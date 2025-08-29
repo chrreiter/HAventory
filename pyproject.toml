@@ -1,0 +1,34 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+respect-gitignore = true
+src = [
+  "custom_components/haventory",
+  "tests",
+]
+exclude = [
+  "cards/**/node_modules",
+  "cards/**/dist",
+  "cards/**/www",
+]
+
+[tool.ruff.lint]
+select = [
+  "E", "F", "W",      # pycodestyle/pyflakes/warnings
+  "I",                  # isort (import order)
+  "UP",                 # pyupgrade
+  "B",                  # flake8-bugbear
+  "ASYNC",              # flake8-async
+  "S",                  # flake8-bandit (security)
+  "PL",                 # pylint subset
+  "RUF",                # ruff rules
+]
+ignore = [
+  "S101",  # allow assert in tests
+]
+
+[tool.ruff.format]
+quote-style = "preserve"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S110"]

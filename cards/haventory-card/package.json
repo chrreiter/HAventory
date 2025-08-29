@@ -19,6 +19,7 @@
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^1.6.1",
     "eslint": "^9.7.0",
     "jsdom": "^26.1.0",
     "typescript": "^5.4.0",

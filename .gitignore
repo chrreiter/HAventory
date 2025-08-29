@@ -225,3 +225,10 @@ __marimo__/
 
 # Custom roadmap
 /roadmap
+
+# CI/test artifacts
+junit.xml
+
+# OS-specific junk
+.DS_Store
+Thumbs.db

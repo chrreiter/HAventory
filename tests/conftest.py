@@ -7,11 +7,11 @@ Additionally, enforce a selector-based event loop policy on Windows to avoid
 ProactorEventLoop self-pipe issues when sockets are tampered with by plugins.
 """
 
+import asyncio
+import platform
 import sys
 import types
 from pathlib import Path
-import asyncio
-import platform
 
 # Re-enable sockets if a plugin disabled them (e.g., pytest-socket via IDE)
 try:  # pragma: no cover - safety for IDE-driven runs
@@ -45,9 +45,7 @@ homeassistant = _ensure_stub("homeassistant")
 
 # homeassistant.const
 ha_const = types.ModuleType("homeassistant.const")
-setattr(
-    ha_const, "Platform", types.SimpleNamespace(SENSOR="sensor", CALENDAR="calendar")
-)
+ha_const.Platform = types.SimpleNamespace(SENSOR="sensor", CALENDAR="calendar")
 sys.modules["homeassistant.const"] = ha_const
 
 # homeassistant.core
@@ -59,7 +57,7 @@ class HomeAssistant:  # type: ignore[override]
         self.data = {}
 
 
-setattr(ha_core, "HomeAssistant", HomeAssistant)
+ha_core.HomeAssistant = HomeAssistant
 sys.modules["homeassistant.core"] = ha_core
 
 # homeassistant.config_entries
@@ -82,8 +80,8 @@ class ConfigFlow:  # type: ignore[override]
         return {"type": "create_entry", "title": title, "data": data}
 
 
-setattr(ha_config_entries, "ConfigEntry", ConfigEntry)
-setattr(ha_config_entries, "ConfigFlow", ConfigFlow)
+ha_config_entries.ConfigEntry = ConfigEntry
+ha_config_entries.ConfigFlow = ConfigFlow
 sys.modules["homeassistant.config_entries"] = ha_config_entries
 
 # homeassistant.data_entry_flow
@@ -95,7 +93,7 @@ class FlowResult(dict):  # type: ignore[override]
 
 
 sys.modules["homeassistant.data_entry_flow"] = ha_data_entry_flow
-setattr(ha_data_entry_flow, "FlowResult", FlowResult)
+ha_data_entry_flow.FlowResult = FlowResult
 
 # homeassistant.helpers and homeassistant.helpers.storage
 ha_helpers = types.ModuleType("homeassistant.helpers")
@@ -105,16 +103,16 @@ ha_helpers_storage = types.ModuleType("homeassistant.helpers.storage")
 
 
 class Store:  # type: ignore[override]
-    def __init__(self, _hass: HomeAssistant, _version: int, _key: str) -> None:  # noqa: D401
+    def __init__(self, _hass: HomeAssistant, _version: int, _key: str) -> None:
         self.version = _version
         self.key = _key
 
-    async def async_load(self):  # noqa: D401
+    async def async_load(self):
         return None
 
-    async def async_save(self, _data):  # noqa: D401
+    async def async_save(self, _data):
         return None
 
 
-setattr(ha_helpers_storage, "Store", Store)
+ha_helpers_storage.Store = Store
 sys.modules["homeassistant.helpers.storage"] = ha_helpers_storage

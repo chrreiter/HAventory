@@ -10,7 +10,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-
 DOMAIN = "haventory"
 STORAGE_VERSION = 1
 STORAGE_KEY = DOMAIN
