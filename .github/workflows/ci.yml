@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Set up venv
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\Activate.ps1
+          python -m pip install -U pip
+          pip install pytest pytest-asyncio aioresponses tzdata beautifulsoup4==4.12.3 aiohttp>=3.9.1 ruff pytest-cov
+      - name: Lint (ruff)
+        shell: pwsh
+        run: |
+          .\.venv\Scripts\Activate.ps1
+          ruff check .
+      - name: Test (pytest offline)
+        shell: pwsh
+        run: |
+          .\.venv\Scripts\Activate.ps1
+          $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = '1'
+          pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cards/haventory-card
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: cards/haventory-card/package.json
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npx eslint .
+      - name: Test
+        run: npx vitest run
+      - name: Build
+        run: npm run build
+
+  validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hassfest
+        uses: home-assistant/actions/hassfest@master
+      - name: HACS validation
+        uses: hacs/action@main
+        with:
+          category: integration
+          ignore: brands
