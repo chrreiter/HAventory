@@ -1,4 +1,4 @@
-name: ci
+﻿name: ci
 
 on:
   push:
@@ -75,7 +75,7 @@ jobs:
         if: success() && hashFiles('cards/haventory-card/coverage/coverage-summary.json') != ''
         shell: bash
         run: |
-          node -e "const fs=require('fs'); const s=require('./coverage/coverage-summary.json'); fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Frontend coverage: ${s.total.lines.pct}%\n`);"
+          node -e 'const fs=require("fs"); const s=require("./coverage/coverage-summary.json"); fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, "Frontend coverage: " + s.total.lines.pct + "%\n");'
       - name: Upload frontend artifacts
         uses: actions/upload-artifact@v4
         with:
