@@ -1,0 +1,98 @@
+﻿name: ci
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend:
+    runs-on: windows-latest
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Set up venv
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\Activate.ps1
+          python -m pip install -U pip
+          if (Test-Path 'requirements-dev.txt') {
+            pip install -r requirements-dev.txt
+          } else {
+            pip install pytest pytest-asyncio aioresponses tzdata beautifulsoup4==4.12.3 aiohttp>=3.9.1 ruff pytest-cov pre-commit
+          }
+      - name: Lint (ruff)
+        shell: pwsh
+        run: |
+          .\.venv\Scripts\Activate.ps1
+          ruff check --no-cache .
+      - name: Test (pytest offline w/ coverage)
+        shell: pwsh
+        run: |
+          .\.venv\Scripts\Activate.ps1
+          pytest -q -p pytest_cov --cov=custom_components/haventory --cov-report=xml --cov-report=term-missing:skip-covered --junitxml=junit.xml
+      - name: Backend coverage summary
+        if: success() && hashFiles('coverage.xml') != ''
+        shell: pwsh
+        run: |
+          [xml]$c = Get-Content coverage.xml
+          $rate = [math]::Round(100 * [double]$c.coverage.'line-rate', 2)
+          "Backend coverage: $rate%" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+      - name: Upload backend artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-artifacts
+          path: |
+            coverage.xml
+            junit.xml
+            htmlcov/**
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cards/haventory-card
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: cards/haventory-card/package-lock.json
+      - name: Install
+        run: npm ci || npm install --no-audit --no-fund
+      - name: Lint
+        run: npx eslint .
+      - name: Test (vitest w/ coverage)
+        run: npx vitest run --coverage
+      - name: Frontend coverage summary
+        if: success() && hashFiles('cards/haventory-card/coverage/coverage-summary.json') != ''
+        shell: bash
+        run: |
+          node -e 'const fs=require("fs"); const s=require("./coverage/coverage-summary.json"); fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, "Frontend coverage: " + s.total.lines.pct + "%\n");'
+      - name: Upload frontend artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-artifacts
+          path: |
+            cards/haventory-card/coverage/**
+      - name: Build
+        run: npm run build
+
+  validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hassfest
+        uses: home-assistant/actions/hassfest@master
+      - name: HACS validation
+        uses: hacs/action@main
+        with:
+          category: integration
+          ignore: brands

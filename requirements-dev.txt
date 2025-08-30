@@ -1,0 +1,9 @@
+pytest
+pytest-asyncio
+aioresponses
+tzdata
+beautifulsoup4==4.12.3
+aiohttp>=3.9.1
+ruff
+pytest-cov
+pre-commit
