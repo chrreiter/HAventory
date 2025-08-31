@@ -4,18 +4,15 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    labels: [ "deps", "actions" ]
 
   - package-ecosystem: "npm"
     directory: "/cards/haventory-card"
     schedule:
       interval: "weekly"
-    labels: [ "deps", "npm" ]
 
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
-    labels: [ "deps", "python" ]
     allow:
       - dependency-type: "direct"
