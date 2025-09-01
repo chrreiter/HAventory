@@ -232,3 +232,6 @@ junit.xml
 # OS-specific junk
 .DS_Store
 Thumbs.db
+
+# Frontend build artifacts
+cards/www/
