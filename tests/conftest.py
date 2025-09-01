@@ -8,12 +8,16 @@ ProactorEventLoop self-pipe issues when sockets are tampered with by plugins.
 """
 
 import asyncio
+import os
 import platform
 import sys
 import types
 from pathlib import Path
 
-pytest_plugins = ("pytest_asyncio.plugin",)
+# Only load pytest-asyncio explicitly when plugin auto-loading is disabled.
+# This avoids duplicate plugin registration under VS Code/Cursor test discovery.
+if os.environ.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD") == "1":
+    pytest_plugins = ("pytest_asyncio.plugin",)
 
 # Re-enable sockets if a plugin disabled them (e.g., pytest-socket via IDE)
 try:  # pragma: no cover - safety for IDE-driven runs
