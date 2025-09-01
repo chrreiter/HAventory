@@ -6,28 +6,23 @@ Covers:
 - Area registry async_get lifecycle
 """
 
-from __future__ import annotations
-
-import asyncio
-
+import pytest
 from homeassistant.components.websocket_api import error_message, result_message
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.area_registry import async_get
 from homeassistant.helpers.storage import Store
 
 
-def test_store_round_trip() -> None:
+@pytest.mark.asyncio
+async def test_store_round_trip() -> None:
     """Store should persist values in-memory by key."""
 
     hass = HomeAssistant()
     store = Store(hass, 1, "haventory")
 
-    async def _run():
-        assert await store.async_load() is None
-        await store.async_save({"a": 1})
-        assert await store.async_load() == {"a": 1}
-
-    asyncio.run(_run())
+    assert await store.async_load() is None
+    await store.async_save({"a": 1})
+    assert await store.async_load() == {"a": 1}
 
 
 def test_websocket_envelope_helpers() -> None:
@@ -45,15 +40,13 @@ def test_websocket_envelope_helpers() -> None:
     }
 
 
-def test_area_registry_lifecycle() -> None:
+@pytest.mark.asyncio
+async def test_area_registry_lifecycle() -> None:
     """async_get returns a stable in-memory registry stored on hass.data."""
 
-    async def _run():
-        hass = HomeAssistant()
-        reg1 = await async_get(hass)
-        reg1._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
+    hass = HomeAssistant()
+    reg1 = await async_get(hass)
+    reg1._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
 
-        reg2 = await async_get(hass)
-        assert reg2.async_get_area("kitchen").name == "Kitchen"  # type: ignore[union-attr]
-
-    asyncio.run(_run())
+    reg2 = await async_get(hass)
+    assert reg2.async_get_area("kitchen").name == "Kitchen"  # type: ignore[union-attr]

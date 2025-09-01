@@ -7,7 +7,7 @@ from typing import Any
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 
-DOMAIN = "haventory"
+from .const import DOMAIN
 
 
 class HAventoryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):

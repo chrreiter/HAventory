@@ -10,9 +10,20 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-DOMAIN = "haventory"
+from .const import DOMAIN
+
 STORAGE_VERSION = 1
 STORAGE_KEY = DOMAIN
+
+
+async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
+    """Set up the HAventory domain at Home Assistant startup.
+
+    Initializes an empty domain bucket in hass.data with no side effects.
+    """
+    if DOMAIN not in hass.data:
+        hass.data[DOMAIN] = {}
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
