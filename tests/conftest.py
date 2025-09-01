@@ -13,6 +13,8 @@ import sys
 import types
 from pathlib import Path
 
+pytest_plugins = ("pytest_asyncio.plugin",)
+
 # Re-enable sockets if a plugin disabled them (e.g., pytest-socket via IDE)
 try:  # pragma: no cover - safety for IDE-driven runs
     from pytest_socket import enable_socket  # type: ignore
