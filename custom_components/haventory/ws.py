@@ -13,10 +13,11 @@ from typing import Any, TypedDict
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
+from .const import DOMAIN, INTEGRATION_VERSION
 from .exceptions import ConflictError, NotFoundError, StorageError, ValidationError
 from .models import ItemUpdate
 from .repository import UNSET, Repository
+from .storage import CURRENT_SCHEMA_VERSION
 
 LOGGER = logging.getLogger(__name__)
 
@@ -167,6 +168,219 @@ def _broadcast_counts(hass: HomeAssistant) -> None:
         action="counts",
         payload={"counts": counts_payload},
     )
+
+
+# -----------------------------
+# Utility commands
+# -----------------------------
+
+
+@websocket_api.websocket_command({"type": "haventory/ping"})
+@websocket_api.async_response
+async def ws_ping(hass: HomeAssistant, _conn, msg):
+    try:
+        if msg.get("type") != "haventory/ping":
+            return None
+        result = {"echo": msg.get("echo"), "ts": _now_ts()}
+        return websocket_api.result_message(msg.get("id", 0), result)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _error_message(hass, msg.get("id", 0), exc, context={"op": "ping"})
+
+
+def _schema_version_from_hass(hass: HomeAssistant) -> int:
+    try:
+        bucket = hass.data.get(DOMAIN) or {}
+        store = bucket.get("store")
+        if store is not None:
+            ver = getattr(store, "schema_version", None)
+            if isinstance(ver, int):
+                return ver
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.warning(
+            "Failed to detect schema_version from hass store",
+            extra={"domain": DOMAIN, "op": "schema_version_probe"},
+            exc_info=True,
+        )
+    return int(CURRENT_SCHEMA_VERSION)
+
+
+@websocket_api.websocket_command({"type": "haventory/version"})
+@websocket_api.async_response
+async def ws_version(hass: HomeAssistant, _conn, msg):
+    try:
+        if msg.get("type") != "haventory/version":
+            return None
+        result = {
+            "integration_version": INTEGRATION_VERSION,
+            "schema_version": _schema_version_from_hass(hass),
+        }
+        return websocket_api.result_message(msg.get("id", 0), result)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _error_message(hass, msg.get("id", 0), exc, context={"op": "version"})
+
+
+@websocket_api.websocket_command({"type": "haventory/stats"})
+@websocket_api.async_response
+async def ws_stats(hass: HomeAssistant, _conn, msg):
+    try:
+        if msg.get("type") != "haventory/stats":
+            return None
+        counts = _repo(hass).get_counts()
+        return websocket_api.result_message(msg.get("id", 0), counts)
+    except Exception as exc:  # pragma: no cover - defensive
+        return _error_message(hass, msg.get("id", 0), exc, context={"op": "stats"})
+
+
+def _health_indexes(repo: Repository) -> dict[str, object]:
+    idx = repo._debug_get_internal_indexes()  # type: ignore[attr-defined]
+    return idx
+
+
+def _collect_item_issues(item_id: str, item, idx: dict) -> list[str]:  # noqa: PLR0912
+    issues: list[str] = []
+    items_by_location_id = idx["items_by_location_id"]  # type: ignore[index]
+    locations_by_id = idx["locations_by_id"]  # type: ignore[index]
+    created_at_bucket = idx["created_at_bucket"]  # type: ignore[index]
+    updated_at_bucket = idx["updated_at_bucket"]  # type: ignore[index]
+    checked_out_item_ids = idx["checked_out_item_ids"]  # type: ignore[index]
+    low_stock_item_ids = idx["low_stock_item_ids"]  # type: ignore[index]
+
+    if getattr(item, "id", None) != item_id:
+        issues.append("item_id_key_mismatch")
+
+    loc_id = getattr(item, "location_id", None)
+    if loc_id is not None and loc_id not in locations_by_id:
+        issues.append("item_references_missing_location")
+
+    if loc_id is not None:
+        bucket_ids = items_by_location_id.get(loc_id, set())
+        if item_id not in bucket_ids:
+            issues.append("item_missing_from_items_by_location_index")
+
+    created_key = getattr(item, "created_at", None)
+    updated_key = getattr(item, "updated_at", None)
+    if created_key not in created_at_bucket or item_id not in created_at_bucket.get(
+        created_key, set()
+    ):
+        issues.append("item_missing_from_created_at_bucket")
+    if updated_key not in updated_at_bucket or item_id not in updated_at_bucket.get(
+        updated_key, set()
+    ):
+        issues.append("item_missing_from_updated_at_bucket")
+
+    if bool(getattr(item, "checked_out", False)):
+        if item_id not in checked_out_item_ids:
+            issues.append("checked_out_item_missing_from_index")
+    elif item_id in checked_out_item_ids:
+        issues.append("non_checked_out_item_present_in_index")
+
+    thr = getattr(item, "low_stock_threshold", None)
+    is_low = False
+    try:
+        is_low = thr is not None and int(getattr(item, "quantity", 0)) <= int(thr)
+    except Exception:  # pragma: no cover - defensive
+        is_low = False
+    if is_low:
+        if item_id not in low_stock_item_ids:
+            issues.append("low_stock_item_missing_from_index")
+    elif item_id in low_stock_item_ids:
+        issues.append("non_low_stock_item_present_in_index")
+    return issues
+
+
+def _check_items_consistency(idx: dict) -> list[str]:
+    issues: list[str] = []
+    items_by_id = idx["items_by_id"]  # type: ignore[index]
+    for item_id, item in items_by_id.items():
+        issues.extend(_collect_item_issues(item_id, item, idx))
+    return issues
+
+
+def _check_index_references(idx: dict) -> list[str]:
+    issues: list[str] = []
+    items_by_id = idx["items_by_id"]  # type: ignore[index]
+    tags_to_item_ids = idx["tags_to_item_ids"]  # type: ignore[index]
+    category_to_item_ids = idx["category_to_item_ids"]  # type: ignore[index]
+    checked_out_item_ids = idx["checked_out_item_ids"]  # type: ignore[index]
+    low_stock_item_ids = idx["low_stock_item_ids"]  # type: ignore[index]
+    items_by_location_id = idx["items_by_location_id"]  # type: ignore[index]
+    created_at_bucket = idx["created_at_bucket"]  # type: ignore[index]
+    updated_at_bucket = idx["updated_at_bucket"]  # type: ignore[index]
+    locations_by_id = idx["locations_by_id"]  # type: ignore[index]
+
+    def _assert_known_ids(name: str, ids: set[str]) -> None:
+        unknown = [x for x in ids if x not in items_by_id]
+        if unknown:
+            issues.append(f"{name}_references_unknown_item_ids")
+
+    for _tag, ids in list(tags_to_item_ids.items()):
+        _assert_known_ids("tags_index", set(ids))
+    for _cat, ids in list(category_to_item_ids.items()):
+        _assert_known_ids("category_index", set(ids))
+
+    _assert_known_ids("checked_out_index", set(checked_out_item_ids))
+    _assert_known_ids("low_stock_index", set(low_stock_item_ids))
+
+    for loc_id, ids in list(items_by_location_id.items()):
+        if loc_id is not None and loc_id not in locations_by_id:
+            issues.append("items_by_location_references_missing_location")
+        _assert_known_ids("items_by_location_index", set(ids))
+        for iid in list(ids):
+            item = items_by_id.get(iid)
+            if item is not None and getattr(item, "location_id", None) != loc_id:
+                issues.append("items_by_location_bucket_mismatch")
+
+    for _t, ids in list(created_at_bucket.items()):
+        _assert_known_ids("created_at_bucket", set(ids))
+    for _t, ids in list(updated_at_bucket.items()):
+        _assert_known_ids("updated_at_bucket", set(ids))
+
+    return issues
+
+
+def _check_locations_consistency(*, locations_by_id) -> list[str]:
+    issues: list[str] = []
+    for loc_id, loc in locations_by_id.items():
+        if getattr(loc, "id", None) != loc_id:
+            issues.append("location_id_key_mismatch")
+    return issues
+
+
+def _collect_health_issues(repo: Repository) -> tuple[list[str], dict[str, int]]:
+    idx = _health_indexes(repo)
+    issues: list[str] = []
+    issues.extend(_check_items_consistency(idx))
+    issues.extend(_check_index_references(idx))
+    issues.extend(_check_locations_consistency(locations_by_id=idx["locations_by_id"]))
+
+    counts = repo.get_counts()
+    items_by_id = idx["items_by_id"]  # type: ignore[index]
+    locations_by_id = idx["locations_by_id"]  # type: ignore[index]
+    checked_out_item_ids = idx["checked_out_item_ids"]  # type: ignore[index]
+    low_stock_item_ids = idx["low_stock_item_ids"]  # type: ignore[index]
+    if counts.get("items_total") != len(items_by_id):
+        issues.append("items_total_count_mismatch")
+    if counts.get("locations_total") != len(locations_by_id):
+        issues.append("locations_total_count_mismatch")
+    if counts.get("checked_out_count") != len(checked_out_item_ids):
+        issues.append("checked_out_count_mismatch")
+    if counts.get("low_stock_count") != len(low_stock_item_ids):
+        issues.append("low_stock_count_mismatch")
+    return issues, counts
+
+
+@websocket_api.websocket_command({"type": "haventory/health"})
+@websocket_api.async_response
+async def ws_health(hass: HomeAssistant, _conn, msg):
+    try:
+        if msg.get("type") != "haventory/health":
+            return None
+        issues, counts = _collect_health_issues(_repo(hass))
+        healthy = len(issues) == 0
+        result = {"healthy": healthy, "issues": issues, "counts": counts}
+        return websocket_api.result_message(msg.get("id", 0), result)
+    except Exception as exc:
+        return _error_message(hass, msg.get("id", 0), exc, context={"op": "health"})
 
 
 # -----------------------------
@@ -691,6 +905,10 @@ def _serialize_location(loc) -> dict[str, Any]:
 
 
 def setup(hass: HomeAssistant) -> None:
+    websocket_api.async_register_command(hass, ws_ping)
+    websocket_api.async_register_command(hass, ws_version)
+    websocket_api.async_register_command(hass, ws_stats)
+    websocket_api.async_register_command(hass, ws_health)
     websocket_api.async_register_command(hass, ws_subscribe)
     websocket_api.async_register_command(hass, ws_unsubscribe)
     websocket_api.async_register_command(hass, ws_item_create)
