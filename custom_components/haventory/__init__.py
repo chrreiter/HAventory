@@ -8,12 +8,11 @@ from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN
+from .storage import DomainStore
 
 STORAGE_VERSION = 1
-STORAGE_KEY = DOMAIN
 
 
 async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
@@ -31,8 +30,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if DOMAIN not in hass.data:
         hass.data[DOMAIN] = {}
 
-    # Expose Store via hass.data[DOMAIN]["store"] as a shared resource
-    hass.data[DOMAIN]["store"] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+    # Expose storage manager via hass.data[DOMAIN]["store"]. Keep name compatible
+    # with tests while upgrading to a schema-aware wrapper.
+    hass.data[DOMAIN]["store"] = DomainStore(hass, key="haventory_store", version=STORAGE_VERSION)
 
     return True
 
