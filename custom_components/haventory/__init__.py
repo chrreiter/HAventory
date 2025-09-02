@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from . import services as services_mod
+from . import ws as ws_mod
 from .const import DOMAIN
 from .repository import Repository
 from .storage import DomainStore
@@ -42,6 +43,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Register services
     services_mod.setup(hass)
+
+    # Register WebSocket commands
+    ws_mod.setup(hass)
 
     return True
 
