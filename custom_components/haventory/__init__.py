@@ -9,7 +9,9 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from . import services as services_mod
 from .const import DOMAIN
+from .repository import Repository
 from .storage import DomainStore
 
 STORAGE_VERSION = 1
@@ -33,6 +35,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Expose storage manager via hass.data[DOMAIN]["store"]. Keep name compatible
     # with tests while upgrading to a schema-aware wrapper.
     hass.data[DOMAIN]["store"] = DomainStore(hass, key="haventory_store", version=STORAGE_VERSION)
+
+    # Initialize in-memory repository for services and APIs
+    if "repository" not in hass.data[DOMAIN]:
+        hass.data[DOMAIN]["repository"] = Repository()
+
+    # Register services
+    services_mod.setup(hass)
 
     return True
 

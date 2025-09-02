@@ -3,3 +3,4 @@ pytest-asyncio
 ruff
 pytest-cov
 pre-commit
+voluptuous

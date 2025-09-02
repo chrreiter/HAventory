@@ -1,10 +1,15 @@
-add_item:
-  name: Add item
-  description: Add a new inventory item
+item_create:
+  name: Create item
+  description: Create a new inventory item
   fields:
     name:
       required: true
       example: "Hammer"
+      selector:
+        text:
+    description:
+      required: false
+      example: "16 oz claw hammer"
       selector:
         text:
     quantity:
@@ -12,18 +17,230 @@ add_item:
       example: 1
       selector:
         number:
+    checked_out:
+      required: false
+      example: false
+      selector:
+        boolean:
+    due_date:
+      required: false
+      example: "2025-01-01"
+      selector:
+        date:
+    location_id:
+      required: false
+      example: "uuid-of-location"
+      selector:
+        text:
+    tags:
+      required: false
+      example: ["tool", "garage"]
+      selector:
+        text:
+    category:
+      required: false
+      example: "tools"
+      selector:
+        text:
+    low_stock_threshold:
+      required: false
+      example: 1
+      selector:
+        number:
+    custom_fields:
+      required: false
+      selector:
+        object:
 
-check_out_item:
-  name: Check out item
-  description: Mark an item as checked out with an optional due date
+item_update:
+  name: Update item
+  description: Update fields on an existing item
   fields:
     item_id:
       required: true
       example: "uuid-of-item"
       selector:
         text:
+    expected_version:
+      required: false
+      example: 2
+      selector:
+        number:
+    name:
+      required: false
+      selector:
+        text:
+    description:
+      required: false
+      selector:
+        text:
+    quantity:
+      required: false
+      selector:
+        number:
+    checked_out:
+      required: false
+      selector:
+        boolean:
     due_date:
       required: false
+      selector:
+        date:
+    location_id:
+      required: false
+      selector:
+        text:
+    tags:
+      required: false
+      selector:
+        object:
+    category:
+      required: false
+      selector:
+        text:
+    low_stock_threshold:
+      required: false
+      selector:
+        number:
+    custom_fields_set:
+      required: false
+      selector:
+        object:
+    custom_fields_unset:
+      required: false
+      selector:
+        object:
+
+item_delete:
+  name: Delete item
+  description: Delete an item by id
+  fields:
+    item_id:
+      required: true
+      selector:
+        text:
+    expected_version:
+      required: false
+      selector:
+        number:
+
+item_move:
+  name: Move item
+  description: Move an item to a new location (or root)
+  fields:
+    item_id:
+      required: true
+      selector:
+        text:
+    new_location_id:
+      required: false
+      selector:
+        text:
+    expected_version:
+      required: false
+      selector:
+        number:
+
+item_adjust_quantity:
+  name: Adjust quantity
+  description: Add or subtract from item quantity
+  fields:
+    item_id:
+      required: true
+      selector:
+        text:
+    delta:
+      required: true
+      selector:
+        number:
+    expected_version:
+      required: false
+      selector:
+        number:
+
+item_set_quantity:
+  name: Set quantity
+  description: Set item quantity exactly
+  fields:
+    item_id:
+      required: true
+      selector:
+        text:
+    quantity:
+      required: true
+      selector:
+        number:
+    expected_version:
+      required: false
+      selector:
+        number:
+
+item_check_out:
+  name: Check out item
+  description: Mark an item as checked out with due date
+  fields:
+    item_id:
+      required: true
+      selector:
+        text:
+    due_date:
+      required: true
       example: "2025-01-01"
       selector:
         date:
+    expected_version:
+      required: false
+      selector:
+        number:
+
+item_check_in:
+  name: Check in item
+  description: Mark an item as not checked out
+  fields:
+    item_id:
+      required: true
+      selector:
+        text:
+    expected_version:
+      required: false
+      selector:
+        number:
+
+location_create:
+  name: Create location
+  description: Create a new location under an optional parent
+  fields:
+    name:
+      required: true
+      selector:
+        text:
+    parent_id:
+      required: false
+      selector:
+        text:
+
+location_update:
+  name: Update location
+  description: Rename and/or move a location
+  fields:
+    location_id:
+      required: true
+      selector:
+        text:
+    name:
+      required: false
+      selector:
+        text:
+    new_parent_id:
+      required: false
+      selector:
+        text:
+
+location_delete:
+  name: Delete location
+  description: Delete a location by id
+  fields:
+    location_id:
+      required: true
+      selector:
+        text:
