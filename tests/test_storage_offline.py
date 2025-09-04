@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 from custom_components.haventory import migrations
+from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
@@ -21,7 +22,7 @@ async def test_initial_load_returns_empty_dataset() -> None:
 
     # Arrange
     hass = HomeAssistant()
-    store = DomainStore(hass)
+    store = DomainStore(hass, key="test_store_initial_clean")
 
     # Act
     data = await store.async_load()
@@ -39,7 +40,7 @@ async def test_save_then_load_roundtrip() -> None:
 
     # Arrange
     hass = HomeAssistant()
-    store = DomainStore(hass)
+    store = DomainStore(hass, key="test_store_roundtrip")
     payload = {
         "schema_version": CURRENT_SCHEMA_VERSION,
         "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 50}},
@@ -52,6 +53,30 @@ async def test_save_then_load_roundtrip() -> None:
 
     # Assert
     assert loaded == payload
+
+
+@pytest.mark.asyncio
+async def test_repository_roundtrip_via_export_and_load() -> None:
+    """Repository export to store and load back yields equivalent state."""
+
+    hass = HomeAssistant()
+    store = DomainStore(hass)
+
+    # Build a small repo
+    repo = Repository()
+    loc = repo.create_location(name="Garage")
+    item = repo.create_item({"name": "Screws", "quantity": 50, "location_id": loc.id})
+
+    # Persist
+    await store.async_save(repo.export_state())
+
+    # Load and hydrate a new repo
+    payload = await store.async_load()
+    repo2 = Repository.from_state(payload)
+
+    # Compare a couple of properties
+    assert repo2.get_location(loc.id).name == "Garage"
+    assert repo2.get_item(item.id).name == "Screws"
 
 
 @pytest.mark.asyncio

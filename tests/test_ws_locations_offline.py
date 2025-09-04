@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.repository import Repository
+from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
@@ -38,6 +39,7 @@ async def test_location_crud_and_tree() -> None:
 
     hass = HomeAssistant()
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
     # Create root and child
@@ -81,7 +83,33 @@ async def test_location_error_mapping() -> None:
 
     hass = HomeAssistant()
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
+
+
+@pytest.mark.asyncio
+async def test_ws_location_mutations_persist_to_store(monkeypatch) -> None:
+    """Location create/update/delete should persist via DomainStore.save."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    store = DomainStore(hass)
+    hass.data[DOMAIN]["store"] = store
+    ws_setup(hass)
+
+    calls = {"count": 0}
+
+    async def _spy_save(payload):  # type: ignore[no-untyped-def]
+        calls["count"] += 1
+
+    monkeypatch.setattr(store, "async_save", _spy_save)
+
+    root = await _send(hass, 1, "haventory/location/create", name="Root")
+    rid = root["result"]["id"]
+    await _send(hass, 2, "haventory/location/update", location_id=rid, name="Root2")
+    await _send(hass, 3, "haventory/location/delete", location_id=rid)
+    MIN_PERSISTS_TOTAL = 3
+    assert calls["count"] >= MIN_PERSISTS_TOTAL
 
     # Not found
     res = await _send(

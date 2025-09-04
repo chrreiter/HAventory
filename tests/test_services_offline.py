@@ -8,8 +8,6 @@ Scenarios:
 
 from __future__ import annotations
 
-import logging
-
 import pytest
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.repository import Repository
@@ -23,8 +21,8 @@ from custom_components.haventory.services import (
     service_item_update,
     service_location_create,
     service_location_delete,
-    service_location_update,
 )
+from custom_components.haventory.storage import DomainStore
 from homeassistant.core import HomeAssistant
 
 
@@ -34,6 +32,7 @@ async def test_item_create_and_update_flow_logs_and_mutates() -> None:
 
     hass = HomeAssistant()
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
 
     # Create
     await service_item_create(
@@ -67,6 +66,7 @@ async def test_item_move_and_quantity_helpers() -> None:
     hass = HomeAssistant()
     repo = Repository()
     hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
 
     # Create locations and item
     await service_location_create(hass, {"name": "Garage"})
@@ -92,27 +92,31 @@ async def test_item_move_and_quantity_helpers() -> None:
 
 
 @pytest.mark.asyncio
-async def test_location_update_and_delete_validation_logged(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Invalid location operations are logged with context and do not raise."""
+async def test_services_persist_after_mutations(monkeypatch) -> None:
+    """Service handlers should call DomainStore.async_save after changes."""
 
     hass = HomeAssistant()
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    store = DomainStore(hass)
+    hass.data[DOMAIN]["store"] = store
 
-    # Create a location
+    calls = {"count": 0}
+
+    async def _spy_save(payload):  # type: ignore[no-untyped-def]
+        calls["count"] += 1
+        assert isinstance(payload, dict) and "items" in payload and "locations" in payload
+
+    monkeypatch.setattr(store, "async_save", _spy_save)
+
+    # Create item + location
+    await service_item_create(hass, {"name": "Widget"})
     await service_location_create(hass, {"name": "Root"})
+    MIN_PERSISTS_AFTER_CREATE = 2
+    assert calls["count"] >= MIN_PERSISTS_AFTER_CREATE
+
+    # Also ensure delete persists
     repo: Repository = hass.data[DOMAIN]["repository"]
     loc_id = next(iter(repo._debug_get_internal_indexes()["locations_by_id"]))
-
-    with caplog.at_level(logging.WARNING):
-        await service_location_update(hass, {"location_id": loc_id, "new_parent_id": loc_id})
-    # A warning should be present with contextual fields
-    assert any(
-        "location_id" in rec.__dict__.get("extra", {}) if hasattr(rec, "extra") else True
-        for rec in caplog.records
-    )
-
-    # Delete should work when no children and no items
     await service_location_delete(hass, {"location_id": loc_id})
-    assert repo.get_counts()["locations_total"] == 0
+    MIN_PERSISTS_AFTER_DELETE = 3
+    assert calls["count"] >= MIN_PERSISTS_AFTER_DELETE

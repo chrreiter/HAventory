@@ -35,11 +35,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Expose storage manager via hass.data[DOMAIN]["store"]. Keep name compatible
     # with tests while upgrading to a schema-aware wrapper.
-    hass.data[DOMAIN]["store"] = DomainStore(hass, key="haventory_store", version=STORAGE_VERSION)
+    store = DomainStore(hass, key="haventory_store", version=STORAGE_VERSION)
+    hass.data[DOMAIN]["store"] = store
 
-    # Initialize in-memory repository for services and APIs
-    if "repository" not in hass.data[DOMAIN]:
-        hass.data[DOMAIN]["repository"] = Repository()
+    # Initialize in-memory repository for services and APIs by loading persisted state
+    try:
+        payload = await store.async_load()
+    except Exception:  # pragma: no cover - defensive
+        payload = {"items": {}, "locations": {}}
+    hass.data[DOMAIN]["repository"] = Repository.from_state(payload)
 
     # Register services
     services_mod.setup(hass)

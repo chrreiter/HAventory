@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.repository import Repository
+from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
@@ -38,6 +39,7 @@ async def test_item_create_get_update_delete_success() -> None:
 
     hass = HomeAssistant()
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
     # Create
@@ -65,6 +67,7 @@ async def test_item_quantity_and_checkout_helpers() -> None:
 
     hass = HomeAssistant()
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
     initial_quantity = 1
@@ -97,6 +100,7 @@ async def test_item_list_pagination_cursor_passthrough() -> None:
 
     hass = HomeAssistant()
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
     # Seed a couple items
@@ -119,7 +123,43 @@ async def test_error_mapping_validation_and_not_found_and_conflict() -> None:
 
     hass = HomeAssistant()
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
+
+
+@pytest.mark.asyncio
+async def test_ws_mutations_persist_to_store(monkeypatch) -> None:
+    """After WS mutations, DomainStore.async_save is invoked with export_state."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    # Real store instance so key exists; we'll spy on method
+    store = DomainStore(hass)
+    hass.data[DOMAIN]["store"] = store
+    ws_setup(hass)
+
+    calls = {"count": 0}
+
+    async def _spy_save(payload):  # type: ignore[no-untyped-def]
+        calls["count"] += 1
+        # Minimal assertions
+        assert isinstance(payload, dict)
+        assert "items" in payload and "locations" in payload
+
+    monkeypatch.setattr(store, "async_save", _spy_save)
+
+    # Create triggers persist
+    created = await _send(hass, 1, "haventory/item/create", name="Hammer")
+    assert calls["count"] >= 1
+    item_id = created["result"]["id"]
+    # Update triggers persist
+    await _send(hass, 2, "haventory/item/update", item_id=item_id, name="HammerX")
+    # Adjust quantity triggers persist
+    await _send(hass, 3, "haventory/item/adjust_quantity", item_id=item_id, delta=1)
+    # Delete triggers persist
+    await _send(hass, 4, "haventory/item/delete", item_id=item_id)
+    MIN_PERSISTS_TOTAL = 4
+    assert calls["count"] >= MIN_PERSISTS_TOTAL
 
     # Validation: set_quantity negative
     res = await _send(hass, 1, "haventory/item/set_quantity", item_id="x", quantity=-1)

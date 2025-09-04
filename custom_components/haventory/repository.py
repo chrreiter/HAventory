@@ -15,7 +15,7 @@ import json
 import logging
 from collections.abc import Iterable
 from dataclasses import replace
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from .exceptions import ConflictError, NotFoundError, ValidationError
 from .models import (
@@ -25,6 +25,7 @@ from .models import (
     ItemFilter,
     ItemUpdate,
     Location,
+    LocationPath,
     Sort,
     apply_item_update,
     build_location_path,
@@ -663,3 +664,164 @@ class Repository:
             "created_at_bucket": self._created_at_bucket,
             "updated_at_bucket": self._updated_at_bucket,
         }
+
+    # -----------------------------
+    # Persistence — export/import
+    # -----------------------------
+
+    def export_state(self) -> dict[str, Any]:
+        """Serialize the repository to a plain dict for storage.
+
+        Shape:
+            {"items": {id -> ItemDict}, "locations": {id -> LocationDict}}
+        """
+
+        def _serialize_item(item: Item) -> dict[str, Any]:
+            return {
+                "id": item.id,
+                "name": item.name,
+                "description": item.description,
+                "quantity": int(item.quantity),
+                "checked_out": bool(item.checked_out),
+                "due_date": item.due_date,
+                "location_id": item.location_id,
+                "tags": list(item.tags),
+                "category": item.category,
+                "low_stock_threshold": item.low_stock_threshold,
+                "custom_fields": dict(item.custom_fields),
+                "created_at": item.created_at,
+                "updated_at": item.updated_at,
+                "version": int(item.version),
+                "location_path": {
+                    "id_path": list(item.location_path.id_path),
+                    "name_path": list(item.location_path.name_path),
+                    "display_path": item.location_path.display_path,
+                    "sort_key": item.location_path.sort_key,
+                },
+            }
+
+        def _serialize_location(loc: Location) -> dict[str, Any]:
+            return {
+                "id": loc.id,
+                "name": loc.name,
+                "parent_id": loc.parent_id,
+                "path": {
+                    "id_path": list(loc.path.id_path),
+                    "name_path": list(loc.path.name_path),
+                    "display_path": loc.path.display_path,
+                    "sort_key": loc.path.sort_key,
+                },
+            }
+
+        items_dict: dict[str, Any] = {}
+        for item_id in sorted(self._items_by_id.keys()):
+            items_dict[item_id] = _serialize_item(self._items_by_id[item_id])
+
+        locations_dict: dict[str, Any] = {}
+        for loc_id in sorted(self._locations_by_id.keys()):
+            locations_dict[loc_id] = _serialize_location(self._locations_by_id[loc_id])
+
+        return {"items": items_dict, "locations": locations_dict}
+
+    def load_state(self, data: dict[str, Any]) -> None:
+        """Load repository content from a persisted payload.
+
+        Replaces current maps and rebuilds all indexes deterministically.
+        """
+
+        # Reset all in-memory structures
+        self._items_by_id = {}
+        self._locations_by_id = {}
+        self._tags_to_item_ids = {}
+        self._category_to_item_ids = {}
+        self._checked_out_item_ids = set()
+        self._low_stock_item_ids = set()
+        self._items_by_location_id = {}
+        self._created_at_bucket = {}
+        self._updated_at_bucket = {}
+        self._name_sort_key_by_item_id = {}
+        self._children_ids_by_parent_id = {}
+
+        if not isinstance(data, dict):
+            return
+
+        # Load locations first so items can reference them
+        locations = data.get("locations") or {}
+        if isinstance(locations, dict):
+            for loc_id, loc_data in locations.items():
+                try:
+                    path_obj = loc_data.get("path", {}) if isinstance(loc_data, dict) else {}
+                    path = LocationPath(
+                        id_path=list(path_obj.get("id_path", []) or []),
+                        name_path=list(path_obj.get("name_path", []) or []),
+                        display_path=str(path_obj.get("display_path", "")),
+                        sort_key=str(path_obj.get("sort_key", "")),
+                    )
+                    loc = Location(
+                        id=str(loc_data.get("id", loc_id)),
+                        parent_id=loc_data.get("parent_id"),
+                        name=str(loc_data.get("name", "")),
+                        path=path,
+                    )
+                    self._add_location(loc)
+                except Exception:  # pragma: no cover - defensive
+                    LOGGER.warning(
+                        "Failed to load location from persisted state",
+                        extra={
+                            "domain": "haventory",
+                            "op": "load_state_locations",
+                            "location_id": str(loc_id),
+                        },
+                        exc_info=True,
+                    )
+                    continue
+
+        # Load items
+        items = data.get("items") or {}
+        if isinstance(items, dict):
+            for item_id, item_data in items.items():
+                try:
+                    lp = (item_data or {}).get("location_path", {})
+                    location_path = LocationPath(
+                        id_path=list(lp.get("id_path", []) or []),
+                        name_path=list(lp.get("name_path", []) or []),
+                        display_path=str(lp.get("display_path", "")),
+                        sort_key=str(lp.get("sort_key", "")),
+                    )
+                    item = Item(
+                        id=str(item_data.get("id", item_id)),
+                        name=str(item_data.get("name", "")),
+                        description=item_data.get("description"),
+                        quantity=int(item_data.get("quantity", 0)),
+                        checked_out=bool(item_data.get("checked_out", False)),
+                        due_date=item_data.get("due_date"),
+                        location_id=item_data.get("location_id"),
+                        tags=list(item_data.get("tags", []) or []),
+                        category=item_data.get("category"),
+                        low_stock_threshold=item_data.get("low_stock_threshold"),
+                        custom_fields=dict(item_data.get("custom_fields", {}) or {}),
+                        created_at=str(item_data.get("created_at", "")),
+                        updated_at=str(item_data.get("updated_at", "")),
+                        version=int(item_data.get("version", 1)),
+                        location_path=location_path,
+                    )
+                    self._index_item(item)
+                except Exception:  # pragma: no cover - defensive
+                    LOGGER.warning(
+                        "Failed to load item from persisted state",
+                        extra={
+                            "domain": "haventory",
+                            "op": "load_state_items",
+                            "item_id": str(item_id),
+                        },
+                        exc_info=True,
+                    )
+                    continue
+
+    @staticmethod
+    def from_state(data: dict[str, Any]) -> Repository:
+        """Create a Repository instance from a persisted payload."""
+
+        repo = Repository()
+        repo.load_state(data)
+        return repo

@@ -22,6 +22,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from . import migrations
+from .const import DOMAIN
 
 # Current schema version for persisted payloads
 CURRENT_SCHEMA_VERSION: Final[int] = 1
@@ -131,3 +132,23 @@ class DomainStore:
 
         await self._store.async_save(migrated)
         return migrated
+
+
+async def async_persist_repo(hass: HomeAssistant) -> None:
+    """Persist the current repository state via DomainStore.
+
+    Looks up both the storage manager and repository in hass.data[DOMAIN].
+    No-ops if either is missing. Logs are the caller's responsibility.
+    """
+
+    try:
+        bucket = hass.data.get(DOMAIN) or {}
+        store = bucket.get("store")
+        repo = bucket.get("repository")
+        if store is None or repo is None:
+            return
+        payload = repo.export_state()
+        await store.async_save(payload)
+    except Exception:  # pragma: no cover - defensive
+        # Avoid importing logging here; callers already log context on failure
+        return

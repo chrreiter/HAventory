@@ -17,7 +17,7 @@ from .const import DOMAIN, INTEGRATION_VERSION
 from .exceptions import ConflictError, NotFoundError, StorageError, ValidationError
 from .models import ItemUpdate
 from .repository import UNSET, Repository
-from .storage import CURRENT_SCHEMA_VERSION
+from .storage import CURRENT_SCHEMA_VERSION, async_persist_repo
 
 LOGGER = logging.getLogger(__name__)
 
@@ -168,6 +168,18 @@ def _broadcast_counts(hass: HomeAssistant) -> None:
         action="counts",
         payload={"counts": counts_payload},
     )
+
+
+async def _persist_repo(hass: HomeAssistant) -> None:
+    # Delegate to shared helper; retain local warning for visibility in logs
+    try:
+        await async_persist_repo(hass)
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.warning(
+            "Failed to persist repository",
+            extra={"domain": DOMAIN, "op": "persist_repo"},
+            exc_info=True,
+        )
 
 
 # -----------------------------
@@ -467,6 +479,7 @@ async def ws_item_create(hass: HomeAssistant, _conn, msg):
         item = _repo(hass).create_item(payload)  # type: ignore[arg-type]
         serialized = _serialize_item(item)
         _broadcast_event(hass, topic="items", action="created", payload={"item": serialized})
+        await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
     except Exception as exc:
@@ -517,6 +530,7 @@ async def ws_item_update(hass: HomeAssistant, _conn, msg):
         if "location_id" in update:
             action = "moved"
         _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+        await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
     except Exception as exc:
@@ -556,6 +570,7 @@ async def ws_item_delete(hass: HomeAssistant, _conn, msg):
                 action="deleted",
                 payload={"item": {"id": item_id}},
             )
+        await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), None)
     except Exception as exc:
@@ -580,6 +595,7 @@ async def ws_item_adjust_quantity(hass: HomeAssistant, _conn, msg):
         _broadcast_event(
             hass, topic="items", action="quantity_changed", payload={"item": serialized}
         )
+        await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
     except Exception as exc:
@@ -604,6 +620,7 @@ async def ws_item_set_quantity(hass: HomeAssistant, _conn, msg):
         _broadcast_event(
             hass, topic="items", action="quantity_changed", payload={"item": serialized}
         )
+        await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
     except Exception as exc:
@@ -628,6 +645,7 @@ async def ws_item_check_out(hass: HomeAssistant, _conn, msg):
         )
         serialized = _serialize_item(item)
         _broadcast_event(hass, topic="items", action="checked_out", payload={"item": serialized})
+        await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
     except Exception as exc:
@@ -650,6 +668,7 @@ async def ws_item_check_in(hass: HomeAssistant, _conn, msg):
         )
         serialized = _serialize_item(item)
         _broadcast_event(hass, topic="items", action="checked_in", payload={"item": serialized})
+        await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg["id"], serialized)
     except Exception as exc:
@@ -694,6 +713,7 @@ async def ws_location_create(hass: HomeAssistant, _conn, msg):
         _broadcast_event(
             hass, topic="locations", action="created", payload={"location": serialized}
         )
+        await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
     except Exception as exc:
@@ -739,6 +759,7 @@ async def ws_location_update(hass: HomeAssistant, _conn, msg):
             _broadcast_event(
                 hass, topic="locations", action="renamed", payload={"location": serialized}
             )
+        await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg["id"], serialized)
     except Exception as exc:
@@ -774,6 +795,7 @@ async def ws_location_delete(hass: HomeAssistant, _conn, msg):
                 action="deleted",
                 payload={"location": {"id": loc_id}},
             )
+        await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), None)
     except Exception as exc:
