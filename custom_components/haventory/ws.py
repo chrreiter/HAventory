@@ -43,6 +43,17 @@ def _error_code(exc: Exception) -> str:
     return "unknown_error"
 
 
+def _ctx(op: str, **extra: Any) -> dict[str, Any]:
+    """Build a structured logging context for WS operations.
+
+    Ensures the `op` field is always present and merges any additional fields.
+    """
+    base: dict[str, Any] = {"op": op}
+    if extra:
+        base.update(extra)
+    return base
+
+
 def _error_message(hass: HomeAssistant, _id: int, exc: Exception, *, context: dict[str, Any]):
     LOGGER.log(
         logging.ERROR if isinstance(exc, ConflictError) else logging.WARNING,
@@ -196,7 +207,7 @@ async def ws_ping(hass: HomeAssistant, _conn, msg):
         result = {"echo": msg.get("echo"), "ts": _now_ts()}
         return websocket_api.result_message(msg.get("id", 0), result)
     except Exception as exc:  # pragma: no cover - defensive
-        return _error_message(hass, msg.get("id", 0), exc, context={"op": "ping"})
+        return _error_message(hass, msg.get("id", 0), exc, context=_ctx("ping"))
 
 
 def _schema_version_from_hass(hass: HomeAssistant) -> int:
@@ -228,7 +239,7 @@ async def ws_version(hass: HomeAssistant, _conn, msg):
         }
         return websocket_api.result_message(msg.get("id", 0), result)
     except Exception as exc:  # pragma: no cover - defensive
-        return _error_message(hass, msg.get("id", 0), exc, context={"op": "version"})
+        return _error_message(hass, msg.get("id", 0), exc, context=_ctx("version"))
 
 
 @websocket_api.websocket_command({"type": "haventory/stats"})
@@ -240,7 +251,7 @@ async def ws_stats(hass: HomeAssistant, _conn, msg):
         counts = _repo(hass).get_counts()
         return websocket_api.result_message(msg.get("id", 0), counts)
     except Exception as exc:  # pragma: no cover - defensive
-        return _error_message(hass, msg.get("id", 0), exc, context={"op": "stats"})
+        return _error_message(hass, msg.get("id", 0), exc, context=_ctx("stats"))
 
 
 def _health_indexes(repo: Repository) -> dict[str, object]:
@@ -392,7 +403,7 @@ async def ws_health(hass: HomeAssistant, _conn, msg):
         result = {"healthy": healthy, "issues": issues, "counts": counts}
         return websocket_api.result_message(msg.get("id", 0), result)
     except Exception as exc:
-        return _error_message(hass, msg.get("id", 0), exc, context={"op": "health"})
+        return _error_message(hass, msg.get("id", 0), exc, context=_ctx("health"))
 
 
 # -----------------------------
@@ -432,7 +443,7 @@ async def ws_subscribe(hass: HomeAssistant, conn, msg):
         )
         return websocket_api.result_message(msg.get("id", 0), None)
     except Exception as exc:
-        ctx = {"op": "subscribe", "topic": msg.get("topic")}
+        ctx = _ctx("subscribe", topic=msg.get("topic"))
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
 
@@ -460,7 +471,7 @@ async def ws_unsubscribe(hass: HomeAssistant, conn, msg):
         )
         return websocket_api.result_message(msg.get("id", 0), None)
     except Exception as exc:
-        ctx = {"op": "unsubscribe", "subscription": msg.get("subscription")}
+        ctx = _ctx("unsubscribe", subscription=msg.get("subscription"))
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
 
@@ -487,7 +498,7 @@ async def ws_item_create(hass: HomeAssistant, _conn, msg):
             hass,
             msg.get("id", 0),
             exc,
-            context={"op": "item_create", "item_name": msg.get("name")},
+            context=_ctx("item_create", item_name=msg.get("name")),
         )
 
 
@@ -501,7 +512,10 @@ async def ws_item_get(hass: HomeAssistant, _conn, msg):
         return websocket_api.result_message(msg.get("id", 0), _serialize_item(item))
     except Exception as exc:
         return _error_message(
-            hass, msg.get("id", 0), exc, context={"op": "item_get", "item_id": msg.get("item_id")}
+            hass,
+            msg.get("id", 0),
+            exc,
+            context=_ctx("item_get", item_id=msg.get("item_id")),
         )
 
 
@@ -534,11 +548,11 @@ async def ws_item_update(hass: HomeAssistant, _conn, msg):
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
     except Exception as exc:
-        ctx = {
-            "op": "item_update",
-            "item_id": msg.get("item_id"),
-            "expected_version": msg.get("expected_version"),
-        }
+        ctx = _ctx(
+            "item_update",
+            item_id=msg.get("item_id"),
+            expected_version=msg.get("expected_version"),
+        )
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
 
@@ -574,11 +588,11 @@ async def ws_item_delete(hass: HomeAssistant, _conn, msg):
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), None)
     except Exception as exc:
-        ctx = {
-            "op": "item_delete",
-            "item_id": msg.get("item_id"),
-            "expected_version": msg.get("expected_version"),
-        }
+        ctx = _ctx(
+            "item_delete",
+            item_id=msg.get("item_id"),
+            expected_version=msg.get("expected_version"),
+        )
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
 
@@ -599,11 +613,11 @@ async def ws_item_adjust_quantity(hass: HomeAssistant, _conn, msg):
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
     except Exception as exc:
-        ctx = {
-            "op": "item_adjust_quantity",
-            "item_id": msg.get("item_id"),
-            "delta": msg.get("delta"),
-        }
+        ctx = _ctx(
+            "item_adjust_quantity",
+            item_id=msg.get("item_id"),
+            delta=msg.get("delta"),
+        )
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
 
@@ -624,11 +638,11 @@ async def ws_item_set_quantity(hass: HomeAssistant, _conn, msg):
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
     except Exception as exc:
-        ctx = {
-            "op": "item_set_quantity",
-            "item_id": msg.get("item_id"),
-            "quantity": msg.get("quantity"),
-        }
+        ctx = _ctx(
+            "item_set_quantity",
+            item_id=msg.get("item_id"),
+            quantity=msg.get("quantity"),
+        )
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
 
@@ -649,11 +663,11 @@ async def ws_item_check_out(hass: HomeAssistant, _conn, msg):
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
     except Exception as exc:
-        ctx = {
-            "op": "item_check_out",
-            "item_id": msg.get("item_id"),
-            "due_date": msg.get("due_date"),
-        }
+        ctx = _ctx(
+            "item_check_out",
+            item_id=msg.get("item_id"),
+            due_date=msg.get("due_date"),
+        )
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
 
@@ -672,7 +686,7 @@ async def ws_item_check_in(hass: HomeAssistant, _conn, msg):
         _broadcast_counts(hass)
         return websocket_api.result_message(msg["id"], serialized)
     except Exception as exc:
-        ctx = {"op": "item_check_in", "item_id": msg.get("item_id")}
+        ctx = _ctx("item_check_in", item_id=msg.get("item_id"))
         return _error_message(hass, msg["id"], exc, context=ctx)
 
 
@@ -694,7 +708,7 @@ async def ws_item_list(hass: HomeAssistant, _conn, msg):
         }
         return websocket_api.result_message(msg.get("id", 0), result)
     except Exception as exc:
-        return _error_message(hass, msg.get("id", 0), exc, context={"op": "item_list"})
+        return _error_message(hass, msg.get("id", 0), exc, context=_ctx("item_list"))
 
 
 # -----------------------------
@@ -717,11 +731,11 @@ async def ws_location_create(hass: HomeAssistant, _conn, msg):
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
     except Exception as exc:
-        ctx = {
-            "op": "location_create",
-            "location_name": msg.get("name"),
-            "parent_id": msg.get("parent_id"),
-        }
+        ctx = _ctx(
+            "location_create",
+            location_name=msg.get("name"),
+            parent_id=msg.get("parent_id"),
+        )
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
 
@@ -734,7 +748,7 @@ async def ws_location_get(hass: HomeAssistant, _conn, msg):
         loc = _repo(hass).get_location(msg.get("location_id"))
         return websocket_api.result_message(msg.get("id", 0), _serialize_location(loc))
     except Exception as exc:
-        ctx = {"op": "location_get", "location_id": msg.get("location_id")}
+        ctx = _ctx("location_get", location_id=msg.get("location_id"))
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
 
@@ -763,7 +777,7 @@ async def ws_location_update(hass: HomeAssistant, _conn, msg):
         _broadcast_counts(hass)
         return websocket_api.result_message(msg["id"], serialized)
     except Exception as exc:
-        ctx = {"op": "location_update", "location_id": msg.get("location_id")}
+        ctx = _ctx("location_update", location_id=msg.get("location_id"))
         return _error_message(hass, msg["id"], exc, context=ctx)
 
 
@@ -799,7 +813,7 @@ async def ws_location_delete(hass: HomeAssistant, _conn, msg):
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), None)
     except Exception as exc:
-        ctx = {"op": "location_delete", "location_id": msg.get("location_id")}
+        ctx = _ctx("location_delete", location_id=msg.get("location_id"))
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
 
@@ -817,7 +831,7 @@ async def ws_location_list(hass: HomeAssistant, _conn, msg):
         ]  # type: ignore[index]
         return websocket_api.result_message(msg.get("id", 0), data)
     except Exception as exc:
-        return _error_message(hass, msg.get("id", 0), exc, context={"op": "location_list"})
+        return _error_message(hass, msg.get("id", 0), exc, context=_ctx("location_list"))
 
 
 @websocket_api.websocket_command({"type": "haventory/location/tree"})
@@ -853,7 +867,7 @@ async def ws_location_tree(hass: HomeAssistant, _conn, msg):
         tree = [build_node(r) for r in roots]
         return websocket_api.result_message(msg.get("id", 0), tree)
     except Exception as exc:
-        return _error_message(hass, msg.get("id", 0), exc, context={"op": "location_tree"})
+        return _error_message(hass, msg.get("id", 0), exc, context=_ctx("location_tree"))
 
 
 @websocket_api.websocket_command({"type": "haventory/location/move_subtree"})
@@ -869,11 +883,11 @@ async def ws_location_move_subtree(hass: HomeAssistant, _conn, msg):
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
     except Exception as exc:
-        ctx = {
-            "op": "location_move_subtree",
-            "location_id": msg.get("location_id"),
-            "new_parent_id": msg.get("new_parent_id"),
-        }
+        ctx = _ctx(
+            "location_move_subtree",
+            location_id=msg.get("location_id"),
+            new_parent_id=msg.get("new_parent_id"),
+        )
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
 
