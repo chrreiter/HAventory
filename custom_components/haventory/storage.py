@@ -15,6 +15,7 @@ forward-only migrations when an older schema payload is encountered.
 
 from __future__ import annotations
 
+import logging
 from copy import deepcopy
 from typing import Any, Final
 
@@ -23,6 +24,8 @@ from homeassistant.helpers.storage import Store
 
 from . import migrations
 from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 # Current schema version for persisted payloads
 CURRENT_SCHEMA_VERSION: Final[int] = 1
@@ -124,7 +127,22 @@ class DomainStore:
             normalized.update(raw)
             return normalized
 
-        migrated = migrations.migrate(raw, from_version=from_version, to_version=to_version)
+        try:
+            migrated = migrations.migrate(raw, from_version=from_version, to_version=to_version)
+        except Exception:  # pragma: no cover - exercised via tests
+            # Do not overwrite on-disk payload; return an empty in-memory dataset
+            _LOGGER.error(
+                "Failed to migrate storage payload; serving empty dataset and "
+                "leaving on-disk payload unchanged",
+                extra={
+                    "domain": DOMAIN,
+                    "op": "migrate",
+                    "from_version": from_version,
+                    "to_version": to_version,
+                },
+                exc_info=True,
+            )
+            return _empty_payload()
         # Guarantee required fields and version
         migrated.setdefault("items", {})
         migrated.setdefault("locations", {})

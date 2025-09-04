@@ -117,3 +117,37 @@ async def test_migration_is_applied_for_older_payload(monkeypatch) -> None:
     assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
     assert loaded["items"] == {}
     assert loaded["locations"] == {}
+
+
+@pytest.mark.asyncio
+async def test_migration_failure_returns_empty_and_does_not_persist(monkeypatch) -> None:
+    """Migration failure returns empty dataset and leaves on-disk payload unchanged."""
+
+    # Arrange
+    hass = HomeAssistant()
+    key = "test_store_migrate_failure_no_persist"
+    store = DomainStore(hass, key=key)
+
+    # Seed an older valid payload directly into underlying storage
+    pre_payload = {"schema_version": 0, "items": {"i1": {"id": "i1"}}, "locations": {}}
+    raw_store = HAStore(hass, 1, key)
+    await raw_store.async_save(pre_payload)
+
+    # Make migrate raise
+    def _raise(_payload, *, from_version, to_version):  # type: ignore[no-untyped-def]
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(migrations, "migrate", _raise)
+
+    # Act
+    loaded = await store.async_load()
+
+    # Assert returned payload is the empty, safe dataset
+    assert isinstance(loaded, dict)
+    assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert loaded["items"] == {}
+    assert loaded["locations"] == {}
+
+    # Assert on-disk payload was not overwritten
+    underlying = await raw_store.async_load()
+    assert underlying == pre_payload
