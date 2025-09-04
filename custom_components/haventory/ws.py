@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN, INTEGRATION_VERSION
 from .exceptions import ConflictError, NotFoundError, StorageError, ValidationError
-from .models import ItemUpdate
+from .models import ItemUpdate, normalize_tags
 from .repository import UNSET, Repository
 from .storage import CURRENT_SCHEMA_VERSION, async_persist_repo
 
@@ -61,6 +61,189 @@ def _error_message(hass: HomeAssistant, _id: int, exc: Exception, *, context: di
         extra={"domain": DOMAIN, **(context or {})},
     )
     return websocket_api.error_message(_id, _error_code(exc), str(exc), context or None)
+
+
+# -----------------------------
+# Shared op helpers (single and bulk)
+# -----------------------------
+
+
+_SUPPORTED_BULK_KINDS: set[str] = {
+    "item_update",
+    "item_delete",
+    "item_move",
+    "item_adjust_quantity",
+    "item_set_quantity",
+    "item_check_out",
+    "item_check_in",
+    "item_add_tags",
+    "item_remove_tags",
+    "item_update_custom_fields",
+    "item_set_low_stock_threshold",
+}
+
+
+def _validate_bulk_ops(operations: Any) -> list[dict]:
+    if not isinstance(operations, list):
+        raise ValidationError("operations must be a list")
+    validated: list[dict] = []
+    for _idx, op in enumerate(operations):
+        if not isinstance(op, dict):
+            raise ValidationError("each operation must be an object")
+        if "op_id" not in op:
+            raise ValidationError("operation missing op_id")
+        op_id = op.get("op_id")
+        if not isinstance(op_id, str | int):
+            raise ValidationError("op_id must be a string or integer")
+        kind = op.get("kind")
+        # Do not reject unknown kinds at schema-level; allow mixed results.
+        if not isinstance(kind, str):
+            raise ValidationError("kind must be a string")
+        payload = op.get("payload")
+        if payload is None:
+            payload = {}
+        if not isinstance(payload, dict):
+            raise ValidationError("operation.payload must be an object")
+        validated.append({"op_id": str(op_id), "kind": str(kind), "payload": payload})
+    return validated
+
+
+def _op_item_update(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+    repo = _repo(hass)
+    item_id = payload.get("item_id")
+    expected = payload.get("expected_version")
+    exclude_keys = {"item_id", "expected_version"}
+    update: ItemUpdate = {k: v for k, v in payload.items() if k not in exclude_keys}
+    updated = repo.update_item(item_id, update, expected_version=expected)
+    serialized = _serialize_item(updated)
+    action = "moved" if "location_id" in update else "updated"
+    return serialized, action
+
+
+def _op_item_delete(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+    repo = _repo(hass)
+    item_id = payload.get("item_id")
+    expected = payload.get("expected_version")
+    try:
+        before = repo.get_item(item_id)
+        serialized_before = _serialize_item(before)
+    except Exception:
+        serialized_before = {"id": item_id}
+    repo.delete_item(item_id, expected_version=expected)
+    return serialized_before, "deleted"
+
+
+def _op_item_move(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+    repo = _repo(hass)
+    item_id = payload.get("item_id")
+    expected = payload.get("expected_version")
+    updated = repo.update_item(
+        item_id, ItemUpdate(location_id=payload.get("location_id")), expected_version=expected
+    )
+    return _serialize_item(updated), "moved"
+
+
+def _op_item_adjust_quantity(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+    repo = _repo(hass)
+    item_id = payload.get("item_id")
+    updated = repo.adjust_quantity(
+        item_id, payload.get("delta"), expected_version=payload.get("expected_version")
+    )
+    return _serialize_item(updated), "quantity_changed"
+
+
+def _op_item_set_quantity(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+    repo = _repo(hass)
+    item_id = payload.get("item_id")
+    updated = repo.set_quantity(
+        item_id, payload.get("quantity"), expected_version=payload.get("expected_version")
+    )
+    return _serialize_item(updated), "quantity_changed"
+
+
+def _op_item_check_out(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+    repo = _repo(hass)
+    item_id = payload.get("item_id")
+    updated = repo.check_out(
+        item_id, due_date=payload.get("due_date"), expected_version=payload.get("expected_version")
+    )
+    return _serialize_item(updated), "checked_out"
+
+
+def _op_item_check_in(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+    repo = _repo(hass)
+    item_id = payload.get("item_id")
+    updated = repo.check_in(item_id, expected_version=payload.get("expected_version"))
+    return _serialize_item(updated), "checked_in"
+
+
+def _op_item_add_tags(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+    repo = _repo(hass)
+    item_id = payload.get("item_id")
+    expected = payload.get("expected_version")
+    tags = normalize_tags(payload.get("tags"))
+    current = repo.get_item(item_id)
+    new_tags = list(dict.fromkeys(list(current.tags) + list(tags)))
+    updated = repo.update_item(item_id, ItemUpdate(tags=new_tags), expected_version=expected)
+    return _serialize_item(updated), "updated"
+
+
+def _op_item_remove_tags(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+    repo = _repo(hass)
+    item_id = payload.get("item_id")
+    expected = payload.get("expected_version")
+    to_remove = set(normalize_tags(payload.get("tags")))
+    current = repo.get_item(item_id)
+    new_tags = [t for t in list(current.tags) if t not in to_remove]
+    updated = repo.update_item(item_id, ItemUpdate(tags=new_tags), expected_version=expected)
+    return _serialize_item(updated), "updated"
+
+
+def _op_item_update_custom_fields(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+    repo = _repo(hass)
+    item_id = payload.get("item_id")
+    expected = payload.get("expected_version")
+    update: ItemUpdate = {}
+    if "set" in payload and payload.get("set") is not None:
+        update["custom_fields_set"] = dict(payload.get("set"))
+    if "unset" in payload and payload.get("unset") is not None:
+        update["custom_fields_unset"] = list(payload.get("unset"))
+    updated = repo.update_item(item_id, update, expected_version=expected)
+    return _serialize_item(updated), "updated"
+
+
+def _op_item_set_low_stock_threshold(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+    repo = _repo(hass)
+    item_id = payload.get("item_id")
+    expected = payload.get("expected_version")
+    updated = repo.update_item(
+        item_id,
+        ItemUpdate(low_stock_threshold=payload.get("low_stock_threshold")),
+        expected_version=expected,
+    )
+    return _serialize_item(updated), "updated"
+
+
+def _execute_item_op(hass: HomeAssistant, kind: str, payload: dict) -> tuple[dict, str]:
+    """Execute one item operation via a dispatch table."""
+
+    dispatch = {
+        "item_update": _op_item_update,
+        "item_delete": _op_item_delete,
+        "item_move": _op_item_move,
+        "item_adjust_quantity": _op_item_adjust_quantity,
+        "item_set_quantity": _op_item_set_quantity,
+        "item_check_out": _op_item_check_out,
+        "item_check_in": _op_item_check_in,
+        "item_add_tags": _op_item_add_tags,
+        "item_remove_tags": _op_item_remove_tags,
+        "item_update_custom_fields": _op_item_update_custom_fields,
+        "item_set_low_stock_threshold": _op_item_set_low_stock_threshold,
+    }
+    handler = dispatch.get(kind)
+    if not handler:
+        raise ValidationError("unknown operation kind")
+    return handler(hass, payload)
 
 
 # -----------------------------
@@ -690,6 +873,162 @@ async def ws_item_check_in(hass: HomeAssistant, _conn, msg):
         return _error_message(hass, msg["id"], exc, context=ctx)
 
 
+@websocket_api.websocket_command({"type": "haventory/item/add_tags"})
+@websocket_api.async_response
+async def ws_item_add_tags(hass: HomeAssistant, _conn, msg):
+    try:
+        if msg.get("type") != "haventory/item/add_tags":
+            return None
+        serialized, action = _execute_item_op(
+            hass,
+            "item_add_tags",
+            {
+                "item_id": msg.get("item_id"),
+                "expected_version": msg.get("expected_version"),
+                "tags": msg.get("tags"),
+            },
+        )
+        _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+        await _persist_repo(hass)
+        _broadcast_counts(hass)
+        return websocket_api.result_message(msg.get("id", 0), serialized)
+    except Exception as exc:
+        ctx = _ctx("item_add_tags", item_id=msg.get("item_id"))
+        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+
+
+@websocket_api.websocket_command({"type": "haventory/item/remove_tags"})
+@websocket_api.async_response
+async def ws_item_remove_tags(hass: HomeAssistant, _conn, msg):
+    try:
+        if msg.get("type") != "haventory/item/remove_tags":
+            return None
+        serialized, action = _execute_item_op(
+            hass,
+            "item_remove_tags",
+            {
+                "item_id": msg.get("item_id"),
+                "expected_version": msg.get("expected_version"),
+                "tags": msg.get("tags"),
+            },
+        )
+        _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+        await _persist_repo(hass)
+        _broadcast_counts(hass)
+        return websocket_api.result_message(msg.get("id", 0), serialized)
+    except Exception as exc:
+        ctx = _ctx("item_remove_tags", item_id=msg.get("item_id"))
+        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+
+
+@websocket_api.websocket_command({"type": "haventory/item/update_custom_fields"})
+@websocket_api.async_response
+async def ws_item_update_custom_fields(hass: HomeAssistant, _conn, msg):
+    try:
+        if msg.get("type") != "haventory/item/update_custom_fields":
+            return None
+        serialized, action = _execute_item_op(
+            hass,
+            "item_update_custom_fields",
+            {
+                "item_id": msg.get("item_id"),
+                "expected_version": msg.get("expected_version"),
+                "set": msg.get("set"),
+                "unset": msg.get("unset"),
+            },
+        )
+        _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+        await _persist_repo(hass)
+        _broadcast_counts(hass)
+        return websocket_api.result_message(msg.get("id", 0), serialized)
+    except Exception as exc:
+        ctx = _ctx("item_update_custom_fields", item_id=msg.get("item_id"))
+        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+
+
+@websocket_api.websocket_command({"type": "haventory/item/set_low_stock_threshold"})
+@websocket_api.async_response
+async def ws_item_set_low_stock_threshold(hass: HomeAssistant, _conn, msg):
+    try:
+        if msg.get("type") != "haventory/item/set_low_stock_threshold":
+            return None
+        serialized, action = _execute_item_op(
+            hass,
+            "item_set_low_stock_threshold",
+            {
+                "item_id": msg.get("item_id"),
+                "expected_version": msg.get("expected_version"),
+                "low_stock_threshold": msg.get("low_stock_threshold"),
+            },
+        )
+        _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+        await _persist_repo(hass)
+        _broadcast_counts(hass)
+        return websocket_api.result_message(msg.get("id", 0), serialized)
+    except Exception as exc:
+        ctx = _ctx("item_set_low_stock_threshold", item_id=msg.get("item_id"))
+        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+
+
+@websocket_api.websocket_command({"type": "haventory/item/move"})
+@websocket_api.async_response
+async def ws_item_move(hass: HomeAssistant, _conn, msg):
+    try:
+        if msg.get("type") != "haventory/item/move":
+            return None
+        serialized, action = _execute_item_op(
+            hass,
+            "item_move",
+            {
+                "item_id": msg.get("item_id"),
+                "expected_version": msg.get("expected_version"),
+                "location_id": msg.get("location_id"),
+            },
+        )
+        _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+        await _persist_repo(hass)
+        _broadcast_counts(hass)
+        return websocket_api.result_message(msg.get("id", 0), serialized)
+    except Exception as exc:
+        ctx = _ctx("item_move", item_id=msg.get("item_id"), location_id=msg.get("location_id"))
+        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+
+
+@websocket_api.websocket_command({"type": "haventory/items/bulk"})
+@websocket_api.async_response
+async def ws_items_bulk(hass: HomeAssistant, _conn, msg):
+    try:
+        if msg.get("type") != "haventory/items/bulk":
+            return None
+        operations = _validate_bulk_ops(msg.get("operations"))
+        results: dict[str, dict[str, object]] = {}
+        any_success = False
+
+        for op in operations:
+            op_id = op["op_id"]
+            kind = op["kind"]
+            payload = op["payload"]
+            try:
+                serialized, action = _execute_item_op(hass, kind, payload)
+                results[op_id] = {"success": True, "result": serialized}
+                _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+                any_success = True
+            except Exception as exc:
+                results[op_id] = {
+                    "success": False,
+                    "error": {"code": _error_code(exc), "message": str(exc)},
+                }
+
+        if any_success:
+            await _persist_repo(hass)
+            _broadcast_counts(hass)
+
+        return websocket_api.result_message(msg.get("id", 0), {"results": results})
+    except Exception as exc:
+        ctx = _ctx("items_bulk")
+        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+
+
 @websocket_api.websocket_command({"type": "haventory/item/list"})
 @websocket_api.async_response
 async def ws_item_list(hass: HomeAssistant, _conn, msg):
@@ -961,6 +1300,12 @@ def setup(hass: HomeAssistant) -> None:
         ws_item_set_quantity,
         ws_item_check_out,
         ws_item_check_in,
+        ws_item_add_tags,
+        ws_item_remove_tags,
+        ws_item_update_custom_fields,
+        ws_item_set_low_stock_threshold,
+        ws_item_move,
+        ws_items_bulk,
         ws_item_list,
         ws_location_create,
         ws_location_get,
