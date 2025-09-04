@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HAventory",
+        "description": "Set up HAventory integration for inventory management in Home Assistant."
+      }
+    },
+    "create_entry": {
+      "default": "Successfully configured HAventory"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HAventory Options",
+        "description": "Configure HAventory options."
+      }
+    }
+  }
+}
