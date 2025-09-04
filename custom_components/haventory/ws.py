@@ -941,26 +941,39 @@ def _serialize_location(loc) -> dict[str, Any]:
 
 
 def setup(hass: HomeAssistant) -> None:
-    websocket_api.async_register_command(hass, ws_ping)
-    websocket_api.async_register_command(hass, ws_version)
-    websocket_api.async_register_command(hass, ws_stats)
-    websocket_api.async_register_command(hass, ws_health)
-    websocket_api.async_register_command(hass, ws_subscribe)
-    websocket_api.async_register_command(hass, ws_unsubscribe)
-    websocket_api.async_register_command(hass, ws_item_create)
-    websocket_api.async_register_command(hass, ws_item_get)
-    websocket_api.async_register_command(hass, ws_item_update)
-    websocket_api.async_register_command(hass, ws_item_delete)
-    websocket_api.async_register_command(hass, ws_item_adjust_quantity)
-    websocket_api.async_register_command(hass, ws_item_set_quantity)
-    websocket_api.async_register_command(hass, ws_item_check_out)
-    websocket_api.async_register_command(hass, ws_item_check_in)
-    websocket_api.async_register_command(hass, ws_item_list)
+    # Idempotent: avoid duplicate registration across reloads
+    bucket = hass.data.setdefault(DOMAIN, {})
+    if bucket.get("ws_registered"):
+        return
 
-    websocket_api.async_register_command(hass, ws_location_create)
-    websocket_api.async_register_command(hass, ws_location_get)
-    websocket_api.async_register_command(hass, ws_location_update)
-    websocket_api.async_register_command(hass, ws_location_delete)
-    websocket_api.async_register_command(hass, ws_location_list)
-    websocket_api.async_register_command(hass, ws_location_tree)
-    websocket_api.async_register_command(hass, ws_location_move_subtree)
+    handlers = [
+        ws_ping,
+        ws_version,
+        ws_stats,
+        ws_health,
+        ws_subscribe,
+        ws_unsubscribe,
+        ws_item_create,
+        ws_item_get,
+        ws_item_update,
+        ws_item_delete,
+        ws_item_adjust_quantity,
+        ws_item_set_quantity,
+        ws_item_check_out,
+        ws_item_check_in,
+        ws_item_list,
+        ws_location_create,
+        ws_location_get,
+        ws_location_update,
+        ws_location_delete,
+        ws_location_list,
+        ws_location_tree,
+        ws_location_move_subtree,
+    ]
+
+    for h in handlers:
+        websocket_api.async_register_command(hass, h)
+
+    # Track our handlers for test stubs cleanup during unload
+    bucket["ws_handlers"] = handlers
+    bucket["ws_registered"] = True

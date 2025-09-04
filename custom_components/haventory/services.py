@@ -343,8 +343,14 @@ async def service_location_delete(hass: HomeAssistant, data: dict) -> None:
 def setup(hass: HomeAssistant) -> None:
     """Register haventory.* services on Home Assistant."""
 
+    # Idempotent: avoid duplicate registration across reloads
+    bucket = hass.data.setdefault(DOMAIN, {})
+    if bucket.get("services_registered"):
+        return
+
     # In offline tests our HomeAssistant stub may not expose a services registry.
     if not hasattr(hass, "services") or not hasattr(hass.services, "async_register"):
+        bucket["services_registered"] = True
         return
 
     # Home Assistant will validate inputs according to these schemas before
@@ -413,3 +419,5 @@ def setup(hass: HomeAssistant) -> None:
         lambda call: service_location_delete(hass, dict(call.data)),
         SCHEMA_LOCATION_DELETE,
     )
+
+    bucket["services_registered"] = True
