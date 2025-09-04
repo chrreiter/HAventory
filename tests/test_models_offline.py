@@ -132,3 +132,29 @@ async def test_monotonic_timestamp_after_strictly_increases() -> None:
     nxt = monotonic_timestamp_after(prev)
     assert nxt.endswith("Z")
     assert nxt > prev
+
+
+@pytest.mark.asyncio
+async def test_create_trims_name_and_accepts_trailing_spaces() -> None:
+    # Create accepts name with spaces and stores trimmed value
+    item = create_item_from_create({"name": "  Widget  "})
+    assert item.name == "Widget"
+
+
+@pytest.mark.asyncio
+async def test_update_trims_name_and_accepts_trailing_spaces() -> None:
+    # Update accepts name with spaces and stores trimmed value
+    item = create_item_from_create({"name": "Start"})
+    updated = apply_item_update(item, ItemUpdate(name="  Wrench  "))
+    assert updated.name == "Wrench"
+
+
+@pytest.mark.asyncio
+async def test_rejects_name_empty_after_trim_on_create_and_update() -> None:
+    # Reject names that become empty after trimming on create and update
+    with pytest.raises(ValidationError):
+        create_item_from_create({"name": "   "})
+
+    item = create_item_from_create({"name": "Valid"})
+    with pytest.raises(ValidationError):
+        apply_item_update(item, ItemUpdate(name="    "))

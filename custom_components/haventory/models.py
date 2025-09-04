@@ -348,6 +348,8 @@ def create_item_from_create(
     name = payload.get("name")  # type: ignore[assignment]
     if name is None:
         raise ValidationError("name is required")
+    # Trim whitespace before validation and persistence
+    name = name.strip()
     description = payload.get("description")
     quantity = int(payload.get("quantity", 1))  # type: ignore[arg-type]
     checked_out = bool(payload.get("checked_out", False))
@@ -400,11 +402,13 @@ def create_item_from_create(
 
 def _update_name_and_description(new_item: Item, update: ItemUpdate) -> None:
     if "name" in update and update["name"] is not None:
+        # Trim before validation and persistence
         if not isinstance(update["name"], str) or len(update["name"].strip()) == 0:
             raise ValidationError("name must be a non-empty string")
-        if len(update["name"]) > NAME_MAX_LENGTH:
+        trimmed = update["name"].strip()
+        if len(trimmed) > NAME_MAX_LENGTH:
             raise ValidationError("name must be at most 120 characters")
-        new_item.name = update["name"]
+        new_item.name = trimmed
     if "description" in update:
         new_item.description = update["description"]
 
