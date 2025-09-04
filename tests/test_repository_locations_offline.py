@@ -75,3 +75,30 @@ async def test_move_to_root_and_disallow_self_parent() -> None:
     updated_b = repo.update_location(b.id, new_parent_id=None)
     assert updated_b.parent_id is None
     assert updated_b.path.display_path == "B"
+
+
+@pytest.mark.asyncio
+async def test_update_location_is_atomic_when_path_rebuild_fails(monkeypatch) -> None:
+    """Path rebuild failure does not leave partial parent/name/path changes."""
+
+    repo = Repository()
+    a = repo.create_location(name="A")
+    b = repo.create_location(name="B", parent_id=a.id)
+
+    old_b = repo.get_location(b.id)
+    old_children = {k: set(v) for k, v in repo._children_ids_by_parent_id.items()}
+    old_paths = {lid: loc.path.display_path for lid, loc in repo._locations_by_id.items()}
+
+    def boom(*args, **kwargs) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(repo, "_rebuild_paths_for_subtree", boom)
+
+    with pytest.raises(RuntimeError):
+        repo.update_location(b.id, name="B2", new_parent_id=None)
+
+    # No state should have changed
+    assert repo.get_location(b.id).name == old_b.name
+    assert repo.get_location(b.id).parent_id == old_b.parent_id
+    assert {k: set(v) for k, v in repo._children_ids_by_parent_id.items()} == old_children
+    assert {lid: loc.path.display_path for lid, loc in repo._locations_by_id.items()} == old_paths

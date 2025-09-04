@@ -204,13 +204,41 @@ class Repository:
                     queue.append(child_id)
         return result
 
-    def _rebuild_paths_for_subtree(self, root_id: str) -> None:
-        """Recompute ``Location.path`` for a subtree rooted at ``root_id``."""
+    def _rebuild_paths_for_subtree(
+        self,
+        root_id: str,
+        *,
+        locations_by_id: dict[str, Location] | None = None,
+        children_ids_by_parent_id: dict[str | None, set[str]] | None = None,
+    ) -> None:
+        """Recompute ``Location.path`` for a subtree rooted at ``root_id``.
 
-        to_fix = [root_id, *self._collect_descendant_ids(root_id)]
+        If ``locations_by_id`` and/or ``children_ids_by_parent_id`` are provided,
+        the computation mutates those maps instead of the repository's live maps.
+        """
+
+        loc_map = locations_by_id if locations_by_id is not None else self._locations_by_id
+        child_map = (
+            children_ids_by_parent_id
+            if children_ids_by_parent_id is not None
+            else self._children_ids_by_parent_id
+        )
+
+        to_fix = [root_id]
+        # Collect descendants using the provided child map
+        queue: list[str] = [root_id]
+        visited: set[str] = set()
+        while queue:
+            current = queue.pop(0)
+            for cid in child_map.get(current, set()):
+                if cid not in visited:
+                    visited.add(cid)
+                    to_fix.append(cid)
+                    queue.append(cid)
+
         for loc_id in to_fix:
-            loc = self._locations_by_id[loc_id]
-            # Build chain root->loc by following parent links
+            loc = loc_map[loc_id]
+            # Build chain root->loc by following parent links in the given locations map
             chain: list[Location] = []
             cursor_id: str | None = loc_id
             guard = 0
@@ -218,14 +246,14 @@ class Repository:
                 guard += 1
                 if guard > LOCATION_GUARD_MAX_STEPS:  # defensive; should never happen
                     raise ValidationError("location graph too deep or cyclic")
-                node = self._locations_by_id.get(cursor_id)
+                node = loc_map.get(cursor_id)
                 if node is None:  # pragma: no cover - corrupted map
                     raise ValidationError("location_id must reference an existing location chain")
                 chain.append(node)
                 cursor_id = node.parent_id
             chain.reverse()
             new_path = build_location_path(chain)
-            self._locations_by_id[loc_id] = replace(loc, path=new_path)
+            loc_map[loc_id] = replace(loc, path=new_path)
 
     def _update_items_location_paths_for_locations(self, affected_location_ids: set[str]) -> None:
         """Refresh ``location_path`` for items under any of the given locations.
@@ -500,28 +528,41 @@ class Repository:
             if target_parent_id in descendant_ids:
                 raise ValidationError("cannot move a location under one of its descendants")
 
-        # All validations passed — perform updates
+        # All validations passed — compute updates on copies first
+        staged_locations_by_id: dict[str, Location] = dict(self._locations_by_id)
+        staged_children_by_parent: dict[str | None, set[str]] = {
+            k: set(v) for k, v in self._children_ids_by_parent_id.items()
+        }
+
+        # Apply name/parent change in the staged maps
         new_loc = replace(loc, name=updated_name, parent_id=target_parent_id)
+        staged_locations_by_id[location_id] = new_loc
 
-        # Update parent->children mapping if needed
         if parent_changed:
-            # Remove from old parent's children
+            # Remove from old parent's children in staged map
             old_parent = loc.parent_id
-            if old_parent in self._children_ids_by_parent_id:
-                self._children_ids_by_parent_id[old_parent].discard(loc.id)
-                if not self._children_ids_by_parent_id[old_parent]:
-                    self._children_ids_by_parent_id.pop(old_parent)
-            # Add to new parent's children bucket
+            if old_parent in staged_children_by_parent:
+                staged_children_by_parent[old_parent].discard(loc.id)
+                if not staged_children_by_parent[old_parent]:
+                    staged_children_by_parent.pop(old_parent)
+            # Add to new parent's children bucket in staged map
             parent_key: str | None = target_parent_id
-            if parent_key not in self._children_ids_by_parent_id:
-                self._children_ids_by_parent_id[parent_key] = set()
-            self._children_ids_by_parent_id[parent_key].add(loc.id)
+            if parent_key not in staged_children_by_parent:
+                staged_children_by_parent[parent_key] = set()
+            staged_children_by_parent[parent_key].add(loc.id)
 
-        # Save the updated location (path will be rebuilt next)
-        self._locations_by_id[location_id] = new_loc
+        # Attempt to rebuild paths against staged maps; if this fails, nothing is committed
+        self._rebuild_paths_for_subtree(
+            location_id,
+            locations_by_id=staged_locations_by_id,
+            children_ids_by_parent_id=staged_children_by_parent,
+        )
 
-        # Rebuild paths for this subtree and update affected items
-        self._rebuild_paths_for_subtree(location_id)
+        # Commit: swap in staged structures atomically
+        self._children_ids_by_parent_id = staged_children_by_parent
+        self._locations_by_id = staged_locations_by_id
+
+        # Update affected items (now that live maps are consistent)
         affected = {location_id}
         affected.update(self._collect_descendant_ids(location_id))
         self._update_items_location_paths_for_locations(affected)
