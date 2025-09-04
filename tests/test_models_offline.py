@@ -21,6 +21,8 @@ from custom_components.haventory.models import (
     build_location_path,
     build_location_path_from_map,
     create_item_from_create,
+    iso_utc_now,
+    monotonic_timestamp_after,
     new_uuid4_str,
 )
 
@@ -121,3 +123,12 @@ async def test_update_version_and_updated_at_changes() -> None:
     updated = apply_item_update(item, ItemUpdate(quantity=3))
     assert updated.version == item.version + 1
     assert updated.updated_at != item.updated_at
+
+
+@pytest.mark.asyncio
+async def test_monotonic_timestamp_after_strictly_increases() -> None:
+    # monotonic_timestamp_after returns a value strictly greater than prev and ends with 'Z'
+    prev = iso_utc_now()
+    nxt = monotonic_timestamp_after(prev)
+    assert nxt.endswith("Z")
+    assert nxt > prev
