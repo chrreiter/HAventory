@@ -162,8 +162,6 @@ async def service_item_create(hass: HomeAssistant, data: dict) -> None:
         await _persist_repo(hass)
     except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _log_domain_error(op, {"name": data.get("name")}, exc)
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.error("Unhandled service error", exc_info=True, extra={"domain": DOMAIN, "op": op})
 
 
 async def service_item_update(hass: HomeAssistant, data: dict) -> None:
@@ -178,8 +176,6 @@ async def service_item_update(hass: HomeAssistant, data: dict) -> None:
         await _persist_repo(hass)
     except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _log_domain_error(op, {"item_id": item_id}, exc)
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.error("Unhandled service error", exc_info=True, extra={"domain": DOMAIN, "op": op})
 
 
 async def service_item_delete(hass: HomeAssistant, data: dict) -> None:
@@ -193,8 +189,6 @@ async def service_item_delete(hass: HomeAssistant, data: dict) -> None:
         await _persist_repo(hass)
     except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _log_domain_error(op, {"item_id": item_id}, exc)
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.error("Unhandled service error", exc_info=True, extra={"domain": DOMAIN, "op": op})
 
 
 async def service_item_move(hass: HomeAssistant, data: dict) -> None:
@@ -211,8 +205,6 @@ async def service_item_move(hass: HomeAssistant, data: dict) -> None:
         _log_domain_error(
             op, {"item_id": item_id, "new_location_id": data.get("new_location_id")}, exc
         )
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.error("Unhandled service error", exc_info=True, extra={"domain": DOMAIN, "op": op})
 
 
 async def service_item_adjust_quantity(hass: HomeAssistant, data: dict) -> None:
@@ -227,8 +219,6 @@ async def service_item_adjust_quantity(hass: HomeAssistant, data: dict) -> None:
         await _persist_repo(hass)
     except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _log_domain_error(op, {"item_id": item_id, "delta": data.get("delta")}, exc)
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.error("Unhandled service error", exc_info=True, extra={"domain": DOMAIN, "op": op})
 
 
 async def service_item_set_quantity(hass: HomeAssistant, data: dict) -> None:
@@ -245,8 +235,6 @@ async def service_item_set_quantity(hass: HomeAssistant, data: dict) -> None:
         await _persist_repo(hass)
     except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _log_domain_error(op, {"item_id": item_id, "quantity": data.get("quantity")}, exc)
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.error("Unhandled service error", exc_info=True, extra={"domain": DOMAIN, "op": op})
 
 
 async def service_item_check_out(hass: HomeAssistant, data: dict) -> None:
@@ -263,8 +251,6 @@ async def service_item_check_out(hass: HomeAssistant, data: dict) -> None:
         await _persist_repo(hass)
     except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _log_domain_error(op, {"item_id": item_id, "due_date": data.get("due_date")}, exc)
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.error("Unhandled service error", exc_info=True, extra={"domain": DOMAIN, "op": op})
 
 
 async def service_item_check_in(hass: HomeAssistant, data: dict) -> None:
@@ -277,8 +263,6 @@ async def service_item_check_in(hass: HomeAssistant, data: dict) -> None:
         await _persist_repo(hass)
     except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _log_domain_error(op, {"item_id": item_id}, exc)
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.error("Unhandled service error", exc_info=True, extra={"domain": DOMAIN, "op": op})
 
 
 async def service_location_create(hass: HomeAssistant, data: dict) -> None:
@@ -294,8 +278,6 @@ async def service_location_create(hass: HomeAssistant, data: dict) -> None:
         await _persist_repo(hass)
     except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _log_domain_error(op, {"name": data.get("name")}, exc)
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.error("Unhandled service error", exc_info=True, extra={"domain": DOMAIN, "op": op})
 
 
 async def service_location_update(hass: HomeAssistant, data: dict) -> None:
@@ -311,8 +293,6 @@ async def service_location_update(hass: HomeAssistant, data: dict) -> None:
         await _persist_repo(hass)
     except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _log_domain_error(op, {"location_id": location_id}, exc)
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.error("Unhandled service error", exc_info=True, extra={"domain": DOMAIN, "op": op})
 
 
 async def service_location_delete(hass: HomeAssistant, data: dict) -> None:
@@ -325,8 +305,6 @@ async def service_location_delete(hass: HomeAssistant, data: dict) -> None:
         await _persist_repo(hass)
     except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _log_domain_error(op, {"location_id": location_id}, exc)
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.error("Unhandled service error", exc_info=True, extra={"domain": DOMAIN, "op": op})
 
 
 # -----------------------------

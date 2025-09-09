@@ -376,13 +376,8 @@ async def _persist_repo(hass: HomeAssistant) -> None:
 @websocket_api.websocket_command({"type": "haventory/ping"})
 @websocket_api.async_response
 async def ws_ping(hass: HomeAssistant, _conn, msg):
-    try:
-        if msg.get("type") != "haventory/ping":
-            return None
-        result = {"echo": msg.get("echo"), "ts": _now_ts()}
-        return websocket_api.result_message(msg.get("id", 0), result)
-    except Exception as exc:  # pragma: no cover - defensive
-        return _error_message(hass, msg.get("id", 0), exc, context=_ctx("ping"))
+    result = {"echo": msg.get("echo"), "ts": _now_ts()}
+    return websocket_api.result_message(msg.get("id", 0), result)
 
 
 def _schema_version_from_hass(hass: HomeAssistant) -> int:
@@ -397,28 +392,18 @@ def _schema_version_from_hass(hass: HomeAssistant) -> int:
 @websocket_api.websocket_command({"type": "haventory/version"})
 @websocket_api.async_response
 async def ws_version(hass: HomeAssistant, _conn, msg):
-    try:
-        if msg.get("type") != "haventory/version":
-            return None
-        result = {
-            "integration_version": INTEGRATION_VERSION,
-            "schema_version": _schema_version_from_hass(hass),
-        }
-        return websocket_api.result_message(msg.get("id", 0), result)
-    except Exception as exc:  # pragma: no cover - defensive
-        return _error_message(hass, msg.get("id", 0), exc, context=_ctx("version"))
+    result = {
+        "integration_version": INTEGRATION_VERSION,
+        "schema_version": _schema_version_from_hass(hass),
+    }
+    return websocket_api.result_message(msg.get("id", 0), result)
 
 
 @websocket_api.websocket_command({"type": "haventory/stats"})
 @websocket_api.async_response
 async def ws_stats(hass: HomeAssistant, _conn, msg):
-    try:
-        if msg.get("type") != "haventory/stats":
-            return None
-        counts = _repo(hass).get_counts()
-        return websocket_api.result_message(msg.get("id", 0), counts)
-    except Exception as exc:  # pragma: no cover - defensive
-        return _error_message(hass, msg.get("id", 0), exc, context=_ctx("stats"))
+    counts = _repo(hass).get_counts()
+    return websocket_api.result_message(msg.get("id", 0), counts)
 
 
 def _health_indexes(repo: Repository) -> dict[str, object]:
@@ -562,15 +547,10 @@ def _collect_health_issues(repo: Repository) -> tuple[list[str], dict[str, int]]
 @websocket_api.websocket_command({"type": "haventory/health"})
 @websocket_api.async_response
 async def ws_health(hass: HomeAssistant, _conn, msg):
-    try:
-        if msg.get("type") != "haventory/health":
-            return None
-        issues, counts = _collect_health_issues(_repo(hass))
-        healthy = len(issues) == 0
-        result = {"healthy": healthy, "issues": issues, "counts": counts}
-        return websocket_api.result_message(msg.get("id", 0), result)
-    except Exception as exc:
-        return _error_message(hass, msg.get("id", 0), exc, context=_ctx("health"))
+    issues, counts = _collect_health_issues(_repo(hass))
+    healthy = len(issues) == 0
+    result = {"healthy": healthy, "issues": issues, "counts": counts}
+    return websocket_api.result_message(msg.get("id", 0), result)
 
 
 # -----------------------------
@@ -581,65 +561,53 @@ async def ws_health(hass: HomeAssistant, _conn, msg):
 @websocket_api.websocket_command({"type": "haventory/subscribe"})
 @websocket_api.async_response
 async def ws_subscribe(hass: HomeAssistant, conn, msg):
-    try:
-        if msg.get("type") != "haventory/subscribe":
-            return None
-        if conn is None:
-            raise ValidationError("connection is required for subscriptions")
-        topic = msg.get("topic")
-        if topic not in {"items", "locations", "stats"}:
-            raise ValidationError("topic must be one of: items, locations, stats")
-        sub: _Subscription = {
+    if conn is None:
+        raise ValidationError("connection is required for subscriptions")
+    topic = msg.get("topic")
+    if topic not in {"items", "locations", "stats"}:
+        raise ValidationError("topic must be one of: items, locations, stats")
+    sub: _Subscription = {
+        "topic": topic,
+    }
+    if "location_id" in msg:
+        sub["location_id"] = msg.get("location_id")
+    if "include_subtree" in msg:
+        sub["include_subtree"] = bool(msg.get("include_subtree"))
+    subs_all = _subs_bucket(hass)
+    subs_for_conn = subs_all.setdefault(conn, {})
+    subs_for_conn[int(msg.get("id", 0))] = sub
+    LOGGER.debug(
+        "Subscribed",
+        extra={
+            "domain": DOMAIN,
+            "op": "subscribe",
+            "subscription_id": msg.get("id", 0),
             "topic": topic,
-        }
-        if "location_id" in msg:
-            sub["location_id"] = msg.get("location_id")
-        if "include_subtree" in msg:
-            sub["include_subtree"] = bool(msg.get("include_subtree"))
-        subs_all = _subs_bucket(hass)
-        subs_for_conn = subs_all.setdefault(conn, {})
-        subs_for_conn[int(msg.get("id", 0))] = sub
-        LOGGER.debug(
-            "Subscribed",
-            extra={
-                "domain": DOMAIN,
-                "op": "subscribe",
-                "subscription_id": msg.get("id", 0),
-                "topic": topic,
-            },
-        )
-        return websocket_api.result_message(msg.get("id", 0), None)
-    except Exception as exc:
-        ctx = _ctx("subscribe", topic=msg.get("topic"))
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+        },
+    )
+    return websocket_api.result_message(msg.get("id", 0), None)
 
 
 @websocket_api.websocket_command({"type": "haventory/unsubscribe"})
 @websocket_api.async_response
 async def ws_unsubscribe(hass: HomeAssistant, conn, msg):
-    try:
-        if msg.get("type") != "haventory/unsubscribe":
-            return None
-        sub_id = msg.get("subscription")
-        subs_all = _subs_bucket(hass)
-        removed = False
-        if conn in subs_all:
-            removed = subs_all[conn].pop(int(sub_id), None) is not None
-            if not subs_all[conn]:
-                subs_all.pop(conn, None)
-        LOGGER.debug(
-            "Unsubscribed",
-            extra={
-                "domain": DOMAIN,
-                "op": "unsubscribe",
-                "subscription_id": sub_id,
-                "removed": bool(removed),
-            },
-        )
-        return websocket_api.result_message(msg.get("id", 0), None)
-    except Exception as exc:
-        ctx = _ctx("unsubscribe", subscription=msg.get("subscription"))
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+    sub_id = msg.get("subscription")
+    subs_all = _subs_bucket(hass)
+    removed = False
+    if conn in subs_all:
+        removed = subs_all[conn].pop(int(sub_id), None) is not None
+        if not subs_all[conn]:
+            subs_all.pop(conn, None)
+    LOGGER.debug(
+        "Unsubscribed",
+        extra={
+            "domain": DOMAIN,
+            "op": "unsubscribe",
+            "subscription_id": sub_id,
+            "removed": bool(removed),
+        },
+    )
+    return websocket_api.result_message(msg.get("id", 0), None)
 
 
 # -----------------------------
@@ -650,22 +618,17 @@ async def ws_unsubscribe(hass: HomeAssistant, conn, msg):
 @websocket_api.websocket_command({"type": "haventory/item/create"})
 @websocket_api.async_response
 async def ws_item_create(hass: HomeAssistant, _conn, msg):
+    payload = {k: v for k, v in msg.items() if k not in {"id", "type"}}
     try:
-        if msg.get("type") != "haventory/item/create":
-            return None
-        payload = {k: v for k, v in msg.items() if k not in {"id", "type"}}
         item = _repo(hass).create_item(payload)  # type: ignore[arg-type]
         serialized = _serialize_item(item)
         _broadcast_event(hass, topic="items", action="created", payload={"item": serialized})
         await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
-    except Exception as exc:
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         return _error_message(
-            hass,
-            msg.get("id", 0),
-            exc,
-            context=_ctx("item_create", item_name=msg.get("name")),
+            hass, msg.get("id", 0), exc, context=_ctx("item_create", item_name=msg.get("name"))
         )
 
 
@@ -673,38 +636,31 @@ async def ws_item_create(hass: HomeAssistant, _conn, msg):
 @websocket_api.async_response
 async def ws_item_get(hass: HomeAssistant, _conn, msg):
     try:
-        if msg.get("type") != "haventory/item/get":
-            return None
         item = _repo(hass).get_item(msg.get("item_id"))
         return websocket_api.result_message(msg.get("id", 0), _serialize_item(item))
-    except Exception as exc:
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         return _error_message(
-            hass,
-            msg.get("id", 0),
-            exc,
-            context=_ctx("item_get", item_id=msg.get("item_id")),
+            hass, msg.get("id", 0), exc, context=_ctx("item_get", item_id=msg.get("item_id"))
         )
 
 
 @websocket_api.websocket_command({"type": "haventory/item/update"})
 @websocket_api.async_response
 async def ws_item_update(hass: HomeAssistant, _conn, msg):
-    try:
-        if msg.get("type") != "haventory/item/update":
-            return None
-        item_id = msg.get("item_id")
-        expected = msg.get("expected_version")
-        update: ItemUpdate = {
-            k: v
-            for k, v in msg.items()
-            if k
-            not in {
-                "id",
-                "type",
-                "item_id",
-                "expected_version",
-            }
+    item_id = msg.get("item_id")
+    expected = msg.get("expected_version")
+    update: ItemUpdate = {
+        k: v
+        for k, v in msg.items()
+        if k
+        not in {
+            "id",
+            "type",
+            "item_id",
+            "expected_version",
         }
+    }
+    try:
         updated = _repo(hass).update_item(item_id, update, expected_version=expected)
         serialized = _serialize_item(updated)
         action = "updated"
@@ -714,11 +670,9 @@ async def ws_item_update(hass: HomeAssistant, _conn, msg):
         await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
-    except Exception as exc:
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         ctx = _ctx(
-            "item_update",
-            item_id=msg.get("item_id"),
-            expected_version=msg.get("expected_version"),
+            "item_update", item_id=msg.get("item_id"), expected_version=msg.get("expected_version")
         )
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
@@ -726,11 +680,9 @@ async def ws_item_update(hass: HomeAssistant, _conn, msg):
 @websocket_api.websocket_command({"type": "haventory/item/delete"})
 @websocket_api.async_response
 async def ws_item_delete(hass: HomeAssistant, _conn, msg):
+    # Capture item before deletion for event payload
+    item_id = msg.get("item_id")
     try:
-        if msg.get("type") != "haventory/item/delete":
-            return None
-        # Capture item before deletion for event payload
-        item_id = msg.get("item_id")
         try:
             before = _repo(hass).get_item(item_id)
             serialized_before = _serialize_item(before)
@@ -754,11 +706,9 @@ async def ws_item_delete(hass: HomeAssistant, _conn, msg):
         await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), None)
-    except Exception as exc:
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         ctx = _ctx(
-            "item_delete",
-            item_id=msg.get("item_id"),
-            expected_version=msg.get("expected_version"),
+            "item_delete", item_id=msg.get("item_id"), expected_version=msg.get("expected_version")
         )
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
@@ -767,8 +717,6 @@ async def ws_item_delete(hass: HomeAssistant, _conn, msg):
 @websocket_api.async_response
 async def ws_item_adjust_quantity(hass: HomeAssistant, _conn, msg):
     try:
-        if msg.get("type") != "haventory/item/adjust_quantity":
-            return None
         item = _repo(hass).adjust_quantity(
             msg.get("item_id"), msg.get("delta"), expected_version=msg.get("expected_version")
         )
@@ -779,12 +727,8 @@ async def ws_item_adjust_quantity(hass: HomeAssistant, _conn, msg):
         await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
-    except Exception as exc:
-        ctx = _ctx(
-            "item_adjust_quantity",
-            item_id=msg.get("item_id"),
-            delta=msg.get("delta"),
-        )
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
+        ctx = _ctx("item_adjust_quantity", item_id=msg.get("item_id"), delta=msg.get("delta"))
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
 
@@ -792,8 +736,6 @@ async def ws_item_adjust_quantity(hass: HomeAssistant, _conn, msg):
 @websocket_api.async_response
 async def ws_item_set_quantity(hass: HomeAssistant, _conn, msg):
     try:
-        if msg.get("type") != "haventory/item/set_quantity":
-            return None
         item = _repo(hass).set_quantity(
             msg.get("item_id"), msg.get("quantity"), expected_version=msg.get("expected_version")
         )
@@ -804,12 +746,8 @@ async def ws_item_set_quantity(hass: HomeAssistant, _conn, msg):
         await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
-    except Exception as exc:
-        ctx = _ctx(
-            "item_set_quantity",
-            item_id=msg.get("item_id"),
-            quantity=msg.get("quantity"),
-        )
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
+        ctx = _ctx("item_set_quantity", item_id=msg.get("item_id"), quantity=msg.get("quantity"))
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
 
@@ -817,8 +755,6 @@ async def ws_item_set_quantity(hass: HomeAssistant, _conn, msg):
 @websocket_api.async_response
 async def ws_item_check_out(hass: HomeAssistant, _conn, msg):
     try:
-        if msg.get("type") != "haventory/item/check_out":
-            return None
         item = _repo(hass).check_out(
             msg.get("item_id"),
             due_date=msg.get("due_date"),
@@ -829,12 +765,8 @@ async def ws_item_check_out(hass: HomeAssistant, _conn, msg):
         await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
-    except Exception as exc:
-        ctx = _ctx(
-            "item_check_out",
-            item_id=msg.get("item_id"),
-            due_date=msg.get("due_date"),
-        )
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
+        ctx = _ctx("item_check_out", item_id=msg.get("item_id"), due_date=msg.get("due_date"))
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
 
@@ -842,8 +774,6 @@ async def ws_item_check_out(hass: HomeAssistant, _conn, msg):
 @websocket_api.async_response
 async def ws_item_check_in(hass: HomeAssistant, _conn, msg):
     try:
-        if msg.get("type") != "haventory/item/check_in":
-            return None
         item = _repo(hass).check_in(
             msg.get("item_id"), expected_version=msg.get("expected_version")
         )
@@ -852,7 +782,7 @@ async def ws_item_check_in(hass: HomeAssistant, _conn, msg):
         await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg["id"], serialized)
-    except Exception as exc:
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         ctx = _ctx("item_check_in", item_id=msg.get("item_id"))
         return _error_message(hass, msg["id"], exc, context=ctx)
 
@@ -861,8 +791,6 @@ async def ws_item_check_in(hass: HomeAssistant, _conn, msg):
 @websocket_api.async_response
 async def ws_item_add_tags(hass: HomeAssistant, _conn, msg):
     try:
-        if msg.get("type") != "haventory/item/add_tags":
-            return None
         serialized, action = _execute_item_op(
             hass,
             "item_add_tags",
@@ -876,7 +804,7 @@ async def ws_item_add_tags(hass: HomeAssistant, _conn, msg):
         await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
-    except Exception as exc:
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         ctx = _ctx("item_add_tags", item_id=msg.get("item_id"))
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
@@ -885,8 +813,6 @@ async def ws_item_add_tags(hass: HomeAssistant, _conn, msg):
 @websocket_api.async_response
 async def ws_item_remove_tags(hass: HomeAssistant, _conn, msg):
     try:
-        if msg.get("type") != "haventory/item/remove_tags":
-            return None
         serialized, action = _execute_item_op(
             hass,
             "item_remove_tags",
@@ -900,7 +826,7 @@ async def ws_item_remove_tags(hass: HomeAssistant, _conn, msg):
         await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
-    except Exception as exc:
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         ctx = _ctx("item_remove_tags", item_id=msg.get("item_id"))
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
@@ -909,8 +835,6 @@ async def ws_item_remove_tags(hass: HomeAssistant, _conn, msg):
 @websocket_api.async_response
 async def ws_item_update_custom_fields(hass: HomeAssistant, _conn, msg):
     try:
-        if msg.get("type") != "haventory/item/update_custom_fields":
-            return None
         serialized, action = _execute_item_op(
             hass,
             "item_update_custom_fields",
@@ -925,7 +849,7 @@ async def ws_item_update_custom_fields(hass: HomeAssistant, _conn, msg):
         await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
-    except Exception as exc:
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         ctx = _ctx("item_update_custom_fields", item_id=msg.get("item_id"))
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
@@ -934,8 +858,6 @@ async def ws_item_update_custom_fields(hass: HomeAssistant, _conn, msg):
 @websocket_api.async_response
 async def ws_item_set_low_stock_threshold(hass: HomeAssistant, _conn, msg):
     try:
-        if msg.get("type") != "haventory/item/set_low_stock_threshold":
-            return None
         serialized, action = _execute_item_op(
             hass,
             "item_set_low_stock_threshold",
@@ -949,7 +871,7 @@ async def ws_item_set_low_stock_threshold(hass: HomeAssistant, _conn, msg):
         await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
-    except Exception as exc:
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         ctx = _ctx("item_set_low_stock_threshold", item_id=msg.get("item_id"))
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
@@ -958,8 +880,6 @@ async def ws_item_set_low_stock_threshold(hass: HomeAssistant, _conn, msg):
 @websocket_api.async_response
 async def ws_item_move(hass: HomeAssistant, _conn, msg):
     try:
-        if msg.get("type") != "haventory/item/move":
-            return None
         serialized, action = _execute_item_op(
             hass,
             "item_move",
@@ -973,7 +893,7 @@ async def ws_item_move(hass: HomeAssistant, _conn, msg):
         await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
-    except Exception as exc:
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         ctx = _ctx("item_move", item_id=msg.get("item_id"), location_id=msg.get("location_id"))
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
@@ -981,57 +901,46 @@ async def ws_item_move(hass: HomeAssistant, _conn, msg):
 @websocket_api.websocket_command({"type": "haventory/items/bulk"})
 @websocket_api.async_response
 async def ws_items_bulk(hass: HomeAssistant, _conn, msg):
-    try:
-        if msg.get("type") != "haventory/items/bulk":
-            return None
-        operations = _validate_bulk_ops(msg.get("operations"))
-        results: dict[str, dict[str, object]] = {}
-        any_success = False
+    operations = _validate_bulk_ops(msg.get("operations"))
+    results: dict[str, dict[str, object]] = {}
+    any_success = False
 
-        for op in operations:
-            op_id = op["op_id"]
-            kind = op["kind"]
-            payload = op["payload"]
-            try:
-                serialized, action = _execute_item_op(hass, kind, payload)
-                results[op_id] = {"success": True, "result": serialized}
-                _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
-                any_success = True
-            except Exception as exc:
-                results[op_id] = {
-                    "success": False,
-                    "error": {"code": _error_code(exc), "message": str(exc)},
-                }
+    for op in operations:
+        op_id = op["op_id"]
+        kind = op["kind"]
+        payload = op["payload"]
+        try:
+            serialized, action = _execute_item_op(hass, kind, payload)
+            results[op_id] = {"success": True, "result": serialized}
+            _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+            any_success = True
+        except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
+            results[op_id] = {
+                "success": False,
+                "error": {"code": _error_code(exc), "message": str(exc)},
+            }
 
-        if any_success:
-            await _persist_repo(hass)
-            _broadcast_counts(hass)
+    if any_success:
+        await _persist_repo(hass)
+        _broadcast_counts(hass)
 
-        return websocket_api.result_message(msg.get("id", 0), {"results": results})
-    except Exception as exc:
-        ctx = _ctx("items_bulk")
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+    return websocket_api.result_message(msg.get("id", 0), {"results": results})
 
 
 @websocket_api.websocket_command({"type": "haventory/item/list"})
 @websocket_api.async_response
 async def ws_item_list(hass: HomeAssistant, _conn, msg):
-    try:
-        if msg.get("type") != "haventory/item/list":
-            return None
-        # Accept filter/sort/limit/cursor passthrough
-        flt = msg.get("filter")
-        sort = msg.get("sort")
-        limit = msg.get("limit")
-        cursor = msg.get("cursor")
-        page = _repo(hass).list_items(flt=flt, sort=sort, limit=limit, cursor=cursor)
-        result = {
-            "items": [_serialize_item(it) for it in page["items"]],
-            "next_cursor": page.get("next_cursor"),
-        }
-        return websocket_api.result_message(msg.get("id", 0), result)
-    except Exception as exc:
-        return _error_message(hass, msg.get("id", 0), exc, context=_ctx("item_list"))
+    # Accept filter/sort/limit/cursor passthrough
+    flt = msg.get("filter")
+    sort = msg.get("sort")
+    limit = msg.get("limit")
+    cursor = msg.get("cursor")
+    page = _repo(hass).list_items(flt=flt, sort=sort, limit=limit, cursor=cursor)
+    result = {
+        "items": [_serialize_item(it) for it in page["items"]],
+        "next_cursor": page.get("next_cursor"),
+    }
+    return websocket_api.result_message(msg.get("id", 0), result)
 
 
 # -----------------------------
@@ -1043,8 +952,6 @@ async def ws_item_list(hass: HomeAssistant, _conn, msg):
 @websocket_api.async_response
 async def ws_location_create(hass: HomeAssistant, _conn, msg):
     try:
-        if msg.get("type") != "haventory/location/create":
-            return None
         loc = _repo(hass).create_location(name=msg.get("name"), parent_id=msg.get("parent_id"))
         serialized = _serialize_location(loc)
         _broadcast_event(
@@ -1053,12 +960,8 @@ async def ws_location_create(hass: HomeAssistant, _conn, msg):
         await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
-    except Exception as exc:
-        ctx = _ctx(
-            "location_create",
-            location_name=msg.get("name"),
-            parent_id=msg.get("parent_id"),
-        )
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
+        ctx = _ctx("location_create", location_name=msg.get("name"), parent_id=msg.get("parent_id"))
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
 
@@ -1066,11 +969,9 @@ async def ws_location_create(hass: HomeAssistant, _conn, msg):
 @websocket_api.async_response
 async def ws_location_get(hass: HomeAssistant, _conn, msg):
     try:
-        if msg.get("type") != "haventory/location/get":
-            return None
         loc = _repo(hass).get_location(msg.get("location_id"))
         return websocket_api.result_message(msg.get("id", 0), _serialize_location(loc))
-    except Exception as exc:
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         ctx = _ctx("location_get", location_id=msg.get("location_id"))
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
@@ -1078,10 +979,8 @@ async def ws_location_get(hass: HomeAssistant, _conn, msg):
 @websocket_api.websocket_command({"type": "haventory/location/update"})
 @websocket_api.async_response
 async def ws_location_update(hass: HomeAssistant, _conn, msg):
+    new_parent = msg["new_parent_id"] if "new_parent_id" in msg else UNSET
     try:
-        if msg.get("type") != "haventory/location/update":
-            return None
-        new_parent = msg["new_parent_id"] if "new_parent_id" in msg else UNSET
         loc = _repo(hass).update_location(
             msg.get("location_id"), name=msg.get("name"), new_parent_id=new_parent
         )
@@ -1099,7 +998,7 @@ async def ws_location_update(hass: HomeAssistant, _conn, msg):
         await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg["id"], serialized)
-    except Exception as exc:
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         ctx = _ctx("location_update", location_id=msg.get("location_id"))
         return _error_message(hass, msg["id"], exc, context=ctx)
 
@@ -1107,11 +1006,9 @@ async def ws_location_update(hass: HomeAssistant, _conn, msg):
 @websocket_api.websocket_command({"type": "haventory/location/delete"})
 @websocket_api.async_response
 async def ws_location_delete(hass: HomeAssistant, _conn, msg):
+    # Capture before delete for payload
+    loc_id = msg.get("location_id")
     try:
-        if msg.get("type") != "haventory/location/delete":
-            return None
-        # Capture before delete for payload
-        loc_id = msg.get("location_id")
         try:
             before = _repo(hass).get_location(loc_id)
             serialized_before = _serialize_location(before)
@@ -1135,7 +1032,7 @@ async def ws_location_delete(hass: HomeAssistant, _conn, msg):
         await _persist_repo(hass)
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), None)
-    except Exception as exc:
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         ctx = _ctx("location_delete", location_id=msg.get("location_id"))
         return _error_message(hass, msg.get("id", 0), exc, context=ctx)
 
@@ -1143,69 +1040,55 @@ async def ws_location_delete(hass: HomeAssistant, _conn, msg):
 @websocket_api.websocket_command({"type": "haventory/location/list"})
 @websocket_api.async_response
 async def ws_location_list(hass: HomeAssistant, _conn, msg):
-    try:
-        if msg.get("type") != "haventory/location/list":
-            return None
-        repo = _repo(hass)
-        # Return flat list
-        data = [
-            _serialize_location(repo.get_location(loc_id))
-            for loc_id in repo._debug_get_internal_indexes()["locations_by_id"].keys()
-        ]  # type: ignore[index]
-        return websocket_api.result_message(msg.get("id", 0), data)
-    except Exception as exc:
-        return _error_message(hass, msg.get("id", 0), exc, context=_ctx("location_list"))
+    repo = _repo(hass)
+    # Return flat list
+    data = [
+        _serialize_location(repo.get_location(loc_id))
+        for loc_id in repo._debug_get_internal_indexes()["locations_by_id"].keys()
+    ]  # type: ignore[index]
+    return websocket_api.result_message(msg.get("id", 0), data)
 
 
 @websocket_api.websocket_command({"type": "haventory/location/tree"})
 @websocket_api.async_response
 async def ws_location_tree(hass: HomeAssistant, _conn, msg):
-    try:
-        if msg.get("type") != "haventory/location/tree":
-            return None
-        # Build a naive tree from repo children mapping
-        repo = _repo(hass)
-        indexes = repo._debug_get_internal_indexes()  # pragma: no cover - only used in tests
-        locs_by_id = indexes["locations_by_id"]  # type: ignore[index]
-        children_by_parent = repo._children_ids_by_parent_id  # type: ignore[attr-defined]
+    # Build a naive tree from repo children mapping
+    repo = _repo(hass)
+    indexes = repo._debug_get_internal_indexes()  # pragma: no cover - only used in tests
+    locs_by_id = indexes["locations_by_id"]  # type: ignore[index]
+    children_by_parent = repo._children_ids_by_parent_id  # type: ignore[attr-defined]
 
-        def build_node(loc_id: str) -> dict[str, Any]:
-            loc = locs_by_id[loc_id]
-            return {
-                "id": loc.id,
-                "name": loc.name,
-                "parent_id": loc.parent_id,
-                "path": {
-                    "id_path": loc.path.id_path,
-                    "name_path": loc.path.name_path,
-                    "display_path": loc.path.display_path,
-                    "sort_key": loc.path.sort_key,
-                },
-                "children": [
-                    build_node(cid) for cid in sorted(children_by_parent.get(loc_id, set()))
-                ],
-            }
+    def build_node(loc_id: str) -> dict[str, Any]:
+        loc = locs_by_id[loc_id]
+        return {
+            "id": loc.id,
+            "name": loc.name,
+            "parent_id": loc.parent_id,
+            "path": {
+                "id_path": loc.path.id_path,
+                "name_path": loc.path.name_path,
+                "display_path": loc.path.display_path,
+                "sort_key": loc.path.sort_key,
+            },
+            "children": [build_node(cid) for cid in sorted(children_by_parent.get(loc_id, set()))],
+        }
 
-        roots = sorted(children_by_parent.get(None, set()))
-        tree = [build_node(r) for r in roots]
-        return websocket_api.result_message(msg.get("id", 0), tree)
-    except Exception as exc:
-        return _error_message(hass, msg.get("id", 0), exc, context=_ctx("location_tree"))
+    roots = sorted(children_by_parent.get(None, set()))
+    tree = [build_node(r) for r in roots]
+    return websocket_api.result_message(msg.get("id", 0), tree)
 
 
 @websocket_api.websocket_command({"type": "haventory/location/move_subtree"})
 @websocket_api.async_response
 async def ws_location_move_subtree(hass: HomeAssistant, _conn, msg):
+    new_parent = msg.get("new_parent_id") if "new_parent_id" in msg else UNSET
     try:
-        if msg.get("type") != "haventory/location/move_subtree":
-            return None
-        new_parent = msg.get("new_parent_id") if "new_parent_id" in msg else UNSET
         loc = _repo(hass).update_location(msg.get("location_id"), new_parent_id=new_parent)
         serialized = _serialize_location(loc)
         _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
         _broadcast_counts(hass)
         return websocket_api.result_message(msg.get("id", 0), serialized)
-    except Exception as exc:
+    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         ctx = _ctx(
             "location_move_subtree",
             location_id=msg.get("location_id"),
