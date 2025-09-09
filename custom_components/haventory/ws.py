@@ -55,11 +55,10 @@ def _ctx(op: str, **extra: Any) -> dict[str, Any]:
 
 
 def _error_message(hass: HomeAssistant, _id: int, exc: Exception, *, context: dict[str, Any]):
-    LOGGER.log(
-        logging.ERROR if isinstance(exc, ConflictError) else logging.WARNING,
-        str(exc),
-        extra={"domain": DOMAIN, **(context or {})},
-    )
+    level = logging.WARNING
+    if isinstance(exc, ConflictError | StorageError):
+        level = logging.ERROR
+    LOGGER.log(level, str(exc), extra={"domain": DOMAIN, **(context or {})})
     return websocket_api.error_message(_id, _error_code(exc), str(exc), context or None)
 
 
@@ -365,15 +364,8 @@ def _broadcast_counts(hass: HomeAssistant) -> None:
 
 
 async def _persist_repo(hass: HomeAssistant) -> None:
-    # Delegate to shared helper; retain local warning for visibility in logs
-    try:
-        await async_persist_repo(hass)
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.warning(
-            "Failed to persist repository",
-            extra={"domain": DOMAIN, "op": "persist_repo"},
-            exc_info=True,
-        )
+    # Delegate to shared helper; let typed exceptions bubble to boundary
+    await async_persist_repo(hass)
 
 
 # -----------------------------

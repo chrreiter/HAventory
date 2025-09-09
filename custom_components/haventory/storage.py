@@ -24,6 +24,7 @@ from homeassistant.helpers.storage import Store
 
 from . import migrations
 from .const import DOMAIN
+from .exceptions import StorageError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -165,4 +166,7 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
     if store is None or repo is None:
         return
     payload = repo.export_state()
-    await store.async_save(payload)
+    try:
+        await store.async_save(payload)
+    except Exception as exc:  # pragma: no cover - mapped at boundaries
+        raise StorageError("failed to persist repository") from exc
