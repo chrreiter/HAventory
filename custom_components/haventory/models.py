@@ -18,7 +18,7 @@ import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
-from typing import Literal, NotRequired, TypedDict
+from typing import Final, Literal, NotRequired, TypedDict
 
 from .exceptions import ValidationError
 
@@ -40,7 +40,7 @@ class LocationPath:
         sort_key: Case-insensitive key suitable for lexicographic sorting.
     """
 
-    id_path: list[str]
+    id_path: list[uuid.UUID]
     name_path: list[str]
     display_path: str
     sort_key: str
@@ -57,8 +57,8 @@ LOCATION_GUARD_MAX_STEPS = 10_000
 class Location:
     """Persisted shape for a location node."""
 
-    id: str
-    parent_id: str | None
+    id: uuid.UUID
+    parent_id: uuid.UUID | None
     name: str
     path: LocationPath
 
@@ -67,13 +67,13 @@ class Location:
 class Item:
     """Persisted shape for an inventory item."""
 
-    id: str
+    id: uuid.UUID
     name: str
     description: str | None = None
     quantity: int = 1
     checked_out: bool = False
     due_date: str | None = None  # YYYY-MM-DD
-    location_id: str | None = None
+    location_id: uuid.UUID | None = None
     tags: list[str] = field(default_factory=list)
     category: str | None = None
     low_stock_threshold: int | None = None
@@ -150,10 +150,27 @@ class LocationNode:
 # -----------------------------
 
 
-UUID4_HYPHENATED_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-    re.IGNORECASE,
-)
+def parse_uuid4(value: str | uuid.UUID, *, field_name: str = "id") -> uuid.UUID:
+    """Parse a UUID value and ensure it is version 4.
+
+    Accepts an existing uuid.UUID and returns it unchanged.
+    Raises ValidationError when parsing fails or version is not 4.
+    """
+
+    UUID_VERSION_V4: Final[int] = 4
+    if isinstance(value, uuid.UUID):
+        if value.version != UUID_VERSION_V4:
+            raise ValidationError(f"{field_name} must be a UUID v4")
+        return value
+    if not isinstance(value, str):
+        raise ValidationError(f"{field_name} must be a UUID v4 string")
+    try:
+        parsed = uuid.UUID(value)
+    except Exception as exc:  # pragma: no cover - specific parsing failure
+        raise ValidationError(f"{field_name} must be a UUID v4 string") from exc
+    if parsed.version != UUID_VERSION_V4:
+        raise ValidationError(f"{field_name} must be a UUID v4")
+    return parsed
 
 
 def iso_utc_now() -> str:
@@ -164,28 +181,16 @@ def iso_utc_now() -> str:
     return now.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def assert_uuid4_hyphenated(value: str, *, field_name: str = "id") -> None:
-    """Validate a string is a hyphenated UUID v4.
+def new_uuid4() -> uuid.UUID:
+    """Generate a UUID v4 object."""
 
-    Raises ValidationError when invalid.
-    """
-
-    if not isinstance(value, str):
-        raise ValidationError(f"{field_name} must be a string UUID v4")
-    if not UUID4_HYPHENATED_RE.match(value):
-        try:
-            parsed = uuid.UUID(value, version=4)
-        except Exception as exc:  # pragma: no cover - specific parsing failure
-            raise ValidationError(f"{field_name} must be a UUID v4 string") from exc
-        # Ensure canonical, hyphenated representation
-        if str(parsed) != value.lower():
-            raise ValidationError(f"{field_name} must be a hyphenated UUID v4 string")
+    return uuid.uuid4()
 
 
 def new_uuid4_str() -> str:
     """Generate a hyphenated UUID v4 string."""
 
-    return str(uuid.uuid4())
+    return str(new_uuid4())
 
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -298,25 +303,26 @@ def build_location_path(location_chain: list[Location]) -> LocationPath:
 
 
 def build_location_path_from_map(
-    leaf_location_id: str, *, locations_by_id: dict[str, Location]
+    leaf_location_id: uuid.UUID, *, locations_by_id: dict[str, Location]
 ) -> LocationPath:
     """Follow parent links to build LocationPath given a leaf location ID.
 
     Raises ValidationError if the leaf ID is unknown.
     """
 
-    assert_uuid4_hyphenated(leaf_location_id, field_name="location_id")
-    if leaf_location_id not in locations_by_id:
+    # locations_by_id is keyed by string UUIDs
+    leaf_key = str(leaf_location_id)
+    if leaf_key not in locations_by_id:
         raise ValidationError("location_id must reference an existing location")
 
     chain: list[Location] = []
-    cursor_id: str | None = leaf_location_id
+    cursor_id: uuid.UUID | None = leaf_location_id
     guard = 0
     while cursor_id:
         guard += 1
         if guard > LOCATION_GUARD_MAX_STEPS:  # pragma: no cover - degenerate cycles
             raise ValidationError("location graph too deep or cyclic")
-        location = locations_by_id.get(cursor_id)
+        location = locations_by_id.get(str(cursor_id))
         if location is None:
             # Broken link in chain
             raise ValidationError("location_id must reference an existing location chain")
@@ -370,7 +376,7 @@ def create_item_from_create(
     quantity = int(payload.get("quantity", 1))  # type: ignore[arg-type]
     checked_out = bool(payload.get("checked_out", False))
     due_date = payload.get("due_date")
-    location_id = payload.get("location_id")
+    location_id_raw = payload.get("location_id")
     tags = normalize_tags(payload.get("tags"))
     category = payload.get("category")
     low_stock_threshold = payload.get("low_stock_threshold")
@@ -380,20 +386,21 @@ def create_item_from_create(
     validate_custom_fields(custom_fields)
     normalized_due_date = validate_due_date_rules(checked_out=checked_out, due_date=due_date)
 
-    if location_id is not None:
-        assert_uuid4_hyphenated(location_id, field_name="location_id")
-        if locations_by_id is None or location_id not in locations_by_id:
+    location_id: uuid.UUID | None = None
+    if location_id_raw is not None:
+        location_id = parse_uuid4(location_id_raw, field_name="location_id")
+        if locations_by_id is None or str(location_id) not in locations_by_id:
             raise ValidationError("location_id must reference an existing location")
 
     created_ts = iso_utc_now()
     location_path = (
         build_location_path_from_map(location_id, locations_by_id=locations_by_id)
-        if location_id and locations_by_id
+        if location_id is not None and locations_by_id
         else EMPTY_LOCATION_PATH
     )
 
     item = Item(
-        id=new_uuid4_str(),
+        id=new_uuid4(),
         name=name,
         description=description,
         quantity=quantity,
@@ -452,15 +459,17 @@ def _update_location_and_path(
     new_item: Item, update: ItemUpdate, locations_by_id: dict[str, Location] | None
 ) -> None:
     if "location_id" in update:
-        loc_id = update["location_id"]
-        if loc_id is not None:
-            assert_uuid4_hyphenated(loc_id, field_name="location_id")
-            if locations_by_id is None or loc_id not in locations_by_id:
+        loc_raw = update["location_id"]
+        loc_id: uuid.UUID | None = None
+        if loc_raw is not None:
+            parsed = parse_uuid4(loc_raw, field_name="location_id")
+            if locations_by_id is None or str(parsed) not in locations_by_id:
                 raise ValidationError("location_id must reference an existing location")
+            loc_id = parsed
         new_item.location_id = loc_id
 
     # Recompute location_path if we have a mapping and a location_id
-    if new_item.location_id and locations_by_id:
+    if new_item.location_id is not None and locations_by_id:
         new_item.location_path = build_location_path_from_map(
             new_item.location_id, locations_by_id=locations_by_id
         )
@@ -591,13 +600,15 @@ def _item_matches_location(item: Item, location_id: str | None, include_subtree:
         return True
     if not item.location_id:
         return False
-    if not include_subtree:
-        return item.location_id == location_id
-    if item.location_id == location_id:
-        return True
-    if item.location_path.id_path and (location_id in item.location_path.id_path):
-        return True
-    return False
+    try:
+        needle = parse_uuid4(location_id, field_name="filter.location_id")
+    except ValidationError:
+        return False
+    if include_subtree:
+        if item.location_id == needle:
+            return True
+        return bool(item.location_path.id_path and (needle in item.location_path.id_path))
+    return item.location_id == needle
 
 
 def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[Item]:
@@ -679,7 +690,7 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
 
     if sort is None:
         # Default: updated_at desc, id asc tie-break
-        result.sort(key=lambda x: x.id)
+        result.sort(key=lambda x: str(x.id))
         result.sort(
             key=lambda x: _parse_iso8601_utc(x.updated_at, field_name="updated_at"), reverse=True
         )
@@ -694,7 +705,7 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
 
     reverse = order == "desc"
     # Stable sort: primary key, then id asc tie-break
-    result.sort(key=lambda x: x.id)
+    result.sort(key=lambda x: str(x.id))
 
     if field == "name":
         result.sort(key=lambda x: normalize_text_for_sort(x.name), reverse=reverse)

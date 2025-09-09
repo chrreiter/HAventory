@@ -425,11 +425,12 @@ def _collect_item_issues(item_id: str, item, idx: dict) -> list[str]:  # noqa: P
         issues.append("item_id_key_mismatch")
 
     loc_id = getattr(item, "location_id", None)
-    if loc_id is not None and loc_id not in locations_by_id:
+    loc_key = str(loc_id) if loc_id is not None else None
+    if loc_key is not None and loc_key not in locations_by_id:
         issues.append("item_references_missing_location")
 
-    if loc_id is not None:
-        bucket_ids = items_by_location_id.get(loc_id, set())
+    if loc_key is not None:
+        bucket_ids = items_by_location_id.get(loc_key, set())
         if item_id not in bucket_ids:
             issues.append("item_missing_from_items_by_location_index")
 
@@ -503,7 +504,14 @@ def _check_index_references(idx: dict) -> list[str]:
         _assert_known_ids("items_by_location_index", set(ids))
         for iid in list(ids):
             item = items_by_id.get(iid)
-            if item is not None and getattr(item, "location_id", None) != loc_id:
+            if item is not None and (
+                (
+                    str(getattr(item, "location_id", None))
+                    if getattr(item, "location_id", None) is not None
+                    else None
+                )
+                != loc_id
+            ):
                 issues.append("items_by_location_bucket_mismatch")
 
     for _t, ids in list(created_at_bucket.items()):
@@ -1065,11 +1073,11 @@ async def ws_location_tree(hass: HomeAssistant, _conn, msg):
     def build_node(loc_id: str) -> dict[str, Any]:
         loc = locs_by_id[loc_id]
         return {
-            "id": loc.id,
+            "id": str(loc.id),
             "name": loc.name,
-            "parent_id": loc.parent_id,
+            "parent_id": str(loc.parent_id) if loc.parent_id is not None else None,
             "path": {
-                "id_path": loc.path.id_path,
+                "id_path": [str(x) for x in loc.path.id_path],
                 "name_path": loc.path.name_path,
                 "display_path": loc.path.display_path,
                 "sort_key": loc.path.sort_key,
@@ -1108,13 +1116,13 @@ async def ws_location_move_subtree(hass: HomeAssistant, _conn, msg):
 
 def _serialize_item(item) -> dict[str, Any]:
     return {
-        "id": item.id,
+        "id": str(item.id),
         "name": item.name,
         "description": item.description,
         "quantity": item.quantity,
         "checked_out": item.checked_out,
         "due_date": item.due_date,
-        "location_id": item.location_id,
+        "location_id": str(item.location_id) if item.location_id is not None else None,
         "tags": list(item.tags),
         "category": item.category,
         "low_stock_threshold": item.low_stock_threshold,
@@ -1123,7 +1131,7 @@ def _serialize_item(item) -> dict[str, Any]:
         "updated_at": item.updated_at,
         "version": item.version,
         "location_path": {
-            "id_path": item.location_path.id_path,
+            "id_path": [str(x) for x in item.location_path.id_path],
             "name_path": item.location_path.name_path,
             "display_path": item.location_path.display_path,
             "sort_key": item.location_path.sort_key,
@@ -1133,11 +1141,11 @@ def _serialize_item(item) -> dict[str, Any]:
 
 def _serialize_location(loc) -> dict[str, Any]:
     return {
-        "id": loc.id,
+        "id": str(loc.id),
         "name": loc.name,
-        "parent_id": loc.parent_id,
+        "parent_id": str(loc.parent_id) if loc.parent_id is not None else None,
         "path": {
-            "id_path": loc.path.id_path,
+            "id_path": [str(x) for x in loc.path.id_path],
             "name_path": loc.path.name_path,
             "display_path": loc.path.display_path,
             "sort_key": loc.path.sort_key,

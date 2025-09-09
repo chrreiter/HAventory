@@ -29,7 +29,7 @@ async def test_item_crud_and_concurrency() -> None:
 
     # Get
     fetched = repo.get_item(item.id)
-    assert fetched.id == item.id
+    assert str(fetched.id) == str(item.id)
 
     # Update with mismatched version → ConflictError
     with pytest.raises(ConflictError):

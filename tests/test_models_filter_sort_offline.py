@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.models import (
@@ -18,7 +20,12 @@ from custom_components.haventory.models import (
 
 
 def _make_location(id: str, name: str, parent_id: str | None) -> Location:
-    return Location(id=id, parent_id=parent_id, name=name, path=EMPTY_LOCATION_PATH)
+    return Location(
+        id=uuid.UUID(id),
+        parent_id=(uuid.UUID(parent_id) if parent_id is not None else None),
+        name=name,
+        path=EMPTY_LOCATION_PATH,
+    )
 
 
 def _build_locations() -> tuple[dict[str, Location], Location, Location, Location]:
@@ -120,12 +127,12 @@ async def test_filter_location_id_with_and_without_subtree() -> None:
     )
 
     without_subtree = filter_items(
-        [at_root, at_mid, at_leaf], ItemFilter(location_id=root.id, include_subtree=False)
+        [at_root, at_mid, at_leaf], ItemFilter(location_id=str(root.id), include_subtree=False)
     )
     assert [x.name for x in without_subtree] == ["Box"]
 
     with_subtree = filter_items(
-        [at_root, at_mid, at_leaf], ItemFilter(location_id=root.id, include_subtree=True)
+        [at_root, at_mid, at_leaf], ItemFilter(location_id=str(root.id), include_subtree=True)
     )
     assert [x.name for x in with_subtree] == ["Box", "Tape", "Glue"]
 

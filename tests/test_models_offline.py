@@ -7,6 +7,7 @@ clearing via updates, and denormalized location path generation.
 from __future__ import annotations
 
 import re
+import uuid
 
 import pytest
 from custom_components.haventory.exceptions import ValidationError
@@ -32,7 +33,12 @@ UUID4_RE = re.compile(
 
 
 def _make_location(id: str, name: str, parent_id: str | None) -> Location:
-    return Location(id=id, parent_id=parent_id, name=name, path=EMPTY_LOCATION_PATH)
+    return Location(
+        id=uuid.UUID(id),
+        parent_id=(uuid.UUID(parent_id) if parent_id is not None else None),
+        name=name,
+        path=EMPTY_LOCATION_PATH,
+    )
 
 
 @pytest.mark.asyncio
@@ -49,7 +55,7 @@ async def test_create_with_defaults_and_optionals() -> None:
     assert item.location_id is None
     assert item.tags == ["tools", "diy"]
     assert item.version == 1
-    assert UUID4_RE.match(item.id)
+    assert UUID4_RE.match(str(item.id))
     assert item.created_at.endswith("Z") and item.updated_at.endswith("Z")
     assert item.location_path == EMPTY_LOCATION_PATH
 
@@ -86,7 +92,7 @@ async def test_denormalized_location_path_generation() -> None:
     path = build_location_path([root, mid, leaf])
 
     assert isinstance(path, LocationPath)
-    assert path.id_path == [root_id, mid_id, leaf_id]
+    assert [str(x) for x in path.id_path] == [root_id, mid_id, leaf_id]
     assert path.name_path == ["Garage", "Shelf A", "Bin 3"]
     assert path.display_path == "Garage / Shelf A / Bin 3"
     assert path.sort_key == "garage / shelf a / bin 3"
@@ -97,11 +103,11 @@ async def test_denormalized_location_path_generation() -> None:
         {"name": "Tape", "location_id": leaf_id, "checked_out": True, "due_date": "2024-01-02"},
         locations_by_id=by_id,
     )
-    assert item.location_id == leaf_id
+    assert str(item.location_id) == leaf_id
     assert item.location_path.display_path == "Garage / Shelf A / Bin 3"
 
     # And lookup via map works from leaf
-    path2 = build_location_path_from_map(leaf_id, locations_by_id=by_id)
+    path2 = build_location_path_from_map(uuid.UUID(leaf_id), locations_by_id=by_id)
     assert path2.display_path == path.display_path
 
 

@@ -91,4 +91,4 @@ async def test_async_setup_entry_loads_repository_from_store_and_ws_reads() -> N
         raise AssertionError("No handler responded for type " + type_)
 
     res = await _send(1, "haventory/item/get", item_id=item.id)
-    assert res["success"] is True and res["result"]["id"] == item.id
+    assert res["success"] is True and res["result"]["id"] == str(item.id)
