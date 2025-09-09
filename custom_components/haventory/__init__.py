@@ -42,10 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN]["store"] = store
 
     # Initialize in-memory repository for services and APIs by loading persisted state
-    try:
-        payload = await store.async_load()
-    except Exception:  # pragma: no cover - defensive
-        payload = {"items": {}, "locations": {}}
+    payload = await store.async_load()
     hass.data[DOMAIN]["repository"] = Repository.from_state(payload)
 
     # Register services
@@ -83,7 +80,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 try:
                     while h in registry:
                         registry.remove(h)
-                except Exception:  # pragma: no cover - defensive
+                except ValueError:  # pragma: no cover - defensive
                     LOGGER.warning(
                         "Failed to remove a WS handler from test stub registry",
                         exc_info=True,

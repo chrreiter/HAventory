@@ -159,14 +159,10 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
     No-ops if either is missing. Logs are the caller's responsibility.
     """
 
-    try:
-        bucket = hass.data.get(DOMAIN) or {}
-        store = bucket.get("store")
-        repo = bucket.get("repository")
-        if store is None or repo is None:
-            return
-        payload = repo.export_state()
-        await store.async_save(payload)
-    except Exception:  # pragma: no cover - defensive
-        # Avoid importing logging here; callers already log context on failure
+    bucket = hass.data.get(DOMAIN) or {}
+    store = bucket.get("store")
+    repo = bucket.get("repository")
+    if store is None or repo is None:
         return
+    payload = repo.export_state()
+    await store.async_save(payload)

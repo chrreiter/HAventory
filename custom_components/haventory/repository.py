@@ -11,6 +11,7 @@ tests and invoked by service/WebSocket layers.
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import logging
 from collections.abc import Iterable
@@ -610,7 +611,7 @@ class Repository:
             if not isinstance(obj, dict):
                 return None
             return obj
-        except Exception:  # pragma: no cover - defensive
+        except (ValueError, binascii.Error):  # pragma: no cover - defensive
             return None
 
     def _primary_sort_value(self, item: Item, sort: Sort) -> str | int:
@@ -805,7 +806,7 @@ class Repository:
                         path=path,
                     )
                     self._add_location(loc)
-                except Exception:  # pragma: no cover - defensive
+                except (AttributeError, TypeError, ValueError):  # pragma: no cover - defensive
                     LOGGER.warning(
                         "Failed to load location from persisted state",
                         extra={
@@ -847,7 +848,7 @@ class Repository:
                         location_path=location_path,
                     )
                     self._index_item(item)
-                except Exception:  # pragma: no cover - defensive
+                except (AttributeError, TypeError, ValueError):  # pragma: no cover - defensive
                     LOGGER.warning(
                         "Failed to load item from persisted state",
                         extra={

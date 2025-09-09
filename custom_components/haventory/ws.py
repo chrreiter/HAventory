@@ -127,7 +127,7 @@ def _op_item_delete(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
     try:
         before = repo.get_item(item_id)
         serialized_before = _serialize_item(before)
-    except Exception:
+    except NotFoundError:
         serialized_before = {"id": item_id}
     repo.delete_item(item_id, expected_version=expected)
     return serialized_before, "deleted"
@@ -394,19 +394,11 @@ async def ws_ping(hass: HomeAssistant, _conn, msg):
 
 
 def _schema_version_from_hass(hass: HomeAssistant) -> int:
-    try:
-        bucket = hass.data.get(DOMAIN) or {}
-        store = bucket.get("store")
-        if store is not None:
-            ver = getattr(store, "schema_version", None)
-            if isinstance(ver, int):
-                return ver
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.warning(
-            "Failed to detect schema_version from hass store",
-            extra={"domain": DOMAIN, "op": "schema_version_probe"},
-            exc_info=True,
-        )
+    bucket = hass.data.get(DOMAIN) or {}
+    store = bucket.get("store")
+    ver = getattr(store, "schema_version", None) if store is not None else None
+    if isinstance(ver, int):
+        return ver
     return int(CURRENT_SCHEMA_VERSION)
 
 
@@ -484,7 +476,7 @@ def _collect_item_issues(item_id: str, item, idx: dict) -> list[str]:  # noqa: P
     is_low = False
     try:
         is_low = thr is not None and int(getattr(item, "quantity", 0)) <= int(thr)
-    except Exception:  # pragma: no cover - defensive
+    except (TypeError, ValueError):  # pragma: no cover - defensive
         is_low = False
     if is_low:
         if item_id not in low_stock_item_ids:
@@ -750,7 +742,7 @@ async def ws_item_delete(hass: HomeAssistant, _conn, msg):
         try:
             before = _repo(hass).get_item(item_id)
             serialized_before = _serialize_item(before)
-        except Exception:
+        except NotFoundError:
             serialized_before = None  # pragma: no cover - item may not exist
         _repo(hass).delete_item(item_id, expected_version=msg.get("expected_version"))
         if serialized_before is not None:
@@ -1131,7 +1123,7 @@ async def ws_location_delete(hass: HomeAssistant, _conn, msg):
         try:
             before = _repo(hass).get_location(loc_id)
             serialized_before = _serialize_location(before)
-        except Exception:
+        except NotFoundError:
             serialized_before = None  # pragma: no cover
         _repo(hass).delete_location(loc_id)
         if serialized_before is not None:
