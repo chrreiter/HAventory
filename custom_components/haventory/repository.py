@@ -35,6 +35,7 @@ from .models import (
     new_uuid4_str,
     normalize_text_for_sort,
     sort_items,
+    validate_location_name,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -364,8 +365,6 @@ class Repository:
     ) -> Item:
         current = self.get_item(item_id)
         new_q = int(current.quantity) + int(delta)
-        if new_q < 0:
-            raise ValidationError("quantity cannot be negative")
         return self.update_item(
             item_id, ItemUpdate(quantity=new_q), expected_version=expected_version
         )
@@ -373,8 +372,6 @@ class Repository:
     def set_quantity(
         self, item_id: str, quantity: int, *, expected_version: int | None = None
     ) -> Item:
-        if not isinstance(quantity, int) or quantity < 0:
-            raise ValidationError("quantity must be an integer >= 0")
         return self.update_item(
             item_id, ItemUpdate(quantity=quantity), expected_version=expected_version
         )
@@ -440,7 +437,7 @@ class Repository:
     # -----------------------------
 
     def create_location(self, *, name: str, parent_id: str | None = None) -> Location:
-        self._validate_location_name(name)
+        name = validate_location_name(name)
         if parent_id is not None and parent_id not in self._locations_by_id:
             raise ValidationError("parent_id must reference an existing location")
 
@@ -504,8 +501,7 @@ class Repository:
         # Validate inputs first (no mutation yet)
         updated_name = loc.name
         if name is not None:
-            self._validate_location_name(name)
-            updated_name = name
+            updated_name = validate_location_name(name)
 
         parent_changed = False
         target_parent_id = loc.parent_id
@@ -677,16 +673,7 @@ class Repository:
         }
         return page, self._encode_cursor(cursor_payload)
 
-    # -----------------------------
-    # Validation helpers
-    # -----------------------------
-
-    def _validate_location_name(self, name: str) -> None:
-        if not isinstance(name, str) or len(name.strip()) == 0:
-            raise ValidationError("name is required and must be a non-empty string")
-        # Align with models.NAME_MAX_LENGTH without importing constant to avoid cycles
-        if len(name) > NAME_MAX_LENGTH_CONST:
-            raise ValidationError("name must be at most 120 characters")
+    # No repository-local validation helpers. Invariants live in models.
 
     # -----------------------------
     # Introspection helpers for tests

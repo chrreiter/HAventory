@@ -237,6 +237,22 @@ def normalize_tags(tags: list[str] | None) -> list[str]:
     return result
 
 
+def validate_location_name(name: str) -> str:
+    """Validate a location name and return a trimmed value.
+
+    Enforces non-empty string and maximum length consistent with item names.
+    """
+
+    if not isinstance(name, str):
+        raise ValidationError("name is required and must be a non-empty string")
+    trimmed = name.strip()
+    if len(trimmed) == 0:
+        raise ValidationError("name is required and must be a non-empty string")
+    if len(trimmed) > NAME_MAX_LENGTH:
+        raise ValidationError("name must be at most 120 characters")
+    return trimmed
+
+
 def validate_custom_fields(values: dict[str, ScalarValue]) -> None:
     """Validate custom field keys and values are scalars of allowed types."""
 

@@ -154,9 +154,10 @@ def _op_item_adjust_quantity(hass: HomeAssistant, payload: dict) -> tuple[dict, 
 def _op_item_set_quantity(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
     repo = _repo(hass)
     item_id = payload.get("item_id")
-    updated = repo.set_quantity(
-        item_id, payload.get("quantity"), expected_version=payload.get("expected_version")
-    )
+    qty = payload.get("quantity")
+    if not isinstance(qty, int) or qty < 0:
+        raise ValidationError("quantity must be an integer >= 0")
+    updated = repo.set_quantity(item_id, qty, expected_version=payload.get("expected_version"))
     return _serialize_item(updated), "quantity_changed"
 
 
@@ -736,8 +737,11 @@ async def ws_item_adjust_quantity(hass: HomeAssistant, _conn, msg):
 @websocket_api.async_response
 async def ws_item_set_quantity(hass: HomeAssistant, _conn, msg):
     try:
+        qty = msg.get("quantity")
+        if not isinstance(qty, int) or qty < 0:
+            raise ValidationError("quantity must be an integer >= 0")
         item = _repo(hass).set_quantity(
-            msg.get("item_id"), msg.get("quantity"), expected_version=msg.get("expected_version")
+            msg.get("item_id"), qty, expected_version=msg.get("expected_version")
         )
         serialized = _serialize_item(item)
         _broadcast_event(
