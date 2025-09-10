@@ -205,8 +205,6 @@ def _op_item_set_quantity(hass: HomeAssistant, payload: dict) -> tuple[dict, str
     repo = _repo(hass)
     item_id = payload.get("item_id")
     qty = payload.get("quantity")
-    if not isinstance(qty, int) or qty < 0:
-        raise ValidationError("quantity must be an integer >= 0")
     updated = repo.set_quantity(item_id, qty, expected_version=payload.get("expected_version"))
     return _serialize_item(updated), "quantity_changed"
 
@@ -432,11 +430,8 @@ async def ws_ping(hass: HomeAssistant, _conn, msg):
 
 def _schema_version_from_hass(hass: HomeAssistant) -> int:
     bucket = hass.data.get(DOMAIN) or {}
-    store = bucket.get("store")
-    ver = getattr(store, "schema_version", None) if store is not None else None
-    if isinstance(ver, int):
-        return ver
-    return int(CURRENT_SCHEMA_VERSION)
+    ver = getattr(bucket.get("store"), "schema_version", None)
+    return ver if isinstance(ver, int) else int(CURRENT_SCHEMA_VERSION)
 
 
 @websocket_api.websocket_command({"type": "haventory/version"})
@@ -619,8 +614,6 @@ async def ws_health(hass: HomeAssistant, _conn, msg):
 @websocket_api.websocket_command({"type": "haventory/subscribe"})
 @websocket_api.async_response
 async def ws_subscribe(hass: HomeAssistant, conn, msg):
-    if conn is None:
-        raise ValidationError("connection is required for subscriptions")
     topic = msg.get("topic")
     if topic not in {"items", "locations", "stats"}:
         raise ValidationError("topic must be one of: items, locations, stats")
@@ -652,9 +645,10 @@ async def ws_unsubscribe(hass: HomeAssistant, conn, msg):
     sub_id = msg.get("subscription")
     subs_all = _subs_bucket(hass)
     removed = False
-    if conn in subs_all:
-        removed = subs_all[conn].pop(int(sub_id), None) is not None
-        if not subs_all[conn]:
+    subs_for_conn = subs_all.get(conn)
+    if subs_for_conn:
+        removed = subs_for_conn.pop(int(sub_id), None) is not None
+        if not subs_for_conn:
             subs_all.pop(conn, None)
     LOGGER.debug(
         "Unsubscribed",
@@ -713,9 +707,7 @@ async def ws_item_update(hass: HomeAssistant, _conn, msg):
     }
     updated = _repo(hass).update_item(item_id, update, expected_version=expected)
     serialized = _serialize_item(updated)
-    action = "updated"
-    if "location_id" in update:
-        action = "moved"
+    action = "moved" if "location_id" in update else "updated"
     _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     await _persist_repo(hass)
     _broadcast_counts(hass)

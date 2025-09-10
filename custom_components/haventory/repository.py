@@ -15,6 +15,7 @@ import binascii
 import json
 import logging
 import uuid
+from collections import deque
 from collections.abc import Iterable
 from dataclasses import replace
 from typing import Any, TypedDict
@@ -96,9 +97,7 @@ class Repository:
     # -----------------------------
 
     def _add_to_bucket(self, bucket: dict[str, set[str]], key: str, item_id: str) -> None:
-        if key not in bucket:
-            bucket[key] = set()
-        bucket[key].add(item_id)
+        bucket.setdefault(key, set()).add(item_id)
 
     def _remove_from_bucket(self, bucket: dict[str, set[str]], key: str, item_id: str) -> None:
         s = bucket.get(key)
@@ -218,9 +217,7 @@ class Repository:
     def _add_location(self, loc: Location) -> None:
         self._locations_by_id[str(loc.id)] = loc
         parent_key: str | None = str(loc.parent_id) if loc.parent_id is not None else None
-        if parent_key not in self._children_ids_by_parent_id:
-            self._children_ids_by_parent_id[parent_key] = set()
-        self._children_ids_by_parent_id[parent_key].add(str(loc.id))
+        self._children_ids_by_parent_id.setdefault(parent_key, set()).add(str(loc.id))
 
     def _remove_location(self, loc: Location) -> None:
         self._locations_by_id.pop(str(loc.id), None)
@@ -237,9 +234,9 @@ class Repository:
         """Collect all descendant location IDs (excluding the root itself)."""
 
         result: set[str] = set()
-        queue: list[str] = [root_id]
+        queue = deque([root_id])
         while queue:
-            current = queue.pop(0)
+            current = queue.popleft()
             for child_id in self._children_ids_by_parent_id.get(current, set()):
                 if child_id not in result:
                     result.add(child_id)
@@ -268,10 +265,10 @@ class Repository:
 
         to_fix = [root_id]
         # Collect descendants using the provided child map
-        queue: list[str] = [root_id]
+        queue = deque([root_id])
         visited: set[str] = set()
         while queue:
-            current = queue.pop(0)
+            current = queue.popleft()
             for cid in child_map.get(current, set()):
                 if cid not in visited:
                     visited.add(cid)
@@ -564,9 +561,7 @@ class Repository:
                     staged_children_by_parent.pop(old_parent)
             # Add to new parent's children bucket in staged map
             parent_key: str | None = str(target_parent_id) if target_parent_id is not None else None
-            if parent_key not in staged_children_by_parent:
-                staged_children_by_parent[parent_key] = set()
-            staged_children_by_parent[parent_key].add(str(loc.id))
+            staged_children_by_parent.setdefault(parent_key, set()).add(str(loc.id))
 
         # Attempt to rebuild paths against staged maps; if this fails, nothing is committed
         self._rebuild_paths_for_subtree(
