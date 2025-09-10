@@ -11,7 +11,6 @@ layers (WebSocket/API, storage) are expected to compose these helpers.
 
 from __future__ import annotations
 
-import logging
 import re
 import unicodedata
 import uuid
@@ -21,9 +20,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Final, Literal, NotRequired, TypedDict
 
 from .exceptions import ValidationError
-
-LOGGER = logging.getLogger(__name__)
-
 
 # Scalar values allowed inside custom_fields.
 ScalarValue = str | int | float | bool
@@ -417,9 +413,6 @@ def create_item_from_create(
         location_path=location_path,
     )
 
-    LOGGER.debug(
-        "Created item", extra={"domain": "haventory", "op": "create_item", "item_id": item.id}
-    )
     return item
 
 
@@ -521,17 +514,6 @@ def apply_item_update(
     # Ensure updated_at is strictly monotonic to avoid equality within same second
     new_item.updated_at = monotonic_timestamp_after(item.updated_at)
     new_item.version = item.version + 1
-
-    LOGGER.debug(
-        "Updated item",
-        extra={
-            "domain": "haventory",
-            "op": "update_item",
-            "item_id": new_item.id,
-            "old_version": item.version,
-            "new_version": new_item.version,
-        },
-    )
     return new_item
 
 

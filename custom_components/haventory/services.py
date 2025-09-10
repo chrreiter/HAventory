@@ -154,11 +154,7 @@ async def service_item_create(hass: HomeAssistant, data: dict) -> None:
     try:
         payload = SCHEMA_ITEM_CREATE(data)
         repo = _get_repo(hass)
-        item = repo.create_item(payload)  # type: ignore[arg-type]
-        LOGGER.debug(
-            "Service item_create created item",
-            extra={"domain": DOMAIN, "op": op, "item_id": item.id},
-        )
+        repo.create_item(payload)  # type: ignore[arg-type]
         await _persist_repo(hass)
     except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _log_domain_error(op, {"name": data.get("name")}, exc)
@@ -270,11 +266,7 @@ async def service_location_create(hass: HomeAssistant, data: dict) -> None:
     try:
         payload = SCHEMA_LOCATION_CREATE(data)
         repo = _get_repo(hass)
-        loc = repo.create_location(name=payload["name"], parent_id=payload.get("parent_id"))
-        LOGGER.debug(
-            "Service location_create created location",
-            extra={"domain": DOMAIN, "op": op, "location_id": loc.id},
-        )
+        repo.create_location(name=payload["name"], parent_id=payload.get("parent_id"))
         await _persist_repo(hass)
     except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _log_domain_error(op, {"name": data.get("name")}, exc)
