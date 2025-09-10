@@ -133,13 +133,13 @@ class DomainStore:
         except Exception:  # pragma: no cover - exercised via tests
             # Do not overwrite on-disk payload; return an empty in-memory dataset
             _LOGGER.error(
-                "Failed to migrate storage payload; serving empty dataset and "
-                "leaving on-disk payload unchanged",
+                "Storage migration failed",
                 extra={
                     "domain": DOMAIN,
                     "op": "migrate",
                     "from_version": from_version,
                     "to_version": to_version,
+                    "storage_key": self.key,
                 },
                 exc_info=True,
             )

@@ -282,10 +282,9 @@ def _send_event_message(conn, subscription_id: int, event_payload: dict[str, Any
             # Fire and forget in tests; assume sync in stub
             async_send(msg)
     except Exception:  # pragma: no cover - defensive logging only
-        LOGGER.warning(
+        LOGGER.debug(
             "Failed to send WS event message",
             extra={"domain": DOMAIN, "op": "send_event", "subscription_id": subscription_id},
-            exc_info=True,
         )
 
 

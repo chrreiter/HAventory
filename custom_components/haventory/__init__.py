@@ -81,16 +81,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     while h in registry:
                         registry.remove(h)
                 except ValueError:  # pragma: no cover - defensive
-                    LOGGER.warning(
+                    LOGGER.debug(
                         "Failed to remove a WS handler from test stub registry",
-                        exc_info=True,
                         extra={"domain": DOMAIN, "op": "unload_ws_stub_cleanup"},
                     )
                     break
     except Exception:  # pragma: no cover - defensive
-        LOGGER.warning(
+        LOGGER.debug(
             "Failed to cleanup WS handlers from test stub registry",
-            exc_info=True,
             extra={"domain": DOMAIN, "op": "unload_ws_stub_cleanup"},
         )
 

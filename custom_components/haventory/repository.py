@@ -847,14 +847,13 @@ class Repository:
                     )
                     self._add_location(loc)
                 except (AttributeError, TypeError, ValueError):  # pragma: no cover - defensive
-                    LOGGER.warning(
+                    LOGGER.debug(
                         "Failed to load location from persisted state",
                         extra={
                             "domain": "haventory",
                             "op": "load_state_locations",
                             "location_id": str(loc_id),
                         },
-                        exc_info=True,
                     )
                     continue
 
@@ -893,14 +892,13 @@ class Repository:
                     )
                     self._index_item(item)
                 except (AttributeError, TypeError, ValueError):  # pragma: no cover - defensive
-                    LOGGER.warning(
+                    LOGGER.debug(
                         "Failed to load item from persisted state",
                         extra={
                             "domain": "haventory",
                             "op": "load_state_items",
                             "item_id": str(item_id),
                         },
-                        exc_info=True,
                     )
                     continue
 
