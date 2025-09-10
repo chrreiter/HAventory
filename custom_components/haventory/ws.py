@@ -7,6 +7,7 @@ Adheres to the envelope: input {id, type, ...payload}, output result_message/err
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, TypedDict
 
@@ -58,8 +59,61 @@ def _error_message(hass: HomeAssistant, _id: int, exc: Exception, *, context: di
     level = logging.WARNING
     if isinstance(exc, ConflictError | StorageError):
         level = logging.ERROR
-    LOGGER.log(level, str(exc), extra={"domain": DOMAIN, **(context or {})})
+    LOGGER.log(level, str(exc), extra={"domain": DOMAIN, **(context or {})}, exc_info=True)
     return websocket_api.error_message(_id, _error_code(exc), str(exc), context or None)
+
+
+# -----------------------------
+# Unified exception handling for WS handlers
+# -----------------------------
+
+_WSHandler = Callable[[HomeAssistant, Any, dict], Awaitable[Any]]
+
+
+def _context_from_msg(op: str, msg: dict, fields: tuple[str, ...]) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for field in fields:
+        if field not in msg:
+            continue
+        value = msg.get(field)
+        key = field
+        # Avoid reserved LogRecord key 'name' by using domain-specific names
+        if field == "name":
+            if op.startswith("item_"):
+                key = "item_name"
+            elif op.startswith("location_"):
+                key = "location_name"
+            else:
+                key = "ctx_name"
+        payload[key] = value
+    return _ctx(op, **payload)
+
+
+def ws_guard(
+    op: str, context_fields: tuple[str, ...] = ()
+) -> Callable[
+    [
+        _WSHandler,
+    ],
+    _WSHandler,
+]:
+    """Decorator to map known domain exceptions to unified WS errors.
+
+    Builds a structured context from selected fields in the incoming message and
+    returns a Home Assistant websocket error envelope with {code, message, context}.
+    """
+
+    def decorator(func: _WSHandler) -> _WSHandler:
+        async def wrapper(hass: HomeAssistant, conn, msg):  # type: ignore[override]
+            try:
+                return await func(hass, conn, msg)
+            except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
+                ctx = _context_from_msg(op, msg, context_fields)
+                return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+
+        return wrapper
+
+    return decorator
 
 
 # -----------------------------
@@ -625,35 +679,28 @@ async def ws_unsubscribe(hass: HomeAssistant, conn, msg):
 
 @websocket_api.websocket_command({"type": "haventory/item/create"})
 @websocket_api.async_response
+@ws_guard("item_create", ("name",))
 async def ws_item_create(hass: HomeAssistant, _conn, msg):
     payload = {k: v for k, v in msg.items() if k not in {"id", "type"}}
-    try:
-        item = _repo(hass).create_item(payload)  # type: ignore[arg-type]
-        serialized = _serialize_item(item)
-        _broadcast_event(hass, topic="items", action="created", payload={"item": serialized})
-        await _persist_repo(hass)
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg.get("id", 0), serialized)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        return _error_message(
-            hass, msg.get("id", 0), exc, context=_ctx("item_create", item_name=msg.get("name"))
-        )
+    item = _repo(hass).create_item(payload)  # type: ignore[arg-type]
+    serialized = _serialize_item(item)
+    _broadcast_event(hass, topic="items", action="created", payload={"item": serialized})
+    await _persist_repo(hass)
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), serialized)
 
 
 @websocket_api.websocket_command({"type": "haventory/item/get"})
 @websocket_api.async_response
+@ws_guard("item_get", ("item_id",))
 async def ws_item_get(hass: HomeAssistant, _conn, msg):
-    try:
-        item = _repo(hass).get_item(msg.get("item_id"))
-        return websocket_api.result_message(msg.get("id", 0), _serialize_item(item))
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        return _error_message(
-            hass, msg.get("id", 0), exc, context=_ctx("item_get", item_id=msg.get("item_id"))
-        )
+    item = _repo(hass).get_item(msg.get("item_id"))
+    return websocket_api.result_message(msg.get("id", 0), _serialize_item(item))
 
 
 @websocket_api.websocket_command({"type": "haventory/item/update"})
 @websocket_api.async_response
+@ws_guard("item_update", ("item_id", "expected_version"))
 async def ws_item_update(hass: HomeAssistant, _conn, msg):
     item_id = msg.get("item_id")
     expected = msg.get("expected_version")
@@ -668,249 +715,198 @@ async def ws_item_update(hass: HomeAssistant, _conn, msg):
             "expected_version",
         }
     }
-    try:
-        updated = _repo(hass).update_item(item_id, update, expected_version=expected)
-        serialized = _serialize_item(updated)
-        action = "updated"
-        if "location_id" in update:
-            action = "moved"
-        _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
-        await _persist_repo(hass)
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg.get("id", 0), serialized)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx(
-            "item_update", item_id=msg.get("item_id"), expected_version=msg.get("expected_version")
-        )
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+    updated = _repo(hass).update_item(item_id, update, expected_version=expected)
+    serialized = _serialize_item(updated)
+    action = "updated"
+    if "location_id" in update:
+        action = "moved"
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+    await _persist_repo(hass)
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), serialized)
 
 
 @websocket_api.websocket_command({"type": "haventory/item/delete"})
 @websocket_api.async_response
+@ws_guard("item_delete", ("item_id", "expected_version"))
 async def ws_item_delete(hass: HomeAssistant, _conn, msg):
-    # Capture item before deletion for event payload
     item_id = msg.get("item_id")
+    repo = _repo(hass)
     try:
-        try:
-            before = _repo(hass).get_item(item_id)
-            serialized_before = _serialize_item(before)
-        except NotFoundError:
-            serialized_before = None  # pragma: no cover - item may not exist
-        _repo(hass).delete_item(item_id, expected_version=msg.get("expected_version"))
-        if serialized_before is not None:
-            _broadcast_event(
-                hass,
-                topic="items",
-                action="deleted",
-                payload={"item": serialized_before},
-            )
-        else:
-            _broadcast_event(
-                hass,
-                topic="items",
-                action="deleted",
-                payload={"item": {"id": item_id}},
-            )
-        await _persist_repo(hass)
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg.get("id", 0), None)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx(
-            "item_delete", item_id=msg.get("item_id"), expected_version=msg.get("expected_version")
-        )
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+        before = repo.get_item(item_id)
+        serialized_before = _serialize_item(before)
+    except NotFoundError:
+        serialized_before = {"id": item_id}
+    repo.delete_item(item_id, expected_version=msg.get("expected_version"))
+    _broadcast_event(
+        hass,
+        topic="items",
+        action="deleted",
+        payload={"item": serialized_before},
+    )
+    await _persist_repo(hass)
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), None)
 
 
 @websocket_api.websocket_command({"type": "haventory/item/adjust_quantity"})
 @websocket_api.async_response
+@ws_guard("item_adjust_quantity", ("item_id", "delta", "expected_version"))
 async def ws_item_adjust_quantity(hass: HomeAssistant, _conn, msg):
-    try:
-        item = _repo(hass).adjust_quantity(
-            msg.get("item_id"), msg.get("delta"), expected_version=msg.get("expected_version")
-        )
-        serialized = _serialize_item(item)
-        _broadcast_event(
-            hass, topic="items", action="quantity_changed", payload={"item": serialized}
-        )
-        await _persist_repo(hass)
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg.get("id", 0), serialized)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx("item_adjust_quantity", item_id=msg.get("item_id"), delta=msg.get("delta"))
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+    item = _repo(hass).adjust_quantity(
+        msg.get("item_id"), msg.get("delta"), expected_version=msg.get("expected_version")
+    )
+    serialized = _serialize_item(item)
+    _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
+    await _persist_repo(hass)
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), serialized)
 
 
 @websocket_api.websocket_command({"type": "haventory/item/set_quantity"})
 @websocket_api.async_response
+@ws_guard("item_set_quantity", ("item_id", "quantity", "expected_version"))
 async def ws_item_set_quantity(hass: HomeAssistant, _conn, msg):
-    try:
-        qty = msg.get("quantity")
-        if not isinstance(qty, int) or qty < 0:
-            raise ValidationError("quantity must be an integer >= 0")
-        item = _repo(hass).set_quantity(
-            msg.get("item_id"), qty, expected_version=msg.get("expected_version")
-        )
-        serialized = _serialize_item(item)
-        _broadcast_event(
-            hass, topic="items", action="quantity_changed", payload={"item": serialized}
-        )
-        await _persist_repo(hass)
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg.get("id", 0), serialized)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx("item_set_quantity", item_id=msg.get("item_id"), quantity=msg.get("quantity"))
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+    qty = msg.get("quantity")
+    if not isinstance(qty, int) or qty < 0:
+        raise ValidationError("quantity must be an integer >= 0")
+    item = _repo(hass).set_quantity(
+        msg.get("item_id"), qty, expected_version=msg.get("expected_version")
+    )
+    serialized = _serialize_item(item)
+    _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
+    await _persist_repo(hass)
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), serialized)
 
 
 @websocket_api.websocket_command({"type": "haventory/item/check_out"})
 @websocket_api.async_response
+@ws_guard("item_check_out", ("item_id", "due_date", "expected_version"))
 async def ws_item_check_out(hass: HomeAssistant, _conn, msg):
-    try:
-        item = _repo(hass).check_out(
-            msg.get("item_id"),
-            due_date=msg.get("due_date"),
-            expected_version=msg.get("expected_version"),
-        )
-        serialized = _serialize_item(item)
-        _broadcast_event(hass, topic="items", action="checked_out", payload={"item": serialized})
-        await _persist_repo(hass)
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg.get("id", 0), serialized)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx("item_check_out", item_id=msg.get("item_id"), due_date=msg.get("due_date"))
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+    item = _repo(hass).check_out(
+        msg.get("item_id"),
+        due_date=msg.get("due_date"),
+        expected_version=msg.get("expected_version"),
+    )
+    serialized = _serialize_item(item)
+    _broadcast_event(hass, topic="items", action="checked_out", payload={"item": serialized})
+    await _persist_repo(hass)
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), serialized)
 
 
 @websocket_api.websocket_command({"type": "haventory/item/check_in"})
 @websocket_api.async_response
+@ws_guard("item_check_in", ("item_id", "expected_version"))
 async def ws_item_check_in(hass: HomeAssistant, _conn, msg):
-    try:
-        item = _repo(hass).check_in(
-            msg.get("item_id"), expected_version=msg.get("expected_version")
-        )
-        serialized = _serialize_item(item)
-        _broadcast_event(hass, topic="items", action="checked_in", payload={"item": serialized})
-        await _persist_repo(hass)
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg["id"], serialized)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx("item_check_in", item_id=msg.get("item_id"))
-        return _error_message(hass, msg["id"], exc, context=ctx)
+    item = _repo(hass).check_in(msg.get("item_id"), expected_version=msg.get("expected_version"))
+    serialized = _serialize_item(item)
+    _broadcast_event(hass, topic="items", action="checked_in", payload={"item": serialized})
+    await _persist_repo(hass)
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), serialized)
 
 
 @websocket_api.websocket_command({"type": "haventory/item/add_tags"})
 @websocket_api.async_response
+@ws_guard("item_add_tags", ("item_id", "expected_version"))
 async def ws_item_add_tags(hass: HomeAssistant, _conn, msg):
-    try:
-        serialized, action = _execute_item_op(
-            hass,
-            "item_add_tags",
-            {
-                "item_id": msg.get("item_id"),
-                "expected_version": msg.get("expected_version"),
-                "tags": msg.get("tags"),
-            },
-        )
-        _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
-        await _persist_repo(hass)
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg.get("id", 0), serialized)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx("item_add_tags", item_id=msg.get("item_id"))
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+    serialized, action = _execute_item_op(
+        hass,
+        "item_add_tags",
+        {
+            "item_id": msg.get("item_id"),
+            "expected_version": msg.get("expected_version"),
+            "tags": msg.get("tags"),
+        },
+    )
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+    await _persist_repo(hass)
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), serialized)
 
 
 @websocket_api.websocket_command({"type": "haventory/item/remove_tags"})
 @websocket_api.async_response
+@ws_guard("item_remove_tags", ("item_id", "expected_version"))
 async def ws_item_remove_tags(hass: HomeAssistant, _conn, msg):
-    try:
-        serialized, action = _execute_item_op(
-            hass,
-            "item_remove_tags",
-            {
-                "item_id": msg.get("item_id"),
-                "expected_version": msg.get("expected_version"),
-                "tags": msg.get("tags"),
-            },
-        )
-        _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
-        await _persist_repo(hass)
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg.get("id", 0), serialized)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx("item_remove_tags", item_id=msg.get("item_id"))
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+    serialized, action = _execute_item_op(
+        hass,
+        "item_remove_tags",
+        {
+            "item_id": msg.get("item_id"),
+            "expected_version": msg.get("expected_version"),
+            "tags": msg.get("tags"),
+        },
+    )
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+    await _persist_repo(hass)
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), serialized)
 
 
 @websocket_api.websocket_command({"type": "haventory/item/update_custom_fields"})
 @websocket_api.async_response
+@ws_guard("item_update_custom_fields", ("item_id", "expected_version"))
 async def ws_item_update_custom_fields(hass: HomeAssistant, _conn, msg):
-    try:
-        serialized, action = _execute_item_op(
-            hass,
-            "item_update_custom_fields",
-            {
-                "item_id": msg.get("item_id"),
-                "expected_version": msg.get("expected_version"),
-                "set": msg.get("set"),
-                "unset": msg.get("unset"),
-            },
-        )
-        _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
-        await _persist_repo(hass)
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg.get("id", 0), serialized)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx("item_update_custom_fields", item_id=msg.get("item_id"))
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+    serialized, action = _execute_item_op(
+        hass,
+        "item_update_custom_fields",
+        {
+            "item_id": msg.get("item_id"),
+            "expected_version": msg.get("expected_version"),
+            "set": msg.get("set"),
+            "unset": msg.get("unset"),
+        },
+    )
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+    await _persist_repo(hass)
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), serialized)
 
 
 @websocket_api.websocket_command({"type": "haventory/item/set_low_stock_threshold"})
 @websocket_api.async_response
+@ws_guard("item_set_low_stock_threshold", ("item_id", "expected_version"))
 async def ws_item_set_low_stock_threshold(hass: HomeAssistant, _conn, msg):
-    try:
-        serialized, action = _execute_item_op(
-            hass,
-            "item_set_low_stock_threshold",
-            {
-                "item_id": msg.get("item_id"),
-                "expected_version": msg.get("expected_version"),
-                "low_stock_threshold": msg.get("low_stock_threshold"),
-            },
-        )
-        _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
-        await _persist_repo(hass)
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg.get("id", 0), serialized)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx("item_set_low_stock_threshold", item_id=msg.get("item_id"))
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+    serialized, action = _execute_item_op(
+        hass,
+        "item_set_low_stock_threshold",
+        {
+            "item_id": msg.get("item_id"),
+            "expected_version": msg.get("expected_version"),
+            "low_stock_threshold": msg.get("low_stock_threshold"),
+        },
+    )
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+    await _persist_repo(hass)
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), serialized)
 
 
 @websocket_api.websocket_command({"type": "haventory/item/move"})
 @websocket_api.async_response
+@ws_guard("item_move", ("item_id", "location_id", "expected_version"))
 async def ws_item_move(hass: HomeAssistant, _conn, msg):
-    try:
-        serialized, action = _execute_item_op(
-            hass,
-            "item_move",
-            {
-                "item_id": msg.get("item_id"),
-                "expected_version": msg.get("expected_version"),
-                "location_id": msg.get("location_id"),
-            },
-        )
-        _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
-        await _persist_repo(hass)
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg.get("id", 0), serialized)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx("item_move", item_id=msg.get("item_id"), location_id=msg.get("location_id"))
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+    serialized, action = _execute_item_op(
+        hass,
+        "item_move",
+        {
+            "item_id": msg.get("item_id"),
+            "expected_version": msg.get("expected_version"),
+            "location_id": msg.get("location_id"),
+        },
+    )
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+    await _persist_repo(hass)
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), serialized)
 
 
 @websocket_api.websocket_command({"type": "haventory/items/bulk"})
 @websocket_api.async_response
+@ws_guard("items_bulk", ())
 async def ws_items_bulk(hass: HomeAssistant, _conn, msg):
     operations = _validate_bulk_ops(msg.get("operations"))
     results: dict[str, dict[str, object]] = {}
@@ -926,9 +922,27 @@ async def ws_items_bulk(hass: HomeAssistant, _conn, msg):
             _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
             any_success = True
         except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
+            ctx = {
+                "op_id": op_id,
+                "kind": kind,
+            }
+            for k in (
+                "item_id",
+                "expected_version",
+                "location_id",
+                "due_date",
+                "quantity",
+                "delta",
+                "low_stock_threshold",
+                "tags",
+                "set",
+                "unset",
+            ):
+                if k in payload:
+                    ctx[k] = payload.get(k)
             results[op_id] = {
                 "success": False,
-                "error": {"code": _error_code(exc), "message": str(exc)},
+                "error": {"code": _error_code(exc), "message": str(exc), "context": ctx},
             }
 
     if any_success:
@@ -961,91 +975,67 @@ async def ws_item_list(hass: HomeAssistant, _conn, msg):
 
 @websocket_api.websocket_command({"type": "haventory/location/create"})
 @websocket_api.async_response
+@ws_guard("location_create", ("name", "parent_id"))
 async def ws_location_create(hass: HomeAssistant, _conn, msg):
-    try:
-        loc = _repo(hass).create_location(name=msg.get("name"), parent_id=msg.get("parent_id"))
-        serialized = _serialize_location(loc)
-        _broadcast_event(
-            hass, topic="locations", action="created", payload={"location": serialized}
-        )
-        await _persist_repo(hass)
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg.get("id", 0), serialized)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx("location_create", location_name=msg.get("name"), parent_id=msg.get("parent_id"))
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+    loc = _repo(hass).create_location(name=msg.get("name"), parent_id=msg.get("parent_id"))
+    serialized = _serialize_location(loc)
+    _broadcast_event(hass, topic="locations", action="created", payload={"location": serialized})
+    await _persist_repo(hass)
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), serialized)
 
 
 @websocket_api.websocket_command({"type": "haventory/location/get"})
 @websocket_api.async_response
+@ws_guard("location_get", ("location_id",))
 async def ws_location_get(hass: HomeAssistant, _conn, msg):
-    try:
-        loc = _repo(hass).get_location(msg.get("location_id"))
-        return websocket_api.result_message(msg.get("id", 0), _serialize_location(loc))
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx("location_get", location_id=msg.get("location_id"))
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+    loc = _repo(hass).get_location(msg.get("location_id"))
+    return websocket_api.result_message(msg.get("id", 0), _serialize_location(loc))
 
 
 @websocket_api.websocket_command({"type": "haventory/location/update"})
 @websocket_api.async_response
+@ws_guard("location_update", ("location_id", "new_parent_id", "name"))
 async def ws_location_update(hass: HomeAssistant, _conn, msg):
     new_parent = msg["new_parent_id"] if "new_parent_id" in msg else UNSET
-    try:
-        loc = _repo(hass).update_location(
-            msg.get("location_id"), name=msg.get("name"), new_parent_id=new_parent
+    loc = _repo(hass).update_location(
+        msg.get("location_id"), name=msg.get("name"), new_parent_id=new_parent
+    )
+    serialized = _serialize_location(loc)
+    # If parent changed emit moved; if name changed emit renamed
+    # (move takes precedence when both)
+    if "new_parent_id" in msg:
+        _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
+    if "name" in msg:
+        _broadcast_event(
+            hass, topic="locations", action="renamed", payload={"location": serialized}
         )
-        serialized = _serialize_location(loc)
-        # If parent changed emit moved; if name changed emit renamed
-        # (move takes precedence when both)
-        if "new_parent_id" in msg:
-            _broadcast_event(
-                hass, topic="locations", action="moved", payload={"location": serialized}
-            )
-        if "name" in msg:
-            _broadcast_event(
-                hass, topic="locations", action="renamed", payload={"location": serialized}
-            )
-        await _persist_repo(hass)
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg["id"], serialized)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx("location_update", location_id=msg.get("location_id"))
-        return _error_message(hass, msg["id"], exc, context=ctx)
+    await _persist_repo(hass)
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), serialized)
 
 
 @websocket_api.websocket_command({"type": "haventory/location/delete"})
 @websocket_api.async_response
+@ws_guard("location_delete", ("location_id",))
 async def ws_location_delete(hass: HomeAssistant, _conn, msg):
-    # Capture before delete for payload
     loc_id = msg.get("location_id")
+    repo = _repo(hass)
     try:
-        try:
-            before = _repo(hass).get_location(loc_id)
-            serialized_before = _serialize_location(before)
-        except NotFoundError:
-            serialized_before = None  # pragma: no cover
-        _repo(hass).delete_location(loc_id)
-        if serialized_before is not None:
-            _broadcast_event(
-                hass,
-                topic="locations",
-                action="deleted",
-                payload={"location": serialized_before},
-            )
-        else:
-            _broadcast_event(
-                hass,
-                topic="locations",
-                action="deleted",
-                payload={"location": {"id": loc_id}},
-            )
-        await _persist_repo(hass)
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg.get("id", 0), None)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx("location_delete", location_id=msg.get("location_id"))
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+        before = repo.get_location(loc_id)
+        serialized_before = _serialize_location(before)
+    except NotFoundError:
+        serialized_before = {"id": loc_id}
+    repo.delete_location(loc_id)
+    _broadcast_event(
+        hass,
+        topic="locations",
+        action="deleted",
+        payload={"location": serialized_before},
+    )
+    await _persist_repo(hass)
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), None)
 
 
 @websocket_api.websocket_command({"type": "haventory/location/list"})
@@ -1091,21 +1081,14 @@ async def ws_location_tree(hass: HomeAssistant, _conn, msg):
 
 @websocket_api.websocket_command({"type": "haventory/location/move_subtree"})
 @websocket_api.async_response
+@ws_guard("location_move_subtree", ("location_id", "new_parent_id"))
 async def ws_location_move_subtree(hass: HomeAssistant, _conn, msg):
     new_parent = msg.get("new_parent_id") if "new_parent_id" in msg else UNSET
-    try:
-        loc = _repo(hass).update_location(msg.get("location_id"), new_parent_id=new_parent)
-        serialized = _serialize_location(loc)
-        _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
-        _broadcast_counts(hass)
-        return websocket_api.result_message(msg.get("id", 0), serialized)
-    except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        ctx = _ctx(
-            "location_move_subtree",
-            location_id=msg.get("location_id"),
-            new_parent_id=msg.get("new_parent_id"),
-        )
-        return _error_message(hass, msg.get("id", 0), exc, context=ctx)
+    loc = _repo(hass).update_location(msg.get("location_id"), new_parent_id=new_parent)
+    serialized = _serialize_location(loc)
+    _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
+    _broadcast_counts(hass)
+    return websocket_api.result_message(msg.get("id", 0), serialized)
 
 
 # -----------------------------

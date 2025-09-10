@@ -157,7 +157,7 @@ async def service_item_create(hass: HomeAssistant, data: dict) -> None:
         repo.create_item(payload)  # type: ignore[arg-type]
         await _persist_repo(hass)
     except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _log_domain_error(op, {"name": data.get("name")}, exc)
+        _log_domain_error(op, {"item_name": data.get("name")}, exc)
 
 
 async def service_item_update(hass: HomeAssistant, data: dict) -> None:
@@ -269,7 +269,7 @@ async def service_location_create(hass: HomeAssistant, data: dict) -> None:
         repo.create_location(name=payload["name"], parent_id=payload.get("parent_id"))
         await _persist_repo(hass)
     except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _log_domain_error(op, {"name": data.get("name")}, exc)
+        _log_domain_error(op, {"location_name": data.get("name")}, exc)
 
 
 async def service_location_update(hass: HomeAssistant, data: dict) -> None:
