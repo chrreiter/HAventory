@@ -800,16 +800,19 @@ class Repository:
                     path_obj = loc_data.get("path", {}) if isinstance(loc_data, dict) else {}
                     path = LocationPath(
                         id_path=[
-                            uuid.UUID(str(x)) for x in list(path_obj.get("id_path", []) or [])
+                            parse_uuid4(str(x), field_name="path.id_path")
+                            for x in list(path_obj.get("id_path", []) or [])
                         ],
                         name_path=list(path_obj.get("name_path", []) or []),
                         display_path=str(path_obj.get("display_path", "")),
                         sort_key=str(path_obj.get("sort_key", "")),
                     )
                     loc = Location(
-                        id=uuid.UUID(str(loc_data.get("id", loc_id))),
+                        id=parse_uuid4(str(loc_data.get("id", loc_id)), field_name="location.id"),
                         parent_id=(
-                            uuid.UUID(str(loc_data.get("parent_id")))
+                            parse_uuid4(
+                                str(loc_data.get("parent_id")), field_name="location.parent_id"
+                            )
                             if loc_data.get("parent_id") is not None
                             else None
                         ),
@@ -817,7 +820,12 @@ class Repository:
                         path=path,
                     )
                     self._add_location(loc)
-                except (AttributeError, TypeError, ValueError):  # pragma: no cover - defensive
+                except (
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    ValidationError,
+                ):  # pragma: no cover - defensive
                     LOGGER.debug(
                         "Failed to load location from persisted state",
                         extra={
@@ -835,20 +843,25 @@ class Repository:
                 try:
                     lp = (item_data or {}).get("location_path", {})
                     location_path = LocationPath(
-                        id_path=[uuid.UUID(str(x)) for x in list(lp.get("id_path", []) or [])],
+                        id_path=[
+                            parse_uuid4(str(x), field_name="location_path.id_path")
+                            for x in list(lp.get("id_path", []) or [])
+                        ],
                         name_path=list(lp.get("name_path", []) or []),
                         display_path=str(lp.get("display_path", "")),
                         sort_key=str(lp.get("sort_key", "")),
                     )
                     item = Item(
-                        id=uuid.UUID(str(item_data.get("id", item_id))),
+                        id=parse_uuid4(str(item_data.get("id", item_id)), field_name="item.id"),
                         name=str(item_data.get("name", "")),
                         description=item_data.get("description"),
                         quantity=int(item_data.get("quantity", 0)),
                         checked_out=bool(item_data.get("checked_out", False)),
                         due_date=item_data.get("due_date"),
                         location_id=(
-                            uuid.UUID(str(item_data.get("location_id")))
+                            parse_uuid4(
+                                str(item_data.get("location_id")), field_name="item.location_id"
+                            )
                             if item_data.get("location_id") is not None
                             else None
                         ),
@@ -862,7 +875,12 @@ class Repository:
                         location_path=location_path,
                     )
                     self._index_item(item)
-                except (AttributeError, TypeError, ValueError):  # pragma: no cover - defensive
+                except (
+                    AttributeError,
+                    TypeError,
+                    ValueError,
+                    ValidationError,
+                ):  # pragma: no cover - defensive
                     LOGGER.debug(
                         "Failed to load item from persisted state",
                         extra={
