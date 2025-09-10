@@ -112,9 +112,18 @@ class DomainStore:
         """
 
         if not isinstance(raw, dict):  # Corrupted or unexpected
-            migrated = _empty_payload()
-            await self._store.async_save(migrated)
-            return migrated
+            _LOGGER.error(
+                "Corrupted storage payload: expected dict, got %s",
+                type(raw).__name__,
+                extra={
+                    "domain": DOMAIN,
+                    "op": "migrate",
+                    "from_version": None,
+                    "to_version": self._schema_version,
+                    "storage_key": self.key,
+                },
+            )
+            raise StorageError("corrupted storage payload: not a dict")
 
         from_version = int(raw.get("schema_version", 0))
         to_version = self._schema_version
@@ -130,8 +139,8 @@ class DomainStore:
 
         try:
             migrated = migrations.migrate(raw, from_version=from_version, to_version=to_version)
-        except Exception:  # pragma: no cover - exercised via tests
-            # Do not overwrite on-disk payload; return an empty in-memory dataset
+        except Exception as exc:  # pragma: no cover - exercised via tests
+            # Do not overwrite on-disk payload; surface as a typed error
             _LOGGER.error(
                 "Storage migration failed",
                 extra={
@@ -143,7 +152,7 @@ class DomainStore:
                 },
                 exc_info=True,
             )
-            return _empty_payload()
+            raise StorageError("storage migration failed") from exc
         # Guarantee required fields and version
         migrated.setdefault("items", {})
         migrated.setdefault("locations", {})

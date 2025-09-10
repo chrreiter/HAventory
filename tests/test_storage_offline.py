@@ -4,12 +4,15 @@ Scenarios:
 - Initial load returns an empty dataset with correct schema_version
 - Save then load returns equal data (roundtrip)
 - Migration hook is invoked when schema_version differs
+- Migration failure raises StorageError and does not persist changes
+- Corrupted payload (non-dict) raises StorageError
 """
 
 from __future__ import annotations
 
 import pytest
 from custom_components.haventory import migrations
+from custom_components.haventory.exceptions import StorageError
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
 from homeassistant.core import HomeAssistant
@@ -120,8 +123,8 @@ async def test_migration_is_applied_for_older_payload(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_migration_failure_returns_empty_and_does_not_persist(monkeypatch) -> None:
-    """Migration failure returns empty dataset and leaves on-disk payload unchanged."""
+async def test_migration_failure_raises_and_does_not_persist(monkeypatch) -> None:
+    """Migration failure raises StorageError and leaves on-disk payload unchanged."""
 
     # Arrange
     hass = HomeAssistant()
@@ -139,15 +142,27 @@ async def test_migration_failure_returns_empty_and_does_not_persist(monkeypatch)
 
     monkeypatch.setattr(migrations, "migrate", _raise)
 
-    # Act
-    loaded = await store.async_load()
-
-    # Assert returned payload is the empty, safe dataset
-    assert isinstance(loaded, dict)
-    assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert loaded["items"] == {}
-    assert loaded["locations"] == {}
+    # Act + Assert
+    with pytest.raises(StorageError):
+        await store.async_load()
 
     # Assert on-disk payload was not overwritten
     underlying = await raw_store.async_load()
     assert underlying == pre_payload
+
+
+@pytest.mark.asyncio
+async def test_corrupted_payload_non_dict_raises_storage_error() -> None:
+    """Non-dict payload in storage should raise StorageError on load."""
+
+    # Arrange
+    hass = HomeAssistant()
+    key = "test_store_corrupted_payload"
+    store = DomainStore(hass, key=key)
+    raw_store = HAStore(hass, 1, key)
+    # Save a corrupted payload (string instead of dict)
+    await raw_store.async_save("oops")
+
+    # Act + Assert
+    with pytest.raises(StorageError):
+        await store.async_load()
