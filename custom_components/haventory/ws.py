@@ -24,11 +24,10 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _repo(hass: HomeAssistant) -> Repository:
-    bucket = hass.data.setdefault(DOMAIN, {})
+    bucket = hass.data.get(DOMAIN) or {}
     repo = bucket.get("repository")
     if repo is None:
-        repo = Repository()
-        bucket["repository"] = repo
+        raise StorageError("repository not initialized; run integration setup")
     return repo  # type: ignore[return-value]
 
 

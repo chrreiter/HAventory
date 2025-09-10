@@ -166,14 +166,17 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
     """Persist the current repository state via DomainStore.
 
     Looks up both the storage manager and repository in hass.data[DOMAIN].
-    No-ops if either is missing. Logs are the caller's responsibility.
+    Fails fast with StorageError if prerequisites are missing to avoid
+    silent data loss. Callers should ensure setup completed successfully.
     """
 
     bucket = hass.data.get(DOMAIN) or {}
     store = bucket.get("store")
     repo = bucket.get("repository")
-    if store is None or repo is None:
-        return
+    if store is None:
+        raise StorageError("storage manager not initialized; run integration setup")
+    if repo is None:
+        raise StorageError("repository not initialized; run integration setup")
     payload = repo.export_state()
     try:
         await store.async_save(payload)

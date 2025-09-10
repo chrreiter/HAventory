@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.repository import Repository
+from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
@@ -64,6 +65,7 @@ async def test_subscribe_receives_item_created_and_counts() -> None:
 
     hass = HomeAssistant()
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
     conn = _ConnStub()
@@ -95,6 +97,7 @@ async def test_unsubscribe_stops_events() -> None:
 
     hass = HomeAssistant()
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
     conn = _ConnStub()
@@ -125,6 +128,7 @@ async def test_location_filters_subtree_and_direct_only() -> None:
 
     hass = HomeAssistant()
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
     conn = _ConnStub()
