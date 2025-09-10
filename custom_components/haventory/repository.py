@@ -35,6 +35,7 @@ from .models import (
     filter_items,
     new_uuid4,
     normalize_text_for_sort,
+    parse_uuid4,
     sort_items,
     validate_location_name,
 )
@@ -192,16 +193,11 @@ class Repository:
             return False, current_parent
         if new_parent_id is None:
             return (current_parent is not None), None
-        if isinstance(new_parent_id, uuid.UUID):
-            candidate = new_parent_id
-        elif isinstance(new_parent_id, str):
-            try:
-                candidate = uuid.UUID(new_parent_id)
-            except Exception:
-                candidate = uuid.UUID(int=0)
-        else:
-            candidate = None
-        return (str(candidate) != str(current_parent)), candidate
+        if isinstance(new_parent_id, str | uuid.UUID):
+            candidate = parse_uuid4(new_parent_id, field_name="new_parent_id")
+            return (str(candidate) != str(current_parent)), candidate
+        # Unsupported type
+        raise ValidationError("new_parent_id must be a UUID v4 string or null")
 
     def _validate_parent_move(
         self,
@@ -338,26 +334,12 @@ class Repository:
         return item
 
     def _create_item_internal(self, payload: ItemCreate) -> Item:
-        item = self._safe_create_item(payload)
+        # Delegate all validation and normalization to models; always provide
+        # the current locations map so location_id can be validated and
+        # location_path can be denormalized when present.
+        item = create_item_from_create(payload, locations_by_id=self._locations_by_id)
         self._index_item(item)
         return item
-
-    def _safe_create_item(self, payload: ItemCreate) -> Item:
-        # Provide location map so validation and denormalization can occur
-        item = None
-        if payload.get("location_id"):
-            item = self._create_item_with_locations(payload)
-        else:
-            item = self._create_item_without_locations(payload)
-        assert item is not None
-        return item
-
-    def _create_item_without_locations(self, payload: ItemCreate) -> Item:
-        # Fast path: no location validation required
-        return create_item_from_create(payload)
-
-    def _create_item_with_locations(self, payload: ItemCreate) -> Item:
-        return create_item_from_create(payload, locations_by_id=self._locations_by_id)
 
     def get_item(self, item_id: str | uuid.UUID) -> Item:
         item = self._items_by_id.get(str(item_id))
@@ -484,18 +466,12 @@ class Repository:
 
     def create_location(self, *, name: str, parent_id: str | uuid.UUID | None = None) -> Location:
         name = validate_location_name(name)
-        # Parse/normalize parent id to UUID once at ingress
+        # Parse/normalize parent id once at ingress using shared helper
         parsed_parent: uuid.UUID | None
         if parent_id is None:
             parsed_parent = None
-        elif isinstance(parent_id, uuid.UUID):
-            parsed_parent = parent_id
         else:
-            try:
-                parsed_parent = uuid.UUID(str(parent_id))
-            except Exception:
-                # Unknown/invalid parent will fail lookup below
-                parsed_parent = uuid.UUID(int=0)
+            parsed_parent = parse_uuid4(parent_id, field_name="parent_id")
         parent_key = str(parsed_parent) if parsed_parent is not None else None
         if parent_key is not None and parent_key not in self._locations_by_id:
             raise ValidationError("parent_id must reference an existing location")

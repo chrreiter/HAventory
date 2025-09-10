@@ -176,11 +176,8 @@ def _op_item_delete(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
     repo = _repo(hass)
     item_id = payload.get("item_id")
     expected = payload.get("expected_version")
-    try:
-        before = repo.get_item(item_id)
-        serialized_before = _serialize_item(before)
-    except NotFoundError:
-        serialized_before = {"id": item_id}
+    before = repo.get_item(item_id)
+    serialized_before = _serialize_item(before)
     repo.delete_item(item_id, expected_version=expected)
     return serialized_before, "deleted"
 
@@ -731,11 +728,8 @@ async def ws_item_update(hass: HomeAssistant, _conn, msg):
 async def ws_item_delete(hass: HomeAssistant, _conn, msg):
     item_id = msg.get("item_id")
     repo = _repo(hass)
-    try:
-        before = repo.get_item(item_id)
-        serialized_before = _serialize_item(before)
-    except NotFoundError:
-        serialized_before = {"id": item_id}
+    before = repo.get_item(item_id)
+    serialized_before = _serialize_item(before)
     repo.delete_item(item_id, expected_version=msg.get("expected_version"))
     _broadcast_event(
         hass,
@@ -1020,11 +1014,8 @@ async def ws_location_update(hass: HomeAssistant, _conn, msg):
 async def ws_location_delete(hass: HomeAssistant, _conn, msg):
     loc_id = msg.get("location_id")
     repo = _repo(hass)
-    try:
-        before = repo.get_location(loc_id)
-        serialized_before = _serialize_location(before)
-    except NotFoundError:
-        serialized_before = {"id": loc_id}
+    before = repo.get_location(loc_id)
+    serialized_before = _serialize_location(before)
     repo.delete_location(loc_id)
     _broadcast_event(
         hass,
