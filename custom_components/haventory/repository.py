@@ -23,6 +23,7 @@ from typing import Any, TypedDict
 from .exceptions import ConflictError, NotFoundError, ValidationError
 from .models import (
     EMPTY_LOCATION_PATH,
+    LOCATION_GUARD_MAX_STEPS,
     Item,
     ItemCreate,
     ItemFilter,
@@ -52,9 +53,7 @@ class PageResult(TypedDict):
 # Sentinel for optional args that distinguish "not provided" from explicit None
 UNSET: object = object()
 
-# Lint-friendly constants
-LOCATION_GUARD_MAX_STEPS: int = 10_000
-NAME_MAX_LENGTH_CONST: int = 120
+# Lint-friendly constants — removed duplicates; shared constants live in models
 
 
 class Repository:

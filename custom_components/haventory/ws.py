@@ -333,6 +333,7 @@ def _send_event_message(conn, subscription_id: int, event_payload: dict[str, Any
         LOGGER.debug(
             "Failed to send WS event message",
             extra={"domain": DOMAIN, "op": "send_event", "subscription_id": subscription_id},
+            exc_info=True,
         )
 
 
@@ -753,6 +754,7 @@ async def ws_item_adjust_quantity(hass: HomeAssistant, _conn, msg):
 @ws_guard("item_set_quantity", ("item_id", "quantity", "expected_version"))
 async def ws_item_set_quantity(hass: HomeAssistant, _conn, msg):
     qty = msg.get("quantity")
+    # Validate upfront so schema errors surface as validation_error even when id is bad
     if not isinstance(qty, int) or qty < 0:
         raise ValidationError("quantity must be an integer >= 0")
     item = _repo(hass).set_quantity(
@@ -939,6 +941,7 @@ async def ws_items_bulk(hass: HomeAssistant, _conn, msg):
 
 @websocket_api.websocket_command({"type": "haventory/item/list"})
 @websocket_api.async_response
+@ws_guard("item_list", ())
 async def ws_item_list(hass: HomeAssistant, _conn, msg):
     # Accept filter/sort/limit/cursor passthrough
     flt = msg.get("filter")

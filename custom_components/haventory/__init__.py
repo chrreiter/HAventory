@@ -90,6 +90,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         LOGGER.debug(
             "Failed to cleanup WS handlers from test stub registry",
             extra={"domain": DOMAIN, "op": "unload_ws_stub_cleanup"},
+            exc_info=True,
         )
 
     bucket.pop("ws_handlers", None)

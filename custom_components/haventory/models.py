@@ -162,7 +162,7 @@ def parse_uuid4(value: str | uuid.UUID, *, field_name: str = "id") -> uuid.UUID:
         raise ValidationError(f"{field_name} must be a UUID v4 string")
     try:
         parsed = uuid.UUID(value)
-    except Exception as exc:  # pragma: no cover - specific parsing failure
+    except ValueError as exc:  # pragma: no cover - specific parsing failure
         raise ValidationError(f"{field_name} must be a UUID v4 string") from exc
     if parsed.version != UUID_VERSION_V4:
         raise ValidationError(f"{field_name} must be a UUID v4")
@@ -203,7 +203,7 @@ def normalize_date_yyyy_mm_dd(value: str) -> str:
     try:
         # This ensures the date components are valid (e.g., no Feb 30)
         datetime.strptime(value, "%Y-%m-%d")
-    except Exception as exc:
+    except ValueError as exc:
         raise ValidationError("due_date must be a valid calendar date (YYYY-MM-DD)") from exc
     return value
 
@@ -551,7 +551,7 @@ def _parse_iso8601_utc(ts: str, *, field_name: str) -> datetime:
             raise ValueError
         # Support YYYY-MM-DDTHH:MM:SSZ (no offset, no micros)
         return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
-    except Exception as exc:
+    except ValueError as exc:
         raise ValidationError(f"{field_name} must be an ISO-8601 UTC timestamp with 'Z'") from exc
 
 

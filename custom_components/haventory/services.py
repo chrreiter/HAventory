@@ -135,7 +135,7 @@ def _log_domain_error(op: str, context: dict[str, Any], exc: Exception) -> None:
     level = logging.WARNING
     if isinstance(exc, ConflictError | StorageError):
         level = logging.ERROR
-    LOGGER.log(level, str(exc), extra={"domain": DOMAIN, "op": op, **context})
+    LOGGER.log(level, str(exc), extra={"domain": DOMAIN, "op": op, **context}, exc_info=True)
 
 
 async def _persist_repo(hass: HomeAssistant) -> None:
