@@ -78,3 +78,51 @@ async def test_bulk_mixed_results_and_single_persist(monkeypatch) -> None:
 
     # Persist should have been called at least once (for the successes)
     assert calls["count"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_bulk_empty_and_invalid_operations_and_duplicate_ids(monkeypatch) -> None:
+    """Bulk: empty returns empty results; invalid type rejected; dup op_id last wins."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    store = DomainStore(hass)
+    hass.data[DOMAIN]["store"] = store
+    ws_setup(hass)
+
+    calls = {"count": 0}
+
+    async def _spy_save(_payload):  # type: ignore[no-untyped-def]
+        calls["count"] += 1
+
+    monkeypatch.setattr(store, "async_save", _spy_save)
+
+    # Empty operations list
+    res = await _send(hass, 1, "haventory/items/bulk", operations=[])
+    assert res["success"] is True and res["result"]["results"] == {}
+    assert calls["count"] == 0  # nothing to persist
+
+    # Invalid operations type
+    res = await _send(hass, 2, "haventory/items/bulk", operations="oops")
+    assert res["success"] is False and res["error"]["code"] == "validation_error"
+
+    # Duplicate op_id: last result should be in the map
+    created = await _send(hass, 3, "haventory/item/create", name="X", quantity=1)
+    iid = created["result"]["id"]
+    FINAL_QTY = 3
+    ops = [
+        {
+            "op_id": "dup",
+            "kind": "item_set_quantity",
+            "payload": {"item_id": iid, "quantity": 2},
+        },
+        {
+            "op_id": "dup",
+            "kind": "item_set_quantity",
+            "payload": {"item_id": iid, "quantity": FINAL_QTY},
+        },
+    ]
+    res = await _send(hass, 4, "haventory/items/bulk", operations=ops)
+    assert res["success"] is True
+    assert res["result"]["results"]["dup"]["success"] is True
+    assert res["result"]["results"]["dup"]["result"]["quantity"] == FINAL_QTY

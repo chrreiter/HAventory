@@ -164,3 +164,29 @@ async def test_item_move_updates_location() -> None:
 
     res = await _send(hass, 3, "haventory/item/move", item_id=item_id, location_id=loc_id)
     assert res["success"] is True and res["result"]["location_id"] == loc_id
+
+
+@pytest.mark.asyncio
+async def test_unknown_command_and_type_errors() -> None:
+    """Unknown command type and bad payloads produce validation_error envelopes."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    # Unknown command type: ensure no handler responds
+    with pytest.raises(AssertionError):
+        await _send(hass, 99, "haventory/does_not_exist")
+
+    # Type errors inside payload for wrappers that validate
+    created = await _send(hass, 1, "haventory/item/create", name="Thing")
+    iid = created["result"]["id"]
+    res = await _send(
+        hass,
+        2,
+        "haventory/item/set_quantity",
+        item_id=iid,
+        quantity=-5,  # invalid
+    )
+    assert res["success"] is False and res["error"]["code"] == "validation_error"

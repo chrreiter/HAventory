@@ -123,6 +123,31 @@ async def test_unsubscribe_stops_events() -> None:
 
 
 @pytest.mark.asyncio
+async def test_double_subscribe_and_unsubscribe_edge() -> None:
+    """Double subscribing reuses conn bucket; unsubscribe of unknown id is benign."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    conn = _ConnStub()
+
+    # Two subscriptions for same topic with different ids
+    await _send(hass, conn, 401, "haventory/subscribe", topic="stats")
+    await _send(hass, conn, 402, "haventory/subscribe", topic="stats")
+
+    # Unsubscribe unknown id should succeed and not crash
+    res = await _send(hass, conn, 499, "haventory/unsubscribe", subscription=999)
+    assert res["success"] is True
+
+    # Trigger mutation and ensure at least one event delivered
+    await _send(hass, conn, 1, "haventory/item/create", name="Hammer")
+    events = _extract_events(conn, topic="stats")
+    assert any(ev.get("action") == "counts" for ev in events)
+
+
+@pytest.mark.asyncio
 async def test_location_filters_subtree_and_direct_only() -> None:
     """location_id + include_subtree filters constrain delivered item events."""
 
