@@ -41,6 +41,39 @@ async def test_item_create_schema_defaults_and_required() -> None:
 
 
 @pytest.mark.asyncio
+async def test_negative_schema_cases() -> None:
+    """Negative cases: wrong types and missing required fields are rejected."""
+
+    # item_update missing item_id
+    with pytest.raises(vol.Invalid):
+        SCHEMA_ITEM_UPDATE({})
+
+    # item_set_quantity wrong type
+    with pytest.raises(vol.Invalid):
+        SCHEMA_ITEM_SET_QTY({"item_id": "i", "quantity": "not-int"})
+
+    # item_adjust_quantity wrong type
+    with pytest.raises(vol.Invalid):
+        SCHEMA_ITEM_ADJUST_QTY({"item_id": "i", "delta": "x"})
+
+    # item_check_out missing due_date
+    with pytest.raises(vol.Invalid):
+        SCHEMA_ITEM_CHECK_OUT({"item_id": "i"})
+
+    # item_move missing item_id
+    with pytest.raises(vol.Invalid):
+        SCHEMA_ITEM_MOVE({})
+
+    # location_update missing location_id
+    with pytest.raises(vol.Invalid):
+        SCHEMA_LOCATION_UPDATE({})
+
+    # location_delete missing location_id
+    with pytest.raises(vol.Invalid):
+        SCHEMA_LOCATION_DELETE({})
+
+
+@pytest.mark.asyncio
 async def test_item_update_schema_shapes() -> None:
     """item_update requires item_id and accepts optional fields."""
 
