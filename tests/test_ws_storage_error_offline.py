@@ -56,8 +56,7 @@ async def test_ws_maps_storage_error_and_logs(caplog, monkeypatch) -> None:
     assert res["success"] is False
     assert res["error"]["code"] == "storage_error"
 
-    # Ensure an ERROR log was emitted for this op
-    assert any(
-        r.levelno == logging.ERROR and getattr(r, "op", None) == "item_create"
-        for r in caplog.records
-    )
+    # Exactly one ERROR boundary log for this op
+    logs = [r for r in caplog.records if r.name == "custom_components.haventory.ws"]
+    assert len(logs) == 1 and logs[0].levelno == logging.ERROR
+    assert getattr(logs[0], "op", None) == "item_create"

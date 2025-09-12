@@ -119,12 +119,32 @@ async def test_item_list_pagination_cursor_passthrough() -> None:
 
 @pytest.mark.asyncio
 async def test_error_mapping_validation_and_not_found_and_conflict() -> None:
-    """Ensure errors map to codes and include minimal context."""
+    """Ensure errors map to codes and include context."""
 
     hass = HomeAssistant()
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
+
+    # validation_error: negative quantity
+    v = await _send(hass, 1, "haventory/item/set_quantity", item_id="x", quantity=-1)
+    assert v["success"] is False and v["error"]["code"] == "validation_error"
+    # Context includes op and input fields
+    assert v["error"].get("context", v["error"].get("data", {})).get("op") == "item_set_quantity"
+
+    # not_found: get by unknown id
+    n = await _send(hass, 2, "haventory/item/get", item_id="00000000-0000-4000-8000-000000000000")
+    assert n["success"] is False and n["error"]["code"] == "not_found"
+    assert n["error"].get("context", n["error"].get("data", {})).get("op") == "item_get"
+
+    # conflict: create then update with stale expected_version
+    c = await _send(hass, 3, "haventory/item/create", name="Widget")
+    iid = c["result"]["id"]
+    stale = await _send(
+        hass, 4, "haventory/item/update", item_id=iid, expected_version=999, name="X"
+    )
+    assert stale["success"] is False and stale["error"]["code"] == "conflict"
+    assert stale["error"].get("context", stale["error"].get("data", {})).get("op") == "item_update"
 
 
 @pytest.mark.asyncio
