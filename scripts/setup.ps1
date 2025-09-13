@@ -29,7 +29,7 @@ Invoke-Python -Args @('-m','pip','install','-U','pip')
 if (Test-Path 'requirements-dev.txt') {
   pip install -r requirements-dev.txt
 } else {
-  pip install pytest pytest-asyncio aioresponses tzdata "aiohttp>=3.9.1" "ruff==0.13.0" pytest-cov pre-commit
+  throw 'requirements-dev.txt not found. This repository expects it to be present.'
 }
 
 if (-not $CI) {
