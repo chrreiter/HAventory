@@ -1,4 +1,5 @@
 pytest
-ruff
+pytest-asyncio
+ruff==0.13.0
 pytest-cov
 pre-commit
