@@ -45,7 +45,7 @@ def _build_locations() -> tuple[dict[str, Location], Location, Location, Locatio
 
 @pytest.mark.asyncio
 async def test_filter_q_matches_name_description_tags_and_location() -> None:
-    by_id, root, mid, leaf = _build_locations()
+    by_id, _root, _mid, leaf = _build_locations()
     a = create_item_from_create({"name": "Electric Saw", "description": "Power cutting TOOL"})
     b = create_item_from_create({"name": "Glue", "description": "Strong adhesive"})
     c = create_item_from_create({"name": "Band", "tags": ["First Aid"]})
