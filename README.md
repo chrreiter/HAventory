@@ -86,6 +86,12 @@ Use this checklist when working on HAventory. Keep it up to date if conventions 
 - Services: `haventory.*`
 - Built assets: `www/haventory/`
 - Calendar entity id: `calendar.haventory`
+- Logging: Avoid reserved LogRecord keys in logger extras; use `item_name`/`location_name` instead of `name` in logging context
+
+### Developer docs
+
+- WebSocket API contract: `docs/backend_api_contract.md`
+- Data shapes (Item/Location/filter/sort/events): `docs/data_shapes.md`
 
 - [ ] Use `scripts/reload_addon.ps1 -ContainerName <your_container> -UseDevConfig:$true -TailLogs:$true -SleepSecondsAfterRestart 8`
 - [ ] When `-UseDevConfig:$false`, deploy `examples\configuration.yaml`
