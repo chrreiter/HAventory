@@ -4,10 +4,11 @@
   "codeowners": ["@chrreiter"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/chrreiter/HAventory",
+  "documentation": "https://github.com/chrreiter/HAventory#readme",
   "integration_type": "service",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/chrreiter/HAventory/issues",
   "requirements": [],
-  "version": "0.0.0"
+  "version": "0.0.1",
+  "homeassistant": "2024.8.0"
 }
