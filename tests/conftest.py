@@ -116,6 +116,26 @@ ha_data_entry_flow.FlowResult = FlowResult
 ha_helpers = types.ModuleType("homeassistant.helpers")
 sys.modules["homeassistant.helpers"] = ha_helpers
 
+ha_helpers_cv = types.ModuleType("homeassistant.helpers.config_validation")
+
+
+def empty_config_schema(_domain: str):  # type: ignore[override]
+    return lambda cfg=None: {}
+
+
+def platform_only_config_schema(_domain: str):  # type: ignore[override]
+    return lambda cfg=None: {}
+
+
+def config_entry_only_config_schema(_domain: str):  # type: ignore[override]
+    return lambda cfg=None: {}
+
+
+ha_helpers_cv.empty_config_schema = empty_config_schema
+ha_helpers_cv.platform_only_config_schema = platform_only_config_schema
+ha_helpers_cv.config_entry_only_config_schema = config_entry_only_config_schema
+sys.modules["homeassistant.helpers.config_validation"] = ha_helpers_cv
+
 ha_helpers_storage = types.ModuleType("homeassistant.helpers.storage")
 
 

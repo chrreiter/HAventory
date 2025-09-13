@@ -10,6 +10,7 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 
 from . import services as services_mod
 from . import ws as ws_mod
@@ -19,6 +20,10 @@ from .storage import DomainStore
 
 STORAGE_VERSION = 1
 LOGGER = logging.getLogger(__name__)
+
+
+# This integration is config-entry only; no YAML configuration is accepted.
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
