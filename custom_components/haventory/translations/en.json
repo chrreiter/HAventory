@@ -1,0 +1,47 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HAventory",
+        "description": "Set up HAventory integration for inventory management in Home Assistant."
+      }
+    },
+    "create_entry": {
+      "default": "Successfully configured HAventory"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HAventory Options",
+        "description": "Configure HAventory options."
+      }
+    }
+  },
+  "services": {
+    "item_create": {
+      "name": "Create item",
+      "description": "Create a new inventory item."
+    },
+    "item_update": {
+      "name": "Update item",
+      "description": "Update an existing inventory item."
+    },
+    "item_delete": {
+      "name": "Delete item",
+      "description": "Delete an inventory item."
+    },
+    "location_create": {
+      "name": "Create location",
+      "description": "Create a new storage location."
+    },
+    "location_update": {
+      "name": "Update location",
+      "description": "Update an existing storage location."
+    },
+    "location_delete": {
+      "name": "Delete location",
+      "description": "Delete a storage location."
+    }
+  }
+}
