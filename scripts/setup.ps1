@@ -29,7 +29,7 @@ Invoke-Python -Args @('-m','pip','install','-U','pip')
 if (Test-Path 'requirements-dev.txt') {
   pip install -r requirements-dev.txt
 } else {
-  pip install pytest pytest-asyncio aioresponses tzdata "beautifulsoup4==4.12.3" "aiohttp>=3.9.1" ruff pytest-cov pre-commit
+  pip install pytest pytest-asyncio aioresponses tzdata "aiohttp>=3.9.1" "ruff==0.13.0" pytest-cov pre-commit
 }
 
 if (-not $CI) {
