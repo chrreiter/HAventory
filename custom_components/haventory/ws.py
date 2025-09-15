@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, TypedDict
 
+import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
@@ -422,11 +423,13 @@ async def _persist_repo(hass: HomeAssistant) -> None:
 # -----------------------------
 
 
-@websocket_api.websocket_command({"type": "haventory/ping"})
+@websocket_api.websocket_command(
+    {vol.Required("type"): "haventory/ping", vol.Optional("echo"): object}
+)
 @websocket_api.async_response
-async def ws_ping(hass: HomeAssistant, _conn, msg):
+async def ws_ping(hass: HomeAssistant, conn, msg):
     result = {"echo": msg.get("echo"), "ts": _now_ts()}
-    return websocket_api.result_message(msg.get("id", 0), result)
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
 
 def _schema_version_from_hass(hass: HomeAssistant) -> int:
@@ -437,19 +440,19 @@ def _schema_version_from_hass(hass: HomeAssistant) -> int:
 
 @websocket_api.websocket_command({"type": "haventory/version"})
 @websocket_api.async_response
-async def ws_version(hass: HomeAssistant, _conn, msg):
+async def ws_version(hass: HomeAssistant, conn, msg):
     result = {
         "integration_version": INTEGRATION_VERSION,
         "schema_version": _schema_version_from_hass(hass),
     }
-    return websocket_api.result_message(msg.get("id", 0), result)
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
 
 @websocket_api.websocket_command({"type": "haventory/stats"})
 @websocket_api.async_response
-async def ws_stats(hass: HomeAssistant, _conn, msg):
+async def ws_stats(hass: HomeAssistant, conn, msg):
     counts = _repo(hass).get_counts()
-    return websocket_api.result_message(msg.get("id", 0), counts)
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), counts))
 
 
 def _health_indexes(repo: Repository) -> dict[str, object]:
@@ -600,11 +603,11 @@ def _collect_health_issues(repo: Repository) -> tuple[list[str], dict[str, int]]
 
 @websocket_api.websocket_command({"type": "haventory/health"})
 @websocket_api.async_response
-async def ws_health(hass: HomeAssistant, _conn, msg):
+async def ws_health(hass: HomeAssistant, conn, msg):
     issues, counts = _collect_health_issues(_repo(hass))
     healthy = len(issues) == 0
     result = {"healthy": healthy, "issues": issues, "counts": counts}
-    return websocket_api.result_message(msg.get("id", 0), result)
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
 
 # -----------------------------
