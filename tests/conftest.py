@@ -192,7 +192,43 @@ def error_message(_id: int, code: str, message: str, data: dict | None = None): 
 
 def async_register_command(hass: HomeAssistant, handler):  # type: ignore[override]
     registry = hass.data.setdefault("__ws_commands__", [])
-    registry.append(handler)
+
+    async def _wrapped(hass: HomeAssistant, conn, msg):  # type: ignore[override]
+        local_conn = conn
+        stub = None
+        if local_conn is None:
+
+            class _StubConn:  # simple capture stub used in offline tests
+                def __init__(self) -> None:
+                    self.last = None
+
+                def send_message(self, m):
+                    self.last = m
+
+            stub = _StubConn()
+            local_conn = stub
+        res = await handler(hass, local_conn, msg)
+        if res is not None:
+            return res
+        # Prefer captured message from our stub, then from provided conn if it collects messages
+        if stub is not None and getattr(stub, "last", None) is not None:
+            return stub.last
+        try:
+            msgs = getattr(local_conn, "messages", None)
+            if isinstance(msgs, list) and msgs:
+                return msgs[-1]
+        except Exception:
+            pass
+        return None
+
+    # Preserve HA websocket metadata so tests can discover handlers by schema
+    for attr in ("_ws_schema", "_ws_command", "_ws_async_response"):
+        try:
+            setattr(_wrapped, attr, getattr(handler, attr, None))
+        except Exception:
+            pass
+
+    registry.append(_wrapped)
 
 
 ha_ws.websocket_command = websocket_command
