@@ -697,7 +697,22 @@ async def ws_unsubscribe(hass: HomeAssistant, conn, msg):
 # -----------------------------
 
 
-@websocket_api.websocket_command({"type": "haventory/item/create"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/create",
+        # ItemCreate fields (name required; others optional)
+        vol.Required("name"): str,
+        vol.Optional("description"): object,
+        vol.Optional("quantity"): int,
+        vol.Optional("checked_out"): bool,
+        vol.Optional("due_date"): str,
+        vol.Optional("location_id"): object,
+        vol.Optional("tags"): [str],
+        vol.Optional("category"): object,
+        vol.Optional("low_stock_threshold"): object,
+        vol.Optional("custom_fields"): {str: object},
+    }
+)
 @websocket_api.async_response
 @ws_guard("item_create", ("name",))
 async def ws_item_create(hass: HomeAssistant, conn, msg):
@@ -710,7 +725,9 @@ async def ws_item_create(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
-@websocket_api.websocket_command({"type": "haventory/item/get"})
+@websocket_api.websocket_command(
+    {vol.Required("type"): "haventory/item/get", vol.Required("item_id"): object}
+)
 @websocket_api.async_response
 @ws_guard("item_get", ("item_id",))
 async def ws_item_get(hass: HomeAssistant, conn, msg):
@@ -718,7 +735,25 @@ async def ws_item_get(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), _serialize_item(item)))
 
 
-@websocket_api.websocket_command({"type": "haventory/item/update"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/update",
+        vol.Required("item_id"): object,
+        vol.Optional("expected_version"): int,
+        # ItemUpdate fields (all optional)
+        vol.Optional("name"): object,
+        vol.Optional("description"): object,
+        vol.Optional("quantity"): int,
+        vol.Optional("checked_out"): bool,
+        vol.Optional("due_date"): str,
+        vol.Optional("location_id"): object,
+        vol.Optional("tags"): object,
+        vol.Optional("category"): object,
+        vol.Optional("low_stock_threshold"): object,
+        vol.Optional("custom_fields_set"): {str: object},
+        vol.Optional("custom_fields_unset"): [str],
+    }
+)
 @websocket_api.async_response
 @ws_guard("item_update", ("item_id", "expected_version"))
 async def ws_item_update(hass: HomeAssistant, conn, msg):
@@ -744,7 +779,13 @@ async def ws_item_update(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
-@websocket_api.websocket_command({"type": "haventory/item/delete"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/delete",
+        vol.Required("item_id"): object,
+        vol.Optional("expected_version"): int,
+    }
+)
 @websocket_api.async_response
 @ws_guard("item_delete", ("item_id", "expected_version"))
 async def ws_item_delete(hass: HomeAssistant, conn, msg):
@@ -920,7 +961,9 @@ async def ws_item_move(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
-@websocket_api.websocket_command({"type": "haventory/items/bulk"})
+@websocket_api.websocket_command(
+    {vol.Required("type"): "haventory/items/bulk", vol.Required("operations"): list}
+)
 @websocket_api.async_response
 @ws_guard("items_bulk", ())
 async def ws_items_bulk(hass: HomeAssistant, conn, msg):
@@ -968,7 +1011,15 @@ async def ws_items_bulk(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), {"results": results}))
 
 
-@websocket_api.websocket_command({"type": "haventory/item/list"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/list",
+        vol.Optional("filter"): dict,
+        vol.Optional("sort"): dict,
+        vol.Optional("limit"): int,
+        vol.Optional("cursor"): str,
+    }
+)
 @websocket_api.async_response
 @ws_guard("item_list", ())
 async def ws_item_list(hass: HomeAssistant, conn, msg):
