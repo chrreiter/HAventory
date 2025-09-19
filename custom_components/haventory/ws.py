@@ -972,7 +972,14 @@ async def ws_item_update_custom_fields(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
-@websocket_api.websocket_command({"type": "haventory/item/set_low_stock_threshold"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/set_low_stock_threshold",
+        vol.Required("item_id"): object,
+        vol.Optional("expected_version"): int,
+        vol.Optional("low_stock_threshold"): object,
+    }
+)
 @websocket_api.async_response
 @ws_guard("item_set_low_stock_threshold", ("item_id", "expected_version"))
 async def ws_item_set_low_stock_threshold(hass: HomeAssistant, conn, msg):
