@@ -851,7 +851,14 @@ async def ws_item_set_quantity(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
-@websocket_api.websocket_command({"type": "haventory/item/check_out"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/check_out",
+        vol.Required("item_id"): object,
+        vol.Optional("due_date"): str,
+        vol.Optional("expected_version"): int,
+    }
+)
 @websocket_api.async_response
 @ws_guard("item_check_out", ("item_id", "due_date", "expected_version"))
 async def ws_item_check_out(hass: HomeAssistant, conn, msg):
@@ -867,7 +874,13 @@ async def ws_item_check_out(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
-@websocket_api.websocket_command({"type": "haventory/item/check_in"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/check_in",
+        vol.Required("item_id"): object,
+        vol.Optional("expected_version"): int,
+    }
+)
 @websocket_api.async_response
 @ws_guard("item_check_in", ("item_id", "expected_version"))
 async def ws_item_check_in(hass: HomeAssistant, conn, msg):
