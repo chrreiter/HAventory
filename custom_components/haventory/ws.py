@@ -805,7 +805,14 @@ async def ws_item_delete(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
 
 
-@websocket_api.websocket_command({"type": "haventory/item/adjust_quantity"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/adjust_quantity",
+        vol.Required("item_id"): object,
+        vol.Required("delta"): int,
+        vol.Optional("expected_version"): int,
+    }
+)
 @websocket_api.async_response
 @ws_guard("item_adjust_quantity", ("item_id", "delta", "expected_version"))
 async def ws_item_adjust_quantity(hass: HomeAssistant, conn, msg):
@@ -819,7 +826,14 @@ async def ws_item_adjust_quantity(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
-@websocket_api.websocket_command({"type": "haventory/item/set_quantity"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/set_quantity",
+        vol.Required("item_id"): object,
+        vol.Required("quantity"): int,
+        vol.Optional("expected_version"): int,
+    }
+)
 @websocket_api.async_response
 @ws_guard("item_set_quantity", ("item_id", "quantity", "expected_version"))
 async def ws_item_set_quantity(hass: HomeAssistant, conn, msg):
