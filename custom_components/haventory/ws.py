@@ -942,7 +942,14 @@ async def ws_item_set_low_stock_threshold(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
-@websocket_api.websocket_command({"type": "haventory/item/move"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/move",
+        vol.Required("item_id"): object,
+        vol.Optional("expected_version"): int,
+        vol.Optional("location_id"): object,
+    }
+)
 @websocket_api.async_response
 @ws_guard("item_move", ("item_id", "location_id", "expected_version"))
 async def ws_item_move(hass: HomeAssistant, conn, msg):
