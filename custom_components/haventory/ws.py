@@ -892,7 +892,14 @@ async def ws_item_check_in(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
-@websocket_api.websocket_command({"type": "haventory/item/add_tags"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/add_tags",
+        vol.Required("item_id"): object,
+        vol.Optional("expected_version"): int,
+        vol.Optional("tags"): [str],
+    }
+)
 @websocket_api.async_response
 @ws_guard("item_add_tags", ("item_id", "expected_version"))
 async def ws_item_add_tags(hass: HomeAssistant, conn, msg):
@@ -911,7 +918,14 @@ async def ws_item_add_tags(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
-@websocket_api.websocket_command({"type": "haventory/item/remove_tags"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/remove_tags",
+        vol.Required("item_id"): object,
+        vol.Optional("expected_version"): int,
+        vol.Optional("tags"): [str],
+    }
+)
 @websocket_api.async_response
 @ws_guard("item_remove_tags", ("item_id", "expected_version"))
 async def ws_item_remove_tags(hass: HomeAssistant, conn, msg):
@@ -930,7 +944,15 @@ async def ws_item_remove_tags(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
-@websocket_api.websocket_command({"type": "haventory/item/update_custom_fields"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/update_custom_fields",
+        vol.Required("item_id"): object,
+        vol.Optional("expected_version"): int,
+        vol.Optional("set"): dict,
+        vol.Optional("unset"): [str],
+    }
+)
 @websocket_api.async_response
 @ws_guard("item_update_custom_fields", ("item_id", "expected_version"))
 async def ws_item_update_custom_fields(hass: HomeAssistant, conn, msg):
