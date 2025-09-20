@@ -29,7 +29,10 @@ if ($Env:HA_CONTAINER) {
 # Avoid 3rd-party pytest plugin interference
 $Env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = '1'
 
-pytest -q -m online --disable-warnings --maxfail=1
+# Run core and advanced online smoke tests explicitly
+pytest -q -m online --disable-warnings --maxfail=1 `
+  tests\test_ws_smoke_online.py `
+  tests\test_ws_smoke_advanced_online.py
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host 'Online smoke test completed successfully.' -ForegroundColor Green
