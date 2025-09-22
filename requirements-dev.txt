@@ -1,6 +1,6 @@
 pytest
 pytest-asyncio
-ruff==0.13.0
+ruff==0.13.1
 pytest-cov
 pre-commit
 voluptuous
