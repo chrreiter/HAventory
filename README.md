@@ -21,6 +21,24 @@ Use this checklist when working on HAventory. Keep it up to date if conventions 
 - [ ] Edge cases covered; errors log context; coverage ≥ target.
 - [ ] Optional: integration smoke tests (pytest-homeassistant-custom-component).
 
+#### Online smoke tests (optional)
+These tests hit a real Home Assistant instance over WebSocket. They are opt-in and require environment variables.
+
+- Prereqs: Home Assistant running, long-lived token, venv activated
+- Set env and run (PowerShell):
+
+```powershell
+$env:RUN_ONLINE = '1'
+$env:HA_BASE_URL = 'http://localhost:8123'
+$env:HA_TOKEN = '<your-long-lived-token>'
+pytest -q -m online -k "ws_smoke or ws_smoke_advanced"
+Remove-Item Env:\RUN_ONLINE
+```
+
+Included smoke tests:
+- `tests/test_ws_smoke_online.py` — Phase-0 ping/version/stats + Phase-1 locations CRUD tree/validation
+- `tests/test_ws_smoke_advanced_online.py` — Phase-3 bulk mixed/all-failure flows
+
 #### Coverage
 - Backend (pytest-cov):
   - Local quick run: `scripts\ci_local.ps1` (produces `coverage.xml` and browsable `htmlcov\index.html`).
@@ -95,3 +113,52 @@ Use this checklist when working on HAventory. Keep it up to date if conventions 
 
 - [ ] Use `scripts/reload_addon.ps1 -ContainerName <your_container> -UseDevConfig:$true -TailLogs:$true -SleepSecondsAfterRestart 8`
 - [ ] When `-UseDevConfig:$false`, deploy `examples\configuration.yaml`
+
+### WebSocket helper scripts
+
+Quick probes and subscriptions without writing test code.
+
+1) `scripts/ws_probe.py` — send a single WS command and print the first reply
+
+Environment (PowerShell):
+- `HA_BASE_URL` (default `http://localhost:8123`)
+- `HA_TOKEN` (required)
+- `HAV_MSG` (required; JSON string)
+
+Examples:
+```powershell
+$env:HAV_MSG = '{"id":1,"type":"haventory/ping","echo":"hi"}'
+python .\scripts\ws_probe.py
+
+$env:HAV_MSG = '{"id":2,"type":"haventory/version"}'
+python .\scripts\ws_probe.py
+```
+
+2) `scripts/ws_subscribe.py` — subscribe to a topic and print events/results
+
+Environment (PowerShell):
+- `HA_BASE_URL`, `HA_TOKEN`
+- `HAV_TOPIC` = `items` | `locations` | `stats`
+- Optional: `HAV_LOCATION_ID`, `HAV_INCLUDE_SUBTREE` (for `locations`), `HAV_MAX_EVENTS` (default 5)
+- Optional: `HAV_MUTATIONS` (JSON array of WS messages to send after subscribing)
+
+Examples:
+```powershell
+# Items topic with two mutations, stop after 3 frames
+$env:HAV_TOPIC = 'items'
+$env:HAV_MAX_EVENTS = '3'
+$env:HAV_MUTATIONS = '[{"id":101,"type":"haventory/item/create","name":"Bananas"},{"id":102,"type":"haventory/item/delete","item_id":"<id>"}]'
+python .\scripts\ws_subscribe.py
+
+# Subtree-filtered locations
+$env:HAV_TOPIC = 'locations'
+$env:HAV_LOCATION_ID = '<root-location-uuid>'
+$env:HAV_INCLUDE_SUBTREE = 'true'
+$env:HAV_MAX_EVENTS = '4'
+python .\scripts\ws_subscribe.py
+```
+
+### Logs and troubleshooting
+- Container logs: `docker logs -f <container>` (or `-n 200` for recent)
+- HA log file (if enabled): `/config/home-assistant.log` inside the container
+- HAventory storage file: `/config/.storage/haventory_store`
