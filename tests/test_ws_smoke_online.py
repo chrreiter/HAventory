@@ -93,18 +93,6 @@ def _id_counter(start: int = 0):
     return _next
 
 
-async def _find_location_id_by_name(
-    ws: aiohttp.ClientWebSocketResponse, name: str, next_id
-) -> str | None:
-    qid = next_id()
-    await ws.send_json({"id": qid, "type": "haventory/location/list"})
-    lst = await _expect_result(ws, qid)
-    for loc in lst.get("result", []) or []:
-        if isinstance(loc, dict) and loc.get("name") == name:
-            return str(loc.get("id"))
-    return None
-
-
 @pytest.mark.asyncio
 @pytest.mark.skipif(
     os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
