@@ -120,3 +120,37 @@ async def test_ws_location_mutations_persist_to_store(monkeypatch) -> None:
     # Validation: create with empty name
     res = await _send(hass, 2, "haventory/location/create", name="")
     assert res["success"] is False and res["error"]["code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+async def test_location_move_subtree_persists(monkeypatch) -> None:
+    """move_subtree persists via DomainStore.async_save."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    store = DomainStore(hass)
+    hass.data[DOMAIN]["store"] = store
+    ws_setup(hass)
+
+    calls = {"count": 0}
+
+    async def _spy_save(payload):  # type: ignore[no-untyped-def]
+        calls["count"] += 1
+
+    monkeypatch.setattr(store, "async_save", _spy_save)
+
+    # Create a small tree: Root -> Shelf
+    res_root = await _send(hass, 10, "haventory/location/create", name="Root")
+    root_id = res_root["result"]["id"]
+    res_child = await _send(hass, 11, "haventory/location/create", name="Shelf", parent_id=root_id)
+    child_id = res_child["result"]["id"]
+
+    before = calls["count"]
+    # Move subtree: Shelf -> root (new_parent_id=None)
+    res_move = await _send(
+        hass, 12, "haventory/location/move_subtree", location_id=child_id, new_parent_id=None
+    )
+    assert res_move["success"] is True
+    after = calls["count"]
+    # Expect at least one persist triggered by move_subtree
+    assert after >= before + 1
