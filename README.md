@@ -35,6 +35,16 @@ pytest -q -m online -k "ws_smoke or ws_smoke_advanced"
 Remove-Item Env:\RUN_ONLINE
 ```
 
+Or use the hardened helper script (auto-activates venv if present, gates on `RUN_ONLINE`, disables pytest plugin autoload, and uses `python -m pytest`):
+
+```powershell
+$env:RUN_ONLINE = '1'
+$env:HA_BASE_URL = 'http://localhost:8123'
+$env:HA_TOKEN = '<your-long-lived-token>'
+scripts\smoke_online.ps1
+Remove-Item Env:\RUN_ONLINE
+```
+
 Included smoke tests:
 - `tests/test_ws_smoke_online.py` — Phase-0 ping/version/stats + Phase-1 locations CRUD tree/validation
 - `tests/test_ws_smoke_advanced_online.py` — Phase-3 bulk mixed/all-failure flows
