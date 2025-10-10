@@ -113,7 +113,9 @@ def ws_guard(
                 # Returning a dict is only supported by our offline test stub.
                 err = _error_message(hass, msg.get("id", 0), exc, context=ctx)
                 try:
-                    conn.send_message(err)
+                    send = getattr(conn, "send_message", None)
+                    if callable(send):
+                        send(err)
                 except Exception:  # pragma: no cover - defensive logging only
                     LOGGER.debug(
                         "Failed to send WS error message",
@@ -124,7 +126,8 @@ def ws_guard(
                         },
                         exc_info=True,
                     )
-                return None
+                # Always return the envelope for offline tests and stubs
+                return err
 
         return wrapper
 
