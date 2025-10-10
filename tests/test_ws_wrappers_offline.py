@@ -17,6 +17,14 @@ from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
 
+class _StubConn:
+    def __init__(self) -> None:
+        self.last = None
+
+    def send_message(self, msg):
+        self.last = msg
+
+
 async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
     handlers = hass.data.get("__ws_commands__", [])
     for h in handlers:
@@ -27,8 +35,9 @@ async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
             continue
         req = {"id": _id, "type": type_}
         req.update(payload)
-        resp = await h(hass, None, req)
-        return resp
+        conn = _StubConn()
+        resp = await h(hass, conn, req)
+        return resp if resp is not None else conn.last
     raise AssertionError("No handler responded for type " + type_)
 
 

@@ -1,0 +1,23 @@
+# Minimal Home Assistant config for local development
+
+homeassistant:
+  name: HAventory Dev
+  unit_system: metric
+  time_zone: UTC
+
+default_config:
+
+# Enable HAventory logs prominently
+logger:
+  default: warning
+  logs:
+    custom_components.haventory: debug
+
+# Expose the integration's services and WS without YAML options (config-entry only)
+# No YAML section for haventory; it is set up via config flow.
+
+# Optional: enable the built-in websocket API and HTTP server configs explicitly
+http:
+  server_port: 8123
+
+websocket_api:
