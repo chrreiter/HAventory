@@ -81,6 +81,9 @@ class Repository:
         self._checked_out_item_ids: set[str] = set()
         self._low_stock_item_ids: set[str] = set()
         self._items_by_location_id: dict[str, set[str]] = {}
+        # Area indexes
+        self._locations_by_area_id: dict[str, set[str]] = {}
+        self._items_by_area_id: dict[str, set[str]] = {}
         # Optional timestamp buckets (not used for ordering, but kept as indexes)
         self._created_at_bucket: dict[str, set[str]] = {}
         self._updated_at_bucket: dict[str, set[str]] = {}
@@ -131,6 +134,11 @@ class Repository:
         if item.location_id:
             self._add_to_bucket(self._items_by_location_id, str(item.location_id), item_key)
 
+            # area membership (effective area resolved via location ancestry)
+            eff_area_id = self._resolve_effective_area_id_for_location(str(item.location_id))
+            if eff_area_id is not None:
+                self._add_to_bucket(self._items_by_area_id, eff_area_id, item_key)
+
         # timestamp buckets
         self._add_to_bucket(self._created_at_bucket, item.created_at, item_key)
         self._add_to_bucket(self._updated_at_bucket, item.updated_at, item_key)
@@ -153,6 +161,8 @@ class Repository:
 
         if item.location_id:
             self._remove_from_bucket(self._items_by_location_id, str(item.location_id), item_key)
+            # Remove from any area buckets (area could have changed since indexing)
+            self._remove_item_from_all_area_buckets(item_key)
 
         self._remove_from_bucket(self._created_at_bucket, item.created_at, item_key)
         self._remove_from_bucket(self._updated_at_bucket, item.updated_at, item_key)
@@ -161,6 +171,37 @@ class Repository:
 
         # Finally, drop from primary store
         self._items_by_id.pop(item_key, None)
+
+    def _remove_item_from_all_area_buckets(self, item_key: str) -> None:
+        # Defensive: remove an item id from every area bucket
+        for area_key in list(self._items_by_area_id.keys()):
+            s = self._items_by_area_id.get(area_key)
+            if not s:
+                continue
+            s.discard(item_key)
+            if not s:
+                self._items_by_area_id.pop(area_key, None)
+
+    def _resolve_effective_area_id_for_location(self, location_key: str) -> str | None:
+        """Return the effective area id (string) for a location by walking ancestors.
+
+        The first non-null ``area_id`` encountered from the node upwards is used.
+        Returns ``None`` if no ancestor defines an area.
+        """
+
+        cursor: str | None = location_key
+        guard = 0
+        while cursor is not None:
+            guard += 1
+            if guard > LOCATION_GUARD_MAX_STEPS:  # pragma: no cover - degenerate
+                return None
+            loc = self._locations_by_id.get(cursor)
+            if loc is None:
+                return None
+            if loc.area_id is not None:
+                return str(loc.area_id)
+            cursor = str(loc.parent_id) if loc.parent_id is not None else None
+        return None
 
     def _reindex_item_replacement(self, old: Item, new: Item) -> None:
         # Efficiently reindex by removing old and adding new
@@ -197,6 +238,23 @@ class Repository:
         # Unsupported type
         raise ValidationError("new_parent_id must be a UUID v4 string or null")
 
+    def _parse_area_change(
+        self, area_id: str | uuid.UUID | None | object, current_area: uuid.UUID | None
+    ) -> tuple[uuid.UUID | None, bool]:
+        """Parse the requested area change and return (target_area, area_changed).
+
+        Treats UNSET as no change, None as clear area, and validates UUID v4.
+        """
+
+        if area_id is UNSET:
+            return current_area, False
+        if area_id is None:
+            return None, current_area is not None
+        if isinstance(area_id, (str, uuid.UUID)):
+            parsed = parse_uuid4(area_id, field_name="area_id")
+            return parsed, str(parsed) != str(current_area)
+        raise ValidationError("area_id must be a UUID v4 string or null")
+
     def _validate_parent_move(
         self,
         *,
@@ -217,6 +275,9 @@ class Repository:
         self._locations_by_id[str(loc.id)] = loc
         parent_key: str | None = str(loc.parent_id) if loc.parent_id is not None else None
         self._children_ids_by_parent_id.setdefault(parent_key, set()).add(str(loc.id))
+        # area index (skip None)
+        if loc.area_id is not None:
+            self._locations_by_area_id.setdefault(str(loc.area_id), set()).add(str(loc.id))
 
     def _remove_location(self, loc: Location) -> None:
         self._locations_by_id.pop(str(loc.id), None)
@@ -228,6 +289,65 @@ class Repository:
                 self._children_ids_by_parent_id.pop(parent_key, None)
         # Remove dedicated children bucket if any
         self._children_ids_by_parent_id.pop(str(loc.id), None)
+        # area index
+        if loc.area_id is not None:
+            s = self._locations_by_area_id.get(str(loc.area_id))
+            if s is not None:
+                s.discard(str(loc.id))
+                if not s:
+                    self._locations_by_area_id.pop(str(loc.area_id), None)
+
+    def _stage_location_update(
+        self,
+        *,
+        loc: Location,
+        updated_name: str,
+        target_parent_id: uuid.UUID | None,
+        parent_changed: bool,
+        target_area: uuid.UUID | None,
+    ) -> tuple[dict[str, Location], dict[str | None, set[str]], Location]:
+        """Create staged maps with the proposed location update applied.
+
+        Returns (staged_locations_by_id, staged_children_by_parent, new_loc).
+        """
+
+        staged_locations_by_id: dict[str, Location] = dict(self._locations_by_id)
+        staged_children_by_parent: dict[str | None, set[str]] = {
+            k: set(v) for k, v in self._children_ids_by_parent_id.items()
+        }
+
+        new_loc = replace(loc, name=updated_name, parent_id=target_parent_id, area_id=target_area)
+        key = str(loc.id)
+        staged_locations_by_id[key] = new_loc
+
+        if parent_changed:
+            # Remove from old parent's children in staged map
+            old_parent = str(loc.parent_id) if loc.parent_id is not None else None
+            if old_parent in staged_children_by_parent:
+                staged_children_by_parent[old_parent].discard(key)
+                if not staged_children_by_parent[old_parent]:
+                    staged_children_by_parent.pop(old_parent)
+            # Add to new parent's children bucket in staged map
+            parent_key: str | None = str(target_parent_id) if target_parent_id is not None else None
+            staged_children_by_parent.setdefault(parent_key, set()).add(key)
+
+        return staged_locations_by_id, staged_children_by_parent, new_loc
+
+    def _update_location_area_index(
+        self, *, location_key: str, old_area: uuid.UUID | None, new_area: uuid.UUID | None
+    ) -> None:
+        """Maintain the locations-by-area index for a single location id."""
+
+        old_area_key = str(old_area) if old_area is not None else None
+        new_area_key = str(new_area) if new_area is not None else None
+        if old_area_key is not None:
+            s = self._locations_by_area_id.get(old_area_key)
+            if s is not None:
+                s.discard(location_key)
+                if not s:
+                    self._locations_by_area_id.pop(old_area_key, None)
+        if new_area_key is not None:
+            self._locations_by_area_id.setdefault(new_area_key, set()).add(location_key)
 
     def _collect_descendant_ids(self, root_id: str) -> set[str]:
         """Collect all descendant location IDs (excluding the root itself)."""
@@ -429,7 +549,14 @@ class Repository:
         limit: int | None = None,
         cursor: str | None = None,
     ) -> PageResult:
-        source: Iterable[Item] = self._items_by_id.values()
+        # Pre-filter by area when requested to reduce search space
+        source: Iterable[Item]
+        if flt and flt.get("area_id"):
+            area_key = flt.get("area_id")  # type: ignore[assignment]
+            item_ids = list(self._items_by_area_id.get(str(area_key), set()))
+            source = (self._items_by_id[i] for i in item_ids if i in self._items_by_id)
+        else:
+            source = self._items_by_id.values()
         filtered = filter_items(source, flt)
         sorted_items = sort_items(filtered, sort)
 
@@ -515,6 +642,7 @@ class Repository:
         *,
         name: str | None = None,
         new_parent_id: str | uuid.UUID | None | object = UNSET,
+        area_id: str | uuid.UUID | None | object = UNSET,
     ) -> Location:
         """Update location name and/or move under a new parent.
 
@@ -536,31 +664,20 @@ class Repository:
             updated_name = validate_location_name(name)
 
         parent_changed, target_parent_id = self._parse_new_parent(new_parent_id, loc.parent_id)
+        target_area, area_changed = self._parse_area_change(area_id, loc.area_id)
 
         # Validate move invariants if changing parent
         if parent_changed:
             self._validate_parent_move(location_key=key, target_parent_id=target_parent_id)
 
         # All validations passed — compute updates on copies first
-        staged_locations_by_id: dict[str, Location] = dict(self._locations_by_id)
-        staged_children_by_parent: dict[str | None, set[str]] = {
-            k: set(v) for k, v in self._children_ids_by_parent_id.items()
-        }
-
-        # Apply name/parent change in the staged maps
-        new_loc = replace(loc, name=updated_name, parent_id=target_parent_id)
-        staged_locations_by_id[key] = new_loc
-
-        if parent_changed:
-            # Remove from old parent's children in staged map
-            old_parent = str(loc.parent_id) if loc.parent_id is not None else None
-            if old_parent in staged_children_by_parent:
-                staged_children_by_parent[old_parent].discard(str(loc.id))
-                if not staged_children_by_parent[old_parent]:
-                    staged_children_by_parent.pop(old_parent)
-            # Add to new parent's children bucket in staged map
-            parent_key: str | None = str(target_parent_id) if target_parent_id is not None else None
-            staged_children_by_parent.setdefault(parent_key, set()).add(str(loc.id))
+        staged_locations_by_id, staged_children_by_parent, _ = self._stage_location_update(
+            loc=loc,
+            updated_name=updated_name,
+            target_parent_id=target_parent_id,
+            parent_changed=parent_changed,
+            target_area=target_area,
+        )
 
         # Attempt to rebuild paths against staged maps; if this fails, nothing is committed
         self._rebuild_paths_for_subtree(
@@ -573,10 +690,20 @@ class Repository:
         self._children_ids_by_parent_id = staged_children_by_parent
         self._locations_by_id = staged_locations_by_id
 
+        # Maintain area indexes for this location
+        if area_changed:
+            self._update_location_area_index(
+                location_key=key, old_area=loc.area_id, new_area=target_area
+            )
+
         # Update affected items (now that live maps are consistent)
         affected = {key}
         affected.update(self._collect_descendant_ids(key))
         self._update_items_location_paths_for_locations(affected)
+
+        # Re-bucket items by area for the entire subtree when area changes
+        if area_changed:
+            self._rebucket_items_for_subtree_area_change(key)
 
         LOGGER.debug(
             "Location updated",
@@ -588,6 +715,28 @@ class Repository:
             },
         )
         return self._locations_by_id[key]
+
+    def _rebucket_items_for_subtree_area_change(self, root_key: str) -> None:
+        """Recompute area buckets for items under a location subtree."""
+
+        # Collect all location ids in subtree including root
+        loc_ids = {root_key}
+        loc_ids.update(self._collect_descendant_ids(root_key))
+
+        # Collect affected item ids
+        impacted_item_ids: set[str] = set()
+        for loc_id in loc_ids:
+            impacted_item_ids.update(self._items_by_location_id.get(loc_id, set()))
+
+        for item_id in impacted_item_ids:
+            # Remove from all area buckets then re-add based on current effective area
+            self._remove_item_from_all_area_buckets(item_id)
+            item = self._items_by_id.get(item_id)
+            if item is None or item.location_id is None:
+                continue
+            eff_area = self._resolve_effective_area_id_for_location(str(item.location_id))
+            if eff_area is not None:
+                self._add_to_bucket(self._items_by_area_id, eff_area, item_id)
 
     def delete_location(self, location_id: str | uuid.UUID) -> None:
         key = str(location_id)
@@ -707,6 +856,8 @@ class Repository:
             "checked_out_item_ids": self._checked_out_item_ids,
             "low_stock_item_ids": self._low_stock_item_ids,
             "items_by_location_id": self._items_by_location_id,
+            "locations_by_area_id": self._locations_by_area_id,
+            "items_by_area_id": self._items_by_area_id,
             "created_at_bucket": self._created_at_bucket,
             "updated_at_bucket": self._updated_at_bucket,
         }
@@ -751,6 +902,7 @@ class Repository:
                 "id": str(loc.id),
                 "name": loc.name,
                 "parent_id": str(loc.parent_id) if loc.parent_id is not None else None,
+                "area_id": str(loc.area_id) if loc.area_id is not None else None,
                 "path": {
                     "id_path": [str(x) for x in list(loc.path.id_path)],
                     "name_path": list(loc.path.name_path),
@@ -783,6 +935,8 @@ class Repository:
         self._checked_out_item_ids = set()
         self._low_stock_item_ids = set()
         self._items_by_location_id = {}
+        self._locations_by_area_id = {}
+        self._items_by_area_id = {}
         self._created_at_bucket = {}
         self._updated_at_bucket = {}
         self._name_sort_key_by_item_id = {}
@@ -816,6 +970,11 @@ class Repository:
                             else None
                         ),
                         name=str(loc_data.get("name", "")),
+                        area_id=(
+                            parse_uuid4(str(loc_data.get("area_id")), field_name="location.area_id")
+                            if loc_data.get("area_id") is not None
+                            else None
+                        ),
                         path=path,
                     )
                     self._add_location(loc)
