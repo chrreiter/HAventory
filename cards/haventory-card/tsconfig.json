@@ -4,6 +4,8 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
     "jsx": "react-jsx",
     "skipLibCheck": true,
     "outDir": "dist",

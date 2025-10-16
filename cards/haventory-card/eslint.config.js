@@ -28,7 +28,9 @@ export default [
     },
     plugins: { '@typescript-eslint': tsPlugin },
     rules: {
-      ...(tsPlugin.configs.recommended?.rules ?? {})
+      ...(tsPlugin.configs.recommended?.rules ?? {}),
+      // TypeScript handles undefined variables; avoid false positives in TS code
+      'no-undef': 'off'
     }
   },
 
