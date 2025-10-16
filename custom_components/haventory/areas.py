@@ -7,6 +7,8 @@ lookup operations; they never create or modify areas.
 
 from __future__ import annotations
 
+import inspect
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 
@@ -18,7 +20,14 @@ async def async_get_area_registry(hass: HomeAssistant):
     to provide a stable import location for the integration and tests.
     """
 
-    return await ar.async_get(hass)
+    # Use Home Assistant's async_get API. In HA (>=2024.8) this returns the
+    # registry synchronously; our offline stubs return an awaitable. Support both.
+    reg = ar.async_get(hass)
+    # HA's API returns a registry synchronously in production; our tests stub
+    # returns an awaitable. Support both to avoid runtime type errors online.
+    if inspect.isawaitable(reg):  # pragma: no cover - exercised in offline tests
+        return await reg
+    return reg
 
 
 async def resolve_area_name(hass: HomeAssistant, area_id: str | None) -> str | None:

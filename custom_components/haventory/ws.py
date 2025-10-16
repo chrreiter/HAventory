@@ -1309,10 +1309,11 @@ def _serialize_location(loc) -> dict[str, Any]:
 
 @websocket_api.websocket_command({"type": "haventory/areas/list"})
 @websocket_api.async_response
+@ws_guard("areas_list", ())
 async def ws_areas_list(hass: HomeAssistant, conn, msg):
     reg = await async_get_area_registry(hass)
-    # Home Assistant registry returns entries with id and name
-    areas = [{"id": a.id, "name": a.name} for a in reg.async_list_areas()]
+    entries = reg.async_list_areas()
+    areas = [{"id": a.id, "name": a.name} for a in entries]
     conn.send_message(websocket_api.result_message(msg.get("id", 0), {"areas": areas}))
 
 
