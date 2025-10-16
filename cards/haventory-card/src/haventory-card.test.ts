@@ -1,7 +1,7 @@
 import './index';
 
 describe('HAventoryCard', () => {
-  it('renders placeholder text', async () => {
+  it('renders header and search bar', async () => {
     const el = document.createElement('haventory-card') as HTMLElement & {
       updateComplete?: Promise<unknown>;
     };
@@ -13,7 +13,9 @@ describe('HAventoryCard', () => {
       await el.updateComplete;
     }
 
-    const text = el.shadowRoot?.textContent ?? '';
-    expect(text).toContain('HAventory card placeholder');
+    const sr = el.shadowRoot as ShadowRoot;
+    expect(sr.textContent || '').toContain('HAventory');
+    expect(sr.querySelector('hv-search-bar')).toBeTruthy();
+    expect(sr.querySelector('hv-inventory-list')).toBeTruthy();
   });
 });
