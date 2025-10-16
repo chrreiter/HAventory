@@ -8,15 +8,35 @@ export class HAventoryCard extends LitElement {
   `;
 
   private store?: Store;
+  private _storeUnsub?: () => void;
+  private _hass?: HassLike;
+
+  get hass(): HassLike | undefined {
+    return this._hass;
+  }
+
+  set hass(h: HassLike | undefined) {
+    this._hass = h;
+    if (h && !this.store) {
+      this.store = new Store(h);
+      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+      void this.store.init().catch(() => undefined);
+    }
+  }
 
   connectedCallback(): void {
     super.connectedCallback();
-    // Initialize only when Home Assistant provides `hass`
-    type HassElement = { hass?: HassLike };
-    const hassLike: HassLike | undefined = (this as unknown as HassElement).hass;
-    if (hassLike) {
-      this.store = new Store(hassLike);
-      void this.store.init().catch(() => undefined);
+    // If hass was already set before connectedCallback ran, ensure subscription exists
+    if (this.store && !this._storeUnsub) {
+      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+    }
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    if (this._storeUnsub) {
+      this._storeUnsub();
+      this._storeUnsub = undefined;
     }
   }
 
