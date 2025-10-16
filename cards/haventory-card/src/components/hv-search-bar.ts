@@ -88,7 +88,7 @@ export class HVSearchBar extends LitElement {
 
   render() {
     return html`
-      <div class="row" data-testid="filters-panel" aria-label="Search and filters">
+      <div class="row" data-testid="filters-panel" aria-label="Search and filters" role="group">
         <input
           type="search"
           placeholder="Search"

@@ -83,6 +83,12 @@ export class HAventoryCard extends LitElement {
             dialog.open = true;
           }
         }}
+        @request-delete=${(e: CustomEvent) => {
+          const item = st?.items.find((i) => i.id === e.detail.itemId);
+          if (!item) return;
+          const confirmed = window.confirm(`Delete item '${item.name}'?`);
+          if (confirmed) this.store?.deleteItem(item.id);
+        }}
       ></hv-inventory-list>
 
       <hv-item-dialog

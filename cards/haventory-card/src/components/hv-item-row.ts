@@ -28,6 +28,30 @@ export class HVItemRow extends LitElement {
     this.dispatchEvent(new CustomEvent('edit', { detail: { itemId: this.item.id }, bubbles: true, composed: true }));
   }
 
+  private onKeyDown(e: KeyboardEvent) {
+    const key = e.key;
+    if (key === 'Enter') {
+      e.preventDefault();
+      this.onEdit();
+      return;
+    }
+    if (key === 'Delete') {
+      e.preventDefault();
+      this.dispatchEvent(new CustomEvent('request-delete', { detail: { itemId: this.item.id }, bubbles: true, composed: true }));
+      return;
+    }
+    if (key === '+' || key === '=' || key === 'Add') {
+      e.preventDefault();
+      this.onIncrement();
+      return;
+    }
+    if (key === '-' || key === 'Subtract') {
+      e.preventDefault();
+      this.onDecrement();
+      return;
+    }
+  }
+
   private get isLow(): boolean {
     const thr = this.item.low_stock_threshold;
     return typeof thr === 'number' && this.item.quantity <= thr;
@@ -36,7 +60,7 @@ export class HVItemRow extends LitElement {
   render() {
     const item = this.item;
     return html`
-      <div class="row" role="row">
+      <div class="row" role="row" tabindex="0" @keydown=${this.onKeyDown} aria-label=${`Item ${item.name}`}>
         <div class="name" role="cell">
           <span>${item.name}</span>
           ${this.isLow ? html`<span class="badge" aria-label="Low stock">LOW</span>` : null}

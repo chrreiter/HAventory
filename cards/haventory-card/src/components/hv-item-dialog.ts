@@ -60,7 +60,7 @@ export class HVItemDialog extends LitElement {
   render() {
     if (!this.open) return null;
     return html`
-      <div class="dialog" role="dialog" aria-label="Item dialog">
+      <div class="dialog" role="dialog" aria-modal="true" aria-label="Item dialog" @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); this.onCancel(); } }}>
         <div class="row"><label>Name* <input type="text" .value=${this._name} @input=${(e: Event) => this._name = (e.target as HTMLInputElement).value} /></label></div>
         <div class="row">
           <label>Quantity <input type="number" .value=${String(this._quantity)} @input=${(e: Event) => this._quantity = Number((e.target as HTMLInputElement).value)} /></label>
