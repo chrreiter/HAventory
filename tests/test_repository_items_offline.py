@@ -6,6 +6,8 @@ and derived counts (checked_out and low_stock).
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from custom_components.haventory.exceptions import ConflictError, NotFoundError
 from custom_components.haventory.models import ItemCreate, ItemFilter, Sort
@@ -80,6 +82,33 @@ async def test_filter_sort_and_cursor_pagination() -> None:
     # Apply a q filter (name/description/tags/location path case-insensitive)
     out = repo.list_items(flt=ItemFilter(q="lph"))
     assert [x.name for x in out["items"]] == ["alpha"]
+
+
+@pytest.mark.asyncio
+async def test_prefilter_by_area_and_and_logic_with_location() -> None:
+    """Pre-filter by area id and support AND with location_id."""
+
+    repo = Repository()
+    # Create locations: L1(area=A), L2(area=B)
+    area_a = uuid.uuid4()
+    area_b = uuid.uuid4()
+    l1 = repo.create_location(name="L1", area_id=area_a)
+    l2 = repo.create_location(name="L2", area_id=area_b)
+
+    # Items in each location
+    i1 = repo.create_item(ItemCreate(name="X", location_id=str(l1.id)))
+    i2 = repo.create_item(ItemCreate(name="Y", location_id=str(l2.id)))
+
+    # Filter by area A returns only i1
+    out = repo.list_items(flt=ItemFilter(area_id=str(area_a)))
+    assert [x.id for x in out["items"]] == [i1.id]
+
+    # Filter by area B AND location_id=L2 returns only i2
+    out2 = repo.list_items(
+        flt=ItemFilter(area_id=str(area_b), location_id=str(l2.id)),
+        sort=Sort(field="name", order="asc"),  # type: ignore[typeddict-item]
+    )
+    assert [x.id for x in out2["items"]] == [i2.id]
 
 
 @pytest.mark.asyncio

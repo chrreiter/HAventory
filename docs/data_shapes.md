@@ -68,6 +68,7 @@ Object shape:
   "id": "uuid-v4",
   "name": "string",
   "parent_id": "uuid-v4|null",
+  "area_id": "uuid-v4|null",
   "path": {
     "id_path": ["uuid-v4", "..."],
     "name_path": ["string", "..."],
@@ -83,6 +84,7 @@ Location tree node (returned by `location/tree`):
   "id": "uuid-v4",
   "name": "string",
   "parent_id": "uuid-v4|null",
+  "area_id": "uuid-v4|null",
   "path": <LocationPath>,
   "children": [ <LocationNode> ]
 }
@@ -98,6 +100,7 @@ Location tree node (returned by `location/tree`):
   - `checked_out?: boolean`
   - `low_stock_only?: boolean`
   - `location_id?: uuid-v4|null`
+  - `area_id?: uuid-v4`
   - `include_subtree?: boolean`
   - `updated_after?: ISO8601Z`
   - `created_after?: ISO8601Z`
