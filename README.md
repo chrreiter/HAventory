@@ -48,6 +48,15 @@ Remove-Item Env:\RUN_ONLINE
 Included smoke tests:
 - `tests/test_ws_smoke_online.py` — Phase-0 ping/version/stats + Phase-1 locations CRUD tree/validation
 - `tests/test_ws_smoke_advanced_online.py` — Phase-3 bulk mixed/all-failure flows
+- `tests/test_ws_areas_online.py` — Optional area registry e2e; creates temporary areas via HA WS and verifies `haventory/areas/list` (requires `HA_ALLOW_AREA_MUTATIONS=1`)
+
+To exercise area registry e2e creation (optional; modifies your HA instance temporarily), also set:
+
+```powershell
+$env:HA_ALLOW_AREA_MUTATIONS = '1'
+pytest -q -m online -k "ws_areas_online"
+Remove-Item Env:\HA_ALLOW_AREA_MUTATIONS
+```
 
 #### Coverage
 - Backend (pytest-cov):
@@ -107,7 +116,7 @@ Included smoke tests:
   `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\reload_addon.ps1 -ContainerName <your_container> -UseDevConfig:$true -TailLogs:$true -SleepSecondsAfterRestart 8`
 
 ### 4) CI
-- GitHub Actions runs: backend lint/tests/coverage (Windows), frontend lint/test/coverage/build (Ubuntu), hassfest/HACS validation, CodeQL.
+- GitHub Actions runs: backend lint/tests/coverage (Windows), frontend lint/test/coverage (Ubuntu), hassfest/HACS validation, CodeQL.
 
 ### 5) Conventions
 - Domain/package: `haventory` under `custom_components/haventory`
