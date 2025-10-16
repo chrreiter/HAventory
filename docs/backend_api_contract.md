@@ -132,7 +132,7 @@ Handlers map domain exceptions to these codes and log with context; `conflict` a
 ### Locations
 
 - `haventory/location/create`
-  - Payload: `{name: string, parent_id?: string|null}`
+  - Payload: `{name: string, parent_id?: string|null, area_id?: string|null}`
   - Result: `<Location>`; emits `locations/created` and `stats/counts`.
 
 - `haventory/location/get`
@@ -140,7 +140,7 @@ Handlers map domain exceptions to these codes and log with context; `conflict` a
   - Result: `<Location>`
 
 - `haventory/location/update`
-  - Payload: `{location_id: string, name?: string, new_parent_id?: string|null}`
+  - Payload: `{location_id: string, name?: string, new_parent_id?: string|null, area_id?: string|null}`
   - Result: `<Location>`; emits `locations/moved` when parent changes and `locations/renamed` when name changes (both may emit if both fields present); also emits `stats/counts`.
 
 - `haventory/location/delete`
@@ -154,6 +154,10 @@ Handlers map domain exceptions to these codes and log with context; `conflict` a
 - `haventory/location/tree`
   - Payload: `{}`
   - Result: Array of tree nodes: `{id, name, parent_id, path: <LocationPath>, children: <Node[]>}`
+
+- `haventory/areas/list`
+  - Payload: `{}`
+  - Result: `{areas: [{id: string, name: string}]}`
 
 - `haventory/location/move_subtree`
   - Payload: `{location_id: string, new_parent_id: string|null}`

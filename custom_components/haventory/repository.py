@@ -587,7 +587,13 @@ class Repository:
     # Public API — Location operations
     # -----------------------------
 
-    def create_location(self, *, name: str, parent_id: str | uuid.UUID | None = None) -> Location:
+    def create_location(
+        self,
+        *,
+        name: str,
+        parent_id: str | uuid.UUID | None = None,
+        area_id: str | uuid.UUID | None = None,
+    ) -> Location:
         name = validate_location_name(name)
         # Parse/normalize parent id once at ingress using shared helper
         parsed_parent: uuid.UUID | None
@@ -598,6 +604,12 @@ class Repository:
         parent_key = str(parsed_parent) if parsed_parent is not None else None
         if parent_key is not None and parent_key not in self._locations_by_id:
             raise ValidationError("parent_id must reference an existing location")
+
+        parsed_area: uuid.UUID | None
+        if area_id is None:
+            parsed_area = None
+        else:
+            parsed_area = parse_uuid4(area_id, field_name="area_id")
 
         new_id = new_uuid4()
         # Build path using parent chain plus new node
@@ -618,7 +630,13 @@ class Repository:
                 cursor = str(node.parent_id) if node.parent_id is not None else None
             lineage.reverse()
             chain.extend(lineage)
-        new_loc = Location(id=new_id, parent_id=parsed_parent, name=name, path=EMPTY_LOCATION_PATH)
+        new_loc = Location(
+            id=new_id,
+            parent_id=parsed_parent,
+            name=name,
+            area_id=parsed_area,
+            path=EMPTY_LOCATION_PATH,
+        )
         chain.append(new_loc)
         new_path = build_location_path(chain)
         new_loc = replace(new_loc, path=new_path)

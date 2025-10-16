@@ -15,6 +15,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
+from .areas import async_get_area_registry
 from .const import DOMAIN, INTEGRATION_VERSION
 from .exceptions import ConflictError, NotFoundError, StorageError, ValidationError
 from .models import ItemUpdate, normalize_tags
@@ -1112,12 +1113,21 @@ async def ws_item_list(hass: HomeAssistant, conn, msg):
         vol.Required("type"): "haventory/location/create",
         vol.Required("name"): str,
         vol.Optional("parent_id"): object,
+        vol.Optional("area_id"): object,
     }
 )
 @websocket_api.async_response
 @ws_guard("location_create", ("name", "parent_id"))
 async def ws_location_create(hass: HomeAssistant, conn, msg):
-    loc = _repo(hass).create_location(name=msg.get("name"), parent_id=msg.get("parent_id"))
+    # Validate area_id against HA area registry when provided
+    area_id = msg.get("area_id") if "area_id" in msg else None
+    if area_id is not None:
+        reg = await async_get_area_registry(hass)
+        if reg.async_get_area(area_id) is None:
+            raise ValidationError("unknown area_id")
+    loc = _repo(hass).create_location(
+        name=msg.get("name"), parent_id=msg.get("parent_id"), area_id=area_id
+    )
     serialized = _serialize_location(loc)
     _broadcast_event(hass, topic="locations", action="created", payload={"location": serialized})
     await _persist_repo(hass)
@@ -1141,14 +1151,20 @@ async def ws_location_get(hass: HomeAssistant, conn, msg):
         vol.Required("location_id"): object,
         vol.Optional("new_parent_id"): object,
         vol.Optional("name"): str,
+        vol.Optional("area_id"): object,
     }
 )
 @websocket_api.async_response
 @ws_guard("location_update", ("location_id", "new_parent_id", "name"))
 async def ws_location_update(hass: HomeAssistant, conn, msg):
     new_parent = msg["new_parent_id"] if "new_parent_id" in msg else UNSET
+    area_id = msg["area_id"] if "area_id" in msg else UNSET
+    if area_id is not UNSET and area_id is not None:
+        reg = await async_get_area_registry(hass)
+        if reg.async_get_area(area_id) is None:
+            raise ValidationError("unknown area_id")
     loc = _repo(hass).update_location(
-        msg.get("location_id"), name=msg.get("name"), new_parent_id=new_parent
+        msg.get("location_id"), name=msg.get("name"), new_parent_id=new_parent, area_id=area_id
     )
     serialized = _serialize_location(loc)
     # If parent changed emit moved; if name changed emit renamed
@@ -1281,6 +1297,7 @@ def _serialize_location(loc) -> dict[str, Any]:
         "id": str(loc.id),
         "name": loc.name,
         "parent_id": str(loc.parent_id) if loc.parent_id is not None else None,
+        "area_id": str(loc.area_id) if getattr(loc, "area_id", None) is not None else None,
         "path": {
             "id_path": [str(x) for x in loc.path.id_path],
             "name_path": loc.path.name_path,
@@ -1288,6 +1305,15 @@ def _serialize_location(loc) -> dict[str, Any]:
             "sort_key": loc.path.sort_key,
         },
     }
+
+
+@websocket_api.websocket_command({"type": "haventory/areas/list"})
+@websocket_api.async_response
+async def ws_areas_list(hass: HomeAssistant, conn, msg):
+    reg = await async_get_area_registry(hass)
+    # Home Assistant registry returns entries with id and name
+    areas = [{"id": a.id, "name": a.name} for a in reg.async_list_areas()]
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), {"areas": areas}))
 
 
 # -----------------------------
@@ -1330,6 +1356,7 @@ def setup(hass: HomeAssistant) -> None:
         ws_location_list,
         ws_location_tree,
         ws_location_move_subtree,
+        ws_areas_list,
     ]
 
     for h in handlers:
