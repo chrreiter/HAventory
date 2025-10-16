@@ -5,12 +5,12 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     include: ['src/**/*.test.ts'],
+    setupFiles: ['src/test.setup.ts'],
     coverage: {
       provider: 'v8',
       reportsDirectory: 'coverage',
       reporter: ['text-summary', 'html', 'json-summary', 'lcov']
-    },
-    setupFiles: []
+    }
   },
   build: {
     lib: {

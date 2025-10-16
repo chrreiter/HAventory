@@ -65,6 +65,10 @@ export class HAventoryCard extends LitElement {
 
       <hv-inventory-list
         .items=${st?.items ?? []}
+        @near-end=${(e: CustomEvent) => {
+          const ratio = e.detail?.ratio ?? 0;
+          void this.store?.prefetchIfNeeded(ratio);
+        }}
         @decrement=${(e: CustomEvent) => this.store?.adjustQuantity(e.detail.itemId, -1)}
         @increment=${(e: CustomEvent) => this.store?.adjustQuantity(e.detail.itemId, +1)}
         @toggle-checkout=${(e: CustomEvent) => {
