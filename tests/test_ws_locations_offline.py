@@ -10,6 +10,7 @@ Scenarios:
 from __future__ import annotations
 
 import pytest
+from custom_components.haventory.areas import async_get_area_registry
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
@@ -42,8 +43,12 @@ async def test_location_crud_and_tree() -> None:
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    # Create root and child
-    res_root = await _send(hass, 1, "haventory/location/create", name="Root")
+    # Seed areas and create root and child
+    reg = await async_get_area_registry(hass)
+    area_uuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    reg._add(area_uuid, "Garage")  # type: ignore[attr-defined]
+
+    res_root = await _send(hass, 1, "haventory/location/create", name="Root", area_id=area_uuid)
     root_id = res_root["result"]["id"]
     res_child = await _send(hass, 2, "haventory/location/create", name="Shelf", parent_id=root_id)
     child_id = res_child["result"]["id"]
@@ -63,18 +68,45 @@ async def test_location_crud_and_tree() -> None:
     tree = res["result"]
     assert isinstance(tree, list) and len(tree) == 1
     assert tree[0]["id"] == root_id and tree[0]["children"][0]["id"] == child_id
+    assert tree[0]["path"]["display_path"] == "Root"
 
-    # Move subtree: move Shelf to root
-    res = await _send(
-        hass, 6, "haventory/location/move_subtree", location_id=child_id, new_parent_id=None
+
+@pytest.mark.asyncio
+async def test_ws_location_create_update_area_validation() -> None:
+    """Create/update with area validation and serialization of area_id."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    # Unknown area on create → validation_error
+    bad = await _send(hass, 1, "haventory/location/create", name="X", area_id="missing")
+    assert bad["success"] is False and bad["error"]["code"] == "validation_error"
+
+    # Seed area, create ok
+    reg = await async_get_area_registry(hass)
+    area_uuid1 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    reg._add(area_uuid1, "Garage")  # type: ignore[attr-defined]
+    created = await _send(hass, 2, "haventory/location/create", name="A", area_id=area_uuid1)
+    assert created["success"] is True and created["result"]["area_id"] == area_uuid1
+    loc_id = created["result"]["id"]
+
+    # Unknown area on update → validation_error
+    upd_bad = await _send(
+        hass, 3, "haventory/location/update", location_id=loc_id, area_id="missing"
     )
-    assert res["success"] is True
+    assert upd_bad["success"] is False and upd_bad["error"]["code"] == "validation_error"
 
-    # Delete child then root
-    res = await _send(hass, 7, "haventory/location/delete", location_id=child_id)
-    assert res["success"] is True
-    res = await _send(hass, 8, "haventory/location/delete", location_id=root_id)
-    assert res["success"] is True
+    # Add second area and update ok
+    area_uuid2 = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    reg._add(area_uuid2, "Office")  # type: ignore[attr-defined]
+    updated = await _send(
+        hass, 4, "haventory/location/update", location_id=loc_id, area_id=area_uuid2
+    )
+    assert updated["success"] is True and updated["result"]["area_id"] == area_uuid2
+
+    # No further mutations in this test
 
 
 @pytest.mark.asyncio

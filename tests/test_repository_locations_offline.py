@@ -34,9 +34,9 @@ async def test_move_and_rename_updates_paths_and_items() -> None:
     """Renaming/moving a location updates subtree paths and item location_path."""
 
     repo = Repository()
-    a = repo.create_location(name="A")
-    b = repo.create_location(name="B", parent_id=a.id)
-    c = repo.create_location(name="C", parent_id=b.id)
+    a = repo.create_location(name="A", area_id=None)
+    b = repo.create_location(name="B", parent_id=a.id, area_id=None)
+    c = repo.create_location(name="C", parent_id=b.id, area_id=None)
 
     # Create an item at C so its path includes A/B/C
     item = repo.create_item(
