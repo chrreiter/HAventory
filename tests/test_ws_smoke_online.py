@@ -98,6 +98,47 @@ def _id_counter(start: int = 0):
     os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
+async def test_ws_areas_list_and_location_area_field_presence() -> None:
+    """Verify areas/list shape and that location serialization includes area_id."""
+
+    session, ws = await _open_ws()
+    next_id = _id_counter()
+    try:
+        # areas/list returns {areas: []}
+        aid = next_id()
+        await ws.send_json({"id": aid, "type": "haventory/areas/list"})
+        areas = await _expect_result(ws, aid)
+        if not areas.get("success"):
+            pytest.skip("areas/list not available in this HA runtime")
+        assert isinstance((areas.get("result") or {}).get("areas"), list)
+
+        # Create a location without area_id and ensure serializer includes area_id: null
+        cid = next_id()
+        await ws.send_json({"id": cid, "type": "haventory/location/create", "name": "AreaProbe"})
+        cre = await _expect_result(ws, cid)
+        loc = cre.get("result") or {}
+        assert "area_id" in loc and loc.get("area_id") is None
+
+        # Cleanup: delete created location
+        did = next_id()
+        await ws.send_json(
+            {
+                "id": did,
+                "type": "haventory/location/delete",
+                "location_id": loc.get("id"),
+            }
+        )
+        _ = await _expect_result(ws, did)
+    finally:
+        await ws.close()
+        await session.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
+    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
+)
 async def test_ws_ping_and_version() -> None:
     """Connect to HA WS and validate ping + version."""
     base = os.environ.get("HA_BASE_URL", "http://localhost:8123")
@@ -1086,6 +1127,17 @@ async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
         )
         r7 = await _expect_result(ws, q7)
         assert ((r7.get("result") or {}).get("items") or []) == []
+
+        # area_id prefilter: expect zero until areas are wired to locations online (best-effort)
+        q8a = next_id()
+        await ws.send_json(
+            {
+                "id": q8a,
+                "type": "haventory/item/list",
+                "filter": {"area_id": "00000000-0000-4000-8000-000000000000"},
+            }
+        )
+        _ = await _expect_result(ws, q8a)
 
         # sort by name asc
         q8 = next_id()
