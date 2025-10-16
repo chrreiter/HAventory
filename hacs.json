@@ -2,5 +2,6 @@
   "name": "HAventory",
   "render_readme": true,
   "content_in_root": false,
-  "country": ["all"]
+  "country": ["all"],
+  "filename": "haventory-card.js"
 }
