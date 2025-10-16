@@ -69,3 +69,14 @@ async def resolve_area_id_by_name(hass: HomeAssistant, name: str | None) -> str 
         if getattr(area, "name", "").casefold() == search:
             return getattr(area, "id", None)
     return None
+
+
+async def list_areas(hass: HomeAssistant) -> list[dict[str, str]]:
+    """Return a list of areas with ``id`` and ``name`` fields.
+
+    Uses Home Assistant's area registry. The stub registry in tests provides
+    ``async_list_areas()`` returning simple objects with ``id`` and ``name``.
+    """
+
+    registry = await async_get_area_registry(hass)
+    return [{"id": a.id, "name": a.name} for a in registry.async_list_areas()]
