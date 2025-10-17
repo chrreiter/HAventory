@@ -37,6 +37,8 @@ export class HVSearchBar extends LitElement {
   @property({ type: Boolean }) checkedOutOnly: boolean = false;
   @property({ type: Boolean }) lowStockFirst: boolean = false;
   @property({ attribute: false }) sort: Sort = { field: 'updated_at', order: 'desc' };
+  @property({ attribute: false }) areas: { id: string; name: string }[] = [];
+  @property({ attribute: false }) locations: Array<{ id: string; name: string; path?: { display_path: string } }> = [];
 
   @state() private _qLocal: string = this.q;
 
@@ -97,14 +99,14 @@ export class HVSearchBar extends LitElement {
           aria-label="Search items"
         />
 
-        <select @change=${this.onAreaChange} aria-label="Area">
+        <select @change=${this.onAreaChange} aria-label="Area" .value=${this.areaId ?? ''}>
           <option value="">Area: All</option>
-          <!-- Options populated later -->
+          ${this.areas.map((a) => html`<option value=${a.id} ?selected=${this.areaId === a.id}>${a.name}</option>`)}
         </select>
 
-        <select @change=${this.onLocationChange} aria-label="Location">
+        <select @change=${this.onLocationChange} aria-label="Location" .value=${this.locationId ?? ''}>
           <option value="">Location: Root</option>
-          <!-- Options populated later -->
+          ${this.locations.map((l) => html`<option value=${l.id} ?selected=${this.locationId === l.id}>${l.path?.display_path || l.name}</option>`)}
         </select>
 
         <label><input type="checkbox" .checked=${this.includeSubtree} @change=${this.onIncludeSubtreeChange} /> Include sublocations</label>

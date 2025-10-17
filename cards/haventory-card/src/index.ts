@@ -75,6 +75,8 @@ export class HAventoryCard extends LitElement {
         .checkedOutOnly=${filters?.checkedOutOnly ?? false}
         .lowStockFirst=${filters?.lowStockFirst ?? false}
         .sort=${filters?.sort}
+        .areas=${st?.areasCache?.areas ?? []}
+        .locations=${st?.locationsFlatCache ?? []}
         @change=${(e: CustomEvent) => this.store?.setFilters(e.detail)}
       ></hv-search-bar>
 
@@ -266,6 +268,8 @@ export class HAventoryCard extends LitElement {
                 .checkedOutOnly=${filters?.checkedOutOnly ?? false}
                 .lowStockFirst=${filters?.lowStockFirst ?? false}
                 .sort=${filters?.sort}
+                .areas=${st?.areasCache?.areas ?? []}
+                .locations=${st?.locationsFlatCache ?? []}
                 @change=${(e: CustomEvent) => this.store?.setFilters(e.detail)}
               ></hv-search-bar>
               <button @click=${() => {
