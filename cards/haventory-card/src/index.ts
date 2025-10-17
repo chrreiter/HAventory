@@ -226,15 +226,17 @@ export class HAventoryCard extends LitElement {
           <div class="sidebar" data-testid="filters-panel" aria-label="Filters">
             <div class="row">
               <label>Area
-                <select @change=${(e: Event) => onFilterPatch({ areaId: (e.target as HTMLSelectElement).value || null })}>
+                <select @change=${(e: Event) => onFilterPatch({ areaId: (e.target as HTMLSelectElement).value || null })} .value=${filters?.areaId ?? ''}>
                   <option value="">All</option>
+                  ${(st?.areasCache?.areas ?? []).map((a) => html`<option value=${a.id} ?selected=${filters?.areaId === a.id}>${a.name}</option>`)}
                 </select>
               </label>
             </div>
             <div class="row">
               <label>Location
-                <select @change=${(e: Event) => onFilterPatch({ locationId: (e.target as HTMLSelectElement).value || null })}>
+                <select @change=${(e: Event) => onFilterPatch({ locationId: (e.target as HTMLSelectElement).value || null })} .value=${filters?.locationId ?? ''}>
                   <option value="">Root</option>
+                  ${(st?.locationsFlatCache ?? []).map((l) => html`<option value=${l.id} ?selected=${filters?.locationId === l.id}>${l.path?.display_path || l.name}</option>`)}
                 </select>
               </label>
             </div>

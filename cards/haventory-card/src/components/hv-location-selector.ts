@@ -43,16 +43,27 @@ export class HVLocationSelector extends LitElement {
         (l.path?.display_path || '').toLowerCase().includes(q)
       );
     });
+
+    // Derive depth from display_path for indentation (simple heuristic): count separators
+    function getDepth(path: string | undefined): number {
+      if (!path) return 0;
+      const parts = path.split('/').map((p) => p.trim()).filter(Boolean);
+      return Math.max(0, parts.length - 1);
+    }
+
     return html`
       <ul aria-label="Location list">
-        ${list.map((l) => html`
-          <li>
-            <label class="node">
-              <input type="radio" name="loc" .checked=${this._selectedId === l.id} @change=${() => this._selectedId = l.id} />
-              <span>${l.path?.display_path || l.name}</span>
-            </label>
-          </li>
-        `)}
+        ${list.map((l) => {
+          const depth = getDepth(l.path?.display_path);
+          return html`
+            <li style="padding-left: ${depth * 12}px;">
+              <label class="node">
+                <input type="radio" name="loc" .checked=${this._selectedId === l.id} @change=${() => this._selectedId = l.id} />
+                <span>${l.path?.display_path || l.name}</span>
+              </label>
+            </li>
+          `;
+        })}
       </ul>
     `;
   }

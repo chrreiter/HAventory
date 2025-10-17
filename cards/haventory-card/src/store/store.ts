@@ -62,7 +62,7 @@ export class Store {
   constructor(hass: HassLike) {
     this.ws = new WSClient(hass);
 
-    const defaultSort: Sort = { field: 'updated_at', order: 'desc' };
+    const defaultSort: Sort = { field: 'name', order: 'desc' };
     const initial: StoreState = {
       items: [],
       cursor: null,

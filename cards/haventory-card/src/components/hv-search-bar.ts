@@ -2,9 +2,9 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { Sort } from '../store/types';
 
-function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number) {
+function debounce<TArgs extends unknown[]>(fn: (...args: TArgs) => void, ms: number) {
   let t: number | undefined;
-  return (...args: Parameters<T>) => {
+  return (...args: TArgs) => {
     if (t) window.clearTimeout(t);
     t = window.setTimeout(() => fn(...args), ms);
   };
@@ -36,7 +36,7 @@ export class HVSearchBar extends LitElement {
   @property({ type: Boolean }) includeSubtree: boolean = true;
   @property({ type: Boolean }) checkedOutOnly: boolean = false;
   @property({ type: Boolean }) lowStockFirst: boolean = false;
-  @property({ attribute: false }) sort: Sort = { field: 'updated_at', order: 'desc' };
+  @property({ attribute: false }) sort: Sort = { field: 'name', order: 'desc' };
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
   @property({ attribute: false }) locations: Array<{ id: string; name: string; path?: { display_path: string } }> = [];
 
