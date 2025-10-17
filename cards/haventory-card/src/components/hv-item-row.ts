@@ -14,6 +14,16 @@ export class HVItemRow extends LitElement {
   `;
 
   @property({ attribute: false }) item!: Item;
+  @property({ attribute: false }) areas: { id: string; name: string }[] = [];
+  @property({ attribute: false }) locations: Array<{ id: string; area_id: string | null }> = [];
+
+  private resolveAreaName(): string | null {
+    if (!this.item.location_id) return null;
+    const loc = this.locations.find((l) => l.id === this.item.location_id);
+    if (!loc || !loc.area_id) return null;
+    const area = this.areas.find((a) => a.id === loc.area_id);
+    return area?.name ?? null;
+  }
 
   private onDecrement() {
     this.dispatchEvent(new CustomEvent('decrement', { detail: { itemId: this.item.id }, bubbles: true, composed: true }));
@@ -64,7 +74,7 @@ export class HVItemRow extends LitElement {
         <div class="name" role="cell">
           <span>${item.name}</span>
           ${this.isLow ? html`<span class="badge" aria-label="Low stock">LOW</span>` : null}
-          ${item.location_path ? html`<span class="area">[Area: ${item.location_path.name_path[1] ?? ''}]</span>` : null}
+          ${this.resolveAreaName() ? html`<span class="area">[Area: ${this.resolveAreaName()}]</span>` : null}
         </div>
         <div role="cell">${item.quantity}</div>
         <div role="cell">${item.category ?? ''}</div>

@@ -13,6 +13,8 @@ export class HVInventoryList extends LitElement {
   `;
 
   @property({ attribute: false }) items: Item[] = [];
+  @property({ attribute: false }) areas: { id: string; name: string }[] = [];
+  @property({ attribute: false }) locations: Array<{ id: string; area_id: string | null }> = [];
 
   private onRowEvent(type: string, e: CustomEvent) {
     e.stopPropagation();
@@ -43,6 +45,8 @@ export class HVInventoryList extends LitElement {
         .renderItem=${(it: Item) => html`
           <hv-item-row
             .item=${it}
+            .areas=${this.areas}
+            .locations=${this.locations}
             @decrement=${(e: CustomEvent) => this.onRowEvent('decrement', e)}
             @increment=${(e: CustomEvent) => this.onRowEvent('increment', e)}
             @toggle-checkout=${(e: CustomEvent) => this.onRowEvent('toggle-checkout', e)}

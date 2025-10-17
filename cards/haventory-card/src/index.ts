@@ -91,6 +91,8 @@ export class HAventoryCard extends LitElement {
 
       <hv-inventory-list
         .items=${st?.items ?? []}
+        .areas=${st?.areasCache?.areas ?? []}
+        .locations=${st?.locationsFlatCache ?? []}
         @near-end=${(e: CustomEvent) => {
           const ratio = e.detail?.ratio ?? 0;
           void this.store?.prefetchIfNeeded(ratio);
@@ -286,6 +288,8 @@ export class HAventoryCard extends LitElement {
               ${html`
                 <hv-inventory-list
                   .items=${st?.items ?? []}
+                  .areas=${st?.areasCache?.areas ?? []}
+                  .locations=${st?.locationsFlatCache ?? []}
                   @near-end=${(e: CustomEvent) => { const ratio = e.detail?.ratio ?? 0; void this.store?.prefetchIfNeeded(ratio); }}
                   @decrement=${(e: CustomEvent) => this.store?.adjustQuantity(e.detail.itemId, -1)}
                   @increment=${(e: CustomEvent) => this.store?.adjustQuantity(e.detail.itemId, +1)}
