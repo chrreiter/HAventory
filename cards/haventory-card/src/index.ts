@@ -60,11 +60,20 @@ export class HAventoryCard extends LitElement {
     const st = this.store?.state.value;
     const filters = st?.filters;
     return html`
-      <div part="header">
+      <div part="header" style="display: flex; align-items: center; justify-content: space-between; padding: 8px;">
         <strong>HAventory</strong>
-        <button data-testid="expand-toggle" @click=${() => this._toggleExpanded()} aria-expanded=${String(this.expanded)} aria-label=${this.expanded ? 'Collapse' : 'Expand'} style="float:right;">
-          ${this.expanded ? '⤢ Collapse' : '⇱ Expand'}
-        </button>
+        <div style="display: flex; gap: 8px;">
+          <button @click=${() => {
+            const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: unknown } | null;
+            if (dialog) {
+              dialog.item = null;
+              dialog.open = true;
+            }
+          }} aria-label="Add item" title="Add item">+</button>
+          <button data-testid="expand-toggle" @click=${() => this._toggleExpanded()} aria-expanded=${String(this.expanded)} aria-label=${this.expanded ? 'Collapse' : 'Expand'}>
+            ${this.expanded ? '⤢ Collapse' : '⇱ Expand'}
+          </button>
+        </div>
       </div>
       ${this._renderBanners()}
       <hv-search-bar
@@ -98,9 +107,7 @@ export class HAventoryCard extends LitElement {
           const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: unknown };
           const item = st?.items.find((i) => i.id === e.detail.itemId);
           if (dialog && item) {
-            // @ts-expect-error: assigning cross-component property
             dialog.item = item;
-            // @ts-expect-error: assigning cross-component property
             dialog.open = true;
           }
         }}
@@ -125,12 +132,10 @@ export class HAventoryCard extends LitElement {
           const currentItem = dlg?.item ?? null;
           if (currentItem && currentItem.id) {
             // Update flow
-            // @ts-expect-error: ItemUpdate shape
-            void this.store?.updateItem(currentItem.id, data);
+            void this.store?.updateItem(currentItem.id, data as unknown as import('./store/types').ItemUpdate);
           } else {
             // Create flow
-            // @ts-expect-error: ItemCreate shape
-            void this.store?.createItem(data);
+            void this.store?.createItem(data as unknown as import('./store/types').ItemCreate);
           }
           if (dlg) dlg.open = false;
         }}
@@ -294,9 +299,7 @@ export class HAventoryCard extends LitElement {
                     const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: unknown };
                     const item = st?.items.find((i) => i.id === e.detail.itemId);
                     if (dialog && item) {
-                      // @ts-expect-error: assigning cross-component property
                       dialog.item = item;
-                      // @ts-expect-error: assigning cross-component property
                       dialog.open = true;
                     }
                   }}
