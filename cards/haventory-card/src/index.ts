@@ -19,6 +19,7 @@ export class HAventoryCard extends LitElement {
   private expanded: boolean = false;
   private _overlayEl: HTMLDivElement | null = null;
   private _prevFocusEl: HTMLElement | null = null;
+  private _locationSelectorOpen = false;
 
   get hass(): HassLike | undefined {
     return this._hass;
@@ -103,14 +104,48 @@ export class HAventoryCard extends LitElement {
       ></hv-inventory-list>
 
       <hv-item-dialog
+        @open-location-selector=${() => { this._locationSelectorOpen = true; this.requestUpdate(); }}
+        @delete-item=${(e: CustomEvent) => {
+          const { itemId, name } = e.detail as { itemId: string; name: string };
+          const confirmed = window.confirm(`Delete item '${name}'?`);
+          if (confirmed) this.store?.deleteItem(itemId);
+        }}
         @save=${(e: CustomEvent) => {
           const data = e.detail as Record<string, unknown>;
-          // For MVP, treat as create
-          // @ts-expect-error: ItemCreate shape
-          this.store?.createItem(data);
+          const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { item?: unknown; open?: boolean };
+          const currentItem = (dlg && (dlg as any).item) as { id?: string } | null;
+          if (currentItem && currentItem.id) {
+            // Update flow
+            // @ts-expect-error: ItemUpdate shape
+            void this.store?.updateItem(currentItem.id, data);
+          } else {
+            // Create flow
+            // @ts-expect-error: ItemCreate shape
+            void this.store?.createItem(data);
+          }
+          if (dlg) (dlg as any).open = false;
         }}
-        @cancel=${() => {}}
+        @cancel=${() => {
+          const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open?: boolean };
+          if (dlg) (dlg as any).open = false;
+        }}
       ></hv-item-dialog>
+
+      <hv-location-selector
+        .open=${this._locationSelectorOpen}
+        .locations=${this.store?.state.value.locationsFlatCache ?? null}
+        @cancel=${() => { this._locationSelectorOpen = false; this.requestUpdate(); }}
+        @select=${(e: CustomEvent) => {
+          const { locationId, includeSubtree } = e.detail as { locationId: string | null; includeSubtree: boolean };
+          // Patch dialog's location and update filters includeSubtree preference (non-destructive for list)
+          const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { setLocation: (id: string | null) => void } | null;
+          if (dlg) dlg.setLocation(locationId);
+          this._locationSelectorOpen = false;
+          // Also reflect includeSubtree in filters for later searches
+          this.store?.setFilters({ includeSubtree });
+          this.requestUpdate();
+        }}
+      ></hv-location-selector>
     `;
   }
 

@@ -168,6 +168,8 @@ export interface StoreState {
   errorQueue: Array<{ code: string; message: string; context?: Record<string, unknown> }>;
   areasCache: AreasListResult | null;
   locationTreeCache: unknown[] | null; // backend returns nested tree nodes; UI shapes can extend
+  // Optional flat locations cache to enrich UI (e.g., show area per node in selectors)
+  locationsFlatCache: Location[] | null;
   statsCounts: StatsCounts | null;
   connected: { items: boolean; stats: boolean };
 }

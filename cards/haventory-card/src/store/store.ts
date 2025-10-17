@@ -7,6 +7,7 @@ import type {
   ItemFilter,
   ItemUpdate,
   ListItemsResult,
+  Location,
   Sort,
   StatsCounts,
   StoreFilters,
@@ -79,6 +80,7 @@ export class Store {
       errorQueue: [],
       areasCache: null,
       locationTreeCache: null,
+      locationsFlatCache: null,
       statsCounts: null,
       connected: { items: false, stats: false },
     };
@@ -100,6 +102,7 @@ export class Store {
       this.refreshStats(),
       this.refreshAreas(),
       this.refreshLocationTree(),
+      this.refreshLocationsFlat(),
     ]);
     await this.listItems(true);
     this.subscribeTopics();
@@ -162,6 +165,11 @@ export class Store {
     const tree = await this.ws.getLocationTree();
     // Keep as-is (unknown[]); UI will interpret into a tree component later
     this.stateObs.set({ locationTreeCache: tree as unknown[] });
+  }
+
+  async refreshLocationsFlat() {
+    const locs = await this.ws.listLocations();
+    this.stateObs.set({ locationsFlatCache: locs as Location[] });
   }
 
   // ---------- Listing & pagination ----------
