@@ -29,7 +29,10 @@ export class HAventoryCard extends LitElement {
     this._hass = h;
     if (h && !this.store) {
       this.store = new Store(h);
-      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+      this._storeUnsub = this.store.state.onChange(() => {
+        this.requestUpdate();
+        if (this.expanded) this._renderOverlay();
+      });
       void this.store.init().catch(() => undefined);
     }
   }
@@ -38,7 +41,10 @@ export class HAventoryCard extends LitElement {
     super.connectedCallback();
     // If hass was already set before connectedCallback ran, ensure subscription exists
     if (this.store && !this._storeUnsub) {
-      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+      this._storeUnsub = this.store.state.onChange(() => {
+        this.requestUpdate();
+        if (this.expanded) this._renderOverlay();
+      });
     }
   }
 
@@ -319,12 +325,12 @@ export class HAventoryCard extends LitElement {
   }
 
   private _focusFirst(root: HTMLElement) {
-    const focusables = this._getFocusables(root);
+    const focusables = this._getFocusables(root).filter((el) => !el.classList.contains('sentinel'));
     if (focusables.length) focusables[0].focus();
   }
 
   private _focusLast(root: HTMLElement) {
-    const focusables = this._getFocusables(root);
+    const focusables = this._getFocusables(root).filter((el) => !el.classList.contains('sentinel'));
     if (focusables.length) focusables[focusables.length - 1].focus();
   }
 
