@@ -63,7 +63,10 @@ Remove-Item Env:\HA_ALLOW_AREA_MUTATIONS
   - Local quick run: `scripts\ci_local.ps1` (produces `coverage.xml` and browsable `htmlcov\index.html`).
   - Manual: `$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'; pytest -q --cov=custom_components/haventory --cov-report=term-missing:skip-covered --cov-report=xml --cov-report=html`.
 - Frontend (Vitest):
-  - In `cards/haventory-card`: `npm test -- --coverage` (opens `coverage/index.html`).
+  - Quick run: `scripts\test_frontend.ps1` (runs tests once)
+  - With coverage: `scripts\test_frontend.ps1 -Coverage` (opens `cards/haventory-card/coverage/index.html`)
+  - Watch mode: `scripts\test_frontend.ps1 -Watch` (interactive re-run on changes)
+  - Manual: In `cards/haventory-card`: `npm test` or `npm run test:coverage`
 
 ### Backend (custom component)
 - [ ] `custom_components/haventory/` with `manifest.json`, `__init__.py`, `config_flow.py`, `services.yaml`
