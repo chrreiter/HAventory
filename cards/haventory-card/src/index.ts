@@ -119,8 +119,8 @@ export class HAventoryCard extends LitElement {
         }}
         @save=${(e: CustomEvent) => {
           const data = e.detail as Record<string, unknown>;
-          const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { item?: unknown; open?: boolean };
-          const currentItem = (dlg && (dlg as any).item) as { id?: string } | null;
+          const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { item?: { id?: string } | null; open?: boolean };
+          const currentItem = dlg?.item ?? null;
           if (currentItem && currentItem.id) {
             // Update flow
             // @ts-expect-error: ItemUpdate shape
@@ -130,11 +130,11 @@ export class HAventoryCard extends LitElement {
             // @ts-expect-error: ItemCreate shape
             void this.store?.createItem(data);
           }
-          if (dlg) (dlg as any).open = false;
+          if (dlg) dlg.open = false;
         }}
         @cancel=${() => {
           const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open?: boolean };
-          if (dlg) (dlg as any).open = false;
+          if (dlg) dlg.open = false;
         }}
       ></hv-item-dialog>
 

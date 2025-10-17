@@ -1,4 +1,4 @@
-import type { AnyEventPayload, HassLike, Item, ListItemsResult, Location, StatsCounts } from './store/types';
+import type { AnyEventPayload, HassLike, Item, Location, StatsCounts } from './store/types';
 
 type SubCb = (msg: { id: number; type: 'event'; event: AnyEventPayload }) => void;
 
@@ -129,7 +129,7 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
     },
     subscribeMessage(cb: SubCb, msg: Record<string, unknown>) {
       const topic = String(msg.topic || '');
-      const id = Number(msg.id || nextId());
+      const _id = Number(msg.id || nextId());
       subs[topic] ||= [];
       subs[topic].push(cb);
       return () => {
