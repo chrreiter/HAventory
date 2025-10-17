@@ -253,7 +253,8 @@ export class Store {
       const updated = await this.ws.updateItem(itemId, changes, expectedVersion);
       this.applyOptimistic(updated);
     } catch (err) {
-      this.pushError(err);
+      // Capture conflict context for actionable retry
+      this.pushError(err, { itemId, changes });
     } finally {
       this.state.value.pendingOps.delete(opId);
       this.stateObs.set({ pendingOps: new Map(this.state.value.pendingOps) });
@@ -347,14 +348,37 @@ export class Store {
   }
 
   // ---------- Errors ----------
-  private pushError(err: unknown) {
+  private pushError(err: unknown, details?: { itemId?: string; changes?: ItemUpdate }) {
     // Home Assistant callWS returns an error envelope with {code, message, context}
     const anyErr = err as { code?: unknown; message?: unknown; context?: unknown; data?: unknown } | undefined;
     const code = String(anyErr?.code ?? 'unknown_error');
     const message = String(anyErr?.message ?? 'Unknown error');
     const context = (anyErr?.context ?? anyErr?.data ?? null) as Record<string, unknown> | null;
-    const next = this.state.value.errorQueue.concat([{ code, message, context: context ?? undefined }]);
+    const entry = {
+      id: `${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+      code,
+      message,
+      context: context ?? undefined,
+      kind: code === 'conflict' ? 'conflict' as const : 'error' as const,
+      itemId: details?.itemId,
+      changes: details?.changes,
+    };
+    const next = this.state.value.errorQueue.concat([entry]);
     this.stateObs.set({ errorQueue: next });
+  }
+
+  dismissError(id: string) {
+    const next = this.state.value.errorQueue.filter((e) => e.id !== id);
+    this.stateObs.set({ errorQueue: next });
+  }
+
+  async refreshItem(itemId: string) {
+    try {
+      const latest = await this.ws.getItem(itemId);
+      this.applyOptimistic(latest);
+    } catch (err) {
+      this.pushError(err);
+    }
   }
 
   // ---------- Local mutations ----------

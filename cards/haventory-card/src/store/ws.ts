@@ -36,6 +36,9 @@ export class WSClient {
   }
 
   // ---------- Items ----------
+  getItem(itemId: string) {
+    return this.hass.callWS<Item>({ type: 'haventory/item/get', item_id: itemId });
+  }
   listItems(filter?: ItemFilter, sort?: Sort, limit?: number, cursor?: string) {
     const msg: Record<string, unknown> = { type: 'haventory/item/list' };
     if (filter) msg.filter = filter;

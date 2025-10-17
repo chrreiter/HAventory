@@ -60,6 +60,7 @@ export class HAventoryCard extends LitElement {
           ${this.expanded ? '⤢ Collapse' : '⇱ Expand'}
         </button>
       </div>
+      ${this._renderBanners()}
       <hv-search-bar
         .q=${filters?.q ?? ''}
         .areaId=${filters?.areaId ?? null}
@@ -193,6 +194,9 @@ export class HAventoryCard extends LitElement {
         .main { background: var(--card-background-color, #fff); padding: 10px; overflow: hidden; display: grid; grid-template-rows: auto 1fr; gap: 8px; }
         .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
         .sentinel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+        .banners { display: grid; gap: 6px; margin: 8px 0; }
+        .banner { padding: 8px 10px; border-radius: 6px; background: #fff3cd; color: #664d03; border: 1px solid #ffecb5; display: flex; justify-content: space-between; align-items: center; }
+        .banner.error { background: #fdecea; color: #611a15; border-color: #f5c6cb; }
       </style>
       <div class="overlay-backdrop" role="presentation"></div>
       <div class="overlay" role="dialog" aria-modal="true" @keydown=${onKeydown}>
@@ -246,6 +250,7 @@ export class HAventoryCard extends LitElement {
             </details>
           </div>
           <div class="main">
+            <div class="banners">${this._renderBanners()}</div>
             <div class="row">
               <hv-search-bar
                 .q=${filters?.q ?? ''}
@@ -327,6 +332,27 @@ export class HAventoryCard extends LitElement {
     const selector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
     const list = Array.from(root.querySelectorAll<HTMLElement>(selector));
     return list.filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1);
+  }
+
+  private _renderBanners() {
+    const errs = this.store?.state.value.errorQueue ?? [];
+    if (!errs.length) return null;
+    return html`
+      <div class="banners">
+        ${errs.map((e) => html`
+          <div class="banner ${e.kind === 'error' ? 'error' : ''}">
+            <span>${e.message}</span>
+            <span>
+              ${e.kind === 'conflict' && e.itemId ? html`
+                <button @click=${() => { void this.store?.refreshItem(e.itemId!); this.store?.dismissError(e.id); }}>View latest</button>
+                ${e.changes ? html`<button @click=${() => { void this.store?.updateItem(e.itemId!, e.changes!); this.store?.dismissError(e.id); }}>Re-apply</button>` : null}
+              ` : null}
+              <button @click=${() => this.store?.dismissError(e.id)}>Dismiss</button>
+            </span>
+          </div>
+        `)}
+      </div>
+    `;
   }
 }
 
