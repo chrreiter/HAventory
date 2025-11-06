@@ -145,8 +145,13 @@ export type Unsubscribe = () => void;
 export interface HassLike {
   // Home Assistant's callWS returns the `result` part of the message.
   callWS<T>(msg: Record<string, unknown>): Promise<T>;
-  // subscribeMessage wires a callback to receive subsequent event messages; returns unsubscribe.
-  subscribeMessage(cb: (msg: { id: number; type: 'event'; event: AnyEventPayload }) => void, msg: Record<string, unknown>): Unsubscribe;
+  // WebSocket connection with subscribeMessage to receive event messages; returns unsubscribe.
+  connection: {
+    subscribeMessage(
+      cb: (msg: { id: number; type: 'event'; event: AnyEventPayload }) => void,
+      msg: Record<string, unknown>,
+    ): Unsubscribe | Promise<Unsubscribe>;
+  };
 }
 
 export interface StoreFilters {

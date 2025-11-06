@@ -279,7 +279,7 @@ haventory-card (main container)
 
 **WebSocket Integration**:
 - Uses Home Assistant's `hass.callWS<T>(message)` for requests
-- Uses `hass.subscribeMessage(callback, message)` for subscriptions
+- Uses `hass.connection.subscribeMessage(callback, message)` for subscriptions
 - Returns typed results via generics
 
 ---

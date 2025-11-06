@@ -127,14 +127,16 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
       }
       throw new Error(`Unhandled callWS type: ${type}`);
     },
-    subscribeMessage(cb: SubCb, msg: Record<string, unknown>) {
-      const topic = String(msg.topic || '');
-      const _id = Number(msg.id || nextId());
-      subs[topic] ||= [];
-      subs[topic].push(cb);
-      return () => {
-        subs[topic] = (subs[topic] || []).filter((x) => x !== cb);
-      };
+    connection: {
+      subscribeMessage(cb: SubCb, msg: Record<string, unknown>) {
+        const topic = String((msg as any).topic || '');
+        const _id = Number((msg as any).id || nextId());
+        subs[topic] ||= [];
+        subs[topic].push(cb);
+        return () => {
+          subs[topic] = (subs[topic] || []).filter((x) => x !== cb);
+        };
+      },
     },
     __emit(topic: AnyEventPayload['topic'], action: string, payload: Record<string, unknown>) {
       const callbacks = subs[topic] || [];

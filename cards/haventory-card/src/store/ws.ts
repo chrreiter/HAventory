@@ -134,11 +134,33 @@ export class WSClient {
     if (opts && 'location_id' in opts) msg.location_id = opts.location_id ?? null;
     if (opts && 'include_subtree' in opts) msg.include_subtree = !!opts.include_subtree;
 
-    const unsubscribe = this.hass.subscribeMessage((message) => {
+    const unsubOrPromise = this.hass.connection.subscribeMessage((message) => {
       // message: { id, type: 'event', event: AnyEventPayload }
       if (!message || message.type !== 'event') return;
       cb(message.event as AnyEventPayload);
     }, msg);
-    return unsubscribe;
+
+    // Home Assistant may return either an unsubscribe function or a Promise<unsubscribe>.
+    if (typeof unsubOrPromise === 'function') {
+      return unsubOrPromise as unknown as Unsubscribe;
+    }
+
+    // Handle Promise<Unsubscribe> with early-cancel support.
+    let resolvedUnsub: Unsubscribe | null = null;
+    let cancelRequested = false;
+    Promise.resolve(unsubOrPromise).then((fn) => {
+      resolvedUnsub = fn as Unsubscribe;
+      if (cancelRequested && resolvedUnsub) {
+        try { resolvedUnsub(); } catch { /* ignore */ }
+      }
+    });
+
+    return () => {
+      if (resolvedUnsub) {
+        resolvedUnsub();
+      } else {
+        cancelRequested = true;
+      }
+    };
   }
 }
