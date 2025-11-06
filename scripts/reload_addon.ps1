@@ -50,6 +50,17 @@ try {
   docker cp $localComponentPath "$ContainerName`:$targetRoot" | Out-Null
   Write-Host "  -> Copied to $targetRoot" -ForegroundColor Green
 
+  # Deploy frontend UI card assets (cards/www/haventory -> /config/www/haventory)
+  $localCardDir = Join-Path $repoRoot 'cards\www\haventory'
+  if (Test-Path -Path $localCardDir -PathType Container) {
+    Write-Info 'Copying frontend UI card assets into container...'
+    docker exec $ContainerName sh -lc "mkdir -p '$remoteCfgDir/www'" | Out-Null
+    docker cp $localCardDir "$ContainerName`:$remoteCfgDir/www" | Out-Null
+    Write-Host "  -> Copied to $remoteCfgDir/www/haventory" -ForegroundColor Green
+  } else {
+    Write-Err "Frontend card assets not found: $localCardDir (skipping card copy)"
+  }
+
   if ($UseDevConfig) {
     $devConfig = Join-Path $repoRoot 'dev\ha_config_for_dev.yaml'
     if (Test-Path -Path $devConfig -PathType Leaf) {
