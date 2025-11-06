@@ -13,6 +13,9 @@ export class HAventoryCard extends LitElement {
     :host { display: block; }
   `;
 
+  // Lovelace config (e.g., title)
+  private config?: { title?: string };
+
   private store?: Store;
   private _storeUnsub?: () => void;
   private _hass?: HassLike;
@@ -20,6 +23,23 @@ export class HAventoryCard extends LitElement {
   private _overlayEl: HTMLDivElement | null = null;
   private _prevFocusEl: HTMLElement | null = null;
   private _locationSelectorOpen = false;
+
+  // Lovelace interface: called by HA when the card is created/configured
+  public setConfig(cfg: unknown): void {
+    if (cfg !== null && typeof cfg !== 'object') {
+      throw new Error('Invalid config');
+    }
+    const obj = (cfg || {}) as { title?: unknown };
+    this.config = {
+      title: typeof obj.title === 'string' ? obj.title : undefined
+    };
+  }
+
+  // Lovelace interface: approximate rows occupied to help layout
+  public getCardSize(): number {
+    // Approximate: header + search + list viewport
+    return 6;
+  }
 
   get hass(): HassLike | undefined {
     return this._hass;
@@ -61,7 +81,7 @@ export class HAventoryCard extends LitElement {
     const filters = st?.filters;
     return html`
       <div part="header" style="display: flex; align-items: center; justify-content: space-between; padding: 8px;">
-        <strong>HAventory</strong>
+        <strong>${this.config?.title ?? 'HAventory'}</strong>
         <div style="display: flex; gap: 8px;">
           <button @click=${() => {
             const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: unknown } | null;
