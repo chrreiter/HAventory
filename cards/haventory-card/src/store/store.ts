@@ -182,7 +182,8 @@ export class Store {
       location_id: st.filters.locationId ?? undefined,
       include_subtree: st.filters.includeSubtree,
       checked_out: st.filters.checkedOutOnly || undefined,
-      low_stock_only: st.filters.lowStockFirst || undefined,
+      // Interpret UI toggle as preference to show low-stock items first
+      low_stock_first: st.filters.lowStockFirst || undefined,
     };
     const sort = st.filters.sort;
     const limit = 50;

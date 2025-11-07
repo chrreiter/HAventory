@@ -73,6 +73,7 @@ export interface ItemFilter {
   category?: string;
   checked_out?: boolean;
   low_stock_only?: boolean;
+  low_stock_first?: boolean;
   location_id?: string | null;
   area_id?: string;
   include_subtree?: boolean;

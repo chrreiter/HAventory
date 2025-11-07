@@ -111,6 +111,36 @@ async def test_filter_low_stock_only_threshold_rules() -> None:
 
 
 @pytest.mark.asyncio
+async def test_low_stock_first_orders_without_filtering() -> None:
+    a = create_item_from_create({"name": "A", "quantity": 5, "low_stock_threshold": 2})
+    b = create_item_from_create({"name": "B", "quantity": 1, "low_stock_threshold": 2})
+    c = create_item_from_create({"name": "C", "quantity": 3, "low_stock_threshold": None})
+    d = create_item_from_create({"name": "D", "quantity": 0, "low_stock_threshold": 0})
+    # Set timestamps so default secondary sorting is deterministic (updated_at desc)
+    a.updated_at = "2024-01-01T00:00:00Z"
+    b.updated_at = "2024-01-02T00:00:00Z"
+    c.updated_at = "2024-01-03T00:00:00Z"
+    d.updated_at = "2024-01-04T00:00:00Z"
+
+    # Base order by updated_at desc (no preference applied yet)
+    items = sort_items(
+        filter_items([a, b, c, d], ItemFilter()),
+        Sort(field="updated_at", order="desc"),
+    )
+    assert [x.name for x in items] == ["D", "C", "B", "A"]
+
+    # Emulate repository stable grouping: bring low-stock items to front,
+    # preserving the chosen primary sort within each group.
+    def _is_low_stock_local(it) -> bool:
+        thr = it.low_stock_threshold
+        return thr is not None and it.quantity <= thr
+
+    items = sort_items([a, b, c, d], Sort(field="updated_at", order="desc"))
+    items.sort(key=lambda it: not _is_low_stock_local(it))
+    assert [x.name for x in items] == ["D", "B", "C", "A"]
+
+
+@pytest.mark.asyncio
 async def test_filter_location_id_with_and_without_subtree() -> None:
     by_id, root, mid, leaf = _build_locations()
     at_root = create_item_from_create(

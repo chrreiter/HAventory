@@ -559,6 +559,10 @@ class Repository:
             source = self._items_by_id.values()
         filtered = filter_items(source, flt)
         sorted_items = sort_items(filtered, sort)
+        # Optional preference: group low-stock items first without filtering, while
+        # preserving the selected primary ordering within groups (stable sort).
+        if flt and flt.get("low_stock_first"):
+            sorted_items.sort(key=lambda it: not self._is_low_stock(it))
 
         # Normalize sort for cursor tracking
         if sort is None:
