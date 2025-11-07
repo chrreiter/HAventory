@@ -144,7 +144,7 @@ describe('hv-search-bar', () => {
     expect(changeDetail.lowStockFirst).toBe(true);
   });
 
-  it('emits change event when sort selection changes', async () => {
+  it('emits change event when sort selection changes (uses default order per field)', async () => {
     const el = document.createElement('hv-search-bar') as HTMLElement & { updateComplete?: Promise<unknown> };
     document.body.appendChild(el);
     await customElements.whenDefined('hv-search-bar');
@@ -158,12 +158,68 @@ describe('hv-search-bar', () => {
       changeDetail = e.detail;
     });
 
-    // Change to Name
+    // Change to Name (should default to asc)
     sortSelect.value = 'name';
     sortSelect.dispatchEvent(new Event('change', { bubbles: true }));
 
     expect(changeDetail).toBeTruthy();
     expect(changeDetail.sort.field).toBe('name');
-    expect(changeDetail.sort.order).toBe('desc'); // Preserves existing order
+    expect(changeDetail.sort.order).toBe('asc');
+  });
+
+  it('defaults to desc for updated_at and created_at; asc for quantity', async () => {
+    const el = document.createElement('hv-search-bar') as HTMLElement & { updateComplete?: Promise<unknown> };
+    document.body.appendChild(el);
+    await customElements.whenDefined('hv-search-bar');
+    if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+
+    const sr = el.shadowRoot as ShadowRoot;
+    const sortSelect = sr.querySelector('select[aria-label="Sort"]') as HTMLSelectElement;
+
+    let changeDetail: any = null;
+    el.addEventListener('change', (e: any) => {
+      changeDetail = e.detail;
+    });
+
+    // updated_at -> desc
+    sortSelect.value = 'updated_at';
+    sortSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(changeDetail.sort.order).toBe('desc');
+
+    // created_at -> desc
+    sortSelect.value = 'created_at';
+    sortSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(changeDetail.sort.order).toBe('desc');
+
+    // quantity -> asc
+    sortSelect.value = 'quantity';
+    sortSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(changeDetail.sort.order).toBe('asc');
+  });
+
+  it('toggles sort order via the toggle button', async () => {
+    const el = document.createElement('hv-search-bar') as HTMLElement & { updateComplete?: Promise<unknown> };
+    document.body.appendChild(el);
+    await customElements.whenDefined('hv-search-bar');
+    if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+
+    const sr = el.shadowRoot as ShadowRoot;
+    const btn = sr.querySelector('[data-testid="sort-order-toggle"]') as HTMLButtonElement;
+    expect(btn).toBeTruthy();
+
+    let changeDetail: any = null;
+    el.addEventListener('change', (e: any) => {
+      changeDetail = e.detail;
+    });
+
+    // Initial default is updated_at desc; toggle -> asc
+    btn.click();
+    expect(changeDetail).toBeTruthy();
+    expect(changeDetail.sort.order === 'asc' || changeDetail.sort.order === 'desc').toBe(true);
+
+    const first = changeDetail.sort.order;
+    // Toggle again -> back
+    btn.click();
+    expect(changeDetail.sort.order).not.toBe(first);
   });
 });

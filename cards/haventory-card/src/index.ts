@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { render as litRender } from 'lit/html.js';
 import type { HassLike } from './store/types';
+import { getDefaultOrderFor } from './store/sort';
 import { Store } from './store/store';
 import './components/hv-search-bar';
 import './components/hv-inventory-list';
@@ -271,12 +272,30 @@ export class HAventoryCard extends LitElement {
             </div>
             <div class="row">
               <label>Sort
-                <select @change=${(e: Event) => onFilterPatch({ sort: { field: (e.target as HTMLSelectElement).value as import('./store/types').Sort['field'], order: filters?.sort?.order ?? 'desc' } })}>
-                  <option value="name" ?selected=${(filters?.sort?.field ?? 'updated_at') === 'name'}>Name</option>
-                  <option value="updated_at" ?selected=${(filters?.sort?.field ?? 'updated_at') === 'updated_at'}>Updated</option>
-                  <option value="created_at" ?selected=${filters?.sort?.field === 'created_at'}>Created</option>
-                  <option value="quantity" ?selected=${filters?.sort?.field === 'quantity'}>Quantity</option>
-                </select>
+                <span style="display:inline-flex; align-items:center; gap:6px;">
+                  <select @change=${(e: Event) => {
+                    const field = (e.target as HTMLSelectElement).value as import('./store/types').Sort['field'];
+                    const order = getDefaultOrderFor(field);
+                    onFilterPatch({ sort: { field, order } });
+                  }}>
+                    <option value="name" ?selected=${(filters?.sort?.field ?? 'updated_at') === 'name'}>Name</option>
+                    <option value="updated_at" ?selected=${(filters?.sort?.field ?? 'updated_at') === 'updated_at'}>Updated</option>
+                    <option value="created_at" ?selected=${filters?.sort?.field === 'created_at'}>Created</option>
+                    <option value="quantity" ?selected=${filters?.sort?.field === 'quantity'}>Quantity</option>
+                  </select>
+                  <button
+                    type="button"
+                    data-testid="sort-order-toggle"
+                    @click=${() => {
+                      const currentField = filters?.sort?.field ?? 'updated_at';
+                      const currentOrder = filters?.sort?.order ?? getDefaultOrderFor(currentField);
+                      const nextOrder = currentOrder === 'asc' ? 'desc' : 'asc';
+                      onFilterPatch({ sort: { field: currentField, order: nextOrder } });
+                    }}
+                    aria-label=${(filters?.sort?.order ?? 'desc') === 'asc' ? 'Ascending' : 'Descending'}
+                    title=${(filters?.sort?.order ?? 'desc') === 'asc' ? 'Ascending' : 'Descending'}
+                  >${(filters?.sort?.order ?? 'desc') === 'asc' ? 'A→Z' : 'Z→A'}</button>
+                </span>
               </label>
             </div>
             <details data-testid="diagnostics-panel" style="margin-top: 12px;">

@@ -15,6 +15,7 @@ import type {
   Unsubscribe,
 } from './types';
 import { WSClient } from './ws';
+import { DEFAULT_SORT } from './sort';
 
 type DebounceHandle = number | undefined;
 
@@ -62,7 +63,7 @@ export class Store {
   constructor(hass: HassLike) {
     this.ws = new WSClient(hass);
 
-    const defaultSort: Sort = { field: 'name', order: 'desc' };
+    const defaultSort: Sort = DEFAULT_SORT;
     const initial: StoreState = {
       items: [],
       cursor: null,

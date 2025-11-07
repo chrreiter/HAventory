@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { Sort } from '../store/types';
+import { DEFAULT_SORT, getDefaultOrderFor } from '../store/sort';
 
 function debounce<TArgs extends unknown[]>(fn: (...args: TArgs) => void, ms: number) {
   let t: number | undefined;
@@ -28,6 +29,7 @@ export class HVSearchBar extends LitElement {
     input[type="search"] { flex: 1 1 220px; }
     select { min-width: 140px; }
     label { display: inline-flex; align-items: center; gap: 6px; }
+    .sort-wrap { display: inline-flex; align-items: center; gap: 6px; }
   `;
 
   @property({ type: String }) q: string = '';
@@ -36,7 +38,7 @@ export class HVSearchBar extends LitElement {
   @property({ type: Boolean }) includeSubtree: boolean = true;
   @property({ type: Boolean }) checkedOutOnly: boolean = false;
   @property({ type: Boolean }) lowStockFirst: boolean = false;
-  @property({ attribute: false }) sort: Sort = { field: 'name', order: 'desc' };
+  @property({ attribute: false }) sort: Sort = DEFAULT_SORT;
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
   @property({ attribute: false }) locations: Array<{ id: string; name: string; path?: { display_path: string } }> = [];
 
@@ -84,8 +86,16 @@ export class HVSearchBar extends LitElement {
 
   private onSortChange(e: Event) {
     const value = (e.target as HTMLSelectElement).value as Sort['field'];
-    const order = this.sort?.order ?? 'desc';
-    this.emitChange({ sort: { field: value, order } });
+    const order = getDefaultOrderFor(value);
+    this.sort = { field: value, order };
+    this.emitChange({ sort: this.sort });
+  }
+
+  private onSortOrderToggle() {
+    const current = this.sort ?? DEFAULT_SORT;
+    const nextOrder = current.order === 'asc' ? 'desc' : 'asc';
+    this.sort = { field: current.field, order: nextOrder };
+    this.emitChange({ sort: this.sort });
   }
 
   render() {
@@ -113,12 +123,21 @@ export class HVSearchBar extends LitElement {
         <label><input type="checkbox" .checked=${this.checkedOutOnly} @change=${this.onCheckedOutChange} /> Checked-out only</label>
         <label><input type="checkbox" .checked=${this.lowStockFirst} @change=${this.onLowStockChange} /> Low-stock first</label>
 
-        <select @change=${this.onSortChange} aria-label="Sort">
-          <option value="name" ?selected=${(this.sort?.field ?? 'updated_at') === 'name'}>Sort: Name</option>
-          <option value="updated_at" ?selected=${(this.sort?.field ?? 'updated_at') === 'updated_at'}>Sort: Updated</option>
-          <option value="created_at" ?selected=${this.sort?.field === 'created_at'}>Sort: Created</option>
-          <option value="quantity" ?selected=${this.sort?.field === 'quantity'}>Sort: Quantity</option>
-        </select>
+        <span class="sort-wrap">
+          <select @change=${this.onSortChange} aria-label="Sort">
+            <option value="name" ?selected=${(this.sort?.field ?? 'updated_at') === 'name'}>Sort: Name</option>
+            <option value="updated_at" ?selected=${(this.sort?.field ?? 'updated_at') === 'updated_at'}>Sort: Updated</option>
+            <option value="created_at" ?selected=${this.sort?.field === 'created_at'}>Sort: Created</option>
+            <option value="quantity" ?selected=${this.sort?.field === 'quantity'}>Sort: Quantity</option>
+          </select>
+          <button
+            type="button"
+            data-testid="sort-order-toggle"
+            @click=${this.onSortOrderToggle}
+            aria-label=${this.sort?.order === 'asc' ? 'Ascending' : 'Descending'}
+            title=${this.sort?.order === 'asc' ? 'Ascending' : 'Descending'}
+          >${this.sort?.order === 'asc' ? 'A→Z' : 'Z→A'}</button>
+        </span>
       </div>
     `;
   }
