@@ -50,6 +50,30 @@ try {
   docker cp $localComponentPath "$ContainerName`:$targetRoot" | Out-Null
   Write-Host "  -> Copied to $targetRoot" -ForegroundColor Green
 
+  # Build frontend UI card assets (cards/haventory-card -> cards/www/haventory)
+  $localCardProjectDir = Join-Path $repoRoot 'cards\haventory-card'
+  if (Test-Path -Path $localCardProjectDir -PathType Container) {
+    if (Get-Command npm -ErrorAction SilentlyContinue) {
+      Write-Info 'Building frontend UI card (npm ci && npm run build)...'
+      Push-Location $localCardProjectDir
+      try {
+        npm ci --no-audit --no-fund | Out-Null
+      } catch {
+        Write-Err "npm ci failed: $($_.Exception.Message)"
+      }
+      try {
+        npm run build --silent | Out-Null
+      } catch {
+        Write-Err "npm run build failed: $($_.Exception.Message)"
+      }
+      Pop-Location
+    } else {
+      Write-Err 'npm not found on host; skipping card build'
+    }
+  } else {
+    Write-Err "Frontend card project not found: $localCardProjectDir (skipping build)"
+  }
+
   # Deploy frontend UI card assets (cards/www/haventory -> /config/www/haventory)
   $localCardDir = Join-Path $repoRoot 'cards\www\haventory'
   if (Test-Path -Path $localCardDir -PathType Container) {
