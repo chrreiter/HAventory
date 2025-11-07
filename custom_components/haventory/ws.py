@@ -709,7 +709,7 @@ async def ws_unsubscribe(hass: HomeAssistant, conn, msg):
         vol.Optional("description"): object,
         vol.Optional("quantity"): int,
         vol.Optional("checked_out"): bool,
-        vol.Optional("due_date"): str,
+        vol.Optional("due_date"): vol.Any(str, None),
         vol.Optional("location_id"): object,
         vol.Optional("tags"): [str],
         vol.Optional("category"): object,
@@ -749,7 +749,7 @@ async def ws_item_get(hass: HomeAssistant, conn, msg):
         vol.Optional("description"): object,
         vol.Optional("quantity"): int,
         vol.Optional("checked_out"): bool,
-        vol.Optional("due_date"): str,
+        vol.Optional("due_date"): vol.Any(str, None),
         vol.Optional("location_id"): object,
         vol.Optional("tags"): object,
         vol.Optional("category"): object,
@@ -859,7 +859,7 @@ async def ws_item_set_quantity(hass: HomeAssistant, conn, msg):
     {
         vol.Required("type"): "haventory/item/check_out",
         vol.Required("item_id"): object,
-        vol.Optional("due_date"): str,
+        vol.Optional("due_date"): vol.Any(str, None),
         vol.Optional("expected_version"): int,
     }
 )
