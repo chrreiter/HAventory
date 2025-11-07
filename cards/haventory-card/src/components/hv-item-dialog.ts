@@ -6,8 +6,8 @@ import type { Item } from '../store/types';
 export class HVItemDialog extends LitElement {
   static styles = css`
     :host { display: block; }
-    .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 9998; }
-    .dialog-wrap { position: fixed; inset: 0; display: grid; place-items: center; z-index: 9999; }
+    .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 10000; }
+    .dialog-wrap { position: fixed; inset: 0; display: grid; place-items: center; z-index: 10001; }
     .dialog { background: white; color: black; border: 1px solid #ddd; border-radius: 8px; padding: 16px; max-width: 520px; width: calc(100vw - 32px); box-sizing: border-box; }
     .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
     .actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; }
