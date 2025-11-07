@@ -1,5 +1,6 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { nextZBase } from '../utils/zindex';
 import type { Location } from '../store/types';
 
 @customElement('hv-location-selector')
@@ -22,6 +23,13 @@ export class HVLocationSelector extends LitElement {
   @state() private _q: string = '';
   @state() private _includeSubtree: boolean = true;
   @state() private _selectedId: string | null = null;
+  @state() private _zBase: number | null = null;
+
+  protected willUpdate(changed: Map<string, unknown>): void {
+    if (changed.has('open') && this.open) {
+      this._zBase = nextZBase();
+    }
+  }
 
   private onCancel() {
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
@@ -71,8 +79,8 @@ export class HVLocationSelector extends LitElement {
   render() {
     if (!this.open) return null;
     return html`
-      <div class="backdrop" role="presentation" @click=${this.onCancel}></div>
-      <div class="panel-wrap" role="none">
+      <div class="backdrop" role="presentation" style="z-index: ${this._zBase ?? 9998};" @click=${this.onCancel}></div>
+      <div class="panel-wrap" role="none" style="z-index: ${(this._zBase ?? 9998) + 1};">
         <div class="panel" role="dialog" aria-label="Location selector" @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); this.onCancel(); } }}>
           <div class="row"><input type="search" placeholder="Search" .value=${this._q} @input=${(e: Event) => this._q = (e.target as HTMLInputElement).value} /></div>
           ${this.renderList()}

@@ -1,5 +1,6 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { nextZBase } from '../utils/zindex';
 import type { Item } from '../store/types';
 
 @customElement('hv-item-dialog')
@@ -28,6 +29,7 @@ export class HVItemDialog extends LitElement {
   @state() private _checkedOut: boolean = false;
   @state() private _dueDate: string = '';
   @state() private _validation: string | null = null;
+  @state() private _zBase: number | null = null;
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('item')) {
@@ -41,6 +43,9 @@ export class HVItemDialog extends LitElement {
       this._checkedOut = !!it?.checked_out;
       this._dueDate = it?.due_date ?? '';
       this._validation = null;
+    }
+    if (changed.has('open') && this.open) {
+      this._zBase = nextZBase();
     }
   }
 
@@ -94,8 +99,8 @@ export class HVItemDialog extends LitElement {
   render() {
     if (!this.open) return null;
     return html`
-      <div class="backdrop" role="presentation" @click=${this.onCancel}></div>
-      <div class="dialog-wrap" role="none">
+      <div class="backdrop" role="presentation" style="z-index: ${this._zBase ?? 10000};" @click=${this.onCancel}></div>
+      <div class="dialog-wrap" role="none" style="z-index: ${(this._zBase ?? 10000) + 1};">
         <div class="dialog" role="dialog" aria-modal="true" aria-label="Item dialog" @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); this.onCancel(); } }}>
           ${this._validation ? html`<div class="banner" role="alert">${this._validation}</div>` : null}
           ${this.error ? html`<div class="banner" role="alert">${this.error}</div>` : null}
