@@ -256,7 +256,7 @@ export class HAventoryCard extends LitElement {
             <div class="row">
               <label>Location
                 <select @change=${(e: Event) => onFilterPatch({ locationId: (e.target as HTMLSelectElement).value || null })} .value=${filters?.locationId ?? ''}>
-                  <option value="">Root</option>
+                  <option value="">All</option>
                   ${(st?.locationsFlatCache ?? []).map((l) => html`<option value=${l.id} ?selected=${filters?.locationId === l.id}>${l.path?.display_path || l.name}</option>`)}
                 </select>
               </label>

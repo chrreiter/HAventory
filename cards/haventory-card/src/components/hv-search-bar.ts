@@ -115,7 +115,7 @@ export class HVSearchBar extends LitElement {
         </select>
 
         <select @change=${this.onLocationChange} aria-label="Location" .value=${this.locationId ?? ''}>
-          <option value="">Location: Root</option>
+          <option value="">Location: All</option>
           ${this.locations.map((l) => html`<option value=${l.id} ?selected=${this.locationId === l.id}>${l.path?.display_path || l.name}</option>`)}
         </select>
 

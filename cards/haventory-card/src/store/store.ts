@@ -170,7 +170,10 @@ export class Store {
 
   async refreshLocationsFlat() {
     const locs = await this.ws.listLocations();
-    this.stateObs.set({ locationsFlatCache: locs as Location[] });
+    const list = (locs as Location[]).slice().sort((a, b) =>
+      (a.path?.sort_key || '').localeCompare(b.path?.sort_key || '', undefined, { sensitivity: 'base' }),
+    );
+    this.stateObs.set({ locationsFlatCache: list });
   }
 
   // ---------- Listing & pagination ----------
