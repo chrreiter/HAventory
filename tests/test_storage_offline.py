@@ -83,6 +83,28 @@ async def test_repository_roundtrip_via_export_and_load() -> None:
 
 
 @pytest.mark.asyncio
+async def test_repository_roundtrip_preserves_string_area_ids_and_filtering() -> None:
+    """Storage roundtrip preserves location.area_id (string) and allows area filtering."""
+
+    hass = HomeAssistant()
+    store = DomainStore(hass, key="test_store_roundtrip_area_strings")
+
+    repo = Repository()
+    loc = repo.create_location(name="Pantry", area_id="kitchen")
+    it = repo.create_item({"name": "Spices", "location_id": loc.id})
+
+    await store.async_save(repo.export_state())
+    payload = await store.async_load()
+    repo2 = Repository.from_state(payload)
+
+    # area_id preserved
+    assert repo2.get_location(loc.id).name == "Pantry"
+    # list by area works
+    page = repo2.list_items(flt={"area_id": "kitchen"})  # type: ignore[typeddict-item]
+    assert [x.id for x in page["items"]] == [it.id]
+
+
+@pytest.mark.asyncio
 async def test_migration_is_applied_for_older_payload(monkeypatch) -> None:
     """Migration hook is invoked when schema_version differs."""
 

@@ -112,6 +112,32 @@ async def test_prefilter_by_area_and_and_logic_with_location() -> None:
 
 
 @pytest.mark.asyncio
+async def test_prefilter_by_area_with_non_uuid_ids_and_update_rebuckets() -> None:
+    """Repository accepts string area ids and re-buckets items on area change."""
+
+    repo = Repository()
+    # Non-UUID area ids
+    l1 = repo.create_location(name="L1", area_id="kitchen")
+    l2 = repo.create_location(name="L2", area_id="garage")
+
+    i1 = repo.create_item(ItemCreate(name="X", location_id=str(l1.id)))
+    i2 = repo.create_item(ItemCreate(name="Y", location_id=str(l2.id)))
+
+    # Filter by 'kitchen' returns only i1
+    out = repo.list_items(flt=ItemFilter(area_id="kitchen"))
+    assert [x.id for x in out["items"]] == [i1.id]
+
+    # Change L2 area to 'kitchen' and ensure item re-bucketed
+    repo.update_location(l2.id, area_id="kitchen")
+    out2 = repo.list_items(flt=ItemFilter(area_id="kitchen"))
+    assert {x.id for x in out2["items"]} == {i1.id, i2.id}
+
+    # 'garage' bucket now empty
+    out3 = repo.list_items(flt=ItemFilter(area_id="garage"))
+    assert [x.id for x in out3["items"]] == []
+
+
+@pytest.mark.asyncio
 async def test_low_stock_and_checked_out_counts_update() -> None:
     """Derived counts reflect item state and update on writes."""
 

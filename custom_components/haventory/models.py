@@ -56,7 +56,7 @@ class Location:
     id: uuid.UUID
     parent_id: uuid.UUID | None
     name: str
-    area_id: uuid.UUID | None = None
+    area_id: str | None = None
     path: LocationPath = field(default_factory=lambda: EMPTY_LOCATION_PATH)
 
 
