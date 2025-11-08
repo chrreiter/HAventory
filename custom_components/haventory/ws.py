@@ -187,7 +187,7 @@ def _op_item_update(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
     exclude_keys = {"item_id", "expected_version"}
     update: ItemUpdate = {k: v for k, v in payload.items() if k not in exclude_keys}
     updated = repo.update_item(item_id, update, expected_version=expected)
-    serialized = _serialize_item(updated)
+    serialized = _serialize_item(hass, updated)
     action = "moved" if "location_id" in update else "updated"
     return serialized, action
 
@@ -197,7 +197,7 @@ def _op_item_delete(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
     item_id = payload.get("item_id")
     expected = payload.get("expected_version")
     before = repo.get_item(item_id)
-    serialized_before = _serialize_item(before)
+    serialized_before = _serialize_item(hass, before)
     repo.delete_item(item_id, expected_version=expected)
     return serialized_before, "deleted"
 
@@ -209,7 +209,7 @@ def _op_item_move(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
     updated = repo.update_item(
         item_id, ItemUpdate(location_id=payload.get("location_id")), expected_version=expected
     )
-    return _serialize_item(updated), "moved"
+    return _serialize_item(hass, updated), "moved"
 
 
 def _op_item_adjust_quantity(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
@@ -218,7 +218,7 @@ def _op_item_adjust_quantity(hass: HomeAssistant, payload: dict) -> tuple[dict, 
     updated = repo.adjust_quantity(
         item_id, payload.get("delta"), expected_version=payload.get("expected_version")
     )
-    return _serialize_item(updated), "quantity_changed"
+    return _serialize_item(hass, updated), "quantity_changed"
 
 
 def _op_item_set_quantity(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
@@ -226,7 +226,7 @@ def _op_item_set_quantity(hass: HomeAssistant, payload: dict) -> tuple[dict, str
     item_id = payload.get("item_id")
     qty = payload.get("quantity")
     updated = repo.set_quantity(item_id, qty, expected_version=payload.get("expected_version"))
-    return _serialize_item(updated), "quantity_changed"
+    return _serialize_item(hass, updated), "quantity_changed"
 
 
 def _op_item_check_out(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
@@ -235,14 +235,14 @@ def _op_item_check_out(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
     updated = repo.check_out(
         item_id, due_date=payload.get("due_date"), expected_version=payload.get("expected_version")
     )
-    return _serialize_item(updated), "checked_out"
+    return _serialize_item(hass, updated), "checked_out"
 
 
 def _op_item_check_in(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
     repo = _repo(hass)
     item_id = payload.get("item_id")
     updated = repo.check_in(item_id, expected_version=payload.get("expected_version"))
-    return _serialize_item(updated), "checked_in"
+    return _serialize_item(hass, updated), "checked_in"
 
 
 def _op_item_add_tags(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
@@ -253,7 +253,7 @@ def _op_item_add_tags(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
     current = repo.get_item(item_id)
     new_tags = list(dict.fromkeys(list(current.tags) + list(tags)))
     updated = repo.update_item(item_id, ItemUpdate(tags=new_tags), expected_version=expected)
-    return _serialize_item(updated), "updated"
+    return _serialize_item(hass, updated), "updated"
 
 
 def _op_item_remove_tags(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
@@ -264,7 +264,7 @@ def _op_item_remove_tags(hass: HomeAssistant, payload: dict) -> tuple[dict, str]
     current = repo.get_item(item_id)
     new_tags = [t for t in list(current.tags) if t not in to_remove]
     updated = repo.update_item(item_id, ItemUpdate(tags=new_tags), expected_version=expected)
-    return _serialize_item(updated), "updated"
+    return _serialize_item(hass, updated), "updated"
 
 
 def _op_item_update_custom_fields(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
@@ -277,7 +277,7 @@ def _op_item_update_custom_fields(hass: HomeAssistant, payload: dict) -> tuple[d
     if "unset" in payload and payload.get("unset") is not None:
         update["custom_fields_unset"] = list(payload.get("unset"))
     updated = repo.update_item(item_id, update, expected_version=expected)
-    return _serialize_item(updated), "updated"
+    return _serialize_item(hass, updated), "updated"
 
 
 def _op_item_set_low_stock_threshold(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
@@ -289,7 +289,7 @@ def _op_item_set_low_stock_threshold(hass: HomeAssistant, payload: dict) -> tupl
         ItemUpdate(low_stock_threshold=payload.get("low_stock_threshold")),
         expected_version=expected,
     )
-    return _serialize_item(updated), "updated"
+    return _serialize_item(hass, updated), "updated"
 
 
 def _execute_item_op(hass: HomeAssistant, kind: str, payload: dict) -> tuple[dict, str]:
@@ -722,7 +722,7 @@ async def ws_unsubscribe(hass: HomeAssistant, conn, msg):
 async def ws_item_create(hass: HomeAssistant, conn, msg):
     payload = {k: v for k, v in msg.items() if k not in {"id", "type"}}
     item = _repo(hass).create_item(payload)  # type: ignore[arg-type]
-    serialized = _serialize_item(item)
+    serialized = _serialize_item(hass, item)
     _broadcast_event(hass, topic="items", action="created", payload={"item": serialized})
     await _persist_repo(hass)
     _broadcast_counts(hass)
@@ -736,7 +736,7 @@ async def ws_item_create(hass: HomeAssistant, conn, msg):
 @ws_guard("item_get", ("item_id",))
 async def ws_item_get(hass: HomeAssistant, conn, msg):
     item = _repo(hass).get_item(msg.get("item_id"))
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), _serialize_item(item)))
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), _serialize_item(hass, item)))
 
 
 @websocket_api.websocket_command(
@@ -775,7 +775,7 @@ async def ws_item_update(hass: HomeAssistant, conn, msg):
         }
     }
     updated = _repo(hass).update_item(item_id, update, expected_version=expected)
-    serialized = _serialize_item(updated)
+    serialized = _serialize_item(hass, updated)
     action = "moved" if "location_id" in update else "updated"
     _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     await _persist_repo(hass)
@@ -796,7 +796,7 @@ async def ws_item_delete(hass: HomeAssistant, conn, msg):
     item_id = msg.get("item_id")
     repo = _repo(hass)
     before = repo.get_item(item_id)
-    serialized_before = _serialize_item(before)
+    serialized_before = _serialize_item(hass, before)
     repo.delete_item(item_id, expected_version=msg.get("expected_version"))
     _broadcast_event(
         hass,
@@ -823,7 +823,7 @@ async def ws_item_adjust_quantity(hass: HomeAssistant, conn, msg):
     item = _repo(hass).adjust_quantity(
         msg.get("item_id"), msg.get("delta"), expected_version=msg.get("expected_version")
     )
-    serialized = _serialize_item(item)
+    serialized = _serialize_item(hass, item)
     _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
     await _persist_repo(hass)
     _broadcast_counts(hass)
@@ -848,7 +848,7 @@ async def ws_item_set_quantity(hass: HomeAssistant, conn, msg):
     item = _repo(hass).set_quantity(
         msg.get("item_id"), qty, expected_version=msg.get("expected_version")
     )
-    serialized = _serialize_item(item)
+    serialized = _serialize_item(hass, item)
     _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
     await _persist_repo(hass)
     _broadcast_counts(hass)
@@ -871,7 +871,7 @@ async def ws_item_check_out(hass: HomeAssistant, conn, msg):
         due_date=msg.get("due_date"),
         expected_version=msg.get("expected_version"),
     )
-    serialized = _serialize_item(item)
+    serialized = _serialize_item(hass, item)
     _broadcast_event(hass, topic="items", action="checked_out", payload={"item": serialized})
     await _persist_repo(hass)
     _broadcast_counts(hass)
@@ -889,7 +889,7 @@ async def ws_item_check_out(hass: HomeAssistant, conn, msg):
 @ws_guard("item_check_in", ("item_id", "expected_version"))
 async def ws_item_check_in(hass: HomeAssistant, conn, msg):
     item = _repo(hass).check_in(msg.get("item_id"), expected_version=msg.get("expected_version"))
-    serialized = _serialize_item(item)
+    serialized = _serialize_item(hass, item)
     _broadcast_event(hass, topic="items", action="checked_in", payload={"item": serialized})
     await _persist_repo(hass)
     _broadcast_counts(hass)
@@ -1097,7 +1097,7 @@ async def ws_item_list(hass: HomeAssistant, conn, msg):
     cursor = msg.get("cursor")
     page = _repo(hass).list_items(flt=flt, sort=sort, limit=limit, cursor=cursor)
     result = {
-        "items": [_serialize_item(it) for it in page["items"]],
+        "items": [_serialize_item(hass, it) for it in page["items"]],
         "next_cursor": page.get("next_cursor"),
     }
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
@@ -1267,7 +1267,18 @@ async def ws_location_move_subtree(hass: HomeAssistant, conn, msg):
 # -----------------------------
 
 
-def _serialize_item(item) -> dict[str, Any]:
+def _effective_area_id_for_item(hass: HomeAssistant, item) -> str | None:
+    """Resolve the effective area id for an item via its location ancestry."""
+    try:
+        if getattr(item, "location_id", None) is None:
+            return None
+        repo = _repo(hass)
+        return repo._resolve_effective_area_id_for_location(str(item.location_id))  # type: ignore[attr-defined]
+    except Exception:
+        return None
+
+
+def _serialize_item(hass: HomeAssistant, item) -> dict[str, Any]:
     return {
         "id": str(item.id),
         "name": item.name,
@@ -1283,6 +1294,7 @@ def _serialize_item(item) -> dict[str, Any]:
         "created_at": item.created_at,
         "updated_at": item.updated_at,
         "version": item.version,
+        "effective_area_id": _effective_area_id_for_item(hass, item),
         "location_path": {
             "id_path": [str(x) for x in item.location_path.id_path],
             "name_path": item.location_path.name_path,

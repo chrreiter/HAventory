@@ -36,6 +36,7 @@ export interface Item {
   created_at: string;
   updated_at: string;
   version: number;
+  effective_area_id?: string | null;
   location_path: LocationPath;
 }
 

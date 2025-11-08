@@ -692,6 +692,7 @@ class Repository:
 
         parent_changed, target_parent_id = self._parse_new_parent(new_parent_id, loc.parent_id)
         target_area, area_changed = self._parse_area_change(area_id, loc.area_id)
+        name_changed = updated_name != loc.name
 
         # Validate move invariants if changing parent
         if parent_changed:
@@ -726,7 +727,11 @@ class Repository:
         # Update affected items (now that live maps are consistent)
         affected = {key}
         affected.update(self._collect_descendant_ids(key))
-        self._update_items_location_paths_for_locations(affected)
+        # Only rebuild item location_path (and bump versions) when the path can change:
+        # - name change affects display paths
+        # - parent change affects ancestry
+        if parent_changed or name_changed:
+            self._update_items_location_paths_for_locations(affected)
 
         # Re-bucket items by area for the entire subtree when area changes
         if area_changed:
