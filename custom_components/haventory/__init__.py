@@ -16,7 +16,7 @@ from . import services as services_mod
 from . import ws as ws_mod
 from .const import DOMAIN
 from .repository import Repository
-from .storage import DomainStore
+from .storage import DomainStore, async_persist_immediate
 
 STORAGE_VERSION = 1
 LOGGER = logging.getLogger(__name__)
@@ -68,6 +68,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """
 
     bucket = hass.data.get(DOMAIN) or {}
+
+    # Ensure any pending changes are persisted before unload
+    try:
+        await async_persist_immediate(hass)
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.warning(
+            "Failed to persist during unload",
+            extra={"domain": DOMAIN, "op": "unload"},
+            exc_info=True,
+        )
 
     # Clear registration flags
     bucket.pop("services_registered", None)

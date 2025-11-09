@@ -15,7 +15,9 @@ forward-only migrations when an older schema payload is encountered.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from copy import deepcopy
 from typing import Any, Final
 
@@ -34,6 +36,9 @@ CURRENT_SCHEMA_VERSION: Final[int] = 1
 # Storage key under which the persisted dataset is saved
 STORAGE_KEY: Final[str] = "haventory_store"
 
+# Debounce delay for persistence operations (seconds)
+PERSIST_DEBOUNCE_DELAY: Final[float] = 1.0
+
 
 def _empty_payload() -> dict[str, Any]:
     """Create a new empty payload matching the current schema.
@@ -42,6 +47,18 @@ def _empty_payload() -> dict[str, Any]:
     """
 
     return {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+
+
+def _get_persist_lock(hass: HomeAssistant) -> asyncio.Lock:
+    """Get or create the persistence lock for this hass instance.
+
+    Returns a per-hass-instance asyncio.Lock to serialize persistence operations
+    and prevent race conditions from concurrent saves.
+    """
+    bucket = hass.data.setdefault(DOMAIN, {})
+    if "persist_lock" not in bucket:
+        bucket["persist_lock"] = asyncio.Lock()
+    return bucket["persist_lock"]
 
 
 class DomainStore:
@@ -163,22 +180,136 @@ class DomainStore:
 
 
 async def async_persist_repo(hass: HomeAssistant) -> None:
-    """Persist the current repository state via DomainStore.
+    """Persist the current repository state via DomainStore with exclusive locking.
 
     Looks up both the storage manager and repository in hass.data[DOMAIN].
     Fails fast with StorageError if prerequisites are missing to avoid
     silent data loss. Callers should ensure setup completed successfully.
+
+    Uses an asyncio.Lock to serialize concurrent persistence operations and
+    prevent race conditions from multiple handlers attempting to save simultaneously.
     """
 
-    bucket = hass.data.get(DOMAIN) or {}
-    store = bucket.get("store")
-    repo = bucket.get("repository")
-    if store is None:
-        raise StorageError("storage manager not initialized; run integration setup")
-    if repo is None:
-        raise StorageError("repository not initialized; run integration setup")
-    payload = repo.export_state()
-    try:
-        await store.async_save(payload)
-    except Exception as exc:  # pragma: no cover - mapped at boundaries
-        raise StorageError("failed to persist repository") from exc
+    lock = _get_persist_lock(hass)
+    async with lock:
+        bucket = hass.data.get(DOMAIN) or {}
+        store = bucket.get("store")
+        repo = bucket.get("repository")
+        if store is None:
+            raise StorageError("storage manager not initialized; run integration setup")
+        if repo is None:
+            raise StorageError("repository not initialized; run integration setup")
+
+        start_time = time.monotonic()
+        generation = getattr(repo, "generation", None)
+        _LOGGER.debug(
+            "Persisting repository state",
+            extra={
+                "domain": DOMAIN,
+                "op": "persist_start",
+                "generation": generation,
+            },
+        )
+
+        payload = repo.export_state()
+        try:
+            await store.async_save(payload)
+            elapsed = time.monotonic() - start_time
+            _LOGGER.debug(
+                "Repository persisted successfully",
+                extra={
+                    "domain": DOMAIN,
+                    "op": "persist_complete",
+                    "generation": generation,
+                    "elapsed_ms": int(elapsed * 1000),
+                },
+            )
+        except Exception as exc:  # pragma: no cover - mapped at boundaries
+            elapsed = time.monotonic() - start_time
+            _LOGGER.error(
+                "Failed to persist repository",
+                extra={
+                    "domain": DOMAIN,
+                    "op": "persist_failed",
+                    "generation": generation,
+                    "elapsed_ms": int(elapsed * 1000),
+                },
+                exc_info=True,
+            )
+            raise StorageError("failed to persist repository") from exc
+
+
+async def async_request_persist(hass: HomeAssistant) -> None:
+    """Request a debounced persistence operation.
+
+    Cancels any pending persist task and schedules a new one after the debounce
+    delay. This coalesces rapid changes into a single persistence operation,
+    reducing disk I/O while maintaining data safety.
+
+    The debounce delay is PERSIST_DEBOUNCE_DELAY (1.0 seconds by default).
+    """
+    bucket = hass.data.setdefault(DOMAIN, {})
+
+    # Cancel any pending persist task
+    existing_task = bucket.get("persist_task")
+    if existing_task is not None and not existing_task.done():
+        existing_task.cancel()
+        _LOGGER.debug(
+            "Cancelled pending persist task",
+            extra={"domain": DOMAIN, "op": "persist_debounce_cancel"},
+        )
+
+    async def _delayed_persist() -> None:
+        """Execute persistence after debounce delay."""
+        try:
+            await asyncio.sleep(PERSIST_DEBOUNCE_DELAY)
+            await async_persist_repo(hass)
+        except asyncio.CancelledError:
+            # Task was cancelled, this is expected
+            _LOGGER.debug(
+                "Debounced persist task cancelled",
+                extra={"domain": DOMAIN, "op": "persist_debounce_cancelled"},
+            )
+        except Exception:  # pragma: no cover - defensive
+            _LOGGER.error(
+                "Debounced persist task failed",
+                extra={"domain": DOMAIN, "op": "persist_debounce_failed"},
+                exc_info=True,
+            )
+
+    _LOGGER.debug(
+        "Persist requested, debouncing",
+        extra={
+            "domain": DOMAIN,
+            "op": "persist_debounce_request",
+            "delay_s": PERSIST_DEBOUNCE_DELAY,
+        },
+    )
+
+    bucket["persist_task"] = asyncio.create_task(_delayed_persist())
+
+
+async def async_persist_immediate(hass: HomeAssistant) -> None:
+    """Persist immediately, bypassing debounce.
+
+    Cancels any pending debounced persist task and executes persistence
+    synchronously. Use this for critical paths like shutdown where we need
+    to ensure data is written to disk before the process exits.
+    """
+    bucket = hass.data.setdefault(DOMAIN, {})
+
+    # Cancel any pending debounced task
+    existing_task = bucket.get("persist_task")
+    if existing_task is not None and not existing_task.done():
+        existing_task.cancel()
+        _LOGGER.debug(
+            "Cancelled pending persist task for immediate persist",
+            extra={"domain": DOMAIN, "op": "persist_immediate_cancel"},
+        )
+
+    _LOGGER.debug(
+        "Immediate persist requested",
+        extra={"domain": DOMAIN, "op": "persist_immediate_request"},
+    )
+
+    await async_persist_repo(hass)

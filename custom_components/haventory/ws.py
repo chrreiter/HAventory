@@ -15,12 +15,13 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
+from . import storage as storage_mod
 from .areas import async_get_area_registry
 from .const import DOMAIN, INTEGRATION_VERSION
 from .exceptions import ConflictError, NotFoundError, StorageError, ValidationError
 from .models import ItemUpdate, normalize_tags
 from .repository import UNSET, Repository
-from .storage import CURRENT_SCHEMA_VERSION, async_persist_repo
+from .storage import CURRENT_SCHEMA_VERSION
 
 LOGGER = logging.getLogger(__name__)
 
@@ -433,8 +434,8 @@ def _broadcast_counts(hass: HomeAssistant) -> None:
 
 
 async def _persist_repo(hass: HomeAssistant) -> None:
-    # Delegate to shared helper; let typed exceptions bubble to boundary
-    await async_persist_repo(hass)
+    # Persist immediately so tests can observe saves and errors map synchronously
+    await storage_mod.async_persist_repo(hass)
 
 
 # -----------------------------
@@ -1036,7 +1037,11 @@ async def ws_item_move(hass: HomeAssistant, conn, msg):
 async def ws_items_bulk(hass: HomeAssistant, conn, msg):
     operations = _validate_bulk_ops(msg.get("operations"))
     results: dict[str, dict[str, object]] = {}
-    any_success = False
+
+    # Capture initial state for logging
+    repo = _repo(hass)
+    initial_generation = repo.generation
+    successful_ops: list[tuple[str, dict, str]] = []  # (op_id, serialized, action)
 
     for op in operations:
         op_id = op["op_id"]
@@ -1045,12 +1050,13 @@ async def ws_items_bulk(hass: HomeAssistant, conn, msg):
         try:
             serialized, action = _execute_item_op(hass, kind, payload)
             results[op_id] = {"success": True, "result": serialized}
-            _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
-            any_success = True
+            successful_ops.append((op_id, serialized, action))
         except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
+            # Log error with full context for debugging
             ctx = {
                 "op_id": op_id,
                 "kind": kind,
+                "error": str(exc),
             }
             for k in (
                 "item_id",
@@ -1066,14 +1072,53 @@ async def ws_items_bulk(hass: HomeAssistant, conn, msg):
             ):
                 if k in payload:
                     ctx[k] = payload.get(k)
+
+            LOGGER.error(
+                "Bulk operation failed, continuing with remaining ops",
+                extra={
+                    "domain": DOMAIN,
+                    "op": "items_bulk_op_failed",
+                    **ctx,
+                },
+                exc_info=True,
+            )
+
             results[op_id] = {
                 "success": False,
                 "error": {"code": _error_code(exc), "message": str(exc), "context": ctx},
             }
 
-    if any_success:
+    if successful_ops:
+        # Log summary of bulk operation
+        LOGGER.info(
+            "Bulk operation completed",
+            extra={
+                "domain": DOMAIN,
+                "op": "items_bulk",
+                "total_ops": len(operations),
+                "successful": len(successful_ops),
+                "failed": len(operations) - len(successful_ops),
+                "initial_generation": initial_generation,
+                "final_generation": repo.generation,
+            },
+        )
+
+        # Broadcast all successful operations
+        for _op_id, serialized, action in successful_ops:
+            _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+
+        # Persist with debouncing (moved broadcasts before persist)
         await _persist_repo(hass)
         _broadcast_counts(hass)
+    else:
+        LOGGER.warning(
+            "Bulk operation completed with no successful operations",
+            extra={
+                "domain": DOMAIN,
+                "op": "items_bulk",
+                "total_ops": len(operations),
+            },
+        )
 
     conn.send_message(websocket_api.result_message(msg.get("id", 0), {"results": results}))
 

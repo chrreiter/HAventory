@@ -274,3 +274,17 @@ async def async_get(hass: HomeAssistant):  # type: ignore[override]
 
 ha_helpers_area_registry.async_get = async_get
 sys.modules["homeassistant.helpers.area_registry"] = ha_helpers_area_registry
+
+
+# Pytest fixtures for testing
+
+# Import project storage module after HA stubs are installed
+import pytest  # noqa: E402
+from custom_components.haventory import storage as storage_mod  # noqa: E402
+
+
+@pytest.fixture
+def immediate_persist(monkeypatch):
+    """Fixture that makes persistence immediate instead of debounced for faster tests."""
+    # Replace async_request_persist with async_persist_repo to make it immediate
+    monkeypatch.setattr(storage_mod, "async_request_persist", storage_mod.async_persist_repo)

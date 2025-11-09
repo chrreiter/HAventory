@@ -143,7 +143,7 @@ async def test_location_error_mapping() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ws_location_mutations_persist_to_store(monkeypatch) -> None:
+async def test_ws_location_mutations_persist_to_store(monkeypatch, immediate_persist) -> None:
     """Location create/update/delete should persist via DomainStore.save."""
 
     hass = HomeAssistant()
@@ -178,7 +178,7 @@ async def test_ws_location_mutations_persist_to_store(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_location_move_subtree_persists(monkeypatch) -> None:
+async def test_location_move_subtree_persists(monkeypatch, immediate_persist) -> None:
     """move_subtree persists via DomainStore.async_save."""
 
     hass = HomeAssistant()
