@@ -10,12 +10,13 @@ import uuid
 
 import pytest
 from custom_components.haventory.exceptions import ConflictError, NotFoundError
-from custom_components.haventory.models import ItemCreate, ItemFilter, Sort
+from custom_components.haventory.models import ItemCreate, ItemFilter, ItemUpdate, Sort
 from custom_components.haventory.repository import Repository
 
 TOTAL_ITEMS = 3
 INITIAL_LOW_STOCK_COUNT = 1
 LOW_STOCK_AFTER_ADJUST = 2
+LOADED_ITEM_COUNT = 2
 
 
 @pytest.mark.asyncio
@@ -163,3 +164,145 @@ async def test_low_stock_and_checked_out_counts_update() -> None:
     assert repo.get_counts()["checked_out_count"] == 1
     repo.check_in(i3.id)
     assert repo.get_counts()["checked_out_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_generation_counter_on_item_operations() -> None:
+    """Generation counter increments on every item state modification."""
+    repo = Repository()
+    initial_gen = repo.generation
+
+    # Create item increments generation
+    item = repo.create_item(ItemCreate(name="Test Item", quantity=10))
+    assert repo.generation == initial_gen + 1
+
+    # Update item increments generation
+    repo.update_item(item.id, ItemUpdate(quantity=20))
+    gen_after_update = repo.generation
+    assert gen_after_update > initial_gen + 1
+
+    # Adjust quantity increments generation
+    repo.adjust_quantity(item.id, delta=5)
+    gen_after_adjust = repo.generation
+    assert gen_after_adjust > gen_after_update
+
+    # Set quantity increments generation
+    repo.set_quantity(item.id, quantity=30)
+    gen_after_set = repo.generation
+    assert gen_after_set > gen_after_adjust
+
+    # Check out increments generation
+    repo.check_out(item.id, due_date="2025-12-31")
+    gen_after_checkout = repo.generation
+    assert gen_after_checkout > gen_after_set
+
+    # Check in increments generation
+    repo.check_in(item.id)
+    gen_after_checkin = repo.generation
+    assert gen_after_checkin > gen_after_checkout
+
+    # Delete item increments generation
+    repo.delete_item(item.id)
+    assert repo.generation > gen_after_checkin
+
+
+@pytest.mark.asyncio
+async def test_generation_counter_on_location_operations() -> None:
+    """Generation counter increments on every location state modification."""
+    repo = Repository()
+    initial_gen = repo.generation
+
+    # Create location increments generation
+    loc1 = repo.create_location(name="Workshop")
+    assert repo.generation == initial_gen + 1
+
+    # Create child location increments generation
+    loc2 = repo.create_location(name="Shelf A", parent_id=loc1.id)
+    assert repo.generation == initial_gen + 2
+
+    # Update location name increments generation (no reindexing, just one increment)
+    repo.update_location(loc2.id, name="Shelf A Updated")
+    gen_after_update = repo.generation
+    assert gen_after_update > initial_gen + 2
+
+    # Move location increments generation
+    repo.update_location(loc2.id, new_parent_id=None)
+    gen_after_move = repo.generation
+    assert gen_after_move > gen_after_update
+
+    # Delete location increments generation
+    repo.delete_location(loc2.id)
+    gen_after_delete1 = repo.generation
+    assert gen_after_delete1 > gen_after_move
+
+    repo.delete_location(loc1.id)
+    assert repo.generation > gen_after_delete1
+
+
+@pytest.mark.asyncio
+async def test_generation_property_accessor() -> None:
+    """Generation property provides read-only access to counter."""
+    repo = Repository()
+
+    # Initial generation
+    gen1 = repo.generation
+    assert isinstance(gen1, int)
+    assert gen1 >= 0
+
+    # After modification
+    repo.create_item(ItemCreate(name="Item"))
+    gen2 = repo.generation
+    assert gen2 == gen1 + 1
+
+    # Property is read-only (no setter)
+    with pytest.raises(AttributeError):
+        repo.generation = 999  # type: ignore[misc]
+
+
+@pytest.mark.asyncio
+async def test_generation_export_and_load_roundtrip() -> None:
+    """Generation counter persists across export/load cycles."""
+    repo = Repository()
+
+    # Create some data
+    item1 = repo.create_item(ItemCreate(name="Item 1"))
+    item2 = repo.create_item(ItemCreate(name="Item 2"))
+    loc = repo.create_location(name="Location")
+
+    generation_before = repo.generation
+    assert generation_before > 0
+
+    # Export state
+    state = repo.export_state()
+    assert "_generation" in state
+    assert state["_generation"] == generation_before
+
+    # Create new repo and load state
+    new_repo = Repository.from_state(state)
+
+    # Generation should be restored and incremented during load
+    # (load calls _index_item/_add_location for each entity, incrementing generation)
+    assert new_repo.generation > generation_before
+
+    # Verify data integrity
+    assert len(new_repo.list_items()["items"]) == LOADED_ITEM_COUNT
+    assert new_repo.get_item(item1.id).name == "Item 1"
+    assert new_repo.get_item(item2.id).name == "Item 2"
+    assert new_repo.get_location(loc.id).name == "Location"
+
+
+@pytest.mark.asyncio
+async def test_generation_load_state_without_generation() -> None:
+    """Loading state without _generation field initializes to 0."""
+    repo = Repository()
+
+    # Create state without _generation field (legacy data)
+    state = {
+        "items": {},
+        "locations": {},
+    }
+
+    repo.load_state(state)
+
+    # Should initialize to 0, then increment for load
+    assert repo.generation == 1

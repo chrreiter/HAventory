@@ -71,6 +71,8 @@ Remove-Item Env:\HA_ALLOW_AREA_MUTATIONS
 ### Backend (custom component)
 - [ ] `custom_components/haventory/` with `manifest.json`, `__init__.py`, `config_flow.py`, `services.yaml`
 - [ ] Store: `hass.data[DOMAIN]["store"]` with versioned schema and safe writes
+- [ ] Persistence: Debounced saves (1s delay) with asyncio locking to prevent race conditions; operations coalesce rapid changes into single disk write; immediate persist on shutdown
+- [ ] Repository generation counter: Increments on every state modification for optimistic locking and debugging; persisted across restarts
 - [ ] WebSocket-only CRUD via `homeassistant.components.websocket_api` decorators (production). For local tooling, an optional dev-only HTTP shim may be enabled behind an env flag.
 - [ ] Services via `hass.services.async_register` with `voluptuous` schemas
 - [ ] Areas via `hass.helpers.area_registry.async_get(hass)`; do not auto-create areas

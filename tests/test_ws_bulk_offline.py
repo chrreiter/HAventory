@@ -31,7 +31,7 @@ async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
 
 
 @pytest.mark.asyncio
-async def test_bulk_mixed_results_and_single_persist(monkeypatch) -> None:
+async def test_bulk_mixed_results_and_single_persist(monkeypatch, immediate_persist) -> None:
     """Bulk should return per-op results and persist once if any success."""
 
     hass = HomeAssistant()

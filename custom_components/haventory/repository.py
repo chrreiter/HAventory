@@ -94,9 +94,20 @@ class Repository:
         self._children_ids_by_parent_id: dict[str | None, set[str]] = {}
         # No instance-level sentinel needed; use module-level UNSET
 
+        # Generation counter for optimistic locking and debugging
+        self._generation: int = 0
+
     # -----------------------------
     # Internal helpers — indexing
     # -----------------------------
+
+    def _increment_generation(self) -> None:
+        """Increment generation counter on any state modification.
+
+        The generation counter is used for optimistic locking and debugging
+        to track when the repository state has changed.
+        """
+        self._generation += 1
 
     def _add_to_bucket(self, bucket: dict[str, set[str]], key: str, item_id: str) -> None:
         bucket.setdefault(key, set()).add(item_id)
@@ -146,6 +157,9 @@ class Repository:
         # cached sort key for name
         self._name_sort_key_by_item_id[item_key] = normalize_text_for_sort(item.name)
 
+        # Increment generation on state modification
+        self._increment_generation()
+
     def _unindex_item(self, item: Item) -> None:
         # Remove from tag/category/checked/low-stock/location/timestamp caches
         item_key = str(item.id)
@@ -171,6 +185,9 @@ class Repository:
 
         # Finally, drop from primary store
         self._items_by_id.pop(item_key, None)
+
+        # Increment generation on state modification
+        self._increment_generation()
 
     def _remove_item_from_all_area_buckets(self, item_key: str) -> None:
         # Defensive: remove an item id from every area bucket
@@ -281,6 +298,9 @@ class Repository:
         if loc.area_id is not None:
             self._locations_by_area_id.setdefault(str(loc.area_id), set()).add(str(loc.id))
 
+        # Increment generation on state modification
+        self._increment_generation()
+
     def _remove_location(self, loc: Location) -> None:
         self._locations_by_id.pop(str(loc.id), None)
         parent_key: str | None = str(loc.parent_id) if loc.parent_id is not None else None
@@ -298,6 +318,9 @@ class Repository:
                 s.discard(str(loc.id))
                 if not s:
                     self._locations_by_area_id.pop(str(loc.area_id), None)
+
+        # Increment generation on state modification
+        self._increment_generation()
 
     def _stage_location_update(
         self,
@@ -737,6 +760,9 @@ class Repository:
         if area_changed:
             self._rebucket_items_for_subtree_area_change(key)
 
+        # Increment generation on any location state modification
+        self._increment_generation()
+
         LOGGER.debug(
             "Location updated",
             extra={
@@ -874,6 +900,19 @@ class Repository:
     # No repository-local validation helpers. Invariants live in models.
 
     # -----------------------------
+    # Properties
+    # -----------------------------
+
+    @property
+    def generation(self) -> int:
+        """Current repository generation for optimistic locking and debugging.
+
+        The generation counter increments on every state modification and can
+        be used to detect stale snapshots or track changes for debugging.
+        """
+        return self._generation
+
+    # -----------------------------
     # Introspection helpers for tests
     # -----------------------------
 
@@ -951,7 +990,11 @@ class Repository:
         for loc_id in sorted(self._locations_by_id.keys()):
             locations_dict[loc_id] = _serialize_location(self._locations_by_id[loc_id])
 
-        return {"items": items_dict, "locations": locations_dict}
+        return {
+            "items": items_dict,
+            "locations": locations_dict,
+            "_generation": self._generation,
+        }
 
     def load_state(self, data: dict[str, Any]) -> None:
         """Load repository content from a persisted payload.
@@ -976,6 +1019,9 @@ class Repository:
 
         if not isinstance(data, dict):
             return
+
+        # Restore generation counter from persisted state
+        self._generation = int(data.get("_generation", 0))
 
         # Load locations first so items can reference them
         locations = data.get("locations") or {}
@@ -1080,6 +1126,9 @@ class Repository:
                         },
                     )
                     continue
+
+        # Increment generation after load to mark as modified since load
+        self._increment_generation()
 
     @staticmethod
     def from_state(data: dict[str, Any]) -> Repository:
