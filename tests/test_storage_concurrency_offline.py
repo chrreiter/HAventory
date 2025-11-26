@@ -9,6 +9,8 @@ import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from custom_components.haventory import storage as storage_mod
+from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.models import ItemCreate, ItemUpdate
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import (
@@ -18,6 +20,12 @@ from custom_components.haventory.storage import (
     async_persist_repo,
     async_request_persist,
 )
+from custom_components.haventory.ws import setup as ws_setup
+from homeassistant.core import HomeAssistant
+
+# Named constants for test assertions
+RAPID_MUTATION_COUNT = 3
+COALESCE_MUTATION_COUNT = 5
 
 
 @pytest.mark.asyncio
@@ -266,3 +274,112 @@ async def test_debounce_request_logs(caplog):
 
     # Check for debounce logs
     assert any("Persist requested, debouncing" in rec.message for rec in caplog.records)
+
+
+# -----------------------------------------------------------------------------
+# Integration test: verify WS handlers use debounced persistence
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ws_mutations_use_debounced_persistence(monkeypatch):
+    """WS mutations should use debounced persistence to reduce disk I/O.
+
+    Verifies that multiple rapid WS mutations are coalesced into a single
+    save operation via async_request_persist, not immediate persistence.
+    """
+    hass = HomeAssistant()
+    repo = Repository()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    store = DomainStore(hass)
+    hass.data[DOMAIN]["store"] = store
+    ws_setup(hass)
+
+    # Track calls to async_request_persist (debounced) vs async_persist_repo (immediate)
+    debounced_calls: list[bool] = []
+    immediate_calls: list[bool] = []
+
+    async def track_debounced(h):
+        debounced_calls.append(True)
+
+    async def track_immediate(h):
+        immediate_calls.append(True)
+
+    monkeypatch.setattr(storage_mod, "async_request_persist", track_debounced)
+    monkeypatch.setattr(storage_mod, "async_persist_repo", track_immediate)
+
+    # Helper to send WS commands
+    async def _send(_id: int, type_: str, **payload):
+        handlers = hass.data.get("__ws_commands__", [])
+        for h in handlers:
+            schema = getattr(h, "_ws_schema", None)
+            if not callable(h) or not isinstance(schema, dict):
+                continue
+            if schema.get("type") != type_:
+                continue
+            req = {"id": _id, "type": type_}
+            req.update(payload)
+            return await h(hass, None, req)
+        raise AssertionError("No handler responded for type " + type_)
+
+    # Execute multiple WS mutations
+    await _send(1, "haventory/item/create", name="Item 1")
+    await _send(2, "haventory/item/create", name="Item 2")
+    await _send(3, "haventory/item/create", name="Item 3")
+
+    # Should have called debounced persist, not immediate
+    assert len(debounced_calls) == RAPID_MUTATION_COUNT
+    assert len(immediate_calls) == 0, "WS should not use immediate persistence"
+
+
+@pytest.mark.asyncio
+async def test_ws_debouncing_coalesces_rapid_mutations():
+    """Rapid WS mutations are coalesced into a single save via debouncing.
+
+    This test verifies the end-to-end behavior: multiple rapid WS mutations
+    result in a single disk write after the debounce delay.
+    """
+    hass = HomeAssistant()
+    repo = Repository()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    mock_store = AsyncMock(spec=DomainStore)
+    save_calls: list[int] = []
+
+    async def count_save(data):
+        save_calls.append(1)
+
+    mock_store.async_save = count_save
+    hass.data[DOMAIN]["store"] = mock_store
+    ws_setup(hass)
+
+    # Helper to send WS commands
+    async def _send(_id: int, type_: str, **payload):
+        handlers = hass.data.get("__ws_commands__", [])
+        for h in handlers:
+            schema = getattr(h, "_ws_schema", None)
+            if not callable(h) or not isinstance(schema, dict):
+                continue
+            if schema.get("type") != type_:
+                continue
+            req = {"id": _id, "type": type_}
+            req.update(payload)
+            return await h(hass, None, req)
+        raise AssertionError("No handler responded for type " + type_)
+
+    # Execute multiple rapid WS mutations (faster than debounce delay)
+    for i in range(COALESCE_MUTATION_COUNT):
+        await _send(i + 1, "haventory/item/create", name=f"Rapid Item {i}")
+        await asyncio.sleep(0.05)  # 50ms between requests (less than 1s debounce)
+
+    # At this point, no saves should have happened yet (still debouncing)
+    assert len(save_calls) == 0, "Should be debouncing, no saves yet"
+
+    # Wait for debounce delay to complete
+    await asyncio.sleep(PERSIST_DEBOUNCE_DELAY + 0.2)
+
+    # Should have exactly one save (all mutations coalesced)
+    assert len(save_calls) == 1, "All rapid mutations should coalesce into one save"
+
+    # Verify all items were created in memory
+    result = repo.list_items()
+    assert len(result["items"]) == COALESCE_MUTATION_COUNT
