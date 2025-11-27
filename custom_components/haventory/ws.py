@@ -1275,6 +1275,7 @@ async def ws_location_tree(hass: HomeAssistant, conn, msg):
             "id": str(loc.id),
             "name": loc.name,
             "parent_id": str(loc.parent_id) if loc.parent_id is not None else None,
+            "area_id": str(loc.area_id) if loc.area_id is not None else None,
             "path": {
                 "id_path": [str(x) for x in loc.path.id_path],
                 "name_path": loc.path.name_path,
