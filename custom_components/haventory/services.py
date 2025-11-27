@@ -104,7 +104,11 @@ SCHEMA_ITEM_CHECK_IN = vol.Schema(
 )
 
 SCHEMA_LOCATION_CREATE = vol.Schema(
-    {vol.Required("name"): str, vol.Optional("parent_id"): vol.Any(str, None)}
+    {
+        vol.Required("name"): str,
+        vol.Optional("parent_id"): vol.Any(str, None),
+        vol.Optional("area_id"): vol.Any(str, None),
+    }
 )
 
 SCHEMA_LOCATION_UPDATE = vol.Schema(
@@ -112,6 +116,7 @@ SCHEMA_LOCATION_UPDATE = vol.Schema(
         vol.Required("location_id"): str,
         vol.Optional("name"): str,
         vol.Optional("new_parent_id"): vol.Any(str, None),
+        vol.Optional("area_id"): vol.Any(str, None),
     }
 )
 
@@ -269,7 +274,11 @@ async def service_location_create(hass: HomeAssistant, data: dict) -> None:
     try:
         payload = SCHEMA_LOCATION_CREATE(data)
         repo = _get_repo(hass)
-        repo.create_location(name=payload["name"], parent_id=payload.get("parent_id"))
+        repo.create_location(
+            name=payload["name"],
+            parent_id=payload.get("parent_id"),
+            area_id=payload.get("area_id"),
+        )
         await async_persist_repo(hass)
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _log_domain_error(op, {"location_name": data.get("name")}, exc)
@@ -281,9 +290,13 @@ async def service_location_update(hass: HomeAssistant, data: dict) -> None:
     try:
         payload = SCHEMA_LOCATION_UPDATE(data)
         new_parent = payload["new_parent_id"] if "new_parent_id" in payload else UNSET
+        area_id = payload["area_id"] if "area_id" in payload else UNSET
         repo = _get_repo(hass)
         repo.update_location(
-            payload["location_id"], name=payload.get("name"), new_parent_id=new_parent
+            payload["location_id"],
+            name=payload.get("name"),
+            new_parent_id=new_parent,
+            area_id=area_id,
         )
         await async_persist_repo(hass)
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
