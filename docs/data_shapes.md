@@ -30,7 +30,8 @@ Object shape for persisted items and API results:
     "name_path": ["string", "..."],
     "display_path": "Garage / Shelf A",
     "sort_key": "garage / shelf a"
-  }
+  },
+  "effective_area_id": "string|null"
 }
 ```
 
@@ -68,7 +69,7 @@ Object shape:
   "id": "uuid-v4",
   "name": "string",
   "parent_id": "uuid-v4|null",
-  "area_id": "uuid-v4|null",
+  "area_id": "string|null",
   "path": {
     "id_path": ["uuid-v4", "..."],
     "name_path": ["string", "..."],
@@ -84,7 +85,7 @@ Location tree node (returned by `location/tree`):
   "id": "uuid-v4",
   "name": "string",
   "parent_id": "uuid-v4|null",
-  "area_id": "uuid-v4|null",
+  "area_id": "string|null",
   "path": <LocationPath>,
   "children": [ <LocationNode> ]
 }
@@ -100,8 +101,9 @@ Location tree node (returned by `location/tree`):
   - `checked_out?: boolean`
   - `low_stock_only?: boolean`
   - `location_id?: uuid-v4|null`
-  - `area_id?: uuid-v4`
+  - `area_id?: string`
   - `include_subtree?: boolean`
+  - `low_stock_first?: boolean`
   - `updated_after?: ISO8601Z`
   - `created_after?: ISO8601Z`
 
