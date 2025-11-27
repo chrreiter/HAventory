@@ -87,9 +87,11 @@ Location tree node (returned by `location/tree`):
   "parent_id": "uuid-v4|null",
   "area_id": "string|null",
   "path": <LocationPath>,
-  "children": [ <LocationNode> ]
+  "children": [ <tree node>, ... ]
 }
 ```
+
+Note: `children` is a recursive array of tree nodes with the same structure.
 
 ### Filters and sorting
 
