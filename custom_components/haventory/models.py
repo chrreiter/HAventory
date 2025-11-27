@@ -137,14 +137,6 @@ class Sort(TypedDict):
     order: Literal["asc", "desc"]
 
 
-@dataclass
-class LocationNode:
-    """Tree node for locations when building hierarchies."""
-
-    location: Location
-    children: list[LocationNode] = field(default_factory=list)
-
-
 # -----------------------------
 # Utility helpers
 # -----------------------------
