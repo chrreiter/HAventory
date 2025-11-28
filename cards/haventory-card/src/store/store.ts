@@ -324,11 +324,14 @@ export class Store {
   }
 
   async moveItem(itemId: string, locationId: string | null, expectedVersion?: number) {
+    const before = this.state.value.items.find((i) => i.id === itemId);
+    if (before) this.applyOptimistic({ ...before, location_id: locationId } as Item);
     try {
       const updated = await this.ws.moveItem(itemId, locationId, expectedVersion);
       this.applyOptimistic(updated);
     } catch (err) {
       this.pushError(err);
+      if (before) this.applyOptimistic(before);
     }
   }
 

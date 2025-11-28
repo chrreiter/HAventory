@@ -113,9 +113,10 @@ export class HVItemDialog extends LitElement {
           <div class="row"><label>Tags <input type="text" .value=${this._tags} @input=${(e: Event) => this._tags = (e.target as HTMLInputElement).value} /></label></div>
           <div class="row" style="align-items: center;">
             <label style="flex:1;">Location
-              <input type="text" placeholder="Select…" .value=${this._location ?? ''} @input=${(e: Event) => this._location = (e.target as HTMLInputElement).value || null} />
+              <input type="text" placeholder="None" readonly .value=${this._location ?? ''} @click=${this.onOpenLocationSelector} style="cursor: pointer;" />
             </label>
             <button @click=${this.onOpenLocationSelector} aria-label="Open location selector">Select…</button>
+            ${this._location ? html`<button @click=${() => this._location = null} aria-label="Clear location">Clear</button>` : null}
           </div>
           <div class="row">
             <label><input type="checkbox" .checked=${this._checkedOut} @change=${(e: Event) => this._checkedOut = (e.target as HTMLInputElement).checked} /> Checked-out</label>

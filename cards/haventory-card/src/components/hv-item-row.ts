@@ -69,12 +69,13 @@ export class HVItemRow extends LitElement {
 
   render() {
     const item = this.item;
+    const areaName = this.resolveAreaName();
     return html`
       <div class="row" role="row" tabindex="0" @keydown=${this.onKeyDown} aria-label=${`Item ${item.name}`}>
         <div class="name" role="cell">
           <span>${item.name}</span>
           ${this.isLow ? html`<span class="badge" aria-label="Low stock">LOW</span>` : null}
-          ${this.resolveAreaName() ? html`<span class="area">[Area: ${this.resolveAreaName()}]</span>` : null}
+          ${areaName ? html`<span class="area">[Area: ${areaName}]</span>` : null}
         </div>
         <div role="cell">${item.quantity}</div>
         <div role="cell">${item.category ?? ''}</div>

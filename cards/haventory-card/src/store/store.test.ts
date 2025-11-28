@@ -152,16 +152,22 @@ describe('Store', () => {
     await clearPromise;
   });
 
-  it('moves item to different location', async () => {
+  it('moves item to different location with optimistic update', async () => {
+    // Optimistic update: location_id changes immediately before server response
     const item = makeItem({ id: '1', location_id: 'loc1' });
     const hass = makeMockHass({ items: [item] });
     const store = new Store(hass);
     await store.init();
 
-    await store.moveItem('1', 'loc2');
+    // Start move - optimistic update should happen immediately
+    const movePromise = store.moveItem('1', 'loc2');
+    const optimistic = store.state.value.items.find((i) => i.id === '1');
+    expect(optimistic?.location_id).toBe('loc2');
+    await movePromise;
+    // After server response, item should still have new location
     const moved = store.state.value.items.find((i) => i.id === '1');
-    // moveItem doesn't do optimistic update on location_id, just on backend response
     expect(moved).toBeTruthy();
+    expect(moved?.location_id).toBe('loc2');
   });
 
   it('handles filter changes and resets list', async () => {

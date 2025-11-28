@@ -322,7 +322,7 @@ export class HAventoryCard extends LitElement {
               ></hv-search-bar>
               <button @click=${() => {
                 const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean } | null;
-                if (dialog) dialog.open = true as unknown as boolean;
+                if (dialog) dialog.open = true;
               }}>Add</button>
             </div>
             <div style="min-height:0; overflow:hidden;">
