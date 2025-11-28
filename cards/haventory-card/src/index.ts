@@ -12,6 +12,36 @@ import './components/hv-location-selector';
 export class HAventoryCard extends LitElement {
   static styles = css`
     :host { display: block; }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px;
+    }
+    .header-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .banners {
+      display: grid;
+      gap: 6px;
+      margin: 8px 0;
+    }
+    .banner {
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: #fff3cd;
+      color: #664d03;
+      border: 1px solid #ffecb5;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .banner.error {
+      background: #fdecea;
+      color: #611a15;
+      border-color: #f5c6cb;
+    }
   `;
 
   // Lovelace config (e.g., title)
@@ -81,9 +111,9 @@ export class HAventoryCard extends LitElement {
     const st = this.store?.state.value;
     const filters = st?.filters;
     return html`
-      <div part="header" style="display: flex; align-items: center; justify-content: space-between; padding: 8px;">
+      <div class="card-header" part="header">
         <strong>${this.config?.title ?? 'HAventory'}</strong>
-        <div style="display: flex; gap: 8px;">
+        <div class="header-actions">
           <button @click=${() => {
             const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: unknown } | null;
             if (dialog) {
@@ -224,11 +254,14 @@ export class HAventoryCard extends LitElement {
       <style>
         .overlay-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 9998; }
         .overlay { position: fixed; inset: 0; z-index: 9999; display: grid; grid-template-rows: auto 1fr; }
-        .ov-header { display:flex; align-items:center; justify-content: space-between; background: var(--card-background-color, #fff); padding: 10px 12px; }
+        .ov-header { display: flex; align-items: center; justify-content: space-between; background: var(--card-background-color, #fff); padding: 10px 12px; }
         .ov-body { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; height: calc(100vh - 48px); box-sizing: border-box; }
         .sidebar { background: var(--card-background-color, #fff); padding: 10px; border-right: 1px solid rgba(0,0,0,0.1); }
         .main { background: var(--card-background-color, #fff); padding: 10px; overflow: hidden; display: grid; grid-template-rows: auto 1fr; gap: 8px; }
         .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+        .sort-controls { display: inline-flex; align-items: center; gap: 6px; }
+        .diagnostics { margin-top: 12px; }
+        .list-container { min-height: 0; overflow: hidden; }
         .sentinel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
         .banners { display: grid; gap: 6px; margin: 8px 0; }
         .banner { padding: 8px 10px; border-radius: 6px; background: #fff3cd; color: #664d03; border: 1px solid #ffecb5; display: flex; justify-content: space-between; align-items: center; }
@@ -272,7 +305,7 @@ export class HAventoryCard extends LitElement {
             </div>
             <div class="row">
               <label>Sort
-                <span style="display:inline-flex; align-items:center; gap:6px;">
+                <span class="sort-controls">
                   <select @change=${(e: Event) => {
                     const field = (e.target as HTMLSelectElement).value as import('./store/types').Sort['field'];
                     const order = getDefaultOrderFor(field);
@@ -298,7 +331,7 @@ export class HAventoryCard extends LitElement {
                 </span>
               </label>
             </div>
-            <details data-testid="diagnostics-panel" style="margin-top: 12px;">
+            <details class="diagnostics" data-testid="diagnostics-panel">
               <summary>Diagnostics</summary>
               <div>WS: items ${st?.connected.items ? 'connected' : 'disconnected'}, stats ${st?.connected.stats ? 'connected' : 'disconnected'}</div>
               <div>Counts: ${st?.statsCounts ? JSON.stringify(st.statsCounts) : '—'}</div>
@@ -325,7 +358,7 @@ export class HAventoryCard extends LitElement {
                 if (dialog) dialog.open = true;
               }}>Add</button>
             </div>
-            <div style="min-height:0; overflow:hidden;">
+            <div class="list-container">
               ${html`
                 <hv-inventory-list
                   .items=${st?.items ?? []}
