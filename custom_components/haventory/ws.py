@@ -626,9 +626,10 @@ def _collect_health_issues(repo: Repository) -> tuple[list[str], dict[str, int]]
 @websocket_api.websocket_command({"type": "haventory/health"})
 @websocket_api.async_response
 async def ws_health(hass: HomeAssistant, conn, msg):
-    issues, counts = _collect_health_issues(_repo(hass))
+    repo = _repo(hass)
+    issues, counts = _collect_health_issues(repo)
     healthy = len(issues) == 0
-    result = {"healthy": healthy, "issues": issues, "counts": counts}
+    result = {"healthy": healthy, "issues": issues, "counts": counts, "generation": repo.generation}
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
 

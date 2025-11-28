@@ -216,6 +216,34 @@ $env:HAV_MAX_EVENTS = '4'
 python .\scripts\ws_subscribe.py
 ```
 
+### Backend Stress Testing
+
+The stress test script (`scripts/stress_test.py`) validates persistence and concurrency fixes against a Docker-based Home Assistant instance.
+
+**Prerequisites:**
+- Docker container running Home Assistant with HAventory integration
+- Environment variables: `HA_CONTAINER`, `HA_BASE_URL`, `HA_TOKEN`
+
+**Quick Start:**
+```powershell
+.\.venv\Scripts\Activate.ps1
+$env:HA_CONTAINER = 'home-assistant'
+$env:HA_BASE_URL = 'http://localhost:8123'
+$env:HA_TOKEN = '<your-token>'
+
+python .\scripts\stress_test.py              # Full run (deploy + test)
+python .\scripts\stress_test.py --skip-deploy --skip-confirm  # Quick re-run
+```
+
+**Test Scenarios:**
+1. **Rapid Sequential Mutations** — 50 items with 10ms delay; validates debounce coalesces into 1-3 disk writes
+2. **Concurrent Burst Operations** — 20 simultaneous requests; validates `asyncio.Lock` prevents race conditions
+3. **Bulk Operations Under Load** — 100 mixed ops with intentional failures; validates partial failure handling
+4. **Mixed Workload** — 100 interleaved operations; validates no deadlocks under realistic load
+5. **Persistence Verification** — Container restart; validates all data survives
+
+**Exit codes:** `0` = all pass, `1` = failures, `2` = setup error
+
 ### Logs and troubleshooting
 - Container logs: `docker logs -f <container>` (or `-n 200` for recent)
 - HA log file (if enabled): `/config/home-assistant.log` inside the container
