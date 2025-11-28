@@ -2,14 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { Sort } from '../store/types';
 import { DEFAULT_SORT, getDefaultOrderFor } from '../store/sort';
-
-function debounce<TArgs extends unknown[]>(fn: (...args: TArgs) => void, ms: number) {
-  let t: number | undefined;
-  return (...args: TArgs) => {
-    if (t) window.clearTimeout(t);
-    t = window.setTimeout(() => fn(...args), ms);
-  };
-}
+import { debounce } from '../utils/debounce';
 
 export interface SearchBarChangeDetail {
   q?: string;
