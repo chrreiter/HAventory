@@ -219,7 +219,6 @@ describe('Store', () => {
     await store.init();
 
     expect(store.state.value.statsCounts).toBeTruthy();
-    const initialTotal = store.state.value.statsCounts?.items_total;
 
     await store.refreshStats();
     expect(store.state.value.statsCounts).toBeTruthy();

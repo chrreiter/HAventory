@@ -141,7 +141,6 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
     connection: {
       subscribeMessage(cb: SubCb, msg: Record<string, unknown>) {
         const topic = String((msg as any).topic || '');
-        const _id = Number((msg as any).id || nextId());
         subs[topic] ||= [];
         subs[topic].push(cb);
         return () => {
