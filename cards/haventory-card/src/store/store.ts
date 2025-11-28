@@ -17,16 +17,6 @@ import type {
 import { WSClient } from './ws';
 import { DEFAULT_SORT } from './sort';
 
-type DebounceHandle = number | undefined;
-
-function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number) {
-  let t: DebounceHandle;
-  return (...args: Parameters<T>) => {
-    if (t) window.clearTimeout(t);
-    t = window.setTimeout(() => fn(...args), ms);
-  };
-}
-
 /** A very small reactive wrapper using a Proxy; components can subscribe to `onChange`. */
 export interface Observable<T> {
   readonly value: T;
@@ -56,7 +46,6 @@ export class Store {
   private ws: WSClient;
   private stateObs: ReturnType<typeof createObservable<StoreState>>;
   private inflight: Map<string, Promise<unknown>> = new Map();
-  private debounceSearch: (q: string) => void;
   private itemsUnsub: Unsubscribe | null = null;
   private statsUnsub: Unsubscribe | null = null;
 
@@ -86,11 +75,6 @@ export class Store {
       connected: { items: false, stats: false },
     };
     this.stateObs = createObservable<StoreState>(initial);
-
-    // Debounced search input handler
-    this.debounceSearch = debounce((q: string) => {
-      this.setFilters({ q });
-    }, 200);
   }
 
   get state(): Observable<StoreState> {
@@ -223,10 +207,6 @@ export class Store {
     this.subscribeTopics();
     // Reload with new filters
     void this.listItems(true);
-  }
-
-  setSearchQueryDebounced(q: string) {
-    this.debounceSearch(q);
   }
 
   // ---------- Optimistic writes ----------
