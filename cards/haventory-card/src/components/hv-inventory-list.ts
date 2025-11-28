@@ -10,6 +10,9 @@ export class HVInventoryList extends LitElement {
     .header, .row { display: grid; grid-template-columns: 1fr 60px 160px 1fr auto; gap: 8px; align-items: center; }
     .header { font-weight: 600; border-bottom: 1px solid #ddd; padding: 6px 0; }
     lit-virtualizer { display: block; height: 420px; overflow: auto; }
+    .empty-state { padding: 32px 16px; text-align: center; color: #666; }
+    .empty-state p { margin: 8px 0; }
+    .empty-state .hint { font-size: 0.9em; opacity: 0.8; }
   `;
 
   @property({ attribute: false }) items: Item[] = [];
@@ -30,6 +33,14 @@ export class HVInventoryList extends LitElement {
   }
 
   render() {
+    if (this.items.length === 0) {
+      return html`
+        <div class="empty-state" role="status" aria-live="polite">
+          <p>No items found</p>
+          <p class="hint">Try adjusting your filters or add a new item.</p>
+        </div>
+      `;
+    }
     return html`
       <div class="header" role="row">
         <div role="columnheader">Name</div>

@@ -47,4 +47,42 @@ describe('hv-inventory-list', () => {
 
     expect(ratioSeen).toBeGreaterThan(0.7);
   });
+
+  it('renders empty state when items array is empty', async () => {
+    // Empty state should show helpful message when no items exist
+    const el = document.createElement('hv-inventory-list') as HTMLElement & { updateComplete?: Promise<unknown> };
+    document.body.appendChild(el);
+    await customElements.whenDefined('hv-inventory-list');
+    (el as any).items = [];
+    if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+
+    const sr = el.shadowRoot as ShadowRoot;
+    const emptyState = sr.querySelector('.empty-state');
+    expect(emptyState).toBeTruthy();
+    expect(sr.textContent).toContain('No items found');
+    expect(sr.textContent).toContain('Try adjusting your filters');
+
+    // Should not render the virtualizer or header
+    const virt = sr.querySelector('lit-virtualizer');
+    expect(virt).toBe(null);
+  });
+
+  it('does not render empty state when items exist', async () => {
+    // Normal list view when items are present
+    const el = document.createElement('hv-inventory-list') as HTMLElement & { updateComplete?: Promise<unknown> };
+    document.body.appendChild(el);
+    await customElements.whenDefined('hv-inventory-list');
+    (el as any).items = makeItems(5);
+    if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+
+    const sr = el.shadowRoot as ShadowRoot;
+    const emptyState = sr.querySelector('.empty-state');
+    expect(emptyState).toBe(null);
+
+    // Should render header and virtualizer
+    const header = sr.querySelector('.header');
+    const virt = sr.querySelector('lit-virtualizer');
+    expect(header).toBeTruthy();
+    expect(virt).toBeTruthy();
+  });
 });
