@@ -21,6 +21,7 @@ export class HVItemDialog extends LitElement {
   @property({ type: String }) error: string | null = null;
 
   @state() private _name: string = '';
+  @state() private _description: string = '';
   @state() private _quantity: number = 1;
   @state() private _lowStock: number | null = null;
   @state() private _category: string = '';
@@ -35,6 +36,7 @@ export class HVItemDialog extends LitElement {
     if (changed.has('item')) {
       const it = this.item;
       this._name = it?.name ?? '';
+      this._description = it?.description ?? '';
       this._quantity = it?.quantity ?? 1;
       this._lowStock = it?.low_stock_threshold ?? null;
       this._category = it?.category ?? '';
@@ -71,6 +73,7 @@ export class HVItemDialog extends LitElement {
     this.dispatchEvent(new CustomEvent('save', {
       detail: {
         name,
+        description: this._description || null,
         quantity: this._quantity,
         low_stock_threshold: this._lowStock,
         category: this._category || null,
@@ -105,6 +108,7 @@ export class HVItemDialog extends LitElement {
           ${this._validation ? html`<div class="banner" role="alert">${this._validation}</div>` : null}
           ${this.error ? html`<div class="banner" role="alert">${this.error}</div>` : null}
           <div class="row"><label>Name* <input aria-required="true" type="text" .value=${this._name} @input=${(e: Event) => this._name = (e.target as HTMLInputElement).value} /></label></div>
+          <div class="row"><label style="flex:1;">Description <textarea rows="2" style="width:100%; resize:vertical;" .value=${this._description} @input=${(e: Event) => this._description = (e.target as HTMLTextAreaElement).value}></textarea></label></div>
           <div class="row">
             <label>Quantity <input type="number" .value=${String(this._quantity)} @input=${(e: Event) => this._quantity = Number((e.target as HTMLInputElement).value)} /></label>
             <label>Low-stock threshold <input type="number" .value=${this._lowStock ?? ''} @input=${(e: Event) => this._lowStock = (e.target as HTMLInputElement).value === '' ? null : Number((e.target as HTMLInputElement).value)} /></label>
