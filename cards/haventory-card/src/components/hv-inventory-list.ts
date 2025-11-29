@@ -21,6 +21,17 @@ export class HVInventoryList extends LitElement {
     :host([compact]) {
       --hv-grid-columns: var(--hv-grid-columns-compact);
     }
+    /* Fill mode: stretch to fill parent container */
+    :host([fill]) {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    :host([fill]) lit-virtualizer {
+      flex: 1;
+      height: auto;
+      min-height: 0;
+    }
     .header {
       display: grid;
       grid-template-columns: var(--hv-grid-columns);
@@ -29,6 +40,7 @@ export class HVInventoryList extends LitElement {
       font-weight: 600;
       border-bottom: 1px solid #ddd;
       padding: 6px 0;
+      flex-shrink: 0;
     }
     .header .hide-compact { display: block; }
     :host([compact]) .header .hide-compact { display: none; }
@@ -48,6 +60,7 @@ export class HVInventoryList extends LitElement {
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
   @property({ attribute: false }) locations: Array<{ id: string; area_id: string | null }> = [];
   @property({ type: Boolean, reflect: true }) compact: boolean = false;
+  @property({ type: Boolean, reflect: true }) fill: boolean = false;
 
   private onRowEvent(type: string, e: CustomEvent) {
     e.stopPropagation();

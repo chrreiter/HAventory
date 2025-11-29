@@ -270,7 +270,7 @@ export class HAventoryCard extends LitElement {
         .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
         .sort-controls { display: inline-flex; align-items: center; gap: 6px; }
         .diagnostics { margin-top: 12px; }
-        .list-container { min-height: 0; overflow: auto; overscroll-behavior: contain; touch-action: pan-y; }
+        .list-container { min-height: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; }
         .sentinel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
         .banners { display: grid; gap: 6px; margin: 8px 0; }
         .banner { padding: 8px 10px; border-radius: 6px; background: #fff3cd; color: #664d03; border: 1px solid #ffecb5; display: flex; justify-content: space-between; align-items: center; }
@@ -370,6 +370,7 @@ export class HAventoryCard extends LitElement {
             <div class="list-container">
               ${html`
                 <hv-inventory-list
+                  fill
                   .items=${st?.items ?? []}
                   .areas=${st?.areasCache?.areas ?? []}
                   .locations=${st?.locationsFlatCache ?? []}
