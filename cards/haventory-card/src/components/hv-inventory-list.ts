@@ -15,6 +15,11 @@ export class HVInventoryList extends LitElement {
       --hv-col-location: minmax(80px, 2fr);
       --hv-col-actions: auto;
       --hv-grid-columns: var(--hv-col-name) var(--hv-col-qty) var(--hv-col-category) var(--hv-col-location) var(--hv-col-actions);
+      /* Compact mode: only Name, Qty, Actions */
+      --hv-grid-columns-compact: 1fr auto auto;
+    }
+    :host([compact]) {
+      --hv-grid-columns: var(--hv-grid-columns-compact);
     }
     .header {
       display: grid;
@@ -25,6 +30,8 @@ export class HVInventoryList extends LitElement {
       border-bottom: 1px solid #ddd;
       padding: 6px 0;
     }
+    .header .hide-compact { display: block; }
+    :host([compact]) .header .hide-compact { display: none; }
     lit-virtualizer {
       display: block;
       height: 420px;
@@ -40,6 +47,7 @@ export class HVInventoryList extends LitElement {
   @property({ attribute: false }) items: Item[] = [];
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
   @property({ attribute: false }) locations: Array<{ id: string; area_id: string | null }> = [];
+  @property({ type: Boolean, reflect: true }) compact: boolean = false;
 
   private onRowEvent(type: string, e: CustomEvent) {
     e.stopPropagation();
@@ -67,8 +75,8 @@ export class HVInventoryList extends LitElement {
       <div class="header" role="row">
         <div role="columnheader">Name</div>
         <div role="columnheader">Qty</div>
-        <div role="columnheader">Category</div>
-        <div role="columnheader">Location path</div>
+        <div role="columnheader" class="hide-compact">Category</div>
+        <div role="columnheader" class="hide-compact">Location</div>
         <div role="columnheader" aria-hidden="true"></div>
       </div>
       <lit-virtualizer
@@ -80,6 +88,7 @@ export class HVInventoryList extends LitElement {
             .item=${it}
             .areas=${this.areas}
             .locations=${this.locations}
+            ?compact=${this.compact}
             @decrement=${(e: CustomEvent) => this.onRowEvent('decrement', e)}
             @increment=${(e: CustomEvent) => this.onRowEvent('increment', e)}
             @toggle-checkout=${(e: CustomEvent) => this.onRowEvent('toggle-checkout', e)}

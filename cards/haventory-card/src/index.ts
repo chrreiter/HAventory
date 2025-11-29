@@ -147,6 +147,7 @@ export class HAventoryCard extends LitElement {
 
       <div class="card-list-container">
         <hv-inventory-list
+          compact
           .items=${st?.items ?? []}
           .areas=${st?.areasCache?.areas ?? []}
           .locations=${st?.locationsFlatCache ?? []}

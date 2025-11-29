@@ -25,6 +25,7 @@ export class HVItemRow extends LitElement {
   @property({ attribute: false }) item!: Item;
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
   @property({ attribute: false }) locations: Array<{ id: string; area_id: string | null }> = [];
+  @property({ type: Boolean }) compact: boolean = false;
 
   private resolveAreaName(): string | null {
     if (!this.item.location_id) return null;
@@ -78,7 +79,26 @@ export class HVItemRow extends LitElement {
 
   render() {
     const item = this.item;
-    const areaName = this.resolveAreaName();
+    const areaName = this.compact ? null : this.resolveAreaName();
+
+    // Compact mode: Name, Qty, and essential buttons only
+    if (this.compact) {
+      return html`
+        <div class="row" role="row" tabindex="0" @keydown=${this.onKeyDown} aria-label=${`Item ${item.name}`}>
+          <div class="name" role="cell">
+            <span>${item.name}</span>
+          </div>
+          <div role="cell">${item.quantity}</div>
+          <div class="actions" role="cell">
+            <button @click=${this.onDecrement} aria-label="Decrease quantity">−</button>
+            <button @click=${this.onIncrement} aria-label="Increase quantity">+</button>
+            <button @click=${this.onEdit} aria-label="Edit item">Edit</button>
+          </div>
+        </div>
+      `;
+    }
+
+    // Full mode: All columns and buttons
     return html`
       <div class="row" role="row" tabindex="0" @keydown=${this.onKeyDown} aria-label=${`Item ${item.name}`}>
         <div class="name" role="cell">
