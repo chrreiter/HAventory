@@ -59,6 +59,7 @@ export class HAventoryCard extends LitElement {
   private _overlayEl: HTMLDivElement | null = null;
   private _prevFocusEl: HTMLElement | null = null;
   private _locationSelectorOpen = false;
+  private _toggleInProgress = false;
 
   // Lovelace interface: called by HA when the card is created/configured
   public setConfig(cfg: unknown): void {
@@ -227,11 +228,20 @@ export class HAventoryCard extends LitElement {
   }
 
   private _toggleExpanded() {
-    const toggle = this.shadowRoot?.querySelector('[data-testid="expand-toggle"]') as HTMLElement | null;
-    this._prevFocusEl = toggle ?? null;
-    this.expanded = !this.expanded;
-    if (this.expanded) this._renderOverlay(); else this._teardownOverlay();
-    this.requestUpdate();
+    // Guard against re-entrancy during rapid clicks
+    if (this._toggleInProgress) return;
+    this._toggleInProgress = true;
+
+    try {
+      const toggle = this.shadowRoot?.querySelector('[data-testid="expand-toggle"]') as HTMLElement | null;
+      this._prevFocusEl = toggle ?? null;
+      this.expanded = !this.expanded;
+      if (this.expanded) this._renderOverlay(); else this._teardownOverlay();
+      this.requestUpdate();
+    } finally {
+      // Release lock after a short delay to prevent double-clicks
+      setTimeout(() => { this._toggleInProgress = false; }, 100);
+    }
   }
 
   private _ensureOverlayRoot(): HTMLDivElement {
@@ -262,7 +272,7 @@ export class HAventoryCard extends LitElement {
     };
     const overlayTemplate = html`
       <style>
-        .overlay-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 9998; pointer-events: none; }
+        .overlay-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 9998; }
         .overlay { position: fixed; inset: 0; z-index: 9999; display: grid; grid-template-rows: auto 1fr; overflow: hidden; overscroll-behavior: contain; }
         .ov-header { display: flex; align-items: center; justify-content: space-between; background: var(--card-background-color, #fff); padding: 10px 12px; }
         .ov-body { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; height: calc(100vh - 48px); box-sizing: border-box; overflow: hidden; }
