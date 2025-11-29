@@ -36,6 +36,17 @@ export class HVItemRow extends LitElement {
     return area?.name ?? null;
   }
 
+  /** Get full location display with area prefix if available */
+  private getFullLocationPath(): string {
+    const locationPath = this.item.location_path?.display_path ?? '';
+    if (!locationPath) return '';
+    const areaName = this.resolveAreaName();
+    if (areaName) {
+      return `${areaName} > ${locationPath}`;
+    }
+    return locationPath;
+  }
+
   private onDecrement() {
     this.dispatchEvent(new CustomEvent('decrement', { detail: { itemId: this.item.id }, bubbles: true, composed: true }));
   }
@@ -109,7 +120,7 @@ export class HVItemRow extends LitElement {
         </div>
         <div role="cell">${item.quantity}</div>
         <div role="cell" class="cell-text" title=${item.category ?? ''}>${item.category ?? ''}</div>
-        <div role="cell" class="cell-text" title=${item.location_path?.display_path ?? ''}>${item.location_path?.display_path ?? ''}</div>
+        <div role="cell" class="cell-text" title=${this.getFullLocationPath()}>${this.getFullLocationPath()}</div>
         <div class="actions" role="cell">
           <button @click=${this.onDecrement} aria-label="Decrease quantity">−</button>
           <button @click=${this.onIncrement} aria-label="Increase quantity">+</button>

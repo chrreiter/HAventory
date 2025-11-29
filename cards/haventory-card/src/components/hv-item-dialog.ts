@@ -59,6 +59,7 @@ export class HVItemDialog extends LitElement {
   @property({ type: Boolean, reflect: true }) open: boolean = false;
   @property({ attribute: false }) item: Item | null = null;
   @property({ attribute: false }) locations: Location[] | null = null;
+  @property({ attribute: false }) areas: { id: string; name: string }[] = [];
   @property({ type: String }) error: string | null = null;
 
   @state() private _name: string = '';
@@ -135,12 +136,21 @@ export class HVItemDialog extends LitElement {
     this._location = locationId;
   }
 
-  /** Resolve location ID to display path, or return placeholder if not found */
+  /** Resolve location ID to display path with area prefix, or return placeholder if not found */
   private getLocationDisplayPath(): string {
     if (!this._location) return '';
     if (!this.locations) return this._location;
     const loc = this.locations.find((l) => l.id === this._location);
-    return loc?.path?.display_path || loc?.name || this._location;
+    if (!loc) return this._location;
+    const locationPath = loc.path?.display_path || loc.name || this._location;
+    // Prepend area name if available
+    if (loc.area_id && this.areas.length > 0) {
+      const area = this.areas.find((a) => a.id === loc.area_id);
+      if (area) {
+        return `${area.name} > ${locationPath}`;
+      }
+    }
+    return locationPath;
   }
 
   private onDelete() {
