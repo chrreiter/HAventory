@@ -9,7 +9,7 @@ export class HVItemRow extends LitElement {
     .row {
       display: grid;
       /* Use inherited grid columns from hv-inventory-list for alignment */
-      grid-template-columns: var(--hv-grid-columns, minmax(100px, 2fr) minmax(40px, 60px) minmax(60px, 1fr) minmax(80px, 2fr) auto);
+      grid-template-columns: var(--hv-grid-columns, minmax(120px, 2fr) 50px minmax(80px, 1fr) minmax(100px, 2fr) 160px);
       gap: 8px;
       align-items: center;
       padding: 6px 0;
@@ -18,8 +18,9 @@ export class HVItemRow extends LitElement {
     .name > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; background: #c62828; color: white; flex-shrink: 0; }
     .area { font-size: 12px; color: #666; flex-shrink: 0; }
-    .actions { display: flex; flex-wrap: nowrap; gap: 4px; }
-    .actions button { margin: 0; padding: 4px 8px; white-space: nowrap; }
+    .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .actions { display: flex; flex-wrap: nowrap; gap: 4px; justify-content: flex-end; }
+    .actions button { margin: 0; padding: 4px 8px; white-space: nowrap; min-width: 32px; }
   `;
 
   @property({ attribute: false }) item!: Item;
@@ -104,11 +105,11 @@ export class HVItemRow extends LitElement {
         <div class="name" role="cell">
           <span>${item.name}</span>
           ${this.isLow ? html`<span class="badge" aria-label="Low stock">LOW</span>` : null}
-          ${areaName ? html`<span class="area">[Area: ${areaName}]</span>` : null}
+          ${areaName ? html`<span class="area">[${areaName}]</span>` : null}
         </div>
         <div role="cell">${item.quantity}</div>
-        <div role="cell">${item.category ?? ''}</div>
-        <div role="cell">${item.location_path?.display_path ?? ''}</div>
+        <div role="cell" class="cell-text" title=${item.category ?? ''}>${item.category ?? ''}</div>
+        <div role="cell" class="cell-text" title=${item.location_path?.display_path ?? ''}>${item.location_path?.display_path ?? ''}</div>
         <div class="actions" role="cell">
           <button @click=${this.onDecrement} aria-label="Decrease quantity">−</button>
           <button @click=${this.onIncrement} aria-label="Increase quantity">+</button>

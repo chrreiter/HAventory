@@ -89,7 +89,7 @@ describe('hv-item-row', () => {
 
     const sr = el.shadowRoot as ShadowRoot;
     const text = sr.textContent || '';
-    expect(text).toContain('[Area: Garage]');
+    expect(text).toContain('[Garage]');
   });
 
   it('does not show area label when location has no area', async () => {

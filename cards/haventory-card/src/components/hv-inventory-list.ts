@@ -9,14 +9,16 @@ export class HVInventoryList extends LitElement {
     :host {
       display: block;
       /* Define grid columns as CSS custom property for header/row alignment */
-      --hv-col-name: minmax(100px, 2fr);
-      --hv-col-qty: minmax(40px, 60px);
-      --hv-col-category: minmax(60px, 1fr);
-      --hv-col-location: minmax(80px, 2fr);
-      --hv-col-actions: auto;
+      /* Full mode: Name, Qty, Category, Location, Actions (4 buttons ~160px) */
+      --hv-col-name: minmax(120px, 2fr);
+      --hv-col-qty: 50px;
+      --hv-col-category: minmax(80px, 1fr);
+      --hv-col-location: minmax(100px, 2fr);
+      --hv-col-actions: 160px;
       --hv-grid-columns: var(--hv-col-name) var(--hv-col-qty) var(--hv-col-category) var(--hv-col-location) var(--hv-col-actions);
-      /* Compact mode: only Name, Qty, Actions */
-      --hv-grid-columns-compact: 1fr auto auto;
+      /* Compact mode: Name (flex), Qty (fixed), Actions (3 buttons ~120px) */
+      --hv-col-actions-compact: 120px;
+      --hv-grid-columns-compact: 1fr 50px var(--hv-col-actions-compact);
     }
     :host([compact]) {
       --hv-grid-columns: var(--hv-grid-columns-compact);
