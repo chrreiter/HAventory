@@ -22,6 +22,18 @@ export class HAventoryCard extends LitElement {
       display: flex;
       gap: 8px;
     }
+    .header-actions button {
+      background: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #fff);
+      border: none;
+      border-radius: 4px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .header-actions button:hover {
+      opacity: 0.9;
+    }
     .card-list-container {
       overflow: auto;
       overscroll-behavior: contain;
@@ -126,7 +138,7 @@ export class HAventoryCard extends LitElement {
               dialog.item = null;
               dialog.open = true;
             }
-          }} aria-label="Add item" title="Add item">+</button>
+          }} aria-label="Add item" title="Add item">Add item</button>
           <button data-testid="expand-toggle" @click=${() => this._toggleExpanded()} aria-expanded=${String(this.expanded)} aria-label=${this.expanded ? 'Collapse' : 'Expand'}>
             ${this.expanded ? '⤢ Collapse' : '⇱ Expand'}
           </button>
@@ -275,10 +287,14 @@ export class HAventoryCard extends LitElement {
         .overlay-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 9998; }
         .overlay { position: fixed; inset: 0; z-index: 9999; display: grid; grid-template-rows: auto 1fr; overflow: hidden; overscroll-behavior: contain; }
         .ov-header { display: flex; align-items: center; justify-content: space-between; background: var(--card-background-color, #fff); padding: 10px 12px; }
+        .ov-header button { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 14px; }
+        .ov-header button:hover { opacity: 0.9; }
         .ov-body { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; height: calc(100vh - 48px); box-sizing: border-box; overflow: hidden; }
         .sidebar { background: var(--card-background-color, #fff); padding: 10px; border-right: 1px solid rgba(0,0,0,0.1); overflow: auto; overscroll-behavior: contain; }
         .main { background: var(--card-background-color, #fff); padding: 10px; overflow: hidden; display: grid; grid-template-rows: auto 1fr; gap: 8px; }
         .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+        .btn-add { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 14px; }
+        .btn-add:hover { opacity: 0.9; }
         .sort-controls { display: inline-flex; align-items: center; gap: 6px; }
         .diagnostics { margin-top: 12px; }
         .list-container { min-height: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; }
@@ -373,10 +389,10 @@ export class HAventoryCard extends LitElement {
                 .locations=${st?.locationsFlatCache ?? []}
                 @change=${(e: CustomEvent) => this.store?.setFilters(e.detail)}
               ></hv-search-bar>
-              <button @click=${() => {
+              <button class="btn-add" @click=${() => {
                 const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean } | null;
                 if (dialog) dialog.open = true;
-              }}>Add</button>
+              }}>Add item</button>
             </div>
             <div class="list-container">
               ${html`

@@ -45,6 +45,9 @@ export class HVItemDialog extends LitElement {
     .actions button:hover {
       opacity: 0.9;
     }
+    .actions button.btn-danger {
+      background: var(--error-color, #db4437);
+    }
     .banner { padding: 8px 10px; border-radius: 6px; background: var(--error-color, #db4437); color: #fff; margin-bottom: 8px; }
     .location-display {
       flex: 1;
@@ -189,7 +192,7 @@ export class HVItemDialog extends LitElement {
           </div>
           <div class="actions">
             <div>
-              ${this.item ? html`<button @click=${this.onDelete} aria-label="Delete item">Delete…</button>` : null}
+              ${this.item ? html`<button class="btn-danger" @click=${this.onDelete} aria-label="Delete item">Delete…</button>` : null}
             </div>
             <div class="right-actions">
               <button @click=${this.onCancel}>Cancel</button>
