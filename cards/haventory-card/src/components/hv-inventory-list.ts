@@ -9,7 +9,13 @@ export class HVInventoryList extends LitElement {
     :host { display: block; }
     .header, .row { display: grid; grid-template-columns: 1fr 60px 160px 1fr auto; gap: 8px; align-items: center; }
     .header { font-weight: 600; border-bottom: 1px solid #ddd; padding: 6px 0; }
-    lit-virtualizer { display: block; height: 420px; overflow: auto; }
+    lit-virtualizer {
+      display: block;
+      height: 420px;
+      overflow: auto;
+      overscroll-behavior: contain;
+      touch-action: pan-y;
+    }
     .empty-state { padding: 32px 16px; text-align: center; color: #666; }
     .empty-state p { margin: 8px 0; }
     .empty-state .hint { font-size: 0.9em; opacity: 0.8; }

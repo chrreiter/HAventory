@@ -22,6 +22,11 @@ export class HAventoryCard extends LitElement {
       display: flex;
       gap: 8px;
     }
+    .card-list-container {
+      overflow: auto;
+      overscroll-behavior: contain;
+      touch-action: pan-y;
+    }
     .banners {
       display: grid;
       gap: 6px;
@@ -140,37 +145,39 @@ export class HAventoryCard extends LitElement {
         @change=${(e: CustomEvent) => this.store?.setFilters(e.detail)}
       ></hv-search-bar>
 
-      <hv-inventory-list
-        .items=${st?.items ?? []}
-        .areas=${st?.areasCache?.areas ?? []}
-        .locations=${st?.locationsFlatCache ?? []}
-        @near-end=${(e: CustomEvent) => {
-          const ratio = e.detail?.ratio ?? 0;
-          void this.store?.prefetchIfNeeded(ratio);
-        }}
-        @decrement=${(e: CustomEvent) => this.store?.adjustQuantity(e.detail.itemId, -1)}
-        @increment=${(e: CustomEvent) => this.store?.adjustQuantity(e.detail.itemId, +1)}
-        @toggle-checkout=${(e: CustomEvent) => {
-          const item = st?.items.find((i) => i.id === e.detail.itemId);
-          if (!item) return;
-          if (item.checked_out) this.store?.markCheckedIn(item.id);
-          else this.store?.checkOut(item.id, null);
-        }}
-        @edit=${(e: CustomEvent) => {
-          const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: unknown };
-          const item = st?.items.find((i) => i.id === e.detail.itemId);
-          if (dialog && item) {
-            dialog.item = item;
-            dialog.open = true;
-          }
-        }}
-        @request-delete=${(e: CustomEvent) => {
-          const item = st?.items.find((i) => i.id === e.detail.itemId);
-          if (!item) return;
-          const confirmed = window.confirm(`Delete item '${item.name}'?`);
-          if (confirmed) this.store?.deleteItem(item.id);
-        }}
-      ></hv-inventory-list>
+      <div class="card-list-container">
+        <hv-inventory-list
+          .items=${st?.items ?? []}
+          .areas=${st?.areasCache?.areas ?? []}
+          .locations=${st?.locationsFlatCache ?? []}
+          @near-end=${(e: CustomEvent) => {
+            const ratio = e.detail?.ratio ?? 0;
+            void this.store?.prefetchIfNeeded(ratio);
+          }}
+          @decrement=${(e: CustomEvent) => this.store?.adjustQuantity(e.detail.itemId, -1)}
+          @increment=${(e: CustomEvent) => this.store?.adjustQuantity(e.detail.itemId, +1)}
+          @toggle-checkout=${(e: CustomEvent) => {
+            const item = st?.items.find((i) => i.id === e.detail.itemId);
+            if (!item) return;
+            if (item.checked_out) this.store?.markCheckedIn(item.id);
+            else this.store?.checkOut(item.id, null);
+          }}
+          @edit=${(e: CustomEvent) => {
+            const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: unknown };
+            const item = st?.items.find((i) => i.id === e.detail.itemId);
+            if (dialog && item) {
+              dialog.item = item;
+              dialog.open = true;
+            }
+          }}
+          @request-delete=${(e: CustomEvent) => {
+            const item = st?.items.find((i) => i.id === e.detail.itemId);
+            if (!item) return;
+            const confirmed = window.confirm(`Delete item '${item.name}'?`);
+            if (confirmed) this.store?.deleteItem(item.id);
+          }}
+        ></hv-inventory-list>
+      </div>
 
       <hv-item-dialog
         @open-location-selector=${() => { this._locationSelectorOpen = true; this.requestUpdate(); }}
@@ -252,22 +259,22 @@ export class HAventoryCard extends LitElement {
     };
     const overlayTemplate = html`
       <style>
-        .overlay-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 9998; }
-        .overlay { position: fixed; inset: 0; z-index: 9999; display: grid; grid-template-rows: auto 1fr; }
+        .overlay-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 9998; pointer-events: none; }
+        .overlay { position: fixed; inset: 0; z-index: 9999; display: grid; grid-template-rows: auto 1fr; overflow: hidden; overscroll-behavior: contain; }
         .ov-header { display: flex; align-items: center; justify-content: space-between; background: var(--card-background-color, #fff); padding: 10px 12px; }
-        .ov-body { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; height: calc(100vh - 48px); box-sizing: border-box; }
-        .sidebar { background: var(--card-background-color, #fff); padding: 10px; border-right: 1px solid rgba(0,0,0,0.1); }
+        .ov-body { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; height: calc(100vh - 48px); box-sizing: border-box; overflow: hidden; }
+        .sidebar { background: var(--card-background-color, #fff); padding: 10px; border-right: 1px solid rgba(0,0,0,0.1); overflow: auto; overscroll-behavior: contain; }
         .main { background: var(--card-background-color, #fff); padding: 10px; overflow: hidden; display: grid; grid-template-rows: auto 1fr; gap: 8px; }
         .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
         .sort-controls { display: inline-flex; align-items: center; gap: 6px; }
         .diagnostics { margin-top: 12px; }
-        .list-container { min-height: 0; overflow: hidden; }
+        .list-container { min-height: 0; overflow: auto; overscroll-behavior: contain; touch-action: pan-y; }
         .sentinel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
         .banners { display: grid; gap: 6px; margin: 8px 0; }
         .banner { padding: 8px 10px; border-radius: 6px; background: #fff3cd; color: #664d03; border: 1px solid #ffecb5; display: flex; justify-content: space-between; align-items: center; }
         .banner.error { background: #fdecea; color: #611a15; border-color: #f5c6cb; }
       </style>
-      <div class="overlay-backdrop" role="presentation"></div>
+      <div class="overlay-backdrop" role="presentation" @click=${() => this._toggleExpanded()}></div>
       <div class="overlay" role="dialog" aria-modal="true" @keydown=${onKeydown}>
         <span class="sentinel" tabindex="0" @focus=${() => this._focusLast(root!)}></span>
         <div class="ov-header">
