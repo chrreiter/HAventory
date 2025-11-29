@@ -6,9 +6,25 @@ import '@lit-labs/virtualizer';
 @customElement('hv-inventory-list')
 export class HVInventoryList extends LitElement {
   static styles = css`
-    :host { display: block; }
-    .header, .row { display: grid; grid-template-columns: 1fr 60px 160px 1fr auto; gap: 8px; align-items: center; }
-    .header { font-weight: 600; border-bottom: 1px solid #ddd; padding: 6px 0; }
+    :host {
+      display: block;
+      /* Define grid columns as CSS custom property for header/row alignment */
+      --hv-col-name: minmax(100px, 2fr);
+      --hv-col-qty: minmax(40px, 60px);
+      --hv-col-category: minmax(60px, 1fr);
+      --hv-col-location: minmax(80px, 2fr);
+      --hv-col-actions: auto;
+      --hv-grid-columns: var(--hv-col-name) var(--hv-col-qty) var(--hv-col-category) var(--hv-col-location) var(--hv-col-actions);
+    }
+    .header {
+      display: grid;
+      grid-template-columns: var(--hv-grid-columns);
+      gap: 8px;
+      align-items: center;
+      font-weight: 600;
+      border-bottom: 1px solid #ddd;
+      padding: 6px 0;
+    }
     lit-virtualizer {
       display: block;
       height: 420px;

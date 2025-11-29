@@ -6,11 +6,20 @@ import type { Item } from '../store/types';
 export class HVItemRow extends LitElement {
   static styles = css`
     :host { display: contents; }
-    .row { display: grid; grid-template-columns: 1fr 60px 160px 1fr auto; gap: 8px; align-items: center; padding: 6px 0; }
-    .name { display: inline-flex; align-items: center; gap: 8px; }
-    .badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; background: #c62828; color: white; }
-    .area { font-size: 12px; color: #666; }
-    .actions button { margin-left: 6px; }
+    .row {
+      display: grid;
+      /* Use inherited grid columns from hv-inventory-list for alignment */
+      grid-template-columns: var(--hv-grid-columns, minmax(100px, 2fr) minmax(40px, 60px) minmax(60px, 1fr) minmax(80px, 2fr) auto);
+      gap: 8px;
+      align-items: center;
+      padding: 6px 0;
+    }
+    .name { display: inline-flex; align-items: center; gap: 8px; overflow: hidden; }
+    .name > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; background: #c62828; color: white; flex-shrink: 0; }
+    .area { font-size: 12px; color: #666; flex-shrink: 0; }
+    .actions { display: flex; flex-wrap: nowrap; gap: 4px; }
+    .actions button { margin: 0; padding: 4px 8px; white-space: nowrap; }
   `;
 
   @property({ attribute: false }) item!: Item;
