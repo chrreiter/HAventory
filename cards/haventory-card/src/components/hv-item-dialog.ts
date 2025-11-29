@@ -1,7 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { nextZBase } from '../utils/zindex';
-import type { Item } from '../store/types';
+import type { Item, Location } from '../store/types';
 
 @customElement('hv-item-dialog')
 export class HVItemDialog extends LitElement {
@@ -9,15 +9,56 @@ export class HVItemDialog extends LitElement {
     :host { display: block; }
     .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 10000; }
     .dialog-wrap { position: fixed; inset: 0; display: grid; place-items: center; z-index: 10001; }
-    .dialog { background: white; color: black; border: 1px solid #ddd; border-radius: 8px; padding: 16px; max-width: 520px; width: calc(100vw - 32px); box-sizing: border-box; }
-    .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+    .dialog {
+      background: var(--card-background-color, var(--ha-card-background, #fff));
+      color: var(--primary-text-color, #212121);
+      border: 1px solid var(--divider-color, #ddd);
+      border-radius: 8px;
+      padding: 16px;
+      max-width: 520px;
+      width: calc(100vw - 32px);
+      box-sizing: border-box;
+    }
+    .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+    .row label { display: flex; flex-direction: column; gap: 4px; }
+    .row input, .row textarea, .row select {
+      background: var(--input-fill-color, var(--secondary-background-color, #f5f5f5));
+      color: var(--primary-text-color, #212121);
+      border: 1px solid var(--divider-color, #ddd);
+      border-radius: 4px;
+      padding: 8px;
+    }
+    .row input:focus, .row textarea:focus {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: -1px;
+    }
     .actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; }
     .right-actions { display: flex; gap: 8px; }
-    .banner { padding: 8px 10px; border-radius: 6px; background: #fdecea; color: #611a15; border: 1px solid #f5c6cb; margin-bottom: 8px; }
+    .actions button {
+      background: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #fff);
+      border: none;
+      border-radius: 4px;
+      padding: 8px 16px;
+      cursor: pointer;
+    }
+    .actions button:hover {
+      opacity: 0.9;
+    }
+    .banner { padding: 8px 10px; border-radius: 6px; background: var(--error-color, #db4437); color: #fff; margin-bottom: 8px; }
+    .location-display {
+      flex: 1;
+      min-width: 0;
+    }
+    .location-display input {
+      width: 100%;
+      box-sizing: border-box;
+    }
   `;
 
   @property({ type: Boolean, reflect: true }) open: boolean = false;
   @property({ attribute: false }) item: Item | null = null;
+  @property({ attribute: false }) locations: Location[] | null = null;
   @property({ type: String }) error: string | null = null;
 
   @state() private _name: string = '';
@@ -94,6 +135,14 @@ export class HVItemDialog extends LitElement {
     this._location = locationId;
   }
 
+  /** Resolve location ID to display path, or return placeholder if not found */
+  private getLocationDisplayPath(): string {
+    if (!this._location) return '';
+    if (!this.locations) return this._location;
+    const loc = this.locations.find((l) => l.id === this._location);
+    return loc?.path?.display_path || loc?.name || this._location;
+  }
+
   private onDelete() {
     if (!this.item) return;
     this.dispatchEvent(new CustomEvent('delete-item', { detail: { itemId: this.item.id, name: this.item.name }, bubbles: true, composed: true }));
@@ -116,9 +165,11 @@ export class HVItemDialog extends LitElement {
           <div class="row"><label>Category <input type="text" .value=${this._category} @input=${(e: Event) => this._category = (e.target as HTMLInputElement).value} /></label></div>
           <div class="row"><label>Tags <input type="text" .value=${this._tags} @input=${(e: Event) => this._tags = (e.target as HTMLInputElement).value} /></label></div>
           <div class="row" style="align-items: center;">
-            <label style="flex:1;">Location
-              <input type="text" placeholder="None" readonly .value=${this._location ?? ''} @click=${this.onOpenLocationSelector} style="cursor: pointer;" />
-            </label>
+            <div class="location-display">
+              <label>Location
+                <input type="text" placeholder="None" readonly .value=${this.getLocationDisplayPath()} @click=${this.onOpenLocationSelector} style="cursor: pointer;" />
+              </label>
+            </div>
             <button @click=${this.onOpenLocationSelector} aria-label="Open location selector">Select…</button>
             ${this._location ? html`<button @click=${() => this._location = null} aria-label="Clear location">Clear</button>` : null}
           </div>

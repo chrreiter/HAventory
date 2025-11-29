@@ -181,6 +181,7 @@ export class HAventoryCard extends LitElement {
       </div>
 
       <hv-item-dialog
+        .locations=${st?.locationsFlatCache ?? null}
         @open-location-selector=${() => { this._locationSelectorOpen = true; this.requestUpdate(); }}
         @delete-item=${(e: CustomEvent) => {
           const { itemId, name } = e.detail as { itemId: string; name: string };
