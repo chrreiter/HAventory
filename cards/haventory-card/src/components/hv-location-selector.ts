@@ -9,11 +9,43 @@ export class HVLocationSelector extends LitElement {
     :host { display: block; }
     .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 9998; }
     .panel-wrap { position: fixed; inset: 0; display: grid; place-items: center; z-index: 9999; }
-    .panel { background: white; color: black; border: 1px solid #ddd; border-radius: 8px; padding: 16px; max-width: 420px; width: calc(100vw - 32px); box-sizing: border-box; }
+    .panel {
+      background: var(--card-background-color, var(--ha-card-background, #fff));
+      color: var(--primary-text-color, #212121);
+      border: 1px solid var(--divider-color, #ddd);
+      border-radius: 8px;
+      padding: 16px;
+      max-width: 420px;
+      width: calc(100vw - 32px);
+      box-sizing: border-box;
+    }
     .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
-    ul { list-style: none; padding-left: 12px; max-height: 320px; overflow: auto; }
-    li { padding: 2px 0; }
-    .node { display: flex; align-items: center; gap: 6px; }
+    .row input[type="search"] {
+      flex: 1;
+      background: var(--input-fill-color, var(--secondary-background-color, #f5f5f5));
+      color: var(--primary-text-color, #212121);
+      border: 1px solid var(--divider-color, #ddd);
+      border-radius: 4px;
+      padding: 8px;
+    }
+    .row input[type="search"]:focus {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: -1px;
+    }
+    ul { list-style: none; padding-left: 12px; max-height: 320px; overflow: auto; margin: 8px 0; }
+    li { padding: 4px 0; }
+    .node { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .node:hover { color: var(--primary-color, #03a9f4); }
+    .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+    .actions button {
+      background: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #fff);
+      border: none;
+      border-radius: 4px;
+      padding: 8px 16px;
+      cursor: pointer;
+    }
+    .actions button:hover { opacity: 0.9; }
   `;
 
   @property({ type: Boolean, reflect: true }) open: boolean = false;
@@ -87,7 +119,7 @@ export class HVLocationSelector extends LitElement {
           <div class="row">
             <label><input type="checkbox" .checked=${this._includeSubtree} @change=${(e: Event) => this._includeSubtree = (e.target as HTMLInputElement).checked} /> Include sublocations</label>
           </div>
-          <div class="row" style="justify-content: flex-end; gap: 8px;">
+          <div class="actions">
             <button @click=${this.onCancel}>Cancel</button>
             <button @click=${this.onSelect}>Select</button>
           </div>

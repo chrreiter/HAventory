@@ -40,7 +40,7 @@ export class HVInventoryList extends LitElement {
       gap: 8px;
       align-items: center;
       font-weight: 600;
-      border-bottom: 1px solid #ddd;
+      border-bottom: 1px solid var(--divider-color, #ddd);
       padding: 6px 0;
       flex-shrink: 0;
     }
