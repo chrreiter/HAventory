@@ -28,11 +28,13 @@ export class HVInventoryList extends LitElement {
       display: flex;
       flex-direction: column;
       height: 100%;
+      align-items: stretch;
     }
     :host([fill]) lit-virtualizer {
       flex: 1;
       height: auto;
       min-height: 0;
+      overflow: auto;
     }
     .header {
       display: grid;
@@ -41,8 +43,9 @@ export class HVInventoryList extends LitElement {
       align-items: center;
       font-weight: 600;
       border-bottom: 1px solid var(--divider-color, #ddd);
-      padding: 6px 0;
+      padding: 6px 8px;
       flex-shrink: 0;
+      box-sizing: border-box;
     }
     .header .hide-compact { display: block; }
     :host([compact]) .header .hide-compact { display: none; }

@@ -12,7 +12,8 @@ export class HVItemRow extends LitElement {
       grid-template-columns: var(--hv-grid-columns, minmax(120px, 2fr) 50px minmax(80px, 1fr) minmax(100px, 2fr) 160px);
       gap: 8px;
       align-items: center;
-      padding: 6px 0;
+      padding: 6px 8px;
+      box-sizing: border-box;
     }
     .name { display: inline-flex; align-items: center; gap: 8px; overflow: hidden; }
     .name > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
