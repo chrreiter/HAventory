@@ -307,11 +307,41 @@ export class HAventoryCard extends LitElement {
         .ov-header button:hover { opacity: 0.9; }
         .ov-body { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; height: calc(100vh - 48px); box-sizing: border-box; overflow: hidden; }
         .sidebar { background: var(--card-background-color, #fff); padding: 10px; border-right: 1px solid rgba(0,0,0,0.1); overflow: auto; overscroll-behavior: contain; }
+        .sidebar .row label { display: inline-flex; align-items: center; gap: 6px; }
+        .sidebar select {
+          background: var(--input-fill-color, var(--secondary-background-color, #f5f5f5));
+          color: var(--primary-text-color, #212121);
+          border: 1px solid var(--divider-color, #ddd);
+          border-radius: 4px;
+          padding: 6px 8px;
+          font-size: 14px;
+          box-sizing: border-box;
+          min-width: 140px;
+        }
+        .sidebar select:focus {
+          outline: 2px solid var(--primary-color, #03a9f4);
+          outline-offset: -1px;
+        }
+        .sidebar input[type="checkbox"] {
+          accent-color: var(--primary-color, #03a9f4);
+        }
         .main { background: var(--card-background-color, #fff); padding: 10px; overflow: hidden; display: flex; flex-direction: column; gap: 8px; }
         .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
         .btn-add { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 14px; }
         .btn-add:hover { opacity: 0.9; }
         .sort-controls { display: inline-flex; align-items: center; gap: 6px; }
+        .sort-controls button {
+          background: var(--primary-color, #03a9f4);
+          color: var(--text-primary-color, #fff);
+          border: none;
+          border-radius: 4px;
+          padding: 6px 10px;
+          cursor: pointer;
+          font-size: 14px;
+        }
+        .sort-controls button:hover {
+          opacity: 0.9;
+        }
         .diagnostics { margin-top: 12px; }
         .list-container { min-height: 0; flex: 1; overflow: hidden; }
         .sentinel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }

@@ -19,10 +19,41 @@ export class HVSearchBar extends LitElement {
   static styles = css`
     :host { display: block; }
     .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    input[type="search"] { flex: 1 1 220px; }
-    select { min-width: 140px; }
+    input[type="search"],
+    select {
+      background: var(--input-fill-color, var(--secondary-background-color, #f5f5f5));
+      color: var(--primary-text-color, #212121);
+      border: 1px solid var(--divider-color, #ddd);
+      border-radius: 4px;
+      padding: 6px 8px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    input[type="search"] {
+      flex: 1 1 220px;
+    }
+    select {
+      min-width: 140px;
+    }
+    input[type="search"]:focus,
+    select:focus {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: -1px;
+    }
     label { display: inline-flex; align-items: center; gap: 6px; }
     .sort-wrap { display: inline-flex; align-items: center; gap: 6px; }
+    button {
+      background: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #fff);
+      border: none;
+      border-radius: 4px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      opacity: 0.9;
+    }
   `;
 
   @property({ type: String }) q: string = '';
