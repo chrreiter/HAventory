@@ -35,9 +35,8 @@ export class HAventoryCard extends LitElement {
       opacity: 0.9;
     }
     .card-list-container {
-      overflow: auto;
-      overscroll-behavior: contain;
-      touch-action: pan-y;
+      /* Let the inner list manage its own scrolling in compact view */
+      overflow: visible;
     }
     .banners {
       display: grid;
@@ -314,7 +313,7 @@ export class HAventoryCard extends LitElement {
         .btn-add:hover { opacity: 0.9; }
         .sort-controls { display: inline-flex; align-items: center; gap: 6px; }
         .diagnostics { margin-top: 12px; }
-        .list-container { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; }
+        .list-container { min-height: 0; flex: 1; overflow: hidden; }
         .sentinel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
         .banners { display: grid; gap: 6px; margin: 8px 0; }
         .banner { padding: 8px 10px; border-radius: 6px; background: #fff3cd; color: #664d03; border: 1px solid #ffecb5; display: flex; justify-content: space-between; align-items: center; }

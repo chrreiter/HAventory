@@ -1,7 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
+import { repeat } from 'lit/directives/repeat.js';
 import type { Item } from '../store/types';
-import '@lit-labs/virtualizer';
 
 @customElement('hv-inventory-list')
 export class HVInventoryList extends LitElement {
@@ -23,18 +23,12 @@ export class HVInventoryList extends LitElement {
     :host([compact]) {
       --hv-grid-columns: var(--hv-grid-columns-compact);
     }
-    /* Fill mode: stretch to fill parent container */
+    /* Fill mode: stretch to fill parent container (expanded view) */
     :host([fill]) {
       display: flex;
       flex-direction: column;
       height: 100%;
       align-items: stretch;
-    }
-    :host([fill]) lit-virtualizer {
-      flex: 1;
-      height: auto;
-      min-height: 0;
-      overflow: auto;
     }
     .header {
       display: grid;
@@ -49,16 +43,29 @@ export class HVInventoryList extends LitElement {
     }
     .header .hide-compact { display: block; }
     :host([compact]) .header .hide-compact { display: none; }
-    lit-virtualizer {
-      display: block;
-      height: 420px;
-      overflow: auto;
-      overscroll-behavior: contain;
-      touch-action: pan-y;
-    }
+
     .empty-state { padding: 32px 16px; text-align: center; color: #666; }
     .empty-state p { margin: 8px 0; }
     .empty-state .hint { font-size: 0.9em; opacity: 0.8; }
+    /* Compact (card) mode: single scroll container with capped height */
+    .plain-list {
+      display: block;
+      max-height: 500px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      touch-action: pan-y;
+    }
+    .plain-list hv-item-row {
+      display: block;
+    }
+    /* Expanded (fill) mode: full-height scroll container */
+    .fill-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      touch-action: pan-y;
+    }
   `;
 
   @property({ attribute: false }) items: Item[] = [];
@@ -80,6 +87,33 @@ export class HVInventoryList extends LitElement {
     this.dispatchEvent(new CustomEvent('near-end', { detail: { ratio }, bubbles: true, composed: true }));
   }
 
+  private renderRow(it: Item) {
+    return html`
+      <hv-item-row
+        .item=${it}
+        .areas=${this.areas}
+        .locations=${this.locations}
+        ?compact=${this.compact}
+        @decrement=${(e: CustomEvent) => this.onRowEvent('decrement', e)}
+        @increment=${(e: CustomEvent) => this.onRowEvent('increment', e)}
+        @toggle-checkout=${(e: CustomEvent) => this.onRowEvent('toggle-checkout', e)}
+        @edit=${(e: CustomEvent) => this.onRowEvent('edit', e)}
+      ></hv-item-row>
+    `;
+  }
+
+  private renderHeader() {
+    return html`
+      <div class="header" role="row">
+        <div role="columnheader">Name</div>
+        <div role="columnheader">Qty</div>
+        <div role="columnheader" class="hide-compact">Category</div>
+        <div role="columnheader" class="hide-compact">Location</div>
+        <div role="columnheader" aria-hidden="true"></div>
+      </div>
+    `;
+  }
+
   render() {
     if (this.items.length === 0) {
       return html`
@@ -89,31 +123,23 @@ export class HVInventoryList extends LitElement {
         </div>
       `;
     }
+
+    // Expanded view (fill mode): plain list with full-height scroll container
+    if (this.fill) {
+      return html`
+        ${this.renderHeader()}
+        <div class="fill-list" role="rowgroup" @scroll=${this.onScroll}>
+          ${repeat(this.items, (it) => it.id, (it) => this.renderRow(it))}
+        </div>
+      `;
+    }
+
+    // Compact card view: plain list with capped height
     return html`
-      <div class="header" role="row">
-        <div role="columnheader">Name</div>
-        <div role="columnheader">Qty</div>
-        <div role="columnheader" class="hide-compact">Category</div>
-        <div role="columnheader" class="hide-compact">Location</div>
-        <div role="columnheader" aria-hidden="true"></div>
+      ${this.renderHeader()}
+      <div class="plain-list" role="rowgroup" @scroll=${this.onScroll}>
+        ${repeat(this.items, (it) => it.id, (it) => this.renderRow(it))}
       </div>
-      <lit-virtualizer
-        role="rowgroup"
-        @scroll=${this.onScroll}
-        .items=${this.items}
-        .renderItem=${(it: Item) => html`
-          <hv-item-row
-            .item=${it}
-            .areas=${this.areas}
-            .locations=${this.locations}
-            ?compact=${this.compact}
-            @decrement=${(e: CustomEvent) => this.onRowEvent('decrement', e)}
-            @increment=${(e: CustomEvent) => this.onRowEvent('increment', e)}
-            @toggle-checkout=${(e: CustomEvent) => this.onRowEvent('toggle-checkout', e)}
-            @edit=${(e: CustomEvent) => this.onRowEvent('edit', e)}
-          ></hv-item-row>
-        `}
-      ></lit-virtualizer>
     `;
   }
 }
