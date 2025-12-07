@@ -291,13 +291,13 @@ export class HAventoryCard extends LitElement {
         .ov-header button:hover { opacity: 0.9; }
         .ov-body { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; height: calc(100vh - 48px); box-sizing: border-box; overflow: hidden; }
         .sidebar { background: var(--card-background-color, #fff); padding: 10px; border-right: 1px solid rgba(0,0,0,0.1); overflow: auto; overscroll-behavior: contain; }
-        .main { background: var(--card-background-color, #fff); padding: 10px; overflow: hidden; display: grid; grid-template-rows: auto 1fr; gap: 8px; }
+        .main { background: var(--card-background-color, #fff); padding: 10px; overflow: hidden; display: flex; flex-direction: column; gap: 8px; }
         .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
         .btn-add { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 14px; }
         .btn-add:hover { opacity: 0.9; }
         .sort-controls { display: inline-flex; align-items: center; gap: 6px; }
         .diagnostics { margin-top: 12px; }
-        .list-container { min-height: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; }
+        .list-container { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; }
         .sentinel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
         .banners { display: grid; gap: 6px; margin: 8px 0; }
         .banner { padding: 8px 10px; border-radius: 6px; background: #fff3cd; color: #664d03; border: 1px solid #ffecb5; display: flex; justify-content: space-between; align-items: center; }
