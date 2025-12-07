@@ -146,7 +146,15 @@ export class HVItemDialog extends LitElement {
     const loc = this.locations.find((l) => l.id === this._location);
     if (!loc) return this._location;
     const locationPath = loc.path?.display_path || loc.name || this._location;
-    // Prepend area name if available
+
+    // First try item's effective_area_id (inherited from location hierarchy)
+    if (this.item?.effective_area_id && this.areas.length > 0) {
+      const area = this.areas.find((a) => a.id === this.item!.effective_area_id);
+      if (area) {
+        return `${area.name} > ${locationPath}`;
+      }
+    }
+    // Fallback to location's direct area_id
     if (loc.area_id && this.areas.length > 0) {
       const area = this.areas.find((a) => a.id === loc.area_id);
       if (area) {

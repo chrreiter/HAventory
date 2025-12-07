@@ -29,9 +29,15 @@ export class HVItemRow extends LitElement {
   @property({ type: Boolean }) compact: boolean = false;
 
   private resolveAreaName(): string | null {
+    // First try item's effective_area_id (inherited from location hierarchy)
+    if (this.item.effective_area_id) {
+      const area = this.areas.find((a) => a.id === this.item.effective_area_id);
+      if (area) return area.name;
+    }
+    // Fallback to location's direct area_id
     if (!this.item.location_id) return null;
     const loc = this.locations.find((l) => l.id === this.item.location_id);
-    if (!loc || !loc.area_id) return null;
+    if (!loc?.area_id) return null;
     const area = this.areas.find((a) => a.id === loc.area_id);
     return area?.name ?? null;
   }
