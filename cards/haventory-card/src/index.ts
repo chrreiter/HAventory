@@ -72,6 +72,7 @@ export class HAventoryCard extends LitElement {
   private _prevFocusEl: HTMLElement | null = null;
   private _locationSelectorOpen = false;
   private _toggleInProgress = false;
+  private _overlayRenderScheduled = false;
 
   // Lovelace interface: called by HA when the card is created/configured
   public setConfig(cfg: unknown): void {
@@ -100,7 +101,7 @@ export class HAventoryCard extends LitElement {
       this.store = new Store(h);
       this._storeUnsub = this.store.state.onChange(() => {
         this.requestUpdate();
-        if (this.expanded) this._renderOverlay();
+        if (this.expanded) this._scheduleOverlayRender();
       });
       void this.store.init().catch(() => undefined);
     }
@@ -112,7 +113,7 @@ export class HAventoryCard extends LitElement {
     if (this.store && !this._storeUnsub) {
       this._storeUnsub = this.store.state.onChange(() => {
         this.requestUpdate();
-        if (this.expanded) this._renderOverlay();
+        if (this.expanded) this._scheduleOverlayRender();
       });
     }
   }
@@ -244,16 +245,32 @@ export class HAventoryCard extends LitElement {
     if (this._toggleInProgress) return;
     this._toggleInProgress = true;
 
-    try {
-      const toggle = this.shadowRoot?.querySelector('[data-testid="expand-toggle"]') as HTMLElement | null;
-      this._prevFocusEl = toggle ?? null;
-      this.expanded = !this.expanded;
-      if (this.expanded) this._renderOverlay(); else this._teardownOverlay();
-      this.requestUpdate();
-    } finally {
-      // Release lock after a short delay to prevent double-clicks
-      setTimeout(() => { this._toggleInProgress = false; }, 100);
+    const toggle = this.shadowRoot?.querySelector('[data-testid="expand-toggle"]') as HTMLElement | null;
+    this._prevFocusEl = toggle ?? null;
+    this.expanded = !this.expanded;
+
+    if (this.expanded) {
+      this._renderOverlay();
+    } else {
+      this._teardownOverlay();
     }
+
+    this.requestUpdate();
+
+    // Release lock after render completes
+    requestAnimationFrame(() => {
+      this._toggleInProgress = false;
+    });
+  }
+
+  /** Debounced overlay render to batch rapid state changes */
+  private _scheduleOverlayRender() {
+    if (this._overlayRenderScheduled || !this.expanded) return;
+    this._overlayRenderScheduled = true;
+    requestAnimationFrame(() => {
+      this._overlayRenderScheduled = false;
+      if (this.expanded) this._renderOverlay();
+    });
   }
 
   private _ensureOverlayRoot(): HTMLDivElement {
