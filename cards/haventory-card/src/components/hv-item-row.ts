@@ -20,7 +20,19 @@ export class HVItemRow extends LitElement {
     .area { font-size: 12px; color: #666; flex-shrink: 0; }
     .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .actions { display: flex; flex-wrap: nowrap; gap: 4px; justify-content: flex-end; }
-    .actions button { margin: 0; padding: 4px 8px; white-space: nowrap; min-width: 32px; }
+    .actions button {
+      margin: 0;
+      padding: 4px 8px;
+      white-space: nowrap;
+      min-width: 32px;
+      background: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #fff);
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .actions button:hover { opacity: 0.9; }
   `;
 
   @property({ attribute: false }) item!: Item;

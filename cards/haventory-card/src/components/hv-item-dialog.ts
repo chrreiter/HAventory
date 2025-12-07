@@ -32,21 +32,26 @@ export class HVItemDialog extends LitElement {
       outline: 2px solid var(--primary-color, #03a9f4);
       outline-offset: -1px;
     }
-    .actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; }
-    .right-actions { display: flex; gap: 8px; }
-    .actions button {
+    /* Base button styling for all buttons in dialog */
+    button {
       background: var(--primary-color, #03a9f4);
       color: var(--text-primary-color, #fff);
       border: none;
       border-radius: 4px;
-      padding: 8px 16px;
+      padding: 6px 12px;
       cursor: pointer;
+      font-size: 14px;
     }
-    .actions button:hover {
+    button:hover {
       opacity: 0.9;
     }
-    .actions button.btn-danger {
+    button.btn-danger {
       background: var(--error-color, #db4437);
+    }
+    .actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; }
+    .right-actions { display: flex; gap: 8px; }
+    .actions button {
+      padding: 8px 16px;
     }
     .banner { padding: 8px 10px; border-radius: 6px; background: var(--error-color, #db4437); color: #fff; margin-bottom: 8px; }
     .location-display {
