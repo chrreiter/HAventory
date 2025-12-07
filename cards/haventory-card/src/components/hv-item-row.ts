@@ -34,6 +34,13 @@ export class HVItemRow extends LitElement {
       font-size: 13px;
     }
     .actions button:hover { opacity: 0.9; }
+    .actions button.btn-danger {
+      background: var(--error-color, #db4437);
+    }
+    .actions button.btn-checkout {
+      min-width: 40px;
+      text-align: center;
+    }
   `;
 
   @property({ attribute: false }) item!: Item;
@@ -143,7 +150,13 @@ export class HVItemRow extends LitElement {
         <div class="actions" role="cell">
           <button @click=${this.onDecrement} aria-label="Decrease quantity">−</button>
           <button @click=${this.onIncrement} aria-label="Increase quantity">+</button>
-          <button @click=${this.onToggleCheckout} aria-label="Toggle check out/in">${item.checked_out ? 'In' : 'Out'}</button>
+          <button
+            class=${`btn-checkout${item.checked_out ? ' btn-danger' : ''}`}
+            @click=${this.onToggleCheckout}
+            aria-label="Toggle check out/in"
+          >
+            ${item.checked_out ? 'In' : 'Out'}
+          </button>
           <button @click=${this.onEdit} aria-label="Edit item">Edit</button>
         </div>
       </div>

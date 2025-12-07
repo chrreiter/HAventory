@@ -186,7 +186,7 @@ describe('hv-item-row', () => {
     });
 
     const sr = el.shadowRoot as ShadowRoot;
-    const checkoutBtn = Array.from(sr.querySelectorAll('button')).find((b) => b.textContent === 'Out');
+    const checkoutBtn = sr.querySelector('button.btn-checkout') as HTMLButtonElement | null;
     checkoutBtn?.click();
 
     expect(eventDetail).toBeTruthy();
