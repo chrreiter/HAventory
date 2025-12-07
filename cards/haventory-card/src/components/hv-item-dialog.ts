@@ -62,6 +62,20 @@ export class HVItemDialog extends LitElement {
       width: 100%;
       box-sizing: border-box;
     }
+    .location-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .location-row .location-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .location-row .location-controls input {
+      flex: 1;
+      min-width: 0;
+    }
   `;
 
   @property({ type: Boolean, reflect: true }) open: boolean = false;
@@ -190,15 +204,22 @@ export class HVItemDialog extends LitElement {
           </div>
           <div class="row"><label>Category <input type="text" .value=${this._category} @input=${(e: Event) => this._category = (e.target as HTMLInputElement).value} /></label></div>
           <div class="row"><label>Tags <input type="text" .value=${this._tags} @input=${(e: Event) => this._tags = (e.target as HTMLInputElement).value} /></label></div>
-          <div class="row" style="align-items: center;">
-            <div class="location-display">
-              <label>Location
-                <input type="text" placeholder="None" readonly .value=${this.getLocationDisplayPath()} @click=${this.onOpenLocationSelector} style="cursor: pointer;" />
-              </label>
-            </div>
+        <div class="row location-row">
+          <span>Location</span>
+          <div class="location-controls">
+            <input
+              type="text"
+              placeholder="None"
+              readonly
+              .value=${this.getLocationDisplayPath()}
+              @click=${this.onOpenLocationSelector}
+              style="cursor: pointer;"
+              aria-label="Location"
+            />
             <button @click=${this.onOpenLocationSelector} aria-label="Open location selector">Select…</button>
             ${this._location ? html`<button @click=${() => this._location = null} aria-label="Clear location">Clear</button>` : null}
           </div>
+        </div>
           <div class="row">
             <label><input type="checkbox" .checked=${this._checkedOut} @change=${(e: Event) => this._checkedOut = (e.target as HTMLInputElement).checked} /> Checked-out</label>
             <label>Due date <input type="date" .value=${this._dueDate} ?disabled=${!this._checkedOut} @input=${(e: Event) => this._dueDate = (e.target as HTMLInputElement).value} /></label>
