@@ -212,4 +212,48 @@ describe('HAventoryCard', () => {
     const sr = el.shadowRoot as ShadowRoot;
     expect(sr.textContent || '').toContain('My Custom Inventory');
   });
+
+  it('resets dialog to create mode when Add item clicked after editing', async () => {
+    // After editing an item and closing dialog, clicking Add item should reset dialog.item to null
+    const testItem = makeItem({ id: 'item-1', name: 'Existing Item', quantity: 5 });
+    const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
+    document.body.appendChild(el);
+    await customElements.whenDefined('haventory-card');
+
+    const hass = makeMockHass({ items: [testItem] });
+    (el as any).hass = hass;
+
+    const store = (el as any).store as Store;
+    await store.init();
+    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
+
+    const sr = el.shadowRoot as ShadowRoot;
+    const dialog = sr.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: any };
+
+    // Edit the item (simulate edit event)
+    const list = sr.querySelector('hv-inventory-list') as HTMLElement;
+    list.dispatchEvent(new CustomEvent('edit', { detail: { itemId: 'item-1' }, bubbles: true, composed: true }));
+    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
+
+    // Verify dialog is in edit mode with the item
+    expect(dialog.open).toBe(true);
+    expect(dialog.item?.id).toBe('item-1');
+
+    // Close the dialog (simulate cancel/close)
+    dialog.open = false;
+    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
+
+    // The dialog.item still holds the old item reference after close
+    expect(dialog.item?.id).toBe('item-1');
+
+    // Click Add item button (compact view)
+    const addBtn = sr.querySelector('button[aria-label="Add item"]') as HTMLButtonElement;
+    expect(addBtn).toBeTruthy();
+    addBtn.click();
+    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
+
+    // Verify dialog is now in create mode (item should be null, not the old item)
+    expect(dialog.open).toBe(true);
+    expect(dialog.item).toBe(null);
+  });
 });

@@ -407,8 +407,11 @@ export class HAventoryCard extends LitElement {
                 @change=${(e: CustomEvent) => this.store?.setFilters(e.detail)}
               ></hv-search-bar>
               <button class="btn-add" @click=${() => {
-                const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean } | null;
-                if (dialog) dialog.open = true;
+                const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: unknown } | null;
+                if (dialog) {
+                  dialog.item = null;  // Reset item for create mode
+                  dialog.open = true;
+                }
               }}>Add item</button>
             </div>
             <div class="list-container">
