@@ -21,6 +21,8 @@ export class HVItemDialog extends LitElement {
     }
     .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
     .row label { display: flex; flex-direction: column; gap: 4px; }
+    .row label.full-width { width: 100%; }
+    .row label.full-width input { width: 100%; }
     .row input, .row textarea, .row select {
       background: var(--input-fill-color, var(--secondary-background-color, #f5f5f5));
       color: var(--primary-text-color, #212121);
@@ -249,14 +251,14 @@ export class HVItemDialog extends LitElement {
         <div class="dialog" role="dialog" aria-modal="true" aria-label="Item dialog" @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); this.onCancel(); } }}>
           ${this._validation ? html`<div class="banner" role="alert">${this._validation}</div>` : null}
           ${this.error ? html`<div class="banner" role="alert">${this.error}</div>` : null}
-          <div class="row"><label>Name* <input aria-required="true" type="text" .value=${this._name} @input=${(e: Event) => this._name = (e.target as HTMLInputElement).value} /></label></div>
+          <div class="row"><label class="full-width">Name* <input aria-required="true" type="text" .value=${this._name} @input=${(e: Event) => this._name = (e.target as HTMLInputElement).value} /></label></div>
           <div class="row"><label style="flex:1;">Description <textarea rows="2" .value=${this._description} @input=${(e: Event) => this._description = (e.target as HTMLTextAreaElement).value}></textarea></label></div>
           <div class="row">
             <label>Quantity <input type="number" .value=${String(this._quantity)} @input=${(e: Event) => this._quantity = Number((e.target as HTMLInputElement).value)} /></label>
             <label>Low-stock threshold <input type="number" .value=${this._lowStock ?? ''} @input=${(e: Event) => this._lowStock = (e.target as HTMLInputElement).value === '' ? null : Number((e.target as HTMLInputElement).value)} /></label>
           </div>
-          <div class="row"><label>Category <input type="text" .value=${this._category} @input=${(e: Event) => this._category = (e.target as HTMLInputElement).value} /></label></div>
-          <div class="row"><label>Tags <input type="text" .value=${this._tags} @input=${(e: Event) => this._tags = (e.target as HTMLInputElement).value} /></label></div>
+          <div class="row"><label class="full-width">Category <input type="text" .value=${this._category} @input=${(e: Event) => this._category = (e.target as HTMLInputElement).value} /></label></div>
+          <div class="row"><label class="full-width">Tags <input type="text" .value=${this._tags} @input=${(e: Event) => this._tags = (e.target as HTMLInputElement).value} /></label></div>
           <div class="row location-row">
             <span>Location</span>
             <div class="location-controls">
