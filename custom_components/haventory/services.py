@@ -143,6 +143,13 @@ def _log_domain_error(op: str, context: dict[str, Any], exc: Exception) -> None:
     LOGGER.log(level, str(exc), extra={"domain": DOMAIN, "op": op, **context}, exc_info=True)
 
 
+def _raise_service_error(op: str, context: dict[str, Any], exc: Exception) -> None:
+    """Log and surface service errors so Home Assistant can report them."""
+
+    _log_domain_error(op, context, exc)
+    raise exc
+
+
 async def async_persist_repo(hass: HomeAssistant) -> None:
     """Persist immediately after a successful service mutation.
 
@@ -165,7 +172,7 @@ async def service_item_create(hass: HomeAssistant, data: dict) -> None:
         repo.create_item(payload)  # type: ignore[arg-type]
         await async_persist_repo(hass)
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _log_domain_error(op, {"item_name": data.get("name")}, exc)
+        _raise_service_error(op, {"item_name": data.get("name")}, exc)
 
 
 async def service_item_update(hass: HomeAssistant, data: dict) -> None:
@@ -179,7 +186,7 @@ async def service_item_update(hass: HomeAssistant, data: dict) -> None:
         repo.update_item(payload["item_id"], update, expected_version=expected)  # type: ignore[arg-type]
         await async_persist_repo(hass)
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _log_domain_error(op, {"item_id": item_id}, exc)
+        _raise_service_error(op, {"item_id": item_id}, exc)
 
 
 async def service_item_delete(hass: HomeAssistant, data: dict) -> None:
@@ -192,7 +199,7 @@ async def service_item_delete(hass: HomeAssistant, data: dict) -> None:
         repo.delete_item(payload["item_id"], expected_version=expected)
         await async_persist_repo(hass)
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _log_domain_error(op, {"item_id": item_id}, exc)
+        _raise_service_error(op, {"item_id": item_id}, exc)
 
 
 async def service_item_move(hass: HomeAssistant, data: dict) -> None:
@@ -206,7 +213,7 @@ async def service_item_move(hass: HomeAssistant, data: dict) -> None:
         repo.update_item(payload["item_id"], update, expected_version=expected)  # type: ignore[arg-type]
         await async_persist_repo(hass)
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _log_domain_error(
+        _raise_service_error(
             op, {"item_id": item_id, "new_location_id": data.get("new_location_id")}, exc
         )
 
@@ -222,7 +229,7 @@ async def service_item_adjust_quantity(hass: HomeAssistant, data: dict) -> None:
         )
         await async_persist_repo(hass)
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _log_domain_error(op, {"item_id": item_id, "delta": data.get("delta")}, exc)
+        _raise_service_error(op, {"item_id": item_id, "delta": data.get("delta")}, exc)
 
 
 async def service_item_set_quantity(hass: HomeAssistant, data: dict) -> None:
@@ -238,7 +245,7 @@ async def service_item_set_quantity(hass: HomeAssistant, data: dict) -> None:
         )
         await async_persist_repo(hass)
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _log_domain_error(op, {"item_id": item_id, "quantity": data.get("quantity")}, exc)
+        _raise_service_error(op, {"item_id": item_id, "quantity": data.get("quantity")}, exc)
 
 
 async def service_item_check_out(hass: HomeAssistant, data: dict) -> None:
@@ -254,7 +261,7 @@ async def service_item_check_out(hass: HomeAssistant, data: dict) -> None:
         )
         await async_persist_repo(hass)
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _log_domain_error(op, {"item_id": item_id, "due_date": data.get("due_date")}, exc)
+        _raise_service_error(op, {"item_id": item_id, "due_date": data.get("due_date")}, exc)
 
 
 async def service_item_check_in(hass: HomeAssistant, data: dict) -> None:
@@ -266,7 +273,7 @@ async def service_item_check_in(hass: HomeAssistant, data: dict) -> None:
         repo.check_in(payload["item_id"], expected_version=payload.get("expected_version"))
         await async_persist_repo(hass)
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _log_domain_error(op, {"item_id": item_id}, exc)
+        _raise_service_error(op, {"item_id": item_id}, exc)
 
 
 async def service_location_create(hass: HomeAssistant, data: dict) -> None:
@@ -281,7 +288,7 @@ async def service_location_create(hass: HomeAssistant, data: dict) -> None:
         )
         await async_persist_repo(hass)
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _log_domain_error(op, {"location_name": data.get("name")}, exc)
+        _raise_service_error(op, {"location_name": data.get("name")}, exc)
 
 
 async def service_location_update(hass: HomeAssistant, data: dict) -> None:
@@ -300,7 +307,7 @@ async def service_location_update(hass: HomeAssistant, data: dict) -> None:
         )
         await async_persist_repo(hass)
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _log_domain_error(op, {"location_id": location_id}, exc)
+        _raise_service_error(op, {"location_id": location_id}, exc)
 
 
 async def service_location_delete(hass: HomeAssistant, data: dict) -> None:
@@ -312,7 +319,7 @@ async def service_location_delete(hass: HomeAssistant, data: dict) -> None:
         repo.delete_location(payload["location_id"])
         await async_persist_repo(hass)
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _log_domain_error(op, {"location_id": location_id}, exc)
+        _raise_service_error(op, {"location_id": location_id}, exc)
 
 
 # -----------------------------
