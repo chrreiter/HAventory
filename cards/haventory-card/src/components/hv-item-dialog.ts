@@ -37,6 +37,10 @@ export class HVItemDialog extends LitElement {
       outline: 2px solid var(--primary-color, #03a9f4);
       outline-offset: -1px;
     }
+    .row input[disabled], .row textarea[disabled], .row select[disabled] {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
     /* Base button styling for all buttons in dialog */
     button {
       background: var(--primary-color, #03a9f4);
@@ -83,6 +87,43 @@ export class HVItemDialog extends LitElement {
     .location-row .location-controls input {
       flex: 1;
       min-width: 0;
+    }
+    .checkout-row {
+      align-items: flex-end;
+    }
+    .checkout-control {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .btn-checkout {
+      background: transparent;
+      color: var(--primary-color, #03a9f4);
+      border: 1px solid var(--primary-color, #03a9f4);
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 130px;
+    }
+    .btn-checkout.active {
+      background: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #fff);
+      border: 1px solid var(--primary-color, #03a9f4);
+    }
+    .btn-checkout:focus-visible {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: 2px;
+    }
+    .due-label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 0 0 auto;
+      min-width: 160px;
+    }
+    .due-label input[type="date"] {
+      width: 180px;
     }
   `;
 
@@ -166,6 +207,10 @@ export class HVItemDialog extends LitElement {
     this._location = locationId;
   }
 
+  private toggleCheckedOut() {
+    this._checkedOut = !this._checkedOut;
+  }
+
   /** Resolve location ID to display path with area prefix, or return placeholder if not found */
   private getLocationDisplayPath(): string {
     if (!this._location) return '';
@@ -212,25 +257,44 @@ export class HVItemDialog extends LitElement {
           </div>
           <div class="row"><label>Category <input type="text" .value=${this._category} @input=${(e: Event) => this._category = (e.target as HTMLInputElement).value} /></label></div>
           <div class="row"><label>Tags <input type="text" .value=${this._tags} @input=${(e: Event) => this._tags = (e.target as HTMLInputElement).value} /></label></div>
-        <div class="row location-row">
-          <span>Location</span>
-          <div class="location-controls">
-            <input
-              type="text"
-              placeholder="None"
-              readonly
-              .value=${this.getLocationDisplayPath()}
-              @click=${this.onOpenLocationSelector}
-              style="cursor: pointer;"
-              aria-label="Location"
-            />
-            <button @click=${this.onOpenLocationSelector} aria-label="Open location selector">Select…</button>
-            ${this._location ? html`<button @click=${() => this._location = null} aria-label="Clear location">Clear</button>` : null}
+          <div class="row location-row">
+            <span>Location</span>
+            <div class="location-controls">
+              <input
+                type="text"
+                placeholder="None"
+                readonly
+                .value=${this.getLocationDisplayPath()}
+                @click=${this.onOpenLocationSelector}
+                style="cursor: pointer;"
+                aria-label="Location"
+              />
+              <button @click=${this.onOpenLocationSelector} aria-label="Open location selector">Select…</button>
+              ${this._location ? html`<button @click=${() => this._location = null} aria-label="Clear location">Clear</button>` : null}
+            </div>
           </div>
-        </div>
-          <div class="row">
-            <label><input type="checkbox" .checked=${this._checkedOut} @change=${(e: Event) => this._checkedOut = (e.target as HTMLInputElement).checked} /> Checked-out</label>
-            <label>Due date <input type="date" .value=${this._dueDate} ?disabled=${!this._checkedOut} @input=${(e: Event) => this._dueDate = (e.target as HTMLInputElement).value} /></label>
+          <div class="row checkout-row">
+            <div class="checkout-control">
+              <span>Checked-out</span>
+              <button
+                class=${this._checkedOut ? 'btn-checkout active' : 'btn-checkout'}
+                @click=${this.toggleCheckedOut}
+                aria-pressed=${this._checkedOut}
+                aria-label="Toggle checked-out"
+                type="button"
+              >
+                ${this._checkedOut ? 'Checked out' : 'Available'}
+              </button>
+            </div>
+            <label class="due-label">
+              Due date
+              <input
+                type="date"
+                .value=${this._dueDate}
+                ?disabled=${!this._checkedOut}
+                @input=${(e: Event) => this._dueDate = (e.target as HTMLInputElement).value}
+              />
+            </label>
           </div>
           <div class="actions">
             <div>

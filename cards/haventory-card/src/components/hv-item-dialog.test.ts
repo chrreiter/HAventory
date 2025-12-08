@@ -16,11 +16,12 @@ describe('hv-item-dialog', () => {
     if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
     expect((sr.textContent || '').toLowerCase()).toContain('name is required');
 
-    // Check-out toggles due date
-    const check = sr.querySelector('input[type="checkbox"]') as HTMLInputElement;
-    check.click();
-    if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+    // Check-out button toggles due date enabled state
+    const toggle = sr.querySelector('button[aria-label="Toggle checked-out"]') as HTMLButtonElement;
     const date = sr.querySelector('input[type="date"]') as HTMLInputElement;
+    expect(date.disabled).toBe(true);
+    toggle.click();
+    if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
     expect(date.disabled).toBe(false);
   });
 
