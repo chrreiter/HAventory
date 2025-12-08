@@ -97,6 +97,9 @@ export class HVLocationSelector extends LitElement {
       color: var(--secondary-text-color, #666);
       margin-bottom: 4px;
     }
+    .area-prefix {
+      color: var(--secondary-text-color, #888);
+    }
   `;
 
   @property({ type: Boolean, reflect: true }) open: boolean = false;
@@ -178,6 +181,27 @@ export class HVLocationSelector extends LitElement {
     this._createError = null;
   }
 
+  /** Get effective area by walking up the location hierarchy */
+  private _getEffectiveAreaId(location: Location): string | null {
+    // Start with this location's area_id
+    if (location.area_id) return location.area_id;
+    // Walk up parent chain to find inherited area
+    let parentId = location.parent_id;
+    while (parentId) {
+      const parent = (this.locations ?? []).find((l) => l.id === parentId);
+      if (!parent) break;
+      if (parent.area_id) return parent.area_id;
+      parentId = parent.parent_id;
+    }
+    return null;
+  }
+
+  private _getAreaName(areaId: string | null): string | null {
+    if (!areaId) return null;
+    const area = this.areas.find((a) => a.id === areaId);
+    return area?.name ?? null;
+  }
+
   private renderList() {
     const list = (this.locations ?? []).filter((l) => {
       const q = this._q.trim().toLowerCase();
@@ -199,11 +223,16 @@ export class HVLocationSelector extends LitElement {
       <ul aria-label="Location list">
         ${list.map((l) => {
           const depth = getDepth(l.path?.display_path);
+          const effectiveAreaId = this._getEffectiveAreaId(l);
+          const areaName = this._getAreaName(effectiveAreaId);
+          const locationPath = l.path?.display_path || l.name;
           return html`
             <li style="padding-left: ${depth * 12}px;">
               <label class="node">
                 <input type="radio" name="loc" .checked=${this._selectedId === l.id} @change=${() => this._selectedId = l.id} />
-                <span>${l.path?.display_path || l.name}</span>
+                ${areaName
+                  ? html`<span><span class="area-prefix">${areaName} &gt;</span> ${locationPath}</span>`
+                  : html`<span>${locationPath}</span>`}
               </label>
             </li>
           `;
