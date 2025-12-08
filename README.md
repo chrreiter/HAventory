@@ -80,7 +80,7 @@ Remove-Item Env:\HA_ALLOW_AREA_MUTATIONS
   - **Edge case**: If storage fails after mutation, the change exists in memory but won't survive restart; client receives `storage_error`
 - [ ] Repository generation counter: Increments on every state modification for optimistic locking and debugging; persisted across restarts
 - [ ] WebSocket-only CRUD via `homeassistant.components.websocket_api` decorators (production). For local tooling, an optional dev-only HTTP shim may be enabled behind an env flag.
-- [ ] Services via `hass.services.async_register` with `voluptuous` schemas
+- [ ] Services via `hass.services.async_register` with `voluptuous` schemas; service handlers log context and re-raise validation/repository/storage errors so Home Assistant surfaces failures.
 - [ ] Areas via `hass.helpers.area_registry.async_get(hass)`; do not auto-create areas
 - [ ] Summary sensors via `DataUpdateCoordinator` + `CoordinatorEntity`
 - [ ] Calendar entity via `CalendarEntity`; implement `async_get_events`
@@ -94,6 +94,7 @@ Remove-Item Env:\HA_ALLOW_AREA_MUTATIONS
 - [ ] Build outputs to `www/haventory/`
 - [ ] Real-time via WebSocket; optimistic UI; virtualization for large lists
 - [ ] MVP: direct search; filters/sorts later; location tree selector; check-in/out actions
+- [ ] WebSocket subscriptions cleaned up via weak references and close callbacks to avoid leaked connections
 
 ### Notifications & Scheduling
 - [ ] Notifications via `notify.notify`; title-only by default
