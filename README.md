@@ -72,9 +72,10 @@ Remove-Item Env:\HA_ALLOW_AREA_MUTATIONS
 - [ ] `custom_components/haventory/` with `manifest.json`, `__init__.py`, `config_flow.py`, `services.yaml`
 - [ ] Store: `hass.data[DOMAIN]["store"]` with versioned schema and safe writes
 - [ ] Persistence architecture:
-  - **WebSocket handlers**: Debounced saves (1s delay) via `async_request_persist` — rapid mutations coalesce into single disk write, reducing I/O
+  - **WebSocket handlers**: Immediate saves via `async_persist_repo` — ensures storage errors propagate to clients as `storage_error`
   - **Service handlers**: Immediate saves via `async_persist_repo` — user-initiated actions prefer immediate durability
   - **Shutdown/unload**: Immediate save via `async_persist_immediate` — ensures pending changes are written before exit
+  - **Debounced saves**: Available via `async_request_persist` for batch/internal operations where error propagation is not required
   - **Concurrency**: All persist paths use `asyncio.Lock` to serialize writes and prevent race conditions
   - **Edge case**: If storage fails after mutation, the change exists in memory but won't survive restart; client receives `storage_error`
 - [ ] Repository generation counter: Increments on every state modification for optimistic locking and debugging; persisted across restarts

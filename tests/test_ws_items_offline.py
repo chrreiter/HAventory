@@ -148,7 +148,7 @@ async def test_error_mapping_validation_and_not_found_and_conflict() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ws_mutations_persist_to_store(monkeypatch, immediate_persist) -> None:
+async def test_ws_mutations_persist_to_store(monkeypatch) -> None:
     """After WS mutations, DomainStore.async_save is invoked with export_state."""
 
     hass = HomeAssistant()

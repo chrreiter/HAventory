@@ -434,9 +434,10 @@ def _broadcast_counts(hass: HomeAssistant) -> None:
 
 
 async def _persist_repo(hass: HomeAssistant) -> None:
-    # Use debounced persistence to reduce disk I/O on rapid changes.
-    # Tests use the immediate_persist fixture to bypass debouncing.
-    await storage_mod.async_request_persist(hass)
+    # Use immediate persistence to ensure storage errors propagate to clients.
+    # Debounced persistence (async_request_persist) swallows errors in background
+    # tasks, breaking the @ws_guard error mapping contract.
+    await storage_mod.async_persist_repo(hass)
 
 
 # -----------------------------

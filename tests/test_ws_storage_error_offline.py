@@ -41,7 +41,7 @@ async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
 
 
 @pytest.mark.asyncio
-async def test_ws_maps_storage_error_and_logs(caplog, monkeypatch, immediate_persist) -> None:
+async def test_ws_maps_storage_error_and_logs(caplog, monkeypatch) -> None:
     """WS should return storage_error when persist fails and log at ERROR level."""
 
     hass = HomeAssistant()
@@ -75,14 +75,11 @@ async def test_ws_maps_storage_error_and_logs(caplog, monkeypatch, immediate_per
 
 
 @pytest.mark.asyncio
-async def test_storage_error_leaves_item_in_memory_but_not_persisted(
-    caplog, monkeypatch, immediate_persist
-) -> None:
+async def test_storage_error_leaves_item_in_memory_but_not_persisted(caplog, monkeypatch) -> None:
     """When persist fails, item exists in memory but won't survive restart.
 
     This documents expected edge-case behavior: the mutation succeeds in memory,
     but the client receives storage_error. On HA restart, the item is lost.
-    Requires immediate_persist fixture to observe storage errors synchronously.
     """
     hass = HomeAssistant()
     repo = Repository()
@@ -123,13 +120,12 @@ async def test_storage_error_leaves_item_in_memory_but_not_persisted(
 
 
 @pytest.mark.asyncio
-async def test_storage_error_broadcast_already_sent(caplog, monkeypatch, immediate_persist) -> None:
+async def test_storage_error_broadcast_already_sent(caplog, monkeypatch) -> None:
     """When persist fails, broadcast has already been sent to subscribers.
 
     This documents that subscribers receive the 'created' event even though
     the client gets storage_error. This is a known limitation - rolling back
     would add complexity for a rare edge case.
-    Requires immediate_persist fixture to observe storage errors synchronously.
     """
     hass = HomeAssistant()
     repo = Repository()
@@ -170,14 +166,11 @@ async def test_storage_error_broadcast_already_sent(caplog, monkeypatch, immedia
 
 
 @pytest.mark.asyncio
-async def test_storage_error_on_delete_item_removed_from_memory(
-    caplog, monkeypatch, immediate_persist
-) -> None:
+async def test_storage_error_on_delete_item_removed_from_memory(caplog, monkeypatch) -> None:
     """When persist fails on delete, item is already removed from memory.
 
     For delete operations, if persist fails, the item was already removed
     from memory. On restart it would reappear (since delete wasn't persisted).
-    Requires immediate_persist fixture to observe storage errors synchronously.
     """
     hass = HomeAssistant()
     repo = Repository()
@@ -215,13 +208,10 @@ async def test_storage_error_on_delete_item_removed_from_memory(
 
 
 @pytest.mark.asyncio
-async def test_storage_error_on_update_change_in_memory_only(
-    caplog, monkeypatch, immediate_persist
-) -> None:
+async def test_storage_error_on_update_change_in_memory_only(caplog, monkeypatch) -> None:
     """When persist fails on update, change exists in memory but not on disk.
 
     Documents that partial updates are applied in-memory even when persist fails.
-    Requires immediate_persist fixture to observe storage errors synchronously.
     """
     hass = HomeAssistant()
     repo = Repository()
