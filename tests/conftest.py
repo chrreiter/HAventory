@@ -74,7 +74,12 @@ class HomeAssistantError(Exception):  # type: ignore[override]
     pass
 
 
+class ConfigEntryNotReady(HomeAssistantError):  # type: ignore[override]
+    pass
+
+
 ha_exceptions.HomeAssistantError = HomeAssistantError
+ha_exceptions.ConfigEntryNotReady = ConfigEntryNotReady
 sys.modules["homeassistant.exceptions"] = ha_exceptions
 
 # homeassistant.config_entries
