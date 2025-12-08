@@ -7,18 +7,21 @@ the core data structures in hass.data.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 
 from . import services as services_mod
 from . import ws as ws_mod
 from .const import DOMAIN
+from .exceptions import StorageError
 from .repository import Repository
-from .storage import DomainStore, async_persist_immediate
+from .storage import CURRENT_SCHEMA_VERSION, DomainStore, async_persist_immediate
 
-STORAGE_VERSION = 1
+STORAGE_VERSION = CURRENT_SCHEMA_VERSION
 LOGGER = logging.getLogger(__name__)
 
 
@@ -47,7 +50,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN]["store"] = store
 
     # Initialize in-memory repository for services and APIs by loading persisted state
-    payload = await store.async_load()
+    try:
+        payload = await store.async_load()
+        _validate_storage_payload(payload, schema_version=store.schema_version)
+    except StorageError as exc:
+        LOGGER.error(
+            "Storage validation failed during setup",
+            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
+            exc_info=True,
+        )
+        raise ConfigEntryNotReady("storage validation failed") from exc
+    except Exception as exc:  # pragma: no cover - defensive
+        LOGGER.error(
+            "Failed to load storage during setup",
+            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
+            exc_info=True,
+        )
+        raise ConfigEntryNotReady("storage load failed") from exc
     hass.data[DOMAIN]["repository"] = Repository.from_state(payload)
 
     # Register services
@@ -111,3 +130,18 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     bucket.pop("ws_handlers", None)
 
     return True
+
+
+def _validate_storage_payload(payload: dict[str, Any], *, schema_version: int) -> None:
+    """Validate loaded storage payload shape and version."""
+
+    if not isinstance(payload, dict):
+        raise StorageError("storage payload is not a dict")
+
+    if int(payload.get("schema_version", -1)) != int(schema_version):
+        raise StorageError("storage payload schema_version mismatch")
+
+    items = payload.get("items")
+    locations = payload.get("locations")
+    if not isinstance(items, dict) or not isinstance(locations, dict):
+        raise StorageError("storage payload missing required collections")

@@ -31,7 +31,7 @@ from .exceptions import StorageError
 _LOGGER = logging.getLogger(__name__)
 
 # Current schema version for persisted payloads
-CURRENT_SCHEMA_VERSION: Final[int] = 1
+CURRENT_SCHEMA_VERSION: Final[int] = 2
 
 # Storage key under which the persisted dataset is saved
 STORAGE_KEY: Final[str] = "haventory_store"
@@ -170,6 +170,18 @@ class DomainStore:
                 exc_info=True,
             )
             raise StorageError("storage migration failed") from exc
+        if not isinstance(migrated, dict):
+            _LOGGER.error(
+                "Storage migration returned invalid payload type",
+                extra={
+                    "domain": DOMAIN,
+                    "op": "migrate",
+                    "from_version": from_version,
+                    "to_version": to_version,
+                    "storage_key": self.key,
+                },
+            )
+            raise StorageError("storage migration returned non-dict payload")
         # Guarantee required fields and version
         migrated.setdefault("items", {})
         migrated.setdefault("locations", {})
