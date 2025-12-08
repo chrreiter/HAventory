@@ -75,6 +75,20 @@ describe('Store', () => {
     expect(after?.name).toBe('A2');
   });
 
+  it('rolls back optimistic changes when updateItem fails', async () => {
+    const base = makeItem({ id: '1', name: 'Original', quantity: 1 });
+    const hass = makeMockHass({ items: [base], conflictOnUpdate: true });
+    const store = new Store(hass);
+    await store.init();
+
+    await store.updateItem('1', { name: 'Changed', quantity: 5 }).catch(() => undefined);
+
+    const after = store.state.value.items.find((i) => i.id === '1');
+    expect(after?.name).toBe('Original');
+    expect(after?.quantity).toBe(1);
+    expect(store.state.value.errorQueue.at(-1)?.code).toBe('conflict');
+  });
+
   it('deletes item optimistically and rolls back on error', async () => {
     const item = makeItem({ id: '1', name: 'ToDelete' });
     const hass = makeMockHass({ items: [item] });
@@ -152,16 +166,22 @@ describe('Store', () => {
     await clearPromise;
   });
 
-  it('moves item to different location', async () => {
+  it('moves item to different location with optimistic update', async () => {
+    // Optimistic update: location_id changes immediately before server response
     const item = makeItem({ id: '1', location_id: 'loc1' });
     const hass = makeMockHass({ items: [item] });
     const store = new Store(hass);
     await store.init();
 
-    await store.moveItem('1', 'loc2');
+    // Start move - optimistic update should happen immediately
+    const movePromise = store.moveItem('1', 'loc2');
+    const optimistic = store.state.value.items.find((i) => i.id === '1');
+    expect(optimistic?.location_id).toBe('loc2');
+    await movePromise;
+    // After server response, item should still have new location
     const moved = store.state.value.items.find((i) => i.id === '1');
-    // moveItem doesn't do optimistic update on location_id, just on backend response
     expect(moved).toBeTruthy();
+    expect(moved?.location_id).toBe('loc2');
   });
 
   it('handles filter changes and resets list', async () => {
@@ -213,7 +233,6 @@ describe('Store', () => {
     await store.init();
 
     expect(store.state.value.statsCounts).toBeTruthy();
-    const initialTotal = store.state.value.statsCounts?.items_total;
 
     await store.refreshStats();
     expect(store.state.value.statsCounts).toBeTruthy();

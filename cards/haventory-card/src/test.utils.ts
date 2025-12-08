@@ -124,13 +124,23 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
           if (!it) throw { code: 'not_found', message: 'not found' };
           return it as unknown as T;
         }
+        case 'haventory/item/move': {
+          // Update location_id and return updated item
+          const itemId = String((msg as any).item_id);
+          const locationId = (msg as any).location_id ?? null;
+          const it = items.find((i) => i.id === itemId);
+          if (!it) throw { code: 'not_found', message: 'not found' };
+          const moved = { ...it, location_id: locationId, updated_at: new Date().toISOString() };
+          const idx = items.findIndex((i) => i.id === itemId);
+          items[idx] = moved;
+          return moved as unknown as T;
+        }
       }
       throw new Error(`Unhandled callWS type: ${type}`);
     },
     connection: {
       subscribeMessage(cb: SubCb, msg: Record<string, unknown>) {
         const topic = String((msg as any).topic || '');
-        const _id = Number((msg as any).id || nextId());
         subs[topic] ||= [];
         subs[topic].push(cb);
         return () => {

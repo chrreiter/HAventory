@@ -1,5 +1,4 @@
 import { LitElement, css, html } from 'lit';
-import { render as litRender } from 'lit/html.js';
 import type { HassLike } from './store/types';
 import { getDefaultOrderFor } from './store/sort';
 import { Store } from './store/store';
@@ -11,7 +10,62 @@ import './components/hv-location-selector';
 
 export class HAventoryCard extends LitElement {
   static styles = css`
-    :host { display: block; }
+    :host {
+      display: block;
+      font-family: var(--paper-font-body1_-_font-family, var(--ha-card-font-family, Arial, sans-serif));
+      font-size: var(--mdc-typography-body2-font-size, 14px);
+      line-height: var(--mdc-typography-body2-line-height, 20px);
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px;
+    }
+    .btn-add {
+      font-weight: 700;
+      padding: 8px 14px;
+      min-width: 110px;
+    }
+    .header-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .header-actions button {
+      background: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #fff);
+      border: none;
+      border-radius: 4px;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    .header-actions button:hover {
+      opacity: 0.9;
+    }
+    .card-list-container {
+      /* Let the inner list manage its own scrolling in compact view */
+      overflow: visible;
+    }
+    .banners {
+      display: grid;
+      gap: 6px;
+      margin: 8px 0;
+    }
+    .banner {
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: #fff3cd;
+      color: #664d03;
+      border: 1px solid #ffecb5;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .banner.error {
+      background: #fdecea;
+      color: #611a15;
+      border-color: #f5c6cb;
+    }
   `;
 
   // Lovelace config (e.g., title)
@@ -21,7 +75,6 @@ export class HAventoryCard extends LitElement {
   private _storeUnsub?: () => void;
   private _hass?: HassLike;
   private expanded: boolean = false;
-  private _overlayEl: HTMLDivElement | null = null;
   private _prevFocusEl: HTMLElement | null = null;
   private _locationSelectorOpen = false;
 
@@ -52,7 +105,6 @@ export class HAventoryCard extends LitElement {
       this.store = new Store(h);
       this._storeUnsub = this.store.state.onChange(() => {
         this.requestUpdate();
-        if (this.expanded) this._renderOverlay();
       });
       void this.store.init().catch(() => undefined);
     }
@@ -64,7 +116,6 @@ export class HAventoryCard extends LitElement {
     if (this.store && !this._storeUnsub) {
       this._storeUnsub = this.store.state.onChange(() => {
         this.requestUpdate();
-        if (this.expanded) this._renderOverlay();
       });
     }
   }
@@ -81,16 +132,16 @@ export class HAventoryCard extends LitElement {
     const st = this.store?.state.value;
     const filters = st?.filters;
     return html`
-      <div part="header" style="display: flex; align-items: center; justify-content: space-between; padding: 8px;">
+      <div class="card-header" part="header">
         <strong>${this.config?.title ?? 'HAventory'}</strong>
-        <div style="display: flex; gap: 8px;">
-          <button @click=${() => {
+        <div class="header-actions">
+          <button class="btn-add" @click=${() => {
             const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: unknown } | null;
             if (dialog) {
               dialog.item = null;
               dialog.open = true;
             }
-          }} aria-label="Add item" title="Add item">+</button>
+          }} aria-label="Add item" title="Add item">Add item</button>
           <button data-testid="expand-toggle" @click=${() => this._toggleExpanded()} aria-expanded=${String(this.expanded)} aria-label=${this.expanded ? 'Collapse' : 'Expand'}>
             ${this.expanded ? '⤢ Collapse' : '⇱ Expand'}
           </button>
@@ -110,44 +161,55 @@ export class HAventoryCard extends LitElement {
         @change=${(e: CustomEvent) => this.store?.setFilters(e.detail)}
       ></hv-search-bar>
 
-      <hv-inventory-list
-        .items=${st?.items ?? []}
-        .areas=${st?.areasCache?.areas ?? []}
-        .locations=${st?.locationsFlatCache ?? []}
-        @near-end=${(e: CustomEvent) => {
-          const ratio = e.detail?.ratio ?? 0;
-          void this.store?.prefetchIfNeeded(ratio);
-        }}
-        @decrement=${(e: CustomEvent) => this.store?.adjustQuantity(e.detail.itemId, -1)}
-        @increment=${(e: CustomEvent) => this.store?.adjustQuantity(e.detail.itemId, +1)}
-        @toggle-checkout=${(e: CustomEvent) => {
-          const item = st?.items.find((i) => i.id === e.detail.itemId);
-          if (!item) return;
-          if (item.checked_out) this.store?.markCheckedIn(item.id);
-          else this.store?.checkOut(item.id, null);
-        }}
-        @edit=${(e: CustomEvent) => {
-          const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: unknown };
-          const item = st?.items.find((i) => i.id === e.detail.itemId);
-          if (dialog && item) {
-            dialog.item = item;
-            dialog.open = true;
-          }
-        }}
-        @request-delete=${(e: CustomEvent) => {
-          const item = st?.items.find((i) => i.id === e.detail.itemId);
-          if (!item) return;
-          const confirmed = window.confirm(`Delete item '${item.name}'?`);
-          if (confirmed) this.store?.deleteItem(item.id);
-        }}
-      ></hv-inventory-list>
+      <div class="card-list-container">
+        <hv-inventory-list
+          compact
+          .items=${st?.items ?? []}
+          .areas=${st?.areasCache?.areas ?? []}
+          .locations=${st?.locationsFlatCache ?? []}
+          @near-end=${(e: CustomEvent) => {
+            const ratio = e.detail?.ratio ?? 0;
+            void this.store?.prefetchIfNeeded(ratio);
+          }}
+          @decrement=${(e: CustomEvent) => this.store?.adjustQuantity(e.detail.itemId, -1)}
+          @increment=${(e: CustomEvent) => this.store?.adjustQuantity(e.detail.itemId, +1)}
+          @toggle-checkout=${(e: CustomEvent) => {
+            const item = st?.items.find((i) => i.id === e.detail.itemId);
+            if (!item) return;
+            if (item.checked_out) this.store?.markCheckedIn(item.id);
+            else this.store?.checkOut(item.id, null);
+          }}
+          @edit=${(e: CustomEvent) => {
+            const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: unknown };
+            const item = st?.items.find((i) => i.id === e.detail.itemId);
+            if (dialog && item) {
+              dialog.item = item;
+              dialog.open = true;
+            }
+          }}
+          @request-delete=${(e: CustomEvent) => {
+            const item = st?.items.find((i) => i.id === e.detail.itemId);
+            if (!item) return;
+            const confirmed = window.confirm(`Delete item '${item.name}'?`);
+            if (confirmed) this.store?.deleteItem(item.id);
+          }}
+        ></hv-inventory-list>
+      </div>
 
       <hv-item-dialog
+        .locations=${st?.locationsFlatCache ?? null}
+        .areas=${st?.areasCache?.areas ?? []}
         @open-location-selector=${() => { this._locationSelectorOpen = true; this.requestUpdate(); }}
         @delete-item=${(e: CustomEvent) => {
           const { itemId, name } = e.detail as { itemId: string; name: string };
           const confirmed = window.confirm(`Delete item '${name}'?`);
-          if (confirmed) this.store?.deleteItem(itemId);
+          if (confirmed) {
+            void this.store?.deleteItem(itemId);
+            const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & {
+              open?: boolean;
+            } | null;
+            if (dlg) dlg.open = false;
+          }
         }}
         @save=${(e: CustomEvent) => {
           const data = e.detail as Record<string, unknown>;
@@ -183,71 +245,127 @@ export class HAventoryCard extends LitElement {
           this.requestUpdate();
         }}
       ></hv-location-selector>
+
+      ${this.expanded ? this._renderOverlayTemplate() : null}
     `;
   }
 
-  private _toggleExpanded() {
+  private async _toggleExpanded() {
     const toggle = this.shadowRoot?.querySelector('[data-testid="expand-toggle"]') as HTMLElement | null;
-    this._prevFocusEl = toggle ?? null;
-    this.expanded = !this.expanded;
-    if (this.expanded) this._renderOverlay(); else this._teardownOverlay();
-    this.requestUpdate();
-  }
-
-  private _ensureOverlayRoot(): HTMLDivElement {
-    let root = document.getElementById('haventory-overlay-root') as HTMLDivElement | null;
-    if (!root) {
-      root = document.createElement('div');
-      root.id = 'haventory-overlay-root';
-      document.body.appendChild(root);
+    if (!this.expanded) {
+      this._prevFocusEl = toggle ?? null;
     }
-    return root;
+    this.expanded = !this.expanded;
+    this.requestUpdate();
+    await this.updateComplete;
+    if (this.expanded) {
+      this._focusFirst();
+    } else if (this._prevFocusEl?.isConnected) {
+      this._prevFocusEl.focus();
+    }
   }
 
-  private _renderOverlay() {
+  private async _closeOverlay() {
+    if (!this.expanded) return;
+    this.expanded = false;
+    this.requestUpdate();
+    await this.updateComplete;
+    if (this._prevFocusEl?.isConnected) {
+      this._prevFocusEl.focus();
+    }
+  }
+
+  private _renderOverlayTemplate() {
     const st = this.store?.state.value;
     const filters = st?.filters;
-    const root = this._ensureOverlayRoot();
-    const onKeydown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        this.expanded = false;
-        this._teardownOverlay();
-        this.requestUpdate();
-        if (this._prevFocusEl) this._prevFocusEl.focus();
-      }
-    };
-    const onFilterPatch = (patch: Partial<Store['state']['value']['filters']>) => {
-      this.store?.setFilters(patch as unknown as Partial<import('./store/types').StoreFilters>);
-    };
-    const overlayTemplate = html`
+    return html`
       <style>
         .overlay-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 9998; }
-        .overlay { position: fixed; inset: 0; z-index: 9999; display: grid; grid-template-rows: auto 1fr; }
-        .ov-header { display:flex; align-items:center; justify-content: space-between; background: var(--card-background-color, #fff); padding: 10px 12px; }
-        .ov-body { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; height: calc(100vh - 48px); box-sizing: border-box; }
-        .sidebar { background: var(--card-background-color, #fff); padding: 10px; border-right: 1px solid rgba(0,0,0,0.1); }
-        .main { background: var(--card-background-color, #fff); padding: 10px; overflow: hidden; display: grid; grid-template-rows: auto 1fr; gap: 8px; }
+        .overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 9999;
+          display: grid;
+          grid-template-rows: auto 1fr;
+          overflow: hidden;
+          overscroll-behavior: contain;
+          font-family: inherit;
+          font-size: inherit;
+          line-height: inherit;
+        }
+        .ov-header { display: flex; align-items: center; justify-content: space-between; background: var(--card-background-color, #fff); padding: 10px 12px; }
+        .ov-header button { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: inherit; }
+        .ov-header button:hover { opacity: 0.9; }
+        .ov-header-actions { display: inline-flex; align-items: center; gap: 8px; }
+        .ov-body { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; height: calc(100vh - 48px); box-sizing: border-box; overflow: hidden; }
+        .sidebar { background: var(--card-background-color, #fff); padding: 10px; border-right: 1px solid rgba(0,0,0,0.1); overflow: auto; overscroll-behavior: contain; }
+        .sidebar .row label { display: inline-flex; align-items: center; gap: 6px; }
+        .sidebar select {
+          background: var(--input-fill-color, var(--secondary-background-color, #f5f5f5));
+          color: var(--primary-text-color, #212121);
+          border: 1px solid var(--divider-color, #ddd);
+          border-radius: 4px;
+          padding: 6px 8px;
+          font-size: inherit;
+          box-sizing: border-box;
+          min-width: 140px;
+        }
+        .sidebar select:focus {
+          outline: 2px solid var(--primary-color, #03a9f4);
+          outline-offset: -1px;
+        }
+        .sidebar input[type=\"checkbox\"] {
+          accent-color: var(--primary-color, #03a9f4);
+        }
+        .main { background: var(--card-background-color, #fff); padding: 10px; overflow: hidden; display: flex; flex-direction: column; gap: 8px; }
         .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+        .btn-add { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); border: none; border-radius: 4px; cursor: pointer; font-size: inherit; font-weight: 700; padding: 8px 14px; min-width: 110px; }
+        .btn-add:hover { opacity: 0.9; }
+        .sort-controls { display: inline-flex; align-items: center; gap: 6px; }
+        .sort-controls button {
+          background: var(--primary-color, #03a9f4);
+          color: var(--text-primary-color, #fff);
+          border: none;
+          border-radius: 4px;
+          padding: 6px 10px;
+          cursor: pointer;
+          font-size: inherit;
+        }
+        .sort-controls button:hover {
+          opacity: 0.9;
+        }
+        .diagnostics { margin-top: 12px; }
+        .list-container { min-height: 0; flex: 1; overflow: hidden; }
         .sentinel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
         .banners { display: grid; gap: 6px; margin: 8px 0; }
         .banner { padding: 8px 10px; border-radius: 6px; background: #fff3cd; color: #664d03; border: 1px solid #ffecb5; display: flex; justify-content: space-between; align-items: center; }
         .banner.error { background: #fdecea; color: #611a15; border-color: #f5c6cb; }
       </style>
-      <div class="overlay-backdrop" role="presentation"></div>
-      <div class="overlay" role="dialog" aria-modal="true" @keydown=${onKeydown}>
-        <span class="sentinel" tabindex="0" @focus=${() => this._focusLast(root!)}></span>
+      <div class="overlay-backdrop" role="presentation" @click=${this._onOverlayBackdropClick}></div>
+      <div class="overlay" role="dialog" aria-modal="true" @keydown=${this._onOverlayKeydown}>
+        <span class="sentinel" tabindex="0" @focus=${() => this._focusLast()}></span>
         <div class="ov-header">
           <div><strong>HAventory</strong></div>
-          <div>
-            <button data-testid="expand-toggle" @click=${() => this._toggleExpanded()} aria-label="Collapse">⤢ Collapse</button>
+          <div class="ov-header-actions">
+            <button
+              class="btn-add"
+              aria-label="Add item"
+              @click=${() => {
+                const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: unknown } | null;
+                if (dialog) {
+                  dialog.item = null;
+                  dialog.open = true;
+                }
+              }}
+            >Add item</button>
+            <button data-testid="expand-toggle" @click=${this._onOverlayCollapseClick} aria-label="Collapse">⤢ Collapse</button>
           </div>
         </div>
         <div class="ov-body">
           <div class="sidebar" data-testid="filters-panel" aria-label="Filters">
             <div class="row">
               <label>Area
-                <select @change=${(e: Event) => onFilterPatch({ areaId: (e.target as HTMLSelectElement).value || null })} .value=${filters?.areaId ?? ''}>
+                <select @change=${(e: Event) => this.store?.setFilters({ areaId: (e.target as HTMLSelectElement).value || null } as Partial<import('./store/types').StoreFilters>)} .value=${filters?.areaId ?? ''}>
                   <option value="">All</option>
                   ${(st?.areasCache?.areas ?? []).map((a) => html`<option value=${a.id} ?selected=${filters?.areaId === a.id}>${a.name}</option>`)}
                 </select>
@@ -255,29 +373,25 @@ export class HAventoryCard extends LitElement {
             </div>
             <div class="row">
               <label>Location
-                <select @change=${(e: Event) => onFilterPatch({ locationId: (e.target as HTMLSelectElement).value || null })} .value=${filters?.locationId ?? ''}>
+                <select @change=${(e: Event) => this.store?.setFilters({ locationId: (e.target as HTMLSelectElement).value || null } as Partial<import('./store/types').StoreFilters>)} .value=${filters?.locationId ?? ''}>
                   <option value="">All</option>
                   ${(st?.locationsFlatCache ?? []).map((l) => html`<option value=${l.id} ?selected=${filters?.locationId === l.id}>${l.path?.display_path || l.name}</option>`)}
                 </select>
               </label>
             </div>
             <div class="row">
-              <label><input type="checkbox" .checked=${filters?.includeSubtree ?? true} @change=${(e: Event) => onFilterPatch({ includeSubtree: (e.target as HTMLInputElement).checked })} /> Include sublocations</label>
+              <label><input type="checkbox" .checked=${filters?.includeSubtree ?? true} @change=${(e: Event) => this.store?.setFilters({ includeSubtree: (e.target as HTMLInputElement).checked })} /> Include sublocations</label>
             </div>
             <div class="row">
-              <label><input type="checkbox" .checked=${filters?.checkedOutOnly ?? false} @change=${(e: Event) => onFilterPatch({ checkedOutOnly: (e.target as HTMLInputElement).checked })} /> Checked-out only</label>
+              <label><input type="checkbox" .checked=${filters?.checkedOutOnly ?? false} @change=${(e: Event) => this.store?.setFilters({ checkedOutOnly: (e.target as HTMLInputElement).checked })} /> Checked-out only</label>
             </div>
             <div class="row">
-              <label><input type="checkbox" .checked=${filters?.lowStockFirst ?? false} @change=${(e: Event) => onFilterPatch({ lowStockFirst: (e.target as HTMLInputElement).checked })} /> Low-stock first</label>
+              <label><input type="checkbox" .checked=${filters?.lowStockFirst ?? false} @change=${(e: Event) => this.store?.setFilters({ lowStockFirst: (e.target as HTMLInputElement).checked })} /> Low-stock first</label>
             </div>
             <div class="row">
               <label>Sort
-                <span style="display:inline-flex; align-items:center; gap:6px;">
-                  <select @change=${(e: Event) => {
-                    const field = (e.target as HTMLSelectElement).value as import('./store/types').Sort['field'];
-                    const order = getDefaultOrderFor(field);
-                    onFilterPatch({ sort: { field, order } });
-                  }}>
+                <span class="sort-controls">
+                  <select @change=${this._onOverlaySortFieldChange}>
                     <option value="name" ?selected=${(filters?.sort?.field ?? 'updated_at') === 'name'}>Name</option>
                     <option value="updated_at" ?selected=${(filters?.sort?.field ?? 'updated_at') === 'updated_at'}>Updated</option>
                     <option value="created_at" ?selected=${filters?.sort?.field === 'created_at'}>Created</option>
@@ -286,19 +400,14 @@ export class HAventoryCard extends LitElement {
                   <button
                     type="button"
                     data-testid="sort-order-toggle"
-                    @click=${() => {
-                      const currentField = filters?.sort?.field ?? 'updated_at';
-                      const currentOrder = filters?.sort?.order ?? getDefaultOrderFor(currentField);
-                      const nextOrder = currentOrder === 'asc' ? 'desc' : 'asc';
-                      onFilterPatch({ sort: { field: currentField, order: nextOrder } });
-                    }}
+                    @click=${this._onOverlaySortOrderToggle}
                     aria-label=${(filters?.sort?.order ?? 'desc') === 'asc' ? 'Ascending' : 'Descending'}
                     title=${(filters?.sort?.order ?? 'desc') === 'asc' ? 'Ascending' : 'Descending'}
                   >${(filters?.sort?.order ?? 'desc') === 'asc' ? 'A→Z' : 'Z→A'}</button>
                 </span>
               </label>
             </div>
-            <details data-testid="diagnostics-panel" style="margin-top: 12px;">
+            <details class="diagnostics" data-testid="diagnostics-panel">
               <summary>Diagnostics</summary>
               <div>WS: items ${st?.connected.items ? 'connected' : 'disconnected'}, stats ${st?.connected.stats ? 'connected' : 'disconnected'}</div>
               <div>Counts: ${st?.statsCounts ? JSON.stringify(st.statsCounts) : '—'}</div>
@@ -320,14 +429,11 @@ export class HAventoryCard extends LitElement {
                 .locations=${st?.locationsFlatCache ?? []}
                 @change=${(e: CustomEvent) => this.store?.setFilters(e.detail)}
               ></hv-search-bar>
-              <button @click=${() => {
-                const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean } | null;
-                if (dialog) dialog.open = true as unknown as boolean;
-              }}>Add</button>
             </div>
-            <div style="min-height:0; overflow:hidden;">
+            <div class="list-container">
               ${html`
                 <hv-inventory-list
+                  fill
                   .items=${st?.items ?? []}
                   .areas=${st?.areasCache?.areas ?? []}
                   .locations=${st?.locationsFlatCache ?? []}
@@ -359,34 +465,53 @@ export class HAventoryCard extends LitElement {
             </div>
           </div>
         </div>
-        <span class="sentinel" tabindex="0" @focus=${() => this._focusFirst(root!)}></span>
+        <span class="sentinel" tabindex="0" @focus=${() => this._focusFirst()}></span>
       </div>`;
-
-    litRender(overlayTemplate, root);
-    this._overlayEl = root.querySelector('.overlay');
-    // Focus first interactive in overlay
-    this._focusFirst(root);
   }
 
-  private _teardownOverlay() {
-    const root = document.getElementById('haventory-overlay-root');
-    if (root) {
-      root.innerHTML = '';
+  private _onOverlayBackdropClick = () => {
+    void this._closeOverlay();
+  };
+
+  private _onOverlayCollapseClick = () => {
+    void this._closeOverlay();
+  };
+
+  private _onOverlayKeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      void this._closeOverlay();
     }
-    this._overlayEl = null;
-  }
+  };
 
-  private _focusFirst(root: HTMLElement) {
+  private _onOverlaySortFieldChange = (e: Event) => {
+    const field = (e.target as HTMLSelectElement | null)?.value as import('./store/types').Sort['field'] | undefined;
+    if (!field) return;
+    const order = getDefaultOrderFor(field);
+    this.store?.setFilters({ sort: { field, order } } as Partial<import('./store/types').StoreFilters>);
+  };
+
+  private _onOverlaySortOrderToggle = () => {
+    const filters = this.store?.state.value.filters;
+    const currentField = filters?.sort?.field ?? 'updated_at';
+    const currentOrder = filters?.sort?.order ?? getDefaultOrderFor(currentField);
+    const nextOrder = currentOrder === 'asc' ? 'desc' : 'asc';
+    this.store?.setFilters({ sort: { field: currentField, order: nextOrder } } as Partial<import('./store/types').StoreFilters>);
+  };
+
+  private _focusFirst(root: HTMLElement | ShadowRoot | null = this.shadowRoot) {
+    if (!root) return;
     const focusables = this._getFocusables(root).filter((el) => !el.classList.contains('sentinel'));
     if (focusables.length) focusables[0].focus();
   }
 
-  private _focusLast(root: HTMLElement) {
+  private _focusLast(root: HTMLElement | ShadowRoot | null = this.shadowRoot) {
+    if (!root) return;
     const focusables = this._getFocusables(root).filter((el) => !el.classList.contains('sentinel'));
     if (focusables.length) focusables[focusables.length - 1].focus();
   }
 
-  private _getFocusables(root: HTMLElement): HTMLElement[] {
+  private _getFocusables(root: HTMLElement | ShadowRoot): HTMLElement[] {
     const selector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
     const list = Array.from(root.querySelectorAll<HTMLElement>(selector));
     return list.filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1);

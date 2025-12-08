@@ -17,16 +17,6 @@ import type {
 import { WSClient } from './ws';
 import { DEFAULT_SORT } from './sort';
 
-type DebounceHandle = number | undefined;
-
-function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number) {
-  let t: DebounceHandle;
-  return (...args: Parameters<T>) => {
-    if (t) window.clearTimeout(t);
-    t = window.setTimeout(() => fn(...args), ms);
-  };
-}
-
 /** A very small reactive wrapper using a Proxy; components can subscribe to `onChange`. */
 export interface Observable<T> {
   readonly value: T;
@@ -56,7 +46,6 @@ export class Store {
   private ws: WSClient;
   private stateObs: ReturnType<typeof createObservable<StoreState>>;
   private inflight: Map<string, Promise<unknown>> = new Map();
-  private debounceSearch: (q: string) => void;
   private itemsUnsub: Unsubscribe | null = null;
   private statsUnsub: Unsubscribe | null = null;
 
@@ -86,11 +75,6 @@ export class Store {
       connected: { items: false, stats: false },
     };
     this.stateObs = createObservable<StoreState>(initial);
-
-    // Debounced search input handler
-    this.debounceSearch = debounce((q: string) => {
-      this.setFilters({ q });
-    }, 200);
   }
 
   get state(): Observable<StoreState> {
@@ -225,10 +209,6 @@ export class Store {
     void this.listItems(true);
   }
 
-  setSearchQueryDebounced(q: string) {
-    this.debounceSearch(q);
-  }
-
   // ---------- Optimistic writes ----------
   async createItem(input: ItemCreate) {
     const opId = `create:${Date.now()}`;
@@ -260,6 +240,7 @@ export class Store {
     } catch (err) {
       // Capture conflict context for actionable retry
       this.pushError(err, { itemId, changes });
+      if (before) this.applyOptimistic(before);
     } finally {
       this.state.value.pendingOps.delete(opId);
       this.stateObs.set({ pendingOps: new Map(this.state.value.pendingOps) });
@@ -344,11 +325,14 @@ export class Store {
   }
 
   async moveItem(itemId: string, locationId: string | null, expectedVersion?: number) {
+    const before = this.state.value.items.find((i) => i.id === itemId);
+    if (before) this.applyOptimistic({ ...before, location_id: locationId } as Item);
     try {
       const updated = await this.ws.moveItem(itemId, locationId, expectedVersion);
       this.applyOptimistic(updated);
     } catch (err) {
       this.pushError(err);
+      if (before) this.applyOptimistic(before);
     }
   }
 

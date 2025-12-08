@@ -2,14 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { Sort } from '../store/types';
 import { DEFAULT_SORT, getDefaultOrderFor } from '../store/sort';
-
-function debounce<TArgs extends unknown[]>(fn: (...args: TArgs) => void, ms: number) {
-  let t: number | undefined;
-  return (...args: TArgs) => {
-    if (t) window.clearTimeout(t);
-    t = window.setTimeout(() => fn(...args), ms);
-  };
-}
+import { debounce } from '../utils/debounce';
 
 export interface SearchBarChangeDetail {
   q?: string;
@@ -24,12 +17,48 @@ export interface SearchBarChangeDetail {
 @customElement('hv-search-bar')
 export class HVSearchBar extends LitElement {
   static styles = css`
-    :host { display: block; }
+    :host {
+      display: block;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: inherit;
+    }
     .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    input[type="search"] { flex: 1 1 220px; }
-    select { min-width: 140px; }
+    input[type="search"],
+    select {
+      background: var(--input-fill-color, var(--secondary-background-color, #f5f5f5));
+      color: var(--primary-text-color, #212121);
+      border: 1px solid var(--divider-color, #ddd);
+      border-radius: 4px;
+      padding: 6px 8px;
+      font: inherit;
+      box-sizing: border-box;
+    }
+    input[type="search"] {
+      flex: 1 1 220px;
+    }
+    select {
+      min-width: 140px;
+    }
+    input[type="search"]:focus,
+    select:focus {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: -1px;
+    }
     label { display: inline-flex; align-items: center; gap: 6px; }
     .sort-wrap { display: inline-flex; align-items: center; gap: 6px; }
+    button {
+      background: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #fff);
+      border: none;
+      border-radius: 4px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font: inherit;
+    }
+    button:hover {
+      opacity: 0.9;
+    }
   `;
 
   @property({ type: String }) q: string = '';

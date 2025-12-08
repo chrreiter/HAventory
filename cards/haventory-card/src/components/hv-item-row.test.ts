@@ -61,6 +61,21 @@ describe('hv-item-row', () => {
     expect(badge?.textContent).toBe('LOW');
   });
 
+  it('shows LOW badge in compact mode', async () => {
+    const item = makeItem({ quantity: 1, low_stock_threshold: 2 });
+    const el = document.createElement('hv-item-row') as HTMLElement & { updateComplete?: Promise<unknown> };
+    (el as any).item = item;
+    (el as any).compact = true;
+    document.body.appendChild(el);
+    await customElements.whenDefined('hv-item-row');
+    if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+
+    const sr = el.shadowRoot as ShadowRoot;
+    const badge = sr.querySelector('.badge');
+    expect(badge).toBeTruthy();
+    expect(badge?.textContent).toBe('LOW');
+  });
+
   it('does not show LOW badge when quantity is above threshold', async () => {
     const item = makeItem({ quantity: 10, low_stock_threshold: 5 });
     const el = document.createElement('hv-item-row') as HTMLElement & { updateComplete?: Promise<unknown> };
@@ -89,7 +104,7 @@ describe('hv-item-row', () => {
 
     const sr = el.shadowRoot as ShadowRoot;
     const text = sr.textContent || '';
-    expect(text).toContain('[Area: Garage]');
+    expect(text).toContain('[Garage]');
   });
 
   it('does not show area label when location has no area', async () => {
@@ -186,7 +201,7 @@ describe('hv-item-row', () => {
     });
 
     const sr = el.shadowRoot as ShadowRoot;
-    const checkoutBtn = Array.from(sr.querySelectorAll('button')).find((b) => b.textContent === 'Out');
+    const checkoutBtn = sr.querySelector('button.btn-checkout') as HTMLButtonElement | null;
     checkoutBtn?.click();
 
     expect(eventDetail).toBeTruthy();
