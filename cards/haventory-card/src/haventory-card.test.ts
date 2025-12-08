@@ -54,6 +54,39 @@ describe('HAventoryCard', () => {
     expect(document.activeElement === toggle || (sr.activeElement === toggle)).toBeTruthy();
   });
 
+  it('shows add button in overlay header and opens dialog', async () => {
+    // Expanded view should surface the Add button in the header with prominent styling
+    const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
+    document.body.appendChild(el);
+    await customElements.whenDefined('haventory-card');
+
+    const hass = makeMockHass({ items: [] });
+    (el as any).hass = hass;
+
+    const store = (el as any).store as Store;
+    await store.init();
+    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
+
+    const sr = el.shadowRoot as ShadowRoot;
+    const toggle = sr.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement;
+    toggle.click();
+    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
+
+    const overlay = sr.querySelector('.overlay') as HTMLElement;
+    expect(overlay).toBeTruthy();
+
+    const overlayAddBtn = overlay.querySelector('.ov-header .btn-add') as HTMLButtonElement;
+    expect(overlayAddBtn).toBeTruthy();
+    expect(overlayAddBtn.classList.contains('btn-add')).toBe(true);
+
+    overlayAddBtn.click();
+    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
+
+    const dialog = sr.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: any };
+    expect(dialog.open).toBe(true);
+    expect(dialog.item).toBe(null);
+  });
+
   it('opens dialog in create mode when + button clicked', async () => {
     // Add button should open dialog with no item (create mode)
     const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };

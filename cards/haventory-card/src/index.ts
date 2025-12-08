@@ -22,6 +22,11 @@ export class HAventoryCard extends LitElement {
       justify-content: space-between;
       padding: 8px;
     }
+    .btn-add {
+      font-weight: 700;
+      padding: 8px 14px;
+      min-width: 110px;
+    }
     .header-actions {
       display: flex;
       gap: 8px;
@@ -130,7 +135,7 @@ export class HAventoryCard extends LitElement {
       <div class="card-header" part="header">
         <strong>${this.config?.title ?? 'HAventory'}</strong>
         <div class="header-actions">
-          <button @click=${() => {
+          <button class="btn-add" @click=${() => {
             const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: unknown } | null;
             if (dialog) {
               dialog.item = null;
@@ -285,6 +290,7 @@ export class HAventoryCard extends LitElement {
         .ov-header { display: flex; align-items: center; justify-content: space-between; background: var(--card-background-color, #fff); padding: 10px 12px; }
         .ov-header button { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: inherit; }
         .ov-header button:hover { opacity: 0.9; }
+        .ov-header-actions { display: inline-flex; align-items: center; gap: 8px; }
         .ov-body { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; height: calc(100vh - 48px); box-sizing: border-box; overflow: hidden; }
         .sidebar { background: var(--card-background-color, #fff); padding: 10px; border-right: 1px solid rgba(0,0,0,0.1); overflow: auto; overscroll-behavior: contain; }
         .sidebar .row label { display: inline-flex; align-items: center; gap: 6px; }
@@ -307,7 +313,7 @@ export class HAventoryCard extends LitElement {
         }
         .main { background: var(--card-background-color, #fff); padding: 10px; overflow: hidden; display: flex; flex-direction: column; gap: 8px; }
         .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-        .btn-add { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: inherit; }
+        .btn-add { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); border: none; border-radius: 4px; cursor: pointer; font-size: inherit; font-weight: 700; padding: 8px 14px; min-width: 110px; }
         .btn-add:hover { opacity: 0.9; }
         .sort-controls { display: inline-flex; align-items: center; gap: 6px; }
         .sort-controls button {
@@ -334,7 +340,18 @@ export class HAventoryCard extends LitElement {
         <span class="sentinel" tabindex="0" @focus=${() => this._focusLast()}></span>
         <div class="ov-header">
           <div><strong>HAventory</strong></div>
-          <div>
+          <div class="ov-header-actions">
+            <button
+              class="btn-add"
+              aria-label="Add item"
+              @click=${() => {
+                const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: unknown } | null;
+                if (dialog) {
+                  dialog.item = null;
+                  dialog.open = true;
+                }
+              }}
+            >Add item</button>
             <button data-testid="expand-toggle" @click=${this._onOverlayCollapseClick} aria-label="Collapse">⤢ Collapse</button>
           </div>
         </div>
@@ -406,13 +423,6 @@ export class HAventoryCard extends LitElement {
                 .locations=${st?.locationsFlatCache ?? []}
                 @change=${(e: CustomEvent) => this.store?.setFilters(e.detail)}
               ></hv-search-bar>
-              <button class="btn-add" @click=${() => {
-                const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: unknown } | null;
-                if (dialog) {
-                  dialog.item = null;
-                  dialog.open = true;
-                }
-              }}>Add item</button>
             </div>
             <div class="list-container">
               ${html`
