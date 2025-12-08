@@ -7,6 +7,7 @@ Adheres to the envelope: input {id, type, ...payload}, output result_message/err
 from __future__ import annotations
 
 import logging
+import weakref
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, TypedDict
@@ -330,9 +331,37 @@ def _subs_bucket(hass: HomeAssistant) -> dict[object, dict[int, _Subscription]]:
     bucket = hass.data.setdefault(DOMAIN, {})
     subs = bucket.get("subscriptions")
     if subs is None:
-        subs = {}
+        subs = weakref.WeakKeyDictionary()
         bucket["subscriptions"] = subs
     return subs  # type: ignore[return-value]
+
+
+def _cleanup_subscriptions_for_conn(hass: HomeAssistant, conn: object) -> None:
+    """Remove all subscriptions for a given connection."""
+
+    subs_all = _subs_bucket(hass)
+    subs_all.pop(conn, None)
+
+
+def _register_close_listener(hass: HomeAssistant, conn: object) -> None:
+    """Attach cleanup to a connection close callback when available."""
+
+    if getattr(conn, "_haventory_close_registered", False):
+        return
+
+    closer = getattr(conn, "on_close", None)
+    if not callable(closer):
+        closer = getattr(conn, "add_close_callback", None)
+    if callable(closer):
+        try:
+            closer(lambda: _cleanup_subscriptions_for_conn(hass, conn))
+            conn._haventory_close_registered = True
+        except Exception:  # pragma: no cover - defensive
+            LOGGER.debug(
+                "Failed to register WS close listener",
+                extra={"domain": DOMAIN, "op": "subscribe_close_hook"},
+                exc_info=True,
+            )
 
 
 def _now_ts() -> str:
@@ -663,6 +692,7 @@ async def ws_subscribe(hass: HomeAssistant, conn, msg):
     subs_all = _subs_bucket(hass)
     subs_for_conn = subs_all.setdefault(conn, {})
     subs_for_conn[int(msg.get("id", 0))] = sub
+    _register_close_listener(hass, conn)
     LOGGER.debug(
         "Subscribed",
         extra={
