@@ -66,13 +66,20 @@ class DomainStore:
 
     This class centralizes storage access and schema migrations. It should be
     exposed via ``hass.data[DOMAIN]["store"]``.
+
+    Note: HA's Store version is fixed at 1 to avoid HA's internal migration
+    mechanism. All versioning is handled via `schema_version` in the payload.
     """
+
+    # HA Store wrapper version - always 1 to avoid HA's migration mechanism
+    _HA_STORE_VERSION: Final[int] = 1
 
     def __init__(
         self, hass: HomeAssistant, *, key: str = STORAGE_KEY, version: int = CURRENT_SCHEMA_VERSION
     ) -> None:
         self._hass = hass
-        self._store = Store(hass, version, key)
+        # Use constant HA Store version; our schema_version handles migrations
+        self._store = Store(hass, self._HA_STORE_VERSION, key)
         self._schema_version = version
 
     @property
