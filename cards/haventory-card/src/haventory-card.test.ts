@@ -34,21 +34,22 @@ describe('HAventoryCard', () => {
 
     const toggle = sr.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement;
     toggle.click();
-    // Overlay root should exist and contain content
-    const root = document.getElementById('haventory-overlay-root') as HTMLElement;
-    expect(root).toBeTruthy();
-    expect(root.textContent || '').toContain('HAventory');
+    // Overlay should exist and contain content
+    await el.updateComplete;
+    const overlay = sr.querySelector('.overlay') as HTMLElement;
+    expect(overlay).toBeTruthy();
+    expect(overlay.textContent || '').toContain('HAventory');
 
     // Inject a conflict to render banner
     const store = (el as any).store as Store;
     store['pushError']({ code: 'conflict', message: 'conflict', context: {} }, { itemId: '1', changes: { name: 'B' } } as any);
-    // Re-render overlay with banners
-    ;(el as any)['_renderOverlay']();
-    expect(root.textContent || '').toContain('conflict');
+    (el as any).requestUpdate?.();
+    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
+    expect((sr.querySelector('.overlay')?.textContent || '')).toContain('conflict');
 
     // Send Esc key to close overlay
-    const overlay = root.querySelector('.overlay') as HTMLElement;
     overlay.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
     // Toggle should regain focus
     expect(document.activeElement === toggle || (sr.activeElement === toggle)).toBeTruthy();
   });
@@ -124,7 +125,7 @@ describe('HAventoryCard', () => {
     store.adjustQuantity = async (...args: any[]) => {
       adjustCalled = true;
       adjustArgs = args;
-      return originalAdjust(...args);
+      return originalAdjust(...(args as Parameters<typeof originalAdjust>));
     };
 
     const sr = el.shadowRoot as ShadowRoot;
