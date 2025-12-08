@@ -123,9 +123,10 @@ export class HVItemRow extends LitElement {
     if (this.compact) {
       return html`
         <div class="row" role="row" tabindex="0" @keydown=${this.onKeyDown} aria-label=${`Item ${item.name}`}>
-          <div class="name" role="cell">
-            <span>${item.name}</span>
-          </div>
+        <div class="name" role="cell">
+          <span>${item.name}</span>
+          ${this.isLow ? html`<span class="badge" aria-label="Low stock">LOW</span>` : null}
+        </div>
           <div role="cell">${item.quantity}</div>
           <div class="actions" role="cell">
             <button @click=${this.onDecrement} aria-label="Decrease quantity">−</button>
