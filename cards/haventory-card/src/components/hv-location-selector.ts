@@ -64,14 +64,21 @@ export class HVLocationSelector extends LitElement {
   }
 
   private onCancel() {
-    this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
-    this.open = false;
+    try {
+      this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
+    } finally {
+      this.open = false;
+    }
   }
   private onSelect() {
-    this.dispatchEvent(new CustomEvent('select', {
-      detail: { locationId: this._selectedId, includeSubtree: this._includeSubtree },
-      bubbles: true, composed: true,
-    }));
+    try {
+      this.dispatchEvent(new CustomEvent('select', {
+        detail: { locationId: this._selectedId, includeSubtree: this._includeSubtree },
+        bubbles: true, composed: true,
+      }));
+    } finally {
+      this.open = false;
+    }
   }
 
   private renderList() {

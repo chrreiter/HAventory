@@ -131,6 +131,7 @@ describe('hv-location-selector', () => {
     expect(eventDetail).toBeTruthy();
     expect(eventDetail.locationId).toBe('loc1');
     expect(eventDetail.includeSubtree).toBe(false); // Was toggled from default true
+    expect((el as any).open).toBe(false);
   });
 
   it('emits cancel event when Cancel button is clicked', async () => {
@@ -188,5 +189,20 @@ describe('hv-location-selector', () => {
     backdrop.click();
 
     expect(cancelEmitted).toBe(true);
+  });
+
+  it('closes even if select handler throws', async () => {
+    const el = document.createElement('hv-location-selector') as HTMLElement & { onSelect?: () => void };
+    (el as any).open = true;
+
+    const err = new Error('boom');
+    const spy = vi.fn(() => {
+      throw err;
+    });
+    // Force dispatchEvent to throw synchronously
+    (el as any).dispatchEvent = spy;
+
+    expect(() => (el as any).onSelect()).toThrow(err);
+    expect((el as any).open).toBe(false);
   });
 });
