@@ -7,7 +7,6 @@ Adheres to the envelope: input {id, type, ...payload}, output result_message/err
 from __future__ import annotations
 
 import logging
-import weakref
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, TypedDict
@@ -328,12 +327,18 @@ class _Subscription(TypedDict, total=False):
 
 
 def _subs_bucket(hass: HomeAssistant) -> dict[object, dict[int, _Subscription]]:
+    """Get or create the subscriptions bucket.
+
+    Note: We use a regular dict (not WeakKeyDictionary) because HA's
+    ActiveConnection doesn't support weak references. Cleanup is handled
+    via the close callback registered in _register_close_listener.
+    """
     bucket = hass.data.setdefault(DOMAIN, {})
     subs = bucket.get("subscriptions")
     if subs is None:
-        subs = weakref.WeakKeyDictionary()
+        subs = {}
         bucket["subscriptions"] = subs
-    return subs  # type: ignore[return-value]
+    return subs
 
 
 def _cleanup_subscriptions_for_conn(hass: HomeAssistant, conn: object) -> None:
