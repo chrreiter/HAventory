@@ -53,6 +53,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         payload = await store.async_load()
         _validate_storage_payload(payload, schema_version=store.schema_version)
+        _log_storage_health(payload, schema_version=store.schema_version)
     except StorageError as exc:
         LOGGER.error(
             "Storage validation failed during setup",
@@ -145,3 +146,28 @@ def _validate_storage_payload(payload: dict[str, Any], *, schema_version: int) -
     locations = payload.get("locations")
     if not isinstance(items, dict) or not isinstance(locations, dict):
         raise StorageError("storage payload missing required collections")
+
+
+def _log_storage_health(payload: dict[str, Any], *, schema_version: int) -> None:
+    """Log storage health summary after validation."""
+
+    items = payload.get("items")
+    locations = payload.get("locations")
+    item_count = len(items) if isinstance(items, dict) else 0
+    location_count = len(locations) if isinstance(locations, dict) else 0
+
+    level = logging.WARNING if item_count == 0 and location_count == 0 else logging.DEBUG
+    LOGGER.log(
+        level,
+        "Storage health: schema_version=%s items=%s locations=%s",
+        schema_version,
+        item_count,
+        location_count,
+        extra={
+            "domain": DOMAIN,
+            "op": "setup_storage_health",
+            "schema_version": schema_version,
+            "items_count": item_count,
+            "locations_count": location_count,
+        },
+    )
