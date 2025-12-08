@@ -203,7 +203,13 @@ export class HAventoryCard extends LitElement {
         @delete-item=${(e: CustomEvent) => {
           const { itemId, name } = e.detail as { itemId: string; name: string };
           const confirmed = window.confirm(`Delete item '${name}'?`);
-          if (confirmed) this.store?.deleteItem(itemId);
+          if (confirmed) {
+            void this.store?.deleteItem(itemId);
+            const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & {
+              open?: boolean;
+            } | null;
+            if (dlg) dlg.open = false;
+          }
         }}
         @save=${(e: CustomEvent) => {
           const data = e.detail as Record<string, unknown>;
