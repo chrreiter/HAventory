@@ -71,7 +71,13 @@ Remove-Item Env:\HA_ALLOW_AREA_MUTATIONS
 ### Backend (custom component)
 - [ ] `custom_components/haventory/` with `manifest.json`, `__init__.py`, `config_flow.py`, `services.yaml`
 - [ ] Store: `hass.data[DOMAIN]["store"]` with versioned schema and safe writes
-- [ ] Persistence: Debounced saves (1s delay) with asyncio locking to prevent race conditions; operations coalesce rapid changes into single disk write; immediate persist on shutdown
+- [ ] Persistence architecture:
+  - **WebSocket handlers**: Immediate saves via `async_persist_repo` — ensures storage errors propagate to clients as `storage_error`
+  - **Service handlers**: Immediate saves via `async_persist_repo` — user-initiated actions prefer immediate durability
+  - **Shutdown/unload**: Immediate save via `async_persist_immediate` — ensures pending changes are written before exit
+  - **Debounced saves**: Available via `async_request_persist` for batch/internal operations where error propagation is not required
+  - **Concurrency**: All persist paths use `asyncio.Lock` to serialize writes and prevent race conditions
+  - **Edge case**: If storage fails after mutation, the change exists in memory but won't survive restart; client receives `storage_error`
 - [ ] Repository generation counter: Increments on every state modification for optimistic locking and debugging; persisted across restarts
 - [ ] WebSocket-only CRUD via `homeassistant.components.websocket_api` decorators (production). For local tooling, an optional dev-only HTTP shim may be enabled behind an env flag.
 - [ ] Services via `hass.services.async_register` with `voluptuous` schemas
@@ -110,7 +116,8 @@ Remove-Item Env:\HA_ALLOW_AREA_MUTATIONS
 - Optimistic concurrency control with versioning
 - Areas integration (filter by HA area)
 - Real-time subscriptions (items, locations, stats)
-- Test coverage: 103 tests passing, 88%+ coverage
+- Debounced persistence with documented edge cases
+- Test coverage: 138 tests passing, 88%+ coverage
 
 ### ✅ Phase 2: Frontend Lovelace Card (Complete)
 - **Components**: Built with Lit 3.1 + TypeScript

@@ -9,6 +9,8 @@ import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from custom_components.haventory import storage as storage_mod
+from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.models import ItemCreate, ItemUpdate
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import (
@@ -18,6 +20,11 @@ from custom_components.haventory.storage import (
     async_persist_repo,
     async_request_persist,
 )
+from custom_components.haventory.ws import setup as ws_setup
+from homeassistant.core import HomeAssistant
+
+# Named constants for test assertions
+RAPID_MUTATION_COUNT = 3
 
 
 @pytest.mark.asyncio
@@ -266,3 +273,54 @@ async def test_debounce_request_logs(caplog):
 
     # Check for debounce logs
     assert any("Persist requested, debouncing" in rec.message for rec in caplog.records)
+
+
+# -----------------------------------------------------------------------------
+# Integration test: verify WS handlers use immediate persistence for error propagation
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ws_mutations_use_immediate_persistence(monkeypatch):
+    """WS mutations use immediate persistence to ensure storage errors propagate.
+
+    Verifies that each WS mutation triggers an immediate persist (async_persist_repo),
+    not debounced persistence. This ensures @ws_guard can catch and report StorageError.
+    """
+    hass = HomeAssistant()
+    repo = Repository()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    store = DomainStore(hass)
+    hass.data[DOMAIN]["store"] = store
+    ws_setup(hass)
+
+    # Track calls to async_persist_repo (immediate)
+    immediate_calls: list[bool] = []
+
+    async def track_immediate(h):
+        immediate_calls.append(True)
+
+    monkeypatch.setattr(storage_mod, "async_persist_repo", track_immediate)
+
+    # Helper to send WS commands
+    async def _send(_id: int, type_: str, **payload):
+        handlers = hass.data.get("__ws_commands__", [])
+        for h in handlers:
+            schema = getattr(h, "_ws_schema", None)
+            if not callable(h) or not isinstance(schema, dict):
+                continue
+            if schema.get("type") != type_:
+                continue
+            req = {"id": _id, "type": type_}
+            req.update(payload)
+            return await h(hass, None, req)
+        raise AssertionError("No handler responded for type " + type_)
+
+    # Execute multiple WS mutations
+    await _send(1, "haventory/item/create", name="Item 1")
+    await _send(2, "haventory/item/create", name="Item 2")
+    await _send(3, "haventory/item/create", name="Item 3")
+
+    # Each WS mutation should trigger an immediate persist
+    assert len(immediate_calls) == RAPID_MUTATION_COUNT
+    assert len(immediate_calls) > 0, "WS must use immediate persistence for error propagation"

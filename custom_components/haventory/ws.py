@@ -434,7 +434,9 @@ def _broadcast_counts(hass: HomeAssistant) -> None:
 
 
 async def _persist_repo(hass: HomeAssistant) -> None:
-    # Persist immediately so tests can observe saves and errors map synchronously
+    # Use immediate persistence to ensure storage errors propagate to clients.
+    # Debounced persistence (async_request_persist) swallows errors in background
+    # tasks, breaking the @ws_guard error mapping contract.
     await storage_mod.async_persist_repo(hass)
 
 
