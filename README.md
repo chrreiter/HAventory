@@ -94,7 +94,7 @@ Remove-Item Env:\HA_ALLOW_AREA_MUTATIONS
 - [ ] Build outputs to `www/haventory/`
 - [ ] Real-time via WebSocket; optimistic UI; virtualization for large lists
 - [ ] MVP: direct search; filters/sorts later; location tree selector; check-in/out actions
-- [ ] WebSocket subscriptions cleaned up via weak references and close callbacks to avoid leaked connections
+- [ ] WebSocket subscriptions cleaned up via close callbacks to avoid leaked connections
 
 ### Notifications & Scheduling
 - [ ] Notifications via `notify.notify`; title-only by default
