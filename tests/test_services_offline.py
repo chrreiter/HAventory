@@ -9,9 +9,10 @@ Scenarios:
 from __future__ import annotations
 
 import pytest
+import voluptuous as vol
 from custom_components.haventory import services as services_mod
 from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.exceptions import StorageError
+from custom_components.haventory.exceptions import ConflictError, NotFoundError, StorageError
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
 from homeassistant.core import HomeAssistant
@@ -169,8 +170,9 @@ async def test_service_registration_and_schema_errors(monkeypatch, caplog) -> No
         def __init__(self, data):
             self.data = data
 
-    # Missing required item_id should fail schema
-    await handler(_Call({}))
+    # Missing required item_id should fail schema and bubble up
+    with pytest.raises(vol.Invalid):
+        await handler(_Call({}))
     # Assert an error log from our boundary with op context
     assert any(getattr(r, "op", None) == "item_update" for r in caplog.records)
 
@@ -192,16 +194,18 @@ async def test_repository_exceptions_are_logged(monkeypatch, caplog) -> None:
     await services_mod.service_item_delete(hass, {"item_id": item_id})
     caplog.clear()
     caplog.set_level("WARNING")
-    await services_mod.service_item_update(hass, {"item_id": item_id, "name": "Nope"})
+    with pytest.raises(NotFoundError):
+        await services_mod.service_item_update(hass, {"item_id": item_id, "name": "Nope"})
     assert any(getattr(r, "op", None) == "item_update" for r in caplog.records)
 
     # Force ConflictError via expected_version mismatch
     await services_mod.service_item_create(hass, {"name": "Widget2"})
     item_id2 = next(reversed(repo._debug_get_internal_indexes()["items_by_id"]))
     caplog.clear()
-    await services_mod.service_item_update(
-        hass, {"item_id": item_id2, "expected_version": 999, "name": "Boom"}
-    )
+    with pytest.raises(ConflictError):
+        await services_mod.service_item_update(
+            hass, {"item_id": item_id2, "expected_version": 999, "name": "Boom"}
+        )
     assert any(getattr(r, "op", None) == "item_update" for r in caplog.records)
 
     # Simulate storage failure during persist
@@ -217,5 +221,6 @@ async def test_repository_exceptions_are_logged(monkeypatch, caplog) -> None:
         raise StorageError("persist failed")
 
     monkeypatch.setattr(services_mod, "async_persist_repo", _persist)
-    await services_mod.service_location_create(hass, {"name": "Root"})
+    with pytest.raises(StorageError):
+        await services_mod.service_location_create(hass, {"name": "Root"})
     assert any(getattr(r, "op", None) == "location_create" for r in caplog.records)
