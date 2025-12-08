@@ -71,11 +71,14 @@ export class HVItemDialog extends LitElement {
       display: flex;
       flex-direction: column;
       gap: 4px;
+      align-items: flex-start;
+      width: 100%;
     }
     .location-row .location-controls {
       display: flex;
       gap: 8px;
       align-items: center;
+      width: 100%;
     }
     .location-row .location-controls input {
       flex: 1;
