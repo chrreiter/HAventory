@@ -75,6 +75,20 @@ describe('Store', () => {
     expect(after?.name).toBe('A2');
   });
 
+  it('rolls back optimistic changes when updateItem fails', async () => {
+    const base = makeItem({ id: '1', name: 'Original', quantity: 1 });
+    const hass = makeMockHass({ items: [base], conflictOnUpdate: true });
+    const store = new Store(hass);
+    await store.init();
+
+    await store.updateItem('1', { name: 'Changed', quantity: 5 }).catch(() => undefined);
+
+    const after = store.state.value.items.find((i) => i.id === '1');
+    expect(after?.name).toBe('Original');
+    expect(after?.quantity).toBe(1);
+    expect(store.state.value.errorQueue.at(-1)?.code).toBe('conflict');
+  });
+
   it('deletes item optimistically and rolls back on error', async () => {
     const item = makeItem({ id: '1', name: 'ToDelete' });
     const hass = makeMockHass({ items: [item] });

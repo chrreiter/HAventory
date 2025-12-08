@@ -240,6 +240,7 @@ export class Store {
     } catch (err) {
       // Capture conflict context for actionable retry
       this.pushError(err, { itemId, changes });
+      if (before) this.applyOptimistic(before);
     } finally {
       this.state.value.pendingOps.delete(opId);
       this.stateObs.set({ pendingOps: new Map(this.state.value.pendingOps) });
