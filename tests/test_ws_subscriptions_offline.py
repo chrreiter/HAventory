@@ -15,6 +15,7 @@ import pytest
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
+from custom_components.haventory.ws import _subs_bucket
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
@@ -22,9 +23,17 @@ from homeassistant.core import HomeAssistant
 class _ConnStub:
     def __init__(self) -> None:
         self.messages: list[dict[str, Any]] = []
+        self._close_callbacks: list[Callable[[], None]] = []
 
     def send_message(self, msg: dict[str, Any]) -> None:
         self.messages.append(msg)
+
+    def on_close(self, callback: Callable[[], None]) -> None:
+        self._close_callbacks.append(callback)
+
+    def close(self) -> None:
+        for cb in list(self._close_callbacks):
+            cb()
 
 
 def _get_handler(
@@ -145,6 +154,26 @@ async def test_double_subscribe_and_unsubscribe_edge() -> None:
     await _send(hass, conn, 1, "haventory/item/create", name="Hammer")
     events = _extract_events(conn, topic="stats")
     assert any(ev.get("action") == "counts" for ev in events)
+
+
+@pytest.mark.asyncio
+async def test_subscriptions_cleanup_on_connection_close() -> None:
+    """Connection close should remove all subscriptions for that connection."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    conn = _ConnStub()
+    await _send(hass, conn, 901, "haventory/subscribe", topic="items")
+
+    subs = _subs_bucket(hass)
+    assert subs.get(conn)
+
+    conn.close()
+
+    assert conn not in _subs_bucket(hass)
 
 
 @pytest.mark.asyncio
