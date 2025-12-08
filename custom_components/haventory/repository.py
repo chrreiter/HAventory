@@ -274,6 +274,55 @@ class Repository:
             return candidate, candidate != (current_area or None)
         raise ValidationError("area_id must be a string or null")
 
+    def _find_location_root(self, location_key: str) -> str:
+        """Walk up the parent chain to find the root location id."""
+        cursor: str | None = location_key
+        root_key = location_key
+        guard = 0
+        while cursor is not None:
+            guard += 1
+            if guard > LOCATION_GUARD_MAX_STEPS:  # pragma: no cover - degenerate
+                break
+            root_key = cursor
+            loc = self._locations_by_id.get(cursor)
+            if loc is None:
+                break
+            cursor = str(loc.parent_id) if loc.parent_id is not None else None
+        return root_key
+
+    def _propagate_area_to_root(self, location_key: str, area_id: str | None) -> set[str]:
+        """Set area on root of tree and clear from all other locations in tree.
+
+        When assigning an area to any location, it propagates to the root.
+        All descendants inherit from root via _resolve_effective_area_id_for_location.
+
+        Returns set of modified location ids.
+        """
+        root_key = self._find_location_root(location_key)
+        modified: set[str] = set()
+
+        # Collect all locations in this tree
+        tree_ids = {root_key}
+        tree_ids.update(self._collect_descendant_ids(root_key))
+
+        for loc_id in tree_ids:
+            loc = self._locations_by_id.get(loc_id)
+            if loc is None:
+                continue
+            old_area = loc.area_id
+            new_area = area_id if loc_id == root_key else None
+            if old_area != new_area:
+                # Update area index
+                self._update_location_area_index(
+                    location_key=loc_id, old_area=old_area, new_area=new_area
+                )
+                # Update location
+                updated_loc = replace(loc, area_id=new_area)
+                self._locations_by_id[loc_id] = updated_loc
+                modified.add(loc_id)
+
+        return modified
+
     def _validate_parent_move(
         self,
         *,
@@ -644,6 +693,7 @@ class Repository:
             parsed_area = candidate
 
         new_id = new_uuid4()
+        new_key = str(new_id)
         # Build path using parent chain plus new node
         chain: list[Location] = []
         if parent_key is not None:
@@ -662,11 +712,14 @@ class Repository:
                 cursor = str(node.parent_id) if node.parent_id is not None else None
             lineage.reverse()
             chain.extend(lineage)
+
+        # New locations never store area_id directly - it's always on root
+        # Area will be propagated to root after creation if specified
         new_loc = Location(
             id=new_id,
             parent_id=parsed_parent,
             name=name,
-            area_id=parsed_area,
+            area_id=None,  # Don't set area directly on new location
             path=EMPTY_LOCATION_PATH,
         )
         chain.append(new_loc)
@@ -674,11 +727,20 @@ class Repository:
         new_loc = replace(new_loc, path=new_path)
 
         self._add_location(new_loc)
+
+        # If area_id specified, propagate to root of the tree
+        if parsed_area is not None:
+            self._propagate_area_to_root(new_key, parsed_area)
+            # Re-bucket items for the entire tree
+            root_key = self._find_location_root(new_key)
+            self._rebucket_items_for_subtree_area_change(root_key)
+
         LOGGER.debug(
             "Location created",
             extra={"domain": "haventory", "op": "create_location", "location_id": new_id},
         )
-        return new_loc
+        # Return the potentially updated location (if area was propagated)
+        return self._locations_by_id[new_key]
 
     def get_location(self, location_id: str | uuid.UUID) -> Location:
         loc = self._locations_by_id.get(str(location_id))
@@ -701,6 +763,7 @@ class Repository:
             name: Optional new name.
             new_parent_id: Optional new parent. Pass ``None`` to move to root.
                 If omitted entirely (leave default sentinel), parent is unchanged.
+            area_id: Optional new area. Propagates to root of location tree.
         """
 
         key = str(location_id)
@@ -714,20 +777,21 @@ class Repository:
             updated_name = validate_location_name(name)
 
         parent_changed, target_parent_id = self._parse_new_parent(new_parent_id, loc.parent_id)
-        target_area, area_changed = self._parse_area_change(area_id, loc.area_id)
+        # Parse area but don't use target_area directly - we propagate to root
+        parsed_area, area_change_requested = self._parse_area_change(area_id, loc.area_id)
         name_changed = updated_name != loc.name
 
         # Validate move invariants if changing parent
         if parent_changed:
             self._validate_parent_move(location_key=key, target_parent_id=target_parent_id)
 
-        # All validations passed — compute updates on copies first
+        # For staging, don't change area on this location - area propagates to root
         staged_locations_by_id, staged_children_by_parent, _ = self._stage_location_update(
             loc=loc,
             updated_name=updated_name,
             target_parent_id=target_parent_id,
             parent_changed=parent_changed,
-            target_area=target_area,
+            target_area=loc.area_id,  # Keep current area in staging; propagation happens after
         )
 
         # Attempt to rebuild paths against staged maps; if this fails, nothing is committed
@@ -741,12 +805,6 @@ class Repository:
         self._children_ids_by_parent_id = staged_children_by_parent
         self._locations_by_id = staged_locations_by_id
 
-        # Maintain area indexes for this location
-        if area_changed:
-            self._update_location_area_index(
-                location_key=key, old_area=loc.area_id, new_area=target_area
-            )
-
         # Update affected items (now that live maps are consistent)
         affected = {key}
         affected.update(self._collect_descendant_ids(key))
@@ -756,9 +814,12 @@ class Repository:
         if parent_changed or name_changed:
             self._update_items_location_paths_for_locations(affected)
 
-        # Re-bucket items by area for the entire subtree when area changes
-        if area_changed:
-            self._rebucket_items_for_subtree_area_change(key)
+        # Handle area change: propagate to root of tree
+        if area_change_requested:
+            self._propagate_area_to_root(key, parsed_area)
+            # Re-bucket items for the entire tree
+            root_key = self._find_location_root(key)
+            self._rebucket_items_for_subtree_area_change(root_key)
 
         # Increment generation on any location state modification
         self._increment_generation()
