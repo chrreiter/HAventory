@@ -27,6 +27,11 @@ export class HVItemDialog extends LitElement {
       border: 1px solid var(--divider-color, #ddd);
       border-radius: 4px;
       padding: 8px;
+      box-sizing: border-box;
+    }
+    .row textarea {
+      width: 100%;
+      resize: vertical;
     }
     .row input:focus, .row textarea:focus {
       outline: 2px solid var(--primary-color, #03a9f4);
@@ -197,7 +202,7 @@ export class HVItemDialog extends LitElement {
           ${this._validation ? html`<div class="banner" role="alert">${this._validation}</div>` : null}
           ${this.error ? html`<div class="banner" role="alert">${this.error}</div>` : null}
           <div class="row"><label>Name* <input aria-required="true" type="text" .value=${this._name} @input=${(e: Event) => this._name = (e.target as HTMLInputElement).value} /></label></div>
-          <div class="row"><label style="flex:1;">Description <textarea rows="2" style="width:100%; resize:vertical;" .value=${this._description} @input=${(e: Event) => this._description = (e.target as HTMLTextAreaElement).value}></textarea></label></div>
+          <div class="row"><label style="flex:1;">Description <textarea rows="2" .value=${this._description} @input=${(e: Event) => this._description = (e.target as HTMLTextAreaElement).value}></textarea></label></div>
           <div class="row">
             <label>Quantity <input type="number" .value=${String(this._quantity)} @input=${(e: Event) => this._quantity = Number((e.target as HTMLInputElement).value)} /></label>
             <label>Low-stock threshold <input type="number" .value=${this._lowStock ?? ''} @input=${(e: Event) => this._lowStock = (e.target as HTMLInputElement).value === '' ? null : Number((e.target as HTMLInputElement).value)} /></label>
