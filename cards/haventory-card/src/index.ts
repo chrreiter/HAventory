@@ -366,7 +366,7 @@ export class HAventoryCard extends LitElement {
             <div class="row">
               <label>Area
                 <select @change=${(e: Event) => this.store?.setFilters({ areaId: (e.target as HTMLSelectElement).value || null } as Partial<import('./store/types').StoreFilters>)} .value=${filters?.areaId ?? ''}>
-                  <option value=\"\">All</option>
+                  <option value="">All</option>
                   ${(st?.areasCache?.areas ?? []).map((a) => html`<option value=${a.id} ?selected=${filters?.areaId === a.id}>${a.name}</option>`)}
                 </select>
               </label>
@@ -374,19 +374,19 @@ export class HAventoryCard extends LitElement {
             <div class="row">
               <label>Location
                 <select @change=${(e: Event) => this.store?.setFilters({ locationId: (e.target as HTMLSelectElement).value || null } as Partial<import('./store/types').StoreFilters>)} .value=${filters?.locationId ?? ''}>
-                  <option value=\"\">All</option>
+                  <option value="">All</option>
                   ${(st?.locationsFlatCache ?? []).map((l) => html`<option value=${l.id} ?selected=${filters?.locationId === l.id}>${l.path?.display_path || l.name}</option>`)}
                 </select>
               </label>
             </div>
             <div class="row">
-              <label><input type=\"checkbox\" .checked=${filters?.includeSubtree ?? true} @change=${(e: Event) => this.store?.setFilters({ includeSubtree: (e.target as HTMLInputElement).checked })} /> Include sublocations</label>
+              <label><input type="checkbox" .checked=${filters?.includeSubtree ?? true} @change=${(e: Event) => this.store?.setFilters({ includeSubtree: (e.target as HTMLInputElement).checked })} /> Include sublocations</label>
             </div>
             <div class="row">
-              <label><input type=\"checkbox\" .checked=${filters?.checkedOutOnly ?? false} @change=${(e: Event) => this.store?.setFilters({ checkedOutOnly: (e.target as HTMLInputElement).checked })} /> Checked-out only</label>
+              <label><input type="checkbox" .checked=${filters?.checkedOutOnly ?? false} @change=${(e: Event) => this.store?.setFilters({ checkedOutOnly: (e.target as HTMLInputElement).checked })} /> Checked-out only</label>
             </div>
             <div class="row">
-              <label><input type=\"checkbox\" .checked=${filters?.lowStockFirst ?? false} @change=${(e: Event) => this.store?.setFilters({ lowStockFirst: (e.target as HTMLInputElement).checked })} /> Low-stock first</label>
+              <label><input type="checkbox" .checked=${filters?.lowStockFirst ?? false} @change=${(e: Event) => this.store?.setFilters({ lowStockFirst: (e.target as HTMLInputElement).checked })} /> Low-stock first</label>
             </div>
             <div class="row">
               <label>Sort
