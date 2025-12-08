@@ -127,6 +127,32 @@ export class HVItemDialog extends LitElement {
     .due-label input[type="date"] {
       width: 180px;
     }
+    .number-row { align-items: stretch; }
+    .number-field { flex: 1; gap: 6px; }
+    .number-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .number-control input {
+      width: 90px;
+      text-align: center;
+      font-size: 14px;
+      padding: 8px;
+    }
+    .pill {
+      width: 32px;
+      height: 32px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 0;
+    }
+    .pill-secondary {
+      background: var(--secondary-background-color, #f5f5f5);
+      color: var(--primary-text-color, #212121);
+      border: 1px solid var(--divider-color, #ddd);
+    }
   `;
 
   @property({ type: Boolean, reflect: true }) open: boolean = false;
@@ -243,6 +269,15 @@ export class HVItemDialog extends LitElement {
     this.dispatchEvent(new CustomEvent('delete-item', { detail: { itemId: this.item.id, name: this.item.name }, bubbles: true, composed: true }));
   }
 
+  private adjustQuantity(delta: number) {
+    this._quantity = Math.max(0, Math.round(this._quantity + delta));
+  }
+
+  private adjustLowStock(delta: number) {
+    const base = this._lowStock ?? 0;
+    this._lowStock = Math.max(0, Math.round(base + delta));
+  }
+
   render() {
     if (!this.open) return null;
     return html`
@@ -253,9 +288,40 @@ export class HVItemDialog extends LitElement {
           ${this.error ? html`<div class="banner" role="alert">${this.error}</div>` : null}
           <div class="row"><label class="full-width">Name* <input aria-required="true" type="text" .value=${this._name} @input=${(e: Event) => this._name = (e.target as HTMLInputElement).value} /></label></div>
           <div class="row"><label style="flex:1;">Description <textarea rows="2" .value=${this._description} @input=${(e: Event) => this._description = (e.target as HTMLTextAreaElement).value}></textarea></label></div>
-          <div class="row">
-            <label>Quantity <input type="number" .value=${String(this._quantity)} @input=${(e: Event) => this._quantity = Number((e.target as HTMLInputElement).value)} /></label>
-            <label>Low-stock threshold <input type="number" .value=${this._lowStock ?? ''} @input=${(e: Event) => this._lowStock = (e.target as HTMLInputElement).value === '' ? null : Number((e.target as HTMLInputElement).value)} /></label>
+          <div class="row number-row">
+            <label class="number-field">
+              <span>Quantity</span>
+              <div class="number-control">
+                <button type="button" class="pill" @click=${() => this.adjustQuantity(-1)} aria-label="Decrease quantity">−</button>
+                <input
+                  type="number"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  .value=${String(this._quantity)}
+                  @input=${(e: Event) => this._quantity = Math.max(0, Number((e.target as HTMLInputElement).value))}
+                  aria-label="Quantity"
+                />
+                <button type="button" class="pill" @click=${() => this.adjustQuantity(1)} aria-label="Increase quantity">+</button>
+              </div>
+            </label>
+            <label class="number-field">
+              <span>Low-stock threshold</span>
+              <div class="number-control">
+                <button type="button" class="pill" @click=${() => this.adjustLowStock(-1)} aria-label="Decrease low-stock threshold">−</button>
+                <input
+                  type="number"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  .value=${this._lowStock ?? ''}
+                  @input=${(e: Event) => {
+                    const raw = (e.target as HTMLInputElement).value;
+                    this._lowStock = raw === '' ? null : Math.max(0, Number(raw));
+                  }}
+                  aria-label="Low-stock threshold"
+                />
+                <button type="button" class="pill" @click=${() => this.adjustLowStock(1)} aria-label="Increase low-stock threshold">+</button>
+              </div>
+            </label>
           </div>
           <div class="row"><label class="full-width">Category <input type="text" .value=${this._category} @input=${(e: Event) => this._category = (e.target as HTMLInputElement).value} /></label></div>
           <div class="row"><label class="full-width">Tags <input type="text" .value=${this._tags} @input=${(e: Event) => this._tags = (e.target as HTMLInputElement).value} /></label></div>
