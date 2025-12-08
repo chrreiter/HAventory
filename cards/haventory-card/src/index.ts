@@ -10,7 +10,12 @@ import './components/hv-location-selector';
 
 export class HAventoryCard extends LitElement {
   static styles = css`
-    :host { display: block; }
+    :host {
+      display: block;
+      font-family: var(--paper-font-body1_-_font-family, var(--ha-card-font-family, Arial, sans-serif));
+      font-size: var(--mdc-typography-body2-font-size, 14px);
+      line-height: var(--mdc-typography-body2-line-height, 20px);
+    }
     .card-header {
       display: flex;
       align-items: center;
@@ -28,7 +33,6 @@ export class HAventoryCard extends LitElement {
       border-radius: 4px;
       padding: 6px 12px;
       cursor: pointer;
-      font-size: 14px;
     }
     .header-actions button:hover {
       opacity: 0.9;
@@ -266,9 +270,20 @@ export class HAventoryCard extends LitElement {
     return html`
       <style>
         .overlay-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 9998; }
-        .overlay { position: fixed; inset: 0; z-index: 9999; display: grid; grid-template-rows: auto 1fr; overflow: hidden; overscroll-behavior: contain; }
+        .overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 9999;
+          display: grid;
+          grid-template-rows: auto 1fr;
+          overflow: hidden;
+          overscroll-behavior: contain;
+          font-family: inherit;
+          font-size: inherit;
+          line-height: inherit;
+        }
         .ov-header { display: flex; align-items: center; justify-content: space-between; background: var(--card-background-color, #fff); padding: 10px 12px; }
-        .ov-header button { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 14px; }
+        .ov-header button { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: inherit; }
         .ov-header button:hover { opacity: 0.9; }
         .ov-body { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; height: calc(100vh - 48px); box-sizing: border-box; overflow: hidden; }
         .sidebar { background: var(--card-background-color, #fff); padding: 10px; border-right: 1px solid rgba(0,0,0,0.1); overflow: auto; overscroll-behavior: contain; }
@@ -279,7 +294,7 @@ export class HAventoryCard extends LitElement {
           border: 1px solid var(--divider-color, #ddd);
           border-radius: 4px;
           padding: 6px 8px;
-          font-size: 14px;
+          font-size: inherit;
           box-sizing: border-box;
           min-width: 140px;
         }
@@ -292,7 +307,7 @@ export class HAventoryCard extends LitElement {
         }
         .main { background: var(--card-background-color, #fff); padding: 10px; overflow: hidden; display: flex; flex-direction: column; gap: 8px; }
         .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-        .btn-add { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 14px; }
+        .btn-add { background: var(--primary-color, #03a9f4); color: var(--text-primary-color, #fff); border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: inherit; }
         .btn-add:hover { opacity: 0.9; }
         .sort-controls { display: inline-flex; align-items: center; gap: 6px; }
         .sort-controls button {
@@ -302,7 +317,7 @@ export class HAventoryCard extends LitElement {
           border-radius: 4px;
           padding: 6px 10px;
           cursor: pointer;
-          font-size: 14px;
+          font-size: inherit;
         }
         .sort-controls button:hover {
           opacity: 0.9;

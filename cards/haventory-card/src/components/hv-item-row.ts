@@ -5,7 +5,12 @@ import type { Item } from '../store/types';
 @customElement('hv-item-row')
 export class HVItemRow extends LitElement {
   static styles = css`
-    :host { display: contents; }
+    :host {
+      display: contents;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: inherit;
+    }
     .row {
       display: grid;
       /* Use inherited grid columns from hv-inventory-list for alignment */
@@ -31,7 +36,7 @@ export class HVItemRow extends LitElement {
       border: none;
       border-radius: 4px;
       cursor: pointer;
-      font-size: 13px;
+      font: inherit;
     }
     .actions button:hover { opacity: 0.9; }
     .actions button.btn-danger {

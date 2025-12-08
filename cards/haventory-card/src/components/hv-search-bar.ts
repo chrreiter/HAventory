@@ -17,7 +17,12 @@ export interface SearchBarChangeDetail {
 @customElement('hv-search-bar')
 export class HVSearchBar extends LitElement {
   static styles = css`
-    :host { display: block; }
+    :host {
+      display: block;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: inherit;
+    }
     .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     input[type="search"],
     select {
@@ -26,7 +31,7 @@ export class HVSearchBar extends LitElement {
       border: 1px solid var(--divider-color, #ddd);
       border-radius: 4px;
       padding: 6px 8px;
-      font-size: 14px;
+      font: inherit;
       box-sizing: border-box;
     }
     input[type="search"] {
@@ -49,7 +54,7 @@ export class HVSearchBar extends LitElement {
       border-radius: 4px;
       padding: 6px 12px;
       cursor: pointer;
-      font-size: 14px;
+      font: inherit;
     }
     button:hover {
       opacity: 0.9;

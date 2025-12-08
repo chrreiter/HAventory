@@ -6,7 +6,12 @@ import type { Item, Location } from '../store/types';
 @customElement('hv-item-dialog')
 export class HVItemDialog extends LitElement {
   static styles = css`
-    :host { display: block; }
+    :host {
+      display: block;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: inherit;
+    }
     .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 10000; }
     .dialog-wrap { position: fixed; inset: 0; display: grid; place-items: center; z-index: 10001; }
     .dialog {
@@ -18,6 +23,7 @@ export class HVItemDialog extends LitElement {
       max-width: 520px;
       width: calc(100vw - 32px);
       box-sizing: border-box;
+      font: inherit;
     }
     .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
     .row label { display: flex; flex-direction: column; gap: 4px; }
@@ -30,6 +36,7 @@ export class HVItemDialog extends LitElement {
       border-radius: 4px;
       padding: 8px;
       box-sizing: border-box;
+      font: inherit;
     }
     .row textarea {
       width: 100%;
@@ -51,7 +58,7 @@ export class HVItemDialog extends LitElement {
       border-radius: 4px;
       padding: 6px 12px;
       cursor: pointer;
-      font-size: 14px;
+      font: inherit;
     }
     button:hover {
       opacity: 0.9;
@@ -137,14 +144,14 @@ export class HVItemDialog extends LitElement {
     .number-control input {
       width: 90px;
       text-align: center;
-      font-size: 14px;
+      font: inherit;
       padding: 8px;
     }
     .pill {
       width: 32px;
       height: 32px;
       border-radius: 4px;
-      font-size: 14px;
+      font: inherit;
       font-weight: 600;
       padding: 0;
     }
