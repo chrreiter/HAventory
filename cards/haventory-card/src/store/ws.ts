@@ -110,6 +110,13 @@ export class WSClient {
     return this.hass.callWS<Location[]>({ type: 'haventory/location/list' });
   }
 
+  createLocation(name: string, parentId?: string | null, areaId?: string | null) {
+    const msg: Record<string, unknown> = { type: 'haventory/location/create', name };
+    if (parentId !== undefined) msg.parent_id = parentId;
+    if (areaId !== undefined) msg.area_id = areaId;
+    return this.hass.callWS<Location>(msg);
+  }
+
   getLocationTree() {
     // The backend returns tree nodes; for typing keep as unknown[] | Location-like.
     return this.hass.callWS<unknown[]>({ type: 'haventory/location/tree' });

@@ -1,3 +1,52 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { fixture, html } from '@open-wc/testing-helpers';
+import './hv-location-selector';
+import type { HVLocationSelector } from './hv-location-selector';
+
+describe('hv-location-selector', () => {
+  let el: HVLocationSelector;
+
+  beforeEach(async () => {
+    el = await fixture<HVLocationSelector>(html`<hv-location-selector .open=${true} .locations=${[]}></hv-location-selector>`);
+  });
+
+  it('renders create form when createMode is true', async () => {
+    el.createMode = true;
+    await el.updateComplete;
+    const input = el.shadowRoot?.querySelector('input[type="text"]');
+    expect(input).toBeTruthy();
+  });
+
+  it('dispatches create-location event on create', async () => {
+    el.createMode = true;
+    await el.updateComplete;
+    const events: CustomEvent[] = [];
+    el.addEventListener('create-location', (e) => events.push(e as CustomEvent));
+
+    const input = el.shadowRoot?.querySelector('input[type="text"]') as HTMLInputElement;
+    input.value = 'New Loc';
+    input.dispatchEvent(new Event('input'));
+    await el.updateComplete;
+
+    const createBtn = el.shadowRoot?.querySelector('.actions button:last-child') as HTMLButtonElement;
+    createBtn.click();
+
+    expect(events.length).toBe(1);
+    expect(events[0].detail.name).toBe('New Loc');
+  });
+
+  it('shows error when name is empty', async () => {
+    el.createMode = true;
+    await el.updateComplete;
+
+    const createBtn = el.shadowRoot?.querySelector('.actions button:last-child') as HTMLButtonElement;
+    createBtn.click();
+    await el.updateComplete;
+
+    const error = el.shadowRoot?.querySelector('.error-banner');
+    expect(error?.textContent).toContain('Name is required');
+  });
+});
 import { describe, it, expect } from 'vitest';
 import './hv-location-selector';
 import type { Location } from '../store/types';
