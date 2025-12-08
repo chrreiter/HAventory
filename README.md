@@ -63,7 +63,10 @@ Remove-Item Env:\HA_ALLOW_AREA_MUTATIONS
   - Local quick run: `scripts\ci_local.ps1` (produces `coverage.xml` and browsable `htmlcov\index.html`).
   - Manual: `$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'; pytest -q --cov=custom_components/haventory --cov-report=term-missing:skip-covered --cov-report=xml --cov-report=html`.
 - Frontend (Vitest):
-  - In `cards/haventory-card`: `npm test -- --coverage` (opens `coverage/index.html`).
+  - Quick run: `scripts\test_frontend.ps1` (runs tests once)
+  - With coverage: `scripts\test_frontend.ps1 -Coverage` (opens `cards/haventory-card/coverage/index.html`)
+  - Watch mode: `scripts\test_frontend.ps1 -Watch` (interactive re-run on changes)
+  - Manual: In `cards/haventory-card`: `npm test` or `npm run test:coverage`
 
 ### Backend (custom component)
 - [ ] `custom_components/haventory/` with `manifest.json`, `__init__.py`, `config_flow.py`, `services.yaml`
@@ -97,6 +100,40 @@ Remove-Item Env:\HA_ALLOW_AREA_MUTATIONS
 - [ ] Conventional Commits; update README and `roadmap/implementation_roadmap.md` before merging a PR (add an entry under `## Changelog`).
 - [ ] Backups: Store data included in HA snapshots; document restore behavior.
 - [ ] Translations under `translations/` (EN initial); strings externalized.
+
+## Implementation Status
+
+### ✅ Phase 1: Backend & WebSocket API (Complete)
+- Full CRUD for Items and Locations via WebSocket
+- Optimistic concurrency control with versioning
+- Areas integration (filter by HA area)
+- Real-time subscriptions (items, locations, stats)
+- Test coverage: 103 tests passing, 88%+ coverage
+
+### ✅ Phase 2: Frontend Lovelace Card (Complete)
+- **Components**: Built with Lit 3.1 + TypeScript
+  - `haventory-card`: Main container with expand/collapse overlay
+  - `hv-search-bar`: Search with Area/Location filters, checkboxes, sort
+  - `hv-inventory-list`: Virtualized list with `@lit-labs/virtualizer`
+  - `hv-item-row`: Interactive rows with keyboard shortcuts (Enter, Delete, +/-)
+  - `hv-item-dialog`: Add/edit with validation
+  - `hv-location-selector`: Location picker with search
+- **Features**:
+  - Populated Area and Location dropdowns (from store cache)
+  - Area labels on item rows (resolved from location)
+  - Quick Add (+) button in header
+  - Debounced search (200ms)
+  - Optimistic updates with conflict resolution UI
+  - Real-time sync via WebSocket subscriptions
+- **Test Coverage**: 46 tests passing, 88.83% statements, 71.63% functions
+- **Build**: Vite → `www/haventory/haventory-card.js`
+
+### 🚧 Phase 3: Polish & HACS (Planned)
+- HACS publication
+- Release automation (Release Please)
+- Additional optimizations
+
+---
 
 ### Dev add-on loop
 ## Phase 0 usage guide

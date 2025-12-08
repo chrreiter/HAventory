@@ -239,21 +239,23 @@ class Repository:
         raise ValidationError("new_parent_id must be a UUID v4 string or null")
 
     def _parse_area_change(
-        self, area_id: str | uuid.UUID | None | object, current_area: uuid.UUID | None
-    ) -> tuple[uuid.UUID | None, bool]:
+        self, area_id: str | None | object, current_area: str | None
+    ) -> tuple[str | None, bool]:
         """Parse the requested area change and return (target_area, area_changed).
 
-        Treats UNSET as no change, None as clear area, and validates UUID v4.
+        Treats UNSET as no change, None as clear area, and validates a non-empty string.
         """
 
         if area_id is UNSET:
             return current_area, False
         if area_id is None:
             return None, current_area is not None
-        if isinstance(area_id, (str, uuid.UUID)):
-            parsed = parse_uuid4(area_id, field_name="area_id")
-            return parsed, str(parsed) != str(current_area)
-        raise ValidationError("area_id must be a UUID v4 string or null")
+        if isinstance(area_id, str):
+            candidate = area_id.strip()
+            if not candidate:
+                raise ValidationError("area_id must be a non-empty string or null")
+            return candidate, candidate != (current_area or None)
+        raise ValidationError("area_id must be a string or null")
 
     def _validate_parent_move(
         self,
@@ -334,12 +336,12 @@ class Repository:
         return staged_locations_by_id, staged_children_by_parent, new_loc
 
     def _update_location_area_index(
-        self, *, location_key: str, old_area: uuid.UUID | None, new_area: uuid.UUID | None
+        self, *, location_key: str, old_area: str | None, new_area: str | None
     ) -> None:
         """Maintain the locations-by-area index for a single location id."""
 
-        old_area_key = str(old_area) if old_area is not None else None
-        new_area_key = str(new_area) if new_area is not None else None
+        old_area_key = old_area if old_area is not None else None
+        new_area_key = new_area if new_area is not None else None
         if old_area_key is not None:
             s = self._locations_by_area_id.get(old_area_key)
             if s is not None:
@@ -559,6 +561,10 @@ class Repository:
             source = self._items_by_id.values()
         filtered = filter_items(source, flt)
         sorted_items = sort_items(filtered, sort)
+        # Optional preference: group low-stock items first without filtering, while
+        # preserving the selected primary ordering within groups (stable sort).
+        if flt and flt.get("low_stock_first"):
+            sorted_items.sort(key=lambda it: not self._is_low_stock(it))
 
         # Normalize sort for cursor tracking
         if sort is None:
@@ -592,7 +598,7 @@ class Repository:
         *,
         name: str,
         parent_id: str | uuid.UUID | None = None,
-        area_id: str | uuid.UUID | None = None,
+        area_id: str | None = None,
     ) -> Location:
         name = validate_location_name(name)
         # Parse/normalize parent id once at ingress using shared helper
@@ -605,11 +611,14 @@ class Repository:
         if parent_key is not None and parent_key not in self._locations_by_id:
             raise ValidationError("parent_id must reference an existing location")
 
-        parsed_area: uuid.UUID | None
+        parsed_area: str | None
         if area_id is None:
             parsed_area = None
         else:
-            parsed_area = parse_uuid4(area_id, field_name="area_id")
+            candidate = str(area_id).strip()
+            if not candidate:
+                raise ValidationError("area_id must be a non-empty string or null")
+            parsed_area = candidate
 
         new_id = new_uuid4()
         # Build path using parent chain plus new node
@@ -683,6 +692,7 @@ class Repository:
 
         parent_changed, target_parent_id = self._parse_new_parent(new_parent_id, loc.parent_id)
         target_area, area_changed = self._parse_area_change(area_id, loc.area_id)
+        name_changed = updated_name != loc.name
 
         # Validate move invariants if changing parent
         if parent_changed:
@@ -717,7 +727,11 @@ class Repository:
         # Update affected items (now that live maps are consistent)
         affected = {key}
         affected.update(self._collect_descendant_ids(key))
-        self._update_items_location_paths_for_locations(affected)
+        # Only rebuild item location_path (and bump versions) when the path can change:
+        # - name change affects display paths
+        # - parent change affects ancestry
+        if parent_changed or name_changed:
+            self._update_items_location_paths_for_locations(affected)
 
         # Re-bucket items by area for the entire subtree when area changes
         if area_changed:
@@ -989,7 +1003,7 @@ class Repository:
                         ),
                         name=str(loc_data.get("name", "")),
                         area_id=(
-                            parse_uuid4(str(loc_data.get("area_id")), field_name="location.area_id")
+                            str(loc_data.get("area_id"))
                             if loc_data.get("area_id") is not None
                             else None
                         ),

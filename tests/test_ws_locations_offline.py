@@ -110,6 +110,29 @@ async def test_ws_location_create_update_area_validation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ws_location_create_update_area_with_non_uuid_id() -> None:
+    """WS accepts non-UUID area ids when present in HA area registry."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    reg = await async_get_area_registry(hass)
+    reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
+
+    created = await _send(hass, 1, "haventory/location/create", name="Root", area_id="kitchen")
+    assert created["success"] is True and created["result"]["area_id"] == "kitchen"
+    loc_id = created["result"]["id"]
+
+    reg._add("garage", "Garage")  # type: ignore[attr-defined]
+    updated = await _send(
+        hass, 2, "haventory/location/update", location_id=loc_id, area_id="garage"
+    )
+    assert updated["success"] is True and updated["result"]["area_id"] == "garage"
+
+
+@pytest.mark.asyncio
 async def test_location_error_mapping() -> None:
     """Invalid operations yield validation/not_found errors."""
 

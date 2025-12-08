@@ -56,7 +56,7 @@ class Location:
     id: uuid.UUID
     parent_id: uuid.UUID | None
     name: str
-    area_id: uuid.UUID | None = None
+    area_id: str | None = None
     path: LocationPath = field(default_factory=lambda: EMPTY_LOCATION_PATH)
 
 
@@ -121,6 +121,8 @@ class ItemFilter(TypedDict, total=False):
     category: str
     checked_out: bool
     low_stock_only: bool
+    # When true, do not filter; instead, prefer low-stock items first in ordering
+    low_stock_first: bool
     location_id: str | None
     area_id: str
     include_subtree: bool

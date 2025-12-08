@@ -5,21 +5,29 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     include: ['src/**/*.test.ts'],
+    setupFiles: ['src/test.setup.ts'],
     coverage: {
       provider: 'v8',
       reportsDirectory: 'coverage',
       reporter: ['text-summary', 'html', 'json-summary', 'lcov']
-    },
-    setupFiles: []
+    }
   },
   build: {
-    outDir: '../www/haventory',
-    emptyOutDir: false,
+    lib: {
+      entry: 'src/index.ts',
+      formats: ['es'],
+      fileName: () => 'haventory-card.js'
+    },
     rollupOptions: {
-      input: 'src/index.ts',
+      external: [],  // Bundle everything since HA doesn't provide dependencies
       output: {
-        entryFileNames: `haventory-card.js`
+        inlineDynamicImports: true  // Single file output for HACS
       }
-    }
+    },
+    minify: true,
+    sourcemap: false,
+    target: 'es2020',  // Match HA browser support
+    outDir: '../www/haventory',
+    emptyOutDir: false
   }
 });

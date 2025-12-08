@@ -28,7 +28,9 @@ export default [
     },
     plugins: { '@typescript-eslint': tsPlugin },
     rules: {
-      ...(tsPlugin.configs.recommended?.rules ?? {})
+      ...(tsPlugin.configs.recommended?.rules ?? {}),
+      // TypeScript handles undefined variables; avoid false positives in TS code
+      'no-undef': 'off'
     }
   },
 
@@ -47,6 +49,20 @@ export default [
         HTMLElement: 'readonly',
         customElements: 'readonly'
       }
+    },
+    rules: {
+      // Loosen strictness for test files to keep tests concise
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }]
+    }
+  }
+  ,
+  // Test utilities
+  {
+    files: ['src/test.utils.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }]
     }
   }
 ];
