@@ -117,7 +117,7 @@ async def test_migration_is_applied_for_older_payload(monkeypatch) -> None:
     # Use the same key as DomainStore config; tests' Store stub exposes key
     # Save a v0 payload lacking required keys
 
-    raw_store = HAStore(hass, 1, getattr(underlying, "key", "haventory_store"))
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, getattr(underlying, "key", "haventory_store"))
     await raw_store.async_save({"schema_version": 0})
 
     # Spy on migrations.migrate to ensure it's called
@@ -155,7 +155,7 @@ async def test_migration_failure_raises_and_does_not_persist(monkeypatch) -> Non
 
     # Seed an older valid payload directly into underlying storage
     pre_payload = {"schema_version": 0, "items": {"i1": {"id": "i1"}}, "locations": {}}
-    raw_store = HAStore(hass, 1, key)
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
     await raw_store.async_save(pre_payload)
 
     # Make migrate raise
@@ -171,6 +171,32 @@ async def test_migration_failure_raises_and_does_not_persist(monkeypatch) -> Non
     # Assert on-disk payload was not overwritten
     underlying = await raw_store.async_load()
     assert underlying == pre_payload
+
+
+@pytest.mark.asyncio
+async def test_migration_from_v1_to_current_preserves_payload() -> None:
+    """v1 payload migrates to current schema and persists updated version."""
+
+    hass = HomeAssistant()
+    key = "test_store_migrate_v1_to_current"
+    store = DomainStore(hass, key=key)
+
+    pre_payload = {
+        "schema_version": 1,
+        "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 5}},
+        "locations": {"l1": {"id": "l1", "name": "Garage"}},
+    }
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save(pre_payload)
+
+    migrated = await store.async_load()
+
+    assert migrated["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert migrated["items"] == pre_payload["items"]
+    assert migrated["locations"] == pre_payload["locations"]
+    # on-disk should be updated to current schema_version
+    persisted = await raw_store.async_load()
+    assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION
 
 
 @pytest.mark.asyncio

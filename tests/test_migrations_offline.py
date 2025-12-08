@@ -66,20 +66,22 @@ async def test_missing_keys_and_empty_payload_safe_defaults() -> None:
     """Migration fills in defaults when keys are missing or input is empty/invalid."""
 
     # Missing keys but has schema_version 0
-    migrated_missing = migrate({"schema_version": 0}, from_version=0, to_version=1)
-    assert migrated_missing["schema_version"] == 1
+    migrated_missing = migrate(
+        {"schema_version": 0}, from_version=0, to_version=CURRENT_SCHEMA_VERSION
+    )
+    assert migrated_missing["schema_version"] == CURRENT_SCHEMA_VERSION
     assert migrated_missing["items"] == {}
     assert migrated_missing["locations"] == {}
 
     # Empty dict without schema_version (treated as v0 by caller of migrate)
-    migrated_empty = migrate({}, from_version=0, to_version=1)
-    assert migrated_empty["schema_version"] == 1
+    migrated_empty = migrate({}, from_version=0, to_version=CURRENT_SCHEMA_VERSION)
+    assert migrated_empty["schema_version"] == CURRENT_SCHEMA_VERSION
     assert migrated_empty["items"] == {}
     assert migrated_empty["locations"] == {}
 
     # Non-dict payload input should be tolerated by step functions; driver normalizes
-    migrated_non_dict = migrate("oops", from_version=0, to_version=1)  # type: ignore[arg-type]
-    assert migrated_non_dict["schema_version"] == 1
+    migrated_non_dict = migrate("oops", from_version=0, to_version=CURRENT_SCHEMA_VERSION)  # type: ignore[arg-type]
+    assert migrated_non_dict["schema_version"] == CURRENT_SCHEMA_VERSION
     assert migrated_non_dict["items"] == {}
     assert migrated_non_dict["locations"] == {}
 
@@ -89,10 +91,12 @@ async def test_downgrade_returns_original(caplog: pytest.LogCaptureFixture) -> N
     """Downgrade returns original payload; migrate stays quiet."""
 
     caplog.set_level(logging.DEBUG)
-    payload = {"schema_version": 1, "items": {}, "locations": {}}
+    payload = {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
 
     # Act: request a downgrade path (from_version > to_version)
-    result = migrate(payload, from_version=1, to_version=0)
+    result = migrate(
+        payload, from_version=CURRENT_SCHEMA_VERSION, to_version=CURRENT_SCHEMA_VERSION - 1
+    )
 
     # Assert: original returned unchanged; we don't enforce specific log content
     assert result is payload or result == payload
