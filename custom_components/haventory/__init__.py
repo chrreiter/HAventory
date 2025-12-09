@@ -7,7 +7,13 @@ the core data structures in hass.data.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
+
+try:
+    from homeassistant.components import frontend as hass_frontend
+except Exception:  # pragma: no cover - optional dependency
+    hass_frontend = None
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -76,6 +82,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register WebSocket commands
     ws_mod.setup(hass)
 
+    # Auto-register frontend card asset if present
+    await _register_frontend_module(hass)
+
     return True
 
 
@@ -131,6 +140,40 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     bucket.pop("ws_handlers", None)
 
     return True
+
+
+async def _register_frontend_module(hass: HomeAssistant) -> None:
+    """Register the built HAventory card asset with the frontend if present."""
+
+    if hass_frontend is None:
+        LOGGER.debug(
+            "Frontend component not available; skipping module registration",
+            extra={"domain": DOMAIN, "op": "frontend_register"},
+        )
+        return
+
+    url = "/local/haventory/haventory-card.js"
+    fs_path = hass.config.path("www", "haventory", "haventory-card.js")
+
+    if not os.path.exists(fs_path):
+        LOGGER.debug(
+            "Frontend asset not found; skipping registration",
+            extra={"domain": DOMAIN, "op": "frontend_register", "path": fs_path},
+        )
+        return
+
+    try:
+        hass_frontend.add_extra_module_url(hass, url)
+        LOGGER.debug(
+            "Registered HAventory card asset",
+            extra={"domain": DOMAIN, "op": "frontend_register", "url": url, "path": fs_path},
+        )
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.warning(
+            "Failed to register frontend asset",
+            extra={"domain": DOMAIN, "op": "frontend_register", "url": url, "path": fs_path},
+            exc_info=True,
+        )
 
 
 def _validate_storage_payload(payload: dict[str, Any], *, schema_version: int) -> None:

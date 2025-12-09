@@ -1,6 +1,7 @@
 import './index';
 import { makeMockHass, makeItem } from './test.utils';
 import { Store } from './store/store';
+import { getStubConfig } from './index';
 
 describe('HAventoryCard', () => {
   it('renders header and search bar', async () => {
@@ -289,5 +290,21 @@ describe('HAventoryCard', () => {
     // Verify dialog is now in create mode (item should be null, not the old item)
     expect(dialog.open).toBe(true);
     expect(dialog.item).toBe(null);
+  });
+
+  it('exposes stub config and registers customCards metadata', async () => {
+    // getStubConfig returns a Lovelace stub pointing to this card
+    const cfg = getStubConfig();
+    expect(cfg.type).toBe('custom:haventory-card');
+
+    // customCards registration
+    const before = (window as any).customCards ? [...(window as any).customCards] : [];
+    // Re-require index to trigger registration
+    await import('./index');
+    const cards = (window as any).customCards || [];
+    expect(cards.some((c: any) => c.type === 'haventory-card')).toBe(true);
+
+    // Restore original state to avoid side-effects on other tests
+    (window as any).customCards = before;
   });
 });
