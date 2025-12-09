@@ -351,6 +351,12 @@ export class Store {
     return created;
   }
 
+  async updateLocation(locationId: string, changes: { name?: string; areaId?: string | null }): Promise<Location> {
+    const updated = await this.ws.updateLocation(locationId, changes);
+    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+    return updated;
+  }
+
   // ---------- Errors ----------
   private pushError(err: unknown, details?: { itemId?: string; changes?: ItemUpdate }) {
     // Home Assistant callWS returns an error envelope with {code, message, context}

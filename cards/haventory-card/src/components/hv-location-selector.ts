@@ -100,6 +100,63 @@ export class HVLocationSelector extends LitElement {
     .area-prefix {
       color: var(--secondary-text-color, #888);
     }
+    .btn-edit {
+      background: transparent;
+      border: none;
+      color: var(--secondary-text-color, #666);
+      cursor: pointer;
+      padding: 2px 6px;
+      font-size: 0.85em;
+      border-radius: 4px;
+    }
+    .btn-edit:hover {
+      background: var(--secondary-background-color, #f5f5f5);
+      color: var(--primary-color, #03a9f4);
+    }
+    .edit-form {
+      padding: 12px;
+      margin: 8px 0;
+      background: var(--secondary-background-color, #f5f5f5);
+      border-radius: 6px;
+      border: 1px solid var(--divider-color, #ddd);
+    }
+    .edit-form input[type="text"],
+    .edit-form select {
+      width: 100%;
+      box-sizing: border-box;
+      background: var(--card-background-color, var(--ha-card-background, #fff));
+      color: var(--primary-text-color, #212121);
+      border: 1px solid var(--divider-color, #ddd);
+      border-radius: 4px;
+      padding: 8px;
+    }
+    .edit-form input[type="text"]:focus,
+    .edit-form select:focus {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: -1px;
+    }
+    .edit-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      justify-content: flex-end;
+    }
+    .edit-actions button {
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9em;
+    }
+    .btn-save {
+      background: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #fff);
+      border: none;
+    }
+    .btn-cancel-edit {
+      background: transparent;
+      color: var(--primary-text-color, #212121);
+      border: 1px solid var(--divider-color, #ddd);
+    }
   `;
 
   @property({ type: Boolean, reflect: true }) open: boolean = false;
@@ -118,6 +175,12 @@ export class HVLocationSelector extends LitElement {
   @state() private _createAreaId: string | null = null;
   @state() private _creating: boolean = false;
   @state() private _createError: string | null = null;
+  // Edit mode state
+  @state() private _editingId: string | null = null;
+  @state() private _editName: string = '';
+  @state() private _editAreaId: string | null = null;
+  @state() private _editing: boolean = false;
+  @state() private _editError: string | null = null;
 
   protected willUpdate(changed: Map<string, unknown>): void {
     if (changed.has('open') && this.open) {
@@ -181,6 +244,47 @@ export class HVLocationSelector extends LitElement {
     this._createError = null;
   }
 
+  // ---------- Edit methods ----------
+  private startEdit(loc: Location) {
+    this._editingId = loc.id;
+    this._editName = loc.name;
+    this._editAreaId = loc.area_id ?? null;
+    this._editError = null;
+    this._editing = false;
+  }
+
+  private cancelEdit() {
+    this._editingId = null;
+    this._editName = '';
+    this._editAreaId = null;
+    this._editError = null;
+    this._editing = false;
+  }
+
+  private onSaveEdit() {
+    const name = this._editName.trim();
+    if (!name) {
+      this._editError = 'Name is required.';
+      return;
+    }
+    this._editError = null;
+    this._editing = true;
+    this.dispatchEvent(new CustomEvent('update-location', {
+      detail: { locationId: this._editingId, name, areaId: this._editAreaId },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  public setEditError(msg: string) {
+    this._editError = msg;
+    this._editing = false;
+  }
+
+  public setEditSuccess() {
+    this.cancelEdit();
+  }
+
   /** Get effective area by walking up the location hierarchy */
   private _getEffectiveAreaId(location: Location): string | null {
     // Start with this location's area_id
@@ -226,6 +330,50 @@ export class HVLocationSelector extends LitElement {
           const effectiveAreaId = this._getEffectiveAreaId(l);
           const areaName = this._getAreaName(effectiveAreaId);
           const locationPath = l.path?.display_path || l.name;
+          const isEditing = this._editingId === l.id;
+
+          if (isEditing) {
+            return html`
+              <li style="padding-left: ${depth * 12}px;">
+                <div class="edit-form">
+                  ${this._editError ? html`<div class="error-banner" role="alert">${this._editError}</div>` : null}
+                  <div class="row" style="flex-direction: column; align-items: stretch; margin-bottom: 8px;">
+                    <span class="field-label">Name</span>
+                    <input
+                      type="text"
+                      .value=${this._editName}
+                      ?disabled=${this._editing}
+                      @input=${(e: Event) => this._editName = (e.target as HTMLInputElement).value}
+                      @keydown=${(e: KeyboardEvent) => {
+                        if (e.key === 'Enter') { e.preventDefault(); this.onSaveEdit(); }
+                        if (e.key === 'Escape') { e.preventDefault(); this.cancelEdit(); }
+                      }}
+                      aria-label="Location name"
+                    />
+                  </div>
+                  <div class="row" style="flex-direction: column; align-items: stretch;">
+                    <span class="field-label">Area</span>
+                    <select
+                      .value=${this._editAreaId ?? ''}
+                      ?disabled=${this._editing}
+                      @change=${(e: Event) => this._editAreaId = (e.target as HTMLSelectElement).value || null}
+                      aria-label="Area"
+                    >
+                      <option value="">No area</option>
+                      ${this.areas.map((a) => html`<option value=${a.id} ?selected=${this._editAreaId === a.id}>${a.name}</option>`)}
+                    </select>
+                  </div>
+                  <div class="edit-actions">
+                    <button class="btn-cancel-edit" @click=${() => this.cancelEdit()} ?disabled=${this._editing}>Cancel</button>
+                    <button class="btn-save" @click=${() => this.onSaveEdit()} ?disabled=${this._editing || !this._editName.trim()}>
+                      ${this._editing ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              </li>
+            `;
+          }
+
           return html`
             <li style="padding-left: ${depth * 12}px;">
               <label class="node">
@@ -233,6 +381,7 @@ export class HVLocationSelector extends LitElement {
                 ${areaName
                   ? html`<span><span class="area-prefix">${areaName} &gt;</span> ${locationPath}</span>`
                   : html`<span>${locationPath}</span>`}
+                <button class="btn-edit" @click=${(e: Event) => { e.preventDefault(); e.stopPropagation(); this.startEdit(l); }} title="Edit location">✎</button>
               </label>
             </li>
           `;

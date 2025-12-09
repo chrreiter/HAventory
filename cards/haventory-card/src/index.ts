@@ -269,6 +269,20 @@ export class HAventoryCard extends LitElement {
             if (selector) selector.setCreateError(msg);
           }
         }}
+        @update-location=${async (e: CustomEvent) => {
+          const { locationId, name, areaId } = e.detail as { locationId: string; name: string; areaId: string | null };
+          const selector = this.shadowRoot?.querySelector('hv-location-selector') as HVLocationSelector | null;
+          try {
+            await this.store?.updateLocation(locationId, { name, areaId });
+            if (selector) {
+              selector.setEditSuccess();
+            }
+            this.requestUpdate();
+          } catch (err: unknown) {
+            const msg = (err as { message?: string })?.message ?? 'Failed to update location';
+            if (selector) selector.setEditError(msg);
+          }
+        }}
       ></hv-location-selector>
 
       ${this.expanded ? this._renderOverlayTemplate() : null}
