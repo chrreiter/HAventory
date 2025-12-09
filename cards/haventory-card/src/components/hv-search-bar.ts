@@ -69,7 +69,33 @@ export class HVSearchBar extends LitElement {
   @property({ type: Boolean }) lowStockFirst: boolean = false;
   @property({ attribute: false }) sort: Sort = DEFAULT_SORT;
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
-  @property({ attribute: false }) locations: Array<{ id: string; name: string; path?: { display_path: string } }> = [];
+  @property({ attribute: false }) locations: Array<{ id: string; name: string; area_id?: string | null; parent_id?: string | null; path?: { display_path: string } }> = [];
+
+  /** Get effective area by walking up location hierarchy */
+  private _getEffectiveAreaId(loc: { area_id?: string | null; parent_id?: string | null }): string | null {
+    if (loc.area_id) return loc.area_id;
+    let parentId = loc.parent_id;
+    while (parentId) {
+      const parent = this.locations.find((l) => l.id === parentId);
+      if (!parent) break;
+      if (parent.area_id) return parent.area_id;
+      parentId = parent.parent_id;
+    }
+    return null;
+  }
+
+  private _getAreaName(areaId: string | null): string | null {
+    if (!areaId) return null;
+    const area = this.areas.find((a) => a.id === areaId);
+    return area?.name ?? null;
+  }
+
+  private _getLocationDisplayWithArea(loc: { id: string; name: string; area_id?: string | null; parent_id?: string | null; path?: { display_path: string } }): string {
+    const effectiveAreaId = this._getEffectiveAreaId(loc);
+    const areaName = this._getAreaName(effectiveAreaId);
+    const locationPath = loc.path?.display_path || loc.name;
+    return areaName ? `${areaName} > ${locationPath}` : locationPath;
+  }
 
   @state() private _qLocal: string = this.q;
 
@@ -145,7 +171,7 @@ export class HVSearchBar extends LitElement {
 
         <select @change=${this.onLocationChange} aria-label="Location" .value=${this.locationId ?? ''}>
           <option value="">Location: All</option>
-          ${this.locations.map((l) => html`<option value=${l.id} ?selected=${this.locationId === l.id}>${l.path?.display_path || l.name}</option>`)}
+          ${this.locations.map((l) => html`<option value=${l.id} ?selected=${this.locationId === l.id}>${this._getLocationDisplayWithArea(l)}</option>`)}
         </select>
 
         <label><input type="checkbox" .checked=${this.includeSubtree} @change=${this.onIncludeSubtreeChange} /> Include sublocations</label>
