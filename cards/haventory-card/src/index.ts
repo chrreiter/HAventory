@@ -239,14 +239,12 @@ export class HAventoryCard extends LitElement {
         .areas=${st?.areasCache?.areas ?? []}
         @cancel=${() => { this._locationSelectorOpen = false; this._locationSelectorCreateMode = false; this.requestUpdate(); }}
         @select=${(e: CustomEvent) => {
-          const { locationId, includeSubtree } = e.detail as { locationId: string | null; includeSubtree: boolean };
-          // Patch dialog's location and update filters includeSubtree preference (non-destructive for list)
+          const { locationId } = e.detail as { locationId: string | null };
+          // Patch dialog's location
           const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { setLocation: (id: string | null) => void } | null;
           if (dlg) dlg.setLocation(locationId);
           this._locationSelectorOpen = false;
           this._locationSelectorCreateMode = false;
-          // Also reflect includeSubtree in filters for later searches
-          this.store?.setFilters({ includeSubtree });
           this.requestUpdate();
         }}
         @create-location=${async (e: CustomEvent) => {
@@ -426,9 +424,6 @@ export class HAventoryCard extends LitElement {
                   ${(st?.locationsFlatCache ?? []).map((l) => html`<option value=${l.id} ?selected=${filters?.locationId === l.id}>${l.path?.display_path || l.name}</option>`)}
                 </select>
               </label>
-            </div>
-            <div class="row">
-              <label><input type="checkbox" .checked=${filters?.includeSubtree ?? true} @change=${(e: Event) => this.store?.setFilters({ includeSubtree: (e.target as HTMLInputElement).checked })} /> Include sublocations</label>
             </div>
             <div class="row">
               <label><input type="checkbox" .checked=${filters?.checkedOutOnly ?? false} @change=${(e: Event) => this.store?.setFilters({ checkedOutOnly: (e.target as HTMLInputElement).checked })} /> Checked-out only</label>

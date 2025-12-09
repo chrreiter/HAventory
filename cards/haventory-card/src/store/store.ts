@@ -61,7 +61,6 @@ export class Store {
         q: '',
         areaId: null,
         locationId: null,
-        includeSubtree: true,
         checkedOutOnly: false,
         lowStockFirst: false,
         sort: defaultSort,
@@ -99,7 +98,7 @@ export class Store {
     if (this.itemsUnsub) this.itemsUnsub();
     this.itemsUnsub = this.ws.subscribe('items', (evt: AnyEventPayload) => this.onItemsEvent(evt), {
       location_id: this.state.value.filters.locationId ?? undefined,
-      include_subtree: this.state.value.filters.includeSubtree,
+      include_subtree: true, // Always include sublocations
     });
     // Stats
     if (this.statsUnsub) this.statsUnsub();

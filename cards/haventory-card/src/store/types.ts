@@ -160,7 +160,6 @@ export interface StoreFilters {
   q: string;
   areaId: string | null;
   locationId: string | null;
-  includeSubtree: boolean;
   checkedOutOnly: boolean;
   lowStockFirst: boolean;
   sort: Sort; // default: { field: 'updated_at', order: 'desc' }

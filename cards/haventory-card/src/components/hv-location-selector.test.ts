@@ -168,7 +168,7 @@ describe('hv-location-selector', () => {
     expect(sr.textContent || '').toContain('Pantry');
   });
 
-  it('emits select event with locationId and includeSubtree when Select is clicked', async () => {
+  it('emits select event with locationId when Select is clicked', async () => {
     const locations = [makeLocation('loc1', 'Shelf A', 'Home / Garage / Shelf A')];
 
     const el = document.createElement('hv-location-selector') as HTMLElement & { updateComplete?: Promise<unknown> };
@@ -190,18 +190,12 @@ describe('hv-location-selector', () => {
     radio.click();
     if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
 
-    // Toggle include subtree
-    const checkbox = sr.querySelector('input[type="checkbox"]') as HTMLInputElement;
-    checkbox.click();
-    if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
-
     // Click Select button
     const selectBtn = Array.from(sr.querySelectorAll('button')).find((b) => b.textContent === 'Select');
     selectBtn?.click();
 
     expect(eventDetail).toBeTruthy();
     expect(eventDetail.locationId).toBe('loc1');
-    expect(eventDetail.includeSubtree).toBe(false); // Was toggled from default true
     expect((el as any).open).toBe(false);
   });
 

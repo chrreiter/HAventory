@@ -167,7 +167,6 @@ export class HVLocationSelector extends LitElement {
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
 
   @state() private _q: string = '';
-  @state() private _includeSubtree: boolean = true;
   @state() private _selectedId: string | null = null;
   @state() private _zBase: number | null = null;
   @state() private _createName: string = '';
@@ -200,7 +199,7 @@ export class HVLocationSelector extends LitElement {
   private onSelect() {
     try {
       this.dispatchEvent(new CustomEvent('select', {
-        detail: { locationId: this._selectedId, includeSubtree: this._includeSubtree },
+        detail: { locationId: this._selectedId },
         bubbles: true, composed: true,
       }));
     } finally {
@@ -464,9 +463,6 @@ export class HVLocationSelector extends LitElement {
           ` : html`
             <div class="row"><input type="search" placeholder="Search" .value=${this._q} @input=${(e: Event) => this._q = (e.target as HTMLInputElement).value} /></div>
             ${this.renderList()}
-            <div class="row">
-              <label><input type="checkbox" .checked=${this._includeSubtree} @change=${(e: Event) => this._includeSubtree = (e.target as HTMLInputElement).checked} /> Include sublocations</label>
-            </div>
             <div class="actions">
               <button class="btn-secondary" @click=${() => { this.createMode = true; }}>New location…</button>
               <button @click=${this.onCancel}>Cancel</button>
