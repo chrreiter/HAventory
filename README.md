@@ -158,6 +158,11 @@ Remove-Item Env:\HA_ALLOW_AREA_MUTATIONS
 - Build: `scripts/build_frontend.ps1` (skips if npm not on PATH)
 - Output is written to `www/haventory/haventory-card.js`
 
+### Creating locations from the card
+- In expanded view, click **Add location** in the header.
+- Enter a name; optionally select a location first and check **Create under selected location** to make a child.
+- Click **Create**. The new location appears immediately and is selected.
+
 ### 3) Dev add-on workflow (optional)
 - Reload HA dev container and deploy config/integration (explicit container name required):
   `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\reload_addon.ps1 -ContainerName <your_container> -UseDevConfig:$true -TailLogs:$true -SleepSecondsAfterRestart 8`

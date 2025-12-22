@@ -227,6 +227,19 @@ describe('Store', () => {
     expect(refreshed?.id).toBe('1');
   });
 
+  it('createLocation calls WS and refreshes caches', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass);
+    await store.init();
+
+    const created = await store.createLocation('Test Location', null);
+    expect(created).toBeTruthy();
+    expect(created.name).toBe('Test Location');
+    expect(store.state.value.locationsFlatCache).toBeTruthy();
+    const inCache = store.state.value.locationsFlatCache?.find((l) => l.id === created.id);
+    expect(inCache?.name).toBe('Test Location');
+  });
+
   it('updates stats cache on refreshStats', async () => {
     const hass = makeMockHass({ items: [] });
     const store = new Store(hass);

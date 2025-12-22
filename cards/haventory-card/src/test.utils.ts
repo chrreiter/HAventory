@@ -48,6 +48,27 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
         case 'haventory/location/list': {
           return locations as unknown as T;
         }
+        case 'haventory/location/create': {
+          const id = `${Date.now()}`;
+          const name = String((msg as any).name);
+          const parent_id = (msg as any).parent_id ?? null;
+          const area_id = (msg as any).area_id ?? null;
+          const pathSegment = parent_id ? `${parent_id}/${name}` : name;
+          const created: Location = {
+            id,
+            name,
+            parent_id,
+            area_id,
+            path: {
+              id_path: parent_id ? [parent_id, id] : [id],
+              name_path: parent_id ? [String(parent_id), name] : [name],
+              display_path: parent_id ? `${parent_id}/${name}` : name,
+              sort_key: pathSegment.toLowerCase(),
+            },
+          };
+          locations = locations.concat([created]);
+          return created as unknown as T;
+        }
         case 'haventory/item/list': {
           const limit = (typeof msg.limit === 'number' ? (msg.limit as number) : 50) || 50;
           const cursor = (msg.cursor as string | undefined) || undefined;

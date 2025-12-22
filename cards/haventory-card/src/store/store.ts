@@ -48,6 +48,7 @@ export class Store {
   private inflight: Map<string, Promise<unknown>> = new Map();
   private itemsUnsub: Unsubscribe | null = null;
   private statsUnsub: Unsubscribe | null = null;
+  private locationsUnsub: Unsubscribe | null = null;
 
   constructor(hass: HassLike) {
     this.ws = new WSClient(hass);
@@ -60,7 +61,6 @@ export class Store {
         q: '',
         areaId: null,
         locationId: null,
-        includeSubtree: true,
         checkedOutOnly: false,
         lowStockFirst: false,
         sort: defaultSort,
@@ -98,11 +98,14 @@ export class Store {
     if (this.itemsUnsub) this.itemsUnsub();
     this.itemsUnsub = this.ws.subscribe('items', (evt: AnyEventPayload) => this.onItemsEvent(evt), {
       location_id: this.state.value.filters.locationId ?? undefined,
-      include_subtree: this.state.value.filters.includeSubtree,
+      include_subtree: true, // Always include sublocations
     });
     // Stats
     if (this.statsUnsub) this.statsUnsub();
     this.statsUnsub = this.ws.subscribe('stats', (evt: AnyEventPayload) => this.onStatsEvent(evt));
+    // Locations
+    if (this.locationsUnsub) this.locationsUnsub();
+    this.locationsUnsub = this.ws.subscribe('locations', (evt: AnyEventPayload) => this.onLocationsEvent(evt));
 
     this.stateObs.set({ connected: { items: true, stats: true } });
   }
@@ -133,6 +136,11 @@ export class Store {
   private onStatsEvent(evt: AnyEventPayload) {
     if (evt.topic !== 'stats' || evt.action !== 'counts') return;
     this.stateObs.set({ statsCounts: (evt as unknown as { counts: StatsCounts }).counts });
+  }
+
+  private onLocationsEvent(evt: AnyEventPayload) {
+    if (evt.topic !== 'locations') return;
+    void Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
   }
 
   // ---------- Data fetchers ----------
@@ -334,6 +342,18 @@ export class Store {
       this.pushError(err);
       if (before) this.applyOptimistic(before);
     }
+  }
+
+  async createLocation(name: string, parentId?: string | null, areaId?: string | null): Promise<Location> {
+    const created = await this.ws.createLocation(name, parentId ?? null, areaId ?? undefined);
+    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+    return created;
+  }
+
+  async updateLocation(locationId: string, changes: { name?: string; areaId?: string | null }): Promise<Location> {
+    const updated = await this.ws.updateLocation(locationId, changes);
+    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+    return updated;
   }
 
   // ---------- Errors ----------

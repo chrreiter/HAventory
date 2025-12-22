@@ -1,5 +1,6 @@
 import { LitElement, css, html } from 'lit';
 import type { HassLike } from './store/types';
+import type { HVLocationSelector } from './components/hv-location-selector';
 import { getDefaultOrderFor } from './store/sort';
 import { Store } from './store/store';
 import './components/hv-search-bar';
@@ -77,6 +78,7 @@ export class HAventoryCard extends LitElement {
   private expanded: boolean = false;
   private _prevFocusEl: HTMLElement | null = null;
   private _locationSelectorOpen = false;
+  private _locationSelectorCreateMode = false;
 
   // Lovelace interface: called by HA when the card is created/configured
   public setConfig(cfg: unknown): void {
@@ -232,17 +234,52 @@ export class HAventoryCard extends LitElement {
 
       <hv-location-selector
         .open=${this._locationSelectorOpen}
+        .createMode=${this._locationSelectorCreateMode}
         .locations=${this.store?.state.value.locationsFlatCache ?? null}
-        @cancel=${() => { this._locationSelectorOpen = false; this.requestUpdate(); }}
+        .areas=${st?.areasCache?.areas ?? []}
+        @cancel=${() => { this._locationSelectorOpen = false; this._locationSelectorCreateMode = false; this.requestUpdate(); }}
         @select=${(e: CustomEvent) => {
-          const { locationId, includeSubtree } = e.detail as { locationId: string | null; includeSubtree: boolean };
-          // Patch dialog's location and update filters includeSubtree preference (non-destructive for list)
+          const { locationId } = e.detail as { locationId: string | null };
+          // Patch dialog's location
           const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { setLocation: (id: string | null) => void } | null;
           if (dlg) dlg.setLocation(locationId);
           this._locationSelectorOpen = false;
-          // Also reflect includeSubtree in filters for later searches
-          this.store?.setFilters({ includeSubtree });
+          this._locationSelectorCreateMode = false;
           this.requestUpdate();
+        }}
+        @create-location=${async (e: CustomEvent) => {
+          const { name, parentId, areaId } = e.detail as { name: string; parentId: string | null; areaId: string | null };
+          const selector = this.shadowRoot?.querySelector('hv-location-selector') as HVLocationSelector | null;
+          try {
+            const created = await this.store?.createLocation(name, parentId, areaId);
+            if (selector && created) {
+              selector.setCreatedLocation(created.id);
+            }
+            const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { setLocation: (id: string | null) => void } | null;
+            if (dlg && created) {
+              dlg.setLocation(created.id);
+            }
+            this._locationSelectorOpen = false;
+            this._locationSelectorCreateMode = false;
+            this.requestUpdate();
+          } catch (err: unknown) {
+            const msg = (err as { message?: string })?.message ?? 'Failed to create location';
+            if (selector) selector.setCreateError(msg);
+          }
+        }}
+        @update-location=${async (e: CustomEvent) => {
+          const { locationId, name, areaId } = e.detail as { locationId: string; name: string; areaId: string | null };
+          const selector = this.shadowRoot?.querySelector('hv-location-selector') as HVLocationSelector | null;
+          try {
+            await this.store?.updateLocation(locationId, { name, areaId });
+            if (selector) {
+              selector.setEditSuccess();
+            }
+            this.requestUpdate();
+          } catch (err: unknown) {
+            const msg = (err as { message?: string })?.message ?? 'Failed to update location';
+            if (selector) selector.setEditError(msg);
+          }
         }}
       ></hv-location-selector>
 
@@ -358,6 +395,15 @@ export class HAventoryCard extends LitElement {
                 }
               }}
             >Add item</button>
+            <button
+              class="btn-add"
+              aria-label="Add location"
+              @click=${() => {
+                this._locationSelectorOpen = true;
+                this._locationSelectorCreateMode = true;
+                this.requestUpdate();
+              }}
+            >Add location</button>
             <button data-testid="expand-toggle" @click=${this._onOverlayCollapseClick} aria-label="Collapse">⤢ Collapse</button>
           </div>
         </div>
@@ -378,9 +424,6 @@ export class HAventoryCard extends LitElement {
                   ${(st?.locationsFlatCache ?? []).map((l) => html`<option value=${l.id} ?selected=${filters?.locationId === l.id}>${l.path?.display_path || l.name}</option>`)}
                 </select>
               </label>
-            </div>
-            <div class="row">
-              <label><input type="checkbox" .checked=${filters?.includeSubtree ?? true} @change=${(e: Event) => this.store?.setFilters({ includeSubtree: (e.target as HTMLInputElement).checked })} /> Include sublocations</label>
             </div>
             <div class="row">
               <label><input type="checkbox" .checked=${filters?.checkedOutOnly ?? false} @change=${(e: Event) => this.store?.setFilters({ checkedOutOnly: (e.target as HTMLInputElement).checked })} /> Checked-out only</label>
