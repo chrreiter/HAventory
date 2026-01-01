@@ -95,6 +95,8 @@ Remove-Item Env:\HA_ALLOW_AREA_MUTATIONS
 - [ ] Real-time via WebSocket; optimistic UI; virtualization for large lists
 - [ ] MVP: direct search; filters/sorts later; location tree selector; check-in/out actions
 - [ ] WebSocket subscriptions cleaned up via close callbacks to avoid leaked connections
+- [ ] Card auto-registered as Lovelace resource on integration setup
+- [ ] **Note:** After first installation, a browser refresh (F5 or Ctrl+Shift+R) is required for the card to appear in the Lovelace card picker. This is standard behavior for all custom cards.
 
 ### Notifications & Scheduling
 - [ ] Notifications via `notify.notify`; title-only by default
@@ -137,6 +139,7 @@ Remove-Item Env:\HA_ALLOW_AREA_MUTATIONS
   - Real-time sync via WebSocket subscriptions
 - **Test Coverage**: 46 tests passing, 88.83% statements, 71.63% functions
 - **Build**: Vite → `www/haventory/haventory-card.js`
+- **Auto-registration**: Card automatically registered as Lovelace resource on integration setup (browser refresh required after first install)
 
 ### 🚧 Phase 3: Polish & HACS (Planned)
 - HACS publication
