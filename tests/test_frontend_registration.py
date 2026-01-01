@@ -184,3 +184,35 @@ async def test_skips_when_lovelace_not_initialized(tmp_path, monkeypatch):
 
     # Assert: no error, function completed gracefully
     assert True
+
+
+@pytest.mark.asyncio
+async def test_skips_when_resources_is_none(tmp_path, monkeypatch):
+    """lovelace_data.resources is None => skips gracefully without AttributeError."""
+    # Mock lovelace BEFORE importing
+    mock_lovelace_key = "lovelace_data_key"
+    lovelace_module = types.SimpleNamespace(LOVELACE_DATA=mock_lovelace_key)
+    monkeypatch.setitem(sys.modules, "homeassistant.components.lovelace", lovelace_module)
+
+    if "custom_components.haventory" in sys.modules:
+        del sys.modules["custom_components.haventory"]
+    hav_init = importlib.import_module("custom_components.haventory")
+
+    # Arrange: create fake asset
+    asset_dir = tmp_path / "www" / "haventory"
+    asset_dir.mkdir(parents=True)
+    asset_file = asset_dir / "haventory-card.js"
+    asset_file.write_text("// test asset")
+
+    hass = HassStub(str(tmp_path))
+    hass.config = HassStub._Config(str(tmp_path))
+
+    # Mock Lovelace data with resources=None
+    lovelace_data = types.SimpleNamespace(resources=None)
+    hass.data[mock_lovelace_key] = lovelace_data
+
+    # Act - should not raise AttributeError
+    await hav_init._register_frontend_module(hass)
+
+    # Assert: no error, function completed gracefully
+    assert True

@@ -172,14 +172,13 @@ async def _register_frontend_module(hass: HomeAssistant) -> None:
         return
 
     lovelace_data = hass.data.get(LOVELACE_DATA)
-    if lovelace_data is None:
+    resources = getattr(lovelace_data, "resources", None) if lovelace_data else None
+    if resources is None:
         LOGGER.debug(
-            "Lovelace not initialized; skipping resource registration",
+            "Lovelace not initialized or resources unavailable; skipping registration",
             extra={"domain": DOMAIN, "op": "frontend_register"},
         )
         return
-
-    resources = lovelace_data.resources
 
     # Ensure resources are loaded before checking
     if hasattr(resources, "loaded") and not resources.loaded:
