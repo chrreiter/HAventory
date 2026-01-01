@@ -10,15 +10,15 @@ import logging
 import os
 from typing import Any
 
-try:
-    from homeassistant.components import frontend as hass_frontend
-except Exception:  # pragma: no cover - optional dependency
-    hass_frontend = None
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
+
+try:
+    from homeassistant.components.lovelace import LOVELACE_DATA
+except ImportError:  # pragma: no cover - older HA versions
+    LOVELACE_DATA = None  # type: ignore[misc, assignment]
 
 from . import services as services_mod
 from . import ws as ws_mod
@@ -143,17 +143,18 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _register_frontend_module(hass: HomeAssistant) -> None:
-    """Register the built HAventory card asset with the frontend if present."""
+    """Register the built HAventory card asset as a Lovelace resource if present."""
+    url = "/local/haventory/haventory-card.js"
 
-    if hass_frontend is None:
+    # Get filesystem path - handle missing config gracefully for tests
+    try:
+        fs_path = hass.config.path("www", "haventory", "haventory-card.js")
+    except AttributeError:
         LOGGER.debug(
-            "Frontend component not available; skipping module registration",
+            "hass.config not available; skipping frontend registration",
             extra={"domain": DOMAIN, "op": "frontend_register"},
         )
         return
-
-    url = "/local/haventory/haventory-card.js"
-    fs_path = hass.config.path("www", "haventory", "haventory-card.js")
 
     if not os.path.exists(fs_path):
         LOGGER.debug(
@@ -162,15 +163,56 @@ async def _register_frontend_module(hass: HomeAssistant) -> None:
         )
         return
 
-    try:
-        hass_frontend.add_extra_module_url(hass, url)
+    # Access the Lovelace resource collection
+    if LOVELACE_DATA is None:
         LOGGER.debug(
-            "Registered HAventory card asset",
+            "Lovelace component not available; skipping resource registration",
+            extra={"domain": DOMAIN, "op": "frontend_register"},
+        )
+        return
+
+    lovelace_data = hass.data.get(LOVELACE_DATA)
+    if lovelace_data is None:
+        LOGGER.debug(
+            "Lovelace not initialized; skipping resource registration",
+            extra={"domain": DOMAIN, "op": "frontend_register"},
+        )
+        return
+
+    resources = lovelace_data.resources
+
+    # Ensure resources are loaded before checking
+    if hasattr(resources, "loaded") and not resources.loaded:
+        await resources.async_load()
+        resources.loaded = True
+
+    # Check if resource already exists
+    existing = resources.async_items() or []
+    for item in existing:
+        if item.get("url") == url:
+            LOGGER.debug(
+                "HAventory card resource already registered",
+                extra={"domain": DOMAIN, "op": "frontend_register", "url": url},
+            )
+            return
+
+    # Create the resource (only works for storage mode, not YAML mode)
+    if not hasattr(resources, "async_create_item"):
+        LOGGER.debug(
+            "Lovelace in YAML mode; manual resource configuration required",
+            extra={"domain": DOMAIN, "op": "frontend_register", "url": url},
+        )
+        return
+
+    try:
+        await resources.async_create_item({"res_type": "module", "url": url})
+        LOGGER.info(
+            "Registered HAventory card as Lovelace resource",
             extra={"domain": DOMAIN, "op": "frontend_register", "url": url, "path": fs_path},
         )
     except Exception:  # pragma: no cover - defensive
         LOGGER.warning(
-            "Failed to register frontend asset",
+            "Failed to register frontend resource",
             extra={"domain": DOMAIN, "op": "frontend_register", "url": url, "path": fs_path},
             exc_info=True,
         )

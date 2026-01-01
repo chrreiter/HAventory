@@ -550,11 +550,24 @@ export function getStubConfig() {
 }
 
 // Auto-register with Lovelace card picker when loaded via /local
+interface CustomCardMeta {
+  type: string;
+  name: string;
+  description: string;
+  preview?: boolean;
+}
+
+declare global {
+  interface Window {
+    customCards?: CustomCardMeta[];
+  }
+}
+
 if (typeof window !== 'undefined') {
-  (window as any).customCards = (window as any).customCards || [];
-  const already = (window as any).customCards.some((c: any) => c?.type === 'haventory-card');
+  window.customCards = window.customCards || [];
+  const already = window.customCards.some((c) => c?.type === 'haventory-card');
   if (!already) {
-    (window as any).customCards.push({
+    window.customCards.push({
       type: 'haventory-card',
       name: 'HAventory',
       description: 'HAventory inventory card',
