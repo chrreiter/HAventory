@@ -7,12 +7,18 @@ the core data structures in hass.data.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
+
+try:
+    from homeassistant.components.lovelace import LOVELACE_DATA
+except ImportError:  # pragma: no cover - older HA versions
+    LOVELACE_DATA = None  # type: ignore[misc, assignment]
 
 from . import services as services_mod
 from . import ws as ws_mod
@@ -76,6 +82,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register WebSocket commands
     ws_mod.setup(hass)
 
+    # Auto-register frontend card asset if present
+    await _register_frontend_module(hass)
+
     return True
 
 
@@ -131,6 +140,81 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     bucket.pop("ws_handlers", None)
 
     return True
+
+
+async def _register_frontend_module(hass: HomeAssistant) -> None:
+    """Register the built HAventory card asset as a Lovelace resource if present."""
+    url = "/local/haventory/haventory-card.js"
+
+    # Get filesystem path - handle missing config gracefully for tests
+    try:
+        fs_path = hass.config.path("www", "haventory", "haventory-card.js")
+    except AttributeError:
+        LOGGER.debug(
+            "hass.config not available; skipping frontend registration",
+            extra={"domain": DOMAIN, "op": "frontend_register"},
+        )
+        return
+
+    if not os.path.exists(fs_path):
+        LOGGER.debug(
+            "Frontend asset not found; skipping registration",
+            extra={"domain": DOMAIN, "op": "frontend_register", "path": fs_path},
+        )
+        return
+
+    # Access the Lovelace resource collection
+    if LOVELACE_DATA is None:
+        LOGGER.debug(
+            "Lovelace component not available; skipping resource registration",
+            extra={"domain": DOMAIN, "op": "frontend_register"},
+        )
+        return
+
+    lovelace_data = hass.data.get(LOVELACE_DATA)
+    resources = getattr(lovelace_data, "resources", None) if lovelace_data else None
+    if resources is None:
+        LOGGER.debug(
+            "Lovelace not initialized or resources unavailable; skipping registration",
+            extra={"domain": DOMAIN, "op": "frontend_register"},
+        )
+        return
+
+    # Ensure resources are loaded before checking
+    if hasattr(resources, "loaded") and not resources.loaded:
+        await resources.async_load()
+        resources.loaded = True
+
+    # Check if resource already exists
+    existing = resources.async_items() or []
+    for item in existing:
+        if item.get("url") == url:
+            LOGGER.debug(
+                "HAventory card resource already registered",
+                extra={"domain": DOMAIN, "op": "frontend_register", "url": url},
+            )
+            return
+
+    # Create the resource (only works for storage mode, not YAML mode)
+    if not hasattr(resources, "async_create_item"):
+        LOGGER.debug(
+            "Lovelace in YAML mode; manual resource configuration required",
+            extra={"domain": DOMAIN, "op": "frontend_register", "url": url},
+        )
+        return
+
+    try:
+        await resources.async_create_item({"res_type": "module", "url": url})
+        LOGGER.info(
+            "Registered HAventory card as Lovelace resource",
+            extra={"domain": DOMAIN, "op": "frontend_register", "url": url, "path": fs_path},
+        )
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.warning(
+            "Failed to register frontend resource",
+            extra={"domain": DOMAIN, "op": "frontend_register", "url": url, "path": fs_path},
+            exc_info=True,
+        )
 
 
 def _validate_storage_payload(payload: dict[str, Any], *, schema_version: int) -> None:

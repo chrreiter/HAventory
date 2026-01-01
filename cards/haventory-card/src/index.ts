@@ -583,3 +583,38 @@ export class HAventoryCard extends LitElement {
 }
 
 customElements.define('haventory-card', HAventoryCard);
+
+// Lovelace card picker metadata
+export function getStubConfig() {
+  return {
+    type: 'custom:haventory-card',
+    title: 'HAventory',
+  };
+}
+
+// Auto-register with Lovelace card picker when loaded via /local
+interface CustomCardMeta {
+  type: string;
+  name: string;
+  description: string;
+  preview?: boolean;
+}
+
+declare global {
+  interface Window {
+    customCards?: CustomCardMeta[];
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.customCards = window.customCards || [];
+  const already = window.customCards.some((c) => c?.type === 'haventory-card');
+  if (!already) {
+    window.customCards.push({
+      type: 'haventory-card',
+      name: 'HAventory',
+      description: 'HAventory inventory card',
+      preview: true,
+    });
+  }
+}
