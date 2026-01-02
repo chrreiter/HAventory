@@ -218,6 +218,9 @@ cython_debug/
 .cursorindexingignore
 .cursorrules
 
+# Google Antigravity
+.agent
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
