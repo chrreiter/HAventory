@@ -1273,7 +1273,6 @@ class Repository:
         self._created_at_bucket = {}
         self._updated_at_bucket = {}
         self._name_sort_key_by_item_id = {}
-        self._name_sort_key_by_item_id = {}
         self._children_ids_by_parent_id = {}
         self._location_descendants = {}
         self._items_in_subtree = {}
