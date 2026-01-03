@@ -36,6 +36,7 @@ from .models import (
     create_item_from_create,
     filter_items,
     new_uuid4,
+    normalize_tags,
     normalize_text_for_sort,
     parse_uuid4,
     sort_items,
@@ -97,6 +98,10 @@ class Repository:
         # Generation counter for optimistic locking and debugging
         self._generation: int = 0
 
+        # Location Hierarchy Indexes (O(1) subtree lookup)
+        self._location_descendants: dict[str, set[str]] = {}  # loc_id -> all descendant ids
+        self._items_in_subtree: dict[str, set[str]] = {}  # loc_id -> all item ids in subtree
+
     # -----------------------------
     # Internal helpers — indexing
     # -----------------------------
@@ -157,6 +162,9 @@ class Repository:
         # cached sort key for name
         self._name_sort_key_by_item_id[item_key] = normalize_text_for_sort(item.name)
 
+        # Update subtree index
+        self._add_item_to_subtree_index(item)
+
         # Increment generation on state modification
         self._increment_generation()
 
@@ -182,6 +190,9 @@ class Repository:
         self._remove_from_bucket(self._updated_at_bucket, item.updated_at, item_key)
 
         self._name_sort_key_by_item_id.pop(item_key, None)
+
+        # Remove from subtree index
+        self._remove_item_from_subtree_index(item)
 
         # Finally, drop from primary store
         self._items_by_id.pop(item_key, None)
@@ -436,6 +447,77 @@ class Repository:
                     queue.append(child_id)
         return result
 
+    def _get_ancestors(self, location_id: str) -> list[str]:
+        """Return list of ancestor location IDs from parent up to root."""
+        ancestors: list[str] = []
+        cursor: str | None = location_id
+        while cursor:
+            loc = self._locations_by_id.get(cursor)
+            if not loc or not loc.parent_id:
+                break
+            parent_key = str(loc.parent_id)
+            ancestors.append(parent_key)
+            cursor = parent_key
+        return ancestors
+
+    def _rebuild_location_hierarchy_indexes(self) -> None:
+        """Rebuild location-based hierarchy indexes from scratch."""
+        self._location_descendants.clear()
+        self._items_in_subtree.clear()
+
+        # Build descendants map
+        for loc_id in self._locations_by_id:
+            descendants = self._collect_descendant_ids(loc_id)
+            if descendants:
+                self._location_descendants[loc_id] = descendants
+
+        # Build items in subtree map
+        # For each location, gather items from itself and all descendants
+        for loc_id in self._locations_by_id:
+            subtree_ids = {loc_id}
+            if loc_id in self._location_descendants:
+                subtree_ids.update(self._location_descendants[loc_id])
+
+            # Aggregate items
+            all_items: set[str] = set()
+            for sub_id in subtree_ids:
+                s = self._items_by_location_id.get(sub_id)
+                if s:
+                    all_items.update(s)
+
+            if all_items:
+                self._items_in_subtree[loc_id] = all_items
+
+    def _add_item_to_subtree_index(self, item: Item) -> None:
+        if not item.location_id:
+            return
+
+        item_key = str(item.id)
+        loc_key = str(item.location_id)
+
+        # Add to direct location
+        self._add_to_bucket(self._items_in_subtree, loc_key, item_key)
+
+        # Add to all ancestors
+        for anc in self._get_ancestors(loc_key):
+            self._add_to_bucket(self._items_in_subtree, anc, item_key)
+
+    def _remove_item_from_subtree_index(self, item: Item) -> None:
+        if not item.location_id:
+            return
+
+        item_key = str(item.id)
+        loc_key = str(item.location_id)
+
+        # Remove from direct location
+        self._remove_from_bucket(self._items_in_subtree, loc_key, item_key)
+
+        # Remove from all ancestors
+        # Optimization: if we moved the item, we called unindex then index.
+        # This naive removal walks up.
+        for anc in self._get_ancestors(loc_key):
+            self._remove_from_bucket(self._items_in_subtree, anc, item_key)
+
     def _rebuild_paths_for_subtree(
         self,
         root_id: str,
@@ -615,6 +697,117 @@ class Repository:
     # Public API — Item querying
     # -----------------------------
 
+    # -----------------------------
+    # Internal helpers — query optimization
+    # -----------------------------
+
+    def _get_filtered_candidates(self, flt: ItemFilter | None) -> list[Item] | None:  # noqa: PLR0911, PLR0912, PLR0915
+        """Return a reduced list of items using indexes, or None if full scan needed.
+
+        Attempt to find the smallest set of candidate items by intersecting
+        available indexes (category, tags, location, etc.).
+        Returns None if no selective index applies.
+        Returns empty list if indexes prove no items match.
+        """
+        if not flt:
+            return None
+
+        candidate_sets: list[set[str]] = []
+        has_indexed_filter = False
+
+        # 1. Area Index
+        if flt.get("area_id"):
+            has_indexed_filter = True
+            area_key = str(flt["area_id"]).strip()
+            if area_key:
+                s = self._items_by_area_id.get(area_key, set())
+                if not s:
+                    return []
+                candidate_sets.append(s)
+
+        # 2. Location Index
+        if flt.get("location_id"):
+            has_indexed_filter = True
+            loc_key = str(flt["location_id"]).strip()
+            if loc_key:
+                if flt.get("include_subtree"):
+                    s = self._items_in_subtree.get(loc_key, set())
+                    if not s:
+                        return []
+                    candidate_sets.append(s)
+                else:
+                    s = self._items_by_location_id.get(loc_key, set())
+                    if not s:
+                        return []
+                    candidate_sets.append(s)
+
+        # 3. Category Index
+        cat = (flt.get("category") or "").strip().casefold()
+        if cat:
+            has_indexed_filter = True
+            s = self._category_to_item_ids.get(cat, set())
+            if not s:
+                return []
+            candidate_sets.append(s)
+
+        # 4. Tags Index (Any)
+        # Note: tags_all is harder to optimize purely with single-tag indexes without
+        # loading item data or doing complex N-way intersection. For now, we only
+        # optimize tags_any which is a union of indexes.
+        if flt.get("tags_any"):
+            tags = normalize_tags(flt["tags_any"])
+            if tags:
+                has_indexed_filter = True
+                tag_items: set[str] = set()
+                for tag in tags:
+                    tag_items.update(self._tags_to_item_ids.get(tag, set()))
+                if not tag_items:
+                    # User asked for tags matching X or Y, but neither exist in index
+                    return []
+                candidate_sets.append(tag_items)
+
+        # 5. Checked Out Index (only useful for True)
+        if flt.get("checked_out") is True:
+            has_indexed_filter = True
+            s = self._checked_out_item_ids
+            if not s:
+                return []
+            candidate_sets.append(s)
+
+        # 6. Low Stock Index (only useful for True)
+        if flt.get("low_stock_only"):
+            has_indexed_filter = True
+            s = self._low_stock_item_ids
+            if not s:
+                return []
+            candidate_sets.append(s)
+
+        if not has_indexed_filter:
+            return None
+
+        # If we have indexed filters but candidate_sets is empty, it means we had
+        # filters like tags_any=[] or category="" which don't restrict candidates
+        # (logic above ensures empty strings don't trigger has_indexed_filter).
+        # However, if we simply have 'checked_out=True' and it's empty, we returned [].
+
+        # If we are here, we have at least one set in candidate_sets.
+        if not candidate_sets:
+            # Fallback (should be covered by has_indexed_filter logic)
+            return None
+
+        # Sort by size to intersect smallest sets first (optimization)
+        candidate_sets.sort(key=len)
+
+        result_ids = candidate_sets[0]
+        for other in candidate_sets[1:]:
+            result_ids = result_ids.intersection(other)
+            if not result_ids:
+                return []
+
+        # Convert back to item objects
+        # Filter out any IDs that might have been deleted (defensive against stale indexes)
+        return [self._items_by_id[i] for i in result_ids if i in self._items_by_id]
+
     def list_items(
         self,
         *,
@@ -623,14 +816,15 @@ class Repository:
         limit: int | None = None,
         cursor: str | None = None,
     ) -> PageResult:
-        # Pre-filter by area when requested to reduce search space
+        # Use index-first filtering if possible
+        candidates = self._get_filtered_candidates(flt)
+
         source: Iterable[Item]
-        if flt and flt.get("area_id"):
-            area_key = flt.get("area_id")  # type: ignore[assignment]
-            item_ids = list(self._items_by_area_id.get(str(area_key), set()))
-            source = (self._items_by_id[i] for i in item_ids if i in self._items_by_id)
+        if candidates is not None:
+            source = candidates
         else:
             source = self._items_by_id.values()
+
         filtered = filter_items(source, flt)
         sorted_items = sort_items(filtered, sort)
         # Optional preference: group low-stock items first without filtering, while
@@ -740,6 +934,7 @@ class Repository:
             extra={"domain": "haventory", "op": "create_location", "location_id": new_id},
         )
         # Return the potentially updated location (if area was propagated)
+        self._rebuild_location_hierarchy_indexes()
         return self._locations_by_id[new_key]
 
     def get_location(self, location_id: str | uuid.UUID) -> Location:
@@ -833,6 +1028,7 @@ class Repository:
                 "moved": bool(parent_changed),
             },
         )
+        self._rebuild_location_hierarchy_indexes()
         return self._locations_by_id[key]
 
     def _rebucket_items_for_subtree_area_change(self, root_key: str) -> None:
@@ -874,6 +1070,7 @@ class Repository:
             "Location deleted",
             extra={"domain": "haventory", "op": "delete_location", "location_id": key},
         )
+        self._rebuild_location_hierarchy_indexes()
 
     # -----------------------------
     # Cursor-based pagination helpers
@@ -1077,6 +1274,8 @@ class Repository:
         self._updated_at_bucket = {}
         self._name_sort_key_by_item_id = {}
         self._children_ids_by_parent_id = {}
+        self._location_descendants = {}
+        self._items_in_subtree = {}
 
         if not isinstance(data, dict):
             return
@@ -1190,6 +1389,9 @@ class Repository:
 
         # Increment generation after load to mark as modified since load
         self._increment_generation()
+
+        # Rebuild location hierarchy indexes ensuring consistency
+        self._rebuild_location_hierarchy_indexes()
 
     @staticmethod
     def from_state(data: dict[str, Any]) -> Repository:
