@@ -701,7 +701,7 @@ class Repository:
     # Internal helpers — query optimization
     # -----------------------------
 
-    def _get_filtered_candidates(self, flt: ItemFilter | None) -> list[Item] | None:  # noqa: PLR0911, PLR0912
+    def _get_filtered_candidates(self, flt: ItemFilter | None) -> list[Item] | None:  # noqa: PLR0911, PLR0912, PLR0915
         """Return a reduced list of items using indexes, or None if full scan needed.
 
         Attempt to find the smallest set of candidate items by intersecting
@@ -1399,6 +1399,4 @@ class Repository:
 
         repo = Repository()
         repo.load_state(data)
-        # Rebuild hierarchy indexes after full load (efficient batch operation)
-        repo._rebuild_location_hierarchy_indexes()
         return repo
