@@ -1,4 +1,4 @@
-﻿name: ci
+name: ci
 
 on:
   push:
@@ -46,7 +46,7 @@ jobs:
           $rate = [math]::Round(100 * [double]$c.coverage.'line-rate', 2)
           "Backend coverage: $rate%" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
       - name: Upload backend artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: backend-artifacts
           path: |
@@ -78,7 +78,7 @@ jobs:
         run: |
           node -e 'const fs=require("fs"); const s=require("./coverage/coverage-summary.json"); fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, "Frontend coverage: " + s.total.lines.pct + "%\n");'
       - name: Upload frontend artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: frontend-artifacts
           path: |
