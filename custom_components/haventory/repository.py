@@ -1210,6 +1210,7 @@ class Repository:
                 "quantity": int(item.quantity),
                 "checked_out": bool(item.checked_out),
                 "due_date": item.due_date,
+                "inspection_date": item.inspection_date,
                 "location_id": str(item.location_id) if item.location_id is not None else None,
                 "tags": list(item.tags),
                 "category": item.category,
@@ -1354,6 +1355,7 @@ class Repository:
                         quantity=int(item_data.get("quantity", 0)),
                         checked_out=bool(item_data.get("checked_out", False)),
                         due_date=item_data.get("due_date"),
+                        inspection_date=item_data.get("inspection_date"),
                         location_id=(
                             parse_uuid4(
                                 str(item_data.get("location_id")), field_name="item.location_id"
