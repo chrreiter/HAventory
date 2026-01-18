@@ -571,18 +571,41 @@ def _parse_iso8601_utc(ts: str, *, field_name: str) -> datetime:
 
 
 def _item_matches_q(item: Item, q: str) -> bool:
+    """Match query string against item fields using multi-word AND logic."""
     if not q:
         return True
-    needle = q.casefold()
-    if needle in (item.name or "").casefold():
+
+    # Normalize query: split into words
+    query_words = q.casefold().split()
+    if not query_words:
         return True
-    if needle in (item.description or "").casefold():
-        return True
-    if any(needle in tag for tag in item.tags):
-        return True
-    if needle in (item.location_path.display_path or "").casefold():
-        return True
-    return False
+
+    # Gather searchable text from item
+    # Join them into a single blob or check individually?
+    # Checking individually is safer to avoid accidental cross-field matches?
+    # But usually full-text search treats the doc as one bag of words.
+
+    # Let's verify if each word exists in ANY of the fields.
+    # Note: this is slightly different from "bag of words" which joins them.
+    # But it's robust enough for "Red" in name, "Large" in desc.
+
+    # Optimization: construct a single searchable string for the item
+    # doing this per-item is O(field_len).
+    searchable_text = " ".join(
+        [
+            item.name or "",
+            item.description or "",
+            item.category or "",
+            item.location_path.display_path or "",
+            " ".join(item.tags),
+        ]
+    ).casefold()
+
+    for word in query_words:
+        if word not in searchable_text:
+            return False
+
+    return True
 
 
 def _low_stock(item: Item) -> bool:
