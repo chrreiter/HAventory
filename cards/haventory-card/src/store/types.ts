@@ -28,6 +28,7 @@ export interface Item {
   quantity: number;
   checked_out: boolean;
   due_date: string | null;
+  inspection_date: string | null;
   location_id: string | null;
   tags: string[];
   category: string | null;
@@ -46,6 +47,7 @@ export interface ItemCreate {
   quantity?: number;
   checked_out?: boolean;
   due_date?: string | null;
+  inspection_date?: string | null;
   location_id?: string | null;
   tags?: string[];
   category?: string | null;
@@ -59,6 +61,7 @@ export interface ItemUpdate {
   quantity?: number;
   checked_out?: boolean;
   due_date?: string | null;
+  inspection_date?: string | null;
   location_id?: string | null;
   tags?: string[] | null;
   category?: string | null;
@@ -118,13 +121,13 @@ export interface ItemsEventPayload extends BaseEventPayload {
   topic: 'items';
   item: Item;
   action:
-    | 'created'
-    | 'updated'
-    | 'moved'
-    | 'deleted'
-    | 'checked_out'
-    | 'checked_in'
-    | 'quantity_changed';
+  | 'created'
+  | 'updated'
+  | 'moved'
+  | 'deleted'
+  | 'checked_out'
+  | 'checked_in'
+  | 'quantity_changed';
 }
 
 export interface LocationsEventPayload extends BaseEventPayload {

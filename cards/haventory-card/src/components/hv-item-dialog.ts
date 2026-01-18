@@ -177,6 +177,7 @@ export class HVItemDialog extends LitElement {
   @state() private _location: string | null = null;
   @state() private _checkedOut: boolean = false;
   @state() private _dueDate: string = '';
+  @state() private _inspectionDate: string = '';
   @state() private _validation: string | null = null;
   @state() private _zBase: number | null = null;
 
@@ -192,6 +193,7 @@ export class HVItemDialog extends LitElement {
       this._location = it?.location_id ?? null;
       this._checkedOut = !!it?.checked_out;
       this._dueDate = it?.due_date ?? '';
+      this._inspectionDate = it?.inspection_date ?? '';
       this._validation = null;
     }
     if (changed.has('open') && this.open) {
@@ -228,7 +230,9 @@ export class HVItemDialog extends LitElement {
         tags: this._tags.split(',').map((t) => t.trim()).filter(Boolean),
         location_id: this._location,
         checked_out: this._checkedOut,
+
         due_date: this._checkedOut ? (this._dueDate || null) : null,
+        inspection_date: this._inspectionDate || null,
       },
       bubbles: true, composed: true,
     }));
@@ -321,9 +325,9 @@ export class HVItemDialog extends LitElement {
                   pattern="[0-9]*"
                   .value=${this._lowStock ?? ''}
                   @input=${(e: Event) => {
-                    const raw = (e.target as HTMLInputElement).value;
-                    this._lowStock = raw === '' ? null : Math.max(0, Number(raw));
-                  }}
+        const raw = (e.target as HTMLInputElement).value;
+        this._lowStock = raw === '' ? null : Math.max(0, Number(raw));
+      }}
                   aria-label="Low-stock threshold"
                 />
                 <button type="button" class="pill" @click=${() => this.adjustLowStock(1)} aria-label="Increase low-stock threshold">+</button>
@@ -368,6 +372,14 @@ export class HVItemDialog extends LitElement {
                 .value=${this._dueDate}
                 ?disabled=${!this._checkedOut}
                 @input=${(e: Event) => this._dueDate = (e.target as HTMLInputElement).value}
+              />
+            </label>
+            <label class="due-label">
+              Inspection date
+              <input
+                type="date"
+                .value=${this._inspectionDate}
+                @input=${(e: Event) => this._inspectionDate = (e.target as HTMLInputElement).value}
               />
             </label>
           </div>

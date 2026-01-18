@@ -70,6 +70,7 @@ class Item:
     quantity: int = 1
     checked_out: bool = False
     due_date: str | None = None  # YYYY-MM-DD
+    inspection_date: str | None = None  # YYYY-MM-DD
     location_id: uuid.UUID | None = None
     tags: list[str] = field(default_factory=list)
     category: str | None = None
@@ -89,6 +90,7 @@ class ItemCreate(TypedDict, total=False):
     quantity: int
     checked_out: bool
     due_date: str | None
+    inspection_date: str | None
     location_id: str | None
     tags: list[str]
     category: str | None
@@ -104,6 +106,7 @@ class ItemUpdate(TypedDict, total=False):
     quantity: int
     checked_out: bool
     due_date: str | None
+    inspection_date: str | None
     location_id: str | None
     tags: list[str] | None
     category: str | None
@@ -280,6 +283,13 @@ def validate_due_date_rules(*, checked_out: bool, due_date: str | None) -> str |
     return normalize_date_yyyy_mm_dd(due_date)
 
 
+def validate_inspection_date(inspection_date: str | None) -> str | None:
+    """Validate inspection_date format (YYYY-MM-DD) if provided."""
+    if inspection_date is None:
+        return None
+    return normalize_date_yyyy_mm_dd(inspection_date)
+
+
 def build_location_path(location_chain: list[Location]) -> LocationPath:
     """Build a denormalized LocationPath from a chain ordered root->leaf."""
 
@@ -368,6 +378,7 @@ def create_item_from_create(
     quantity = int(payload.get("quantity", 1))  # type: ignore[arg-type]
     checked_out = bool(payload.get("checked_out", False))
     due_date = payload.get("due_date")
+    inspection_date = payload.get("inspection_date")
     location_id_raw = payload.get("location_id")
     tags = normalize_tags(payload.get("tags"))
     category = payload.get("category")
@@ -377,6 +388,7 @@ def create_item_from_create(
     _validate_item_core_fields(name, quantity, low_stock_threshold)
     validate_custom_fields(custom_fields)
     normalized_due_date = validate_due_date_rules(checked_out=checked_out, due_date=due_date)
+    normalized_inspection_date = validate_inspection_date(inspection_date)
 
     location_id: uuid.UUID | None = None
     if location_id_raw is not None:
@@ -398,6 +410,7 @@ def create_item_from_create(
         quantity=quantity,
         checked_out=checked_out,
         due_date=normalized_due_date,
+        inspection_date=normalized_inspection_date,
         location_id=location_id,
         tags=tags,
         category=category,
@@ -442,6 +455,11 @@ def _update_checkout_and_due_date(new_item: Item, update: ItemUpdate) -> None:
         due_date_val = update["due_date"]
     new_item.checked_out = checked_out
     new_item.due_date = validate_due_date_rules(checked_out=checked_out, due_date=due_date_val)
+
+
+def _update_inspection_date(new_item: Item, update: ItemUpdate) -> None:
+    if "inspection_date" in update:
+        new_item.inspection_date = validate_inspection_date(update["inspection_date"])
 
 
 def _update_location_and_path(
@@ -503,6 +521,7 @@ def apply_item_update(
     _update_name_and_description(new_item, update)
     _update_quantity(new_item, update)
     _update_checkout_and_due_date(new_item, update)
+    _update_inspection_date(new_item, update)
     _update_location_and_path(new_item, update, locations_by_id)
     _update_tags_category_threshold(new_item, update)
     _update_custom_fields(new_item, update)

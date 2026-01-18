@@ -63,3 +63,8 @@ def migrate_1_to_2(payload: dict[str, Any]) -> dict[str, Any]:
     data.setdefault("items", {})
     data.setdefault("locations", {})
     return data
+
+
+def migrate_2_to_3(payload: dict[str, Any]) -> dict[str, Any]:
+    """No-op migration to v3 (inspection_date is optional)."""
+    return deepcopy(payload) if isinstance(payload, dict) else {}
