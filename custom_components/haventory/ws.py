@@ -1372,6 +1372,7 @@ def _serialize_item(hass: HomeAssistant, item) -> dict[str, Any]:
         "quantity": item.quantity,
         "checked_out": item.checked_out,
         "due_date": item.due_date,
+        "inspection_date": item.inspection_date,
         "location_id": str(item.location_id) if item.location_id is not None else None,
         "tags": list(item.tags),
         "category": item.category,
