@@ -164,3 +164,30 @@ async def test_rejects_name_empty_after_trim_on_create_and_update() -> None:
     item = create_item_from_create({"name": "Valid"})
     with pytest.raises(ValidationError):
         apply_item_update(item, ItemUpdate(name="    "))
+
+
+@pytest.mark.asyncio
+async def test_inspection_date_accepted_without_checked_out() -> None:
+    # inspection_date can be set without checked_out=True (unlike due_date)
+    item = create_item_from_create({"name": "Battery", "inspection_date": "2024-12-31"})
+    assert item.inspection_date == "2024-12-31"
+    assert item.checked_out is False
+
+    # Update inspection_date on non-checked-out item
+    updated = apply_item_update(item, ItemUpdate(inspection_date="2025-01-15"))
+    assert updated.inspection_date == "2025-01-15"
+    assert updated.checked_out is False
+
+
+@pytest.mark.asyncio
+async def test_invalid_inspection_date_format_raises_validation_error() -> None:
+    # Invalid inspection_date format → ValidationError
+    with pytest.raises(ValidationError):
+        create_item_from_create({"name": "Equipment", "inspection_date": "12/31/2024"})
+
+    with pytest.raises(ValidationError):
+        create_item_from_create({"name": "Equipment", "inspection_date": "2024-13-01"})
+
+    item = create_item_from_create({"name": "Equipment"})
+    with pytest.raises(ValidationError):
+        apply_item_update(item, ItemUpdate(inspection_date="invalid-date"))

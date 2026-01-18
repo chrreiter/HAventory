@@ -196,3 +196,38 @@ async def test_ws_mutations_persist_to_store(monkeypatch) -> None:
         hass, 4, "haventory/item/update", item_id=item_id, expected_version=999, name="X"
     )
     assert stale["success"] is False and stale["error"]["code"] == "conflict"
+
+
+@pytest.mark.asyncio
+async def test_inspection_date_in_create_update_get() -> None:
+    """inspection_date field is handled correctly in WS create/update/get operations."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    # Create item with inspection_date
+    res = await _send(
+        hass, 1, "haventory/item/create", name="Calibration Tool", inspection_date="2024-03-15"
+    )
+    assert res["success"] is True
+    assert res["result"]["inspection_date"] == "2024-03-15"
+    item_id = res["result"]["id"]
+
+    # Get item and verify inspection_date is returned
+    res = await _send(hass, 2, "haventory/item/get", item_id=item_id)
+    assert res["success"] is True
+    assert res["result"]["inspection_date"] == "2024-03-15"
+
+    # Update inspection_date
+    res = await _send(
+        hass, 3, "haventory/item/update", item_id=item_id, inspection_date="2024-09-30"
+    )
+    assert res["success"] is True
+    assert res["result"]["inspection_date"] == "2024-09-30"
+
+    # Clear inspection_date
+    res = await _send(hass, 4, "haventory/item/update", item_id=item_id, inspection_date=None)
+    assert res["success"] is True
+    assert res["result"]["inspection_date"] is None

@@ -306,3 +306,35 @@ async def test_generation_load_state_without_generation() -> None:
 
     # Should initialize to 0, then increment for load
     assert repo.generation == 1
+
+
+@pytest.mark.asyncio
+async def test_inspection_date_persists_across_create_update_get() -> None:
+    """inspection_date field persists correctly through CRUD operations."""
+    repo = Repository()
+
+    # Create item with inspection_date
+    item = repo.create_item(ItemCreate(name="Fire Extinguisher", inspection_date="2024-06-15"))
+    assert item.inspection_date == "2024-06-15"
+
+    # Get item and verify inspection_date
+    fetched = repo.get_item(item.id)
+    assert fetched.inspection_date == "2024-06-15"
+
+    # Update inspection_date
+    updated = repo.update_item(item.id, ItemUpdate(inspection_date="2024-12-31"))
+    assert updated.inspection_date == "2024-12-31"
+
+    # Get again to verify persistence
+    fetched_again = repo.get_item(item.id)
+    assert fetched_again.inspection_date == "2024-12-31"
+
+    # Clear inspection_date
+    cleared = repo.update_item(item.id, ItemUpdate(inspection_date=None))
+    assert cleared.inspection_date is None
+
+    # Export and reload state to verify serialization
+    state = repo.export_state()
+    new_repo = Repository.from_state(state)
+    reloaded = new_repo.get_item(item.id)
+    assert reloaded.inspection_date is None
