@@ -1401,8 +1401,8 @@ class Repository:
             "items_by_location_id": self._items_by_location_id,
             "locations_by_area_id": self._locations_by_area_id,
             "items_by_area_id": self._items_by_area_id,
-            "created_at_bucket": self._created_at_bucket,
-            "updated_at_bucket": self._updated_at_bucket,
+            "items_by_created_at": self._items_by_created_at,
+            "items_by_updated_at": self._items_by_updated_at,
         }
 
     # -----------------------------
