@@ -14,6 +14,8 @@ import base64
 import binascii
 import json
 import logging
+import re
+import unicodedata
 import uuid
 from collections import deque
 from collections.abc import Iterable
@@ -55,6 +57,8 @@ class PageResult(TypedDict):
 UNSET: object = object()
 
 # Lint-friendly constants — removed duplicates; shared constants live in models
+TRIGRAM_MIN_LEN = 3
+PREFIX_MIN_LEN = 2
 
 
 class Repository:
@@ -90,6 +94,11 @@ class Repository:
         self._updated_at_bucket: dict[str, set[str]] = {}
         # Cached name sort keys
         self._name_sort_key_by_item_id: dict[str, str] = {}
+
+        # Text Indices
+        self._word_to_item_ids: dict[str, set[str]] = {}
+        self._name_prefix_to_item_ids: dict[str, set[str]] = {}
+        self._trigram_to_item_ids: dict[str, set[str]] = {}
 
         # Location tree indexes
         self._children_ids_by_parent_id: dict[str | None, set[str]] = {}
@@ -165,6 +174,9 @@ class Repository:
         # Update subtree index
         self._add_item_to_subtree_index(item)
 
+        # Update text search index
+        self._index_item_text(item)
+
         # Increment generation on state modification
         self._increment_generation()
 
@@ -193,6 +205,9 @@ class Repository:
 
         # Remove from subtree index
         self._remove_item_from_subtree_index(item)
+
+        # Remove from text search index
+        self._clear_item_text_index(item)
 
         # Finally, drop from primary store
         self._items_by_id.pop(item_key, None)
@@ -241,6 +256,178 @@ class Repository:
         if thr is None:
             return False
         return item.quantity <= int(thr)
+
+    def _normalize_for_search(self, text: str) -> str:
+        """Normalize text for search indexing (lowercase, strip accents).
+
+        Uses NFKD normalization to separate accents from characters, then keeps only ASCII.
+        """
+        if not text:
+            return ""
+        nfkd = unicodedata.normalize("NFKD", text)
+        ascii_text = nfkd.encode("ascii", "ignore").decode("ascii")
+        return ascii_text.casefold().strip()
+
+    def _extract_trigrams(self, text: str) -> set[str]:
+        """Extract 3-character trigrams from normalized text."""
+        if len(text) < TRIGRAM_MIN_LEN:
+            return set()
+        return {text[i : i + TRIGRAM_MIN_LEN] for i in range(len(text) - (TRIGRAM_MIN_LEN - 1))}
+
+    def _index_item_text(self, item: Item) -> None:
+        """Build text indexes for an item."""
+        item_key = str(item.id)
+
+        # Gather searchable text
+        texts = [
+            item.name,
+            item.description or "",
+            item.category or "",
+            item.location_path.display_path,
+        ]
+        texts.extend(item.tags)
+
+        # Separate name for prefix indexing (now per-word)
+        norm_name = self._normalize_for_search(item.name)
+        if norm_name:
+            name_words = [w for w in re.split(r"[^a-z0-9]", norm_name) if w]
+            for w in name_words:
+                # Index prefixes of each word in the name
+                for i in range(PREFIX_MIN_LEN, len(w) + 1):
+                    prefix = w[:i]
+                    self._add_to_bucket(self._name_prefix_to_item_ids, prefix, item_key)
+
+        # Index words and trigrams for all fields
+        seen_words: set[str] = set()
+        seen_trigrams: set[str] = set()
+
+        for text in texts:
+            norm = self._normalize_for_search(text)
+            if not norm:
+                continue
+
+            # Words (split by non-alphanumeric)
+            words = [w for w in re.split(r"[^a-z0-9]", norm) if w]
+            for w in words:
+                if w not in seen_words:
+                    self._add_to_bucket(self._word_to_item_ids, w, item_key)
+                    seen_words.add(w)
+
+            # Trigrams (on the whole normalized string usually, or per word?
+            # Per word is safer for boundary conditions)
+            for w in words:
+                trigrams = self._extract_trigrams(w)
+                for t in trigrams:
+                    if t not in seen_trigrams:
+                        self._add_to_bucket(self._trigram_to_item_ids, t, item_key)
+                        seen_trigrams.add(t)
+
+    def _clear_item_text_index(self, item: Item) -> None:
+        """Remove item from text bucket indexes."""
+        item_key = str(item.id)
+
+        # We must re-derive the keys to remove them. Alternatively, if buckets are small,
+        # we might just do nothing and filter false positives, BUT memory usage would grow.
+        # "Correct" way without storing "what did I index" on the item is to re-compute.
+        # This matches the strategy used for other bucket indexes.
+
+        texts = [
+            item.name,
+            item.description or "",
+            item.category or "",
+            item.location_path.display_path,
+        ]
+        texts.extend(item.tags)
+
+        norm_name = self._normalize_for_search(item.name)
+        if norm_name:
+            name_words = [w for w in re.split(r"[^a-z0-9]", norm_name) if w]
+            for w in name_words:
+                for i in range(PREFIX_MIN_LEN, len(w) + 1):
+                    self._remove_from_bucket(self._name_prefix_to_item_ids, w[:i], item_key)
+
+        seen_words: set[str] = set()
+        seen_trigrams: set[str] = set()
+
+        for text in texts:
+            norm = self._normalize_for_search(text)
+            if not norm:
+                continue
+            words = [w for w in re.split(r"[^a-z0-9]", norm) if w]
+            for w in words:
+                if w not in seen_words:
+                    self._remove_from_bucket(self._word_to_item_ids, w, item_key)
+                    seen_words.add(w)
+
+                trigrams = self._extract_trigrams(w)
+                for t in trigrams:
+                    if t not in seen_trigrams:
+                        self._remove_from_bucket(self._trigram_to_item_ids, t, item_key)
+                        seen_trigrams.add(t)
+
+    def _get_candidates_for_word(self, word: str) -> set[str]:
+        """Get candidate item IDs for a single search word using strict OR logic."""
+        word_candidates = self._word_to_item_ids.get(word)
+        prefix_candidates = self._name_prefix_to_item_ids.get(word)
+
+        matches = set()
+        if word_candidates:
+            matches.update(word_candidates)
+        if prefix_candidates:
+            matches.update(prefix_candidates)
+
+        if not matches and len(word) >= TRIGRAM_MIN_LEN:
+            trigrams = self._extract_trigrams(word)
+            if trigrams:
+                trigram_candidates: list[set[str]] = []
+                for t in trigrams:
+                    ts = self._trigram_to_item_ids.get(t)
+                    if ts:
+                        trigram_candidates.append(ts)
+
+                if trigram_candidates:
+                    fuzzy_matches = set(trigram_candidates[0])
+                    for other in trigram_candidates[1:]:
+                        fuzzy_matches.intersection_update(other)
+                    matches.update(fuzzy_matches)
+
+        return matches
+
+    def _search_by_text(self, query: str) -> set[str]:
+        """Return item IDs matching the query using indexes.
+
+        Strategies:
+        1. Exact word matches (intersection of all query words).
+        2. Prefix match (if query is a single word and matches a name prefix).
+        3. Fuzzy match (trigrams) if no exact matches found logic could be added here,
+           but for now implementing explicit exact/prefix logic.
+        """
+        norm_query = self._normalize_for_search(query)
+        if not norm_query:
+            return set()
+
+        # Split into words
+        query_words = [w for w in re.split(r"[^a-z0-9]", norm_query) if w]
+        if not query_words:
+            return set()
+
+        # Strategy: Intersection of candidates for each word
+        candidate_sets: list[set[str]] = []
+
+        for word in query_words:
+            matches = self._get_candidates_for_word(word)
+            if not matches:
+                return set()
+            candidate_sets.append(matches)
+
+        if not candidate_sets:
+            return set()
+
+        result = set(candidate_sets[0])
+        for other in candidate_sets[1:]:
+            result.intersection_update(other)
+
+        return result
 
     # -----------------------------
     # Internal helpers — locations
@@ -724,6 +911,16 @@ class Repository:
                 if not s:
                     return []
                 candidate_sets.append(s)
+
+        # 0. Text Search Index (q)
+        q = (flt.get("q") or "").strip()
+        if q:
+            # We treat text index as authoritative for text matches
+            has_indexed_filter = True
+            text_matches = self._search_by_text(q)
+            if not text_matches:
+                return []
+            candidate_sets.append(text_matches)
 
         # 2. Location Index
         if flt.get("location_id"):
@@ -1266,6 +1463,9 @@ class Repository:
         self._locations_by_id = {}
         self._tags_to_item_ids = {}
         self._category_to_item_ids = {}
+        self._word_to_item_ids = {}
+        self._name_prefix_to_item_ids = {}
+        self._trigram_to_item_ids = {}
         self._checked_out_item_ids = set()
         self._low_stock_item_ids = set()
         self._items_by_location_id = {}
