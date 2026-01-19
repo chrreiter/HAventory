@@ -1437,7 +1437,6 @@ class Repository:
                     "id_path": [str(x) for x in list(item.location_path.id_path)],
                     "name_path": list(item.location_path.name_path),
                     "display_path": item.location_path.display_path,
-                    "sort_key": item.location_path.sort_key,
                 },
             }
 
@@ -1451,7 +1450,6 @@ class Repository:
                     "id_path": [str(x) for x in list(loc.path.id_path)],
                     "name_path": list(loc.path.name_path),
                     "display_path": loc.path.display_path,
-                    "sort_key": loc.path.sort_key,
                 },
             }
 
