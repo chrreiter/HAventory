@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import bisect
 import json
 import logging
 import re
@@ -89,9 +90,9 @@ class Repository:
         # Area indexes
         self._locations_by_area_id: dict[str, set[str]] = {}
         self._items_by_area_id: dict[str, set[str]] = {}
-        # Optional timestamp buckets (not used for ordering, but kept as indexes)
-        self._created_at_bucket: dict[str, set[str]] = {}
-        self._updated_at_bucket: dict[str, set[str]] = {}
+        # Temporal indexes for efficient range queries (sorted lists)
+        self._items_by_created_at: list[tuple[str, str]] = []  # (iso_timestamp, item_id)
+        self._items_by_updated_at: list[tuple[str, str]] = []  # (iso_timestamp, item_id)
         # Cached name sort keys
         self._name_sort_key_by_item_id: dict[str, str] = {}
 
@@ -164,9 +165,9 @@ class Repository:
             if eff_area_id is not None:
                 self._add_to_bucket(self._items_by_area_id, eff_area_id, item_key)
 
-        # timestamp buckets
-        self._add_to_bucket(self._created_at_bucket, item.created_at, item_key)
-        self._add_to_bucket(self._updated_at_bucket, item.updated_at, item_key)
+        # Temporal indexes
+        self._add_to_temporal_index(self._items_by_created_at, item.created_at, item_key)
+        self._add_to_temporal_index(self._items_by_updated_at, item.updated_at, item_key)
 
         # cached sort key for name
         self._name_sort_key_by_item_id[item_key] = normalize_text_for_sort(item.name)
@@ -198,8 +199,9 @@ class Repository:
             # Remove from any area buckets (area could have changed since indexing)
             self._remove_item_from_all_area_buckets(item_key)
 
-        self._remove_from_bucket(self._created_at_bucket, item.created_at, item_key)
-        self._remove_from_bucket(self._updated_at_bucket, item.updated_at, item_key)
+        # Temporal indexes
+        self._remove_from_temporal_index(self._items_by_created_at, item.created_at, item_key)
+        self._remove_from_temporal_index(self._items_by_updated_at, item.updated_at, item_key)
 
         self._name_sort_key_by_item_id.pop(item_key, None)
 
@@ -364,6 +366,21 @@ class Repository:
                     if t not in seen_trigrams:
                         self._remove_from_bucket(self._trigram_to_item_ids, t, item_key)
                         seen_trigrams.add(t)
+
+    def _add_to_temporal_index(
+        self, index: list[tuple[str, str]], timestamp: str, item_id: str
+    ) -> None:
+        """Insert (timestamp, item_id) into sorted temporal index using bisect."""
+        bisect.insort(index, (timestamp, item_id))
+
+    def _remove_from_temporal_index(
+        self, index: list[tuple[str, str]], timestamp: str, item_id: str
+    ) -> None:
+        """Remove (timestamp, item_id) from sorted temporal index."""
+        key = (timestamp, item_id)
+        pos = bisect.bisect_left(index, key)
+        if pos < len(index) and index[pos] == key:
+            index.pop(pos)
 
     def _get_candidates_for_word(self, word: str) -> set[str]:
         """Get candidate item IDs for a single search word using strict OR logic."""
@@ -1471,8 +1488,8 @@ class Repository:
         self._items_by_location_id = {}
         self._locations_by_area_id = {}
         self._items_by_area_id = {}
-        self._created_at_bucket = {}
-        self._updated_at_bucket = {}
+        self._items_by_created_at = []
+        self._items_by_updated_at = []
         self._name_sort_key_by_item_id = {}
         self._children_ids_by_parent_id = {}
         self._location_descendants = {}
