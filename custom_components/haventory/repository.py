@@ -367,21 +367,6 @@ class Repository:
                         self._remove_from_bucket(self._trigram_to_item_ids, t, item_key)
                         seen_trigrams.add(t)
 
-    def _add_to_temporal_index(
-        self, index: list[tuple[str, str]], timestamp: str, item_id: str
-    ) -> None:
-        """Insert (timestamp, item_id) into sorted temporal index using bisect."""
-        bisect.insort(index, (timestamp, item_id))
-
-    def _remove_from_temporal_index(
-        self, index: list[tuple[str, str]], timestamp: str, item_id: str
-    ) -> None:
-        """Remove (timestamp, item_id) from sorted temporal index."""
-        key = (timestamp, item_id)
-        pos = bisect.bisect_left(index, key)
-        if pos < len(index) and index[pos] == key:
-            index.pop(pos)
-
     def _get_candidates_for_word(self, word: str) -> set[str]:
         """Get candidate item IDs for a single search word using strict OR logic."""
         word_candidates = self._word_to_item_ids.get(word)
