@@ -520,8 +520,8 @@ def _collect_item_issues(item_id: str, item, idx: dict) -> list[str]:  # noqa: P
     issues: list[str] = []
     items_by_location_id = idx["items_by_location_id"]  # type: ignore[index]
     locations_by_id = idx["locations_by_id"]  # type: ignore[index]
-    created_at_bucket = idx["created_at_bucket"]  # type: ignore[index]
-    updated_at_bucket = idx["updated_at_bucket"]  # type: ignore[index]
+    items_by_created_at = idx["items_by_created_at"]  # type: ignore[index]
+    items_by_updated_at = idx["items_by_updated_at"]  # type: ignore[index]
     checked_out_item_ids = idx["checked_out_item_ids"]  # type: ignore[index]
     low_stock_item_ids = idx["low_stock_item_ids"]  # type: ignore[index]
 
@@ -541,14 +541,10 @@ def _collect_item_issues(item_id: str, item, idx: dict) -> list[str]:  # noqa: P
 
     created_key = getattr(item, "created_at", None)
     updated_key = getattr(item, "updated_at", None)
-    if created_key not in created_at_bucket or item_id not in created_at_bucket.get(
-        created_key, set()
-    ):
-        issues.append("item_missing_from_created_at_bucket")
-    if updated_key not in updated_at_bucket or item_id not in updated_at_bucket.get(
-        updated_key, set()
-    ):
-        issues.append("item_missing_from_updated_at_bucket")
+    if not any(k == created_key and iid == item_id for k, iid in items_by_created_at):
+        issues.append("item_missing_from_created_at_index")
+    if not any(k == updated_key and iid == item_id for k, iid in items_by_updated_at):
+        issues.append("item_missing_from_updated_at_index")
 
     if bool(getattr(item, "checked_out", False)):
         if item_id not in checked_out_item_ids:
@@ -586,8 +582,8 @@ def _check_index_references(idx: dict) -> list[str]:
     checked_out_item_ids = idx["checked_out_item_ids"]  # type: ignore[index]
     low_stock_item_ids = idx["low_stock_item_ids"]  # type: ignore[index]
     items_by_location_id = idx["items_by_location_id"]  # type: ignore[index]
-    created_at_bucket = idx["created_at_bucket"]  # type: ignore[index]
-    updated_at_bucket = idx["updated_at_bucket"]  # type: ignore[index]
+    items_by_created_at = idx["items_by_created_at"]  # type: ignore[index]
+    items_by_updated_at = idx["items_by_updated_at"]  # type: ignore[index]
     locations_by_id = idx["locations_by_id"]  # type: ignore[index]
 
     def _assert_known_ids(name: str, ids: set[str]) -> None:
@@ -619,10 +615,10 @@ def _check_index_references(idx: dict) -> list[str]:
             ):
                 issues.append("items_by_location_bucket_mismatch")
 
-    for _t, ids in list(created_at_bucket.items()):
-        _assert_known_ids("created_at_bucket", set(ids))
-    for _t, ids in list(updated_at_bucket.items()):
-        _assert_known_ids("updated_at_bucket", set(ids))
+    for _t, ids in list(items_by_created_at):
+        _assert_known_ids("created_at_index", {ids})
+    for _t, ids in list(items_by_updated_at):
+        _assert_known_ids("updated_at_index", {ids})
 
     return issues
 
