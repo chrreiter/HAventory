@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigFlowResult
 
 
-class HAventoryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class HAventoryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]  # HA ConfigFlow domain= kwarg; HA is not installed for mypy
     """Handle a config flow for HAventory."""
 
     VERSION = 1

@@ -16,6 +16,7 @@ dev = [
   "pytest-asyncio",
   "pytest-cov",
   "ruff==0.15.22",
+  "mypy",
   "pre-commit",
   "voluptuous",
   "aiohttp>=3.9.1",
@@ -67,3 +68,35 @@ quote-style = "preserve"
 "tests/**" = ["S110"]
 # Dev/utility scripts legitimately do blocking IO and interactive input.
 "scripts/**" = ["ASYNC240", "ASYNC250"]
+
+[tool.mypy]
+# Non-strict baseline: the current code passes. Strictness ratchets in WP4/WP5.
+# python_version tracks the source floor (3.12), matching ruff `target-version`
+# and requires-python; the integration also runs on the declared HA 3.14 runtime.
+python_version = "3.12"
+files = ["custom_components/haventory"]
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = "custom_components"
+# Home Assistant is not installed in the offline dev env (it is stubbed for
+# tests), so its imports are unresolved — don't fail on that at this stage.
+ignore_missing_imports = true
+
+# The WebSocket handlers (ws.py) and the repository's dynamic sort/relocation
+# paths (repository.py) type-check against values pulled from the untyped WS
+# envelope / cross-type sort keys. Their annotations are otherwise honoured;
+# hardening these two boundaries is deferred to WP4/WP5 (Follow-up: type-harden
+# ws.py + repository.py and drop this override).
+[[tool.mypy.overrides]]
+module = [
+  "haventory.ws",
+  "haventory.repository",
+]
+disable_error_code = [
+  "arg-type",
+  "attr-defined",
+  "assignment",
+  "index",
+  "operator",
+  "typeddict-item",
+]
