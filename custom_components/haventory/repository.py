@@ -16,7 +16,6 @@ import bisect
 import json
 import logging
 import re
-import unicodedata
 import uuid
 from collections import deque
 from collections.abc import Iterable
@@ -39,6 +38,7 @@ from .models import (
     create_item_from_create,
     filter_items,
     new_uuid4,
+    normalize_search_text,
     normalize_tags,
     normalize_text_for_sort,
     parse_uuid4,
@@ -262,13 +262,10 @@ class Repository:
     def _normalize_for_search(self, text: str) -> str:
         """Normalize text for search indexing (lowercase, strip accents).
 
-        Uses NFKD normalization to separate accents from characters, then keeps only ASCII.
+        Delegates to :func:`models.normalize_search_text` so the index path and the
+        ``filter_items`` post-filter always agree on normalization.
         """
-        if not text:
-            return ""
-        nfkd = unicodedata.normalize("NFKD", text)
-        ascii_text = nfkd.encode("ascii", "ignore").decode("ascii")
-        return ascii_text.casefold().strip()
+        return normalize_search_text(text)
 
     def _extract_trigrams(self, text: str) -> set[str]:
         """Extract 3-character trigrams from normalized text."""

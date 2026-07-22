@@ -71,6 +71,36 @@ async def test_text_search_fuzzy_matching() -> None:
 
 
 @pytest.mark.asyncio
+async def test_text_search_accent_insensitive_end_to_end() -> None:
+    """Accent-insensitive search works through list_items (index + post-filter).
+
+    Regression: the index normalized accents (NFKD) but the filter_items
+    post-filter only casefolded, so "cafe" found the candidate in the index
+    and then discarded it — list_items returned nothing for unaccented queries
+    against accented content.
+    """
+    repo = Repository()
+    i1 = repo.create_item({"name": "Probe Café"})
+    repo.create_item({"name": "Plain Mug"})
+
+    # Unaccented query vs accented content (the previously broken direction)
+    for query in ("cafe", "CAFE", "Cafe"):
+        results = repo.list_items(flt={"q": query})["items"]
+        assert len(results) == 1, f"q={query!r} should match 'Probe Café'"
+        assert results[0].id == i1.id
+
+    # Accented query still works
+    results = repo.list_items(flt={"q": "café"})["items"]
+    assert len(results) == 1
+    assert results[0].id == i1.id
+
+    # Prefix search stays accent-insensitive too
+    results = repo.list_items(flt={"q": "caf"})["items"]  # codespell:ignore caf
+    assert len(results) == 1
+    assert results[0].id == i1.id
+
+
+@pytest.mark.asyncio
 async def test_text_search_multi_word_and_logic() -> None:
     """Multi-word text search uses AND logic."""
     repo = Repository()
