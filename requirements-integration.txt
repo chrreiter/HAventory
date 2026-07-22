@@ -1,0 +1,26 @@
+# HAventory — in-process Home Assistant integration test harness (phacc).
+#
+# These are the dependencies for the SECOND test mode (tests/integration/): the
+# integration is exercised inside a REAL in-process Home Assistant core provided
+# by pytest-homeassistant-custom-component ("phacc"). phacc bundles the matching
+# Home Assistant core AND the exact pytest / pytest-asyncio / pytest-aiohttp /
+# pytest-socket test stack that HA core uses, so nothing else is required here.
+#
+# Deliberately hand-maintained and kept SEPARATE from the offline path:
+#   * NOT in pyproject `[dependency-groups]` / uv.lock — phacc drags in a full HA
+#     core; keeping it out means the default `uv sync` and the fast offline suite
+#     stay lean, and uv.lock stays regenerable (it can only be re-locked under the
+#     Python 3.14 the HA runtime requires).
+#   * Install into a DEDICATED environment, never the offline `.venv` (which is
+#     intentionally HA-free — tests/conftest.py stubs Home Assistant there). e.g.:
+#         uv venv .venv-integration --python 3.14
+#         uv pip install --python .venv-integration -r requirements-integration.txt
+#         .venv-integration/bin/python -m pytest -o asyncio_mode=auto tests/integration
+#     or simply: scripts/test_integration.sh
+#
+# Version policy: pin the Home Assistant core to the WP0.5 minimum-supported
+# stable (2026.7.3). Because each phacc release pins one exact HA version, this HA
+# pin uniquely selects the matching phacc build — no separate phacc version guess
+# is needed. Bump both together (raise the HA pin) when the minimum-HA target moves.
+homeassistant==2026.7.3
+pytest-homeassistant-custom-component
