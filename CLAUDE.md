@@ -69,7 +69,7 @@ npm run build
 Bootstrap a fresh session (also run by the SessionStart hook):
 ```bash
 uv sync                                   # env from pyproject.toml + uv.lock
-(cd cards/haventory-card && npm install)  # card sets package-lock=false
+(cd cards/haventory-card && npm ci)       # reproducible install from the committed lockfile
 ```
 
 Convenience wrappers live in `scripts/*.sh` (`setup.sh`, `lint.sh`, `test.sh`,

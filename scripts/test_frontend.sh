@@ -10,7 +10,7 @@ if ! command -v npm >/dev/null 2>&1; then
 fi
 
 cd "$CARD_DIR"
-[ -d node_modules ] || { info 'Installing dependencies (npm install --no-audit --no-fund)...'; npm install --no-audit --no-fund; }
+[ -d node_modules ] || { info 'Installing dependencies (npm ci --no-audit --no-fund)...'; npm ci --no-audit --no-fund; }
 
 case "${1:-}" in
   --watch)    info 'Running frontend tests (watch)...';    npm run test:watch ;;

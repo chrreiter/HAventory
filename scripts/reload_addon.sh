@@ -70,8 +70,8 @@ ok "Copied to $target_root"
 
 # Build + deploy the card.
 if command -v npm >/dev/null 2>&1; then
-  info 'Building frontend card (npm install --no-audit --no-fund && npm run build)...'
-  (cd "$CARD_DIR" && npm install --no-audit --no-fund >/dev/null && npm run build --silent >/dev/null) \
+  info 'Building frontend card (npm ci --no-audit --no-fund && npm run build)...'
+  (cd "$CARD_DIR" && npm ci --no-audit --no-fund >/dev/null && npm run build --silent >/dev/null) \
     || err 'card build failed'
 fi
 local_card="$REPO_ROOT/cards/www/haventory"

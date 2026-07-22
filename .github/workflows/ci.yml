@@ -76,10 +76,8 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
           cache-dependency-path: cards/haventory-card/package-lock.json
-      # The card sets package-lock=false, so there is no committed lockfile for
-      # `npm ci`; `npm install` resolves from package.json.
       - name: Install
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Lint
         run: npx eslint .
       - name: Test (vitest w/ coverage)

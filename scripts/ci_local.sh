@@ -33,7 +33,7 @@ fi
 
 if command -v npm >/dev/null 2>&1; then
   info 'Frontend: install, lint, test, build...'
-  (cd "$CARD_DIR" && npm install --no-audit --no-fund && npm run lint && npm test -- --coverage && npm run build)
+  (cd "$CARD_DIR" && npm ci --no-audit --no-fund && npm run lint && npm test -- --coverage && npm run build)
 else
   err 'npm not found; skipping frontend tasks.'
 fi

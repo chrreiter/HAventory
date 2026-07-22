@@ -24,7 +24,7 @@ scripts/setup.sh
 
 # ...or manually:
 uv sync                                   # creates .venv from pyproject.toml + uv.lock
-(cd cards/haventory-card && npm install)  # card sets package-lock=false
+(cd cards/haventory-card && npm ci)       # reproducible install from the committed lockfile
 ```
 
 Run any Python tool through uv (`uv run <tool>`), so it uses the locked dev environment.

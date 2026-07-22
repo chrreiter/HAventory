@@ -2,7 +2,7 @@
 # Bootstrap the HAventory dev environment (Linux/bash).
 #   - syncs the Python dev environment with uv (creates .venv from
 #     pyproject.toml + uv.lock, installs the `dev` dependency group)
-#   - installs frontend deps with npm install --no-audit --no-fund
+#   - installs frontend deps with npm ci --no-audit --no-fund
 #   - installs pre-commit hooks (unless --ci)
 source "$(dirname "$0")/common.sh"
 
@@ -18,8 +18,8 @@ info 'Syncing Python dev environment with uv...'
 "$UV" sync
 
 if command -v npm >/dev/null 2>&1; then
-  info 'Installing frontend dependencies (npm install --no-audit --no-fund)...'
-  (cd "$CARD_DIR" && npm install --no-audit --no-fund)
+  info 'Installing frontend dependencies (npm ci --no-audit --no-fund)...'
+  (cd "$CARD_DIR" && npm ci --no-audit --no-fund)
 else
   err 'npm not found; skipping frontend bootstrap (install Node 22.13+ / 24 LTS).'
 fi
