@@ -156,7 +156,9 @@ async def _register_frontend_module(hass: HomeAssistant) -> None:
         )
         return
 
-    if not os.path.exists(fs_path):
+    # One-shot existence check at setup; not worth an executor round-trip (and the
+    # test Hass stub has no async_add_executor_job).
+    if not os.path.exists(fs_path):  # noqa: ASYNC240
         LOGGER.debug(
             "Frontend asset not found; skipping registration",
             extra={"domain": DOMAIN, "op": "frontend_register", "path": fs_path},

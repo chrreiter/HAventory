@@ -623,7 +623,7 @@ async def test_p2_item_create_defaults_and_rich() -> None:
         )
         rich = await _expect_result(ws, rid)
         ritem = rich.get("result") or {}
-        TARGET_QTY_RICH = 3  # ruff: avoid magic numbers
+        TARGET_QTY_RICH = 3  # avoid magic numbers
         assert ritem.get("quantity") == TARGET_QTY_RICH and ritem.get("category") == "tools"
         lp = ritem.get("location_path") or {}
         assert lp.get("display_path") == "Garage / Shelf A"
