@@ -1,7 +1,19 @@
 {
   "name": "haventory-card",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
+  "description": "Lovelace card for the HAventory Home Assistant integration.",
+  "license": "Apache-2.0",
+  "author": "chrreiter",
+  "homepage": "https://github.com/chrreiter/HAventory#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chrreiter/HAventory.git",
+    "directory": "cards/haventory-card"
+  },
+  "bugs": {
+    "url": "https://github.com/chrreiter/HAventory/issues"
+  },
   "type": "module",
   "packageManager": "npm@10",
   "engines": {

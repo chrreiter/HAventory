@@ -1,0 +1,82 @@
+name: 🐛 Bug report
+description: Report a problem with the HAventory integration or card.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug! Please search existing issues first to avoid duplicates.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      options:
+        - Integration (backend)
+        - Lovelace card (frontend)
+        - Both
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: haventory_version
+    attributes:
+      label: HAventory version
+      description: The integration version (HACS, or `manifest.json`), e.g. 0.0.1.
+      placeholder: "0.0.1"
+    validations:
+      required: true
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      description: Settings → About, e.g. 2026.7.3. Minimum supported is 2026.7.
+      placeholder: "2026.7.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Installation method
+      options:
+        - HACS
+        - Manual (copied to custom_components)
+        - Dev checkout
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser (card issues only)
+      description: e.g. Chrome 140, Firefox 142, or the HA Companion app. Leave blank for backend-only issues.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: HA logs (Settings → System → Logs, or `home-assistant.log`). This is rendered as code — no backticks needed.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I am running a supported Home Assistant version (>= 2026.7).
+          required: true

@@ -1,0 +1,15 @@
+# Code owners are automatically requested for review on matching PRs.
+# See https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything in the repo.
+*                       @chrreiter
+
+# Backend integration
+/custom_components/      @chrreiter
+
+# Frontend Lovelace card
+/cards/                  @chrreiter
+
+# Docs & project meta
+/docs/                   @chrreiter
+/.github/                @chrreiter

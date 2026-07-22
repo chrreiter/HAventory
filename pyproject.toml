@@ -10,6 +10,13 @@ authors = [{ name = "chrreiter" }]
 # must allow the interpreter download or preinstall 3.14.
 requires-python = ">=3.14"
 
+[project.urls]
+Homepage = "https://github.com/chrreiter/HAventory#readme"
+Repository = "https://github.com/chrreiter/HAventory"
+Issues = "https://github.com/chrreiter/HAventory/issues"
+Changelog = "https://github.com/chrreiter/HAventory/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/chrreiter/HAventory/tree/main/docs"
+
 [dependency-groups]
 dev = [
   "pytest",
