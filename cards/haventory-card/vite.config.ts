@@ -9,7 +9,11 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reportsDirectory: 'coverage',
-      reporter: ['text-summary', 'html', 'json-summary', 'lcov']
+      reporter: ['text-summary', 'html', 'json-summary', 'lcov'],
+      // Vitest 4 removed `coverage.all` and reports only touched files by
+      // default; list the source set explicitly so uncovered files still count.
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.test.ts', 'src/test.setup.ts', 'src/test.utils.ts']
     }
   },
   build: {
