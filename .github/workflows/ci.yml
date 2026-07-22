@@ -1,4 +1,4 @@
-﻿name: ci
+name: ci
 
 on:
   push:
@@ -6,94 +6,112 @@ on:
   pull_request:
     branches: [ main ]
 
+# Cancel superseded runs on a PR; main/tag runs (empty head_ref) fall back to
+# run_id and are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   backend:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.12 = dev/test source floor; 3.14 = declared HA 2026.7 runtime.
+        python-version: [ '3.12', '3.14' ]
     env:
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
-          python-version: '3.12'
-      - name: Set up venv
-        shell: pwsh
-        run: |
-          python -m venv .venv
-          .\.venv\Scripts\Activate.ps1
-          python -m pip install -U pip
-          if (Test-Path 'requirements-dev.txt') {
-            pip install -r requirements-dev.txt
-          } else {
-            throw 'requirements-dev.txt not found. This repository expects it to be present.'
-          }
+          enable-cache: true
+      - name: Install Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+      - name: Sync dev environment
+        run: uv sync --python ${{ matrix.python-version }}
       - name: Lint (ruff)
-        shell: pwsh
-        run: |
-          .\.venv\Scripts\Activate.ps1
-          ruff --version
-          ruff check --no-cache .
+        run: uv run ruff check .
+      - name: Types (mypy)
+        run: uv run mypy
       - name: Test (pytest offline w/ coverage)
-        shell: pwsh
-        run: |
-          .\.venv\Scripts\Activate.ps1
-          pytest -q -p pytest_cov --cov=custom_components/haventory --cov-report=xml --cov-report=term-missing:skip-covered --junitxml=junit.xml
+        run: >
+          uv run pytest -q -p pytest_cov
+          --cov=custom_components/haventory
+          --cov-report=xml --cov-report=term-missing:skip-covered
+          --junitxml=junit.xml
       - name: Backend coverage summary
         if: success() && hashFiles('coverage.xml') != ''
-        shell: pwsh
         run: |
-          [xml]$c = Get-Content coverage.xml
-          $rate = [math]::Round(100 * [double]$c.coverage.'line-rate', 2)
-          "Backend coverage: $rate%" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          rate=$(uv run python -c "import xml.etree.ElementTree as ET; r=ET.parse('coverage.xml').getroot(); print(f\"{100*float(r.get('line-rate',0)):.2f}\")")
+          echo "Backend coverage (py${{ matrix.python-version }}): ${rate}%" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload backend artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: backend-artifacts
+          name: backend-artifacts-py${{ matrix.python-version }}
           path: |
             coverage.xml
             junit.xml
-            htmlcov/**
 
   frontend:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: cards/haventory-card
+    strategy:
+      fail-fast: false
+      matrix:
+        # 24 = active LTS (primary); 22 = maintenance LTS floor.
+        node-version: [ '22', '24' ]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
           cache-dependency-path: cards/haventory-card/package-lock.json
+      # The card sets package-lock=false, so there is no committed lockfile for
+      # `npm ci`; `npm install` resolves from package.json.
       - name: Install
-        run: npm ci || npm install --no-audit --no-fund
+        run: npm install --no-audit --no-fund
       - name: Lint
         run: npx eslint .
       - name: Test (vitest w/ coverage)
         run: npx vitest run --coverage
       - name: Frontend coverage summary
         if: success() && hashFiles('cards/haventory-card/coverage/coverage-summary.json') != ''
-        shell: bash
         run: |
-          node -e 'const fs=require("fs"); const s=require("./coverage/coverage-summary.json"); fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, "Frontend coverage: " + s.total.lines.pct + "%\n");'
+          node -e 'const fs=require("fs"); const s=require("./coverage/coverage-summary.json"); fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, "Frontend coverage (node${{ matrix.node-version }}): " + s.total.lines.pct + "%\n");'
       - name: Upload frontend artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: frontend-artifacts
-          path: |
-            cards/haventory-card/coverage/**
+          name: frontend-artifacts-node${{ matrix.node-version }}
+          path: cards/haventory-card/coverage/**
       - name: Build
         run: npm run build
+
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
 
   validation:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Hassfest
-        uses: home-assistant/actions/hassfest@master
+        uses: home-assistant/actions/hassfest@e3fb68ebda13d88a0d695082f471ba2c83d025fb  # master (untagged upstream)
       - name: HACS validation
-        uses: hacs/action@main
+        uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa  # main (untagged upstream)
         with:
           category: integration
           ignore: brands

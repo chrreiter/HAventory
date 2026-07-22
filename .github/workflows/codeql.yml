@@ -21,15 +21,15 @@ jobs:
       matrix:
         language: [ "python", "javascript-typescript" ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "24"
 
       - uses: github/codeql-action/init@v4
         with:
@@ -38,6 +38,6 @@ jobs:
       - name: Install frontend deps
         if: matrix.language == 'javascript-typescript' && hashFiles('cards/haventory-card/package.json') != ''
         working-directory: cards/haventory-card
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - uses: github/codeql-action/analyze@v4
