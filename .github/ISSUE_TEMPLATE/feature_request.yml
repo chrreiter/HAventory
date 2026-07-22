@@ -1,0 +1,51 @@
+name: ✨ Feature request
+description: Suggest an idea or enhancement for HAventory.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! Please search existing issues and discussions first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do? What is missing or painful today?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like HAventory to do?
+    validations:
+      required: true
+  - type: dropdown
+    id: pillar
+    attributes:
+      label: Related area
+      options:
+        - Quantity / low-stock threshold
+        - Categories & tags
+        - Custom fields
+        - Check-out / due dates
+        - Inspection dates
+        - Multi-level location tree
+        - Areas integration
+        - Import / export
+        - Reminders / calendar
+        - Lovelace card / UI
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I searched existing issues and discussions and this is not a duplicate.
+          required: true

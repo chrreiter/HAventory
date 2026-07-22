@@ -1,0 +1,24 @@
+# Path-based auto-labeling for pull requests (actions/labeler).
+# Label names must exist in the repo — see .github/labels.yml.
+
+"area:backend":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "custom_components/haventory/**"
+
+"area:card":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "cards/**"
+
+"area:ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - ".pre-commit-config.yaml"
+
+"area:docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "**/*.md"

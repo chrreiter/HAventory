@@ -1,0 +1,29 @@
+name: release-please
+
+# DORMANT until WP5 / Phase 3 (see CONTRIBUTING.md → Releases).
+#
+# This workflow is config-ready but does NOT run automatically: it has only a
+# manual `workflow_dispatch` trigger. To turn on automated release PRs, add the
+# `push` trigger to `main` (uncomment below). Running it (manually or on push)
+# opens a release PR that bumps versions across manifest.json / pyproject.toml /
+# card package.json and publishes a GitHub Release with notes generated from
+# Conventional Commit history.
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071  # v4.4.1
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

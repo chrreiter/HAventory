@@ -1,5 +1,11 @@
 # HAventory
 
+[![CI](https://github.com/chrreiter/HAventory/actions/workflows/ci.yml/badge.svg)](https://github.com/chrreiter/HAventory/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/chrreiter/HAventory/actions/workflows/codeql.yml/badge.svg)](https://github.com/chrreiter/HAventory/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/chrreiter/HAventory/badge)](https://securityscorecards.dev/viewer/?uri=github.com/chrreiter/HAventory)
+[![HACS: Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![License: Apache-2.0](https://img.shields.io/github/license/chrreiter/HAventory)](LICENSE)
+
 Home Assistant custom integration (domain `haventory`) for household inventory tracking,
 plus a Lit + TypeScript Lovelace card. Local-push, single-instance, HA `Store`-backed
 persistence — no external services.
@@ -7,6 +13,21 @@ persistence — no external services.
 **Targets:** Linux dev + `ubuntu-latest` CI. Minimum Home Assistant **2026.7** ⇒ Python
 **3.14** everywhere (uv provisions the interpreter automatically; the source uses 3.14-only
 PEP 758 syntax). Node **22.13+ / 24 LTS** for the card.
+
+---
+
+## Installation
+
+HAventory isn't in the HACS default store yet. To install from this repository:
+
+1. In Home Assistant, open **HACS → ⋮ → Custom repositories**.
+2. Add `https://github.com/chrreiter/HAventory` with category **Integration**.
+3. Install **HAventory**, then restart Home Assistant.
+4. Add it via **Settings → Devices & Services → Add Integration → HAventory**.
+5. Refresh your browser (Ctrl/Cmd+Shift+R) so the Lovelace card appears in the picker.
+
+Minimum Home Assistant version: **2026.7**. Developers: see the Developer Checklist below
+and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -120,10 +141,15 @@ Included: `tests/test_ws_smoke_online.py`, `tests/test_ws_smoke_advanced_online.
 
 - GitHub Actions (`ubuntu-latest`): backend (uv, ruff + mypy + pytest w/ coverage, Python
   3.14), frontend (eslint + vitest + build, Node 22/24 matrix), actionlint,
-  hassfest + HACS validation, CodeQL. Third-party actions are SHA-pinned; first-party
-  `actions/*` use `@v7`.
+  hassfest + HACS validation, CodeQL, OpenSSF Scorecard, and dependency review.
+  Third-party actions are SHA-pinned; first-party `actions/*` use `@v7`.
+- PR hygiene: Conventional-Commit PR-title check, path-based auto-labeling
+  (`.github/labeler.yml`), labels-as-code (`.github/labels.yml`), CODEOWNERS review
+  requests, and issue/PR templates.
 - Dependabot: grouped updates for `github-actions`, `npm` (card), and `uv` (Python).
-- Release automation planned via **release-please** (WP5).
+- Release automation via **release-please** is config-ready but deferred (WP5) — enable it
+  by uncommenting the `push` trigger in `.github/workflows/release-please.yml`.
+- Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md).
 - Conventional Commits; update this README when behavior changes.
 
 ---
@@ -201,6 +227,12 @@ Scenarios: rapid sequential mutations, concurrent burst, bulk-under-load, mixed 
 persistence-across-restart. Exit codes: `0` pass, `1` failures, `2` setup error.
 
 ---
+
+## Contributing
+
+Contributions are welcome! See **[CONTRIBUTING.md](CONTRIBUTING.md)**. File bugs and feature
+requests through the [issue tracker](https://github.com/chrreiter/HAventory/issues/new/choose),
+and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discussions).
 
 ## Conventions
 
