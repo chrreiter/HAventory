@@ -14,7 +14,7 @@ requires-python = ">=3.14"
 Homepage = "https://github.com/chrreiter/HAventory#readme"
 Repository = "https://github.com/chrreiter/HAventory"
 Issues = "https://github.com/chrreiter/HAventory/issues"
-Changelog = "https://github.com/chrreiter/HAventory/blob/main/CHANGELOG.md"
+Changelog = "https://github.com/chrreiter/HAventory/releases"
 Documentation = "https://github.com/chrreiter/HAventory/tree/main/docs"
 
 [dependency-groups]

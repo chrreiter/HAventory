@@ -6,7 +6,8 @@ name: release-please
 # manual `workflow_dispatch` trigger. To turn on automated release PRs, add the
 # `push` trigger to `main` (uncomment below). Running it (manually or on push)
 # opens a release PR that bumps versions across manifest.json / pyproject.toml /
-# card package.json and updates CHANGELOG.md from Conventional Commit history.
+# card package.json and publishes a GitHub Release with notes generated from
+# Conventional Commit history.
 on:
   workflow_dispatch:
   # push:

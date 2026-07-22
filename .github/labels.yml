@@ -40,13 +40,7 @@
   color: "0e8a16"
   description: "Nice to have"
 
-# --- Status / triage ---
-- name: "status:triage"
-  color: "ededed"
-  description: "Needs triage"
-- name: "status:blocked"
-  color: "d93f0b"
-  description: "Blocked by another issue or dependency"
+# --- Housekeeping ---
 - name: "good first issue"
   color: "7057ff"
   description: "Good for newcomers"

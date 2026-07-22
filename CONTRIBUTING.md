@@ -4,8 +4,6 @@ Thanks for your interest in HAventory! This project is a Home Assistant custom
 integration (domain `haventory`) plus a Lit + TypeScript Lovelace card.
 Contributions of all kinds are welcome — bug reports, features, docs, and code.
 
-By participating you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
-
 ## Ways to contribute
 
 - **Report a bug** or **request a feature** via the
@@ -80,10 +78,5 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
 Release automation (release-please) is **config-ready but deferred to WP5** —
 see `.github/workflows/release-please.yml`. When enabled, merging Conventional
 Commits to `main` opens a release PR that bumps the version across
-`manifest.json`, `pyproject.toml`, and the card's `package.json`, and updates
-`CHANGELOG.md`.
-
-## Security
-
-Please report vulnerabilities privately — see [SECURITY.md](SECURITY.md). Do not
-open a public issue for a security problem.
+`manifest.json`, `pyproject.toml`, and the card's `package.json`, and publishes
+a GitHub Release with generated notes.

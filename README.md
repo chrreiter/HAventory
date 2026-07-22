@@ -149,8 +149,7 @@ Included: `tests/test_ws_smoke_online.py`, `tests/test_ws_smoke_advanced_online.
 - Dependabot: grouped updates for `github-actions`, `npm` (card), and `uv` (Python).
 - Release automation via **release-please** is config-ready but deferred (WP5) — enable it
   by uncommenting the `push` trigger in `.github/workflows/release-please.yml`.
-- Community docs: [CONTRIBUTING](CONTRIBUTING.md), [SECURITY](SECURITY.md),
-  [CODE_OF_CONDUCT](CODE_OF_CONDUCT.md), [SUPPORT](SUPPORT.md).
+- Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md).
 - Conventional Commits; update this README when behavior changes.
 
 ---
@@ -231,11 +230,9 @@ persistence-across-restart. Exit codes: `0` pass, `1` failures, `2` setup error.
 
 ## Contributing
 
-Contributions are welcome! Please read **[CONTRIBUTING.md](CONTRIBUTING.md)** and our
-**[Code of Conduct](CODE_OF_CONDUCT.md)**. File bugs and feature requests through the
-[issue tracker](https://github.com/chrreiter/HAventory/issues/new/choose), ask questions in
-[Discussions](https://github.com/chrreiter/HAventory/discussions), and report security issues
-privately per **[SECURITY.md](SECURITY.md)**.
+Contributions are welcome! See **[CONTRIBUTING.md](CONTRIBUTING.md)**. File bugs and feature
+requests through the [issue tracker](https://github.com/chrreiter/HAventory/issues/new/choose),
+and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discussions).
 
 ## Conventions
 
