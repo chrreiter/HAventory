@@ -234,8 +234,6 @@ Adopted tooling (latest stable at review time; verified against release pages / 
 - **TypeScript 7**: adopt once typescript-eslint supports it (currently capped `<6.1.0`).
 - **`tsc --noEmit`** surfaces pre-existing card type gaps; not yet part of the gate.
 - **release-please** wiring lands in WP5.
-- **Environment-blocked files** (this session's sandbox denies writes to them — apply
-  manually): `.devcontainer/*` (reproducible HA+HACS container), `.npmrc`
-  (`package-lock=true` to enable a committed lockfile + switch CI/scripts back to `npm ci`),
-  `.pre-commit-config.yaml` (bump ruff rev `v0.13.0 → v0.15.22`, add an actionlint hook).
-  actionlint already runs as a CI job; the pre-commit ruff-rev drift is cosmetic.
+- **Windows-only test scaffolding**: `tests/conftest.py` uses
+  `asyncio.WindowsSelectorEventLoopPolicy` / `set_event_loop_policy`, both deprecated for
+  removal in Python 3.16 — replace when convenient (effort S).
