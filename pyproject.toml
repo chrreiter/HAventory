@@ -1,3 +1,31 @@
+[project]
+name = "haventory"
+version = "0.0.1"
+description = "Home Assistant custom integration for household inventory tracking"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "chrreiter" }]
+# Dev-tooling floor. The offline test suite is HA-stubbed and interpreter-agnostic,
+# so it runs on 3.12+; the *shipped integration* targets Home Assistant 2026.7 /
+# Python 3.14 (enforced by ruff `target-version`, mypy `python_version`, and CI).
+requires-python = ">=3.12"
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "pytest-asyncio",
+  "pytest-cov",
+  "ruff==0.14.8",
+  "pre-commit",
+  "voluptuous",
+  "aiohttp>=3.9.1",
+]
+
+[tool.uv]
+# This is a custom-integration source tree, not a distributable package: HA loads
+# `custom_components/haventory` directly. Don't build/install the project itself.
+package = false
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
