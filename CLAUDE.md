@@ -172,5 +172,21 @@ is partial and confined to primitives (counters, to-do due dates, labels/categor
 calendar) plus the one strong overlap: **HA Areas** (which HAventory already integrates
 with). HA has **no** nested/multi-level location tree (hard-capped at floor → area).
 
-**Per-item redundancy decisions: PENDING owner calls.** Do NOT rework any pillar until the
-owner has answered the WP0.5 decision table. Record the answers here when given.
+### Per-item decisions (DECIDED by owner, 2026-07-22)
+
+| # | Pillar | Nearest HA-native (since) | Overlap | Decision |
+|---|---|---|---|---|
+| 1 | Quantity + low-stock threshold | `counter` / `input_number` helpers | weak (no threshold logic) | **Keep as-is** |
+| 2 | Categories + tags | Labels + Categories registries (2024.4) | partial (target HA entities, not item objects) | **Keep as-is** |
+| 3 | Custom fields | none | none | **Keep as-is** |
+| 4 | Check-out + due dates | `todo` due dates (2024.1) | none (primitive only; no borrow/return) | **Keep as-is** |
+| 5 | Inspection dates | `todo` / `calendar` primitive | none | **Keep as-is** |
+| 6 | Multi-level location tree | Floors → Areas (2024.4) = one level only | none (major gap; a differentiator) | **Keep as-is** |
+| 7 | Areas integration | Area registry (0.87), Floors (2024.4) | strong | **Keep as-is** (already rides native Areas) |
+| 8 | JSON import/export (planned) | none | none | **Keep / build as planned** |
+| 9 | Reminders / calendar (post-1.0) | Local Calendar (2022.12) + `todo` + automations | partial | **Rework onto HA-native**: implement the roadmap's `CalendarEntity` (`calendar.haventory`) + HA automations rather than a bespoke reminder scheduler. Effort M, post-1.0. |
+
+Net: HAventory keeps all pillars; only the post-1.0 reminders/calendar work is to be built on
+HA-native primitives (`CalendarEntity` + automations) rather than a custom scheduler. Do NOT
+start that rework here — it is post-1.0 and out of WP0.5 scope; this table just fixes the
+direction. Everything else stays as implemented (no core-HA equivalent to migrate onto).
