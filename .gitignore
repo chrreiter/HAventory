@@ -152,6 +152,7 @@ celerybeat.pid
 .envrc
 .envrc
 .venv
+.venv-integration
 env/
 venv/
 ENV/
@@ -231,6 +232,7 @@ __marimo__/
 
 # CI/test artifacts
 junit.xml
+integration-junit.xml
 
 # OS-specific junk
 .DS_Store

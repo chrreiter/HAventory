@@ -66,6 +66,19 @@ npx vitest run
 npm run build
 ```
 
+In-process HA integration tests (WP1.5 — second, separate mode, opt-in): run the
+integration against a **real** Home Assistant core via
+`pytest-homeassistant-custom-component` (phacc). Needs Python 3.14 + a full HA install
+(from `requirements-integration.txt`; kept out of `pyproject`/`uv.lock`/the offline
+`.venv` so the fast suite stays lean), plugin autoload **on**, pytest-asyncio auto mode:
+```bash
+scripts/test_integration.sh               # provisions .venv-integration (Py 3.14 + phacc)
+# manual: .venv-integration/bin/python -m pytest -o asyncio_mode=auto tests/integration
+```
+The offline suite stays byte-identical: `tests/conftest.py` stubs HA only when the real
+package is absent, and the offline run never collects `tests/integration/`. Do **not**
+set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` for the integration mode.
+
 Bootstrap a fresh session (also run by the SessionStart hook):
 ```bash
 uv sync                                   # env from pyproject.toml + uv.lock
