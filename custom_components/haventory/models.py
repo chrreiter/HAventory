@@ -76,8 +76,10 @@ class Item:
     category: str | None = None
     low_stock_threshold: int | None = None
     custom_fields: dict[str, ScalarValue] = field(default_factory=dict)
-    created_at: str = field(default_factory=lambda: iso_utc_now())
-    updated_at: str = field(default_factory=lambda: iso_utc_now())
+    # `iso_utc_now` is defined later in this module, so the lambda is required to
+    # defer name resolution to instance-creation time (PLW0108 false positive).
+    created_at: str = field(default_factory=lambda: iso_utc_now())  # noqa: PLW0108
+    updated_at: str = field(default_factory=lambda: iso_utc_now())  # noqa: PLW0108
     version: int = 1
     location_path: LocationPath = field(default_factory=lambda: EMPTY_LOCATION_PATH)
 

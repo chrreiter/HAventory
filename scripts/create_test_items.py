@@ -23,7 +23,7 @@ except ImportError:
     print("Installing aiohttp...")
     import subprocess
 
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "aiohttp"])  # noqa: S603
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "aiohttp"])
     import aiohttp
 
 

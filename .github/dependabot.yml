@@ -1,18 +1,36 @@
 version: 2
 updates:
+  # GitHub Actions — group all bumps into one PR (keeps SHA-pinned + tagged
+  # actions moving together).
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
 
+  # Frontend card (npm). Group minor/patch; majors still arrive individually.
   - package-ecosystem: "npm"
     directory: "/cards/haventory-card"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 3
+    groups:
+      card-deps:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
-  - package-ecosystem: "pip"
+  # Python dev toolchain via uv (reads pyproject.toml + uv.lock; GA since
+  # 2025-03). Group minor/patch; majors arrive individually.
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
-    allow:
-      - dependency-type: "direct"
+    cooldown:
+      default-days: 3
+    groups:
+      python-dev:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
