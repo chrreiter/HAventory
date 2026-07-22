@@ -220,6 +220,21 @@ def normalize_text_for_sort(text: str) -> str:
     return collapsed.casefold()
 
 
+def normalize_search_text(text: str) -> str:
+    """Normalize text for search matching (lowercase, strip accents).
+
+    Uses NFKD normalization to separate accents from characters, then keeps only ASCII.
+    Shared by the repository search indexes and the post-filter in ``_item_matches_q``
+    so both layers agree on what "case-insensitive, accent-insensitive" means.
+    """
+
+    if not text:
+        return ""
+    nfkd = unicodedata.normalize("NFKD", text)
+    ascii_text = nfkd.encode("ascii", "ignore").decode("ascii")
+    return ascii_text.casefold().strip()
+
+
 def normalize_tags(tags: list[str] | None) -> list[str]:
     """Lowercase, trim, and de-duplicate a list of tags, preserving order."""
 
@@ -577,8 +592,8 @@ def _item_matches_q(item: Item, q: str) -> bool:
     if not q:
         return True
 
-    # Normalize query: split into words
-    query_words = q.casefold().split()
+    # Normalize query (casefold + NFKD accent-stripping): split into words
+    query_words = normalize_search_text(q).split()
     if not query_words:
         return True
 
@@ -593,15 +608,17 @@ def _item_matches_q(item: Item, q: str) -> bool:
 
     # Optimization: construct a single searchable string for the item
     # doing this per-item is O(field_len).
-    searchable_text = " ".join(
-        [
-            item.name or "",
-            item.description or "",
-            item.category or "",
-            item.location_path.display_path or "",
-            " ".join(item.tags),
-        ]
-    ).casefold()
+    searchable_text = normalize_search_text(
+        " ".join(
+            [
+                item.name or "",
+                item.description or "",
+                item.category or "",
+                item.location_path.display_path or "",
+                " ".join(item.tags),
+            ]
+        )
+    )
 
     for word in query_words:
         if word not in searchable_text:

@@ -69,6 +69,33 @@ async def test_filter_q_matches_name_description_tags_and_location() -> None:
 
 
 @pytest.mark.asyncio
+async def test_filter_q_is_accent_insensitive() -> None:
+    """q matching folds accents (NFKD) in both the query and the item text.
+
+    Regression: the post-filter used casefold() only, so the unaccented query
+    "cafe" missed an item named "Probe Café" even though the index found it.
+    """
+    a = create_item_from_create({"name": "Probe Café"})
+    b = create_item_from_create({"name": "Plain Mug"})
+
+    # Unaccented query vs accented content (the previously broken direction)
+    out = filter_items([a, b], ItemFilter(q="cafe"))
+    assert [x.name for x in out] == ["Probe Café"]
+
+    out2 = filter_items([a, b], ItemFilter(q="CAFE"))
+    assert [x.name for x in out2] == ["Probe Café"]
+
+    # Accented query vs accented content still works
+    out3 = filter_items([a, b], ItemFilter(q="café"))
+    assert [x.name for x in out3] == ["Probe Café"]
+
+    # Accented query vs unaccented content (the reverse direction)
+    c = create_item_from_create({"name": "Cafe Filter"})
+    out4 = filter_items([b, c], ItemFilter(q="café"))
+    assert [x.name for x in out4] == ["Cafe Filter"]
+
+
+@pytest.mark.asyncio
 async def test_filter_tags_any_and_all() -> None:
     i1 = create_item_from_create({"name": "Box", "tags": ["red", "blue"]})
     i2 = create_item_from_create({"name": "Tape", "tags": ["blue"]})
