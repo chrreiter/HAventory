@@ -1,266 +1,222 @@
-## HAventory — Developer Checklist
+# HAventory
+
+Home Assistant custom integration (domain `haventory`) for household inventory tracking,
+plus a Lit + TypeScript Lovelace card. Local-push, single-instance, HA `Store`-backed
+persistence — no external services.
+
+**Targets:** Linux dev + `ubuntu-latest` CI. Minimum Home Assistant **2026.7** (⇒ Python
+**3.14** runtime). The offline test suite is HA-stubbed and runs on the dev floor (Python
+**3.12+**). Node **22.13+ / 24 LTS** for the card.
+
+---
+
+## Developer Checklist
 
 Use this checklist when working on HAventory. Keep it up to date if conventions change.
 
-### Setup
-- [ ] Windows-first (PowerShell); provide macOS/Linux fallbacks in scripts/CI; Python 3.12; Home Assistant ≥ 2024.8
-- [ ] Create venv: `python -m venv .venv` and activate: `\.venv\Scripts\Activate.ps1`
-- [ ] `python -m pip install -U pip`
-- [ ] Install dev deps: `pip install -r requirements-dev.txt` (or run `scripts/setup.ps1` to bootstrap venv, deps, and install pre-commit hooks)
-- [ ] Frontend: Node 20 (pinned via engines); install with `npm ci` in `cards/haventory-card`
+### Setup (Linux/bash)
+
+Prereqs: [uv](https://docs.astral.sh/uv/), Node 22.13+ (or 24 LTS), git.
+
+```bash
+# One-shot bootstrap: uv env + card deps + pre-commit hooks
+scripts/setup.sh
+
+# ...or manually:
+uv sync                                   # creates .venv from pyproject.toml + uv.lock
+(cd cards/haventory-card && npm install)  # card sets package-lock=false
+```
+
+Run any Python tool through uv (`uv run <tool>`), so it uses the locked dev environment.
 
 ### Tooling
-- [ ] Ruff configured via `pyproject.toml` (Python 3.12 target; import sorting, pyupgrade, security, etc.).
-- [ ] Pre-commit hooks (optional): install via `pre-commit install` or `scripts/setup.ps1`.
-- [ ] Frontend ESLint v9 using flat config `cards/haventory-card/eslint.config.js`.
-- [ ] Vitest configured with coverage (v8) in `cards/haventory-card/vite.config.ts`.
+
+- **uv** — Python env, dependency resolution, and lockfile (`uv.lock`). Dev deps live in
+  `pyproject.toml` under `[dependency-groups]`; `requirements-dev.txt` is a generated,
+  pip-installable export kept for environments without uv.
+- **Ruff** `0.15.x` — lint + format, configured in `pyproject.toml`.
+- **mypy** `2.x` — type checking (non-strict baseline; scoped to `custom_components/haventory`).
+- **ESLint** `10` (flat config `cards/haventory-card/eslint.config.js`) + `@typescript-eslint 8`.
+- **TypeScript** `6`, **Vite** `8`, **Vitest** `4` (+ `@vitest/coverage-v8`) for the card.
+- **pre-commit** — ruff, codespell, basic hooks.
+
+### The gate (run before every commit — both halves must be green)
+
+```bash
+# Backend
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
+uv run ruff check .
+uv run mypy
+
+# Frontend (in cards/haventory-card)
+npx eslint .
+npx vitest run
+npm run build
+```
+
+Or all at once: `scripts/ci_local.sh` (backend lint + types + tests w/ coverage, then
+frontend install + lint + test + build). Lint only: `scripts/lint.sh`. Backend tests
+only: `scripts/test.sh`. Frontend tests: `scripts/test_frontend.sh [--coverage|--watch]`.
 
 ### Testing
-- [ ] Default to offline tests; disable plugin autoload: `$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'; pytest -q`
-- [ ] Async tests use `@pytest.mark.asyncio`; HA stubs in `tests/conftest.py`.
-- [ ] Edge cases covered; errors log context; coverage ≥ target.
-- [ ] Optional: integration smoke tests (pytest-homeassistant-custom-component).
 
-#### Online smoke tests (optional)
-These tests hit a real Home Assistant instance over WebSocket. They are opt-in and require environment variables.
+- Default to offline tests; HA is stubbed in `tests/conftest.py`. Async tests use
+  `@pytest.mark.asyncio`.
+- Every feature/fix ships with tests — happy path plus at least one edge/error case.
 
-- Prereqs: Home Assistant running, long-lived token, venv activated
-- Set env and run (PowerShell):
+#### Online smoke tests (opt-in)
 
-```powershell
-$env:RUN_ONLINE = '1'
-$env:HA_BASE_URL = 'http://localhost:8123'
-$env:HA_TOKEN = '<your-long-lived-token>'
-pytest -q -m online -k "ws_smoke or ws_smoke_advanced"
-Remove-Item Env:\RUN_ONLINE
+These hit a real Home Assistant instance over WebSocket. Require env vars:
+
+```bash
+export RUN_ONLINE=1
+export HA_BASE_URL=http://localhost:8123
+export HA_TOKEN=<your-long-lived-token>
+scripts/smoke_online.sh
+# or: uv run pytest -q -m online -k "ws_smoke or ws_smoke_advanced"
 ```
 
-Or use the hardened helper script (auto-activates venv if present, gates on `RUN_ONLINE`, disables pytest plugin autoload, and uses `python -m pytest`):
+Area-registry e2e (optional; temporarily mutates your HA instance):
 
-```powershell
-$env:RUN_ONLINE = '1'
-$env:HA_BASE_URL = 'http://localhost:8123'
-$env:HA_TOKEN = '<your-long-lived-token>'
-scripts\smoke_online.ps1
-Remove-Item Env:\RUN_ONLINE
+```bash
+export HA_ALLOW_AREA_MUTATIONS=1
+uv run pytest -q -m online -k ws_areas_online
 ```
 
-Included smoke tests:
-- `tests/test_ws_smoke_online.py` — Phase-0 ping/version/stats + Phase-1 locations CRUD tree/validation
-- `tests/test_ws_smoke_advanced_online.py` — Phase-3 bulk mixed/all-failure flows
-- `tests/test_ws_areas_online.py` — Optional area registry e2e; creates temporary areas via HA WS and verifies `haventory/areas/list` (requires `HA_ALLOW_AREA_MUTATIONS=1`)
-
-To exercise area registry e2e creation (optional; modifies your HA instance temporarily), also set:
-
-```powershell
-$env:HA_ALLOW_AREA_MUTATIONS = '1'
-pytest -q -m online -k "ws_areas_online"
-Remove-Item Env:\HA_ALLOW_AREA_MUTATIONS
-```
+Included: `tests/test_ws_smoke_online.py`, `tests/test_ws_smoke_advanced_online.py`,
+`tests/test_ws_areas_online.py`.
 
 #### Coverage
-- Backend (pytest-cov):
-  - Local quick run: `scripts\ci_local.ps1` (produces `coverage.xml` and browsable `htmlcov\index.html`).
-  - Manual: `$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'; pytest -q --cov=custom_components/haventory --cov-report=term-missing:skip-covered --cov-report=xml --cov-report=html`.
-- Frontend (Vitest):
-  - Quick run: `scripts\test_frontend.ps1` (runs tests once)
-  - With coverage: `scripts\test_frontend.ps1 -Coverage` (opens `cards/haventory-card/coverage/index.html`)
-  - Watch mode: `scripts\test_frontend.ps1 -Watch` (interactive re-run on changes)
-  - Manual: In `cards/haventory-card`: `npm test` or `npm run test:coverage`
+
+- Backend: `scripts/ci_local.sh` produces `coverage.xml` + browsable `htmlcov/index.html`.
+- Frontend: `scripts/test_frontend.sh --coverage` (report at `cards/haventory-card/coverage/`).
 
 ### Backend (custom component)
-- [ ] `custom_components/haventory/` with `manifest.json`, `__init__.py`, `config_flow.py`, `services.yaml`
-- [ ] Store: `hass.data[DOMAIN]["store"]` with versioned schema and safe writes
-- [ ] Persistence architecture:
-  - **WebSocket handlers**: Immediate saves via `async_persist_repo` — ensures storage errors propagate to clients as `storage_error`
-  - **Service handlers**: Immediate saves via `async_persist_repo` — user-initiated actions prefer immediate durability
-  - **Shutdown/unload**: Immediate save via `async_persist_immediate` — ensures pending changes are written before exit
-  - **Debounced saves**: Available via `async_request_persist` for batch/internal operations where error propagation is not required
-  - **Concurrency**: All persist paths use `asyncio.Lock` to serialize writes and prevent race conditions
-  - **Edge case**: If storage fails after mutation, the change exists in memory but won't survive restart; client receives `storage_error`
-- [ ] Repository generation counter: Increments on every state modification for optimistic locking and debugging; persisted across restarts
-- [ ] WebSocket-only CRUD via `homeassistant.components.websocket_api` decorators (production). For local tooling, an optional dev-only HTTP shim may be enabled behind an env flag.
-- [ ] Services via `hass.services.async_register` with `voluptuous` schemas; service handlers log context and re-raise validation/repository/storage errors so Home Assistant surfaces failures.
-- [ ] Areas via `hass.helpers.area_registry.async_get(hass)`; do not auto-create areas
-- [ ] Summary sensors via `DataUpdateCoordinator` + `CoordinatorEntity`
-- [ ] Calendar entity via `CalendarEntity`; implement `async_get_events`
-- [ ] Single device in device registry (`device_info`); stable `unique_id` for entities
-- [ ] Case-insensitive search; denormalized `location_path` on items
-- [ ] Checkout: boolean + optional `due_date` (no quantity decrement)
-- [ ] History retention: 20 per item; global 1000 FIFO, keep ≥1 per item; exclude reminder events from retention counts
+
+- `custom_components/haventory/` with `manifest.json`, `__init__.py`, `config_flow.py`, `services.yaml`.
+- Store: `hass.data[DOMAIN]["store"]` with versioned schema and safe writes.
+- Persistence architecture:
+  - **WebSocket / service handlers**: immediate saves via `async_persist_repo` — storage
+    errors propagate to clients as `storage_error`.
+  - **Shutdown/unload**: immediate save via `async_persist_immediate`.
+  - **Debounced saves**: `async_request_persist` for batch/internal operations only.
+  - **Concurrency**: all persist paths use `asyncio.Lock` to serialize writes.
+- Repository generation counter increments on every state modification (optimistic locking/debugging).
+- WebSocket-first CRUD via `homeassistant.components.websocket_api` decorators.
+- Services via `hass.services.async_register` with `voluptuous` schemas; handlers re-raise
+  validation/repository/storage errors so HA surfaces them.
+- Areas via `homeassistant.helpers.area_registry.async_get(hass)`; never auto-create areas.
+- Case-insensitive search; denormalized `location_path` on items; item `version` for optimistic concurrency.
 
 ### Frontend (Lovelace card)
-- [ ] Lit + TypeScript + Vite; tests with Vitest
-- [ ] Build outputs to `www/haventory/`
-- [ ] Real-time via WebSocket; optimistic UI; virtualization for large lists
-- [ ] MVP: direct search; filters/sorts later; location tree selector; check-in/out actions
-- [ ] WebSocket subscriptions cleaned up via close callbacks to avoid leaked connections
-- [ ] Card auto-registered as Lovelace resource on integration setup
-- [ ] **Note:** After first installation, a browser refresh (F5 or Ctrl+Shift+R) is required for the card to appear in the Lovelace card picker. This is standard behavior for all custom cards.
 
-### Notifications & Scheduling
-- [ ] Notifications via `notify.notify`; title-only by default
-- [ ] Calendar defaults: entity `calendar.haventory`; all-day; title `Inspect {item_name}`
-- [ ] Reminders: intervals days/weeks/months; rely on HA for offline catch-up
+- Lit + TypeScript + Vite; tests with Vitest. Build outputs to `www/haventory/`.
+- Real-time via WebSocket; optimistic UI; virtualization for large lists.
+- Card auto-registered as a Lovelace resource on integration setup.
+- **Note:** after first install, a browser refresh (F5 / Ctrl+Shift+R) is required for the
+  card to appear in the picker (standard for all custom cards).
 
 ### CI/CD & Ops
-- [ ] GitHub Actions: hassfest, HACS validation (no publish until Phase 3), Ruff, pytest (offline) with coverage and artifacts, frontend lint/test/coverage/build, CodeQL.
-- [ ] CI coverage summary is added to the job summary; artifacts (`coverage.xml`, `junit.xml`, `htmlcov/**`, frontend `coverage/**`) are uploaded.
-- [ ] Dependabot enabled for GitHub Actions, npm (card), and pip dev deps.
-- [ ] Release automation planned via Release Please (see roadmap “Phase: Polish”).
-- [ ] Conventional Commits; update README and `roadmap/implementation_roadmap.md` before merging a PR (add an entry under `## Changelog`).
-- [ ] Backups: Store data included in HA snapshots; document restore behavior.
-- [ ] Translations under `translations/` (EN initial); strings externalized.
+
+- GitHub Actions (`ubuntu-latest`): backend (uv, ruff + mypy + pytest w/ coverage, Python
+  3.12/3.14 matrix), frontend (eslint + vitest + build, Node 22/24 matrix), actionlint,
+  hassfest + HACS validation, CodeQL. Third-party actions are SHA-pinned; first-party
+  `actions/*` use `@v7`.
+- Dependabot: grouped updates for `github-actions`, `npm` (card), and `uv` (Python).
+- Release automation planned via **release-please** (WP5).
+- Conventional Commits; update this README when behavior changes.
+
+---
+
+## Reproducible dev environment (.devcontainer)
+
+Open the repo in VS Code / GitHub Codespaces and "Reopen in Container" for a ready-to-go
+environment (uv + Node 24). `post-create` runs `uv sync`, installs card deps, and verifies
+the offline suite. To bring up a real Home Assistant with HACS against the working tree
+(WP4 E2E), run `bash .devcontainer/develop.sh` (needs network; provisions Python 3.14).
+
+---
 
 ## Implementation Status
 
 ### ✅ Phase 1: Backend & WebSocket API (Complete)
-- Full CRUD for Items and Locations via WebSocket
-- Optimistic concurrency control with versioning
-- Areas integration (filter by HA area)
-- Real-time subscriptions (items, locations, stats)
-- Debounced persistence with documented edge cases
-- Test coverage: 138 tests passing, 88%+ coverage
+- Full CRUD for Items and Locations via WebSocket; optimistic concurrency with versioning;
+  Areas integration; real-time subscriptions (items, locations, stats); documented persistence.
 
 ### ✅ Phase 2: Frontend Lovelace Card (Complete)
-- **Components**: Built with Lit 3.1 + TypeScript
-  - `haventory-card`: Main container with expand/collapse overlay
-  - `hv-search-bar`: Search with Area/Location filters, checkboxes, sort
-  - `hv-inventory-list`: Virtualized list with `@lit-labs/virtualizer`
-  - `hv-item-row`: Interactive rows with keyboard shortcuts (Enter, Delete, +/-)
-  - `hv-item-dialog`: Add/edit with validation
-  - `hv-location-selector`: Location picker with search
-- **Features**:
-  - Populated Area and Location dropdowns (from store cache)
-  - Area labels on item rows (resolved from location)
-  - Quick Add (+) button in header
-  - Debounced search (200ms)
-  - Optimistic updates with conflict resolution UI
-  - Real-time sync via WebSocket subscriptions
-- **Test Coverage**: 46 tests passing, 88.83% statements, 71.63% functions
-- **Build**: Vite → `www/haventory/haventory-card.js`
-- **Auto-registration**: Card automatically registered as Lovelace resource on integration setup (browser refresh required after first install)
+- Lit 3 + TypeScript components (`haventory-card`, `hv-search-bar`, `hv-inventory-list`,
+  `hv-item-row`, `hv-item-dialog`, `hv-location-selector`); real-time sync; optimistic
+  updates with conflict resolution; Vite build → `www/haventory/haventory-card.js`.
 
 ### 🚧 Phase 3: Polish & HACS (Planned)
-- HACS publication
-- Release automation (Release Please)
-- Additional optimizations
+- HACS publication; release automation (release-please); additional optimizations.
 
 ---
 
-### Dev add-on loop
-## Phase 0 usage guide
+## Dev helper scripts
 
-### 1) Bootstrap and lint/test
-- Clone repo and open PowerShell in the repo root
-- Run `scripts/setup.ps1` (installs venv deps)
-- Lint: `scripts/lint.ps1`
-- Local CI (lint + tests + coverage + frontend): `scripts/ci_local.ps1`
+All scripts are Linux/bash under `scripts/` (the former `.ps1` scripts were retired in WP1).
 
-### 2) Frontend card
-- Build: `scripts/build_frontend.ps1` (skips if npm not on PATH)
-- Output is written to `www/haventory/haventory-card.js`
+### Reload into a running HA dev container
 
-### Creating locations from the card
-- In expanded view, click **Add location** in the header.
-- Enter a name; optionally select a location first and check **Create under selected location** to make a child.
-- Click **Create**. The new location appears immediately and is selected.
+```bash
+scripts/reload_addon.sh --container <your_container> --tail-logs
+# deploy examples/configuration.yaml instead of the dev config: add --examples-config
+```
 
-### 3) Dev add-on workflow (optional)
-- Reload HA dev container and deploy config/integration (explicit container name required):
-  `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\reload_addon.ps1 -ContainerName <your_container> -UseDevConfig:$true -TailLogs:$true -SleepSecondsAfterRestart 8`
+### WebSocket helper scripts (cross-platform Python)
 
-### 4) CI
-- GitHub Actions runs: backend lint/tests/coverage (Windows), frontend lint/test/coverage (Ubuntu), hassfest/HACS validation, CodeQL.
+Quick probes/subscriptions without writing test code. Run via `uv run python scripts/<name>.py`.
 
-### 5) Conventions
-- Domain/package: `haventory` under `custom_components/haventory`
-- Services: `haventory.*`
-- Built assets: `www/haventory/`
-- Calendar entity id: `calendar.haventory`
-- Logging: Avoid reserved LogRecord keys in logger extras; use `item_name`/`location_name` instead of `name` in logging context
+`scripts/ws_probe.py` — send a single WS command and print the first reply:
 
-### Developer docs
+```bash
+export HA_TOKEN=<token>            # HA_BASE_URL defaults to http://localhost:8123
+export HAV_MSG='{"id":1,"type":"haventory/ping","echo":"hi"}'
+uv run python scripts/ws_probe.py
+```
+
+`scripts/ws_subscribe.py` — subscribe to a topic (`items` | `locations` | `stats`) and
+print events. Optional: `HAV_LOCATION_ID`, `HAV_INCLUDE_SUBTREE`, `HAV_MAX_EVENTS`,
+`HAV_MUTATIONS` (JSON array of WS messages to send after subscribing):
+
+```bash
+export HA_TOKEN=<token>
+export HAV_TOPIC=items HAV_MAX_EVENTS=3
+uv run python scripts/ws_subscribe.py
+```
+
+### Backend stress testing
+
+`scripts/stress_test.py` validates persistence/concurrency against a Docker-based HA
+instance. Requires `HA_CONTAINER`, `HA_BASE_URL`, `HA_TOKEN`:
+
+```bash
+export HA_CONTAINER=home-assistant HA_BASE_URL=http://localhost:8123 HA_TOKEN=<token>
+uv run python scripts/stress_test.py                          # full run (deploy + test)
+uv run python scripts/stress_test.py --skip-deploy --skip-confirm  # quick re-run
+```
+
+Scenarios: rapid sequential mutations, concurrent burst, bulk-under-load, mixed workload,
+persistence-across-restart. Exit codes: `0` pass, `1` failures, `2` setup error.
+
+---
+
+## Conventions
+
+- Domain/package: `haventory` under `custom_components/haventory`; services `haventory.*`;
+  built assets `www/haventory/`; calendar entity `calendar.haventory`.
+- Logging: avoid reserved `LogRecord` keys in logger extras — use `item_name` /
+  `location_name`, not `name`.
+
+## Developer docs
 
 - WebSocket API contract: `docs/backend_api_contract.md`
 - Data shapes (Item/Location/filter/sort/events): `docs/data_shapes.md`
+- Frontend architecture: `docs/frontend_architecture.md`
 
-- [ ] Use `scripts/reload_addon.ps1 -ContainerName <your_container> -UseDevConfig:$true -TailLogs:$true -SleepSecondsAfterRestart 8`
-- [ ] When `-UseDevConfig:$false`, deploy `examples\configuration.yaml`
+## Troubleshooting
 
-### WebSocket helper scripts
-
-Quick probes and subscriptions without writing test code.
-
-1) `scripts/ws_probe.py` — send a single WS command and print the first reply
-
-Environment (PowerShell):
-- `HA_BASE_URL` (default `http://localhost:8123`)
-- `HA_TOKEN` (required)
-- `HAV_MSG` (required; JSON string)
-
-Examples:
-```powershell
-$env:HAV_MSG = '{"id":1,"type":"haventory/ping","echo":"hi"}'
-python .\scripts\ws_probe.py
-
-$env:HAV_MSG = '{"id":2,"type":"haventory/version"}'
-python .\scripts\ws_probe.py
-```
-
-2) `scripts/ws_subscribe.py` — subscribe to a topic and print events/results
-
-Environment (PowerShell):
-- `HA_BASE_URL`, `HA_TOKEN`
-- `HAV_TOPIC` = `items` | `locations` | `stats`
-- Optional: `HAV_LOCATION_ID`, `HAV_INCLUDE_SUBTREE` (for `locations`), `HAV_MAX_EVENTS` (default 5)
-- Optional: `HAV_MUTATIONS` (JSON array of WS messages to send after subscribing)
-
-Examples:
-```powershell
-# Items topic with two mutations, stop after 3 frames
-$env:HAV_TOPIC = 'items'
-$env:HAV_MAX_EVENTS = '3'
-$env:HAV_MUTATIONS = '[{"id":101,"type":"haventory/item/create","name":"Bananas"},{"id":102,"type":"haventory/item/delete","item_id":"<id>"}]'
-python .\scripts\ws_subscribe.py
-
-# Subtree-filtered locations
-$env:HAV_TOPIC = 'locations'
-$env:HAV_LOCATION_ID = '<root-location-uuid>'
-$env:HAV_INCLUDE_SUBTREE = 'true'
-$env:HAV_MAX_EVENTS = '4'
-python .\scripts\ws_subscribe.py
-```
-
-### Backend Stress Testing
-
-The stress test script (`scripts/stress_test.py`) validates persistence and concurrency fixes against a Docker-based Home Assistant instance.
-
-**Prerequisites:**
-- Docker container running Home Assistant with HAventory integration
-- Environment variables: `HA_CONTAINER`, `HA_BASE_URL`, `HA_TOKEN`
-
-**Quick Start:**
-```powershell
-.\.venv\Scripts\Activate.ps1
-$env:HA_CONTAINER = 'home-assistant'
-$env:HA_BASE_URL = 'http://localhost:8123'
-$env:HA_TOKEN = '<your-token>'
-
-python .\scripts\stress_test.py              # Full run (deploy + test)
-python .\scripts\stress_test.py --skip-deploy --skip-confirm  # Quick re-run
-```
-
-**Test Scenarios:**
-1. **Rapid Sequential Mutations** — 50 items with 10ms delay; validates debounce coalesces into 1-3 disk writes
-2. **Concurrent Burst Operations** — 20 simultaneous requests; validates `asyncio.Lock` prevents race conditions
-3. **Bulk Operations Under Load** — 100 mixed ops with intentional failures; validates partial failure handling
-4. **Mixed Workload** — 100 interleaved operations; validates no deadlocks under realistic load
-5. **Persistence Verification** — Container restart; validates all data survives
-
-**Exit codes:** `0` = all pass, `1` = failures, `2` = setup error
-
-### Logs and troubleshooting
 - Container logs: `docker logs -f <container>` (or `-n 200` for recent)
 - HA log file (if enabled): `/config/home-assistant.log` inside the container
 - HAventory storage file: `/config/.storage/haventory_store`

@@ -8,14 +8,14 @@ HAventory is a Home Assistant **custom integration** (domain `haventory`) for ho
 inventory tracking, plus a Lovelace **card** frontend. Local-push, single-instance, HA
 `Store`-backed persistence — no external services.
 
-Targets: minimum Home Assistant is a recent stable release (2026.x era; no legacy support),
-Python 3.12 (`pyproject.toml` ruff `target-version = py312`, CI Python 3.12), Node 20
-(`engines: node >=20 <23`). Version 0.0.1, unreleased.
+Targets (as of WP1): minimum Home Assistant **2026.7** (⇒ Python **3.14** runtime). The
+offline suite is HA-stubbed and runs on the dev/source floor **Python 3.12+** (`pyproject.toml`
+ruff `target-version = py312`, CI matrix 3.12 + 3.14). Node **22.13+ / 24 LTS**
+(`engines: ^22.13 || >=24`). Toolchain: **uv** (env + lockfile + dependency groups), ruff
+`0.15`, mypy `2`, ESLint `10`, TypeScript `6`, Vite `8`, Vitest `4`. Version 0.0.1, unreleased.
 
-> **Superseded by WP0.5 (2026-07-22):** the Python target is now **3.14** (forced by HA
-> ≥ 2026.3) and the min HA is **2026.7** — see the "HA / Python compatibility baseline"
-> section below. The `py312` / CI-3.12 values above describe the *current* toolchain; the
-> bump to 3.14 lands in WP1.
+> See the "WP1 Decisions" section at the end for the full adopted platform + tooling set and
+> the reasons the lint/type floor stays at 3.12 while the declared runtime is 3.14.
 
 ## Architecture & key files
 
@@ -52,10 +52,11 @@ Lit 3 + TypeScript + Vite Lovelace card. Source in `src/` (`haventory-card` cont
 
 ## Running tests / lint / build (Linux)
 
-Backend (repo root, venv activated):
+Backend (repo root):
 ```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q
-ruff check .
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
+uv run ruff check .
+uv run mypy
 ```
 
 Frontend (in `cards/haventory-card`):
@@ -65,19 +66,21 @@ npx vitest run
 npm run build
 ```
 
-Bootstrap a fresh session (also run automatically by the SessionStart hook):
+Bootstrap a fresh session (also run by the SessionStart hook):
 ```bash
-python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-(cd cards/haventory-card && npm ci)
+uv sync                                   # env from pyproject.toml + uv.lock
+(cd cards/haventory-card && npm install)  # card sets package-lock=false
 ```
 
-Online smoke tests (`tests/*_online.py`) are opt-in and need a real HA instance plus
-`RUN_ONLINE=1`, `HA_BASE_URL`, `HA_TOKEN` — see the README. Offline tests stub HA via
-`tests/conftest.py`.
+Convenience wrappers live in `scripts/*.sh` (`setup.sh`, `lint.sh`, `test.sh`,
+`ci_local.sh`, `build_frontend.sh`, …). Online smoke tests (`tests/*_online.py`) are opt-in
+and need a real HA instance plus `RUN_ONLINE=1`, `HA_BASE_URL`, `HA_TOKEN` — see the README.
+Offline tests stub HA via `tests/conftest.py`.
 
-> The `scripts/*.ps1` files are **legacy** PowerShell tooling, slated for replacement in WP1.
-> Develop and document for Linux/bash; leave the `.ps1` scripts (and the `windows-latest` CI
-> job) untouched for now.
+> WP1 retired the `scripts/*.ps1` PowerShell tooling and moved CI off `windows-latest` —
+> everything is Linux/bash now. The cross-platform Python helpers (`ws_probe.py`,
+> `ws_subscribe.py`, `ws_init_haventory.py`, `stress_test.py`, `create_test_items.py`) are
+> unchanged; run them via `uv run python scripts/<name>.py`.
 
 ## Conventions
 
@@ -190,3 +193,49 @@ Net: HAventory keeps all pillars; only the post-1.0 reminders/calendar work is t
 HA-native primitives (`CalendarEntity` + automations) rather than a custom scheduler. Do NOT
 start that rework here — it is post-1.0 and out of WP0.5 scope; this table just fixes the
 direction. Everything else stays as implemented (no core-HA equivalent to migrate onto).
+
+---
+
+## WP1 Decisions — toolchain modernization + Linux-first (2026-07-22)
+
+Adopted tooling (latest stable at review time; verified against release pages / npm registry):
+
+| Area | Choice | Notes |
+|---|---|---|
+| Python env/deps | **uv** (`uv.lock` + `[dependency-groups]`, `[tool.uv] package=false`) | replaces pip + hand `.venv`; `requirements-dev.txt` is now a generated uv export |
+| Lint/format | **ruff 0.15.22** | pin unified across `pyproject.toml` + pre-commit |
+| Type checker | **mypy 2.x**, non-strict | matches HA core; scoped to `custom_components/haventory`; `ws.py`/`repository.py` boundaries relaxed via override; ratchet in WP4/WP5 |
+| Frontend pkg mgr | **npm** (kept) | pnpm not worth it for one small package |
+| Frontend lint | **ESLint 10** + `@typescript-eslint 8`; no separate formatter | Biome not adopted (weaker Lit/TS type-aware coverage) |
+| TypeScript | **6.0.3** (hold 7.x) | typescript-eslint 8.65 caps at `<6.1.0`; TS 7 would break type-aware lint. Follow-up: bump to 7 when typescript-eslint supports it |
+| Vite / Vitest | **8 / 4** (+ coverage-v8 4) | upgraded together (vitest 4 needs vite ≥6) |
+| Node | `engines ^22.13 || >=24`; CI 22 + 24 | Node 20 EOL 2026-04-30 |
+| CI | ubuntu-latest, uv (`setup-uv` w/ cache), Python 3.12+3.14 matrix, concurrency+cancel, actionlint, `actions/*@v7`, SHA-pinned hassfest/hacs/setup-uv | moved off windows-latest |
+| Dependabot | grouped updates; **uv** ecosystem for Python | kept over Renovate |
+| Release automation | **release-please** | recommended now, implement in WP5 |
+
+### Platform floors (important, load-bearing)
+
+- **`requires-python = ">=3.12"`**, **ruff `target-version = py312`**, **mypy
+  `python_version = 3.12`** track the **source floor** — the interpreter the HA-stubbed
+  offline suite actually runs on. The **declared HA runtime is 2026.7 / Python 3.14**
+  (manifest + docs + a CI 3.14 matrix leg). The code is written 3.12-compatible so tooling
+  and tests run everywhere; it also runs on 3.14.
+- **Do NOT set the lint/type floor to py314.** ruff's 2026 formatter emits PEP 758
+  unparenthesized `except A, B:` at py314, which is a `SyntaxError` on 3.12/3.13 and breaks
+  the offline suite on the dev floor. **Follow-up:** raise the floor to 3.14 once 3.12/3.13
+  support is dropped (then the WP0.5 `py314` targets apply).
+
+### WP1 follow-ups (out of scope / environment-blocked)
+
+- **Type-harden** `ws.py` + `repository.py` and drop the mypy per-module override (WP4/WP5).
+- **`storage.py`**: switch the debounced persist from bare `asyncio.create_task` to
+  `hass.async_create_background_task(...)` (WP0.5 finding; effort S).
+- **TypeScript 7**: adopt once typescript-eslint supports it (currently capped `<6.1.0`).
+- **`tsc --noEmit`** surfaces pre-existing card type gaps; not yet part of the gate.
+- **release-please** wiring lands in WP5.
+- **Environment-blocked files** (this session's sandbox denies writes to them — apply
+  manually): `.devcontainer/*` (reproducible HA+HACS container), `.npmrc`
+  (`package-lock=true` to enable a committed lockfile + switch CI/scripts back to `npm ci`),
+  `.pre-commit-config.yaml` (bump ruff rev `v0.13.0 → v0.15.22`, add an actionlint hook).
+  actionlint already runs as a CI job; the pre-commit ruff-rev drift is cosmetic.
