@@ -29,17 +29,6 @@
   color: "bfd4f2"
   description: "Documentation and READMEs"
 
-# --- Priority ---
-- name: "priority:high"
-  color: "b60205"
-  description: "Should be addressed soon"
-- name: "priority:medium"
-  color: "fbca04"
-  description: "Normal priority"
-- name: "priority:low"
-  color: "0e8a16"
-  description: "Nice to have"
-
 # --- Housekeeping ---
 - name: "good first issue"
   color: "7057ff"
