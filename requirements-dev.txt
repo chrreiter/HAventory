@@ -75,11 +75,7 @@ pyyaml==6.0.3
     # via pre-commit
 ruff==0.15.22
 typing-extensions==4.16.0
-    # via
-    #   aiohttp
-    #   aiosignal
-    #   mypy
-    #   pytest-asyncio
+    # via mypy
 virtualenv==21.7.0
     # via pre-commit
 voluptuous==0.16.0

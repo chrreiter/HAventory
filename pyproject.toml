@@ -5,10 +5,10 @@ description = "Home Assistant custom integration for household inventory trackin
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "chrreiter" }]
-# Dev-tooling floor. The offline test suite is HA-stubbed and interpreter-agnostic,
-# so it runs on 3.12+; the *shipped integration* targets Home Assistant 2026.7 /
-# Python 3.14 (enforced by ruff `target-version`, mypy `python_version`, and CI).
-requires-python = ">=3.12"
+# Matches the declared HA runtime (min HA 2026.7 => Python 3.14). uv provisions
+# 3.14 automatically (`uv sync` / `uv python install 3.14`); dev environments
+# must allow the interpreter download or preinstall 3.14.
+requires-python = ">=3.14"
 
 [dependency-groups]
 dev = [
@@ -27,13 +27,10 @@ dev = [
 # `custom_components/haventory` directly. Don't build/install the project itself.
 package = false
 
-# NOTE: `target-version` tracks the *source floor* the offline suite runs on
-# (Python 3.12), NOT the declared HA runtime (2026.7 / Python 3.14). Bumping this
-# to py314 makes ruff's formatter emit PEP 758 unparenthesized `except A, B:`,
-# which is a SyntaxError on 3.12/3.13 and breaks the HA-stubbed offline suite on
-# the dev floor. Follow-up: raise to py314 once the test floor drops 3.12/3.13.
+# py314 matches requires-python. Note: the 2026 formatter emits PEP 758
+# unparenthesized `except A, B:` at this target — the source is 3.14-only.
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 100
 respect-gitignore = true
 src = [
@@ -71,9 +68,8 @@ quote-style = "preserve"
 
 [tool.mypy]
 # Non-strict baseline: the current code passes. Strictness ratchets in WP4/WP5.
-# python_version tracks the source floor (3.12), matching ruff `target-version`
-# and requires-python; the integration also runs on the declared HA 3.14 runtime.
-python_version = "3.12"
+# python_version matches requires-python / ruff target (HA 2026.7 => 3.14).
+python_version = "3.14"
 files = ["custom_components/haventory"]
 namespace_packages = true
 explicit_package_bases = true

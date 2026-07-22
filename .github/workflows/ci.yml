@@ -21,8 +21,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.12 = dev/test source floor; 3.14 = declared HA 2026.7 runtime.
-        python-version: [ '3.12', '3.14' ]
+        # The declared HA 2026.7 runtime. The source is 3.14-only (PEP 758
+        # `except A, B:` syntax emitted by the 2026 ruff formatter).
+        python-version: [ '3.14' ]
     env:
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
     steps:

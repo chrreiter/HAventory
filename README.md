@@ -4,9 +4,9 @@ Home Assistant custom integration (domain `haventory`) for household inventory t
 plus a Lit + TypeScript Lovelace card. Local-push, single-instance, HA `Store`-backed
 persistence — no external services.
 
-**Targets:** Linux dev + `ubuntu-latest` CI. Minimum Home Assistant **2026.7** (⇒ Python
-**3.14** runtime). The offline test suite is HA-stubbed and runs on the dev floor (Python
-**3.12+**). Node **22.13+ / 24 LTS** for the card.
+**Targets:** Linux dev + `ubuntu-latest` CI. Minimum Home Assistant **2026.7** ⇒ Python
+**3.14** everywhere (uv provisions the interpreter automatically; the source uses 3.14-only
+PEP 758 syntax). Node **22.13+ / 24 LTS** for the card.
 
 ---
 
@@ -119,7 +119,7 @@ Included: `tests/test_ws_smoke_online.py`, `tests/test_ws_smoke_advanced_online.
 ### CI/CD & Ops
 
 - GitHub Actions (`ubuntu-latest`): backend (uv, ruff + mypy + pytest w/ coverage, Python
-  3.12/3.14 matrix), frontend (eslint + vitest + build, Node 22/24 matrix), actionlint,
+  3.14), frontend (eslint + vitest + build, Node 22/24 matrix), actionlint,
   hassfest + HACS validation, CodeQL. Third-party actions are SHA-pinned; first-party
   `actions/*` use `@v7`.
 - Dependabot: grouped updates for `github-actions`, `npm` (card), and `uv` (Python).

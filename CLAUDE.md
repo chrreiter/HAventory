@@ -8,14 +8,14 @@ HAventory is a Home Assistant **custom integration** (domain `haventory`) for ho
 inventory tracking, plus a Lovelace **card** frontend. Local-push, single-instance, HA
 `Store`-backed persistence — no external services.
 
-Targets (as of WP1): minimum Home Assistant **2026.7** (⇒ Python **3.14** runtime). The
-offline suite is HA-stubbed and runs on the dev/source floor **Python 3.12+** (`pyproject.toml`
-ruff `target-version = py312`, CI matrix 3.12 + 3.14). Node **22.13+ / 24 LTS**
-(`engines: ^22.13 || >=24`). Toolchain: **uv** (env + lockfile + dependency groups), ruff
-`0.15`, mypy `2`, ESLint `10`, TypeScript `6`, Vite `8`, Vitest `4`. Version 0.0.1, unreleased.
+Targets (as of WP1): minimum Home Assistant **2026.7** ⇒ **Python 3.14 everywhere**
+(`requires-python >=3.14`, ruff `target-version = py314`, mypy `3.14`, CI 3.14; the source
+uses 3.14-only PEP 758 syntax). uv provisions the interpreter automatically. Node
+**22.13+ / 24 LTS** (`engines: ^22.13 || >=24`). Toolchain: **uv** (env + lockfile +
+dependency groups), ruff `0.15`, mypy `2`, ESLint `10`, TypeScript `6`, Vite `8`,
+Vitest `4`. Version 0.0.1, unreleased.
 
-> See the "WP1 Decisions" section at the end for the full adopted platform + tooling set and
-> the reasons the lint/type floor stays at 3.12 while the declared runtime is 3.14.
+> See the "WP1 Decisions" section at the end for the full adopted platform + tooling set.
 
 ## Architecture & key files
 
@@ -216,15 +216,15 @@ Adopted tooling (latest stable at review time; verified against release pages / 
 
 ### Platform floors (important, load-bearing)
 
-- **`requires-python = ">=3.12"`**, **ruff `target-version = py312`**, **mypy
-  `python_version = 3.12`** track the **source floor** — the interpreter the HA-stubbed
-  offline suite actually runs on. The **declared HA runtime is 2026.7 / Python 3.14**
-  (manifest + docs + a CI 3.14 matrix leg). The code is written 3.12-compatible so tooling
-  and tests run everywhere; it also runs on 3.14.
-- **Do NOT set the lint/type floor to py314.** ruff's 2026 formatter emits PEP 758
-  unparenthesized `except A, B:` at py314, which is a `SyntaxError` on 3.12/3.13 and breaks
-  the offline suite on the dev floor. **Follow-up:** raise the floor to 3.14 once 3.12/3.13
-  support is dropped (then the WP0.5 `py314` targets apply).
+- **Python 3.14 everywhere** (floor raised 2026-07-22, completing the WP0.5 target):
+  `requires-python = ">=3.14"`, ruff `target-version = "py314"`, mypy
+  `python_version = "3.14"`, CI runs 3.14 only. The source uses PEP 758 unparenthesized
+  `except A, B:` (emitted by ruff's 2026 formatter at py314), so it does **not parse on
+  ≤ 3.13** — there is no 3.12/3.13 support anymore.
+- Dev environments must be able to provide CPython 3.14: uv downloads it automatically on
+  `uv sync`. Environments with restricted egress (e.g. a remote sandbox that blocks
+  python-build-standalone downloads) must preinstall 3.14 or allow the download — otherwise
+  the offline suite cannot run there.
 
 ### WP1 follow-ups (out of scope / environment-blocked)
 

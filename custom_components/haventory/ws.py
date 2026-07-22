@@ -556,7 +556,7 @@ def _collect_item_issues(item_id: str, item, idx: dict) -> list[str]:  # noqa: P
     is_low = False
     try:
         is_low = thr is not None and int(getattr(item, "quantity", 0)) <= int(thr)
-    except (TypeError, ValueError):  # pragma: no cover - defensive
+    except TypeError, ValueError:  # pragma: no cover - defensive
         is_low = False
     if is_low:
         if item_id not in low_stock_item_ids:

@@ -1301,7 +1301,7 @@ class Repository:
             if not isinstance(obj, dict):
                 return None
             return obj
-        except (ValueError, binascii.Error):  # pragma: no cover - defensive
+        except ValueError, binascii.Error:  # pragma: no cover - defensive
             return None
 
     def _primary_sort_value(self, item: Item, sort: Sort) -> str | int:
