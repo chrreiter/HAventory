@@ -257,7 +257,7 @@ describe('hv-location-selector', () => {
   });
 
   it('closes even if select handler throws', async () => {
-    const el = document.createElement('hv-location-selector') as HTMLElement & { onSelect?: () => void };
+    const el = document.createElement('hv-location-selector') as unknown as HTMLElement & { onSelect?: () => void };
     (el as any).open = true;
 
     const err = new Error('boom');

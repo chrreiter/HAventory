@@ -12,6 +12,7 @@ function makeItems(n: number): Item[] {
     quantity: i,
     checked_out: false,
     due_date: null,
+    inspection_date: null,
     location_id: null,
     tags: [],
     category: null,

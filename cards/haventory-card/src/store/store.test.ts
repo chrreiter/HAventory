@@ -86,7 +86,7 @@ describe('Store', () => {
     const after = store.state.value.items.find((i) => i.id === '1');
     expect(after?.name).toBe('Original');
     expect(after?.quantity).toBe(1);
-    expect(store.state.value.errorQueue.at(-1)?.code).toBe('conflict');
+    expect(store.state.value.errorQueue[store.state.value.errorQueue.length - 1]?.code).toBe('conflict');
   });
 
   it('deletes item optimistically and rolls back on error', async () => {
@@ -272,6 +272,60 @@ describe('Store', () => {
     store.setFilters({ orphansOnly: false });
     await new Promise((r) => setTimeout(r, 10));
     expect(listFilters[listFilters.length - 1]?.orphaned_only).toBeUndefined();
+  });
+
+  it('orphans filter narrows the visible items end-to-end through the mock', async () => {
+    const placed = makeItem({
+      id: 'p1', name: 'Placed', location_id: 'loc1',
+      location_path: { id_path: ['loc1'], name_path: ['Garage'], display_path: 'Garage', sort_key: 'garage' },
+    });
+    const orphan = makeItem({ id: 'o1', name: 'Orphan' });
+    const hass = makeMockHass({ items: [placed, orphan] });
+    const store = new Store(hass);
+    await store.init();
+    expect(store.state.value.items.length).toBe(2);
+
+    store.setFilters({ orphansOnly: true });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.state.value.items.map((i) => i.id)).toEqual(['o1']);
+
+    store.setFilters({ orphansOnly: false });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.state.value.items.length).toBe(2);
+  });
+
+  it('q filter narrows the visible items end-to-end through the mock', async () => {
+    const a = makeItem({ id: 'a', name: 'Electric Saw' });
+    const b = makeItem({ id: 'b', name: 'Glue', tags: ['adhesive'] });
+    const hass = makeMockHass({ items: [a, b] });
+    const store = new Store(hass);
+    await store.init();
+
+    store.setFilters({ q: 'saw' });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.state.value.items.map((i) => i.name)).toEqual(['Electric Saw']);
+
+    // Tags are searchable too
+    store.setFilters({ q: 'adhesive' });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.state.value.items.map((i) => i.name)).toEqual(['Glue']);
+  });
+
+  it('due_date sort orders items through the mock, undated last in both orders', async () => {
+    const early = makeItem({ id: 'e', name: 'Early', checked_out: true, due_date: '2024-01-01' });
+    const late = makeItem({ id: 'l', name: 'Late', checked_out: true, due_date: '2024-03-01' });
+    const undated = makeItem({ id: 'u', name: 'Undated' });
+    const hass = makeMockHass({ items: [undated, late, early] });
+    const store = new Store(hass);
+    await store.init();
+
+    store.setFilters({ sort: { field: 'due_date', order: 'asc' } });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.state.value.items.map((i) => i.name)).toEqual(['Early', 'Late', 'Undated']);
+
+    store.setFilters({ sort: { field: 'due_date', order: 'desc' } });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.state.value.items.map((i) => i.name)).toEqual(['Late', 'Early', 'Undated']);
   });
 
   it('populates healthCache on init and refreshes on demand', async () => {
