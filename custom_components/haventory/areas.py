@@ -8,6 +8,7 @@ areas.
 from __future__ import annotations
 
 import inspect
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
@@ -22,7 +23,7 @@ async def async_get_area_registry(hass: HomeAssistant):
 
     # HA's async_get returns the registry synchronously; the offline test stub
     # returns an awaitable. Support both to avoid runtime type errors online.
-    reg = ar.async_get(hass)
+    reg: Any = ar.async_get(hass)
     if inspect.isawaitable(reg):
         return await reg
     return reg

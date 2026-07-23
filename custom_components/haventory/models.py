@@ -388,13 +388,13 @@ def create_item_from_create(
         A fully-populated Item instance with defaults applied.
     """
 
-    name = payload.get("name")  # type: ignore[assignment]
+    name = payload.get("name")
     if name is None:
         raise ValidationError("name is required")
     # Trim whitespace before validation and persistence
     name = name.strip()
     description = payload.get("description")
-    quantity = int(payload.get("quantity", 1))  # type: ignore[arg-type]
+    quantity = int(payload.get("quantity", 1))
     checked_out = bool(payload.get("checked_out", False))
     due_date = payload.get("due_date")
     inspection_date = payload.get("inspection_date")
@@ -469,7 +469,7 @@ def _update_checkout_and_due_date(new_item: Item, update: ItemUpdate) -> None:
     checked_out = new_item.checked_out
     due_date_val = new_item.due_date
     if "checked_out" in update:
-        checked_out = bool(update["checked_out"])  # type: ignore[truthy-bool]
+        checked_out = bool(update["checked_out"])
     if "due_date" in update:
         due_date_val = update["due_date"]
     new_item.checked_out = checked_out

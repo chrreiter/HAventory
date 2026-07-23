@@ -73,6 +73,20 @@ class PageResult(TypedDict):
     next_cursor: str | None
 
 
+class InternalIndexes(TypedDict):
+    """Live references to the repository's internal indexes (health/tests)."""
+
+    items_by_id: dict[str, Item]
+    locations_by_id: dict[str, Location]
+    tags_to_item_ids: dict[str, set[str]]
+    category_to_item_ids: dict[str, set[str]]
+    checked_out_item_ids: set[str]
+    low_stock_item_ids: set[str]
+    items_by_location_id: dict[str, set[str]]
+    locations_by_area_id: dict[str, set[str]]
+    items_by_area_id: dict[str, set[str]]
+
+
 # Sentinel for optional args that distinguish "not provided" from explicit None
 UNSET: object = object()
 
@@ -587,7 +601,7 @@ class Repository:
         updated_name: str,
         target_parent_id: uuid.UUID | None,
         parent_changed: bool,
-        target_area: uuid.UUID | None,
+        target_area: str | None,
     ) -> tuple[dict[str, Location], dict[str | None, set[str]], Location]:
         """Create staged maps with the proposed location update applied.
 
@@ -916,7 +930,11 @@ class Repository:
         )
 
     def check_out(
-        self, item_id: str | uuid.UUID, *, due_date: str, expected_version: int | None = None
+        self,
+        item_id: str | uuid.UUID,
+        *,
+        due_date: str | None,
+        expected_version: int | None = None,
     ) -> Item:
         # Validation rules for due_date checked in models
         return self.update_item(
@@ -1078,7 +1096,7 @@ class Repository:
 
         # Normalize sort for cursor tracking
         if sort is None:
-            sort = Sort(field="updated_at", order="desc")  # type: ignore[assignment]
+            sort = Sort(field="updated_at", order="desc")
 
         if limit is None or limit <= 0:
             # No pagination requested
@@ -1367,11 +1385,11 @@ class Repository:
     # Cursor-based pagination helpers
     # -----------------------------
 
-    def _encode_cursor(self, payload: dict) -> str:
+    def _encode_cursor(self, payload: dict[str, Any]) -> str:
         raw = json.dumps(payload, separators=(",", ":"))
         return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
 
-    def _decode_cursor(self, cursor: str) -> dict | None:
+    def _decode_cursor(self, cursor: str) -> dict[str, Any] | None:
         try:
             raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
             obj = json.loads(raw)
@@ -1400,9 +1418,16 @@ class Repository:
 
     def _tuple_cmp(self, a: tuple[str | int, str], b: tuple[str | int, str], order: str) -> int:
         asc = order == "asc"
-        # primary
-        if a[0] != b[0]:
-            return -1 if ((a[0] < b[0]) == asc) else 1
+        # primary — within one sort field both values share a type; the str()
+        # fallback keeps a mixed comparison (corrupt cursor) total instead of
+        # raising TypeError.
+        a0, b0 = a[0], b[0]
+        if a0 != b0:
+            if isinstance(a0, int) and isinstance(b0, int):
+                primary_less = a0 < b0
+            else:
+                primary_less = str(a0) < str(b0)
+            return -1 if (primary_less == asc) else 1
         # tie-break on id asc
         if a[1] == b[1]:
             return 0
@@ -1427,9 +1452,12 @@ class Repository:
             ):
                 last_key = cursor_info.get("last_sort_key")
                 last_id = cursor_info.get("last_id")
-                if last_id is not None:
-                    # Find first item strictly after the cursor tuple
-                    needle = (last_key, last_id)
+                if isinstance(last_id, str) and isinstance(last_key, str | int):
+                    # Find first item strictly after the cursor tuple. When
+                    # nothing compares after it (e.g. the tail was deleted
+                    # between pages), the page is empty — not page one again.
+                    needle: tuple[str | int, str] = (last_key, last_id)
+                    start_index = len(items_sorted)
                     for idx, it in enumerate(items_sorted):
                         tup = (self._primary_sort_value(it, sort), str(it.id))
                         if self._tuple_cmp(tup, needle, order) > 0:
@@ -1467,9 +1495,8 @@ class Repository:
     # Introspection helpers for tests
     # -----------------------------
 
-    def _debug_get_internal_indexes(
-        self,
-    ) -> dict[str, object]:  # pragma: no cover - test helper only
+    def _debug_get_internal_indexes(self) -> InternalIndexes:
+        """Expose live index references for the health command and tests."""
         return {
             "items_by_id": self._items_by_id,
             "locations_by_id": self._locations_by_id,

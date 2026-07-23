@@ -74,32 +74,37 @@ quote-style = "preserve"
 "scripts/**" = ["ASYNC240", "ASYNC250"]
 
 [tool.mypy]
-# Non-strict baseline: the current code passes. Strictness ratchets in WP4/WP5.
 # python_version matches requires-python / ruff target (HA 2026.7 => 3.14).
 python_version = "3.14"
 files = ["custom_components/haventory"]
 namespace_packages = true
 explicit_package_bases = true
-mypy_path = "custom_components"
-# Home Assistant is not installed in the offline dev env (it is stubbed for
-# tests), so its imports are unresolved — don't fail on that at this stage.
+# stubs/ carries minimal local homeassistant .pyi stubs so the core modules
+# type-check against real signatures even though HA is not installed offline.
+mypy_path = "custom_components:stubs"
+# Home Assistant modules not covered by stubs/ (and untyped deps such as
+# voluptuous) resolve to Any rather than failing the run.
 ignore_missing_imports = true
+warn_redundant_casts = true
 
-# The WebSocket handlers (ws.py) and the repository's dynamic sort/relocation
-# paths (repository.py) type-check against values pulled from the untyped WS
-# envelope / cross-type sort keys. Their annotations are otherwise honoured;
-# hardening these two boundaries is deferred to WP4/WP5 (Follow-up: type-harden
-# ws.py + repository.py and drop this override).
+# WP4: the core modules are held to (per-module) strict mode. The rest of the
+# integration stays at the non-strict baseline; ratcheting them is a WP5 call.
 [[tool.mypy.overrides]]
 module = [
-  "haventory.ws",
+  "haventory.models",
   "haventory.repository",
+  "haventory.storage",
+  "haventory.ws",
 ]
-disable_error_code = [
-  "arg-type",
-  "attr-defined",
-  "assignment",
-  "index",
-  "operator",
-  "typeddict-item",
-]
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+warn_unused_ignores = true
+warn_return_any = true
+no_implicit_reexport = true
+strict_equality = true
+extra_checks = true
