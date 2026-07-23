@@ -58,6 +58,34 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
         case 'haventory/areas/list': {
           return { areas: [] } as unknown as T;
         }
+        case 'haventory/distinct_values': {
+          // Mirror the backend: distinct categories (case-insensitive) and tags,
+          // each with a usage count, sorted case-insensitively by value.
+          const catGroups = new Map<string, { display: string; ids: Set<string> }>();
+          for (const it of items) {
+            const raw = (it.category ?? '').trim();
+            if (!raw) continue;
+            const key = raw.toLowerCase();
+            const group = catGroups.get(key) ?? { display: raw, ids: new Set<string>() };
+            group.ids.add(it.id);
+            catGroups.set(key, group);
+          }
+          const categories = Array.from(catGroups.values())
+            .map((g) => ({ value: g.display, count: g.ids.size }))
+            .sort((a, b) => a.value.toLowerCase().localeCompare(b.value.toLowerCase()));
+          const tagGroups = new Map<string, Set<string>>();
+          for (const it of items) {
+            for (const tag of it.tags ?? []) {
+              const set = tagGroups.get(tag) ?? new Set<string>();
+              set.add(it.id);
+              tagGroups.set(tag, set);
+            }
+          }
+          const tags = Array.from(tagGroups.entries())
+            .map(([value, ids]) => ({ value, count: ids.size }))
+            .sort((a, b) => a.value.toLowerCase().localeCompare(b.value.toLowerCase()));
+          return { categories, tags } as unknown as T;
+        }
         case 'haventory/location/tree': {
           return [] as unknown as T;
         }
