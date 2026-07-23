@@ -556,12 +556,31 @@ def apply_item_update(
 # -----------------------------
 
 
-def monotonic_timestamp_after(previous_ts: str) -> str:
+#: Length of the canonical "YYYY-MM-DDTHH:MM:SSZ" timestamp format. Canonical
+#: timestamps are fixed-width, so lexicographic comparison IS chronological
+#: comparison — sorting and range filters rely on this.
+_CANONICAL_TS_LENGTH = 20
+
+
+def monotonic_timestamp_after(previous_ts: str, *, now_ts: str | None = None) -> str:
     """Return a UTC ISO-8601 'Z' timestamp strictly after previous_ts.
 
-    If iso_utc_now() is not greater than the previous timestamp (due to second
-    resolution), bump by one second to maintain monotonicity.
+    If the current time is not greater than the previous timestamp (due to
+    second resolution), bump by one second to maintain monotonicity. Batch
+    callers may pass a precomputed ``now_ts`` (from :func:`iso_utc_now`) to
+    avoid re-reading the clock per item.
     """
+
+    if now_ts is None:
+        now_ts = iso_utc_now()
+    # Fast path: canonical fixed-width timestamps compare lexicographically,
+    # so the common case (time moved on) needs no parsing at all.
+    if (
+        len(previous_ts) == _CANONICAL_TS_LENGTH
+        and previous_ts.endswith("Z")
+        and now_ts > previous_ts
+    ):
+        return now_ts
 
     now_dt = datetime.now(tz=UTC).replace(microsecond=0)
     try:
@@ -577,14 +596,16 @@ def monotonic_timestamp_after(previous_ts: str) -> str:
 def _parse_iso8601_utc(ts: str, *, field_name: str) -> datetime:
     """Parse a UTC ISO-8601 with trailing 'Z' into datetime.
 
+    Only the canonical fixed-width YYYY-MM-DDTHH:MM:SSZ form is accepted.
     Raises ValidationError on bad format.
     """
 
     try:
-        if not isinstance(ts, str) or not ts.endswith("Z"):
+        if not isinstance(ts, str) or len(ts) != _CANONICAL_TS_LENGTH or not ts.endswith("Z"):
             raise ValueError
-        # Support YYYY-MM-DDTHH:MM:SSZ (no offset, no micros)
-        return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+        # fromisoformat is C-implemented and, with the length/suffix guard
+        # above, only accepts exactly the canonical form.
+        return datetime.fromisoformat(ts)
     except ValueError as exc:
         raise ValidationError(f"{field_name} must be an ISO-8601 UTC timestamp with 'Z'") from exc
 
@@ -673,12 +694,27 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     updated_after = flt.get("updated_after") if "updated_after" in flt else None
     created_after = flt.get("created_after") if "created_after" in flt else None
 
-    updated_after_dt = (
-        _parse_iso8601_utc(updated_after, field_name="updated_after") if updated_after else None
+    # Validate filter bounds (raises ValidationError for malformed input).
+    if updated_after:
+        _parse_iso8601_utc(updated_after, field_name="updated_after")
+    if created_after:
+        _parse_iso8601_utc(created_after, field_name="created_after")
+
+    predicates_active = (
+        bool(q)
+        or bool(tags_any)
+        or bool(tags_all)
+        or bool(category)
+        or checked_out is not None
+        or low_stock_only
+        or orphaned_only
+        or location_id is not None
+        or updated_after is not None
+        or created_after is not None
     )
-    created_after_dt = (
-        _parse_iso8601_utc(created_after, field_name="created_after") if created_after else None
-    )
+    if not predicates_active:
+        # e.g. flt only carries presentation hints such as low_stock_first
+        return list(items)
 
     filtered: list[Item] = []
     for it in items:
@@ -690,12 +726,10 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
         matches_low_stock = (not low_stock_only) or item_is_low_stock(it)
         matches_orphaned = (not orphaned_only) or (it.location_id is None)
         matches_location = _item_matches_location(it, location_id, include_subtree)
-        matches_updated = (updated_after_dt is None) or (
-            _parse_iso8601_utc(it.updated_at, field_name="item.updated_at") > updated_after_dt
-        )
-        matches_created = (created_after_dt is None) or (
-            _parse_iso8601_utc(it.created_at, field_name="item.created_at") > created_after_dt
-        )
+        # Canonical fixed-width 'Z' timestamps compare lexicographically, so no
+        # per-item parsing is needed (the filter bound was validated above).
+        matches_updated = (updated_after is None) or (it.updated_at > updated_after)
+        matches_created = (created_after is None) or (it.created_at > created_after)
         ok = (
             matches_q
             and matches_any
@@ -741,11 +775,10 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
         return result
 
     if sort is None:
-        # Default: updated_at desc, id asc tie-break
+        # Default: updated_at desc, id asc tie-break. Canonical fixed-width
+        # 'Z' timestamps sort lexicographically — no parsing needed.
         result.sort(key=lambda x: str(x.id))
-        result.sort(
-            key=lambda x: _parse_iso8601_utc(x.updated_at, field_name="updated_at"), reverse=True
-        )
+        result.sort(key=lambda x: x.updated_at, reverse=True)
         return result
 
     field = sort.get("field")
@@ -772,12 +805,8 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
     elif field == "inspection_date":
         result.sort(key=lambda x: date_sort_key(x.inspection_date, order), reverse=reverse)
     elif field == "created_at":
-        result.sort(
-            key=lambda x: _parse_iso8601_utc(x.created_at, field_name="created_at"), reverse=reverse
-        )
+        result.sort(key=lambda x: x.created_at, reverse=reverse)
     else:  # updated_at
-        result.sort(
-            key=lambda x: _parse_iso8601_utc(x.updated_at, field_name="updated_at"), reverse=reverse
-        )
+        result.sort(key=lambda x: x.updated_at, reverse=reverse)
 
     return result
