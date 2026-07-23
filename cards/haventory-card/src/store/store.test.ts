@@ -413,4 +413,21 @@ describe('Store', () => {
       { value: 'Tools', count: 1 },
     ]);
   });
+
+  it('fetchItemsByCategory returns only items in that category', async () => {
+    const items = [
+      makeItem({ id: '1', name: 'Hammer', category: 'Tools' }),
+      makeItem({ id: '2', name: 'Novel', category: 'Books' }),
+      makeItem({ id: '3', name: 'Wrench', category: 'tools' }), // case-insensitive
+    ];
+    const hass = makeMockHass({ items });
+    const store = new Store(hass);
+    await store.init();
+
+    const tools = await store.fetchItemsByCategory('Tools');
+    expect(tools.map((i) => i.id).sort()).toEqual(['1', '3']);
+
+    const books = await store.fetchItemsByCategory('Books');
+    expect(books.map((i) => i.name)).toEqual(['Novel']);
+  });
 });

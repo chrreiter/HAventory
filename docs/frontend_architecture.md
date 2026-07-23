@@ -22,7 +22,8 @@ haventory-card (main container)
 ├── hv-inventory-list (virtualized list)
 │   └── hv-item-row (individual item rows) × N
 ├── hv-item-dialog (add/edit modal)
-└── hv-location-selector (location picker modal)
+├── hv-location-selector (location picker modal)
+└── hv-category-browser (browse-by-category modal)
 ```
 
 ---
@@ -225,6 +226,36 @@ tags can follow.
 
 **Keyboard**:
 - `Esc`: Close selector
+
+---
+
+### `hv-category-browser`
+
+**Purpose**: Dedicated modal for browsing items by category, opened from the
+card header ("Categories" button).
+
+**Properties**:
+- `open`: Boolean visibility
+- `categories`: `DistinctValue[]` (value + count) from `store.distinctValuesCache`
+- `selectedCategory`: `string | null` — the drilled-in category (null = list level)
+- `items`: `Item[]` — items filed under `selectedCategory` (fetched by the container)
+- `loading`: Boolean — drill-down fetch in progress
+
+**Two levels**:
+1. **Category list** — all used categories with item counts, filterable via a
+   search box. Empty states for "no categories" and "no matches".
+2. **Drill-down** — the items in the selected category (name, quantity, location),
+   fetched by the container via `store.fetchItemsByCategory()` (a snapshot, first
+   page capped at 500). A "‹ Categories" button returns to the list.
+
+**Events**:
+- `select-category`: `{category}` — a category was chosen (container fetches items)
+- `clear-category`: return to the category list
+- `open-item`: `{itemId}` — a drill-down item was clicked (container opens the item dialog)
+- `cancel`: close the browser
+
+**Keyboard**:
+- `Esc`: step back to the category list when drilled in; otherwise close
 
 ---
 
