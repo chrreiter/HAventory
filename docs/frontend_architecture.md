@@ -4,10 +4,10 @@
 
 The HAventory Lovelace card is a custom Home Assistant dashboard component built with modern web technologies:
 
-- **Framework**: Lit 3.1 (web components)
+- **Framework**: Lit 3 (web components)
 - **Language**: TypeScript
-- **Build Tool**: Vite 5
-- **Testing**: Vitest with jsdom
+- **Build Tool**: Vite 8
+- **Testing**: Vitest 4 with jsdom
 - **Virtualization**: `@lit-labs/virtualizer` for efficient list rendering
 
 The card provides a complete inventory management interface with real-time updates via WebSocket.
@@ -368,52 +368,35 @@ haventory-card (main container)
 
 ### Unit Tests (Vitest)
 
-**Coverage**: 46 tests, 88.83% statements, 71.63% functions
+**Coverage**: 105 tests across 8 files (as of WP2). Run
+`npm run test:coverage` for the current coverage report — exact counts and
+percentages are not tracked here to keep this document from going stale.
 
-**Test Files**:
-1. `store.test.ts` (15 tests):
-   - Initialization, pagination, prefetch
-   - CRUD operations with optimistic updates
-   - Conflict handling, error dismissal
-   - Filter changes, refreshStats
-
-2. `hv-search-bar.test.ts` (6 tests):
-   - Render all controls
-   - Debounced search (200ms)
-   - Area/Location dropdown changes
-   - Checkbox toggles
-   - Sort selection
-
-3. `hv-item-row.test.ts` (13 tests):
-   - Render with all fields
-   - LOW badge logic
-   - Area name resolution
-   - Button actions (−, +, Out/In, Edit)
-   - Keyboard shortcuts (Enter, Delete, +, -)
-
-4. `hv-inventory-list.test.ts` (1 test):
-   - Virtualized rendering
-   - Scroll near-end detection
-
-5. `hv-item-dialog.test.ts` (1 test):
-   - Name validation
-   - Due date enable/disable
-
-6. `hv-location-selector.test.ts` (8 tests):
-   - Open/close states
-   - Location list rendering
-   - Search filtering
-   - Select/Cancel events
-   - Escape key, backdrop clicks
-
-7. `haventory-card.test.ts` (2 tests):
-   - Header and search bar rendering
-   - Overlay toggle, Esc close, focus trap, banners
+**Test Files** (what each covers):
+1. `store.test.ts` — initialization, pagination/prefetch, CRUD with
+   optimistic updates and rollback, conflict handling, filter changes
+   (including orphans, q, and date sorts end-to-end through the mock),
+   location delete/move, health cache, event-driven reloads.
+2. `hv-search-bar.test.ts` — all controls render, debounced search (200ms),
+   dropdown/checkbox changes, sort selection and per-field default order.
+3. `hv-item-row.test.ts` — field rendering, LOW badge, area resolution,
+   button actions, keyboard shortcuts.
+4. `hv-inventory-list.test.ts` — virtualized rendering, near-end detection.
+5. `hv-item-dialog.test.ts` — validation, due-date enable/disable.
+6. `hv-location-selector.test.ts` — open/close, list rendering and search,
+   select/cancel, create/edit forms, delete + parent-move flows,
+   error banners, keyboard handling.
+7. `haventory-card.test.ts` — header/search rendering, overlay + focus trap,
+   banners, dialog flows, diagnostics/health panel.
+8. `debounce.test.ts` — utility behavior.
 
 **Mock Strategy**:
 - `makeMockHass()`: Simulates Home Assistant's `hass` object
-- In-memory WS client with controlled responses
-- Conflict simulation via `conflictOnUpdate` flag
+- In-memory WS handlers with controlled responses; `item/list` honors
+  filter + sort with the backend's semantics (AND predicates, nullable
+  dates last, id-asc tie-break) so store tests exercise real narrowing
+- Conflict simulation via `conflictOnUpdate` flag; health override via
+  `__setHealth`
 
 ---
 
@@ -421,11 +404,12 @@ haventory-card (main container)
 
 ### Development
 
-```powershell
+```bash
 cd cards/haventory-card
 npm ci                    # Install dependencies
 npm run dev              # Dev server with HMR
 npm run lint             # ESLint
+npm run typecheck        # tsc --noEmit (not yet part of the gate)
 npm test                 # Run tests once
 npm run test:watch       # Watch mode
 npm run test:coverage    # With coverage report
@@ -433,7 +417,7 @@ npm run test:coverage    # With coverage report
 
 ### Production Build
 
-```powershell
+```bash
 npm run build
 # Output: www/haventory/haventory-card.js
 ```
