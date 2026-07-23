@@ -1067,6 +1067,39 @@ class Repository:
             "locations_total": len(self._locations_by_id),
         }
 
+    def get_distinct_field_values(self) -> dict[str, list[dict[str, object]]]:
+        """Return distinct categories and tags with per-value usage counts.
+
+        Categories are grouped case-insensitively (matching the case-insensitive
+        category index); each entry's ``value`` is a representative display label
+        — the most frequent original casing among the items using it, ties broken
+        alphabetically — and ``count`` is the number of items in that group. Tags
+        are already normalized (lowercase) at ingress, so each key maps directly
+        to one entry. Both lists are sorted case-insensitively by value.
+        """
+
+        categories: list[dict[str, object]] = []
+        for key, item_ids in self._category_to_item_ids.items():
+            originals: dict[str, int] = {}
+            for item_id in item_ids:
+                item = self._items_by_id.get(item_id)
+                if item is None:
+                    continue
+                raw = (item.category or "").strip()
+                if raw:
+                    originals[raw] = originals.get(raw, 0) + 1
+            display = max(sorted(originals), key=lambda o: originals[o]) if originals else key
+            categories.append({"value": display, "count": len(item_ids)})
+        categories.sort(key=lambda c: str(c["value"]).casefold())
+
+        tags = [
+            {"value": tag, "count": len(item_ids)}
+            for tag, item_ids in self._tags_to_item_ids.items()
+        ]
+        tags.sort(key=lambda t: str(t["value"]).casefold())
+
+        return {"categories": categories, "tags": tags}
+
     # -----------------------------
     # Public API — Location operations
     # -----------------------------

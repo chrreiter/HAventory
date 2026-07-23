@@ -511,6 +511,14 @@ async def ws_stats(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), counts))
 
 
+@websocket_api.websocket_command({"type": "haventory/distinct_values"})
+@websocket_api.async_response
+@ws_guard("distinct_values", ())
+async def ws_distinct_values(hass: HomeAssistant, conn, msg):
+    result = _repo(hass).get_distinct_field_values()
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+
+
 def _health_indexes(repo: Repository) -> dict[str, object]:
     idx = repo._debug_get_internal_indexes()  # type: ignore[attr-defined]
     return idx
@@ -1427,6 +1435,7 @@ def setup(hass: HomeAssistant) -> None:
         ws_ping,
         ws_version,
         ws_stats,
+        ws_distinct_values,
         ws_health,
         ws_subscribe,
         ws_unsubscribe,

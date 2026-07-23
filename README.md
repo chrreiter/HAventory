@@ -217,6 +217,8 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
 ### ✅ Phase 1: Backend & WebSocket API (Complete)
 - Full CRUD for Items and Locations via WebSocket; optimistic concurrency with versioning;
   Areas integration; real-time subscriptions (items, locations, stats); documented persistence.
+- `haventory/distinct_values` returns distinct categories and tags with usage counts
+  (categories grouped case-insensitively) — powers category/tag autocomplete and browser views.
 
 ### ✅ Phase 2: Frontend Lovelace Card (Complete)
 - Lit 3 + TypeScript components (`haventory-card`, `hv-search-bar`, `hv-inventory-list`,
