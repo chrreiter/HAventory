@@ -575,11 +575,7 @@ def monotonic_timestamp_after(previous_ts: str, *, now_ts: str | None = None) ->
         now_ts = iso_utc_now()
     # Fast path: canonical fixed-width timestamps compare lexicographically,
     # so the common case (time moved on) needs no parsing at all.
-    if (
-        len(previous_ts) == _CANONICAL_TS_LENGTH
-        and previous_ts.endswith("Z")
-        and now_ts > previous_ts
-    ):
+    if _looks_canonical_utc(previous_ts) and now_ts > previous_ts:
         return now_ts
 
     now_dt = datetime.now(tz=UTC).replace(microsecond=0)
@@ -593,6 +589,37 @@ def monotonic_timestamp_after(previous_ts: str, *, now_ts: str | None = None) ->
     return now_dt.isoformat().replace("+00:00", "Z")
 
 
+def _looks_canonical_utc(ts: str) -> bool:
+    """Cheap positional shape check for the canonical YYYY-MM-DDTHH:MM:SSZ form."""
+    return (
+        len(ts) == _CANONICAL_TS_LENGTH
+        and ts[4] == "-"
+        and ts[7] == "-"
+        and ts[10] == "T"
+        and ts[13] == ":"
+        and ts[16] == ":"
+        and ts[19] == "Z"
+    )
+
+
+def is_canonical_utc_timestamp(ts: object) -> bool:
+    """Return True when ``ts`` is exactly the canonical YYYY-MM-DDTHH:MM:SSZ form.
+
+    The positional separator checks matter: ``datetime.fromisoformat`` alone
+    would also accept e.g. a space date/time separator, ISO week dates, or
+    basic-format times, which would then compare lexicographically wrong
+    against canonical timestamps.
+    """
+
+    if not isinstance(ts, str) or not _looks_canonical_utc(ts):
+        return False
+    try:
+        datetime.fromisoformat(ts)
+    except ValueError:
+        return False
+    return True
+
+
 def _parse_iso8601_utc(ts: str, *, field_name: str) -> datetime:
     """Parse a UTC ISO-8601 with trailing 'Z' into datetime.
 
@@ -600,14 +627,9 @@ def _parse_iso8601_utc(ts: str, *, field_name: str) -> datetime:
     Raises ValidationError on bad format.
     """
 
-    try:
-        if not isinstance(ts, str) or len(ts) != _CANONICAL_TS_LENGTH or not ts.endswith("Z"):
-            raise ValueError
-        # fromisoformat is C-implemented and, with the length/suffix guard
-        # above, only accepts exactly the canonical form.
-        return datetime.fromisoformat(ts)
-    except ValueError as exc:
-        raise ValidationError(f"{field_name} must be an ISO-8601 UTC timestamp with 'Z'") from exc
+    if not is_canonical_utc_timestamp(ts):
+        raise ValidationError(f"{field_name} must be an ISO-8601 UTC timestamp with 'Z'")
+    return datetime.fromisoformat(ts)
 
 
 def _item_matches_q(item: Item, q: str) -> bool:

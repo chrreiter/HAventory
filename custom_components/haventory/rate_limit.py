@@ -108,7 +108,13 @@ class RateLimitConfig:
                 value = float(opts.get(key, default))
             except TypeError, ValueError:
                 return default
-            return value if value > 0 else default
+            if value <= 0:
+                return default
+            # A bucket capacity below one token can never grant a token and
+            # would block ALL traffic — fall back to the default instead.
+            if key.endswith("_burst") and value < 1.0:
+                return default
+            return value
 
         return cls(
             enabled=_flag(CONF_RATE_LIMIT_ENABLED, DEFAULT_RATE_LIMIT_ENABLED),

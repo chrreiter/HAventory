@@ -47,6 +47,7 @@ from .models import (
     Item,
     Location,
     build_location_path_from_map,
+    is_canonical_utc_timestamp,
     iso_utc_now,
     normalize_tags,
     parse_uuid4,
@@ -321,6 +322,18 @@ def _validate_item_doc(idx: int, doc: dict[str, Any], errors: list[dict[str, str
                 errors.append(
                     _err(f"{base}.custom_fields.{k}", "custom_fields values must be scalar")
                 )
+    # Canonical fixed-width timestamps are a load-bearing invariant: sorting
+    # and range filters compare them lexicographically. Reject imports that
+    # would smuggle non-canonical values into storage.
+    for ts_field in ("created_at", "updated_at"):
+        ts_value = doc.get(ts_field)
+        if ts_value is not None and not is_canonical_utc_timestamp(ts_value):
+            errors.append(
+                _err(
+                    f"{base}.{ts_field}",
+                    f"{ts_field} must be an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ)",
+                )
+            )
     return iid
 
 

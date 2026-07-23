@@ -54,8 +54,11 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
         ): bool
     }
     for key, default in _RATE_LIMIT_NUMBER_OPTIONS:
+        # Bucket capacities below one token would block ALL traffic (a bucket
+        # never holding a whole token can never grant one) — require >= 1.
+        minimum = 1.0 if key.endswith("_burst") else 0.1
         fields[vol.Required(key, default=float(current.get(key, default)))] = vol.All(
-            vol.Coerce(float), vol.Range(min=0.1)
+            vol.Coerce(float), vol.Range(min=minimum)
         )
     return vol.Schema(fields)
 

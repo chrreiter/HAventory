@@ -35,6 +35,30 @@ async def test_sort_key_survives_persistence_round_trip() -> None:
 
 
 @pytest.mark.asyncio
+async def test_legacy_store_without_sort_key_is_backfilled_on_load() -> None:
+    """Pre-WP4 stores never persisted sort_key; loading must derive it."""
+
+    repo = Repository()
+    garage = repo.create_location(name="Garage")
+    shelf = repo.create_location(name="Shelf Alpha", parent_id=garage.id)
+    item = repo.create_item(ItemCreate(name="Hammer", quantity=1, location_id=str(shelf.id)))
+
+    payload = repo.export_state()
+    # Simulate a legacy payload: strip every persisted sort_key.
+    for loc in payload["locations"].values():
+        loc["path"].pop("sort_key", None)
+    for it in payload["items"].values():
+        it["location_path"].pop("sort_key", None)
+
+    reloaded = Repository.from_state(payload)
+
+    expected = repo.get_location(shelf.id).path.sort_key
+    assert expected
+    assert reloaded.get_location(shelf.id).path.sort_key == expected
+    assert reloaded.get_item(item.id).location_path.sort_key == expected
+
+
+@pytest.mark.asyncio
 async def test_cursor_returns_empty_page_when_tail_deleted() -> None:
     repo = Repository()
     items = [repo.create_item(ItemCreate(name=f"Item {i:02d}", quantity=1)) for i in range(6)]

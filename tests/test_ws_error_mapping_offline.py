@@ -199,6 +199,50 @@ async def test_bulk_malformed_custom_fields_payload_fails_only_that_op() -> None
 
 
 @pytest.mark.asyncio
+async def test_bulk_payload_field_validation_errors() -> None:
+    """Missing/typed-wrong per-op payload fields fail their own op only."""
+
+    hass = _make_hass()
+    repo = hass.data[DOMAIN]["repository"]
+    item = repo.create_item({"name": "Widget", "quantity": 1})
+
+    res = await _send(
+        hass,
+        _ConnCollect(),
+        13,
+        "haventory/items/bulk",
+        operations=[
+            {"op_id": "no-id", "kind": "item_update", "payload": {"name": "X"}},
+            {"op_id": "empty-id", "kind": "item_delete", "payload": {"item_id": ""}},
+            {
+                "op_id": "str-delta",
+                "kind": "item_adjust_quantity",
+                "payload": {"item_id": str(item.id), "delta": "5"},
+            },
+            {
+                "op_id": "bool-qty",
+                "kind": "item_set_quantity",
+                "payload": {"item_id": str(item.id), "quantity": True},
+            },
+            {
+                "op_id": "good",
+                "kind": "item_adjust_quantity",
+                "payload": {"item_id": str(item.id), "delta": 1},
+            },
+        ],
+    )
+
+    assert res["success"] is True
+    results = res["result"]["results"]
+    for op_id in ("no-id", "empty-id", "str-delta", "bool-qty"):
+        assert results[op_id]["success"] is False, op_id
+        assert results[op_id]["error"]["code"] == "validation_error", op_id
+    assert results["good"]["success"] is True
+    expected_quantity = 1 + 1  # initial quantity + the one valid delta
+    assert repo.get_item(item.id).quantity == expected_quantity
+
+
+@pytest.mark.asyncio
 async def test_bulk_unexpected_per_op_error_is_contained(monkeypatch) -> None:
     """An unexpected exception in one op yields per-op unknown_error only."""
 

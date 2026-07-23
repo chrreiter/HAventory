@@ -535,6 +535,40 @@ def _location_matches_filter(location: dict[str, Any], sub: _Subscription) -> bo
     return location.get("id") == loc_filter
 
 
+def _collect_event_deliveries(
+    hass: HomeAssistant, topic: str, payload: dict[str, Any] | None
+) -> list[tuple[websocket_api.ActiveConnection, list[int]]]:
+    """Return (connection, subscription ids) pairs the event would reach.
+
+    Snapshots the subscription registry to avoid mutation issues.
+    """
+    item_obj = (payload or {}).get("item") if payload else None
+    location_obj = (payload or {}).get("location") if payload else None
+
+    deliveries: list[tuple[websocket_api.ActiveConnection, list[int]]] = []
+    for conn, subs in list(_subs_bucket(hass).items()):
+        sub_ids: list[int] = []
+        for sub_id, sub in list(subs.items()):
+            if sub.get("topic") != topic:
+                continue
+            if (
+                topic == "items"
+                and item_obj is not None
+                and not _item_matches_filter(item_obj, sub)
+            ):
+                continue
+            if (
+                topic == "locations"
+                and location_obj is not None
+                and not _location_matches_filter(location_obj, sub)
+            ):
+                continue
+            sub_ids.append(sub_id)
+        if sub_ids:
+            deliveries.append((conn, sub_ids))
+    return deliveries
+
+
 def _broadcast_event(
     hass: HomeAssistant,
     *,
@@ -555,38 +589,23 @@ def _broadcast_event(
         if payload:
             event.update(payload)
 
+        # Collect matching deliveries first so budgets are only consumed for
+        # events somebody would actually receive.
+        deliveries = _collect_event_deliveries(hass, topic, payload)
+        if not deliveries:
+            return
+
         limiter = _rate_limiter(hass)
         if limiter is not None and not limiter.allow_event_broadcast():
             # Global event budget exhausted: drop this event entirely.
             return
 
-        subs_all = _subs_bucket(hass)
-        # Iterate over a snapshot to avoid mutation issues
-        for conn, subs in list(subs_all.items()):
-            conn_allowed: bool | None = None
-            for sub_id, sub in list(subs.items()):
-                if sub.get("topic") != topic:
-                    continue
-                item_obj = (payload or {}).get("item") if payload else None
-                location_obj = (payload or {}).get("location") if payload else None
-                if (
-                    topic == "items"
-                    and item_obj is not None
-                    and not _item_matches_filter(item_obj, sub)
-                ):
-                    continue
-                if (
-                    topic == "locations"
-                    and location_obj is not None
-                    and not _location_matches_filter(location_obj, sub)
-                ):
-                    continue
-                if conn_allowed is None:
-                    # One event delivered to a connection consumes one token,
-                    # regardless of how many of its subscriptions match.
-                    conn_allowed = limiter is None or limiter.allow_event_send(conn)
-                if not conn_allowed:
-                    continue
+        for conn, sub_ids in deliveries:
+            # One event delivered to a connection consumes one token,
+            # regardless of how many of its subscriptions match.
+            if limiter is not None and not limiter.allow_event_send(conn):
+                continue
+            for sub_id in sub_ids:
                 _send_event_message(conn, sub_id, event)
     except Exception:  # pragma: no cover - defensive
         LOGGER.exception(

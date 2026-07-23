@@ -15,15 +15,18 @@ from __future__ import annotations
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+import custom_components.haventory as haven_init
 import pytest
+import voluptuous as vol
 from custom_components.haventory import _async_options_updated
 from custom_components.haventory import rate_limit as rate_limit_module
 from custom_components.haventory import ws as ws_module
-from custom_components.haventory.config_flow import HAventoryOptionsFlowHandler
+from custom_components.haventory.config_flow import HAventoryOptionsFlowHandler, _options_schema
 from custom_components.haventory.const import (
     CONF_RATE_LIMIT_COMMANDS_BURST,
     CONF_RATE_LIMIT_COMMANDS_PER_SECOND,
     CONF_RATE_LIMIT_ENABLED,
+    DEFAULT_RATE_LIMIT_COMMANDS_BURST,
     DOMAIN,
 )
 from custom_components.haventory.rate_limit import (
@@ -32,7 +35,7 @@ from custom_components.haventory.rate_limit import (
     TokenBucket,
 )
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import DomainStore
+from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
 from custom_components.haventory.ws import RATE_LIMITED_MESSAGE
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.config_entries import ConfigEntry
@@ -253,6 +256,53 @@ async def test_per_connection_event_limit(clock: _FakeClock) -> None:
 
 
 @pytest.mark.asyncio
+async def test_no_budget_consumed_without_matching_subscribers(clock: _FakeClock) -> None:
+    """Events nobody would receive must not consume the global event budget."""
+
+    limiter = RateLimiter(_config(global_events_per_second=1.0, global_events_burst=1.0))
+    hass = _make_hass(limiter)
+
+    # No subscribers at all: nothing is consumed or counted.
+    for _ in range(3):
+        ws_module._broadcast_event(hass, topic="items", action="created", payload=None)
+    assert limiter.dropped_events == 0
+
+    # A subscriber on another topic does not consume the budget either.
+    other = _ConnStub()
+    assert (await _send(hass, other, 99, "haventory/subscribe", topic="locations"))["success"]
+    ws_module._broadcast_event(hass, topic="items", action="created", payload=None)
+    assert limiter.dropped_events == 0
+
+    # The budget is still intact for the first real delivery.
+    subscriber = _ConnStub()
+    assert (await _send(hass, subscriber, 100, "haventory/subscribe", topic="items"))["success"]
+    ws_module._broadcast_event(hass, topic="items", action="created", payload=None)
+    assert len(subscriber.events()) == 1
+
+
+@pytest.mark.asyncio
+async def test_one_event_consumes_one_token_across_multiple_subscriptions(
+    clock: _FakeClock,
+) -> None:
+    """Two matching subscriptions on one connection share a single event token."""
+
+    limiter = RateLimiter(_config(events_per_second=1.0, events_burst=1.0))
+    hass = _make_hass(limiter)
+    conn = _ConnStub()
+    assert (await _send(hass, conn, 301, "haventory/subscribe", topic="items"))["success"]
+    assert (await _send(hass, conn, 302, "haventory/subscribe", topic="items"))["success"]
+
+    ws_module._broadcast_event(hass, topic="items", action="created", payload=None)
+    # Both subscriptions receive the event; only one token was spent.
+    assert {m.get("id") for m in conn.events()} == {301, 302}
+
+    ws_module._broadcast_event(hass, topic="items", action="created", payload=None)
+    delivered_before_drop = 2  # both subscriptions got the FIRST event only
+    assert len(conn.events()) == delivered_before_drop
+    assert limiter.dropped_events == 1
+
+
+@pytest.mark.asyncio
 async def test_global_event_limit_drops_for_all_subscribers(clock: _FakeClock) -> None:
     limiter = RateLimiter(_config(global_events_per_second=1.0, global_events_burst=1.0))
     hass = _make_hass(limiter)
@@ -278,9 +328,10 @@ async def test_event_drop_does_not_fail_the_command(clock: _FakeClock) -> None:
     subscriber = _ConnStub()
     actor = _ConnStub()
     assert (await _send(hass, subscriber, 100, "haventory/subscribe", topic="items"))["success"]
+    assert (await _send(hass, subscriber, 101, "haventory/subscribe", topic="stats"))["success"]
 
-    # One create emits an item event + a counts event; the budget of one means
-    # something gets dropped, but the command itself must succeed.
+    # One create emits an item event + a counts event to this subscriber; the
+    # budget of one means something gets dropped, but the command must succeed.
     res = await _send(hass, actor, 1, "haventory/item/create", name="Widget")
     assert res["success"] is True
     assert limiter.dropped_events >= 1
@@ -381,6 +432,72 @@ def test_from_options_ignores_invalid_values() -> None:
     # Invalid/non-positive values fall back to defaults.
     assert config.commands_per_second > 0
     assert config.commands_burst > 0
+
+
+def test_from_options_rejects_sub_token_bursts() -> None:
+    """A burst below one token would block ALL traffic — fall back to default."""
+
+    config = RateLimitConfig.from_options(
+        {CONF_RATE_LIMIT_ENABLED: True, CONF_RATE_LIMIT_COMMANDS_BURST: 0.5}
+    )
+    assert config.commands_burst == DEFAULT_RATE_LIMIT_COMMANDS_BURST
+
+
+def test_options_schema_enforces_burst_minimum() -> None:
+    """The options-flow schema must reject burst < 1 and rate <= 0."""
+
+    BURST = CONF_RATE_LIMIT_COMMANDS_BURST
+    RATE = CONF_RATE_LIMIT_COMMANDS_PER_SECOND
+
+    schema = _options_schema({})
+    base = schema({CONF_RATE_LIMIT_ENABLED: True})  # defaults fill the rest
+    assert base[BURST] >= 1
+
+    with pytest.raises(vol.Invalid):
+        schema({CONF_RATE_LIMIT_ENABLED: True, BURST: 0.5})
+    with pytest.raises(vol.Invalid):
+        schema({CONF_RATE_LIMIT_ENABLED: True, RATE: 0})
+    # A fractional sustained rate remains valid.
+    fractional_rate = 0.5
+    ok = schema({CONF_RATE_LIMIT_ENABLED: True, RATE: fractional_rate})
+    assert ok[RATE] == fractional_rate
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_wires_rate_limiter_from_entry_options(monkeypatch) -> None:
+    """async_setup_entry builds the limiter from entry.options and wires updates."""
+
+    hass = HomeAssistant()
+    configured_rate = 3.0
+    entry = ConfigEntry(
+        options={
+            CONF_RATE_LIMIT_ENABLED: True,
+            CONF_RATE_LIMIT_COMMANDS_PER_SECOND: configured_rate,
+        }
+    )
+
+    payload = {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return payload
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    assert await haven_init.async_setup_entry(hass, entry) is True
+    limiter = hass.data[DOMAIN]["rate_limiter"]
+    assert isinstance(limiter, RateLimiter)
+    assert limiter.enabled is True
+    assert limiter.config.commands_per_second == configured_rate
+    assert entry._update_listeners, "expected an options update listener"
+
+    # An options change rebuilds the limiter through the registered listener.
+    entry.options[CONF_RATE_LIMIT_ENABLED] = False
+    await entry._update_listeners[0](hass, entry)
+    assert hass.data[DOMAIN]["rate_limiter"].enabled is False
+
+    # Unload drops the limiter with the other ephemeral state.
+    assert await haven_init.async_unload_entry(hass, entry) is True
+    assert "rate_limiter" not in hass.data[DOMAIN]
 
 
 # -----------------------------

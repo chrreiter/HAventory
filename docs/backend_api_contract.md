@@ -36,7 +36,7 @@ Guarantees (every `haventory/*` command is wrapped by the same guard):
 
 - Domain errors carry the exception message plus structured `data` context (`op` and selected request fields).
 - Any unexpected (non-domain) exception maps to `unknown_error` with the fixed message `"unexpected error; see Home Assistant logs"` and `data` context. Exception text and stack traces never reach the client; the full traceback goes to the server log only.
-- In `haventory/items/bulk`, a failing operation (including an unexpectedly malformed payload) fails only its own per-op result; the remaining operations still run and successful ones persist.
+- In `haventory/items/bulk`, a failing operation (including an unexpectedly malformed **payload**) fails only its own per-op result; the remaining operations still run and successful ones persist. Note the batch **envelope** is validated first: a structurally malformed operation *entry* (non-object entry, missing/invalid `op_id`, non-string `kind`, non-object `payload`) cannot be reported per-op and rejects the whole command with `validation_error`.
 
 Transport-level errors produced by Home Assistant itself (before a handler runs) are outside this taxonomy and can also be observed by clients: `invalid_format` (request failed the command's voluptuous schema) and `unknown_command` (integration not loaded or unknown `type`).
 
@@ -46,7 +46,7 @@ Transport-level errors produced by Home Assistant itself (before a handler runs)
 
 - Commands: when a budget is exhausted, the command is not executed and the client receives an error envelope with code `rate_limited`, message `"rate limit exceeded; retry later"`, and `data.op`. Retry after a short backoff.
 - Broadcasts: when the global event budget is exhausted the event is dropped for all subscribers; when a connection's event budget is exhausted the event is dropped for that connection only. Event delivery is best-effort — a client that must not miss state re-lists on demand (`item/list`, `location/tree`, `stats`).
-- Observability: `haventory/health` includes `rate_limit: {enabled, dropped_commands, dropped_events}`; drops log a throttled warning server-side.
+- Observability: `haventory/health` includes `rate_limit: {enabled, dropped_commands, dropped_events}`; drops log a throttled warning server-side. Changing any rate-limit option rebuilds the limiter: all buckets refill and the drop counters reset to 0.
 
 Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100/200 global; events 50/200 per connection, 500/1000 global. Normal Lovelace-card usage stays far below these; bulk imports or stress tooling (`scripts/stress_test.py`) should keep limiting disabled.
 

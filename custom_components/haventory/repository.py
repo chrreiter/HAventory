@@ -1617,7 +1617,10 @@ class Repository:
                         ],
                         name_path=list(path_obj.get("name_path", []) or []),
                         display_path=str(path_obj.get("display_path", "")),
-                        sort_key=str(path_obj.get("sort_key", "")),
+                        # Backfill for stores written before sort_key was
+                        # persisted (pre-WP4): derive it from display_path.
+                        sort_key=str(path_obj.get("sort_key", ""))
+                        or normalize_text_for_sort(str(path_obj.get("display_path", ""))),
                     )
                     loc = Location(
                         id=parse_uuid4(str(loc_data.get("id", loc_id)), field_name="location.id"),
@@ -1666,7 +1669,10 @@ class Repository:
                         ],
                         name_path=list(lp.get("name_path", []) or []),
                         display_path=str(lp.get("display_path", "")),
-                        sort_key=str(lp.get("sort_key", "")),
+                        # Backfill for stores written before sort_key was
+                        # persisted (pre-WP4): derive it from display_path.
+                        sort_key=str(lp.get("sort_key", ""))
+                        or normalize_text_for_sort(str(lp.get("display_path", ""))),
                     )
                     item = Item(
                         id=parse_uuid4(str(item_data.get("id", item_id)), field_name="item.id"),
