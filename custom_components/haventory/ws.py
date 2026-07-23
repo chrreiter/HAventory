@@ -143,21 +143,6 @@ def ws_guard(
 # -----------------------------
 
 
-_SUPPORTED_BULK_KINDS: set[str] = {
-    "item_update",
-    "item_delete",
-    "item_move",
-    "item_adjust_quantity",
-    "item_set_quantity",
-    "item_check_out",
-    "item_check_in",
-    "item_add_tags",
-    "item_remove_tags",
-    "item_update_custom_fields",
-    "item_set_low_stock_threshold",
-}
-
-
 def _validate_bulk_ops(operations: Any) -> list[dict]:
     if not isinstance(operations, list):
         raise ValidationError("operations must be a list")
@@ -526,12 +511,10 @@ def _health_indexes(repo: Repository) -> dict[str, object]:
     return idx
 
 
-def _collect_item_issues(item_id: str, item, idx: dict) -> list[str]:  # noqa: PLR0912
+def _collect_item_issues(item_id: str, item, idx: dict) -> list[str]:
     issues: list[str] = []
     items_by_location_id = idx["items_by_location_id"]  # type: ignore[index]
     locations_by_id = idx["locations_by_id"]  # type: ignore[index]
-    items_by_created_at = idx["items_by_created_at"]  # type: ignore[index]
-    items_by_updated_at = idx["items_by_updated_at"]  # type: ignore[index]
     checked_out_item_ids = idx["checked_out_item_ids"]  # type: ignore[index]
     low_stock_item_ids = idx["low_stock_item_ids"]  # type: ignore[index]
 
@@ -548,13 +531,6 @@ def _collect_item_issues(item_id: str, item, idx: dict) -> list[str]:  # noqa: P
         bucket_ids = items_by_location_id.get(loc_key, set())
         if item_id not in bucket_ids:
             issues.append("item_missing_from_items_by_location_index")
-
-    created_key = getattr(item, "created_at", None)
-    updated_key = getattr(item, "updated_at", None)
-    if not any(k == created_key and iid == item_id for k, iid in items_by_created_at):
-        issues.append("item_missing_from_created_at_index")
-    if not any(k == updated_key and iid == item_id for k, iid in items_by_updated_at):
-        issues.append("item_missing_from_updated_at_index")
 
     if bool(getattr(item, "checked_out", False)):
         if item_id not in checked_out_item_ids:
@@ -592,8 +568,6 @@ def _check_index_references(idx: dict) -> list[str]:
     checked_out_item_ids = idx["checked_out_item_ids"]  # type: ignore[index]
     low_stock_item_ids = idx["low_stock_item_ids"]  # type: ignore[index]
     items_by_location_id = idx["items_by_location_id"]  # type: ignore[index]
-    items_by_created_at = idx["items_by_created_at"]  # type: ignore[index]
-    items_by_updated_at = idx["items_by_updated_at"]  # type: ignore[index]
     locations_by_id = idx["locations_by_id"]  # type: ignore[index]
 
     def _assert_known_ids(name: str, ids: set[str]) -> None:
@@ -624,11 +598,6 @@ def _check_index_references(idx: dict) -> list[str]:
                 != loc_id
             ):
                 issues.append("items_by_location_bucket_mismatch")
-
-    for _t, ids in list(items_by_created_at):
-        _assert_known_ids("created_at_index", {ids})
-    for _t, ids in list(items_by_updated_at):
-        _assert_known_ids("updated_at_index", {ids})
 
     return issues
 
@@ -1153,7 +1122,7 @@ async def ws_items_bulk(hass: HomeAssistant, conn, msg):
         for _op_id, serialized, action in successful_ops:
             _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
 
-        # Persist with debouncing (moved broadcasts before persist)
+        # Persist immediately so storage errors surface through @ws_guard.
         await _persist_repo(hass)
         _broadcast_counts(hass)
     else:

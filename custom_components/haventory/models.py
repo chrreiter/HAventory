@@ -599,17 +599,8 @@ def _item_matches_q(item: Item, q: str) -> bool:
     if not query_words:
         return True
 
-    # Gather searchable text from item
-    # Join them into a single blob or check individually?
-    # Checking individually is safer to avoid accidental cross-field matches?
-    # But usually full-text search treats the doc as one bag of words.
-
-    # Let's verify if each word exists in ANY of the fields.
-    # Note: this is slightly different from "bag of words" which joins them.
-    # But it's robust enough for "Red" in name, "Large" in desc.
-
-    # Optimization: construct a single searchable string for the item
-    # doing this per-item is O(field_len).
+    # Every query word must appear somewhere in the item's combined
+    # searchable text (name, description, category, path, tags).
     searchable_text = normalize_search_text(
         " ".join(
             [
@@ -629,7 +620,8 @@ def _item_matches_q(item: Item, q: str) -> bool:
     return True
 
 
-def _low_stock(item: Item) -> bool:
+def item_is_low_stock(item: Item) -> bool:
+    """Return True when the item's quantity is at or below its threshold."""
     thr = item.low_stock_threshold
     if thr is None:
         return False
@@ -695,7 +687,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
         matches_all = (not tags_all) or all(tag in it.tags for tag in tags_all)
         matches_category = (not category) or ((it.category or "").strip().casefold() == category)
         matches_checked = (checked_out is None) or (it.checked_out == bool(checked_out))
-        matches_low_stock = (not low_stock_only) or _low_stock(it)
+        matches_low_stock = (not low_stock_only) or item_is_low_stock(it)
         matches_orphaned = (not orphaned_only) or (it.location_id is None)
         matches_location = _item_matches_location(it, location_id, include_subtree)
         matches_updated = (updated_after_dt is None) or (

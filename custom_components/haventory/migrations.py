@@ -50,12 +50,6 @@ def migrate_0_to_1(payload: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def migrate_1_to_1(payload: dict[str, Any]) -> dict[str, Any]:
-    """No-op placeholder to demonstrate scaffold for equal-version calls."""
-
-    return deepcopy(payload) if isinstance(payload, dict) else {}
-
-
 def migrate_1_to_2(payload: dict[str, Any]) -> dict[str, Any]:
     """Ensure items/locations keys exist for schema v2."""
 

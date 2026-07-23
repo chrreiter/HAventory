@@ -25,9 +25,8 @@ from . import ws as ws_mod
 from .const import DOMAIN
 from .exceptions import StorageError
 from .repository import Repository
-from .storage import CURRENT_SCHEMA_VERSION, DomainStore, async_persist_immediate
+from .storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore, async_persist_immediate
 
-STORAGE_VERSION = CURRENT_SCHEMA_VERSION
 LOGGER = logging.getLogger(__name__)
 
 
@@ -52,7 +51,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Expose storage manager via hass.data[DOMAIN]["store"]. Keep name compatible
     # with tests while upgrading to a schema-aware wrapper.
-    store = DomainStore(hass, key="haventory_store", version=STORAGE_VERSION)
+    store = DomainStore(hass, key=STORAGE_KEY, version=CURRENT_SCHEMA_VERSION)
     hass.data[DOMAIN]["store"] = store
 
     # Initialize in-memory repository for services and APIs by loading persisted state

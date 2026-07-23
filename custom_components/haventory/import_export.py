@@ -509,7 +509,6 @@ def plan_import(
     _check_duplicate_ids(loc_ids, "locations", errors)
 
     if errors:
-        report["errors"] = errors
         return report, None
 
     existing = repo.export_state()
@@ -542,7 +541,6 @@ def plan_import(
 
     payload = _recompute_paths(target_items, target_locations, errors)
     if payload is None or errors:
-        report["errors"] = errors
         return report, None
 
     report["valid"] = True

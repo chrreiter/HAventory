@@ -111,30 +111,3 @@ async def test_benchmark_subtree_operations() -> None:
     # Verify all items were updated
     updated_warehouse = repo.get_location(warehouse.id)
     assert updated_warehouse.parent_id == new_parent.id
-
-
-@pytest.mark.asyncio
-async def test_benchmark_temporal_index_performance() -> None:
-    """Verify temporal indexes maintain performance during item creation."""
-    repo = Repository()
-    count = 5000
-
-    start = time.perf_counter()
-    for i in range(count):
-        repo.create_item(ItemCreate(name=f"Item{i}", quantity=1))
-    elapsed = time.perf_counter() - start
-
-    # Verify temporal indexes are populated and sorted
-    assert len(repo._items_by_created_at) == count
-    assert len(repo._items_by_updated_at) == count
-
-    # Verify sorted order
-    created_timestamps = [ts for ts, _ in repo._items_by_created_at]
-    assert created_timestamps == sorted(created_timestamps)
-
-    updated_timestamps = [ts for ts, _ in repo._items_by_updated_at]
-    assert updated_timestamps == sorted(updated_timestamps)
-
-    _print_result(
-        f"Create {count} items with temporal indexing", elapsed, BUDGET_CREATE_1K_ITEMS * 5
-    )

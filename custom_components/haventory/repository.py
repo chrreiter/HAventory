@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-import bisect
 import json
 import logging
 import re
@@ -38,6 +37,7 @@ from .models import (
     create_item_from_create,
     date_sort_key,
     filter_items,
+    item_is_low_stock,
     new_uuid4,
     normalize_search_text,
     normalize_tags,
@@ -58,7 +58,6 @@ class PageResult(TypedDict):
 # Sentinel for optional args that distinguish "not provided" from explicit None
 UNSET: object = object()
 
-# Lint-friendly constants — removed duplicates; shared constants live in models
 TRIGRAM_MIN_LEN = 3
 PREFIX_MIN_LEN = 2
 
@@ -91,9 +90,6 @@ class Repository:
         # Area indexes
         self._locations_by_area_id: dict[str, set[str]] = {}
         self._items_by_area_id: dict[str, set[str]] = {}
-        # Temporal indexes for efficient range queries (sorted lists)
-        self._items_by_created_at: list[tuple[str, str]] = []  # (iso_timestamp, item_id)
-        self._items_by_updated_at: list[tuple[str, str]] = []  # (iso_timestamp, item_id)
         # Cached name sort keys
         self._name_sort_key_by_item_id: dict[str, str] = {}
 
@@ -104,7 +100,6 @@ class Repository:
 
         # Location tree indexes
         self._children_ids_by_parent_id: dict[str | None, set[str]] = {}
-        # No instance-level sentinel needed; use module-level UNSET
 
         # Generation counter for optimistic locking and debugging
         self._generation: int = 0
@@ -166,10 +161,6 @@ class Repository:
             if eff_area_id is not None:
                 self._add_to_bucket(self._items_by_area_id, eff_area_id, item_key)
 
-        # Temporal indexes
-        self._add_to_temporal_index(self._items_by_created_at, item.created_at, item_key)
-        self._add_to_temporal_index(self._items_by_updated_at, item.updated_at, item_key)
-
         # cached sort key for name
         self._name_sort_key_by_item_id[item_key] = normalize_text_for_sort(item.name)
 
@@ -183,7 +174,7 @@ class Repository:
         self._increment_generation()
 
     def _unindex_item(self, item: Item) -> None:
-        # Remove from tag/category/checked/low-stock/location/timestamp caches
+        # Remove from tag/category/checked/low-stock/location caches
         item_key = str(item.id)
         for tag in item.tags:
             self._remove_from_bucket(self._tags_to_item_ids, tag, item_key)
@@ -199,10 +190,6 @@ class Repository:
             self._remove_from_bucket(self._items_by_location_id, str(item.location_id), item_key)
             # Remove from any area buckets (area could have changed since indexing)
             self._remove_item_from_all_area_buckets(item_key)
-
-        # Temporal indexes
-        self._remove_from_temporal_index(self._items_by_created_at, item.created_at, item_key)
-        self._remove_from_temporal_index(self._items_by_updated_at, item.updated_at, item_key)
 
         self._name_sort_key_by_item_id.pop(item_key, None)
 
@@ -255,10 +242,7 @@ class Repository:
         self._index_item(new)
 
     def _is_low_stock(self, item: Item) -> bool:
-        thr = item.low_stock_threshold
-        if thr is None:
-            return False
-        return item.quantity <= int(thr)
+        return item_is_low_stock(item)
 
     def _normalize_for_search(self, text: str) -> str:
         """Normalize text for search indexing (lowercase, strip accents).
@@ -313,8 +297,7 @@ class Repository:
                     self._add_to_bucket(self._word_to_item_ids, w, item_key)
                     seen_words.add(w)
 
-            # Trigrams (on the whole normalized string usually, or per word?
-            # Per word is safer for boundary conditions)
+            # Trigrams are extracted per word to respect word boundaries.
             for w in words:
                 trigrams = self._extract_trigrams(w)
                 for t in trigrams:
@@ -326,11 +309,8 @@ class Repository:
         """Remove item from text bucket indexes."""
         item_key = str(item.id)
 
-        # We must re-derive the keys to remove them. Alternatively, if buckets are small,
-        # we might just do nothing and filter false positives, BUT memory usage would grow.
-        # "Correct" way without storing "what did I index" on the item is to re-compute.
-        # This matches the strategy used for other bucket indexes.
-
+        # Re-derive the indexed keys from the item fields to remove them; this
+        # matches the strategy used for the other bucket indexes.
         texts = [
             item.name,
             item.description or "",
@@ -365,21 +345,6 @@ class Repository:
                         self._remove_from_bucket(self._trigram_to_item_ids, t, item_key)
                         seen_trigrams.add(t)
 
-    def _add_to_temporal_index(
-        self, index: list[tuple[str, str]], timestamp: str, item_id: str
-    ) -> None:
-        """Insert (timestamp, item_id) into sorted temporal index using bisect."""
-        bisect.insort(index, (timestamp, item_id))
-
-    def _remove_from_temporal_index(
-        self, index: list[tuple[str, str]], timestamp: str, item_id: str
-    ) -> None:
-        """Remove (timestamp, item_id) from sorted temporal index."""
-        key = (timestamp, item_id)
-        pos = bisect.bisect_left(index, key)
-        if pos < len(index) and index[pos] == key:
-            index.pop(pos)
-
     def _get_candidates_for_word(self, word: str) -> set[str]:
         """Get candidate item IDs for a single search word using strict OR logic."""
         word_candidates = self._word_to_item_ids.get(word)
@@ -411,11 +376,10 @@ class Repository:
     def _search_by_text(self, query: str) -> set[str]:
         """Return item IDs matching the query using indexes.
 
-        Strategies:
-        1. Exact word matches (intersection of all query words).
-        2. Prefix match (if query is a single word and matches a name prefix).
-        3. Fuzzy match (trigrams) if no exact matches found logic could be added here,
-           but for now implementing explicit exact/prefix logic.
+        Per query word, candidates come from exact word matches, name-prefix
+        matches, and (only when both miss) a trigram fallback — see
+        ``_get_candidates_for_word``. Multi-word queries intersect the per-word
+        candidate sets.
         """
         norm_query = self._normalize_for_search(query)
         if not norm_query:
@@ -625,16 +589,14 @@ class Repository:
     ) -> None:
         """Maintain the locations-by-area index for a single location id."""
 
-        old_area_key = old_area if old_area is not None else None
-        new_area_key = new_area if new_area is not None else None
-        if old_area_key is not None:
-            s = self._locations_by_area_id.get(old_area_key)
+        if old_area is not None:
+            s = self._locations_by_area_id.get(old_area)
             if s is not None:
                 s.discard(location_key)
                 if not s:
-                    self._locations_by_area_id.pop(old_area_key, None)
-        if new_area_key is not None:
-            self._locations_by_area_id.setdefault(new_area_key, set()).add(location_key)
+                    self._locations_by_area_id.pop(old_area, None)
+        if new_area is not None:
+            self._locations_by_area_id.setdefault(new_area, set()).add(location_key)
 
     def _collect_descendant_ids(self, root_id: str) -> set[str]:
         """Collect all descendant location IDs (excluding the root itself)."""
@@ -997,14 +959,9 @@ class Repository:
         if not has_indexed_filter:
             return None
 
-        # If we have indexed filters but candidate_sets is empty, it means we had
-        # filters like tags_any=[] or category="" which don't restrict candidates
-        # (logic above ensures empty strings don't trigger has_indexed_filter).
-        # However, if we simply have 'checked_out=True' and it's empty, we returned [].
-
-        # If we are here, we have at least one set in candidate_sets.
+        # Defensive: with an indexed filter present the loop above either
+        # returned early or appended at least one candidate set.
         if not candidate_sets:
-            # Fallback (should be covered by has_indexed_filter logic)
             return None
 
         # Sort by size to intersect smallest sets first (optimization)
@@ -1418,8 +1375,6 @@ class Repository:
         }
         return page, self._encode_cursor(cursor_payload)
 
-    # No repository-local validation helpers. Invariants live in models.
-
     # -----------------------------
     # Properties
     # -----------------------------
@@ -1450,8 +1405,6 @@ class Repository:
             "items_by_location_id": self._items_by_location_id,
             "locations_by_area_id": self._locations_by_area_id,
             "items_by_area_id": self._items_by_area_id,
-            "items_by_created_at": self._items_by_created_at,
-            "items_by_updated_at": self._items_by_updated_at,
         }
 
     # -----------------------------
@@ -1535,8 +1488,6 @@ class Repository:
         self._items_by_location_id = {}
         self._locations_by_area_id = {}
         self._items_by_area_id = {}
-        self._items_by_created_at = []
-        self._items_by_updated_at = []
         self._name_sort_key_by_item_id = {}
         self._children_ids_by_parent_id = {}
         self._location_descendants = {}

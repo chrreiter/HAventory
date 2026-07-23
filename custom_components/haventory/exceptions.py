@@ -16,9 +16,6 @@ from homeassistant.exceptions import HomeAssistantError
 class HaventoryError(HomeAssistantError):
     """Base exception for HAventory-related errors."""
 
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-
 
 class ValidationError(HaventoryError):
     """Raised when input payloads fail validation or violate invariants."""
