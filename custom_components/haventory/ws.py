@@ -15,10 +15,12 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
+from . import import_export
 from . import storage as storage_mod
 from .areas import async_get_area_registry
 from .const import DOMAIN, INTEGRATION_VERSION
 from .exceptions import ConflictError, NotFoundError, StorageError, ValidationError
+from .import_export import POLICIES
 from .models import ItemUpdate, normalize_tags
 from .repository import UNSET, Repository
 from .storage import CURRENT_SCHEMA_VERSION
@@ -1421,6 +1423,132 @@ async def ws_areas_list(hass: HomeAssistant, conn, msg):
 
 
 # -----------------------------
+# Import / Export (data safety)
+# -----------------------------
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "haventory/export", vol.Optional("filter"): dict}
+)
+@websocket_api.async_response
+@ws_guard("export", ())
+async def ws_export(hass: HomeAssistant, conn, msg):
+    if "filter" in msg and not isinstance(msg.get("filter"), dict):
+        raise ValidationError("filter must be an object")
+    item_filter = msg.get("filter") if "filter" in msg else None
+    document = import_export.build_export_document(
+        _repo(hass),
+        item_filter=item_filter,
+        schema_version=_schema_version_from_hass(hass),
+    )
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), document))
+
+
+def _import_policy(msg: dict) -> str:
+    policy = msg.get("policy", "merge")
+    if policy not in POLICIES:
+        raise ValidationError(f"policy must be one of: {', '.join(POLICIES)}")
+    return policy
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/import/preview",
+        vol.Required("document"): dict,
+        vol.Optional("policy"): str,
+    }
+)
+@websocket_api.async_response
+@ws_guard("import_preview", ())
+async def ws_import_preview(hass: HomeAssistant, conn, msg):
+    policy = _import_policy(msg)
+    report, _target = import_export.plan_import(
+        _repo(hass),
+        msg.get("document"),
+        policy=policy,
+        current_schema_version=_schema_version_from_hass(hass),
+    )
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), report))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/import/execute",
+        vol.Required("document"): dict,
+        vol.Optional("policy"): str,
+    }
+)
+@websocket_api.async_response
+@ws_guard("import_execute", ())
+async def ws_import_execute(hass: HomeAssistant, conn, msg):
+    policy = _import_policy(msg)
+    repo = _repo(hass)
+    report, target = import_export.plan_import(
+        repo,
+        msg.get("document"),
+        policy=policy,
+        current_schema_version=_schema_version_from_hass(hass),
+    )
+    if not report.get("valid") or target is None:
+        # Invalid document: surface structured errors without mutating state.
+        err = websocket_api.error_message(
+            msg.get("id", 0),
+            "validation_error",
+            "import document is invalid",
+            {"op": "import_execute", "errors": report.get("errors", [])},
+        )
+        LOGGER.warning(
+            "Import rejected: invalid document",
+            extra={
+                "domain": DOMAIN,
+                "op": "import_execute",
+                "error_count": len(report.get("errors", [])),
+            },
+        )
+        conn.send_message(err)
+        return
+
+    # Snapshot for rollback, then swap the whole dataset atomically.
+    snapshot = repo.export_state()
+    repo.load_state(target)
+    try:
+        await _persist_repo(hass)
+    except Exception:
+        # A failed persist must never leave partial in-memory state.
+        repo.load_state(snapshot)
+        LOGGER.error(
+            "Import failed during persist; rolled back",
+            extra={"domain": DOMAIN, "op": "import_execute"},
+            exc_info=True,
+        )
+        raise
+
+    # Tell every subscriber the dataset was replaced wholesale.
+    _broadcast_event(hass, topic="items", action="reloaded", payload=None)
+    _broadcast_event(hass, topic="locations", action="reloaded", payload=None)
+    _broadcast_counts(hass)
+
+    summary = {
+        "applied": True,
+        "policy": policy,
+        "items": report["counts"]["items"],
+        "locations": report["counts"]["locations"],
+        "totals": repo.get_counts(),
+    }
+    LOGGER.info(
+        "Import applied",
+        extra={
+            "domain": DOMAIN,
+            "op": "import_execute",
+            "policy": policy,
+            "items_total": summary["items"]["total"],
+            "locations_total": summary["locations"]["total"],
+        },
+    )
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), summary))
+
+
+# -----------------------------
 # Registration
 # -----------------------------
 
@@ -1462,6 +1590,9 @@ def setup(hass: HomeAssistant) -> None:
         ws_location_tree,
         ws_location_move_subtree,
         ws_areas_list,
+        ws_export,
+        ws_import_preview,
+        ws_import_execute,
     ]
 
     for h in handlers:

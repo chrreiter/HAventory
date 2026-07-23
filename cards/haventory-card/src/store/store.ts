@@ -2,8 +2,12 @@ import type {
   AreasListResult,
   AnyEventPayload,
   DistinctValues,
+  ExportDocument,
   HassLike,
   HealthResult,
+  ImportPolicy,
+  ImportPreview,
+  ImportSummary,
   Item,
   ItemCreate,
   ItemFilter,
@@ -123,6 +127,12 @@ export class Store {
 
   private onItemsEvent(evt: AnyEventPayload) {
     if (evt.topic !== 'items') return;
+    if (evt.action === 'reloaded') {
+      // An import replaced the dataset wholesale — reload from scratch.
+      void this.listItems(true);
+      void this.refreshDistinctValues().catch(() => undefined);
+      return;
+    }
     const item = (evt as unknown as { item: Item }).item; // narrow by known payload structure
     const items = this.state.value.items.slice();
     const idx = items.findIndex((x) => x.id === item.id);
@@ -156,6 +166,11 @@ export class Store {
 
   private onLocationsEvent(evt: AnyEventPayload) {
     if (evt.topic !== 'locations') return;
+    if (evt.action === 'reloaded') {
+      void Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+      void this.listItems(true);
+      return;
+    }
     void Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
     // Moving or renaming a location rewrites the denormalized location_path on
     // every item in its subtree — reload the list so rows reflect it live.
@@ -423,6 +438,36 @@ export class Store {
     // Denormalized item location_path values changed for the whole subtree.
     await this.listItems(true);
     return moved;
+  }
+
+  // ---------- Import / export (data safety) ----------
+  /** Build a versioned backup document of the whole inventory. */
+  async exportDocument(): Promise<ExportDocument> {
+    return this.ws.exportDocument();
+  }
+
+  /** Validate + classify an import document without mutating state. */
+  async previewImport(document: unknown, policy: ImportPolicy): Promise<ImportPreview> {
+    return this.ws.importPreview(document, policy);
+  }
+
+  /** Apply an import document, then reload local caches to reflect the new dataset. */
+  async executeImport(document: unknown, policy: ImportPolicy): Promise<ImportSummary> {
+    const summary = await this.ws.importExecute(document, policy);
+    await this.reloadAll();
+    return summary;
+  }
+
+  /** Refresh every derived cache and the item list (used after a wholesale import). */
+  async reloadAll(): Promise<void> {
+    await Promise.all([
+      this.refreshStats(),
+      this.refreshHealth(),
+      this.refreshLocationsFlat(),
+      this.refreshLocationTree(),
+      this.refreshDistinctValues(),
+    ]);
+    await this.listItems(true);
   }
 
   // ---------- Errors ----------

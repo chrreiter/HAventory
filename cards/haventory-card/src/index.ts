@@ -13,6 +13,8 @@ import './components/hv-location-selector';
 import './components/hv-category-browser';
 import './components/hv-tag-browser';
 import './components/hv-column-picker';
+import './components/hv-import-dialog';
+import type { ImportPolicy, ImportPreview, ImportSummary } from './store/types';
 
 export class HAventoryCard extends LitElement {
   static styles = css`
@@ -95,6 +97,11 @@ export class HAventoryCard extends LitElement {
   private _columnPrefs: ColumnPrefs = loadColumnPrefs();
   private _columnPickerOpen = false;
   private _columnPickerScope: 'standard' | 'expanded' = 'standard';
+  private _importDialogOpen = false;
+  private _importPreview: ImportPreview | null = null;
+  private _importSummary: ImportSummary | null = null;
+  private _importBusy = false;
+  private _importError: string | null = null;
 
   // Lovelace interface: called by HA when the card is created/configured
   public setConfig(cfg: unknown): void {
@@ -163,6 +170,8 @@ export class HAventoryCard extends LitElement {
           <button data-testid="browse-categories" @click=${() => this._openCategoryBrowser()} aria-label="Browse categories" title="Browse categories">Categories</button>
           <button data-testid="browse-tags" @click=${() => this._openTagBrowser()} aria-label="Browse tags" title="Browse tags">Tags</button>
           <button data-testid="columns-standard" @click=${() => this._openColumnPicker('standard')} aria-label="Choose columns" title="Choose columns">Columns</button>
+          <button data-testid="export-btn" @click=${() => { void this._exportDownload(); }} aria-label="Export inventory" title="Download a JSON backup">Export</button>
+          <button data-testid="import-btn" @click=${() => this._openImportDialog()} aria-label="Import inventory" title="Restore from a JSON backup">Import</button>
           <button data-testid="expand-toggle" @click=${() => this._toggleExpanded()} aria-expanded=${String(this.expanded)} aria-label=${this.expanded ? 'Collapse' : 'Expand'}>
             ${this.expanded ? '⤢ Collapse' : '⇱ Expand'}
           </button>
@@ -362,8 +371,96 @@ export class HAventoryCard extends LitElement {
         @cancel=${() => { this._columnPickerOpen = false; this.requestUpdate(); }}
       ></hv-column-picker>
 
+      <hv-import-dialog
+        .open=${this._importDialogOpen}
+        .preview=${this._importPreview}
+        .summary=${this._importSummary}
+        .busy=${this._importBusy}
+        .errorMessage=${this._importError}
+        @preview=${(e: CustomEvent) => this._onImportPreview(e)}
+        @execute=${(e: CustomEvent) => this._onImportExecute(e)}
+        @cancel=${() => { this._importDialogOpen = false; this._resetImportState(); this.requestUpdate(); }}
+      ></hv-import-dialog>
+
       ${this.expanded ? this._renderOverlayTemplate() : null}
     `;
+  }
+
+  private async _exportDownload() {
+    try {
+      const doc = await this.store?.exportDocument();
+      if (!doc) return;
+      const json = JSON.stringify(doc, null, 2);
+      const stamp = (doc.exported_at ?? '').replace(/[:]/g, '-') || 'backup';
+      this._triggerDownload(`haventory-export-${stamp}.json`, json);
+    } catch (err: unknown) {
+      // Surfacing this via the import dialog is overkill for export; log for diagnostics.
+      console.error('HAventory export failed', err);
+    }
+  }
+
+  /** Trigger a browser download of the given text as a JSON file. Isolated for testing. */
+  protected _triggerDownload(filename: string, text: string) {
+    const blob = new Blob([text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  private _openImportDialog() {
+    this._resetImportState();
+    this._importDialogOpen = true;
+    this.requestUpdate();
+  }
+
+  private _resetImportState() {
+    this._importPreview = null;
+    this._importSummary = null;
+    this._importBusy = false;
+    this._importError = null;
+  }
+
+  private async _onImportPreview(e: CustomEvent) {
+    const { document, policy } = e.detail as { document: unknown; policy: ImportPolicy };
+    this._importBusy = true;
+    this._importError = null;
+    this._importSummary = null;
+    this.requestUpdate();
+    try {
+      this._importPreview = (await this.store?.previewImport(document, policy)) ?? null;
+    } catch (err: unknown) {
+      this._importPreview = null;
+      this._importError = (err as { message?: string })?.message ?? 'Preview failed';
+    } finally {
+      this._importBusy = false;
+      this.requestUpdate();
+    }
+  }
+
+  private async _onImportExecute(e: CustomEvent) {
+    const { document, policy } = e.detail as { document: unknown; policy: ImportPolicy };
+    this._importBusy = true;
+    this._importError = null;
+    this.requestUpdate();
+    try {
+      this._importSummary = (await this.store?.executeImport(document, policy)) ?? null;
+    } catch (err: unknown) {
+      const anyErr = err as { code?: string; message?: string; data?: { errors?: { path: string; message: string }[] } };
+      if (anyErr?.code === 'validation_error' && anyErr.data?.errors?.length) {
+        this._importError = `Import rejected: ${anyErr.data.errors.length} problem(s) in the document.`;
+      } else {
+        this._importError = anyErr?.message ?? 'Import failed';
+      }
+    } finally {
+      this._importBusy = false;
+      this.requestUpdate();
+    }
   }
 
   private _openColumnPicker(scope: 'standard' | 'expanded') {

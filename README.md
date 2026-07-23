@@ -168,6 +168,16 @@ Included: `tests/test_ws_smoke_online.py`, `tests/test_ws_smoke_advanced_online.
   validation/repository/storage errors so HA surfaces them.
 - Areas via `homeassistant.helpers.area_registry.async_get(hass)`; never auto-create areas.
 - Case-insensitive search; denormalized `location_path` on items; item `version` for optimistic concurrency.
+- **JSON import/export (data safety)** via `haventory/export`, `haventory/import/preview`,
+  and `haventory/import/execute`: back up to a versioned document before a breaking update
+  and restore afterwards. Preview reports would-be adds/updates/conflicts without touching
+  state; execute applies a `merge` / `replace` / `skip` conflict policy and rolls back on
+  failure so a bad import never leaves partial state. This **complements** Home Assistant's
+  own snapshots/backups — the HAventory store file is already captured by an HA backup;
+  import/export adds a portable, human-readable document you can inspect, diff, and restore
+  independently of a full-instance snapshot. See
+  [`docs/backend_api_contract.md`](docs/backend_api_contract.md) and
+  [`docs/data_shapes.md`](docs/data_shapes.md).
 
 ### Frontend (Lovelace card)
 
@@ -181,6 +191,10 @@ Included: `tests/test_ws_smoke_online.py`, `tests/test_ws_smoke_advanced_online.
   **move a whole subtree** to a new parent, with descendant paths updating live.
 - Expanded view includes a diagnostics panel with **storage health**
   (`haventory/health`: status, issues, generation) and a refresh action.
+- **Export / Import** buttons in the card header: Export downloads a JSON backup;
+  Import opens a dialog with a **preview step** (adds/updates/conflicts per policy),
+  `merge` / `replace` / `skip` policy selection, and structured error display before
+  anything is written.
 - Card auto-registered as a Lovelace resource on integration setup.
 - **Note:** after first install, a browser refresh (F5 / Ctrl+Shift+R) is required for the
   card to appear in the picker (standard for all custom cards).
