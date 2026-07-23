@@ -1,10 +1,30 @@
 import os
+import uuid
 from typing import Any
 
 import aiohttp
 import pytest
+from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 
 pytestmark = pytest.mark.online
+
+# Destructive online tests PURGE ALL HAventory data on the target instance.
+# They are opt-in twice: RUN_ONLINE=1 *and* HAV_ONLINE_DESTRUCTIVE=1, and must
+# only ever be pointed at a disposable HA. Everything not marked destructive is
+# self-contained: it creates uniquely-named entities and cleans them up.
+DESTRUCTIVE_ONLINE = os.environ.get("HAV_ONLINE_DESTRUCTIVE") == "1"
+destructive = pytest.mark.skipif(
+    not DESTRUCTIVE_ONLINE,
+    reason=(
+        "destructive online test (purges ALL HAventory data on the target HA); "
+        "set HAV_ONLINE_DESTRUCTIVE=1 only against a disposable instance"
+    ),
+)
+
+
+def _unique(name: str) -> str:
+    """A per-run unique entity name so tests never collide with real data."""
+    return f"{name} {uuid.uuid4().hex[:8]}"
 
 
 def _ws_url_from_base(base_url: str) -> str:
@@ -63,34 +83,28 @@ async def _find_location_id_by_name(
     return None
 
 
-async def _open_ws():
-    base = os.environ.get("HA_BASE_URL", "http://localhost:8123")
-    token = os.environ.get("HA_TOKEN")
-    ws_url = _ws_url_from_base(base)
-    session = aiohttp.ClientSession()
-    ws = await session.ws_connect(ws_url)
-    _ = await ws.receive_json()
-    await ws.send_json({"type": "auth", "access_token": token})
-    _ = await ws.receive_json()
-    return session, ws
+async def _create_location(
+    ws: aiohttp.ClientWebSocketResponse, next_id, name: str, parent_id: str | None = None
+) -> str:
+    cid = next_id()
+    payload: dict[str, Any] = {"id": cid, "type": "haventory/location/create", "name": name}
+    if parent_id is not None:
+        payload["parent_id"] = parent_id
+    await ws.send_json(payload)
+    res = await _expect_result(ws, cid)
+    assert res.get("success") is True, res
+    return str(res["result"]["id"])
 
 
-async def _expect_result(ws: aiohttp.ClientWebSocketResponse, expect_id: int) -> dict[str, Any]:
-    while True:
-        msg = await ws.receive_json()
-        if isinstance(msg, dict) and msg.get("id") == expect_id and msg.get("type") == "result":
-            return msg
-
-
-def _id_counter(start: int = 0):
-    value = start
-
-    def _next() -> int:
-        nonlocal value
-        value += 1
-        return value
-
-    return _next
+async def _delete_location_quiet(
+    ws: aiohttp.ClientWebSocketResponse, next_id, location_id: str | None
+) -> None:
+    """Best-effort cleanup delete for test-created locations."""
+    if not location_id:
+        return
+    did = next_id()
+    await ws.send_json({"id": did, "type": "haventory/location/delete", "location_id": location_id})
+    _ = await _expect_result(ws, did)
 
 
 @pytest.mark.asyncio
@@ -114,21 +128,13 @@ async def test_ws_areas_list_and_location_area_field_presence() -> None:
 
         # Create a location without area_id and ensure serializer includes area_id: null
         cid = next_id()
-        await ws.send_json({"id": cid, "type": "haventory/location/create", "name": "AreaProbe"})
+        probe_name = _unique("AreaProbe")
+        await ws.send_json({"id": cid, "type": "haventory/location/create", "name": probe_name})
         cre = await _expect_result(ws, cid)
         loc = cre.get("result") or {}
         assert "area_id" in loc and loc.get("area_id") is None
-
-        # Cleanup: delete created location
-        did = next_id()
-        await ws.send_json(
-            {
-                "id": did,
-                "type": "haventory/location/delete",
-                "location_id": loc.get("id"),
-            }
-        )
-        _ = await _expect_result(ws, did)
+        # Clean up the probe location so the test leaves no trace
+        await _delete_location_quiet(ws, next_id, loc.get("id"))
     finally:
         await ws.close()
         await session.close()
@@ -166,7 +172,7 @@ async def test_ws_ping_and_version() -> None:
             result = ver.get("result")
             assert isinstance(result, dict)
             assert "integration_version" in result
-            assert result.get("schema_version") == 1
+            assert result.get("schema_version") == CURRENT_SCHEMA_VERSION
 
 
 @pytest.mark.asyncio
@@ -174,6 +180,7 @@ async def test_ws_ping_and_version() -> None:
     os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
+@destructive
 async def test_ws_smoke_phase0_phase1_locations() -> None:  # noqa: PLR0915
     """End-to-end online smoke: Phase 0 and Phase 1 (locations CRUD and validation).
 
@@ -198,7 +205,7 @@ async def test_ws_smoke_phase0_phase1_locations() -> None:  # noqa: PLR0915
         ver = await _expect_result(ws, 102)
         assert ver.get("success") is True  # scenario: version endpoint works
         vres = ver.get("result")
-        assert isinstance(vres, dict) and vres.get("schema_version") == 1  # expected: schema v1
+        assert isinstance(vres, dict) and vres.get("schema_version") == CURRENT_SCHEMA_VERSION
 
         await ws.send_json({"id": 103, "type": "haventory/stats"})
         stats = await _expect_result(ws, 103)
@@ -283,24 +290,26 @@ async def test_ws_smoke_phase0_phase1_locations() -> None:  # noqa: PLR0915
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
 async def test_ws_location_rename() -> None:
-    """Rename existing 'Garage' to 'Garage West'."""
+    """Rename a test-created location (self-contained, cleans up after itself)."""
     session, ws = await _open_ws()
     next_id = _id_counter()
+    loc_id: str | None = None
     try:
-        garage_id = await _find_location_id_by_name(ws, "Garage", next_id)
-        assert garage_id is not None
+        name = _unique("SmokeRename")
+        loc_id = await _create_location(ws, next_id, name)
         rid = next_id()
         await ws.send_json(
             {
                 "id": rid,
                 "type": "haventory/location/update",
-                "location_id": garage_id,
-                "name": "Garage West",
+                "location_id": loc_id,
+                "name": f"{name} Renamed",
             }
         )
         upd = await _expect_result(ws, rid)
-        assert upd.get("success") is True and upd["result"]["name"] == "Garage West"
+        assert upd.get("success") is True and upd["result"]["name"] == f"{name} Renamed"
     finally:
+        await _delete_location_quiet(ws, next_id, loc_id)
         await ws.close()
         await session.close()
 
@@ -311,16 +320,15 @@ async def test_ws_location_rename() -> None:
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
 async def test_ws_location_create_basement() -> None:
-    """Create a new root 'Basement'."""
+    """Create and remove a root location (self-contained)."""
     session, ws = await _open_ws()
     next_id = _id_counter()
+    basement_id: str | None = None
     try:
-        cid = next_id()
-        await ws.send_json({"id": cid, "type": "haventory/location/create", "name": "Basement"})
-        cre_b = await _expect_result(ws, cid)
-        basement_id = cre_b.get("result", {}).get("id")
+        basement_id = await _create_location(ws, next_id, _unique("SmokeBasement"))
         assert isinstance(basement_id, str) and len(basement_id) > 0
     finally:
+        await _delete_location_quiet(ws, next_id, basement_id)
         await ws.close()
         await session.close()
 
@@ -331,13 +339,14 @@ async def test_ws_location_create_basement() -> None:
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
 async def test_ws_location_move_subtree() -> None:
-    """Move 'Garage West' subtree under 'Basement'."""
+    """Move a test-created subtree under another test-created root (self-contained)."""
     session, ws = await _open_ws()
     next_id = _id_counter()
+    garage_id: str | None = None
+    basement_id: str | None = None
     try:
-        garage_id = await _find_location_id_by_name(ws, "Garage West", next_id)
-        basement_id = await _find_location_id_by_name(ws, "Basement", next_id)
-        assert garage_id and basement_id
+        garage_id = await _create_location(ws, next_id, _unique("SmokeMoveSrc"))
+        basement_id = await _create_location(ws, next_id, _unique("SmokeMoveDst"))
         mid = next_id()
         await ws.send_json(
             {
@@ -371,6 +380,9 @@ async def test_ws_location_move_subtree() -> None:
         b_child_ids = [c.get("id") for c in basement_node.get("children") or []]
         assert garage_id in b_child_ids
     finally:
+        # children first: the moved source now sits under the destination
+        await _delete_location_quiet(ws, next_id, garage_id)
+        await _delete_location_quiet(ws, next_id, basement_id)
         await ws.close()
         await session.close()
 
@@ -381,12 +393,12 @@ async def test_ws_location_move_subtree() -> None:
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
 async def test_ws_location_move_subtree_negative_self() -> None:
-    """Negative: cannot move a location under itself."""
+    """Negative: cannot move a location under itself (self-contained)."""
     session, ws = await _open_ws()
     next_id = _id_counter()
+    garage_id: str | None = None
     try:
-        garage_id = await _find_location_id_by_name(ws, "Garage West", next_id)
-        assert garage_id
+        garage_id = await _create_location(ws, next_id, _unique("SmokeSelfMove"))
         nid = next_id()
         await ws.send_json(
             {
@@ -402,6 +414,7 @@ async def test_ws_location_move_subtree_negative_self() -> None:
             and (neg.get("error") or {}).get("code") == "validation_error"
         )
     finally:
+        await _delete_location_quiet(ws, next_id, garage_id)
         await ws.close()
         await session.close()
 
@@ -412,24 +425,16 @@ async def test_ws_location_move_subtree_negative_self() -> None:
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
 async def test_ws_location_move_subtree_negative_descendant() -> None:
-    """Negative: cannot move a location under a descendant."""
+    """Negative: cannot move a location under a descendant (self-contained)."""
     session, ws = await _open_ws()
     next_id = _id_counter()
+    garage_id: str | None = None
+    shelf_id: str | None = None
     try:
-        garage_id = await _find_location_id_by_name(ws, "Garage West", next_id)
-        # ensure a child leaf exists to test descendant move validation
-        cid = next_id()
-        await ws.send_json(
-            {
-                "id": cid,
-                "type": "haventory/location/create",
-                "name": "Shelf A",
-                "parent_id": garage_id,
-            }
+        garage_id = await _create_location(ws, next_id, _unique("SmokeDescMove"))
+        shelf_id = await _create_location(
+            ws, next_id, _unique("SmokeDescShelf"), parent_id=garage_id
         )
-        _ = await _expect_result(ws, cid)
-        shelf_id = await _find_location_id_by_name(ws, "Shelf A", next_id)
-        assert garage_id and shelf_id
         nid = next_id()
         await ws.send_json(
             {
@@ -445,6 +450,9 @@ async def test_ws_location_move_subtree_negative_descendant() -> None:
             and (neg2.get("error") or {}).get("code") == "validation_error"
         )
     finally:
+        # child first, then the root
+        await _delete_location_quiet(ws, next_id, shelf_id)
+        await _delete_location_quiet(ws, next_id, garage_id)
         await ws.close()
         await session.close()
 
@@ -455,12 +463,13 @@ async def test_ws_location_move_subtree_negative_descendant() -> None:
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
 async def test_ws_location_delete_leaf_and_get_not_found() -> None:
-    """Delete leaf 'Shelf A' and verify get returns not_found."""
+    """Delete a test-created leaf and verify get returns not_found (self-contained)."""
     session, ws = await _open_ws()
     next_id = _id_counter()
+    root_id: str | None = None
     try:
-        shelf_id = await _find_location_id_by_name(ws, "Shelf A", next_id)
-        assert shelf_id
+        root_id = await _create_location(ws, next_id, _unique("SmokeDelRoot"))
+        shelf_id = await _create_location(ws, next_id, _unique("SmokeDelLeaf"), parent_id=root_id)
         did = next_id()
         await ws.send_json(
             {"id": did, "type": "haventory/location/delete", "location_id": shelf_id}
@@ -475,6 +484,7 @@ async def test_ws_location_delete_leaf_and_get_not_found() -> None:
             and (get_after.get("error") or {}).get("code") == "not_found"
         )
     finally:
+        await _delete_location_quiet(ws, next_id, root_id)
         await ws.close()
         await session.close()
 
@@ -484,6 +494,7 @@ async def test_ws_location_delete_leaf_and_get_not_found() -> None:
     os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
+@destructive
 async def test_ws_final_stats_after_all_location_ops() -> None:
     """Final stats: expect 2 locations remaining (Basement + Garage West)."""
     session, ws = await _open_ws()
@@ -591,6 +602,7 @@ async def _ensure_phase2_base(ws: aiohttp.ClientWebSocketResponse, next_id) -> d
     os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
+@destructive
 async def test_p2_item_create_defaults_and_rich() -> None:
     """Create default item and rich item with all optionals."""
     session, ws = await _open_ws()
@@ -637,6 +649,7 @@ async def test_p2_item_create_defaults_and_rich() -> None:
     os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
+@destructive
 async def test_p2_item_get_update_delete_recreate() -> None:
     """Get, update (version++), delete (with expected), then re-create."""
     session, ws = await _open_ws()
@@ -702,6 +715,7 @@ async def test_p2_item_get_update_delete_recreate() -> None:
     os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
+@destructive
 async def test_p2_item_move_between_locations() -> None:
     """Move item to Workshop; verify location_path and version bump."""
     session, ws = await _open_ws()
@@ -739,6 +753,7 @@ async def test_p2_item_move_between_locations() -> None:
     os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
+@destructive
 async def test_p2_quantity_operations() -> None:
     """Invalid set_quantity (-1) then adjust +2 and set=5."""
     session, ws = await _open_ws()
@@ -809,6 +824,7 @@ async def test_p2_quantity_operations() -> None:
     os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
+@destructive
 async def test_p2_checkout_checkin_and_due_dates() -> None:
     """Check-out with due_date, check-in, then negative due_date without checked_out."""
     session, ws = await _open_ws()
@@ -877,6 +893,7 @@ async def test_p2_checkout_checkin_and_due_dates() -> None:
     os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
+@destructive
 async def test_p2_tags_and_custom_fields() -> None:
     """Add/remove tags; set/unset custom fields; verify normalization and result."""
     session, ws = await _open_ws()
@@ -964,6 +981,7 @@ async def test_p2_tags_and_custom_fields() -> None:
     os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
+@destructive
 async def test_p2_low_stock_threshold_and_stats() -> None:
     """Set threshold and cross it to verify low_stock_count in stats."""
     session, ws = await _open_ws()
@@ -1041,6 +1059,7 @@ async def test_p2_low_stock_threshold_and_stats() -> None:
     os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
+@destructive
 async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
     """Exercise list filters, sorts, and cursor pagination."""
     session, ws = await _open_ws()
@@ -1193,6 +1212,7 @@ async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
     os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
+@destructive
 async def test_p2_optimistic_concurrency_conflict() -> None:
     """Demonstrate conflict on stale expected_version with error envelope."""
     session, ws = await _open_ws()
@@ -1248,6 +1268,7 @@ async def test_p2_optimistic_concurrency_conflict() -> None:
     or not os.environ.get("HA_CONTAINER"),
     reason="RUN_ONLINE!=1 or HA_TOKEN/HA_CONTAINER missing",
 )
+@destructive
 async def test_p2_logs_conflict_and_validation_present() -> None:
     """Best-effort: verify haventory WS logs appear in Docker logs (conflict/validation)."""
     # This test does not assert exact lines, only presence of key phrases to avoid flakiness.

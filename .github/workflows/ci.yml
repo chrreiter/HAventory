@@ -38,6 +38,10 @@ jobs:
         run: uv sync --python ${{ matrix.python-version }}
       - name: Lint (ruff)
         run: uv run ruff check .
+      - name: Format (ruff format --check)
+        # pre-commit enforces formatting only for local commits with hooks
+        # installed; this step is the backstop for remote/hookless authors.
+        run: uv run ruff format --check .
       - name: Types (mypy)
         run: uv run mypy
       - name: Test (pytest offline w/ coverage)

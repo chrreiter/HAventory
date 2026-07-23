@@ -8,6 +8,9 @@ cd "$REPO_ROOT"
 info 'Backend: ruff check...'
 ruff_run check .
 
+info 'Backend: ruff format --check...'
+ruff_run format --check .
+
 info 'Backend: mypy...'
 mypy_run
 

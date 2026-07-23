@@ -137,6 +137,13 @@ scripts/smoke_online.sh
 # or: uv run pytest -q -m online -k "ws_smoke or ws_smoke_advanced"
 ```
 
+> ⚠️ **Destructive scenario tests are double-gated.** A subset of the online
+> suite **purges ALL HAventory items and locations** on the target instance
+> before running (they assert exact totals against a clean dataset). Those
+> tests are skipped unless you *also* set `HAV_ONLINE_DESTRUCTIVE=1` — do that
+> only against a disposable HA. Everything that runs without the flag is
+> self-contained: it creates uniquely-named entities and deletes them again.
+
 Area-registry e2e (optional; temporarily mutates your HA instance):
 
 ```bash
