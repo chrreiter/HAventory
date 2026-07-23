@@ -155,25 +155,15 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
         case 'haventory/item/list': {
           const limit = (typeof msg.limit === 'number' ? (msg.limit as number) : 50) || 50;
           const cursor = (msg.cursor as string | undefined) || undefined;
-          const filter = (msg.filter as Record<string, unknown> | undefined) ?? {};
-          // Apply the subset of filters the browsers rely on (category, tags_any),
-          // case-insensitively, mirroring the backend indexes.
-          let filtered = items;
-          const cat = typeof filter.category === 'string' ? filter.category.trim().toLowerCase() : '';
-          if (cat) {
-            filtered = filtered.filter((i) => (i.category ?? '').trim().toLowerCase() === cat);
-          }
-          const tagsAny = Array.isArray(filter.tags_any) ? (filter.tags_any as string[]).map((t) => t.toLowerCase()) : [];
-          if (tagsAny.length) {
-            filtered = filtered.filter((i) => (i.tags ?? []).some((t) => tagsAny.includes(t.toLowerCase())));
-          }
-          const page1 = filtered.slice(0, limit);
+          // Mirror the backend: filter, then sort, then paginate.
+          const listed = applyMockSort(applyMockFilter(items, msg.filter), msg.sort);
+          const page1 = listed.slice(0, limit);
           if (!cursor) {
-            const next_cursor = filtered.length > limit ? 'cursor-2' : null;
+            const next_cursor = listed.length > limit ? 'cursor-2' : null;
             return { items: page1, next_cursor } as unknown as T;
           }
           if (cursor === 'cursor-2') {
-            return { items: filtered.slice(limit, limit * 2), next_cursor: null } as unknown as T;
+            return { items: listed.slice(limit, limit * 2), next_cursor: null } as unknown as T;
           }
           return { items: [], next_cursor: null } as unknown as T;
         }
@@ -278,6 +268,73 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
   };
 
   return hass;
+}
+
+/** Faithful-but-small mirror of the backend ItemFilter semantics (AND of all predicates). */
+function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
+  const filter = (rawFilter ?? null) as {
+    q?: string;
+    checked_out?: boolean;
+    orphaned_only?: boolean;
+    location_id?: string | null;
+    include_subtree?: boolean;
+    category?: string;
+    tags_any?: string[];
+  } | null;
+  if (!filter) return list;
+  return list.filter((it) => {
+    // Category equals + tags_any (case-insensitive), used by the browser views.
+    const cat = typeof filter.category === 'string' ? filter.category.trim().toLowerCase() : '';
+    if (cat && (it.category ?? '').trim().toLowerCase() !== cat) return false;
+    if (Array.isArray(filter.tags_any) && filter.tags_any.length) {
+      const wanted = filter.tags_any.map((t) => t.toLowerCase());
+      if (!(it.tags ?? []).some((t) => wanted.includes(t.toLowerCase()))) return false;
+    }
+    if (filter.q) {
+      const q = String(filter.q).toLowerCase();
+      const blob = [
+        it.name,
+        it.description ?? '',
+        it.category ?? '',
+        (it.tags ?? []).join(' '),
+        it.location_path?.display_path ?? '',
+      ].join(' ').toLowerCase();
+      if (!blob.includes(q)) return false;
+    }
+    if (typeof filter.checked_out === 'boolean' && it.checked_out !== filter.checked_out) return false;
+    if (filter.orphaned_only && it.location_id !== null) return false;
+    if (filter.location_id) {
+      const inSubtree = it.location_id === filter.location_id
+        || (it.location_path?.id_path ?? []).includes(filter.location_id);
+      if (filter.include_subtree ? !inSubtree : it.location_id !== filter.location_id) return false;
+    }
+    return true;
+  });
+}
+
+/** Mirror of backend sort_items: supported fields, nullable dates last in both orders, id-asc tie-break. */
+function applyMockSort(list: Item[], rawSort: unknown): Item[] {
+  const sort = (rawSort ?? null) as { field?: string; order?: string } | null;
+  if (!sort?.field) return list;
+  const order = sort.order === 'desc' ? 'desc' : 'asc';
+  const dir = order === 'desc' ? -1 : 1;
+  const dateKey = (v: string | null) => v ?? (order === 'asc' ? '~' : '');
+  const key = (it: Item): string | number => {
+    switch (sort.field) {
+      case 'name': return it.name.toLowerCase();
+      case 'quantity': return it.quantity;
+      case 'due_date': return dateKey(it.due_date);
+      case 'inspection_date': return dateKey(it.inspection_date);
+      case 'created_at': return it.created_at;
+      default: return it.updated_at;
+    }
+  };
+  return list.slice().sort((a, b) => {
+    const ka = key(a), kb = key(b);
+    if (ka < kb) return -1 * dir;
+    if (ka > kb) return 1 * dir;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; // id asc tie-break in both orders
+  });
 }
 
 export function makeItem(partial?: Partial<Item>): Item {
