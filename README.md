@@ -228,6 +228,8 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
   `haventory/distinct_values`.
 - Dedicated **category browser** (header → "Categories"): lists used categories with item
   counts and drills down to the items filed under each.
+- Dedicated **tag browser** (header → "Tags"): lists used tags with item counts and drills
+  down to the items carrying each.
 
 ### 🚧 Phase 3: Polish & HACS (Planned)
 - HACS publication; release automation (release-please); additional optimizations.
