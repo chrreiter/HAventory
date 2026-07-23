@@ -126,6 +126,20 @@ Counts object used in `stats` results and events:
 { "items_total": 0, "low_stock_count": 0, "checked_out_count": 0, "locations_total": 0 }
 ```
 
+### Distinct values
+
+Result of `distinct_values`, used by category/tag autocomplete and browser views:
+```json
+{
+  "categories": [ { "value": "Books", "count": 1 }, { "value": "Tools", "count": 2 } ],
+  "tags": [ { "value": "blue", "count": 2 }, { "value": "red", "count": 2 } ]
+}
+```
+
+- `DistinctValue`: `{ value: string, count: number }` where `count` is the number of items using that value.
+- Categories are grouped case-insensitively; `value` is a representative display label (most frequent original casing, ties broken alphabetically). Tags are already normalized (lowercase), so `value` is the tag itself.
+- Both lists are sorted case-insensitively by `value`. Items with no category (or no tags) contribute nothing to the respective list.
+
 ### Events
 
 Common envelope inside HA WS event wrapper:
