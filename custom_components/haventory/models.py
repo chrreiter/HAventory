@@ -359,15 +359,30 @@ def build_location_path_from_map(
 # -----------------------------
 
 
+def _is_int_not_bool(value: object) -> bool:
+    """True for a real integer. ``bool`` is a subclass of ``int`` — exclude it."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _validate_optional_text(value: object, field_name: str) -> None:
+    """Ensure an optional free-text field is a string or None.
+
+    Non-text values (list/dict/number) would otherwise reach the search-index
+    build and crash mid-way, leaving a partially-indexed item.
+    """
+    if value is not None and not isinstance(value, str):
+        raise ValidationError(f"{field_name} must be a string or null")
+
+
 def _validate_item_core_fields(name: str, quantity: int, low_stock_threshold: int | None) -> None:
     if not isinstance(name, str) or len(name.strip()) == 0:
         raise ValidationError("name is required and must be a non-empty string")
     if len(name) > NAME_MAX_LENGTH:
         raise ValidationError("name must be at most 120 characters")
-    if not isinstance(quantity, int) or quantity < 0:
+    if not _is_int_not_bool(quantity) or quantity < 0:
         raise ValidationError("quantity must be an integer >= 0")
     if low_stock_threshold is not None and (
-        not isinstance(low_stock_threshold, int) or low_stock_threshold < 0
+        not _is_int_not_bool(low_stock_threshold) or low_stock_threshold < 0
     ):
         raise ValidationError("low_stock_threshold must be an integer >= 0 or null")
 
@@ -394,7 +409,10 @@ def create_item_from_create(
     # Trim whitespace before validation and persistence
     name = name.strip()
     description = payload.get("description")
-    quantity = int(payload.get("quantity", 1))
+    raw_quantity = payload.get("quantity", 1)
+    if isinstance(raw_quantity, bool):
+        raise ValidationError("quantity must be an integer >= 0")
+    quantity = int(raw_quantity)
     checked_out = bool(payload.get("checked_out", False))
     due_date = payload.get("due_date")
     inspection_date = payload.get("inspection_date")
@@ -404,6 +422,8 @@ def create_item_from_create(
     low_stock_threshold = payload.get("low_stock_threshold")
     custom_fields = payload.get("custom_fields", {})
 
+    _validate_optional_text(description, "description")
+    _validate_optional_text(category, "category")
     _validate_item_core_fields(name, quantity, low_stock_threshold)
     validate_custom_fields(custom_fields)
     normalized_due_date = validate_due_date_rules(checked_out=checked_out, due_date=due_date)
@@ -454,13 +474,14 @@ def _update_name_and_description(new_item: Item, update: ItemUpdate) -> None:
             raise ValidationError("name must be at most 120 characters")
         new_item.name = trimmed
     if "description" in update:
+        _validate_optional_text(update["description"], "description")
         new_item.description = update["description"]
 
 
 def _update_quantity(new_item: Item, update: ItemUpdate) -> None:
     if "quantity" in update:
         q = update["quantity"]
-        if not isinstance(q, int) or q < 0:
+        if not _is_int_not_bool(q) or q < 0:
             raise ValidationError("quantity must be an integer >= 0")
         new_item.quantity = q
 
@@ -507,10 +528,11 @@ def _update_tags_category_threshold(new_item: Item, update: ItemUpdate) -> None:
     if "tags" in update:
         new_item.tags = normalize_tags(update.get("tags") or [])
     if "category" in update:
+        _validate_optional_text(update["category"], "category")
         new_item.category = update["category"]
     if "low_stock_threshold" in update:
         thr = update["low_stock_threshold"]
-        if thr is not None and (not isinstance(thr, int) or thr < 0):
+        if thr is not None and (not _is_int_not_bool(thr) or thr < 0):
             raise ValidationError("low_stock_threshold must be an integer >= 0 or null")
         new_item.low_stock_threshold = thr
 

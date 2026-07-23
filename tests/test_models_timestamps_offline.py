@@ -77,3 +77,53 @@ def test_import_rejects_non_canonical_item_timestamps() -> None:
     assert any("updated_at" in err.get("path", "") for err in report["errors"])
     # The canonical timestamp from our own export is fine.
     assert is_canonical_utc_timestamp(item.updated_at)
+
+
+def test_import_rejects_explicit_null_timestamp() -> None:
+    """A present-but-null timestamp must be rejected (would store as 'None')."""
+    repo = Repository()
+    source = Repository()
+    source.create_item(ItemCreate(name="Widget", quantity=1))
+    doc = ie.build_export_document(source, schema_version=CURRENT_SCHEMA_VERSION)
+    doc["items"][0]["updated_at"] = None
+
+    report, target = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+    assert report["valid"] is False
+    assert target is None
+    assert any("updated_at" in err.get("path", "") for err in report["errors"])
+
+
+def test_import_backfills_omitted_timestamp() -> None:
+    """An omitted timestamp is allowed and loads as a canonical value."""
+    repo = Repository()
+    source = Repository()
+    source.create_item(ItemCreate(name="Widget", quantity=1))
+    doc = ie.build_export_document(source, schema_version=CURRENT_SCHEMA_VERSION)
+    doc["items"][0].pop("updated_at")
+    doc["items"][0].pop("created_at")
+
+    report, target = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+    assert report["valid"] is True
+    assert target is not None
+
+    repo.load_state(target)
+    loaded = next(iter(repo._items_by_id.values()))
+    assert is_canonical_utc_timestamp(loaded.created_at)
+    assert is_canonical_utc_timestamp(loaded.updated_at)
+
+
+def test_load_state_backfills_non_canonical_timestamps() -> None:
+    """Corrupt/missing timestamps in a persisted payload are healed on load."""
+    repo = Repository()
+    source = Repository()
+    source.create_item(ItemCreate(name="Widget", quantity=1))
+    payload = source.export_state()
+
+    item_key = next(iter(payload["items"]))
+    payload["items"][item_key]["updated_at"] = "None"  # what a stored null becomes
+    payload["items"][item_key].pop("created_at")  # missing entirely
+
+    repo.load_state(payload)
+    loaded = repo._items_by_id[item_key]
+    assert is_canonical_utc_timestamp(loaded.created_at)
+    assert is_canonical_utc_timestamp(loaded.updated_at)

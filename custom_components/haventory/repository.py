@@ -38,6 +38,7 @@ from .models import (
     create_item_from_create,
     date_sort_key,
     filter_items,
+    is_canonical_utc_timestamp,
     iso_utc_now,
     item_is_low_stock,
     monotonic_timestamp_after,
@@ -92,6 +93,20 @@ UNSET: object = object()
 
 TRIGRAM_MIN_LEN = 3
 PREFIX_MIN_LEN = 2
+
+
+def _coerce_canonical_ts(value: object, *, fallback: str | None = None) -> str:
+    """Return a canonical UTC timestamp, backfilling non-canonical input.
+
+    Item timestamps compare lexicographically for sort/range filters, so on
+    load any missing / null / corrupt value is replaced with a canonical one
+    (the fallback when it is itself canonical, otherwise the current time).
+    """
+    if isinstance(value, str) and is_canonical_utc_timestamp(value):
+        return value
+    if fallback is not None and is_canonical_utc_timestamp(fallback):
+        return fallback
+    return iso_utc_now()
 
 
 class Repository:
@@ -916,8 +931,12 @@ class Repository:
     def adjust_quantity(
         self, item_id: str | uuid.UUID, delta: int, *, expected_version: int | None = None
     ) -> Item:
+        # Reject booleans (an int subclass) so the single-command path matches
+        # the bulk validator and never silently treats True/False as +/-1.
+        if isinstance(delta, bool) or not isinstance(delta, int):
+            raise ValidationError("delta must be an integer")
         current = self.get_item(item_id)
-        new_q = int(current.quantity) + int(delta)
+        new_q = int(current.quantity) + delta
         return self.update_item(
             item_id, ItemUpdate(quantity=new_q), expected_version=expected_version
         )
@@ -1693,8 +1712,14 @@ class Repository:
                         category=item_data.get("category"),
                         low_stock_threshold=item_data.get("low_stock_threshold"),
                         custom_fields=dict(item_data.get("custom_fields", {}) or {}),
-                        created_at=str(item_data.get("created_at", "")),
-                        updated_at=str(item_data.get("updated_at", "")),
+                        # Timestamps compare lexicographically for sort/filter,
+                        # so any non-canonical value (missing / null / corrupt /
+                        # hand-edited import) is backfilled with a canonical one.
+                        created_at=_coerce_canonical_ts(item_data.get("created_at")),
+                        updated_at=_coerce_canonical_ts(
+                            item_data.get("updated_at"),
+                            fallback=_coerce_canonical_ts(item_data.get("created_at")),
+                        ),
                         version=int(item_data.get("version", 1)),
                         location_path=location_path,
                     )

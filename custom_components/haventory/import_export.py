@@ -323,11 +323,12 @@ def _validate_item_doc(idx: int, doc: dict[str, Any], errors: list[dict[str, str
                     _err(f"{base}.custom_fields.{k}", "custom_fields values must be scalar")
                 )
     # Canonical fixed-width timestamps are a load-bearing invariant: sorting
-    # and range filters compare them lexicographically. Reject imports that
-    # would smuggle non-canonical values into storage.
+    # and range filters compare them lexicographically. A field that is PRESENT
+    # must be canonical (an explicit null / non-canonical string is rejected so
+    # it cannot be stored as "None"/garbage); an omitted field is allowed and
+    # backfilled with a canonical value on load.
     for ts_field in ("created_at", "updated_at"):
-        ts_value = doc.get(ts_field)
-        if ts_value is not None and not is_canonical_utc_timestamp(ts_value):
+        if ts_field in doc and not is_canonical_utc_timestamp(doc.get(ts_field)):
             errors.append(
                 _err(
                     f"{base}.{ts_field}",

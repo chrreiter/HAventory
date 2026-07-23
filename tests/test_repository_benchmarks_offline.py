@@ -122,9 +122,10 @@ async def test_benchmark_subtree_operations() -> None:
 # location move_subtree (typical subtree):
 #   p50 <= 80 ms, p95 <= 150 ms
 #
-# The stretch dataset (10k items / 200 locations) is exercised by the
-# standalone sweep documented in docs/; keeping it out of the default suite
-# keeps the offline run fast.
+# These tests run against the "typical" 2k-item / 60-location dataset to keep
+# the offline suite fast. The "stretch" target (10k items / 200 locations) is
+# not run here; to check it, bump the counts in _build_typical_dataset locally
+# and run this file with ASSERT_BUDGETS=1.
 # -----------------------------
 
 LIST_BUDGET_P50_MS = 30.0
