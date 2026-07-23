@@ -252,6 +252,25 @@ describe('Store', () => {
     expect(typeof store.state.value.statsCounts?.items_total).toBe('number');
   });
 
+  it('populates healthCache on init and refreshes on demand', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'A' })] });
+    const store = new Store(hass);
+    await store.init();
+
+    const health = store.state.value.healthCache;
+    expect(health).toBeTruthy();
+    expect(health?.healthy).toBe(true);
+    expect(health?.issues).toEqual([]);
+    expect(typeof health?.generation).toBe('number');
+    expect(health?.counts.items_total).toBe(1);
+
+    // Backend degrades → refreshHealth picks it up
+    hass.__setHealth({ healthy: false, issues: ['item_missing_from_created_at_index'] });
+    await store.refreshHealth();
+    expect(store.state.value.healthCache?.healthy).toBe(false);
+    expect(store.state.value.healthCache?.issues).toContain('item_missing_from_created_at_index');
+  });
+
   it('deleteLocation removes an empty location and refreshes caches', async () => {
     const hass = makeMockHass({ items: [] });
     const store = new Store(hass);

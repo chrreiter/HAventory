@@ -395,6 +395,10 @@ export class HAventoryCard extends LitElement {
           opacity: 0.9;
         }
         .diagnostics { margin-top: 12px; }
+        .health-status.ok { color: var(--success-color, #0f9d58); }
+        .health-status.bad { color: var(--error-color, #db4437); font-weight: 600; }
+        .health-issues { margin: 4px 0; padding-left: 18px; color: var(--error-color, #db4437); }
+        [data-testid="health-refresh"] { margin-top: 4px; padding: 4px 8px; }
         .list-container { min-height: 0; flex: 1; overflow: hidden; }
         .sentinel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
         .banners { display: grid; gap: 6px; margin: 8px 0; }
@@ -480,6 +484,26 @@ export class HAventoryCard extends LitElement {
               <div>WS: items ${st?.connected.items ? 'connected' : 'disconnected'}, stats ${st?.connected.stats ? 'connected' : 'disconnected'}</div>
               <div>Counts: ${st?.statsCounts ? JSON.stringify(st.statsCounts) : '—'}</div>
               <div>Cursor: ${st?.cursor ?? '—'}</div>
+              <div data-testid="storage-health">
+                ${st?.healthCache ? html`
+                  <div class="health-status ${st.healthCache.healthy ? 'ok' : 'bad'}">
+                    Storage: ${st.healthCache.healthy
+                      ? html`✓ Healthy`
+                      : html`⚠ ${st.healthCache.issues.length} issue${st.healthCache.issues.length === 1 ? '' : 's'}`}
+                    (generation ${st.healthCache.generation})
+                  </div>
+                  ${!st.healthCache.healthy ? html`
+                    <ul class="health-issues">
+                      ${st.healthCache.issues.map((issue) => html`<li>${issue}</li>`)}
+                    </ul>
+                  ` : null}
+                ` : html`<div>Storage: —</div>`}
+                <button
+                  type="button"
+                  data-testid="health-refresh"
+                  @click=${() => { void this.store?.refreshHealth(); }}
+                >Refresh health</button>
+              </div>
             </details>
           </div>
           <div class="main">

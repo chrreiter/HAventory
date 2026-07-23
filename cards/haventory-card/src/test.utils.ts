@@ -12,10 +12,12 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
   __emit(topic: AnyEventPayload['topic'], action: string, payload: Record<string, unknown>): void;
   __setConflict(on: boolean): void;
   __setItems(items: Item[]): void;
+  __setHealth(patch: { healthy?: boolean; issues?: string[]; generation?: number }): void;
 } {
   let items: Item[] = initial?.items ? [...initial.items] : [];
   let locations: Location[] = initial?.locations ? [...initial.locations] : [];
   let conflictOnUpdate = !!initial?.conflictOnUpdate;
+  let healthOverride: { healthy?: boolean; issues?: string[]; generation?: number } | null = null;
   const subs: Record<string, SubCb[]> = {};
 
   function nextId() {
@@ -38,6 +40,20 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
             locations_total: locations.length,
           };
           return counts as unknown as T;
+        }
+        case 'haventory/health': {
+          const counts: StatsCounts = {
+            items_total: items.length,
+            low_stock_count: items.filter((i) => typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number)).length,
+            checked_out_count: items.filter((i) => i.checked_out).length,
+            locations_total: locations.length,
+          };
+          return {
+            healthy: healthOverride?.healthy ?? true,
+            issues: healthOverride?.issues ?? [],
+            counts,
+            generation: healthOverride?.generation ?? 1,
+          } as unknown as T;
         }
         case 'haventory/areas/list': {
           return { areas: [] } as unknown as T;
@@ -206,6 +222,9 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
     },
     __setConflict(on: boolean) { conflictOnUpdate = on; },
     __setItems(it: Item[]) { items = [...it]; },
+    __setHealth(patch: { healthy?: boolean; issues?: string[]; generation?: number }) {
+      healthOverride = { ...(healthOverride ?? {}), ...patch };
+    },
   };
 
   return hass;

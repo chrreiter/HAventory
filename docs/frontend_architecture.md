@@ -232,6 +232,7 @@ haventory-card (main container)
   locationTreeCache: unknown[] | null,
   locationsFlatCache: Location[] | null,
   statsCounts: StatsCounts | null,
+  healthCache: HealthResult | null,
   connected: { items: boolean, stats: boolean }
 }
 ```

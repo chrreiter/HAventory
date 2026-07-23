@@ -109,6 +109,14 @@ export interface AreasListResult {
   areas: { id: string; name: string }[];
 }
 
+/** Result of haventory/health: storage/index integrity as seen by the backend. */
+export interface HealthResult {
+  healthy: boolean;
+  issues: string[];
+  counts: StatsCounts;
+  generation: number;
+}
+
 // WS subscription event payloads
 export interface BaseEventPayload {
   domain: 'haventory';
@@ -180,6 +188,7 @@ export interface StoreState {
   // Optional flat locations cache to enrich UI (e.g., show area per node in selectors)
   locationsFlatCache: Location[] | null;
   statsCounts: StatsCounts | null;
+  healthCache: HealthResult | null;
   connected: { items: boolean; stats: boolean };
 }
 

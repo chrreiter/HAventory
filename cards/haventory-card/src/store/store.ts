@@ -2,6 +2,7 @@ import type {
   AreasListResult,
   AnyEventPayload,
   HassLike,
+  HealthResult,
   Item,
   ItemCreate,
   ItemFilter,
@@ -72,6 +73,7 @@ export class Store {
       locationTreeCache: null,
       locationsFlatCache: null,
       statsCounts: null,
+      healthCache: null,
       connected: { items: false, stats: false },
     };
     this.stateObs = createObservable<StoreState>(initial);
@@ -85,6 +87,7 @@ export class Store {
   async init() {
     await Promise.all([
       this.refreshStats(),
+      this.refreshHealth(),
       this.refreshAreas(),
       this.refreshLocationTree(),
       this.refreshLocationsFlat(),
@@ -152,6 +155,11 @@ export class Store {
   async refreshStats() {
     const counts = await this.ws.stats();
     this.stateObs.set({ statsCounts: counts });
+  }
+
+  async refreshHealth() {
+    const health: HealthResult = await this.ws.health();
+    this.stateObs.set({ healthCache: health });
   }
 
   async refreshAreas() {

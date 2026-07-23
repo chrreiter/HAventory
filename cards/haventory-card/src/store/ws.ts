@@ -1,6 +1,7 @@
 import type {
   AreasListResult,
   HassLike,
+  HealthResult,
   Item,
   ItemCreate,
   ItemFilter,
@@ -33,6 +34,10 @@ export class WSClient {
 
   stats() {
     return this.hass.callWS<StatsCounts>({ type: 'haventory/stats' });
+  }
+
+  health() {
+    return this.hass.callWS<HealthResult>({ type: 'haventory/health' });
   }
 
   // ---------- Items ----------
