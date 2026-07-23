@@ -45,8 +45,8 @@ Handlers map domain exceptions to these codes and log with context; `conflict` a
 
 - `haventory/distinct_values`
   - Request: `{id, type: "haventory/distinct_values"}` (no payload; extra fields → `validation_error`)
-  - Result: `{categories: DistinctValue[], tags: DistinctValue[]}` (see data shapes)
-  - `categories` are grouped case-insensitively; each `value` is a representative display label (most frequent original casing, ties broken alphabetically) and `count` is the number of items using that category. `tags` are already normalized (lowercase); each maps to one entry. Both lists are sorted case-insensitively by `value`.
+  - Result: `{categories: DistinctValue[], tags: DistinctValue[], custom_field_keys: string[]}` (see data shapes)
+  - `categories` are grouped case-insensitively; each `value` is a representative display label (most frequent original casing, ties broken alphabetically) and `count` is the number of items using that category. `tags` are already normalized (lowercase); each maps to one entry. Both lists are sorted case-insensitively by `value`. `custom_field_keys` is the sorted, distinct set of keys used across all items' `custom_fields` (case-sensitive keys, sorted case-insensitively).
   - Read-only: emits no events and does not mutate state.
 
 - `haventory/health`

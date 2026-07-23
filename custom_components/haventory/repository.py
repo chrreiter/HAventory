@@ -1067,15 +1067,18 @@ class Repository:
             "locations_total": len(self._locations_by_id),
         }
 
-    def get_distinct_field_values(self) -> dict[str, list[dict[str, object]]]:
-        """Return distinct categories and tags with per-value usage counts.
+    def get_distinct_field_values(self) -> dict[str, object]:
+        """Return distinct categories, tags, and custom-field keys.
 
         Categories are grouped case-insensitively (matching the case-insensitive
         category index); each entry's ``value`` is a representative display label
         — the most frequent original casing among the items using it, ties broken
         alphabetically — and ``count`` is the number of items in that group. Tags
         are already normalized (lowercase) at ingress, so each key maps directly
-        to one entry. Both lists are sorted case-insensitively by value.
+        to one entry. ``custom_field_keys`` is the sorted, distinct set of keys
+        used across all items' ``custom_fields`` (keys are case-sensitive; sorted
+        case-insensitively). The two value lists are sorted case-insensitively by
+        value.
         """
 
         categories: list[dict[str, object]] = []
@@ -1098,7 +1101,18 @@ class Repository:
         ]
         tags.sort(key=lambda t: str(t["value"]).casefold())
 
-        return {"categories": categories, "tags": tags}
+        custom_keys: set[str] = set()
+        for item in self._items_by_id.values():
+            for cf_key in item.custom_fields:
+                if isinstance(cf_key, str) and cf_key.strip():
+                    custom_keys.add(cf_key)
+        custom_field_keys = sorted(custom_keys, key=lambda k: k.casefold())
+
+        return {
+            "categories": categories,
+            "tags": tags,
+            "custom_field_keys": custom_field_keys,
+        }
 
     # -----------------------------
     # Public API — Location operations

@@ -163,6 +163,8 @@ haventory-card (main container)
 - `categorySuggestions`: `string[]` of existing category values (autocomplete source)
 - `tagSuggestions`: `string[]` of existing tag values (autocomplete source)
 - `debounceMs`: debounce delay before recomputing suggestions (default 120)
+- `customFieldKeys`: `string[]` of existing custom-field keys across the dataset
+  (from `distinct_values.custom_field_keys`), offered as key suggestions
 
 **Fields**:
 - **Name*** (required)
@@ -175,6 +177,18 @@ haventory-card (main container)
 - **Location** (opens `hv-location-selector`)
 - **Checked-out** (checkbox)
 - **Due date** (enabled only when checked out)
+- **Custom fields** (define/edit/remove; see below)
+
+**Custom fields**: A repeatable editor of `{key, type, value}` rows. Types are
+`string` / `number` / `boolean` / `date`, each with a type-appropriate value
+input (text / number / checkbox / date). Types are inferred when loading an
+existing item (booleans, numbers, and `YYYY-MM-DD` strings → `date`, else
+`string`); `date` values are stored as strings since the backend only persists
+scalars. Rows with an empty key are ignored; a non-numeric `number` field blocks
+save with an inline error. Key inputs offer a `<datalist>` of existing keys
+(`customFieldKeys`). On save: **create** sends `custom_fields`; **edit** sends
+`custom_fields_set` (the full desired map) plus `custom_fields_unset` (keys
+removed relative to the original item).
 
 **Autocomplete**: The Category and Tags inputs render a suggestion dropdown
 (`role="listbox"`) sourced from `haventory/distinct_values` via

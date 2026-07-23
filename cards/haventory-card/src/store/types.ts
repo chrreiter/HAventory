@@ -120,6 +120,8 @@ export interface DistinctValue {
 export interface DistinctValues {
   categories: DistinctValue[];
   tags: DistinctValue[];
+  /** Distinct custom-field keys across all items (sorted, case-insensitive). */
+  custom_field_keys: string[];
 }
 
 /** Result of haventory/health: storage/index integrity as seen by the backend. */
