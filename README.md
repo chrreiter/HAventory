@@ -97,6 +97,16 @@ There are two backend test modes, kept deliberately separate:
 
 Every feature/fix ships with tests — happy path plus at least one edge/error case.
 
+Performance benchmarks live in `tests/test_repository_benchmarks_offline.py`,
+including the WP4 percentile scenarios (item list: 50-item page p50 ≤ 30 ms /
+p95 ≤ 75 ms; `move_subtree` p50 ≤ 80 ms / p95 ≤ 150 ms on the 2k-items /
+60-locations typical dataset). They print results always and fail on budget
+misses only with `ASSERT_BUDGETS=1`:
+
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ASSERT_BUDGETS=1 uv run pytest -q tests/test_repository_benchmarks_offline.py -s
+```
+
 [phacc]: https://github.com/MatthewFlamm/pytest-homeassistant-custom-component
 
 #### In-process HA integration tests (opt-in)
@@ -137,6 +147,27 @@ scripts/smoke_online.sh
 # or: uv run pytest -q -m online -k "ws_smoke or ws_smoke_advanced"
 ```
 
+Full online E2E gate against a **disposable** HA (e.g. the Docker dev container),
+including the destructive and area-registry scenarios:
+
+```bash
+export RUN_ONLINE=1
+export HA_BASE_URL=http://localhost:8123
+export HA_TOKEN=<your-long-lived-token>
+export HA_CONTAINER=home-assistant     # docker-logs assertions; also lets reload_addon.sh deploy
+export HAV_ONLINE_DESTRUCTIVE=1        # unlocks the purging tests — disposable instances only!
+export HA_ALLOW_AREA_MUTATIONS=1       # unlocks the area-registry e2e test
+
+# Deploy the current working tree into the container and (re)create the config
+# entry, so the instance matches the local CURRENT_SCHEMA_VERSION:
+scripts/reload_addon.sh --container "$HA_CONTAINER"
+
+scripts/test_online.sh                 # pytest -q -m online (all three online files)
+```
+
+Run the suite sequentially (no `-n`/xdist): destructive tests purge and then
+assert exact totals, so they assume exclusive access to the instance.
+
 > ⚠️ **Destructive scenario tests are double-gated.** A subset of the online
 > suite **purges ALL HAventory items and locations** on the target instance
 > before running (they assert exact totals against a clean dataset). Those
@@ -175,6 +206,13 @@ Included: `tests/test_ws_smoke_online.py`, `tests/test_ws_smoke_advanced_online.
   validation/repository/storage errors so HA surfaces them.
 - Areas via `homeassistant.helpers.area_registry.async_get(hass)`; never auto-create areas.
 - Case-insensitive search; denormalized `location_path` on items; item `version` for optimistic concurrency.
+- **WebSocket rate limiting (opt-in, off by default)**: per-connection **and** global
+  token buckets for commands (excess requests get a `rate_limited` error) and for
+  subscription broadcasts (excess events are dropped, never breaking the command).
+  Enable and tune it under Settings → Devices & services → HAventory → **Configure**;
+  `haventory/health` reports drop counters. Leave it disabled for stress testing
+  (`scripts/stress_test.py`). Semantics and defaults:
+  [`docs/backend_api_contract.md`](docs/backend_api_contract.md) → "Rate limiting".
 - **JSON import/export (data safety)** via `haventory/export`, `haventory/import/preview`,
   and `haventory/import/execute`: back up to a versioned document before a breaking update
   and restore afterwards. Preview reports would-be adds/updates/conflicts without touching
