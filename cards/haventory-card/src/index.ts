@@ -439,6 +439,8 @@ export class HAventoryCard extends LitElement {
                     <option value="updated_at" ?selected=${(filters?.sort?.field ?? 'updated_at') === 'updated_at'}>Updated</option>
                     <option value="created_at" ?selected=${filters?.sort?.field === 'created_at'}>Created</option>
                     <option value="quantity" ?selected=${filters?.sort?.field === 'quantity'}>Quantity</option>
+                    <option value="due_date" ?selected=${filters?.sort?.field === 'due_date'}>Due date</option>
+                    <option value="inspection_date" ?selected=${filters?.sort?.field === 'inspection_date'}>Inspection</option>
                   </select>
                   <button
                     type="button"

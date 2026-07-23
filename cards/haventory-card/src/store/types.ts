@@ -85,7 +85,7 @@ export interface ItemFilter {
   created_after?: string;
 }
 
-export type SortField = 'updated_at' | 'created_at' | 'name' | 'quantity';
+export type SortField = 'updated_at' | 'created_at' | 'name' | 'quantity' | 'due_date' | 'inspection_date';
 export type SortOrder = 'asc' | 'desc';
 
 export interface Sort {

@@ -78,7 +78,7 @@ haventory-card (main container)
 **Rendering**:
 - Populates Area dropdown from `areas` array
 - Populates Location dropdown from `locations` array (shows `display_path`)
-- Sort options: Name, Updated, Created, Quantity
+- Sort options: Name, Updated, Created, Quantity, Due date, Inspection
 
 ---
 

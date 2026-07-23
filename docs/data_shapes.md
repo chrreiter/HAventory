@@ -110,7 +110,8 @@ Note: `children` is a recursive array of tree nodes with the same structure.
   - `created_after?: ISO8601Z`
 
 - Sort:
-  - `{ field: "updated_at"|"created_at"|"name"|"quantity", order: "asc"|"desc" }`
+  - `{ field: "updated_at"|"created_at"|"name"|"quantity"|"due_date"|"inspection_date", order: "asc"|"desc" }`
+  - `due_date` / `inspection_date`: items without a date sort last in both orders; ties break by id asc.
 
 ### Pagination
 

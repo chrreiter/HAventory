@@ -86,6 +86,41 @@ async def test_filter_sort_and_cursor_pagination() -> None:
 
 
 @pytest.mark.asyncio
+async def test_due_date_sort_cursor_pagination_with_nulls() -> None:
+    """Cursor pagination stays consistent for due_date sort, undated items last."""
+
+    repo = Repository()
+    repo.create_item(ItemCreate(name="Mid", checked_out=True, due_date="2024-02-01"))
+    repo.create_item(ItemCreate(name="Early", checked_out=True, due_date="2024-01-01"))
+    repo.create_item(ItemCreate(name="Late", checked_out=True, due_date="2024-03-01"))
+    repo.create_item(ItemCreate(name="UndatedA"))
+    repo.create_item(ItemCreate(name="UndatedB"))
+
+    sort = Sort(field="due_date", order="asc")  # type: ignore[typeddict-item]
+
+    page1 = repo.list_items(sort=sort, limit=2)
+    assert [x.name for x in page1["items"]] == ["Early", "Mid"]
+    assert isinstance(page1["next_cursor"], str)
+
+    page2 = repo.list_items(sort=sort, limit=2, cursor=page1["next_cursor"])
+    assert page2["items"][0].name == "Late"
+    # The second slot starts the undated tail (id-asc order within the tail)
+    assert page2["items"][1].due_date is None
+    assert isinstance(page2["next_cursor"], str)
+
+    page3 = repo.list_items(sort=sort, limit=2, cursor=page2["next_cursor"])
+    assert len(page3["items"]) == 1
+    assert page3["items"][0].due_date is None
+    assert page3["next_cursor"] is None
+
+    # Descending: dated items newest-first, undated still last
+    out_desc = repo.list_items(sort=Sort(field="due_date", order="desc"))  # type: ignore[typeddict-item]
+    names = [x.name for x in out_desc["items"]]
+    assert names[:3] == ["Late", "Mid", "Early"]
+    assert {names[3], names[4]} == {"UndatedA", "UndatedB"}
+
+
+@pytest.mark.asyncio
 async def test_prefilter_by_area_and_and_logic_with_location() -> None:
     """Pre-filter by area id and support AND with location_id."""
 

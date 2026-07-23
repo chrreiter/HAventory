@@ -138,7 +138,7 @@ class ItemFilter(TypedDict, total=False):
 class Sort(TypedDict):
     """Sort definition for item queries."""
 
-    field: Literal["updated_at", "created_at", "name", "quantity"]
+    field: Literal["updated_at", "created_at", "name", "quantity", "due_date", "inspection_date"]
     order: Literal["asc", "desc"]
 
 
@@ -716,11 +716,26 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     return filtered
 
 
+def date_sort_key(value: str | None, order: str) -> str:
+    """Return a scalar sort key for a nullable YYYY-MM-DD field.
+
+    Items without a date sort last in BOTH orders: in ascending order null maps
+    to "~" (after any digit), in descending order to "" (smallest value, which
+    a reversed sort places last). The same key is used by the repository's
+    cursor pagination so page boundaries stay consistent with this ordering.
+    """
+
+    if value is None:
+        return "~" if order == "asc" else ""
+    return value
+
+
 def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
     """Sort items by the requested field and order.
 
     Defaults to updated_at desc with id asc tie-break.
     name sorting is case-insensitive using normalize_text_for_sort.
+    due_date / inspection_date place undated items last in both orders.
     """
 
     result = list(items)
@@ -737,8 +752,12 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
 
     field = sort.get("field")
     order = sort.get("order")
-    if field not in {"updated_at", "created_at", "name", "quantity"}:
-        raise ValidationError("sort.field must be one of: updated_at, created_at, name, quantity")
+    allowed_fields = {"updated_at", "created_at", "name", "quantity", "due_date", "inspection_date"}
+    if field not in allowed_fields:
+        raise ValidationError(
+            "sort.field must be one of: updated_at, created_at, name, quantity, "
+            "due_date, inspection_date"
+        )
     if order not in {"asc", "desc"}:
         raise ValidationError("sort.order must be 'asc' or 'desc'")
 
@@ -750,6 +769,10 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
         result.sort(key=lambda x: normalize_text_for_sort(x.name), reverse=reverse)
     elif field == "quantity":
         result.sort(key=lambda x: int(x.quantity), reverse=reverse)
+    elif field == "due_date":
+        result.sort(key=lambda x: date_sort_key(x.due_date, order), reverse=reverse)
+    elif field == "inspection_date":
+        result.sort(key=lambda x: date_sort_key(x.inspection_date, order), reverse=reverse)
     elif field == "created_at":
         result.sort(
             key=lambda x: _parse_iso8601_utc(x.created_at, field_name="created_at"), reverse=reverse

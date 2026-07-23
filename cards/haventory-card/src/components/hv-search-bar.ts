@@ -184,6 +184,8 @@ export class HVSearchBar extends LitElement {
             <option value="updated_at" ?selected=${(this.sort?.field ?? 'updated_at') === 'updated_at'}>Sort: Updated</option>
             <option value="created_at" ?selected=${this.sort?.field === 'created_at'}>Sort: Created</option>
             <option value="quantity" ?selected=${this.sort?.field === 'quantity'}>Sort: Quantity</option>
+            <option value="due_date" ?selected=${this.sort?.field === 'due_date'}>Sort: Due date</option>
+            <option value="inspection_date" ?selected=${this.sort?.field === 'inspection_date'}>Sort: Inspection</option>
           </select>
           <button
             type="button"

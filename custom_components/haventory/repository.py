@@ -36,6 +36,7 @@ from .models import (
     apply_item_update,
     build_location_path,
     create_item_from_create,
+    date_sort_key,
     filter_items,
     new_uuid4,
     normalize_search_text,
@@ -1309,6 +1310,10 @@ class Repository:
             )
         if field == "quantity":
             return int(item.quantity)
+        if field == "due_date":
+            return date_sort_key(item.due_date, sort.get("order", "desc"))
+        if field == "inspection_date":
+            return date_sort_key(item.inspection_date, sort.get("order", "desc"))
         if field == "created_at":
             return item.created_at
         # default / updated_at

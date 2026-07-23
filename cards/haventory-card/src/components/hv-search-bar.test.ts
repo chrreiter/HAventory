@@ -197,6 +197,35 @@ describe('hv-search-bar', () => {
     expect(changeDetail.sort.order).toBe('asc');
   });
 
+  it('offers due_date and inspection_date sort options, defaulting to asc', async () => {
+    const el = document.createElement('hv-search-bar') as HTMLElement & { updateComplete?: Promise<unknown> };
+    document.body.appendChild(el);
+    await customElements.whenDefined('hv-search-bar');
+    if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+
+    const sr = el.shadowRoot as ShadowRoot;
+    const sortSelect = sr.querySelector('select[aria-label="Sort"]') as HTMLSelectElement;
+
+    const values = Array.from(sortSelect.querySelectorAll('option')).map((o) => o.value);
+    expect(values).toContain('due_date');
+    expect(values).toContain('inspection_date');
+
+    let changeDetail: any = null;
+    el.addEventListener('change', (e: any) => {
+      changeDetail = e.detail;
+    });
+
+    // due_date -> asc (due soonest first)
+    sortSelect.value = 'due_date';
+    sortSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(changeDetail.sort).toEqual({ field: 'due_date', order: 'asc' });
+
+    // inspection_date -> asc (next inspection first)
+    sortSelect.value = 'inspection_date';
+    sortSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(changeDetail.sort).toEqual({ field: 'inspection_date', order: 'asc' });
+  });
+
   it('toggles sort order via the toggle button', async () => {
     const el = document.createElement('hv-search-bar') as HTMLElement & { updateComplete?: Promise<unknown> };
     document.body.appendChild(el);
