@@ -245,7 +245,8 @@ Adopted tooling (latest stable at review time; verified against release pages / 
 - **`storage.py`**: switch the debounced persist from bare `asyncio.create_task` to
   `hass.async_create_background_task(...)` (WP0.5 finding; effort S).
 - **TypeScript 7**: adopt once typescript-eslint supports it (currently capped `<6.1.0`).
-- **`tsc --noEmit`** surfaces pre-existing card type gaps; not yet part of the gate.
+- **`tsc --noEmit`** is clean as of WP2 follow-ups (`npm run typecheck`); not yet part of the
+  gate — adding it is a WP4/WP5 call.
 - **release-please** wiring lands in WP5.
 - **Windows-only test scaffolding**: `tests/conftest.py` uses
   `asyncio.WindowsSelectorEventLoopPolicy` / `set_event_loop_policy`, both deprecated for

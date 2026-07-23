@@ -28,6 +28,7 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
     __emit: (topic: AnyEventPayload['topic'], action: string, payload: Record<string, unknown>) => void;
     __setConflict: (on: boolean) => void;
     __setItems: (it: Item[]) => void;
+    __setHealth: (patch: { healthy?: boolean; issues?: string[]; generation?: number }) => void;
   } = {
     async callWS<T>(msg: Record<string, unknown>): Promise<T> {
       const type = String(msg.type || '');
