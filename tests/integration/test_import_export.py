@@ -104,18 +104,14 @@ async def test_import_preview_reports_errors_without_mutating(
         "locations": [],
     }
 
-    await client.send_json(
-        {"id": 1, "type": "haventory/import/preview", "document": bad_document}
-    )
+    await client.send_json({"id": 1, "type": "haventory/import/preview", "document": bad_document})
     preview = await client.receive_json()
     assert preview["success"] is True, preview
     assert preview["result"]["valid"] is False
     assert preview["result"]["errors"]
 
     # Executing the same invalid document is a structured validation error.
-    await client.send_json(
-        {"id": 2, "type": "haventory/import/execute", "document": bad_document}
-    )
+    await client.send_json({"id": 2, "type": "haventory/import/execute", "document": bad_document})
     executed = await client.receive_json()
     assert executed["success"] is False, executed
     assert executed["error"]["code"] == "validation_error"

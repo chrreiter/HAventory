@@ -163,9 +163,7 @@ def build_export_document(
 
     items_docs = [_serialize_item_doc(items[i]) for i in _sorted_index_by_id(items)]
     locations = [
-        repo._locations_by_id[lid]
-        for lid in sorted(location_ids)
-        if lid in repo._locations_by_id
+        repo._locations_by_id[lid] for lid in sorted(location_ids) if lid in repo._locations_by_id
     ]
     locations_docs = [_serialize_location_doc(loc) for loc in locations]
 
