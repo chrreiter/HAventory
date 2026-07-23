@@ -69,6 +69,8 @@ async def test_distinct_values_returns_categories_and_tags_with_counts() -> None
     # Deterministic, case-insensitive alphabetical ordering.
     assert [c["value"] for c in result["categories"]] == ["Books", "Tools"]
     assert [t["value"] for t in result["tags"]] == ["blue", "red"]
+    # No custom fields on any item yet.
+    assert result["custom_field_keys"] == []
 
 
 @pytest.mark.asyncio
@@ -94,12 +96,37 @@ async def test_distinct_values_groups_categories_case_insensitively() -> None:
 
 @pytest.mark.asyncio
 async def test_distinct_values_empty_repository() -> None:
-    """An empty repository yields empty category and tag lists."""
+    """An empty repository yields empty category, tag, and custom-field lists."""
 
     hass = _fresh_hass()
     res = await _send(hass, 1, "haventory/distinct_values")
     assert res["success"] is True
-    assert res["result"] == {"categories": [], "tags": []}
+    assert res["result"] == {"categories": [], "tags": [], "custom_field_keys": []}
+
+
+@pytest.mark.asyncio
+async def test_distinct_values_returns_custom_field_keys() -> None:
+    """Distinct custom-field keys across all items are returned, sorted."""
+
+    hass = _fresh_hass()
+    await _send(
+        hass,
+        1,
+        "haventory/item/create",
+        name="Drill",
+        custom_fields={"Voltage": 18, "warranty_until": "2027-01-01"},
+    )
+    await _send(
+        hass,
+        2,
+        "haventory/item/create",
+        name="Saw",
+        custom_fields={"Voltage": 20, "serial": "abc"},
+    )
+
+    res = await _send(hass, 3, "haventory/distinct_values")
+    # Distinct keys, sorted case-insensitively; "Voltage" appears once.
+    assert res["result"]["custom_field_keys"] == ["serial", "Voltage", "warranty_until"]
 
 
 def test_distinct_values_schema_rejects_unknown_field() -> None:

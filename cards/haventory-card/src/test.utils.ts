@@ -84,7 +84,16 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
           const tags = Array.from(tagGroups.entries())
             .map(([value, ids]) => ({ value, count: ids.size }))
             .sort((a, b) => a.value.toLowerCase().localeCompare(b.value.toLowerCase()));
-          return { categories, tags } as unknown as T;
+          const customKeys = new Set<string>();
+          for (const it of items) {
+            for (const k of Object.keys(it.custom_fields ?? {})) {
+              if (k.trim()) customKeys.add(k);
+            }
+          }
+          const custom_field_keys = Array.from(customKeys).sort((a, b) =>
+            a.toLowerCase().localeCompare(b.toLowerCase()),
+          );
+          return { categories, tags, custom_field_keys } as unknown as T;
         }
         case 'haventory/location/tree': {
           return [] as unknown as T;

@@ -224,6 +224,7 @@ export class HAventoryCard extends LitElement {
         .areas=${st?.areasCache?.areas ?? []}
         .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
         .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
+        .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
         @open-location-selector=${() => { this._locationSelectorOpen = true; this.requestUpdate(); }}
         @delete-item=${(e: CustomEvent) => {
           const { itemId, name } = e.detail as { itemId: string; name: string };

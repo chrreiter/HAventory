@@ -128,17 +128,19 @@ Counts object used in `stats` results and events:
 
 ### Distinct values
 
-Result of `distinct_values`, used by category/tag autocomplete and browser views:
+Result of `distinct_values`, used by category/tag autocomplete, the browser views, and custom-field key suggestions:
 ```json
 {
   "categories": [ { "value": "Books", "count": 1 }, { "value": "Tools", "count": 2 } ],
-  "tags": [ { "value": "blue", "count": 2 }, { "value": "red", "count": 2 } ]
+  "tags": [ { "value": "blue", "count": 2 }, { "value": "red", "count": 2 } ],
+  "custom_field_keys": [ "serial", "Voltage", "warranty_until" ]
 }
 ```
 
 - `DistinctValue`: `{ value: string, count: number }` where `count` is the number of items using that value.
 - Categories are grouped case-insensitively; `value` is a representative display label (most frequent original casing, ties broken alphabetically). Tags are already normalized (lowercase), so `value` is the tag itself.
-- Both lists are sorted case-insensitively by `value`. Items with no category (or no tags) contribute nothing to the respective list.
+- Both value lists are sorted case-insensitively by `value`. Items with no category (or no tags) contribute nothing to the respective list.
+- `custom_field_keys` is the sorted, distinct set of keys used across all items' `custom_fields` (keys are case-sensitive; sorted case-insensitively). Empty when no item has custom fields.
 
 ### Events
 

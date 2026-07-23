@@ -218,7 +218,8 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
 - Full CRUD for Items and Locations via WebSocket; optimistic concurrency with versioning;
   Areas integration; real-time subscriptions (items, locations, stats); documented persistence.
 - `haventory/distinct_values` returns distinct categories and tags with usage counts
-  (categories grouped case-insensitively) — powers category/tag autocomplete and browser views.
+  (categories grouped case-insensitively) plus distinct custom-field keys — powers
+  category/tag autocomplete, the browser views, and custom-field key suggestions.
 
 ### ✅ Phase 2: Frontend Lovelace Card (Complete)
 - Lit 3 + TypeScript components (`haventory-card`, `hv-search-bar`, `hv-inventory-list`,
@@ -233,6 +234,9 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
 - **Column selection** (header → "Columns"): choose which optional columns (quantity,
   category, location, tags, due date) show in the standard vs expanded view; the choice is
   persisted in `localStorage` (`haventory:columns:v1`, per browser).
+- **Custom fields UI** in the item dialog: define/edit/remove typed fields
+  (string/number/boolean/date) with type-appropriate inputs; existing field keys across the
+  dataset are offered as suggestions.
 
 ### 🚧 Phase 3: Polish & HACS (Planned)
 - HACS publication; release automation (release-please); additional optimizations.

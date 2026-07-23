@@ -1,7 +1,18 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { nextZBase } from '../utils/zindex';
-import type { Item, Location } from '../store/types';
+import type { Item, Location, ScalarValue } from '../store/types';
+
+type CustomFieldType = 'string' | 'number' | 'boolean' | 'date';
+interface CustomFieldRow {
+  id: number;
+  key: string;
+  type: CustomFieldType;
+  /** Raw string form; booleans use 'true'/'false'. */
+  value: string;
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 @customElement('hv-item-dialog')
 export class HVItemDialog extends LitElement {
@@ -190,6 +201,54 @@ export class HVItemDialog extends LitElement {
       background: var(--primary-color, #03a9f4);
       color: var(--text-primary-color, #fff);
     }
+    /* Custom fields */
+    .cf-section { margin: 8px 0; }
+    .cf-heading { font-weight: 600; margin: 8px 0 4px; }
+    .cf-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) 90px minmax(0, 1.6fr) 32px;
+      gap: 8px;
+      align-items: center;
+      margin: 4px 0;
+    }
+    .cf-row input[type="text"],
+    .cf-row input[type="number"],
+    .cf-row input[type="date"],
+    .cf-row select {
+      background: var(--input-fill-color, var(--secondary-background-color, #f5f5f5));
+      color: var(--primary-text-color, #212121);
+      border: 1px solid var(--divider-color, #ddd);
+      border-radius: 4px;
+      padding: 8px;
+      box-sizing: border-box;
+      font: inherit;
+      width: 100%;
+      min-width: 0;
+    }
+    .cf-row input:focus, .cf-row select:focus {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: -1px;
+    }
+    .cf-bool { display: flex; align-items: center; }
+    .cf-bool input[type="checkbox"] { accent-color: var(--primary-color, #03a9f4); width: 18px; height: 18px; }
+    .cf-remove {
+      background: transparent;
+      color: var(--error-color, #db4437);
+      border: 1px solid var(--divider-color, #ddd);
+      border-radius: 4px;
+      padding: 6px;
+      cursor: pointer;
+    }
+    .cf-add {
+      background: transparent;
+      color: var(--primary-color, #03a9f4);
+      border: 1px dashed var(--primary-color, #03a9f4);
+      border-radius: 4px;
+      padding: 6px 10px;
+      margin-top: 4px;
+      cursor: pointer;
+      font: inherit;
+    }
   `;
 
   @property({ type: Boolean, reflect: true }) open: boolean = false;
@@ -203,6 +262,8 @@ export class HVItemDialog extends LitElement {
   @property({ attribute: false }) tagSuggestions: string[] = [];
   /** Debounce delay (ms) before recomputing autocomplete suggestions. */
   @property({ type: Number }) debounceMs: number = 120;
+  /** Existing custom-field keys across the dataset (suggestions). */
+  @property({ attribute: false }) customFieldKeys: string[] = [];
 
   @state() private _name: string = '';
   @state() private _description: string = '';
@@ -220,6 +281,8 @@ export class HVItemDialog extends LitElement {
   @state() private _acField: 'category' | 'tags' | null = null;
   @state() private _acSuggestions: string[] = [];
   @state() private _acIndex: number = -1;
+  @state() private _customFields: CustomFieldRow[] = [];
+  private _cfCounter = 0;
   private _acTimer: number | undefined;
   private static readonly _AC_MAX = 8;
 
@@ -236,6 +299,7 @@ export class HVItemDialog extends LitElement {
       this._checkedOut = !!it?.checked_out;
       this._dueDate = it?.due_date ?? '';
       this._inspectionDate = it?.inspection_date ?? '';
+      this._customFields = this._rowsFromItem(it);
       this._validation = null;
       this._closeSuggestions();
     }
@@ -265,23 +329,104 @@ export class HVItemDialog extends LitElement {
       this._validation = 'Low-stock threshold must be ≥ 0 or empty.';
       return;
     }
+    const built = this._buildCustomFields();
+    if (built === null) return; // validation error already set
     this._validation = null;
-    this.dispatchEvent(new CustomEvent('save', {
-      detail: {
-        name,
-        description: this._description || null,
-        quantity: this._quantity,
-        low_stock_threshold: this._lowStock,
-        category: this._category || null,
-        tags: this._tags.split(',').map((t) => t.trim()).filter(Boolean),
-        location_id: this._location,
-        checked_out: this._checkedOut,
 
-        due_date: this._checkedOut ? (this._dueDate || null) : null,
-        inspection_date: this._inspectionDate || null,
-      },
-      bubbles: true, composed: true,
+    const detail: Record<string, unknown> = {
+      name,
+      description: this._description || null,
+      quantity: this._quantity,
+      low_stock_threshold: this._lowStock,
+      category: this._category || null,
+      tags: this._tags.split(',').map((t) => t.trim()).filter(Boolean),
+      location_id: this._location,
+      checked_out: this._checkedOut,
+      due_date: this._checkedOut ? (this._dueDate || null) : null,
+      inspection_date: this._inspectionDate || null,
+    };
+
+    if (this.item) {
+      // Editing: send the full desired map as *_set, and unset removed keys.
+      const original = this.item.custom_fields ?? {};
+      detail.custom_fields_set = built;
+      detail.custom_fields_unset = Object.keys(original).filter((k) => !(k in built));
+    } else {
+      detail.custom_fields = built;
+    }
+
+    this.dispatchEvent(new CustomEvent('save', { detail, bubbles: true, composed: true }));
+  }
+
+  // ---------- Custom fields ----------
+
+  private _rowsFromItem(it: Item | null): CustomFieldRow[] {
+    const cf = it?.custom_fields ?? {};
+    return Object.entries(cf).map(([key, value]) => ({
+      id: this._cfCounter++,
+      key,
+      type: this._inferType(value),
+      value: this._valueToString(value),
     }));
+  }
+
+  private _inferType(value: ScalarValue): CustomFieldType {
+    if (typeof value === 'boolean') return 'boolean';
+    if (typeof value === 'number') return 'number';
+    if (typeof value === 'string' && DATE_RE.test(value)) return 'date';
+    return 'string';
+  }
+
+  private _valueToString(value: ScalarValue): string {
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    return String(value);
+  }
+
+  /** Build the custom_fields map, or null (and set a validation error) if invalid. */
+  private _buildCustomFields(): Record<string, ScalarValue> | null {
+    const out: Record<string, ScalarValue> = {};
+    for (const row of this._customFields) {
+      const key = row.key.trim();
+      if (!key) continue; // skip incomplete rows
+      if (row.type === 'number') {
+        const n = Number(row.value);
+        if (row.value.trim() === '' || !Number.isFinite(n)) {
+          this._validation = `Custom field "${key}" must be a number.`;
+          return null;
+        }
+        out[key] = n;
+      } else if (row.type === 'boolean') {
+        out[key] = row.value === 'true';
+      } else {
+        out[key] = row.value; // string or date (stored as a string)
+      }
+    }
+    return out;
+  }
+
+  private _addCustomField = () => {
+    this._customFields = [
+      ...this._customFields,
+      { id: this._cfCounter++, key: '', type: 'string', value: '' },
+    ];
+  };
+
+  private _removeCustomField(id: number) {
+    this._customFields = this._customFields.filter((r) => r.id !== id);
+  }
+
+  private _updateCustomField(id: number, patch: Partial<CustomFieldRow>) {
+    this._customFields = this._customFields.map((r) => {
+      if (r.id !== id) return r;
+      const next = { ...r, ...patch };
+      // When the type changes, keep the value only if it fits the new type.
+      if (patch.type && patch.type !== r.type) {
+        if (patch.type === 'boolean' && next.value !== 'true' && next.value !== 'false') next.value = 'false';
+        if (patch.type === 'number' && next.value.trim() !== '' && !Number.isFinite(Number(next.value))) next.value = '';
+        if (patch.type === 'date' && !DATE_RE.test(next.value)) next.value = '';
+      }
+      return next;
+    });
   }
 
   private onOpenLocationSelector() {
@@ -456,6 +601,78 @@ export class HVItemDialog extends LitElement {
     `;
   }
 
+  private _renderCustomFieldValue(row: CustomFieldRow) {
+    const set = (v: string) => this._updateCustomField(row.id, { value: v });
+    if (row.type === 'boolean') {
+      return html`<label class="cf-bool"><input
+        type="checkbox"
+        data-testid="cf-value"
+        .checked=${row.value === 'true'}
+        @change=${(e: Event) => set((e.target as HTMLInputElement).checked ? 'true' : 'false')}
+        aria-label="Custom field value"
+      /></label>`;
+    }
+    const inputType = row.type === 'number' ? 'number' : row.type === 'date' ? 'date' : 'text';
+    return html`<input
+      class="cf-value"
+      data-testid="cf-value"
+      type=${inputType}
+      .value=${row.value}
+      @input=${(e: Event) => set((e.target as HTMLInputElement).value)}
+      aria-label="Custom field value"
+    />`;
+  }
+
+  private _renderCustomFieldRow(row: CustomFieldRow) {
+    return html`
+      <div class="cf-row" data-testid="cf-row">
+        <input
+          class="cf-key"
+          data-testid="cf-key"
+          type="text"
+          placeholder="Key"
+          list="cf-key-suggestions"
+          .value=${row.key}
+          @input=${(e: Event) => this._updateCustomField(row.id, { key: (e.target as HTMLInputElement).value })}
+          aria-label="Custom field key"
+        />
+        <select
+          class="cf-type"
+          data-testid="cf-type"
+          .value=${row.type}
+          @change=${(e: Event) => this._updateCustomField(row.id, { type: (e.target as HTMLSelectElement).value as CustomFieldType })}
+          aria-label="Custom field type"
+        >
+          <option value="string" ?selected=${row.type === 'string'}>Text</option>
+          <option value="number" ?selected=${row.type === 'number'}>Number</option>
+          <option value="boolean" ?selected=${row.type === 'boolean'}>Boolean</option>
+          <option value="date" ?selected=${row.type === 'date'}>Date</option>
+        </select>
+        ${this._renderCustomFieldValue(row)}
+        <button
+          type="button"
+          class="cf-remove"
+          data-testid="cf-remove"
+          @click=${() => this._removeCustomField(row.id)}
+          aria-label="Remove custom field"
+        >✕</button>
+      </div>
+    `;
+  }
+
+  private _renderCustomFields() {
+    return html`
+      <div class="cf-section">
+        <div class="cf-heading">Custom fields</div>
+        <datalist id="cf-key-suggestions">
+          ${this.customFieldKeys.map((k) => html`<option value=${k}></option>`)}
+        </datalist>
+        ${this._customFields.map((row) => this._renderCustomFieldRow(row))}
+        <button type="button" class="cf-add" data-testid="cf-add" @click=${this._addCustomField}>+ Add field</button>
+      </div>
+    `;
+  }
+
   render() {
     if (!this.open) return null;
     return html`
@@ -580,6 +797,7 @@ export class HVItemDialog extends LitElement {
               />
             </label>
           </div>
+          ${this._renderCustomFields()}
           <div class="actions">
             <div>
               ${this.item ? html`<button class="btn-danger" @click=${this.onDelete} aria-label="Delete item">Delete…</button>` : null}
