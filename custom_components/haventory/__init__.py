@@ -24,6 +24,7 @@ from . import services as services_mod
 from . import ws as ws_mod
 from .const import DOMAIN
 from .exceptions import StorageError
+from .rate_limit import RateLimitConfig, RateLimiter
 from .repository import Repository
 from .storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore, async_persist_immediate
 
@@ -75,6 +76,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady("storage load failed") from exc
     hass.data[DOMAIN]["repository"] = Repository.from_state(payload)
 
+    # WebSocket rate limiting (off by default; configured via the options flow)
+    hass.data[DOMAIN]["rate_limiter"] = RateLimiter(
+        RateLimitConfig.from_options(getattr(entry, "options", None))
+    )
+    # Rebuild the limiter when options change. Guarded with getattr so the
+    # minimal offline-test ConfigEntry stubs keep working.
+    add_listener = getattr(entry, "add_update_listener", None)
+    on_unload = getattr(entry, "async_on_unload", None)
+    if callable(add_listener) and callable(on_unload):
+        on_unload(add_listener(_async_options_updated))
+
     # Register services
     services_mod.setup(hass)
 
@@ -85,6 +97,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _register_frontend_module(hass)
 
     return True
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Apply changed options by rebuilding the WS rate limiter."""
+    hass.data.setdefault(DOMAIN, {})["rate_limiter"] = RateLimiter(
+        RateLimitConfig.from_options(getattr(entry, "options", None))
+    )
+    LOGGER.info(
+        "Applied updated HAventory options",
+        extra={"domain": DOMAIN, "op": "options_updated"},
+    )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -113,6 +136,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Drop ephemeral data
     bucket.pop("subscriptions", None)
+    bucket.pop("rate_limiter", None)
 
     # Test stub cleanup: remove our handlers from __ws_commands__
     try:  # pragma: no cover - exercised in offline tests only

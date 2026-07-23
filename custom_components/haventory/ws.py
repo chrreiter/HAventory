@@ -23,6 +23,7 @@ from .const import DOMAIN, INTEGRATION_VERSION
 from .exceptions import ConflictError, NotFoundError, StorageError, ValidationError
 from .import_export import POLICIES
 from .models import ItemUpdate, normalize_tags
+from .rate_limit import RateLimiter
 from .repository import UNSET, Repository
 from .storage import CURRENT_SCHEMA_VERSION
 
@@ -35,6 +36,13 @@ def _repo(hass: HomeAssistant) -> Repository:
     if repo is None:
         raise StorageError("repository not initialized; run integration setup")
     return repo  # type: ignore[return-value]
+
+
+def _rate_limiter(hass: HomeAssistant) -> RateLimiter | None:
+    """Return the configured rate limiter, or None when limiting is off."""
+    bucket = hass.data.get(DOMAIN) or {}
+    limiter = bucket.get("rate_limiter")
+    return limiter if isinstance(limiter, RateLimiter) else None
 
 
 def _error_code(exc: Exception) -> str:
@@ -64,6 +72,9 @@ def _ctx(op: str, **extra: Any) -> dict[str, Any]:
 # generic: internal details (exception text, stack traces) stay in the server
 # log and never reach the wire.
 UNEXPECTED_ERROR_MESSAGE = "unexpected error; see Home Assistant logs"
+
+# Sent to clients when a command exceeds the configured rate limit.
+RATE_LIMITED_MESSAGE = "rate limit exceeded; retry later"
 
 
 def _error_message(_id: int, exc: Exception, *, context: dict[str, Any]):
@@ -133,6 +144,13 @@ def ws_guard(
 
         @functools.wraps(func)
         async def wrapper(hass: HomeAssistant, conn, msg):  # type: ignore[override]
+            limiter = _rate_limiter(hass)
+            if limiter is not None and not limiter.allow_command(conn):
+                err = websocket_api.error_message(
+                    msg.get("id", 0), "rate_limited", RATE_LIMITED_MESSAGE, _ctx(op)
+                )
+                _send_error(conn, err)
+                return err
             try:
                 return await func(hass, conn, msg)
             except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
@@ -369,10 +387,27 @@ def _cleanup_subscriptions_for_conn(hass: HomeAssistant, conn: object) -> None:
 
 
 def _register_close_listener(hass: HomeAssistant, conn: object) -> None:
-    """Attach cleanup to a connection close callback when available."""
+    """Attach cleanup to a connection close callback when available.
+
+    On real Home Assistant, ``ActiveConnection`` exposes a ``subscriptions``
+    dict whose values are invoked when the connection closes — registering
+    there is what prevents disconnected clients from leaking subscription
+    state. The ``on_close``/``add_close_callback`` probes support the offline
+    test stubs.
+    """
 
     if getattr(conn, "_haventory_close_registered", False):
         return
+
+    registered = False
+
+    subscriptions = getattr(conn, "subscriptions", None)
+    if isinstance(subscriptions, dict):
+        # String key cannot collide with HA's integer subscription ids.
+        subscriptions["haventory/cleanup"] = functools.partial(
+            _cleanup_subscriptions_for_conn, hass, conn
+        )
+        registered = True
 
     closer = getattr(conn, "on_close", None)
     if not callable(closer):
@@ -380,10 +415,20 @@ def _register_close_listener(hass: HomeAssistant, conn: object) -> None:
     if callable(closer):
         try:
             closer(lambda: _cleanup_subscriptions_for_conn(hass, conn))
-            conn._haventory_close_registered = True
+            registered = True
         except Exception:  # pragma: no cover - defensive
             LOGGER.debug(
                 "Failed to register WS close listener",
+                extra={"domain": DOMAIN, "op": "subscribe_close_hook"},
+                exc_info=True,
+            )
+
+    if registered:
+        try:
+            conn._haventory_close_registered = True
+        except Exception:  # pragma: no cover - exotic connection objects
+            LOGGER.debug(
+                "Failed to stamp WS close registration",
                 extra={"domain": DOMAIN, "op": "subscribe_close_hook"},
                 exc_info=True,
             )
@@ -458,9 +503,15 @@ def _broadcast_event(
         if payload:
             event.update(payload)
 
+        limiter = _rate_limiter(hass)
+        if limiter is not None and not limiter.allow_event_broadcast():
+            # Global event budget exhausted: drop this event entirely.
+            return
+
         subs_all = _subs_bucket(hass)
         # Iterate over a snapshot to avoid mutation issues
         for conn, subs in list(subs_all.items()):
+            conn_allowed: bool | None = None
             for sub_id, sub in list(subs.items()):
                 if sub.get("topic") != topic:
                     continue
@@ -477,6 +528,12 @@ def _broadcast_event(
                     and location_obj is not None
                     and not _location_matches_filter(location_obj, sub)
                 ):
+                    continue
+                if conn_allowed is None:
+                    # One event delivered to a connection consumes one token,
+                    # regardless of how many of its subscriptions match.
+                    conn_allowed = limiter is None or limiter.allow_event_send(conn)
+                if not conn_allowed:
                     continue
                 _send_event_message(conn, sub_id, event)
     except Exception:  # pragma: no cover - defensive
@@ -692,7 +749,19 @@ async def ws_health(hass: HomeAssistant, conn, msg):
     repo = _repo(hass)
     issues, counts = _collect_health_issues(repo)
     healthy = len(issues) == 0
-    result = {"healthy": healthy, "issues": issues, "counts": counts, "generation": repo.generation}
+    limiter = _rate_limiter(hass)
+    rate_limit = {
+        "enabled": bool(limiter is not None and limiter.enabled),
+        "dropped_commands": limiter.dropped_commands if limiter is not None else 0,
+        "dropped_events": limiter.dropped_events if limiter is not None else 0,
+    }
+    result = {
+        "healthy": healthy,
+        "issues": issues,
+        "counts": counts,
+        "generation": repo.generation,
+        "rate_limit": rate_limit,
+    }
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
 

@@ -14,7 +14,18 @@
     "step": {
       "init": {
         "title": "HAventory Options",
-        "description": "Configure HAventory options."
+        "description": "Configure WebSocket rate limiting. Limits are off by default; when enabled, excess commands receive a rate_limited error and excess subscription events are dropped.",
+        "data": {
+          "rate_limit_enabled": "Enable WebSocket rate limiting",
+          "rate_limit_commands_per_second": "Commands per second (per connection)",
+          "rate_limit_commands_burst": "Command burst (per connection)",
+          "rate_limit_global_commands_per_second": "Commands per second (global)",
+          "rate_limit_global_commands_burst": "Command burst (global)",
+          "rate_limit_events_per_second": "Events per second (per connection)",
+          "rate_limit_events_burst": "Event burst (per connection)",
+          "rate_limit_global_events_per_second": "Events per second (global)",
+          "rate_limit_global_events_burst": "Event burst (global)"
+        }
       }
     }
   }

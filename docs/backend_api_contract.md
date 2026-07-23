@@ -27,6 +27,7 @@ Notes:
 - `not_found`: Referenced entity does not exist
 - `conflict`: Version mismatch on optimistic concurrency
 - `storage_error`: Persistence or setup issue
+- `rate_limited`: Command rejected by the (opt-in) WebSocket rate limiter — see "Rate limiting"
 - `unknown_error`: Fallback for unexpected exceptions
 
 Handlers map domain exceptions to these codes and log with context; `conflict` and `storage_error` log at error level; others at warning.
@@ -38,6 +39,16 @@ Guarantees (every `haventory/*` command is wrapped by the same guard):
 - In `haventory/items/bulk`, a failing operation (including an unexpectedly malformed payload) fails only its own per-op result; the remaining operations still run and successful ones persist.
 
 Transport-level errors produced by Home Assistant itself (before a handler runs) are outside this taxonomy and can also be observed by clients: `invalid_format` (request failed the command's voluptuous schema) and `unknown_command` (integration not loaded or unknown `type`).
+
+### Rate limiting
+
+**Off by default.** Enable and tune it in the integration's options flow (Settings → Devices & services → HAventory → Configure). Token buckets (sustained rate + burst) apply per connection **and** globally, separately for commands and for subscription broadcasts:
+
+- Commands: when a budget is exhausted, the command is not executed and the client receives an error envelope with code `rate_limited`, message `"rate limit exceeded; retry later"`, and `data.op`. Retry after a short backoff.
+- Broadcasts: when the global event budget is exhausted the event is dropped for all subscribers; when a connection's event budget is exhausted the event is dropped for that connection only. Event delivery is best-effort — a client that must not miss state re-lists on demand (`item/list`, `location/tree`, `stats`).
+- Observability: `haventory/health` includes `rate_limit: {enabled, dropped_commands, dropped_events}`; drops log a throttled warning server-side.
+
+Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100/200 global; events 50/200 per connection, 500/1000 global. Normal Lovelace-card usage stays far below these; bulk imports or stress tooling (`scripts/stress_test.py`) should keep limiting disabled.
 
 ### Utility commands
 
@@ -58,7 +69,7 @@ Transport-level errors produced by Home Assistant itself (before a handler runs)
   - Read-only: emits no events and does not mutate state.
 
 - `haventory/health`
-  - Result: `{healthy: boolean, issues: string[], counts: <stats shape>, generation: number}`
+  - Result: `{healthy: boolean, issues: string[], counts: <stats shape>, generation: number, rate_limit: {enabled: boolean, dropped_commands: number, dropped_events: number}}`
 
 ### Subscriptions and events
 
