@@ -408,3 +408,19 @@ async def test_close_cleanup_registers_in_conn_subscriptions() -> None:
 
     cleanup()
     assert conn not in hass.data[DOMAIN]["subscriptions"]
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_state_cleanup_via_conn_subscriptions(clock: _FakeClock) -> None:
+    """Per-connection bucket state is dropped when real HA closes the conn."""
+
+    limiter = RateLimiter(_config())
+    hass = _make_hass(limiter)
+    conn = _ConnWithSubscriptions()
+    assert (await _send(hass, conn, 1, "haventory/ping"))["success"] is True
+    assert conn in limiter._conn_states
+
+    cleanup = conn.subscriptions.get("haventory/rate_limit_cleanup")
+    assert callable(cleanup)
+    cleanup()
+    assert conn not in limiter._conn_states

@@ -77,12 +77,28 @@ UNEXPECTED_ERROR_MESSAGE = "unexpected error; see Home Assistant logs"
 RATE_LIMITED_MESSAGE = "rate limit exceeded; retry later"
 
 
+def _error_envelope(
+    iden: int, code: str, message: str, context: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Build the contract's error envelope (with ``data`` context) directly.
+
+    Deliberately NOT ``websocket_api.error_message``: HA's helper has no
+    data/context parameter (its 4th positional is ``translation_key``), so
+    building the envelope ourselves keeps the structured ``data`` context
+    identical on real Home Assistant and in the offline stub.
+    """
+    error: dict[str, Any] = {"code": code, "message": message}
+    if context:
+        error["data"] = context
+    return {"id": iden, "type": "result", "success": False, "error": error}
+
+
 def _error_message(_id: int, exc: Exception, *, context: dict[str, Any]):
     level = logging.WARNING
     if isinstance(exc, ConflictError | StorageError):
         level = logging.ERROR
     LOGGER.log(level, str(exc), extra={"domain": DOMAIN, **(context or {})}, exc_info=True)
-    return websocket_api.error_message(_id, _error_code(exc), str(exc), context or None)
+    return _error_envelope(_id, _error_code(exc), str(exc), context or None)
 
 
 # -----------------------------
@@ -146,7 +162,7 @@ def ws_guard(
         async def wrapper(hass: HomeAssistant, conn, msg):  # type: ignore[override]
             limiter = _rate_limiter(hass)
             if limiter is not None and not limiter.allow_command(conn):
-                err = websocket_api.error_message(
+                err = _error_envelope(
                     msg.get("id", 0), "rate_limited", RATE_LIMITED_MESSAGE, _ctx(op)
                 )
                 _send_error(conn, err)
@@ -170,7 +186,7 @@ def ws_guard(
                     "Unexpected error in WS handler",
                     extra={"domain": DOMAIN, **ctx},
                 )
-                err = websocket_api.error_message(
+                err = _error_envelope(
                     msg.get("id", 0), "unknown_error", UNEXPECTED_ERROR_MESSAGE, ctx
                 )
                 _send_error(conn, err)
@@ -1611,7 +1627,7 @@ async def ws_import_execute(hass: HomeAssistant, conn, msg):
     )
     if not report.get("valid") or target is None:
         # Invalid document: surface structured errors without mutating state.
-        err = websocket_api.error_message(
+        err = _error_envelope(
             msg.get("id", 0),
             "validation_error",
             "import document is invalid",

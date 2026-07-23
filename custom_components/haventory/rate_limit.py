@@ -14,6 +14,7 @@ loop access is needed. Tests monkeypatch ``_monotonic`` for determinism.
 
 from __future__ import annotations
 
+import functools
 import logging
 import time
 from collections.abc import Mapping
@@ -46,10 +47,6 @@ LOGGER = logging.getLogger(__name__)
 
 # Module-level clock indirection so tests can monkeypatch time deterministically.
 _monotonic = time.monotonic
-
-# Attribute stamped onto connection objects to hold their bucket pair. The
-# state dies with the connection, so no registry/cleanup is needed.
-_CONN_STATE_ATTR = "_haventory_rate_buckets"
 
 # Warn at most once per this many seconds per drop kind to keep an abusive
 # client from flooding the log.
@@ -141,7 +138,7 @@ class RateLimitConfig:
 
 
 class _ConnBuckets:
-    """Per-connection bucket pair, stamped onto the connection object."""
+    """Per-connection bucket pair."""
 
     __slots__ = ("commands", "events")
 
@@ -164,21 +161,31 @@ class RateLimiter:
             config.global_events_per_second, config.global_events_burst
         )
         self._last_warn: dict[str, float] = {}
+        # Per-connection bucket pairs keyed by the connection object. Real
+        # HA's ActiveConnection defines __slots__, so state cannot be stamped
+        # onto the connection; cleanup is hooked into conn.subscriptions,
+        # whose callables HA invokes when the connection closes.
+        self._conn_states: dict[object, _ConnBuckets] = {}
 
     @property
     def enabled(self) -> bool:
         return self.config.enabled
 
-    def _conn_buckets(self, conn: object) -> _ConnBuckets | None:
-        state = getattr(conn, _CONN_STATE_ATTR, None)
-        if isinstance(state, _ConnBuckets):
+    def _cleanup_conn(self, conn: object) -> None:
+        self._conn_states.pop(conn, None)
+
+    def _conn_buckets(self, conn: object) -> _ConnBuckets:
+        state = self._conn_states.get(conn)
+        if state is not None:
             return state
         state = _ConnBuckets(self.config)
-        try:
-            setattr(conn, _CONN_STATE_ATTR, state)
-        except Exception:  # pragma: no cover - exotic connection objects
-            # Without per-connection state only the global buckets protect us.
-            return None
+        self._conn_states[conn] = state
+        subscriptions = getattr(conn, "subscriptions", None)
+        if isinstance(subscriptions, dict):
+            # String key cannot collide with HA's integer subscription ids.
+            subscriptions["haventory/rate_limit_cleanup"] = functools.partial(
+                self._cleanup_conn, conn
+            )
         return state
 
     def _warn(self, kind: str, detail: str) -> None:
@@ -197,8 +204,7 @@ class RateLimiter:
         """Budget check for one incoming command on ``conn``."""
         if not self.config.enabled:
             return True
-        buckets = self._conn_buckets(conn)
-        if buckets is not None and not buckets.commands.try_consume():
+        if not self._conn_buckets(conn).commands.try_consume():
             self.dropped_commands += 1
             self._warn("commands_per_connection", "per-connection command budget")
             return False
@@ -222,10 +228,7 @@ class RateLimiter:
         """Per-connection budget check for one event delivery to ``conn``."""
         if not self.config.enabled:
             return True
-        buckets = self._conn_buckets(conn)
-        if buckets is None:
-            return True
-        if not buckets.events.try_consume():
+        if not self._conn_buckets(conn).events.try_consume():
             self.dropped_events += 1
             self._warn("events_per_connection", "per-connection event budget")
             return False
