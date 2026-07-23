@@ -11,6 +11,7 @@ function makeItem(overrides?: Partial<Item>): Item {
     quantity: 10,
     checked_out: false,
     due_date: null,
+    inspection_date: null,
     location_id: 'loc1',
     tags: [],
     category: 'Tools',

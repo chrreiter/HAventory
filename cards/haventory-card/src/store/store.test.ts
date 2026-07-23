@@ -86,7 +86,7 @@ describe('Store', () => {
     const after = store.state.value.items.find((i) => i.id === '1');
     expect(after?.name).toBe('Original');
     expect(after?.quantity).toBe(1);
-    expect(store.state.value.errorQueue.at(-1)?.code).toBe('conflict');
+    expect(store.state.value.errorQueue[store.state.value.errorQueue.length - 1]?.code).toBe('conflict');
   });
 
   it('deletes item optimistically and rolls back on error', async () => {
