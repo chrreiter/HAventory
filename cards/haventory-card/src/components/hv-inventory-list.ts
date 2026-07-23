@@ -2,26 +2,14 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import type { Item } from '../store/types';
+import type { ColumnKey } from '../store/columns';
+import { COLUMN_DEFS, DEFAULT_COLUMN_PREFS, gridTemplateFor, normalizeColumns } from '../store/columns';
 
 @customElement('hv-inventory-list')
 export class HVInventoryList extends LitElement {
   static styles = css`
     :host {
       display: block;
-      /* Define grid columns as CSS custom property for header/row alignment */
-      /* Full mode: Name, Qty, Category, Location, Actions (4 buttons ~160px) */
-      --hv-col-name: minmax(120px, 2fr);
-      --hv-col-qty: 50px;
-      --hv-col-category: minmax(80px, 1fr);
-      --hv-col-location: minmax(100px, 2fr);
-      --hv-col-actions: 160px;
-      --hv-grid-columns: var(--hv-col-name) var(--hv-col-qty) var(--hv-col-category) var(--hv-col-location) var(--hv-col-actions);
-      /* Compact mode: Name (flex), Qty (fixed), Actions (3 buttons ~120px) */
-      --hv-col-actions-compact: 120px;
-      --hv-grid-columns-compact: 1fr 50px var(--hv-col-actions-compact);
-    }
-    :host([compact]) {
-      --hv-grid-columns: var(--hv-grid-columns-compact);
     }
     /* Fill mode: stretch to fill parent container (expanded view) */
     :host([fill]) {
@@ -32,7 +20,6 @@ export class HVInventoryList extends LitElement {
     }
     .header {
       display: grid;
-      grid-template-columns: var(--hv-grid-columns);
       gap: 8px;
       align-items: center;
       font-weight: 600;
@@ -41,9 +28,6 @@ export class HVInventoryList extends LitElement {
       flex-shrink: 0;
       box-sizing: border-box;
     }
-    .header .hide-compact { display: block; }
-    :host([compact]) .header .hide-compact { display: none; }
-
     .empty-state { padding: 32px 16px; text-align: center; color: #666; }
     .empty-state p { margin: 8px 0; }
     .empty-state .hint { font-size: 0.9em; opacity: 0.8; }
@@ -73,6 +57,8 @@ export class HVInventoryList extends LitElement {
   @property({ attribute: false }) locations: Array<{ id: string; area_id: string | null }> = [];
   @property({ type: Boolean, reflect: true }) compact: boolean = false;
   @property({ type: Boolean, reflect: true }) fill: boolean = false;
+  /** Optional middle columns to display (Name + Actions are always shown). */
+  @property({ attribute: false }) columns: ColumnKey[] = [...DEFAULT_COLUMN_PREFS.expanded];
 
   private onRowEvent(type: string, e: CustomEvent) {
     e.stopPropagation();
@@ -93,6 +79,7 @@ export class HVInventoryList extends LitElement {
         .item=${it}
         .areas=${this.areas}
         .locations=${this.locations}
+        .columns=${this._cols()}
         ?compact=${this.compact}
         @decrement=${(e: CustomEvent) => this.onRowEvent('decrement', e)}
         @increment=${(e: CustomEvent) => this.onRowEvent('increment', e)}
@@ -102,13 +89,18 @@ export class HVInventoryList extends LitElement {
     `;
   }
 
+  private _cols(): ColumnKey[] {
+    return normalizeColumns(this.columns);
+  }
+
   private renderHeader() {
+    const cols = this._cols();
+    const template = gridTemplateFor(cols, { compact: this.compact });
+    const labelFor = (k: ColumnKey) => COLUMN_DEFS.find((c) => c.key === k)?.label ?? k;
     return html`
-      <div class="header" role="row">
+      <div class="header" role="row" style="grid-template-columns: ${template};">
         <div role="columnheader">Name</div>
-        <div role="columnheader">Qty</div>
-        <div role="columnheader" class="hide-compact">Category</div>
-        <div role="columnheader" class="hide-compact">Location</div>
+        ${cols.map((k) => html`<div role="columnheader">${labelFor(k)}</div>`)}
         <div role="columnheader" aria-hidden="true"></div>
       </div>
     `;

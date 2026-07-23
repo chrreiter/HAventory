@@ -230,6 +230,9 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
   counts and drills down to the items filed under each.
 - Dedicated **tag browser** (header → "Tags"): lists used tags with item counts and drills
   down to the items carrying each.
+- **Column selection** (header → "Columns"): choose which optional columns (quantity,
+  category, location, tags, due date) show in the standard vs expanded view; the choice is
+  persisted in `localStorage` (`haventory:columns:v1`, per browser).
 
 ### 🚧 Phase 3: Polish & HACS (Planned)
 - HACS publication; release automation (release-please); additional optimizations.
