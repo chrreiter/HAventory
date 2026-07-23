@@ -1,6 +1,7 @@
 import type {
   AreasListResult,
   HassLike,
+  HealthResult,
   Item,
   ItemCreate,
   ItemFilter,
@@ -33,6 +34,10 @@ export class WSClient {
 
   stats() {
     return this.hass.callWS<StatsCounts>({ type: 'haventory/stats' });
+  }
+
+  health() {
+    return this.hass.callWS<HealthResult>({ type: 'haventory/health' });
   }
 
   // ---------- Items ----------
@@ -122,6 +127,18 @@ export class WSClient {
     if (changes.name !== undefined) msg.name = changes.name;
     if (changes.areaId !== undefined) msg.area_id = changes.areaId;
     return this.hass.callWS<Location>(msg);
+  }
+
+  deleteLocation(locationId: string) {
+    return this.hass.callWS<null>({ type: 'haventory/location/delete', location_id: locationId });
+  }
+
+  moveLocationSubtree(locationId: string, newParentId: string | null) {
+    return this.hass.callWS<Location>({
+      type: 'haventory/location/move_subtree',
+      location_id: locationId,
+      new_parent_id: newParentId,
+    });
   }
 
   getLocationTree() {

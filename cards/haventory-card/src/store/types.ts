@@ -78,6 +78,7 @@ export interface ItemFilter {
   checked_out?: boolean;
   low_stock_only?: boolean;
   low_stock_first?: boolean;
+  orphaned_only?: boolean;
   location_id?: string | null;
   area_id?: string;
   include_subtree?: boolean;
@@ -85,7 +86,7 @@ export interface ItemFilter {
   created_after?: string;
 }
 
-export type SortField = 'updated_at' | 'created_at' | 'name' | 'quantity';
+export type SortField = 'updated_at' | 'created_at' | 'name' | 'quantity' | 'due_date' | 'inspection_date';
 export type SortOrder = 'asc' | 'desc';
 
 export interface Sort {
@@ -107,6 +108,14 @@ export interface StatsCounts {
 
 export interface AreasListResult {
   areas: { id: string; name: string }[];
+}
+
+/** Result of haventory/health: storage/index integrity as seen by the backend. */
+export interface HealthResult {
+  healthy: boolean;
+  issues: string[];
+  counts: StatsCounts;
+  generation: number;
 }
 
 // WS subscription event payloads
@@ -163,8 +172,10 @@ export interface StoreFilters {
   q: string;
   areaId: string | null;
   locationId: string | null;
+  includeSubtree: boolean;
   checkedOutOnly: boolean;
   lowStockFirst: boolean;
+  orphansOnly: boolean;
   sort: Sort; // default: { field: 'updated_at', order: 'desc' }
 }
 
@@ -180,6 +191,7 @@ export interface StoreState {
   // Optional flat locations cache to enrich UI (e.g., show area per node in selectors)
   locationsFlatCache: Location[] | null;
   statsCounts: StatsCounts | null;
+  healthCache: HealthResult | null;
   connected: { items: boolean; stats: boolean };
 }
 

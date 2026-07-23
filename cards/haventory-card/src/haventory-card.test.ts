@@ -292,6 +292,42 @@ describe('HAventoryCard', () => {
     expect(dialog.item).toBe(null);
   });
 
+  it('shows storage health in the expanded diagnostics panel', async () => {
+    const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
+    document.body.appendChild(el);
+    await customElements.whenDefined('haventory-card');
+
+    const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'A' })] });
+    (el as any).hass = hass;
+
+    const store = (el as any).store as Store;
+    await store.init();
+    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
+
+    const sr = el.shadowRoot as ShadowRoot;
+    (sr.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement).click();
+    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
+
+    const diag = sr.querySelector('[data-testid="diagnostics-panel"]') as HTMLElement;
+    expect(diag).toBeTruthy();
+    const health = diag.querySelector('[data-testid="storage-health"]') as HTMLElement;
+    expect(health).toBeTruthy();
+    expect(health.textContent || '').toContain('Healthy');
+    expect(health.textContent || '').toMatch(/generation\s+\d+/i);
+
+    // Degraded backend → refresh button surfaces issues
+    hass.__setHealth({ healthy: false, issues: ['item_id_key_mismatch', 'item_references_missing_location'] });
+    const refreshBtn = diag.querySelector('[data-testid="health-refresh"]') as HTMLButtonElement;
+    expect(refreshBtn).toBeTruthy();
+    refreshBtn.click();
+    await new Promise((r) => setTimeout(r, 10));
+    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
+
+    const healthAfter = sr.querySelector('[data-testid="storage-health"]') as HTMLElement;
+    expect(healthAfter.textContent || '').toContain('2 issue');
+    expect(healthAfter.textContent || '').toContain('item_id_key_mismatch');
+  });
+
   it('exposes stub config and registers customCards metadata', async () => {
     // getStubConfig returns a Lovelace stub pointing to this card
     const cfg = getStubConfig();

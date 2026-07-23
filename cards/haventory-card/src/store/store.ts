@@ -2,6 +2,7 @@ import type {
   AreasListResult,
   AnyEventPayload,
   HassLike,
+  HealthResult,
   Item,
   ItemCreate,
   ItemFilter,
@@ -61,8 +62,10 @@ export class Store {
         q: '',
         areaId: null,
         locationId: null,
+        includeSubtree: true,
         checkedOutOnly: false,
         lowStockFirst: false,
+        orphansOnly: false,
         sort: defaultSort,
       },
       selection: new Set<string>(),
@@ -72,6 +75,7 @@ export class Store {
       locationTreeCache: null,
       locationsFlatCache: null,
       statsCounts: null,
+      healthCache: null,
       connected: { items: false, stats: false },
     };
     this.stateObs = createObservable<StoreState>(initial);
@@ -85,6 +89,7 @@ export class Store {
   async init() {
     await Promise.all([
       this.refreshStats(),
+      this.refreshHealth(),
       this.refreshAreas(),
       this.refreshLocationTree(),
       this.refreshLocationsFlat(),
@@ -141,12 +146,22 @@ export class Store {
   private onLocationsEvent(evt: AnyEventPayload) {
     if (evt.topic !== 'locations') return;
     void Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+    // Moving or renaming a location rewrites the denormalized location_path on
+    // every item in its subtree — reload the list so rows reflect it live.
+    if (evt.action === 'moved' || evt.action === 'renamed') {
+      void this.listItems(true);
+    }
   }
 
   // ---------- Data fetchers ----------
   async refreshStats() {
     const counts = await this.ws.stats();
     this.stateObs.set({ statsCounts: counts });
+  }
+
+  async refreshHealth() {
+    const health: HealthResult = await this.ws.health();
+    this.stateObs.set({ healthCache: health });
   }
 
   async refreshAreas() {
@@ -179,6 +194,8 @@ export class Store {
       checked_out: st.filters.checkedOutOnly || undefined,
       // Interpret UI toggle as preference to show low-stock items first
       low_stock_first: st.filters.lowStockFirst || undefined,
+      // Only items without a location
+      orphaned_only: st.filters.orphansOnly || undefined,
     };
     const sort = st.filters.sort;
     const limit = 50;
@@ -354,6 +371,21 @@ export class Store {
     const updated = await this.ws.updateLocation(locationId, changes);
     await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
     return updated;
+  }
+
+  /** Delete an empty location. Rejects with validation_error when it still has children or items. */
+  async deleteLocation(locationId: string): Promise<void> {
+    await this.ws.deleteLocation(locationId);
+    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+  }
+
+  /** Move a whole subtree under a new parent (null = top level). Descendant paths update live. */
+  async moveLocationSubtree(locationId: string, newParentId: string | null): Promise<Location> {
+    const moved = await this.ws.moveLocationSubtree(locationId, newParentId);
+    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+    // Denormalized item location_path values changed for the whole subtree.
+    await this.listItems(true);
+    return moved;
   }
 
   // ---------- Errors ----------

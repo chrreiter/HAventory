@@ -12,10 +12,12 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
   __emit(topic: AnyEventPayload['topic'], action: string, payload: Record<string, unknown>): void;
   __setConflict(on: boolean): void;
   __setItems(items: Item[]): void;
+  __setHealth(patch: { healthy?: boolean; issues?: string[]; generation?: number }): void;
 } {
   let items: Item[] = initial?.items ? [...initial.items] : [];
   let locations: Location[] = initial?.locations ? [...initial.locations] : [];
   let conflictOnUpdate = !!initial?.conflictOnUpdate;
+  let healthOverride: { healthy?: boolean; issues?: string[]; generation?: number } | null = null;
   const subs: Record<string, SubCb[]> = {};
 
   function nextId() {
@@ -38,6 +40,20 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
             locations_total: locations.length,
           };
           return counts as unknown as T;
+        }
+        case 'haventory/health': {
+          const counts: StatsCounts = {
+            items_total: items.length,
+            low_stock_count: items.filter((i) => typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number)).length,
+            checked_out_count: items.filter((i) => i.checked_out).length,
+            locations_total: locations.length,
+          };
+          return {
+            healthy: healthOverride?.healthy ?? true,
+            issues: healthOverride?.issues ?? [],
+            counts,
+            generation: healthOverride?.generation ?? 1,
+          } as unknown as T;
         }
         case 'haventory/areas/list': {
           return { areas: [] } as unknown as T;
@@ -69,6 +85,35 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
           locations = locations.concat([created]);
           return created as unknown as T;
         }
+        case 'haventory/location/delete': {
+          const locationId = String((msg as any).location_id);
+          const loc = locations.find((l) => l.id === locationId);
+          if (!loc) throw { code: 'not_found', message: 'location not found' };
+          if (locations.some((l) => l.parent_id === locationId)) {
+            throw { code: 'validation_error', message: 'cannot delete a location that has child locations' };
+          }
+          if (items.some((i) => i.location_id === locationId)) {
+            throw { code: 'validation_error', message: 'cannot delete a location that contains items' };
+          }
+          locations = locations.filter((l) => l.id !== locationId);
+          return null as unknown as T;
+        }
+        case 'haventory/location/move_subtree': {
+          const locationId = String((msg as any).location_id);
+          const newParentId = (msg as any).new_parent_id ?? null;
+          const loc = locations.find((l) => l.id === locationId);
+          if (!loc) throw { code: 'not_found', message: 'location not found' };
+          const moved: Location = {
+            ...loc,
+            parent_id: newParentId,
+            path: {
+              ...loc.path,
+              id_path: newParentId ? [String(newParentId), loc.id] : [loc.id],
+            },
+          };
+          locations = locations.map((l) => (l.id === locationId ? moved : l));
+          return moved as unknown as T;
+        }
         case 'haventory/item/list': {
           const limit = (typeof msg.limit === 'number' ? (msg.limit as number) : 50) || 50;
           const cursor = (msg.cursor as string | undefined) || undefined;
@@ -98,6 +143,7 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
             quantity: Number((msg as any).quantity ?? 0),
             checked_out: Boolean((msg as any).checked_out ?? false),
             due_date: (msg as any).due_date ?? null,
+            inspection_date: (msg as any).inspection_date ?? null,
             location_id: (msg as any).location_id ?? null,
             tags: ((msg as any).tags as string[]) ?? [],
             category: (msg as any).category ?? null,
@@ -176,6 +222,9 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
     },
     __setConflict(on: boolean) { conflictOnUpdate = on; },
     __setItems(it: Item[]) { items = [...it]; },
+    __setHealth(patch: { healthy?: boolean; issues?: string[]; generation?: number }) {
+      healthOverride = { ...(healthOverride ?? {}), ...patch };
+    },
   };
 
   return hass;
@@ -191,6 +240,7 @@ export function makeItem(partial?: Partial<Item>): Item {
     quantity: partial?.quantity ?? 0,
     checked_out: partial?.checked_out ?? false,
     due_date: partial?.due_date ?? null,
+    inspection_date: partial?.inspection_date ?? null,
     location_id: partial?.location_id ?? null,
     tags: partial?.tags ?? [],
     category: partial?.category ?? null,

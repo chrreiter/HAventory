@@ -157,6 +157,7 @@ export class HAventoryCard extends LitElement {
         .includeSubtree=${filters?.includeSubtree ?? true}
         .checkedOutOnly=${filters?.checkedOutOnly ?? false}
         .lowStockFirst=${filters?.lowStockFirst ?? false}
+        .orphansOnly=${filters?.orphansOnly ?? false}
         .sort=${filters?.sort}
         .areas=${st?.areasCache?.areas ?? []}
         .locations=${st?.locationsFlatCache ?? []}
@@ -268,10 +269,16 @@ export class HAventoryCard extends LitElement {
           }
         }}
         @update-location=${async (e: CustomEvent) => {
-          const { locationId, name, areaId } = e.detail as { locationId: string; name: string; areaId: string | null };
+          const { locationId, name, areaId, newParentId } = e.detail as {
+            locationId: string; name: string; areaId: string | null; newParentId?: string | null;
+          };
           const selector = this.shadowRoot?.querySelector('hv-location-selector') as HVLocationSelector | null;
           try {
             await this.store?.updateLocation(locationId, { name, areaId });
+            // A changed parent moves the whole subtree; descendant paths update live.
+            if (newParentId !== undefined) {
+              await this.store?.moveLocationSubtree(locationId, newParentId);
+            }
             if (selector) {
               selector.setEditSuccess();
             }
@@ -279,6 +286,23 @@ export class HAventoryCard extends LitElement {
           } catch (err: unknown) {
             const msg = (err as { message?: string })?.message ?? 'Failed to update location';
             if (selector) selector.setEditError(msg);
+          }
+        }}
+        @delete-location=${async (e: CustomEvent) => {
+          const { locationId, name } = e.detail as { locationId: string; name: string };
+          const selector = this.shadowRoot?.querySelector('hv-location-selector') as HVLocationSelector | null;
+          const confirmed = window.confirm(`Delete location '${name}'?`);
+          if (!confirmed) return;
+          try {
+            await this.store?.deleteLocation(locationId);
+            this.requestUpdate();
+          } catch (err: unknown) {
+            const anyErr = err as { code?: string; message?: string };
+            const msg = anyErr?.code === 'validation_error'
+              ? `'${name}' can't be deleted yet: it still contains items or sub-locations. ` +
+                'Move or delete its contents first, then try again.'
+              : (anyErr?.message ?? 'Failed to delete location');
+            if (selector) selector.setActionError(msg);
           }
         }}
       ></hv-location-selector>
@@ -372,6 +396,10 @@ export class HAventoryCard extends LitElement {
           opacity: 0.9;
         }
         .diagnostics { margin-top: 12px; }
+        .health-status.ok { color: var(--success-color, #0f9d58); }
+        .health-status.bad { color: var(--error-color, #db4437); font-weight: 600; }
+        .health-issues { margin: 4px 0; padding-left: 18px; color: var(--error-color, #db4437); }
+        [data-testid="health-refresh"] { margin-top: 4px; padding: 4px 8px; }
         .list-container { min-height: 0; flex: 1; overflow: hidden; }
         .sentinel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
         .banners { display: grid; gap: 6px; margin: 8px 0; }
@@ -432,6 +460,9 @@ export class HAventoryCard extends LitElement {
               <label><input type="checkbox" .checked=${filters?.lowStockFirst ?? false} @change=${(e: Event) => this.store?.setFilters({ lowStockFirst: (e.target as HTMLInputElement).checked })} /> Low-stock first</label>
             </div>
             <div class="row">
+              <label title="Only items without a location"><input type="checkbox" .checked=${filters?.orphansOnly ?? false} @change=${(e: Event) => this.store?.setFilters({ orphansOnly: (e.target as HTMLInputElement).checked })} /> No location</label>
+            </div>
+            <div class="row">
               <label>Sort
                 <span class="sort-controls">
                   <select @change=${this._onOverlaySortFieldChange}>
@@ -439,6 +470,8 @@ export class HAventoryCard extends LitElement {
                     <option value="updated_at" ?selected=${(filters?.sort?.field ?? 'updated_at') === 'updated_at'}>Updated</option>
                     <option value="created_at" ?selected=${filters?.sort?.field === 'created_at'}>Created</option>
                     <option value="quantity" ?selected=${filters?.sort?.field === 'quantity'}>Quantity</option>
+                    <option value="due_date" ?selected=${filters?.sort?.field === 'due_date'}>Due date</option>
+                    <option value="inspection_date" ?selected=${filters?.sort?.field === 'inspection_date'}>Inspection</option>
                   </select>
                   <button
                     type="button"
@@ -455,6 +488,26 @@ export class HAventoryCard extends LitElement {
               <div>WS: items ${st?.connected.items ? 'connected' : 'disconnected'}, stats ${st?.connected.stats ? 'connected' : 'disconnected'}</div>
               <div>Counts: ${st?.statsCounts ? JSON.stringify(st.statsCounts) : '—'}</div>
               <div>Cursor: ${st?.cursor ?? '—'}</div>
+              <div data-testid="storage-health">
+                ${st?.healthCache ? html`
+                  <div class="health-status ${st.healthCache.healthy ? 'ok' : 'bad'}">
+                    Storage: ${st.healthCache.healthy
+                      ? html`✓ Healthy`
+                      : html`⚠ ${st.healthCache.issues.length} issue${st.healthCache.issues.length === 1 ? '' : 's'}`}
+                    (generation ${st.healthCache.generation})
+                  </div>
+                  ${!st.healthCache.healthy ? html`
+                    <ul class="health-issues">
+                      ${st.healthCache.issues.map((issue) => html`<li>${issue}</li>`)}
+                    </ul>
+                  ` : null}
+                ` : html`<div>Storage: —</div>`}
+                <button
+                  type="button"
+                  data-testid="health-refresh"
+                  @click=${() => { void this.store?.refreshHealth(); }}
+                >Refresh health</button>
+              </div>
             </details>
           </div>
           <div class="main">
@@ -467,6 +520,7 @@ export class HAventoryCard extends LitElement {
                 .includeSubtree=${filters?.includeSubtree ?? true}
                 .checkedOutOnly=${filters?.checkedOutOnly ?? false}
                 .lowStockFirst=${filters?.lowStockFirst ?? false}
+                .orphansOnly=${filters?.orphansOnly ?? false}
                 .sort=${filters?.sort}
                 .areas=${st?.areasCache?.areas ?? []}
                 .locations=${st?.locationsFlatCache ?? []}

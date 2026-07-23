@@ -128,6 +128,8 @@ class ItemFilter(TypedDict, total=False):
     low_stock_only: bool
     # When true, do not filter; instead, prefer low-stock items first in ordering
     low_stock_first: bool
+    # When true, only items without a location (location_id is None)
+    orphaned_only: bool
     location_id: str | None
     area_id: str
     include_subtree: bool
@@ -138,7 +140,7 @@ class ItemFilter(TypedDict, total=False):
 class Sort(TypedDict):
     """Sort definition for item queries."""
 
-    field: Literal["updated_at", "created_at", "name", "quantity"]
+    field: Literal["updated_at", "created_at", "name", "quantity", "due_date", "inspection_date"]
     order: Literal["asc", "desc"]
 
 
@@ -659,6 +661,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     - category: case-insensitive equals
     - checked_out: exact match
     - low_stock_only: quantity <= threshold (0 valid, None disables)
+    - orphaned_only: only items without a location (location_id is None)
     - location_id: equals; include_subtree optionally includes descendants (by prefix of id_path)
     - updated_after/created_after: ISO-8601 UTC with 'Z'
     """
@@ -672,6 +675,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     category = (flt.get("category") or "").strip().casefold() if "category" in flt else ""
     checked_out = flt.get("checked_out") if "checked_out" in flt else None
     low_stock_only = bool(flt.get("low_stock_only")) if "low_stock_only" in flt else False
+    orphaned_only = bool(flt.get("orphaned_only")) if "orphaned_only" in flt else False
     location_id = flt.get("location_id") if "location_id" in flt else None
     include_subtree = bool(flt.get("include_subtree")) if "include_subtree" in flt else False
     updated_after = flt.get("updated_after") if "updated_after" in flt else None
@@ -692,6 +696,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
         matches_category = (not category) or ((it.category or "").strip().casefold() == category)
         matches_checked = (checked_out is None) or (it.checked_out == bool(checked_out))
         matches_low_stock = (not low_stock_only) or _low_stock(it)
+        matches_orphaned = (not orphaned_only) or (it.location_id is None)
         matches_location = _item_matches_location(it, location_id, include_subtree)
         matches_updated = (updated_after_dt is None) or (
             _parse_iso8601_utc(it.updated_at, field_name="item.updated_at") > updated_after_dt
@@ -706,6 +711,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
             and matches_category
             and matches_checked
             and matches_low_stock
+            and matches_orphaned
             and matches_location
             and matches_updated
             and matches_created
@@ -716,11 +722,26 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     return filtered
 
 
+def date_sort_key(value: str | None, order: str) -> str:
+    """Return a scalar sort key for a nullable YYYY-MM-DD field.
+
+    Items without a date sort last in BOTH orders: in ascending order null maps
+    to "~" (after any digit), in descending order to "" (smallest value, which
+    a reversed sort places last). The same key is used by the repository's
+    cursor pagination so page boundaries stay consistent with this ordering.
+    """
+
+    if value is None:
+        return "~" if order == "asc" else ""
+    return value
+
+
 def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
     """Sort items by the requested field and order.
 
     Defaults to updated_at desc with id asc tie-break.
     name sorting is case-insensitive using normalize_text_for_sort.
+    due_date / inspection_date place undated items last in both orders.
     """
 
     result = list(items)
@@ -737,8 +758,12 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
 
     field = sort.get("field")
     order = sort.get("order")
-    if field not in {"updated_at", "created_at", "name", "quantity"}:
-        raise ValidationError("sort.field must be one of: updated_at, created_at, name, quantity")
+    allowed_fields = {"updated_at", "created_at", "name", "quantity", "due_date", "inspection_date"}
+    if field not in allowed_fields:
+        raise ValidationError(
+            "sort.field must be one of: updated_at, created_at, name, quantity, "
+            "due_date, inspection_date"
+        )
     if order not in {"asc", "desc"}:
         raise ValidationError("sort.order must be 'asc' or 'desc'")
 
@@ -750,6 +775,10 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
         result.sort(key=lambda x: normalize_text_for_sort(x.name), reverse=reverse)
     elif field == "quantity":
         result.sort(key=lambda x: int(x.quantity), reverse=reverse)
+    elif field == "due_date":
+        result.sort(key=lambda x: date_sort_key(x.due_date, order), reverse=reverse)
+    elif field == "inspection_date":
+        result.sort(key=lambda x: date_sort_key(x.inspection_date, order), reverse=reverse)
     elif field == "created_at":
         result.sort(
             key=lambda x: _parse_iso8601_utc(x.created_at, field_name="created_at"), reverse=reverse

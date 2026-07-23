@@ -44,7 +44,7 @@ Handlers map domain exceptions to these codes and log with context; `conflict` a
   - Result: `{items_total: number, low_stock_count: number, checked_out_count: number, locations_total: number}`
 
 - `haventory/health`
-  - Result: `{healthy: boolean, issues: string[], counts: <stats shape>}`
+  - Result: `{healthy: boolean, issues: string[], counts: <stats shape>, generation: number}`
 
 ### Subscriptions and events
 

@@ -66,6 +66,7 @@ haventory-card (main container)
 - `includeSubtree`: Boolean for subtree filtering
 - `checkedOutOnly`: Boolean for checked-out filter
 - `lowStockFirst`: Boolean for low-stock sorting
+- `orphansOnly`: Boolean for the "No location" (orphaned items) filter
 - `sort`: Sort configuration (field + order)
 - `areas`: Array of `{id, name}` area options
 - `locations`: Array of location objects with `{id, name, path}`
@@ -78,7 +79,7 @@ haventory-card (main container)
 **Rendering**:
 - Populates Area dropdown from `areas` array
 - Populates Location dropdown from `locations` array (shows `display_path`)
-- Sort options: Name, Updated, Created, Quantity
+- Sort options: Name, Updated, Created, Quantity, Due date, Inspection
 
 ---
 
@@ -193,10 +194,19 @@ haventory-card (main container)
 - Search input: filters by name or display_path (case-insensitive)
 - Radio buttons for location selection
 - "Include sublocations" checkbox
+- Per-row edit (✎) and delete (🗑) buttons
+- Edit form: rename, area, and "Parent location" select (moves the whole
+  subtree; the select excludes the location itself and its descendants)
+- Delete of a non-empty location is rejected by the backend
+  (`validation_error`); the card surfaces a guidance banner via
+  `setActionError()` telling the user to empty the location first
 - Currently flat list (tree view deferred to Phase 2.5)
 
 **Events**:
 - `select`: Emits `{locationId, includeSubtree}`
+- `update-location`: Emits `{locationId, name, areaId, newParentId?}` —
+  `newParentId` present only when the parent changed (null = top level)
+- `delete-location`: Emits `{locationId, name}`
 - `cancel`: Close without selection
 
 **Keyboard**:
@@ -223,6 +233,7 @@ haventory-card (main container)
   locationTreeCache: unknown[] | null,
   locationsFlatCache: Location[] | null,
   statsCounts: StatsCounts | null,
+  healthCache: HealthResult | null,
   connected: { items: boolean, stats: boolean }
 }
 ```

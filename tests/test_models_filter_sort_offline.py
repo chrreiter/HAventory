@@ -273,6 +273,66 @@ async def test_sort_by_quantity_and_timestamps() -> None:
 
 
 @pytest.mark.asyncio
+async def test_filter_orphaned_only_matches_items_without_location() -> None:
+    """orphaned_only=True keeps only items with location_id == None."""
+
+    by_id, root, _mid, _leaf = _build_locations()
+    placed = create_item_from_create(
+        {"name": "Placed", "location_id": root.id}, locations_by_id=by_id
+    )
+    orphan_a = create_item_from_create({"name": "Orphan Saw"})
+    orphan_b = create_item_from_create({"name": "Orphan Glue"})
+
+    out = filter_items([placed, orphan_a, orphan_b], ItemFilter(orphaned_only=True))
+    assert sorted(x.name for x in out) == ["Orphan Glue", "Orphan Saw"]
+
+    # Combines with q (AND semantics)
+    out_q = filter_items([placed, orphan_a, orphan_b], ItemFilter(orphaned_only=True, q="saw"))
+    assert [x.name for x in out_q] == ["Orphan Saw"]
+
+    # False / absent → no effect
+    out_off = filter_items([placed, orphan_a, orphan_b], ItemFilter(orphaned_only=False))
+    assert sorted(x.name for x in out_off) == ["Orphan Glue", "Orphan Saw", "Placed"]
+
+
+@pytest.mark.asyncio
+async def test_sort_by_due_date_nulls_last_both_orders() -> None:
+    """due_date sorting orders dated items and places undated items last."""
+
+    d1 = create_item_from_create({"name": "Early", "checked_out": True, "due_date": "2024-01-05"})
+    d2 = create_item_from_create({"name": "Late", "checked_out": True, "due_date": "2024-03-01"})
+    d3 = create_item_from_create({"name": "Undated"})  # due_date is None
+
+    out_asc = sort_items([d3, d2, d1], Sort(field="due_date", order="asc"))
+    assert [x.name for x in out_asc] == ["Early", "Late", "Undated"]
+
+    out_desc = sort_items([d1, d3, d2], Sort(field="due_date", order="desc"))
+    assert [x.name for x in out_desc] == ["Late", "Early", "Undated"]
+
+
+@pytest.mark.asyncio
+async def test_sort_by_inspection_date_nulls_last_both_orders() -> None:
+    """inspection_date sorting mirrors due_date semantics (nulls last)."""
+
+    i1 = create_item_from_create({"name": "Soon", "inspection_date": "2024-02-01"})
+    i2 = create_item_from_create({"name": "Later", "inspection_date": "2024-06-15"})
+    i3 = create_item_from_create({"name": "Never"})  # inspection_date is None
+
+    out_asc = sort_items([i2, i3, i1], Sort(field="inspection_date", order="asc"))
+    assert [x.name for x in out_asc] == ["Soon", "Later", "Never"]
+
+    out_desc = sort_items([i1, i2, i3], Sort(field="inspection_date", order="desc"))
+    assert [x.name for x in out_desc] == ["Later", "Soon", "Never"]
+
+    # Ties on the date fall back to id asc (stable, deterministic paging)
+    t1 = create_item_from_create({"name": "TieA", "inspection_date": "2024-02-01"})
+    t2 = create_item_from_create({"name": "TieB", "inspection_date": "2024-02-01"})
+    out_tie = sort_items([t2, t1], Sort(field="inspection_date", order="asc"))
+    expected = [t1, t2] if str(t1.id) < str(t2.id) else [t2, t1]
+    assert [x.id for x in out_tie] == [x.id for x in expected]
+
+
+@pytest.mark.asyncio
 async def test_sort_invalid_inputs_raise() -> None:
     items = [create_item_from_create({"name": "A"})]
     with pytest.raises(ValidationError):
