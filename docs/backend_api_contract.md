@@ -65,8 +65,8 @@ Handlers map domain exceptions to these codes and log with context; `conflict` a
 
 - Event payloads (inside `event`):
   - Common: `{domain: "haventory", topic: "items"|"locations"|"stats", action: string, ts: string, ...payload}`
-  - Items topic payloads include `{item: <Item>}` and actions: `created`, `updated`, `moved`, `deleted`, `checked_out`, `checked_in`, `quantity_changed`.
-  - Locations topic payloads include `{location: <Location>}` and actions: `created`, `renamed`, `moved`, `deleted`.
+  - Items topic payloads include `{item: <Item>}` and actions: `created`, `updated`, `moved`, `deleted`, `checked_out`, `checked_in`, `quantity_changed`. The `reloaded` action (emitted after `import/execute`) carries **no** `item` and signals a wholesale dataset replacement.
+  - Locations topic payloads include `{location: <Location>}` and actions: `created`, `renamed`, `moved`, `deleted`. The `reloaded` action (emitted after `import/execute`) carries **no** `location`.
   - Stats topic payload `action: "counts"` with `{counts: <stats shape>}`.
   - When `location_id` filter is provided on subscription:
     - Items: if `include_subtree` (default true) match any item whose `location_path.id_path` contains the filter id; otherwise only direct `location_id` matches.
@@ -168,6 +168,47 @@ Handlers map domain exceptions to these codes and log with context; `conflict` a
 - `haventory/location/move_subtree`
   - Payload: `{location_id: string, new_parent_id: string|null}`
   - Result: `<Location>`; emits `locations/moved` and `stats/counts`.
+
+### Import / export (data safety)
+
+Backup-and-restore over WebSocket. Processing is in-memory (add chunking only if
+payload size demands it). The export document embeds `schema_version` plus all items
+and locations; a round-trip (export → import into an empty instance) reproduces the
+data. See `data_shapes.md` for the full document, preview, and summary shapes.
+
+- `haventory/export`
+  - Payload: `{filter?: <ItemFilter>}` (a non-object `filter` → `validation_error`).
+  - Result: `<ExportDocument>`. With no filter this is a full backup; with a filter,
+    only matching items are exported together with the locations on each item's
+    ancestry (so the document stays referentially self-consistent).
+  - Read-only: emits no events and does not mutate state.
+
+- `haventory/import/preview`
+  - Payload: `{document: <ExportDocument>, policy?: "merge"|"replace"|"skip"}` (default
+    `merge`).
+  - Result: `<ImportPreview>` — validates and classifies **without mutating state**.
+    Each incoming entity lands in exactly one bucket: `add` (id absent), `unchanged`
+    (id present, identical), `update` (id present, differs, resolved by the policy), or
+    `conflict` (id present, differs, left untouched by `skip`). Invalid documents return
+    `{valid: false, errors: [{path, message}]}` rather than throwing.
+
+- `haventory/import/execute`
+  - Payload: `{document: <ExportDocument>, policy?: "merge"|"replace"|"skip"}` (default
+    `merge`).
+  - Applies the document with the chosen conflict policy, persists immediately, then
+    emits `items/reloaded`, `locations/reloaded`, and `stats/counts`. Result:
+    `<ImportSummary>`.
+  - An invalid document is rejected with a `validation_error` whose `data.errors` lists
+    the structured problems; **state is not mutated**. If persistence fails after the
+    in-memory swap, the repository is rolled back to its pre-import snapshot and the
+    error surfaces as `storage_error` — a bad import never leaves partial state.
+  - Conflict policies (for ids already present): `skip` keeps the existing entity;
+    `replace` overwrites it with the incoming one; `merge` overlays incoming onto
+    existing (scalar fields from incoming; item `tags` unioned; item `custom_fields`
+    merged, incoming wins per key). For locations, `merge` behaves as `replace`.
+
+Note: a successful import emits `items/reloaded` and `locations/reloaded` (no `item` /
+`location` payload) to tell every subscriber the dataset was replaced wholesale.
 
 ### Versioning and concurrency
 

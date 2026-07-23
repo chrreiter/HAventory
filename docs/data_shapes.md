@@ -142,6 +142,67 @@ Result of `distinct_values`, used by category/tag autocomplete, the browser view
 - Both value lists are sorted case-insensitively by `value`. Items with no category (or no tags) contribute nothing to the respective list.
 - `custom_field_keys` is the sorted, distinct set of keys used across all items' `custom_fields` (keys are case-sensitive; sorted case-insensitively). Empty when no item has custom fields.
 
+### Import / export (data safety)
+
+`ExportDocument` — the versioned backup produced by `haventory/export` and accepted by
+`haventory/import/preview` / `haventory/import/execute`:
+```json
+{
+  "haventory_export_version": 1,
+  "schema_version": 4,
+  "exported_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "integration_version": "0.0.1",
+  "items": [ <Item>, ... ],
+  "locations": [ <Location>, ... ]
+}
+```
+
+- `haventory_export_version` versions the document envelope; `schema_version` is the
+  storage schema of the embedded item/location shapes.
+- `items` / `locations` are arrays of the canonical `Item` / `Location` shapes above,
+  including the denormalized `location_path` / `path` (with `sort_key`) so a round-trip
+  reproduces the data exactly. The document is machine-generated and best treated as
+  opaque; hand-editing works but paths are recomputed on import.
+
+`ImportPreview` — result of `haventory/import/preview` (no mutation):
+```json
+{
+  "valid": true,
+  "errors": [ { "path": "items[2].id", "message": "must be a UUID v4 string" } ],
+  "policy": "merge",
+  "document": {
+    "haventory_export_version": 1, "schema_version": 4,
+    "exported_at": "…", "integration_version": "0.0.1"
+  },
+  "items":     { "add": ["uuid"], "update": [], "conflict": [], "unchanged": [] },
+  "locations": { "add": [], "update": [], "conflict": [], "unchanged": [] },
+  "counts": {
+    "items":     { "total": 1, "add": 1, "update": 0, "conflict": 0, "unchanged": 0 },
+    "locations": { "total": 0, "add": 0, "update": 0, "conflict": 0, "unchanged": 0 }
+  }
+}
+```
+
+- Buckets are mutually exclusive per entity: `add` (id absent), `unchanged` (present &
+  identical), `update` (present, differs, resolved by `merge`/`replace`), `conflict`
+  (present, differs, left as-is by `skip`). Under `merge`/`replace` `conflict` is empty;
+  under `skip` `update` is empty.
+- When `valid` is `false`, `errors` (each `{path, message}`) explains why and `counts` is
+  empty. Envelope problems (bad/missing versions, malformed `items`/`locations`, a
+  `schema_version` newer than supported), invalid entities, duplicate ids, and broken
+  references (e.g. an item's `location_id` with no matching location) all surface here.
+
+`ImportSummary` — result of a successful `haventory/import/execute`:
+```json
+{
+  "applied": true,
+  "policy": "merge",
+  "items":     { "total": 2, "add": 2, "update": 0, "conflict": 0, "unchanged": 0 },
+  "locations": { "total": 1, "add": 1, "update": 0, "conflict": 0, "unchanged": 0 },
+  "totals": { "items_total": 2, "low_stock_count": 0, "checked_out_count": 0, "locations_total": 1 }
+}
+```
+
 ### Events
 
 Common envelope inside HA WS event wrapper:
@@ -149,8 +210,8 @@ Common envelope inside HA WS event wrapper:
 { "domain": "haventory", "topic": "items|locations|stats", "action": "...", "ts": "ISO8601Z", ... }
 ```
 
-- Items: `created`, `updated`, `moved`, `deleted`, `checked_out`, `checked_in`, `quantity_changed` with `{item: <Item>}`.
-- Locations: `created`, `renamed`, `moved`, `deleted` with `{location: <Location>}`.
+- Items: `created`, `updated`, `moved`, `deleted`, `checked_out`, `checked_in`, `quantity_changed` with `{item: <Item>}`; plus `reloaded` (no `item`) after an import replaces the dataset.
+- Locations: `created`, `renamed`, `moved`, `deleted` with `{location: <Location>}`; plus `reloaded` (no `location`) after an import.
 - Stats: `counts` with `{counts: <Counts>}`.
 
 ### Validation notes

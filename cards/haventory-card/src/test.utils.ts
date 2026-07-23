@@ -1,4 +1,13 @@
-import type { AnyEventPayload, HassLike, Item, Location, StatsCounts } from './store/types';
+import type {
+  AnyEventPayload,
+  ExportDocument,
+  HassLike,
+  ImportPreview,
+  ImportSummary,
+  Item,
+  Location,
+  StatsCounts,
+} from './store/types';
 
 type SubCb = (msg: { id: number; type: 'event'; event: AnyEventPayload }) => void;
 
@@ -58,6 +67,54 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
         }
         case 'haventory/areas/list': {
           return { areas: [] } as unknown as T;
+        }
+        case 'haventory/export': {
+          const doc: ExportDocument = {
+            haventory_export_version: 1,
+            schema_version: 4,
+            exported_at: new Date().toISOString(),
+            integration_version: '0.0.1',
+            items: items.map((i) => ({ ...i })),
+            locations: locations.map((l) => ({ ...l })),
+          };
+          return doc as unknown as T;
+        }
+        case 'haventory/import/preview': {
+          const doc = ((msg as any).document ?? {}) as { items?: Item[]; locations?: Location[] };
+          const policy = String((msg as any).policy || 'merge');
+          const itemIds = (doc.items ?? []).map((i) => i.id);
+          const locIds = (doc.locations ?? []).map((l) => l.id);
+          const bucket = (ids: string[]) => ({ add: ids, update: [], conflict: [], unchanged: [] });
+          const counts = (ids: string[]) => ({ total: ids.length, add: ids.length, update: 0, conflict: 0, unchanged: 0 });
+          const report: ImportPreview = {
+            valid: true,
+            errors: [],
+            policy: policy as ImportPreview['policy'],
+            document: { haventory_export_version: 1, schema_version: 4, exported_at: null, integration_version: null },
+            items: bucket(itemIds),
+            locations: bucket(locIds),
+            counts: { items: counts(itemIds), locations: counts(locIds) },
+          };
+          return report as unknown as T;
+        }
+        case 'haventory/import/execute': {
+          const doc = ((msg as any).document ?? {}) as { items?: Item[]; locations?: Location[] };
+          const policy = String((msg as any).policy || 'merge');
+          items = (doc.items ?? []).map((i) => ({ ...i }));
+          locations = (doc.locations ?? []).map((l) => ({ ...l }));
+          const summary: ImportSummary = {
+            applied: true,
+            policy: policy as ImportSummary['policy'],
+            items: { total: items.length, add: items.length, update: 0, conflict: 0, unchanged: 0 },
+            locations: { total: locations.length, add: locations.length, update: 0, conflict: 0, unchanged: 0 },
+            totals: {
+              items_total: items.length,
+              low_stock_count: 0,
+              checked_out_count: 0,
+              locations_total: locations.length,
+            },
+          };
+          return summary as unknown as T;
         }
         case 'haventory/distinct_values': {
           // Mirror the backend: distinct categories (case-insensitive) and tags,

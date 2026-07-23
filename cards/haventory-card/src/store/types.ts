@@ -132,6 +132,69 @@ export interface HealthResult {
   generation: number;
 }
 
+// ---------- Import / export (data safety) ----------
+
+/** Conflict resolution policy for import/execute and import/preview. */
+export type ImportPolicy = 'merge' | 'replace' | 'skip';
+
+/** A versioned backup document produced by haventory/export. */
+export interface ExportDocument {
+  haventory_export_version: number;
+  schema_version: number;
+  exported_at: string;
+  integration_version: string;
+  items: unknown[];
+  locations: unknown[];
+}
+
+/** A single structured validation problem in an import document. */
+export interface ImportError {
+  path: string;
+  message: string;
+}
+
+/** Per-type classification counts in an import preview. */
+export interface ImportBucketCounts {
+  total: number;
+  add: number;
+  update: number;
+  conflict: number;
+  unchanged: number;
+}
+
+/** Per-type lists of entity ids by classification. */
+export interface ImportBuckets {
+  add: string[];
+  update: string[];
+  conflict: string[];
+  unchanged: string[];
+}
+
+/** Result of haventory/import/preview: validation + classification, no mutation. */
+export interface ImportPreview {
+  valid: boolean;
+  errors: ImportError[];
+  policy: ImportPolicy;
+  document: {
+    haventory_export_version: number | null;
+    schema_version: number | null;
+    exported_at: string | null;
+    integration_version: string | null;
+  };
+  items: ImportBuckets;
+  locations: ImportBuckets;
+  counts: { items?: ImportBucketCounts; locations?: ImportBucketCounts };
+}
+
+/** Result of haventory/import/execute after a successful apply. */
+export interface ImportSummary {
+  applied: boolean;
+  policy: ImportPolicy;
+  items: ImportBucketCounts;
+  locations: ImportBucketCounts;
+  totals: StatsCounts;
+}
+
 // WS subscription event payloads
 export interface BaseEventPayload {
   domain: 'haventory';
@@ -142,7 +205,9 @@ export interface BaseEventPayload {
 
 export interface ItemsEventPayload extends BaseEventPayload {
   topic: 'items';
-  item: Item;
+  // `item` is present for per-item actions; absent for the wholesale `reloaded`
+  // signal emitted after an import replaces the dataset.
+  item?: Item;
   action:
   | 'created'
   | 'updated'
@@ -150,13 +215,14 @@ export interface ItemsEventPayload extends BaseEventPayload {
   | 'deleted'
   | 'checked_out'
   | 'checked_in'
-  | 'quantity_changed';
+  | 'quantity_changed'
+  | 'reloaded';
 }
 
 export interface LocationsEventPayload extends BaseEventPayload {
   topic: 'locations';
-  location: Location;
-  action: 'created' | 'renamed' | 'moved' | 'deleted';
+  location?: Location;
+  action: 'created' | 'renamed' | 'moved' | 'deleted' | 'reloaded';
 }
 
 export interface StatsEventPayload extends BaseEventPayload {

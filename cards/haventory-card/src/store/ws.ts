@@ -1,8 +1,12 @@
 import type {
   AreasListResult,
   DistinctValues,
+  ExportDocument,
   HassLike,
   HealthResult,
+  ImportPolicy,
+  ImportPreview,
+  ImportSummary,
   Item,
   ItemCreate,
   ItemFilter,
@@ -153,6 +157,24 @@ export class WSClient {
 
   listAreas() {
     return this.hass.callWS<AreasListResult>({ type: 'haventory/areas/list' });
+  }
+
+  // ---------- Import / export (data safety) ----------
+  /** Build a versioned backup document (optionally filtered to matching items). */
+  exportDocument(filter?: ItemFilter) {
+    const msg: Record<string, unknown> = { type: 'haventory/export' };
+    if (filter) msg.filter = filter;
+    return this.hass.callWS<ExportDocument>(msg);
+  }
+
+  /** Validate + classify a document without mutating state. */
+  importPreview(document: unknown, policy: ImportPolicy) {
+    return this.hass.callWS<ImportPreview>({ type: 'haventory/import/preview', document, policy });
+  }
+
+  /** Apply a document with the chosen conflict policy (rolls back on failure). */
+  importExecute(document: unknown, policy: ImportPolicy) {
+    return this.hass.callWS<ImportSummary>({ type: 'haventory/import/execute', document, policy });
   }
 
   // ---------- Subscriptions ----------
