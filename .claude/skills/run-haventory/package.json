@@ -1,0 +1,9 @@
+{
+  "name": "run-haventory-harness",
+  "private": true,
+  "description": "Browser harness for the run-haventory skill (screenshots of the Lovelace card in a real HA instance)",
+  "type": "module",
+  "devDependencies": {
+    "playwright": "^1.58.2"
+  }
+}
