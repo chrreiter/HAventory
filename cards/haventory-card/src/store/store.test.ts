@@ -373,4 +373,44 @@ describe('Store', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(listCalls).toBe(2);
   });
+
+  it('caches distinct categories and tags with counts on init', async () => {
+    const items = [
+      makeItem({ id: '1', category: 'Tools', tags: ['red'] }),
+      makeItem({ id: '2', category: 'Tools', tags: ['red', 'blue'] }),
+      makeItem({ id: '3', category: 'Books', tags: ['blue'] }),
+    ];
+    const hass = makeMockHass({ items });
+    const store = new Store(hass);
+    await store.init();
+
+    const distinct = store.state.value.distinctValuesCache;
+    expect(distinct).toBeTruthy();
+    expect(distinct!.categories).toEqual([
+      { value: 'Books', count: 1 },
+      { value: 'Tools', count: 2 },
+    ]);
+    expect(distinct!.tags).toEqual([
+      { value: 'blue', count: 2 },
+      { value: 'red', count: 2 },
+    ]);
+  });
+
+  it('refreshes distinct values after an item is created', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass);
+    await store.init();
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([]);
+
+    await store.createItem({ name: 'Drill', category: 'Tools' });
+    // The items subscription event triggers a distinct-values refresh.
+    hass.__emit('items', 'created', {
+      item: makeItem({ id: '99', name: 'Drill', category: 'Tools' }),
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([
+      { value: 'Tools', count: 1 },
+    ]);
+  });
 });

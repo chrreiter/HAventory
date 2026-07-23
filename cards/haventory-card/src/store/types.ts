@@ -110,6 +110,18 @@ export interface AreasListResult {
   areas: { id: string; name: string }[];
 }
 
+/** A distinct field value with its usage count (see haventory/distinct_values). */
+export interface DistinctValue {
+  value: string;
+  count: number;
+}
+
+/** Result of haventory/distinct_values: distinct categories and tags with counts. */
+export interface DistinctValues {
+  categories: DistinctValue[];
+  tags: DistinctValue[];
+}
+
 /** Result of haventory/health: storage/index integrity as seen by the backend. */
 export interface HealthResult {
   healthy: boolean;
@@ -192,6 +204,8 @@ export interface StoreState {
   locationsFlatCache: Location[] | null;
   statsCounts: StatsCounts | null;
   healthCache: HealthResult | null;
+  // Distinct categories/tags with counts, sourcing category/tag autocomplete.
+  distinctValuesCache: DistinctValues | null;
   connected: { items: boolean; stats: boolean };
 }
 

@@ -224,6 +224,8 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
 - Lit 3 + TypeScript components (`haventory-card`, `hv-search-bar`, `hv-inventory-list`,
   `hv-item-row`, `hv-item-dialog`, `hv-location-selector`); real-time sync; optimistic
   updates with conflict resolution; Vite build → `www/haventory/haventory-card.js`.
+- Item dialog offers debounced, keyboard-navigable category/tag autocomplete sourced from
+  `haventory/distinct_values`.
 
 ### 🚧 Phase 3: Polish & HACS (Planned)
 - HACS publication; release automation (release-please); additional optimizations.

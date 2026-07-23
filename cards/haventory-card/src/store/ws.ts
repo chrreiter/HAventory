@@ -1,5 +1,6 @@
 import type {
   AreasListResult,
+  DistinctValues,
   HassLike,
   HealthResult,
   Item,
@@ -38,6 +39,10 @@ export class WSClient {
 
   health() {
     return this.hass.callWS<HealthResult>({ type: 'haventory/health' });
+  }
+
+  distinctValues() {
+    return this.hass.callWS<DistinctValues>({ type: 'haventory/distinct_values' });
   }
 
   // ---------- Items ----------

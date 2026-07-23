@@ -160,6 +160,36 @@ export class HVItemDialog extends LitElement {
       color: var(--primary-text-color, #212121);
       border: 1px solid var(--divider-color, #ddd);
     }
+    /* Autocomplete */
+    .ac-wrap { position: relative; }
+    .ac-list {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      z-index: 1;
+      margin: 2px 0 0;
+      padding: 4px 0;
+      list-style: none;
+      max-height: 200px;
+      overflow-y: auto;
+      background: var(--card-background-color, var(--ha-card-background, #fff));
+      border: 1px solid var(--divider-color, #ddd);
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    }
+    .ac-option {
+      padding: 6px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ac-option:hover,
+    .ac-option.active {
+      background: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #fff);
+    }
   `;
 
   @property({ type: Boolean, reflect: true }) open: boolean = false;
@@ -167,6 +197,12 @@ export class HVItemDialog extends LitElement {
   @property({ attribute: false }) locations: Location[] | null = null;
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
   @property({ type: String }) error: string | null = null;
+  /** Existing category values for autocomplete (sourced from distinct_values). */
+  @property({ attribute: false }) categorySuggestions: string[] = [];
+  /** Existing tag values for autocomplete (sourced from distinct_values). */
+  @property({ attribute: false }) tagSuggestions: string[] = [];
+  /** Debounce delay (ms) before recomputing autocomplete suggestions. */
+  @property({ type: Number }) debounceMs: number = 120;
 
   @state() private _name: string = '';
   @state() private _description: string = '';
@@ -180,6 +216,12 @@ export class HVItemDialog extends LitElement {
   @state() private _inspectionDate: string = '';
   @state() private _validation: string | null = null;
   @state() private _zBase: number | null = null;
+  /** Which field's suggestion dropdown is currently open, if any. */
+  @state() private _acField: 'category' | 'tags' | null = null;
+  @state() private _acSuggestions: string[] = [];
+  @state() private _acIndex: number = -1;
+  private _acTimer: number | undefined;
+  private static readonly _AC_MAX = 8;
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('item')) {
@@ -195,9 +237,13 @@ export class HVItemDialog extends LitElement {
       this._dueDate = it?.due_date ?? '';
       this._inspectionDate = it?.inspection_date ?? '';
       this._validation = null;
+      this._closeSuggestions();
     }
-    if (changed.has('open') && this.open) {
-      this._zBase = nextZBase();
+    if (changed.has('open')) {
+      this._closeSuggestions();
+      if (this.open) {
+        this._zBase = nextZBase();
+      }
     }
   }
 
@@ -289,6 +335,127 @@ export class HVItemDialog extends LitElement {
     this._lowStock = Math.max(0, Math.round(base + delta));
   }
 
+  // ---------- Autocomplete (category + tags) ----------
+
+  private _closeSuggestions() {
+    if (this._acTimer !== undefined) {
+      window.clearTimeout(this._acTimer);
+      this._acTimer = undefined;
+    }
+    this._acField = null;
+    this._acSuggestions = [];
+    this._acIndex = -1;
+  }
+
+  /** The in-progress (last, comma-separated) tag token the user is typing. */
+  private _lastTagToken(): string {
+    const parts = this._tags.split(',');
+    return (parts[parts.length - 1] ?? '').trim();
+  }
+
+  /** Tags already committed (everything before the last comma), normalized. */
+  private _committedTags(): string[] {
+    return this._tags
+      .split(',')
+      .slice(0, -1)
+      .map((t) => t.trim())
+      .filter(Boolean);
+  }
+
+  private _onFieldInput(field: 'category' | 'tags', e: Event) {
+    const value = (e.target as HTMLInputElement).value;
+    if (field === 'category') this._category = value;
+    else this._tags = value;
+    this._scheduleSuggestions(field);
+  }
+
+  private _scheduleSuggestions(field: 'category' | 'tags') {
+    if (this._acTimer !== undefined) window.clearTimeout(this._acTimer);
+    this._acTimer = window.setTimeout(() => {
+      this._acTimer = undefined;
+      this._computeSuggestions(field);
+    }, Math.max(0, this.debounceMs));
+  }
+
+  private _computeSuggestions(field: 'category' | 'tags') {
+    const source = field === 'category' ? this.categorySuggestions : this.tagSuggestions;
+    const query = (field === 'category' ? this._category.trim() : this._lastTagToken()).toLowerCase();
+    const exclude = new Set(
+      field === 'category'
+        ? [this._category.trim().toLowerCase()]
+        : this._committedTags().map((t) => t.toLowerCase()),
+    );
+    const matches: string[] = [];
+    for (const candidate of source) {
+      const lc = candidate.toLowerCase();
+      if (exclude.has(lc)) continue;
+      if (query !== '' && !lc.includes(query)) continue;
+      if (!matches.includes(candidate)) matches.push(candidate);
+      if (matches.length >= HVItemDialog._AC_MAX) break;
+    }
+    this._acField = field;
+    this._acSuggestions = matches;
+    this._acIndex = matches.length > 0 ? 0 : -1;
+  }
+
+  private _selectSuggestion(field: 'category' | 'tags', value: string) {
+    if (field === 'category') {
+      this._category = value;
+    } else {
+      const next = [...this._committedTags(), value];
+      // Trailing separator lets the user keep adding tags.
+      this._tags = next.join(', ') + ', ';
+    }
+    this._closeSuggestions();
+  }
+
+  private _onFieldKeydown(field: 'category' | 'tags', e: KeyboardEvent) {
+    if (this._acField !== field || this._acSuggestions.length === 0) return;
+    const len = this._acSuggestions.length;
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        this._acIndex = (this._acIndex + 1) % len;
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        this._acIndex = (this._acIndex - 1 + len) % len;
+        break;
+      case 'Enter': {
+        e.preventDefault();
+        const idx = this._acIndex >= 0 ? this._acIndex : 0;
+        this._selectSuggestion(field, this._acSuggestions[idx]);
+        break;
+      }
+      case 'Escape':
+        // Close the dropdown only; don't let the dialog's Escape handler fire.
+        e.preventDefault();
+        e.stopPropagation();
+        this._closeSuggestions();
+        break;
+      case 'Tab':
+        this._closeSuggestions();
+        break;
+    }
+  }
+
+  private _renderSuggestions(field: 'category' | 'tags') {
+    if (this._acField !== field || this._acSuggestions.length === 0) return null;
+    return html`
+      <ul class="ac-list" role="listbox" id="${field}-suggestions" data-testid="${field}-suggestions">
+        ${this._acSuggestions.map((s, i) => html`
+          <li
+            role="option"
+            id="ac-${field}-${i}"
+            class="ac-option ${i === this._acIndex ? 'active' : ''}"
+            aria-selected=${i === this._acIndex}
+            @mousedown=${(e: Event) => { e.preventDefault(); this._selectSuggestion(field, s); }}
+          >${s}</li>
+        `)}
+      </ul>
+    `;
+  }
+
   render() {
     if (!this.open) return null;
     return html`
@@ -334,8 +501,38 @@ export class HVItemDialog extends LitElement {
               </div>
             </label>
           </div>
-          <div class="row"><label class="full-width">Category <input type="text" .value=${this._category} @input=${(e: Event) => this._category = (e.target as HTMLInputElement).value} /></label></div>
-          <div class="row"><label class="full-width">Tags <input type="text" .value=${this._tags} @input=${(e: Event) => this._tags = (e.target as HTMLInputElement).value} /></label></div>
+          <div class="row"><label class="full-width ac-wrap">Category
+            <input
+              type="text"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded=${this._acField === 'category'}
+              aria-controls="category-suggestions"
+              aria-activedescendant=${this._acField === 'category' && this._acIndex >= 0 ? `ac-category-${this._acIndex}` : ''}
+              .value=${this._category}
+              @input=${(e: Event) => this._onFieldInput('category', e)}
+              @focus=${() => this._computeSuggestions('category')}
+              @keydown=${(e: KeyboardEvent) => this._onFieldKeydown('category', e)}
+              @blur=${() => this._closeSuggestions()}
+            />
+            ${this._renderSuggestions('category')}
+          </label></div>
+          <div class="row"><label class="full-width ac-wrap">Tags
+            <input
+              type="text"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded=${this._acField === 'tags'}
+              aria-controls="tags-suggestions"
+              aria-activedescendant=${this._acField === 'tags' && this._acIndex >= 0 ? `ac-tags-${this._acIndex}` : ''}
+              .value=${this._tags}
+              @input=${(e: Event) => this._onFieldInput('tags', e)}
+              @focus=${() => this._computeSuggestions('tags')}
+              @keydown=${(e: KeyboardEvent) => this._onFieldKeydown('tags', e)}
+              @blur=${() => this._closeSuggestions()}
+            />
+            ${this._renderSuggestions('tags')}
+          </label></div>
           <div class="row location-row">
             <span>Location</span>
             <div class="location-controls">

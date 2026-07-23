@@ -1,6 +1,7 @@
 import type {
   AreasListResult,
   AnyEventPayload,
+  DistinctValues,
   HassLike,
   HealthResult,
   Item,
@@ -76,6 +77,7 @@ export class Store {
       locationsFlatCache: null,
       statsCounts: null,
       healthCache: null,
+      distinctValuesCache: null,
       connected: { items: false, stats: false },
     };
     this.stateObs = createObservable<StoreState>(initial);
@@ -93,6 +95,7 @@ export class Store {
       this.refreshAreas(),
       this.refreshLocationTree(),
       this.refreshLocationsFlat(),
+      this.refreshDistinctValues(),
     ]);
     await this.listItems(true);
     this.subscribeTopics();
@@ -136,6 +139,11 @@ export class Store {
       }
     }
     this.stateObs.set({ items });
+    // Category/tag distributions can change on create/update/delete — keep the
+    // autocomplete source fresh. Other actions (quantity, check-out) can't.
+    if (evt.action === 'created' || evt.action === 'updated' || evt.action === 'deleted') {
+      void this.refreshDistinctValues().catch(() => undefined);
+    }
   }
 
   private onStatsEvent(evt: AnyEventPayload) {
@@ -167,6 +175,12 @@ export class Store {
   async refreshAreas() {
     const areas = await this.ws.listAreas();
     this.stateObs.set({ areasCache: areas as AreasListResult });
+  }
+
+  /** Refresh distinct categories/tags with counts (source for autocomplete). */
+  async refreshDistinctValues() {
+    const distinct = await this.ws.distinctValues();
+    this.stateObs.set({ distinctValuesCache: distinct as DistinctValues });
   }
 
   async refreshLocationTree() {

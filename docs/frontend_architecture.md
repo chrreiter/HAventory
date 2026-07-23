@@ -153,16 +153,30 @@ haventory-card (main container)
 - `open`: Boolean visibility
 - `item`: Item object (null for create mode)
 - `error`: Error message string
+- `categorySuggestions`: `string[]` of existing category values (autocomplete source)
+- `tagSuggestions`: `string[]` of existing tag values (autocomplete source)
+- `debounceMs`: debounce delay before recomputing suggestions (default 120)
 
 **Fields**:
 - **Name*** (required)
 - **Quantity** (default 1)
 - **Low-stock threshold**
-- **Category**
-- **Tags** (comma-separated, converted to array)
+- **Category** (autocomplete against `categorySuggestions`)
+- **Tags** (comma-separated, converted to array; autocomplete against
+  `tagSuggestions`, matching only the last comma-separated token and excluding
+  tags already entered)
 - **Location** (opens `hv-location-selector`)
 - **Checked-out** (checkbox)
 - **Due date** (enabled only when checked out)
+
+**Autocomplete**: The Category and Tags inputs render a suggestion dropdown
+(`role="listbox"`) sourced from `haventory/distinct_values` via
+`store.distinctValuesCache`. Matching is case-insensitive substring, debounced by
+`debounceMs`, capped at 8 results. Keyboard: `ArrowUp`/`ArrowDown` move the
+highlight, `Enter` accepts the highlighted suggestion, `Esc` closes the dropdown
+only (without closing the dialog). Selecting a category replaces the field;
+selecting a tag replaces the in-progress token and appends a separator so more
+tags can follow.
 
 **Validation**:
 - Name required (non-empty after trim)
@@ -177,7 +191,7 @@ haventory-card (main container)
 - `open-location-selector`: Open location picker
 
 **Keyboard**:
-- `Esc`: Close dialog
+- `Esc`: Close dialog (or, when a suggestion dropdown is open, close the dropdown only)
 
 ---
 
