@@ -9,6 +9,7 @@ import './components/hv-item-row';
 import './components/hv-item-dialog';
 import './components/hv-location-selector';
 import './components/hv-category-browser';
+import './components/hv-tag-browser';
 
 export class HAventoryCard extends LitElement {
   static styles = css`
@@ -84,6 +85,10 @@ export class HAventoryCard extends LitElement {
   private _browseCategory: string | null = null;
   private _browseItems: Item[] = [];
   private _browseLoading = false;
+  private _tagBrowserOpen = false;
+  private _browseTag: string | null = null;
+  private _browseTagItems: Item[] = [];
+  private _browseTagLoading = false;
 
   // Lovelace interface: called by HA when the card is created/configured
   public setConfig(cfg: unknown): void {
@@ -150,6 +155,7 @@ export class HAventoryCard extends LitElement {
             }
           }} aria-label="Add item" title="Add item">Add item</button>
           <button data-testid="browse-categories" @click=${() => this._openCategoryBrowser()} aria-label="Browse categories" title="Browse categories">Categories</button>
+          <button data-testid="browse-tags" @click=${() => this._openTagBrowser()} aria-label="Browse tags" title="Browse tags">Tags</button>
           <button data-testid="expand-toggle" @click=${() => this._toggleExpanded()} aria-expanded=${String(this.expanded)} aria-label=${this.expanded ? 'Collapse' : 'Expand'}>
             ${this.expanded ? '⤢ Collapse' : '⇱ Expand'}
           </button>
@@ -327,6 +333,18 @@ export class HAventoryCard extends LitElement {
         @cancel=${() => { this._categoryBrowserOpen = false; this._browseCategory = null; this._browseItems = []; this.requestUpdate(); }}
       ></hv-category-browser>
 
+      <hv-tag-browser
+        .open=${this._tagBrowserOpen}
+        .tags=${st?.distinctValuesCache?.tags ?? []}
+        .selectedTag=${this._browseTag}
+        .items=${this._browseTagItems}
+        .loading=${this._browseTagLoading}
+        @select-tag=${(e: CustomEvent) => { void this._openTag(e.detail.tag as string); }}
+        @clear-tag=${() => { this._browseTag = null; this._browseTagItems = []; this._browseTagLoading = false; this.requestUpdate(); }}
+        @open-item=${(e: CustomEvent) => this._openBrowseItem(e.detail.itemId as string)}
+        @cancel=${() => { this._tagBrowserOpen = false; this._browseTag = null; this._browseTagItems = []; this.requestUpdate(); }}
+      ></hv-tag-browser>
+
       ${this.expanded ? this._renderOverlayTemplate() : null}
     `;
   }
@@ -354,8 +372,31 @@ export class HAventoryCard extends LitElement {
     }
   }
 
+  private _openTagBrowser() {
+    this._tagBrowserOpen = true;
+    this._browseTag = null;
+    this._browseTagItems = [];
+    this._browseTagLoading = false;
+    this.requestUpdate();
+  }
+
+  private async _openTag(tag: string) {
+    this._browseTag = tag;
+    this._browseTagItems = [];
+    this._browseTagLoading = true;
+    this.requestUpdate();
+    try {
+      this._browseTagItems = (await this.store?.fetchItemsByTag(tag)) ?? [];
+    } catch {
+      this._browseTagItems = [];
+    } finally {
+      this._browseTagLoading = false;
+      this.requestUpdate();
+    }
+  }
+
   private _openBrowseItem(itemId: string) {
-    const item = this._browseItems.find((i) => i.id === itemId);
+    const item = [...this._browseItems, ...this._browseTagItems].find((i) => i.id === itemId);
     if (!item) return;
     const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as
       (HTMLElement & { open: boolean; item: unknown }) | null;

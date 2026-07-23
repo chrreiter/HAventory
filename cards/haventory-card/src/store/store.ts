@@ -244,6 +244,16 @@ export class Store {
     return res.items;
   }
 
+  /**
+   * Fetch items carrying a single tag, sorted by name. Used by the dedicated
+   * tag browser (drill-down). Returns a snapshot (first page, capped) independent
+   * of the main list's filters/pagination.
+   */
+  async fetchItemsByTag(tag: string): Promise<Item[]> {
+    const res = await this.ws.listItems({ tags_any: [tag] }, { field: 'name', order: 'asc' }, BROWSE_PAGE_LIMIT);
+    return res.items;
+  }
+
   async prefetchIfNeeded(scrollRatio: number) {
     if (scrollRatio < 0.7) return;
     if (!this.state.value.cursor) return;

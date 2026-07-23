@@ -23,7 +23,8 @@ haventory-card (main container)
 │   └── hv-item-row (individual item rows) × N
 ├── hv-item-dialog (add/edit modal)
 ├── hv-location-selector (location picker modal)
-└── hv-category-browser (browse-by-category modal)
+├── hv-category-browser (browse-by-category modal)
+└── hv-tag-browser (browse-by-tag modal)
 ```
 
 ---
@@ -256,6 +257,34 @@ card header ("Categories" button).
 
 **Keyboard**:
 - `Esc`: step back to the category list when drilled in; otherwise close
+
+---
+
+### `hv-tag-browser`
+
+**Purpose**: Dedicated modal for browsing items by tag, opened from the card
+header ("Tags" button). Mirrors `hv-category-browser`.
+
+**Properties**:
+- `open`: Boolean visibility
+- `tags`: `DistinctValue[]` (value + count) from `store.distinctValuesCache`
+- `selectedTag`: `string | null` — the drilled-in tag (null = list level)
+- `items`: `Item[]` — items carrying `selectedTag` (fetched by the container)
+- `loading`: Boolean — drill-down fetch in progress
+
+**Two levels**: a filterable list of all used tags with item counts, and a
+drill-down of the items carrying the selected tag (fetched via
+`store.fetchItemsByTag()`, a snapshot capped at 500).
+
+**Events**: `select-tag` `{tag}`, `clear-tag`, `open-item` `{itemId}`, `cancel`.
+
+**Keyboard**:
+- `Esc`: step back to the tag list when drilled in; otherwise close
+
+> The category and tag browsers are deliberately parallel components, matching
+> this codebase's per-component modal convention (see also `hv-item-dialog` /
+> `hv-location-selector`). A future refactor could unify them into one
+> value-browser parameterized by kind.
 
 ---
 
