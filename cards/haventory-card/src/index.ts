@@ -1,5 +1,5 @@
 import { LitElement, css, html } from 'lit';
-import type { HassLike } from './store/types';
+import type { HassLike, Item } from './store/types';
 import type { HVLocationSelector } from './components/hv-location-selector';
 import { getDefaultOrderFor } from './store/sort';
 import { Store } from './store/store';
@@ -8,6 +8,7 @@ import './components/hv-inventory-list';
 import './components/hv-item-row';
 import './components/hv-item-dialog';
 import './components/hv-location-selector';
+import './components/hv-category-browser';
 
 export class HAventoryCard extends LitElement {
   static styles = css`
@@ -79,6 +80,10 @@ export class HAventoryCard extends LitElement {
   private _prevFocusEl: HTMLElement | null = null;
   private _locationSelectorOpen = false;
   private _locationSelectorCreateMode = false;
+  private _categoryBrowserOpen = false;
+  private _browseCategory: string | null = null;
+  private _browseItems: Item[] = [];
+  private _browseLoading = false;
 
   // Lovelace interface: called by HA when the card is created/configured
   public setConfig(cfg: unknown): void {
@@ -144,6 +149,7 @@ export class HAventoryCard extends LitElement {
               dialog.open = true;
             }
           }} aria-label="Add item" title="Add item">Add item</button>
+          <button data-testid="browse-categories" @click=${() => this._openCategoryBrowser()} aria-label="Browse categories" title="Browse categories">Categories</button>
           <button data-testid="expand-toggle" @click=${() => this._toggleExpanded()} aria-expanded=${String(this.expanded)} aria-label=${this.expanded ? 'Collapse' : 'Expand'}>
             ${this.expanded ? '⤢ Collapse' : '⇱ Expand'}
           </button>
@@ -309,8 +315,54 @@ export class HAventoryCard extends LitElement {
         }}
       ></hv-location-selector>
 
+      <hv-category-browser
+        .open=${this._categoryBrowserOpen}
+        .categories=${st?.distinctValuesCache?.categories ?? []}
+        .selectedCategory=${this._browseCategory}
+        .items=${this._browseItems}
+        .loading=${this._browseLoading}
+        @select-category=${(e: CustomEvent) => { void this._openCategory(e.detail.category as string); }}
+        @clear-category=${() => { this._browseCategory = null; this._browseItems = []; this._browseLoading = false; this.requestUpdate(); }}
+        @open-item=${(e: CustomEvent) => this._openBrowseItem(e.detail.itemId as string)}
+        @cancel=${() => { this._categoryBrowserOpen = false; this._browseCategory = null; this._browseItems = []; this.requestUpdate(); }}
+      ></hv-category-browser>
+
       ${this.expanded ? this._renderOverlayTemplate() : null}
     `;
+  }
+
+  private _openCategoryBrowser() {
+    this._categoryBrowserOpen = true;
+    this._browseCategory = null;
+    this._browseItems = [];
+    this._browseLoading = false;
+    this.requestUpdate();
+  }
+
+  private async _openCategory(category: string) {
+    this._browseCategory = category;
+    this._browseItems = [];
+    this._browseLoading = true;
+    this.requestUpdate();
+    try {
+      this._browseItems = (await this.store?.fetchItemsByCategory(category)) ?? [];
+    } catch {
+      this._browseItems = [];
+    } finally {
+      this._browseLoading = false;
+      this.requestUpdate();
+    }
+  }
+
+  private _openBrowseItem(itemId: string) {
+    const item = this._browseItems.find((i) => i.id === itemId);
+    if (!item) return;
+    const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as
+      (HTMLElement & { open: boolean; item: unknown }) | null;
+    if (dialog) {
+      dialog.item = item;
+      dialog.open = true;
+    }
   }
 
   private async _toggleExpanded() {

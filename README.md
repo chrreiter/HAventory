@@ -226,6 +226,8 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
   updates with conflict resolution; Vite build → `www/haventory/haventory-card.js`.
 - Item dialog offers debounced, keyboard-navigable category/tag autocomplete sourced from
   `haventory/distinct_values`.
+- Dedicated **category browser** (header → "Categories"): lists used categories with item
+  counts and drills down to the items filed under each.
 
 ### 🚧 Phase 3: Polish & HACS (Planned)
 - HACS publication; release automation (release-please); additional optimizations.

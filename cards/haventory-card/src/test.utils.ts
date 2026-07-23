@@ -145,13 +145,25 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
         case 'haventory/item/list': {
           const limit = (typeof msg.limit === 'number' ? (msg.limit as number) : 50) || 50;
           const cursor = (msg.cursor as string | undefined) || undefined;
-          const page1 = items.slice(0, limit);
+          const filter = (msg.filter as Record<string, unknown> | undefined) ?? {};
+          // Apply the subset of filters the browsers rely on (category, tags_any),
+          // case-insensitively, mirroring the backend indexes.
+          let filtered = items;
+          const cat = typeof filter.category === 'string' ? filter.category.trim().toLowerCase() : '';
+          if (cat) {
+            filtered = filtered.filter((i) => (i.category ?? '').trim().toLowerCase() === cat);
+          }
+          const tagsAny = Array.isArray(filter.tags_any) ? (filter.tags_any as string[]).map((t) => t.toLowerCase()) : [];
+          if (tagsAny.length) {
+            filtered = filtered.filter((i) => (i.tags ?? []).some((t) => tagsAny.includes(t.toLowerCase())));
+          }
+          const page1 = filtered.slice(0, limit);
           if (!cursor) {
-            const next_cursor = items.length > limit ? 'cursor-2' : null;
+            const next_cursor = filtered.length > limit ? 'cursor-2' : null;
             return { items: page1, next_cursor } as unknown as T;
           }
           if (cursor === 'cursor-2') {
-            return { items: items.slice(limit, limit * 2), next_cursor: null } as unknown as T;
+            return { items: filtered.slice(limit, limit * 2), next_cursor: null } as unknown as T;
           }
           return { items: [], next_cursor: null } as unknown as T;
         }

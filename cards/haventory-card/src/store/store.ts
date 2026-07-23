@@ -19,6 +19,9 @@ import type {
 import { WSClient } from './ws';
 import { DEFAULT_SORT } from './sort';
 
+/** Max items fetched for a single-category/tag browse drill-down (snapshot). */
+const BROWSE_PAGE_LIMIT = 500;
+
 /** A very small reactive wrapper using a Proxy; components can subscribe to `onChange`. */
 export interface Observable<T> {
   readonly value: T;
@@ -229,6 +232,16 @@ export class Store {
 
     this.inflight.set(key, p);
     return p as Promise<void>;
+  }
+
+  /**
+   * Fetch items filed under a single category, sorted by name. Used by the
+   * dedicated category browser (drill-down). Returns a snapshot (first page,
+   * capped) independent of the main list's filters/pagination.
+   */
+  async fetchItemsByCategory(category: string): Promise<Item[]> {
+    const res = await this.ws.listItems({ category }, { field: 'name', order: 'asc' }, BROWSE_PAGE_LIMIT);
+    return res.items;
   }
 
   async prefetchIfNeeded(scrollRatio: number) {
