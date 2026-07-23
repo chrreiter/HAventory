@@ -92,6 +92,13 @@ async def _purge_locations(ws: aiohttp.ClientWebSocketResponse, next_id) -> None
     os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
     reason="RUN_ONLINE!=1 or HA_TOKEN missing",
 )
+@pytest.mark.skipif(
+    os.environ.get("HAV_ONLINE_DESTRUCTIVE") != "1",
+    reason=(
+        "destructive online test (purges ALL HAventory data on the target HA); "
+        "set HAV_ONLINE_DESTRUCTIVE=1 only against a disposable instance"
+    ),
+)
 async def test_p3_bulk_operations_mixed_and_all_failure() -> None:  # noqa: PLR0915
     """Phase 3: mixed-success bulk then all-failure bulk; verify stats and per-op outcomes."""
     session, ws = await _open_ws()
