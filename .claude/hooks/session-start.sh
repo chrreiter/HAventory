@@ -52,4 +52,34 @@ else
   log "npm not found; skipping frontend bootstrap"
 fi
 
+# --- Integration test harness (in-process HA via phacc) --------------------
+# The second test mode (tests/integration/) runs against a REAL Home Assistant
+# core, which needs Python 3.14 and a full HA install (phacc, from
+# requirements-integration.txt). It uses a DEDICATED env (.venv-integration) so
+# the offline `.venv` above stays Home-Assistant-free.
+#
+# This is heavy and needs a 3.14 interpreter plus network for the HA core, so it
+# is strictly best-effort: it must NEVER fail session bootstrap (e.g. in
+# restricted-egress sandboxes that can't fetch Python 3.14). The offline suite is
+# unaffected either way. Run the suite with: scripts/test_integration.sh
+INT_VENV=".venv-integration"
+if command -v uv >/dev/null 2>&1; then
+  if [ ! -x "$INT_VENV/bin/python" ]; then
+    log "provisioning integration test env ($INT_VENV) — best-effort"
+    if uv python install 3.14 >/dev/null 2>&1 \
+       && uv venv --python 3.14 "$INT_VENV" >/dev/null 2>&1 \
+       && uv pip install --python "$INT_VENV/bin/python" \
+            -r requirements-integration.txt >/dev/null 2>&1; then
+      log "integration env ready; run scripts/test_integration.sh"
+    else
+      log "integration env unavailable (needs Python 3.14 + network for HA core); skipping"
+      rm -rf "$INT_VENV" 2>/dev/null || true
+    fi
+  else
+    log "integration env present; skipping"
+  fi
+else
+  log "uv not found; skipping integration env bootstrap"
+fi
+
 log "bootstrap complete"

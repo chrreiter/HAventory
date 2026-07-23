@@ -59,6 +59,40 @@ jobs:
             coverage.xml
             junit.xml
 
+  integration:
+    # Second, separate test mode: runs the integration inside a REAL in-process
+    # Home Assistant core (pytest-homeassistant-custom-component) to catch drift
+    # against real HA APIs the offline stubs can't see. Uses a dedicated
+    # environment so the offline `.venv` stays HA-free, and keeps plugin autoload
+    # ON (phacc must load) — note there is NO PYTEST_DISABLE_PLUGIN_AUTOLOAD here.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        with:
+          enable-cache: true
+      - name: Install Python 3.14
+        run: uv python install 3.14
+      - name: Create integration environment (phacc + real HA core)
+        run: |
+          uv venv --python 3.14 .venv-integration
+          uv pip install --python .venv-integration/bin/python -r requirements-integration.txt
+      - name: Integration tests (in-process HA via phacc)
+        # Autoload ON so phacc + its pytest-asyncio/aiohttp/socket stack load;
+        # phacc requires pytest-asyncio's auto mode.
+        run: >
+          .venv-integration/bin/python -m pytest -q
+          -o asyncio_mode=auto
+          tests/integration
+          --junitxml=integration-junit.xml
+      - name: Upload integration artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-artifacts
+          path: integration-junit.xml
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

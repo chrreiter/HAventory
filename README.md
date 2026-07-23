@@ -81,9 +81,49 @@ only: `scripts/test.sh`. Frontend tests: `scripts/test_frontend.sh [--coverage|-
 
 ### Testing
 
-- Default to offline tests; HA is stubbed in `tests/conftest.py`. Async tests use
-  `@pytest.mark.asyncio`.
-- Every feature/fix ships with tests — happy path plus at least one edge/error case.
+There are two backend test modes, kept deliberately separate:
+
+- **Offline (fast, default).** HA is stubbed in `tests/conftest.py`, so the suite runs
+  in milliseconds with no HA install. Invoke with plugin autoload disabled; async tests
+  use `@pytest.mark.asyncio`:
+
+  ```bash
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
+  ```
+
+- **In-process HA integration (opt-in).** Runs the integration inside a *real* Home
+  Assistant core via [`pytest-homeassistant-custom-component`][phacc] (phacc), catching
+  drift against real HA APIs the stubs can't see. See below.
+
+Every feature/fix ships with tests — happy path plus at least one edge/error case.
+
+[phacc]: https://github.com/MatthewFlamm/pytest-homeassistant-custom-component
+
+#### In-process HA integration tests (opt-in)
+
+These load a genuine HA core, so they need **Python 3.14** and a full HA install
+(phacc, from `requirements-integration.txt` — kept out of `pyproject`/`uv.lock` and the
+offline `.venv` so the fast suite stays lean). They live under `tests/integration/` and
+run with plugin autoload **on** (phacc must load) in pytest-asyncio's auto mode.
+
+```bash
+# One-shot: provisions Python 3.14 + a dedicated .venv-integration, then runs them
+scripts/test_integration.sh
+
+# ...or manually:
+uv venv --python 3.14 .venv-integration
+uv pip install --python .venv-integration/bin/python -r requirements-integration.txt
+.venv-integration/bin/python -m pytest -o asyncio_mode=auto tests/integration
+```
+
+Do **not** set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` for this mode. `tests/conftest.py`
+detects the real `homeassistant` package these tests pull in and installs none of the
+offline stubs, so the two modes never collide; the offline run never collects
+`tests/integration/`. Covered: config-entry setup/unload, WebSocket item CRUD end-to-end,
+Store persistence round-trip, and `haventory/areas/list` against the real area registry.
+
+> Restricted-egress environments (e.g. sandboxes that can't fetch Python 3.14 or the HA
+> core) can't run this mode — CI provisions 3.14 and runs it in its own job.
 
 #### Online smoke tests (opt-in)
 
@@ -140,7 +180,8 @@ Included: `tests/test_ws_smoke_online.py`, `tests/test_ws_smoke_advanced_online.
 ### CI/CD & Ops
 
 - GitHub Actions (`ubuntu-latest`): backend (uv, ruff + mypy + pytest w/ coverage, Python
-  3.14), frontend (eslint + vitest + build, Node 22/24 matrix), actionlint,
+  3.14), a dedicated **integration** job (in-process HA via phacc, Python 3.14),
+  frontend (eslint + vitest + build, Node 22/24 matrix), actionlint,
   hassfest + HACS validation, CodeQL, OpenSSF Scorecard, and dependency review.
   Third-party actions are SHA-pinned; first-party `actions/*` use `@v7`.
 - PR hygiene: Conventional-Commit PR-title check, path-based auto-labeling
