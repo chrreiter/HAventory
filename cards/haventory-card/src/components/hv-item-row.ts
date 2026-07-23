@@ -1,6 +1,8 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import type { Item } from '../store/types';
+import type { ColumnKey } from '../store/columns';
+import { DEFAULT_COLUMN_PREFS, gridTemplateFor, normalizeColumns } from '../store/columns';
 
 @customElement('hv-item-row')
 export class HVItemRow extends LitElement {
@@ -13,8 +15,6 @@ export class HVItemRow extends LitElement {
     }
     .row {
       display: grid;
-      /* Use inherited grid columns from hv-inventory-list for alignment */
-      grid-template-columns: var(--hv-grid-columns, minmax(120px, 2fr) 50px minmax(80px, 1fr) minmax(100px, 2fr) 160px);
       gap: 8px;
       align-items: center;
       padding: 6px 8px;
@@ -52,6 +52,8 @@ export class HVItemRow extends LitElement {
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
   @property({ attribute: false }) locations: Array<{ id: string; area_id: string | null }> = [];
   @property({ type: Boolean }) compact: boolean = false;
+  /** Which optional middle columns to render (Name + Actions are always shown). */
+  @property({ attribute: false }) columns: ColumnKey[] = [...DEFAULT_COLUMN_PREFS.expanded];
 
   private resolveAreaName(): string | null {
     // First try item's effective_area_id (inherited from location hierarchy)
@@ -120,49 +122,57 @@ export class HVItemRow extends LitElement {
     return typeof thr === 'number' && this.item.quantity <= thr;
   }
 
+  private renderCell(key: ColumnKey) {
+    const item = this.item;
+    switch (key) {
+      case 'quantity':
+        return html`<div role="cell">${item.quantity}</div>`;
+      case 'category':
+        return html`<div role="cell" class="cell-text" title=${item.category ?? ''}>${item.category ?? ''}</div>`;
+      case 'location': {
+        const path = this.getFullLocationPath();
+        return html`<div role="cell" class="cell-text" title=${path}>${path}</div>`;
+      }
+      case 'tags': {
+        const tags = (item.tags ?? []).join(', ');
+        return html`<div role="cell" class="cell-text" title=${tags}>${tags}</div>`;
+      }
+      case 'due_date':
+        return html`<div role="cell" class="cell-text">${item.due_date ?? ''}</div>`;
+    }
+  }
+
   render() {
     const item = this.item;
+    const cols = normalizeColumns(this.columns);
     const areaName = this.compact ? null : this.resolveAreaName();
+    const template = gridTemplateFor(cols, { compact: this.compact });
 
-    // Compact mode: Name, Qty, and essential buttons only
-    if (this.compact) {
-      return html`
-        <div class="row" role="row" tabindex="0" @keydown=${this.onKeyDown} aria-label=${`Item ${item.name}`}>
-        <div class="name" role="cell">
-          <span>${item.name}</span>
-          ${this.isLow ? html`<span class="badge" aria-label="Low stock">LOW</span>` : null}
-        </div>
-          <div role="cell">${item.quantity}</div>
-          <div class="actions" role="cell">
-            <button @click=${this.onDecrement} aria-label="Decrease quantity">−</button>
-            <button @click=${this.onIncrement} aria-label="Increase quantity">+</button>
-            <button @click=${this.onEdit} aria-label="Edit item">Edit</button>
-          </div>
-        </div>
-      `;
-    }
-
-    // Full mode: All columns and buttons
     return html`
-      <div class="row" role="row" tabindex="0" @keydown=${this.onKeyDown} aria-label=${`Item ${item.name}`}>
+      <div
+        class="row"
+        role="row"
+        tabindex="0"
+        style="grid-template-columns: ${template};"
+        @keydown=${this.onKeyDown}
+        aria-label=${`Item ${item.name}`}
+      >
         <div class="name" role="cell">
           <span>${item.name}</span>
           ${this.isLow ? html`<span class="badge" aria-label="Low stock">LOW</span>` : null}
           ${areaName ? html`<span class="area">[${areaName}]</span>` : null}
         </div>
-        <div role="cell">${item.quantity}</div>
-        <div role="cell" class="cell-text" title=${item.category ?? ''}>${item.category ?? ''}</div>
-        <div role="cell" class="cell-text" title=${this.getFullLocationPath()}>${this.getFullLocationPath()}</div>
+        ${cols.map((k) => this.renderCell(k))}
         <div class="actions" role="cell">
           <button @click=${this.onDecrement} aria-label="Decrease quantity">−</button>
           <button @click=${this.onIncrement} aria-label="Increase quantity">+</button>
-          <button
-            class=${`btn-checkout${item.checked_out ? ' btn-danger' : ''}`}
-            @click=${this.onToggleCheckout}
-            aria-label="Toggle check out/in"
-          >
-            ${item.checked_out ? 'In' : 'Out'}
-          </button>
+          ${this.compact
+            ? null
+            : html`<button
+                class=${`btn-checkout${item.checked_out ? ' btn-danger' : ''}`}
+                @click=${this.onToggleCheckout}
+                aria-label="Toggle check out/in"
+              >${item.checked_out ? 'In' : 'Out'}</button>`}
           <button @click=${this.onEdit} aria-label="Edit item">Edit</button>
         </div>
       </div>

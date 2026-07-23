@@ -3,6 +3,8 @@ import type { HassLike, Item } from './store/types';
 import type { HVLocationSelector } from './components/hv-location-selector';
 import { getDefaultOrderFor } from './store/sort';
 import { Store } from './store/store';
+import type { ColumnKey, ColumnPrefs } from './store/columns';
+import { loadColumnPrefs, saveColumnPrefs } from './store/columns';
 import './components/hv-search-bar';
 import './components/hv-inventory-list';
 import './components/hv-item-row';
@@ -10,6 +12,7 @@ import './components/hv-item-dialog';
 import './components/hv-location-selector';
 import './components/hv-category-browser';
 import './components/hv-tag-browser';
+import './components/hv-column-picker';
 
 export class HAventoryCard extends LitElement {
   static styles = css`
@@ -89,6 +92,9 @@ export class HAventoryCard extends LitElement {
   private _browseTag: string | null = null;
   private _browseTagItems: Item[] = [];
   private _browseTagLoading = false;
+  private _columnPrefs: ColumnPrefs = loadColumnPrefs();
+  private _columnPickerOpen = false;
+  private _columnPickerScope: 'standard' | 'expanded' = 'standard';
 
   // Lovelace interface: called by HA when the card is created/configured
   public setConfig(cfg: unknown): void {
@@ -156,6 +162,7 @@ export class HAventoryCard extends LitElement {
           }} aria-label="Add item" title="Add item">Add item</button>
           <button data-testid="browse-categories" @click=${() => this._openCategoryBrowser()} aria-label="Browse categories" title="Browse categories">Categories</button>
           <button data-testid="browse-tags" @click=${() => this._openTagBrowser()} aria-label="Browse tags" title="Browse tags">Tags</button>
+          <button data-testid="columns-standard" @click=${() => this._openColumnPicker('standard')} aria-label="Choose columns" title="Choose columns">Columns</button>
           <button data-testid="expand-toggle" @click=${() => this._toggleExpanded()} aria-expanded=${String(this.expanded)} aria-label=${this.expanded ? 'Collapse' : 'Expand'}>
             ${this.expanded ? '⤢ Collapse' : '⇱ Expand'}
           </button>
@@ -182,6 +189,7 @@ export class HAventoryCard extends LitElement {
           .items=${st?.items ?? []}
           .areas=${st?.areasCache?.areas ?? []}
           .locations=${st?.locationsFlatCache ?? []}
+          .columns=${this._columnPrefs.standard}
           @near-end=${(e: CustomEvent) => {
             const ratio = e.detail?.ratio ?? 0;
             void this.store?.prefetchIfNeeded(ratio);
@@ -345,8 +353,28 @@ export class HAventoryCard extends LitElement {
         @cancel=${() => { this._tagBrowserOpen = false; this._browseTag = null; this._browseTagItems = []; this.requestUpdate(); }}
       ></hv-tag-browser>
 
+      <hv-column-picker
+        .open=${this._columnPickerOpen}
+        .columns=${this._columnPrefs[this._columnPickerScope]}
+        .heading=${this._columnPickerScope === 'standard' ? 'Standard view columns' : 'Expanded view columns'}
+        @change=${(e: CustomEvent) => this._setColumns(this._columnPickerScope, e.detail.columns as ColumnKey[])}
+        @cancel=${() => { this._columnPickerOpen = false; this.requestUpdate(); }}
+      ></hv-column-picker>
+
       ${this.expanded ? this._renderOverlayTemplate() : null}
     `;
+  }
+
+  private _openColumnPicker(scope: 'standard' | 'expanded') {
+    this._columnPickerScope = scope;
+    this._columnPickerOpen = true;
+    this.requestUpdate();
+  }
+
+  private _setColumns(scope: 'standard' | 'expanded', columns: ColumnKey[]) {
+    this._columnPrefs = { ...this._columnPrefs, [scope]: columns };
+    saveColumnPrefs(this._columnPrefs);
+    this.requestUpdate();
   }
 
   private _openCategoryBrowser() {
@@ -527,6 +555,7 @@ export class HAventoryCard extends LitElement {
                 this.requestUpdate();
               }}
             >Add location</button>
+            <button class="btn-add" data-testid="columns-expanded" @click=${() => this._openColumnPicker('expanded')} aria-label="Choose columns">Columns</button>
             <button data-testid="expand-toggle" @click=${this._onOverlayCollapseClick} aria-label="Collapse">⤢ Collapse</button>
           </div>
         </div>
@@ -629,6 +658,7 @@ export class HAventoryCard extends LitElement {
                   .items=${st?.items ?? []}
                   .areas=${st?.areasCache?.areas ?? []}
                   .locations=${st?.locationsFlatCache ?? []}
+                  .columns=${this._columnPrefs.expanded}
                   @near-end=${(e: CustomEvent) => { const ratio = e.detail?.ratio ?? 0; void this.store?.prefetchIfNeeded(ratio); }}
                   @decrement=${(e: CustomEvent) => this.store?.adjustQuantity(e.detail.itemId, -1)}
                   @increment=${(e: CustomEvent) => this.store?.adjustQuantity(e.detail.itemId, +1)}

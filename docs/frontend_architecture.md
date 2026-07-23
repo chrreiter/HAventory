@@ -24,7 +24,8 @@ haventory-card (main container)
 ├── hv-item-dialog (add/edit modal)
 ├── hv-location-selector (location picker modal)
 ├── hv-category-browser (browse-by-category modal)
-└── hv-tag-browser (browse-by-tag modal)
+├── hv-tag-browser (browse-by-tag modal)
+└── hv-column-picker (column-selection modal)
 ```
 
 ---
@@ -93,12 +94,16 @@ haventory-card (main container)
 - `items`: Array of items to display
 - `areas`: Passed through to rows
 - `locations`: Passed through to rows
+- `columns`: `ColumnKey[]` — the optional middle columns to show (Name and
+  Actions are always present). Passed through to rows; also drives the header
+  and the shared grid template (`gridTemplateFor`).
 
 **Features**:
 - Uses `@lit-labs/virtualizer` with `lit-virtualizer` element
 - Fixed height: 420px with overflow scroll
 - Renders only visible rows + buffer
-- Header row with column labels (Name, Qty, Category, Location path, Actions)
+- Header row with column labels; the middle columns are user-selectable (see
+  `hv-column-picker` and Column preferences below)
 
 **Events**:
 - `near-end`: Emitted on scroll with `{ratio}` (triggers prefetch at ~70%)
@@ -285,6 +290,45 @@ drill-down of the items carrying the selected tag (fetched via
 > this codebase's per-component modal convention (see also `hv-item-dialog` /
 > `hv-location-selector`). A future refactor could unify them into one
 > value-browser parameterized by kind.
+
+---
+
+### `hv-column-picker`
+
+**Purpose**: Small modal to choose which optional columns are shown, opened from
+the "Columns" button in the card header (standard view) and in the expanded
+overlay header (expanded view).
+
+**Properties**:
+- `open`: Boolean visibility
+- `columns`: `ColumnKey[]` — the current selection for the scope being edited
+- `heading`: label (e.g. "Standard view columns" / "Expanded view columns")
+
+**Events**:
+- `change`: `{columns}` — emitted on every toggle with the new, canonically
+  ordered selection (the container persists it)
+- `cancel`: close the picker
+
+---
+
+## Column preferences (`store/columns.ts`)
+
+The optional middle columns are `quantity`, `category`, `location`, `tags`,
+`due_date` (Name and Actions are always shown). Users pick an independent set
+for the **standard** (card) view and the **expanded** view.
+
+- `COLUMN_DEFS` — canonical order + labels + grid sizing.
+- `normalizeColumns()` — filter to known keys, dedupe, enforce canonical order.
+- `gridTemplateFor(columns, {compact})` — the shared `grid-template-columns`
+  value (name + selected columns + actions) used by both the list header and the
+  rows so they stay aligned.
+- `DEFAULT_COLUMN_PREFS` — `{ standard: ['quantity'], expanded: ['quantity',
+  'category', 'location'] }`, mirroring the pre-feature layout.
+
+**Persistence**: choices are stored in **`localStorage`** under
+`haventory:columns:v1` (per browser). This was chosen over card config so users
+can change columns live without editing the dashboard YAML; loads/saves are
+best-effort and fall back to defaults if storage is unavailable or corrupt.
 
 ---
 
