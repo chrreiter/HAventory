@@ -173,6 +173,14 @@ Included: `tests/test_ws_smoke_online.py`, `tests/test_ws_smoke_advanced_online.
 
 - Lit + TypeScript + Vite; tests with Vitest. Build outputs to `www/haventory/`.
 - Real-time via WebSocket; optimistic UI; virtualization for large lists.
+- Sorting by name, updated, created, quantity, **due date**, and **inspection date**
+  (date sorts place undated items last); filters include checked-out, low-stock-first,
+  and **"No location"** (orphaned items).
+- Location management in the picker: create, rename, re-area, **delete** (backend
+  rejects deleting non-empty locations — the card explains how to proceed), and
+  **move a whole subtree** to a new parent, with descendant paths updating live.
+- Expanded view includes a diagnostics panel with **storage health**
+  (`haventory/health`: status, issues, generation) and a refresh action.
 - Card auto-registered as a Lovelace resource on integration setup.
 - **Note:** after first install, a browser refresh (F5 / Ctrl+Shift+R) is required for the
   card to appear in the picker (standard for all custom cards).
