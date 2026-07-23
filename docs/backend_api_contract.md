@@ -31,6 +31,14 @@ Notes:
 
 Handlers map domain exceptions to these codes and log with context; `conflict` and `storage_error` log at error level; others at warning.
 
+Guarantees (every `haventory/*` command is wrapped by the same guard):
+
+- Domain errors carry the exception message plus structured `data` context (`op` and selected request fields).
+- Any unexpected (non-domain) exception maps to `unknown_error` with the fixed message `"unexpected error; see Home Assistant logs"` and `data` context. Exception text and stack traces never reach the client; the full traceback goes to the server log only.
+- In `haventory/items/bulk`, a failing operation (including an unexpectedly malformed payload) fails only its own per-op result; the remaining operations still run and successful ones persist.
+
+Transport-level errors produced by Home Assistant itself (before a handler runs) are outside this taxonomy and can also be observed by clients: `invalid_format` (request failed the command's voluptuous schema) and `unknown_command` (integration not loaded or unknown `type`).
+
 ### Utility commands
 
 - `haventory/ping`
