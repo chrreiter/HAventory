@@ -326,4 +326,140 @@ describe('hv-location-selector', () => {
       expect(events[0].detail.name).toBe('New Name');
     });
   });
+
+  describe('delete and move', () => {
+    function makeTree(): Location[] {
+      const root: Location = {
+        id: 'root1', parent_id: null, name: 'Garage', area_id: null,
+        path: { id_path: ['root1'], name_path: ['Garage'], display_path: 'Garage', sort_key: 'garage' },
+      };
+      const child: Location = {
+        id: 'child1', parent_id: 'root1', name: 'Shelf', area_id: null,
+        path: { id_path: ['root1', 'child1'], name_path: ['Garage', 'Shelf'], display_path: 'Garage / Shelf', sort_key: 'garage / shelf' },
+      };
+      const other: Location = {
+        id: 'other1', parent_id: null, name: 'Attic', area_id: null,
+        path: { id_path: ['other1'], name_path: ['Attic'], display_path: 'Attic', sort_key: 'attic' },
+      };
+      return [root, child, other];
+    }
+
+    async function mount(locations: Location[]) {
+      const el = document.createElement('hv-location-selector') as HTMLElement & { updateComplete?: Promise<unknown> };
+      (el as any).open = true;
+      (el as any).locations = locations;
+      document.body.appendChild(el);
+      await customElements.whenDefined('hv-location-selector');
+      if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+      return el;
+    }
+
+    it('renders a delete button per row and emits delete-location', async () => {
+      const el = await mount(makeTree());
+      const sr = el.shadowRoot as ShadowRoot;
+
+      const events: CustomEvent[] = [];
+      el.addEventListener('delete-location', (e) => events.push(e as CustomEvent));
+
+      const deleteBtns = sr.querySelectorAll('.btn-delete');
+      expect(deleteBtns.length).toBe(3);
+
+      (deleteBtns[0] as HTMLButtonElement).click();
+      expect(events.length).toBe(1);
+      expect(events[0].detail).toEqual({ locationId: 'root1', name: 'Garage' });
+    });
+
+    it('shows an action error banner via setActionError and clears on re-open', async () => {
+      const el = await mount(makeTree());
+      const sr = el.shadowRoot as ShadowRoot;
+
+      (el as any).setActionError("'Garage' still contains items. Move or delete them first.");
+      if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+
+      const banner = sr.querySelector('.error-banner[role="alert"]');
+      expect(banner).toBeTruthy();
+      expect(banner!.textContent).toContain('Move or delete them first');
+
+      // Re-opening resets the banner
+      (el as any).open = false;
+      if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+      (el as any).open = true;
+      if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+      expect(sr.querySelector('.error-banner[role="alert"]')).toBeFalsy();
+    });
+
+    it('edit form offers a parent select excluding self and descendants', async () => {
+      const el = await mount(makeTree());
+      const sr = el.shadowRoot as ShadowRoot;
+
+      // Edit the root: its subtree (root1, child1) must not be offered as parents
+      const editBtns = sr.querySelectorAll('.btn-edit');
+      (editBtns[0] as HTMLButtonElement).click();
+      if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+
+      const parentSelect = sr.querySelector('.edit-form select[aria-label="Parent location"]') as HTMLSelectElement;
+      expect(parentSelect).toBeTruthy();
+      const values = Array.from(parentSelect.querySelectorAll('option')).map((o) => o.value);
+      expect(values).toContain(''); // top level
+      expect(values).toContain('other1');
+      expect(values).not.toContain('root1');
+      expect(values).not.toContain('child1');
+    });
+
+    it('save includes newParentId only when the parent changed', async () => {
+      const el = await mount(makeTree());
+      const sr = el.shadowRoot as ShadowRoot;
+
+      const events: CustomEvent[] = [];
+      el.addEventListener('update-location', (e) => events.push(e as CustomEvent));
+
+      // Edit the child (parent root1) and move it under other1
+      const editBtns = sr.querySelectorAll('.btn-edit');
+      (editBtns[1] as HTMLButtonElement).click();
+      if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+
+      const parentSelect = sr.querySelector('.edit-form select[aria-label="Parent location"]') as HTMLSelectElement;
+      parentSelect.value = 'other1';
+      parentSelect.dispatchEvent(new Event('change'));
+      if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+
+      const saveBtn = sr.querySelector('.btn-save') as HTMLButtonElement;
+      saveBtn.click();
+
+      expect(events.length).toBe(1);
+      expect(events[0].detail.locationId).toBe('child1');
+      expect(events[0].detail.newParentId).toBe('other1');
+
+      // Save again without touching the parent → no newParentId in the detail
+      (el as any).setEditSuccess();
+      if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+      const editBtnsAfter = sr.querySelectorAll('.btn-edit');
+      (editBtnsAfter[1] as HTMLButtonElement).click();
+      if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+      (sr.querySelector('.btn-save') as HTMLButtonElement).click();
+      expect(events.length).toBe(2);
+      expect(events[1].detail.newParentId).toBeUndefined();
+    });
+
+    it('moving to top level sends newParentId null', async () => {
+      const el = await mount(makeTree());
+      const sr = el.shadowRoot as ShadowRoot;
+
+      const events: CustomEvent[] = [];
+      el.addEventListener('update-location', (e) => events.push(e as CustomEvent));
+
+      const editBtns = sr.querySelectorAll('.btn-edit');
+      (editBtns[1] as HTMLButtonElement).click(); // child1 (parent root1)
+      if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+
+      const parentSelect = sr.querySelector('.edit-form select[aria-label="Parent location"]') as HTMLSelectElement;
+      parentSelect.value = '';
+      parentSelect.dispatchEvent(new Event('change'));
+      if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+
+      (sr.querySelector('.btn-save') as HTMLButtonElement).click();
+      expect(events.length).toBe(1);
+      expect(events[0].detail.newParentId).toBeNull();
+    });
+  });
 });

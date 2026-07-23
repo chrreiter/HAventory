@@ -251,4 +251,85 @@ describe('Store', () => {
     expect(store.state.value.statsCounts).toBeTruthy();
     expect(typeof store.state.value.statsCounts?.items_total).toBe('number');
   });
+
+  it('deleteLocation removes an empty location and refreshes caches', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass);
+    await store.init();
+
+    const created = await store.createLocation('Doomed', null);
+    expect(store.state.value.locationsFlatCache?.some((l) => l.id === created.id)).toBe(true);
+
+    await store.deleteLocation(created.id);
+    expect(store.state.value.locationsFlatCache?.some((l) => l.id === created.id)).toBe(false);
+  });
+
+  it('deleteLocation rejects with validation_error when the location is not empty', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass);
+    await store.init();
+
+    const parent = await store.createLocation('Parent', null);
+    await store.createLocation('Child', parent.id);
+
+    await expect(store.deleteLocation(parent.id)).rejects.toMatchObject({ code: 'validation_error' });
+    // Still present — nothing was deleted
+    expect(store.state.value.locationsFlatCache?.some((l) => l.id === parent.id)).toBe(true);
+  });
+
+  it('deleteLocation rejects when items still reference the location', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass);
+    await store.init();
+
+    const loc = await store.createLocation('Occupied', null);
+    hass.__setItems([makeItem({ id: 'i1', name: 'Blocker', location_id: loc.id })]);
+
+    await expect(store.deleteLocation(loc.id)).rejects.toMatchObject({ code: 'validation_error' });
+  });
+
+  it('moveLocationSubtree reparents and refreshes locations and items', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: 'i1', name: 'Inside' })] });
+    const store = new Store(hass);
+    await store.init();
+
+    const src = await store.createLocation('Source', null);
+    const dst = await store.createLocation('Dest', null);
+
+    const moved = await store.moveLocationSubtree(src.id, dst.id);
+    expect(moved.parent_id).toBe(dst.id);
+    const cached = store.state.value.locationsFlatCache?.find((l) => l.id === src.id);
+    expect(cached?.parent_id).toBe(dst.id);
+  });
+
+  it('reloads the item list when a locations moved/renamed event arrives', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: 'i1', name: 'Widget' })] });
+    const store = new Store(hass);
+    await store.init();
+
+    // Count item/list calls from here on via the callWS wrapper
+    let listCalls = 0;
+    const origCallWS = hass.callWS.bind(hass);
+    hass.callWS = async <T,>(msg: Record<string, unknown>): Promise<T> => {
+      if (msg.type === 'haventory/item/list') listCalls += 1;
+      return origCallWS<T>(msg);
+    };
+
+    const loc = {
+      id: 'locX', parent_id: null, name: 'Moved', area_id: null,
+      path: { id_path: ['locX'], name_path: ['Moved'], display_path: 'Moved', sort_key: 'moved' },
+    };
+    hass.__emit('locations', 'moved', { location: loc });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(listCalls).toBe(1);
+
+    hass.__emit('locations', 'renamed', { location: loc });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(listCalls).toBe(2);
+
+    // Non-path-changing events do not reload the list
+    hass.__emit('locations', 'created', { location: loc });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(listCalls).toBe(2);
+  });
 });

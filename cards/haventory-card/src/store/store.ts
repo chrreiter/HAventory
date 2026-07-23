@@ -141,6 +141,11 @@ export class Store {
   private onLocationsEvent(evt: AnyEventPayload) {
     if (evt.topic !== 'locations') return;
     void Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+    // Moving or renaming a location rewrites the denormalized location_path on
+    // every item in its subtree — reload the list so rows reflect it live.
+    if (evt.action === 'moved' || evt.action === 'renamed') {
+      void this.listItems(true);
+    }
   }
 
   // ---------- Data fetchers ----------
@@ -354,6 +359,21 @@ export class Store {
     const updated = await this.ws.updateLocation(locationId, changes);
     await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
     return updated;
+  }
+
+  /** Delete an empty location. Rejects with validation_error when it still has children or items. */
+  async deleteLocation(locationId: string): Promise<void> {
+    await this.ws.deleteLocation(locationId);
+    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+  }
+
+  /** Move a whole subtree under a new parent (null = top level). Descendant paths update live. */
+  async moveLocationSubtree(locationId: string, newParentId: string | null): Promise<Location> {
+    const moved = await this.ws.moveLocationSubtree(locationId, newParentId);
+    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+    // Denormalized item location_path values changed for the whole subtree.
+    await this.listItems(true);
+    return moved;
   }
 
   // ---------- Errors ----------

@@ -69,6 +69,35 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
           locations = locations.concat([created]);
           return created as unknown as T;
         }
+        case 'haventory/location/delete': {
+          const locationId = String((msg as any).location_id);
+          const loc = locations.find((l) => l.id === locationId);
+          if (!loc) throw { code: 'not_found', message: 'location not found' };
+          if (locations.some((l) => l.parent_id === locationId)) {
+            throw { code: 'validation_error', message: 'cannot delete a location that has child locations' };
+          }
+          if (items.some((i) => i.location_id === locationId)) {
+            throw { code: 'validation_error', message: 'cannot delete a location that contains items' };
+          }
+          locations = locations.filter((l) => l.id !== locationId);
+          return null as unknown as T;
+        }
+        case 'haventory/location/move_subtree': {
+          const locationId = String((msg as any).location_id);
+          const newParentId = (msg as any).new_parent_id ?? null;
+          const loc = locations.find((l) => l.id === locationId);
+          if (!loc) throw { code: 'not_found', message: 'location not found' };
+          const moved: Location = {
+            ...loc,
+            parent_id: newParentId,
+            path: {
+              ...loc.path,
+              id_path: newParentId ? [String(newParentId), loc.id] : [loc.id],
+            },
+          };
+          locations = locations.map((l) => (l.id === locationId ? moved : l));
+          return moved as unknown as T;
+        }
         case 'haventory/item/list': {
           const limit = (typeof msg.limit === 'number' ? (msg.limit as number) : 50) || 50;
           const cursor = (msg.cursor as string | undefined) || undefined;

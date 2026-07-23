@@ -113,6 +113,19 @@ export class HVLocationSelector extends LitElement {
       background: var(--secondary-background-color, #f5f5f5);
       color: var(--primary-color, #03a9f4);
     }
+    .btn-delete {
+      background: transparent;
+      border: none;
+      color: var(--secondary-text-color, #666);
+      cursor: pointer;
+      padding: 2px 6px;
+      font-size: 0.85em;
+      border-radius: 4px;
+    }
+    .btn-delete:hover {
+      background: var(--secondary-background-color, #f5f5f5);
+      color: var(--error-color, #db4437);
+    }
     .edit-form {
       padding: 12px;
       margin: 8px 0;
@@ -178,14 +191,19 @@ export class HVLocationSelector extends LitElement {
   @state() private _editingId: string | null = null;
   @state() private _editName: string = '';
   @state() private _editAreaId: string | null = null;
+  @state() private _editParentId: string | null = null;
   @state() private _editing: boolean = false;
   @state() private _editError: string | null = null;
+  private _editOriginalParentId: string | null = null;
+  // List-level action feedback (e.g. a rejected delete)
+  @state() private _actionError: string | null = null;
 
   protected willUpdate(changed: Map<string, unknown>): void {
     if (changed.has('open') && this.open) {
       this._zBase = nextZBase();
       this.resetCreateState();
       this.createMode = false;
+      this._actionError = null;
     }
   }
 
@@ -248,6 +266,8 @@ export class HVLocationSelector extends LitElement {
     this._editingId = loc.id;
     this._editName = loc.name;
     this._editAreaId = loc.area_id ?? null;
+    this._editParentId = loc.parent_id ?? null;
+    this._editOriginalParentId = loc.parent_id ?? null;
     this._editError = null;
     this._editing = false;
   }
@@ -256,6 +276,8 @@ export class HVLocationSelector extends LitElement {
     this._editingId = null;
     this._editName = '';
     this._editAreaId = null;
+    this._editParentId = null;
+    this._editOriginalParentId = null;
     this._editError = null;
     this._editing = false;
   }
@@ -268,11 +290,40 @@ export class HVLocationSelector extends LitElement {
     }
     this._editError = null;
     this._editing = true;
+    const parentChanged = this._editParentId !== this._editOriginalParentId;
     this.dispatchEvent(new CustomEvent('update-location', {
-      detail: { locationId: this._editingId, name, areaId: this._editAreaId },
+      detail: {
+        locationId: this._editingId,
+        name,
+        areaId: this._editAreaId,
+        // Present only when the user picked a different parent (null = top level)
+        ...(parentChanged ? { newParentId: this._editParentId } : {}),
+      },
       bubbles: true,
       composed: true,
     }));
+  }
+
+  // ---------- Delete ----------
+  private onRequestDelete(loc: Location) {
+    this._actionError = null;
+    this.dispatchEvent(new CustomEvent('delete-location', {
+      detail: { locationId: loc.id, name: loc.name },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  /** Show a list-level error (e.g. delete rejected because the location is not empty). */
+  public setActionError(msg: string) {
+    this._actionError = msg;
+  }
+
+  /** Parent options for the edit form: everywhere except the subtree being moved. */
+  private _parentOptionsFor(locationId: string): Location[] {
+    return (this.locations ?? []).filter(
+      (l) => l.id !== locationId && !(l.path?.id_path ?? []).includes(locationId),
+    );
   }
 
   public setEditError(msg: string) {
@@ -323,6 +374,7 @@ export class HVLocationSelector extends LitElement {
     }
 
     return html`
+      ${this._actionError ? html`<div class="error-banner" role="alert">${this._actionError}</div>` : null}
       <ul aria-label="Location list">
         ${list.map((l) => {
           const depth = getDepth(l.path?.display_path);
@@ -362,6 +414,18 @@ export class HVLocationSelector extends LitElement {
                       ${this.areas.map((a) => html`<option value=${a.id} ?selected=${this._editAreaId === a.id}>${a.name}</option>`)}
                     </select>
                   </div>
+                  <div class="row" style="flex-direction: column; align-items: stretch;">
+                    <span class="field-label">Parent location (moves the whole subtree)</span>
+                    <select
+                      .value=${this._editParentId ?? ''}
+                      ?disabled=${this._editing}
+                      @change=${(e: Event) => this._editParentId = (e.target as HTMLSelectElement).value || null}
+                      aria-label="Parent location"
+                    >
+                      <option value="" ?selected=${this._editParentId === null}>Top level</option>
+                      ${this._parentOptionsFor(l.id).map((p) => html`<option value=${p.id} ?selected=${this._editParentId === p.id}>${p.path?.display_path || p.name}</option>`)}
+                    </select>
+                  </div>
                   <div class="edit-actions">
                     <button class="btn-cancel-edit" @click=${() => this.cancelEdit()} ?disabled=${this._editing}>Cancel</button>
                     <button class="btn-save" @click=${() => this.onSaveEdit()} ?disabled=${this._editing || !this._editName.trim()}>
@@ -381,6 +445,7 @@ export class HVLocationSelector extends LitElement {
                   ? html`<span><span class="area-prefix">${areaName} &gt;</span> ${locationPath}</span>`
                   : html`<span>${locationPath}</span>`}
                 <button class="btn-edit" @click=${(e: Event) => { e.preventDefault(); e.stopPropagation(); this.startEdit(l); }} title="Edit location">✎</button>
+                <button class="btn-delete" @click=${(e: Event) => { e.preventDefault(); e.stopPropagation(); this.onRequestDelete(l); }} title="Delete location" aria-label="Delete ${l.name}">🗑</button>
               </label>
             </li>
           `;

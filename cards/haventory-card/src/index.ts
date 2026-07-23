@@ -268,10 +268,16 @@ export class HAventoryCard extends LitElement {
           }
         }}
         @update-location=${async (e: CustomEvent) => {
-          const { locationId, name, areaId } = e.detail as { locationId: string; name: string; areaId: string | null };
+          const { locationId, name, areaId, newParentId } = e.detail as {
+            locationId: string; name: string; areaId: string | null; newParentId?: string | null;
+          };
           const selector = this.shadowRoot?.querySelector('hv-location-selector') as HVLocationSelector | null;
           try {
             await this.store?.updateLocation(locationId, { name, areaId });
+            // A changed parent moves the whole subtree; descendant paths update live.
+            if (newParentId !== undefined) {
+              await this.store?.moveLocationSubtree(locationId, newParentId);
+            }
             if (selector) {
               selector.setEditSuccess();
             }
@@ -279,6 +285,23 @@ export class HAventoryCard extends LitElement {
           } catch (err: unknown) {
             const msg = (err as { message?: string })?.message ?? 'Failed to update location';
             if (selector) selector.setEditError(msg);
+          }
+        }}
+        @delete-location=${async (e: CustomEvent) => {
+          const { locationId, name } = e.detail as { locationId: string; name: string };
+          const selector = this.shadowRoot?.querySelector('hv-location-selector') as HVLocationSelector | null;
+          const confirmed = window.confirm(`Delete location '${name}'?`);
+          if (!confirmed) return;
+          try {
+            await this.store?.deleteLocation(locationId);
+            this.requestUpdate();
+          } catch (err: unknown) {
+            const anyErr = err as { code?: string; message?: string };
+            const msg = anyErr?.code === 'validation_error'
+              ? `'${name}' can't be deleted yet: it still contains items or sub-locations. ` +
+                'Move or delete its contents first, then try again.'
+              : (anyErr?.message ?? 'Failed to delete location');
+            if (selector) selector.setActionError(msg);
           }
         }}
       ></hv-location-selector>

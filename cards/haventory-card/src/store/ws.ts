@@ -124,6 +124,18 @@ export class WSClient {
     return this.hass.callWS<Location>(msg);
   }
 
+  deleteLocation(locationId: string) {
+    return this.hass.callWS<null>({ type: 'haventory/location/delete', location_id: locationId });
+  }
+
+  moveLocationSubtree(locationId: string, newParentId: string | null) {
+    return this.hass.callWS<Location>({
+      type: 'haventory/location/move_subtree',
+      location_id: locationId,
+      new_parent_id: newParentId,
+    });
+  }
+
   getLocationTree() {
     // The backend returns tree nodes; for typing keep as unknown[] | Location-like.
     return this.hass.callWS<unknown[]>({ type: 'haventory/location/tree' });
