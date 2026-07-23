@@ -252,6 +252,28 @@ describe('Store', () => {
     expect(typeof store.state.value.statsCounts?.items_total).toBe('number');
   });
 
+  it('sends orphaned_only to the backend when the orphans filter is on', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass);
+    await store.init();
+
+    const listFilters: any[] = [];
+    const origCallWS = hass.callWS.bind(hass);
+    hass.callWS = async <T,>(msg: Record<string, unknown>): Promise<T> => {
+      if (msg.type === 'haventory/item/list') listFilters.push(msg.filter);
+      return origCallWS<T>(msg);
+    };
+
+    store.setFilters({ orphansOnly: true });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(listFilters.length).toBeGreaterThan(0);
+    expect(listFilters[listFilters.length - 1]?.orphaned_only).toBe(true);
+
+    store.setFilters({ orphansOnly: false });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(listFilters[listFilters.length - 1]?.orphaned_only).toBeUndefined();
+  });
+
   it('populates healthCache on init and refreshes on demand', async () => {
     const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'A' })] });
     const store = new Store(hass);

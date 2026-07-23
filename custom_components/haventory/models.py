@@ -128,6 +128,8 @@ class ItemFilter(TypedDict, total=False):
     low_stock_only: bool
     # When true, do not filter; instead, prefer low-stock items first in ordering
     low_stock_first: bool
+    # When true, only items without a location (location_id is None)
+    orphaned_only: bool
     location_id: str | None
     area_id: str
     include_subtree: bool
@@ -659,6 +661,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     - category: case-insensitive equals
     - checked_out: exact match
     - low_stock_only: quantity <= threshold (0 valid, None disables)
+    - orphaned_only: only items without a location (location_id is None)
     - location_id: equals; include_subtree optionally includes descendants (by prefix of id_path)
     - updated_after/created_after: ISO-8601 UTC with 'Z'
     """
@@ -672,6 +675,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     category = (flt.get("category") or "").strip().casefold() if "category" in flt else ""
     checked_out = flt.get("checked_out") if "checked_out" in flt else None
     low_stock_only = bool(flt.get("low_stock_only")) if "low_stock_only" in flt else False
+    orphaned_only = bool(flt.get("orphaned_only")) if "orphaned_only" in flt else False
     location_id = flt.get("location_id") if "location_id" in flt else None
     include_subtree = bool(flt.get("include_subtree")) if "include_subtree" in flt else False
     updated_after = flt.get("updated_after") if "updated_after" in flt else None
@@ -692,6 +696,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
         matches_category = (not category) or ((it.category or "").strip().casefold() == category)
         matches_checked = (checked_out is None) or (it.checked_out == bool(checked_out))
         matches_low_stock = (not low_stock_only) or _low_stock(it)
+        matches_orphaned = (not orphaned_only) or (it.location_id is None)
         matches_location = _item_matches_location(it, location_id, include_subtree)
         matches_updated = (updated_after_dt is None) or (
             _parse_iso8601_utc(it.updated_at, field_name="item.updated_at") > updated_after_dt
@@ -706,6 +711,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
             and matches_category
             and matches_checked
             and matches_low_stock
+            and matches_orphaned
             and matches_location
             and matches_updated
             and matches_created

@@ -66,6 +66,7 @@ haventory-card (main container)
 - `includeSubtree`: Boolean for subtree filtering
 - `checkedOutOnly`: Boolean for checked-out filter
 - `lowStockFirst`: Boolean for low-stock sorting
+- `orphansOnly`: Boolean for the "No location" (orphaned items) filter
 - `sort`: Sort configuration (field + order)
 - `areas`: Array of `{id, name}` area options
 - `locations`: Array of location objects with `{id, name, path}`

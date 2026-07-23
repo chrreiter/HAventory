@@ -62,8 +62,10 @@ export class Store {
         q: '',
         areaId: null,
         locationId: null,
+        includeSubtree: true,
         checkedOutOnly: false,
         lowStockFirst: false,
+        orphansOnly: false,
         sort: defaultSort,
       },
       selection: new Set<string>(),
@@ -192,6 +194,8 @@ export class Store {
       checked_out: st.filters.checkedOutOnly || undefined,
       // Interpret UI toggle as preference to show low-stock items first
       low_stock_first: st.filters.lowStockFirst || undefined,
+      // Only items without a location
+      orphaned_only: st.filters.orphansOnly || undefined,
     };
     const sort = st.filters.sort;
     const limit = 50;

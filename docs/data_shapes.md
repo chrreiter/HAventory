@@ -102,6 +102,7 @@ Note: `children` is a recursive array of tree nodes with the same structure.
   - `category?: string`
   - `checked_out?: boolean`
   - `low_stock_only?: boolean`
+  - `orphaned_only?: boolean` (only items without a location, i.e. `location_id == null`)
   - `location_id?: uuid-v4|null`
   - `area_id?: string`
   - `include_subtree?: boolean`

@@ -21,7 +21,7 @@ describe('hv-search-bar', () => {
 
     // Checkboxes
     const checkboxes = sr.querySelectorAll('input[type="checkbox"]');
-    expect(checkboxes.length).toBe(3); // Include sublocations, Checked-out only, Low-stock first
+    expect(checkboxes.length).toBe(4); // Include sublocations, Checked-out only, Low-stock first, Orphaned only
   });
 
   it('debounces search input and emits change event after 200ms', async () => {
@@ -195,6 +195,26 @@ describe('hv-search-bar', () => {
     sortSelect.value = 'quantity';
     sortSelect.dispatchEvent(new Event('change', { bubbles: true }));
     expect(changeDetail.sort.order).toBe('asc');
+  });
+
+  it('emits orphansOnly when the orphaned filter checkbox is toggled', async () => {
+    const el = document.createElement('hv-search-bar') as HTMLElement & { updateComplete?: Promise<unknown> };
+    document.body.appendChild(el);
+    await customElements.whenDefined('hv-search-bar');
+    if ('updateComplete' in el && el.updateComplete) await el.updateComplete;
+
+    const sr = el.shadowRoot as ShadowRoot;
+    const checkboxes = Array.from(sr.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
+
+    let changeDetail: any = null;
+    el.addEventListener('change', (e: any) => {
+      changeDetail = e.detail;
+    });
+
+    const orphans = checkboxes.find((cb) => cb.parentElement?.textContent?.includes('No location'));
+    expect(orphans).toBeTruthy();
+    orphans!.click();
+    expect(changeDetail.orphansOnly).toBe(true);
   });
 
   it('offers due_date and inspection_date sort options, defaulting to asc', async () => {

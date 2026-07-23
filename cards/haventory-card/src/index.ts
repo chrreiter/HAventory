@@ -157,6 +157,7 @@ export class HAventoryCard extends LitElement {
         .includeSubtree=${filters?.includeSubtree ?? true}
         .checkedOutOnly=${filters?.checkedOutOnly ?? false}
         .lowStockFirst=${filters?.lowStockFirst ?? false}
+        .orphansOnly=${filters?.orphansOnly ?? false}
         .sort=${filters?.sort}
         .areas=${st?.areasCache?.areas ?? []}
         .locations=${st?.locationsFlatCache ?? []}
@@ -459,6 +460,9 @@ export class HAventoryCard extends LitElement {
               <label><input type="checkbox" .checked=${filters?.lowStockFirst ?? false} @change=${(e: Event) => this.store?.setFilters({ lowStockFirst: (e.target as HTMLInputElement).checked })} /> Low-stock first</label>
             </div>
             <div class="row">
+              <label title="Only items without a location"><input type="checkbox" .checked=${filters?.orphansOnly ?? false} @change=${(e: Event) => this.store?.setFilters({ orphansOnly: (e.target as HTMLInputElement).checked })} /> No location</label>
+            </div>
+            <div class="row">
               <label>Sort
                 <span class="sort-controls">
                   <select @change=${this._onOverlaySortFieldChange}>
@@ -516,6 +520,7 @@ export class HAventoryCard extends LitElement {
                 .includeSubtree=${filters?.includeSubtree ?? true}
                 .checkedOutOnly=${filters?.checkedOutOnly ?? false}
                 .lowStockFirst=${filters?.lowStockFirst ?? false}
+                .orphansOnly=${filters?.orphansOnly ?? false}
                 .sort=${filters?.sort}
                 .areas=${st?.areasCache?.areas ?? []}
                 .locations=${st?.locationsFlatCache ?? []}

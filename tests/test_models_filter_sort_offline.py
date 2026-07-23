@@ -273,6 +273,29 @@ async def test_sort_by_quantity_and_timestamps() -> None:
 
 
 @pytest.mark.asyncio
+async def test_filter_orphaned_only_matches_items_without_location() -> None:
+    """orphaned_only=True keeps only items with location_id == None."""
+
+    by_id, root, _mid, _leaf = _build_locations()
+    placed = create_item_from_create(
+        {"name": "Placed", "location_id": root.id}, locations_by_id=by_id
+    )
+    orphan_a = create_item_from_create({"name": "Orphan Saw"})
+    orphan_b = create_item_from_create({"name": "Orphan Glue"})
+
+    out = filter_items([placed, orphan_a, orphan_b], ItemFilter(orphaned_only=True))
+    assert sorted(x.name for x in out) == ["Orphan Glue", "Orphan Saw"]
+
+    # Combines with q (AND semantics)
+    out_q = filter_items([placed, orphan_a, orphan_b], ItemFilter(orphaned_only=True, q="saw"))
+    assert [x.name for x in out_q] == ["Orphan Saw"]
+
+    # False / absent → no effect
+    out_off = filter_items([placed, orphan_a, orphan_b], ItemFilter(orphaned_only=False))
+    assert sorted(x.name for x in out_off) == ["Orphan Glue", "Orphan Saw", "Placed"]
+
+
+@pytest.mark.asyncio
 async def test_sort_by_due_date_nulls_last_both_orders() -> None:
     """due_date sorting orders dated items and places undated items last."""
 

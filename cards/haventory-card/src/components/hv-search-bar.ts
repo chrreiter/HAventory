@@ -11,6 +11,7 @@ export interface SearchBarChangeDetail {
   includeSubtree?: boolean;
   checkedOutOnly?: boolean;
   lowStockFirst?: boolean;
+  orphansOnly?: boolean;
   sort?: Sort;
 }
 
@@ -67,6 +68,7 @@ export class HVSearchBar extends LitElement {
   @property({ type: Boolean }) includeSubtree: boolean = true;
   @property({ type: Boolean }) checkedOutOnly: boolean = false;
   @property({ type: Boolean }) lowStockFirst: boolean = false;
+  @property({ type: Boolean }) orphansOnly: boolean = false;
   @property({ attribute: false }) sort: Sort = DEFAULT_SORT;
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
   @property({ attribute: false }) locations: Array<{ id: string; name: string; area_id?: string | null; parent_id?: string | null; path?: { display_path: string } }> = [];
@@ -139,6 +141,10 @@ export class HVSearchBar extends LitElement {
     this.emitChange({ lowStockFirst: (e.target as HTMLInputElement).checked });
   }
 
+  private onOrphansOnlyChange(e: Event) {
+    this.emitChange({ orphansOnly: (e.target as HTMLInputElement).checked });
+  }
+
   private onSortChange(e: Event) {
     const value = (e.target as HTMLSelectElement).value as Sort['field'];
     const order = getDefaultOrderFor(value);
@@ -177,6 +183,7 @@ export class HVSearchBar extends LitElement {
         <label><input type="checkbox" .checked=${this.includeSubtree} @change=${this.onIncludeSubtreeChange} /> Include sublocations</label>
         <label><input type="checkbox" .checked=${this.checkedOutOnly} @change=${this.onCheckedOutChange} /> Checked-out only</label>
         <label><input type="checkbox" .checked=${this.lowStockFirst} @change=${this.onLowStockChange} /> Low-stock first</label>
+        <label title="Only items without a location"><input type="checkbox" .checked=${this.orphansOnly} @change=${this.onOrphansOnlyChange} /> No location</label>
 
         <span class="sort-wrap">
           <select @change=${this.onSortChange} aria-label="Sort">

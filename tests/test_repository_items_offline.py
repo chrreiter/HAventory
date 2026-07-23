@@ -121,6 +121,24 @@ async def test_due_date_sort_cursor_pagination_with_nulls() -> None:
 
 
 @pytest.mark.asyncio
+async def test_orphaned_only_filter_through_list_items() -> None:
+    """orphaned_only composes with the index-first candidate path (q index)."""
+
+    repo = Repository()
+    loc = repo.create_location(name="Garage")
+    repo.create_item(ItemCreate(name="Placed Saw", location_id=str(loc.id)))
+    repo.create_item(ItemCreate(name="Orphan Saw"))
+    repo.create_item(ItemCreate(name="Orphan Tape"))
+
+    out = repo.list_items(flt=ItemFilter(orphaned_only=True))
+    assert sorted(x.name for x in out["items"]) == ["Orphan Saw", "Orphan Tape"]
+
+    # q uses the text index for candidates; orphaned_only post-filters them
+    out_q = repo.list_items(flt=ItemFilter(orphaned_only=True, q="saw"))
+    assert [x.name for x in out_q["items"]] == ["Orphan Saw"]
+
+
+@pytest.mark.asyncio
 async def test_prefilter_by_area_and_and_logic_with_location() -> None:
     """Pre-filter by area id and support AND with location_id."""
 

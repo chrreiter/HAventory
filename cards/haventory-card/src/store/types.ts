@@ -78,6 +78,7 @@ export interface ItemFilter {
   checked_out?: boolean;
   low_stock_only?: boolean;
   low_stock_first?: boolean;
+  orphaned_only?: boolean;
   location_id?: string | null;
   area_id?: string;
   include_subtree?: boolean;
@@ -171,8 +172,10 @@ export interface StoreFilters {
   q: string;
   areaId: string | null;
   locationId: string | null;
+  includeSubtree: boolean;
   checkedOutOnly: boolean;
   lowStockFirst: boolean;
+  orphansOnly: boolean;
   sort: Sort; // default: { field: 'updated_at', order: 'desc' }
 }
 
