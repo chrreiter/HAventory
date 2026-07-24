@@ -15,6 +15,7 @@ import './hv-filter-chips';
 import './hv-filter-panel';
 import './hv-list';
 import './hv-item-editor';
+import './hv-detail-sheet';
 import './hv-overflow-menu';
 import type { HVFilterPanel } from './hv-filter-panel';
 import type { HVItemEditor } from './hv-item-editor';
@@ -267,6 +268,8 @@ export class HVCardShell extends LitElement {
   @state() private _editing: string | 'new' | null = null;
   @state() private _editorBusy = false;
   @state() private _editorError: string | null = null;
+  /** Item shown in the mobile detail sheet. */
+  @state() private _detailItemId: string | null = null;
 
   private readonly responsive = new ResponsiveController(this);
   private storeUnsub?: () => void;
@@ -347,6 +350,7 @@ export class HVCardShell extends LitElement {
       destructive: true,
       onConfirm: () => {
         if (this._editing === item.id) this._editing = null;
+        if (this._detailItemId === item.id) this._detailItemId = null;
         void this.store?.deleteItem(item.id, item.version);
       },
     };
@@ -456,12 +460,20 @@ export class HVCardShell extends LitElement {
       case 'check-in':
         void this.store?.markCheckedIn(item.id, item.version);
         break;
+      case 'check-out':
+        // A due date is optional over the WS API; the date step lands with the
+        // check-out popover.
+        void this.store?.checkOut(item.id, null, item.version);
+        break;
       case 'request-delete':
         this._requestDelete(item);
         break;
       case 'edit':
       case 'open-item':
-        this._startEdit(item.id);
+        // Touch has no hover: tapping a row opens the detail sheet, which is the
+        // single mobile surface. Desktop expands the row in place instead.
+        if (this.mobile) this._detailItemId = item.id;
+        else this._startEdit(item.id);
         break;
       default:
         this.dispatchEvent(
@@ -795,6 +807,31 @@ export class HVCardShell extends LitElement {
               </button>
             </div>
           </hv-bottom-sheet>`
+        : null}
+
+      ${mobile
+        ? html`<hv-detail-sheet
+            data-testid="card-detail-sheet"
+            ?open=${this._detailItemId !== null}
+            .item=${this._detailItemId ? (this._itemById(this._detailItemId) ?? null) : null}
+            .locations=${st?.locationsFlatCache ?? null}
+            .locationTree=${st?.locationTreeCache ?? []}
+            .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
+            .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
+            .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
+            .busy=${this._editorBusy}
+            .errorMessage=${this._editorError}
+            @cancel=${() => {
+              this._detailItemId = null;
+              this._editorError = null;
+            }}
+            @increment=${(e: CustomEvent) => this._onRowEvent('increment', e.detail)}
+            @decrement=${(e: CustomEvent) => this._onRowEvent('decrement', e.detail)}
+            @check-in=${(e: CustomEvent) => this._onRowEvent('check-in', e.detail)}
+            @check-out=${(e: CustomEvent) => this._onRowEvent('check-out', e.detail)}
+            @request-delete=${(e: CustomEvent) => this._onRowEvent('request-delete', e.detail)}
+            @save=${this._onEditorSave}
+          ></hv-detail-sheet>`
         : null}
 
       <hv-confirm

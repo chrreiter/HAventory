@@ -576,3 +576,88 @@ describe('hv-card-shell: inline editing', () => {
     expect(editor(sr)).toBe(null);
   });
 });
+
+describe('hv-card-shell: mobile detail sheet', () => {
+  const sheet = (sr: ShadowRoot) =>
+    sr.querySelector('[data-testid="card-detail-sheet"]') as HTMLElement & { open: boolean; item: Item | null };
+  const firstRow = (sr: ShadowRoot) =>
+    (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector('hv-list-row') as HTMLElement;
+
+  it('opens the sheet on tap instead of expanding the row', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'AA Batteries' })], mobile: true });
+    expect(sheet(sr).open).toBe(false);
+
+    (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
+    await settle(el);
+
+    expect(sheet(sr).open).toBe(true);
+    expect(sheet(sr).item?.id).toBe('1');
+    // No inline expander on touch.
+    expect(
+      (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector('hv-item-editor'),
+    ).toBe(null);
+  });
+
+  it('is not rendered at all on desktop', async () => {
+    const { sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: false });
+    expect(sr.querySelector('[data-testid="card-detail-sheet"]')).toBe(null);
+  });
+
+  it('drives quantity from the sheet hero', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', quantity: 5 })], mobile: true });
+    (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
+    await settle(el);
+
+    (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-increment"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(store.state.value.items[0].quantity).toBe(6);
+  });
+
+  it('checks out from the sheet with no due date, which the API allows', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+    (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
+    await settle(el);
+
+    (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-check-out"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(store.state.value.items[0].checked_out).toBe(true);
+    expect(store.state.value.items[0].due_date).toBe(null);
+  });
+
+  it('saves an edit made in the sheet', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Old' })], mobile: true });
+    (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
+    await settle(el);
+
+    (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const editor = sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-editor"]') as HTMLElement;
+    const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    name.value = 'New';
+    name.dispatchEvent(new Event('input'));
+    await settle(el);
+
+    (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+    expect(store.state.value.items[0].name).toBe('New');
+  });
+
+  it('deletes through the same confirmation and closes the sheet', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Doomed' })], mobile: true });
+    (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
+    await settle(el);
+
+    (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-delete"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const confirm = sr.querySelector('[data-testid="card-confirm"]') as HTMLElement & { open: boolean };
+    expect(confirm.open).toBe(true);
+    (confirm.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(store.state.value.items).toHaveLength(0);
+    expect(sheet(sr).open).toBe(false);
+  });
+});
