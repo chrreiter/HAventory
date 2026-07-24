@@ -81,6 +81,12 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 - Unsubscribe
   - `haventory/unsubscribe` request: `{id, type, subscription: number}`
   - Result: `null`
+  - A subscription is also registered in Home Assistant's own connection registry
+    under its `id`, so it can equally be torn down via HA core's standard
+    `unsubscribe_events` (`{id, type: "unsubscribe_events", subscription: number}`).
+    This is the path the frontend's `connection.subscribeMessage` lifecycle uses;
+    both routes cancel the subscription and the connection close hook remains the
+    backstop for dropped clients.
 
 - Event payloads (inside `event`):
   - Common: `{domain: "haventory", topic: "items"|"locations"|"stats", action: string, ts: string, ...payload}`

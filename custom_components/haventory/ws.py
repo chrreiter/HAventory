@@ -436,6 +436,57 @@ def _cleanup_subscriptions_for_conn(hass: HomeAssistant, conn: object) -> None:
     subs_all.pop(cast("websocket_api.ActiveConnection", conn), None)
 
 
+def _drop_subscription(hass: HomeAssistant, conn: object, sub_id: int) -> None:
+    """Remove a single subscription from the per-connection bucket.
+
+    Registered as the zero-arg teardown callback in HA's ``connection.subscriptions``
+    registry (see ``_register_framework_unsub``). Safe to call repeatedly and after
+    the connection bucket has already been cleaned up.
+    """
+
+    subs_all = _subs_bucket(hass)
+    subs_for_conn = subs_all.get(cast("websocket_api.ActiveConnection", conn))
+    if subs_for_conn is None:
+        return
+    subs_for_conn.pop(sub_id, None)
+    if not subs_for_conn:
+        subs_all.pop(cast("websocket_api.ActiveConnection", conn), None)
+
+
+def _register_framework_unsub(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, sub_id: int
+) -> None:
+    """Register the subscription teardown in HA's own subscription registry.
+
+    ``ActiveConnection.subscriptions`` maps a message id to a zero-arg unsubscribe
+    callback, and HA core's generic ``unsubscribe_events`` command pops-and-calls
+    it. The frontend's ``subscribeMessage`` lifecycle tears down via exactly that
+    command, so without an entry here HA core replies ``not_found``
+    ("Subscription not found.") on every teardown — surfacing as an unhandled
+    rejection in the card. Registering the id makes the standard lifecycle work.
+
+    The ``getattr``/``isinstance`` probe mirrors ``_register_close_listener`` so the
+    offline test stubs (which expose no ``subscriptions`` dict) are unaffected.
+    """
+
+    subscriptions = getattr(conn, "subscriptions", None)
+    if isinstance(subscriptions, dict):
+        subscriptions[sub_id] = functools.partial(_drop_subscription, hass, conn, sub_id)
+
+
+def _unregister_framework_unsub(conn: websocket_api.ActiveConnection, sub_id: int) -> None:
+    """Drop the HA-registry entry for a subscription torn down via our own command.
+
+    Keeps ``haventory/unsubscribe`` and HA core's ``unsubscribe_events`` symmetric so
+    a subscription removed through the dedicated command leaves no stale callback in
+    ``connection.subscriptions``.
+    """
+
+    subscriptions = getattr(conn, "subscriptions", None)
+    if isinstance(subscriptions, dict):
+        subscriptions.pop(sub_id, None)
+
+
 def _register_close_listener(hass: HomeAssistant, conn: websocket_api.ActiveConnection) -> None:
     """Attach cleanup to a connection close callback when available.
 
@@ -869,10 +920,14 @@ async def ws_subscribe(
         sub["location_id"] = msg.get("location_id")
     if "include_subtree" in msg:
         sub["include_subtree"] = bool(msg.get("include_subtree"))
+    sub_id = int(msg.get("id", 0))
     subs_all = _subs_bucket(hass)
     subs_for_conn = subs_all.setdefault(conn, {})
-    subs_for_conn[int(msg.get("id", 0))] = sub
+    subs_for_conn[sub_id] = sub
     _register_close_listener(hass, conn)
+    # Let HA core's generic `unsubscribe_events` (the path the frontend uses) tear
+    # this subscription down cleanly, instead of replying "Subscription not found".
+    _register_framework_unsub(hass, conn, sub_id)
     LOGGER.debug(
         "Subscribed",
         extra={
@@ -907,6 +962,8 @@ async def ws_unsubscribe(
         removed = subs_for_conn.pop(sub_id, None) is not None
         if not subs_for_conn:
             subs_all.pop(conn, None)
+    # Keep HA's own subscription registry in sync with this explicit teardown.
+    _unregister_framework_unsub(conn, sub_id)
     LOGGER.debug(
         "Unsubscribed",
         extra={
