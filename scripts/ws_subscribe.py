@@ -101,8 +101,14 @@ async def run_subscriber() -> int:
     ws_url = _ws_url_from_base(base)
 
     async with aiohttp.ClientSession() as session:
-        timeout = aiohttp.ClientTimeout(total=connect_timeout_s)
-        async with session.ws_connect(ws_url, timeout=timeout) as ws:
+        # Bound the websocket upgrade with connect_timeout_s (asyncio.wait_for); the
+        # per-receive budget is recv_timeout_s (ClientWSTimeout.ws_receive). Passing a
+        # ClientTimeout to ws_connect is deprecated in aiohttp.
+        ws = await asyncio.wait_for(
+            session.ws_connect(ws_url, timeout=aiohttp.ClientWSTimeout(ws_receive=recv_timeout_s)),
+            timeout=connect_timeout_s,
+        )
+        async with ws:
             try:
                 _hello = await asyncio.wait_for(ws.receive_json(), timeout=recv_timeout_s)
                 await ws.send_json({"type": "auth", "access_token": token})

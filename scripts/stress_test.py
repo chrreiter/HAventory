@@ -275,8 +275,15 @@ class HAWebSocketClient:
         """Establish WebSocket connection and authenticate."""
         try:
             self._session = aiohttp.ClientSession()
-            timeout = aiohttp.ClientTimeout(total=CONNECT_TIMEOUT_S)
-            self._ws = await self._session.ws_connect(self.ws_url, timeout=timeout)
+            # Bound the upgrade handshake with CONNECT_TIMEOUT_S (asyncio.wait_for); the
+            # per-receive budget is RECV_TIMEOUT_S (ClientWSTimeout.ws_receive). Passing a
+            # ClientTimeout to ws_connect is deprecated in aiohttp.
+            self._ws = await asyncio.wait_for(
+                self._session.ws_connect(
+                    self.ws_url, timeout=aiohttp.ClientWSTimeout(ws_receive=RECV_TIMEOUT_S)
+                ),
+                timeout=CONNECT_TIMEOUT_S,
+            )
 
             # Receive hello
             await asyncio.wait_for(self._ws.receive_json(), timeout=RECV_TIMEOUT_S)
