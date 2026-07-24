@@ -98,6 +98,7 @@ describe('hv-card-shell: overflow menu', () => {
     );
     expect(ids).toEqual([
       'select-items',
+      'organize',
       'columns',
       'refresh',
       'export-all',

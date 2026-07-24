@@ -17,6 +17,7 @@ import './hv-list';
 import './hv-item-editor';
 import './hv-detail-sheet';
 import './hv-full-view';
+import './hv-organize-dialog';
 import './hv-overflow-menu';
 import type { ColumnKey } from '../store/columns';
 import type { HVFilterPanel } from './hv-filter-panel';
@@ -276,6 +277,7 @@ export class HVCardShell extends LitElement {
   @state() private _detailItemId: string | null = null;
   @state() private _fullViewOpen = false;
   @state() private _startSelecting = false;
+  @state() private _organizeOpen = false;
 
   private readonly responsive = new ResponsiveController(this);
   private storeUnsub?: () => void;
@@ -496,6 +498,7 @@ export class HVCardShell extends LitElement {
     const filtersOn = activeFilterCount(st?.filters ?? defaultFilters()) > 0;
     return [
       { id: 'select-items', label: 'Select items…', glyph: 'select' },
+      { id: 'organize', label: 'Organize…', glyph: 'mapMarker', meta: 'Locations · Tags · Categories' },
       { id: 'columns', label: 'Columns…', glyph: 'viewColumn' },
       { divider: true },
       { id: 'refresh', label: 'Refresh data', glyph: 'refresh', meta: 'Items · locations · stats' },
@@ -528,6 +531,10 @@ export class HVCardShell extends LitElement {
     const { id } = e.detail as { id: string };
     if (id === 'refresh') {
       void this.store?.refreshAll();
+      return;
+    }
+    if (id === 'organize') {
+      this._organizeOpen = true;
       return;
     }
     if (id === 'select-items') {
@@ -890,6 +897,16 @@ export class HVCardShell extends LitElement {
             @save=${this._onEditorSave}
           ></hv-detail-sheet>`
         : null}
+
+      <hv-organize-dialog
+        data-testid="card-organize"
+        ?open=${this._organizeOpen}
+        ?mobile=${mobile}
+        .store=${this.store}
+        @cancel=${() => {
+          this._organizeOpen = false;
+        }}
+      ></hv-organize-dialog>
 
       <hv-confirm
         data-testid="card-confirm"
