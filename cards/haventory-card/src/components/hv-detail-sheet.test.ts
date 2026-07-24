@@ -111,12 +111,24 @@ describe('hv-detail-sheet: read view', () => {
     expect(q(out, '[data-testid="sheet-check-out"]')).toBe(null);
   });
 
-  it('emits check-out, check-in and delete', async () => {
+  it('emits delete straight away, but routes check-out through the date step', async () => {
     const el = await mount({ id: 'item-1' });
-    const seen = captured(el, ['check-out', 'request-delete']);
-    (q(el, '[data-testid="sheet-check-out"]') as HTMLButtonElement).click();
+    const seen = captured(el, ['check-out-confirmed', 'request-delete']);
+
     (q(el, '[data-testid="sheet-delete"]') as HTMLButtonElement).click();
-    expect(seen).toEqual(['check-out', 'request-delete']);
+    expect(seen).toEqual(['request-delete']);
+
+    (q(el, '[data-testid="sheet-check-out"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    // Nothing is checked out until the date step is answered.
+    expect(seen).toEqual(['request-delete']);
+    expect(q(el, '[data-testid="sheet-checkout"]')).toBeTruthy();
+
+    const step = q(el, '[data-testid="sheet-checkout"]') as HTMLElement;
+    (step.shadowRoot?.querySelector('[data-testid="checkout-no-date"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(seen).toEqual(['request-delete', 'check-out-confirmed']);
+    expect(q(el, '[data-testid="sheet-checkout"]')).toBe(null);
   });
 
   it('closes from the ✕', async () => {

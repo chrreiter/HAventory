@@ -18,6 +18,7 @@ import './hv-item-editor';
 import './hv-detail-sheet';
 import './hv-full-view';
 import './hv-organize-dialog';
+import './hv-checkout-popover';
 import './hv-overflow-menu';
 import type { ColumnKey } from '../store/columns';
 import type { HVFilterPanel } from './hv-filter-panel';
@@ -278,6 +279,9 @@ export class HVCardShell extends LitElement {
   @state() private _fullViewOpen = false;
   @state() private _startSelecting = false;
   @state() private _organizeOpen = false;
+  /** Item whose check-out / due-date step is open, with where to anchor it. */
+  @state() private _checkout: { itemId: string; mode: 'check-out' | 'set-due-date'; anchor: DOMRect | null } | null =
+    null;
 
   private readonly responsive = new ResponsiveController(this);
   private storeUnsub?: () => void;
@@ -366,6 +370,26 @@ export class HVCardShell extends LitElement {
 
   private _itemById(itemId: string): Item | undefined {
     return this.st?.items.find((i) => i.id === itemId);
+  }
+
+  private _onRowAction(item: Item, detail: { action?: string; anchor?: DOMRect }) {
+    switch (detail.action) {
+      case 'check-out':
+        this._checkout = { itemId: item.id, mode: 'check-out', anchor: detail.anchor ?? null };
+        break;
+      case 'set-due-date':
+        this._checkout = { itemId: item.id, mode: 'set-due-date', anchor: detail.anchor ?? null };
+        break;
+      case 'check-in':
+        void this.store?.markCheckedIn(item.id, item.version);
+        break;
+      case 'edit':
+        this._startEdit(item.id);
+        break;
+      case 'delete':
+        this._requestDelete(item);
+        break;
+    }
   }
 
   // ---------- Inline editing ----------
@@ -469,12 +493,15 @@ export class HVCardShell extends LitElement {
         void this.store?.markCheckedIn(item.id, item.version);
         break;
       case 'check-out':
-        // A due date is optional over the WS API; the date step lands with the
-        // check-out popover.
-        void this.store?.checkOut(item.id, null, item.version);
+        // A due date is optional over the WS API, but it is what makes overdue
+        // highlighting mean anything — so offer the step rather than skipping it.
+        this._checkout = { itemId: item.id, mode: 'check-out', anchor: null };
         break;
       case 'request-delete':
         this._requestDelete(item);
+        break;
+      case 'row-action':
+        this._onRowAction(item, detail as { action?: string; anchor?: DOMRect });
         break;
       case 'edit':
       case 'open-item':
@@ -788,6 +815,7 @@ export class HVCardShell extends LitElement {
         @request-delete=${(e: CustomEvent) => this._onRowEvent('request-delete', e.detail)}
         @edit=${(e: CustomEvent) => this._onRowEvent('edit', e.detail)}
         @open-item=${(e: CustomEvent) => this._onRowEvent('open-item', e.detail)}
+        @row-action=${(e: CustomEvent) => this._onRowEvent('row-action', e.detail)}
       ></hv-list>
 
       ${loaded > 0
@@ -892,11 +920,45 @@ export class HVCardShell extends LitElement {
             @increment=${(e: CustomEvent) => this._onRowEvent('increment', e.detail)}
             @decrement=${(e: CustomEvent) => this._onRowEvent('decrement', e.detail)}
             @check-in=${(e: CustomEvent) => this._onRowEvent('check-in', e.detail)}
-            @check-out=${(e: CustomEvent) => this._onRowEvent('check-out', e.detail)}
+            @check-out-confirmed=${(e: CustomEvent) => {
+              const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
+              const item = this._itemById(itemId);
+              if (item) void this.store?.checkOut(item.id, dueDate, item.version);
+            }}
+            @set-due-date=${(e: CustomEvent) => {
+              const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
+              const item = this._itemById(itemId);
+              if (item) void this.store?.updateItem(item.id, { due_date: dueDate }, item.version);
+            }}
             @request-delete=${(e: CustomEvent) => this._onRowEvent('request-delete', e.detail)}
             @save=${this._onEditorSave}
           ></hv-detail-sheet>`
         : null}
+
+      <hv-checkout-popover
+        data-testid="card-checkout"
+        ?open=${this._checkout !== null}
+        ?mobile=${mobile}
+        .mode=${this._checkout?.mode ?? 'check-out'}
+        .anchor=${this._checkout?.anchor ?? null}
+        .item=${this._checkout ? (this._itemById(this._checkout.itemId) ?? null) : null}
+        @check-out=${(e: CustomEvent) => {
+          const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
+          const item = this._itemById(itemId);
+          this._checkout = null;
+          if (item) void this.store?.checkOut(item.id, dueDate, item.version);
+        }}
+        @set-due-date=${(e: CustomEvent) => {
+          const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
+          const item = this._itemById(itemId);
+          this._checkout = null;
+          // A due date only exists while an item is out, so this is a plain update.
+          if (item) void this.store?.updateItem(item.id, { due_date: dueDate }, item.version);
+        }}
+        @cancel=${() => {
+          this._checkout = null;
+        }}
+      ></hv-checkout-popover>
 
       <hv-organize-dialog
         data-testid="card-organize"

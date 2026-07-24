@@ -4,6 +4,8 @@ import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue } from '../ui/relative-time';
 import type { Item } from '../store/types';
+import './hv-overflow-menu';
+import type { OverflowMenuEntry } from './hv-overflow-menu';
 
 /** True when an item is at or under its low-stock threshold. */
 export function isLowStock(item: Item): boolean {
@@ -230,6 +232,28 @@ export class HVListRow extends LitElement {
     );
   }
 
+  /** Row menu contents depend on whether the item is out, and whether it has a due date. */
+  private _menuEntries(item: Item): OverflowMenuEntry[] {
+    if (item.checked_out) {
+      return [
+        { id: 'check-in', label: 'Check in', glyph: 'account' },
+        {
+          id: 'set-due-date',
+          label: item.due_date ? 'Change due date…' : 'Set due date…',
+          glyph: 'calendar',
+        },
+        { divider: true },
+        { id: 'delete', label: 'Delete item', glyph: 'del' },
+      ];
+    }
+    return [
+      { id: 'check-out', label: 'Check out…', glyph: 'account' },
+      { id: 'edit', label: 'Edit', glyph: 'pencil' },
+      { divider: true },
+      { id: 'delete', label: 'Delete item', glyph: 'del' },
+    ];
+  }
+
   private _onKeydown = (e: KeyboardEvent) => {
     switch (e.key) {
       case 'Enter':
@@ -371,17 +395,21 @@ export class HVListRow extends LitElement {
               >
                 ${icon('pencil', 18)}
               </button>
-              <button
+              <hv-overflow-menu
                 data-testid="row-menu"
-                aria-label=${`Actions for ${item.name}`}
-                title="More actions"
-                @click=${(e: Event) => {
+                label=${`Actions for ${item.name}`}
+                .entries=${this._menuEntries(item)}
+                @click=${(e: Event) => e.stopPropagation()}
+                @select=${(e: CustomEvent) => {
                   e.stopPropagation();
-                  this._emit('row-menu', { anchor: e.currentTarget });
+                  const { id } = e.detail as { id: string };
+                  // The check-out flow needs somewhere to anchor its popover.
+                  const anchor = (
+                    this.shadowRoot?.querySelector('[data-testid="row-menu"]') as HTMLElement | null
+                  )?.getBoundingClientRect();
+                  this._emit('row-action', { action: id, anchor });
                 }}
-              >
-                ${icon('dotsVertical', 18)}
-              </button>
+              ></hv-overflow-menu>
             </span>`}
         ${this._renderStepper()}
       </div>

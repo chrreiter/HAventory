@@ -621,15 +621,40 @@ describe('hv-card-shell: mobile detail sheet', () => {
     expect(store.state.value.items[0].quantity).toBe(6);
   });
 
-  it('checks out from the sheet with no due date, which the API allows', async () => {
+  it('offers the due-date step inline in the sheet, and honours "no due date"', async () => {
     const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
     (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
     await settle(el);
 
     (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-check-out"]') as HTMLButtonElement).click();
     await settle(el);
+
+    // The step opens inside the sheet — no second dialog.
+    const step = sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-checkout"]') as HTMLElement;
+    expect(step).toBeTruthy();
+
+    (step.shadowRoot?.querySelector('[data-testid="checkout-no-date"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
     expect(store.state.value.items[0].checked_out).toBe(true);
     expect(store.state.value.items[0].due_date).toBe(null);
+  });
+
+  it('checks out from the sheet with the suggested due date', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+    (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
+    await settle(el);
+    (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-check-out"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const step = sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-checkout"]') as HTMLElement;
+    (step.shadowRoot?.querySelector('[data-testid="checkout-confirm"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    expect(store.state.value.items[0].checked_out).toBe(true);
+    expect(store.state.value.items[0].due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it('saves an edit made in the sheet', async () => {
@@ -718,5 +743,106 @@ describe('hv-card-shell: full view', () => {
     await settle(el);
 
     expect(seen).toEqual(['columns']);
+  });
+});
+
+describe('hv-card-shell: check-out with a due date', () => {
+  const rowMenu = (sr: ShadowRoot) => {
+    const row = (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector(
+      'hv-list-row',
+    ) as HTMLElement;
+    return row.shadowRoot?.querySelector('[data-testid="row-menu"]') as HTMLElement;
+  };
+  const openRowMenu = async (el: HVCardShell, sr: ShadowRoot) => {
+    const menu = rowMenu(sr) as HTMLElement & { updateComplete: Promise<unknown> };
+    // The menu lives two shadow roots down; let it render before reaching in.
+    await menu.updateComplete;
+    (menu.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
+    await menu.updateComplete;
+    await settle(el);
+    return menu;
+  };
+  const popover = (sr: ShadowRoot) =>
+    sr.querySelector('[data-testid="card-checkout"]') as HTMLElement & { open: boolean };
+
+  it('offers check-out, edit and delete on a row that is in stock', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const menu = await openRowMenu(el, sr);
+    const ids = [...(menu.shadowRoot?.querySelectorAll('[data-testid="overflow-item"]') ?? [])].map(
+      (b) => (b as HTMLElement).dataset.id,
+    );
+    expect(ids).toEqual(['check-out', 'edit', 'delete']);
+  });
+
+  it('offers check-in and a due-date entry on a row that is out', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1', checked_out: true })] });
+    const menu = await openRowMenu(el, sr);
+    const items = [...(menu.shadowRoot?.querySelectorAll('[data-testid="overflow-item"]') ?? [])].map(
+      (b) => (b as HTMLElement),
+    );
+    expect(items.map((b) => b.dataset.id)).toEqual(['check-in', 'set-due-date', 'delete']);
+    expect(items[1].textContent).toContain('Set due date');
+  });
+
+  it('says "Change due date" when there already is one', async () => {
+    const { el, sr } = await mountShell({
+      items: [makeItem({ id: '1', checked_out: true, due_date: '2030-01-01' })],
+    });
+    const menu = await openRowMenu(el, sr);
+    const entry = menu.shadowRoot?.querySelector('[data-id="set-due-date"]') as HTMLElement;
+    expect(entry.textContent).toContain('Change due date');
+  });
+
+  it('checks out through the date step rather than silently with none', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const menu = await openRowMenu(el, sr);
+    (menu.shadowRoot?.querySelector('[data-id="check-out"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(popover(sr).open).toBe(true);
+    expect(store.state.value.items[0].checked_out).toBe(false);
+
+    (popover(sr).shadowRoot?.querySelector('[data-testid="checkout-confirm"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    expect(store.state.value.items[0].checked_out).toBe(true);
+    expect(store.state.value.items[0].due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('checks in straight from the row menu', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', checked_out: true })] });
+    const menu = await openRowMenu(el, sr);
+    (menu.shadowRoot?.querySelector('[data-id="check-in"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+    expect(store.state.value.items[0].checked_out).toBe(false);
+  });
+
+  it('sets a due date on an item that is already out', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', checked_out: true })] });
+    const menu = await openRowMenu(el, sr);
+    (menu.shadowRoot?.querySelector('[data-id="set-due-date"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    (popover(sr).shadowRoot?.querySelector('[data-testid="checkout-confirm"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    expect(store.state.value.items[0].due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(store.state.value.items[0].checked_out).toBe(true);
+  });
+
+  it('deletes from the row menu through the same confirmation', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const menu = await openRowMenu(el, sr);
+    (menu.shadowRoot?.querySelector('[data-id="delete"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const confirm = sr.querySelector('[data-testid="card-confirm"]') as HTMLElement & { open: boolean };
+    expect(confirm.open).toBe(true);
+    (confirm.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(store.state.value.items).toHaveLength(0);
   });
 });

@@ -7,6 +7,7 @@ import { inferType } from '../ui/item-form';
 import { displayPath, isLowStock } from './hv-list-row';
 import type { Item, Location, LocationTreeNode, ScalarValue } from '../store/types';
 import './hv-bottom-sheet';
+import './hv-checkout-popover';
 import './hv-item-editor';
 import type { HVItemEditor } from './hv-item-editor';
 
@@ -250,10 +251,15 @@ export class HVDetailSheet extends LitElement {
   @property({ type: String }) errorMessage: string | null = null;
 
   @state() private _mode: 'read' | 'edit' = 'read';
+  /** The check-out date step, shown inline in the sheet rather than as a popup. */
+  @state() private _checkoutOpen = false;
 
   protected willUpdate(changed: Map<string, unknown>) {
     // A fresh item, or a re-open, always lands on the read view.
-    if (changed.has('item') || (changed.has('open') && this.open)) this._mode = 'read';
+    if (changed.has('item') || (changed.has('open') && this.open)) {
+      this._mode = 'read';
+      this._checkoutOpen = false;
+    }
   }
 
   /** True when the edit form is open with unsaved changes. */
@@ -388,13 +394,44 @@ export class HVDetailSheet extends LitElement {
         </div>
       </div>
 
+      ${this._checkoutOpen
+        ? html`<div style="padding: 0 14px 14px">
+            <hv-checkout-popover
+              mobile
+              open
+              data-testid="sheet-checkout"
+              .item=${item}
+              .mode=${item.checked_out ? 'set-due-date' : 'check-out'}
+              @check-out=${(e: CustomEvent) => {
+                this._checkoutOpen = false;
+                this._emit('check-out-confirmed', {
+                  dueDate: (e.detail as { dueDate: string | null }).dueDate,
+                });
+              }}
+              @set-due-date=${(e: CustomEvent) => {
+                this._checkoutOpen = false;
+                this._emit('set-due-date', { dueDate: (e.detail as { dueDate: string | null }).dueDate });
+              }}
+              @cancel=${() => {
+                this._checkoutOpen = false;
+              }}
+            ></hv-checkout-popover>
+          </div>`
+        : null}
+
       <div class="actions">
         <div class="pair">
           ${item.checked_out
             ? html`<button class="outline" data-testid="sheet-check-in" @click=${() => this._emit('check-in')}>
                 ${icon('account', 18)}Check in
               </button>`
-            : html`<button class="outline" data-testid="sheet-check-out" @click=${() => this._emit('check-out')}>
+            : html`<button
+                class="outline"
+                data-testid="sheet-check-out"
+                @click=${() => {
+                  this._checkoutOpen = true;
+                }}
+              >
                 ${icon('account', 18)}Check out
               </button>`}
           <button
