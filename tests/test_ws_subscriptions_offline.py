@@ -36,6 +36,35 @@ class _ConnStub:
             cb()
 
 
+class _HAConnStub(_ConnStub):
+    """Connection stub that mirrors HA's ``ActiveConnection`` subscription registry.
+
+    Real ``ActiveConnection`` exposes a ``subscriptions`` dict (message id -> zero-arg
+    unsub callback) that both the framework's ``unsubscribe_events`` command and the
+    disconnect path drive. The plain ``_ConnStub`` deliberately omits it (exercising the
+    ``on_close`` fallback); this subclass restores it so we can drive the framework
+    teardown path the frontend actually uses.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.subscriptions: dict[Any, Callable[[], None]] = {}
+
+    def core_unsubscribe_events(self, subscription: int) -> bool:
+        """Emulate HA core's ``unsubscribe_events``: pop-and-call, or report missing."""
+        if subscription in self.subscriptions:
+            self.subscriptions.pop(subscription)()
+            return True
+        return False
+
+    def close(self) -> None:
+        # HA calls every registered unsub on disconnect, then any close callbacks.
+        for unsub in list(self.subscriptions.values()):
+            unsub()
+        self.subscriptions.clear()
+        super().close()
+
+
 def _get_handler(
     hass: HomeAssistant, type_: str
 ) -> Callable[[HomeAssistant, object, dict], Coroutine[Any, Any, dict]]:
@@ -253,3 +282,64 @@ async def test_location_filters_subtree_and_direct_only() -> None:
         if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
     }
     assert ids == {SUB_ID_SUBTREE}
+
+
+@pytest.mark.asyncio
+async def test_framework_unsubscribe_events_tears_down_subscription() -> None:
+    """Subscriptions register in HA's own registry so core ``unsubscribe_events``
+    (the teardown path the frontend's ``subscribeMessage`` uses) can cancel them.
+
+    Before the fix nothing was registered under the message id, so core replied
+    ``not_found`` ("Subscription not found.") on every teardown — an unhandled
+    rejection in the card.
+    """
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    sub_id = 501
+    conn = _HAConnStub()
+    res = await _send(hass, conn, sub_id, "haventory/subscribe", topic="items")
+    assert res["success"] is True
+
+    # The zero-arg teardown is registered under the message id — exactly what core's
+    # ``unsubscribe_events`` looks up (`if subscription in connection.subscriptions`).
+    assert sub_id in conn.subscriptions
+    assert callable(conn.subscriptions[sub_id])
+
+    # Events flow while subscribed.
+    await _send(hass, conn, 1, "haventory/item/create", name="Box")
+    assert len(_extract_events(conn, topic="items")) >= 1
+
+    # Emulate core ``unsubscribe_events``: the id is found -> success (no not_found).
+    assert conn.core_unsubscribe_events(sub_id) is True
+    assert sub_id not in conn.subscriptions
+    assert conn not in _subs_bucket(hass)  # our bucket was cleaned up too
+
+    # No further deliveries after teardown.
+    conn.messages.clear()
+    await _send(hass, conn, 2, "haventory/item/create", name="Tape")
+    assert _extract_events(conn, topic="items") == []
+
+
+@pytest.mark.asyncio
+async def test_dedicated_unsubscribe_clears_framework_registry() -> None:
+    """``haventory/unsubscribe`` also clears the HA-registry entry, keeping the two
+    teardown paths symmetric (no stale callback left in ``connection.subscriptions``)."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    sub_id = 601
+    conn = _HAConnStub()
+    await _send(hass, conn, sub_id, "haventory/subscribe", topic="stats")
+    assert sub_id in conn.subscriptions
+
+    res = await _send(hass, conn, 602, "haventory/unsubscribe", subscription=sub_id)
+    assert res["success"] is True
+    assert sub_id not in conn.subscriptions
+    assert conn not in _subs_bucket(hass)
