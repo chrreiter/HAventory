@@ -125,8 +125,11 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - Result: `<Item>`; emits `items/quantity_changed` and `stats/counts`.
 
 - `haventory/item/check_out`
-  - Payload: `{item_id: string, due_date: YYYY-MM-DD, expected_version?: number}`
+  - Payload: `{item_id: string, due_date?: YYYY-MM-DD|null, expected_version?: number}`
   - Result: `<Item>`; emits `items/checked_out` and `stats/counts`.
+  - `due_date` is optional here: omitting it (or passing `null`) checks the item out with
+    no due date. Note this differs from the `haventory.item_check_out` **service**, whose
+    schema requires `due_date`.
 
 - `haventory/item/check_in`
   - Payload: `{item_id: string, expected_version?: number}`

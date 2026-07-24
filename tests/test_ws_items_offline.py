@@ -95,6 +95,38 @@ async def test_item_quantity_and_checkout_helpers() -> None:
 
 
 @pytest.mark.asyncio
+async def test_item_check_out_due_date_is_optional() -> None:
+    """Check out without a due date, and with an explicit null one.
+
+    The WS schema declares ``due_date`` optional and nullable (unlike the
+    ``haventory.item_check_out`` service, which requires it), so both forms
+    check the item out and leave ``due_date`` unset.
+    """
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    item_id = created["result"]["id"]
+
+    # Omitted entirely
+    res = await _send(hass, 2, "haventory/item/check_out", item_id=item_id)
+    assert res["success"] is True
+    assert res["result"]["checked_out"] is True
+    assert res["result"]["due_date"] is None
+
+    await _send(hass, 3, "haventory/item/check_in", item_id=item_id)
+
+    # Explicit null
+    res = await _send(hass, 4, "haventory/item/check_out", item_id=item_id, due_date=None)
+    assert res["success"] is True
+    assert res["result"]["checked_out"] is True
+    assert res["result"]["due_date"] is None
+
+
+@pytest.mark.asyncio
 async def test_item_list_pagination_cursor_passthrough() -> None:
     """List items returns items array and next_cursor passthrough shape."""
 
