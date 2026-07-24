@@ -56,6 +56,7 @@ Ordered by impact.
 | 21 | **Undecodable pagination `cursor` returns a full unfiltered page** (`"garbage"`, `""`, base64-junk) instead of `validation_error`. Reject malformed cursors explicitly. | WP4 stress test | Low | S |
 | 22 | **Duplicate bulk `op_id`s collapse silently** — the operations execute but the per-`op_id` results dict keeps only the last, so the client can't tell which of its ops succeeded. Reject duplicate `op_id`s (or document last-wins in the contract). | WP4 stress test | Low | S |
 | 23 | **Location rename bumps every subtree item's `version`** (denormalized `location_path` rewrite), so a client holding a stale `expected_version` for an unrelated field gets a spurious `conflict`. Indexes stay consistent — it's a UX surprise, not corruption. A path-only rewrite need not bump the optimistic-concurrency version. | WP4 stress test | Low | M |
+| 24 | **`item/list` silently ignores unknown filter keys.** The `filter`/`sort` payloads are schema-validated only as `dict` (`ws.py`), and `repository.list_items` reads known keys via `flt.get(...)`, so a typo'd or unsupported key (e.g. `query`/`search` instead of `q`) is dropped and the "filtered" list returns **everything** instead of erroring — a silent-match-all footgun. Same input-hardening family as #20/#21: reject unknown `filter`/`sort` keys with `validation_error`. Confirm the card sends only known keys before tightening (contract change). | run-haventory skill gotcha review | Low | S |
 
 ---
 
@@ -78,3 +79,7 @@ Ordered by impact.
   items 19–23. The two confirmed breakages from the same run — the card not live-updating from
   WS subscriptions, and "Subscription not found" teardown rejections — are addressed separately
   in PRs #93 and #94.
+- A later **gotcha triage of the `run-haventory`/`test-haventory` skills** surfaced item 24
+  (lenient `item/list` filters). The other skill gotchas are environmental (broken `.venv`,
+  partial `node_modules`, Python 3.14 requirement) or expected behavior (optimistic-concurrency
+  `conflict`s, the destructive `HA_CONTAINER` clean-start mode), not tracked here.
