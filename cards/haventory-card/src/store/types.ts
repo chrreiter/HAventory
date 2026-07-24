@@ -128,12 +128,100 @@ export interface DistinctValues {
   custom_field_keys: string[];
 }
 
+/** Rate-limiter state reported by haventory/health (opt-in; disabled by default). */
+export interface RateLimitHealth {
+  enabled: boolean;
+  dropped_commands: number;
+  dropped_events: number;
+}
+
 /** Result of haventory/health: storage/index integrity as seen by the backend. */
 export interface HealthResult {
   healthy: boolean;
   issues: string[];
   counts: StatsCounts;
   generation: number;
+  /** Present on every real backend; optional so older payloads still type-check. */
+  rate_limit?: RateLimitHealth;
+}
+
+/** Result of haventory/version. */
+export interface VersionInfo {
+  integration_version: string;
+  schema_version: number;
+}
+
+/**
+ * A node of haventory/location/tree. Unlike the flat `location/list`, tree nodes
+ * carry the per-location counts the sidebar and organize dialog display.
+ */
+export interface LocationTreeNode {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  area_id: string | null;
+  path: LocationPath;
+  /** Items filed directly on this location. */
+  direct_item_count: number;
+  /** Items on this location or any descendant (always >= direct_item_count). */
+  subtree_item_count: number;
+  children: LocationTreeNode[];
+}
+
+// ---------- Bulk operations (haventory/items/bulk) ----------
+
+/**
+ * Operation kinds the batch endpoint dispatches. Note there is deliberately no
+ * `item_create` — the backend does not support creation in a batch.
+ */
+export type BulkOpKind =
+  | 'item_update'
+  | 'item_delete'
+  | 'item_move'
+  | 'item_adjust_quantity'
+  | 'item_set_quantity'
+  | 'item_check_out'
+  | 'item_check_in'
+  | 'item_add_tags'
+  | 'item_remove_tags'
+  | 'item_update_custom_fields'
+  | 'item_set_low_stock_threshold';
+
+export interface BulkOperation {
+  /** Must be unique per call — the backend keys results by it and silently keeps the last duplicate. */
+  op_id: string;
+  kind: BulkOpKind;
+  payload: Record<string, unknown>;
+}
+
+/** Per-operation failure. The backend names this key `context`, not `data`. */
+export interface BulkOpError {
+  code: string;
+  message: string;
+  context?: Record<string, unknown>;
+}
+
+export type BulkOpResult = { success: true; result: Item } | { success: false; error: BulkOpError };
+
+/** Raw haventory/items/bulk response: one entry per op_id. */
+export interface BulkResults {
+  results: Record<string, BulkOpResult>;
+}
+
+/** A failed operation paired back up with the op that produced it. */
+export interface BulkFailure {
+  op: BulkOperation;
+  error: BulkOpError;
+  /** Item id the op targeted, when it had one — lets the UI name the row. */
+  itemId: string | null;
+}
+
+/** Aggregated outcome of a chunked bulk run. */
+export interface BulkOutcome {
+  succeeded: Item[];
+  failed: BulkFailure[];
+  /** True when the caller cancelled between chunks; already-applied chunks stand. */
+  cancelled: boolean;
 }
 
 // ---------- Import / export (data safety) ----------
@@ -254,33 +342,72 @@ export interface HassLike {
   };
 }
 
+/** How a tag selection is combined: any of them, or all of them. */
+export type TagMatchMode = 'any' | 'all';
+
 export interface StoreFilters {
   q: string;
   areaId: string | null;
   locationId: string | null;
   includeSubtree: boolean;
   checkedOutOnly: boolean;
+  /** Presentation hint, not a filter: re-sorts low-stock items to the front. */
   lowStockFirst: boolean;
   orphansOnly: boolean;
+  /** A real filter, independent of `lowStockFirst` — both are separately clearable. */
+  lowStockOnly: boolean;
+  category: string | null;
+  tags: string[];
+  tagsMode: TagMatchMode;
+  /** ISO-8601 instants; the backend compares strictly greater-than. */
+  updatedAfter: string | null;
+  createdAfter: string | null;
   sort: Sort; // default: { field: 'updated_at', order: 'desc' }
+}
+
+/**
+ * Conditions that make the card quietly untrustworthy, so it can say so.
+ *
+ * Rate limiting can reject commands *and silently drop subscription events*, and
+ * events carry no sequence number, so a card cannot detect a gap on its own. The
+ * contract's stated recovery is that the client re-lists on demand — hence the
+ * explicit Refresh action these flags drive.
+ */
+export interface DegradedState {
+  /** A command or a subscribe came back `rate_limited`. */
+  rateLimited: boolean;
+  /** Consecutive transport-level failures — best-effort, lags a real outage by one call. */
+  connectionLost: boolean;
+  /** Commands currently waiting on an automatic retry. */
+  retrying: number;
+  /** Epoch ms of the next scheduled retry, when one is pending. */
+  nextRetryAt: number | null;
+  /** True while reloading after an import replaced the dataset. */
+  reloading: boolean;
 }
 
 export interface StoreState {
   items: Item[];
   cursor: string | null;
+  /** Items matching the active filter across all pages (not just the loaded page). */
+  total: number | null;
+  /** True until the first list resolves — drives skeleton rows. */
+  loading: boolean;
   filters: StoreFilters;
   selection: Set<string>;
   pendingOps: Map<string, { kind: string; itemId?: string }>;
   errorQueue: ErrorEntry[];
   areasCache: AreasListResult | null;
-  locationTreeCache: unknown[] | null; // backend returns nested tree nodes; UI shapes can extend
+  locationTreeCache: LocationTreeNode[] | null;
   // Optional flat locations cache to enrich UI (e.g., show area per node in selectors)
   locationsFlatCache: Location[] | null;
   statsCounts: StatsCounts | null;
   healthCache: HealthResult | null;
+  versionInfo: VersionInfo | null;
   // Distinct categories/tags with counts, sourcing category/tag autocomplete.
   distinctValuesCache: DistinctValues | null;
   connected: { items: boolean; stats: boolean };
+  degraded: DegradedState;
 }
 
 export interface ErrorEntry {

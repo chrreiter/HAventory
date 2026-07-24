@@ -1,5 +1,7 @@
 import type {
   AreasListResult,
+  BulkOperation,
+  BulkResults,
   DistinctValues,
   ExportDocument,
   HassLike,
@@ -13,9 +15,12 @@ import type {
   ItemUpdate,
   ListItemsResult,
   Location,
+  LocationTreeNode,
+  ScalarValue,
   Sort,
   StatsCounts,
   Unsubscribe,
+  VersionInfo,
   AnyEventPayload,
 } from './types';
 
@@ -34,7 +39,7 @@ export class WSClient {
   }
 
   version() {
-    return this.hass.callWS<{ integration_version: string; schema_version: number }>({ type: 'haventory/version' });
+    return this.hass.callWS<VersionInfo>({ type: 'haventory/version' });
   }
 
   stats() {
@@ -119,6 +124,47 @@ export class WSClient {
     return this.hass.callWS<Item>(payload);
   }
 
+  /**
+   * Additive tag edit. Preferred over sending the whole `tags` array through
+   * item/update, which loses a concurrent edit made by another client.
+   */
+  addTags(itemId: string, tags: string[], expectedVersion?: number) {
+    const payload: Record<string, unknown> = { type: 'haventory/item/add_tags', item_id: itemId, tags };
+    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
+    return this.hass.callWS<Item>(payload);
+  }
+
+  removeTags(itemId: string, tags: string[], expectedVersion?: number) {
+    const payload: Record<string, unknown> = { type: 'haventory/item/remove_tags', item_id: itemId, tags };
+    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
+    return this.hass.callWS<Item>(payload);
+  }
+
+  updateCustomFields(
+    itemId: string,
+    set: Record<string, ScalarValue> | undefined,
+    unset: string[] | undefined,
+    expectedVersion?: number,
+  ) {
+    const payload: Record<string, unknown> = {
+      type: 'haventory/item/update_custom_fields',
+      item_id: itemId,
+    };
+    if (set) payload.set = set;
+    if (unset) payload.unset = unset;
+    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
+    return this.hass.callWS<Item>(payload);
+  }
+
+  /**
+   * Run a mixed batch in one call. Partial failure is the normal case: the result
+   * is keyed by `op_id` and each entry independently succeeded or failed. There is
+   * no rollback — earlier successes stand.
+   */
+  bulk(operations: BulkOperation[]) {
+    return this.hass.callWS<BulkResults>({ type: 'haventory/items/bulk', operations });
+  }
+
   // ---------- Locations / Areas ----------
   listLocations() {
     return this.hass.callWS<Location[]>({ type: 'haventory/location/list' });
@@ -131,10 +177,23 @@ export class WSClient {
     return this.hass.callWS<Location>(msg);
   }
 
-  updateLocation(locationId: string, changes: { name?: string; areaId?: string | null }) {
+  getLocation(locationId: string) {
+    return this.hass.callWS<Location>({ type: 'haventory/location/get', location_id: locationId });
+  }
+
+  /**
+   * Rename, re-area and/or re-parent in one call. `newParentId` moves the whole
+   * subtree; passing it here avoids the second `move_subtree` round trip the POC
+   * UI made, so an edit lands atomically.
+   */
+  updateLocation(
+    locationId: string,
+    changes: { name?: string; areaId?: string | null; newParentId?: string | null },
+  ) {
     const msg: Record<string, unknown> = { type: 'haventory/location/update', location_id: locationId };
     if (changes.name !== undefined) msg.name = changes.name;
     if (changes.areaId !== undefined) msg.area_id = changes.areaId;
+    if (changes.newParentId !== undefined) msg.new_parent_id = changes.newParentId;
     return this.hass.callWS<Location>(msg);
   }
 
@@ -150,9 +209,9 @@ export class WSClient {
     });
   }
 
+  /** Nested tree nodes carrying `direct_item_count` / `subtree_item_count`. */
   getLocationTree() {
-    // The backend returns tree nodes; for typing keep as unknown[] | Location-like.
-    return this.hass.callWS<unknown[]>({ type: 'haventory/location/tree' });
+    return this.hass.callWS<LocationTreeNode[]>({ type: 'haventory/location/tree' });
   }
 
   listAreas() {
@@ -181,7 +240,15 @@ export class WSClient {
   subscribe(
     topic: 'items' | 'locations' | 'stats',
     cb: (payload: AnyEventPayload) => void,
-    opts?: { location_id?: string | null; include_subtree?: boolean }
+    opts?: {
+      location_id?: string | null;
+      include_subtree?: boolean;
+      /**
+       * Called when the backend rejects the subscribe — most importantly with
+       * `rate_limited`, which otherwise kills live updates silently.
+       */
+      onError?: (err: unknown) => void;
+    }
   ): Unsubscribe {
     const id = nextSubscriptionId++;
     const msg: Record<string, unknown> = {
@@ -208,12 +275,19 @@ export class WSClient {
     // Handle Promise<Unsubscribe> with early-cancel support.
     let resolvedUnsub: Unsubscribe | null = null;
     let cancelRequested = false;
-    Promise.resolve(unsubOrPromise).then((fn) => {
-      resolvedUnsub = fn as Unsubscribe;
-      if (cancelRequested && resolvedUnsub) {
-        try { resolvedUnsub(); } catch { /* ignore */ }
-      }
-    });
+    Promise.resolve(unsubOrPromise)
+      .then((fn) => {
+        resolvedUnsub = fn as Unsubscribe;
+        if (cancelRequested && resolvedUnsub) {
+          try { resolvedUnsub(); } catch { /* ignore */ }
+        }
+      })
+      .catch((err: unknown) => {
+        // A rejected subscribe means no live updates at all. Report it so the
+        // card can go degraded and offer a manual refresh instead of quietly
+        // showing stale data.
+        opts?.onError?.(err);
+      });
 
     return () => {
       if (resolvedUnsub) {
