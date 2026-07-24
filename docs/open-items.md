@@ -51,6 +51,11 @@ Ordered by impact.
 | 16 | **TypeScript 7 adoption** once typescript-eslint supports it (currently capped `<6.1.0`). | #74 | Low | S |
 | 17 | **`tests/conftest.py`** uses `WindowsSelectorEventLoopPolicy` / `set_event_loop_policy`, both deprecated for removal in Python 3.16. Replace when convenient. | #74, #91 | Low | S |
 | 18 | **Other frontend enhancements** (roadmap): advanced date-range filters, drag & drop move/reorder, item image upload (HA media), mobile touch/swipe optimization, offline/service-worker support, virtual-scroll/lazy-load perf. | `docs/frontend_architecture.md` (Future Enhancements Phase 2.5+) | Low | L (each) |
+| 19 | **O(N²) persistence: every single mutation serializes the *whole* dataset and rewrites the store blob** (immediate persist, serialized by the write lock). Measured per-create p50 climbs 70 ms @250 → 114 ms @500 → 200 ms @1000 items; at a few thousand items a single create trends toward ~1 s. Correctness is unaffected. A debounced/delta persistence path for bulk work would flatten the curve. | WP4 stress test | Medium (scaling) | M |
+| 20 | **No upper bound on `description` length (1 MB accepted) or `custom_fields` key count (~1000 accepted).** A persistence-bloat vector, amplified by #19. Add sane input caps. | WP4 stress test | Low | S |
+| 21 | **Undecodable pagination `cursor` returns a full unfiltered page** (`"garbage"`, `""`, base64-junk) instead of `validation_error`. Reject malformed cursors explicitly. | WP4 stress test | Low | S |
+| 22 | **Duplicate bulk `op_id`s collapse silently** — the operations execute but the per-`op_id` results dict keeps only the last, so the client can't tell which of its ops succeeded. Reject duplicate `op_id`s (or document last-wins in the contract). | WP4 stress test | Low | S |
+| 23 | **Location rename bumps every subtree item's `version`** (denormalized `location_path` rewrite), so a client holding a stale `expected_version` for an unrelated field gets a spurious `conflict`. Indexes stay consistent — it's a UX surprise, not corruption. A path-only rewrite need not bump the optimistic-concurrency version. | WP4 stress test | Low | M |
 
 ---
 
@@ -67,3 +72,9 @@ Ordered by impact.
   these were created/extended by the frontend PRs (#32, #79, #82–#86).
 - The four WP2 PRs (#79, #80, #88, #90) shipped with empty bodies (`@-`); their follow-ups
   were consolidated into #80/#88 (already merged) and the `docs` staleness notes.
+- The **WP4 online stress test** (an exploratory break-it run against the Docker HA container
+  — bulk 250→1000 items, adversarial fuzzing, concurrency races, rate-limit toggling,
+  mid-load restart with an on-disk cross-check, and a browser-driven card under load) surfaced
+  items 19–23. The two confirmed breakages from the same run — the card not live-updating from
+  WS subscriptions, and "Subscription not found" teardown rejections — are addressed separately
+  in PRs #93 and #94.
