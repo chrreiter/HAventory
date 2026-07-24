@@ -65,6 +65,46 @@ class _HAConnStub(_ConnStub):
         super().close()
 
 
+class _SlottedHAConn:
+    """Faithful stand-in for HA's ``__slots__``-based ``ActiveConnection``.
+
+    Crucially it has **no** ``__dict__``: setting an arbitrary attribute on the
+    connection (as an old ``_haventory_close_registered`` marker did) raises
+    ``AttributeError`` here exactly as it does on real HA — the ``__dict__``-carrying
+    stubs above silently tolerate it and hide the bug. A custom ``__setattr__``
+    *records* every rejected attempt so a test can prove production code never tries.
+    Mirrors only the surface the subscribe path touches: a ``subscriptions`` registry
+    and ``send_message``, with a disconnect ``close()`` that invokes every unsub.
+    """
+
+    __slots__ = ("messages", "stray_set_attempts", "subscriptions")
+
+    def __init__(self) -> None:
+        object.__setattr__(self, "messages", [])
+        object.__setattr__(self, "subscriptions", {})
+        object.__setattr__(self, "stray_set_attempts", [])
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in self.__slots__:
+            object.__setattr__(self, name, value)
+            return
+        # Real HA rejects arbitrary attrs (no __dict__); record the attempt first so
+        # tests can assert production code never stamps a marker on the connection.
+        self.stray_set_attempts.append(name)
+        raise AttributeError(
+            f"'_SlottedHAConn' object has no attribute {name!r} "
+            "and no __dict__ for setting new attributes"
+        )
+
+    def send_message(self, msg: dict[str, Any]) -> None:
+        self.messages.append(msg)
+
+    def close(self) -> None:
+        for unsub in list(self.subscriptions.values()):
+            unsub()
+        self.subscriptions.clear()
+
+
 def _get_handler(
     hass: HomeAssistant, type_: str
 ) -> Callable[[HomeAssistant, object, dict], Coroutine[Any, Any, dict]]:
@@ -343,3 +383,49 @@ async def test_dedicated_unsubscribe_clears_framework_registry() -> None:
     assert res["success"] is True
     assert sub_id not in conn.subscriptions
     assert conn not in _subs_bucket(hass)
+
+
+@pytest.mark.asyncio
+async def test_subscribe_on_slotted_connection_never_stamps_attribute() -> None:
+    """Subscribe must not stamp a marker attribute on a ``__slots__`` connection.
+
+    Regression for the WP4 stress re-run finding: ``_register_close_listener`` used to
+    set ``conn._haventory_close_registered = True`` for "register once" behaviour. Real
+    HA's ``ActiveConnection`` is slotted (no ``__dict__``), so that assignment raised
+    ``AttributeError`` on **every** subscribe (caught, but logged as a traceback under
+    debug logging). The ``__dict__``-carrying stubs never surfaced it. Idempotency now
+    derives from the ``"haventory/cleanup"`` key already present in ``subscriptions``.
+    """
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    conn = _SlottedHAConn()
+
+    # Two subscribes on the same connection must not raise, must register the per-id
+    # framework teardown for each, and must leave exactly one connection-cleanup entry.
+    sub_a, sub_b = 701, 702
+    r1 = await _send(hass, conn, sub_a, "haventory/subscribe", topic="items")
+    r2 = await _send(hass, conn, sub_b, "haventory/subscribe", topic="stats")
+    assert r1["success"] is True
+    assert r2["success"] is True
+    assert sub_a in conn.subscriptions
+    assert sub_b in conn.subscriptions
+    assert list(conn.subscriptions).count("haventory/cleanup") == 1  # idempotent
+
+    # The core assertion: production code never attempted to stamp a marker attribute
+    # on the slotted connection (the old ``_haventory_close_registered = True``).
+    assert conn.stray_set_attempts == []
+    assert not hasattr(conn, "_haventory_close_registered")
+
+    # Both subscriptions are live in our bucket, and the disconnect path
+    # (subscriptions.values()) tears them all down without drift.
+    assert _subs_bucket(hass).get(conn)
+    conn.close()
+    assert conn not in _subs_bucket(hass)
+
+    # Sanity: the stub really is slotted like real HA (rejects arbitrary attrs).
+    with pytest.raises(AttributeError):
+        conn.some_unexpected_attr = 1  # type: ignore[attr-defined]

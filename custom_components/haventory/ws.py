@@ -495,41 +495,38 @@ def _register_close_listener(hass: HomeAssistant, conn: websocket_api.ActiveConn
     there is what prevents disconnected clients from leaking subscription
     state. The ``on_close``/``add_close_callback`` probes support the offline
     test stubs.
+
+    Idempotency is derived from the state itself, not stamped on the connection:
+    real HA's ``ActiveConnection`` is ``__slots__``-based (no ``__dict__``), so a
+    ``conn._haventory_close_registered = True`` marker raises ``AttributeError`` on
+    every subscribe there — a benign-but-noisy exception the offline stubs never
+    surface because they carry a ``__dict__``. Our ``"haventory/cleanup"`` key and
+    the idempotent ``_cleanup_subscriptions_for_conn`` make repeat registration a
+    harmless no-op, so no marker is needed.
     """
-
-    if getattr(conn, "_haventory_close_registered", False):
-        return
-
-    registered = False
 
     subscriptions = getattr(conn, "subscriptions", None)
     if isinstance(subscriptions, dict):
-        # String key cannot collide with HA's integer subscription ids.
-        subscriptions["haventory/cleanup"] = functools.partial(
-            _cleanup_subscriptions_for_conn, hass, conn
-        )
-        registered = True
+        # Real-HA path. String key cannot collide with HA's integer subscription
+        # ids; its presence is also the "already registered" marker.
+        if "haventory/cleanup" not in subscriptions:
+            subscriptions["haventory/cleanup"] = functools.partial(
+                _cleanup_subscriptions_for_conn, hass, conn
+            )
+        return
 
+    # Offline-stub path: connections expose on_close / add_close_callback instead of
+    # a subscriptions dict. `_cleanup_subscriptions_for_conn` is idempotent, so even a
+    # repeat registration here only ever removes the (already-removed) bucket.
     closer = getattr(conn, "on_close", None)
     if not callable(closer):
         closer = getattr(conn, "add_close_callback", None)
     if callable(closer):
         try:
             closer(lambda: _cleanup_subscriptions_for_conn(hass, conn))
-            registered = True
         except Exception:  # pragma: no cover - defensive
             LOGGER.debug(
                 "Failed to register WS close listener",
-                extra={"domain": DOMAIN, "op": "subscribe_close_hook"},
-                exc_info=True,
-            )
-
-    if registered:
-        try:
-            conn._haventory_close_registered = True
-        except Exception:  # pragma: no cover - exotic connection objects
-            LOGGER.debug(
-                "Failed to stamp WS close registration",
                 extra={"domain": DOMAIN, "op": "subscribe_close_hook"},
                 exc_info=True,
             )
