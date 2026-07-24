@@ -46,6 +46,7 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
             low_stock_count: items.filter((i) => typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number)).length,
             checked_out_count: items.filter((i) => i.checked_out).length,
             locations_total: locations.length,
+            no_location_count: items.filter((i) => i.location_id == null).length,
           };
           return counts as unknown as T;
         }
@@ -55,6 +56,7 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
             low_stock_count: items.filter((i) => typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number)).length,
             checked_out_count: items.filter((i) => i.checked_out).length,
             locations_total: locations.length,
+            no_location_count: items.filter((i) => i.location_id == null).length,
           };
           return {
             healthy: healthOverride?.healthy ?? true,
@@ -110,6 +112,7 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
               low_stock_count: 0,
               checked_out_count: 0,
               locations_total: locations.length,
+              no_location_count: 0,
             },
           };
           return summary as unknown as T;
@@ -212,15 +215,16 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
           const cursor = (msg.cursor as string | undefined) || undefined;
           // Mirror the backend: filter, then sort, then paginate.
           const listed = applyMockSort(applyMockFilter(items, msg.filter), msg.sort);
+          const total = listed.length;
           const page1 = listed.slice(0, limit);
           if (!cursor) {
             const next_cursor = listed.length > limit ? 'cursor-2' : null;
-            return { items: page1, next_cursor } as unknown as T;
+            return { items: page1, next_cursor, total } as unknown as T;
           }
           if (cursor === 'cursor-2') {
-            return { items: listed.slice(limit, limit * 2), next_cursor: null } as unknown as T;
+            return { items: listed.slice(limit, limit * 2), next_cursor: null, total } as unknown as T;
           }
-          return { items: [], next_cursor: null } as unknown as T;
+          return { items: [], next_cursor: null, total } as unknown as T;
         }
         case 'haventory/item/get': {
           const itemId = String((msg as any).item_id);

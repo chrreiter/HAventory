@@ -1465,6 +1465,7 @@ async def ws_item_list(
     result = {
         "items": [_serialize_item(hass, it) for it in page["items"]],
         "next_cursor": page.get("next_cursor"),
+        "total": page["total"],
     }
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
@@ -1605,6 +1606,7 @@ async def ws_location_tree(
 
     def build_node(loc_id: str) -> dict[str, Any]:
         loc = locs_by_id[loc_id]
+        counts = repo.get_location_item_counts(loc_id)
         return {
             "id": str(loc.id),
             "name": loc.name,
@@ -1616,6 +1618,8 @@ async def ws_location_tree(
                 "display_path": loc.path.display_path,
                 "sort_key": loc.path.sort_key,
             },
+            "direct_item_count": counts["direct"],
+            "subtree_item_count": counts["subtree"],
             "children": [build_node(cid) for cid in sorted(children_by_parent.get(loc_id, set()))],
         }
 

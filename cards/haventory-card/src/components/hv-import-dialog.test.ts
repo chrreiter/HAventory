@@ -134,7 +134,7 @@ describe('hv-import-dialog', () => {
       policy: 'merge',
       items: { total: 2, add: 2, update: 0, conflict: 0, unchanged: 0 },
       locations: { total: 1, add: 1, update: 0, conflict: 0, unchanged: 0 },
-      totals: { items_total: 2, low_stock_count: 0, checked_out_count: 0, locations_total: 1 },
+      totals: { items_total: 2, low_stock_count: 0, checked_out_count: 0, locations_total: 1, no_location_count: 0 },
     };
     if (el.updateComplete) await el.updateComplete;
 

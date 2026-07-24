@@ -391,3 +391,37 @@ async def test_inspection_date_persists_across_create_update_get() -> None:
     new_repo = Repository.from_state(state)
     reloaded = new_repo.get_item(item.id)
     assert reloaded.inspection_date is None
+
+
+@pytest.mark.asyncio
+async def test_list_items_total_counts_all_matches() -> None:
+    """`total` reflects all filtered matches, independent of pagination."""
+
+    repo = Repository()
+    seeded = 5
+    tools = 2
+    for i in range(seeded):
+        repo.create_item(ItemCreate(name=f"Widget {i}", category="tools" if i < tools else "misc"))
+
+    # Unpaginated: total equals the number of items returned
+    out = repo.list_items()
+    assert out["total"] == seeded
+    assert len(out["items"]) == seeded
+
+    # Paginated: every page reports the full total, not the page size
+    page_limit = 2
+    page1 = repo.list_items(limit=page_limit)
+    assert page1["total"] == seeded
+    assert len(page1["items"]) == page_limit
+    page2 = repo.list_items(limit=page_limit, cursor=page1["next_cursor"])
+    assert page2["total"] == seeded
+
+    # Filtered: total counts only matches
+    filtered = repo.list_items(flt=ItemFilter(category="tools"), limit=1)
+    assert filtered["total"] == tools
+    assert len(filtered["items"]) == 1
+
+    # No matches: empty page, zero total
+    none = repo.list_items(flt=ItemFilter(q="zzz-not-there"))
+    assert none["total"] == 0
+    assert none["items"] == []
