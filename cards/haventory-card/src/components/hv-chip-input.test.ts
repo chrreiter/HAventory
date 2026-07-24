@@ -1,0 +1,93 @@
+import './hv-chip-input';
+import type { HVChipInput } from './hv-chip-input';
+
+async function mount(props: Partial<HVChipInput> = {}) {
+  const el = document.createElement('hv-chip-input') as HVChipInput;
+  el.values = [];
+  el.suggestions = [];
+  Object.assign(el, props);
+  document.body.appendChild(el);
+  await el.updateComplete;
+  return el;
+}
+
+const q = (el: HVChipInput, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
+const all = (el: HVChipInput, sel: string) => [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
+
+function changes(el: HVChipInput) {
+  const seen: string[][] = [];
+  el.addEventListener('change', (e) => seen.push((e as CustomEvent).detail.values));
+  return seen;
+}
+
+function commit(el: HVChipInput, text: string, key = 'Enter') {
+  const input = q(el, '[data-testid="chip-input"]') as HTMLInputElement;
+  input.value = text;
+  input.dispatchEvent(new Event('input'));
+  input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+}
+
+describe('hv-chip-input', () => {
+  it('renders one removable chip per value', async () => {
+    const el = await mount({ values: ['battery', 'aa'] });
+    expect(all(el, '[data-testid="chip"]').map((c) => c.dataset.value)).toEqual(['battery', 'aa']);
+    expect(all(el, '[data-testid="chip-remove"]')).toHaveLength(2);
+  });
+
+  it('lowercases and trims on commit, matching how the backend stores tags', async () => {
+    const el = await mount();
+    const seen = changes(el);
+    commit(el, '  Battery  ');
+    expect(seen).toEqual([['battery']]);
+  });
+
+  it('accepts a comma as a separator too', async () => {
+    const el = await mount();
+    const seen = changes(el);
+    commit(el, 'metric', ',');
+    expect(seen).toEqual([['metric']]);
+  });
+
+  it('ignores a duplicate and an empty commit', async () => {
+    const el = await mount({ values: ['metric'] });
+    const seen = changes(el);
+    commit(el, 'METRIC');
+    commit(el, '   ');
+    expect(seen).toEqual([]);
+  });
+
+  it('removes a chip by its button, and by Backspace on an empty input', async () => {
+    const el = await mount({ values: ['a', 'b'] });
+    const seen = changes(el);
+
+    (q(el, '[data-testid="chip-remove"][data-value="a"]') as HTMLButtonElement).click();
+    expect(seen[0]).toEqual(['b']);
+
+    const input = q(el, '[data-testid="chip-input"]') as HTMLInputElement;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+    expect(seen[1]).toEqual(['a']);
+  });
+
+  it('suggests unused values, filtered by what is typed', async () => {
+    const el = await mount({ values: ['metric'], suggestions: ['metric', 'm4', 'wood'] });
+    expect(all(el, '[data-testid="chip-suggestion"]').map((s) => s.dataset.value)).toEqual(['m4', 'wood']);
+
+    const input = q(el, '[data-testid="chip-input"]') as HTMLInputElement;
+    input.value = 'wo';
+    input.dispatchEvent(new Event('input'));
+    await el.updateComplete;
+    expect(all(el, '[data-testid="chip-suggestion"]').map((s) => s.dataset.value)).toEqual(['wood']);
+  });
+
+  it('adds a suggestion when it is clicked', async () => {
+    const el = await mount({ suggestions: ['m4'] });
+    const seen = changes(el);
+    (q(el, '[data-testid="chip-suggestion"]') as HTMLButtonElement).click();
+    expect(seen[0]).toEqual(['m4']);
+  });
+
+  it('shows nothing when every suggestion is already used', async () => {
+    const el = await mount({ values: ['m4'], suggestions: ['m4'] });
+    expect(q(el, '[data-testid="chip-suggestions"]')).toBe(null);
+  });
+});

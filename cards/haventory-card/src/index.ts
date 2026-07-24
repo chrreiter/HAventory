@@ -172,9 +172,9 @@ export class HAventoryCard extends LitElement {
 
   /**
    * The revamped card (WP4.1). `haventory-card` stays the custom element HA
-   * knows about and becomes a thin host: `hv-card-shell` owns the store and the
-   * layout, while the dialogs that are still modal live here until their
-   * replacements land.
+   * knows about and becomes a thin host: `hv-card-shell` owns the store, the
+   * layout and item editing, while the two surfaces that are still modal (the
+   * column picker and the import dialog) live here until their redesigns land.
    */
   private _renderRevamp() {
     return html`
@@ -183,8 +183,6 @@ export class HAventoryCard extends LitElement {
         .store=${this.store}
         .heading=${this.config?.title ?? 'Inventory'}
         @menu-action=${(e: CustomEvent) => this._onShellAction((e.detail as { id: string }).id)}
-        @edit=${(e: CustomEvent) => this._openItemDialog((e.detail as { itemId: string }).itemId)}
-        @open-item=${(e: CustomEvent) => this._openItemDialog((e.detail as { itemId: string }).itemId)}
       ></hv-card-shell>
 
       ${this._renderSharedDialogs()}
@@ -193,42 +191,7 @@ export class HAventoryCard extends LitElement {
 
   /** Dialogs the revamped shell delegates to the host card. */
   private _renderSharedDialogs() {
-    const st = this.store?.state.value;
     return html`
-      <hv-item-dialog
-        .locations=${st?.locationsFlatCache ?? null}
-        .areas=${st?.areasCache?.areas ?? []}
-        .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
-        .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
-        .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
-        @open-location-selector=${() => { this._locationSelectorOpen = true; this.requestUpdate(); }}
-        @delete-item=${(e: CustomEvent) => {
-          const { itemId } = e.detail as { itemId: string };
-          void this.store?.deleteItem(itemId);
-          const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open?: boolean } | null;
-          if (dlg) dlg.open = false;
-        }}
-        @save=${(e: CustomEvent) => this._saveFromDialog(e)}
-        @cancel=${() => {
-          const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open?: boolean };
-          if (dlg) dlg.open = false;
-        }}
-      ></hv-item-dialog>
-
-      <hv-location-selector
-        .open=${this._locationSelectorOpen}
-        .locations=${st?.locationsFlatCache ?? null}
-        .areas=${st?.areasCache?.areas ?? []}
-        @cancel=${() => { this._locationSelectorOpen = false; this.requestUpdate(); }}
-        @select=${(e: CustomEvent) => {
-          const { locationId } = e.detail as { locationId: string | null };
-          const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { setLocation: (id: string | null) => void } | null;
-          dlg?.setLocation(locationId);
-          this._locationSelectorOpen = false;
-          this.requestUpdate();
-        }}
-      ></hv-location-selector>
-
       <hv-column-picker
         .open=${this._columnPickerOpen}
         .columns=${this._columnPrefs.expanded}
@@ -250,32 +213,9 @@ export class HAventoryCard extends LitElement {
     `;
   }
 
-  private _saveFromDialog(e: CustomEvent) {
-    const data = e.detail as Record<string, unknown>;
-    const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { item?: { id?: string } | null; open?: boolean };
-    const currentItem = dlg?.item ?? null;
-    if (currentItem && currentItem.id) {
-      void this.store?.updateItem(currentItem.id, data as unknown as import('./store/types').ItemUpdate);
-    } else {
-      void this.store?.createItem(data as unknown as import('./store/types').ItemCreate);
-    }
-    if (dlg) dlg.open = false;
-  }
-
-  private _openItemDialog(itemId: string | null) {
-    const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as
-      (HTMLElement & { open: boolean; item: unknown }) | null;
-    if (!dialog) return;
-    dialog.item = itemId ? (this.store?.state.value.items.find((i) => i.id === itemId) ?? null) : null;
-    dialog.open = true;
-  }
-
   /** Actions the shell hands up because they open a host-owned surface. */
   private _onShellAction(id: string) {
     switch (id) {
-      case 'add-item':
-        this._openItemDialog(null);
-        break;
       case 'columns':
         this._openColumnPicker('expanded');
         break;

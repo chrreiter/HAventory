@@ -106,6 +106,16 @@ export class HVList extends LitElement {
   /** Location name for the "Nothing in X" empty state. */
   @property({ type: String }) emptyLocationName: string | null = null;
   @property({ type: Number }) skeletonRows = 5;
+  /**
+   * Inline editing: the host supplies a template and says which row it belongs
+   * to. Passing a callback rather than editor props keeps this component from
+   * needing to know anything about the edit form.
+   */
+  @property({ attribute: false }) editorTemplate: ((itemId: string | null) => unknown) | null = null;
+  /** Row currently expanded into the editor; its own row is hidden while it is. */
+  @property({ type: String }) editingItemId: string | null = null;
+  /** Pin an empty editor at the top of the list ("Add item"). */
+  @property({ type: Boolean }) addingNew = false;
 
   private _onScroll = (e: Event) => {
     const el = e.currentTarget as HTMLElement;
@@ -169,20 +179,27 @@ export class HVList extends LitElement {
       </div>`;
     }
 
-    if (!this.items.length) return this._renderEmpty();
+    const newEditor = this.addingNew && this.editorTemplate ? this.editorTemplate(null) : null;
+    if (!this.items.length && !newEditor) return this._renderEmpty();
 
     return html`
       <div class="scroller" role="rowgroup" data-testid="list-rows" @scroll=${this._onScroll}>
+        ${newEditor}
         ${repeat(
           this.items,
           (it) => it.id,
-          (it) => html`<hv-list-row
-            .item=${it}
-            ?mobile=${this.mobile}
-            ?selectable=${this.selectable}
-            ?selected=${this.selection.has(it.id)}
-            ?pending=${this.pendingIds.has(it.id)}
-          ></hv-list-row>`,
+          (it) =>
+            this.editingItemId === it.id && this.editorTemplate
+              ? // The expander carries the item's name in its own header, so
+                // showing the collapsed row as well would just be a duplicate.
+                this.editorTemplate(it.id)
+              : html`<hv-list-row
+                  .item=${it}
+                  ?mobile=${this.mobile}
+                  ?selectable=${this.selectable}
+                  ?selected=${this.selection.has(it.id)}
+                  ?pending=${this.pendingIds.has(it.id)}
+                ></hv-list-row>`,
         )}
       </div>
     `;

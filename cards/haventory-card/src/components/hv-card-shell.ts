@@ -14,9 +14,12 @@ import './hv-confirm';
 import './hv-filter-chips';
 import './hv-filter-panel';
 import './hv-list';
+import './hv-item-editor';
 import './hv-overflow-menu';
 import type { HVFilterPanel } from './hv-filter-panel';
+import type { HVItemEditor } from './hv-item-editor';
 import type { ListEmptyKind } from './hv-list';
+import type { ItemCreate, ItemUpdate } from '../store/types';
 
 const SEARCH_DEBOUNCE_MS = 200;
 const FILTER_PANEL_STORAGE_KEY = 'haventory:filter-panel-open:v1';
@@ -252,8 +255,18 @@ export class HVCardShell extends LitElement {
   @state() private _filterPanelOpen = false;
   @state() private _filterSheetOpen = false;
   @state() private _stagedCount: number | null = null;
-  @state() private _confirm: { heading: string; message: string; onConfirm: () => void } | null = null;
+  @state() private _confirm: {
+    heading: string;
+    message: string;
+    confirmLabel?: string;
+    destructive?: boolean;
+    onConfirm: () => void;
+  } | null = null;
   @state() private _searchDraft = '';
+  /** Row expanded into the inline editor, or `'new'` for the add-item expander. */
+  @state() private _editing: string | 'new' | null = null;
+  @state() private _editorBusy = false;
+  @state() private _editorError: string | null = null;
 
   private readonly responsive = new ResponsiveController(this);
   private storeUnsub?: () => void;
@@ -330,13 +343,105 @@ export class HVCardShell extends LitElement {
     this._confirm = {
       heading: `Delete "${item.name}"?`,
       message: 'This cannot be undone. The item is removed for every connected client.',
-      onConfirm: () => void this.store?.deleteItem(item.id, item.version),
+      confirmLabel: 'Delete',
+      destructive: true,
+      onConfirm: () => {
+        if (this._editing === item.id) this._editing = null;
+        void this.store?.deleteItem(item.id, item.version);
+      },
     };
   }
 
   private _itemById(itemId: string): Item | undefined {
     return this.st?.items.find((i) => i.id === itemId);
   }
+
+  // ---------- Inline editing ----------
+  private get _editor(): HVItemEditor | null {
+    // The expander is rendered by hv-list (inside the row order), so it lives in
+    // that component's shadow root rather than this one's.
+    const list = this.shadowRoot?.querySelector('hv-list');
+    return list?.shadowRoot?.querySelector('hv-item-editor') ?? null;
+  }
+
+  /**
+   * Open an expander, closing whichever one is open. Only one row edits at a
+   * time; if the open one has unsaved changes the user is asked first, rather
+   * than silently losing them.
+   */
+  private _startEdit(next: string | 'new' | null) {
+    if (this._editing === next) return;
+    if (this._editing !== null && this._editor?.dirty) {
+      this._confirm = {
+        heading: 'Discard your changes?',
+        message: 'The item you are editing has unsaved changes.',
+        confirmLabel: 'Discard',
+        destructive: true,
+        onConfirm: () => {
+          this._editorError = null;
+          this._editing = next;
+        },
+      };
+      return;
+    }
+    this._editorError = null;
+    this._editing = next;
+  }
+
+  private _onEditorSave = async (e: CustomEvent) => {
+    const detail = e.detail as {
+      itemId: string | null;
+      expectedVersion?: number;
+      changes?: ItemUpdate;
+      create?: ItemCreate;
+    };
+    this._editorBusy = true;
+    this._editorError = null;
+    const errorsBefore = this.st?.errorQueue.length ?? 0;
+    try {
+      if (detail.itemId && detail.changes) {
+        await this.store?.updateItem(detail.itemId, detail.changes, detail.expectedVersion);
+      } else if (detail.create) {
+        await this.store?.createItem(detail.create);
+      }
+    } finally {
+      this._editorBusy = false;
+    }
+    // The store reports failures through its error queue rather than throwing,
+    // so a new entry is how we know the save did not land. Keep the expander
+    // open in that case so the user's edits are still there to retry.
+    const failed = (this.st?.errorQueue.length ?? 0) > errorsBefore;
+    if (!failed) this._editing = null;
+  };
+
+  private _onEditorDelete = (e: CustomEvent) => {
+    const { itemId } = e.detail as { itemId: string };
+    const item = this._itemById(itemId);
+    if (!item) return;
+    this._requestDelete(item);
+  };
+
+  private _renderEditor = (itemId: string | null) => {
+    const st = this.st;
+    return html`<hv-item-editor
+      data-testid="inline-editor"
+      .item=${itemId ? (this._itemById(itemId) ?? null) : null}
+      .locations=${st?.locationsFlatCache ?? null}
+      .locationTree=${st?.locationTreeCache ?? []}
+      .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
+      .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
+      .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
+      ?mobile=${this.mobile}
+      .busy=${this._editorBusy}
+      .errorMessage=${this._editorError}
+      @save=${this._onEditorSave}
+      @delete-item=${this._onEditorDelete}
+      @cancel=${() => {
+        this._editing = null;
+        this._editorError = null;
+      }}
+    ></hv-item-editor>`;
+  };
 
   private _onRowEvent = (name: string, detail: { itemId: string }) => {
     const item = this._itemById(detail.itemId);
@@ -353,6 +458,10 @@ export class HVCardShell extends LitElement {
         break;
       case 'request-delete':
         this._requestDelete(item);
+        break;
+      case 'edit':
+      case 'open-item':
+        this._startEdit(item.id);
         break;
       default:
         this.dispatchEvent(
@@ -508,6 +617,7 @@ export class HVCardShell extends LitElement {
     const { id } = e.detail as { id: string };
     if (id === 'clear-filters') this.store?.clearFilters();
     else if (id === 'refresh') void this.store?.refreshAll();
+    else if (id === 'add-item') this._startEdit('new');
     else this.dispatchEvent(new CustomEvent('menu-action', { detail: { id }, bubbles: true, composed: true }));
   };
 
@@ -551,10 +661,7 @@ export class HVCardShell extends LitElement {
           data-testid="add-item"
           aria-label="Add item"
           title="Add item"
-          @click=${() =>
-            this.dispatchEvent(
-              new CustomEvent('menu-action', { detail: { id: 'add-item' }, bubbles: true, composed: true }),
-            )}
+          @click=${() => this._startEdit('new')}
         >
           ${icon('plus', 16)}${mobile ? null : 'Add'}
         </button>
@@ -617,6 +724,9 @@ export class HVCardShell extends LitElement {
         .items=${st?.items ?? []}
         .loading=${st?.loading ?? true}
         .mobile=${mobile}
+        .editorTemplate=${this._renderEditor}
+        .editingItemId=${this._editing === 'new' ? null : this._editing}
+        .addingNew=${this._editing === 'new'}
         .emptyKind=${this.emptyKind}
         .emptyLocationName=${(st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId)?.name ??
         null}
@@ -692,8 +802,8 @@ export class HVCardShell extends LitElement {
         ?open=${this._confirm !== null}
         .heading=${this._confirm?.heading ?? ''}
         .message=${this._confirm?.message ?? ''}
-        confirmLabel="Delete"
-        destructive
+        .confirmLabel=${this._confirm?.confirmLabel ?? 'Delete'}
+        .destructive=${this._confirm?.destructive ?? true}
         @confirm=${() => {
           this._confirm?.onConfirm();
           this._confirm = null;

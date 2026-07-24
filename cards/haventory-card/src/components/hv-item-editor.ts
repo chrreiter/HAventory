@@ -1,0 +1,784 @@
+import { LitElement, css, html } from 'lit';
+import { customElement, property, state } from 'lit/decorators.js';
+import { tokens, base } from '../ui/tokens';
+import { icon } from '../ui/icons';
+import { relativeTime, formatDate, isOverdue } from '../ui/relative-time';
+import {
+  customFieldsFrom,
+  formFromItem,
+  isDirty,
+  newCustomFieldRow,
+  toCreatePayload,
+  toUpdatePayload,
+  validateForm,
+} from '../ui/item-form';
+import type { CustomFieldRow, CustomFieldType, FieldError, ItemFormModel } from '../ui/item-form';
+import type { Item, Location, LocationTreeNode } from '../store/types';
+import './hv-chip-input';
+import './hv-location-tree';
+
+const CUSTOM_FIELD_TYPES: { value: CustomFieldType; label: string }[] = [
+  { value: 'string', label: 'Text' },
+  { value: 'number', label: 'Number' },
+  { value: 'boolean', label: 'Yes/No' },
+  { value: 'date', label: 'Date' },
+];
+
+/**
+ * The one edit surface (mocks 1f / 4h on desktop, 4i's edit view on mobile).
+ *
+ * It replaces the modal chain the POC had — editing an item opened a dialog,
+ * which opened a second dialog to pick a location. Here the row expands in
+ * place and the location tree opens *inside* the form.
+ *
+ * Full field parity with the old modal: name, description, quantity, low-stock
+ * threshold, category (with suggestions), tags, location, checked-out plus due
+ * date, inspection date and typed custom fields. On mobile the rarely-touched
+ * half collapses behind one "More fields" disclosure rather than being dropped.
+ */
+@customElement('hv-item-editor')
+export class HVItemEditor extends LitElement {
+  static styles = [
+    tokens,
+    base,
+    css`
+      :host {
+        display: block;
+        background: var(--hv-row-hover);
+        border-left: 3px solid var(--hv-primary);
+      }
+      :host([mobile]) {
+        background: transparent;
+        border-left: none;
+      }
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 18px 4px;
+      }
+      .head .name {
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--hv-primary-darker);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .head .meta {
+        margin-left: auto;
+        font-size: 11.5px;
+        color: var(--hv-text-tertiary);
+        white-space: nowrap;
+      }
+      .out-chip {
+        flex: none;
+        font: 500 11px var(--hv-font);
+        color: var(--hv-primary-darker);
+        background: var(--hv-surface);
+        border: 1px solid var(--hv-primary-tint-border);
+        border-radius: var(--hv-radius-chip);
+        padding: 2px 8px;
+      }
+      .out-chip.overdue {
+        color: #fff;
+        background: var(--hv-error);
+        border-color: var(--hv-error);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr;
+        gap: 12px;
+        padding: 8px 18px 14px;
+      }
+      :host([mobile]) .grid {
+        grid-template-columns: 1fr;
+        gap: 14px;
+        padding: 14px 16px;
+      }
+      .cell.span2 {
+        grid-column: span 2;
+      }
+      .cell.span3 {
+        grid-column: span 3;
+      }
+      :host([mobile]) .cell.span2,
+      :host([mobile]) .cell.span3 {
+        grid-column: span 1;
+      }
+      .cell {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .trio {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+        align-items: end;
+      }
+      :host([mobile]) .trio {
+        grid-template-columns: 1fr 1fr;
+      }
+      label.hv-label {
+        display: block;
+      }
+      .hv-input,
+      .field-button {
+        box-sizing: border-box;
+        width: 100%;
+        min-width: 0;
+        background: var(--hv-surface);
+        border: 1px solid var(--hv-input-border);
+        border-radius: var(--hv-radius-input);
+        padding: 9px 11px;
+        font: 400 13.5px var(--hv-font);
+        color: var(--hv-text);
+      }
+      :host([mobile]) .hv-input,
+      :host([mobile]) .field-button {
+        min-height: 48px;
+        font-size: 14.5px;
+      }
+      textarea.hv-input {
+        min-height: 44px;
+        line-height: 1.5;
+        resize: vertical;
+      }
+      .field-button {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        text-align: left;
+      }
+      .field-button .value {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .field-button.empty .value {
+        color: var(--hv-text-tertiary);
+      }
+      .invalid .hv-input,
+      .invalid .field-button {
+        border-color: var(--hv-error);
+      }
+      .field-error {
+        font-size: 12px;
+        color: var(--hv-error);
+      }
+      .tree-holder {
+        margin-top: 6px;
+        border: 1px solid var(--hv-divider);
+        border-radius: var(--hv-radius-input);
+        background: var(--hv-surface);
+        max-height: 220px;
+        overflow: auto;
+        padding: 4px 0;
+      }
+      .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: none;
+        background: none;
+        padding: 9px 0;
+        font: 400 13.5px var(--hv-font);
+        color: var(--hv-text);
+      }
+      .switch {
+        width: 34px;
+        height: 18px;
+        border-radius: 999px;
+        background: var(--hv-divider);
+        position: relative;
+        flex: none;
+        transition: background var(--hv-motion-fast) ease-out;
+      }
+      .switch.on {
+        background: var(--hv-primary);
+      }
+      .switch::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #fff;
+        transition: transform var(--hv-motion-fast) ease-out;
+      }
+      .switch.on::after {
+        transform: translateX(16px);
+      }
+      .custom {
+        border-top: 1px solid var(--hv-divider);
+        padding-top: 12px;
+        display: grid;
+        gap: 8px;
+      }
+      .custom-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .custom-head .tally {
+        margin-left: auto;
+        font-size: 11.5px;
+        color: var(--hv-text-tertiary);
+      }
+      .cf-row {
+        display: grid;
+        grid-template-columns: 1.2fr 110px 1.6fr 34px;
+        gap: 8px;
+        align-items: center;
+      }
+      :host([mobile]) .cf-row {
+        grid-template-columns: 1fr 1fr;
+      }
+      :host([mobile]) .cf-row .cf-value {
+        grid-column: span 2;
+      }
+      .cf-remove {
+        display: inline-grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border: none;
+        border-radius: 50%;
+        background: none;
+        color: var(--hv-text-tertiary);
+        padding: 0;
+      }
+      .cf-remove:hover {
+        background: var(--hv-hover-overlay);
+      }
+      .cf-add {
+        justify-self: start;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px dashed var(--hv-primary-tint-border);
+        background: none;
+        color: var(--hv-primary-dark);
+        border-radius: var(--hv-radius-input);
+        padding: 8px 13px;
+        font: 500 12.5px var(--hv-font);
+      }
+      .key-hints {
+        font-size: 11.5px;
+        color: var(--hv-text-tertiary);
+      }
+      .key-hints button {
+        border: none;
+        background: none;
+        padding: 0 2px;
+        font: inherit;
+        color: var(--hv-primary-dark);
+      }
+      .more-toggle {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        border: none;
+        border-top: 1px solid var(--hv-divider);
+        background: none;
+        padding: 12px 0 0;
+        font: 500 14.5px var(--hv-font);
+        color: var(--hv-text);
+        text-align: left;
+      }
+      .more-toggle .summary {
+        margin-left: auto;
+        font: 400 12px var(--hv-font);
+        color: var(--hv-text-secondary);
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-top: 4px;
+        flex-wrap: wrap;
+      }
+      .actions .hint {
+        margin-left: auto;
+        font-size: 11.5px;
+        color: var(--hv-text-tertiary);
+      }
+      .save {
+        border: none;
+        border-radius: var(--hv-radius-chip);
+        background: var(--hv-primary);
+        color: var(--hv-text-on-primary);
+        padding: 8px 20px;
+        font: 500 13px var(--hv-font);
+      }
+      .save[disabled] {
+        opacity: 0.5;
+      }
+      .delete {
+        border: 1px solid var(--hv-error-border);
+        background: none;
+        color: var(--hv-error-soft);
+        border-radius: var(--hv-radius-chip);
+        padding: 7px 14px;
+        font: 400 12.5px var(--hv-font);
+      }
+      .banner {
+        margin: 0 18px;
+        padding: 9px 12px;
+        border-radius: var(--hv-radius-input);
+        background: var(--hv-error-bg);
+        color: var(--hv-error-deep);
+        font-size: 12.5px;
+      }
+    `,
+  ];
+
+  /** null means "add item" — the same expander, empty. */
+  @property({ attribute: false }) item: Item | null = null;
+  @property({ attribute: false }) locations: Location[] | null = null;
+  @property({ attribute: false }) locationTree: LocationTreeNode[] = [];
+  @property({ attribute: false }) categorySuggestions: string[] = [];
+  @property({ attribute: false }) tagSuggestions: string[] = [];
+  @property({ attribute: false }) customFieldKeys: string[] = [];
+  @property({ type: Boolean, reflect: true }) mobile = false;
+  @property({ type: Boolean }) busy = false;
+  /** Server-side failure to show above the actions. */
+  @property({ type: String }) errorMessage: string | null = null;
+  /** Hide the header row when the host already provides one (the mobile sheet). */
+  @property({ type: Boolean }) noHeader = false;
+
+  @state() private _model: ItemFormModel = formFromItem(null);
+  @state() private _errors: FieldError[] = [];
+  @state() private _showErrors = false;
+  @state() private _locationOpen = false;
+  @state() private _moreOpen = false;
+
+  protected willUpdate(changed: Map<string, unknown>) {
+    if (changed.has('item')) {
+      this._model = formFromItem(this.item);
+      this._errors = [];
+      this._showErrors = false;
+      this._locationOpen = false;
+      this._moreOpen = false;
+    }
+  }
+
+  /** True when the user has typed something they would lose. */
+  get dirty(): boolean {
+    return isDirty(this._model, this.item);
+  }
+
+  private _patch(patch: Partial<ItemFormModel>) {
+    this._model = { ...this._model, ...patch };
+    if (this._showErrors) this._errors = validateForm(this._model);
+  }
+
+  private _errorFor(field: string): string | null {
+    if (!this._showErrors) return null;
+    return this._errors.find((e) => e.field === field)?.message ?? null;
+  }
+
+  private _save = () => {
+    const errors = validateForm(this._model);
+    this._errors = errors;
+    this._showErrors = true;
+    if (errors.length) return;
+    const detail = this.item
+      ? { itemId: this.item.id, expectedVersion: this.item.version, changes: toUpdatePayload(this._model, this.item) }
+      : { itemId: null, expectedVersion: undefined, create: toCreatePayload(this._model) };
+    this.dispatchEvent(new CustomEvent('save', { detail, bubbles: true, composed: true }));
+  };
+
+  private _cancel = () => {
+    this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
+  };
+
+  private _onKeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      this._cancel();
+    } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      this._save();
+    }
+  };
+
+  // ---------- Field renderers ----------
+  private _text(
+    field: keyof ItemFormModel,
+    label: string,
+    opts: { type?: string; span?: number; testid: string; placeholder?: string } = { testid: '' },
+  ) {
+    const error = this._errorFor(field as string);
+    return html`<div class="cell ${opts.span === 2 ? 'span2' : opts.span === 3 ? 'span3' : ''} ${error ? 'invalid' : ''}">
+      <label class="hv-label" for=${opts.testid}>${label}</label>
+      <input
+        id=${opts.testid}
+        class="hv-input"
+        type=${opts.type ?? 'text'}
+        data-testid=${opts.testid}
+        placeholder=${opts.placeholder ?? ''}
+        .value=${String(this._model[field] ?? '')}
+        @input=${(e: Event) => {
+          const raw = (e.target as HTMLInputElement).value;
+          if (opts.type === 'number') {
+            this._patch({ [field]: raw === '' ? null : Number(raw) } as Partial<ItemFormModel>);
+          } else {
+            this._patch({ [field]: raw } as Partial<ItemFormModel>);
+          }
+        }}
+      />
+      ${error ? html`<span class="field-error" data-testid=${`${opts.testid}-error`}>${error}</span>` : null}
+    </div>`;
+  }
+
+  private _renderLocationField() {
+    const loc = (this.locations ?? []).find((l) => l.id === this._model.locationId);
+    const label = loc ? (loc.path?.display_path ?? loc.name).replace(/\s*\/\s*/g, ' › ') : 'No location';
+    return html`<div class="cell span2">
+      <span class="hv-label">Location</span>
+      <button
+        class="field-button ${this._model.locationId ? '' : 'empty'}"
+        data-testid="editor-location"
+        aria-expanded=${String(this._locationOpen)}
+        @click=${() => {
+          this._locationOpen = !this._locationOpen;
+        }}
+      >
+        ${icon('mapMarker', 15)}<span class="value">${label}</span>${icon('chevronDown', 15)}
+      </button>
+      ${this._locationOpen
+        ? html`<div class="tree-holder">
+            <hv-location-tree
+              data-testid="editor-location-tree"
+              .nodes=${this.locationTree}
+              .selectedId=${this._model.locationId}
+              showAll
+              @select=${(e: CustomEvent) => {
+                this._patch({ locationId: (e.detail as { locationId: string | null }).locationId });
+                this._locationOpen = false;
+              }}
+            ></hv-location-tree>
+          </div>`
+        : null}
+    </div>`;
+  }
+
+  private _renderCategoryField() {
+    const listId = 'hv-editor-categories';
+    return html`<div class="cell">
+      <label class="hv-label" for="editor-category">Category</label>
+      <input
+        id="editor-category"
+        class="hv-input"
+        data-testid="editor-category"
+        list=${listId}
+        .value=${this._model.category}
+        @input=${(e: Event) => this._patch({ category: (e.target as HTMLInputElement).value })}
+      />
+      <datalist id=${listId} data-testid="editor-category-suggestions">
+        ${this.categorySuggestions.map((c) => html`<option value=${c}></option>`)}
+      </datalist>
+    </div>`;
+  }
+
+  private _renderStateFields() {
+    const model = this._model;
+    return html`<div class="cell span3">
+      <div class="trio">
+        <div class="cell">
+          <span class="hv-label">Checked out</span>
+          <button
+            class="toggle"
+            role="switch"
+            aria-checked=${String(model.checkedOut)}
+            data-testid="editor-checked-out"
+            @click=${() => this._patch({ checkedOut: !model.checkedOut })}
+          >
+            <span class="switch ${model.checkedOut ? 'on' : ''}"></span>
+            <span>${model.checkedOut ? 'Yes' : 'No'}</span>
+          </button>
+        </div>
+        <div class="cell">
+          <label class="hv-label" for="editor-due">Due date</label>
+          <input
+            id="editor-due"
+            class="hv-input"
+            type="date"
+            data-testid="editor-due-date"
+            ?disabled=${!model.checkedOut}
+            title=${model.checkedOut ? '' : 'A due date only applies while an item is checked out'}
+            .value=${model.dueDate}
+            @input=${(e: Event) => this._patch({ dueDate: (e.target as HTMLInputElement).value })}
+          />
+        </div>
+        <div class="cell">
+          <label class="hv-label" for="editor-inspection">Inspection date</label>
+          <input
+            id="editor-inspection"
+            class="hv-input"
+            type="date"
+            data-testid="editor-inspection-date"
+            .value=${model.inspectionDate}
+            @input=${(e: Event) => this._patch({ inspectionDate: (e.target as HTMLInputElement).value })}
+          />
+        </div>
+      </div>
+    </div>`;
+  }
+
+  private _patchRow(id: number, patch: Partial<CustomFieldRow>) {
+    this._patch({
+      customFields: this._model.customFields.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    });
+  }
+
+  private _renderCustomFields() {
+    const rows = this._model.customFields;
+    const used = Object.keys(customFieldsFrom(this._model)).length;
+    const unusedKeys = this.customFieldKeys.filter((k) => !rows.some((r) => r.key === k)).slice(0, 3);
+    return html`<div class="cell span3">
+      <div class="custom">
+        <div class="custom-head">
+          <span class="hv-label">Custom fields</span>
+          <span class="tally" data-testid="editor-cf-tally">
+            ${used} of ${this.customFieldKeys.length || used} key${
+              (this.customFieldKeys.length || used) === 1 ? '' : 's'
+            } in use
+          </span>
+        </div>
+        ${rows.map((row) => {
+          const error = this._errorFor(`custom:${row.id}`);
+          return html`<div class="cf-row ${error ? 'invalid' : ''}" data-testid="editor-cf-row" data-id=${row.id}>
+            <input
+              class="hv-input"
+              data-testid="editor-cf-key"
+              aria-label="Field key"
+              placeholder="key"
+              .value=${row.key}
+              @input=${(e: Event) => this._patchRow(row.id, { key: (e.target as HTMLInputElement).value })}
+            />
+            <select
+              class="hv-input"
+              data-testid="editor-cf-type"
+              aria-label="Field type"
+              @change=${(e: Event) =>
+                this._patchRow(row.id, { type: (e.target as HTMLSelectElement).value as CustomFieldType })}
+            >
+              ${CUSTOM_FIELD_TYPES.map(
+                (t) => html`<option value=${t.value} ?selected=${row.type === t.value}>${t.label}</option>`,
+              )}
+            </select>
+            ${row.type === 'boolean'
+              ? html`<button
+                  class="toggle cf-value"
+                  role="switch"
+                  aria-checked=${String(row.value === 'true')}
+                  data-testid="editor-cf-value"
+                  @click=${() => this._patchRow(row.id, { value: row.value === 'true' ? 'false' : 'true' })}
+                >
+                  <span class="switch ${row.value === 'true' ? 'on' : ''}"></span>
+                  <span>${row.value === 'true' ? 'Yes' : 'No'}</span>
+                </button>`
+              : html`<input
+                  class="hv-input cf-value"
+                  data-testid="editor-cf-value"
+                  aria-label="Field value"
+                  type=${row.type === 'number' ? 'number' : row.type === 'date' ? 'date' : 'text'}
+                  .value=${row.value}
+                  @input=${(e: Event) => this._patchRow(row.id, { value: (e.target as HTMLInputElement).value })}
+                />`}
+            <button
+              class="cf-remove"
+              data-testid="editor-cf-remove"
+              aria-label=${`Remove ${row.key || 'field'}`}
+              title="Remove field"
+              @click=${() => this._patch({ customFields: rows.filter((r) => r.id !== row.id) })}
+            >
+              ${icon('close', 16)}
+            </button>
+            ${error ? html`<span class="field-error" data-testid="editor-cf-error">${error}</span>` : null}
+          </div>`;
+        })}
+        <button
+          class="cf-add"
+          data-testid="editor-cf-add"
+          @click=${() => this._patch({ customFields: [...rows, newCustomFieldRow()] })}
+        >
+          ${icon('plus', 15)}Add field
+        </button>
+        ${unusedKeys.length
+          ? html`<span class="key-hints" data-testid="editor-cf-key-hints">
+              Key suggestions:
+              ${unusedKeys.map(
+                (k) => html`<button
+                  data-testid="editor-cf-key-hint"
+                  data-value=${k}
+                  @click=${() => this._patch({ customFields: [...rows, newCustomFieldRow({ key: k })] })}
+                >
+                  ${k}
+                </button>`,
+              )}
+              · Clearing a value unsets the key on save.
+            </span>`
+          : html`<span class="key-hints">Clearing a value unsets the key on save.</span>`}
+      </div>
+    </div>`;
+  }
+
+  private _renderMoreFields() {
+    const model = this._model;
+    const summary = [
+      model.description ? 'description' : null,
+      model.dueDate || model.inspectionDate ? 'dates' : null,
+      model.customFields.length ? `${model.customFields.length} custom` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    return html`
+      <button
+        class="more-toggle"
+        data-testid="editor-more-toggle"
+        aria-expanded=${String(this._moreOpen)}
+        @click=${() => {
+          this._moreOpen = !this._moreOpen;
+        }}
+      >
+        ${icon(this._moreOpen ? 'chevronDown' : 'chevronRight', 19)} More fields
+        <span class="summary">${summary || 'description · dates · custom fields'}</span>
+      </button>
+      ${this._moreOpen
+        ? html`
+            <div class="cell span3">
+              <label class="hv-label" for="editor-description">Description</label>
+              <textarea
+                id="editor-description"
+                class="hv-input"
+                data-testid="editor-description"
+                .value=${model.description}
+                @input=${(e: Event) => this._patch({ description: (e.target as HTMLTextAreaElement).value })}
+              ></textarea>
+            </div>
+            ${this._renderStateFields()} ${this._renderCustomFields()}
+          `
+        : null}
+    `;
+  }
+
+  render() {
+    const model = this._model;
+    const creating = this.item === null;
+    const overdue = isOverdue(this.item?.due_date);
+
+    return html`
+      <div data-testid="item-editor" @keydown=${this._onKeydown}>
+        ${this.noHeader
+          ? null
+          : html`<div class="head">
+              ${icon('chevronDown', 18)}
+              <span class="name" data-testid="editor-heading">
+                ${creating ? 'New item' : `${this.item?.name} — editing`}
+              </span>
+              ${this.item?.checked_out
+                ? html`<span class="out-chip ${overdue ? 'overdue' : ''}">
+                    ${overdue ? 'Overdue' : 'Out'}${this.item?.due_date
+                      ? ` · due ${formatDate(this.item.due_date)}`
+                      : ''}
+                  </span>`
+                : null}
+              ${this.item
+                ? html`<span class="meta" data-testid="editor-version"
+                    >v${this.item.version} · updated ${relativeTime(this.item.updated_at)}</span
+                  >`
+                : null}
+              <button
+                class="hv-icon-button"
+                data-testid="editor-close"
+                aria-label="Close editor"
+                @click=${this._cancel}
+              >
+                ${icon('close', 18)}
+              </button>
+            </div>`}
+        ${this.errorMessage
+          ? html`<div class="banner" role="alert" data-testid="editor-error">${this.errorMessage}</div>`
+          : null}
+
+        <div class="grid">
+          ${this._text('name', 'Name', { testid: 'editor-name' })}
+          ${this._text('quantity', 'Quantity', { type: 'number', testid: 'editor-quantity' })}
+          ${this._text('lowStock', 'Low-stock at', { type: 'number', testid: 'editor-low-stock' })}
+          ${this.mobile
+            ? null
+            : html`<div class="cell span3">
+                <label class="hv-label" for="editor-description-desktop">Description</label>
+                <textarea
+                  id="editor-description-desktop"
+                  class="hv-input"
+                  data-testid="editor-description"
+                  .value=${model.description}
+                  @input=${(e: Event) => this._patch({ description: (e.target as HTMLTextAreaElement).value })}
+                ></textarea>
+              </div>`}
+          ${this._renderLocationField()} ${this._renderCategoryField()}
+          <div class="cell span3">
+            <span class="hv-label">Tags <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--hv-text-tertiary)">· stored lowercase</span></span>
+            <hv-chip-input
+              data-testid="editor-tags"
+              .values=${model.tags}
+              .suggestions=${this.tagSuggestions}
+              @change=${(e: CustomEvent) => this._patch({ tags: (e.detail as { values: string[] }).values })}
+            ></hv-chip-input>
+          </div>
+          ${this.mobile
+            ? html`<div class="cell span3">${this._renderMoreFields()}</div>`
+            : html`${this._renderStateFields()} ${this._renderCustomFields()}`}
+
+          <div class="cell span3">
+            <div class="actions">
+              ${this.item
+                ? html`<button
+                    class="delete"
+                    data-testid="editor-delete"
+                    @click=${() =>
+                      this.dispatchEvent(
+                        new CustomEvent('delete-item', {
+                          detail: { itemId: this.item!.id, name: this.item!.name },
+                          bubbles: true,
+                          composed: true,
+                        }),
+                      )}
+                  >
+                    Delete item
+                  </button>`
+                : null}
+              <span class="hint">Esc discards · ⌘↵ saves</span>
+              <button class="hv-text-button" data-testid="editor-cancel" @click=${this._cancel}>Cancel</button>
+              <button class="save" data-testid="editor-save" ?disabled=${this.busy} @click=${this._save}>
+                ${this.busy ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'hv-item-editor': HVItemEditor;
+  }
+}

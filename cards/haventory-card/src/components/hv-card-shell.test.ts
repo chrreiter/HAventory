@@ -424,3 +424,155 @@ describe('hv-card-shell: mobile', () => {
     expect(store.state.value.items[0].checked_out).toBe(false);
   });
 });
+
+describe('hv-card-shell: inline editing', () => {
+  const editor = (sr: ShadowRoot) =>
+    (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector('hv-item-editor') as
+      | (HTMLElement & { dirty: boolean })
+      | null;
+  const row = (sr: ShadowRoot, id: string) =>
+    [...((sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelectorAll('hv-list-row') ?? [])]
+      .map((r) => r as HTMLElement & { item: Item })
+      .find((r) => r.item.id === id) ?? null;
+
+  it('expands the row in place instead of opening a dialog', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'AA Batteries' })] });
+    expect(editor(sr)).toBe(null);
+
+    const r = row(sr, '1')!;
+    (r.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(editor(sr)).toBeTruthy();
+    expect(editor(sr)?.shadowRoot?.textContent).toContain('AA Batteries — editing');
+    // The collapsed row is replaced by the expander, not duplicated.
+    expect(row(sr, '1')).toBe(null);
+  });
+
+  it('pins an empty expander at the top for Add item', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    (sr.querySelector('[data-testid="add-item"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(editor(sr)?.shadowRoot?.textContent).toContain('New item');
+    // The existing row is still listed underneath.
+    expect(row(sr, '1')).toBeTruthy();
+  });
+
+  it('saves an edit through the store and collapses', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Old' })] });
+    (row(sr, '1')!.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const nameInput = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    nameInput.value = 'New';
+    nameInput.dispatchEvent(new Event('input'));
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    expect(store.state.value.items[0].name).toBe('New');
+    expect(editor(sr)).toBe(null);
+  });
+
+  it('creates an item from the empty expander', async () => {
+    const { el, store, sr } = await mountShell({ items: [] });
+    (sr.querySelector('[data-testid="add-item"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const nameInput = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    nameInput.value = 'Brand new';
+    nameInput.dispatchEvent(new Event('input'));
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    expect(store.state.value.items.map((i) => i.name)).toContain('Brand new');
+  });
+
+  it('keeps the expander open when the save is rejected', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Old' })] });
+    store['ws'].updateItem = async () => {
+      throw { code: 'conflict', message: 'version conflict' };
+    };
+
+    (row(sr, '1')!.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const nameInput = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    nameInput.value = 'New';
+    nameInput.dispatchEvent(new Event('input'));
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    expect(editor(sr)).toBeTruthy();
+    expect(sr.querySelector('[data-testid="banner-entry"]')).toBeTruthy();
+  });
+
+  it('closes on cancel', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    (row(sr, '1')!.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(editor(sr)).toBe(null);
+  });
+
+  it('opens only one expander at a time', async () => {
+    const items = [makeItem({ id: '1', name: 'One' }), makeItem({ id: '2', name: 'Two' })];
+    const { el, sr } = await mountShell({ items });
+
+    (row(sr, '1')!.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    (row(sr, '2')!.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const editors = (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelectorAll(
+      'hv-item-editor',
+    );
+    expect(editors).toHaveLength(1);
+    expect(editor(sr)?.shadowRoot?.textContent).toContain('Two — editing');
+  });
+
+  it('asks before throwing away unsaved edits', async () => {
+    const items = [makeItem({ id: '1', name: 'One' }), makeItem({ id: '2', name: 'Two' })];
+    const { el, sr } = await mountShell({ items });
+
+    (row(sr, '1')!.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const nameInput = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    nameInput.value = 'Edited';
+    nameInput.dispatchEvent(new Event('input'));
+    await settle(el);
+
+    (row(sr, '2')!.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    // Still on the first item, with a prompt in the way.
+    const confirm = sr.querySelector('[data-testid="card-confirm"]') as HTMLElement & { open: boolean };
+    expect(confirm.open).toBe(true);
+    expect(editor(sr)?.shadowRoot?.textContent).toContain('One — editing');
+
+    (confirm.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(editor(sr)?.shadowRoot?.textContent).toContain('Two — editing');
+  });
+
+  it('deletes from inside the expander, via the same confirmation', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Doomed' })] });
+    (row(sr, '1')!.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-delete"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const confirm = sr.querySelector('[data-testid="card-confirm"]') as HTMLElement & { open: boolean };
+    expect(confirm.open).toBe(true);
+    (confirm.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(store.state.value.items).toHaveLength(0);
+    expect(editor(sr)).toBe(null);
+  });
+});
