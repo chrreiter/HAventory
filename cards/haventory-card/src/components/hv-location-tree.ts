@@ -1,0 +1,357 @@
+import { LitElement, css, html } from 'lit';
+import { customElement, property, state } from 'lit/decorators.js';
+import type { TemplateResult } from 'lit';
+import { tokens, base } from '../ui/tokens';
+import { icon } from '../ui/icons';
+import type { LocationTreeNode } from '../store/types';
+
+/**
+ * The real location tree the backend has always served and the POC card never
+ * rendered (it drew a flat list with fake indentation). Used by the full-view
+ * sidebar, the filter panel's location picker, the item editor's location field
+ * and the organize dialog — hence the mode/decoration switches rather than four
+ * near-identical trees.
+ *
+ * Counts come from the tree nodes themselves (`direct_item_count` /
+ * `subtree_item_count`), so nothing is computed client-side.
+ */
+@customElement('hv-location-tree')
+export class HVLocationTree extends LitElement {
+  static styles = [
+    tokens,
+    base,
+    css`
+      :host {
+        display: block;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        box-sizing: border-box;
+        border: none;
+        background: none;
+        text-align: left;
+        font: 400 13.5px var(--hv-font);
+        color: var(--hv-text);
+        padding: 7px 12px;
+        border-radius: var(--hv-radius-input);
+      }
+      .row:hover {
+        background: var(--hv-hover-overlay);
+      }
+      .row.selected {
+        background: var(--hv-primary-tint);
+        color: var(--hv-primary-darker);
+        font-weight: 500;
+        box-shadow: inset -3px 0 0 0 var(--hv-primary);
+      }
+      .row.orphans {
+        color: var(--hv-warn);
+      }
+      .row[disabled] {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .twisty {
+        flex: none;
+        display: inline-grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        border: none;
+        background: none;
+        border-radius: 50%;
+        color: var(--hv-text-tertiary);
+        padding: 0;
+      }
+      .twisty:hover {
+        background: var(--hv-hover-overlay);
+      }
+      .twisty.placeholder {
+        visibility: hidden;
+      }
+      .name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .count {
+        flex: none;
+        font-size: 11.5px;
+        color: var(--hv-text-tertiary);
+      }
+      .row.selected .count {
+        color: inherit;
+      }
+      .area-chip {
+        flex: none;
+        font-size: 11px;
+        color: var(--hv-chip-text);
+        background: var(--hv-chip-bg);
+        border-radius: var(--hv-radius-chip);
+        padding: 2px 8px;
+      }
+      .actions {
+        flex: none;
+        display: none;
+        gap: 2px;
+      }
+      .row:hover .actions,
+      .row:focus-within .actions {
+        display: flex;
+      }
+      .action {
+        display: inline-grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        border: none;
+        border-radius: 50%;
+        background: none;
+        color: var(--hv-primary-dark);
+        padding: 0;
+      }
+      .action.danger {
+        color: var(--hv-error);
+      }
+      .action:hover {
+        background: var(--hv-hover-overlay);
+      }
+      .empty {
+        padding: 10px 12px;
+        font-size: 12.5px;
+        color: var(--hv-text-tertiary);
+      }
+      .divider {
+        height: 1px;
+        background: var(--hv-row-divider);
+        margin: 6px 0;
+      }
+    `,
+  ];
+
+  @property({ attribute: false }) nodes: LocationTreeNode[] = [];
+  @property({ type: String }) selectedId: string | null = null;
+  /** Show an "All items" row that clears the location filter. */
+  @property({ type: Boolean }) showAll = false;
+  /** Show a "No location" row bound to the orphans filter. */
+  @property({ type: Boolean }) showOrphans = false;
+  /** True when the current selection is the orphans row rather than a location. */
+  @property({ type: Boolean }) orphansSelected = false;
+  @property({ type: Number }) totalCount: number | null = null;
+  @property({ type: Number }) orphanCount: number | null = null;
+  @property({ type: Boolean }) showCounts = false;
+  /** Show the "Area: X" chip on locations that set one explicitly. */
+  @property({ type: Boolean }) showAreas = false;
+  /** Reveal rename/delete affordances on hover (organize + sidebar management). */
+  @property({ type: Boolean }) manage = false;
+  /**
+   * Disable this node and everything under it. Parent pickers must exclude the
+   * location itself and its descendants — the backend rejects cycles.
+   */
+  @property({ type: String }) excludeSubtreeOf: string | null = null;
+  /** Substring filter over name and display path. */
+  @property({ type: String }) filterText = '';
+  /** Resolve an area id to its name for the "Area: X" chip. */
+  @property({ attribute: false }) areas: { id: string; name: string }[] = [];
+
+  @state() private _expanded = new Set<string>();
+  /** Nodes whose children the filter forced open; kept apart from user intent. */
+  private _autoExpanded = new Set<string>();
+
+  /** Open the ancestors of `id` so a selection deep in the tree is visible. */
+  revealPathTo(id: string | null) {
+    if (!id) return;
+    const path = this._findPath(this.nodes, id) ?? [];
+    const next = new Set(this._expanded);
+    for (const node of path.slice(0, -1)) next.add(node.id);
+    this._expanded = next;
+  }
+
+  private _findPath(nodes: LocationTreeNode[], id: string): LocationTreeNode[] | null {
+    for (const node of nodes) {
+      if (node.id === id) return [node];
+      const deeper = this._findPath(node.children ?? [], id);
+      if (deeper) return [node, ...deeper];
+    }
+    return null;
+  }
+
+  private _toggle(id: string) {
+    const next = new Set(this._expanded);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    this._expanded = next;
+  }
+
+  private _emit(name: string, detail: Record<string, unknown>) {
+    this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
+  }
+
+  private _matches(node: LocationTreeNode): boolean {
+    const needle = this.filterText.trim().toLowerCase();
+    if (!needle) return true;
+    return (
+      node.name.toLowerCase().includes(needle) ||
+      (node.path?.display_path ?? '').toLowerCase().includes(needle)
+    );
+  }
+
+  /** A node stays visible when it matches or when any descendant does. */
+  private _visible(node: LocationTreeNode): boolean {
+    if (this._matches(node)) return true;
+    return (node.children ?? []).some((c) => this._visible(c));
+  }
+
+  private _areaName(areaId: string | null): string | null {
+    if (!areaId) return null;
+    return this.areas.find((a) => a.id === areaId)?.name ?? areaId;
+  }
+
+  private _renderNode(node: LocationTreeNode, depth: number, excluded: boolean): TemplateResult | null {
+    if (!this._visible(node)) return null;
+
+    const children = (node.children ?? []).filter((c) => this._visible(c));
+    const hasChildren = children.length > 0;
+    const filtering = this.filterText.trim().length > 0;
+    const open = filtering ? true : this._expanded.has(node.id);
+    const isExcluded = excluded || node.id === this.excludeSubtreeOf;
+    const selected = !this.orphansSelected && this.selectedId === node.id;
+    const areaName = this.showAreas ? this._areaName(node.area_id) : null;
+
+    return html`
+      <div class="node">
+        <div
+          class="row ${selected ? 'selected' : ''}"
+          role="treeitem"
+          aria-selected=${String(selected)}
+          aria-expanded=${hasChildren ? String(open) : 'undefined'}
+          data-testid="tree-row"
+          data-id=${node.id}
+          data-depth=${depth}
+          ?disabled=${isExcluded}
+          style="padding-left: ${12 + depth * 18}px"
+        >
+          ${hasChildren
+            ? html`<button
+                class="twisty"
+                data-testid="tree-twisty"
+                aria-label=${open ? `Collapse ${node.name}` : `Expand ${node.name}`}
+                @click=${(e: Event) => {
+                  e.stopPropagation();
+                  this._toggle(node.id);
+                }}
+              >
+                ${icon(open ? 'chevronDown' : 'chevronRight', 17)}
+              </button>`
+            : html`<span class="twisty placeholder">${icon('chevronRight', 17)}</span>`}
+          <button
+            class="name"
+            data-testid="tree-select"
+            data-id=${node.id}
+            ?disabled=${isExcluded}
+            style="border:none;background:none;padding:0;font:inherit;color:inherit;text-align:left"
+            @click=${() => {
+              if (isExcluded) return;
+              this._emit('select', { locationId: node.id, node });
+            }}
+          >
+            ${node.name}
+          </button>
+          ${areaName ? html`<span class="area-chip" data-testid="tree-area">Area: ${areaName}</span>` : null}
+          ${this.manage
+            ? html`<span class="actions">
+                <button
+                  class="action"
+                  data-testid="tree-edit"
+                  data-id=${node.id}
+                  aria-label=${`Edit ${node.name}`}
+                  title="Edit location"
+                  @click=${(e: Event) => {
+                    e.stopPropagation();
+                    this._emit('edit-location', { locationId: node.id, node });
+                  }}
+                >
+                  ${icon('pencil', 16)}
+                </button>
+                <button
+                  class="action danger"
+                  data-testid="tree-delete"
+                  data-id=${node.id}
+                  aria-label=${`Delete ${node.name}`}
+                  title="Delete location"
+                  @click=${(e: Event) => {
+                    e.stopPropagation();
+                    this._emit('delete-location', { locationId: node.id, node });
+                  }}
+                >
+                  ${icon('del', 16)}
+                </button>
+              </span>`
+            : null}
+          ${this.showCounts
+            ? html`<span class="count" data-testid="tree-count"
+                >${node.subtree_item_count ?? node.direct_item_count ?? 0}</span
+              >`
+            : null}
+        </div>
+        <slot name=${`after-${node.id}`}></slot>
+        ${open ? children.map((c) => this._renderNode(c, depth + 1, isExcluded)) : null}
+      </div>
+    `;
+  }
+
+  render() {
+    const rendered = this.nodes.map((n) => this._renderNode(n, 0, false)).filter(Boolean);
+    return html`
+      <div role="tree" aria-label="Locations">
+        ${this.showAll
+          ? html`<button
+              class="row ${!this.orphansSelected && this.selectedId === null ? 'selected' : ''}"
+              data-testid="tree-all"
+              @click=${() => this._emit('select', { locationId: null, node: null })}
+            >
+              <span class="twisty placeholder">${icon('chevronRight', 17)}</span>
+              ${icon('home', 18)}
+              <span class="name">All items</span>
+              ${this.showCounts && this.totalCount !== null
+                ? html`<span class="count">${this.totalCount}</span>`
+                : null}
+            </button>`
+          : null}
+        ${rendered.length
+          ? rendered
+          : html`<div class="empty" data-testid="tree-empty">
+              ${this.filterText.trim() ? 'No locations match.' : 'No locations yet.'}
+            </div>`}
+        ${this.showOrphans
+          ? html`
+              <div class="divider"></div>
+              <button
+                class="row orphans ${this.orphansSelected ? 'selected' : ''}"
+                data-testid="tree-orphans"
+                @click=${() => this._emit('select-orphans', {})}
+              >
+                <span class="twisty placeholder">${icon('chevronRight', 17)}</span>
+                ${icon('alert', 18)}
+                <span class="name">No location</span>
+                ${this.showCounts && this.orphanCount !== null
+                  ? html`<span class="count">${this.orphanCount}</span>`
+                  : null}
+              </button>
+            `
+          : null}
+      </div>
+    `;
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'hv-location-tree': HVLocationTree;
+  }
+}

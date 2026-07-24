@@ -1,0 +1,396 @@
+import { LitElement, css, html } from 'lit';
+import { customElement, property } from 'lit/decorators.js';
+import { tokens, base } from '../ui/tokens';
+import { icon } from '../ui/icons';
+import { formatDate, isOverdue } from '../ui/relative-time';
+import type { Item } from '../store/types';
+
+/** True when an item is at or under its low-stock threshold. */
+export function isLowStock(item: Item): boolean {
+  return typeof item.low_stock_threshold === 'number' && item.quantity <= item.low_stock_threshold;
+}
+
+/** "Garage › Shelf A" from the denormalized path the backend already ships. */
+export function displayPath(item: Item): string {
+  return (item.location_path?.display_path ?? '').replace(/\s*\/\s*/g, ' › ');
+}
+
+/**
+ * One row of the standard card list (mocks 1a/1b/1d).
+ *
+ * Desktop reveals edit and row-menu actions on hover; touch has no hover, so the
+ * whole row is the tap target and opens the detail sheet instead. Checked-out
+ * rows lose the stepper — on mobile it is replaced outright by "Check in", which
+ * is the only action that makes sense for an item that is out.
+ */
+@customElement('hv-list-row')
+export class HVListRow extends LitElement {
+  static styles = [
+    tokens,
+    base,
+    css`
+      :host {
+        display: block;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 44px;
+        padding: 9px 16px;
+        box-sizing: border-box;
+        border-top: 1px solid var(--hv-row-divider);
+        background: none;
+        width: 100%;
+        text-align: left;
+        color: inherit;
+        font: inherit;
+      }
+      :host([mobile]) .row {
+        padding: 11px 14px;
+      }
+      :host(:first-of-type) .row {
+        border-top: none;
+      }
+      .row:hover:not(.touch) {
+        background: var(--hv-row-hover);
+      }
+      .row.selected {
+        background: var(--hv-row-hover);
+      }
+      .names {
+        flex: 1;
+        min-width: 0;
+      }
+      .name {
+        font-size: 14px;
+        font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      :host([mobile]) .name {
+        font-size: 14.5px;
+      }
+      .secondary {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--hv-text-secondary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .secondary.out {
+        color: var(--hv-primary-dark);
+      }
+      .dot {
+        flex: none;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--hv-amber);
+      }
+      .low-badge {
+        flex: none;
+        font: 700 10.5px var(--hv-font);
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+        color: var(--hv-warn);
+        background: var(--hv-warn-bg);
+        border-radius: 4px;
+        padding: 2px 6px;
+      }
+      .out-chip {
+        flex: none;
+        font: 500 11px var(--hv-font);
+        color: var(--hv-primary-darker);
+        border: 1px solid var(--hv-primary-tint-border);
+        border-radius: var(--hv-radius-chip);
+        padding: 2px 8px;
+      }
+      .out-chip.overdue {
+        color: #fff;
+        background: var(--hv-error);
+        border-color: var(--hv-error);
+      }
+      .hover-actions {
+        flex: none;
+        display: flex;
+        gap: 2px;
+        visibility: hidden;
+      }
+      .row:hover .hover-actions,
+      .row:focus-within .hover-actions {
+        visibility: visible;
+      }
+      :host([mobile]) .hover-actions {
+        display: none;
+      }
+      .hover-actions button {
+        display: inline-grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border: none;
+        border-radius: 50%;
+        background: none;
+        color: var(--hv-text-secondary);
+        padding: 0;
+        transition: opacity var(--hv-motion-fast) ease-out;
+      }
+      .hover-actions button:hover {
+        background: var(--hv-hover-overlay);
+      }
+      .stepper {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--hv-divider);
+        border-radius: var(--hv-radius-chip);
+      }
+      .stepper.disabled {
+        opacity: 0.45;
+      }
+      .stepper button {
+        display: inline-grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border: none;
+        background: none;
+        border-radius: 50%;
+        color: var(--hv-text-secondary);
+        padding: 0;
+      }
+      :host([mobile]) .stepper button {
+        width: 34px;
+        height: 34px;
+      }
+      .stepper button:hover:not([disabled]) {
+        background: var(--hv-hover-overlay);
+      }
+      .qty {
+        min-width: 26px;
+        text-align: center;
+        font: 500 13px var(--hv-font);
+      }
+      .qty.low {
+        color: var(--hv-warn);
+      }
+      .check-in {
+        flex: none;
+        border: 1px solid var(--hv-primary-tint-border);
+        background: none;
+        color: var(--hv-primary-darker);
+        border-radius: var(--hv-radius-chip);
+        min-height: 40px;
+        padding: 0 18px;
+        font: 500 13.5px var(--hv-font);
+      }
+      .pending {
+        flex: none;
+        font: 500 11px var(--hv-font);
+        color: var(--hv-warn);
+        background: var(--hv-warn-bg);
+        border-radius: var(--hv-radius-chip);
+        padding: 3px 8px;
+      }
+      .box {
+        flex: none;
+        display: inline-grid;
+        place-items: center;
+        width: 16px;
+        height: 16px;
+        border-radius: 3px;
+        border: 1.5px solid var(--hv-text-tertiary);
+        background: none;
+        color: #fff;
+        padding: 0;
+      }
+      .box.on {
+        background: var(--hv-primary-dark);
+        border-color: var(--hv-primary-dark);
+      }
+    `,
+  ];
+
+  @property({ attribute: false }) item!: Item;
+  @property({ type: Boolean, reflect: true }) mobile = false;
+  /** Selection mode: show a checkbox and suppress row navigation. */
+  @property({ type: Boolean }) selectable = false;
+  @property({ type: Boolean }) selected = false;
+  /** Show the optimistic-write "pending" chip. */
+  @property({ type: Boolean }) pending = false;
+
+  private _emit(name: string, detail: Record<string, unknown> = {}) {
+    this.dispatchEvent(
+      new CustomEvent(name, { detail: { itemId: this.item.id, ...detail }, bubbles: true, composed: true }),
+    );
+  }
+
+  private _onKeydown = (e: KeyboardEvent) => {
+    switch (e.key) {
+      case 'Enter':
+        e.preventDefault();
+        this._emit('open-item');
+        break;
+      case 'Delete':
+        e.preventDefault();
+        this._emit('request-delete');
+        break;
+      case '+':
+      case '=':
+      case 'Add':
+        e.preventDefault();
+        this._emit('increment');
+        break;
+      case '-':
+      case 'Subtract':
+        e.preventDefault();
+        this._emit('decrement');
+        break;
+    }
+  };
+
+  private _renderStepper() {
+    const item = this.item;
+    const low = isLowStock(item);
+    // A checked-out item's quantity is not the thing to adjust.
+    const disabled = item.checked_out;
+    if (this.mobile && item.checked_out) {
+      return html`<button
+        class="check-in"
+        data-testid="row-check-in"
+        @click=${(e: Event) => {
+          e.stopPropagation();
+          this._emit('check-in');
+        }}
+      >
+        Check in
+      </button>`;
+    }
+    return html`
+      <span class="stepper ${disabled ? 'disabled' : ''}" data-testid="row-stepper">
+        <button
+          data-testid="row-decrement"
+          aria-label="Decrease quantity"
+          ?disabled=${disabled}
+          @click=${(e: Event) => {
+            e.stopPropagation();
+            this._emit('decrement');
+          }}
+        >
+          ${icon('minus', 16)}
+        </button>
+        <span class="qty ${low ? 'low' : ''}" data-testid="row-qty">${item.quantity}</span>
+        <button
+          data-testid="row-increment"
+          aria-label="Increase quantity"
+          ?disabled=${disabled}
+          @click=${(e: Event) => {
+            e.stopPropagation();
+            this._emit('increment');
+          }}
+        >
+          ${icon('plus', 16)}
+        </button>
+      </span>
+    `;
+  }
+
+  render() {
+    const item = this.item;
+    if (!item) return null;
+    const low = isLowStock(item);
+    const overdue = isOverdue(item.due_date);
+    const path = displayPath(item);
+    const secondary = [path, item.category].filter(Boolean).join(' · ');
+
+    return html`
+      <div
+        class="row ${this.mobile ? 'touch' : ''} ${this.selected ? 'selected' : ''}"
+        role="row"
+        tabindex="0"
+        aria-label=${`Item ${item.name}`}
+        data-testid="list-row"
+        data-item-id=${item.id}
+        @keydown=${this._onKeydown}
+        @click=${() => {
+          if (this.selectable) this._emit('toggle-select');
+          else this._emit('open-item');
+        }}
+      >
+        ${this.selectable
+          ? html`<button
+              class="box ${this.selected ? 'on' : ''}"
+              role="checkbox"
+              aria-checked=${String(this.selected)}
+              aria-label=${`Select ${item.name}`}
+              data-testid="row-select"
+              @click=${(e: Event) => {
+                e.stopPropagation();
+                this._emit('toggle-select');
+              }}
+            >
+              ${this.selected ? icon('check', 13) : null}
+            </button>`
+          : null}
+        <span class="names">
+          <span class="name" data-testid="row-name">${item.name}</span>
+          <span class="secondary ${item.checked_out && this.mobile ? 'out' : ''}">
+            ${this.mobile && low && !item.checked_out
+              ? html`<span class="dot" data-testid="row-low-dot"></span>`
+              : null}
+            ${this.mobile && item.checked_out
+              ? html`Checked out${item.due_date ? ` · due ${formatDate(item.due_date)}` : ''}`
+              : secondary || 'No location'}
+          </span>
+        </span>
+        ${this.pending ? html`<span class="pending" data-testid="row-pending">pending</span>` : null}
+        ${!this.mobile && low
+          ? html`<span class="low-badge" data-testid="row-low" aria-label="Low stock">LOW</span>`
+          : null}
+        ${!this.mobile && item.checked_out
+          ? html`<span class="out-chip ${overdue ? 'overdue' : ''}" data-testid="row-checked-out">
+              ${overdue ? `Overdue · ${formatDate(item.due_date)}` : 'Checked out'}
+            </span>`
+          : null}
+        ${this.selectable
+          ? null
+          : html`<span class="hover-actions">
+              <button
+                data-testid="row-edit"
+                aria-label=${`Edit ${item.name}`}
+                title="Edit item"
+                @click=${(e: Event) => {
+                  e.stopPropagation();
+                  this._emit('edit');
+                }}
+              >
+                ${icon('pencil', 18)}
+              </button>
+              <button
+                data-testid="row-menu"
+                aria-label=${`Actions for ${item.name}`}
+                title="More actions"
+                @click=${(e: Event) => {
+                  e.stopPropagation();
+                  this._emit('row-menu', { anchor: e.currentTarget });
+                }}
+              >
+                ${icon('dotsVertical', 18)}
+              </button>
+            </span>`}
+        ${this._renderStepper()}
+      </div>
+    `;
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'hv-list-row': HVListRow;
+  }
+}

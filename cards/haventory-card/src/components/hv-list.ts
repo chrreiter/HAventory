@@ -1,0 +1,196 @@
+import { LitElement, css, html } from 'lit';
+import { customElement, property } from 'lit/decorators.js';
+import { repeat } from 'lit/directives/repeat.js';
+import { tokens, base } from '../ui/tokens';
+import type { Item } from '../store/types';
+import './hv-list-row';
+
+export type ListEmptyKind = 'no-items' | 'no-matches' | 'empty-location' | 'connection-lost';
+
+/**
+ * The standard card's list: skeletons while loading, a named empty state, rows,
+ * and the near-end signal that drives infinite scroll.
+ *
+ * The empty state is deliberately specific — "no items yet", "nothing matched
+ * these filters" and "nothing in this location" want different offers, and the
+ * design calls for all three.
+ */
+@customElement('hv-list')
+export class HVList extends LitElement {
+  static styles = [
+    tokens,
+    base,
+    css`
+      :host {
+        display: block;
+      }
+      .scroller {
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+      :host(:not([fill])) .scroller {
+        max-height: var(--hv-list-max-height, 420px);
+      }
+      :host([fill]) {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      :host([fill]) .scroller {
+        flex: 1;
+        min-height: 0;
+      }
+      .empty {
+        display: grid;
+        justify-items: center;
+        gap: 10px;
+        padding: 32px 16px;
+        text-align: center;
+        color: var(--hv-text-secondary);
+        font-size: 13px;
+      }
+      .empty .headline {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--hv-text);
+      }
+      .empty .offers {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .skeleton-row {
+        display: grid;
+        gap: 6px;
+        padding: 12px 16px;
+        border-top: 1px solid var(--hv-row-divider);
+      }
+      .skeleton-row:first-child {
+        border-top: none;
+      }
+      .bar {
+        height: 10px;
+        border-radius: 4px;
+        background: var(--hv-row-divider);
+      }
+      .bar.short {
+        height: 8px;
+        opacity: 0.7;
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        .bar {
+          animation: pulse 1.4s ease-in-out infinite;
+        }
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+    `,
+  ];
+
+  @property({ attribute: false }) items: Item[] = [];
+  @property({ type: Boolean, reflect: true }) fill = false;
+  @property({ type: Boolean }) mobile = false;
+  @property({ type: Boolean }) loading = false;
+  @property({ type: Boolean }) selectable = false;
+  @property({ attribute: false }) selection: Set<string> = new Set();
+  @property({ attribute: false }) pendingIds: Set<string> = new Set();
+  @property({ type: String }) emptyKind: ListEmptyKind = 'no-items';
+  /** Location name for the "Nothing in X" empty state. */
+  @property({ type: String }) emptyLocationName: string | null = null;
+  @property({ type: Number }) skeletonRows = 5;
+
+  private _onScroll = (e: Event) => {
+    const el = e.currentTarget as HTMLElement;
+    const ratio = (el.scrollTop + el.clientHeight) / Math.max(1, el.scrollHeight);
+    this.dispatchEvent(new CustomEvent('near-end', { detail: { ratio }, bubbles: true, composed: true }));
+  };
+
+  private _offer(id: string, label: string, primary = false) {
+    return html`<button
+      class=${primary ? 'hv-pill' : 'hv-pill outline'}
+      data-testid="empty-action"
+      data-id=${id}
+      @click=${() =>
+        this.dispatchEvent(new CustomEvent('empty-action', { detail: { id }, bubbles: true, composed: true }))}
+    >
+      ${label}
+    </button>`;
+  }
+
+  private _renderEmpty() {
+    switch (this.emptyKind) {
+      case 'connection-lost':
+        return html`<div class="empty" role="status" data-testid="list-empty" data-kind="connection-lost">
+          <span class="headline">Can't reach Home Assistant</span>
+          <span>The list will fill in once the connection is back.</span>
+          <div class="offers">${this._offer('refresh', 'Try again', true)}</div>
+        </div>`;
+      case 'no-matches':
+        return html`<div class="empty" role="status" data-testid="list-empty" data-kind="no-matches">
+          <span class="headline">No items match these filters</span>
+          <div class="offers">${this._offer('clear-filters', 'Clear all', true)}</div>
+        </div>`;
+      case 'empty-location':
+        return html`<div class="empty" role="status" data-testid="list-empty" data-kind="empty-location">
+          <span class="headline">Nothing in ${this.emptyLocationName ?? 'this location'}</span>
+          <div class="offers">
+            ${this._offer('add-item', 'Add item here', true)}${this._offer('clear-filters', 'Show everything')}
+          </div>
+        </div>`;
+      default:
+        return html`<div class="empty" role="status" data-testid="list-empty" data-kind="no-items">
+          <span class="headline">No items yet</span>
+          <span>Add your first item, or restore a backup.</span>
+          <div class="offers">
+            ${this._offer('add-item', 'Add your first item', true)}${this._offer('import', 'Import backup')}
+          </div>
+        </div>`;
+    }
+  }
+
+  render() {
+    if (this.loading && !this.items.length) {
+      return html`<div class="scroller" data-testid="list-skeleton" aria-busy="true">
+        ${Array.from(
+          { length: this.skeletonRows },
+          () => html`<div class="skeleton-row">
+            <div class="bar" style="width: 55%"></div>
+            <div class="bar short" style="width: 38%"></div>
+          </div>`,
+        )}
+      </div>`;
+    }
+
+    if (!this.items.length) return this._renderEmpty();
+
+    return html`
+      <div class="scroller" role="rowgroup" data-testid="list-rows" @scroll=${this._onScroll}>
+        ${repeat(
+          this.items,
+          (it) => it.id,
+          (it) => html`<hv-list-row
+            .item=${it}
+            ?mobile=${this.mobile}
+            ?selectable=${this.selectable}
+            ?selected=${this.selection.has(it.id)}
+            ?pending=${this.pendingIds.has(it.id)}
+          ></hv-list-row>`,
+        )}
+      </div>
+    `;
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'hv-list': HVList;
+  }
+}

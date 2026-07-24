@@ -14,7 +14,11 @@ import './components/hv-category-browser';
 import './components/hv-tag-browser';
 import './components/hv-column-picker';
 import './components/hv-import-dialog';
+import './components/hv-card-shell';
 import type { ImportPolicy, ImportPreview, ImportSummary } from './store/types';
+
+/** Which UI the card renders. `legacy` is the pre-WP4.1 proof-of-concept. */
+export type CardUiMode = 'revamp' | 'legacy';
 
 export class HAventoryCard extends LitElement {
   static styles = css`
@@ -77,7 +81,7 @@ export class HAventoryCard extends LitElement {
   `;
 
   // Lovelace config (e.g., title)
-  private config?: { title?: string };
+  private config?: { title?: string; ui?: CardUiMode };
 
   private store?: Store;
   private _storeUnsub?: () => void;
@@ -108,10 +112,19 @@ export class HAventoryCard extends LitElement {
     if (cfg !== null && typeof cfg !== 'object') {
       throw new Error('Invalid config');
     }
-    const obj = (cfg || {}) as { title?: unknown };
+    const obj = (cfg || {}) as { title?: unknown; ui?: unknown };
     this.config = {
-      title: typeof obj.title === 'string' ? obj.title : undefined
+      title: typeof obj.title === 'string' ? obj.title : undefined,
+      // `ui: legacy` keeps the pre-WP4.1 proof-of-concept UI reachable while the
+      // revamp is experimental. Anything else (including nothing) gets the new UI.
+      ui: obj.ui === 'legacy' ? 'legacy' : 'revamp',
     };
+    this.requestUpdate();
+  }
+
+  /** The UI mode in force; defaults to the revamped card. */
+  private get uiMode(): CardUiMode {
+    return this.config?.ui ?? 'revamp';
   }
 
   // Lovelace interface: approximate rows occupied to help layout
@@ -154,6 +167,131 @@ export class HAventoryCard extends LitElement {
   }
 
   render() {
+    return this.uiMode === 'legacy' ? this._renderLegacy() : this._renderRevamp();
+  }
+
+  /**
+   * The revamped card (WP4.1). `haventory-card` stays the custom element HA
+   * knows about and becomes a thin host: `hv-card-shell` owns the store and the
+   * layout, while the dialogs that are still modal live here until their
+   * replacements land.
+   */
+  private _renderRevamp() {
+    return html`
+      <hv-card-shell
+        data-testid="card-shell"
+        .store=${this.store}
+        .heading=${this.config?.title ?? 'Inventory'}
+        @menu-action=${(e: CustomEvent) => this._onShellAction((e.detail as { id: string }).id)}
+        @edit=${(e: CustomEvent) => this._openItemDialog((e.detail as { itemId: string }).itemId)}
+        @open-item=${(e: CustomEvent) => this._openItemDialog((e.detail as { itemId: string }).itemId)}
+      ></hv-card-shell>
+
+      ${this._renderSharedDialogs()}
+    `;
+  }
+
+  /** Dialogs the revamped shell delegates to the host card. */
+  private _renderSharedDialogs() {
+    const st = this.store?.state.value;
+    return html`
+      <hv-item-dialog
+        .locations=${st?.locationsFlatCache ?? null}
+        .areas=${st?.areasCache?.areas ?? []}
+        .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
+        .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
+        .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
+        @open-location-selector=${() => { this._locationSelectorOpen = true; this.requestUpdate(); }}
+        @delete-item=${(e: CustomEvent) => {
+          const { itemId } = e.detail as { itemId: string };
+          void this.store?.deleteItem(itemId);
+          const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open?: boolean } | null;
+          if (dlg) dlg.open = false;
+        }}
+        @save=${(e: CustomEvent) => this._saveFromDialog(e)}
+        @cancel=${() => {
+          const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { open?: boolean };
+          if (dlg) dlg.open = false;
+        }}
+      ></hv-item-dialog>
+
+      <hv-location-selector
+        .open=${this._locationSelectorOpen}
+        .locations=${st?.locationsFlatCache ?? null}
+        .areas=${st?.areasCache?.areas ?? []}
+        @cancel=${() => { this._locationSelectorOpen = false; this.requestUpdate(); }}
+        @select=${(e: CustomEvent) => {
+          const { locationId } = e.detail as { locationId: string | null };
+          const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { setLocation: (id: string | null) => void } | null;
+          dlg?.setLocation(locationId);
+          this._locationSelectorOpen = false;
+          this.requestUpdate();
+        }}
+      ></hv-location-selector>
+
+      <hv-column-picker
+        .open=${this._columnPickerOpen}
+        .columns=${this._columnPrefs.expanded}
+        heading="Full view columns"
+        @change=${(e: CustomEvent) => this._setColumns('expanded', e.detail.columns as ColumnKey[])}
+        @cancel=${() => { this._columnPickerOpen = false; this.requestUpdate(); }}
+      ></hv-column-picker>
+
+      <hv-import-dialog
+        .open=${this._importDialogOpen}
+        .preview=${this._importPreview}
+        .summary=${this._importSummary}
+        .busy=${this._importBusy}
+        .errorMessage=${this._importError}
+        @preview=${(e: CustomEvent) => this._onImportPreview(e)}
+        @execute=${(e: CustomEvent) => this._onImportExecute(e)}
+        @cancel=${() => { this._importDialogOpen = false; this._resetImportState(); this.requestUpdate(); }}
+      ></hv-import-dialog>
+    `;
+  }
+
+  private _saveFromDialog(e: CustomEvent) {
+    const data = e.detail as Record<string, unknown>;
+    const dlg = this.shadowRoot?.querySelector('hv-item-dialog') as HTMLElement & { item?: { id?: string } | null; open?: boolean };
+    const currentItem = dlg?.item ?? null;
+    if (currentItem && currentItem.id) {
+      void this.store?.updateItem(currentItem.id, data as unknown as import('./store/types').ItemUpdate);
+    } else {
+      void this.store?.createItem(data as unknown as import('./store/types').ItemCreate);
+    }
+    if (dlg) dlg.open = false;
+  }
+
+  private _openItemDialog(itemId: string | null) {
+    const dialog = this.shadowRoot?.querySelector('hv-item-dialog') as
+      (HTMLElement & { open: boolean; item: unknown }) | null;
+    if (!dialog) return;
+    dialog.item = itemId ? (this.store?.state.value.items.find((i) => i.id === itemId) ?? null) : null;
+    dialog.open = true;
+  }
+
+  /** Actions the shell hands up because they open a host-owned surface. */
+  private _onShellAction(id: string) {
+    switch (id) {
+      case 'add-item':
+        this._openItemDialog(null);
+        break;
+      case 'columns':
+        this._openColumnPicker('expanded');
+        break;
+      case 'export-all':
+        void this._exportDownload('all');
+        break;
+      case 'export-view':
+        void this._exportDownload('view');
+        break;
+      case 'import':
+        this._openImportDialog();
+        break;
+    }
+  }
+
+  private _renderLegacy() {
     const st = this.store?.state.value;
     const filters = st?.filters;
     return html`
@@ -386,9 +524,9 @@ export class HAventoryCard extends LitElement {
     `;
   }
 
-  private async _exportDownload() {
+  private async _exportDownload(scope: 'all' | 'view' = 'all') {
     try {
-      const doc = await this.store?.exportDocument();
+      const doc = await this.store?.exportDocument(scope);
       if (!doc) return;
       const json = JSON.stringify(doc, null, 2);
       const stamp = (doc.exported_at ?? '').replace(/[:]/g, '-') || 'backup';

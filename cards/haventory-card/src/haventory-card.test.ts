@@ -3,12 +3,16 @@ import { makeMockHass, makeItem } from './test.utils';
 import { Store } from './store/store';
 import { getStubConfig } from './index';
 
-describe('HAventoryCard', () => {
+// These exercise the pre-WP4.1 proof-of-concept DOM, which now lives behind
+// `ui: legacy`. The revamped card has its own suite in
+// src/components/hv-card-shell.test.ts.
+describe('HAventoryCard (legacy UI)', () => {
   it('renders header and search bar', async () => {
     const el = document.createElement('haventory-card') as HTMLElement & {
       updateComplete?: Promise<unknown>;
     };
     document.body.appendChild(el);
+    (el as any).setConfig({ ui: 'legacy' });
 
     await customElements.whenDefined('haventory-card');
 
@@ -25,6 +29,7 @@ describe('HAventoryCard', () => {
   it('overlay toggles and Esc closes; focus returns to toggle; banners render', async () => {
     const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
     document.body.appendChild(el);
+    (el as any).setConfig({ ui: 'legacy' });
     await customElements.whenDefined('haventory-card');
 
     const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'A' })] });
@@ -59,6 +64,7 @@ describe('HAventoryCard', () => {
     // Expanded view should surface the Add button in the header with prominent styling
     const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
     document.body.appendChild(el);
+    (el as any).setConfig({ ui: 'legacy' });
     await customElements.whenDefined('haventory-card');
 
     const hass = makeMockHass({ items: [] });
@@ -92,6 +98,7 @@ describe('HAventoryCard', () => {
     // Add button should open dialog with no item (create mode)
     const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
     document.body.appendChild(el);
+    (el as any).setConfig({ ui: 'legacy' });
     await customElements.whenDefined('haventory-card');
 
     const hass = makeMockHass({ items: [] });
@@ -115,6 +122,7 @@ describe('HAventoryCard', () => {
     const testItem = makeItem({ id: 'item-1', name: 'Test Item', quantity: 5 });
     const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
     document.body.appendChild(el);
+    (el as any).setConfig({ ui: 'legacy' });
     await customElements.whenDefined('haventory-card');
 
     const hass = makeMockHass({ items: [testItem] });
@@ -143,6 +151,7 @@ describe('HAventoryCard', () => {
     const testItem = makeItem({ id: 'item-1', name: 'Test', quantity: 10 });
     const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
     document.body.appendChild(el);
+    (el as any).setConfig({ ui: 'legacy' });
     await customElements.whenDefined('haventory-card');
 
     const hass = makeMockHass({ items: [testItem] });
@@ -179,6 +188,7 @@ describe('HAventoryCard', () => {
     const testItem = makeItem({ id: 'item-1', name: 'Test', checked_out: false });
     const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
     document.body.appendChild(el);
+    (el as any).setConfig({ ui: 'legacy' });
     await customElements.whenDefined('haventory-card');
 
     const hass = makeMockHass({ items: [testItem] });
@@ -213,6 +223,7 @@ describe('HAventoryCard', () => {
     // Search bar change event should update store filters
     const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
     document.body.appendChild(el);
+    (el as any).setConfig({ ui: 'legacy' });
     await customElements.whenDefined('haventory-card');
 
     const hass = makeMockHass({ items: [] });
@@ -238,9 +249,10 @@ describe('HAventoryCard', () => {
       requestUpdate: () => void;
     };
     document.body.appendChild(el);
+    (el as any).setConfig({ ui: 'legacy' });
     await customElements.whenDefined('haventory-card');
 
-    el.setConfig({ title: 'My Custom Inventory' });
+    el.setConfig({ title: 'My Custom Inventory', ui: 'legacy' });
     el.requestUpdate();
     if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
 
@@ -253,6 +265,7 @@ describe('HAventoryCard', () => {
     const testItem = makeItem({ id: 'item-1', name: 'Existing Item', quantity: 5 });
     const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
     document.body.appendChild(el);
+    (el as any).setConfig({ ui: 'legacy' });
     await customElements.whenDefined('haventory-card');
 
     const hass = makeMockHass({ items: [testItem] });
@@ -295,6 +308,7 @@ describe('HAventoryCard', () => {
   it('shows storage health in the expanded diagnostics panel', async () => {
     const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
     document.body.appendChild(el);
+    (el as any).setConfig({ ui: 'legacy' });
     await customElements.whenDefined('haventory-card');
 
     const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'A' })] });
