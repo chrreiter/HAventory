@@ -60,7 +60,8 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - Result: `{integration_version: string, schema_version: number}`
 
 - `haventory/stats`
-  - Result: `{items_total: number, low_stock_count: number, checked_out_count: number, locations_total: number}`
+  - Result: `{items_total: number, low_stock_count: number, checked_out_count: number, locations_total: number, no_location_count: number}`
+  - `no_location_count` is the number of items without a location (`location_id == null`, i.e. the `orphaned_only` filter's population).
 
 - `haventory/distinct_values`
   - Request: `{id, type: "haventory/distinct_values"}` (no payload; extra fields → `validation_error`)
@@ -158,7 +159,8 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 
 - `haventory/item/list`
   - Payload: `{filter?: <ItemFilter>, sort?: <Sort>, limit?: number, cursor?: string}`
-  - Result: `{items: <Item[]>, next_cursor: string|null}`
+  - Result: `{items: <Item[]>, next_cursor: string|null, total: number}`
+  - `total` is the number of items matching the filter across **all** pages (not the page size), recomputed per request — so "Showing N of `total`" is renderable on every page.
 
 ### Locations
 
@@ -184,7 +186,8 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 
 - `haventory/location/tree`
   - Payload: `{}`
-  - Result: Array of tree nodes: `{id, name, parent_id, path: <LocationPath>, children: <Node[]>}`
+  - Result: Array of tree nodes: `{id, name, parent_id, path: <LocationPath>, direct_item_count, subtree_item_count, children: <Node[]>}`
+  - `direct_item_count` counts items whose `location_id` is exactly that node; `subtree_item_count` counts items in the node or any descendant (`subtree_item_count >= direct_item_count`). Counts change on item create/delete/move — clients showing them should refresh the tree on item events (or on `stats/counts`), not only on location events.
 
 - `haventory/areas/list`
   - Payload: `{}`

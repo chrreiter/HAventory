@@ -90,11 +90,15 @@ Location tree node (returned by `location/tree`):
   "parent_id": "uuid-v4|null",
   "area_id": "string|null",
   "path": <LocationPath>,
+  "direct_item_count": 0,
+  "subtree_item_count": 0,
   "children": [ <tree node>, ... ]
 }
 ```
 
 Note: `children` is a recursive array of tree nodes with the same structure.
+`direct_item_count` counts items located exactly at the node; `subtree_item_count`
+counts items at the node or any descendant (so it is always >= the direct count).
 
 ### Filters and sorting
 
@@ -119,15 +123,18 @@ Note: `children` is a recursive array of tree nodes with the same structure.
 
 ### Pagination
 
-- `item/list` returns `{items: <Item[]>, next_cursor: string|null}`.
+- `item/list` returns `{items: <Item[]>, next_cursor: string|null, total: number}`.
+- `total` is the count of items matching the filter across all pages, independent of `limit`/`cursor`.
 - `cursor` is an opaque base64url-encoded JSON with last tuple and sort metadata; pass it back unchanged.
 
 ### Stats
 
 Counts object used in `stats` results and events:
 ```json
-{ "items_total": 0, "low_stock_count": 0, "checked_out_count": 0, "locations_total": 0 }
+{ "items_total": 0, "low_stock_count": 0, "checked_out_count": 0, "locations_total": 0, "no_location_count": 0 }
 ```
+
+`no_location_count` is the number of items without a location (`location_id == null`).
 
 ### Distinct values
 
@@ -202,7 +209,7 @@ Result of `distinct_values`, used by category/tag autocomplete, the browser view
   "policy": "merge",
   "items":     { "total": 2, "add": 2, "update": 0, "conflict": 0, "unchanged": 0 },
   "locations": { "total": 1, "add": 1, "update": 0, "conflict": 0, "unchanged": 0 },
-  "totals": { "items_total": 2, "low_stock_count": 0, "checked_out_count": 0, "locations_total": 1 }
+  "totals": { "items_total": 2, "low_stock_count": 0, "checked_out_count": 0, "locations_total": 1, "no_location_count": 0 }
 }
 ```
 

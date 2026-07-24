@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 from custom_components.haventory.exceptions import NotFoundError, ValidationError
+from custom_components.haventory.models import ItemCreate, ItemUpdate
 from custom_components.haventory.repository import Repository
 
 
@@ -102,3 +103,32 @@ async def test_update_location_is_atomic_when_path_rebuild_fails(monkeypatch) ->
     assert repo.get_location(b.id).parent_id == old_b.parent_id
     assert {k: set(v) for k, v in repo._children_ids_by_parent_id.items()} == old_children
     assert {lid: loc.path.display_path for lid, loc in repo._locations_by_id.items()} == old_paths
+
+
+@pytest.mark.asyncio
+async def test_location_item_counts_and_no_location_count() -> None:
+    """Per-location direct/subtree counts and the orphan count track item moves."""
+
+    repo = Repository()
+    garage = repo.create_location(name="Garage")
+    shelf = repo.create_location(name="Shelf", parent_id=garage.id)
+
+    repo.create_item(ItemCreate(name="Car", location_id=str(garage.id)))
+    wrench = repo.create_item(ItemCreate(name="Wrench", location_id=str(shelf.id)))
+    repo.create_item(ItemCreate(name="Orphan"))
+
+    # Subtree count includes the location's own items plus descendants
+    assert repo.get_location_item_counts(garage.id) == {"direct": 1, "subtree": 2}
+    assert repo.get_location_item_counts(shelf.id) == {"direct": 1, "subtree": 1}
+    assert repo.get_counts()["no_location_count"] == 1
+
+    # Clearing an item's location updates both the tree counts and the orphan count
+    repo.update_item(wrench.id, ItemUpdate(location_id=None))
+    assert repo.get_location_item_counts(garage.id) == {"direct": 1, "subtree": 1}
+    assert repo.get_location_item_counts(shelf.id) == {"direct": 0, "subtree": 0}
+    expected_orphans = 2
+    assert repo.get_counts()["no_location_count"] == expected_orphans
+
+    # Unknown location id raises NotFoundError
+    with pytest.raises(NotFoundError):
+        repo.get_location_item_counts("00000000-0000-4000-8000-000000000000")

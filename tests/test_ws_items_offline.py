@@ -231,3 +231,38 @@ async def test_inspection_date_in_create_update_get() -> None:
     res = await _send(hass, 4, "haventory/item/update", item_id=item_id, inspection_date=None)
     assert res["success"] is True
     assert res["result"]["inspection_date"] is None
+
+
+@pytest.mark.asyncio
+async def test_item_list_reports_filtered_total() -> None:
+    """item/list includes `total`: all matches for the filter, on every page."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    await _send(hass, 1, "haventory/item/create", name="Hammer", category="tools")
+    await _send(hass, 2, "haventory/item/create", name="Wrench", category="tools")
+    await _send(hass, 3, "haventory/item/create", name="Glue", category="misc")
+
+    seeded = 3
+    res = await _send(hass, 4, "haventory/item/list", limit=1)
+    assert res["success"] is True
+    assert res["result"]["total"] == seeded
+    assert len(res["result"]["items"]) == 1
+
+    # A later page still reports the full total
+    res_page2 = await _send(
+        hass, 5, "haventory/item/list", limit=1, cursor=res["result"]["next_cursor"]
+    )
+    assert res_page2["result"]["total"] == seeded
+
+    tools = 2
+    filtered = await _send(hass, 6, "haventory/item/list", filter={"category": "tools"}, limit=1)
+    assert filtered["result"]["total"] == tools
+    assert len(filtered["result"]["items"]) == 1
+
+    empty = await _send(hass, 7, "haventory/item/list", filter={"q": "zzz-not-there"})
+    assert empty["result"]["total"] == 0
+    assert empty["result"]["items"] == []

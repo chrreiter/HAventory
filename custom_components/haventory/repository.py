@@ -72,6 +72,7 @@ class _TextTokens(NamedTuple):
 class PageResult(TypedDict):
     items: list[Item]
     next_cursor: str | None
+    total: int
 
 
 class InternalIndexes(TypedDict):
@@ -1117,23 +1118,44 @@ class Repository:
         if sort is None:
             sort = Sort(field="updated_at", order="desc")
 
+        # The full filtered+sorted list is materialized before slicing, so the
+        # total number of matches is already known regardless of pagination.
+        total = len(sorted_items)
+
         if limit is None or limit <= 0:
             # No pagination requested
-            return {"items": sorted_items, "next_cursor": None}
+            return {"items": sorted_items, "next_cursor": None, "total": total}
 
         page, next_cursor = self._paginate(sorted_items, sort, limit, cursor)
-        return {"items": page, "next_cursor": next_cursor}
+        return {"items": page, "next_cursor": next_cursor, "total": total}
 
     # -----------------------------
     # Public API — Counts
     # -----------------------------
 
     def get_counts(self) -> dict[str, int]:
+        items_with_location = sum(len(ids) for ids in self._items_by_location_id.values())
         return {
             "items_total": len(self._items_by_id),
             "low_stock_count": len(self._low_stock_item_ids),
             "checked_out_count": len(self._checked_out_item_ids),
             "locations_total": len(self._locations_by_id),
+            "no_location_count": len(self._items_by_id) - items_with_location,
+        }
+
+    def get_location_item_counts(self, location_id: str | uuid.UUID) -> dict[str, int]:
+        """Return item counts for a location.
+
+        ``direct`` counts items whose ``location_id`` is exactly this location;
+        ``subtree`` counts items in this location or any descendant (so
+        ``subtree >= direct``).
+        """
+        key = str(location_id)
+        if key not in self._locations_by_id:
+            raise NotFoundError("location not found")
+        return {
+            "direct": len(self._items_by_location_id.get(key, set())),
+            "subtree": len(self._items_in_subtree.get(key, set())),
         }
 
     def get_distinct_field_values(self) -> dict[str, object]:

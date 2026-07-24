@@ -97,6 +97,8 @@ export interface Sort {
 export interface ListItemsResult {
   items: Item[];
   next_cursor: string | null;
+  /** Count of items matching the filter across all pages, independent of limit/cursor. */
+  total: number;
 }
 
 export interface StatsCounts {
@@ -104,6 +106,8 @@ export interface StatsCounts {
   low_stock_count: number;
   checked_out_count: number;
   locations_total: number;
+  /** Items without a location (location_id == null). */
+  no_location_count: number;
 }
 
 export interface AreasListResult {

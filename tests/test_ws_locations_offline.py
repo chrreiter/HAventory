@@ -209,3 +209,42 @@ async def test_location_move_subtree_persists(monkeypatch) -> None:
     after = calls["count"]
     # Expect at least one persist triggered by move_subtree
     assert after >= before + 1
+
+
+@pytest.mark.asyncio
+async def test_location_tree_includes_item_counts() -> None:
+    """Tree nodes carry direct and subtree item counts."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    root = await _send(hass, 1, "haventory/location/create", name="Garage")
+    root_id = root["result"]["id"]
+    child = await _send(hass, 2, "haventory/location/create", name="Shelf", parent_id=root_id)
+    child_id = child["result"]["id"]
+
+    await _send(hass, 3, "haventory/item/create", name="Car", location_id=root_id)
+    await _send(hass, 4, "haventory/item/create", name="Wrench", location_id=child_id)
+    await _send(hass, 5, "haventory/item/create", name="Orphan")
+
+    res = await _send(hass, 6, "haventory/location/tree")
+    assert res["success"] is True
+    node = res["result"][0]
+    subtree_total = 2
+    assert node["direct_item_count"] == 1
+    assert node["subtree_item_count"] == subtree_total
+    child_node = node["children"][0]
+    assert child_node["direct_item_count"] == 1
+    assert child_node["subtree_item_count"] == 1
+
+    # Moving the wrench out of the tree drops both counts
+    items = hass.data[DOMAIN]["repository"].list_items(flt={"q": "wrench"})["items"]
+    hass.data[DOMAIN]["repository"].update_item(items[0].id, {"location_id": None})
+    res2 = await _send(hass, 8, "haventory/location/tree")
+    node2 = res2["result"][0]
+    assert node2["direct_item_count"] == 1
+    assert node2["subtree_item_count"] == 1
+    assert node2["children"][0]["direct_item_count"] == 0
+    assert node2["children"][0]["subtree_item_count"] == 0
