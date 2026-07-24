@@ -28,9 +28,12 @@ the offline suite and gets the stubs. As a result:
   and is never collected by the offline run (``collect_ignore`` below).
 
 It also ensures sockets are enabled when pytest-socket is auto-loaded by IDEs
-(required on Windows where creating the event loop uses ``socket.socket``) and
-enforces a selector-based event loop policy on Windows to avoid
+(required on Windows where creating the event loop uses ``socket.socket``) and,
+on Windows, makes pytest-asyncio hand out a selector-based event loop to avoid
 ProactorEventLoop self-pipe issues when sockets are tampered with by plugins.
+That's done via the ``pytest_asyncio_loop_factories`` hook rather than
+``asyncio.set_event_loop_policy``/``WindowsSelectorEventLoopPolicy`` — both are
+deprecated since Python 3.14 and slated for removal in 3.16.
 """
 
 import asyncio
@@ -332,12 +335,16 @@ else:
     except Exception:
         pass
 
-    # On Windows force SelectorEventLoopPolicy early (pytest-asyncio will reuse it)
+    # On Windows, hand pytest-asyncio a selector-based loop factory instead of
+    # forcing a process-wide event loop policy: asyncio.set_event_loop_policy()
+    # and WindowsSelectorEventLoopPolicy are both deprecated since Python 3.14
+    # (removal slated for 3.16). A single-entry mapping keeps every async test
+    # parametrized exactly as before (one run, id hidden) while going through
+    # pytest-asyncio's supported extension point.
     if platform.system() == "Windows":  # pragma: no cover - environment-specific
-        try:
-            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-        except Exception:
-            pass
+
+        def pytest_asyncio_loop_factories():
+            return {"selector": asyncio.SelectorEventLoop}
 
     _install_offline_ha_stubs()
 
