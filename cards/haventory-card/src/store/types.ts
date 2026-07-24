@@ -240,9 +240,11 @@ export interface HassLike {
   // Home Assistant's callWS returns the `result` part of the message.
   callWS<T>(msg: Record<string, unknown>): Promise<T>;
   // WebSocket connection with subscribeMessage to receive event messages; returns unsubscribe.
+  // Home Assistant delivers the *inner* event payload to the callback (the `event`
+  // field of the `{id, type:'event', event}` wire frame), not the whole envelope.
   connection: {
     subscribeMessage(
-      cb: (msg: { id: number; type: 'event'; event: AnyEventPayload }) => void,
+      cb: (event: AnyEventPayload) => void,
       msg: Record<string, unknown>,
     ): Unsubscribe | Promise<Unsubscribe>;
   };
