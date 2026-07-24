@@ -25,7 +25,8 @@ haventory-card (main container)
 ├── hv-location-selector (location picker modal)
 ├── hv-category-browser (browse-by-category modal)
 ├── hv-tag-browser (browse-by-tag modal)
-└── hv-column-picker (column-selection modal)
+├── hv-column-picker (column-selection modal)
+└── hv-import-dialog (restore-from-backup modal with preview step)
 ```
 
 ---
@@ -50,7 +51,9 @@ haventory-card (main container)
 - Renders overlay into `#haventory-overlay-root` (appended to `document.body`)
 - Focus trap with sentinel elements (Tab/Shift+Tab cycling, Esc to close)
 - Conflict resolution banners with "View latest" / "Re-apply" actions
-- Quick Add (+) button in header
+- Header action row: Add item, Categories, Tags, Columns, Export (downloads a
+  timestamped JSON backup via `store.exportDocument()`), Import (opens
+  `hv-import-dialog`), Expand/Collapse
 
 **Responsive Layout**:
 - Collapsed: Compact header + filters + list
@@ -168,6 +171,7 @@ haventory-card (main container)
 
 **Fields**:
 - **Name*** (required)
+- **Description** (optional multiline text)
 - **Quantity** (default 1)
 - **Low-stock threshold**
 - **Category** (autocomplete against `categorySuggestions`)
@@ -177,6 +181,7 @@ haventory-card (main container)
 - **Location** (opens `hv-location-selector`)
 - **Checked-out** (checkbox)
 - **Due date** (enabled only when checked out)
+- **Inspection date** (always enabled, independent of check-out state)
 - **Custom fields** (define/edit/remove; see below)
 
 **Custom fields**: A repeatable editor of `{key, type, value}` rows. Types are
@@ -325,6 +330,41 @@ overlay header (expanded view).
 
 ---
 
+### `hv-import-dialog`
+
+**Purpose**: Restore-from-backup modal (data safety), opened from the "Import"
+button in the card header. Presentational: the container performs the WebSocket
+calls and pushes results back via properties (mirroring `hv-location-selector`).
+
+**Properties**:
+- `open`: Boolean visibility
+- `preview`: `ImportPreview | null` — validation/classification report from the container
+- `summary`: `ImportSummary | null` — success summary after an executed import
+- `busy`: Boolean — a WS call is in flight (disables actions)
+- `errorMessage`: container-level error (e.g. a WS failure) to surface
+
+**Flow**:
+1. User pastes a JSON backup document or loads it from a file picker.
+2. User picks a conflict policy (`merge` / `replace` / `skip`; default `merge`).
+3. **Preview** — emits `preview`; the container calls `store.previewImport()`
+   (`haventory/import/preview`, no mutation) and pushes the report back:
+   add/update/conflict/unchanged counts per entity type, or a structured error
+   list (`{path, message}` rows) when the document is invalid.
+4. **Import** — emits `execute`; the container calls `store.executeImport()`
+   (`haventory/import/execute`), shows the returned summary, and the store
+   refreshes every cache (the backend also broadcasts `items/reloaded` /
+   `locations/reloaded` to other clients).
+
+**Events**:
+- `preview`: `{document, policy}` — validate + classify without mutating
+- `execute`: `{document, policy}` — apply the import
+- `cancel`: close the dialog
+
+The Export counterpart needs no dialog: the header button downloads the
+`haventory/export` result as a timestamped `.json` file.
+
+---
+
 ## Column preferences (`store/columns.ts`)
 
 The optional middle columns are `quantity`, `category`, `location`, `tags`,
@@ -373,13 +413,20 @@ best-effort and fall back to defaults if storage is unavailable or corrupt.
 **Initialization** (`init()`):
 1. Fetch `stats()`, `listAreas()`, `getLocationTree()`, `listLocations()`
 2. Load first page of items (50, sorted by updated_at desc)
-3. Subscribe to `items` and `stats` topics
+3. Subscribe to `items`, `locations`, and `stats` topics (`locations` events
+   refresh the location caches; a `reloaded` event on either topic — emitted
+   after an import — triggers a wholesale refresh of items and caches)
 
 **CRUD Operations**:
 - `createItem()`, `updateItem()`, `deleteItem()`
 - `adjustQuantity()`, `setQuantity()`
 - `checkOut()`, `markCheckedIn()`
 - `setLowStockThreshold()`, `moveItem()`
+
+**Import / export**:
+- `exportDocument()` — full JSON backup via `haventory/export`
+- `previewImport(document, policy)` — validate + classify, no mutation
+- `executeImport(document, policy)` — apply, then refresh all caches and the item list
 
 **Optimistic Updates**:
 1. Apply change to local state immediately
@@ -411,13 +458,15 @@ best-effort and fall back to defaults if storage is unavailable or corrupt.
 **Purpose**: WebSocket message abstraction.
 
 **Methods**:
-- Utility: `ping()`, `version()`, `stats()`, `health()`
+- Utility: `ping()`, `version()`, `stats()`, `health()`, `distinctValues()`
 - Items: `listItems()`, `getItem()`, `createItem()`, `updateItem()`, `deleteItem()`
 - Quantities: `adjustQuantity()`, `setQuantity()`
 - Check-out: `checkOut()`, `markCheckedIn()`
 - Other: `setLowStockThreshold()`, `moveItem()`
-- Locations: `listLocations()`, `getLocationTree()`
+- Locations: `listLocations()`, `getLocationTree()`, `createLocation()`,
+  `updateLocation()`, `deleteLocation()`, `moveLocationSubtree()`
 - Areas: `listAreas()`
+- Import/export: `exportDocument()`, `importPreview()`, `importExecute()`
 - Subscriptions: `subscribe()` (returns `Unsubscribe` function)
 
 **WebSocket Integration**:
@@ -438,7 +487,7 @@ best-effort and fall back to defaults if storage is unavailable or corrupt.
 4. Store.init():
    a. Fetch stats, areas, locations (parallel)
    b. Fetch first page of items (50)
-   c. Subscribe to items & stats topics
+   c. Subscribe to items, locations & stats topics
 5. Card renders with populated data
 ```
 
@@ -526,9 +575,12 @@ percentages are not tracked here to keep this document from going stale.
 7. `hv-category-browser.test.ts` / `hv-tag-browser.test.ts` — browse lists
    with counts, filtering, drill-down into item lists.
 8. `hv-column-picker.test.ts` — column selection and persistence events.
-9. `haventory-card.test.ts` — header/search rendering, overlay + focus trap,
-   banners, dialog flows, diagnostics/health panel.
-10. `debounce.test.ts` — utility behavior.
+9. `hv-import-dialog.test.ts` / `store/import-export.test.ts` — import dialog
+   paste/file-load, policy selection, preview/execute flows, and store-level
+   export/import round-trips.
+10. `haventory-card.test.ts` — header/search rendering, overlay + focus trap,
+    banners, dialog flows, diagnostics/health panel.
+11. `debounce.test.ts` — utility behavior.
 
 **Mock Strategy**:
 - `makeMockHass()`: Simulates Home Assistant's `hass` object
