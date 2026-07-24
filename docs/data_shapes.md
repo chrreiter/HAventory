@@ -17,6 +17,7 @@ Object shape for persisted items and API results:
   "quantity": 0,
   "checked_out": false,
   "due_date": "YYYY-MM-DD|null",
+  "inspection_date": "YYYY-MM-DD|null",
   "location_id": "uuid-v4|null",
   "tags": ["string", "..."],
   "category": "string|null",
@@ -42,6 +43,7 @@ Input shapes:
   - `quantity?: number>=0`
   - `checked_out?: boolean`
   - `due_date?: YYYY-MM-DD|null` (only valid when `checked_out` is true)
+  - `inspection_date?: YYYY-MM-DD|null` (independent of check-out state)
   - `location_id?: uuid-v4|null`
   - `tags?: string[]` (normalized: trimmed, lowercased, deduped)
   - `category?: string|null`
@@ -54,6 +56,7 @@ Input shapes:
   - `quantity?: number>=0`
   - `checked_out?: boolean`
   - `due_date?: YYYY-MM-DD|null` (only valid when `checked_out` is true)
+  - `inspection_date?: YYYY-MM-DD|null` (null clears)
   - `location_id?: uuid-v4|null`
   - `tags?: string[]|null` (null clears)
   - `category?: string|null`

@@ -27,6 +27,11 @@ item_create:
       example: "2025-01-01"
       selector:
         date:
+    inspection_date:
+      required: false
+      example: "2025-06-01"
+      selector:
+        date:
     location_id:
       required: false
       example: "uuid-of-location"
@@ -83,6 +88,10 @@ item_update:
       selector:
         boolean:
     due_date:
+      required: false
+      selector:
+        date:
+    inspection_date:
       required: false
       selector:
         date:
