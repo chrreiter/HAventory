@@ -19,7 +19,7 @@ import asyncio
 import logging
 import time
 from copy import deepcopy
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
@@ -58,7 +58,7 @@ def _get_persist_lock(hass: HomeAssistant) -> asyncio.Lock:
     bucket = hass.data.setdefault(DOMAIN, {})
     if "persist_lock" not in bucket:
         bucket["persist_lock"] = asyncio.Lock()
-    return bucket["persist_lock"]
+    return cast("asyncio.Lock", bucket["persist_lock"])
 
 
 class DomainStore:
@@ -79,7 +79,7 @@ class DomainStore:
     ) -> None:
         self._hass = hass
         # Use constant HA Store version; our schema_version handles migrations
-        self._store = Store(hass, self._HA_STORE_VERSION, key)
+        self._store: Store[dict[str, Any]] = Store(hass, self._HA_STORE_VERSION, key)
         self._schema_version = version
 
     @property

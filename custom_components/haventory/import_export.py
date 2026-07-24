@@ -47,6 +47,7 @@ from .models import (
     Item,
     Location,
     build_location_path_from_map,
+    is_canonical_utc_timestamp,
     iso_utc_now,
     normalize_tags,
     parse_uuid4,
@@ -321,6 +322,19 @@ def _validate_item_doc(idx: int, doc: dict[str, Any], errors: list[dict[str, str
                 errors.append(
                     _err(f"{base}.custom_fields.{k}", "custom_fields values must be scalar")
                 )
+    # Canonical fixed-width timestamps are a load-bearing invariant: sorting
+    # and range filters compare them lexicographically. A field that is PRESENT
+    # must be canonical (an explicit null / non-canonical string is rejected so
+    # it cannot be stored as "None"/garbage); an omitted field is allowed and
+    # backfilled with a canonical value on load.
+    for ts_field in ("created_at", "updated_at"):
+        if ts_field in doc and not is_canonical_utc_timestamp(doc.get(ts_field)):
+            errors.append(
+                _err(
+                    f"{base}.{ts_field}",
+                    f"{ts_field} must be an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ)",
+                )
+            )
     return iid
 
 
@@ -509,7 +523,6 @@ def plan_import(
     _check_duplicate_ids(loc_ids, "locations", errors)
 
     if errors:
-        report["errors"] = errors
         return report, None
 
     existing = repo.export_state()
@@ -542,7 +555,6 @@ def plan_import(
 
     payload = _recompute_paths(target_items, target_locations, errors)
     if payload is None or errors:
-        report["errors"] = errors
         return report, None
 
     report["valid"] = True

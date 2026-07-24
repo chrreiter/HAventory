@@ -33,7 +33,13 @@ Vitest `4`. Version 0.0.1, unreleased.
   `STORAGE_KEY = "haventory_store"`), plus `asyncio.Lock`-serialized writes.
 - `migrations.py` — forward-only, **idempotent** schema migrations (`migrate_N_to_N+1`).
 - `ws.py` — WebSocket-first CRUD API (`websocket_api` decorators) and subscriptions
-  (items / locations / stats). This is the primary API surface.
+  (items / locations / stats). This is the primary API surface. Every command is wrapped
+  by `ws_guard` (error taxonomy incl. `unknown_error` catch-all and the opt-in
+  `rate_limited` check); error envelopes are built by `_error_envelope`, NOT
+  `websocket_api.error_message` (HA's helper has no `data` param).
+- `rate_limit.py` — WP4 opt-in token-bucket rate limiting (per-connection + global, for
+  commands and broadcasts). Off by default; configured via the options flow
+  (`config_flow.py`); limiter instance lives in `hass.data[DOMAIN]["rate_limiter"]`.
 - `services.py` / `services.yaml` — HA services (`haventory.*`) with voluptuous schemas; handlers
   re-raise validation/repository/storage errors so HA surfaces them.
 - `areas.py` — HA area registry integration (read-only; never auto-creates areas).
@@ -217,7 +223,7 @@ Adopted tooling (latest stable at review time; verified against release pages / 
 |---|---|---|
 | Python env/deps | **uv** (`uv.lock` + `[dependency-groups]`, `[tool.uv] package=false`) | replaces pip + hand `.venv`; `requirements-dev.txt` is now a generated uv export |
 | Lint/format | **ruff 0.15.22** | pin unified across `pyproject.toml` + pre-commit |
-| Type checker | **mypy 2.x**, non-strict | matches HA core; scoped to `custom_components/haventory`; `ws.py`/`repository.py` boundaries relaxed via override; ratchet in WP4/WP5 |
+| Type checker | **mypy 2.x**; strict on the core four | WP4: per-module strict for `models`/`repository`/`storage`/`ws` against local HA stubs in `stubs/` (`mypy_path = custom_components:stubs`); the rest stays non-strict (WP5 ratchet) |
 | Frontend pkg mgr | **npm** (kept) | pnpm not worth it for one small package |
 | Frontend lint | **ESLint 10** + `@typescript-eslint 8`; no separate formatter | Biome not adopted (weaker Lit/TS type-aware coverage) |
 | TypeScript | **6.0.3** (hold 7.x) | typescript-eslint 8.65 caps at `<6.1.0`; TS 7 would break type-aware lint. Follow-up: bump to 7 when typescript-eslint supports it |
@@ -241,7 +247,8 @@ Adopted tooling (latest stable at review time; verified against release pages / 
 
 ### WP1 follow-ups (out of scope / environment-blocked)
 
-- **Type-harden** `ws.py` + `repository.py` and drop the mypy per-module override (WP4/WP5).
+- ~~**Type-harden** `ws.py` + `repository.py` and drop the mypy per-module override~~ —
+  done in WP4 (per-module strict on the core four + `stubs/`).
 - **`storage.py`**: switch the debounced persist from bare `asyncio.create_task` to
   `hass.async_create_background_task(...)` (WP0.5 finding; effort S).
 - **TypeScript 7**: adopt once typescript-eslint supports it (currently capped `<6.1.0`).

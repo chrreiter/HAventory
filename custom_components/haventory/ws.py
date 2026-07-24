@@ -6,10 +6,11 @@ Adheres to the envelope: input {id, type, ...payload}, output result_message/err
 
 from __future__ import annotations
 
+import functools
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
@@ -20,9 +21,10 @@ from . import storage as storage_mod
 from .areas import async_get_area_registry
 from .const import DOMAIN, INTEGRATION_VERSION
 from .exceptions import ConflictError, NotFoundError, StorageError, ValidationError
-from .import_export import POLICIES
-from .models import ItemUpdate, normalize_tags
-from .repository import UNSET, Repository
+from .import_export import POLICIES, Policy
+from .models import Item, ItemUpdate, Location, normalize_tags
+from .rate_limit import RateLimiter
+from .repository import UNSET, InternalIndexes, Repository
 from .storage import CURRENT_SCHEMA_VERSION
 
 LOGGER = logging.getLogger(__name__)
@@ -33,7 +35,14 @@ def _repo(hass: HomeAssistant) -> Repository:
     repo = bucket.get("repository")
     if repo is None:
         raise StorageError("repository not initialized; run integration setup")
-    return repo  # type: ignore[return-value]
+    return cast("Repository", repo)
+
+
+def _rate_limiter(hass: HomeAssistant) -> RateLimiter | None:
+    """Return the configured rate limiter, or None when limiting is off."""
+    bucket = hass.data.get(DOMAIN) or {}
+    limiter = bucket.get("rate_limiter")
+    return limiter if isinstance(limiter, RateLimiter) else None
 
 
 def _error_code(exc: Exception) -> str:
@@ -59,22 +68,49 @@ def _ctx(op: str, **extra: Any) -> dict[str, Any]:
     return base
 
 
-def _error_message(hass: HomeAssistant, _id: int, exc: Exception, *, context: dict[str, Any]):
+# Sent to clients when a non-domain exception escapes a handler. Deliberately
+# generic: internal details (exception text, stack traces) stay in the server
+# log and never reach the wire.
+UNEXPECTED_ERROR_MESSAGE = "unexpected error; see Home Assistant logs"
+
+# Sent to clients when a command exceeds the configured rate limit.
+RATE_LIMITED_MESSAGE = "rate limit exceeded; retry later"
+
+
+def _error_envelope(
+    iden: int, code: str, message: str, context: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Build the contract's error envelope (with ``data`` context) directly.
+
+    Deliberately NOT ``websocket_api.error_message``: HA's helper has no
+    data/context parameter (its 4th positional is ``translation_key``), so
+    building the envelope ourselves keeps the structured ``data`` context
+    identical on real Home Assistant and in the offline stub.
+    """
+    error: dict[str, Any] = {"code": code, "message": message}
+    if context:
+        error["data"] = context
+    return {"id": iden, "type": "result", "success": False, "error": error}
+
+
+def _error_message(_id: int, exc: Exception, *, context: dict[str, Any]) -> dict[str, Any]:
     level = logging.WARNING
     if isinstance(exc, ConflictError | StorageError):
         level = logging.ERROR
     LOGGER.log(level, str(exc), extra={"domain": DOMAIN, **(context or {})}, exc_info=True)
-    return websocket_api.error_message(_id, _error_code(exc), str(exc), context or None)
+    return _error_envelope(_id, _error_code(exc), str(exc), context or None)
 
 
 # -----------------------------
 # Unified exception handling for WS handlers
 # -----------------------------
 
-_WSHandler = Callable[[HomeAssistant, Any, dict], Awaitable[Any]]
+_WSHandler = Callable[
+    [HomeAssistant, "websocket_api.ActiveConnection", dict[str, Any]], Awaitable[Any]
+]
 
 
-def _context_from_msg(op: str, msg: dict, fields: tuple[str, ...]) -> dict[str, Any]:
+def _context_from_msg(op: str, msg: dict[str, Any], fields: tuple[str, ...]) -> dict[str, Any]:
     payload: dict[str, Any] = {}
     for field in fields:
         if field not in msg:
@@ -108,31 +144,60 @@ def ws_guard(
     """
 
     def decorator(func: _WSHandler) -> _WSHandler:
-        async def wrapper(hass: HomeAssistant, conn, msg):  # type: ignore[override]
+        def _send_error(conn: websocket_api.ActiveConnection, err: dict[str, Any]) -> None:
+            try:
+                send = getattr(conn, "send_message", None)
+                if callable(send):
+                    send(err)
+            except Exception:  # pragma: no cover - defensive logging only
+                LOGGER.debug(
+                    "Failed to send WS error message",
+                    extra={
+                        "domain": DOMAIN,
+                        "op": op,
+                        "handler": getattr(func, "__name__", "?"),
+                    },
+                    exc_info=True,
+                )
+
+        @functools.wraps(func)
+        async def wrapper(
+            hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+        ) -> Any:
+            limiter = _rate_limiter(hass)
+            if limiter is not None and not limiter.allow_command(conn):
+                err = _error_envelope(
+                    msg.get("id", 0), "rate_limited", RATE_LIMITED_MESSAGE, _ctx(op)
+                )
+                _send_error(conn, err)
+                return err
             try:
                 return await func(hass, conn, msg)
             except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
                 ctx = _context_from_msg(op, msg, context_fields)
                 # In real Home Assistant, handlers must send on the connection.
                 # Returning a dict is only supported by our offline test stub.
-                err = _error_message(hass, msg.get("id", 0), exc, context=ctx)
-                try:
-                    send = getattr(conn, "send_message", None)
-                    if callable(send):
-                        send(err)
-                except Exception:  # pragma: no cover - defensive logging only
-                    LOGGER.debug(
-                        "Failed to send WS error message",
-                        extra={
-                            "domain": DOMAIN,
-                            "op": op,
-                            "handler": getattr(func, "__name__", "?"),
-                        },
-                        exc_info=True,
-                    )
+                err = _error_message(msg.get("id", 0), exc, context=ctx)
+                _send_error(conn, err)
                 # Always return the envelope for offline tests and stubs
                 return err
+            except Exception:
+                # Final safety net: any non-domain exception maps to the
+                # contract's unknown_error with a generic message; the real
+                # exception (with traceback) only goes to the server log.
+                ctx = _context_from_msg(op, msg, context_fields)
+                LOGGER.exception(
+                    "Unexpected error in WS handler",
+                    extra={"domain": DOMAIN, **ctx},
+                )
+                err = _error_envelope(
+                    msg.get("id", 0), "unknown_error", UNEXPECTED_ERROR_MESSAGE, ctx
+                )
+                _send_error(conn, err)
+                return err
 
+        # Structural marker: tests assert every registered command is guarded.
+        wrapper._haventory_ws_guard = True  # type: ignore[attr-defined]
         return wrapper
 
     return decorator
@@ -143,25 +208,10 @@ def ws_guard(
 # -----------------------------
 
 
-_SUPPORTED_BULK_KINDS: set[str] = {
-    "item_update",
-    "item_delete",
-    "item_move",
-    "item_adjust_quantity",
-    "item_set_quantity",
-    "item_check_out",
-    "item_check_in",
-    "item_add_tags",
-    "item_remove_tags",
-    "item_update_custom_fields",
-    "item_set_low_stock_threshold",
-}
-
-
-def _validate_bulk_ops(operations: Any) -> list[dict]:
+def _validate_bulk_ops(operations: Any) -> list[dict[str, Any]]:
     if not isinstance(operations, list):
         raise ValidationError("operations must be a list")
-    validated: list[dict] = []
+    validated: list[dict[str, Any]] = []
     for _idx, op in enumerate(operations):
         if not isinstance(op, dict):
             raise ValidationError("each operation must be an object")
@@ -183,21 +233,37 @@ def _validate_bulk_ops(operations: Any) -> list[dict]:
     return validated
 
 
-def _op_item_update(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+def _payload_item_id(payload: dict[str, Any]) -> str:
+    """Extract a validated item_id from an (unschema'd) op payload."""
+    value = payload.get("item_id")
+    if not isinstance(value, str) or not value:
+        raise ValidationError("item_id must be a non-empty string")
+    return value
+
+
+def _payload_int(payload: dict[str, Any], key: str) -> int:
+    """Extract a required integer field from an (unschema'd) op payload."""
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValidationError(f"{key} must be an integer")
+    return value
+
+
+def _op_item_update(hass: HomeAssistant, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
     repo = _repo(hass)
-    item_id = payload.get("item_id")
+    item_id = _payload_item_id(payload)
     expected = payload.get("expected_version")
     exclude_keys = {"item_id", "expected_version"}
-    update: ItemUpdate = {k: v for k, v in payload.items() if k not in exclude_keys}
+    update = cast("ItemUpdate", {k: v for k, v in payload.items() if k not in exclude_keys})
     updated = repo.update_item(item_id, update, expected_version=expected)
     serialized = _serialize_item(hass, updated)
     action = "moved" if "location_id" in update else "updated"
     return serialized, action
 
 
-def _op_item_delete(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+def _op_item_delete(hass: HomeAssistant, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
     repo = _repo(hass)
-    item_id = payload.get("item_id")
+    item_id = _payload_item_id(payload)
     expected = payload.get("expected_version")
     before = repo.get_item(item_id)
     serialized_before = _serialize_item(hass, before)
@@ -205,9 +271,9 @@ def _op_item_delete(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
     return serialized_before, "deleted"
 
 
-def _op_item_move(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+def _op_item_move(hass: HomeAssistant, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
     repo = _repo(hass)
-    item_id = payload.get("item_id")
+    item_id = _payload_item_id(payload)
     expected = payload.get("expected_version")
     updated = repo.update_item(
         item_id, ItemUpdate(location_id=payload.get("location_id")), expected_version=expected
@@ -215,42 +281,46 @@ def _op_item_move(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
     return _serialize_item(hass, updated), "moved"
 
 
-def _op_item_adjust_quantity(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+def _op_item_adjust_quantity(
+    hass: HomeAssistant, payload: dict[str, Any]
+) -> tuple[dict[str, Any], str]:
     repo = _repo(hass)
-    item_id = payload.get("item_id")
+    item_id = _payload_item_id(payload)
     updated = repo.adjust_quantity(
-        item_id, payload.get("delta"), expected_version=payload.get("expected_version")
+        item_id, _payload_int(payload, "delta"), expected_version=payload.get("expected_version")
     )
     return _serialize_item(hass, updated), "quantity_changed"
 
 
-def _op_item_set_quantity(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+def _op_item_set_quantity(
+    hass: HomeAssistant, payload: dict[str, Any]
+) -> tuple[dict[str, Any], str]:
     repo = _repo(hass)
-    item_id = payload.get("item_id")
-    qty = payload.get("quantity")
+    item_id = _payload_item_id(payload)
+    qty = _payload_int(payload, "quantity")
     updated = repo.set_quantity(item_id, qty, expected_version=payload.get("expected_version"))
     return _serialize_item(hass, updated), "quantity_changed"
 
 
-def _op_item_check_out(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+def _op_item_check_out(hass: HomeAssistant, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
     repo = _repo(hass)
-    item_id = payload.get("item_id")
+    item_id = _payload_item_id(payload)
     updated = repo.check_out(
         item_id, due_date=payload.get("due_date"), expected_version=payload.get("expected_version")
     )
     return _serialize_item(hass, updated), "checked_out"
 
 
-def _op_item_check_in(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+def _op_item_check_in(hass: HomeAssistant, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
     repo = _repo(hass)
-    item_id = payload.get("item_id")
+    item_id = _payload_item_id(payload)
     updated = repo.check_in(item_id, expected_version=payload.get("expected_version"))
     return _serialize_item(hass, updated), "checked_in"
 
 
-def _op_item_add_tags(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+def _op_item_add_tags(hass: HomeAssistant, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
     repo = _repo(hass)
-    item_id = payload.get("item_id")
+    item_id = _payload_item_id(payload)
     expected = payload.get("expected_version")
     tags = normalize_tags(payload.get("tags"))
     current = repo.get_item(item_id)
@@ -259,9 +329,11 @@ def _op_item_add_tags(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
     return _serialize_item(hass, updated), "updated"
 
 
-def _op_item_remove_tags(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+def _op_item_remove_tags(
+    hass: HomeAssistant, payload: dict[str, Any]
+) -> tuple[dict[str, Any], str]:
     repo = _repo(hass)
-    item_id = payload.get("item_id")
+    item_id = _payload_item_id(payload)
     expected = payload.get("expected_version")
     to_remove = set(normalize_tags(payload.get("tags")))
     current = repo.get_item(item_id)
@@ -270,22 +342,32 @@ def _op_item_remove_tags(hass: HomeAssistant, payload: dict) -> tuple[dict, str]
     return _serialize_item(hass, updated), "updated"
 
 
-def _op_item_update_custom_fields(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+def _op_item_update_custom_fields(
+    hass: HomeAssistant, payload: dict[str, Any]
+) -> tuple[dict[str, Any], str]:
     repo = _repo(hass)
-    item_id = payload.get("item_id")
+    item_id = _payload_item_id(payload)
     expected = payload.get("expected_version")
     update: ItemUpdate = {}
-    if "set" in payload and payload.get("set") is not None:
-        update["custom_fields_set"] = dict(payload.get("set"))
-    if "unset" in payload and payload.get("unset") is not None:
-        update["custom_fields_unset"] = list(payload.get("unset"))
+    set_value = payload.get("set")
+    if set_value is not None:
+        if not isinstance(set_value, dict):
+            raise ValidationError("set must be an object")
+        update["custom_fields_set"] = dict(set_value)
+    unset_value = payload.get("unset")
+    if unset_value is not None:
+        if not isinstance(unset_value, list):
+            raise ValidationError("unset must be a list")
+        update["custom_fields_unset"] = list(unset_value)
     updated = repo.update_item(item_id, update, expected_version=expected)
     return _serialize_item(hass, updated), "updated"
 
 
-def _op_item_set_low_stock_threshold(hass: HomeAssistant, payload: dict) -> tuple[dict, str]:
+def _op_item_set_low_stock_threshold(
+    hass: HomeAssistant, payload: dict[str, Any]
+) -> tuple[dict[str, Any], str]:
     repo = _repo(hass)
-    item_id = payload.get("item_id")
+    item_id = _payload_item_id(payload)
     expected = payload.get("expected_version")
     updated = repo.update_item(
         item_id,
@@ -295,7 +377,9 @@ def _op_item_set_low_stock_threshold(hass: HomeAssistant, payload: dict) -> tupl
     return _serialize_item(hass, updated), "updated"
 
 
-def _execute_item_op(hass: HomeAssistant, kind: str, payload: dict) -> tuple[dict, str]:
+def _execute_item_op(
+    hass: HomeAssistant, kind: str, payload: dict[str, Any]
+) -> tuple[dict[str, Any], str]:
     """Execute one item operation via a dispatch table."""
 
     dispatch = {
@@ -328,7 +412,9 @@ class _Subscription(TypedDict, total=False):
     include_subtree: bool
 
 
-def _subs_bucket(hass: HomeAssistant) -> dict[object, dict[int, _Subscription]]:
+def _subs_bucket(
+    hass: HomeAssistant,
+) -> dict[websocket_api.ActiveConnection, dict[int, _Subscription]]:
     """Get or create the subscriptions bucket.
 
     Note: We use a regular dict (not WeakKeyDictionary) because HA's
@@ -340,21 +426,38 @@ def _subs_bucket(hass: HomeAssistant) -> dict[object, dict[int, _Subscription]]:
     if subs is None:
         subs = {}
         bucket["subscriptions"] = subs
-    return subs
+    return cast("dict[websocket_api.ActiveConnection, dict[int, _Subscription]]", subs)
 
 
 def _cleanup_subscriptions_for_conn(hass: HomeAssistant, conn: object) -> None:
     """Remove all subscriptions for a given connection."""
 
     subs_all = _subs_bucket(hass)
-    subs_all.pop(conn, None)
+    subs_all.pop(cast("websocket_api.ActiveConnection", conn), None)
 
 
-def _register_close_listener(hass: HomeAssistant, conn: object) -> None:
-    """Attach cleanup to a connection close callback when available."""
+def _register_close_listener(hass: HomeAssistant, conn: websocket_api.ActiveConnection) -> None:
+    """Attach cleanup to a connection close callback when available.
+
+    On real Home Assistant, ``ActiveConnection`` exposes a ``subscriptions``
+    dict whose values are invoked when the connection closes — registering
+    there is what prevents disconnected clients from leaking subscription
+    state. The ``on_close``/``add_close_callback`` probes support the offline
+    test stubs.
+    """
 
     if getattr(conn, "_haventory_close_registered", False):
         return
+
+    registered = False
+
+    subscriptions = getattr(conn, "subscriptions", None)
+    if isinstance(subscriptions, dict):
+        # String key cannot collide with HA's integer subscription ids.
+        subscriptions["haventory/cleanup"] = functools.partial(
+            _cleanup_subscriptions_for_conn, hass, conn
+        )
+        registered = True
 
     closer = getattr(conn, "on_close", None)
     if not callable(closer):
@@ -362,10 +465,20 @@ def _register_close_listener(hass: HomeAssistant, conn: object) -> None:
     if callable(closer):
         try:
             closer(lambda: _cleanup_subscriptions_for_conn(hass, conn))
-            conn._haventory_close_registered = True
+            registered = True
         except Exception:  # pragma: no cover - defensive
             LOGGER.debug(
                 "Failed to register WS close listener",
+                extra={"domain": DOMAIN, "op": "subscribe_close_hook"},
+                exc_info=True,
+            )
+
+    if registered:
+        try:
+            conn._haventory_close_registered = True
+        except Exception:  # pragma: no cover - exotic connection objects
+            LOGGER.debug(
+                "Failed to stamp WS close registration",
                 extra={"domain": DOMAIN, "op": "subscribe_close_hook"},
                 exc_info=True,
             )
@@ -375,7 +488,9 @@ def _now_ts() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _send_event_message(conn, subscription_id: int, event_payload: dict[str, Any]) -> None:
+def _send_event_message(
+    conn: websocket_api.ActiveConnection, subscription_id: int, event_payload: dict[str, Any]
+) -> None:
     try:
         msg = {"id": subscription_id, "type": "event", "event": event_payload}
         send = getattr(conn, "send_message", None)
@@ -420,30 +535,22 @@ def _location_matches_filter(location: dict[str, Any], sub: _Subscription) -> bo
     return location.get("id") == loc_filter
 
 
-def _broadcast_event(
-    hass: HomeAssistant,
-    *,
-    topic: str,
-    action: str,
-    payload: dict[str, Any] | None = None,
-) -> None:
-    event: dict[str, Any] = {
-        "domain": DOMAIN,
-        "topic": topic,
-        "action": action,
-        "ts": _now_ts(),
-    }
-    if payload:
-        event.update(payload)
+def _collect_event_deliveries(
+    hass: HomeAssistant, topic: str, payload: dict[str, Any] | None
+) -> list[tuple[websocket_api.ActiveConnection, list[int]]]:
+    """Return (connection, subscription ids) pairs the event would reach.
 
-    subs_all = _subs_bucket(hass)
-    # Iterate over a snapshot to avoid mutation issues
-    for conn, subs in list(subs_all.items()):
+    Snapshots the subscription registry to avoid mutation issues.
+    """
+    item_obj = (payload or {}).get("item") if payload else None
+    location_obj = (payload or {}).get("location") if payload else None
+
+    deliveries: list[tuple[websocket_api.ActiveConnection, list[int]]] = []
+    for conn, subs in list(_subs_bucket(hass).items()):
+        sub_ids: list[int] = []
         for sub_id, sub in list(subs.items()):
             if sub.get("topic") != topic:
                 continue
-            item_obj = (payload or {}).get("item") if payload else None
-            location_obj = (payload or {}).get("location") if payload else None
             if (
                 topic == "items"
                 and item_obj is not None
@@ -456,11 +563,65 @@ def _broadcast_event(
                 and not _location_matches_filter(location_obj, sub)
             ):
                 continue
-            _send_event_message(conn, sub_id, event)
+            sub_ids.append(sub_id)
+        if sub_ids:
+            deliveries.append((conn, sub_ids))
+    return deliveries
+
+
+def _broadcast_event(
+    hass: HomeAssistant,
+    *,
+    topic: str,
+    action: str,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    # Broadcasts are best-effort: they run after a mutation has already been
+    # applied (and usually persisted), so a broadcast failure must never turn
+    # the originating command into an error.
+    try:
+        event: dict[str, Any] = {
+            "domain": DOMAIN,
+            "topic": topic,
+            "action": action,
+            "ts": _now_ts(),
+        }
+        if payload:
+            event.update(payload)
+
+        # Collect matching deliveries first so budgets are only consumed for
+        # events somebody would actually receive.
+        deliveries = _collect_event_deliveries(hass, topic, payload)
+        if not deliveries:
+            return
+
+        limiter = _rate_limiter(hass)
+        if limiter is not None and not limiter.allow_event_broadcast():
+            # Global event budget exhausted: drop this event entirely.
+            return
+
+        for conn, sub_ids in deliveries:
+            # One event delivered to a connection consumes one token,
+            # regardless of how many of its subscriptions match.
+            if limiter is not None and not limiter.allow_event_send(conn):
+                continue
+            for sub_id in sub_ids:
+                _send_event_message(conn, sub_id, event)
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.exception(
+            "Failed to broadcast WS event",
+            extra={"domain": DOMAIN, "op": "broadcast_event", "topic": topic, "action": action},
+        )
 
 
 def _broadcast_counts(hass: HomeAssistant) -> None:
-    counts_payload = _repo(hass).get_counts()
+    try:
+        counts_payload = _repo(hass).get_counts()
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.exception(
+            "Failed to broadcast counts", extra={"domain": DOMAIN, "op": "broadcast_counts"}
+        )
+        return
     _broadcast_event(
         hass,
         topic="stats",
@@ -485,7 +646,10 @@ async def _persist_repo(hass: HomeAssistant) -> None:
     {vol.Required("type"): "haventory/ping", vol.Optional("echo"): object}
 )
 @websocket_api.async_response
-async def ws_ping(hass: HomeAssistant, conn, msg):
+@ws_guard("ping", ())
+async def ws_ping(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     result = {"echo": msg.get("echo"), "ts": _now_ts()}
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
@@ -498,7 +662,10 @@ def _schema_version_from_hass(hass: HomeAssistant) -> int:
 
 @websocket_api.websocket_command({"type": "haventory/version"})
 @websocket_api.async_response
-async def ws_version(hass: HomeAssistant, conn, msg):
+@ws_guard("version", ())
+async def ws_version(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     result = {
         "integration_version": INTEGRATION_VERSION,
         "schema_version": _schema_version_from_hass(hass),
@@ -508,7 +675,10 @@ async def ws_version(hass: HomeAssistant, conn, msg):
 
 @websocket_api.websocket_command({"type": "haventory/stats"})
 @websocket_api.async_response
-async def ws_stats(hass: HomeAssistant, conn, msg):
+@ws_guard("stats", ())
+async def ws_stats(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     counts = _repo(hass).get_counts()
     conn.send_message(websocket_api.result_message(msg.get("id", 0), counts))
 
@@ -516,24 +686,19 @@ async def ws_stats(hass: HomeAssistant, conn, msg):
 @websocket_api.websocket_command({"type": "haventory/distinct_values"})
 @websocket_api.async_response
 @ws_guard("distinct_values", ())
-async def ws_distinct_values(hass: HomeAssistant, conn, msg):
+async def ws_distinct_values(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     result = _repo(hass).get_distinct_field_values()
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
 
-def _health_indexes(repo: Repository) -> dict[str, object]:
-    idx = repo._debug_get_internal_indexes()  # type: ignore[attr-defined]
-    return idx
-
-
-def _collect_item_issues(item_id: str, item, idx: dict) -> list[str]:  # noqa: PLR0912
+def _collect_item_issues(item_id: str, item: Item, idx: InternalIndexes) -> list[str]:
     issues: list[str] = []
-    items_by_location_id = idx["items_by_location_id"]  # type: ignore[index]
-    locations_by_id = idx["locations_by_id"]  # type: ignore[index]
-    items_by_created_at = idx["items_by_created_at"]  # type: ignore[index]
-    items_by_updated_at = idx["items_by_updated_at"]  # type: ignore[index]
-    checked_out_item_ids = idx["checked_out_item_ids"]  # type: ignore[index]
-    low_stock_item_ids = idx["low_stock_item_ids"]  # type: ignore[index]
+    items_by_location_id = idx["items_by_location_id"]
+    locations_by_id = idx["locations_by_id"]
+    checked_out_item_ids = idx["checked_out_item_ids"]
+    low_stock_item_ids = idx["low_stock_item_ids"]
 
     # Normalize types for comparison (UUID vs string)
     if str(getattr(item, "id", "")) != item_id:
@@ -548,13 +713,6 @@ def _collect_item_issues(item_id: str, item, idx: dict) -> list[str]:  # noqa: P
         bucket_ids = items_by_location_id.get(loc_key, set())
         if item_id not in bucket_ids:
             issues.append("item_missing_from_items_by_location_index")
-
-    created_key = getattr(item, "created_at", None)
-    updated_key = getattr(item, "updated_at", None)
-    if not any(k == created_key and iid == item_id for k, iid in items_by_created_at):
-        issues.append("item_missing_from_created_at_index")
-    if not any(k == updated_key and iid == item_id for k, iid in items_by_updated_at):
-        issues.append("item_missing_from_updated_at_index")
 
     if bool(getattr(item, "checked_out", False)):
         if item_id not in checked_out_item_ids:
@@ -576,25 +734,23 @@ def _collect_item_issues(item_id: str, item, idx: dict) -> list[str]:  # noqa: P
     return issues
 
 
-def _check_items_consistency(idx: dict) -> list[str]:
+def _check_items_consistency(idx: InternalIndexes) -> list[str]:
     issues: list[str] = []
-    items_by_id = idx["items_by_id"]  # type: ignore[index]
+    items_by_id = idx["items_by_id"]
     for item_id, item in items_by_id.items():
         issues.extend(_collect_item_issues(item_id, item, idx))
     return issues
 
 
-def _check_index_references(idx: dict) -> list[str]:
+def _check_index_references(idx: InternalIndexes) -> list[str]:
     issues: list[str] = []
-    items_by_id = idx["items_by_id"]  # type: ignore[index]
-    tags_to_item_ids = idx["tags_to_item_ids"]  # type: ignore[index]
-    category_to_item_ids = idx["category_to_item_ids"]  # type: ignore[index]
-    checked_out_item_ids = idx["checked_out_item_ids"]  # type: ignore[index]
-    low_stock_item_ids = idx["low_stock_item_ids"]  # type: ignore[index]
-    items_by_location_id = idx["items_by_location_id"]  # type: ignore[index]
-    items_by_created_at = idx["items_by_created_at"]  # type: ignore[index]
-    items_by_updated_at = idx["items_by_updated_at"]  # type: ignore[index]
-    locations_by_id = idx["locations_by_id"]  # type: ignore[index]
+    items_by_id = idx["items_by_id"]
+    tags_to_item_ids = idx["tags_to_item_ids"]
+    category_to_item_ids = idx["category_to_item_ids"]
+    checked_out_item_ids = idx["checked_out_item_ids"]
+    low_stock_item_ids = idx["low_stock_item_ids"]
+    items_by_location_id = idx["items_by_location_id"]
+    locations_by_id = idx["locations_by_id"]
 
     def _assert_known_ids(name: str, ids: set[str]) -> None:
         unknown = [x for x in ids if x not in items_by_id]
@@ -625,15 +781,10 @@ def _check_index_references(idx: dict) -> list[str]:
             ):
                 issues.append("items_by_location_bucket_mismatch")
 
-    for _t, ids in list(items_by_created_at):
-        _assert_known_ids("created_at_index", {ids})
-    for _t, ids in list(items_by_updated_at):
-        _assert_known_ids("updated_at_index", {ids})
-
     return issues
 
 
-def _check_locations_consistency(*, locations_by_id) -> list[str]:
+def _check_locations_consistency(*, locations_by_id: dict[str, Location]) -> list[str]:
     issues: list[str] = []
     for loc_id, loc in locations_by_id.items():
         # Normalize types for comparison (UUID vs string)
@@ -643,17 +794,17 @@ def _check_locations_consistency(*, locations_by_id) -> list[str]:
 
 
 def _collect_health_issues(repo: Repository) -> tuple[list[str], dict[str, int]]:
-    idx = _health_indexes(repo)
+    idx = repo._debug_get_internal_indexes()
     issues: list[str] = []
     issues.extend(_check_items_consistency(idx))
     issues.extend(_check_index_references(idx))
     issues.extend(_check_locations_consistency(locations_by_id=idx["locations_by_id"]))
 
     counts = repo.get_counts()
-    items_by_id = idx["items_by_id"]  # type: ignore[index]
-    locations_by_id = idx["locations_by_id"]  # type: ignore[index]
-    checked_out_item_ids = idx["checked_out_item_ids"]  # type: ignore[index]
-    low_stock_item_ids = idx["low_stock_item_ids"]  # type: ignore[index]
+    items_by_id = idx["items_by_id"]
+    locations_by_id = idx["locations_by_id"]
+    checked_out_item_ids = idx["checked_out_item_ids"]
+    low_stock_item_ids = idx["low_stock_item_ids"]
     if counts.get("items_total") != len(items_by_id):
         issues.append("items_total_count_mismatch")
     if counts.get("locations_total") != len(locations_by_id):
@@ -667,11 +818,26 @@ def _collect_health_issues(repo: Repository) -> tuple[list[str], dict[str, int]]
 
 @websocket_api.websocket_command({"type": "haventory/health"})
 @websocket_api.async_response
-async def ws_health(hass: HomeAssistant, conn, msg):
+@ws_guard("health", ())
+async def ws_health(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     repo = _repo(hass)
     issues, counts = _collect_health_issues(repo)
     healthy = len(issues) == 0
-    result = {"healthy": healthy, "issues": issues, "counts": counts, "generation": repo.generation}
+    limiter = _rate_limiter(hass)
+    rate_limit = {
+        "enabled": bool(limiter is not None and limiter.enabled),
+        "dropped_commands": limiter.dropped_commands if limiter is not None else 0,
+        "dropped_events": limiter.dropped_events if limiter is not None else 0,
+    }
+    result = {
+        "healthy": healthy,
+        "issues": issues,
+        "counts": counts,
+        "generation": repo.generation,
+        "rate_limit": rate_limit,
+    }
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
 
@@ -689,7 +855,10 @@ async def ws_health(hass: HomeAssistant, conn, msg):
     }
 )
 @websocket_api.async_response
-async def ws_subscribe(hass: HomeAssistant, conn, msg):
+@ws_guard("subscribe", ("topic",))
+async def ws_subscribe(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     topic = msg.get("topic")
     if topic not in {"items", "locations", "stats"}:
         raise ValidationError("topic must be one of: items, locations, stats")
@@ -720,13 +889,22 @@ async def ws_subscribe(hass: HomeAssistant, conn, msg):
     {vol.Required("type"): "haventory/unsubscribe", vol.Required("subscription"): object}
 )
 @websocket_api.async_response
-async def ws_unsubscribe(hass: HomeAssistant, conn, msg):
-    sub_id = msg.get("subscription")
+@ws_guard("unsubscribe", ("subscription",))
+async def ws_unsubscribe(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    sub_id_raw = msg.get("subscription")
+    if isinstance(sub_id_raw, bool) or not isinstance(sub_id_raw, int | str):
+        raise ValidationError("subscription must be an integer")
+    try:
+        sub_id = int(sub_id_raw)
+    except ValueError:
+        raise ValidationError("subscription must be an integer") from None
     subs_all = _subs_bucket(hass)
     removed = False
     subs_for_conn = subs_all.get(conn)
     if subs_for_conn:
-        removed = subs_for_conn.pop(int(sub_id), None) is not None
+        removed = subs_for_conn.pop(sub_id, None) is not None
         if not subs_for_conn:
             subs_all.pop(conn, None)
     LOGGER.debug(
@@ -765,7 +943,9 @@ async def ws_unsubscribe(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("item_create", ("name",))
-async def ws_item_create(hass: HomeAssistant, conn, msg):
+async def ws_item_create(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     payload = {k: v for k, v in msg.items() if k not in {"id", "type"}}
     item = _repo(hass).create_item(payload)  # type: ignore[arg-type]
     serialized = _serialize_item(hass, item)
@@ -780,8 +960,10 @@ async def ws_item_create(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("item_get", ("item_id",))
-async def ws_item_get(hass: HomeAssistant, conn, msg):
-    item = _repo(hass).get_item(msg.get("item_id"))
+async def ws_item_get(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    item = _repo(hass).get_item(msg["item_id"])
     conn.send_message(websocket_api.result_message(msg.get("id", 0), _serialize_item(hass, item)))
 
 
@@ -807,20 +989,15 @@ async def ws_item_get(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("item_update", ("item_id", "expected_version"))
-async def ws_item_update(hass: HomeAssistant, conn, msg):
-    item_id = msg.get("item_id")
+async def ws_item_update(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    item_id = msg["item_id"]
     expected = msg.get("expected_version")
-    update: ItemUpdate = {
-        k: v
-        for k, v in msg.items()
-        if k
-        not in {
-            "id",
-            "type",
-            "item_id",
-            "expected_version",
-        }
-    }
+    update = cast(
+        "ItemUpdate",
+        {k: v for k, v in msg.items() if k not in {"id", "type", "item_id", "expected_version"}},
+    )
     updated = _repo(hass).update_item(item_id, update, expected_version=expected)
     serialized = _serialize_item(hass, updated)
     action = "moved" if "location_id" in update else "updated"
@@ -839,8 +1016,10 @@ async def ws_item_update(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("item_delete", ("item_id", "expected_version"))
-async def ws_item_delete(hass: HomeAssistant, conn, msg):
-    item_id = msg.get("item_id")
+async def ws_item_delete(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    item_id = msg["item_id"]
     repo = _repo(hass)
     before = repo.get_item(item_id)
     serialized_before = _serialize_item(hass, before)
@@ -866,9 +1045,11 @@ async def ws_item_delete(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("item_adjust_quantity", ("item_id", "delta", "expected_version"))
-async def ws_item_adjust_quantity(hass: HomeAssistant, conn, msg):
+async def ws_item_adjust_quantity(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     item = _repo(hass).adjust_quantity(
-        msg.get("item_id"), msg.get("delta"), expected_version=msg.get("expected_version")
+        msg["item_id"], msg["delta"], expected_version=msg.get("expected_version")
     )
     serialized = _serialize_item(hass, item)
     _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
@@ -887,13 +1068,15 @@ async def ws_item_adjust_quantity(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("item_set_quantity", ("item_id", "quantity", "expected_version"))
-async def ws_item_set_quantity(hass: HomeAssistant, conn, msg):
+async def ws_item_set_quantity(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     qty = msg.get("quantity")
     # Validate upfront so schema errors surface as validation_error even when id is bad
     if not isinstance(qty, int) or qty < 0:
         raise ValidationError("quantity must be an integer >= 0")
     item = _repo(hass).set_quantity(
-        msg.get("item_id"), qty, expected_version=msg.get("expected_version")
+        msg["item_id"], qty, expected_version=msg.get("expected_version")
     )
     serialized = _serialize_item(hass, item)
     _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
@@ -912,9 +1095,11 @@ async def ws_item_set_quantity(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("item_check_out", ("item_id", "due_date", "expected_version"))
-async def ws_item_check_out(hass: HomeAssistant, conn, msg):
+async def ws_item_check_out(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     item = _repo(hass).check_out(
-        msg.get("item_id"),
+        msg["item_id"],
         due_date=msg.get("due_date"),
         expected_version=msg.get("expected_version"),
     )
@@ -934,8 +1119,10 @@ async def ws_item_check_out(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("item_check_in", ("item_id", "expected_version"))
-async def ws_item_check_in(hass: HomeAssistant, conn, msg):
-    item = _repo(hass).check_in(msg.get("item_id"), expected_version=msg.get("expected_version"))
+async def ws_item_check_in(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    item = _repo(hass).check_in(msg["item_id"], expected_version=msg.get("expected_version"))
     serialized = _serialize_item(hass, item)
     _broadcast_event(hass, topic="items", action="checked_in", payload={"item": serialized})
     await _persist_repo(hass)
@@ -953,12 +1140,14 @@ async def ws_item_check_in(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("item_add_tags", ("item_id", "expected_version"))
-async def ws_item_add_tags(hass: HomeAssistant, conn, msg):
+async def ws_item_add_tags(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     serialized, action = _execute_item_op(
         hass,
         "item_add_tags",
         {
-            "item_id": msg.get("item_id"),
+            "item_id": msg["item_id"],
             "expected_version": msg.get("expected_version"),
             "tags": msg.get("tags"),
         },
@@ -979,12 +1168,14 @@ async def ws_item_add_tags(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("item_remove_tags", ("item_id", "expected_version"))
-async def ws_item_remove_tags(hass: HomeAssistant, conn, msg):
+async def ws_item_remove_tags(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     serialized, action = _execute_item_op(
         hass,
         "item_remove_tags",
         {
-            "item_id": msg.get("item_id"),
+            "item_id": msg["item_id"],
             "expected_version": msg.get("expected_version"),
             "tags": msg.get("tags"),
         },
@@ -1006,12 +1197,14 @@ async def ws_item_remove_tags(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("item_update_custom_fields", ("item_id", "expected_version"))
-async def ws_item_update_custom_fields(hass: HomeAssistant, conn, msg):
+async def ws_item_update_custom_fields(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     serialized, action = _execute_item_op(
         hass,
         "item_update_custom_fields",
         {
-            "item_id": msg.get("item_id"),
+            "item_id": msg["item_id"],
             "expected_version": msg.get("expected_version"),
             "set": msg.get("set"),
             "unset": msg.get("unset"),
@@ -1033,12 +1226,14 @@ async def ws_item_update_custom_fields(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("item_set_low_stock_threshold", ("item_id", "expected_version"))
-async def ws_item_set_low_stock_threshold(hass: HomeAssistant, conn, msg):
+async def ws_item_set_low_stock_threshold(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     serialized, action = _execute_item_op(
         hass,
         "item_set_low_stock_threshold",
         {
-            "item_id": msg.get("item_id"),
+            "item_id": msg["item_id"],
             "expected_version": msg.get("expected_version"),
             "low_stock_threshold": msg.get("low_stock_threshold"),
         },
@@ -1059,12 +1254,14 @@ async def ws_item_set_low_stock_threshold(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("item_move", ("item_id", "location_id", "expected_version"))
-async def ws_item_move(hass: HomeAssistant, conn, msg):
+async def ws_item_move(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     serialized, action = _execute_item_op(
         hass,
         "item_move",
         {
-            "item_id": msg.get("item_id"),
+            "item_id": msg["item_id"],
             "expected_version": msg.get("expected_version"),
             "location_id": msg.get("location_id"),
         },
@@ -1080,14 +1277,16 @@ async def ws_item_move(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("items_bulk", ())
-async def ws_items_bulk(hass: HomeAssistant, conn, msg):
+async def ws_items_bulk(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     operations = _validate_bulk_ops(msg.get("operations"))
     results: dict[str, dict[str, object]] = {}
 
     # Capture initial state for logging
     repo = _repo(hass)
     initial_generation = repo.generation
-    successful_ops: list[tuple[str, dict, str]] = []  # (op_id, serialized, action)
+    successful_ops: list[tuple[str, dict[str, Any], str]] = []  # (op_id, serialized, action)
 
     for op in operations:
         op_id = op["op_id"]
@@ -1133,6 +1332,26 @@ async def ws_items_bulk(hass: HomeAssistant, conn, msg):
                 "success": False,
                 "error": {"code": _error_code(exc), "message": str(exc), "context": ctx},
             }
+        except Exception:
+            # A malformed payload must fail only its own op, never the batch,
+            # and internal details stay out of the client-visible message.
+            LOGGER.exception(
+                "Bulk operation failed unexpectedly, continuing with remaining ops",
+                extra={
+                    "domain": DOMAIN,
+                    "op": "items_bulk_op_failed",
+                    "op_id": op_id,
+                    "kind": kind,
+                },
+            )
+            results[op_id] = {
+                "success": False,
+                "error": {
+                    "code": "unknown_error",
+                    "message": UNEXPECTED_ERROR_MESSAGE,
+                    "context": {"op_id": op_id, "kind": kind},
+                },
+            }
 
     if successful_ops:
         # Log summary of bulk operation
@@ -1153,7 +1372,7 @@ async def ws_items_bulk(hass: HomeAssistant, conn, msg):
         for _op_id, serialized, action in successful_ops:
             _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
 
-        # Persist with debouncing (moved broadcasts before persist)
+        # Persist immediately so storage errors surface through @ws_guard.
         await _persist_repo(hass)
         _broadcast_counts(hass)
     else:
@@ -1180,7 +1399,9 @@ async def ws_items_bulk(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("item_list", ())
-async def ws_item_list(hass: HomeAssistant, conn, msg):
+async def ws_item_list(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     # Accept filter/sort/limit/cursor passthrough
     flt = msg.get("filter")
     sort = msg.get("sort")
@@ -1209,7 +1430,9 @@ async def ws_item_list(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("location_create", ("name", "parent_id"))
-async def ws_location_create(hass: HomeAssistant, conn, msg):
+async def ws_location_create(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     # Validate area_id against HA area registry when provided
     area_id = msg.get("area_id") if "area_id" in msg else None
     if area_id is not None:
@@ -1217,7 +1440,7 @@ async def ws_location_create(hass: HomeAssistant, conn, msg):
         if reg.async_get_area(area_id) is None:
             raise ValidationError("unknown area_id")
     loc = _repo(hass).create_location(
-        name=msg.get("name"), parent_id=msg.get("parent_id"), area_id=area_id
+        name=msg["name"], parent_id=msg.get("parent_id"), area_id=area_id
     )
     serialized = _serialize_location(loc)
     _broadcast_event(hass, topic="locations", action="created", payload={"location": serialized})
@@ -1231,8 +1454,10 @@ async def ws_location_create(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("location_get", ("location_id",))
-async def ws_location_get(hass: HomeAssistant, conn, msg):
-    loc = _repo(hass).get_location(msg.get("location_id"))
+async def ws_location_get(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    loc = _repo(hass).get_location(msg["location_id"])
     conn.send_message(websocket_api.result_message(msg.get("id", 0), _serialize_location(loc)))
 
 
@@ -1247,7 +1472,9 @@ async def ws_location_get(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("location_update", ("location_id", "new_parent_id", "name"))
-async def ws_location_update(hass: HomeAssistant, conn, msg):
+async def ws_location_update(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     new_parent = msg["new_parent_id"] if "new_parent_id" in msg else UNSET
     area_id = msg["area_id"] if "area_id" in msg else UNSET
     if area_id is not UNSET and area_id is not None:
@@ -1255,7 +1482,7 @@ async def ws_location_update(hass: HomeAssistant, conn, msg):
         if reg.async_get_area(area_id) is None:
             raise ValidationError("unknown area_id")
     loc = _repo(hass).update_location(
-        msg.get("location_id"), name=msg.get("name"), new_parent_id=new_parent, area_id=area_id
+        msg["location_id"], name=msg.get("name"), new_parent_id=new_parent, area_id=area_id
     )
     serialized = _serialize_location(loc)
     # If parent changed emit moved; if name changed emit renamed
@@ -1276,8 +1503,10 @@ async def ws_location_update(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("location_delete", ("location_id",))
-async def ws_location_delete(hass: HomeAssistant, conn, msg):
-    loc_id = msg.get("location_id")
+async def ws_location_delete(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    loc_id = msg["location_id"]
     repo = _repo(hass)
     before = repo.get_location(loc_id)
     serialized_before = _serialize_location(before)
@@ -1295,24 +1524,30 @@ async def ws_location_delete(hass: HomeAssistant, conn, msg):
 
 @websocket_api.websocket_command({"type": "haventory/location/list"})
 @websocket_api.async_response
-async def ws_location_list(hass: HomeAssistant, conn, msg):
+@ws_guard("location_list", ())
+async def ws_location_list(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     repo = _repo(hass)
     # Return flat list
     data = [
         _serialize_location(repo.get_location(loc_id))
-        for loc_id in repo._debug_get_internal_indexes()["locations_by_id"].keys()
-    ]  # type: ignore[index]
+        for loc_id in repo._debug_get_internal_indexes()["locations_by_id"]
+    ]
     conn.send_message(websocket_api.result_message(msg.get("id", 0), data))
 
 
 @websocket_api.websocket_command({"type": "haventory/location/tree"})
 @websocket_api.async_response
-async def ws_location_tree(hass: HomeAssistant, conn, msg):
+@ws_guard("location_tree", ())
+async def ws_location_tree(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     # Build a naive tree from repo children mapping
     repo = _repo(hass)
-    indexes = repo._debug_get_internal_indexes()  # pragma: no cover - only used in tests
-    locs_by_id = indexes["locations_by_id"]  # type: ignore[index]
-    children_by_parent = repo._children_ids_by_parent_id  # type: ignore[attr-defined]
+    indexes = repo._debug_get_internal_indexes()
+    locs_by_id = indexes["locations_by_id"]
+    children_by_parent = repo._children_ids_by_parent_id
 
     def build_node(loc_id: str) -> dict[str, Any]:
         loc = locs_by_id[loc_id]
@@ -1344,9 +1579,11 @@ async def ws_location_tree(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("location_move_subtree", ("location_id", "new_parent_id"))
-async def ws_location_move_subtree(hass: HomeAssistant, conn, msg):
+async def ws_location_move_subtree(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     new_parent = msg.get("new_parent_id") if "new_parent_id" in msg else UNSET
-    loc = _repo(hass).update_location(msg.get("location_id"), new_parent_id=new_parent)
+    loc = _repo(hass).update_location(msg["location_id"], new_parent_id=new_parent)
     serialized = _serialize_location(loc)
     _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
     await _persist_repo(hass)
@@ -1359,18 +1596,18 @@ async def ws_location_move_subtree(hass: HomeAssistant, conn, msg):
 # -----------------------------
 
 
-def _effective_area_id_for_item(hass: HomeAssistant, item) -> str | None:
+def _effective_area_id_for_item(hass: HomeAssistant, item: Item) -> str | None:
     """Resolve the effective area id for an item via its location ancestry."""
     try:
         if getattr(item, "location_id", None) is None:
             return None
         repo = _repo(hass)
-        return repo._resolve_effective_area_id_for_location(str(item.location_id))  # type: ignore[attr-defined]
+        return repo._resolve_effective_area_id_for_location(str(item.location_id))
     except Exception:
         return None
 
 
-def _serialize_item(hass: HomeAssistant, item) -> dict[str, Any]:
+def _serialize_item(hass: HomeAssistant, item: Item) -> dict[str, Any]:
     return {
         "id": str(item.id),
         "name": item.name,
@@ -1397,7 +1634,7 @@ def _serialize_item(hass: HomeAssistant, item) -> dict[str, Any]:
     }
 
 
-def _serialize_location(loc) -> dict[str, Any]:
+def _serialize_location(loc: Location) -> dict[str, Any]:
     return {
         "id": str(loc.id),
         "name": loc.name,
@@ -1415,7 +1652,9 @@ def _serialize_location(loc) -> dict[str, Any]:
 @websocket_api.websocket_command({"type": "haventory/areas/list"})
 @websocket_api.async_response
 @ws_guard("areas_list", ())
-async def ws_areas_list(hass: HomeAssistant, conn, msg):
+async def ws_areas_list(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     reg = await async_get_area_registry(hass)
     entries = reg.async_list_areas()
     areas = [{"id": a.id, "name": a.name} for a in entries]
@@ -1432,7 +1671,9 @@ async def ws_areas_list(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("export", ())
-async def ws_export(hass: HomeAssistant, conn, msg):
+async def ws_export(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     if "filter" in msg and not isinstance(msg.get("filter"), dict):
         raise ValidationError("filter must be an object")
     item_filter = msg.get("filter") if "filter" in msg else None
@@ -1444,11 +1685,11 @@ async def ws_export(hass: HomeAssistant, conn, msg):
     conn.send_message(websocket_api.result_message(msg.get("id", 0), document))
 
 
-def _import_policy(msg: dict) -> str:
+def _import_policy(msg: dict[str, Any]) -> Policy:
     policy = msg.get("policy", "merge")
     if policy not in POLICIES:
         raise ValidationError(f"policy must be one of: {', '.join(POLICIES)}")
-    return policy
+    return cast("Policy", policy)
 
 
 @websocket_api.websocket_command(
@@ -1460,7 +1701,9 @@ def _import_policy(msg: dict) -> str:
 )
 @websocket_api.async_response
 @ws_guard("import_preview", ())
-async def ws_import_preview(hass: HomeAssistant, conn, msg):
+async def ws_import_preview(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     policy = _import_policy(msg)
     report, _target = import_export.plan_import(
         _repo(hass),
@@ -1480,7 +1723,9 @@ async def ws_import_preview(hass: HomeAssistant, conn, msg):
 )
 @websocket_api.async_response
 @ws_guard("import_execute", ())
-async def ws_import_execute(hass: HomeAssistant, conn, msg):
+async def ws_import_execute(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     policy = _import_policy(msg)
     repo = _repo(hass)
     report, target = import_export.plan_import(
@@ -1491,7 +1736,7 @@ async def ws_import_execute(hass: HomeAssistant, conn, msg):
     )
     if not report.get("valid") or target is None:
         # Invalid document: surface structured errors without mutating state.
-        err = websocket_api.error_message(
+        err = _error_envelope(
             msg.get("id", 0),
             "validation_error",
             "import document is invalid",

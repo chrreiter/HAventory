@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import base64
 import binascii
-import bisect
+import copy
 import json
 import logging
 import re
@@ -20,7 +20,7 @@ import uuid
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import replace
-from typing import Any, TypedDict
+from typing import Any, NamedTuple, TypedDict
 
 from .exceptions import ConflictError, NotFoundError, ValidationError
 from .models import (
@@ -38,6 +38,10 @@ from .models import (
     create_item_from_create,
     date_sort_key,
     filter_items,
+    is_canonical_utc_timestamp,
+    iso_utc_now,
+    item_is_low_stock,
+    monotonic_timestamp_after,
     new_uuid4,
     normalize_search_text,
     normalize_tags,
@@ -50,17 +54,59 @@ from .models import (
 LOGGER = logging.getLogger(__name__)
 
 
+class _TextTokens(NamedTuple):
+    """Cached text-index tokens for one item, split by source.
+
+    ``base_*`` tokens derive from name/description/category/tags; ``path_*``
+    tokens derive from the denormalized ``location_path.display_path``. The
+    split lets subtree moves update only the path-derived buckets.
+    """
+
+    base_words: frozenset[str]
+    path_words: frozenset[str]
+    name_prefixes: frozenset[str]
+    base_trigrams: frozenset[str]
+    path_trigrams: frozenset[str]
+
+
 class PageResult(TypedDict):
     items: list[Item]
     next_cursor: str | None
 
 
+class InternalIndexes(TypedDict):
+    """Live references to the repository's internal indexes (health/tests)."""
+
+    items_by_id: dict[str, Item]
+    locations_by_id: dict[str, Location]
+    tags_to_item_ids: dict[str, set[str]]
+    category_to_item_ids: dict[str, set[str]]
+    checked_out_item_ids: set[str]
+    low_stock_item_ids: set[str]
+    items_by_location_id: dict[str, set[str]]
+    locations_by_area_id: dict[str, set[str]]
+    items_by_area_id: dict[str, set[str]]
+
+
 # Sentinel for optional args that distinguish "not provided" from explicit None
 UNSET: object = object()
 
-# Lint-friendly constants — removed duplicates; shared constants live in models
 TRIGRAM_MIN_LEN = 3
 PREFIX_MIN_LEN = 2
+
+
+def _coerce_canonical_ts(value: object, *, fallback: str | None = None) -> str:
+    """Return a canonical UTC timestamp, backfilling non-canonical input.
+
+    Item timestamps compare lexicographically for sort/range filters, so on
+    load any missing / null / corrupt value is replaced with a canonical one
+    (the fallback when it is itself canonical, otherwise the current time).
+    """
+    if isinstance(value, str) and is_canonical_utc_timestamp(value):
+        return value
+    if fallback is not None and is_canonical_utc_timestamp(fallback):
+        return fallback
+    return iso_utc_now()
 
 
 class Repository:
@@ -91,9 +137,6 @@ class Repository:
         # Area indexes
         self._locations_by_area_id: dict[str, set[str]] = {}
         self._items_by_area_id: dict[str, set[str]] = {}
-        # Temporal indexes for efficient range queries (sorted lists)
-        self._items_by_created_at: list[tuple[str, str]] = []  # (iso_timestamp, item_id)
-        self._items_by_updated_at: list[tuple[str, str]] = []  # (iso_timestamp, item_id)
         # Cached name sort keys
         self._name_sort_key_by_item_id: dict[str, str] = {}
 
@@ -101,10 +144,12 @@ class Repository:
         self._word_to_item_ids: dict[str, set[str]] = {}
         self._name_prefix_to_item_ids: dict[str, set[str]] = {}
         self._trigram_to_item_ids: dict[str, set[str]] = {}
+        # Per-item cached tokens so clearing/delta-updating the text indexes
+        # never has to re-derive tokens from the item fields.
+        self._item_text_tokens: dict[str, _TextTokens] = {}
 
         # Location tree indexes
         self._children_ids_by_parent_id: dict[str | None, set[str]] = {}
-        # No instance-level sentinel needed; use module-level UNSET
 
         # Generation counter for optimistic locking and debugging
         self._generation: int = 0
@@ -166,10 +211,6 @@ class Repository:
             if eff_area_id is not None:
                 self._add_to_bucket(self._items_by_area_id, eff_area_id, item_key)
 
-        # Temporal indexes
-        self._add_to_temporal_index(self._items_by_created_at, item.created_at, item_key)
-        self._add_to_temporal_index(self._items_by_updated_at, item.updated_at, item_key)
-
         # cached sort key for name
         self._name_sort_key_by_item_id[item_key] = normalize_text_for_sort(item.name)
 
@@ -183,7 +224,7 @@ class Repository:
         self._increment_generation()
 
     def _unindex_item(self, item: Item) -> None:
-        # Remove from tag/category/checked/low-stock/location/timestamp caches
+        # Remove from tag/category/checked/low-stock/location caches
         item_key = str(item.id)
         for tag in item.tags:
             self._remove_from_bucket(self._tags_to_item_ids, tag, item_key)
@@ -199,10 +240,6 @@ class Repository:
             self._remove_from_bucket(self._items_by_location_id, str(item.location_id), item_key)
             # Remove from any area buckets (area could have changed since indexing)
             self._remove_item_from_all_area_buckets(item_key)
-
-        # Temporal indexes
-        self._remove_from_temporal_index(self._items_by_created_at, item.created_at, item_key)
-        self._remove_from_temporal_index(self._items_by_updated_at, item.updated_at, item_key)
 
         self._name_sort_key_by_item_id.pop(item_key, None)
 
@@ -255,10 +292,7 @@ class Repository:
         self._index_item(new)
 
     def _is_low_stock(self, item: Item) -> bool:
-        thr = item.low_stock_threshold
-        if thr is None:
-            return False
-        return item.quantity <= int(thr)
+        return item_is_low_stock(item)
 
     def _normalize_for_search(self, text: str) -> str:
         """Normalize text for search indexing (lowercase, strip accents).
@@ -274,111 +308,103 @@ class Repository:
             return set()
         return {text[i : i + TRIGRAM_MIN_LEN] for i in range(len(text) - (TRIGRAM_MIN_LEN - 1))}
 
+    def _tokenize(self, text: str) -> list[str]:
+        """Normalize and split text into indexable words."""
+        norm = self._normalize_for_search(text)
+        if not norm:
+            return []
+        return [w for w in re.split(r"[^a-z0-9]", norm) if w]
+
+    def _compute_path_tokens(self, display_path: str) -> tuple[frozenset[str], frozenset[str]]:
+        """Return (words, trigrams) derived from a location display path."""
+        words = self._tokenize(display_path)
+        trigrams: set[str] = set()
+        for w in words:
+            trigrams |= self._extract_trigrams(w)
+        return frozenset(words), frozenset(trigrams)
+
+    def _compute_text_tokens(self, item: Item) -> _TextTokens:
+        """Derive the full token record for an item's text indexes."""
+        base_words: set[str] = set()
+        base_trigrams: set[str] = set()
+        for text in (item.name, item.description or "", item.category or "", *item.tags):
+            for w in self._tokenize(text):
+                base_words.add(w)
+                base_trigrams |= self._extract_trigrams(w)
+
+        # Prefixes are indexed per word of the name only.
+        name_prefixes: set[str] = set()
+        for w in self._tokenize(item.name):
+            for i in range(PREFIX_MIN_LEN, len(w) + 1):
+                name_prefixes.add(w[:i])
+
+        path_words, path_trigrams = self._compute_path_tokens(item.location_path.display_path)
+        return _TextTokens(
+            base_words=frozenset(base_words),
+            path_words=path_words,
+            name_prefixes=frozenset(name_prefixes),
+            base_trigrams=frozenset(base_trigrams),
+            path_trigrams=path_trigrams,
+        )
+
     def _index_item_text(self, item: Item) -> None:
-        """Build text indexes for an item."""
+        """Build text indexes for an item and cache its token record."""
         item_key = str(item.id)
+        tokens = self._compute_text_tokens(item)
+        self._item_text_tokens[item_key] = tokens
 
-        # Gather searchable text
-        texts = [
-            item.name,
-            item.description or "",
-            item.category or "",
-            item.location_path.display_path,
-        ]
-        texts.extend(item.tags)
-
-        # Separate name for prefix indexing (now per-word)
-        norm_name = self._normalize_for_search(item.name)
-        if norm_name:
-            name_words = [w for w in re.split(r"[^a-z0-9]", norm_name) if w]
-            for w in name_words:
-                # Index prefixes of each word in the name
-                for i in range(PREFIX_MIN_LEN, len(w) + 1):
-                    prefix = w[:i]
-                    self._add_to_bucket(self._name_prefix_to_item_ids, prefix, item_key)
-
-        # Index words and trigrams for all fields
-        seen_words: set[str] = set()
-        seen_trigrams: set[str] = set()
-
-        for text in texts:
-            norm = self._normalize_for_search(text)
-            if not norm:
-                continue
-
-            # Words (split by non-alphanumeric)
-            words = [w for w in re.split(r"[^a-z0-9]", norm) if w]
-            for w in words:
-                if w not in seen_words:
-                    self._add_to_bucket(self._word_to_item_ids, w, item_key)
-                    seen_words.add(w)
-
-            # Trigrams (on the whole normalized string usually, or per word?
-            # Per word is safer for boundary conditions)
-            for w in words:
-                trigrams = self._extract_trigrams(w)
-                for t in trigrams:
-                    if t not in seen_trigrams:
-                        self._add_to_bucket(self._trigram_to_item_ids, t, item_key)
-                        seen_trigrams.add(t)
+        for prefix in tokens.name_prefixes:
+            self._add_to_bucket(self._name_prefix_to_item_ids, prefix, item_key)
+        for w in tokens.base_words | tokens.path_words:
+            self._add_to_bucket(self._word_to_item_ids, w, item_key)
+        for t in tokens.base_trigrams | tokens.path_trigrams:
+            self._add_to_bucket(self._trigram_to_item_ids, t, item_key)
 
     def _clear_item_text_index(self, item: Item) -> None:
-        """Remove item from text bucket indexes."""
+        """Remove item from text bucket indexes using its cached tokens."""
         item_key = str(item.id)
+        tokens = self._item_text_tokens.pop(item_key, None)
+        if tokens is None:  # pragma: no cover - defensive fallback
+            tokens = self._compute_text_tokens(item)
 
-        # We must re-derive the keys to remove them. Alternatively, if buckets are small,
-        # we might just do nothing and filter false positives, BUT memory usage would grow.
-        # "Correct" way without storing "what did I index" on the item is to re-compute.
-        # This matches the strategy used for other bucket indexes.
+        for prefix in tokens.name_prefixes:
+            self._remove_from_bucket(self._name_prefix_to_item_ids, prefix, item_key)
+        for w in tokens.base_words | tokens.path_words:
+            self._remove_from_bucket(self._word_to_item_ids, w, item_key)
+        for t in tokens.base_trigrams | tokens.path_trigrams:
+            self._remove_from_bucket(self._trigram_to_item_ids, t, item_key)
 
-        texts = [
-            item.name,
-            item.description or "",
-            item.category or "",
-            item.location_path.display_path,
-        ]
-        texts.extend(item.tags)
-
-        norm_name = self._normalize_for_search(item.name)
-        if norm_name:
-            name_words = [w for w in re.split(r"[^a-z0-9]", norm_name) if w]
-            for w in name_words:
-                for i in range(PREFIX_MIN_LEN, len(w) + 1):
-                    self._remove_from_bucket(self._name_prefix_to_item_ids, w[:i], item_key)
-
-        seen_words: set[str] = set()
-        seen_trigrams: set[str] = set()
-
-        for text in texts:
-            norm = self._normalize_for_search(text)
-            if not norm:
-                continue
-            words = [w for w in re.split(r"[^a-z0-9]", norm) if w]
-            for w in words:
-                if w not in seen_words:
-                    self._remove_from_bucket(self._word_to_item_ids, w, item_key)
-                    seen_words.add(w)
-
-                trigrams = self._extract_trigrams(w)
-                for t in trigrams:
-                    if t not in seen_trigrams:
-                        self._remove_from_bucket(self._trigram_to_item_ids, t, item_key)
-                        seen_trigrams.add(t)
-
-    def _add_to_temporal_index(
-        self, index: list[tuple[str, str]], timestamp: str, item_id: str
+    def _apply_path_token_delta(
+        self,
+        item_key: str,
+        tokens: _TextTokens,
+        new_path_words: frozenset[str],
+        new_path_trigrams: frozenset[str],
     ) -> None:
-        """Insert (timestamp, item_id) into sorted temporal index using bisect."""
-        bisect.insort(index, (timestamp, item_id))
+        """Update text buckets for a path-only change using set deltas.
 
-    def _remove_from_temporal_index(
-        self, index: list[tuple[str, str]], timestamp: str, item_id: str
-    ) -> None:
-        """Remove (timestamp, item_id) from sorted temporal index."""
-        key = (timestamp, item_id)
-        pos = bisect.bisect_left(index, key)
-        if pos < len(index) and index[pos] == key:
-            index.pop(pos)
+        A bucket entry must exist iff the token is in ``base | path``: a token
+        leaving the path is only removed when the base does not also carry it,
+        and a token joining the path is only added when the base did not
+        already index it.
+        """
+        for w in tokens.path_words - new_path_words:
+            if w not in tokens.base_words:
+                self._remove_from_bucket(self._word_to_item_ids, w, item_key)
+        for w in new_path_words - tokens.path_words:
+            if w not in tokens.base_words:
+                self._add_to_bucket(self._word_to_item_ids, w, item_key)
+
+        for t in tokens.path_trigrams - new_path_trigrams:
+            if t not in tokens.base_trigrams:
+                self._remove_from_bucket(self._trigram_to_item_ids, t, item_key)
+        for t in new_path_trigrams - tokens.path_trigrams:
+            if t not in tokens.base_trigrams:
+                self._add_to_bucket(self._trigram_to_item_ids, t, item_key)
+
+        self._item_text_tokens[item_key] = tokens._replace(
+            path_words=new_path_words, path_trigrams=new_path_trigrams
+        )
 
     def _get_candidates_for_word(self, word: str) -> set[str]:
         """Get candidate item IDs for a single search word using strict OR logic."""
@@ -411,11 +437,10 @@ class Repository:
     def _search_by_text(self, query: str) -> set[str]:
         """Return item IDs matching the query using indexes.
 
-        Strategies:
-        1. Exact word matches (intersection of all query words).
-        2. Prefix match (if query is a single word and matches a name prefix).
-        3. Fuzzy match (trigrams) if no exact matches found logic could be added here,
-           but for now implementing explicit exact/prefix logic.
+        Per query word, candidates come from exact word matches, name-prefix
+        matches, and (only when both miss) a trigram fallback — see
+        ``_get_candidates_for_word``. Multi-word queries intersect the per-word
+        candidate sets.
         """
         norm_query = self._normalize_for_search(query)
         if not norm_query:
@@ -591,7 +616,7 @@ class Repository:
         updated_name: str,
         target_parent_id: uuid.UUID | None,
         parent_changed: bool,
-        target_area: uuid.UUID | None,
+        target_area: str | None,
     ) -> tuple[dict[str, Location], dict[str | None, set[str]], Location]:
         """Create staged maps with the proposed location update applied.
 
@@ -625,16 +650,14 @@ class Repository:
     ) -> None:
         """Maintain the locations-by-area index for a single location id."""
 
-        old_area_key = old_area if old_area is not None else None
-        new_area_key = new_area if new_area is not None else None
-        if old_area_key is not None:
-            s = self._locations_by_area_id.get(old_area_key)
+        if old_area is not None:
+            s = self._locations_by_area_id.get(old_area)
             if s is not None:
                 s.discard(location_key)
                 if not s:
-                    self._locations_by_area_id.pop(old_area_key, None)
-        if new_area_key is not None:
-            self._locations_by_area_id.setdefault(new_area_key, set()).add(location_key)
+                    self._locations_by_area_id.pop(old_area, None)
+        if new_area is not None:
+            self._locations_by_area_id.setdefault(new_area, set()).add(location_key)
 
     def _collect_descendant_ids(self, root_id: str) -> set[str]:
         """Collect all descendant location IDs (excluding the root itself)."""
@@ -774,26 +797,69 @@ class Repository:
     def _update_items_location_paths_for_locations(self, affected_location_ids: set[str]) -> None:
         """Refresh ``location_path`` for items under any of the given locations.
 
-        Uses ``apply_item_update`` with a no-op ``location_id`` to increment
-        item versions and updated_at while recomputing the denormalized path.
+        Fast path for subtree renames/moves. All items in one location share
+        that location's (already recomputed) ``path``, and only three things
+        change per item: the denormalized ``location_path``, the version /
+        ``updated_at`` bump, and the path-derived text tokens. Everything else
+        is either untouched (location/category/tag/checkout/low-stock buckets,
+        name sort keys) or rebuilt wholesale by the caller via
+        ``_rebuild_location_hierarchy_indexes`` (subtree index). The effective
+        area is re-resolved once per location and items are re-bucketed only
+        when it actually changed.
         """
 
         if not affected_location_ids:
             return
 
-        impacted_item_ids: set[str] = set()
-        for loc_id in affected_location_ids:
-            impacted_item_ids.update(self._items_by_location_id.get(loc_id, set()))
+        # One clock read for the whole batch; per-item monotonicity is still
+        # guaranteed because each item only needs to exceed its own previous
+        # updated_at.
+        now_ts = iso_utc_now()
 
-        for item_id in impacted_item_ids:
-            old_item = self._items_by_id[item_id]
-            # Force recomputation of location_path by "updating" location_id to itself
-            updated = apply_item_update(
-                old_item,
-                ItemUpdate(location_id=old_item.location_id),
-                locations_by_id=self._locations_by_id,
+        for loc_id in affected_location_ids:
+            item_ids = self._items_by_location_id.get(loc_id)
+            if not item_ids:
+                continue
+            loc = self._locations_by_id.get(loc_id)
+            if loc is None:  # pragma: no cover - defensive
+                continue
+
+            new_path = loc.path
+            new_path_words, new_path_trigrams = self._compute_path_tokens(new_path.display_path)
+
+            # All items of a location live in the same area bucket; probe once.
+            item_id_list = list(item_ids)
+            probe = item_id_list[0]
+            old_area = next(
+                (area for area, ids in self._items_by_area_id.items() if probe in ids), None
             )
-            self._reindex_item_replacement(old_item, updated)
+            new_area = self._resolve_effective_area_id_for_location(loc_id)
+            area_changed = old_area != new_area
+
+            for item_id in item_id_list:
+                old_item = self._items_by_id[item_id]
+                # copy.copy + attribute writes is measurably cheaper than
+                # dataclasses.replace on this hot path.
+                updated = copy.copy(old_item)
+                updated.location_path = new_path
+                updated.updated_at = monotonic_timestamp_after(old_item.updated_at, now_ts=now_ts)
+                updated.version = old_item.version + 1
+                self._items_by_id[item_id] = updated
+
+                tokens = self._item_text_tokens.get(item_id)
+                if tokens is None:  # pragma: no cover - defensive fallback
+                    self._clear_item_text_index(old_item)
+                    self._index_item_text(updated)
+                else:
+                    self._apply_path_token_delta(item_id, tokens, new_path_words, new_path_trigrams)
+
+                if area_changed:
+                    if old_area is not None:
+                        self._remove_from_bucket(self._items_by_area_id, old_area, item_id)
+                    if new_area is not None:
+                        self._add_to_bucket(self._items_by_area_id, new_area, item_id)
+
+                self._increment_generation()
 
     # -----------------------------
     # Public API — Item operations
@@ -865,8 +931,12 @@ class Repository:
     def adjust_quantity(
         self, item_id: str | uuid.UUID, delta: int, *, expected_version: int | None = None
     ) -> Item:
+        # Reject booleans (an int subclass) so the single-command path matches
+        # the bulk validator and never silently treats True/False as +/-1.
+        if isinstance(delta, bool) or not isinstance(delta, int):
+            raise ValidationError("delta must be an integer")
         current = self.get_item(item_id)
-        new_q = int(current.quantity) + int(delta)
+        new_q = int(current.quantity) + delta
         return self.update_item(
             item_id, ItemUpdate(quantity=new_q), expected_version=expected_version
         )
@@ -879,7 +949,11 @@ class Repository:
         )
 
     def check_out(
-        self, item_id: str | uuid.UUID, *, due_date: str, expected_version: int | None = None
+        self,
+        item_id: str | uuid.UUID,
+        *,
+        due_date: str | None,
+        expected_version: int | None = None,
     ) -> Item:
         # Validation rules for due_date checked in models
         return self.update_item(
@@ -997,14 +1071,9 @@ class Repository:
         if not has_indexed_filter:
             return None
 
-        # If we have indexed filters but candidate_sets is empty, it means we had
-        # filters like tags_any=[] or category="" which don't restrict candidates
-        # (logic above ensures empty strings don't trigger has_indexed_filter).
-        # However, if we simply have 'checked_out=True' and it's empty, we returned [].
-
-        # If we are here, we have at least one set in candidate_sets.
+        # Defensive: with an indexed filter present the loop above either
+        # returned early or appended at least one candidate set.
         if not candidate_sets:
-            # Fallback (should be covered by has_indexed_filter logic)
             return None
 
         # Sort by size to intersect smallest sets first (optimization)
@@ -1046,7 +1115,7 @@ class Repository:
 
         # Normalize sort for cursor tracking
         if sort is None:
-            sort = Sort(field="updated_at", order="desc")  # type: ignore[assignment]
+            sort = Sort(field="updated_at", order="desc")
 
         if limit is None or limit <= 0:
             # No pagination requested
@@ -1335,11 +1404,11 @@ class Repository:
     # Cursor-based pagination helpers
     # -----------------------------
 
-    def _encode_cursor(self, payload: dict) -> str:
+    def _encode_cursor(self, payload: dict[str, Any]) -> str:
         raw = json.dumps(payload, separators=(",", ":"))
         return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
 
-    def _decode_cursor(self, cursor: str) -> dict | None:
+    def _decode_cursor(self, cursor: str) -> dict[str, Any] | None:
         try:
             raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
             obj = json.loads(raw)
@@ -1368,9 +1437,16 @@ class Repository:
 
     def _tuple_cmp(self, a: tuple[str | int, str], b: tuple[str | int, str], order: str) -> int:
         asc = order == "asc"
-        # primary
-        if a[0] != b[0]:
-            return -1 if ((a[0] < b[0]) == asc) else 1
+        # primary — within one sort field both values share a type; the str()
+        # fallback keeps a mixed comparison (corrupt cursor) total instead of
+        # raising TypeError.
+        a0, b0 = a[0], b[0]
+        if a0 != b0:
+            if isinstance(a0, int) and isinstance(b0, int):
+                primary_less = a0 < b0
+            else:
+                primary_less = str(a0) < str(b0)
+            return -1 if (primary_less == asc) else 1
         # tie-break on id asc
         if a[1] == b[1]:
             return 0
@@ -1395,9 +1471,12 @@ class Repository:
             ):
                 last_key = cursor_info.get("last_sort_key")
                 last_id = cursor_info.get("last_id")
-                if last_id is not None:
-                    # Find first item strictly after the cursor tuple
-                    needle = (last_key, last_id)
+                if isinstance(last_id, str) and isinstance(last_key, str | int):
+                    # Find first item strictly after the cursor tuple. When
+                    # nothing compares after it (e.g. the tail was deleted
+                    # between pages), the page is empty — not page one again.
+                    needle: tuple[str | int, str] = (last_key, last_id)
+                    start_index = len(items_sorted)
                     for idx, it in enumerate(items_sorted):
                         tup = (self._primary_sort_value(it, sort), str(it.id))
                         if self._tuple_cmp(tup, needle, order) > 0:
@@ -1418,8 +1497,6 @@ class Repository:
         }
         return page, self._encode_cursor(cursor_payload)
 
-    # No repository-local validation helpers. Invariants live in models.
-
     # -----------------------------
     # Properties
     # -----------------------------
@@ -1437,9 +1514,8 @@ class Repository:
     # Introspection helpers for tests
     # -----------------------------
 
-    def _debug_get_internal_indexes(
-        self,
-    ) -> dict[str, object]:  # pragma: no cover - test helper only
+    def _debug_get_internal_indexes(self) -> InternalIndexes:
+        """Expose live index references for the health command and tests."""
         return {
             "items_by_id": self._items_by_id,
             "locations_by_id": self._locations_by_id,
@@ -1450,8 +1526,6 @@ class Repository:
             "items_by_location_id": self._items_by_location_id,
             "locations_by_area_id": self._locations_by_area_id,
             "items_by_area_id": self._items_by_area_id,
-            "items_by_created_at": self._items_by_created_at,
-            "items_by_updated_at": self._items_by_updated_at,
         }
 
     # -----------------------------
@@ -1486,6 +1560,7 @@ class Repository:
                     "id_path": [str(x) for x in list(item.location_path.id_path)],
                     "name_path": list(item.location_path.name_path),
                     "display_path": item.location_path.display_path,
+                    "sort_key": item.location_path.sort_key,
                 },
             }
 
@@ -1499,6 +1574,7 @@ class Repository:
                     "id_path": [str(x) for x in list(loc.path.id_path)],
                     "name_path": list(loc.path.name_path),
                     "display_path": loc.path.display_path,
+                    "sort_key": loc.path.sort_key,
                 },
             }
 
@@ -1535,9 +1611,8 @@ class Repository:
         self._items_by_location_id = {}
         self._locations_by_area_id = {}
         self._items_by_area_id = {}
-        self._items_by_created_at = []
-        self._items_by_updated_at = []
         self._name_sort_key_by_item_id = {}
+        self._item_text_tokens = {}
         self._children_ids_by_parent_id = {}
         self._location_descendants = {}
         self._items_in_subtree = {}
@@ -1561,7 +1636,10 @@ class Repository:
                         ],
                         name_path=list(path_obj.get("name_path", []) or []),
                         display_path=str(path_obj.get("display_path", "")),
-                        sort_key=str(path_obj.get("sort_key", "")),
+                        # Backfill for stores written before sort_key was
+                        # persisted (pre-WP4): derive it from display_path.
+                        sort_key=str(path_obj.get("sort_key", ""))
+                        or normalize_text_for_sort(str(path_obj.get("display_path", ""))),
                     )
                     loc = Location(
                         id=parse_uuid4(str(loc_data.get("id", loc_id)), field_name="location.id"),
@@ -1610,7 +1688,10 @@ class Repository:
                         ],
                         name_path=list(lp.get("name_path", []) or []),
                         display_path=str(lp.get("display_path", "")),
-                        sort_key=str(lp.get("sort_key", "")),
+                        # Backfill for stores written before sort_key was
+                        # persisted (pre-WP4): derive it from display_path.
+                        sort_key=str(lp.get("sort_key", ""))
+                        or normalize_text_for_sort(str(lp.get("display_path", ""))),
                     )
                     item = Item(
                         id=parse_uuid4(str(item_data.get("id", item_id)), field_name="item.id"),
@@ -1631,8 +1712,14 @@ class Repository:
                         category=item_data.get("category"),
                         low_stock_threshold=item_data.get("low_stock_threshold"),
                         custom_fields=dict(item_data.get("custom_fields", {}) or {}),
-                        created_at=str(item_data.get("created_at", "")),
-                        updated_at=str(item_data.get("updated_at", "")),
+                        # Timestamps compare lexicographically for sort/filter,
+                        # so any non-canonical value (missing / null / corrupt /
+                        # hand-edited import) is backfilled with a canonical one.
+                        created_at=_coerce_canonical_ts(item_data.get("created_at")),
+                        updated_at=_coerce_canonical_ts(
+                            item_data.get("updated_at"),
+                            fallback=_coerce_canonical_ts(item_data.get("created_at")),
+                        ),
                         version=int(item_data.get("version", 1)),
                         location_path=location_path,
                     )

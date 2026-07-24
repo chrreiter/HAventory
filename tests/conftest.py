@@ -106,7 +106,23 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     ha_config_entries = types.ModuleType("homeassistant.config_entries")
 
     class ConfigEntry:  # type: ignore[override]
-        pass
+        def __init__(self, *, options: dict | None = None) -> None:
+            self.options: dict = dict(options or {})
+            self._update_listeners: list = []
+            self._on_unload: list = []
+
+        def add_update_listener(self, listener):
+            self._update_listeners.append(listener)
+
+            def _remove() -> None:
+                if listener in self._update_listeners:
+                    self._update_listeners.remove(listener)
+
+            return _remove
+
+        def async_on_unload(self, func):
+            self._on_unload.append(func)
+            return func
 
     class ConfigFlow:  # type: ignore[override]
         def __init_subclass__(cls, **kwargs):  # accept e.g. domain=...
@@ -119,8 +135,19 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def async_create_entry(self, *, title: str, data: dict):
             return {"type": "create_entry", "title": title, "data": data}
 
+    class OptionsFlow:  # type: ignore[override]
+        # The real OptionsFlow resolves config_entry via hass; tests assign it.
+        config_entry: ConfigEntry | None = None
+
+        def async_create_entry(self, *, title: str, data: dict):
+            return {"type": "create_entry", "title": title, "data": data}
+
+        def async_show_form(self, *, step_id: str, data_schema=None):
+            return {"type": "form", "step_id": step_id, "data_schema": data_schema}
+
     ha_config_entries.ConfigEntry = ConfigEntry
     ha_config_entries.ConfigFlow = ConfigFlow
+    ha_config_entries.OptionsFlow = OptionsFlow
     sys.modules["homeassistant.config_entries"] = ha_config_entries
 
     # homeassistant.data_entry_flow

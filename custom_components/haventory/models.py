@@ -359,15 +359,30 @@ def build_location_path_from_map(
 # -----------------------------
 
 
+def _is_int_not_bool(value: object) -> bool:
+    """True for a real integer. ``bool`` is a subclass of ``int`` — exclude it."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _validate_optional_text(value: object, field_name: str) -> None:
+    """Ensure an optional free-text field is a string or None.
+
+    Non-text values (list/dict/number) would otherwise reach the search-index
+    build and crash mid-way, leaving a partially-indexed item.
+    """
+    if value is not None and not isinstance(value, str):
+        raise ValidationError(f"{field_name} must be a string or null")
+
+
 def _validate_item_core_fields(name: str, quantity: int, low_stock_threshold: int | None) -> None:
     if not isinstance(name, str) or len(name.strip()) == 0:
         raise ValidationError("name is required and must be a non-empty string")
     if len(name) > NAME_MAX_LENGTH:
         raise ValidationError("name must be at most 120 characters")
-    if not isinstance(quantity, int) or quantity < 0:
+    if not _is_int_not_bool(quantity) or quantity < 0:
         raise ValidationError("quantity must be an integer >= 0")
     if low_stock_threshold is not None and (
-        not isinstance(low_stock_threshold, int) or low_stock_threshold < 0
+        not _is_int_not_bool(low_stock_threshold) or low_stock_threshold < 0
     ):
         raise ValidationError("low_stock_threshold must be an integer >= 0 or null")
 
@@ -388,13 +403,16 @@ def create_item_from_create(
         A fully-populated Item instance with defaults applied.
     """
 
-    name = payload.get("name")  # type: ignore[assignment]
+    name = payload.get("name")
     if name is None:
         raise ValidationError("name is required")
     # Trim whitespace before validation and persistence
     name = name.strip()
     description = payload.get("description")
-    quantity = int(payload.get("quantity", 1))  # type: ignore[arg-type]
+    raw_quantity = payload.get("quantity", 1)
+    if isinstance(raw_quantity, bool):
+        raise ValidationError("quantity must be an integer >= 0")
+    quantity = int(raw_quantity)
     checked_out = bool(payload.get("checked_out", False))
     due_date = payload.get("due_date")
     inspection_date = payload.get("inspection_date")
@@ -404,6 +422,8 @@ def create_item_from_create(
     low_stock_threshold = payload.get("low_stock_threshold")
     custom_fields = payload.get("custom_fields", {})
 
+    _validate_optional_text(description, "description")
+    _validate_optional_text(category, "category")
     _validate_item_core_fields(name, quantity, low_stock_threshold)
     validate_custom_fields(custom_fields)
     normalized_due_date = validate_due_date_rules(checked_out=checked_out, due_date=due_date)
@@ -454,13 +474,14 @@ def _update_name_and_description(new_item: Item, update: ItemUpdate) -> None:
             raise ValidationError("name must be at most 120 characters")
         new_item.name = trimmed
     if "description" in update:
+        _validate_optional_text(update["description"], "description")
         new_item.description = update["description"]
 
 
 def _update_quantity(new_item: Item, update: ItemUpdate) -> None:
     if "quantity" in update:
         q = update["quantity"]
-        if not isinstance(q, int) or q < 0:
+        if not _is_int_not_bool(q) or q < 0:
             raise ValidationError("quantity must be an integer >= 0")
         new_item.quantity = q
 
@@ -469,7 +490,7 @@ def _update_checkout_and_due_date(new_item: Item, update: ItemUpdate) -> None:
     checked_out = new_item.checked_out
     due_date_val = new_item.due_date
     if "checked_out" in update:
-        checked_out = bool(update["checked_out"])  # type: ignore[truthy-bool]
+        checked_out = bool(update["checked_out"])
     if "due_date" in update:
         due_date_val = update["due_date"]
     new_item.checked_out = checked_out
@@ -507,10 +528,11 @@ def _update_tags_category_threshold(new_item: Item, update: ItemUpdate) -> None:
     if "tags" in update:
         new_item.tags = normalize_tags(update.get("tags") or [])
     if "category" in update:
+        _validate_optional_text(update["category"], "category")
         new_item.category = update["category"]
     if "low_stock_threshold" in update:
         thr = update["low_stock_threshold"]
-        if thr is not None and (not isinstance(thr, int) or thr < 0):
+        if thr is not None and (not _is_int_not_bool(thr) or thr < 0):
             raise ValidationError("low_stock_threshold must be an integer >= 0 or null")
         new_item.low_stock_threshold = thr
 
@@ -556,12 +578,27 @@ def apply_item_update(
 # -----------------------------
 
 
-def monotonic_timestamp_after(previous_ts: str) -> str:
+#: Length of the canonical "YYYY-MM-DDTHH:MM:SSZ" timestamp format. Canonical
+#: timestamps are fixed-width, so lexicographic comparison IS chronological
+#: comparison — sorting and range filters rely on this.
+_CANONICAL_TS_LENGTH = 20
+
+
+def monotonic_timestamp_after(previous_ts: str, *, now_ts: str | None = None) -> str:
     """Return a UTC ISO-8601 'Z' timestamp strictly after previous_ts.
 
-    If iso_utc_now() is not greater than the previous timestamp (due to second
-    resolution), bump by one second to maintain monotonicity.
+    If the current time is not greater than the previous timestamp (due to
+    second resolution), bump by one second to maintain monotonicity. Batch
+    callers may pass a precomputed ``now_ts`` (from :func:`iso_utc_now`) to
+    avoid re-reading the clock per item.
     """
+
+    if now_ts is None:
+        now_ts = iso_utc_now()
+    # Fast path: canonical fixed-width timestamps compare lexicographically,
+    # so the common case (time moved on) needs no parsing at all.
+    if _looks_canonical_utc(previous_ts) and now_ts > previous_ts:
+        return now_ts
 
     now_dt = datetime.now(tz=UTC).replace(microsecond=0)
     try:
@@ -574,19 +611,47 @@ def monotonic_timestamp_after(previous_ts: str) -> str:
     return now_dt.isoformat().replace("+00:00", "Z")
 
 
+def _looks_canonical_utc(ts: str) -> bool:
+    """Cheap positional shape check for the canonical YYYY-MM-DDTHH:MM:SSZ form."""
+    return (
+        len(ts) == _CANONICAL_TS_LENGTH
+        and ts[4] == "-"
+        and ts[7] == "-"
+        and ts[10] == "T"
+        and ts[13] == ":"
+        and ts[16] == ":"
+        and ts[19] == "Z"
+    )
+
+
+def is_canonical_utc_timestamp(ts: object) -> bool:
+    """Return True when ``ts`` is exactly the canonical YYYY-MM-DDTHH:MM:SSZ form.
+
+    The positional separator checks matter: ``datetime.fromisoformat`` alone
+    would also accept e.g. a space date/time separator, ISO week dates, or
+    basic-format times, which would then compare lexicographically wrong
+    against canonical timestamps.
+    """
+
+    if not isinstance(ts, str) or not _looks_canonical_utc(ts):
+        return False
+    try:
+        datetime.fromisoformat(ts)
+    except ValueError:
+        return False
+    return True
+
+
 def _parse_iso8601_utc(ts: str, *, field_name: str) -> datetime:
     """Parse a UTC ISO-8601 with trailing 'Z' into datetime.
 
+    Only the canonical fixed-width YYYY-MM-DDTHH:MM:SSZ form is accepted.
     Raises ValidationError on bad format.
     """
 
-    try:
-        if not isinstance(ts, str) or not ts.endswith("Z"):
-            raise ValueError
-        # Support YYYY-MM-DDTHH:MM:SSZ (no offset, no micros)
-        return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
-    except ValueError as exc:
-        raise ValidationError(f"{field_name} must be an ISO-8601 UTC timestamp with 'Z'") from exc
+    if not is_canonical_utc_timestamp(ts):
+        raise ValidationError(f"{field_name} must be an ISO-8601 UTC timestamp with 'Z'")
+    return datetime.fromisoformat(ts)
 
 
 def _item_matches_q(item: Item, q: str) -> bool:
@@ -599,17 +664,8 @@ def _item_matches_q(item: Item, q: str) -> bool:
     if not query_words:
         return True
 
-    # Gather searchable text from item
-    # Join them into a single blob or check individually?
-    # Checking individually is safer to avoid accidental cross-field matches?
-    # But usually full-text search treats the doc as one bag of words.
-
-    # Let's verify if each word exists in ANY of the fields.
-    # Note: this is slightly different from "bag of words" which joins them.
-    # But it's robust enough for "Red" in name, "Large" in desc.
-
-    # Optimization: construct a single searchable string for the item
-    # doing this per-item is O(field_len).
+    # Every query word must appear somewhere in the item's combined
+    # searchable text (name, description, category, path, tags).
     searchable_text = normalize_search_text(
         " ".join(
             [
@@ -629,7 +685,8 @@ def _item_matches_q(item: Item, q: str) -> bool:
     return True
 
 
-def _low_stock(item: Item) -> bool:
+def item_is_low_stock(item: Item) -> bool:
+    """Return True when the item's quantity is at or below its threshold."""
     thr = item.low_stock_threshold
     if thr is None:
         return False
@@ -681,12 +738,27 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     updated_after = flt.get("updated_after") if "updated_after" in flt else None
     created_after = flt.get("created_after") if "created_after" in flt else None
 
-    updated_after_dt = (
-        _parse_iso8601_utc(updated_after, field_name="updated_after") if updated_after else None
+    # Validate filter bounds (raises ValidationError for malformed input).
+    if updated_after:
+        _parse_iso8601_utc(updated_after, field_name="updated_after")
+    if created_after:
+        _parse_iso8601_utc(created_after, field_name="created_after")
+
+    predicates_active = (
+        bool(q)
+        or bool(tags_any)
+        or bool(tags_all)
+        or bool(category)
+        or checked_out is not None
+        or low_stock_only
+        or orphaned_only
+        or location_id is not None
+        or updated_after is not None
+        or created_after is not None
     )
-    created_after_dt = (
-        _parse_iso8601_utc(created_after, field_name="created_after") if created_after else None
-    )
+    if not predicates_active:
+        # e.g. flt only carries presentation hints such as low_stock_first
+        return list(items)
 
     filtered: list[Item] = []
     for it in items:
@@ -695,15 +767,13 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
         matches_all = (not tags_all) or all(tag in it.tags for tag in tags_all)
         matches_category = (not category) or ((it.category or "").strip().casefold() == category)
         matches_checked = (checked_out is None) or (it.checked_out == bool(checked_out))
-        matches_low_stock = (not low_stock_only) or _low_stock(it)
+        matches_low_stock = (not low_stock_only) or item_is_low_stock(it)
         matches_orphaned = (not orphaned_only) or (it.location_id is None)
         matches_location = _item_matches_location(it, location_id, include_subtree)
-        matches_updated = (updated_after_dt is None) or (
-            _parse_iso8601_utc(it.updated_at, field_name="item.updated_at") > updated_after_dt
-        )
-        matches_created = (created_after_dt is None) or (
-            _parse_iso8601_utc(it.created_at, field_name="item.created_at") > created_after_dt
-        )
+        # Canonical fixed-width 'Z' timestamps compare lexicographically, so no
+        # per-item parsing is needed (the filter bound was validated above).
+        matches_updated = (updated_after is None) or (it.updated_at > updated_after)
+        matches_created = (created_after is None) or (it.created_at > created_after)
         ok = (
             matches_q
             and matches_any
@@ -749,11 +819,10 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
         return result
 
     if sort is None:
-        # Default: updated_at desc, id asc tie-break
+        # Default: updated_at desc, id asc tie-break. Canonical fixed-width
+        # 'Z' timestamps sort lexicographically — no parsing needed.
         result.sort(key=lambda x: str(x.id))
-        result.sort(
-            key=lambda x: _parse_iso8601_utc(x.updated_at, field_name="updated_at"), reverse=True
-        )
+        result.sort(key=lambda x: x.updated_at, reverse=True)
         return result
 
     field = sort.get("field")
@@ -780,12 +849,8 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
     elif field == "inspection_date":
         result.sort(key=lambda x: date_sort_key(x.inspection_date, order), reverse=reverse)
     elif field == "created_at":
-        result.sort(
-            key=lambda x: _parse_iso8601_utc(x.created_at, field_name="created_at"), reverse=reverse
-        )
+        result.sort(key=lambda x: x.created_at, reverse=reverse)
     else:  # updated_at
-        result.sort(
-            key=lambda x: _parse_iso8601_utc(x.updated_at, field_name="updated_at"), reverse=reverse
-        )
+        result.sort(key=lambda x: x.updated_at, reverse=reverse)
 
     return result

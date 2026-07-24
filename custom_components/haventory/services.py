@@ -4,8 +4,9 @@ Exposes Home Assistant services under the ``haventory`` domain to perform
 CRUD operations on items and locations. Input is validated with voluptuous
 and operations are delegated to the in-memory ``Repository``.
 
-Errors from the domain layer (validation, not found, conflicts) are logged
-with contextual fields and do not raise stack traces.
+Errors from the domain layer (validation, not found, conflicts, storage) are
+logged with contextual fields and re-raised unchanged so Home Assistant
+surfaces them to the caller.
 """
 
 from __future__ import annotations
