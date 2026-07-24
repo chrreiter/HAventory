@@ -275,6 +275,7 @@ export class HVCardShell extends LitElement {
   /** Item shown in the mobile detail sheet. */
   @state() private _detailItemId: string | null = null;
   @state() private _fullViewOpen = false;
+  @state() private _startSelecting = false;
 
   private readonly responsive = new ResponsiveController(this);
   private storeUnsub?: () => void;
@@ -494,6 +495,7 @@ export class HVCardShell extends LitElement {
     const filtered = st?.total ?? null;
     const filtersOn = activeFilterCount(st?.filters ?? defaultFilters()) > 0;
     return [
+      { id: 'select-items', label: 'Select items…', glyph: 'select' },
       { id: 'columns', label: 'Columns…', glyph: 'viewColumn' },
       { divider: true },
       { id: 'refresh', label: 'Refresh data', glyph: 'refresh', meta: 'Items · locations · stats' },
@@ -526,6 +528,12 @@ export class HVCardShell extends LitElement {
     const { id } = e.detail as { id: string };
     if (id === 'refresh') {
       void this.store?.refreshAll();
+      return;
+    }
+    if (id === 'select-items') {
+      // Selection lives in the full view, where there is room for the bulk bar.
+      this._startSelecting = true;
+      this._fullViewOpen = true;
       return;
     }
     // Everything else is owned by the host card, which knows about dialogs.
@@ -803,8 +811,10 @@ export class HVCardShell extends LitElement {
         .heading=${this.heading}
         .columns=${this.columns}
         .menuEntries=${this.menuEntries}
+        ?startSelecting=${this._startSelecting}
         @close=${() => {
           this._fullViewOpen = false;
+          this._startSelecting = false;
         }}
         @menu-action=${this._onMenuSelect}
         @request-delete=${(e: CustomEvent) => this._onRowEvent('request-delete', e.detail)}

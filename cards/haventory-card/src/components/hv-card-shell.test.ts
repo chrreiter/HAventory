@@ -96,7 +96,14 @@ describe('hv-card-shell: overflow menu', () => {
     const ids = [...(menu.shadowRoot?.querySelectorAll('[data-testid="overflow-item"]') ?? [])].map(
       (b) => (b as HTMLElement).dataset.id,
     );
-    expect(ids).toEqual(['columns', 'refresh', 'export-all', 'export-view', 'import']);
+    expect(ids).toEqual([
+      'select-items',
+      'columns',
+      'refresh',
+      'export-all',
+      'export-view',
+      'import',
+    ]);
   });
 
   it('handles Refresh itself and hands the rest to the host card', async () => {

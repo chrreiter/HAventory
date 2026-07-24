@@ -273,3 +273,188 @@ describe('hv-full-view: app bar filters', () => {
     expect(store.state.value.filters.q).toBe('glue');
   });
 });
+
+describe('hv-full-view: selection and bulk actions', () => {
+  const bulkBar = (sr: ShadowRoot) => sr.querySelector('[data-testid="full-bulk-bar"]') as HTMLElement;
+  const table = (sr: ShadowRoot) => sr.querySelector('[data-testid="full-table"]') as HTMLElement;
+
+  async function enterSelection(el: HVFullView, sr: ShadowRoot) {
+    const menu = sr.querySelector('[data-testid="full-overflow"]') as HTMLElement;
+    (menu.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
+    await settle(el);
+    (menu.shadowRoot?.querySelector('[data-id="select-items"]') as HTMLButtonElement).click();
+    await settle(el);
+  }
+
+  const withSelectEntry = { entries: [{ id: 'select-items', label: 'Select items…' }] };
+
+  it('swaps the app bar for the selection bar', async () => {
+    const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
+    el.menuEntries = withSelectEntry.entries;
+    await settle(el);
+    expect(q(sr, '[data-testid="selection-bar"]')).toBe(null);
+
+    await enterSelection(el, sr);
+    expect(q(sr, '[data-testid="selection-bar"]')).toBeTruthy();
+    // The normal app bar is gone, not stacked.
+    expect(q(sr, '[data-testid="full-add-item"]')).toBe(null);
+  });
+
+  it('counts the selection honestly against the filtered total', async () => {
+    const items = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}` }));
+    const { el, store, sr } = await mount({ items });
+    el.menuEntries = withSelectEntry.entries;
+    await settle(el);
+    await enterSelection(el, sr);
+
+    (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="selection-count"]')?.textContent).toContain('50 selected');
+    expect(q(sr, '[data-testid="selection-subcount"]')?.textContent).toContain('of 60 matching');
+    // And it says out loud that select-all only covered what is loaded.
+    expect(q(sr, '[data-testid="selection-honesty"]')?.textContent).toContain(
+      'Select-all covers loaded rows only',
+    );
+    expect(store.state.value.selection.size).toBe(50);
+  });
+
+  it('offers an explicit path to selecting everything that matches', async () => {
+    const items = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}` }));
+    const { el, store, sr } = await mount({ items });
+    el.menuEntries = withSelectEntry.entries;
+    await settle(el);
+    await enterSelection(el, sr);
+
+    const loadAll = q(sr, '[data-testid="selection-load-all"]') as HTMLButtonElement;
+    expect(loadAll.textContent).toContain('Load all 60 to select');
+    loadAll.click();
+    await settle(el);
+    await settle(el);
+
+    expect(store.state.value.selection.size).toBe(60);
+  });
+
+  it('runs a bulk move and reports it', async () => {
+    const locations = [loc('workshop', 'Workshop')];
+    const items = [makeItem({ id: '1' }), makeItem({ id: '2' })];
+    const { el, store, sr } = await mount({ items, locations });
+    el.menuEntries = withSelectEntry.entries;
+    await settle(el);
+    await enterSelection(el, sr);
+
+    (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const bar = bulkBar(sr);
+    (bar.shadowRoot?.querySelector('[data-testid="bulk-action"][data-action="move"]') as HTMLButtonElement).click();
+    await settle(el);
+    const tree = bar.shadowRoot?.querySelector('hv-location-tree') as HTMLElement;
+    (tree.shadowRoot?.querySelector('[data-testid="tree-select"][data-id="workshop"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    expect(store.state.value.items.every((i) => i.location_id === 'workshop')).toBe(true);
+    expect(bar.shadowRoot?.querySelector('[data-testid="bulk-result-summary"]')?.textContent).toContain(
+      '2 of 2 succeeded',
+    );
+  });
+
+  it('keeps the failures listed and the selection narrowed to them', async () => {
+    const items = [makeItem({ id: '1' }), makeItem({ id: '2', name: 'Stubborn' })];
+    const { el, store, sr } = await mount({ items });
+    el.menuEntries = withSelectEntry.entries;
+    await settle(el);
+    await enterSelection(el, sr);
+
+    (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    // One of the two rows refuses.
+    const realBulk = store['ws'].bulk.bind(store['ws']);
+    store['ws'].bulk = async (ops) => {
+      const res = await realBulk(ops);
+      const doomed = ops.find((o) => o.payload.item_id === '2');
+      if (doomed) {
+        res.results[doomed.op_id] = {
+          success: false,
+          error: { code: 'conflict', message: 'version conflict' },
+        };
+      }
+      return res;
+    };
+
+    const bar = bulkBar(sr);
+    (bar.shadowRoot?.querySelector('[data-action="check-in"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    expect(bar.shadowRoot?.querySelector('[data-testid="bulk-result-summary"]')?.textContent).toContain(
+      '1 of 2 succeeded',
+    );
+    expect(bar.shadowRoot?.querySelector('[data-testid="bulk-failure"]')?.textContent).toContain('Stubborn');
+    expect([...store.state.value.selection]).toEqual(['2']);
+  });
+
+  it('confirms a bulk delete and warns about checked-out items', async () => {
+    const items = [makeItem({ id: '1' }), makeItem({ id: '2', checked_out: true })];
+    const { el, store, sr } = await mount({ items });
+    el.menuEntries = withSelectEntry.entries;
+    await settle(el);
+    await enterSelection(el, sr);
+
+    (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    (bulkBar(sr).shadowRoot?.querySelector('[data-action="delete"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const confirm = q(sr, '[data-testid="bulk-confirm"]') as HTMLElement & { open: boolean };
+    expect(confirm.open).toBe(true);
+    expect(confirm.shadowRoot?.textContent).toContain('Delete 2 items?');
+    const warning = confirm.shadowRoot?.querySelector('[data-testid="confirm-warning"]') as HTMLElement;
+    expect(warning.shadowRoot?.textContent).toContain('1 of them is checked out');
+
+    (confirm.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+    expect(store.state.value.items).toHaveLength(0);
+  });
+
+  it('leaves everything alone when the delete is cancelled', async () => {
+    const items = [makeItem({ id: '1' })];
+    const { el, store, sr } = await mount({ items });
+    el.menuEntries = withSelectEntry.entries;
+    await settle(el);
+    await enterSelection(el, sr);
+
+    (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
+    await settle(el);
+    (bulkBar(sr).shadowRoot?.querySelector('[data-action="delete"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const confirm = q(sr, '[data-testid="bulk-confirm"]') as HTMLElement & { open: boolean };
+    (confirm.shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(store.state.value.items).toHaveLength(1);
+  });
+
+  it('exits selection mode and clears the selection', async () => {
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1' })] });
+    el.menuEntries = withSelectEntry.entries;
+    await settle(el);
+    await enterSelection(el, sr);
+
+    (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(store.state.value.selection.size).toBe(1);
+
+    (q(sr, '[data-testid="exit-selection"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(store.state.value.selection.size).toBe(0);
+    expect(q(sr, '[data-testid="selection-bar"]')).toBe(null);
+    expect(q(sr, '[data-testid="full-add-item"]')).toBeTruthy();
+  });
+});

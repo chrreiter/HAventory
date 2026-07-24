@@ -9,6 +9,11 @@ import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
 import type { Item, LocationTreeNode, Sort, StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
+import { makeBulkOp } from '../store/store';
+import type { BulkOperation, BulkOutcome } from '../store/types';
+import type { BulkProgress, BulkResultView, BulkRunDetail } from './hv-bulk-bar';
+import './hv-bulk-bar';
+import './hv-confirm';
 import './hv-data-table';
 import './hv-filter-chips';
 import './hv-filter-panel';
@@ -59,6 +64,35 @@ export class HVFullView extends LitElement {
         padding: 10px 16px;
         background: var(--hv-primary);
         color: #fff;
+      }
+      .appbar.selecting {
+        background: var(--hv-primary-darker);
+      }
+      .appbar .count {
+        font: 500 18px var(--hv-font);
+      }
+      .appbar .subcount {
+        font-size: 12.5px;
+        opacity: 0.85;
+      }
+      .appbar .ghost {
+        flex: none;
+        border: 1px solid rgba(255, 255, 255, 0.45);
+        background: rgba(255, 255, 255, 0.2);
+        color: #fff;
+        border-radius: var(--hv-radius-chip);
+        padding: 5px 13px;
+        font: 500 12.5px var(--hv-font);
+      }
+      .appbar .ghost.plain {
+        background: none;
+        font-weight: 400;
+      }
+      .honesty {
+        padding: 10px 20px;
+        border-bottom: 1px solid var(--hv-row-divider);
+        font-size: 12px;
+        color: var(--hv-text-tertiary);
       }
       .appbar h2 {
         margin: 0;
@@ -240,6 +274,8 @@ export class HVFullView extends LitElement {
   @property({ attribute: false }) columns: ColumnKey[] = [];
   /** Extra entries the host adds to the app bar's ⋮ menu. */
   @property({ attribute: false }) menuEntries: OverflowMenuEntry[] = [];
+  /** Open straight into selection mode (the card's "Select items…" entry). */
+  @property({ type: Boolean }) startSelecting = false;
 
   @state() private _zBase = 0;
   @state() private _filtersOpen = false;
@@ -248,6 +284,15 @@ export class HVFullView extends LitElement {
   @state() private _editorBusy = false;
   @state() private _creatingLocation = false;
   @state() private _locationError: string | null = null;
+  @state() private _selecting = false;
+  @state() private _bulkProgress: BulkProgress | null = null;
+  @state() private _bulkResult: BulkResultView | null = null;
+  @state() private _pendingDelete = false;
+  @state() private _loadingAll = false;
+  /** Set while a batch is running so Cancel can stop it between chunks. */
+  private _bulkCancelled = false;
+  /** The ops of the last run, so "Retry failed" can replay just the failures. */
+  private _lastOps: { label: string; ops: BulkOperation[] } | null = null;
 
   private storeUnsub?: () => void;
   private _prevFocus: HTMLElement | null = null;
@@ -279,11 +324,15 @@ export class HVFullView extends LitElement {
         this._zBase = nextZBase();
         this._searchDraft = this.st?.filters.q ?? '';
         this._prevFocus = (document.activeElement as HTMLElement) ?? null;
+        this._selecting = this.startSelecting;
       } else {
         this._filtersOpen = false;
         this._editing = null;
         this._creatingLocation = false;
         this._locationError = null;
+        this._selecting = false;
+        this._bulkResult = null;
+        this._bulkProgress = null;
       }
     }
   }
@@ -371,6 +420,119 @@ export class HVFullView extends LitElement {
     }
     if ((this.st?.errorQueue.length ?? 0) === before) this._editing = null;
   };
+
+  // ---------- Bulk actions ----------
+  private get _selectedItems(): Item[] {
+    const selection = this.st?.selection ?? new Set<string>();
+    return (this.st?.items ?? []).filter((i) => selection.has(i.id));
+  }
+
+  private _exitSelection() {
+    this._selecting = false;
+    this._bulkResult = null;
+    this._lastOps = null;
+    this.store?.clearSelection();
+  }
+
+  /** Build the batch for an action over the current selection. */
+  private _opsFor(detail: BulkRunDetail, items: Item[]): { label: string; ops: BulkOperation[] } {
+    switch (detail.action) {
+      case 'move':
+        return {
+          label: 'Move',
+          ops: items.map((i) =>
+            makeBulkOp('item_move', {
+              item_id: i.id,
+              location_id: detail.locationId ?? null,
+              expected_version: i.version,
+            }),
+          ),
+        };
+      case 'add-tags':
+        return {
+          label: 'Tagging',
+          // add_tags/remove_tags are additive server-side, so concurrent edits
+          // by another client are not clobbered the way a whole-array update
+          // would clobber them.
+          ops: items.map((i) => makeBulkOp('item_add_tags', { item_id: i.id, tags: detail.tags ?? [] })),
+        };
+      case 'remove-tags':
+        return {
+          label: 'Untagging',
+          ops: items.map((i) => makeBulkOp('item_remove_tags', { item_id: i.id, tags: detail.tags ?? [] })),
+        };
+      case 'set-category':
+        return {
+          label: 'Categorising',
+          ops: items.map((i) =>
+            makeBulkOp('item_update', {
+              item_id: i.id,
+              category: detail.category ?? null,
+              expected_version: i.version,
+            }),
+          ),
+        };
+      case 'adjust-qty':
+        return {
+          label: 'Adjusting',
+          ops: items.map((i) => makeBulkOp('item_adjust_quantity', { item_id: i.id, delta: detail.delta ?? 0 })),
+        };
+      case 'check-out':
+        return {
+          label: 'Checking out',
+          ops: items.map((i) =>
+            makeBulkOp('item_check_out', { item_id: i.id, due_date: detail.dueDate ?? null }),
+          ),
+        };
+      case 'check-in':
+        return { label: 'Checking in', ops: items.map((i) => makeBulkOp('item_check_in', { item_id: i.id })) };
+      case 'delete':
+        return {
+          label: 'Delete',
+          ops: items.map((i) => makeBulkOp('item_delete', { item_id: i.id, expected_version: i.version })),
+        };
+    }
+  }
+
+  private _onBulkRun = (e: CustomEvent) => {
+    const detail = e.detail as BulkRunDetail;
+    if (detail.action === 'delete') {
+      // Destructive actions get a confirmation step of their own.
+      this._pendingDelete = true;
+      return;
+    }
+    void this._execute(this._opsFor(detail, this._selectedItems));
+  };
+
+  private async _execute(batch: { label: string; ops: BulkOperation[] }) {
+    if (!batch.ops.length) return;
+    this._lastOps = batch;
+    this._bulkCancelled = false;
+    this._bulkResult = null;
+    this._bulkProgress = { done: 0, total: batch.ops.length, failed: 0, label: batch.label };
+
+    // Count what actually ran rather than assuming the whole batch did: a
+    // cancellation stops after the in-flight chunk, and deletes come back with
+    // no item, so `outcome.succeeded` alone would undercount them.
+    let ran = 0;
+    const outcome: BulkOutcome | undefined = await this.store?.bulkExecute(batch.ops, {
+      onProgress: (done, total, failed) => {
+        ran = done;
+        this._bulkProgress = { done, total, failed, label: batch.label };
+      },
+      isCancelled: () => this._bulkCancelled,
+    });
+
+    this._bulkProgress = null;
+    if (!outcome) return;
+    this._bulkResult = {
+      label: batch.label,
+      succeeded: Math.max(0, ran - outcome.failed.length),
+      failed: outcome.failed,
+    };
+    // Narrow the selection to what still needs attention.
+    this.store?.setSelected(outcome.failed.map((f) => f.itemId).filter((id): id is string => !!id));
+  }
 
   private async _createLocation(name: string) {
     const trimmed = name.trim();
@@ -520,11 +682,7 @@ export class HVFullView extends LitElement {
 
   render() {
     if (!this.open) return null;
-    const st = this.st;
-    const filters = st?.filters ?? defaultFilters();
-    const counts = st?.statsCounts;
     const z = this._zBase || 9998;
-    const loaded = st?.items.length ?? 0;
 
     return html`
       <div class="backdrop" role="presentation" style="z-index: ${z};" @click=${this._close}></div>
@@ -543,6 +701,61 @@ export class HVFullView extends LitElement {
         }}
       >
         <span class="sentinel" tabindex="0" @focus=${() => this._focusLast()}></span>
+        ${this._selecting ? this._renderSelectionBar() : this._renderAppBar()}
+        ${this._renderBody()}
+        <span class="sentinel" tabindex="0" @focus=${() => this._focusFirst()}></span>
+      </div>
+    `;
+  }
+
+  private _renderSelectionBar() {
+    const st = this.st;
+    const selected = st?.selection.size ?? 0;
+    const total = st?.total ?? null;
+    const loaded = st?.items.length ?? 0;
+    const canLoadMore = total !== null && loaded < total;
+
+    return html`
+      <div class="appbar selecting" data-testid="selection-bar">
+        <button class="tap" data-testid="exit-selection" aria-label="Exit selection" @click=${() => this._exitSelection()}>
+          ${icon('close', 20)}
+        </button>
+        <span class="count" data-testid="selection-count">${selected} selected</span>
+        ${total !== null
+          ? html`<span class="subcount" data-testid="selection-subcount"
+              >of ${total} matching the current filter</span
+            >`
+          : null}
+        ${canLoadMore
+          ? html`<button
+              class="ghost"
+              data-testid="selection-load-all"
+              ?disabled=${this._loadingAll}
+              @click=${async () => {
+                this._loadingAll = true;
+                try {
+                  await this.store?.loadAllThenSelectAll();
+                } finally {
+                  this._loadingAll = false;
+                }
+              }}
+            >
+              ${this._loadingAll ? 'Loading…' : `Load all ${total} to select`}
+            </button>`
+          : null}
+        <span class="spacer"></span>
+        <button class="ghost plain" data-testid="selection-clear" @click=${() => this.store?.clearSelection()}>
+          Clear selection
+        </button>
+      </div>
+    `;
+  }
+
+  private _renderAppBar() {
+    const st = this.st;
+    const filters = st?.filters ?? defaultFilters();
+    const counts = st?.statsCounts;
+    return html`
         <div class="appbar">
           <button class="tap" data-testid="expand-toggle" aria-label="Close full view" @click=${this._close}>
             ${icon('close', 20)}
@@ -594,13 +807,28 @@ export class HVFullView extends LitElement {
             onPrimary
             data-testid="full-overflow"
             .entries=${this.menuEntries}
-            @select=${(e: CustomEvent) =>
+            @select=${(e: CustomEvent) => {
+              if ((e.detail as { id: string }).id === 'select-items') {
+                this._selecting = true;
+                return;
+              }
               this.dispatchEvent(
                 new CustomEvent('menu-action', { detail: e.detail, bubbles: true, composed: true }),
-              )}
+              );
+            }}
           ></hv-overflow-menu>
         </div>
+    `;
+  }
 
+  private _renderBody() {
+    const st = this.st;
+    const filters = st?.filters ?? defaultFilters();
+    const counts = st?.statsCounts;
+    const loaded = st?.items.length ?? 0;
+    const selection = st?.selection ?? new Set<string>();
+
+    return html`
         <div class="body">
           ${this._renderSidebar()}
           <div class="main">
@@ -645,11 +873,19 @@ export class HVFullView extends LitElement {
                 </div>`
               : null}
 
+            ${this._selecting && st?.total !== null && st?.total !== undefined && loaded < st.total
+              ? html`<div class="honesty" data-testid="selection-honesty">
+                  ${loaded} of ${st.total} loaded · scroll to load more. Select-all covers loaded rows only.
+                </div>`
+              : null}
+
             <hv-data-table
               data-testid="full-table"
               .items=${(st?.items ?? []) as Item[]}
               .columns=${this.columns}
               .sort=${filters.sort as Sort}
+              ?selectable=${this._selecting}
+              .selection=${selection}
               @sort-change=${(e: CustomEvent) => this._setFilters({ sort: (e.detail as { sort: Sort }).sort })}
               @near-end=${(e: CustomEvent) =>
                 void this.store?.prefetchIfNeeded((e.detail as { ratio: number }).ratio)}
@@ -657,6 +893,10 @@ export class HVFullView extends LitElement {
               @decrement=${(e: CustomEvent) => this._onRowEvent('decrement', e.detail)}
               @edit=${(e: CustomEvent) => this._onRowEvent('edit', e.detail)}
               @open-item=${(e: CustomEvent) => this._onRowEvent('open-item', e.detail)}
+              @toggle-select=${(e: CustomEvent) =>
+                this.store?.toggleSelected((e.detail as { itemId: string }).itemId)}
+              @select-all-loaded=${() => this.store?.selectAllLoaded()}
+              @clear-selection=${() => this.store?.clearSelection()}
             >
               <span slot="empty"
                 >${activeFilterCount(filters) > 0
@@ -665,6 +905,35 @@ export class HVFullView extends LitElement {
               >
             </hv-data-table>
 
+            ${this._selecting
+              ? html`<hv-bulk-bar
+                  data-testid="full-bulk-bar"
+                  .selectedCount=${selection.size}
+                  .selectedItems=${this._selectedItems}
+                  .locationTree=${st?.locationTreeCache ?? []}
+                  .distinct=${st?.distinctValuesCache ?? null}
+                  .progress=${this._bulkProgress}
+                  .result=${this._bulkResult}
+                  @run=${this._onBulkRun}
+                  @cancel-run=${() => {
+                    this._bulkCancelled = true;
+                  }}
+                  @dismiss-result=${() => {
+                    this._bulkResult = null;
+                  }}
+                  @retry-failed=${() => {
+                    const failed = this._bulkResult?.failed ?? [];
+                    if (!this._lastOps || !failed.length) return;
+                    // Rebuild rather than replay: the failed rows may have moved
+                    // on, and an op_id must never be reused.
+                    void this._execute({
+                      label: this._lastOps.label,
+                      ops: failed.map((f) => makeBulkOp(f.op.kind, { ...f.op.payload })),
+                    });
+                  }}
+                ></hv-bulk-bar>`
+              : null}
+
             <div class="footer" data-testid="full-footer">
               ${st?.total !== null && st?.total !== undefined
                 ? `Showing ${loaded} of ${st.total}${st.cursor ? ' · scroll to load more' : ''}`
@@ -672,9 +941,31 @@ export class HVFullView extends LitElement {
             </div>
           </div>
         </div>
-        <span class="sentinel" tabindex="0" @focus=${() => this._focusFirst()}></span>
-      </div>
+
+        <hv-confirm
+          data-testid="bulk-confirm"
+          ?open=${this._pendingDelete}
+          .heading=${`Delete ${selection.size} item${selection.size === 1 ? '' : 's'}?`}
+          message="This cannot be undone. Items are removed for every connected client. Locations and tags are not affected."
+          .warning=${this._checkedOutWarning}
+          .confirmLabel=${`Delete ${selection.size}`}
+          destructive
+          @confirm=${() => {
+            this._pendingDelete = false;
+            void this._execute(this._opsFor({ action: 'delete' }, this._selectedItems));
+          }}
+          @cancel=${() => {
+            this._pendingDelete = false;
+          }}
+        ></hv-confirm>
     `;
+  }
+
+  /** Extra warning for a bulk delete that would remove checked-out items. */
+  private get _checkedOutWarning(): string | null {
+    const out = this._selectedItems.filter((i) => i.checked_out).length;
+    if (!out) return null;
+    return `${out} of them ${out === 1 ? 'is' : 'are'} checked out`;
   }
 }
 
