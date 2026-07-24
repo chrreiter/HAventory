@@ -255,6 +255,9 @@ Adopted tooling (latest stable at review time; verified against release pages / 
 - **`tsc --noEmit`** is clean as of WP2 follow-ups (`npm run typecheck`); not yet part of the
   gate — adding it is a WP4/WP5 call.
 - **release-please** wiring lands in WP5.
-- **Windows-only test scaffolding**: `tests/conftest.py` uses
+- ~~**Windows-only test scaffolding**: `tests/conftest.py` uses
   `asyncio.WindowsSelectorEventLoopPolicy` / `set_event_loop_policy`, both deprecated for
-  removal in Python 3.16 — replace when convenient (effort S).
+  removal in Python 3.16~~ — fixed: `tests/conftest.py` now implements the
+  `pytest_asyncio_loop_factories` hook (Windows-only) to hand pytest-asyncio a
+  `asyncio.SelectorEventLoop` factory directly, instead of mutating the process-wide event
+  loop policy.
