@@ -64,5 +64,15 @@ export default [
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }]
     }
+  },
+
+  // Opt-in browser smoke scripts: mixed Node + in-page (browser) globals. These run
+  // outside the shipped bundle and are not type-checked, so defer undefined-name
+  // checking (as the TS blocks do) rather than enumerating both runtimes' globals.
+  // Must come after js.configs.recommended so it wins for these files.
+  {
+    files: ['e2e/**/*.mjs'],
+    languageOptions: { ecmaVersion: 'latest', sourceType: 'module' },
+    rules: { 'no-undef': 'off' }
   }
 ];
