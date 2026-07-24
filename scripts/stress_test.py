@@ -3,11 +3,11 @@ r"""Backend stress test for HAventory persistence and concurrency fixes.
 This script validates the debounced persistence, concurrent operation handling,
 and bulk operation reliability in a Docker-based Home Assistant backend.
 
-Usage (PowerShell):
-    $env:HA_CONTAINER = 'home-assistant'
-    $env:HA_BASE_URL = 'http://localhost:8123'
-    $env:HA_TOKEN = '<your-long-lived-token>'
-    python .\scripts\stress_test.py
+Usage (Git Bash / Linux):
+    export HA_CONTAINER='home-assistant'
+    export HA_BASE_URL='http://localhost:8123'
+    export HA_TOKEN='<your-long-lived-token>'
+    python scripts/stress_test.py
 
 Options:
     --skip-deploy    Skip deployment step (code already deployed)
@@ -19,6 +19,9 @@ Environment variables:
     HA_CONTAINER: Docker container name (required)
     HA_BASE_URL: Home Assistant base URL (default: http://localhost:8123)
     HA_TOKEN: Long-lived access token (required)
+
+The optional deployment step (omitted with --skip-deploy) shells out to
+``scripts/reload_addon.sh``, so it needs bash on PATH (Git Bash on Windows).
 """
 
 from __future__ import annotations
@@ -369,34 +372,29 @@ async def check_container_running(container_name: str) -> bool:
 
 
 async def deploy_code(container_name: str) -> bool:
-    """Deploy latest code to container using reload_addon.ps1."""
+    """Deploy latest code to the container via scripts/reload_addon.sh."""
     print_status("Deploying latest code to container...", "info")
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        repo_root = os.path.dirname(script_dir)
-        reload_script = os.path.join(repo_root, "scripts", "reload_addon.ps1")
+        reload_script = os.path.join(script_dir, "reload_addon.sh")
 
-        # ASYNC221: Blocking subprocess is acceptable here (deployment step)
-        # S603/S607: subprocess with trusted input (known script path)
+        # ASYNC221: Blocking subprocess is acceptable here (deployment step).
+        # S603/S607: subprocess with trusted input (known script path).
+        # reload_addon.sh does npm ci + vite build + docker restart, so allow
+        # a generous timeout; needs bash on PATH (Git Bash on Windows).
         result = subprocess.run(  # noqa: ASYNC221, S603
             [  # noqa: S607
-                "powershell",
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
+                "bash",
                 reload_script,
-                "-ContainerName",
+                "--container",
                 container_name,
-                "-UseDevConfig:$true",
-                "-TailLogs:$false",
-                "-SleepSecondsAfterRestart",
+                "--sleep",
                 "8",
             ],
             check=False,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=300,
         )
         if result.returncode != 0:
             print_status(f"Deployment failed: {result.stderr}", "fail")
