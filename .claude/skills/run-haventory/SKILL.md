@@ -149,8 +149,10 @@ clean-start mode), then `Online smoke test completed successfully.`
   `reload_addon.sh --sleep 30` covers it; with the default `--sleep 8` the final
   WS entry-init step can race a not-yet-up HA (it prints a WS-init error — harmless,
   rerun `uv run python scripts/ws_init_haventory.py`).
-- **aiohttp deprecation**: `ws_connect(timeout=ClientTimeout(...))` is deprecated —
-  use `aiohttp.ClientWSTimeout(ws_receive=...)` in new WS scripts.
+- **aiohttp `ws_connect` timeout**: passing a `ClientTimeout` to `ws_connect` is deprecated —
+  use `aiohttp.ClientWSTimeout(ws_receive=...)` (per-receive budget). All WS scripts now use
+  the new form; to bound the *upgrade handshake* wrap `ws_connect` in
+  `asyncio.wait_for(..., timeout=connect_timeout_s)` (`ClientWSTimeout` does not cover it).
 - **Mutations rejected with error code `conflict`** mean a stale `expected_version` —
   that's optimistic concurrency working, not a bug; re-`get` the item and retry.
 
