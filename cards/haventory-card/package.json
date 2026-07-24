@@ -27,7 +27,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "node e2e/live-updates.smoke.mjs"
   },
   "dependencies": {
     "@lit-labs/virtualizer": "^2.1.1",
@@ -40,6 +41,7 @@
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.7.0",
     "jsdom": "^26.1.0",
+    "playwright": "^1.61.1",
     "typescript": "^6.0.3",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"

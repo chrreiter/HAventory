@@ -185,6 +185,28 @@ uv run pytest -q -m online -k ws_areas_online
 Included: `tests/test_ws_smoke_online.py`, `tests/test_ws_smoke_advanced_online.py`,
 `tests/test_ws_areas_online.py`.
 
+#### Live-update browser smoke (opt-in)
+
+`cards/haventory-card/e2e/live-updates.smoke.mjs` drives the **real card** in a headless
+browser against a running HA and asserts that out-of-band inventory changes (made over a
+separate WebSocket connection) reach the card purely through its subscription — create →
+rename → delete, live, with no manual re-list. It guards the "green unit tests, dead
+feature" class of regression that unit mocks cannot (see PR #93): the mock is only ever as
+truthful as the contract its author imagined.
+
+```bash
+export RUN_ONLINE=1
+export HA_BASE_URL=http://localhost:8123
+export HA_TOKEN=<your-long-lived-token>
+cd cards/haventory-card
+npm i && npx playwright install chromium   # one-time
+npm run test:e2e                            # skips cleanly if RUN_ONLINE is unset
+```
+
+The card must be deployed on a dashboard at `--path` (default `/lovelace/default_view`),
+e.g. via `scripts/reload_addon.sh`. The test is idempotent — it creates a uniquely-named
+item and deletes it (best-effort cleanup even on failure).
+
 #### Coverage
 
 - Backend: `scripts/ci_local.sh` produces `coverage.xml` + browsable `htmlcov/index.html`.
