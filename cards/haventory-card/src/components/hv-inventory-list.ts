@@ -3,7 +3,7 @@ import { customElement, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import type { Item } from '../store/types';
 import type { ColumnKey } from '../store/columns';
-import { COLUMN_DEFS, DEFAULT_COLUMN_PREFS, gridTemplateFor, normalizeColumns } from '../store/columns';
+import { COLUMN_DEFS, LEGACY_DEFAULT_COLUMNS, gridTemplateFor, normalizeColumns } from '../store/columns';
 
 @customElement('hv-inventory-list')
 export class HVInventoryList extends LitElement {
@@ -58,7 +58,7 @@ export class HVInventoryList extends LitElement {
   @property({ type: Boolean, reflect: true }) compact: boolean = false;
   @property({ type: Boolean, reflect: true }) fill: boolean = false;
   /** Optional middle columns to display (Name + Actions are always shown). */
-  @property({ attribute: false }) columns: ColumnKey[] = [...DEFAULT_COLUMN_PREFS.expanded];
+  @property({ attribute: false }) columns: ColumnKey[] = [...LEGACY_DEFAULT_COLUMNS];
 
   private onRowEvent(type: string, e: CustomEvent) {
     e.stopPropagation();

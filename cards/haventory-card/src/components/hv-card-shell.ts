@@ -16,7 +16,9 @@ import './hv-filter-panel';
 import './hv-list';
 import './hv-item-editor';
 import './hv-detail-sheet';
+import './hv-full-view';
 import './hv-overflow-menu';
+import type { ColumnKey } from '../store/columns';
 import type { HVFilterPanel } from './hv-filter-panel';
 import type { HVItemEditor } from './hv-item-editor';
 import type { ListEmptyKind } from './hv-list';
@@ -252,6 +254,8 @@ export class HVCardShell extends LitElement {
   @property({ type: String }) heading = 'Inventory';
   /** Force a layout instead of measuring; `null` measures. */
   @property({ attribute: false }) forceMobile: boolean | null = null;
+  /** Column selection for the full-view table (the card list has its own row). */
+  @property({ attribute: false }) columns: ColumnKey[] = [];
 
   @state() private _filterPanelOpen = false;
   @state() private _filterSheetOpen = false;
@@ -270,6 +274,7 @@ export class HVCardShell extends LitElement {
   @state() private _editorError: string | null = null;
   /** Item shown in the mobile detail sheet. */
   @state() private _detailItemId: string | null = null;
+  @state() private _fullViewOpen = false;
 
   private readonly responsive = new ResponsiveController(this);
   private storeUnsub?: () => void;
@@ -515,6 +520,9 @@ export class HVCardShell extends LitElement {
   }
 
   private _onMenuSelect = (e: CustomEvent) => {
+    // The full view re-dispatches its own menu selections through here; stop the
+    // original so the host card does not also see it directly.
+    e.stopPropagation();
     const { id } = e.detail as { id: string };
     if (id === 'refresh') {
       void this.store?.refreshAll();
@@ -712,6 +720,20 @@ export class HVCardShell extends LitElement {
           ${icon('tune', 19)}
           ${filterCount > 0 ? html`<span class="dot" data-testid="filter-active-dot"></span>` : null}
         </button>
+        ${mobile
+          ? null
+          : html`<button
+              class="icon-toggle"
+              data-testid="expand-toggle"
+              aria-label="Open full view"
+              aria-expanded=${String(this._fullViewOpen)}
+              title="Open full view"
+              @click=${() => {
+                this._fullViewOpen = true;
+              }}
+            >
+              ${icon('arrowExpand', 19)}
+            </button>`}
       </div>
 
       ${filterCount > 0
@@ -760,8 +782,33 @@ export class HVCardShell extends LitElement {
                 ? `Showing ${loaded} of ${total}${filterCount > 0 ? ' filtered' : ''}`
                 : `Showing ${loaded}`}
             </span>
+            ${mobile
+              ? null
+              : html`<button
+                  class="link"
+                  data-testid="open-full-view"
+                  @click=${() => {
+                    this._fullViewOpen = true;
+                  }}
+                >
+                  Open full view${icon('openInNew', 15)}
+                </button>`}
           </div>`
         : null}
+
+      <hv-full-view
+        data-testid="card-full-view"
+        ?open=${this._fullViewOpen}
+        .store=${this.store}
+        .heading=${this.heading}
+        .columns=${this.columns}
+        .menuEntries=${this.menuEntries}
+        @close=${() => {
+          this._fullViewOpen = false;
+        }}
+        @menu-action=${this._onMenuSelect}
+        @request-delete=${(e: CustomEvent) => this._onRowEvent('request-delete', e.detail)}
+      ></hv-full-view>
       ${mobile
         ? html`<hv-bottom-sheet
             label="Filters"

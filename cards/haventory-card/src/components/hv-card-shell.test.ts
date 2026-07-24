@@ -661,3 +661,54 @@ describe('hv-card-shell: mobile detail sheet', () => {
     expect(sheet(sr).open).toBe(false);
   });
 });
+
+describe('hv-card-shell: full view', () => {
+  const fullView = (sr: ShadowRoot) =>
+    sr.querySelector('[data-testid="card-full-view"]') as HTMLElement & { open: boolean };
+
+  it('opens from the expand toggle and from the footer link', async () => {
+    for (const testid of ['expand-toggle', 'open-full-view']) {
+      const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+      expect(fullView(sr).open).toBe(false);
+
+      (sr.querySelector(`[data-testid="${testid}"]`) as HTMLButtonElement).click();
+      await settle(el);
+      expect(fullView(sr).open, testid).toBe(true);
+      el.remove();
+    }
+  });
+
+  it('closes back to the card', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    (sr.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const inner = fullView(sr).shadowRoot?.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement;
+    inner.click();
+    await settle(el);
+    expect(fullView(sr).open).toBe(false);
+  });
+
+  it('has no expand affordance on mobile', async () => {
+    const { sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+    expect(sr.querySelector('[data-testid="expand-toggle"]')).toBe(null);
+    expect(sr.querySelector('[data-testid="open-full-view"]')).toBe(null);
+  });
+
+  it('routes the full view menu through the card, exactly once', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const seen: string[] = [];
+    el.addEventListener('menu-action', (e) => seen.push((e as CustomEvent).detail.id));
+
+    (sr.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const columnsBtn = fullView(sr).shadowRoot?.querySelector(
+      '[data-testid="columns-expanded"]',
+    ) as HTMLButtonElement;
+    columnsBtn.click();
+    await settle(el);
+
+    expect(seen).toEqual(['columns']);
+  });
+});

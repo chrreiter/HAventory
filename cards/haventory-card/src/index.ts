@@ -182,6 +182,7 @@ export class HAventoryCard extends LitElement {
         data-testid="card-shell"
         .store=${this.store}
         .heading=${this.config?.title ?? 'Inventory'}
+        .columns=${this._columnPrefs.expanded}
         @menu-action=${(e: CustomEvent) => this._onShellAction((e.detail as { id: string }).id)}
       ></hv-card-shell>
 

@@ -2,7 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import type { Item } from '../store/types';
 import type { ColumnKey } from '../store/columns';
-import { DEFAULT_COLUMN_PREFS, gridTemplateFor, normalizeColumns } from '../store/columns';
+import { LEGACY_DEFAULT_COLUMNS, gridTemplateFor, normalizeColumns } from '../store/columns';
 
 @customElement('hv-item-row')
 export class HVItemRow extends LitElement {
@@ -53,7 +53,7 @@ export class HVItemRow extends LitElement {
   @property({ attribute: false }) locations: Array<{ id: string; area_id: string | null }> = [];
   @property({ type: Boolean }) compact: boolean = false;
   /** Which optional middle columns to render (Name + Actions are always shown). */
-  @property({ attribute: false }) columns: ColumnKey[] = [...DEFAULT_COLUMN_PREFS.expanded];
+  @property({ attribute: false }) columns: ColumnKey[] = [...LEGACY_DEFAULT_COLUMNS];
 
   private resolveAreaName(): string | null {
     // First try item's effective_area_id (inherited from location hierarchy)
