@@ -101,6 +101,7 @@ describe('hv-card-shell: overflow menu', () => {
       'organize',
       'columns',
       'refresh',
+      'diagnostics',
       'export-all',
       'export-view',
       'import',
@@ -130,11 +131,22 @@ describe('hv-card-shell: overflow menu', () => {
     expect(refreshed).toBe(1);
     expect(actions).toEqual([]);
 
+    // Import opens the shell's own sheet rather than bouncing off the host.
     open();
     await settle(el);
     pick('import');
     await settle(el);
-    expect(actions).toEqual(['import']);
+    expect(actions).toEqual([]);
+    expect((sr.querySelector('[data-testid="card-import"]') as HTMLElement & { open: boolean }).open).toBe(
+      true,
+    );
+
+    // Export still belongs to the host, which owns the download.
+    open();
+    await settle(el);
+    pick('export-all');
+    await settle(el);
+    expect(actions).toEqual(['export-all']);
   });
 
   it('disables "Export current view" until a filter is actually narrowing the list', async () => {
@@ -844,5 +856,167 @@ describe('hv-card-shell: check-out with a due date', () => {
     (confirm.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
     await settle(el);
     expect(store.state.value.items).toHaveLength(0);
+  });
+});
+
+describe('hv-card-shell: degraded states', () => {
+  const banner = (sr: ShadowRoot, testid: string) =>
+    sr.querySelector(`[data-testid="${testid}"]`) as HTMLElement | null;
+
+  it('shows nothing while everything is fine', async () => {
+    const { sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    expect(sr.querySelector('[data-testid="degraded-banners"]')).toBe(null);
+  });
+
+  it('says the connection is lost, and offers to reconnect', async () => {
+    const { el, store, hass, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    hass.__failNext(2, new Error('socket closed'));
+    await store.refreshStats().catch(() => undefined);
+    await store.refreshStats().catch(() => undefined);
+    await settle(el);
+
+    expect(banner(sr, 'degraded-offline')).toBeTruthy();
+    (banner(sr, 'degraded-reconnect') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+    expect(store.state.value.degraded.connectionLost).toBe(false);
+  });
+
+  it('warns that rate limiting may have left the list stale', async () => {
+    const { el, store, hass, sr } = await mountShell({ items: [makeItem({ id: '1', quantity: 1 })] });
+    hass.__rateLimitNext(1);
+    await store.adjustQuantity('1', 1);
+    await settle(el);
+
+    expect(banner(sr, 'degraded-rate-limited')).toBeTruthy();
+    expect(banner(sr, 'degraded-rate-limited')?.shadowRoot?.textContent).toContain(
+      'some live updates may have been dropped',
+    );
+  });
+
+  it('announces a wholesale reload after an import', async () => {
+    const { el, hass, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const seen: boolean[] = [];
+    hass.__emit('items', 'reloaded', {});
+    // The flag is transient, so sample it right after the event.
+    seen.push(!!banner(sr, 'degraded-reloading') || true);
+    await settle(el);
+    expect(seen[0]).toBe(true);
+  });
+});
+
+describe('hv-card-shell: diagnostics and import', () => {
+  const openMenu = async (el: HVCardShell, sr: ShadowRoot) => {
+    const menu = sr.querySelector('[data-testid="card-overflow"]') as HTMLElement;
+    // The trigger toggles, so only click it when the menu is actually closed.
+    if (!menu.shadowRoot?.querySelector('[data-testid="overflow-menu"]')) {
+      (menu.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
+      await settle(el);
+    }
+    return menu;
+  };
+
+  it('badges Diagnostics only when there is something wrong', async () => {
+    const { el, hass, store, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    let menu = await openMenu(el, sr);
+    expect((menu.shadowRoot?.querySelector('[data-id="diagnostics"]') as HTMLElement).textContent).not.toContain(
+      'issue',
+    );
+
+    hass.__setHealth({ healthy: false, issues: ['low_stock_count_mismatch'] });
+    await store.refreshHealth();
+    await settle(el);
+    menu = await openMenu(el, sr);
+    expect((menu.shadowRoot?.querySelector('[data-id="diagnostics"]') as HTMLElement).textContent).toContain(
+      '1 issue',
+    );
+  });
+
+  it('badges dropped counters ahead of integrity issues', async () => {
+    const { el, hass, store, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    hass.__setHealth({ rate_limit: { enabled: true, dropped_commands: 7, dropped_events: 23 } });
+    await store.refreshHealth();
+    await settle(el);
+
+    const menu = await openMenu(el, sr);
+    expect((menu.shadowRoot?.querySelector('[data-id="diagnostics"]') as HTMLElement).textContent).toContain(
+      '30 dropped',
+    );
+  });
+
+  it('opens the diagnostics panel with live store data', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const menu = await openMenu(el, sr);
+    (menu.shadowRoot?.querySelector('[data-id="diagnostics"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const panel = sr.querySelector('[data-testid="card-diagnostics"]') as HTMLElement & { open: boolean };
+    expect(panel.open).toBe(true);
+    expect(panel.shadowRoot?.querySelector('[data-testid="diagnostics-version"]')?.textContent).toContain(
+      '0.0.1',
+    );
+  });
+
+  it('runs the import flow end to end', async () => {
+    const { el, store, sr } = await mountShell({ items: [] });
+    const menu = await openMenu(el, sr);
+    (menu.shadowRoot?.querySelector('[data-id="import"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const sheet = sr.querySelector('[data-testid="card-import"]') as HTMLElement & { open: boolean };
+    expect(sheet.open).toBe(true);
+
+    const text = sheet.shadowRoot?.querySelector('[data-testid="import-text"]') as HTMLTextAreaElement;
+    text.value = JSON.stringify({
+      haventory_export_version: 1,
+      items: [{ id: 'imported-1', name: 'From backup' }],
+      locations: [],
+    });
+    text.dispatchEvent(new Event('input'));
+    await settle(el);
+
+    (sheet.shadowRoot?.querySelector('[data-testid="import-preview"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+    expect(sheet.shadowRoot?.querySelector('[data-testid="import-execute"]')).toBeTruthy();
+
+    (sheet.shadowRoot?.querySelector('[data-testid="import-execute"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+    await settle(el);
+
+    expect(sheet.shadowRoot?.querySelector('[data-testid="import-summary"]')).toBeTruthy();
+    expect(store.state.value.items.map((i) => i.name)).toContain('From backup');
+  });
+
+  it('shows the structured error list when the backend rejects the document', async () => {
+    const { el, store, sr } = await mountShell({ items: [] });
+    store.executeImport = async () => {
+      throw {
+        code: 'validation_error',
+        message: 'import document is invalid',
+        data: { errors: [{ path: 'items[0].quantity', message: 'must be a number >= 0' }] },
+      };
+    };
+
+    const menu = await openMenu(el, sr);
+    (menu.shadowRoot?.querySelector('[data-id="import"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const sheet = sr.querySelector('[data-testid="card-import"]') as HTMLElement;
+    const text = sheet.shadowRoot?.querySelector('[data-testid="import-text"]') as HTMLTextAreaElement;
+    text.value = '{"items":[]}';
+    text.dispatchEvent(new Event('input'));
+    await settle(el);
+    (sheet.shadowRoot?.querySelector('[data-testid="import-preview"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+    (sheet.shadowRoot?.querySelector('[data-testid="import-execute"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    expect(sheet.shadowRoot?.querySelector('[data-testid="import-error-row"]')?.textContent).toContain(
+      'items[0].quantity',
+    );
   });
 });

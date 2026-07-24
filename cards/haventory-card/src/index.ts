@@ -201,16 +201,6 @@ export class HAventoryCard extends LitElement {
         @cancel=${() => { this._columnPickerOpen = false; this.requestUpdate(); }}
       ></hv-column-picker>
 
-      <hv-import-dialog
-        .open=${this._importDialogOpen}
-        .preview=${this._importPreview}
-        .summary=${this._importSummary}
-        .busy=${this._importBusy}
-        .errorMessage=${this._importError}
-        @preview=${(e: CustomEvent) => this._onImportPreview(e)}
-        @execute=${(e: CustomEvent) => this._onImportExecute(e)}
-        @cancel=${() => { this._importDialogOpen = false; this._resetImportState(); this.requestUpdate(); }}
-      ></hv-import-dialog>
     `;
   }
 
@@ -225,9 +215,6 @@ export class HAventoryCard extends LitElement {
         break;
       case 'export-view':
         void this._exportDownload('view');
-        break;
-      case 'import':
-        this._openImportDialog();
         break;
     }
   }

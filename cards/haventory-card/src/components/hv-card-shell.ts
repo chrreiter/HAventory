@@ -19,12 +19,14 @@ import './hv-detail-sheet';
 import './hv-full-view';
 import './hv-organize-dialog';
 import './hv-checkout-popover';
+import './hv-diagnostics-panel';
+import './hv-import-sheet';
 import './hv-overflow-menu';
 import type { ColumnKey } from '../store/columns';
 import type { HVFilterPanel } from './hv-filter-panel';
 import type { HVItemEditor } from './hv-item-editor';
 import type { ListEmptyKind } from './hv-list';
-import type { ItemCreate, ItemUpdate } from '../store/types';
+import type { ImportPolicy, ImportPreview, ImportSummary, ItemCreate, ItemUpdate } from '../store/types';
 
 const SEARCH_DEBOUNCE_MS = 200;
 const FILTER_PANEL_STORAGE_KEY = 'haventory:filter-panel-open:v1';
@@ -279,6 +281,15 @@ export class HVCardShell extends LitElement {
   @state() private _fullViewOpen = false;
   @state() private _startSelecting = false;
   @state() private _organizeOpen = false;
+  @state() private _diagnosticsOpen = false;
+  @state() private _importOpen = false;
+  @state() private _importPreview: ImportPreview | null = null;
+  @state() private _importSummary: ImportSummary | null = null;
+  @state() private _importBusy = false;
+  @state() private _importError: string | null = null;
+  @state() private _refreshBusy = false;
+  /** When the caches were last known-good, for the diagnostics "since" tile. */
+  @state() private _lastRefresh: string | null = null;
   /** Item whose check-out / due-date step is open, with where to anchor it. */
   @state() private _checkout: { itemId: string; mode: 'check-out' | 'set-due-date'; anchor: DOMRect | null } | null =
     null;
@@ -518,6 +529,82 @@ export class HVCardShell extends LitElement {
   };
 
   // ---------- Overflow menu ----------
+  /** Short badge for the Diagnostics menu row, or null when all is well. */
+  private get diagnosticsBadge(): string | null {
+    const st = this.st;
+    if (!st) return null;
+    const rate = st.healthCache?.rate_limit;
+    const dropped = (rate?.dropped_commands ?? 0) + (rate?.dropped_events ?? 0);
+    if (dropped > 0) return `${dropped} dropped`;
+    const issues = st.healthCache?.issues.length ?? 0;
+    if (issues > 0) return `${issues} issue${issues === 1 ? '' : 's'}`;
+    if (st.degraded.connectionLost) return 'offline';
+    return null;
+  }
+
+  private async _refresh() {
+    this._refreshBusy = true;
+    try {
+      await this.store?.refreshAll();
+      this._lastRefresh = new Date().toISOString();
+    } finally {
+      this._refreshBusy = false;
+    }
+  }
+
+  private async _onImportPreview(e: CustomEvent) {
+    const { document, policy } = e.detail as { document: unknown; policy: ImportPolicy };
+    this._importBusy = true;
+    this._importError = null;
+    this._importSummary = null;
+    try {
+      this._importPreview = (await this.store?.previewImport(document, policy)) ?? null;
+    } catch (err) {
+      this._importPreview = null;
+      this._importError = (err as { message?: string })?.message ?? 'Could not check that document.';
+    } finally {
+      this._importBusy = false;
+    }
+  }
+
+  private async _onImportExecute(e: CustomEvent) {
+    const { document, policy } = e.detail as { document: unknown; policy: ImportPolicy };
+    this._importBusy = true;
+    this._importError = null;
+    try {
+      this._importSummary = (await this.store?.executeImport(document, policy)) ?? null;
+      this._lastRefresh = new Date().toISOString();
+    } catch (err) {
+      const anyErr = err as {
+        code?: string;
+        message?: string;
+        data?: { errors?: { path: string; message: string }[] };
+      };
+      if (anyErr?.code === 'validation_error' && anyErr.data?.errors?.length) {
+        // The backend rejected the document itself — show the structured list
+        // rather than flattening it into one message.
+        this._importPreview = {
+          valid: false,
+          errors: anyErr.data.errors,
+          policy,
+          document: {
+            haventory_export_version: null,
+            schema_version: null,
+            exported_at: null,
+            integration_version: null,
+          },
+          items: { add: [], update: [], conflict: [], unchanged: [] },
+          locations: { add: [], update: [], conflict: [], unchanged: [] },
+          counts: {},
+        };
+      } else {
+        this._importError = anyErr?.message ?? 'The import failed.';
+      }
+    } finally {
+      this._importBusy = false;
+    }
+  }
+
   private get menuEntries(): OverflowMenuEntry[] {
     const st = this.st;
     const total = st?.statsCounts?.items_total ?? null;
@@ -529,6 +616,13 @@ export class HVCardShell extends LitElement {
       { id: 'columns', label: 'Columns…', glyph: 'viewColumn' },
       { divider: true },
       { id: 'refresh', label: 'Refresh data', glyph: 'refresh', meta: 'Items · locations · stats' },
+      {
+        id: 'diagnostics',
+        label: 'Diagnostics',
+        glyph: 'alertCircle',
+        // Badge only when there is actually something wrong — otherwise it is a plain row.
+        ...(this.diagnosticsBadge ? { badge: this.diagnosticsBadge } : {}),
+      },
       { divider: true },
       { caption: 'Data' },
       {
@@ -557,7 +651,18 @@ export class HVCardShell extends LitElement {
     e.stopPropagation();
     const { id } = e.detail as { id: string };
     if (id === 'refresh') {
-      void this.store?.refreshAll();
+      void this._refresh();
+      return;
+    }
+    if (id === 'diagnostics') {
+      this._diagnosticsOpen = true;
+      return;
+    }
+    if (id === 'import') {
+      this._importPreview = null;
+      this._importSummary = null;
+      this._importError = null;
+      this._importOpen = true;
       return;
     }
     if (id === 'organize') {
@@ -609,6 +714,75 @@ export class HVCardShell extends LitElement {
           : null}
       </div>
     `;
+  }
+
+  /**
+   * Conditions that make the card untrustworthy, said out loud.
+   *
+   * Rate limiting can drop subscription events silently and events carry no
+   * sequence number, so the card cannot detect a gap on its own — the honest
+   * move is to say it might be stale and offer the re-read.
+   */
+  private _renderDegradedBanners() {
+    const degraded = this.st?.degraded;
+    if (!degraded) return null;
+    const banners = [];
+
+    if (degraded.connectionLost) {
+      banners.push(html`<hv-banner
+        kind="error"
+        glyph="wifiOff"
+        heading="Connection lost"
+        message=" · showing the data already loaded. Changes may not save."
+        data-testid="degraded-offline"
+      >
+        <button
+          slot="actions"
+          class="hv-pill outline"
+          data-testid="degraded-reconnect"
+          @click=${() => void this._refresh()}
+        >
+          Reconnect
+        </button>
+      </hv-banner>`);
+    } else if (degraded.retrying > 0) {
+      banners.push(html`<hv-banner
+        kind="warning"
+        glyph="clock"
+        heading="Busy — retrying"
+        message=${` · ${degraded.retrying} change${degraded.retrying === 1 ? '' : 's'} queued`}
+        data-testid="degraded-retrying"
+      ></hv-banner>`);
+    } else if (degraded.rateLimited) {
+      banners.push(html`<hv-banner
+        kind="warning"
+        glyph="clock"
+        heading="Rate limited"
+        message=" · some live updates may have been dropped, so this list can be out of date."
+        data-testid="degraded-rate-limited"
+      >
+        <button
+          slot="actions"
+          class="hv-pill outline"
+          data-testid="degraded-refresh"
+          @click=${() => void this._refresh()}
+        >
+          Refresh
+        </button>
+      </hv-banner>`);
+    }
+
+    if (degraded.reloading) {
+      banners.push(html`<hv-banner
+        kind="info"
+        glyph="refresh"
+        heading="Inventory was replaced by an import"
+        message=" · reloading…"
+        data-testid="degraded-reloading"
+      ></hv-banner>`);
+    }
+
+    return banners.length ? html`<div class="banners" data-testid="degraded-banners">${banners}</div>` : null;
   }
 
   private _renderBanners() {
@@ -793,7 +967,7 @@ export class HVCardShell extends LitElement {
       ${!mobile && this._filterPanelOpen
         ? html`<div class="panel-holder">${this._renderFilterPanel(false)}</div>`
         : null}
-      ${this._renderBanners()}
+      ${this._renderDegradedBanners()} ${this._renderBanners()}
 
       <hv-list
         data-testid="card-list"
@@ -934,6 +1108,45 @@ export class HVCardShell extends LitElement {
             @save=${this._onEditorSave}
           ></hv-detail-sheet>`
         : null}
+
+      <hv-import-sheet
+        data-testid="card-import"
+        ?open=${this._importOpen}
+        .preview=${this._importPreview}
+        .summary=${this._importSummary}
+        .busy=${this._importBusy}
+        .errorMessage=${this._importError}
+        @preview=${(e: CustomEvent) => void this._onImportPreview(e)}
+        @execute=${(e: CustomEvent) => void this._onImportExecute(e)}
+        @invalidate-preview=${() => {
+          // A preview is only valid for the policy it was run with.
+          this._importPreview = null;
+          this._importError = null;
+        }}
+        @cancel=${() => {
+          this._importOpen = false;
+          this._importPreview = null;
+          this._importSummary = null;
+          this._importError = null;
+        }}
+      ></hv-import-sheet>
+
+      <hv-diagnostics-panel
+        data-testid="card-diagnostics"
+        ?open=${this._diagnosticsOpen}
+        .health=${st?.healthCache ?? null}
+        .counts=${st?.statsCounts ?? null}
+        .version=${st?.versionInfo ?? null}
+        .degraded=${st?.degraded ?? null}
+        .connected=${st?.connected ?? null}
+        .loadedItems=${loaded}
+        .lastRefresh=${this._lastRefresh}
+        .busy=${this._refreshBusy}
+        @refresh=${() => void this._refresh()}
+        @cancel=${() => {
+          this._diagnosticsOpen = false;
+        }}
+      ></hv-diagnostics-panel>
 
       <hv-checkout-popover
         data-testid="card-checkout"
