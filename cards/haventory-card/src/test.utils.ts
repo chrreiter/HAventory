@@ -9,7 +9,9 @@ import type {
   StatsCounts,
 } from './store/types';
 
-type SubCb = (msg: { id: number; type: 'event'; event: AnyEventPayload }) => void;
+// Mirror real Home Assistant: `subscribeMessage` hands the callback the *inner*
+// event payload, not the `{id, type:'event', event}` envelope.
+type SubCb = (event: AnyEventPayload) => void;
 
 interface MockConfig {
   items?: Item[];
@@ -28,10 +30,6 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
   let conflictOnUpdate = !!initial?.conflictOnUpdate;
   let healthOverride: { healthy?: boolean; issues?: string[]; generation?: number } | null = null;
   const subs: Record<string, SubCb[]> = {};
-
-  function nextId() {
-    return Math.floor(Math.random() * 100000);
-  }
 
   const hass: HassLike & {
     __emit: (topic: AnyEventPayload['topic'], action: string, payload: Record<string, unknown>) => void;
@@ -314,8 +312,9 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
     },
     __emit(topic: AnyEventPayload['topic'], action: string, payload: Record<string, unknown>) {
       const callbacks = subs[topic] || [];
-      const event = { domain: 'haventory', topic, action, ts: new Date().toISOString(), ...payload } as AnyEventPayload as any;
-      callbacks.forEach((cb) => cb({ id: nextId(), type: 'event', event }));
+      // Deliver the inner payload exactly as real Home Assistant does.
+      const event = { domain: 'haventory', topic, action, ts: new Date().toISOString(), ...payload } as AnyEventPayload;
+      callbacks.forEach((cb) => cb(event));
     },
     __setConflict(on: boolean) { conflictOnUpdate = on; },
     __setItems(it: Item[]) { items = [...it]; },

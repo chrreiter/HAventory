@@ -428,6 +428,44 @@ describe('Store', () => {
     expect(listCalls).toBe(2);
   });
 
+  // Regression: live items/stats subscription events must reach the store WITHOUT
+  // any explicit re-fetch. This guards the contract that Home Assistant delivers
+  // the inner event payload (not the {id, type:'event', event} envelope) to the
+  // subscribeMessage callback — a mismatch there silently freezes the live card.
+  it('applies live item events (created/quantity_changed/deleted) to the list without a re-list', async () => {
+    const existing = makeItem({ id: '1', name: 'Existing', quantity: 1 });
+    const hass = makeMockHass({ items: [existing] });
+    const store = new Store(hass);
+    await store.init();
+    expect(store.state.value.items.length).toBe(1);
+
+    // An item created elsewhere appears live.
+    hass.__emit('items', 'created', { item: makeItem({ id: '2', name: 'Fresh', quantity: 3 }) });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(store.state.value.items.map((i) => i.id)).toContain('2');
+
+    // A quantity change on an existing row is reflected live.
+    hass.__emit('items', 'quantity_changed', { item: makeItem({ id: '1', name: 'Existing', quantity: 9 }) });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(store.state.value.items.find((i) => i.id === '1')?.quantity).toBe(9);
+
+    // A delete removes the row live.
+    hass.__emit('items', 'deleted', { item: makeItem({ id: '2', name: 'Fresh' }) });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(store.state.value.items.map((i) => i.id)).not.toContain('2');
+  });
+
+  it('updates statsCounts live from a stats counts event', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass);
+    await store.init();
+
+    const counts = { items_total: 42, low_stock_count: 3, checked_out_count: 1, locations_total: 7 };
+    hass.__emit('stats', 'counts', { counts });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(store.state.value.statsCounts).toEqual(expect.objectContaining({ items_total: 42, locations_total: 7 }));
+  });
+
   it('caches distinct categories and tags with counts on init', async () => {
     const items = [
       makeItem({ id: '1', category: 'Tools', tags: ['red'] }),

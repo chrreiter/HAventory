@@ -192,10 +192,12 @@ export class WSClient {
     if (opts && 'location_id' in opts) msg.location_id = opts.location_id ?? null;
     if (opts && 'include_subtree' in opts) msg.include_subtree = !!opts.include_subtree;
 
-    const unsubOrPromise = this.hass.connection.subscribeMessage((message) => {
-      // message: { id, type: 'event', event: AnyEventPayload }
-      if (!message || message.type !== 'event') return;
-      cb(message.event as AnyEventPayload);
+    const unsubOrPromise = this.hass.connection.subscribeMessage((event) => {
+      // Home Assistant's `subscribeMessage` delivers the *inner* event payload
+      // (the `event` field of the `{id, type:'event', event}` wire frame) to the
+      // callback — NOT the whole envelope. Guard only against a nullish payload.
+      if (!event) return;
+      cb(event as AnyEventPayload);
     }, msg);
 
     // Home Assistant may return either an unsubscribe function or a Promise<unsubscribe>.
