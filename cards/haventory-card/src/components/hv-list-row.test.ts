@@ -149,6 +149,24 @@ describe('hv-list-row: mobile affordances', () => {
     expect(btn?.textContent).toContain('Check in');
     expect(el.shadowRoot?.textContent).toContain('Checked out · due Jul 28');
   });
+
+  // A passed date used to render exactly like an upcoming one — same wording,
+  // same blue — so the row said nothing about being late.
+  it('says a passed due date is overdue, and colours it that way', async () => {
+    const el = await mount({ checked_out: true, due_date: '2000-01-02' }, { mobile: true });
+    const secondary = q(el, '[data-testid="row-secondary"]');
+
+    expect(secondary?.textContent).toContain('Overdue · due Jan 2, 2000');
+    expect(secondary?.classList.contains('overdue')).toBe(true);
+  });
+
+  it('leaves an upcoming due date alone', async () => {
+    const el = await mount({ checked_out: true, due_date: '2999-12-31' }, { mobile: true });
+    const secondary = q(el, '[data-testid="row-secondary"]');
+
+    expect(secondary?.textContent).toContain('Checked out · due Dec 31, 2999');
+    expect(secondary?.classList.contains('overdue')).toBe(false);
+  });
 });
 
 describe('hv-list-row: selection mode', () => {

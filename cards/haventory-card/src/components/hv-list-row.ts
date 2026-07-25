@@ -87,6 +87,12 @@ export class HVListRow extends LitElement {
       .secondary.out {
         color: var(--hv-primary-dark);
       }
+      /* A passed due date is the one thing on this line worth interrupting for,
+         and "due Jul 2" in the same blue as "due Aug 24" said nothing. */
+      .secondary.overdue {
+        color: var(--hv-error);
+        font-weight: 500;
+      }
       .dot {
         flex: none;
         width: 6px;
@@ -363,12 +369,19 @@ export class HVListRow extends LitElement {
           : null}
         <span class="names">
           <span class="name" data-testid="row-name">${item.name}</span>
-          <span class="secondary ${item.checked_out && this.mobile ? 'out' : ''}">
+          <span
+            class="secondary ${item.checked_out && this.mobile ? 'out' : ''} ${overdue && this.mobile
+              ? 'overdue'
+              : ''}"
+            data-testid="row-secondary"
+          >
             ${this.mobile && low && !item.checked_out
               ? html`<span class="dot" data-testid="row-low-dot"></span>`
               : null}
             ${this.mobile && item.checked_out
-              ? html`Checked out${item.due_date ? ` · due ${formatDate(item.due_date)}` : ''}`
+              ? html`${overdue ? 'Overdue' : 'Checked out'}${item.due_date
+                  ? ` · due ${formatDate(item.due_date)}`
+                  : ''}`
               : secondary || 'No location'}
           </span>
         </span>
