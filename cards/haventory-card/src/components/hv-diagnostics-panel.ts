@@ -5,6 +5,7 @@ import { icon } from '../ui/icons';
 import { summarizeIssues } from '../ui/health-codes';
 import { relativeTime } from '../ui/relative-time';
 import { nextZBase } from '../utils/zindex';
+import { DialogFocus } from '../ui/dialog-focus';
 import type { DegradedState, HealthResult, StatsCounts, VersionInfo } from '../store/types';
 
 /**
@@ -200,6 +201,16 @@ export class HVDiagnosticsPanel extends LitElement {
 
   @state() private _zBase = 0;
   @state() private _copied = false;
+
+
+  /** Opening a surface must put focus in it, or Escape never reaches it. */
+  private _dialogFocus = new DialogFocus();
+
+  protected updated() {
+    this._dialogFocus.sync(this.open, () =>
+      this.renderRoot.querySelector<HTMLElement>('[data-testid="diagnostics-panel"]'),
+    );
+  }
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('open') && this.open) {

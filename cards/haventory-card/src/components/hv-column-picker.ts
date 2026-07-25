@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { nextZBase } from '../utils/zindex';
+import { DialogFocus } from '../ui/dialog-focus';
 import type { ColumnKey } from '../store/columns';
 import { COLUMN_DEFS, normalizeColumns } from '../store/columns';
 
@@ -57,6 +58,16 @@ export class HVColumnPicker extends LitElement {
   @property({ type: String }) heading: string = 'Columns';
 
   @state() private _zBase: number | null = null;
+
+
+  /** Opening a surface must put focus in it, or Escape never reaches it. */
+  private _dialogFocus = new DialogFocus();
+
+  protected updated() {
+    this._dialogFocus.sync(this.open, () =>
+      this.renderRoot.querySelector<HTMLElement>('[role="dialog"]'),
+    );
+  }
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('open') && this.open) {

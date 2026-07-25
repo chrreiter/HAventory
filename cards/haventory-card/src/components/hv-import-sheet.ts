@@ -3,6 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import { nextZBase } from '../utils/zindex';
+import { DialogFocus } from '../ui/dialog-focus';
 import type { ImportBucketCounts, ImportPolicy, ImportPreview, ImportSummary } from '../store/types';
 
 const POLICIES: { id: ImportPolicy; title: string; description: string }[] = [
@@ -302,6 +303,16 @@ export class HVImportSheet extends LitElement {
   @state() private _parseError: string | null = null;
   @state() private _zBase = 0;
   @state() private _copied = false;
+
+
+  /** Opening a surface must put focus in it, or Escape never reaches it. */
+  private _dialogFocus = new DialogFocus();
+
+  protected updated() {
+    this._dialogFocus.sync(this.open, () =>
+      this.renderRoot.querySelector<HTMLElement>('[data-testid="import-sheet"]'),
+    );
+  }
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('open') && this.open) {

@@ -4,6 +4,7 @@ import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import type { IconName } from '../ui/icons';
 import { nextZBase } from '../utils/zindex';
+import { DialogFocus } from '../ui/dialog-focus';
 
 export interface OverflowMenuItem {
   id: string;
@@ -139,11 +140,20 @@ export class HVOverflowMenu extends LitElement {
   @state() private _open = false;
   @state() private _zBase = 0;
 
+  /** Opening the menu must put focus in it, or Escape never reaches it. */
+  private _dialogFocus = new DialogFocus();
+
   private _onDocPointerDown = (e: Event) => {
     // composedPath sees through the shadow root, so clicks on our own menu don't close it.
     if (e.composedPath().includes(this)) return;
     this.close();
   };
+
+  protected updated() {
+    this._dialogFocus.sync(this._open, () =>
+      this.renderRoot.querySelector<HTMLElement>('[data-testid="overflow-menu"]'),
+    );
+  }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();

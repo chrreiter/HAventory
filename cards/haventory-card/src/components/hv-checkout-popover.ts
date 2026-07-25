@@ -4,6 +4,7 @@ import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import { addDays, formatDate } from '../ui/relative-time';
 import { nextZBase } from '../utils/zindex';
+import { DialogFocus } from '../ui/dialog-focus';
 import type { Item } from '../store/types';
 
 const OFFSETS: { days: number; label: string }[] = [
@@ -174,6 +175,16 @@ export class HVCheckoutPopover extends LitElement {
 
   @state() private _due: string | null = null;
   @state() private _zBase = 0;
+
+
+  /** Opening a surface must put focus in it, or Escape never reaches it. */
+  private _dialogFocus = new DialogFocus();
+
+  protected updated() {
+    this._dialogFocus.sync(this.open, () =>
+      this.renderRoot.querySelector<HTMLElement>('[data-testid="checkout-popover"]'),
+    );
+  }
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('open') && this.open) {

@@ -6,6 +6,7 @@ import { closestMatch } from '../ui/fuzzy';
 import { describeRewrite, filterForValue, rewriteOps } from '../ui/value-rewrite';
 import type { ValueKind } from '../ui/value-rewrite';
 import { nextZBase } from '../utils/zindex';
+import { DialogFocus } from '../ui/dialog-focus';
 import { describeFailure } from './hv-bulk-bar';
 import type { Store } from '../store/store';
 import type { BulkFailure, DistinctValue, LocationTreeNode, StoreState } from '../store/types';
@@ -388,6 +389,16 @@ export class HVOrganizeDialog extends LitElement {
     super.disconnectedCallback();
     this.storeUnsub?.();
     this.storeUnsub = undefined;
+  }
+
+
+  /** Opening a surface must put focus in it, or Escape never reaches it. */
+  private _dialogFocus = new DialogFocus();
+
+  protected updated() {
+    this._dialogFocus.sync(this.open, () =>
+      this.renderRoot.querySelector<HTMLElement>('[data-testid="organize-dialog"]'),
+    );
   }
 
   protected willUpdate(changed: Map<string, unknown>) {
