@@ -693,7 +693,7 @@ export class HVOrganizeDialog extends LitElement {
           />
         </label>
         <button
-          class="hv-pill outline"
+          class="hv-pill"
           data-testid="organize-new-location"
           @click=${() => this._startLocationEdit('new')}
         >

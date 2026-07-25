@@ -136,6 +136,14 @@ describe('hv-organize-dialog: locations', () => {
     expect(q(sr, '[data-testid="location-editor"]')).toBe(null);
   });
 
+  it('gives the create action the primary treatment', async () => {
+    const { sr } = await mount({ locations });
+    const button = q(sr, '[data-testid="organize-new-location"]') as HTMLButtonElement;
+    // Outlined, it reads as secondary next to the filter box and gets missed.
+    expect(button.classList.contains('hv-pill')).toBe(true);
+    expect(button.classList.contains('outline')).toBe(false);
+  });
+
   it('refuses to save a location with no name', async () => {
     const { el, sr } = await mount({ locations });
     (q(sr, '[data-testid="organize-new-location"]') as HTMLButtonElement).click();
