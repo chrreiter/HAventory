@@ -251,16 +251,17 @@ item and deletes it (best-effort cleanup even on failure).
 Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs to
 `www/haventory/`. Real-time over WebSocket with optimistic writes throughout.
 
-- **Standard card** — one Add button and a single ⋮ menu (Select items, Organize,
-  Columns, Refresh, Diagnostics, Export backup / Export current view, Import). Live stat
-  badges are click-to-filter. Rows carry a quantity stepper, a LOW badge, an overdue
+- **Standard card** — one Add button and a single ⋮ menu (Select items, Organize, Refresh,
+  Diagnostics, Export backup / Export current view, Import); Columns is offered in the full
+  view, which is the only surface it changes. Live stat badges — items, low stock, overdue,
+  checked out — are click-to-filter. Rows carry a quantity stepper, a LOW badge, an overdue
   check-out chip, and hover actions.
 - **Filters** — a collapsible panel exposing the whole backend filter object: location
   (from a real tree), area, include-subtree, category chips with counts, tag chips with an
-  any/all toggle, low-stock-only, checked-out, no-location, updated-since / created-since,
-  and sort across all six sortable fields. "Low stock" (a filter) and "Low stock first"
-  (an ordering) are separate, independently clearable controls. Active filters appear as
-  removable chips.
+  any/all toggle, low-stock-only, checked-out, overdue, no-location, updated / created
+  windows (each row's ≥ flips to ≤ for "before"), and sort across all six sortable fields.
+  "Low stock" (a filter) and "Low stock first" (an ordering) are separate, independently
+  clearable controls. Active filters appear as removable chips.
 - **Editing** — the row expands in place; there is no dialog chain. Full field parity:
   name, description, quantity, low-stock threshold, category, tags, location (picked from
   a tree inside the form), checked-out with due date, inspection date, and typed
@@ -268,15 +269,21 @@ Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs t
   a concurrent edit surfaces as a conflict.
 - **Full view** — a fullscreen workspace with a coloured app bar, a **location tree
   sidebar** carrying the backend's own per-location counts, an orphans row, and a sortable
-  table. Only columns the backend can sort by get a clickable header.
+  table. Only columns the backend can sort by get a clickable header. With a filter on,
+  each sidebar row reads "4 / 37" — matches over total — so you can see where the matches
+  are rather than a total that never moves. The counts ignore the *location* filter, since
+  the sidebar is how you pick one.
 - **Multi-select and bulk actions** — move, add/remove tags, set category, adjust
   quantity, check out/in and delete over a selection. Work is chunked so progress is
   determinate and cancellable, and the result is reported *per operation*: "39 of 42
   succeeded", every failure named with its reason and a retry scoped to just those.
   Select-all covers loaded rows only and says so, with an explicit "load the rest" path.
-- **Organize dialog** — Locations / Categories / Tags in one place. Locations edit inline
-  with a guarded delete that explains what is in the way. Category and tag rename, merge
-  and removal are batch rewrites over every affected item, with the same progress and
+- **Organize dialog** — Locations / Categories / Tags in one place, each row offering the
+  same moves: an "N items" link that opens the filtered list in the full view, plus rename,
+  merge and delete. Locations keep their collapsible tree and edit inline, with a guarded
+  delete that explains what is in the way. Category and tag rename, merge and removal are
+  batch rewrites over every affected item; a location merge re-files that location's items,
+  re-parents its children and deletes the husk — all with the same progress and
   partial-failure reporting.
 - **Check-out** invites an optional due date (+1 / +7 / +30 day suggestions) rather than
   silently checking out with none — the date is what makes overdue highlighting mean
