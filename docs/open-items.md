@@ -33,6 +33,7 @@ Ordered by impact.
 | 2 | **Triage the 19 Dependabot security alerts on `main`** (`/security/dependabot`). Pre-existing, flagged as unrelated to #76 but still open. | #76 | Medium (security) | S–M |
 | 3 | **Enable release automation.** `release-please` is config-ready but dormant — uncomment the `push` trigger in `.github/workflows/release-please.yml` and run the release flow. Needed to cut a 1.0. | #74, #76 | Medium (release-blocking) | S |
 | 4 | **HACS publication** (Phase 3 "Polish & HACS"). Distribution path for a 1.0. | README Phase 3 | Medium (distribution) | M |
+| 32 | **Audit every logged error for its severity classification, then apply one policy.** Trigger: `_error_message` (`ws.py:96-101`) logs `ConflictError` at `logging.ERROR` **with `exc_info=True`**, so an ordinary optimistic-concurrency rejection — a contract-defined, client-recoverable outcome (`code: "conflict"`, the moral equivalent of an HTTP 409) — writes a red traceback into the user's HA log that is indistinguishable from a crash and will earn false bug reports. Settle the policy first: ERROR only where an operator must act (`storage_error`, `unknown_error`), WARNING for client-recoverable rejections (`validation_error`, `not_found`, `conflict`, `rate_limited`), and `exc_info` only where a traceback adds information the message does not. Then apply it across every logging call site — `ws.py` (including the bulk-op failure log at `ws.py:1375`), `services.py`, `storage.py`, `repository.py`, `__init__.py`, `import_export.py` — and extend `tests/test_ws_logging_offline.py` to assert the level and `exc_info`, not just the `op` context. Do the audit before the one-line fix so the classification lands once. | dev-log review 2026-07-25 | Low–Med (support burden) | S–M |
 | 5 | **Add `tsc --noEmit` (typecheck) to the CI gate.** It is clean (#89/#91) but still not gated, so card type regressions can slip through. | #74, `docs/frontend_architecture.md` | Low–Med | S |
 | 6 | **Pin the service-registration pattern with a test.** `services.py` registers sync lambdas that return coroutines; the integration suite passes, but a targeted service-call integration test would guard it. | #91 | Low–Med (correctness) | S |
 | 7 | **GitHub repo hardening (manual, GitHub UI):** branch protection/ruleset on `main`, secret scanning + push protection, enable Discussions, run the `labels` workflow once, set a social-preview image. | #76 | Low | S (manual) |
@@ -109,6 +110,12 @@ Ordered by impact.
   rollback, backup and removal paths while drafting `release_testing_plan.md` — supplied
   items 25–31. Items 25 and 26 are confirmed from source, not hypotheses; the rest are
   release chores. The scenarios that exercise them are cross-referenced in the plan.
+- A **dev-log review (2026-07-25)** of the Docker test instance supplied item 32. All 49
+  `version conflict` ERRORs in that container's log are test fixtures (the `driver.py smoke`
+  stale-version step and the online smoke/stress scripts — signatures `expected 1, actual 2`,
+  `expected 1, actual 6`, `expected 999, actual 1`); none originated from the card. The
+  conflict path itself is correct, so item 32 is about how loudly it is logged, not about
+  the behavior.
 - A later **gotcha triage of the `run-haventory`/`test-haventory` skills** surfaced item 24
   (lenient `item/list` filters). The other skill gotchas are environmental (broken `.venv`,
   partial `node_modules`, Python 3.14 requirement) or expected behavior (optimistic-concurrency
