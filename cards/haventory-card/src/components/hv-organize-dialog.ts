@@ -182,6 +182,11 @@ export class HVOrganizeDialog extends LitElement {
         font: 400 12px var(--hv-font);
         padding: 0;
       }
+      .draft-note {
+        font: 400 12px var(--hv-font);
+        color: var(--hv-text-tertiary);
+        font-style: italic;
+      }
       .row-actions {
         margin-left: auto;
         display: flex;
@@ -371,6 +376,10 @@ export class HVOrganizeDialog extends LitElement {
   @state() private _rewrite: RewriteState | null = null;
   @state() private _confirmRemove: string | null = null;
   @state() private _sheetValue: string | null = null;
+  /** The "New category"/"New tag" row, open with the name being typed. */
+  @state() private _creatingValue = false;
+  @state() private _newValue = '';
+  @state() private _newValueError: string | null = null;
 
   private storeUnsub?: () => void;
 
@@ -421,6 +430,9 @@ export class HVOrganizeDialog extends LitElement {
     this._locError = null;
     this._rewrite = null;
     this._sheetValue = null;
+    this._creatingValue = false;
+    this._newValue = '';
+    this._newValueError = null;
   }
 
   private _close = () => {
@@ -511,6 +523,31 @@ export class HVOrganizeDialog extends LitElement {
     const list = this.tab === 'tags' ? (distinct?.tags ?? []) : (distinct?.categories ?? []);
     const needle = this._filter.trim().toLowerCase();
     return needle ? list.filter((v) => v.value.toLowerCase().includes(needle)) : list;
+  }
+
+  /** Singular noun for the tab, for button labels and messages. */
+  private get _noun(): string {
+    return this.tab === 'tags' ? 'tag' : 'category';
+  }
+
+  /** True while the value exists only on the card, with no item carrying it. */
+  private _isDraft(value: string): boolean {
+    return this.store?.isDraftValue(this._kind, value) ?? false;
+  }
+
+  private _createValue() {
+    const name = this._newValue.trim();
+    if (!name) {
+      this._newValueError = `A ${this._noun} needs a name.`;
+      return;
+    }
+    if (!this.store?.addDraftValue(this._kind, name)) {
+      this._newValueError = `"${name}" already exists.`;
+      return;
+    }
+    this._creatingValue = false;
+    this._newValue = '';
+    this._newValueError = null;
   }
 
   private _startValueEdit(value: string, mode: 'rename' | 'merge') {
@@ -831,6 +868,55 @@ export class HVOrganizeDialog extends LitElement {
     </div>`;
   }
 
+  private _renderValueCreator() {
+    return html`<div class="expander" data-testid="value-create">
+      <label style="display:flex;align-items:center;gap:8px">
+        <span class="hv-sr-only">New ${this._noun}</span>
+        <input
+          class="control"
+          data-testid="new-value-name"
+          placeholder=${`New ${this._noun}…`}
+          .value=${this._newValue}
+          @input=${(e: Event) => {
+            this._newValue = (e.target as HTMLInputElement).value;
+            this._newValueError = null;
+          }}
+          @keydown=${(e: KeyboardEvent) => {
+            if (e.key === 'Enter') this._createValue();
+          }}
+        />
+      </label>
+      ${this._newValueError
+        ? html`<div class="failure" role="alert" data-testid="new-value-error">${this._newValueError}</div>`
+        : null}
+      <span class="note">
+        A ${this._noun} exists through the items using it — there is nothing to create on the server. This
+        one is kept on the card and offered while editing items, until an item takes it.
+      </span>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button
+          class="hv-text-button"
+          data-testid="new-value-cancel"
+          @click=${() => {
+            this._creatingValue = false;
+            this._newValueError = null;
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          class="hv-pill"
+          data-testid="new-value-create"
+          ?disabled=${!this._newValue.trim()}
+          @click=${() => this._createValue()}
+        >
+          Create
+        </button>
+      </div>
+    </div>`;
+  }
+
   private _renderValuesTab() {
     const values = this._values;
     const noun = this.tab === 'tags' ? 'tags' : 'categories';
@@ -851,23 +937,50 @@ export class HVOrganizeDialog extends LitElement {
         <span style="font-size:12.5px;color:var(--hv-text-secondary)" data-testid="organize-value-count">
           ${values.length} ${noun}
         </span>
+        <button
+          class="hv-pill"
+          data-testid="organize-new-value"
+          @click=${() => {
+            this._creatingValue = true;
+            this._newValue = '';
+            this._newValueError = null;
+            this._editingValue = null;
+          }}
+        >
+          ${icon('plus', 15)}New ${this._noun}
+        </button>
       </div>
       <div class="body">
+        ${this._creatingValue ? this._renderValueCreator() : null}
         ${this._rewrite ? this._renderRewrite() : null}
         ${values.length
           ? values.map(
               (v) => html`
                 <div class="value-row" data-testid="value-row" data-value=${v.value}>
                   <span class="value-chip">${v.value}</span>
-                  <button
-                    class="count-link"
-                    data-testid="value-count"
-                    @click=${() => this._showValue(v.value)}
-                  >
-                    ${v.count} items
-                  </button>
+                  ${this._isDraft(v.value)
+                    ? html`<span class="draft-note" data-testid="value-draft">
+                        new · not saved until an item uses it
+                      </span>`
+                    : html`<button
+                        class="count-link"
+                        data-testid="value-count"
+                        @click=${() => this._showValue(v.value)}
+                      >
+                        ${v.count} items
+                      </button>`}
                   <span class="row-actions">
-                    ${this.mobile
+                    ${this._isDraft(v.value)
+                      ? html`<button
+                          class="danger"
+                          data-testid="value-discard"
+                          aria-label=${`Discard ${v.value}`}
+                          title="Discard"
+                          @click=${() => this.store?.removeDraftValue(this._kind, v.value)}
+                        >
+                          ${icon('del', 16)}
+                        </button>`
+                      : this.mobile
                       ? html`<button
                           data-testid="value-more"
                           aria-label=${`Actions for ${v.value}`}

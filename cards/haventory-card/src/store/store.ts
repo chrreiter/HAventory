@@ -5,6 +5,7 @@ import type {
   BulkOperation,
   BulkOutcome,
   DegradedState,
+  DistinctValue,
   DistinctValues,
   ExportDocument,
   HassLike,
@@ -181,6 +182,10 @@ export class Store {
   private retryBaseMs: number;
   private consecutiveTransportFailures = 0;
   private treeRefreshHandle: ReturnType<typeof setTimeout> | null = null;
+  /** Last untouched `distinct_values` result, so drafts can be re-merged. */
+  private serverDistinct: DistinctValues | null = null;
+  /** Values named in the organize dialog that no item carries yet. */
+  private drafts: { categories: string[]; tags: string[] } = { categories: [], tags: [] };
 
   constructor(hass: HassLike, options: StoreOptions = {}) {
     this.ws = new WSClient(hass);
@@ -375,8 +380,71 @@ export class Store {
 
   /** Refresh distinct categories/tags with counts (source for autocomplete). */
   async refreshDistinctValues() {
-    const distinct = await this.run(() => this.ws.distinctValues());
-    this.stateObs.set({ distinctValuesCache: distinct as DistinctValues });
+    const distinct = (await this.run(() => this.ws.distinctValues())) as DistinctValues;
+    this.serverDistinct = distinct;
+    // A draft the backend now knows about is no longer a draft.
+    const known = (list: DistinctValue[], value: string) =>
+      list.some((v) => v.value.toLowerCase() === value.toLowerCase());
+    this.drafts = {
+      categories: this.drafts.categories.filter((v) => !known(distinct.categories, v)),
+      tags: this.drafts.tags.filter((v) => !known(distinct.tags, v)),
+    };
+    this.publishDistinct();
+  }
+
+  /**
+   * Name a category or tag before any item carries it.
+   *
+   * There is nothing to create server-side — `distinct_values` is derived from
+   * the items — so the value is held here at count 0 and offered as a
+   * suggestion until an item adopts it, at which point the refresh above drops
+   * the draft in favour of the real one. Returns false for a blank name or one
+   * that already exists.
+   */
+  addDraftValue(kind: 'category' | 'tag', raw: string): boolean {
+    const value = kind === 'tag' ? raw.trim().toLowerCase() : raw.trim();
+    if (!value) return false;
+    const key = kind === 'tag' ? 'tags' : 'categories';
+    const current = this.state.value.distinctValuesCache?.[key] ?? [];
+    if (current.some((v) => v.value.toLowerCase() === value.toLowerCase())) return false;
+    this.drafts = { ...this.drafts, [key]: [...this.drafts[key], value] };
+    this.publishDistinct();
+    return true;
+  }
+
+  /** Drop a value named here that never made it onto an item. */
+  removeDraftValue(kind: 'category' | 'tag', value: string): void {
+    const key = kind === 'tag' ? 'tags' : 'categories';
+    this.drafts = {
+      ...this.drafts,
+      [key]: this.drafts[key].filter((v) => v.toLowerCase() !== value.toLowerCase()),
+    };
+    this.publishDistinct();
+  }
+
+  /** True while this value only exists on the card. */
+  isDraftValue(kind: 'category' | 'tag', value: string): boolean {
+    const key = kind === 'tag' ? 'tags' : 'categories';
+    return this.drafts[key].some((v) => v.toLowerCase() === value.toLowerCase());
+  }
+
+  /** Publish the server's distinct values with the drafts folded in. */
+  private publishDistinct() {
+    const server = this.serverDistinct;
+    if (!server) return;
+    const merge = (list: DistinctValue[], drafts: string[]): DistinctValue[] =>
+      drafts.length
+        ? [...list, ...drafts.map((value) => ({ value, count: 0 }))].sort((a, b) =>
+            a.value.toLowerCase().localeCompare(b.value.toLowerCase()),
+          )
+        : list;
+    this.stateObs.set({
+      distinctValuesCache: {
+        ...server,
+        categories: merge(server.categories, this.drafts.categories),
+        tags: merge(server.tags, this.drafts.tags),
+      },
+    });
   }
 
   /** Version banner for the diagnostics panel. */

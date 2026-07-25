@@ -233,6 +233,68 @@ describe('hv-organize-dialog: tags and categories', () => {
     expect(el.open).toBe(false);
   });
 
+  async function create(el: HVOrganizeDialog, sr: ShadowRoot, name: string) {
+    (q(sr, '[data-testid="organize-new-value"]') as HTMLButtonElement).click();
+    await settle(el);
+    const input = q(sr, '[data-testid="new-value-name"]') as HTMLInputElement;
+    input.value = name;
+    input.dispatchEvent(new Event('input'));
+    await settle(el);
+    (q(sr, '[data-testid="new-value-create"]') as HTMLButtonElement).click();
+    await settle(el);
+  }
+
+  it('names a new category, which then shows up as a suggestion', async () => {
+    const { el, store, sr } = await mount({ items, tab: 'categories' });
+    await create(el, sr, 'Spare parts');
+
+    const rows = all(sr, '[data-testid="value-row"]').map((r) => r.dataset.value);
+    expect(rows).toEqual(['Consumables', 'Spare parts', 'Tools']);
+    // Nothing to create server-side, so it has to be honest about that.
+    expect(q(sr, '[data-testid="value-draft"]')?.textContent).toContain('not saved');
+    expect(store.state.value.distinctValuesCache?.categories).toContainEqual({
+      value: 'Spare parts',
+      count: 0,
+    });
+  });
+
+  it('names a new tag the way the backend would store it', async () => {
+    const { el, sr } = await mount({ items, tab: 'tags' });
+    await create(el, sr, 'Power Tools');
+    expect(all(sr, '[data-testid="value-row"]').map((r) => r.dataset.value)).toContain('power tools');
+  });
+
+  it('refuses a name that is already in use', async () => {
+    const { el, sr } = await mount({ items, tab: 'categories' });
+    await create(el, sr, 'tools');
+
+    expect(q(sr, '[data-testid="new-value-error"]')?.textContent).toContain('already');
+    expect(all(sr, '[data-testid="value-row"]')).toHaveLength(2);
+  });
+
+  it('discards a named value that never made it onto an item', async () => {
+    const { el, store, sr } = await mount({ items, tab: 'tags' });
+    await create(el, sr, 'seasonal');
+
+    const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'seasonal')!;
+    (row.querySelector('[data-testid="value-discard"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(all(sr, '[data-testid="value-row"]').map((r) => r.dataset.value)).not.toContain('seasonal');
+    expect(store.state.value.distinctValuesCache?.tags.map((t) => t.value)).not.toContain('seasonal');
+  });
+
+  it('offers no rename or merge on a value no item carries yet', async () => {
+    const { el, sr } = await mount({ items, tab: 'tags' });
+    await create(el, sr, 'seasonal');
+    const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'seasonal')!;
+
+    // Both rewrite every matching item, and there are none — they would look
+    // like they worked and do nothing.
+    expect(row.querySelector('[data-testid="value-rename"]')).toBe(null);
+    expect(row.querySelector('[data-testid="value-merge"]')).toBe(null);
+  });
+
   it('filters the value list', async () => {
     const { el, sr } = await mount({ items, tab: 'tags' });
     const filter = q(sr, '[data-testid="organize-filter"]') as HTMLInputElement;
