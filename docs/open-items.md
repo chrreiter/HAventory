@@ -1,7 +1,9 @@
 # Open Items — future work & identified gaps from closed PRs
 
 Compiled from a sweep of **all closed pull requests** (#1–#91) plus the follow-up
-notes they reference in `CLAUDE.md`, `README.md`, and `docs/`. Pure Dependabot /
+notes they reference in `CLAUDE.md`, `README.md`, and `docs/`, and extended by the
+**release-readiness review (2026-07-25)** that produced
+[`release_testing_plan.md`](release_testing_plan.md). Pure Dependabot /
 tooling-bump PRs (the majority of the closed set) carry no future-work notes and are
 excluded. Each item records its **source PR**, **impact**, **effort**, and whether it
 is **pre-v1.0** (should land before a 1.0 release) or **post-v1.0** (enhancement /
@@ -10,6 +12,9 @@ non-blocking).
 - **Impact** — High / Medium / Low (user-facing or release/correctness/security risk).
 - **Effort** — S (≲ half a day) · M (~1–3 days) · L (multi-day).
 - Status verified against the working tree at `main` @ WP4 (`390cba6`).
+- **Item numbers are stable and append-only** — new items get the next free number
+  rather than renumbering the list, so references from PRs and docs keep resolving.
+  Read each table's own ordering, not the numbering, for priority.
 
 > Already resolved along the way (not listed below): type-hardening `ws.py`/`repository.py`
 > + dropping the mypy override (done in #91/WP4); the `*.sh` CRLF guard, now present in
@@ -32,6 +37,27 @@ Ordered by impact.
 | 6 | **Pin the service-registration pattern with a test.** `services.py` registers sync lambdas that return coroutines; the integration suite passes, but a targeted service-call integration test would guard it. | #91 | Low–Med (correctness) | S |
 | 7 | **GitHub repo hardening (manual, GitHub UI):** branch protection/ruleset on `main`, secret scanning + push protection, enable Discussions, run the `labels` workflow once, set a social-preview image. | #76 | Low | S (manual) |
 | 8 | **`storage.py` debounced persist uses bare `asyncio.create_task`** instead of `hass.async_create_background_task(...)` (HA guidance: tracked tasks are cancelled/awaited on shutdown). Note: this path is currently production-dead (WS handlers persist immediately), so low impact. | #73 (WP0.5), #74, #91 | Low | S |
+
+### Release-readiness tasks (from the 2026-07-25 review)
+
+Work items — **not** tests — surfaced while drafting
+[`release_testing_plan.md`](release_testing_plan.md). Two are confirmed defects read
+straight out of the code (25, 26); the rest are release chores that must be done before
+a 1.0 regardless of how the manual test run goes. Ordered by impact.
+
+| # | Item | Source | Impact | Effort |
+|---|------|--------|--------|--------|
+| 25 | **Storage silently accepts a downgrade and relabels newer data as older.** In `DomainStore.async_migrate_if_needed` (`storage.py:152-198`), a stored `schema_version` *newer* than `CURRENT_SCHEMA_VERSION` falls through `migrations.migrate` untouched (it early-returns when `from_version > to_version`), after which storage stamps `migrated["schema_version"] = to_version` and **saves it back** — so newer data is silently relabeled as older, and `_validate_storage_payload` (`__init__.py:251`) then passes because the versions match. Hits on integration rollback and on restoring a newer backup into an older build. `import_export.py:241` already handles the same case correctly (refuses the document); storage should refuse just as loudly instead of writing. Exercised by release-test D8/E4. | release review 2026-07-25 | **High (data integrity)** | S |
+| 26 | **Lovelace card resource URL has no cache-busting version.** `_async_register_frontend_resource` (`__init__.py:170`) registers a bare `/local/haventory/haventory-card.js`, so after an integration update browsers and the companion-app webview can keep serving the previous bundle — an old card against a new backend, which surfaces to users as arbitrary breakage. Append `?v=<manifest version>` and update the existing resource entry when the version changes. Exercised by release-test D9. | release review 2026-07-25 | Medium (user-facing) | S |
+| 27 | **Config-entry removal leaves the Lovelace resource behind.** `__init__.py` implements `async_unload_entry` but no `async_remove_entry`, so removing the integration leaves the registered `/local/haventory/haventory-card.js` resource (and the `www` asset) in place, pointing at a file that may no longer exist. Decide the removal contract — clean up the resource, keep the store (so a re-add restores data), and document both. Exercised by release-test A5. | release review 2026-07-25 | Medium | S |
+| 28 | **YAML-mode Lovelace is undocumented.** Resource auto-registration is skipped in YAML mode (`__init__.py:224-227`) — correctly, but the card then simply never loads and the user gets only a log line. Document the manual `resources:` entry in the README installation section. Exercised by release-test A3. | release review 2026-07-25 | Medium (docs) | S |
+| 29 | **The declared minimum HA version is unverified.** `hacs.json` claims `2026.7.0`; nothing has ever been run against it (CI runs the HA-less offline suite, and the integration suite pins whatever `requirements-integration.txt` resolves). Either verify on a pinned `2026.7.0` instance (release-test D6) or correct the claim, and consider pinning the integration-test HA version to the declared floor so CI defends it. | release review 2026-07-25 | Medium (release claim) | S–M |
+| 30 | **Version numbers are still `0.0.1`.** `manifest.json` `version` (and `INTEGRATION_VERSION`, surfaced by `haventory/version` and stamped into export documents) must be bumped for the release and kept in sync with the release tag — which is what item 3 (release-please) is meant to automate. Add a check that the manifest version, `.release-please-manifest.json`, and the tag agree. | release review 2026-07-25 | Medium (release-blocking) | S |
+| 31 | **No published "Known limitations / not supported" list.** A 1.0 should state up front: the supported item-count ceiling (see item 19 and release-test F3), that no HA bus events are fired so automations can only *call* services and cannot trigger on inventory changes (release-test I3), that WS commands are not admin-gated so any logged-in HA user can mutate the inventory (release-test G3), and whatever rate-limiting posture item 1 lands on. Add it to the README. | release review 2026-07-25 | Low–Med (docs) | S |
+
+> Items 1 (card swallows `rate_limited` on subscribe), 2 (Dependabot alerts), 3
+> (release-please) and 4 (HACS publication) above are also release-readiness tasks and
+> are referenced from the test plan; they are already tracked and are not duplicated here.
 
 ---
 
@@ -79,6 +105,10 @@ Ordered by impact.
   items 19–23. The two confirmed breakages from the same run — the card not live-updating from
   WS subscriptions, and "Subscription not found" teardown rejections — are addressed separately
   in PRs #93 and #94.
+- The **release-readiness review (2026-07-25)** — a code read of the install, update,
+  rollback, backup and removal paths while drafting `release_testing_plan.md` — supplied
+  items 25–31. Items 25 and 26 are confirmed from source, not hypotheses; the rest are
+  release chores. The scenarios that exercise them are cross-referenced in the plan.
 - A later **gotcha triage of the `run-haventory`/`test-haventory` skills** surfaced item 24
   (lenient `item/list` filters). The other skill gotchas are environmental (broken `.venv`,
   partial `node_modules`, Python 3.14 requirement) or expected behavior (optimistic-concurrency
