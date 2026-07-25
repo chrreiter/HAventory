@@ -56,12 +56,47 @@ restarts HA (~30 s), and initialises the config entry via WS. Run from Git Bash:
 ```bash
 set -a; . ./.env; set +a
 bash scripts/reload_addon.sh --container home-assistant --sleep 30 --tail-logs
+uv run python .claude/skills/run-haventory/pin_resource.py   # <- always
 ```
 
 Success looks like: `{"ok": true, "version": {...}}` plus a
 `Storage health: schema_version=N items=N locations=N` debug log line.
 Backend-only change and HA already has the current card? The same script is still the
 path — it redeploys both; there is no partial-deploy variant.
+
+**`pin_resource.py` is not optional after a card change.** HA serves `/local/` with
+`Cache-Control: public, max-age=2678400` (31 days, no revalidation), so the browser
+keeps running the *old* card from disk cache even though the new file is on the server.
+The script re-registers the Lovelace resource as
+`/local/haventory/haventory-card.js?v=<content-hash>` — a new build is a new URL, which
+no cache can satisfy — and collapses the duplicate resource HA's restart re-adds. To
+confirm the server itself has the new bytes:
+
+```bash
+sha256sum cards/www/haventory/haventory-card.js
+curl -s "$HA_BASE_URL/local/haventory/haventory-card.js" | sha256sum   # must match
+```
+
+### Wipe HAventory from the dev HA (fresh-start testing)
+
+`smoke_online.sh` with `HA_CONTAINER` set only removes the store file. For a full purge —
+data, config entry, Lovelace resource, deployed code — remove the config entry via REST
+first (so the integration unloads and can't flush the store back out on shutdown):
+
+```bash
+ENTRY=$(curl -s -H "Authorization: Bearer $HA_TOKEN" \
+  "$HA_BASE_URL/api/config/config_entries/entry" \
+  | python -c 'import json,sys; print(next(e["entry_id"] for e in json.load(sys.stdin) if e["domain"]=="haventory"))')
+curl -s -X DELETE -H "Authorization: Bearer $HA_TOKEN" \
+  "$HA_BASE_URL/api/config/config_entries/entry/$ENTRY"
+docker exec home-assistant sh -lc \
+  'rm -f /config/.storage/haventory_store*; rm -rf /config/custom_components/haventory /config/www/haventory'
+```
+
+Then redeploy as above. A clean result logs `Storage health: schema_version=N items=0
+locations=0`. (`grep -il haventory /config/.storage/*` still matches
+`core.entity_registry` if the HA instance itself is named "HAventory Dev" — that is the
+weather entity's `original_name`, not a leftover.)
 
 ## Run (agent path)
 
@@ -128,6 +163,18 @@ clean-start mode), then `Online smoke test completed successfully.`
 
 ## Gotchas
 
+- **A card change you can't see in the browser is almost always the 31-day
+  `/local/` cache** — run `pin_resource.py` (see Deploy) before concluding the fix
+  didn't work. Hard-reload (Ctrl+Shift+R) also works, once.
+- **HA's service worker reloads the page ~30–90 s into a fresh browser context**,
+  destroying Playwright's JS execution context mid-run. It looks exactly like a card
+  crash but leaves no console output and no HA log entry. `screenshot.mjs` blocks
+  service workers for this reason; the resulting single `navigator.serviceWorker is
+  undefined` console error comes from HA's own bundle, not the card.
+- **HA dark mode is independent of the OS `prefers-color-scheme`** — a card has to be
+  checked in all four combinations. Drive HA's side with a `selectedTheme`
+  localStorage entry (`{"dark":true}`) before load, the OS side with
+  `page.emulateMedia({ colorScheme })`.
 - **`HA_CONTAINER` turns `smoke_online.sh` destructive**: when set, the script
   `rm -f`s `haventory_store` inside that container and restarts HA before testing —
   all dev items/locations are gone. Leave it unset unless you *want* a wiped store.

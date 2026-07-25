@@ -47,7 +47,15 @@ const urlPath = flag("--path", "/lovelace/default_view");
 
 // --- drive ---------------------------------------------------------------
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+// HA's service worker activates ~30-90s into a fresh context and reloads the
+// page, which kills the JS execution context mid-run and looks exactly like a
+// card crash. Blocking it costs one harmless `navigator.serviceWorker` console
+// error from HA's own bundle.
+const context = await browser.newContext({
+  viewport: { width: 1280, height: 900 },
+  serviceWorkers: "block",
+});
+const page = await context.newPage();
 
 const consoleErrors = [];
 page.on("console", (msg) => {
@@ -88,7 +96,11 @@ await page.waitForTimeout(2500); // let the card's WS subscription deliver data
 
 const searchText = flag("--search", null);
 if (searchText !== null) {
-  const search = page.locator('haventory-card input[placeholder="Search"]');
+  // Revamped card: [data-testid="search-input"], placeholder is dynamic
+  // ("Search 560 matching items…"). Legacy POC card: placeholder="Search".
+  const search = page
+    .locator('haventory-card [data-testid="search-input"], haventory-card input[placeholder^="Search"]')
+    .first();
   await search.fill(searchText);
   await page.waitForTimeout(1500); // debounce + round-trip through the WS filter
 }
