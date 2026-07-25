@@ -11,6 +11,12 @@ Out of scope: feature work, and anything tracked as **post-v1.0** in
 [`open-items.md`](open-items.md). Pre-v1.0 *tasks* (fixes/docs/release chores identified
 alongside this plan) also live in `open-items.md` — this file is tests only.
 
+**Sequencing.** The run belongs after v1.0 feature freeze. One scenario has a hard
+prerequisite: **D6 cannot run until the minimum supported HA version is actually decided**
+(open item 29) — the `2026.7.0` currently in `hacs.json` is a stale leftover from an earlier
+work package, not a verified floor, and the real number can only be derived once the final
+feature set fixes which HA APIs are used.
+
 ---
 
 ## Exit criteria
@@ -35,7 +41,7 @@ A release is "ready" when **all** of the following hold:
 |-----|------|----------|
 | **ENV-A** | Personal production HA instance, real data, real hardware | Everything except destructive scenarios (D8, E2–E4) |
 | **ENV-B** | Throwaway HA in Docker (`scripts/reload_addon.sh`, `run-haventory` skill) | Destructive + adversarial scenarios; YAML-mode Lovelace |
-| **ENV-C** | Docker HA pinned to the **declared minimum** (`2026.7.0` per `hacs.json`) | D6 — validates the floor claim |
+| **ENV-C** | Docker HA pinned to the **minimum supported version — once that number is actually set** (open item 29). The `2026.7.0` currently in `hacs.json` is a stale leftover, not a verified floor; the real minimum is decided after v1.0 is feature-complete | D6 — validates the floor |
 | **ENV-D** | Docker HA restored from an **ENV-A production backup** | E2–E4 restore scenarios, without risking ENV-A |
 
 Clients to cover: desktop Chrome, one of Firefox/Safari desktop, **iOS companion app**,
@@ -142,7 +148,7 @@ Run `haventory/health` after **each** of these, and snapshot the store around D7
 | D3 | Config-entry reload (no HA restart) | Reload succeeds; subscriptions re-established; no duplicate WS handler registration | ✅ |
 | D4 | HA minor update (current stable → next stable) with HAventory installed | Setup succeeds; no deprecation warnings from `custom_components.haventory` | ✅ |
 | D5 | HA **next beta** | Same; any breakage is filed before it reaches stable | |
-| D6 | Declared minimum HA `2026.7.0` (ENV-C) | Integration sets up and the full CRUD path works — otherwise the declared floor is wrong (open item 29) | ✅ |
+| D6 | Minimum supported HA (ENV-C). **Blocked on open item 29** — the floor has not been set yet, and `hacs.json`'s `2026.7.0` is stale. Run this against whatever number the post-feature-freeze decision lands on | Integration sets up and the full CRUD path works on the declared floor; if it does not, the floor is wrong and must be raised before release | ✅ |
 | D7 | Integration update N → N+1 **with real data**, including a schema migration | Migration runs once, is idempotent on a second restart, data intact, `health` healthy | ✅ |
 | D8 | Integration **rollback** N+1 → N (ENV-B only) | Newer-schema data is either migrated down or **refused loudly** — it must not be silently relabeled. *Known defect*, open item 25 | ✅ |
 | D9 | Card update with a warm browser cache: update the integration, then reload normally (no hard refresh), on desktop **and** in the companion app | New card version actually loads; check `haventory/version` vs. the card build. *Suspected failure* — the resource URL has no cache-busting query, open item 26 | ✅ |
