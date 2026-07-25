@@ -734,10 +734,16 @@ describe('hv-card-shell: full view', () => {
     expect(fullView(sr).open).toBe(false);
   });
 
-  it('has no expand affordance on mobile', async () => {
-    const { sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
-    expect(sr.querySelector('[data-testid="expand-toggle"]')).toBe(null);
-    expect(sr.querySelector('[data-testid="open-full-view"]')).toBe(null);
+  it('keeps the expand toggle on a narrow card, where only "select items" led there', async () => {
+    // "mobile" means the *card* is narrow, not the screen: a narrow card in a
+    // wide dashboard is exactly when the full view is worth opening, and the
+    // only route to it used to be the overflow menu's "Select items".
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+    expect(sr.querySelector('[data-testid="open-full-view"]'), 'footer link stays desktop-only').toBe(null);
+
+    (sr.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(fullView(sr).open).toBe(true);
   });
 
   it('routes the full view menu through the card, exactly once', async () => {

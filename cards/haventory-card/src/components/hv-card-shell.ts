@@ -936,20 +936,18 @@ export class HVCardShell extends LitElement {
           ${icon('tune', 19)}
           ${filterCount > 0 ? html`<span class="dot" data-testid="filter-active-dot"></span>` : null}
         </button>
-        ${mobile
-          ? null
-          : html`<button
-              class="icon-toggle"
-              data-testid="expand-toggle"
-              aria-label="Open full view"
-              aria-expanded=${String(this._fullViewOpen)}
-              title="Open full view"
-              @click=${() => {
-                this._fullViewOpen = true;
-              }}
-            >
-              ${icon('arrowExpand', 19)}
-            </button>`}
+        <button
+          class="icon-toggle"
+          data-testid="expand-toggle"
+          aria-label="Open full view"
+          aria-expanded=${String(this._fullViewOpen)}
+          title="Open full view"
+          @click=${() => {
+            this._fullViewOpen = true;
+          }}
+        >
+          ${icon('arrowExpand', 19)}
+        </button>
       </div>
 
       ${filterCount > 0

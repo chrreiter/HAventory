@@ -169,6 +169,17 @@ export class HVFullView extends LitElement {
         grid-template-columns: 264px 1fr;
         min-height: 0;
       }
+      /* Now reachable from a narrow card, so it can land on a phone-width
+         viewport: there is no room for a 264px tree beside the table, and the
+         app bar's search and filters still cover navigation. */
+      @media (max-width: 700px) {
+        .body {
+          grid-template-columns: 1fr;
+        }
+        .sidebar {
+          display: none;
+        }
+      }
       .sidebar {
         background: var(--hv-page);
         border-right: 1px solid var(--hv-divider);
