@@ -111,7 +111,10 @@ describe('hv-organize-dialog: locations', () => {
     const { sr } = await mount({ items, locations });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
 
-    expect(tree.shadowRoot?.querySelector('[data-testid="tree-count"]')?.textContent?.trim()).toBe('1');
+    // The count names its unit here, exactly as the category and tag rows do.
+    expect(tree.shadowRoot?.querySelector('[data-testid="tree-count"]')?.textContent?.trim()).toBe(
+      '1 item',
+    );
     expect(tree.shadowRoot?.querySelector('[data-testid="tree-edit"]')).toBeTruthy();
   });
 
@@ -211,6 +214,127 @@ describe('hv-organize-dialog: locations', () => {
 
     expect(q(sr, '[data-testid="location-guard"]')).toBe(null);
     expect(store.state.value.locationsFlatCache).toHaveLength(0);
+  });
+
+  // A location row used to be the odd one out: its name did nothing and its
+  // count was a muted number at the far edge, while a category row's count was
+  // the way into the items.
+  it('opens the items behind a location from its name or its count', async () => {
+    const items = [makeItem({ id: '1', location_id: 'shelf-a' })];
+    for (const testid of ['tree-select', 'tree-count']) {
+      const { el, store, sr } = await mount({ items, locations });
+      const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+      let browsed = 0;
+      el.addEventListener('browse', () => {
+        browsed += 1;
+      });
+
+      (tree.shadowRoot?.querySelector(`[data-testid="${testid}"][data-id="garage"]`) as HTMLButtonElement).click();
+      await settle(el);
+
+      expect(store.state.value.filters.locationId, testid).toBe('garage');
+      // Organizing happens full-screen; so should the list it hands back.
+      expect(browsed, testid).toBe(1);
+      expect(el.open, testid).toBe(false);
+      el.remove();
+    }
+  });
+
+  // Touch has no hover, so the row's icons would be unreachable — the value rows
+  // already solved this with a ⋮ and a sheet.
+  it('puts a location’s actions in a sheet on touch, like the value rows', async () => {
+    const items = [makeItem({ id: '1', location_id: 'garage' })];
+    const { el, sr } = await mount({ items, locations, mobile: true });
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+    expect(tree.shadowRoot?.querySelector('[data-testid="tree-edit"]')).toBe(null);
+
+    (tree.shadowRoot?.querySelector('[data-testid="tree-more"][data-id="garage"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const sheet = q(sr, '[data-testid="location-sheet"]') as HTMLElement;
+    expect(sheet.querySelector('[data-testid="location-sheet-show"]')?.textContent).toContain('Show 1 item');
+    (sheet.querySelector('[data-testid="location-sheet-merge"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="location-merge"]')).toBeTruthy();
+    expect(q(sr, '[data-testid="location-sheet"]')).toBe(null);
+  });
+
+  it('merges a location: items move, children re-parent, the husk is deleted', async () => {
+    const items = [
+      makeItem({ id: '1', location_id: 'garage' }),
+      makeItem({ id: '2', location_id: 'garage' }),
+    ];
+    const { el, store, sr } = await mount({
+      items,
+      locations: [...locations, loc('workshop', 'Workshop')],
+    });
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+
+    (tree.shadowRoot?.querySelector('[data-testid="tree-merge"][data-id="garage"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(q(sr, '[data-testid="merge-effect"]')?.textContent).toContain('Pick a location');
+
+    (q(sr, '[data-testid="merge-target"]') as HTMLButtonElement).click();
+    await settle(el);
+    const picker = q(sr, '[data-testid="merge-target-tree"]') as HTMLElement;
+    // The target cannot be inside what is being merged away — neither the
+    // location itself nor anything under it.
+    const disabled = () =>
+      [...(picker.shadowRoot?.querySelectorAll('[data-testid="tree-row"][disabled]') ?? [])].map(
+        (r) => (r as HTMLElement).dataset.id,
+      );
+    expect(disabled()).toContain('garage');
+    (picker.shadowRoot?.querySelector('[data-testid="tree-twisty"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(disabled()).toEqual(expect.arrayContaining(['garage', 'shelf-a']));
+
+    (picker.shadowRoot?.querySelector('[data-testid="tree-select"][data-id="workshop"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(q(sr, '[data-testid="merge-effect"]')?.textContent).toContain('2 items and 1 sub-location');
+
+    (q(sr, '[data-testid="merge-apply"]') as HTMLButtonElement).click();
+    for (let i = 0; i < 6; i += 1) await settle(el);
+
+    expect(store.state.value.items.every((i) => i.location_id === 'workshop')).toBe(true);
+    expect(store.state.value.locationsFlatCache?.find((l) => l.id === 'shelf-a')?.parent_id).toBe('workshop');
+    expect(store.state.value.locationsFlatCache?.some((l) => l.id === 'garage')).toBe(false);
+    expect(q(sr, '[data-testid="rewrite-label"]')?.textContent?.trim()).toBe('Merged 2 items');
+  });
+
+  it('keeps the location when its items could not all be moved', async () => {
+    const items = [makeItem({ id: '1', location_id: 'garage' })];
+    const { el, store, sr } = await mount({
+      items,
+      locations: [...locations, loc('workshop', 'Workshop')],
+    });
+    // The batch reports per-operation failures rather than throwing.
+    store.bulkExecute = async () => ({
+      succeeded: [],
+      failed: [
+        {
+          op: { op_id: 'x', kind: 'item_move', payload: { item_id: '1' } },
+          error: { code: 'conflict', message: 'stale' },
+          itemId: '1',
+        },
+      ],
+      cancelled: false,
+    });
+
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+    (tree.shadowRoot?.querySelector('[data-testid="tree-merge"][data-id="garage"]') as HTMLButtonElement).click();
+    await settle(el);
+    (q(sr, '[data-testid="merge-target"]') as HTMLButtonElement).click();
+    await settle(el);
+    const picker = q(sr, '[data-testid="merge-target-tree"]') as HTMLElement;
+    (picker.shadowRoot?.querySelector('[data-testid="tree-select"][data-id="workshop"]') as HTMLButtonElement).click();
+    await settle(el);
+    (q(sr, '[data-testid="merge-apply"]') as HTMLButtonElement).click();
+    for (let i = 0; i < 4; i += 1) await settle(el);
+
+    // Deleting it would have failed anyway — say why instead.
+    expect(store.state.value.locationsFlatCache?.some((l) => l.id === 'garage')).toBe(true);
+    expect(q(sr, '[data-testid="rewrite-error"]')?.textContent).toContain('was kept');
   });
 });
 
@@ -331,7 +455,10 @@ describe('hv-organize-dialog: tags and categories', () => {
     const tags = store.state.value.items.flatMap((i) => i.tags);
     expect(tags).not.toContain('batery');
     expect(tags.filter((t) => t === 'battery')).toHaveLength(3);
-    expect(q(sr, '[data-testid="rewrite-label"]')?.textContent).toContain('2 of 2 rewritten');
+    // Said once, in the past tense: the count of both halves and the caveat
+    // about partial application only matter when something actually failed.
+    expect(q(sr, '[data-testid="rewrite-label"]')?.textContent?.trim()).toBe('Merged 2 items');
+    expect(q(sr, '[data-testid="rewrite-status"]')?.textContent).not.toContain('one batch call');
   });
 
   it('will not apply a rename to the same value', async () => {

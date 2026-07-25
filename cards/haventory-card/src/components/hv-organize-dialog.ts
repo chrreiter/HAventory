@@ -8,12 +8,20 @@ import type { ValueKind } from '../ui/value-rewrite';
 import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
 import { describeFailure } from './hv-bulk-bar';
+import { makeBulkOp } from '../store/store';
 import type { Store } from '../store/store';
-import type { BulkFailure, DistinctValue, LocationTreeNode, StoreState } from '../store/types';
+import type { BulkFailure, DistinctValue, Item, LocationTreeNode, StoreState } from '../store/types';
 import './hv-confirm';
 import './hv-location-tree';
 
 export type OrganizeTab = 'locations' | 'categories' | 'tags';
+
+/** The three batch rewrites, and how each reads once it is over. */
+const PAST_TENSE: Record<string, string> = {
+  Merge: 'Merged',
+  Rename: 'Renamed',
+  Remove: 'Removed from',
+};
 
 interface RewriteState {
   label: string;
@@ -21,6 +29,8 @@ interface RewriteState {
   total: number;
   failed: BulkFailure[];
   finished: boolean;
+  /** A step outside the batch that failed — only a location merge has those. */
+  error?: string | null;
 }
 
 /**
@@ -370,6 +380,12 @@ export class HVOrganizeDialog extends LitElement {
   @state() private _locParentOpen = false;
   @state() private _locError: string | null = null;
   @state() private _guard: { locationId: string; message: string } | null = null;
+  /** Location being merged away, with the location it is merging into. */
+  @state() private _mergingLocation: string | null = null;
+  @state() private _mergeTarget: string | null = null;
+  @state() private _mergeTargetOpen = false;
+  /** Location whose actions are open in the touch sheet. */
+  @state() private _sheetLocation: string | null = null;
   /** Value row expanded for rename or merge, keyed `${kind}:${value}`. */
   @state() private _editingValue: { value: string; mode: 'rename' | 'merge' } | null = null;
   @state() private _valueDraft = '';
@@ -433,6 +449,10 @@ export class HVOrganizeDialog extends LitElement {
     this._creatingValue = false;
     this._newValue = '';
     this._newValueError = null;
+    this._mergingLocation = null;
+    this._mergeTarget = null;
+    this._mergeTargetOpen = false;
+    this._sheetLocation = null;
   }
 
   private _close = () => {
@@ -452,6 +472,8 @@ export class HVOrganizeDialog extends LitElement {
 
   private _startLocationEdit(id: string | 'new') {
     const node = id === 'new' ? null : this._findNode(this.st?.locationTreeCache ?? [], id);
+    this._mergingLocation = null;
+    this._sheetLocation = null;
     this._editingLocation = id;
     this._locName = node?.name ?? '';
     this._locArea = node?.area_id ?? null;
@@ -511,6 +533,78 @@ export class HVOrganizeDialog extends LitElement {
         message: (err as { message?: string })?.message ?? 'Could not delete that location.',
       };
     }
+  }
+
+  private _startLocationMerge(id: string) {
+    this._editingLocation = null;
+    this._sheetLocation = null;
+    this._guard = null;
+    this._rewrite = null;
+    this._mergingLocation = id;
+    this._mergeTarget = null;
+    this._mergeTargetOpen = false;
+  }
+
+  /**
+   * Fold one location into another and delete it.
+   *
+   * There is no merge endpoint, so this is the three moves it decomposes into:
+   * the items filed directly here are re-filed in one batch, each child subtree
+   * is re-parented (which rewrites its descendants' paths server-side), and the
+   * emptied location is deleted. The delete is skipped if anything before it
+   * failed — a location that still holds items is refused, and reporting the
+   * real reason beats a second, misleading error.
+   */
+  private async _runLocationMerge(source: LocationTreeNode, targetId: string) {
+    const label = 'Merge';
+    this._mergingLocation = null;
+    this._rewrite = { label, done: 0, total: 0, failed: [], finished: false, error: null };
+
+    let items: Item[];
+    try {
+      items = (await this.store?.listAllMatching({ location_id: source.id, include_subtree: false })) ?? [];
+    } catch (err) {
+      this._rewrite = {
+        label,
+        done: 0,
+        total: 0,
+        failed: [],
+        finished: true,
+        error: (err as { message?: string })?.message ?? 'Could not read that location’s items.',
+      };
+      return;
+    }
+
+    const ops = items.map((i) =>
+      makeBulkOp('item_move', { item_id: i.id, location_id: targetId, expected_version: i.version }),
+    );
+    this._rewrite = { label, done: 0, total: ops.length, failed: [], finished: false, error: null };
+    const outcome = ops.length
+      ? await this.store?.bulkExecute(ops, {
+          onProgress: (done, total) => {
+            this._rewrite = { label, done, total, failed: [], finished: false, error: null };
+          },
+        })
+      : undefined;
+    const failed = outcome?.failed ?? [];
+
+    let error: string | null = null;
+    if (!failed.length) {
+      try {
+        for (const child of source.children ?? []) {
+          await this.store?.moveLocationSubtree(child.id, targetId);
+        }
+        await this.store?.deleteLocation(source.id);
+      } catch (err) {
+        error =
+          (err as { message?: string })?.message ??
+          `Moved the items, but "${source.name}" could not be removed.`;
+      }
+    } else {
+      error = `"${source.name}" was kept: ${failed.length} item${failed.length === 1 ? '' : 's'} could not be moved.`;
+    }
+
+    this._rewrite = { label, done: ops.length, total: ops.length, failed, finished: true, error };
   }
 
   // ---------- Categories & tags ----------
@@ -606,6 +700,23 @@ export class HVOrganizeDialog extends LitElement {
     // Filtering by a value is the list's job, so hand it back and get out of the way.
     if (this.tab === 'tags') this.store?.setFilters({ tags: [value], tagsMode: 'any' });
     else this.store?.setFilters({ category: value });
+    this._browse();
+  }
+
+  private _showLocation(locationId: string | null) {
+    if (!locationId) return;
+    this.store?.setFilters({ locationId, orphansOnly: false });
+    this._browse();
+  }
+
+  /**
+   * Close, asking the host for the expanded surface.
+   *
+   * This dialog is full-screen, so returning to the small card to look at what
+   * you just picked means expanding again straight away.
+   */
+  private _browse() {
+    this.dispatchEvent(new CustomEvent('browse', { bubbles: true, composed: true }));
     this._close();
   }
 
@@ -713,8 +824,109 @@ export class HVOrganizeDialog extends LitElement {
     </div>`;
   }
 
+  /** Touch has no hover, so a location's actions live in a sheet — as on the value rows. */
+  private _renderLocationSheet(node: LocationTreeNode) {
+    const count = node.subtree_item_count ?? 0;
+    return html`<div class="expander" data-testid="location-sheet">
+      <div class="sheet-actions">
+        <button data-testid="location-sheet-show" @click=${() => this._showLocation(node.id)}>
+          ${icon('magnify', 20)}Show ${count} item${count === 1 ? '' : 's'}
+        </button>
+        <button data-testid="location-sheet-edit" @click=${() => this._startLocationEdit(node.id)}>
+          ${icon('pencil', 20)}Edit…
+        </button>
+        <button data-testid="location-sheet-merge" @click=${() => this._startLocationMerge(node.id)}>
+          ${icon('callMerge', 20)}Merge into…
+        </button>
+        <button
+          class="danger"
+          data-testid="location-sheet-delete"
+          @click=${() => {
+            this._sheetLocation = null;
+            void this._deleteLocation(node);
+          }}
+        >
+          ${icon('del', 20)}Delete
+        </button>
+      </div>
+    </div>`;
+  }
+
+  /** The merge step: pick where this location's contents should end up. */
+  private _renderLocationMerge(source: LocationTreeNode) {
+    const tree = this.st?.locationTreeCache ?? [];
+    const target = this._mergeTarget ? this._findNode(tree, this._mergeTarget) : null;
+    const items = source.direct_item_count ?? 0;
+    const children = source.children?.length ?? 0;
+    const parts = [`${items} item${items === 1 ? '' : 's'}`];
+    if (children) parts.push(`${children} sub-location${children === 1 ? '' : 's'}`);
+
+    return html`<div class="expander" data-testid="location-merge">
+      <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
+        <span class="value-chip" style="text-decoration: line-through">${source.name}</span>
+        ${icon('arrowRight', 18)}
+        <button
+          class="control"
+          style="flex:1;min-width:180px"
+          data-testid="merge-target"
+          aria-expanded=${String(this._mergeTargetOpen)}
+          @click=${() => {
+            this._mergeTargetOpen = !this._mergeTargetOpen;
+          }}
+        >
+          ${icon('mapMarker', 15)}<span class="value">${target?.name ?? 'merge into…'}</span>
+          ${icon('chevronDown', 15)}
+        </button>
+      </div>
+      ${this._mergeTargetOpen
+        ? html`<div class="tree-holder">
+            <hv-location-tree
+              data-testid="merge-target-tree"
+              .nodes=${tree}
+              .selectedId=${this._mergeTarget}
+              .excludeSubtreeOf=${source.id}
+              @select=${(e: CustomEvent) => {
+                this._mergeTarget = (e.detail as { locationId: string | null }).locationId;
+                this._mergeTargetOpen = false;
+              }}
+            ></hv-location-tree>
+          </div>`
+        : null}
+      <span class="note" data-testid="merge-effect">
+        ${target
+          ? `${parts.join(' and ')} move to "${target.name}", then "${source.name}" is deleted.
+             Items in sub-locations stay where they are; their paths just change.`
+          : 'Pick a location to continue.'}
+      </span>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button
+          class="hv-text-button"
+          data-testid="merge-cancel"
+          @click=${() => {
+            this._mergingLocation = null;
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          class="hv-pill"
+          data-testid="merge-apply"
+          ?disabled=${!this._mergeTarget}
+          @click=${() => {
+            if (this._mergeTarget) void this._runLocationMerge(source, this._mergeTarget);
+          }}
+        >
+          Merge
+        </button>
+      </div>
+    </div>`;
+  }
+
   private _renderLocationsTab() {
     const tree = this.st?.locationTreeCache ?? [];
+    const merging = this._mergingLocation ? this._findNode(tree, this._mergingLocation) : null;
+    const sheeted = this._sheetLocation ? this._findNode(tree, this._sheetLocation) : null;
     return html`
       <div class="toolbar">
         <label class="search">
@@ -739,21 +951,35 @@ export class HVOrganizeDialog extends LitElement {
       </div>
       <div class="body">
         ${this._editingLocation === 'new' ? this._renderLocationEditor('new') : null}
+        ${this._rewrite ? this._renderRewrite() : null}
         <hv-location-tree
           data-testid="organize-tree"
           manage
           showCounts
           showAreas
+          ?touch=${this.mobile}
           .nodes=${tree}
           .areas=${this.st?.areasCache?.areas ?? []}
           .filterText=${this._filter}
+          @select=${(e: CustomEvent) =>
+            this._showLocation((e.detail as { locationId: string | null }).locationId)}
           @edit-location=${(e: CustomEvent) =>
             this._startLocationEdit((e.detail as { locationId: string }).locationId)}
+          @merge-location=${(e: CustomEvent) =>
+            this._startLocationMerge((e.detail as { locationId: string }).locationId)}
+          @more-location=${(e: CustomEvent) => {
+            const { locationId } = e.detail as { locationId: string };
+            this._sheetLocation = this._sheetLocation === locationId ? null : locationId;
+            this._editingLocation = null;
+            this._mergingLocation = null;
+          }}
           @delete-location=${(e: CustomEvent) => {
             const node = (e.detail as { node: LocationTreeNode }).node;
             void this._deleteLocation(node);
           }}
         ></hv-location-tree>
+        ${sheeted ? this._renderLocationSheet(sheeted) : null}
+        ${merging ? this._renderLocationMerge(merging) : null}
         ${this._editingLocation && this._editingLocation !== 'new'
           ? this._renderLocationEditor(this._editingLocation)
           : null}
@@ -767,17 +993,25 @@ export class HVOrganizeDialog extends LitElement {
     `;
   }
 
+  /** What the status line says, in as few words as the outcome allows. */
+  private _rewriteSummary(rewrite: RewriteState): string {
+    if (!rewrite.finished) return `${rewrite.label} ${rewrite.done} of ${rewrite.total}`;
+    if (!rewrite.total) return `Nothing to ${rewrite.label.toLowerCase()}.`;
+    const done = rewrite.total - rewrite.failed.length;
+    const past = PAST_TENSE[rewrite.label] ?? rewrite.label;
+    // The partial case is the only one that needs both numbers.
+    if (rewrite.failed.length) return `${past} ${done} of ${rewrite.total} items`;
+    return `${past} ${rewrite.total} item${rewrite.total === 1 ? '' : 's'}`;
+  }
+
   private _renderRewrite() {
     const rewrite = this._rewrite;
     if (!rewrite) return null;
     const pct = rewrite.total ? Math.round((rewrite.done / rewrite.total) * 100) : 100;
+    const trouble = rewrite.failed.length > 0 || !!rewrite.error;
     return html`<div class="expander" data-testid="rewrite-status">
       <div style="display:flex;gap:8px;font-size:12.5px">
-        <span data-testid="rewrite-label">
-          ${rewrite.finished
-            ? `${rewrite.label} finished — ${rewrite.total - rewrite.failed.length} of ${rewrite.total} rewritten`
-            : `${rewrite.label} ${rewrite.done} of ${rewrite.total}`}
-        </span>
+        <span data-testid="rewrite-label">${this._rewriteSummary(rewrite)}</span>
         ${rewrite.failed.length
           ? html`<span style="margin-left:auto" data-testid="rewrite-failed"
               >${rewrite.failed.length} failed</span
@@ -785,15 +1019,26 @@ export class HVOrganizeDialog extends LitElement {
           : null}
       </div>
       ${rewrite.finished ? null : html`<div class="track"><div class="fill" style="width:${pct}%"></div></div>`}
+      ${rewrite.error
+        ? html`<div class="failure" role="alert" data-testid="rewrite-error">
+            ${icon('alertCircle', 16)}<span>${rewrite.error}</span>
+          </div>`
+        : null}
       ${rewrite.failed.map(
         (f) => html`<div class="failure" data-testid="rewrite-failure">
           ${icon('alertCircle', 16)}<span>${f.itemId} — ${describeFailure(f)}</span>
         </div>`,
       )}
-      <span class="note">
-        Sent as one batch call · already-rewritten items keep the new value, so cancelling or a failure
-        part-way is not undone.
-      </span>
+      ${
+        // Only worth saying while it can still be interrupted, or when something
+        // did go wrong and "how much of this stands?" is a live question.
+        rewrite.finished && !trouble
+          ? null
+          : html`<span class="note">
+              Sent as one batch call · already-rewritten items keep the new value, so cancelling or a
+              failure part-way is not undone.
+            </span>`
+      }
       <div class="actions">
         <span class="spacer"></span>
         <button
