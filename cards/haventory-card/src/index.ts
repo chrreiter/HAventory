@@ -5,6 +5,7 @@ import { getDefaultOrderFor } from './store/sort';
 import { Store } from './store/store';
 import type { ColumnKey, ColumnPrefs } from './store/columns';
 import { loadColumnPrefs, saveColumnPrefs } from './store/columns';
+import { resolveColorScheme } from './ui/theme';
 import './components/hv-search-bar';
 import './components/hv-inventory-list';
 import './components/hv-item-row';
@@ -146,6 +147,8 @@ export class HAventoryCard extends LitElement {
       });
       void this.store.init().catch(() => undefined);
     }
+    // A theme switch arrives as a fresh hass object, so this is the hook for it.
+    this._syncColorScheme();
   }
 
   connectedCallback(): void {
@@ -156,6 +159,7 @@ export class HAventoryCard extends LitElement {
         this.requestUpdate();
       });
     }
+    this._syncColorScheme();
   }
 
   disconnectedCallback(): void {
@@ -164,6 +168,25 @@ export class HAventoryCard extends LitElement {
       this._storeUnsub();
       this._storeUnsub = undefined;
     }
+  }
+
+  firstUpdated(): void {
+    this._syncColorScheme();
+  }
+
+  /**
+   * Publish the active Home Assistant theme as `color-scheme` on this host.
+   *
+   * `light-dark()` in the design tokens resolves against it, and the browser
+   * uses it to paint native controls, so both follow HA rather than the OS.
+   * The value is inherited, so setting it here covers every nested component.
+   * When the theme has not painted yet we leave the property alone and the OS
+   * preference keeps deciding.
+   */
+  private _syncColorScheme(): void {
+    if (!this.isConnected || typeof getComputedStyle !== 'function') return;
+    const scheme = resolveColorScheme(getComputedStyle(this));
+    if (scheme) this.style.colorScheme = scheme;
   }
 
   render() {

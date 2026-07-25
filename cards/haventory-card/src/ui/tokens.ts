@@ -5,10 +5,17 @@ import { css } from 'lit';
  *
  * Every token binds to the Home Assistant theme variable first and falls back to
  * the hex used in the design mocks, so user themes keep working. Tokens that have
- * no HA equivalent (tints, hover washes, warning surfaces) get a light value here
- * and a dark value under `prefers-color-scheme: dark` — HA's own surface variables
- * track the active theme, and these accents track the OS/theme preference alongside
- * them.
+ * no HA equivalent (tints, hover washes, warning surfaces) carry both values in a
+ * `light-dark()` pair.
+ *
+ * Which half wins is decided by `color-scheme`, which `haventory-card` sets on its
+ * host from the surface HA actually paints (see `ui/theme.ts`) — *not* by
+ * `prefers-color-scheme`. HA's dark mode is a frontend setting independent of the
+ * OS, so keying off the media query mixed the two palettes whenever they disagreed:
+ * near-black dividers and unreadable amber badges on a white card. `color-scheme`
+ * is inherited, so one declaration on the outermost host reaches every component,
+ * and it makes native controls (select arrows, date pickers) paint correctly too.
+ * With no host declaration the property stays `normal` and the light half applies.
  *
  * Usage: `static styles = [tokens, css\`...\`]` in every revamped component. The
  * fragment only declares custom properties on `:host`, so it is safe to compose.
@@ -16,54 +23,54 @@ import { css } from 'lit';
 export const tokens = css`
   :host {
     /* Surfaces */
-    --hv-surface: var(--card-background-color, var(--ha-card-background, #fff));
-    --hv-surface-raised: #f5f5f5;
-    --hv-page: var(--primary-background-color, #fafafa);
+    --hv-surface: var(--card-background-color, var(--ha-card-background, light-dark(#fff, #1c1c1c)));
+    --hv-surface-raised: light-dark(#f5f5f5, #232323);
+    --hv-page: var(--primary-background-color, light-dark(#fafafa, #111));
     --hv-scrim: rgba(0, 0, 0, 0.5);
 
     /* Text */
-    --hv-text: var(--primary-text-color, #212121);
-    --hv-text-secondary: var(--secondary-text-color, #727272);
-    --hv-text-tertiary: #9e9e9e;
+    --hv-text: var(--primary-text-color, light-dark(#212121, #e1e1e1));
+    --hv-text-secondary: var(--secondary-text-color, light-dark(#727272, #9b9b9b));
+    --hv-text-tertiary: light-dark(#9e9e9e, #7d7d7d);
     --hv-text-on-primary: var(--text-primary-color, #fff);
 
     /* Lines */
-    --hv-divider: var(--divider-color, #e0e0e0);
-    --hv-row-divider: #ededed;
+    --hv-divider: var(--divider-color, light-dark(#e0e0e0, #383838));
+    --hv-row-divider: light-dark(#ededed, #2e2e2e);
 
     /* Primary / accent */
     --hv-primary: var(--primary-color, #03a9f4);
-    --hv-primary-dark: #0288d1;
-    --hv-primary-darker: #0277bd;
-    --hv-primary-tint: #e3f4fd;
-    --hv-primary-tint-border: #a8d8f0;
-    --hv-row-hover: #f5f9fd;
+    --hv-primary-dark: light-dark(#0288d1, #4fc3f7);
+    --hv-primary-darker: light-dark(#0277bd, #4fc3f7);
+    --hv-primary-tint: light-dark(#e3f4fd, rgba(3, 169, 244, 0.16));
+    --hv-primary-tint-border: light-dark(#a8d8f0, rgba(3, 169, 244, 0.5));
+    --hv-row-hover: light-dark(#f5f9fd, rgba(255, 255, 255, 0.04));
 
     /* Warning / low stock */
-    --hv-warn: #b26b00;
-    --hv-warn-bg: #fff4e0;
-    --hv-warn-deep: #7a4d00;
-    --hv-warn-border: #e0c98f;
+    --hv-warn: light-dark(#b26b00, #ffb74d);
+    --hv-warn-bg: light-dark(#fff4e0, rgba(255, 167, 38, 0.14));
+    --hv-warn-deep: light-dark(#7a4d00, #ffb74d);
+    --hv-warn-border: light-dark(#e0c98f, rgba(255, 167, 38, 0.4));
     --hv-amber: #ffa726;
 
     /* Error */
-    --hv-error: var(--error-color, #c62828);
-    --hv-error-bg: #fdecea;
-    --hv-error-deep: #8b1f1a;
-    --hv-error-border: #e6a9a4;
-    --hv-error-soft: #c62828;
+    --hv-error: var(--error-color, light-dark(#c62828, #ef5350));
+    --hv-error-bg: light-dark(#fdecea, rgba(198, 40, 40, 0.14));
+    --hv-error-deep: light-dark(#8b1f1a, #ef9a9a);
+    --hv-error-border: light-dark(#e6a9a4, rgba(239, 83, 80, 0.7));
+    --hv-error-soft: light-dark(#c62828, #ef9a9a);
 
     /* Success */
-    --hv-success: #2e7d32;
+    --hv-success: light-dark(#2e7d32, #81c784);
 
     /* Inputs */
-    --hv-input-bg: var(--input-fill-color, #f5f5f5);
-    --hv-input-border: #cfd8dc;
-    --hv-chip-bg: #e7e7e7;
-    --hv-chip-text: #4a4a4a;
+    --hv-input-bg: var(--input-fill-color, light-dark(#f5f5f5, #2b2b2b));
+    --hv-input-border: light-dark(#cfd8dc, #4a4a4a);
+    --hv-chip-bg: light-dark(#e7e7e7, #2b2b2b);
+    --hv-chip-text: light-dark(#4a4a4a, #bdbdbd);
 
     /* Interaction */
-    --hv-hover-overlay: rgba(0, 0, 0, 0.06);
+    --hv-hover-overlay: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08));
 
     /* Shape */
     --hv-radius-card: var(--ha-card-border-radius, 12px);
@@ -77,7 +84,7 @@ export const tokens = css`
     --hv-shadow-menu: 0 8px 28px rgba(0, 0, 0, 0.22);
     --hv-shadow-dialog: 0 12px 40px rgba(0, 0, 0, 0.28);
     --hv-shadow-overlay: 0 8px 32px rgba(0, 0, 0, 0.18);
-    --hv-shadow-sheet: 0 -8px 32px rgba(0, 0, 0, 0.3);
+    --hv-shadow-sheet: light-dark(0 -8px 32px rgba(0, 0, 0, 0.3), 0 -8px 32px rgba(0, 0, 0, 0.5));
 
     /* Type */
     --hv-font: var(--ha-card-font-family, var(--paper-font-body1_-_font-family, Roboto, sans-serif));
@@ -87,48 +94,6 @@ export const tokens = css`
     --hv-motion-panel: 180ms;
     --hv-motion-sheet: 240ms;
     --hv-ease-out: cubic-bezier(0.25, 0.8, 0.25, 1);
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :host {
-      --hv-surface: var(--card-background-color, var(--ha-card-background, #1c1c1c));
-      --hv-surface-raised: #232323;
-      --hv-page: var(--primary-background-color, #111);
-
-      --hv-text: var(--primary-text-color, #e1e1e1);
-      --hv-text-secondary: var(--secondary-text-color, #9b9b9b);
-      --hv-text-tertiary: #7d7d7d;
-
-      --hv-divider: var(--divider-color, #383838);
-      --hv-row-divider: #2e2e2e;
-
-      --hv-primary-dark: #4fc3f7;
-      --hv-primary-darker: #4fc3f7;
-      --hv-primary-tint: rgba(3, 169, 244, 0.16);
-      --hv-primary-tint-border: rgba(3, 169, 244, 0.5);
-      --hv-row-hover: rgba(255, 255, 255, 0.04);
-
-      --hv-warn: #ffb74d;
-      --hv-warn-bg: rgba(255, 167, 38, 0.14);
-      --hv-warn-deep: #ffb74d;
-      --hv-warn-border: rgba(255, 167, 38, 0.4);
-
-      --hv-error: var(--error-color, #ef5350);
-      --hv-error-bg: rgba(198, 40, 40, 0.14);
-      --hv-error-deep: #ef9a9a;
-      --hv-error-border: rgba(239, 83, 80, 0.7);
-      --hv-error-soft: #ef9a9a;
-
-      --hv-success: #81c784;
-
-      --hv-input-bg: var(--input-fill-color, #2b2b2b);
-      --hv-input-border: #4a4a4a;
-      --hv-chip-bg: #2b2b2b;
-      --hv-chip-text: #bdbdbd;
-
-      --hv-hover-overlay: rgba(255, 255, 255, 0.08);
-      --hv-shadow-sheet: 0 -8px 32px rgba(0, 0, 0, 0.5);
-    }
   }
 
   @media (prefers-reduced-motion: reduce) {
