@@ -224,6 +224,63 @@ async def test_filter_updated_after_and_created_after() -> None:
 
 
 @pytest.mark.asyncio
+async def test_filter_updated_before_and_created_before() -> None:
+    """The `before` bounds mirror the `after` ones and combine into a range."""
+
+    a = create_item_from_create({"name": "A"})
+    b = create_item_from_create({"name": "B"})
+    c = create_item_from_create({"name": "C"})
+
+    a.created_at = "2024-01-01T00:00:00Z"
+    a.updated_at = "2024-01-01T10:00:00Z"
+    b.created_at = "2024-01-02T00:00:00Z"
+    b.updated_at = "2024-01-02T10:00:00Z"
+    c.created_at = "2024-01-03T00:00:00Z"
+    c.updated_at = "2024-01-03T10:00:00Z"
+
+    out_upd = filter_items([a, b, c], ItemFilter(updated_before="2024-01-02T00:00:00Z"))
+    assert [x.name for x in out_upd] == ["A"]
+
+    out_created = filter_items([a, b, c], ItemFilter(created_before="2024-01-03T00:00:00Z"))
+    assert [x.name for x in out_created] == ["A", "B"]
+
+    # Both ends together select the middle, and the bounds stay exclusive.
+    windowed = filter_items(
+        [a, b, c],
+        ItemFilter(updated_after="2024-01-01T10:00:00Z", updated_before="2024-01-03T10:00:00Z"),
+    )
+    assert [x.name for x in windowed] == ["B"]
+
+    # An inverted window matches nothing rather than erroring.
+    assert (
+        filter_items(
+            [a, b, c],
+            ItemFilter(updated_after="2024-01-03T00:00:00Z", updated_before="2024-01-02T00:00:00Z"),
+        )
+        == []
+    )
+
+    with pytest.raises(ValidationError):
+        filter_items([a, b, c], ItemFilter(created_before="2024/01/01"))
+
+
+@pytest.mark.asyncio
+async def test_filter_overdue_only() -> None:
+    """`overdue_only` keeps items whose due date is already in the past."""
+
+    late = create_item_from_create({"name": "Late", "checked_out": True, "due_date": "2000-01-01"})
+    soon = create_item_from_create({"name": "Soon", "checked_out": True, "due_date": "2999-12-31"})
+    undated = create_item_from_create({"name": "Out", "checked_out": True})
+    home = create_item_from_create({"name": "Home"})
+    every = [late, soon, undated, home]
+
+    assert [x.name for x in filter_items(every, ItemFilter(overdue_only=True))] == ["Late"]
+
+    # Off (or absent) it is not a predicate at all, so nothing is excluded.
+    assert filter_items(every, ItemFilter(overdue_only=False)) == every
+
+
+@pytest.mark.asyncio
 async def test_sort_default_and_fields_with_tiebreak() -> None:
     a = create_item_from_create({"name": "Alpha"})
     b = create_item_from_create({"name": "Bravo"})
