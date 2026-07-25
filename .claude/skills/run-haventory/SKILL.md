@@ -138,6 +138,63 @@ prints browser console errors — check them when the card renders blank.
 (card → WS → repository index → filtered render), so it doubles as a UI smoke:
 searching `sponges` must reduce the list to the one matching item.
 
+#### Mobile view + touch/swipe
+
+```bash
+node screenshot.mjs --mobile                          # iPhone 15 (390x844, touch on)
+node screenshot.mjs --device "Pixel 8" --out m.png    # any Playwright descriptor
+node screenshot.mjs --devices                         # list descriptor names
+node screenshot.mjs --viewport 390x844                # raw size, touch on
+node screenshot.mjs --mobile --dark                   # HA dark theme + dark OS scheme
+```
+
+`--mobile`/`--device`/`--viewport` enable `hasTouch` + `isMobile`, so the page takes
+the touch / `pointer: coarse` code paths **and HA itself switches to its narrow,
+sidebar-collapsed layout** — the card is then laid out exactly as on a phone.
+(Playwright's `hasTouch` sets `maxTouchPoints` and `(pointer: coarse)` but leaves
+`'ontouchstart' in window` **false**, so the script also launches Chromium with
+`--touch-events=enabled` — code that feature-detects touch that way would otherwise
+take the desktop path.)
+
+`--search`, `--tap`, `--swipe` and `--wait` run **in the order given on the command
+line**, so gestures chain:
+
+```bash
+node screenshot.mjs --mobile \
+  --tap 'haventory-card [data-testid="add-item"]' \
+  --wait 800 \
+  --swipe 'down@hv-item-editor' \
+  --out sheet-dismiss.png
+```
+
+- `--tap <selector>` dispatches a real tap when touch is on (falls back to click on desktop).
+- `--swipe <dir>[:<px>][@<selector>]` — `up|down|left|right`, default target
+  `haventory-card`, default distance 60 % of the target box. Implemented over CDP
+  `Input.dispatchTouchEvent` (touchStart → 16 × touchMove @60 fps → touchEnd), so it is a
+  genuine touch stream: scroll containers, `touch-action` rules and any gesture handler
+  see exactly what a finger produces.
+  Direction is the **finger's** direction — `--swipe up` scrolls the list down.
+  The list's scroll container is **`hv-list`** (`--swipe 'up@hv-list'`), which is what
+  verifies the header/search stay pinned while only the rows move. Note `hv-list` is the
+  revamped component — `hv-inventory-list` is legacy and is *not* in the rendered tree.
+  Measured limits: ~36 px is eaten by Chromium's touch-slop threshold before scrolling
+  starts, and there is **no fling momentum** after `touchEnd` (a 200 px swipe scrolls
+  164 px and stops dead). Distance-sensitive or momentum-sensitive behaviour needs a
+  real device.
+- `--full` captures the full scrollable page; `--dsf <n>` overrides the pixel ratio
+  (device descriptors default to 3x, which makes big PNGs).
+
+Limitation: this is **Chromium** emulation. iPhone descriptors set an iOS viewport and UA
+but not WebKit's engine, so iOS-only issues (safe-area insets, `100vh`/`dvh` behaviour,
+momentum-scroll quirks) still need a real device — see "Real phone on the LAN" below.
+
+#### Real phone on the LAN (ground truth)
+
+The container publishes 8123 on the host, so a phone on the same network can hit
+`http://<host-LAN-IP>:8123` directly (`ipconfig` for the IP; Windows Firewall must allow
+inbound 8123 on the private profile). This is the only way to test real fingers, momentum
+scrolling, iOS Safari, and the HA Companion app's webview.
+
 ## Test
 
 Offline suites (no HA needed — full gate incl. lint is in CLAUDE.md):
