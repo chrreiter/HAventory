@@ -1,4 +1,5 @@
 import { LitElement, css, html } from 'lit';
+import type { PropertyValues } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { tokens, base } from '../ui/tokens';
@@ -30,6 +31,16 @@ export class HVList extends LitElement {
       }
       :host(:not([fill])) .scroller {
         max-height: var(--hv-list-max-height, 420px);
+      }
+      /*
+       * The inline editor renders inside this same scroller and is roughly
+       * 720px tall, so the compact cap buried its Save/Cancel row and the
+       * custom-fields group. While an editor is open the card grows to fit the
+       * form — as the design shows — but stays bounded so a long row list
+       * cannot run away with the page.
+       */
+      :host(:not([fill])[editing]) .scroller {
+        max-height: var(--hv-list-editing-max-height, min(80vh, 760px));
       }
       :host([fill]) {
         display: flex;
@@ -116,6 +127,14 @@ export class HVList extends LitElement {
   @property({ type: String }) editingItemId: string | null = null;
   /** Pin an empty editor at the top of the list ("Add item"). */
   @property({ type: Boolean }) addingNew = false;
+  /** Reflected so the stylesheet can give the open editor more room. */
+  @property({ type: Boolean, reflect: true }) editing = false;
+
+  protected willUpdate(changed: PropertyValues) {
+    if (changed.has('editingItemId') || changed.has('addingNew') || changed.has('editorTemplate')) {
+      this.editing = Boolean(this.editorTemplate) && (this.addingNew || this.editingItemId !== null);
+    }
+  }
 
   private _onScroll = (e: Event) => {
     const el = e.currentTarget as HTMLElement;

@@ -364,6 +364,16 @@ export class HVItemEditor extends LitElement {
   @state() private _locationOpen = false;
   @state() private _moreOpen = false;
 
+  /**
+   * The footer promises "Esc discards", but that is a keydown handler on the
+   * editor root — it never fires while focus is still on the page body, which
+   * is where it stayed when a row expanded. Focusing the name field also
+   * scrolls the expander into view inside the list's scroller.
+   */
+  protected firstUpdated() {
+    this.renderRoot.querySelector<HTMLInputElement>('[data-testid="editor-name"]')?.focus();
+  }
+
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('item')) {
       this._model = formFromItem(this.item);
