@@ -27,6 +27,7 @@ import type {
 } from './types';
 import { WSClient } from './ws';
 import { DEFAULT_SORT } from './sort';
+import { sortLocationTree } from './location-tree';
 
 /** Max items fetched for a single-category/tag browse drill-down (snapshot). */
 const BROWSE_PAGE_LIMIT = 500;
@@ -386,7 +387,9 @@ export class Store {
 
   async refreshLocationTree() {
     const tree = await this.run(() => this.ws.getLocationTree());
-    this.stateObs.set({ locationTreeCache: (tree ?? []) as LocationTreeNode[] });
+    // Sorted once here so every consumer — sidebar, pickers, organize dialog —
+    // sees the same order; the API returns nodes in insertion order.
+    this.stateObs.set({ locationTreeCache: sortLocationTree((tree ?? []) as LocationTreeNode[]) });
   }
 
   async refreshLocationsFlat() {
