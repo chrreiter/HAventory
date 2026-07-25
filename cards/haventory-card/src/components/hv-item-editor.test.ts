@@ -225,6 +225,38 @@ describe('hv-item-editor: typed custom fields', () => {
     expect(rows[2].querySelector('[data-testid="editor-cf-value"]')?.getAttribute('role')).toBe('switch');
   });
 
+  it('puts the remove button right after the value it removes', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A', custom_fields: { serial: '44210' } }));
+    const row = q(el, '[data-testid="editor-cf-row"]') as HTMLElement;
+
+    expect([...row.children].map((c) => c.getAttribute('data-testid'))).toEqual([
+      'editor-cf-key',
+      'editor-cf-type',
+      'editor-cf-value',
+      'editor-cf-remove',
+    ]);
+  });
+
+  it('lays a row out from its own width, not from the card-wide mobile flag', () => {
+    const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+
+    // The editor is a desktop row in one host and a phone sheet in another, so
+    // `mobile` (which describes the card) must not decide this layout.
+    expect(css).toMatch(/\.custom \{[^}]*container-type: inline-size/);
+    expect(css).not.toMatch(/:host\(\[mobile\]\) \.cf-row/);
+    // Wide enough: key, type, value and the remove button share one line.
+    expect(css).toMatch(/\.cf-row \{[^}]*grid-template-columns: minmax\(0, 1\.2fr\) 110px minmax\(0, 1\.6fr\) 34px/);
+    // Too tight: the value drops under its key and remove spans both rows, so
+    // it still reads as belonging to that field.
+    expect(css).toMatch(
+      /@container \(max-width: \d+px\) \{ \.cf-row \{[^}]*grid-template-areas: 'key type remove' 'value value remove'/,
+    );
+  });
+
   it('adds and removes rows', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
     expect(all(el, '[data-testid="editor-cf-row"]')).toHaveLength(0);

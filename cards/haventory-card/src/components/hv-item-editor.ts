@@ -224,6 +224,10 @@ export class HVItemEditor extends LitElement {
         padding-top: 12px;
         display: grid;
         gap: 8px;
+        /* The rows size themselves from the room they actually have. The mobile
+           flag describes the *card*, and the same editor runs inside a desktop
+           row and inside a sheet far wider than the card that opened it. */
+        container-type: inline-size;
       }
       .custom-head {
         display: flex;
@@ -237,15 +241,36 @@ export class HVItemEditor extends LitElement {
       }
       .cf-row {
         display: grid;
-        grid-template-columns: 1.2fr 110px 1.6fr 34px;
+        grid-template-columns: minmax(0, 1.2fr) 110px minmax(0, 1.6fr) 34px;
         gap: 8px;
         align-items: center;
       }
-      :host([mobile]) .cf-row {
-        grid-template-columns: 1fr 1fr;
+      /* No named area: it auto-places into the row below whatever came before. */
+      .cf-row .field-error {
+        grid-column: 1 / -1;
       }
-      :host([mobile]) .cf-row .cf-value {
-        grid-column: span 2;
+      /* Too tight for one line: the value drops under its key, and the remove
+         button spans both rows so it still reads as belonging to that field
+         rather than floating under the one before it. */
+      @container (max-width: 520px) {
+        .cf-row {
+          grid-template-columns: minmax(0, 1fr) 104px 34px;
+          grid-template-areas:
+            'key type remove'
+            'value value remove';
+        }
+        .cf-row .cf-key {
+          grid-area: key;
+        }
+        .cf-row .cf-type {
+          grid-area: type;
+        }
+        .cf-row .cf-value {
+          grid-area: value;
+        }
+        .cf-row .cf-remove {
+          grid-area: remove;
+        }
       }
       .cf-remove {
         display: inline-grid;
@@ -573,7 +598,7 @@ export class HVItemEditor extends LitElement {
           const error = this._errorFor(`custom:${row.id}`);
           return html`<div class="cf-row ${error ? 'invalid' : ''}" data-testid="editor-cf-row" data-id=${row.id}>
             <input
-              class="hv-input"
+              class="hv-input cf-key"
               data-testid="editor-cf-key"
               aria-label="Field key"
               placeholder="key"
@@ -581,7 +606,7 @@ export class HVItemEditor extends LitElement {
               @input=${(e: Event) => this._patchRow(row.id, { key: (e.target as HTMLInputElement).value })}
             />
             <select
-              class="hv-input"
+              class="hv-input cf-type"
               data-testid="editor-cf-type"
               aria-label="Field type"
               @change=${(e: Event) =>
