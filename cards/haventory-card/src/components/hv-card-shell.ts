@@ -61,6 +61,10 @@ export class HVCardShell extends LitElement {
         padding: 14px 16px 10px;
       }
       .title {
+        /* Takes the slack so the actions stay right-aligned even before the
+           stats badges have loaded. */
+        flex: 1;
+        min-width: 0;
         font-size: 20px;
         font-weight: 400;
         margin: 0;
@@ -96,6 +100,11 @@ export class HVCardShell extends LitElement {
         background: var(--hv-primary-tint);
         border-color: transparent;
       }
+      .badge.overdue {
+        color: var(--hv-error-deep);
+        background: var(--hv-error-bg);
+        border-color: transparent;
+      }
       .badge.on {
         outline: 2px solid var(--hv-primary);
         outline-offset: 1px;
@@ -121,6 +130,20 @@ export class HVCardShell extends LitElement {
         padding: 0;
         border-radius: 50%;
         justify-content: center;
+      }
+      /* Sits with the other header actions rather than in the search row, where
+         a third circle crowded the search box on a narrow card. Outlined like
+         the filter button below it: a borderless glyph beside a filled primary
+         button reads as decoration rather than something to press. */
+      .header .expand {
+        width: 36px;
+        height: 36px;
+        border: 1px solid var(--hv-divider);
+        color: var(--hv-text-secondary);
+      }
+      .header .expand:hover {
+        border-color: var(--hv-primary);
+        color: var(--hv-primary-dark);
       }
       .search-row {
         display: flex;
@@ -264,6 +287,8 @@ export class HVCardShell extends LitElement {
   @state() private _filterPanelOpen = false;
   @state() private _filterSheetOpen = false;
   @state() private _stagedCount: number | null = null;
+  /** The sheet's in-flight filter set, so its header counts what you staged. */
+  @state() private _stagedFilters: StoreFilters | null = null;
   @state() private _confirm: {
     heading: string;
     message: string;
@@ -346,6 +371,7 @@ export class HVCardShell extends LitElement {
   private _toggleFilterSurface = () => {
     if (this.mobile) {
       this._filterSheetOpen = !this._filterSheetOpen;
+      this._stagedFilters = this._filterSheetOpen ? (this.st?.filters ?? defaultFilters()) : null;
       if (this._filterSheetOpen) void this._priceStaged(this.st?.filters ?? defaultFilters());
       return;
     }
@@ -645,6 +671,17 @@ export class HVCardShell extends LitElement {
     ];
   }
 
+  /**
+   * The card's own ⋮, which is the full-view menu minus "Columns…".
+   *
+   * Column choices only drive the full view's table — the card list draws a
+   * fixed compact row — so offering them here opened a picker that changed
+   * nothing visible on this surface.
+   */
+  private get cardMenuEntries(): OverflowMenuEntry[] {
+    return this.menuEntries.filter((entry) => !('id' in entry && entry.id === 'columns'));
+  }
+
   private _onMenuSelect = (e: CustomEvent) => {
     // The full view re-dispatches its own menu selections through here; stop the
     // original so the host card does not also see it directly.
@@ -699,6 +736,17 @@ export class HVCardShell extends LitElement {
               @click=${() => this._setFilters({ lowStockOnly: !f?.lowStockOnly })}
             >
               ${counts.low_stock_count} low
+            </button>`
+          : null}
+        ${(counts.overdue_count ?? 0) > 0
+          ? html`<button
+              class="badge overdue ${f?.overdueOnly ? 'on' : ''}"
+              data-testid="badge-overdue"
+              aria-pressed=${String(!!f?.overdueOnly)}
+              title="Show only overdue items"
+              @click=${() => this._setFilters({ overdueOnly: !f?.overdueOnly })}
+            >
+              ${counts.overdue_count} overdue
             </button>`
           : null}
         ${!this.mobile && counts.checked_out_count > 0
@@ -871,10 +919,15 @@ export class HVCardShell extends LitElement {
       .stagedCount=${this._stagedCount}
       ?mobile=${mobile}
       @change=${(e: CustomEvent) => this._setFilters(e.detail as Partial<StoreFilters>)}
-      @stage=${(e: CustomEvent) => this._priceStaged((e.detail as { filters: StoreFilters }).filters)}
+      @stage=${(e: CustomEvent) => {
+        const staged = (e.detail as { filters: StoreFilters }).filters;
+        this._stagedFilters = staged;
+        this._priceStaged(staged);
+      }}
       @apply=${(e: CustomEvent) => {
         this._setFilters(e.detail as StoreFilters);
         this._filterSheetOpen = false;
+        this._stagedFilters = null;
       }}
       @clear-filters=${() => this.store?.clearFilters()}
     ></hv-filter-panel>`;
@@ -884,6 +937,7 @@ export class HVCardShell extends LitElement {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
     const filterCount = activeFilterCount(filters);
+    const stagedFilterCount = activeFilterCount(this._stagedFilters ?? filters);
     const loaded = st?.items.length ?? 0;
     const total = st?.total;
     const mobile = this.mobile;
@@ -892,6 +946,18 @@ export class HVCardShell extends LitElement {
       <div class="header">
         <h2 class="title" data-testid="card-title">${this.heading}</h2>
         ${this._renderBadges()}
+        <button
+          class="hv-icon-button expand"
+          data-testid="expand-toggle"
+          aria-label="Open full view"
+          aria-expanded=${String(this._fullViewOpen)}
+          title="Open full view"
+          @click=${() => {
+            this._fullViewOpen = true;
+          }}
+        >
+          ${icon('arrowExpand', 19)}
+        </button>
         <button
           class="add ${mobile ? 'round' : ''}"
           data-testid="add-item"
@@ -902,7 +968,7 @@ export class HVCardShell extends LitElement {
           ${icon('plus', 16)}${mobile ? null : 'Add'}
         </button>
         <hv-overflow-menu
-          .entries=${this.menuEntries}
+          .entries=${this.cardMenuEntries}
           data-testid="card-overflow"
           @select=${this._onMenuSelect}
         ></hv-overflow-menu>
@@ -935,18 +1001,6 @@ export class HVCardShell extends LitElement {
         >
           ${icon('tune', 19)}
           ${filterCount > 0 ? html`<span class="dot" data-testid="filter-active-dot"></span>` : null}
-        </button>
-        <button
-          class="icon-toggle"
-          data-testid="expand-toggle"
-          aria-label="Open full view"
-          aria-expanded=${String(this._fullViewOpen)}
-          title="Open full view"
-          @click=${() => {
-            this._fullViewOpen = true;
-          }}
-        >
-          ${icon('arrowExpand', 19)}
         </button>
       </div>
 
@@ -1033,17 +1087,18 @@ export class HVCardShell extends LitElement {
             data-testid="filter-sheet"
             @cancel=${() => {
               this._filterSheetOpen = false;
+              this._stagedFilters = null;
               this._filterPanel?.resetDraft();
             }}
           >
             <div class="sheet-head">
               <span class="heading">Filters</span>
-              <span style="font-size:12.5px;color:var(--hv-text-secondary)">${filterCount} active</span>
+              <span style="font-size:12.5px;color:var(--hv-text-secondary)">${stagedFilterCount} active</span>
               <button
                 class="link"
                 style="margin-left:auto"
                 data-testid="sheet-clear-all"
-                @click=${() => this.store?.clearFilters()}
+                @click=${() => this._filterPanel?.clearAll()}
               >
                 Clear all
               </button>
@@ -1055,6 +1110,7 @@ export class HVCardShell extends LitElement {
                 data-testid="sheet-cancel"
                 @click=${() => {
                   this._filterSheetOpen = false;
+                  this._stagedFilters = null;
                   this._filterPanel?.resetDraft();
                 }}
               >
@@ -1178,6 +1234,12 @@ export class HVCardShell extends LitElement {
         .store=${this.store}
         @cancel=${() => {
           this._organizeOpen = false;
+        }}
+        @browse=${() => {
+          // Organizing is a full-screen job, so the filter it hands back belongs
+          // on the full-screen surface too — dropping back to the small card
+          // means immediately expanding again to see what you just picked.
+          this._fullViewOpen = true;
         }}
       ></hv-organize-dialog>
 

@@ -59,6 +59,26 @@ describe('hv-card-shell: header', () => {
     const { sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     expect(sr.querySelector('[data-testid="badge-low"]')).toBe(null);
     expect(sr.querySelector('[data-testid="badge-out"]')).toBe(null);
+    expect(sr.querySelector('[data-testid="badge-overdue"]')).toBe(null);
+  });
+
+  // A due date that has passed was invisible from the card: the row said
+  // "Checked out · due Jul 2" in the same blue as any other date.
+  it('counts overdue items in a badge of their own, on any width', async () => {
+    const overdue = [
+      makeItem({ id: '1', checked_out: true, due_date: '2000-01-01' }),
+      makeItem({ id: '2', checked_out: true, due_date: '2999-12-31' }),
+    ];
+    for (const mobile of [false, true]) {
+      const { el, store, sr } = await mountShell({ items: overdue, mobile });
+      const badge = sr.querySelector('[data-testid="badge-overdue"]') as HTMLButtonElement;
+      expect(badge?.textContent, `mobile=${mobile}`).toContain('1 overdue');
+
+      badge.click();
+      await settle(el);
+      expect(store.state.value.filters.overdueOnly).toBe(true);
+      el.remove();
+    }
   });
 
   it('makes the low badge a filter toggle, not just a number', async () => {
@@ -99,13 +119,35 @@ describe('hv-card-shell: overflow menu', () => {
     expect(ids).toEqual([
       'select-items',
       'organize',
-      'columns',
       'refresh',
       'diagnostics',
       'export-all',
       'export-view',
       'import',
     ]);
+  });
+
+  // Column choices only drive the full view's table — the card list draws a
+  // fixed compact row — so the entry belongs where it does something.
+  it('offers Columns in the full view but not on the card itself', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const idsOf = async (host: Element | null | undefined) => {
+      const menu = host as HTMLElement & { updateComplete: Promise<unknown> };
+      (menu.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
+      await menu.updateComplete;
+      const ids = [...(menu.shadowRoot?.querySelectorAll('[data-testid="overflow-item"]') ?? [])].map(
+        (b) => (b as HTMLElement).dataset.id,
+      );
+      expect(ids.length).toBeGreaterThan(0);
+      return ids;
+    };
+
+    expect(await idsOf(sr.querySelector('[data-testid="card-overflow"]'))).not.toContain('columns');
+
+    const full = sr.querySelector('[data-testid="card-full-view"]') as HTMLElement & { open: boolean };
+    full.open = true;
+    await settle(el);
+    expect(await idsOf(full.shadowRoot?.querySelector('[data-testid="full-overflow"]'))).toContain('columns');
   });
 
   it('handles Refresh itself and hands the rest to the host card', async () => {
@@ -408,6 +450,36 @@ describe('hv-card-shell: mobile', () => {
     apply.click();
     await settle(el);
     expect(store.state.value.filters.category).toBe('Hardware');
+  });
+
+  // "Clear all" went straight to the store: the list behind the sheet reloaded
+  // while the sheet's own controls kept every value the user was looking at.
+  it('clears the sheet itself, and only reaches the store on commit', async () => {
+    const items = [makeItem({ id: '1', category: 'Tools' }), makeItem({ id: '2', category: 'Hardware' })];
+    const { el, store, sr } = await mountShell({ items, mobile: true });
+    (sr.querySelector('[data-testid="filter-toggle"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const panel = sr.querySelector('hv-filter-panel') as HTMLElement;
+    (panel.shadowRoot?.querySelector('[data-value="Hardware"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(sr.querySelector('.sheet-head')?.textContent).toContain('1 active');
+
+    (sr.querySelector('[data-testid="sheet-clear-all"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    // The controls in front of the user are the ones that changed.
+    const chip = panel.shadowRoot?.querySelector('[data-value="Hardware"]') as HTMLElement;
+    expect(chip.classList.contains('on')).toBe(false);
+    expect(sr.querySelector('.sheet-head')?.textContent).toContain('0 active');
+    // Nothing applied yet, so the list behind the sheet has not moved.
+    expect(store.state.value.filters.category).toBe(null);
+
+    (panel.shadowRoot?.querySelector('[data-value="Tools"]') as HTMLButtonElement).click();
+    await settle(el);
+    (sr.querySelector('[data-testid="sheet-apply"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(store.state.value.filters.category).toBe('Tools');
   });
 
   it('drops staged edits on cancel', async () => {
@@ -743,6 +815,44 @@ describe('hv-card-shell: full view', () => {
 
     (sr.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement).click();
     await settle(el);
+    expect(fullView(sr).open).toBe(true);
+  });
+
+  // A third circular button next to the search box left it barely wider than
+  // its placeholder on a narrow card; the header row is where the other actions
+  // already live.
+  it('sits in the header, immediately before Add item', async () => {
+    const { sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const expand = sr.querySelector('[data-testid="expand-toggle"]') as HTMLElement;
+
+    expect(expand.closest('.header')).toBeTruthy();
+    expect(expand.closest('.search-row')).toBe(null);
+    expect(expand.nextElementSibling?.getAttribute('data-testid')).toBe('add-item');
+  });
+
+  // Beside a filled primary button, a bare glyph reads as decoration.
+  it('is outlined like the filter button rather than a bare glyph', async () => {
+    const { sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const expand = sr.querySelector('[data-testid="expand-toggle"]') as HTMLElement;
+    expect(expand.classList.contains('expand')).toBe(true);
+
+    const styles = (customElements.get('hv-card-shell') as typeof HVCardShell).styles;
+    const cssText = (Array.isArray(styles) ? styles : [styles]).map((s) => String(s.cssText)).join('\n');
+    const rule = cssText.slice(cssText.indexOf('.header .expand'), cssText.indexOf('.search-row'));
+    expect(rule).toMatch(/border:\s*1px solid/);
+  });
+
+  // The organize dialog is full-screen; dropping back to the small card to look
+  // at the filter it just applied means expanding again straight away.
+  it('opens when the organize dialog hands back a filtered view', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1', category: 'Tools' })] });
+    const organize = sr.querySelector('[data-testid="card-organize"]') as HTMLElement & { open: boolean };
+    organize.open = true;
+    await settle(el);
+
+    organize.dispatchEvent(new CustomEvent('browse', { bubbles: true, composed: true }));
+    await settle(el);
+
     expect(fullView(sr).open).toBe(true);
   });
 
