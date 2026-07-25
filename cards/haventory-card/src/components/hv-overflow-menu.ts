@@ -96,17 +96,16 @@ export class HVOverflowMenu extends LitElement {
       .labels {
         flex: 1;
         min-width: 0;
+        /* A label with no break opportunity ("Organize…") would otherwise spill
+           out of its shrunken box and paint over whatever sits beside it. */
+        overflow-wrap: anywhere;
       }
-      .sub {
+      .sub,
+      .meta {
         display: block;
         font-size: 11.5px;
         color: var(--hv-text-tertiary);
         margin-top: 1px;
-      }
-      .meta {
-        font-size: 11.5px;
-        color: var(--hv-text-tertiary);
-        flex: none;
       }
       .badge {
         flex: none;
@@ -224,9 +223,13 @@ export class HVOverflowMenu extends LitElement {
               >
                 ${entry.glyph ? html`<span class="glyph">${icon(entry.glyph, 18)}</span>` : null}
                 <span class="labels">
-                  ${entry.label}${entry.sub ? html`<span class="sub">${entry.sub}</span>` : null}
+                  ${entry.label}${entry.sub ? html`<span class="sub">${entry.sub}</span>` : null}${
+                    // Beside the label this had one line to share with it inside a
+                    // 250px menu, so "Locations · Tags · Categories" ran straight
+                    // over "Organize…". It is the same kind of hint as `sub`.
+                    entry.meta ? html`<span class="meta">${entry.meta}</span>` : null
+                  }
                 </span>
-                ${entry.meta ? html`<span class="meta">${entry.meta}</span>` : null}
                 ${entry.badge ? html`<span class="badge">${entry.badge}</span>` : null}
               </button>`;
             })}
