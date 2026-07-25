@@ -209,9 +209,15 @@ export class WSClient {
     });
   }
 
-  /** Nested tree nodes carrying `direct_item_count` / `subtree_item_count`. */
-  getLocationTree() {
-    return this.hass.callWS<LocationTreeNode[]>({ type: 'haventory/location/tree' });
+  /**
+   * Nested tree nodes carrying `direct_item_count` / `subtree_item_count`.
+   * With a filter each node also carries the matching pair, so a sidebar can
+   * say how much of a location the active filter keeps.
+   */
+  getLocationTree(filter?: ItemFilter) {
+    const msg: Record<string, unknown> = { type: 'haventory/location/tree' };
+    if (filter) msg.filter = filter;
+    return this.hass.callWS<LocationTreeNode[]>(msg);
   }
 
   listAreas() {

@@ -14,10 +14,13 @@ export type FilterChipKey =
   | 'orphansOnly'
   | 'lowStockOnly'
   | 'lowStockFirst'
+  | 'overdueOnly'
   | 'category'
   | 'tags'
   | 'updatedAfter'
-  | 'createdAfter';
+  | 'createdAfter'
+  | 'updatedBefore'
+  | 'createdBefore';
 
 export interface FilterChip {
   key: FilterChipKey;
@@ -62,20 +65,18 @@ export function chipsFor(
   if (filters.lowStockOnly) chips.push({ key: 'lowStockOnly', label: 'Low stock only', tone: 'warning' });
   if (filters.lowStockFirst) chips.push({ key: 'lowStockFirst', label: 'Low stock first', tone: 'primary' });
   if (filters.checkedOutOnly) chips.push({ key: 'checkedOutOnly', label: 'Checked out', tone: 'primary' });
+  if (filters.overdueOnly) chips.push({ key: 'overdueOnly', label: 'Overdue', tone: 'warning' });
   if (filters.orphansOnly) chips.push({ key: 'orphansOnly', label: 'No location', tone: 'primary' });
-  if (filters.updatedAfter) {
-    chips.push({
-      key: 'updatedAfter',
-      label: `Updated since ${formatDate(filters.updatedAfter.slice(0, 10))}`,
-      tone: 'primary',
-    });
-  }
-  if (filters.createdAfter) {
-    chips.push({
-      key: 'createdAfter',
-      label: `Created since ${formatDate(filters.createdAfter.slice(0, 10))}`,
-      tone: 'primary',
-    });
+  // One chip per bound rather than one per field: each is separately clearable,
+  // so a range narrowed too far can be half-undone.
+  const dateChips: [FilterChipKey, string | null, string][] = [
+    ['updatedAfter', filters.updatedAfter, 'Updated ≥'],
+    ['updatedBefore', filters.updatedBefore, 'Updated ≤'],
+    ['createdAfter', filters.createdAfter, 'Created ≥'],
+    ['createdBefore', filters.createdBefore, 'Created ≤'],
+  ];
+  for (const [key, value, prefix] of dateChips) {
+    if (value) chips.push({ key, label: `${prefix} ${formatDate(value.slice(0, 10))}`, tone: 'primary' });
   }
   return chips;
 }
@@ -92,6 +93,8 @@ export function clearedValueFor(key: FilterChipKey): Partial<StoreFilters> {
     case 'category':
     case 'updatedAfter':
     case 'createdAfter':
+    case 'updatedBefore':
+    case 'createdBefore':
       return { [key]: null } as Partial<StoreFilters>;
     default:
       return { [key]: false } as Partial<StoreFilters>;

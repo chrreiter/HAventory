@@ -46,9 +46,12 @@ describe('toWireFilter', () => {
       lowStockOnly: true,
       lowStockFirst: true,
       orphansOnly: true,
+      overdueOnly: true,
       category: 'Hardware',
       updatedAfter: '2026-07-01T00:00:00Z',
       createdAfter: '2026-01-01T00:00:00Z',
+      updatedBefore: '2026-08-01T00:00:00Z',
+      createdBefore: '2026-02-01T00:00:00Z',
     });
     expect(wire).toMatchObject({
       q: 'screws',
@@ -58,10 +61,20 @@ describe('toWireFilter', () => {
       low_stock_only: true,
       low_stock_first: true,
       orphaned_only: true,
+      overdue_only: true,
       category: 'Hardware',
       updated_after: '2026-07-01T00:00:00Z',
       created_after: '2026-01-01T00:00:00Z',
+      updated_before: '2026-08-01T00:00:00Z',
+      created_before: '2026-02-01T00:00:00Z',
     });
+  });
+
+  it('leaves the before-bounds off when they are unset', () => {
+    const wire = toWireFilter(defaultFilters());
+    expect(wire.updated_before).toBeUndefined();
+    expect(wire.created_before).toBeUndefined();
+    expect(wire.overdue_only).toBeUndefined();
   });
 
   it('keeps low-stock-only and low-stock-first independent', () => {
@@ -97,6 +110,18 @@ describe('activeFilterCount', () => {
 
   it('ignores sort, which is not a filter', () => {
     expect(activeFilterCount({ ...defaultFilters(), sort: { field: 'name', order: 'asc' } })).toBe(0);
+  });
+
+  it('counts each date bound and the overdue toggle', () => {
+    expect(activeFilterCount({ ...defaultFilters(), overdueOnly: true })).toBe(1);
+    // A window is two separate bounds, each separately clearable.
+    expect(
+      activeFilterCount({
+        ...defaultFilters(),
+        updatedAfter: '2026-07-01T00:00:00Z',
+        updatedBefore: '2026-08-01T00:00:00Z',
+      }),
+    ).toBe(2);
   });
 });
 
@@ -424,6 +449,56 @@ describe('Store: location tree and diagnostics data', () => {
     expect(tree[0].subtree_item_count).toBe(3);
     expect(tree[0].children[0].id).toBe('shelf-a');
     expect(tree[0].children[0].subtree_item_count).toBe(2);
+  });
+
+  // Unfiltered, the tree is asked plainly — no filter key on the wire at all,
+  // so nodes come back without the matching pair.
+  it('leaves the tree unfiltered until something is actually narrowing', async () => {
+    const locations = [loc('garage', 'Garage')];
+    const store = new Store(makeMockHass({ items: [makeItem({ id: '1', location_id: 'garage' })], locations }), fast);
+    await store.init();
+
+    expect(store.state.value.locationTreeCache![0].matching_subtree_count).toBeUndefined();
+    expect(store.state.value.locationMatchTotal).toBe(null);
+  });
+
+  it('counts each location against the filter, ignoring the location filter itself', async () => {
+    const locations = [loc('garage', 'Garage'), loc('shelf-a', 'Shelf A', 'garage'), loc('kitchen', 'Kitchen')];
+    const items = [
+      makeItem({ id: '1', location_id: 'garage', category: 'Tools' }),
+      makeItem({ id: '2', location_id: 'shelf-a', category: 'Tools' }),
+      makeItem({ id: '3', location_id: 'shelf-a', category: 'Cables' }),
+      makeItem({ id: '4', location_id: 'kitchen', category: 'Tools' }),
+      makeItem({ id: '5', category: 'Tools' }),
+    ];
+    const store = new Store(makeMockHass({ items, locations }), fast);
+    await store.init();
+
+    // Narrow by category *and* location: the sidebar still has to show where the
+    // other matches are, or picking a different branch becomes guesswork.
+    store.setFilters({ category: 'Tools', locationId: 'kitchen' });
+    await new Promise((r) => setTimeout(r, 400));
+
+    const tree = store.state.value.locationTreeCache!;
+    const garage = tree.find((n) => n.id === 'garage')!;
+    const kitchen = tree.find((n) => n.id === 'kitchen')!;
+    expect(garage.subtree_item_count).toBe(3);
+    expect(garage.matching_subtree_count).toBe(2);
+    expect(kitchen.matching_subtree_count).toBe(1);
+    // Four Tools items in total; the fourth has no location, and the sidebar
+    // derives that row from this number.
+    expect(store.state.value.locationMatchTotal).toBe(4);
+  });
+
+  it('does not re-walk the tree for a re-order, which changes no count', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1' })], locations: [loc('garage', 'Garage')] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    const before = hass.__calls.filter((c) => c === 'haventory/location/tree').length;
+    store.setFilters({ sort: { field: 'name', order: 'asc' } });
+    await new Promise((r) => setTimeout(r, 400));
+    expect(hass.__calls.filter((c) => c === 'haventory/location/tree').length).toBe(before);
   });
 
   it('caches the rate-limit block and the integration version for diagnostics', async () => {

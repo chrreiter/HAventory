@@ -79,11 +79,15 @@ export interface ItemFilter {
   low_stock_only?: boolean;
   low_stock_first?: boolean;
   orphaned_only?: boolean;
+  /** Only items whose `due_date` is strictly before today (UTC). */
+  overdue_only?: boolean;
   location_id?: string | null;
   area_id?: string;
   include_subtree?: boolean;
   updated_after?: string;
   created_after?: string;
+  updated_before?: string;
+  created_before?: string;
 }
 
 export type SortField = 'updated_at' | 'created_at' | 'name' | 'quantity' | 'due_date' | 'inspection_date';
@@ -105,6 +109,12 @@ export interface StatsCounts {
   items_total: number;
   low_stock_count: number;
   checked_out_count: number;
+  /**
+   * Items whose `due_date` has passed. Derived from the calendar rather than
+   * stored state, so it can change with no event to announce it; optional
+   * because older backends do not send it.
+   */
+  overdue_count?: number;
   locations_total: number;
   /** Items without a location (location_id == null). */
   no_location_count: number;
@@ -165,6 +175,13 @@ export interface LocationTreeNode {
   direct_item_count: number;
   /** Items on this location or any descendant (always >= direct_item_count). */
   subtree_item_count: number;
+  /**
+   * The two counts above restricted to what an active filter keeps. Present
+   * only when `location/tree` was asked with a filter, so `undefined` means
+   * "nothing was asked" rather than "nothing matches".
+   */
+  matching_direct_count?: number;
+  matching_subtree_count?: number;
   children: LocationTreeNode[];
 }
 
@@ -356,12 +373,17 @@ export interface StoreFilters {
   orphansOnly: boolean;
   /** A real filter, independent of `lowStockFirst` — both are separately clearable. */
   lowStockOnly: boolean;
+  /** Only items past their due date. */
+  overdueOnly: boolean;
   category: string | null;
   tags: string[];
   tagsMode: TagMatchMode;
   /** ISO-8601 instants; the backend compares strictly greater-than. */
   updatedAfter: string | null;
   createdAfter: string | null;
+  /** ISO-8601 instants; the backend compares strictly less-than. */
+  updatedBefore: string | null;
+  createdBefore: string | null;
   sort: Sort; // default: { field: 'updated_at', order: 'desc' }
 }
 
@@ -399,6 +421,11 @@ export interface StoreState {
   errorQueue: ErrorEntry[];
   areasCache: AreasListResult | null;
   locationTreeCache: LocationTreeNode[] | null;
+  /**
+   * Items matching the active filter ignoring its location dimension — the
+   * denominator-free half of the sidebar's "4 / 37". Null when no filter is on.
+   */
+  locationMatchTotal: number | null;
   // Optional flat locations cache to enrich UI (e.g., show area per node in selectors)
   locationsFlatCache: Location[] | null;
   statsCounts: StatsCounts | null;

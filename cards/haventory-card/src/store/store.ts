@@ -94,9 +94,12 @@ export function toWireFilter(filters: StoreFilters): ItemFilter {
     // A presentation hint rather than a filter — it re-sorts, it does not exclude.
     low_stock_first: filters.lowStockFirst || undefined,
     orphaned_only: filters.orphansOnly || undefined,
+    overdue_only: filters.overdueOnly || undefined,
     category: filters.category || undefined,
     updated_after: filters.updatedAfter || undefined,
     created_after: filters.createdAfter || undefined,
+    updated_before: filters.updatedBefore || undefined,
+    created_before: filters.createdBefore || undefined,
   };
   if (filters.tags.length) {
     if (filters.tagsMode === 'all') filter.tags_all = [...filters.tags];
@@ -116,11 +119,14 @@ export function defaultFilters(): StoreFilters {
     lowStockFirst: false,
     orphansOnly: false,
     lowStockOnly: false,
+    overdueOnly: false,
     category: null,
     tags: [],
     tagsMode: 'any',
     updatedAfter: null,
     createdAfter: null,
+    updatedBefore: null,
+    createdBefore: null,
     sort: DEFAULT_SORT,
   };
 }
@@ -135,10 +141,13 @@ export function activeFilterCount(filters: StoreFilters): number {
   if (filters.orphansOnly) n += 1;
   if (filters.lowStockOnly) n += 1;
   if (filters.lowStockFirst) n += 1;
+  if (filters.overdueOnly) n += 1;
   if (filters.category) n += 1;
   if (filters.tags.length) n += 1;
   if (filters.updatedAfter) n += 1;
   if (filters.createdAfter) n += 1;
+  if (filters.updatedBefore) n += 1;
+  if (filters.createdBefore) n += 1;
   return n;
 }
 
@@ -202,6 +211,7 @@ export class Store {
       errorQueue: [],
       areasCache: null,
       locationTreeCache: null,
+      locationMatchTotal: null,
       locationsFlatCache: null,
       statsCounts: null,
       healthCache: null,
@@ -453,11 +463,32 @@ export class Store {
     this.stateObs.set({ versionInfo: info });
   }
 
+  /**
+   * The filter the per-location counts are measured against.
+   *
+   * Everything the user has narrowed by *except* location: the tree is how you
+   * choose a location, so applying the current choice to it would zero every
+   * other branch exactly when you want to see where else the matches are.
+   */
+  private locationCountFilters(): StoreFilters {
+    return {
+      ...this.state.value.filters,
+      locationId: null,
+      includeSubtree: true,
+      orphansOnly: false,
+    };
+  }
+
   async refreshLocationTree() {
-    const tree = await this.run(() => this.ws.getLocationTree());
+    const counting = this.locationCountFilters();
+    const filtered = activeFilterCount(counting) > 0;
+    const tree = await this.run(() => this.ws.getLocationTree(filtered ? toWireFilter(counting) : undefined));
     // Sorted once here so every consumer — sidebar, pickers, organize dialog —
     // sees the same order; the API returns nodes in insertion order.
     this.stateObs.set({ locationTreeCache: sortLocationTree((tree ?? []) as LocationTreeNode[]) });
+    // The tree covers filed items only, so the whole-inventory match count comes
+    // separately; "No location" is then the remainder, with no third query.
+    this.stateObs.set({ locationMatchTotal: filtered ? await this.countMatching(counting) : null });
   }
 
   async refreshLocationsFlat() {
@@ -586,6 +617,11 @@ export class Store {
     if (locationChanged) this.subscribeTopics();
     // Reload with new filters
     void this.listItems(true);
+    // Per-location counts are measured against the filter, so they move with it.
+    // Coalesced: a filter panel can patch several keys in a row. Re-ordering
+    // changes no count, and a sortable table header would otherwise walk the
+    // whole tree on every click.
+    if (Object.keys(patch).some((key) => key !== 'sort')) this.scheduleTreeRefresh();
   }
 
   /** Drop every filter, keeping the current sort. */

@@ -197,7 +197,7 @@ describe('hv-filter-panel: dates and location', () => {
   it('turns a date input into the ISO instant the backend compares against', async () => {
     const el = await mount();
     const seen = changes(el);
-    const input = q(el, '[data-testid="filter-updated-after"]').querySelector(
+    const input = q(el, '[data-testid="filter-updated-date"]').querySelector(
       'input',
     ) as HTMLInputElement;
 
@@ -293,6 +293,51 @@ describe('hv-filter-panel: footer and staging', () => {
     await el.updateComplete;
     expect(el.working.category).toBe(null);
   });
+
+  // Clearing used to go straight to the store: the list behind the sheet
+  // reloaded while every control in the sheet kept its old value.
+  it('clears the staged draft, not the applied filters', async () => {
+    const el = await mount(
+      { category: 'Hardware', tags: ['metric'], lowStockOnly: true },
+      { mobile: true },
+    );
+    const applied: unknown[] = [];
+    const staged: StoreFilters[] = [];
+    el.addEventListener('change', () => applied.push(true));
+    el.addEventListener('stage', (e) => staged.push((e as CustomEvent).detail.filters));
+
+    el.clearAll();
+    await el.updateComplete;
+
+    expect(applied).toEqual([]);
+    expect(el.working).toMatchObject({ category: null, tags: [], lowStockOnly: false });
+    expect(staged[0]).toMatchObject({ category: null, tags: [], lowStockOnly: false });
+    // Every chip in the sheet is visibly off again.
+    expect(all(el, '[data-testid="filter-category"].on')).toEqual([]);
+
+    // Still staged: the filters only reach the store on apply.
+    const applies: StoreFilters[] = [];
+    el.addEventListener('apply', (e) => applies.push((e as CustomEvent).detail));
+    el.apply();
+    expect(applies[0]).toMatchObject({ category: null, tags: [], lowStockOnly: false });
+  });
+
+  it('keeps the chosen sort when clearing', async () => {
+    const el = await mount({ category: 'Tools', sort: { field: 'name', order: 'asc' } }, { mobile: true });
+    el.clearAll();
+    await el.updateComplete;
+    expect(el.working.sort).toEqual({ field: 'name', order: 'asc' });
+  });
+
+  it('still asks the host to clear when it applies live (desktop)', async () => {
+    const el = await mount({ category: 'Tools' });
+    let cleared = 0;
+    el.addEventListener('clear-filters', () => {
+      cleared += 1;
+    });
+    (q(el, '[data-testid="filter-clear-all"]') as HTMLButtonElement).click();
+    expect(cleared).toBe(1);
+  });
 });
 
 describe('hv-filter-panel: native control affordances', () => {
@@ -304,40 +349,107 @@ describe('hv-filter-panel: native control affordances', () => {
     const selectRule = cssText.slice(cssText.indexOf('.field select'));
     expect(selectRule).toContain('appearance: none');
   });
+
+  // The drawn chevron used to be a sibling of a select only as wide as its own
+  // text, so clicking the arrow — the obvious target — did nothing at all.
+  it('lets the select own the whole field, chevron included', async () => {
+    const el = await mount();
+    for (const testid of ['filter-sort-field', 'filter-area']) {
+      const field = q(el, `[data-testid="${testid}"]`);
+      expect(field.classList.contains('select-field')).toBe(true);
+      expect(field.querySelector('.chevron')).not.toBe(null);
+    }
+
+    const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
+    const cssText = (Array.isArray(sheet) ? sheet : [sheet]).map((s) => String(s.cssText)).join('\n');
+    const chevronRule = cssText.slice(cssText.indexOf('.field .chevron'));
+    expect(chevronRule).toContain('pointer-events: none');
+  });
 });
 
-describe('hv-filter-panel: changed since', () => {
+describe('hv-filter-panel: changed', () => {
   // Two bare date inputs side by side are indistinguishable: the only labels
   // used to be screen-reader-only, so a sighted user could not tell which one
   // filtered on updated and which on created.
   it('labels each date filter visibly, not only for screen readers', async () => {
     const el = await mount();
-    const updated = q(el, '[data-testid="filter-updated-after"]');
-    const created = q(el, '[data-testid="filter-created-after"]');
 
     const visibleText = (host: HTMLElement) =>
-      [...host.querySelectorAll('span')]
+      [...host.querySelectorAll('button, span')]
         .filter((s) => !s.classList.contains('hv-sr-only'))
         .map((s) => s.textContent?.trim())
         .join(' ');
 
-    expect(visibleText(updated)).toMatch(/updated/i);
-    expect(visibleText(created)).toMatch(/created/i);
+    expect(visibleText(q(el, '[data-testid="filter-updated-date"]'))).toMatch(/updated/i);
+    expect(visibleText(q(el, '[data-testid="filter-created-date"]'))).toMatch(/created/i);
   });
 
   it('keeps the two date inputs wired to their own filter keys', async () => {
     const el = await mount();
     const seen = changes(el);
 
-    const updatedInput = q(el, '[data-testid="filter-updated-after"] input') as HTMLInputElement;
+    const updatedInput = q(el, '[data-testid="filter-updated-date"] input') as HTMLInputElement;
     updatedInput.value = '2026-07-01';
     updatedInput.dispatchEvent(new Event('change'));
 
-    const createdInput = q(el, '[data-testid="filter-created-after"] input') as HTMLInputElement;
+    const createdInput = q(el, '[data-testid="filter-created-date"] input') as HTMLInputElement;
     createdInput.value = '2026-06-01';
     createdInput.dispatchEvent(new Event('change'));
 
     expect(seen[0]).toMatchObject({ updatedAfter: '2026-07-01T00:00:00Z' });
     expect(seen[1]).toMatchObject({ createdAfter: '2026-06-01T00:00:00Z' });
+  });
+
+  // "Since" and "before" are the same row asked in two directions.
+  it('flips a date row from ≥ to ≤ and back, carrying the value across', async () => {
+    const el = await mount({ updatedAfter: '2026-07-01T00:00:00Z' });
+    const seen = changes(el);
+    const direction = () => q(el, '[data-testid="filter-updated-direction"]') as HTMLButtonElement;
+
+    expect(direction().dataset.direction).toBe('after');
+    expect(direction().textContent).toContain('≥');
+
+    direction().click();
+    expect(seen[0]).toEqual({ updatedAfter: null, updatedBefore: '2026-07-01T00:00:00Z' });
+
+    // Re-mount as the store would, with the flipped filter applied.
+    const flipped = await mount({ updatedBefore: '2026-07-01T00:00:00Z' });
+    const flippedDirection = q(flipped, '[data-testid="filter-updated-direction"]') as HTMLButtonElement;
+    expect(flippedDirection.dataset.direction).toBe('before');
+    expect(flippedDirection.textContent).toContain('≤');
+
+    // The input now edits the `before` bound rather than the `after` one.
+    const seenFlipped = changes(flipped);
+    const input = q(flipped, '[data-testid="filter-updated-date"] input') as HTMLInputElement;
+    input.value = '2026-06-01';
+    input.dispatchEvent(new Event('change'));
+    expect(seenFlipped[0]).toEqual({ updatedBefore: '2026-06-01T00:00:00Z' });
+  });
+
+  it('flips an empty row without filtering on nothing', async () => {
+    const el = await mount();
+    const seen = changes(el);
+    (q(el, '[data-testid="filter-created-direction"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    // The row remembers the flip so the next date lands on the right bound…
+    const direction = q(el, '[data-testid="filter-created-direction"]') as HTMLButtonElement;
+    expect(direction.dataset.direction).toBe('before');
+    // …but there is nothing to filter on yet, so the list is left alone.
+    expect(seen).toEqual([]);
+
+    const input = q(el, '[data-testid="filter-created-date"] input') as HTMLInputElement;
+    input.value = '2026-06-01';
+    input.dispatchEvent(new Event('change'));
+    expect(seen[0]).toEqual({ createdBefore: '2026-06-01T00:00:00Z' });
+  });
+});
+
+describe('hv-filter-panel: overdue', () => {
+  it('offers overdue alongside the other show-only filters', async () => {
+    const el = await mount();
+    const seen = changes(el);
+    (q(el, '[data-testid="filter-overdue"]') as HTMLButtonElement).click();
+    expect(seen[0]).toEqual({ overdueOnly: true });
   });
 });

@@ -2,7 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
-import { activeFilterCount } from '../store/store';
+import { activeFilterCount, defaultFilters } from '../store/store';
 import type {
   DistinctValues,
   Location,
@@ -24,6 +24,14 @@ const SORT_FIELDS: { field: SortField; label: string }[] = [
 
 /** How many category chips to show before collapsing the rest behind "More…". */
 const CATEGORY_CHIP_LIMIT = 4;
+
+/** The two timestamps a "Changed" row can compare, and the filter keys behind them. */
+type DateField = 'updated' | 'created';
+
+const DATE_KEYS = {
+  updated: { after: 'updatedAfter', before: 'updatedBefore', noun: 'Updated' },
+  created: { after: 'createdAfter', before: 'createdBefore', noun: 'Created' },
+} as const;
 
 /**
  * Every filter the backend accepts, in one panel (mock 4b) — and the same set as
@@ -154,13 +162,49 @@ export class HVFilterPanel extends LitElement {
         color: inherit;
         font: inherit;
       }
-      /* Distinguishes "Updated ≥" from "Created ≥"; both fields are otherwise identical. */
-      .field .field-label {
+      /*
+       * The comparison is a button, not a caption: it says which field this row
+       * is about *and* which way the comparison runs, and clicking it flips the
+       * direction.
+       */
+      .field .direction {
         white-space: nowrap;
+        border: none;
+        background: none;
+        border-radius: 5px;
+        padding: 2px 5px;
+        margin: -2px -2px -2px -3px;
+        font: inherit;
         color: var(--hv-text-secondary);
       }
-      .field.on .field-label {
+      .field.on .direction {
         color: var(--hv-text);
+      }
+      .field .direction:hover {
+        background: var(--hv-hover-overlay);
+        color: var(--hv-primary-dark);
+      }
+      /*
+       * An appearance:none select is only as wide as its text, so the drawn
+       * chevron sat outside it and clicking the chevron did nothing. The select
+       * now fills the field and the chevron is decoration on top of it.
+       */
+      .field.select-field {
+        position: relative;
+        padding-right: 27px;
+      }
+      .field.select-field select {
+        flex: 1;
+        min-width: 0;
+      }
+      .field .chevron {
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: inline-flex;
+        color: var(--hv-text-secondary);
+        pointer-events: none;
       }
       .segmented {
         display: inline-flex;
@@ -286,6 +330,11 @@ export class HVFilterPanel extends LitElement {
   @state() private _locationOpen = false;
   @state() private _showAllCategories = false;
   @state() private _tagDraft = '';
+  /** Direction a date row falls back to while it holds no date. */
+  @state() private _dateDirection: Record<DateField, 'after' | 'before'> = {
+    updated: 'after',
+    created: 'after',
+  };
 
   /** The filter set the controls are bound to. */
   get working(): StoreFilters {
@@ -302,6 +351,22 @@ export class HVFilterPanel extends LitElement {
   /** Discard staged edits (the sheet's Cancel). */
   resetDraft() {
     this._draft = this.mobile ? { ...this.filters, tags: [...this.filters.tags] } : null;
+  }
+
+  /**
+   * The sheet's "Clear all". In staged mode this has to empty the *draft* — a
+   * store-level clear left the panel bound to its untouched draft, so the list
+   * behind the sheet reloaded while every control stayed exactly as it was.
+   * Nothing is applied until the footer button commits, like every other edit
+   * in the sheet.
+   */
+  clearAll() {
+    if (!this.mobile) {
+      this.dispatchEvent(new CustomEvent('clear-filters', { bubbles: true, composed: true }));
+      return;
+    }
+    // Sort is a view preference, not a filter — "Clear all" keeps it.
+    this._patch({ ...defaultFilters(), sort: this.working.sort });
   }
 
   private _patch(patch: Partial<StoreFilters>) {
@@ -380,7 +445,7 @@ export class HVFilterPanel extends LitElement {
           >
             ${icon('mapMarker', 14)}${label}${icon('chevronDown', 14)}
           </button>
-          <label class="field" data-testid="filter-area">
+          <label class="field select-field ${f.areaId ? 'on' : ''}" data-testid="filter-area">
             <span class="hv-sr-only">Area</span>
             <select
               .value=${f.areaId ?? ''}
@@ -391,6 +456,7 @@ export class HVFilterPanel extends LitElement {
                 (a) => html`<option value=${a.id} ?selected=${f.areaId === a.id}>${a.name}</option>`,
               )}
             </select>
+            <span class="chevron">${icon('chevronDown', 14)}</span>
           </label>
           ${this._renderCheckbox(
             'Include sub-locations',
@@ -541,6 +607,7 @@ export class HVFilterPanel extends LitElement {
             ? html`
                 ${this._renderCheckbox('Low stock', f.lowStockOnly, () => this._patch({ lowStockOnly: !f.lowStockOnly }), { warning: true, tally: counts.low, testid: 'filter-low-stock-only' })}
                 ${this._renderCheckbox('Checked out', f.checkedOutOnly, () => this._patch({ checkedOutOnly: !f.checkedOutOnly }), { tally: counts.out, testid: 'filter-checked-out' })}
+                ${this._renderCheckbox('Overdue', f.overdueOnly, () => this._patch({ overdueOnly: !f.overdueOnly }), { warning: true, testid: 'filter-overdue' })}
                 ${this._renderCheckbox('No location', f.orphansOnly, () => this._patch({ orphansOnly: !f.orphansOnly }), { tally: counts.none, testid: 'filter-orphans' })}
               `
             : html`
@@ -559,6 +626,13 @@ export class HVFilterPanel extends LitElement {
                   ${f.checkedOutOnly ? icon('check', 12) : null}Checked out
                 </button>
                 <button
+                  class="chip ${f.overdueOnly ? 'on warning' : ''}"
+                  data-testid="filter-overdue"
+                  @click=${() => this._patch({ overdueOnly: !f.overdueOnly })}
+                >
+                  ${f.overdueOnly ? icon('check', 12) : null}Overdue
+                </button>
+                <button
                   class="chip ${f.orphansOnly ? 'on' : ''}"
                   data-testid="filter-orphans"
                   @click=${() => this._patch({ orphansOnly: !f.orphansOnly })}
@@ -571,35 +645,63 @@ export class HVFilterPanel extends LitElement {
     `;
   }
 
-  private _renderDateGroup() {
+  /**
+   * Which way a date row compares. An applied bound decides it; an empty row
+   * remembers the last flip, so pressing ≥ before picking a date does something.
+   */
+  private _dateDirectionOf(field: DateField): 'after' | 'before' {
     const f = this.working;
+    if (f[DATE_KEYS[field].before]) return 'before';
+    if (f[DATE_KEYS[field].after]) return 'after';
+    return this._dateDirection[field];
+  }
+
+  /**
+   * One date row, with the comparison itself as the control.
+   *
+   * "Since" and "before" are the same question asked in two directions, so
+   * flipping ≥/≤ is cheaper than a second row — and a date already picked moves
+   * across with the flip, since it is the date you meant either way.
+   */
+  private _renderDateRow(field: DateField) {
+    const { after: afterKey, before: beforeKey, noun } = DATE_KEYS[field];
+    const before = this._dateDirectionOf(field) === 'before';
+    const activeKey = before ? beforeKey : afterKey;
+    const value = this.working[activeKey];
     const dateOf = (iso: string | null) => (iso ? iso.slice(0, 10) : '');
-    const toIso = (value: string) => (value ? `${value}T00:00:00Z` : null);
+    const toIso = (raw: string) => (raw ? `${raw}T00:00:00Z` : null);
+
+    return html`<span class="field ${value ? 'on' : 'muted'}" data-testid=${`filter-${field}-date`}>
+      ${icon('calendar', 14)}
+      <button
+        class="direction"
+        data-testid=${`filter-${field}-direction`}
+        data-direction=${before ? 'before' : 'after'}
+        aria-label=${`${noun} ${before ? 'before' : 'since'} — switch to ${before ? 'since' : 'before'}`}
+        title=${before ? 'Before this date — click for "since"' : 'Since this date — click for "before"'}
+        @click=${() => {
+          this._dateDirection = { ...this._dateDirection, [field]: before ? 'after' : 'before' };
+          // Nothing to re-apply on an empty row, and patching two nulls would
+          // reload the list for no reason.
+          if (value) this._patch({ [afterKey]: before ? value : null, [beforeKey]: before ? null : value });
+        }}
+      >
+        ${noun} ${before ? '≤' : '≥'}
+      </button>
+      <input
+        type="date"
+        aria-label=${`${noun} ${before ? 'before' : 'since'}`}
+        .value=${dateOf(value)}
+        @change=${(e: Event) => this._patch({ [activeKey]: toIso((e.target as HTMLInputElement).value) })}
+      />
+    </span>`;
+  }
+
+  private _renderDateGroup() {
     return html`
       <div class="group">
-        <span class="hv-label">Changed since</span>
-        <div class="chips">
-          <label class="field ${f.updatedAfter ? 'on' : 'muted'}" data-testid="filter-updated-after">
-            ${icon('calendar', 14)}
-            <span class="field-label">Updated ≥</span>
-            <input
-              type="date"
-              aria-label="Updated since"
-              .value=${dateOf(f.updatedAfter)}
-              @change=${(e: Event) => this._patch({ updatedAfter: toIso((e.target as HTMLInputElement).value) })}
-            />
-          </label>
-          <label class="field ${f.createdAfter ? 'on' : 'muted'}" data-testid="filter-created-after">
-            ${icon('calendar', 14)}
-            <span class="field-label">Created ≥</span>
-            <input
-              type="date"
-              aria-label="Created since"
-              .value=${dateOf(f.createdAfter)}
-              @change=${(e: Event) => this._patch({ createdAfter: toIso((e.target as HTMLInputElement).value) })}
-            />
-          </label>
-        </div>
+        <span class="hv-label">Changed</span>
+        <div class="chips">${this._renderDateRow('updated')} ${this._renderDateRow('created')}</div>
       </div>
     `;
   }
@@ -613,7 +715,7 @@ export class HVFilterPanel extends LitElement {
       <div class="group">
         <span class="hv-label">Sort</span>
         <div class="chips">
-          <label class="field" data-testid="filter-sort-field">
+          <label class="field select-field" data-testid="filter-sort-field">
             <span class="hv-sr-only">Sort by</span>
             <select
               @change=${(e: Event) =>
@@ -625,7 +727,7 @@ export class HVFilterPanel extends LitElement {
                 (s) => html`<option value=${s.field} ?selected=${f.sort.field === s.field}>${s.label}</option>`,
               )}
             </select>
-            ${icon('chevronDown', 14)}
+            <span class="chevron">${icon('chevronDown', 14)}</span>
           </label>
           <span class="segmented" role="radiogroup" aria-label="Sort direction">
             ${(['desc', 'asc'] as const).map(
@@ -668,12 +770,7 @@ export class HVFilterPanel extends LitElement {
                   ? ` · ${this.total} of ${this.grandTotal} match`
                   : ''}
               </span>
-              <button
-                class="link"
-                data-testid="filter-clear-all"
-                @click=${() =>
-                  this.dispatchEvent(new CustomEvent('clear-filters', { bubbles: true, composed: true }))}
-              >
+              <button class="link" data-testid="filter-clear-all" @click=${() => this.clearAll()}>
                 Clear all
               </button>
             </div>`}

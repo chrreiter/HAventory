@@ -86,6 +86,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             items_total: items.length,
             low_stock_count: items.filter((i) => typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number)).length,
             checked_out_count: items.filter((i) => i.checked_out).length,
+            overdue_count: items.filter((i) => isMockOverdue(i)).length,
             locations_total: locations.length,
             no_location_count: items.filter((i) => i.location_id == null).length,
           };
@@ -96,6 +97,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             items_total: items.length,
             low_stock_count: items.filter((i) => typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number)).length,
             checked_out_count: items.filter((i) => i.checked_out).length,
+            overdue_count: items.filter((i) => isMockOverdue(i)).length,
             locations_total: locations.length,
             no_location_count: items.filter((i) => i.location_id == null).length,
           };
@@ -204,8 +206,13 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           return { categories, tags, custom_field_keys } as unknown as T;
         }
         case 'haventory/location/tree': {
-          // Mirror the backend: nested nodes carrying direct and subtree counts.
+          // Mirror the backend: nested nodes carrying direct and subtree counts,
+          // plus the matching pair when (and only when) a filter is sent.
           const directCount = (id: string) => items.filter((i) => i.location_id === id).length;
+          const treeFilter = (msg as any).filter as unknown;
+          const matched = treeFilter ? applyMockFilter(items, treeFilter) : null;
+          const matchingDirect = (id: string) =>
+            (matched ?? []).filter((i) => i.location_id === id).length;
           // Guard against a fixture that parents a location to itself: the real
           // backend rejects cycles, but a test can hand us one.
           const seen = new Set<string>();
@@ -217,7 +224,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
                 seen.add(l.id);
                 const children = build(l.id);
                 const direct = directCount(l.id);
-                return {
+                const node: Record<string, unknown> = {
                   id: l.id,
                   name: l.name,
                   parent_id: l.parent_id ?? null,
@@ -228,6 +235,13 @@ export function makeMockHass(initial?: MockConfig): MockHass {
                     direct + children.reduce((sum, c) => sum + (c.subtree_item_count as number), 0),
                   children,
                 };
+                if (matched) {
+                  const mDirect = matchingDirect(l.id);
+                  node.matching_direct_count = mDirect;
+                  node.matching_subtree_count =
+                    mDirect + children.reduce((sum, c) => sum + ((c.matching_subtree_count as number) ?? 0), 0);
+                }
+                return node;
               });
           return build(null) as unknown as T;
         }
@@ -523,16 +537,26 @@ export function makeMockHass(initial?: MockConfig): MockHass {
   return hass;
 }
 
+/** Mirror of the backend's overdue rule: a due date strictly before today (UTC). */
+function isMockOverdue(item: Item): boolean {
+  return !!item.due_date && item.due_date < new Date().toISOString().slice(0, 10);
+}
+
 /** Faithful-but-small mirror of the backend ItemFilter semantics (AND of all predicates). */
 function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
   const filter = (rawFilter ?? null) as {
     q?: string;
     checked_out?: boolean;
     orphaned_only?: boolean;
+    overdue_only?: boolean;
     location_id?: string | null;
     include_subtree?: boolean;
     category?: string;
     tags_any?: string[];
+    updated_after?: string;
+    updated_before?: string;
+    created_after?: string;
+    created_before?: string;
   } | null;
   if (!filter) return list;
   return list.filter((it) => {
@@ -556,6 +580,12 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     }
     if (typeof filter.checked_out === 'boolean' && it.checked_out !== filter.checked_out) return false;
     if (filter.orphaned_only && it.location_id !== null) return false;
+    if (filter.overdue_only && !isMockOverdue(it)) return false;
+    // Canonical 'Z' timestamps compare lexicographically; both bounds are exclusive.
+    if (filter.updated_after && !(it.updated_at > filter.updated_after)) return false;
+    if (filter.updated_before && !(it.updated_at < filter.updated_before)) return false;
+    if (filter.created_after && !(it.created_at > filter.created_after)) return false;
+    if (filter.created_before && !(it.created_at < filter.created_before)) return false;
     if (filter.location_id) {
       const inSubtree = it.location_id === filter.location_id
         || (it.location_path?.id_path ?? []).includes(filter.location_id);
