@@ -622,6 +622,7 @@ export class HVFullView extends LitElement {
           showCounts
           .totalCount=${st?.statsCounts?.items_total ?? null}
           .orphanCount=${st?.statsCounts?.no_location_count ?? null}
+          .matchingTotalCount=${st?.locationMatchTotal ?? null}
           @select=${(e: CustomEvent) =>
             this._setFilters({
               locationId: (e.detail as { locationId: string | null }).locationId,

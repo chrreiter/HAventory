@@ -117,6 +117,43 @@ describe('hv-location-tree: counts and decorations', () => {
   });
 });
 
+// A total that ignores the active filter says nothing about where the matches
+// are, which is the one question a location sidebar exists to answer.
+describe('hv-location-tree: counts under a filter', () => {
+  const matched: LocationTreeNode[] = [
+    { ...tree[0], matching_direct_count: 0, matching_subtree_count: 4 },
+    { ...tree[1], matching_direct_count: 2, matching_subtree_count: 2 },
+  ];
+
+  it('reads "matching / total" on every row once the backend sends both', async () => {
+    const el = await mount({ nodes: matched, showCounts: true });
+    const counts = [...(el.shadowRoot?.querySelectorAll('[data-testid="tree-count"]') ?? [])].map(
+      (c) => c.textContent?.trim(),
+    );
+    expect(counts).toEqual(['4 / 64', '2 / 57']);
+  });
+
+  it('falls back to the plain total when nothing is filtered', async () => {
+    const el = await mount({ showCounts: true });
+    expect(q(el, '[data-testid="tree-count"]')?.textContent?.trim()).toBe('64');
+  });
+
+  it('pairs the All items row and derives the orphan share as the remainder', async () => {
+    const el = await mount({
+      nodes: matched,
+      showAll: true,
+      showOrphans: true,
+      showCounts: true,
+      totalCount: 250,
+      orphanCount: 3,
+      // 4 + 2 are filed, so the last one has no location.
+      matchingTotalCount: 7,
+    });
+    expect(q(el, '[data-testid="tree-all"]')?.textContent).toContain('7 / 250');
+    expect(q(el, '[data-testid="tree-orphans"]')?.textContent).toContain('1 / 3');
+  });
+});
+
 describe('hv-location-tree: selection', () => {
   it('emits the picked location', async () => {
     const el = await mount();

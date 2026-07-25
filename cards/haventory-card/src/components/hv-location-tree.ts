@@ -87,6 +87,26 @@ export class HVLocationTree extends LitElement {
       .row.selected .count {
         color: inherit;
       }
+      /* Managing is browsing too: the count is the way into the items, exactly
+         as it is on the organize dialog's category and tag rows. */
+      .count.link {
+        border: none;
+        background: none;
+        padding: 0 2px;
+        font: 400 12px var(--hv-font);
+        color: var(--hv-primary-dark);
+      }
+      .count.link:hover {
+        text-decoration: underline;
+      }
+      /* Left-packed like a value row (name, then count) instead of the name
+         pushing the count to the far edge. */
+      .row.manage .name {
+        flex: 0 1 auto;
+      }
+      .row.manage .actions {
+        margin-left: auto;
+      }
       .area-chip {
         flex: none;
         font-size: 11px;
@@ -97,12 +117,22 @@ export class HVLocationTree extends LitElement {
       }
       .actions {
         flex: none;
-        display: none;
+        display: flex;
         gap: 2px;
       }
-      .row:hover .actions,
-      .row:focus-within .actions {
-        display: flex;
+      /* Reveal-on-hover only where hovering exists; on touch these were simply
+         unreachable. Hidden rather than unrendered, so the rest of the row does
+         not jump sideways the moment the pointer arrives. */
+      @media (hover: hover) {
+        .actions {
+          visibility: hidden;
+        }
+        .row:hover .actions,
+        .row:focus-within .actions,
+        /* The touch layout's single ⋮ is the only way in — never hide it. */
+        .row.touch .actions {
+          visibility: visible;
+        }
       }
       .action {
         display: inline-grid;
@@ -144,11 +174,22 @@ export class HVLocationTree extends LitElement {
   @property({ type: Boolean }) orphansSelected = false;
   @property({ type: Number }) totalCount: number | null = null;
   @property({ type: Number }) orphanCount: number | null = null;
+  /**
+   * Items matching the active filter across the whole inventory, ignoring its
+   * location dimension. Pairs the "All items" row with the node rows; the
+   * orphan row's match count is the part of it no root accounts for.
+   */
+  @property({ type: Number }) matchingTotalCount: number | null = null;
   @property({ type: Boolean }) showCounts = false;
   /** Show the "Area: X" chip on locations that set one explicitly. */
   @property({ type: Boolean }) showAreas = false;
   /** Reveal rename/delete affordances on hover (organize + sidebar management). */
   @property({ type: Boolean }) manage = false;
+  /**
+   * Touch layout for `manage`: one always-visible ⋮ per row instead of a row of
+   * icons that only a hover can reveal.
+   */
+  @property({ type: Boolean }) touch = false;
   /**
    * Disable this node and everything under it. Parent pickers must exclude the
    * location itself and its descendants — the backend rejects cycles.
@@ -212,6 +253,36 @@ export class HVLocationTree extends LitElement {
     return this.areas.find((a) => a.id === areaId)?.name ?? areaId;
   }
 
+  /**
+   * The per-node tally. In a picker it is a plain number beside the name; in
+   * manage mode it names its unit and opens the items, so a location row offers
+   * the same "N items" way in that a category or tag row does.
+   */
+  private _renderCount(node: LocationTreeNode, excluded: boolean) {
+    const count = node.subtree_item_count ?? node.direct_item_count ?? 0;
+    if (!this.manage) {
+      // A total that never moves while a filter is on says nothing about where
+      // the matches are — which is the one thing this sidebar is for.
+      const matching = node.matching_subtree_count;
+      return html`<span class="count" data-testid="tree-count"
+        >${matching === undefined ? count : `${matching} / ${count}`}</span
+      >`;
+    }
+    return html`<button
+      class="count link"
+      data-testid="tree-count"
+      data-id=${node.id}
+      ?disabled=${excluded}
+      @click=${(e: Event) => {
+        e.stopPropagation();
+        if (excluded) return;
+        this._emit('select', { locationId: node.id, node });
+      }}
+    >
+      ${count} item${count === 1 ? '' : 's'}
+    </button>`;
+  }
+
   private _renderNode(node: LocationTreeNode, depth: number, excluded: boolean): TemplateResult | null {
     if (!this._visible(node)) return null;
 
@@ -226,7 +297,9 @@ export class HVLocationTree extends LitElement {
     return html`
       <div class="node">
         <div
-          class="row ${selected ? 'selected' : ''}"
+          class="row ${selected ? 'selected' : ''} ${this.manage ? 'manage' : ''} ${this.touch
+            ? 'touch'
+            : ''}"
           role="treeitem"
           aria-selected=${String(selected)}
           aria-expanded=${hasChildren ? String(open) : 'undefined'}
@@ -263,8 +336,38 @@ export class HVLocationTree extends LitElement {
             ${node.name}
           </button>
           ${areaName ? html`<span class="area-chip" data-testid="tree-area">Area: ${areaName}</span>` : null}
-          ${this.manage
+          ${this.showCounts ? this._renderCount(node, isExcluded) : null}
+          ${this.manage && this.touch
             ? html`<span class="actions">
+                <button
+                  class="action"
+                  data-testid="tree-more"
+                  data-id=${node.id}
+                  aria-label=${`Actions for ${node.name}`}
+                  @click=${(e: Event) => {
+                    e.stopPropagation();
+                    this._emit('more-location', { locationId: node.id, node });
+                  }}
+                >
+                  ${icon('dotsVertical', 17)}
+                </button>
+              </span>`
+            : null}
+          ${this.manage && !this.touch
+            ? html`<span class="actions">
+                <button
+                  class="action"
+                  data-testid="tree-merge"
+                  data-id=${node.id}
+                  aria-label=${`Merge ${node.name}`}
+                  title="Merge into another location"
+                  @click=${(e: Event) => {
+                    e.stopPropagation();
+                    this._emit('merge-location', { locationId: node.id, node });
+                  }}
+                >
+                  ${icon('callMerge', 16)}
+                </button>
                 <button
                   class="action"
                   data-testid="tree-edit"
@@ -293,16 +396,27 @@ export class HVLocationTree extends LitElement {
                 </button>
               </span>`
             : null}
-          ${this.showCounts
-            ? html`<span class="count" data-testid="tree-count"
-                >${node.subtree_item_count ?? node.direct_item_count ?? 0}</span
-              >`
-            : null}
         </div>
         <slot name=${`after-${node.id}`}></slot>
         ${open ? children.map((c) => this._renderNode(c, depth + 1, isExcluded)) : null}
       </div>
     `;
+  }
+
+  /** "4 / 37" while a filter is on, plain "37" otherwise. */
+  private _pairedCount(total: number, matching: number | null) {
+    return html`<span class="count">${matching === null ? total : `${matching} / ${total}`}</span>`;
+  }
+
+  /**
+   * How many matches are on items with no location: the whole-inventory match
+   * count less everything the roots already account for. Every item is either
+   * filed somewhere or an orphan, so the remainder needs no extra query.
+   */
+  private get _matchingOrphanCount(): number | null {
+    if (this.matchingTotalCount === null) return null;
+    const filed = this.nodes.reduce((sum, n) => sum + (n.matching_subtree_count ?? 0), 0);
+    return Math.max(0, this.matchingTotalCount - filed);
   }
 
   render() {
@@ -319,7 +433,7 @@ export class HVLocationTree extends LitElement {
               ${icon('home', 18)}
               <span class="name">All items</span>
               ${this.showCounts && this.totalCount !== null
-                ? html`<span class="count">${this.totalCount}</span>`
+                ? this._pairedCount(this.totalCount, this.matchingTotalCount)
                 : null}
             </button>`
           : null}
@@ -340,7 +454,7 @@ export class HVLocationTree extends LitElement {
                 ${icon('alert', 18)}
                 <span class="name">No location</span>
                 ${this.showCounts && this.orphanCount !== null
-                  ? html`<span class="count">${this.orphanCount}</span>`
+                  ? this._pairedCount(this.orphanCount, this._matchingOrphanCount)
                   : null}
               </button>
             `
