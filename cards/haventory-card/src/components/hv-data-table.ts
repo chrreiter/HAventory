@@ -5,6 +5,7 @@ import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import { COLUMN_DEFS, normalizeColumns, tableTemplateFor } from '../store/columns';
+import { getDefaultOrderFor } from '../store/sort';
 import type { ColumnKey } from '../store/columns';
 import { displayPath, isLowStock } from './hv-list-row';
 import type { Item, Sort, SortField } from '../store/types';
@@ -207,15 +208,15 @@ export class HVDataTable extends LitElement {
   }
 
   private _onSort(field: SortField) {
+    // Clicking the sorted column flips it; a fresh column opens on whichever
+    // direction reads as "most interesting first" for that field — the same
+    // table the filter panel and the store default from.
     const order =
       this.sort?.field === field
         ? this.sort.order === 'asc'
           ? 'desc'
           : 'asc'
-        : // Dates read newest-first, everything else reads smallest-first.
-          field === 'name' || field === 'quantity'
-          ? 'asc'
-          : 'desc';
+        : getDefaultOrderFor(field);
     this._emit('sort-change', { sort: { field, order } });
   }
 
