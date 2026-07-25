@@ -211,6 +211,102 @@ describe('hv-item-editor: location and tags', () => {
   });
 });
 
+describe('hv-item-editor: category picker', () => {
+  const options = (el: HVItemEditor) =>
+    all(el, '[data-testid="editor-category-option"]').map((o) => o.dataset.value);
+
+  async function focusCategory(el: HVItemEditor) {
+    const input = q(el, '[data-testid="editor-category"]') as HTMLInputElement;
+    input.focus();
+    await el.updateComplete;
+    return input;
+  }
+
+  it('shows every existing category on focus, before a single keystroke', async () => {
+    const el = await mount(null);
+    expect(q(el, '[data-testid="editor-category-list"]')).toBe(null);
+
+    await focusCategory(el);
+    expect(options(el)).toEqual(['Hardware', 'Tools']);
+  });
+
+  it('narrows the list while typing', async () => {
+    const el = await mount(null);
+    await focusCategory(el);
+
+    await type(el, 'editor-category', 'too');
+    expect(options(el)).toEqual(['Tools']);
+  });
+
+  it('reopens the full list from the arrow, whatever is typed', async () => {
+    const el = await mount(null);
+    await type(el, 'editor-category', 'too');
+    expect(options(el)).toEqual(['Tools']);
+
+    (q(el, '[data-testid="editor-category-toggle"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(options(el)).toEqual(['Hardware', 'Tools']);
+
+    // The same button closes it again.
+    (q(el, '[data-testid="editor-category-toggle"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(q(el, '[data-testid="editor-category-list"]')).toBe(null);
+  });
+
+  it('fills the field from a picked option and saves it', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    const saves = onSave(el);
+    await focusCategory(el);
+
+    (all(el, '[data-testid="editor-category-option"]')[1] as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    expect((q(el, '[data-testid="editor-category"]') as HTMLInputElement).value).toBe('Tools');
+    expect(q(el, '[data-testid="editor-category-list"]')).toBe(null);
+
+    (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
+    expect(saves[0].changes?.category).toBe('Tools');
+  });
+
+  it('picks with the keyboard and closes on Escape without discarding the edit', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    let cancels = 0;
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
+    const input = await focusCategory(el);
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await el.updateComplete;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await el.updateComplete;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await el.updateComplete;
+    expect(input.value).toBe('Tools');
+
+    (q(el, '[data-testid="editor-category-toggle"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await el.updateComplete;
+    expect(q(el, '[data-testid="editor-category-list"]')).toBe(null);
+    expect(cancels).toBe(0);
+  });
+
+  it('says so when what you typed is a brand new category', async () => {
+    const el = await mount(null);
+    await type(el, 'editor-category', 'Camping');
+    expect(options(el)).toEqual([]);
+    expect(q(el, '[data-testid="editor-category-empty"]')?.textContent).toContain('Camping');
+  });
+
+  it('drops the arrow when there is nothing to list yet', async () => {
+    const el = await mount(null, { categorySuggestions: [] });
+    expect(q(el, '[data-testid="editor-category-toggle"]')).toBe(null);
+    await focusCategory(el);
+    expect(q(el, '[data-testid="editor-category-list"]')).toBe(null);
+  });
+});
+
 describe('hv-item-editor: typed custom fields', () => {
   it('lists the fields of an item with the right editor per type', async () => {
     const el = await mount(

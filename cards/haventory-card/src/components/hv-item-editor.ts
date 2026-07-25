@@ -174,7 +174,8 @@ export class HVItemEditor extends LitElement {
         font-size: 12px;
         color: var(--hv-error);
       }
-      .tree-holder {
+      .tree-holder,
+      .list-holder {
         margin-top: 6px;
         border: 1px solid var(--hv-divider);
         border-radius: var(--hv-radius-input);
@@ -182,6 +183,75 @@ export class HVItemEditor extends LitElement {
         max-height: 220px;
         overflow: auto;
         padding: 4px 0;
+      }
+      /* The category field is a text input plus its own dropdown affordance —
+         without the arrow the existing values were only findable by guessing. */
+      .combo {
+        position: relative;
+        display: flex;
+        align-items: center;
+      }
+      .combo .hv-input {
+        padding-right: 34px;
+      }
+      .combo-arrow {
+        position: absolute;
+        right: 4px;
+        display: inline-grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        border: none;
+        border-radius: 50%;
+        background: none;
+        color: var(--hv-text-tertiary);
+        padding: 0;
+      }
+      .combo-arrow:hover {
+        background: var(--hv-hover-overlay);
+      }
+      :host([mobile]) .combo-arrow {
+        right: 6px;
+        width: 32px;
+        height: 32px;
+      }
+      .option {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        box-sizing: border-box;
+        border: none;
+        background: none;
+        text-align: left;
+        font: 400 13.5px var(--hv-font);
+        color: var(--hv-text);
+        padding: 7px 12px;
+        border-radius: var(--hv-radius-input);
+      }
+      .option .label {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .option:hover,
+      .option.active {
+        background: var(--hv-hover-overlay);
+      }
+      .option.selected {
+        background: var(--hv-primary-tint);
+        color: var(--hv-primary-darker);
+        font-weight: 500;
+      }
+      .option.active {
+        box-shadow: inset 0 0 0 1px var(--hv-primary);
+      }
+      .option-empty {
+        padding: 8px 12px;
+        font-size: 12.5px;
+        color: var(--hv-text-tertiary);
       }
       .toggle {
         display: inline-flex;
@@ -388,6 +458,11 @@ export class HVItemEditor extends LitElement {
   @state() private _showErrors = false;
   @state() private _locationOpen = false;
   @state() private _moreOpen = false;
+  @state() private _categoryOpen = false;
+  /** Opened from the arrow: list everything, ignoring what is already typed. */
+  @state() private _categoryShowAll = false;
+  /** Keyboard cursor into the visible category options; -1 = nothing active. */
+  @state() private _categoryIndex = -1;
 
   /**
    * The footer promises "Esc discards", but that is a keydown handler on the
@@ -406,6 +481,7 @@ export class HVItemEditor extends LitElement {
       this._showErrors = false;
       this._locationOpen = false;
       this._moreOpen = false;
+      this._closeCategory();
     }
   }
 
@@ -511,21 +587,143 @@ export class HVItemEditor extends LitElement {
     </div>`;
   }
 
+  /**
+   * What the dropdown shows right now. Typing narrows the list; the arrow
+   * (and re-focusing the field) puts every category back, because a native
+   * `<datalist>` only ever revealed matches for what you had already guessed.
+   */
+  private get _categoryOptions(): string[] {
+    const query = this._model.category.trim().toLowerCase();
+    if (this._categoryShowAll || !query) return this.categorySuggestions;
+    return this.categorySuggestions.filter((c) => c.toLowerCase().includes(query));
+  }
+
+  private _openCategory(showAll: boolean) {
+    if (!this.categorySuggestions.length) return;
+    this._categoryShowAll = showAll;
+    this._categoryOpen = true;
+    this._categoryIndex = -1;
+  }
+
+  private _closeCategory() {
+    this._categoryOpen = false;
+    this._categoryShowAll = false;
+    this._categoryIndex = -1;
+  }
+
+  private _chooseCategory(value: string) {
+    this._patch({ category: value });
+    this._closeCategory();
+  }
+
+  private _onCategoryKeydown(e: KeyboardEvent) {
+    const options = this._categoryOptions;
+    switch (e.key) {
+      case 'ArrowDown':
+      case 'ArrowUp': {
+        e.preventDefault();
+        if (!this._categoryOpen) {
+          this._openCategory(false);
+          this._categoryIndex = 0;
+          return;
+        }
+        if (!options.length) return;
+        const step = e.key === 'ArrowDown' ? 1 : -1;
+        this._categoryIndex = (this._categoryIndex + step + options.length) % options.length;
+        break;
+      }
+      case 'Enter':
+        if (this._categoryOpen && options[this._categoryIndex]) {
+          e.preventDefault();
+          e.stopPropagation();
+          this._chooseCategory(options[this._categoryIndex]);
+        }
+        break;
+      case 'Escape':
+        // Dismiss the list only — the editor's own Escape would discard the edit.
+        if (this._categoryOpen) {
+          e.preventDefault();
+          e.stopPropagation();
+          this._closeCategory();
+        }
+        break;
+      case 'Tab':
+        this._closeCategory();
+        break;
+    }
+  }
+
   private _renderCategoryField() {
-    const listId = 'hv-editor-categories';
+    const typed = this._model.category.trim();
+    const options = this._categoryOptions;
     return html`<div class="cell">
       <label class="hv-label" for="editor-category">Category</label>
-      <input
-        id="editor-category"
-        class="hv-input"
-        data-testid="editor-category"
-        list=${listId}
-        .value=${this._model.category}
-        @input=${(e: Event) => this._patch({ category: (e.target as HTMLInputElement).value })}
-      />
-      <datalist id=${listId} data-testid="editor-category-suggestions">
-        ${this.categorySuggestions.map((c) => html`<option value=${c}></option>`)}
-      </datalist>
+      <div class="combo">
+        <input
+          id="editor-category"
+          class="hv-input"
+          data-testid="editor-category"
+          role="combobox"
+          autocomplete="off"
+          aria-autocomplete="list"
+          aria-expanded=${String(this._categoryOpen)}
+          aria-controls="editor-category-list"
+          aria-activedescendant=${this._categoryOpen && this._categoryIndex >= 0
+            ? `editor-category-option-${this._categoryIndex}`
+            : ''}
+          .value=${this._model.category}
+          @focus=${() => this._openCategory(true)}
+          @input=${(e: Event) => {
+            this._patch({ category: (e.target as HTMLInputElement).value });
+            this._openCategory(false);
+          }}
+          @keydown=${this._onCategoryKeydown}
+          @blur=${() => this._closeCategory()}
+        />
+        ${this.categorySuggestions.length
+          ? html`<button
+              class="combo-arrow"
+              data-testid="editor-category-toggle"
+              tabindex="-1"
+              aria-label="Show all categories"
+              title="Show all categories"
+              @mousedown=${(e: Event) => e.preventDefault()}
+              @click=${() => {
+                // Only a second click on the *full* list closes it — pressing the
+                // arrow while a typed filter is showing means "show me the rest".
+                if (this._categoryOpen && this._categoryShowAll) this._closeCategory();
+                else this._openCategory(true);
+              }}
+            >
+              ${icon('chevronDown', 18)}
+            </button>`
+          : null}
+      </div>
+      ${this._categoryOpen
+        ? html`<div class="list-holder" role="listbox" id="editor-category-list" data-testid="editor-category-list">
+            ${options.length
+              ? options.map(
+                  (c, i) => html`<button
+                    class="option ${i === this._categoryIndex ? 'active' : ''} ${
+                      c.toLowerCase() === typed.toLowerCase() ? 'selected' : ''
+                    }"
+                    id=${`editor-category-option-${i}`}
+                    role="option"
+                    aria-selected=${String(c.toLowerCase() === typed.toLowerCase())}
+                    data-testid="editor-category-option"
+                    data-value=${c}
+                    @mousedown=${(e: Event) => e.preventDefault()}
+                    @click=${() => this._chooseCategory(c)}
+                  >
+                    <span class="label">${c}</span>
+                    ${c.toLowerCase() === typed.toLowerCase() ? icon('check', 15) : null}
+                  </button>`,
+                )
+              : html`<div class="option-empty" data-testid="editor-category-empty">
+                  No existing category matches “${typed}” — saving adds it as a new one.
+                </div>`}
+          </div>`
+        : null}
     </div>`;
   }
 
