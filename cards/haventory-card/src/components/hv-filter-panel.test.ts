@@ -294,3 +294,50 @@ describe('hv-filter-panel: footer and staging', () => {
     expect(el.working.category).toBe(null);
   });
 });
+
+describe('hv-filter-panel: native control affordances', () => {
+  // The sort field draws its own chevron next to the <select>. Without
+  // resetting the UA appearance the browser draws a second one beside it.
+  it('suppresses the browser-drawn arrow on selects it decorates itself', () => {
+    const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
+    const cssText = (Array.isArray(sheet) ? sheet : [sheet]).map((s) => String(s.cssText)).join('\n');
+    const selectRule = cssText.slice(cssText.indexOf('.field select'));
+    expect(selectRule).toContain('appearance: none');
+  });
+});
+
+describe('hv-filter-panel: changed since', () => {
+  // Two bare date inputs side by side are indistinguishable: the only labels
+  // used to be screen-reader-only, so a sighted user could not tell which one
+  // filtered on updated and which on created.
+  it('labels each date filter visibly, not only for screen readers', async () => {
+    const el = await mount();
+    const updated = q(el, '[data-testid="filter-updated-after"]');
+    const created = q(el, '[data-testid="filter-created-after"]');
+
+    const visibleText = (host: HTMLElement) =>
+      [...host.querySelectorAll('span')]
+        .filter((s) => !s.classList.contains('hv-sr-only'))
+        .map((s) => s.textContent?.trim())
+        .join(' ');
+
+    expect(visibleText(updated)).toMatch(/updated/i);
+    expect(visibleText(created)).toMatch(/created/i);
+  });
+
+  it('keeps the two date inputs wired to their own filter keys', async () => {
+    const el = await mount();
+    const seen = changes(el);
+
+    const updatedInput = q(el, '[data-testid="filter-updated-after"] input') as HTMLInputElement;
+    updatedInput.value = '2026-07-01';
+    updatedInput.dispatchEvent(new Event('change'));
+
+    const createdInput = q(el, '[data-testid="filter-created-after"] input') as HTMLInputElement;
+    createdInput.value = '2026-06-01';
+    createdInput.dispatchEvent(new Event('change'));
+
+    expect(seen[0]).toMatchObject({ updatedAfter: '2026-07-01T00:00:00Z' });
+    expect(seen[1]).toMatchObject({ createdAfter: '2026-06-01T00:00:00Z' });
+  });
+});

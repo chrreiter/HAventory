@@ -137,6 +137,31 @@ export class HVFilterPanel extends LitElement {
       .field.muted {
         color: var(--hv-text-tertiary);
       }
+      /* The field draws its own chevron, so drop the browser's. */
+      .field select {
+        appearance: none;
+        background: none;
+        border: none;
+        padding: 0;
+        margin: 0;
+        color: inherit;
+        font: inherit;
+      }
+      .field input[type='date'] {
+        background: none;
+        border: none;
+        padding: 0;
+        color: inherit;
+        font: inherit;
+      }
+      /* Distinguishes "Updated ≥" from "Created ≥"; both fields are otherwise identical. */
+      .field .field-label {
+        white-space: nowrap;
+        color: var(--hv-text-secondary);
+      }
+      .field.on .field-label {
+        color: var(--hv-text);
+      }
       .segmented {
         display: inline-flex;
         border: 1px solid var(--hv-divider);
@@ -556,18 +581,20 @@ export class HVFilterPanel extends LitElement {
         <div class="chips">
           <label class="field ${f.updatedAfter ? 'on' : 'muted'}" data-testid="filter-updated-after">
             ${icon('calendar', 14)}
-            <span class="hv-sr-only">Updated since</span>
+            <span class="field-label">Updated ≥</span>
             <input
               type="date"
+              aria-label="Updated since"
               .value=${dateOf(f.updatedAfter)}
               @change=${(e: Event) => this._patch({ updatedAfter: toIso((e.target as HTMLInputElement).value) })}
             />
           </label>
           <label class="field ${f.createdAfter ? 'on' : 'muted'}" data-testid="filter-created-after">
             ${icon('calendar', 14)}
-            <span class="hv-sr-only">Created since</span>
+            <span class="field-label">Created ≥</span>
             <input
               type="date"
+              aria-label="Created since"
               .value=${dateOf(f.createdAfter)}
               @change=${(e: Event) => this._patch({ createdAfter: toIso((e.target as HTMLInputElement).value) })}
             />
