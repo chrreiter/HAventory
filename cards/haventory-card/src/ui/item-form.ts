@@ -6,8 +6,7 @@ import type { Item, ItemCreate, ItemUpdate, ScalarValue } from '../store/types';
  * Kept as pure functions so the desktop inline expander and the mobile detail
  * sheet share one definition of what a field means, and so the fiddly parts —
  * typed custom fields and the set/unset diff on save — are testable without a
- * DOM. Written fresh rather than lifted out of `hv-item-dialog`, which stays
- * untouched behind `ui: legacy`.
+ * DOM.
  */
 
 export type CustomFieldType = 'string' | 'number' | 'boolean' | 'date';
@@ -81,7 +80,7 @@ export function formFromItem(item: Item | null): ItemFormModel {
   };
 }
 
-/** Every problem with the model, in field order. Empty means it is savable. */
+/** Every problem with the model, in field order. Empty means it is saveable. */
 export function validateForm(model: ItemFormModel): FieldError[] {
   const errors: FieldError[] = [];
   if (!model.name.trim()) {

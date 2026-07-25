@@ -31,7 +31,6 @@ import { DEFAULT_SORT } from './sort';
 import { sortLocationTree } from './location-tree';
 
 /** Max items fetched for a single-category/tag browse drill-down (snapshot). */
-const BROWSE_PAGE_LIMIT = 500;
 
 /** Page size for the main list. */
 const PAGE_LIMIT = 50;
@@ -570,26 +569,6 @@ export class Store {
       pages += 1;
       if (this.state.value.cursor === before) break; // defensive: cursor not advancing
     }
-  }
-
-  /**
-   * Fetch items filed under a single category, sorted by name. Used by the
-   * dedicated category browser (drill-down). Returns a snapshot (first page,
-   * capped) independent of the main list's filters/pagination.
-   */
-  async fetchItemsByCategory(category: string): Promise<Item[]> {
-    const res = await this.ws.listItems({ category }, { field: 'name', order: 'asc' }, BROWSE_PAGE_LIMIT);
-    return res.items;
-  }
-
-  /**
-   * Fetch items carrying a single tag, sorted by name. Used by the dedicated
-   * tag browser (drill-down). Returns a snapshot (first page, capped) independent
-   * of the main list's filters/pagination.
-   */
-  async fetchItemsByTag(tag: string): Promise<Item[]> {
-    const res = await this.ws.listItems({ tags_any: [tag] }, { field: 'name', order: 'asc' }, BROWSE_PAGE_LIMIT);
-    return res.items;
   }
 
   async prefetchIfNeeded(scrollRatio: number) {
