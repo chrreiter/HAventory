@@ -195,6 +195,25 @@ describe('hv-item-editor: location and tags', () => {
     expect(saves[0].changes?.location_id).toBe('garage');
   });
 
+  // The modal had a dedicated Clear button next to the location field; here the
+  // same job belongs to the tree's own "All items" row, and it has to reach the
+  // save payload as a null rather than being quietly dropped.
+  it('puts an item back to no location at all', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A', location_id: 'garage' }));
+    const saves = onSave(el);
+
+    (q(el, '[data-testid="editor-location"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const treeEl = el.shadowRoot?.querySelector('hv-location-tree') as HTMLElement;
+    (treeEl.shadowRoot?.querySelector('[data-testid="tree-all"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="editor-location"]')?.textContent).toContain('No location');
+
+    (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
+    expect(saves[0].changes?.location_id).toBeNull();
+  });
+
   it('edits tags as chips and lowercases them on commit', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A', tags: ['metric'] }));
     const saves = onSave(el);

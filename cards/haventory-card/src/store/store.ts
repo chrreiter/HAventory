@@ -902,7 +902,12 @@ export class Store {
     return created;
   }
 
-  async updateLocation(locationId: string, changes: { name?: string; areaId?: string | null }): Promise<Location> {
+  async updateLocation(
+    locationId: string,
+    // `newParentId` re-parents the whole subtree in the same call — the WS
+    // command takes it, so an edit that also moves the location is one trip.
+    changes: { name?: string; areaId?: string | null; newParentId?: string | null },
+  ): Promise<Location> {
     const updated = await this.ws.updateLocation(locationId, changes);
     await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
     return updated;
