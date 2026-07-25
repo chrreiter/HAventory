@@ -310,12 +310,10 @@ Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs t
 ```yaml
 type: custom:haventory-card
 title: Inventory   # optional; defaults to "Inventory"
-ui: revamp         # optional; "legacy" renders the pre-WP4.1 proof-of-concept UI
 ```
 
-`ui: legacy` is an escape hatch kept while the revamp is experimental — it renders the old
-card unchanged (modal item dialog, flat location list, always-visible filter strip). It
-will be removed once the new UI has settled.
+`title` is the only option the card reads. Any other key is ignored rather than rejected,
+so a stale dashboard config never breaks the card.
 
 ### CI/CD & Ops
 
@@ -353,10 +351,12 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
   (categories grouped case-insensitively) plus distinct custom-field keys — powers
   category/tag autocomplete, the browser views, and custom-field key suggestions.
 
-### ✅ Phase 2: Frontend Lovelace Card (Complete)
-- Lit 3 + TypeScript components (`haventory-card`, `hv-search-bar`, `hv-inventory-list`,
-  `hv-item-row`, `hv-item-dialog`, `hv-location-selector`); real-time sync; optimistic
-  updates with conflict resolution; Vite build → `www/haventory/haventory-card.js`.
+### ✅ Phase 2: Frontend Lovelace Card (Complete — superseded by Phase 2.5)
+> Historical: this describes the proof-of-concept card. Phase 2.5 replaced its components;
+> the capabilities below carried over, the surfaces they are reached through did not.
+
+- Lit 3 + TypeScript components; real-time sync; optimistic updates with conflict
+  resolution; Vite build → `www/haventory/haventory-card.js`.
 - Item dialog offers debounced, keyboard-navigable category/tag autocomplete sourced from
   `haventory/distinct_values`.
 - Dedicated **category browser** (header → "Categories"): lists used categories with item
@@ -370,7 +370,7 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
   (string/number/boolean/date) with type-appropriate inputs; existing field keys across the
   dataset are offered as suggestions.
 
-### ✅ Phase 2.5: UI revamp (WP4.1, experimental)
+### ✅ Phase 2.5: UI revamp (WP4.1)
 - The proof-of-concept card was replaced with the redesigned UI: decluttered header with a
   single ⋮ menu, complete filter panel, inline row editing, a full view with a real
   location tree sidebar and a sortable table, multi-select with per-operation bulk results,
@@ -380,8 +380,9 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
 - Closes the standing gaps for the location tree view, bulk operations, unified
   category/tag browsing, and the card's silent failure when a subscription is
   rate-limited.
-- **Experimental.** It has not yet been verified against a running Home Assistant frontend;
-  `ui: legacy` keeps the previous card reachable in the meantime.
+- Verified against a running Home Assistant frontend, after which the proof-of-concept
+  components and the `ui: legacy` option that reached them were removed — there is one
+  card now, not two.
 
 ### 🚧 Phase 3: Polish & HACS (Planned)
 - HACS publication; release automation (release-please); additional optimizations.

@@ -11,9 +11,9 @@ The HAventory Lovelace card is a Home Assistant dashboard component built with:
 
 It provides the full inventory UI, updating live over the HAventory WebSocket API.
 
-> **WP4.1 replaced the proof-of-concept UI with the redesigned one.** The old card is still
-> reachable via `ui: legacy` in the Lovelace config while the revamp is experimental; its
-> components are listed under [Legacy UI](#legacy-ui-uilegacy) and are otherwise untouched.
+> **WP4.1 replaced the proof-of-concept UI with the redesigned one.** The old card was kept
+> reachable behind `ui: legacy` until the revamp had been verified against a running Home
+> Assistant; both it and the option are gone. Everything described here is the only UI.
 
 ---
 
@@ -22,15 +22,16 @@ It provides the full inventory UI, updating live over the HAventory WebSocket AP
 `src/index.ts` defines `haventory-card` — the element Home Assistant knows about. It owns
 the `Store` (created on the first `hass` assignment), the Lovelace interface
 (`setConfig`, `getCardSize`, `getStubConfig`, `window.customCards`), and nothing else of
-substance. It is a dispatcher:
+substance:
 
 ```ts
-setConfig(cfg) → { title?: string; ui?: 'revamp' | 'legacy' }   // default: revamp
-render()       → ui === 'legacy' ? legacy template : <hv-card-shell>
+setConfig(cfg) → { title?: string }   // every other key is ignored, not rejected
+render()       → <hv-card-shell> + <hv-column-picker>
 ```
 
-In revamp mode it renders `<hv-card-shell>` and keeps only the two surfaces the shell hands
-back up: the column picker and the export download (which needs a DOM anchor click).
+It renders `<hv-card-shell>` and keeps only the two surfaces the shell hands back up: the
+column picker and the export download (which needs a DOM anchor click). It also publishes
+the active HA theme as `color-scheme` on the host, which every nested component inherits.
 
 ---
 
@@ -240,16 +241,25 @@ npm run build
 
 ---
 
-## Legacy UI (`ui: legacy`)
+## What the proof-of-concept UI became
 
-The proof-of-concept components are unchanged and still tested:
-`hv-search-bar`, `hv-inventory-list`, `hv-item-row`, `hv-item-dialog`,
-`hv-location-selector`, `hv-category-browser`, `hv-tag-browser`, `hv-column-picker`,
-`hv-import-dialog`. `hv-column-picker` is shared with the revamped UI; the rest are reachable
-only through `ui: legacy`.
+The POC's components were deleted once the revamp had been verified against a running
+Home Assistant. Where each one's job went:
 
-They are kept as an escape hatch while the revamp is experimental and should be removed —
-along with the `ui` option — once it has settled.
+| Removed | Replaced by |
+|---|---|
+| `hv-search-bar` | `hv-filter-panel` + `hv-filter-chips`, with search in the shell header |
+| `hv-inventory-list` | `hv-list` (card) and `hv-data-table` (full view) |
+| `hv-item-row` | `hv-list-row` |
+| `hv-item-dialog` | `hv-item-editor`, expanded inline instead of over the card |
+| `hv-location-selector` | `hv-location-tree`, embedded wherever a location is picked |
+| `hv-category-browser`, `hv-tag-browser` | `hv-organize-dialog`, one tabbed surface |
+| `hv-import-dialog` | `hv-import-sheet`, a two-step flow |
+
+`hv-column-picker` was shared with the revamp and stays. The behaviours those suites were
+the only test of moved onto the components above rather than being dropped — the
+re-parenting contract, clearing an item's location, the card list's paging signal, and the
+per-field default sort direction.
 
 ---
 
