@@ -56,6 +56,17 @@ describe('hv-bottom-sheet', () => {
     }
   });
 
+  it('caps its width and centres itself so a wide screen does not stretch the content', () => {
+    const styles = (customElements.get('hv-bottom-sheet') as typeof HVBottomSheet).styles;
+    const css = (Array.isArray(styles) ? styles : [styles]).map((s) => String(s.cssText)).join('\n');
+    const rule = css.slice(css.indexOf('.sheet {'), css.indexOf('@keyframes')).replace(/\s+/g, ' ');
+
+    // min() keeps a phone full-bleed and stops a 2560px desktop from spreading
+    // a 48px-tall label/value row — or a pair of action buttons — edge to edge.
+    expect(rule).toMatch(/width: min\(100%, var\(--hv-sheet-max-width, \d+px\)\)/);
+    expect(rule).toMatch(/margin-inline: auto/);
+  });
+
   it('stacks above previously opened surfaces', async () => {
     const first = await mount();
     const second = await mount();

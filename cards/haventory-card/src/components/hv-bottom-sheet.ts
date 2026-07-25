@@ -31,6 +31,13 @@ export class HVBottomSheet extends LitElement {
         left: 0;
         right: 0;
         bottom: 0;
+        /* The sheet is fixed to the viewport, not to the card that opened it,
+           so on a desktop dashboard it would run the full screen width — 48px
+           fact rows with the value flung to the far edge, and action buttons a
+           metre wide. Cap it and let the auto margins centre it; on a phone
+           min() resolves to 100% and this is a no-op. */
+        width: min(100%, var(--hv-sheet-max-width, 640px));
+        margin-inline: auto;
         max-height: 92vh;
         display: flex;
         flex-direction: column;

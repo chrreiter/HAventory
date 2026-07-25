@@ -79,6 +79,9 @@ export const tokens = css`
     --hv-radius-input: 8px;
     --hv-radius-chip: 999px;
     --hv-radius-sheet: 20px;
+    /* How wide a bottom sheet is allowed to get before it stops growing with
+       the viewport. Roughly HA's own more-info dialog. */
+    --hv-sheet-max-width: 640px;
 
     /* Elevation */
     --hv-shadow-menu: 0 8px 28px rgba(0, 0, 0, 0.22);
