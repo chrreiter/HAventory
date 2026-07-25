@@ -92,11 +92,15 @@ Location tree node (returned by `location/tree`):
   "path": <LocationPath>,
   "direct_item_count": 0,
   "subtree_item_count": 0,
+  "matching_direct_count": 0,
+  "matching_subtree_count": 0,
   "children": [ <tree node>, ... ]
 }
 ```
 
 Note: `children` is a recursive array of tree nodes with the same structure.
+The two `matching_*` counts are present **only** when `location/tree` was called with a
+`filter`; they mirror the two counts below over the items that filter keeps.
 `direct_item_count` counts items located exactly at the node; `subtree_item_count`
 counts items at the node or any descendant (so it is always >= the direct count).
 
@@ -110,12 +114,15 @@ counts items at the node or any descendant (so it is always >= the direct count)
   - `checked_out?: boolean`
   - `low_stock_only?: boolean`
   - `orphaned_only?: boolean` (only items without a location, i.e. `location_id == null`)
+  - `overdue_only?: boolean` (only items whose `due_date` is strictly before today, UTC)
   - `location_id?: uuid-v4|null`
   - `area_id?: string`
   - `include_subtree?: boolean`
   - `low_stock_first?: boolean`
-  - `updated_after?: ISO8601Z`
-  - `created_after?: ISO8601Z`
+  - `updated_after?: ISO8601Z` (strictly greater-than)
+  - `created_after?: ISO8601Z` (strictly greater-than)
+  - `updated_before?: ISO8601Z` (strictly less-than; combine with `updated_after` for a range)
+  - `created_before?: ISO8601Z` (strictly less-than; combine with `created_after` for a range)
 
 - Sort:
   - `{ field: "updated_at"|"created_at"|"name"|"quantity"|"due_date"|"inspection_date", order: "asc"|"desc" }`
@@ -131,10 +138,19 @@ counts items at the node or any descendant (so it is always >= the direct count)
 
 Counts object used in `stats` results and events:
 ```json
-{ "items_total": 0, "low_stock_count": 0, "checked_out_count": 0, "locations_total": 0, "no_location_count": 0 }
+{
+  "items_total": 0,
+  "low_stock_count": 0,
+  "checked_out_count": 0,
+  "overdue_count": 0,
+  "locations_total": 0,
+  "no_location_count": 0
+}
 ```
 
 `no_location_count` is the number of items without a location (`location_id == null`).
+`overdue_count` is the number of items whose `due_date` is strictly before today (UTC);
+it moves with the calendar, so the same data can report a different count tomorrow.
 
 ### Distinct values
 

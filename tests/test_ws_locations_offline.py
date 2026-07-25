@@ -248,3 +248,43 @@ async def test_location_tree_includes_item_counts() -> None:
     assert node2["subtree_item_count"] == 1
     assert node2["children"][0]["direct_item_count"] == 0
     assert node2["children"][0]["subtree_item_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_location_tree_reports_matching_counts_for_a_filter() -> None:
+    """With a filter, nodes also carry how much of themselves it keeps."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    root = await _send(hass, 1, "haventory/location/create", name="Garage")
+    root_id = root["result"]["id"]
+    child = await _send(hass, 2, "haventory/location/create", name="Shelf", parent_id=root_id)
+    child_id = child["result"]["id"]
+
+    create = "haventory/item/create"
+    await _send(hass, 3, create, name="Car", location_id=root_id, category="Auto")
+    await _send(hass, 4, create, name="Wrench", location_id=child_id, category="Tools")
+    await _send(hass, 5, create, name="Saw", location_id=child_id, category="Tools")
+
+    res = await _send(hass, 6, "haventory/location/tree", filter={"category": "Tools"})
+    assert res["success"] is True
+    node = res["result"][0]
+    matching_subtree = 2
+    all_subtree = 3
+    # Unfiltered counts are unchanged; the matching pair sits beside them.
+    assert node["subtree_item_count"] == all_subtree
+    assert node["matching_direct_count"] == 0
+    assert node["matching_subtree_count"] == matching_subtree
+    assert node["children"][0]["matching_subtree_count"] == matching_subtree
+
+    # Without a filter the keys are absent rather than zero, so a client can tell
+    # "nothing matches" from "nothing was asked".
+    plain = await _send(hass, 7, "haventory/location/tree")
+    assert "matching_subtree_count" not in plain["result"][0]
+
+    # A malformed filter is rejected like anywhere else, not silently ignored.
+    bad = await _send(hass, 8, "haventory/location/tree", filter={"updated_after": "2024/01/01"})
+    assert bad["success"] is False and bad["error"]["code"] == "validation_error"
