@@ -317,6 +317,11 @@ export class HVCardShell extends LitElement {
         color: var(--hv-primary-dark);
         padding: 0;
       }
+      /* 45x15 in the filter sheet's header — a text link, but still a control. */
+      :host([mobile]) .link {
+        min-height: var(--hv-tap-min, auto);
+        padding: 0 6px;
+      }
     `,
   ];
 

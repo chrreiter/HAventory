@@ -89,10 +89,13 @@ export class HVChipInput extends LitElement {
       .suggestion {
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         min-height: var(--hv-tap-min, auto);
+        /* A three-letter tag is otherwise a 23px-wide target. */
+        min-width: var(--hv-tap-min, auto);
         border: none;
         background: none;
-        padding: 0;
+        padding: 0 6px;
         font: inherit;
         color: var(--hv-primary-dark);
       }

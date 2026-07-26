@@ -97,7 +97,7 @@ export class HVFilterPanel extends LitElement {
         font: 400 12.5px var(--hv-font);
       }
       :host([mobile]) .chip {
-        min-height: 36px;
+        min-height: var(--hv-tap-min, 36px);
         padding: 0 14px;
         font-size: 13.5px;
       }
@@ -176,6 +176,11 @@ export class HVFilterPanel extends LitElement {
         margin: -2px -2px -2px -3px;
         font: inherit;
         color: var(--hv-text-secondary);
+        /* It sits inline in the field's label, so it takes height from the
+           field it is in rather than becoming a block of its own. */
+        display: inline-flex;
+        align-items: center;
+        min-height: var(--hv-tap-min, auto);
       }
       .field.on .direction {
         color: var(--hv-text);
@@ -196,6 +201,9 @@ export class HVFilterPanel extends LitElement {
       .field.select-field select {
         flex: 1;
         min-width: 0;
+        /* The wrapper looked like a 46px control while the select inside it,
+           which is what actually takes the tap, was 19px tall. */
+        min-height: var(--hv-tap-min, auto);
       }
       .field .chevron {
         position: absolute;
@@ -218,6 +226,9 @@ export class HVFilterPanel extends LitElement {
         color: var(--hv-chip-text);
         padding: 4px 12px;
         font: 400 11.5px var(--hv-font);
+        /* The pill around them looked like a control; each segment inside was
+           22px tall. */
+        min-height: var(--hv-tap-min, auto);
       }
       .segmented button.on {
         background: var(--hv-primary);
@@ -235,7 +246,7 @@ export class HVFilterPanel extends LitElement {
         padding: 4px 0;
       }
       :host([mobile]) .check {
-        min-height: 44px;
+        min-height: var(--hv-tap-min, 44px);
         width: 100%;
         font-size: 14px;
       }
@@ -282,6 +293,8 @@ export class HVFilterPanel extends LitElement {
         border: none;
         outline: none;
         min-width: 0;
+        /* Same trap as the select: a 46px field wrapping a 21px input. */
+        min-height: var(--hv-tap-min, auto);
         flex: 1;
       }
       .footer {
