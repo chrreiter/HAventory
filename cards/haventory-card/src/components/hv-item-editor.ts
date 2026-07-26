@@ -5,6 +5,7 @@ import { icon } from '../ui/icons';
 import { relativeTime, formatDate, isOverdue } from '../ui/relative-time';
 import { saveShortcutLabel } from '../ui/keyboard';
 import { counted } from '../ui/plural';
+import { nextZBase } from '../utils/zindex';
 import {
   customFieldsFrom,
   formFromItem,
@@ -264,6 +265,22 @@ export class HVItemEditor extends LitElement {
         max-height: 220px;
         overflow: auto;
         padding: 4px 0;
+      }
+      /* The category list is the one holder that must NOT take part in the
+         layout. In flow it grew its own grid cell, which grew the row, which
+         stretched the Location button beside it to ~130px — the form visibly
+         came apart every time the suggestions opened. The location tree below
+         is the opposite case: it is meant to push the form open, so it keeps
+         the in-flow rule above.
+
+         Fixed rather than absolute, because the expanded view puts the whole
+         form inside an editor-holder that is max-height 70dvh with
+         overflow-y auto, and an absolute list would be clipped by it. Same
+         technique the checkout popover and the overflow menu already use. */
+      .list-holder.floating {
+        position: fixed;
+        margin-top: 0;
+        box-shadow: var(--hv-shadow-menu);
       }
       /* The category field is a text input plus its own dropdown affordance —
          without the arrow the existing values were only findable by guessing. */
@@ -578,6 +595,15 @@ export class HVItemEditor extends LitElement {
   @state() private _categoryShowAll = false;
   /** Keyboard cursor into the visible category options; -1 = nothing active. */
   @state() private _categoryIndex = -1;
+  /** Viewport placement of the floating category list, while it is open. */
+  @state() private _categoryBox: {
+    left: number;
+    width: number;
+    edge: number;
+    flip: boolean;
+    room: number;
+  } | null = null;
+  private _categoryZ = 0;
 
   /**
    * The footer promises "Esc discards", but that is a keydown handler on the
@@ -715,17 +741,68 @@ export class HVItemEditor extends LitElement {
     return this.categorySuggestions.filter((c) => c.toLowerCase().includes(query));
   }
 
+  /**
+   * Where the floating category list goes, in viewport coordinates.
+   *
+   * Recomputed on every scroll and resize while the list is open: `position:
+   * fixed` is measured against the viewport, and the form it belongs to sits in
+   * a scroll box of its own, so the list would otherwise drift off its input.
+   */
+  private _placeCategory = () => {
+    const combo = this.renderRoot?.querySelector<HTMLElement>('.combo');
+    if (!combo) return;
+    const rect = combo.getBoundingClientRect();
+    const gap = 6;
+    const viewport = window.innerHeight;
+    const roomBelow = viewport - rect.bottom - gap - 8;
+    const roomAbove = rect.top - gap - 8;
+    // Flip up only when below is genuinely too tight and above is roomier.
+    const flip = roomBelow < 120 && roomAbove > roomBelow;
+    this._categoryBox = {
+      left: Math.round(rect.left),
+      width: Math.round(rect.width),
+      edge: flip ? Math.round(viewport - rect.top + gap) : Math.round(rect.bottom + gap),
+      flip,
+      room: Math.max(80, Math.round(flip ? roomAbove : roomBelow)),
+    };
+  };
+
+  private get _categoryStyle(): string {
+    const box = this._categoryBox;
+    if (!box) return '';
+    const edge = box.flip ? `bottom: ${box.edge}px` : `top: ${box.edge}px`;
+    return `${edge}; left: ${box.left}px; width: ${box.width}px; max-height: min(220px, ${box.room}px); z-index: ${this._categoryZ || 9999};`;
+  }
+
   private _openCategory(showAll: boolean) {
     if (!this.categorySuggestions.length) return;
     this._categoryShowAll = showAll;
+    if (!this._categoryOpen) {
+      this._categoryZ = nextZBase();
+      // Capture phase: the scrolling ancestor is a shadow-DOM box of another
+      // component, and a bubbling listener on this element never sees it.
+      window.addEventListener('scroll', this._placeCategory, true);
+      window.addEventListener('resize', this._placeCategory);
+    }
     this._categoryOpen = true;
     this._categoryIndex = -1;
+    this._placeCategory();
   }
 
   private _closeCategory() {
+    if (this._categoryOpen) {
+      window.removeEventListener('scroll', this._placeCategory, true);
+      window.removeEventListener('resize', this._placeCategory);
+    }
     this._categoryOpen = false;
     this._categoryShowAll = false;
     this._categoryIndex = -1;
+    this._categoryBox = null;
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._closeCategory();
   }
 
   private _chooseCategory(value: string) {
@@ -817,7 +894,13 @@ export class HVItemEditor extends LitElement {
           : null}
       </div>
       ${this._categoryOpen
-        ? html`<div class="list-holder" role="listbox" id="editor-category-list" data-testid="editor-category-list">
+        ? html`<div
+            class="list-holder floating"
+            role="listbox"
+            id="editor-category-list"
+            data-testid="editor-category-list"
+            style=${this._categoryStyle}
+          >
             ${options.length
               ? options.map(
                   (c, i) => html`<button

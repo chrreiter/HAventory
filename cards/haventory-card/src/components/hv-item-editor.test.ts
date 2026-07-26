@@ -360,6 +360,31 @@ describe('hv-item-editor: category picker', () => {
     expect(options(el)).toEqual(['Hardware', 'Tools']);
   });
 
+  // In flow the list grew its own grid cell, which grew the row, which
+  // stretched the Location button beside it — the form came apart every time
+  // the suggestions opened. Fixed, not absolute: the expanded view wraps the
+  // whole form in an overflow-y:auto holder that would clip an absolute list.
+  it('floats the list over the form instead of growing the row it sits in', async () => {
+    const el = await mount(null);
+    await focusCategory(el);
+
+    const list = q(el, '[data-testid="editor-category-list"]');
+    expect(list?.classList).toContain('floating');
+    // Placed from a measurement, so it carries its own coordinates and stack.
+    expect(list?.getAttribute('style')).toMatch(/left: -?\d+px/);
+    expect(list?.getAttribute('style')).toMatch(/z-index: \d+/);
+
+    const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+    expect(css).toMatch(/\.list-holder\.floating \{[^}]*position: fixed/);
+    // The location tree is the opposite case — it is *meant* to open the form.
+    expect(css).toMatch(/\.tree-holder, \.list-holder \{[^}]*margin-top: 6px/);
+    expect(css).not.toMatch(/\.tree-holder[^{]*\{[^}]*position: fixed/);
+  });
+
   it('narrows the list while typing', async () => {
     const el = await mount(null);
     await focusCategory(el);
