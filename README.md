@@ -258,8 +258,9 @@ Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs t
   check-out chip, and hover actions.
 - **Filters** — a collapsible panel exposing the whole backend filter object: location
   (from a real tree), area, include-subtree, category chips with counts, tag chips with an
-  any/all toggle, low-stock-only, checked-out, overdue, no-location, updated / created
-  windows (each row's ≥ flips to ≤ for "before"), and sort across all six sortable fields.
+  any/all toggle, low-stock-only, checked-out, overdue and no-location — each with the
+  count of what it would keep — plus updated / created windows (each row's ≥ flips to ≤ for
+  "before") and sort across all six sortable fields.
   "Low stock" (a filter) and "Low stock first" (an ordering) are separate, independently
   clearable controls. Active filters appear as removable chips.
 - **Editing** — the row expands in place; there is no dialog chain. Full field parity:
@@ -276,8 +277,18 @@ Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs t
   tags accumulate, matching how the backend treats them. With a filter on, each location
   row reads "4 / 37" — matches over total — so you can see where the matches are rather
   than a total that never moves. The counts ignore the *location* filter, since the sidebar
-  is how you pick one. The app bar's stat pills are the card's: low in amber, overdue in
-  red, checked out, each click-to-filter.
+  is how you pick one. Each heading also offers a create action: Locations opens an inline
+  name field, while Categories and Tags open the organize dialog on their own tab — a
+  category exists through the items using it, so that is where making one is explained.
+  From the second selected tag on, the Tags heading carries the same any/all control the
+  filter panel has, since that is the mode governing what the sidebar just selected. The
+  app bar's stat pills are the card's: low in amber, overdue in red, checked out, each
+  click-to-filter. An empty table names the reason and offers a way out — the same
+  wording and the same offers as the card's list.
+
+  At phone width the sidebar folds away and the surface hands its own breakpoint down to
+  the edit form and the filter panel, so both take their phone layouts: one field per row,
+  and filters staged behind a "Show N items" commit row exactly as in the card's sheet.
 - **Multi-select and bulk actions** — move, add/remove tags, set category, adjust
   quantity, check out/in and delete over a selection. Work is chunked so progress is
   determinate and cancellable, and the result is reported *per operation*: "39 of 42
@@ -295,7 +306,8 @@ Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs t
   anything. "No due date" stays a first-class choice.
 - **Mobile** — the card switches layout from its own width. Tapping a row opens one bottom
   sheet holding everything about the item; filters open as a staged sheet whose apply
-  button shows the live matching count.
+  button shows the live matching count. Every surface honours the same 44px touch minimum
+  and 16px field text (iOS zooms a page whose fields are smaller and never zooms back).
 - **Import** keeps the mandatory server-side dry run: paste or pick a file, choose
   merge / replace / skip, preview add/update/conflict counts per items and locations, then
   import. An invalid document is shown as a list of JSON paths, not one flat message.

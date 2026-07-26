@@ -60,6 +60,8 @@ haventory-card                     Lovelace element; dispatcher + store owner
     ├── hv-banner                  the one alert treatment
     └── hv-full-view               fullscreen workspace
         ├── hv-location-tree       sidebar's Locations section, manage-capable
+        ├── hv-filter-panel        same panel, staged behind a commit row on a phone
+        ├── hv-item-editor         inline above the table (the same one edit form)
         ├── hv-data-table          sortable table + selection column
         └── hv-bulk-bar            bulk actions, progress, per-operation results
 ```
@@ -69,11 +71,39 @@ than by a component of their own: they are flat lists of `distinct_values` entri
 rows only have to look like `hv-location-tree`'s — which, being in another shadow root,
 could not have shared the rule either way.
 
-Each of the three headings states how many of its thing there is. Categories and tags come
-with their `distinct_values` length; locations are counted by `countLocations` in
-`store/location-tree.ts`, which walks every depth and takes the same optional filter needle
-`hv-location-tree` matches rows with, so the organize dialog's "N locations" can never
-disagree with the tree printed under it.
+Each of the three headings states how many of its thing there is, and offers a create
+action. Categories and tags come with their `distinct_values` length; locations are counted
+by `countLocations` in `store/location-tree.ts`, which walks every depth and takes the same
+optional filter needle `hv-location-tree` matches rows with, so the organize dialog's
+"N locations" can never disagree with the tree printed under it. Creating differs by facet
+because the backend does: a location is a real object and is created inline, while a
+category or tag exists only through the items using it, so those buttons ask the card to
+open `hv-organize-dialog` on the matching tab (`menu-action` with `{ id: 'organize', tab }`).
+
+### Two different "is this a phone?" signals
+
+Most components take a `mobile` **property** fed by `hv-card-shell`'s *measured width* — a
+card in a narrow dashboard column is a phone layout regardless of the viewport. `hv-full-view`
+is the exception: it is fixed to the viewport, so it switches on a `@media (max-width: 700px)`
+query instead.
+
+That split bit once. `hv-item-editor` and `hv-filter-panel` are property-driven but are also
+children of `hv-full-view`, which never set the property — so at 375px the expanded view drew
+the editor's three-column desktop grid in 156px + 78px + 78px. `hv-full-view` now reads the
+same breakpoint with `matchMedia` (`NARROW_QUERY`, kept in step with the media query) and
+hands it down. Note what came with it: `hv-filter-panel` in `mobile` mode *stages* its edits
+and drops its own footer, expecting the host to provide one, so the expanded view also grew
+the Clear all / Cancel / "Show N items" row the card's filter sheet has.
+
+### Shared wording
+
+`ui/empty-state.ts` owns the four empty-list situations — nothing yet, nothing matched,
+nothing filed here, no connection — as copy plus offered actions, because `hv-list` and the
+`hv-data-table` inside `hv-full-view` were describing the same states in different words with
+different offers. `ui/plural.ts` owns count agreement (`counted(n, 'item')`); nineteen call
+sites hand-rolled `n === 1 ? '' : 's'` before, and nine of them were wrong. Only the CSS is
+per-component — style rules cannot cross a shadow boundary, which is also why the sidebar's
+value rows restate `hv-location-tree`'s row styling.
 
 ### Container vs presentation
 
@@ -267,7 +297,8 @@ Home Assistant. Where each one's job went:
 | `hv-category-browser`, `hv-tag-browser` | `hv-organize-dialog`, one tabbed surface |
 | `hv-import-dialog` | `hv-import-sheet`, a two-step flow |
 
-`hv-column-picker` was shared with the revamp and stays. The behaviours those suites were
+`hv-column-picker` was shared with the revamp and stays, now styled from the same tokens as
+everything else rather than straight from HA's variables. The behaviours those suites were
 the only test of moved onto the components above rather than being dropped — the
 re-parenting contract, clearing an item's location, the card list's paging signal, and the
 per-field default sort direction.
