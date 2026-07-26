@@ -194,15 +194,24 @@ export class HVFullView extends LitElement {
            with no horizontal scroll, which put Add item (532..636), the badges
            and the ⋮ (648..682) permanently off-screen — you could not add an
            item or open the menu at all. */
+        /* This surface fills the screen even when the card that opened it is
+           narrow, so it sets its own touch sizing rather than inheriting the
+           card's. Declared on the shell so the table, its sort headers and the
+           context bar are covered too, not just the app bar. */
+        .shell {
+          --hv-tap-min: 44px;
+          --hv-input-font: 16px;
+        }
         .appbar {
           flex-wrap: wrap;
           gap: 8px;
           padding: 8px 12px;
-          /* This surface fills the screen even when the card that opened it is
-             narrow, so it sets its own touch sizing rather than inheriting the
-             card's. */
-          --hv-tap-min: 44px;
-          --hv-input-font: 16px;
+        }
+        .appbar .search input {
+          min-height: var(--hv-tap-min, auto);
+        }
+        .filters-button {
+          min-height: var(--hv-tap-min, auto);
         }
         .appbar h2 {
           flex: 1;

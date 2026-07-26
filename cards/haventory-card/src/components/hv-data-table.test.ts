@@ -42,6 +42,17 @@ describe('hv-data-table: narrow screens', () => {
     expect(tableCss()).toMatch(/\.head, \.body \{ min-width: min-content; \}/);
   });
 
+  it('grows the checkbox hit area for touch without growing the box', () => {
+    // 16px is right for a dense table; 16px of tappable area is not.
+    expect(tableCss()).toMatch(
+      /\.box::after \{[^}]*inset: calc\(\(var\(--hv-tap-min, 16px\) - 16px\) \/ -2\)/,
+    );
+  });
+
+  it('gives the sort headers a tappable height', () => {
+    expect(tableCss()).toMatch(/\.head button \{[^}]*min-height: var\(--hv-tap-min, auto\)/);
+  });
+
   it('keeps rows scrolling vertically inside the body', () => {
     // The horizontal scroller is the host; the body stays the vertical one, so
     // the header does not scroll away with the rows.

@@ -69,6 +69,7 @@ export class HVDataTable extends LitElement {
         display: inline-flex;
         align-items: center;
         gap: 3px;
+        min-height: var(--hv-tap-min, auto);
         border: none;
         background: none;
         padding: 0;
@@ -191,6 +192,7 @@ export class HVDataTable extends LitElement {
       .box {
         display: inline-grid;
         place-items: center;
+        position: relative;
         width: 16px;
         height: 16px;
         border-radius: 3px;
@@ -198,6 +200,15 @@ export class HVDataTable extends LitElement {
         background: none;
         color: #fff;
         padding: 0;
+      }
+      /* Grow the hit area for touch without growing the box, which has to stay
+         checkbox-sized in a dense table. Clicking the row toggles the same
+         selection, so on a row the two can only ever agree; the select-all in
+         the header has nothing behind it and needs the area outright. */
+      .box::after {
+        content: '';
+        position: absolute;
+        inset: calc((var(--hv-tap-min, 16px) - 16px) / -2);
       }
       .box.on,
       .box.mixed {

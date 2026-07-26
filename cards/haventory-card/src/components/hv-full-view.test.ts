@@ -86,7 +86,10 @@ describe('hv-full-view: phone-width app bar', () => {
   });
 
   it('sizes its own touch targets rather than inheriting the card its opener had', () => {
-    expect(narrow()).toMatch(/\.appbar \{[^}]*--hv-tap-min: 44px/);
+    // On the shell, not the app bar: the table, its sort headers and the
+    // context bar are on this surface too and need the same sizing.
+    expect(narrow()).toMatch(/\.shell \{[^}]*--hv-tap-min: 44px/);
+    expect(narrow()).toMatch(/\.shell \{[^}]*--hv-input-font: 16px/);
   });
 
   // Selection mode reuses the same bar. `.subcount` was the only shrinkable
