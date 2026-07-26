@@ -32,12 +32,28 @@ export class HVDiagnosticsPanel extends LitElement {
         inset: 0;
         background: rgba(0, 0, 0, 0.35);
       }
+      /*
+       * The single implicit track of a centring grid is auto-sized, and an
+       * auto track takes the width its item asks for — 470px — however narrow
+       * the container is. The panel's own max-width: 100% then resolved
+       * against that 470px track and never clamped, so on a 390px screen the
+       * dialog stayed 470 wide: the third tile, the fact values and the Close
+       * button all hung off the right edge, unreachable (the wrap measured
+       * scrollWidth 494 against clientWidth 390).
+       *
+       * A minmax(0, 1fr) track is the container's width instead, which is what
+       * gives the percentage something to bite on. Rows get the same treatment
+       * so a panel with several issues in it scrolls its body rather than
+       * growing past the top and bottom edges.
+       */
       .wrap {
         position: fixed;
         inset: 0;
         display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
         place-items: center;
-        padding: 24px;
+        padding: 16px;
         box-sizing: border-box;
       }
       .panel {
@@ -98,9 +114,12 @@ export class HVDiagnosticsPanel extends LitElement {
         border-radius: 50%;
         background: currentColor;
       }
+      /* Three fixed columns fit 470px. Once the panel is allowed to be as
+         narrow as the screen, three tiles of "Commands rejected" width no
+         longer do, so they wrap to two rows instead of overflowing. */
       .tiles {
         display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
         gap: 10px;
       }
       .tile {
