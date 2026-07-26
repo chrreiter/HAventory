@@ -136,10 +136,22 @@ export class HVFilterPanel extends LitElement {
         padding: 7px 11px;
         font: 400 12.5px var(--hv-font);
       }
+      /*
+       * 13.5px is the chip beside it — the area select sits in the same row as
+       * "Any location", and taking the card's 16px input size made the one
+       * full-width control on the page shout at the chips, checkboxes and
+       * headings around it. The desktop panel has always matched (both 12.5px).
+       */
       :host([mobile]) .field {
         min-height: 46px;
         width: 100%;
-        font-size: var(--hv-input-font, 14px);
+        font-size: 13.5px;
+      }
+      /* Except a box you type free text into: 16px is what stops iOS zooming
+         the page when it takes focus, and a select or a date field opens
+         native UI instead of a keyboard. */
+      :host([mobile]) .field input[type='search'] {
+        font-size: var(--hv-input-font, 16px);
       }
       .field.on {
         border-color: var(--hv-primary);

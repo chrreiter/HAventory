@@ -449,6 +449,29 @@ describe('hv-filter-panel: native control affordances', () => {
     // Hover still adds emphasis; it is no longer the only state that has any.
     expect(cssText).toMatch(/\.field \.direction:hover \{[^}]*border-color/);
   });
+
+  // On a phone the fields took --hv-input-font (16px on this surface) while the
+  // chips beside them are 13.5px and the checkbox rows 14px, so the area select
+  // — the one full-width control in the panel — was the largest text on the
+  // page. Desktop has always matched its chips at 12.5px.
+  it('sizes its fields like the chips beside them, in both layouts', () => {
+    const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
+    const css = (Array.isArray(sheet) ? sheet : [sheet])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+
+    const size = (selector: string) => {
+      const rule = new RegExp(`${selector.replace(/[.[\]()]/g, '\\$&')} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+      return /font(?:-size)?:[^;]*?(\d+(?:\.\d+)?)px/.exec(rule)?.[1] ?? null;
+    };
+
+    expect(size('.field')).toBe(size('.chip'));
+    expect(size(':host([mobile]) .field')).toBe(size(':host([mobile]) .chip'));
+    expect(size(':host([mobile]) .field')).toBe('13.5');
+    // The one exception, and why: a text box iOS would zoom the page for.
+    expect(css).toMatch(/:host\(\[mobile\]\) \.field input\[type='search'\] \{[^}]*var\(--hv-input-font/);
+  });
 });
 
 describe('hv-filter-panel: changed', () => {
