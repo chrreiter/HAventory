@@ -20,13 +20,34 @@ export function sortLocationTree(nodes: readonly LocationTreeNode[]): LocationTr
 }
 
 /**
- * How many locations a tree holds, counting every depth.
+ * Does this location match the substring filter the trees offer? Its name or
+ * its display path, case-insensitively; an empty needle matches everything.
+ *
+ * Shared with `countLocations` so a "13 locations" tally can never disagree with
+ * the rows the tree beneath it actually kept.
+ */
+export function locationMatches(node: LocationTreeNode, filterText: string): boolean {
+  const needle = filterText.trim().toLowerCase();
+  if (!needle) return true;
+  return (
+    node.name.toLowerCase().includes(needle) ||
+    (node.path?.display_path ?? '').toLowerCase().includes(needle)
+  );
+}
+
+/**
+ * How many locations a tree holds, counting every depth, and only those matching
+ * `filterText` when one is given.
  *
  * The sidebar and the organize dialog both put this number beside the word
  * "Locations", next to a count of categories and a count of tags — so it has to
- * mean the same thing they do: how many of that thing exists. Nested locations
+ * mean the same thing they do: how many of that thing there is. Nested locations
  * are locations, so the roots alone would undercount.
  */
-export function countLocations(nodes: readonly LocationTreeNode[]): number {
-  return nodes.reduce((sum, n) => sum + 1 + countLocations(n.children ?? []), 0);
+export function countLocations(nodes: readonly LocationTreeNode[], filterText = ''): number {
+  return nodes.reduce(
+    (sum, n) =>
+      sum + (locationMatches(n, filterText) ? 1 : 0) + countLocations(n.children ?? [], filterText),
+    0,
+  );
 }

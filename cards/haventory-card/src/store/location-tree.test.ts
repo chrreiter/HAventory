@@ -1,4 +1,4 @@
-import { countLocations, sortLocationTree } from './location-tree';
+import { countLocations, locationMatches, sortLocationTree } from './location-tree';
 import type { LocationTreeNode } from './types';
 
 function node(name: string, children: LocationTreeNode[] = []): LocationTreeNode {
@@ -68,6 +68,22 @@ describe('countLocations', () => {
 
   it('is zero for an empty inventory', () => {
     expect(countLocations([])).toBe(0);
+  });
+
+  it('counts only what a filter keeps, at any depth', () => {
+    const tree = [node('Garage', [node('Shelf A'), node('Bin')]), node('Shelf B')];
+    expect(countLocations(tree, 'shelf')).toBe(2);
+    expect(countLocations(tree, '  ')).toBe(4);
+    expect(countLocations(tree, 'nothing')).toBe(0);
+  });
+
+  it('matches the display path too, so a filter can name the parent', () => {
+    const shelf: LocationTreeNode = {
+      ...node('Shelf A'),
+      path: { id_path: [], name_path: ['Garage', 'Shelf A'], display_path: 'Garage / Shelf A', sort_key: '' },
+    };
+    expect(locationMatches(shelf, 'garage')).toBe(true);
+    expect(locationMatches(shelf, 'kitchen')).toBe(false);
   });
 
   it('survives nodes the backend sent without a children array', () => {

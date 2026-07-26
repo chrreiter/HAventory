@@ -5,6 +5,7 @@ import { icon } from '../ui/icons';
 import { closestMatch } from '../ui/fuzzy';
 import { describeRewrite, filterForValue, rewriteOps } from '../ui/value-rewrite';
 import type { ValueKind } from '../ui/value-rewrite';
+import { countLocations } from '../store/location-tree';
 import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
 import { describeFailure } from './hv-bulk-bar';
@@ -161,6 +162,16 @@ export class HVOrganizeDialog extends LitElement {
         outline: none;
         font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
         color: var(--hv-text);
+      }
+      /* How many of this tab's thing there is. Every tab prints one, so it is a
+         class rather than the inline style the value tabs used to carry — and
+         nowrap, because on a phone the row has no width to spare and "13
+         locations" broke over two lines. */
+      .toolbar-count {
+        flex: none;
+        white-space: nowrap;
+        font-size: 12.5px;
+        color: var(--hv-text-secondary);
       }
       .body {
         flex: 1;
@@ -927,6 +938,9 @@ export class HVOrganizeDialog extends LitElement {
     const tree = this.st?.locationTreeCache ?? [];
     const merging = this._mergingLocation ? this._findNode(tree, this._mergingLocation) : null;
     const sheeted = this._sheetLocation ? this._findNode(tree, this._sheetLocation) : null;
+    // Counted at every depth and against the filter, exactly as the other two
+    // tabs count their values — this was the only tab that stated no total.
+    const count = countLocations(tree, this._filter);
     return html`
       <div class="toolbar">
         <label class="search">
@@ -941,6 +955,9 @@ export class HVOrganizeDialog extends LitElement {
             }}
           />
         </label>
+        <span class="toolbar-count" data-testid="organize-location-count">
+          ${count} location${count === 1 ? '' : 's'}
+        </span>
         <button
           class="hv-pill"
           data-testid="organize-new-location"
@@ -1179,9 +1196,7 @@ export class HVOrganizeDialog extends LitElement {
             }}
           />
         </label>
-        <span style="font-size:12.5px;color:var(--hv-text-secondary)" data-testid="organize-value-count">
-          ${values.length} ${noun}
-        </span>
+        <span class="toolbar-count" data-testid="organize-value-count">${values.length} ${noun}</span>
         <button
           class="hv-pill"
           data-testid="organize-new-value"

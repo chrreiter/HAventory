@@ -4,6 +4,7 @@ import type { TemplateResult } from 'lit';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import type { IconName } from '../ui/icons';
+import { locationMatches } from '../store/location-tree';
 import type { LocationTreeNode } from '../store/types';
 
 /**
@@ -244,12 +245,9 @@ export class HVLocationTree extends LitElement {
   }
 
   private _matches(node: LocationTreeNode): boolean {
-    const needle = this.filterText.trim().toLowerCase();
-    if (!needle) return true;
-    return (
-      node.name.toLowerCase().includes(needle) ||
-      (node.path?.display_path ?? '').toLowerCase().includes(needle)
-    );
+    // Shared with the tally the organize toolbar prints above this tree, so the
+    // number and the rows can never tell different stories.
+    return locationMatches(node, this.filterText);
   }
 
   /** A node stays visible when it matches or when any descendant does. */

@@ -139,6 +139,22 @@ describe('hv-organize-dialog: locations', () => {
     expect(q(sr, '[data-testid="location-editor"]')).toBe(null);
   });
 
+  // Categories and tags each printed "N categories" above their list; locations
+  // was the one tab that stated no total at all.
+  it('states how many locations there are, counting every depth', async () => {
+    const { sr } = await mount({ locations });
+    expect(q(sr, '[data-testid="organize-location-count"]')?.textContent?.trim()).toBe('2 locations');
+  });
+
+  it('counts against the filter, like the value tabs do', async () => {
+    const { el, sr } = await mount({ locations });
+    const filter = q(sr, '[data-testid="organize-filter"]') as HTMLInputElement;
+    filter.value = 'shelf';
+    filter.dispatchEvent(new Event('input'));
+    await settle(el);
+    expect(q(sr, '[data-testid="organize-location-count"]')?.textContent?.trim()).toBe('1 location');
+  });
+
   it('gives the create action the primary treatment', async () => {
     const { sr } = await mount({ locations });
     const button = q(sr, '[data-testid="organize-new-location"]') as HTMLButtonElement;
