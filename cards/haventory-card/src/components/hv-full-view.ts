@@ -251,8 +251,15 @@ export class HVFullView extends LitElement {
           gap: 8px;
           padding: 8px 12px;
         }
+        /* The bar reads at the size of the list it sits over: 13.5px is the
+           table row (hv-data-table .row), and matching it is what stops a
+           three-row bar from looking like the loudest thing on the screen.
+           This is the one control that opts out of the shell's 16px input
+           size above — the size iOS wants to avoid zooming a focused field —
+           because it is a filter box in a bar, not a form field. */
         .appbar .search input {
-          min-height: var(--hv-tap-min, auto);
+          font-size: 13.5px;
+          min-height: 34px;
         }
         .filters-button {
           min-height: var(--hv-tap-min, auto);
@@ -264,16 +271,23 @@ export class HVFullView extends LitElement {
           text-overflow: ellipsis;
           font-size: 17px;
         }
-        /* Second row: the search takes the slack and the count pills ride
-           along beside it, dropping to a third row only if they cannot fit. */
+        /* Second row: the search alone. A 200px basis let the first count pill
+           ride up beside it, which split the three pills across two rows and
+           read as if that one belonged to the search box. A full-width basis
+           gives the search the line and keeps the pills together under it. */
         .appbar .search {
           order: 1;
-          flex: 1 1 200px;
+          flex: 1 0 100%;
           max-width: none;
+          padding: 5px 12px;
         }
+        /* Third row. These are secondary toggles reporting a count, not the
+           bar's actions, so they keep their own compact height instead of
+           growing to the 44px tap target the buttons above them take. */
         .appbar .pill {
           order: 2;
-          min-height: var(--hv-tap-min, auto);
+          min-height: 30px;
+          padding: 5px 11px;
         }
         .appbar .ghost,
         .appbar .add {

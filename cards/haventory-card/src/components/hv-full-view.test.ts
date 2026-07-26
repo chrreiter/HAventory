@@ -87,6 +87,30 @@ describe('hv-full-view: phone-width app bar', () => {
     expect(css).toMatch(/\.appbar \.spacer \{ display: none; \}/);
   });
 
+  // With a 200px basis the search shared its line with whichever pills fit —
+  // at 390px "102 low" rode up beside it while the other two sat on a row of
+  // their own, so the three counts read as two unrelated groups.
+  it('gives the search a row to itself so no count pill rides beside it', () => {
+    expect(narrow()).toMatch(/\.appbar \.search \{[^}]*flex: 1 0 100%/);
+  });
+
+  // The bar came to 178px of a 844px screen: 16px search text and three 44px
+  // pills, all of it above the list it belongs to.
+  it('reads at the size of the rows it searches', () => {
+    // 13.5px is hv-data-table's .row — another shadow root, so the size is
+    // repeated rather than shared.
+    expect(narrow()).toMatch(/\.appbar \.search input \{[^}]*font-size: 13\.5px/);
+    expect(narrow()).not.toMatch(/\.appbar \.search input \{[^}]*min-height: var\(--hv-tap-min/);
+  });
+
+  it('keeps the count pills shorter than the actions above them', () => {
+    const css = narrow();
+    expect(css).toMatch(/\.appbar \.pill \{[^}]*min-height: 30px/);
+    expect(css).not.toMatch(/\.appbar \.pill \{[^}]*min-height: var\(--hv-tap-min/);
+    // The bar's actual actions keep the full target.
+    expect(css).toMatch(/\.appbar \.ghost,\s*\.appbar \.add \{[^}]*min-height: var\(--hv-tap-min/);
+  });
+
   it('sizes its own touch targets rather than inheriting the card its opener had', () => {
     // On the shell, not the app bar: the table, its sort headers and the
     // context bar are on this surface too and need the same sizing.
