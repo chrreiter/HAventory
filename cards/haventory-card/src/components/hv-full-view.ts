@@ -23,8 +23,24 @@ import './hv-item-editor';
 import './hv-location-tree';
 import './hv-overflow-menu';
 import type { HVLocationTree } from './hv-location-tree';
+import type { HVFilterPanel } from './hv-filter-panel';
 
 const SEARCH_DEBOUNCE_MS = 200;
+
+/**
+ * The phone breakpoint, in JS.
+ *
+ * This surface fills the viewport rather than being sized by the card, so its
+ * own layout switches on the `@media (max-width: 700px)` block below. Its two
+ * biggest children take their layout from a `mobile` *property* instead, which
+ * only the card ever set — so at 375px the expanded view drew the item editor's
+ * three-column desktop grid in 156px + 78px + 78px, with "Low-stock at" wrapping
+ * over its own field and Category too narrow to show a value. A media query
+ * cannot set a property, so the same breakpoint is read here and handed down.
+ *
+ * Keep this string and the media query in agreement.
+ */
+const NARROW_QUERY = '(max-width: 700px)';
 
 /** The sidebar's collapsible sections, in the order they appear. */
 type SidebarSection = 'locations' | 'categories' | 'tags';
@@ -432,6 +448,16 @@ export class HVFullView extends LitElement {
       .panel-holder {
         padding: 0 20px 12px;
       }
+      /* Only rendered on a phone, where the panel stages its edits. */
+      .panel-foot {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 0 2px;
+      }
+      .panel-foot .hv-pill {
+        min-width: 130px;
+      }
       .footer {
         padding: 10px 20px;
         border-top: 1px solid var(--hv-row-divider);
@@ -513,6 +539,13 @@ export class HVFullView extends LitElement {
     categories: true,
     tags: true,
   };
+  /** True on a phone-width viewport — see NARROW_QUERY. */
+  @state() private _narrow = false;
+  /**
+   * The staged filter set's match count, so the phone footer's button can say
+   * what pressing it will show — the same contract the card's filter sheet has.
+   */
+  @state() private _stagedCount: number | null = null;
   @state() private _selecting = false;
   @state() private _bulkProgress: BulkProgress | null = null;
   @state() private _bulkResult: BulkResultView | null = null;
@@ -535,13 +568,31 @@ export class HVFullView extends LitElement {
     if (this.store && !this.storeUnsub) {
       this.storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
+    this._narrowQuery ??= window.matchMedia?.(NARROW_QUERY) ?? null;
+    if (this._narrowQuery) {
+      this._narrow = this._narrowQuery.matches;
+      this._narrowQuery.addEventListener('change', this._onNarrowChange);
+    }
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
     this.storeUnsub?.();
     this.storeUnsub = undefined;
+    this._narrowQuery?.removeEventListener('change', this._onNarrowChange);
   }
+
+  private _narrowQuery?: MediaQueryList | null;
+  private _onNarrowChange = (e: MediaQueryListEvent) => {
+    this._narrow = e.matches;
+  };
+
+  /** Price a staged (not yet applied) filter set, so the footer can be honest. */
+  private _priceStaged = debounce((filters: StoreFilters) => {
+    void this.store?.countMatching(filters).then((count) => {
+      this._stagedCount = count;
+    });
+  }, 150);
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('store') && this.store) {
@@ -956,6 +1007,40 @@ export class HVFullView extends LitElement {
     `;
   }
 
+  /**
+   * The phone panel's commit row.
+   *
+   * `hv-filter-panel` stages its edits when it is on a phone and drops its own
+   * footer, because its host is expected to provide one — the card's filter
+   * sheet does. This surface had neither, so telling the panel it was on a phone
+   * without this would stage every edit with no way to apply it.
+   */
+  private _renderPanelFoot() {
+    // Resolved per click, never captured at render time: on the render that
+    // first draws the panel this element does not exist yet, so a captured
+    // reference would leave all three buttons doing nothing.
+    const panel = () => this.renderRoot?.querySelector<HVFilterPanel>('[data-testid="full-filter-panel"]');
+    return html`<div class="panel-foot" data-testid="full-panel-foot">
+      <button class="hv-text-button" data-testid="full-panel-clear" @click=${() => panel()?.clearAll()}>
+        Clear all
+      </button>
+      <span class="spacer"></span>
+      <button
+        class="hv-text-button"
+        data-testid="full-panel-cancel"
+        @click=${() => {
+          panel()?.resetDraft();
+          this._filtersOpen = false;
+        }}
+      >
+        Cancel
+      </button>
+      <button class="hv-pill" data-testid="full-panel-apply" @click=${() => panel()?.apply()}>
+        ${this._stagedCount === null ? 'Show items' : `Show ${counted(this._stagedCount, 'item')}`}
+      </button>
+    </div>`;
+  }
+
   private _renderContextBar() {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
@@ -994,6 +1079,9 @@ export class HVFullView extends LitElement {
           aria-expanded=${String(this._filtersOpen)}
           @click=${() => {
             this._filtersOpen = !this._filtersOpen;
+            // The phone panel stages its edits, so its button has a number to
+            // print from the moment it opens.
+            if (this._filtersOpen && this._narrow) this._priceStaged(filters);
           }}
         >
           ${icon('tune', 16)}Filters
@@ -1185,6 +1273,7 @@ export class HVFullView extends LitElement {
             ${this._filtersOpen
               ? html`<div class="panel-holder">
                   <hv-filter-panel
+                    data-testid="full-filter-panel"
                     .filters=${filters}
                     .distinct=${st?.distinctValuesCache ?? null}
                     .areas=${st?.areasCache?.areas ?? []}
@@ -1192,9 +1281,18 @@ export class HVFullView extends LitElement {
                     .locationTree=${st?.locationTreeCache ?? []}
                     .total=${st?.total ?? null}
                     .grandTotal=${counts?.items_total ?? null}
+                    .stagedCount=${this._stagedCount}
+                    ?mobile=${this._narrow}
                     @change=${(e: CustomEvent) => this._setFilters(e.detail as Partial<StoreFilters>)}
+                    @stage=${(e: CustomEvent) =>
+                      this._priceStaged((e.detail as { filters: StoreFilters }).filters)}
+                    @apply=${(e: CustomEvent) => {
+                      this._setFilters(e.detail as StoreFilters);
+                      this._filtersOpen = false;
+                    }}
                     @clear-filters=${() => this.store?.clearFilters()}
                   ></hv-filter-panel>
+                  ${this._narrow ? this._renderPanelFoot() : null}
                 </div>`
               : null}
             ${this._editing !== null
@@ -1210,6 +1308,7 @@ export class HVFullView extends LitElement {
                     .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
                     .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
                     .busy=${this._editorBusy}
+                    ?mobile=${this._narrow}
                     @save=${this._onEditorSave}
                     @cancel=${() => {
                       this._editing = null;

@@ -463,6 +463,102 @@ describe('hv-full-view: editing', () => {
   });
 });
 
+// This surface switches its own layout on a media query, but its two biggest
+// children switch theirs on a `mobile` property that only the card ever set —
+// so at 375px the expanded view drew the editor's three-column desktop grid in
+// 156px + 78px + 78px, with "Low-stock at" wrapping over its own field.
+describe('hv-full-view: phone-width children', () => {
+  /** jsdom's matchMedia always reports false, so the breakpoint is stubbed. */
+  const stubViewport = (matches: boolean) => {
+    const original = window.matchMedia;
+    window.matchMedia = ((media: string) => ({
+      matches,
+      media,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    return () => {
+      window.matchMedia = original;
+    };
+  };
+
+  it('tells the item editor when it is on a phone', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { el, sr } = await mount({ items: [] });
+      (q(sr, '[data-testid="full-add-item"]') as HTMLButtonElement).click();
+      await settle(el);
+      expect(q(sr, '[data-testid="full-editor"]')?.hasAttribute('mobile')).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+
+  it('leaves the editor on its desktop layout at desktop widths', async () => {
+    const restore = stubViewport(false);
+    try {
+      const { el, sr } = await mount({ items: [] });
+      (q(sr, '[data-testid="full-add-item"]') as HTMLButtonElement).click();
+      await settle(el);
+      expect(q(sr, '[data-testid="full-editor"]')?.hasAttribute('mobile')).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
+  // The panel stages its edits on a phone and drops its own footer, expecting
+  // its host to provide one. Telling it "phone" without that would stage every
+  // edit with no way to apply it.
+  it('stages the phone filter panel behind a commit row', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { el, store, sr } = await mount({ items: [makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 })] });
+      (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      const panel = q(sr, '[data-testid="full-filter-panel"]') as HTMLElement;
+      expect(panel.hasAttribute('mobile')).toBe(true);
+      expect(q(sr, '[data-testid="full-panel-foot"]')).toBeTruthy();
+
+      (panel.shadowRoot?.querySelector('[data-testid="filter-low-stock-only"]') as HTMLButtonElement).click();
+      await settle(el);
+      // Staged, not applied.
+      expect(store.state.value.filters.lowStockOnly).toBe(false);
+
+      (q(sr, '[data-testid="full-panel-apply"]') as HTMLButtonElement).click();
+      await settle(el);
+      expect(store.state.value.filters.lowStockOnly).toBe(true);
+      // Applying closes the panel, as it does in the card's filter sheet.
+      expect(q(sr, '[data-testid="full-filter-panel"]')).toBe(null);
+    } finally {
+      restore();
+    }
+  });
+
+  it('keeps the desktop panel live-applying, with no commit row', async () => {
+    const restore = stubViewport(false);
+    try {
+      const { el, store, sr } = await mount({ items: [makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 })] });
+      (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      const panel = q(sr, '[data-testid="full-filter-panel"]') as HTMLElement;
+      expect(panel.hasAttribute('mobile')).toBe(false);
+      expect(q(sr, '[data-testid="full-panel-foot"]')).toBe(null);
+
+      (panel.shadowRoot?.querySelector('[data-testid="filter-low-stock-only"]') as HTMLButtonElement).click();
+      await settle(el);
+      expect(store.state.value.filters.lowStockOnly).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+});
+
 describe('hv-full-view: app bar filters', () => {
   const flagged = [
     makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 }),
