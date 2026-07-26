@@ -89,7 +89,29 @@ describe('hv-overflow-menu: narrow screens', () => {
     // The menu closes on any outside pointerdown, and that check asks whether
     // the composed path includes this element. A scrim that took the tap would
     // be inside that path, so tapping away would leave the menu open.
-    expect(narrow()).toMatch(/\.menu::before \{[^}]*pointer-events: none/);
+    expect(narrow()).toMatch(/\.scrim \{[^}]*pointer-events: none/);
+  });
+
+  // The scrim was a ::before on the menu. A negative-z-index child paints after
+  // the background of the element establishing the stacking context and before
+  // its content, so the wash landed on top of the menu's own white surface and
+  // under its text: the sheet looked like it had no background at all.
+  it('paints the scrim behind the sheet, not over its surface', async () => {
+    const el = await mount([{ id: 'refresh', label: 'Refresh data' }]);
+    const scrim = el.shadowRoot?.querySelector('[data-testid="overflow-scrim"]') as HTMLElement;
+    const menu = el.shadowRoot?.querySelector('[data-testid="overflow-menu"]') as HTMLElement;
+
+    // A sibling, so it is outside the menu's stacking context...
+    expect(scrim).toBeTruthy();
+    expect(menu.contains(scrim)).toBe(false);
+    // ...and one layer under it.
+    const z = (n: HTMLElement) => Number(/z-index: (\d+)/.exec(n.getAttribute('style') ?? '')?.[1]);
+    expect(z(scrim)).toBeLessThan(z(menu));
+    // The surface itself is untouched.
+    expect(narrow()).not.toMatch(/\.menu::before/);
+    expect(String((customElements.get('hv-overflow-menu') as never as { styles: unknown[] }).styles)).toContain(
+      'background: var(--hv-surface)',
+    );
   });
 
   it('gives the entries a touch-sized row', () => {

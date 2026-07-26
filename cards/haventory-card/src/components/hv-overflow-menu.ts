@@ -139,6 +139,10 @@ export class HVOverflowMenu extends LitElement {
          what decides whether there is room — and it keeps the component free
          of a mobile property that all three of its callers would have to
          thread through. */
+      /* The dropdown form needs no scrim; only the sheet dims the page. */
+      .scrim {
+        display: none;
+      }
       @media (max-width: 600px) {
         .menu {
           position: fixed;
@@ -150,16 +154,28 @@ export class HVOverflowMenu extends LitElement {
           padding: 8px 0 max(8px, env(safe-area-inset-bottom));
           animation: rise var(--hv-motion-sheet) var(--hv-ease-out);
         }
-        /* Dims the page behind the sheet. pointer-events: none is load-bearing:
-           the menu closes on any outside pointerdown, and that check asks
-           whether the event's composed path includes this element — a scrim
-           that swallowed the tap would be inside the path and would stop the
-           menu closing when you tapped away from it. */
-        .menu::before {
-          content: '';
+        /*
+         * Dims the page behind the sheet.
+         *
+         * This was a ::before on the menu, which put the wash on top of the
+         * menu's own background rather than behind it: the menu carries a
+         * z-index, so it establishes a stacking context, and inside one the
+         * element's background paints first and negative-z-index children
+         * paint next — above that background, below the content. The white
+         * sheet came out washed 50% black under fully opaque text, which read
+         * as a menu with no surface of its own. A sibling with its own z-index
+         * paints where a backdrop belongs.
+         *
+         * pointer-events: none is load-bearing: the menu closes on any outside
+         * pointerdown, and that check asks whether the event's composed path
+         * includes this element — a scrim that swallowed the tap would be
+         * inside the path and would stop the menu closing when you tapped away
+         * from it.
+         */
+        .scrim {
+          display: block;
           position: fixed;
           inset: 0;
-          z-index: -1;
           background: var(--hv-scrim);
           pointer-events: none;
         }
@@ -238,6 +254,9 @@ export class HVOverflowMenu extends LitElement {
   }
 
   render() {
+    // nextZBase() allocates the pair: the backdrop takes the base, the surface
+    // over it takes base + 1.
+    const z = this._zBase || 10000;
     return html`
       <button
         class="hv-icon-button trigger ${this.onPrimary ? 'on-primary' : ''}"
@@ -251,11 +270,12 @@ export class HVOverflowMenu extends LitElement {
         ${icon('dotsVertical', 20)}
       </button>
       ${this._open
-        ? html`<div
+        ? html`<div class="scrim" role="presentation" data-testid="overflow-scrim" style="z-index: ${z};"></div>
+          <div
             class="menu"
             role="menu"
             data-testid="overflow-menu"
-            style="z-index: ${this._zBase || 10000};"
+            style="z-index: ${z + 1};"
             @keydown=${(e: KeyboardEvent) => {
               if (e.key === 'Escape') {
                 e.preventDefault();
