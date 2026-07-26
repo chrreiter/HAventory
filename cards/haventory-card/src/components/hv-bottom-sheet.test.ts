@@ -67,6 +67,16 @@ describe('hv-bottom-sheet', () => {
     expect(rule).toMatch(/margin-inline: auto/);
   });
 
+  // `vh` resolves against the viewport with the browser chrome retracted, so a
+  // sheet at its cap could stand taller than the screen actually showing and
+  // push its sticky footer under the URL bar.
+  it('caps its height against the viewport that is really visible', () => {
+    const styles = (customElements.get('hv-bottom-sheet') as typeof HVBottomSheet).styles;
+    const css = (Array.isArray(styles) ? styles : [styles]).map((s) => String(s.cssText)).join('\n');
+    expect(css).toMatch(/max-height: 92dvh/);
+    expect(css).not.toMatch(/max-height: 92vh/);
+  });
+
   it('stacks above previously opened surfaces', async () => {
     const first = await mount();
     const second = await mount();

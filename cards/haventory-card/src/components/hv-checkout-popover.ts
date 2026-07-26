@@ -211,7 +211,7 @@ export class HVCheckoutPopover extends LitElement {
   };
 
   private get _position(): string {
-    if (this.mobile || !this.anchor) return 'top: 20vh; left: 50%; transform: translateX(-50%);';
+    if (this.mobile || !this.anchor) return 'top: 20dvh; left: 50%; transform: translateX(-50%);';
     const width = 300;
     const gap = 6;
     const viewportWidth = typeof window === 'undefined' ? width : window.innerWidth;

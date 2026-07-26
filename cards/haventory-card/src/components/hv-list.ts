@@ -40,7 +40,7 @@ export class HVList extends LitElement {
        * cannot run away with the page.
        */
       :host(:not([fill])[editing]) .scroller {
-        max-height: var(--hv-list-editing-max-height, min(80vh, 760px));
+        max-height: var(--hv-list-editing-max-height, min(80dvh, 760px));
       }
       :host([fill]) {
         display: flex;

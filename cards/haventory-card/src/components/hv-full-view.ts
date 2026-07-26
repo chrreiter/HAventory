@@ -343,7 +343,7 @@ export class HVFullView extends LitElement {
       }
       .editor-holder {
         border-bottom: 1px solid var(--hv-divider);
-        max-height: 60vh;
+        max-height: 60dvh;
         overflow-y: auto;
       }
       .new-location {

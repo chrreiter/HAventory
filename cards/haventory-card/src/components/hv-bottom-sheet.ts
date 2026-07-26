@@ -38,7 +38,12 @@ export class HVBottomSheet extends LitElement {
            min() resolves to 100% and this is a no-op. */
         width: min(100%, var(--hv-sheet-max-width, 640px));
         margin-inline: auto;
-        max-height: 92vh;
+        /* dvh, not vh: on a phone vh resolves against the viewport with the
+           browser chrome retracted, so a sheet at its cap could stand taller
+           than the screen actually showing and push its sticky footer — the
+           Cancel and "Show N items" buttons — under the URL bar. dvh tracks
+           the viewport that is really visible. */
+        max-height: 92dvh;
         display: flex;
         flex-direction: column;
         box-sizing: border-box;
