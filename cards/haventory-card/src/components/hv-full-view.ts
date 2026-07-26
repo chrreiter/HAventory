@@ -156,6 +156,27 @@ export class HVFullView extends LitElement {
       .appbar .pill.on {
         outline: 2px solid #fff;
       }
+      /*
+       * Low and overdue carry the card's meanings here too: amber for a stock
+       * warning, red for a passed due date. Two identical translucent pills
+       * reading "102 low" and "82 out" told you nothing apart.
+       *
+       * They cannot reuse the card's exact fills, though. Those are pale tints
+       * of their hue chosen to sit on a plain card surface, and in dark mode
+       * they are translucent — laid over this already-blue bar, "low" would come
+       * out as faintly warm blue with amber text on it. Same hues, same
+       * meanings, solid fills that do not depend on what is behind them.
+       * Checked out keeps the neutral wash, which is what the card's
+       * primary-tint amounts to on a primary-coloured bar.
+       */
+      .appbar .pill.low {
+        background: var(--hv-amber);
+        color: #3b2600;
+      }
+      .appbar .pill.overdue {
+        background: var(--hv-error);
+        color: #fff;
+      }
       .appbar .add {
         flex: none;
         display: inline-flex;
@@ -1071,20 +1092,35 @@ export class HVFullView extends LitElement {
           <span class="spacer"></span>
           ${counts && counts.low_stock_count > 0
             ? html`<button
-                class="pill ${filters.lowStockOnly ? 'on' : ''}"
+                class="pill low ${filters.lowStockOnly ? 'on' : ''}"
                 data-testid="full-badge-low"
+                aria-pressed=${String(filters.lowStockOnly)}
+                title="Show only low-stock items"
                 @click=${() => this._setFilters({ lowStockOnly: !filters.lowStockOnly })}
               >
                 ${counts.low_stock_count} low
               </button>`
             : null}
+          ${counts && (counts.overdue_count ?? 0) > 0
+            ? html`<button
+                class="pill overdue ${filters.overdueOnly ? 'on' : ''}"
+                data-testid="full-badge-overdue"
+                aria-pressed=${String(filters.overdueOnly)}
+                title="Show only overdue items"
+                @click=${() => this._setFilters({ overdueOnly: !filters.overdueOnly })}
+              >
+                ${counts.overdue_count} overdue
+              </button>`
+            : null}
           ${counts && counts.checked_out_count > 0
             ? html`<button
-                class="pill ${filters.checkedOutOnly ? 'on' : ''}"
+                class="pill out ${filters.checkedOutOnly ? 'on' : ''}"
                 data-testid="full-badge-out"
+                aria-pressed=${String(filters.checkedOutOnly)}
+                title="Show only checked-out items"
                 @click=${() => this._setFilters({ checkedOutOnly: !filters.checkedOutOnly })}
               >
-                ${counts.checked_out_count} out
+                ${counts.checked_out_count} checked out
               </button>`
             : null}
           <button

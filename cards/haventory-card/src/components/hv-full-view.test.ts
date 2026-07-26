@@ -444,12 +444,14 @@ describe('hv-full-view: editing', () => {
 });
 
 describe('hv-full-view: app bar filters', () => {
+  const flagged = [
+    makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 }),
+    makeItem({ id: '2', checked_out: true }),
+    makeItem({ id: '3', checked_out: true, due_date: '2020-01-01' }),
+  ];
+
   it('filters from the stat pills', async () => {
-    const items = [
-      makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 }),
-      makeItem({ id: '2', checked_out: true }),
-    ];
-    const { el, store, sr } = await mount({ items });
+    const { el, store, sr } = await mount({ items: flagged });
 
     (q(sr, '[data-testid="full-badge-low"]') as HTMLButtonElement).click();
     await settle(el);
@@ -458,6 +460,41 @@ describe('hv-full-view: app bar filters', () => {
     (q(sr, '[data-testid="full-badge-out"]') as HTMLButtonElement).click();
     await settle(el);
     expect(store.state.value.filters.checkedOutOnly).toBe(true);
+  });
+
+  // The card has carried an overdue badge all along; this bar had low and
+  // checked-out only, so the one state worth interrupting for was the one it
+  // would not show.
+  it('carries the overdue count too, and filters on it', async () => {
+    const { el, store, sr } = await mount({ items: flagged });
+    const pill = q(sr, '[data-testid="full-badge-overdue"]') as HTMLButtonElement;
+    expect(pill?.textContent).toContain('1 overdue');
+
+    pill.click();
+    await settle(el);
+    expect(store.state.value.filters.overdueOnly).toBe(true);
+    expect(q(sr, '[data-testid="full-badge-overdue"]')?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('drops the overdue pill when nothing is overdue', async () => {
+    const { sr } = await mount({ items: [makeItem({ id: '1', checked_out: true })] });
+    expect(q(sr, '[data-testid="full-badge-overdue"]')).toBe(null);
+    expect(q(sr, '[data-testid="full-badge-out"]')).toBeTruthy();
+  });
+
+  // "82 out" reads as "82 out of stock", which is the opposite of what it counts.
+  it('spells out what the checked-out pill counts', async () => {
+    const { sr } = await mount({ items: flagged });
+    expect(q(sr, '[data-testid="full-badge-out"]')?.textContent?.trim()).toBe('2 checked out');
+  });
+
+  // Three identically washed pills said nothing apart. The card's hues carry the
+  // meaning; the fills are solid rather than the card's pale tints, because a
+  // tint over this already-coloured bar is unreadable in dark mode.
+  it('colours low and overdue the way the card does', () => {
+    const css = fullCss();
+    expect(css).toMatch(/\.appbar \.pill\.low \{[^}]*background: var\(--hv-amber\)/);
+    expect(css).toMatch(/\.appbar \.pill\.overdue \{[^}]*background: var\(--hv-error\)/);
   });
 
   it('debounces the app bar search', async () => {
