@@ -148,6 +148,21 @@ describe('hv-filter-panel: tags', () => {
     const values = all(el, '[data-testid="filter-tag"]').map((c) => c.dataset.value);
     expect(values).toContain('nobody-uses-this');
   });
+
+  // An auto margin parked Any/All against the right rim of the panel. On the
+  // expanded view that is over a screen's width from the word "Tags" and sits
+  // directly above an unrelated row, so what it applied to was anyone's guess.
+  it('keeps the any/all toggle beside its own heading', async () => {
+    const el = await mount();
+    const segmented = q(el, '[data-testid="filter-tags-mode"]').parentElement as HTMLElement;
+
+    expect(segmented.style.marginLeft).toBe('');
+    // Immediately after the heading it qualifies, in the same head row.
+    const head = segmented.parentElement as HTMLElement;
+    expect(head.classList.contains('group-head')).toBe(true);
+    expect(head.firstElementChild?.textContent?.trim()).toBe('Tags');
+    expect(head.firstElementChild?.nextElementSibling).toBe(segmented);
+  });
 });
 
 describe('hv-filter-panel: show only vs sort', () => {

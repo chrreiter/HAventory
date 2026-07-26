@@ -557,7 +557,12 @@ export class HVFilterPanel extends LitElement {
       <div class="group">
         <div class="group-head">
           <span class="hv-label">Tags</span>
-          <span class="segmented" style="margin-left:auto" role="radiogroup" aria-label="Tag match mode">
+          <!-- Beside its own heading, not pushed to the far edge: an auto margin
+               parked Any/All against the right rim of a full-width panel, a
+               screen's width from the word it qualifies and directly above an
+               unrelated row. The Sort group's direction toggle already sits next
+               to what it sorts, so this matches it. -->
+          <span class="segmented" role="radiogroup" aria-label="Tag match mode">
             ${(['any', 'all'] as const).map(
               (mode) => html`<button
                 class=${f.tagsMode === mode ? 'on' : ''}
