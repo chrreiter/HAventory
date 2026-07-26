@@ -529,8 +529,14 @@ export class HVItemEditor extends LitElement {
         padding: 10px 0 14px;
         border-top: 1px solid var(--hv-row-divider);
       }
-      .actions .hint {
+      /* The auto margin lives on a spacer of its own, not on the hint: the hint
+         is gone on a phone (no keyboard to press Esc with), and with the margin
+         attached to it Cancel and Save fell back to the left edge — right next
+         to Delete. */
+      .actions .spacer {
         margin-left: auto;
+      }
+      .actions .hint {
         font-size: 11.5px;
         color: var(--hv-text-tertiary);
       }
@@ -1268,9 +1274,12 @@ export class HVItemEditor extends LitElement {
                     Delete item
                   </button>`
                 : null}
-              <span class="hint" data-testid="editor-key-hint">
-                Esc discards · ${saveShortcutLabel()} saves
-              </span>
+              <span class="spacer"></span>
+              ${this.mobile
+                ? null
+                : html`<span class="hint" data-testid="editor-key-hint">
+                    Esc discards · ${saveShortcutLabel()} saves
+                  </span>`}
               <button class="hv-text-button" data-testid="editor-cancel" @click=${this._cancel}>Cancel</button>
               <button class="save" data-testid="editor-save" ?disabled=${this.busy} @click=${this._save}>
                 ${this.busy ? 'Saving…' : 'Save'}

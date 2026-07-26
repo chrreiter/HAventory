@@ -43,6 +43,15 @@ const q = (el: HVItemEditor, sel: string) => el.shadowRoot?.querySelector(sel) a
 const all = (el: HVItemEditor, sel: string) =>
   [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
 
+/** jsdom lays out no shadow DOM, so layout rules are asserted on the sheet. */
+const editorCss = () => {
+  const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
+  return (Array.isArray(styles) ? styles : [styles])
+    .map((s) => String(s.cssText))
+    .join('\n')
+    .replace(/\s+/g, ' ');
+};
+
 async function type(el: HVItemEditor, testid: string, value: string) {
   const input = q(el, `[data-testid="${testid}"]`) as HTMLInputElement;
   input.value = value;
@@ -343,6 +352,34 @@ describe('hv-item-editor: saving', () => {
     expect(hint).toContain('Esc discards');
     expect(hint).toContain('Ctrl+Enter saves');
     expect(hint).not.toContain('⌘');
+  });
+
+  // Neither shortcut exists on a phone: there is no Esc key and no Ctrl to hold,
+  // so the footer was advertising two chords nobody holding the thing can press.
+  it('drops the keyboard hint on a phone', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }), { mobile: true });
+    expect(q(el, '[data-testid="editor-key-hint"]')).toBe(null);
+    // The keydown handlers stay — a phone can be docked to a keyboard.
+    const saves = onSave(el);
+    (q(el, '[data-testid="item-editor"]') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }),
+    );
+    expect(saves).toHaveLength(1);
+  });
+
+  // The auto margin that holds Cancel and Save against the right edge used to
+  // ride on the hint, so hiding the hint dropped them back beside Delete.
+  it('keeps Cancel and Save off the left edge once the hint is gone', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }), { mobile: true });
+    const kids = [...(q(el, '.actions')?.children ?? [])];
+    expect(kids.map((c) => c.getAttribute('data-testid') ?? c.className)).toEqual([
+      'editor-delete',
+      'spacer',
+      'editor-cancel',
+      'editor-save',
+    ]);
+    expect(editorCss()).toMatch(/\.actions \.spacer \{[^}]*margin-left: auto/);
+    expect(/\.actions \.hint \{([^}]*)\}/.exec(editorCss())?.[1]).not.toContain('margin-left');
   });
 
   it('surfaces a server-side failure without losing the form', async () => {
