@@ -150,7 +150,7 @@ describe('hv-item-editor: saving', () => {
     expect(q(el, '[data-testid="editor-name-error"]')).toBe(null);
   });
 
-  it('saves on ⌘↵ and discards on Escape', async () => {
+  it('saves on either modifier + Enter, and discards on Escape', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
     const saves = onSave(el);
     let cancels = 0;
@@ -162,8 +162,23 @@ describe('hv-item-editor: saving', () => {
     root.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }));
     expect(saves).toHaveLength(1);
 
+    // The PC chord is not a second-class citizen — the footer advertises it by
+    // default, so it has to be the same binding.
+    root.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+    expect(saves).toHaveLength(2);
+
     root.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(cancels).toBe(1);
+  });
+
+  // The hint used to print ⌘↵ on every platform, naming a key a PC keyboard does
+  // not have. jsdom reports no Apple platform, so this is the fallback branch.
+  it('names the save chord for the keyboard it can actually detect', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    const hint = q(el, '[data-testid="editor-key-hint"]')?.textContent ?? '';
+    expect(hint).toContain('Esc discards');
+    expect(hint).toContain('Ctrl+Enter saves');
+    expect(hint).not.toContain('⌘');
   });
 
   it('surfaces a server-side failure without losing the form', async () => {

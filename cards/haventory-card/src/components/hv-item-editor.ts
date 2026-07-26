@@ -3,6 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import { relativeTime, formatDate, isOverdue } from '../ui/relative-time';
+import { saveShortcutLabel } from '../ui/keyboard';
 import {
   customFieldsFrom,
   formFromItem,
@@ -1033,7 +1034,9 @@ export class HVItemEditor extends LitElement {
                     Delete item
                   </button>`
                 : null}
-              <span class="hint">Esc discards · ⌘↵ saves</span>
+              <span class="hint" data-testid="editor-key-hint">
+                Esc discards · ${saveShortcutLabel()} saves
+              </span>
               <button class="hv-text-button" data-testid="editor-cancel" @click=${this._cancel}>Cancel</button>
               <button class="save" data-testid="editor-save" ?disabled=${this.busy} @click=${this._save}>
                 ${this.busy ? 'Saving…' : 'Save'}
