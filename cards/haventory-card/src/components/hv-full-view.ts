@@ -997,7 +997,7 @@ export class HVFullView extends LitElement {
               </button>`,
             )
           : html`<div class="section-empty" data-testid=${`sidebar-${section}-empty`}>
-              ${section === 'tags' ? 'No tags in use yet.' : 'No categories in use yet.'}
+              ${section === 'tags' ? 'No tags in use yet' : 'No categories in use yet'}
             </div>`
         : null}
     `;

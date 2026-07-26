@@ -12,9 +12,12 @@ import type { TemplateResult } from 'lit';
  * search and a filter panel — the one where you are most likely to filter
  * yourself down to nothing and least able to see which control did it.
  *
- * Both now render from here, so the wording cannot drift again. Convention:
- * the headline is a fragment with no full stop, the detail line is a sentence
- * with one.
+ * Both now render from here, so the wording cannot drift again.
+ *
+ * The card's punctuation convention, of which this is the busiest example:
+ * headlines, hints and short empty lines are captions and take no terminal full
+ * stop; a detail line or a prose note is written as sentences and punctuated as
+ * such.
  */
 export type EmptyKind = 'no-items' | 'no-matches' | 'empty-location' | 'connection-lost';
 

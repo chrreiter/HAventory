@@ -582,7 +582,7 @@ export class HVImportSheet extends LitElement {
       ${willWrite === 0
         ? html`<div class="foot" style="padding-top:0">
             <span class="hint" data-testid="import-nothing-to-do">
-              Nothing in this file would change the inventory.
+              Nothing in this file would change the inventory
             </span>
           </div>`
         : null}

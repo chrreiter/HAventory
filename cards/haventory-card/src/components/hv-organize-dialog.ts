@@ -1299,7 +1299,7 @@ export class HVOrganizeDialog extends LitElement {
               `,
             )
           : html`<div class="empty" data-testid="organize-empty">
-              ${this._filter.trim() ? `No ${noun} match.` : `No ${noun} in use yet.`}
+              ${this._filter.trim() ? `No ${noun} match` : `No ${noun} in use yet`}
             </div>`}
       </div>
     `;

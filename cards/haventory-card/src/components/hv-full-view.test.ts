@@ -409,10 +409,11 @@ describe('hv-full-view: sidebar facets', () => {
     const { sr } = await mount({ items: [makeItem({ id: '1', category: null, tags: [] })] });
     // Worded as the organize dialog words it: a category exists through the
     // items using it, so "in use" is the honest phrasing in both places.
-    expect(q(sr, '[data-testid="sidebar-categories-empty"]')?.textContent).toContain(
+    expect(q(sr, '[data-testid="sidebar-categories-empty"]')?.textContent?.trim()).toBe(
       'No categories in use yet',
     );
-    expect(q(sr, '[data-testid="sidebar-tags-empty"]')?.textContent).toContain('No tags in use yet');
+    // Captions take no full stop; prose notes do.
+    expect(q(sr, '[data-testid="sidebar-tags-empty"]')?.textContent?.trim()).toBe('No tags in use yet');
   });
 });
 

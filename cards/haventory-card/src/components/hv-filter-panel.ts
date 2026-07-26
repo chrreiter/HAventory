@@ -791,7 +791,7 @@ export class HVFilterPanel extends LitElement {
             { testid: 'filter-low-stock-first' },
           )}
         </div>
-        <span class="hint">Undated items always sort last, in both directions.</span>
+        <span class="hint">Undated items always sort last, in both directions</span>
       </div>
     `;
   }

@@ -450,7 +450,7 @@ export class HVLocationTree extends LitElement {
         ${rendered.length
           ? rendered
           : html`<div class="empty" data-testid="tree-empty">
-              ${this.filterText.trim() ? 'No locations match.' : 'No locations yet.'}
+              ${this.filterText.trim() ? 'No locations match' : 'No locations yet'}
             </div>`}
         ${this.showOrphans
           ? html`
