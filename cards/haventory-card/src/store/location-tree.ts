@@ -18,3 +18,15 @@ export function sortLocationTree(nodes: readonly LocationTreeNode[]): LocationTr
     .sort((a, b) => collator.compare(a.name, b.name) || collator.compare(a.id, b.id))
     .map((n) => (n.children?.length ? { ...n, children: sortLocationTree(n.children) } : n));
 }
+
+/**
+ * How many locations a tree holds, counting every depth.
+ *
+ * The sidebar and the organize dialog both put this number beside the word
+ * "Locations", next to a count of categories and a count of tags — so it has to
+ * mean the same thing they do: how many of that thing exists. Nested locations
+ * are locations, so the roots alone would undercount.
+ */
+export function countLocations(nodes: readonly LocationTreeNode[]): number {
+  return nodes.reduce((sum, n) => sum + 1 + countLocations(n.children ?? []), 0);
+}

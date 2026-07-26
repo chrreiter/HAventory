@@ -5,6 +5,7 @@ import { icon } from '../ui/icons';
 import { nextZBase } from '../utils/zindex';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
+import { countLocations } from '../store/location-tree';
 import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
 import type { Item, LocationTreeNode, Sort, StoreFilters, StoreState } from '../store/types';
@@ -329,6 +330,15 @@ export class HVFullView extends LitElement {
         flex: none;
         font-size: 11.5px;
         color: var(--hv-text-tertiary);
+      }
+      /* The three tallies read as one column, so a heading with no trailing
+         action still reserves the room one takes — otherwise the Locations
+         count sits an icon-button's width left of the other two. */
+      .head-action {
+        flex: none;
+        display: flex;
+        justify-content: flex-end;
+        width: var(--hv-tap-min, 34px);
       }
       /*
        * A category or tag row. Deliberately the same shape as a location row in
@@ -811,6 +821,7 @@ export class HVFullView extends LitElement {
       <div class="sidebar-head">
         ${this._renderSectionToggle(section, label)}
         <span class="section-tally" data-testid=${`sidebar-${section}-tally`}>${values.length}</span>
+        <span class="head-action"></span>
       </div>
       ${open
         ? values.length
@@ -843,20 +854,28 @@ export class HVFullView extends LitElement {
       <div class="sidebar" data-testid="full-sidebar">
         <div class="sidebar-head">
           ${this._renderSectionToggle('locations', 'Locations')}
-          <button
-            class="hv-icon-button"
-            data-testid="sidebar-new-location"
-            aria-label="New location"
-            title="New location"
-            @click=${() => {
-              this._creatingLocation = !this._creatingLocation;
-              this._locationError = null;
-              // Nowhere to put the field if the section is shut.
-              if (this._creatingLocation) this._sections = { ...this._sections, locations: true };
-            }}
-          >
-            ${icon('plus', 20)}
-          </button>
+          <!-- Categories and tags each state how many there are; locations
+               offered a "+" and no number, so the one section you can add to was
+               also the one you could not size up. -->
+          <span class="section-tally" data-testid="sidebar-locations-tally">
+            ${countLocations(st?.locationTreeCache ?? [])}
+          </span>
+          <span class="head-action">
+            <button
+              class="hv-icon-button"
+              data-testid="sidebar-new-location"
+              aria-label="New location"
+              title="New location"
+              @click=${() => {
+                this._creatingLocation = !this._creatingLocation;
+                this._locationError = null;
+                // Nowhere to put the field if the section is shut.
+                if (this._creatingLocation) this._sections = { ...this._sections, locations: true };
+              }}
+            >
+              ${icon('plus', 20)}
+            </button>
+          </span>
         </div>
         ${this._sections.locations ? this._renderLocationSection() : null}
         ${this._renderFacetSection(

@@ -333,6 +333,25 @@ describe('hv-full-view: sidebar facets', () => {
     expect(q(sr, '[data-testid="sidebar-tree"]')).toBeTruthy();
   });
 
+  // Locations was the odd one out: a "+" where the other two headings carry a
+  // number, so the section you can add to was the one you could not size up.
+  it('states how many locations there are, at every depth', async () => {
+    const { sr } = await mount({
+      items: faceted,
+      locations: [loc('garage', 'Garage'), loc('shelf-a', 'Shelf A', 'garage'), loc('kitchen', 'Kitchen')],
+    });
+    expect(q(sr, '[data-testid="sidebar-locations-tally"]')?.textContent?.trim()).toBe('3');
+    // …and the "+" is still there beside it.
+    expect(q(sr, '[data-testid="sidebar-new-location"]')).toBeTruthy();
+  });
+
+  it('lines the three tallies up in one column', () => {
+    // The Locations heading ends in a button and the other two in nothing, so
+    // without a reserved slot its number sits an icon-button's width inboard.
+    expect(fullCss()).toMatch(/\.head-action \{[^}]*width: var\(--hv-tap-min, 34px\)/);
+    expect(fullCss()).toMatch(/\.head-action \{[^}]*flex: none/);
+  });
+
   it('says so when a facet has nothing in it yet', async () => {
     const { sr } = await mount({ items: [makeItem({ id: '1', category: null, tags: [] })] });
     expect(q(sr, '[data-testid="sidebar-categories-empty"]')?.textContent).toContain('No categories yet');
