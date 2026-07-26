@@ -103,6 +103,32 @@ describe('hv-full-view: phone-width app bar', () => {
     expect(narrow()).not.toMatch(/\.appbar \.search input \{[^}]*min-height: var\(--hv-tap-min/);
   });
 
+  // The panel is ~1600px of form in one column. The shell is fixed to the
+  // viewport and clips, and nothing in this column was a scroll container, so
+  // on a 756px screen 1138px of it was unreachable — including the apply
+  // button, which measured 1039px below the bottom edge — and the table under
+  // it was squeezed to zero height.
+  it('gives the filter panel a ceiling and something to scroll', () => {
+    const css = narrow();
+    expect(css).toMatch(/\.panel-holder \{[^}]*max-height: 62dvh/);
+    expect(css).toMatch(/\.panel-holder \{[^}]*flex-direction: column/);
+    expect(css).toMatch(/\.panel-scroll \{[^}]*overflow-y: auto/);
+    expect(css).toMatch(/\.panel-scroll \{[^}]*min-height: 0/);
+  });
+
+  it('keeps the apply button out of the scroll, where the count is visible', async () => {
+    const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
+    (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const scroll = q(sr, '.panel-scroll') as HTMLElement;
+    expect(scroll?.querySelector('[data-testid="full-filter-panel"]')).toBeTruthy();
+    // The commit row is a sibling of the scroll box, not inside it, so the
+    // count on the apply button stays visible while the filters move.
+    expect(scroll.querySelector('.panel-foot')).toBe(null);
+    expect(narrow()).toMatch(/\.panel-foot \{[^}]*flex: none/);
+  });
+
   it('keeps the count pills shorter than the actions above them', () => {
     const css = narrow();
     expect(css).toMatch(/\.appbar \.pill \{[^}]*min-height: 30px/);

@@ -302,6 +302,38 @@ export class HVFullView extends LitElement {
           display: none;
         }
 
+        /*
+         * Every filter the backend accepts, stacked in one column, is around
+         * 1600px of form. Nothing in this column was a scroll container and the
+         * shell is fixed to the viewport and clips, so on a 756px screen 1138px
+         * of the panel simply did not exist: the sort controls, the date rows
+         * and the Show N items button sat about a thousand pixels below the
+         * bottom edge, reachable by no gesture at all, and the table under it
+         * was squeezed to zero.
+         *
+         * Same shape as the editor holder above — a ceiling with a scroll box
+         * inside it — except the foot stays pinned, because the panel's whole
+         * point is the count on that button.
+         */
+        .panel-holder {
+          display: flex;
+          flex-direction: column;
+          flex: none;
+          min-height: 0;
+          max-height: 62dvh;
+        }
+        .panel-scroll {
+          flex: 1;
+          min-height: 0;
+          overflow-y: auto;
+          /* Stop a flick that runs out of panel from scrolling the surface
+             underneath it. */
+          overscroll-behavior-y: contain;
+        }
+        .panel-foot {
+          flex: none;
+        }
+
         /* Selection mode reuses this bar and broke in its own way. .subcount
            was the only shrinkable item in a row of flex:none siblings, so it
            collapsed to its longest word and stacked "of 556 / matching / the /
@@ -514,6 +546,9 @@ export class HVFullView extends LitElement {
       }
       .panel-holder {
         padding: 0 20px 12px;
+      }
+      .panel-scroll {
+        min-width: 0;
       }
       /* Only rendered on a phone, where the panel stages its edits. */
       .panel-foot {
@@ -1425,6 +1460,7 @@ export class HVFullView extends LitElement {
             ${this._renderContextBar()}
             ${this._filtersOpen
               ? html`<div class="panel-holder">
+                  <div class="panel-scroll">
                   <hv-filter-panel
                     data-testid="full-filter-panel"
                     .filters=${filters}
@@ -1446,6 +1482,7 @@ export class HVFullView extends LitElement {
                     }}
                     @clear-filters=${() => this.store?.clearFilters()}
                   ></hv-filter-panel>
+                  </div>
                   ${this._narrow ? this._renderPanelFoot() : null}
                 </div>`
               : null}
