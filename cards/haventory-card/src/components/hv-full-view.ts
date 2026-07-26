@@ -234,6 +234,28 @@ export class HVFullView extends LitElement {
         .appbar .spacer {
           display: none;
         }
+
+        /* Selection mode reuses this bar and broke in its own way. .subcount
+           was the only shrinkable item in a row of flex:none siblings, so it
+           collapsed to its longest word and stacked "of 556 / matching / the /
+           current / filter" down five lines, eating ~230px of a 667px screen —
+           and Clear selection landed at 380..490, off the side. Giving the
+           count the slack keeps Clear on the first row, and the subtitle gets
+           a line to itself instead of a column. */
+        .appbar.selecting .count {
+          flex: 1;
+          min-width: 0;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .appbar.selecting .subcount {
+          order: 1;
+          flex-basis: 100%;
+        }
+        .appbar.selecting .load-all {
+          order: 2;
+        }
       }
       .sidebar {
         background: var(--hv-page);
@@ -795,7 +817,7 @@ export class HVFullView extends LitElement {
           : null}
         ${canLoadMore
           ? html`<button
-              class="ghost"
+              class="ghost load-all"
               data-testid="selection-load-all"
               ?disabled=${this._loadingAll}
               @click=${async () => {

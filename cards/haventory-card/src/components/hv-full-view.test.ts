@@ -88,6 +88,44 @@ describe('hv-full-view: phone-width app bar', () => {
   it('sizes its own touch targets rather than inheriting the card its opener had', () => {
     expect(narrow()).toMatch(/\.appbar \{[^}]*--hv-tap-min: 44px/);
   });
+
+  // Selection mode reuses the same bar. `.subcount` was the only shrinkable
+  // item among flex:none siblings, so it collapsed to its longest word and
+  // stacked "of 556 / matching / the / current / filter" down five lines.
+  it('gives the selection subtitle a line instead of a column', () => {
+    const css = narrow();
+    expect(css).toMatch(/\.appbar\.selecting \.subcount \{[^}]*flex-basis: 100%/);
+    expect(css).toMatch(/\.appbar\.selecting \.count \{[^}]*flex: 1/);
+  });
+
+  it('keeps Clear selection on screen', async () => {
+    // It measured 380..490 in a 375px viewport before the bar could wrap.
+    const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
+    el.startSelecting = true;
+    el.open = false;
+    await el.updateComplete;
+    el.open = true;
+    await settle(el);
+
+    expect(q(sr, '[data-testid="selection-bar"]')).toBeTruthy();
+    expect(q(sr, '[data-testid="selection-clear"]')).toBeTruthy();
+  });
+
+  it('marks the load-all button so it can be ordered onto its own row', async () => {
+    // Styling it by data-testid would tie the stylesheet to the test hooks.
+    const { el, store, sr } = await mount({
+      items: [makeItem({ id: '1' }), makeItem({ id: '2' })],
+    });
+    store.state.value.total = 99;
+    el.startSelecting = true;
+    el.open = false;
+    await el.updateComplete;
+    el.open = true;
+    await settle(el);
+
+    const loadAll = q(sr, '[data-testid="selection-load-all"]');
+    expect(loadAll?.classList.contains('load-all')).toBe(true);
+  });
 });
 
 describe('hv-full-view: shell', () => {
