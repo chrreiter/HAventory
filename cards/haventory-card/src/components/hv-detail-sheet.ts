@@ -333,7 +333,9 @@ export class HVDetailSheet extends LitElement {
           ${low ? html`<span class="chip low" data-testid="sheet-low">LOW</span>` : null}
           ${item.checked_out
             ? html`<span class="chip state ${overdue ? 'overdue' : ''}" data-testid="sheet-out">
-                ${overdue ? 'Overdue' : 'Out'}${item.due_date ? ` · due ${formatDate(item.due_date)}` : ''}
+                ${overdue ? 'Overdue' : 'Checked out'}${item.due_date
+                  ? ` · due ${formatDate(item.due_date)}`
+                  : ''}
               </span>`
             : null}
           ${item.category ? html`<span class="chip" data-testid="sheet-category">${item.category}</span>` : null}

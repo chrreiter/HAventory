@@ -85,6 +85,17 @@ describe('hv-item-editor: field parity', () => {
     expect(q(el, '[data-testid="editor-heading"]')?.textContent).toContain('Multimeter — editing');
   });
 
+  // The header chip said "Out", which reads as out of stock — the opposite of a
+  // borrowed item that is still in the inventory. Every list and table already
+  // said "Checked out"; this header and the detail sheet were the holdouts.
+  it('names the check-out state the way every list does', async () => {
+    const el = await mount(makeItem({ id: '1', checked_out: true, due_date: '2099-07-31' }));
+    expect(q(el, '[data-testid="editor-out-chip"]')?.textContent?.trim()).toMatch(/^Checked out · due /);
+
+    const late = await mount(makeItem({ id: '2', checked_out: true, due_date: '2020-01-01' }));
+    expect(q(late, '[data-testid="editor-out-chip"]')?.textContent).toContain('Overdue');
+  });
+
   it('opens empty as the add-item expander', async () => {
     const el = await mount(null);
     expect(q(el, '[data-testid="editor-heading"]')?.textContent).toContain('New item');

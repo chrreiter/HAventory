@@ -37,7 +37,8 @@ describe('hv-detail-sheet: read view', () => {
 
     expect(q(el, '[data-testid="sheet-name"]')?.textContent).toContain('Multimeter');
     expect(q(el, '[data-testid="sheet-path"]')?.textContent).toContain('Garage › Shelf B');
-    expect(q(el, '[data-testid="sheet-out"]')?.textContent).toContain('Out · due Jul 31');
+    // "Out" read as out of stock — the opposite of what a checked-out item is.
+    expect(q(el, '[data-testid="sheet-out"]')?.textContent).toContain('Checked out · due Jul 31');
     expect(q(el, '[data-testid="sheet-category"]')?.textContent).toContain('Tools');
     expect(all(el, '[data-testid="sheet-tag"]').map((t) => t.textContent?.trim())).toEqual([
       'electric',

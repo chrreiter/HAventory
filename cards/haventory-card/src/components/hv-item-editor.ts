@@ -962,8 +962,8 @@ export class HVItemEditor extends LitElement {
                 ${creating ? 'New item' : `${this.item?.name} — editing`}
               </span>
               ${this.item?.checked_out
-                ? html`<span class="out-chip ${overdue ? 'overdue' : ''}">
-                    ${overdue ? 'Overdue' : 'Out'}${this.item?.due_date
+                ? html`<span class="out-chip ${overdue ? 'overdue' : ''}" data-testid="editor-out-chip">
+                    ${overdue ? 'Overdue' : 'Checked out'}${this.item?.due_date
                       ? ` · due ${formatDate(this.item.due_date)}`
                       : ''}
                   </span>`
