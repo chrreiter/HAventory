@@ -158,11 +158,22 @@ export class HVCheckoutPopover extends LitElement {
         border-color: var(--hv-divider);
         color: var(--hv-text-tertiary);
       }
+      /* Three buttons never fit across 300px once the confirm label carries a
+         date: every one of them wrapped onto three lines. The escape hatch
+         takes a row of its own and the pair that ends the dialog keeps the
+         bottom one. */
       .actions {
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
         gap: 8px;
         padding: 0 12px 14px;
+      }
+      .actions .none-button {
+        flex-basis: 100%;
+      }
+      :host(:not([mobile])) .actions .none-button {
+        text-align: left;
       }
       :host([mobile]) .actions {
         display: grid;
@@ -364,7 +375,7 @@ export class HVCheckoutPopover extends LitElement {
         </div>
         <div class="actions">
           <button
-            class="hv-text-button ${this.mobile ? 'none-button' : ''}"
+            class="hv-text-button none-button"
             data-testid="checkout-no-date"
             @click=${() => this._commit(null)}
           >
