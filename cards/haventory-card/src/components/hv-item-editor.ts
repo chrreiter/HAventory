@@ -19,6 +19,13 @@ import type { Item, Location, LocationTreeNode } from '../store/types';
 import './hv-chip-input';
 import './hv-location-tree';
 
+/**
+ * Why the due date is dead until the item is out. Shown as a note under the
+ * checkout, and as the field's `title` — a tooltip alone never reaches a phone,
+ * which is where the whole block hides behind a disclosure to begin with.
+ */
+const DUE_DATE_HINT = 'A due date applies while the item is checked out.';
+
 const CUSTOM_FIELD_TYPES: { value: CustomFieldType; label: string }[] = [
   { value: 'string', label: 'Text' },
   { value: 'number', label: 'Number' },
@@ -177,6 +184,11 @@ export class HVItemEditor extends LitElement {
         flex: none;
         opacity: 0.85;
       }
+      .group-hint {
+        font-size: 11.5px;
+        line-height: 1.4;
+        color: var(--hv-text-tertiary);
+      }
       /* A native date input clips its own placeholder much below ~140px, and
          half of a 375px screen minus the box padding is under that. */
       :host([mobile]) .checkout-body {
@@ -201,6 +213,18 @@ export class HVItemEditor extends LitElement {
       :host([mobile]) .field-button {
         min-height: 48px;
         font-size: var(--hv-input-font, 14.5px);
+      }
+      /* A disabled date input keeps the browser's own colour, which against a
+         dark HA theme is all but indistinguishable from an enabled one. */
+      .hv-input:disabled {
+        background: var(--hv-input-bg);
+        border-color: var(--hv-divider);
+        color: var(--hv-text-tertiary);
+        -webkit-text-fill-color: var(--hv-text-tertiary);
+        cursor: not-allowed;
+      }
+      .cell.muted .hv-label {
+        color: var(--hv-text-tertiary);
       }
       textarea.hv-input {
         min-height: 44px;
@@ -856,7 +880,7 @@ export class HVItemEditor extends LitElement {
                 <span>${model.checkedOut ? 'Check in' : 'Check out'}</span>
               </button>
             </div>
-            <div class="cell">
+            <div class="cell ${model.checkedOut ? '' : 'muted'}">
               <label class="hv-label" for="editor-due">Due date</label>
               <input
                 id="editor-due"
@@ -864,12 +888,15 @@ export class HVItemEditor extends LitElement {
                 type="date"
                 data-testid="editor-due-date"
                 ?disabled=${!model.checkedOut}
-                title=${model.checkedOut ? '' : 'A due date only applies while an item is checked out'}
+                title=${model.checkedOut ? '' : DUE_DATE_HINT}
                 .value=${model.dueDate}
                 @input=${(e: Event) => this._patch({ dueDate: (e.target as HTMLInputElement).value })}
               />
             </div>
           </div>
+          ${model.checkedOut
+            ? null
+            : html`<span class="group-hint" data-testid="editor-due-hint">${DUE_DATE_HINT}</span>`}
         </div>
         <div class="group">
           <label class="group-caption" for="editor-inspection" data-testid="editor-inspection-caption">

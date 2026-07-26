@@ -112,6 +112,33 @@ describe('hv-item-editor: field parity', () => {
     expect((q(el, '[data-testid="editor-due-date"]') as HTMLInputElement).disabled).toBe(false);
   });
 
+  // The field was already disabled, but a disabled date input keeps the
+  // browser's own colour — against a dark HA theme it looked live, and the
+  // `title` explaining it never reaches a phone.
+  it('greys the due date out, and says why, while the item is not checked out', async () => {
+    const el = await mount(makeItem({ id: '1', checked_out: false }));
+    expect(q(el, '[data-testid="editor-due-date"]')?.closest('.cell')?.classList).toContain('muted');
+    expect(q(el, '[data-testid="editor-due-hint"]')?.textContent?.trim()).toBe(
+      'A due date applies while the item is checked out.',
+    );
+    expect(q(el, '[data-testid="editor-due-date"]')?.getAttribute('title')).toBe(
+      'A due date applies while the item is checked out.',
+    );
+
+    (q(el, '[data-testid="editor-checked-out"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(q(el, '[data-testid="editor-due-date"]')?.closest('.cell')?.classList).not.toContain('muted');
+    expect(q(el, '[data-testid="editor-due-hint"]')).toBe(null);
+
+    const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+    expect(css).toMatch(/\.hv-input:disabled \{[^}]*color: var\(--hv-text-tertiary\)/);
+    expect(css).toMatch(/\.hv-input:disabled \{[^}]*-webkit-text-fill-color/);
+  });
+
   // A switch says "this is a property, set it either way". Checking something
   // out is an act, and the detail sheet has always said so — same words, same
   // icons, so the two surfaces cannot teach different things.
