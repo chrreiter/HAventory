@@ -169,6 +169,44 @@ describe('hv-list-row: mobile affordances', () => {
   });
 });
 
+describe('hv-list-row: truncation', () => {
+  // jsdom does not lay shadow DOM out, so the stylesheet itself is the only
+  // thing here worth asserting on — and the bug was entirely in the stylesheet.
+  const styleText = () => {
+    const styles = (customElements.get('hv-list-row') as typeof HVListRow).styles;
+    return (Array.isArray(styles) ? styles : [styles]).map((s) => String(s.cssText)).join('\n');
+  };
+  const rule = (selector: string) => {
+    const css = styleText();
+    const start = css.indexOf(`${selector} {`);
+    expect(start, `no rule for ${selector}`).toBeGreaterThan(-1);
+    return css.slice(start, css.indexOf('}', start)).replace(/\s+/g, ' ');
+  };
+
+  // `overflow`/`text-overflow` are ignored on an inline box, and `text-overflow`
+  // is ignored on a flex container. Both lines asked for an ellipsis from a box
+  // that could never draw one, so a long path hard-cut mid-character instead.
+  it('gives the name line a box an ellipsis can apply to', () => {
+    const css = rule('.name');
+    expect(css).toMatch(/display: block/);
+    expect(css).toMatch(/text-overflow: ellipsis/);
+    expect(css).not.toMatch(/display: flex/);
+  });
+
+  it('gives the location line a box an ellipsis can apply to', () => {
+    const css = rule('.secondary');
+    expect(css).toMatch(/display: block/);
+    expect(css).toMatch(/text-overflow: ellipsis/);
+    expect(css).not.toMatch(/display: flex/);
+  });
+
+  it('keeps the low-stock dot on the same line once that line is a block', () => {
+    // It used to be a flex item; as a block child it would have stacked above
+    // the text and pushed every row 6px taller.
+    expect(rule('.dot')).toMatch(/display: inline-block/);
+  });
+});
+
 describe('hv-list-row: selection mode', () => {
   it('swaps row navigation for a checkbox', async () => {
     const el = await mount({ id: 'item-1' }, { selectable: true });

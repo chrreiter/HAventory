@@ -64,7 +64,14 @@ export class HVListRow extends LitElement {
         flex: 1;
         min-width: 0;
       }
+      /* Both lines must be block containers with inline content, or the
+         ellipsis is silently ignored: overflow does not apply to an inline box,
+         and text-overflow does not apply to a flex container. As spans inside a
+         blockified flex item these were the first case, and .secondary was
+         explicitly the second — so a long path hard-cut mid-character with no
+         "…" to say anything had been dropped. */
       .name {
+        display: block;
         font-size: 14px;
         font-weight: 500;
         overflow: hidden;
@@ -75,9 +82,7 @@ export class HVListRow extends LitElement {
         font-size: 14.5px;
       }
       .secondary {
-        display: flex;
-        align-items: center;
-        gap: 6px;
+        display: block;
         font-size: 12px;
         color: var(--hv-text-secondary);
         overflow: hidden;
@@ -94,7 +99,9 @@ export class HVListRow extends LitElement {
         font-weight: 500;
       }
       .dot {
-        flex: none;
+        display: inline-block;
+        vertical-align: middle;
+        margin-right: 6px;
         width: 6px;
         height: 6px;
         border-radius: 50%;
