@@ -101,8 +101,8 @@ export class HVFullView extends LitElement {
         white-space: nowrap;
       }
       .appbar .tap {
-        width: 36px;
-        height: 36px;
+        width: var(--hv-tap-min, 36px);
+        height: var(--hv-tap-min, 36px);
         border: none;
         border-radius: 50%;
         background: none;
@@ -117,6 +117,10 @@ export class HVFullView extends LitElement {
       }
       .appbar .search {
         flex: 1;
+        /* Without this the field will not shrink below its content width, and
+           a flex item that refuses to shrink pushes everything after it off
+           the end of a narrow bar. */
+        min-width: 0;
         max-width: 420px;
         display: flex;
         align-items: center;
@@ -171,12 +175,63 @@ export class HVFullView extends LitElement {
       }
       /* Now reachable from a narrow card, so it can land on a phone-width
          viewport: there is no room for a 264px tree beside the table, and the
-         app bar's search and filters still cover navigation. */
+         app bar's search and filters still cover navigation.
+
+         This surface is fixed to the viewport rather than sized by the card,
+         so a media query — not the card's measured-width mobile flag — is the
+         right signal here. */
       @media (max-width: 700px) {
         .body {
           grid-template-columns: 1fr;
         }
         .sidebar {
+          display: none;
+        }
+        /* The full view is reachable from a phone, and nothing in the app bar
+           could give: every child is flex:none, the heading is nowrap, and
+           .search had flex:1 but no min-width:0 so it would not compress below
+           its content. At 375px the bar laid out to 634px inside a 375px page
+           with no horizontal scroll, which put Add item (532..636), the badges
+           and the ⋮ (648..682) permanently off-screen — you could not add an
+           item or open the menu at all. */
+        .appbar {
+          flex-wrap: wrap;
+          gap: 8px;
+          padding: 8px 12px;
+          /* This surface fills the screen even when the card that opened it is
+             narrow, so it sets its own touch sizing rather than inheriting the
+             card's. */
+          --hv-tap-min: 44px;
+          --hv-input-font: 16px;
+        }
+        .appbar h2 {
+          flex: 1;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          font-size: 17px;
+        }
+        /* Second row: the search takes the slack and the count pills ride
+           along beside it, dropping to a third row only if they cannot fit. */
+        .appbar .search {
+          order: 1;
+          flex: 1 1 200px;
+          max-width: none;
+        }
+        .appbar .pill {
+          order: 2;
+          min-height: var(--hv-tap-min, auto);
+        }
+        .appbar .ghost,
+        .appbar .add {
+          min-height: var(--hv-tap-min, auto);
+        }
+        .appbar .add {
+          padding: 0 14px;
+        }
+        /* An auto margin cannot push anything anywhere once the row wraps, and
+           it would only add a phantom flex item to the line. */
+        .appbar .spacer {
           display: none;
         }
       }

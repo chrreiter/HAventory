@@ -42,6 +42,54 @@ const settle = async (el: HVFullView) => {
 
 const q = (sr: ShadowRoot, sel: string) => sr.querySelector(sel) as HTMLElement | null;
 
+describe('hv-full-view: phone-width app bar', () => {
+  const fullCss = () => {
+    const styles = (customElements.get('hv-full-view') as typeof HVFullView).styles;
+    return (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+  };
+  // Everything responsive in this component lives in one media query, because
+  // the surface is fixed to the viewport rather than sized by the card.
+  const narrow = () => {
+    const css = fullCss();
+    const start = css.indexOf('@media (max-width: 700px)');
+    expect(start, 'no narrow-viewport block').toBeGreaterThan(-1);
+    return css.slice(start);
+  };
+
+  // At 375px the bar laid out to 634px inside a 375px page that had no
+  // horizontal scroll, so Add item, the count pills and the ⋮ were unreachable.
+  it('lets the bar wrap instead of running off the end', () => {
+    expect(narrow()).toMatch(/\.appbar \{[^}]*flex-wrap: wrap/);
+  });
+
+  it('lets the search field shrink at any width', () => {
+    // `flex: 1` alone leaves min-width at auto, so the field refuses to
+    // compress below its content and shoves its siblings off the bar.
+    expect(fullCss()).toMatch(/\.appbar \.search \{[^}]*min-width: 0/);
+  });
+
+  it('lets the heading give way rather than the controls after it', () => {
+    const css = narrow();
+    expect(css).toMatch(/\.appbar h2 \{[^}]*flex: 1/);
+    expect(css).toMatch(/\.appbar h2 \{[^}]*text-overflow: ellipsis/);
+  });
+
+  it('drops the search and the pills onto later rows', () => {
+    const css = narrow();
+    expect(css).toMatch(/\.appbar \.search \{[^}]*order: 1/);
+    expect(css).toMatch(/\.appbar \.pill \{[^}]*order: 2/);
+    // An auto margin cannot push anything once the row wraps.
+    expect(css).toMatch(/\.appbar \.spacer \{ display: none; \}/);
+  });
+
+  it('sizes its own touch targets rather than inheriting the card its opener had', () => {
+    expect(narrow()).toMatch(/\.appbar \{[^}]*--hv-tap-min: 44px/);
+  });
+});
+
 describe('hv-full-view: shell', () => {
   it('renders nothing when closed', async () => {
     const { el, sr } = await mount();
