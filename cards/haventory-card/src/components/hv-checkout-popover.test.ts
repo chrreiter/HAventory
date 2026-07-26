@@ -40,13 +40,43 @@ describe('hv-checkout-popover: check-out', () => {
     expect(q(el, '[data-testid="checkout-date-label"]')?.textContent).toBe(formatDate(addDays(7)));
   });
 
+  // A week, a month, a quarter. +1 day was shorter than most borrowings ever
+  // are, and +30 was a month that isn't one.
   it('offers the other offsets and switches between them', async () => {
     const el = await mount();
-    expect(all(el, '[data-testid="checkout-offset"]').map((b) => b.dataset.days)).toEqual(['1', '7', '30']);
+    expect(all(el, '[data-testid="checkout-offset"]').map((b) => b.dataset.days)).toEqual(['7', '31', '90']);
 
     (all(el, '[data-testid="checkout-offset"]')[2] as HTMLButtonElement).click();
     await el.updateComplete;
-    expect(q(el, '[data-testid="checkout-date-label"]')?.textContent).toBe(formatDate(addDays(30)));
+    expect(q(el, '[data-testid="checkout-date-label"]')?.textContent).toBe(formatDate(addDays(90)));
+  });
+
+  it('takes a wait time of your own, and hands the date back to a preset', async () => {
+    const el = await mount();
+    expect(q(el, '[data-testid="checkout-custom"]')).toBe(null);
+
+    (q(el, '[data-testid="checkout-offset-custom"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(q(el, '[data-testid="checkout-date-label"]')?.textContent).toBe(formatDate(addDays(14)));
+
+    const input = q(el, '[data-testid="checkout-custom"]')?.querySelector('input') as HTMLInputElement;
+    input.value = '45';
+    input.dispatchEvent(new Event('input'));
+    await el.updateComplete;
+    expect(q(el, '[data-testid="checkout-date-label"]')?.textContent).toBe(formatDate(addDays(45)));
+    // No preset can claim the date while the custom field owns it.
+    expect(all(el, '[data-testid="checkout-offset"]').some((b) => b.classList.contains('on'))).toBe(false);
+
+    // An emptied box is "no date yet", not a stale one left behind.
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    await el.updateComplete;
+    expect((q(el, '[data-testid="checkout-confirm"]') as HTMLButtonElement).disabled).toBe(true);
+
+    (all(el, '[data-testid="checkout-offset"]')[0] as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(q(el, '[data-testid="checkout-custom"]')).toBe(null);
+    expect(q(el, '[data-testid="checkout-date-label"]')?.textContent).toBe(formatDate(addDays(7)));
   });
 
   it('starts from the existing due date when there is one', async () => {

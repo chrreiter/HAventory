@@ -7,14 +7,21 @@ import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
 import type { Item } from '../store/types';
 
+/**
+ * A week, a month, a quarter. The first set offered +1 day, which is shorter
+ * than most borrowings are ever going to be, and +30 rather than a real month.
+ */
 const OFFSETS: { days: number; label: string }[] = [
-  { days: 1, label: '+1 day' },
   { days: 7, label: '+7 days' },
-  { days: 30, label: '+30 days' },
+  { days: 31, label: '+31 days' },
+  { days: 90, label: '+90 days' },
 ];
 
 /** Default suggestion, matching the mock. */
 const DEFAULT_OFFSET = 7;
+
+/** What the custom field starts at when it is first opened. */
+const DEFAULT_CUSTOM = 14;
 
 /**
  * Check-out with an optional due date (mock 4g).
@@ -100,6 +107,31 @@ export class HVCheckoutPopover extends LitElement {
         color: #fff;
         font-weight: 500;
       }
+      .custom {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border: 1px solid var(--hv-divider);
+        border-radius: var(--hv-radius-input);
+        font-size: 13px;
+        color: var(--hv-text-secondary);
+      }
+      .custom input {
+        width: 72px;
+        box-sizing: border-box;
+        border: 1px solid var(--hv-input-border);
+        border-radius: var(--hv-radius-input);
+        background: var(--hv-surface);
+        color: var(--hv-text);
+        padding: 5px 8px;
+        font: 400 13.5px var(--hv-font);
+      }
+      :host([mobile]) .custom input {
+        min-height: 44px;
+        width: 88px;
+        font-size: var(--hv-input-font, 14.5px);
+      }
       .date {
         display: flex;
         align-items: center;
@@ -176,6 +208,9 @@ export class HVCheckoutPopover extends LitElement {
 
   @state() private _due: string | null = null;
   @state() private _zBase = 0;
+  /** The +X days field is showing, and owns the date instead of a preset. */
+  @state() private _customOpen = false;
+  @state() private _customDays = DEFAULT_CUSTOM;
 
 
   /** Opening a surface must put focus in it, or Escape never reaches it. */
@@ -191,6 +226,8 @@ export class HVCheckoutPopover extends LitElement {
     if (changed.has('open') && this.open) {
       this._zBase = nextZBase();
       this._due = this.item?.due_date || addDays(DEFAULT_OFFSET);
+      this._customOpen = false;
+      this._customDays = DEFAULT_CUSTOM;
     }
   }
 
@@ -250,17 +287,48 @@ export class HVCheckoutPopover extends LitElement {
             ${OFFSETS.map((offset) => {
               const value = addDays(offset.days);
               return html`<button
-                class="offset ${this._due === value ? 'on' : ''}"
+                class="offset ${!this._customOpen && this._due === value ? 'on' : ''}"
                 data-testid="checkout-offset"
                 data-days=${offset.days}
                 @click=${() => {
+                  this._customOpen = false;
                   this._due = value;
                 }}
               >
                 ${offset.label}
               </button>`;
             })}
+            <button
+              class="offset ${this._customOpen ? 'on' : ''}"
+              data-testid="checkout-offset-custom"
+              @click=${() => {
+                this._customOpen = true;
+                this._due = addDays(this._customDays);
+              }}
+            >
+              +X days
+            </button>
           </div>
+          ${this._customOpen
+            ? html`<label class="custom" data-testid="checkout-custom">
+                <input
+                  type="number"
+                  min="1"
+                  max="3650"
+                  inputmode="numeric"
+                  aria-label="Days from today"
+                  .value=${String(this._customDays)}
+                  @input=${(e: Event) => {
+                    const days = Number((e.target as HTMLInputElement).value);
+                    // An empty or nonsense box means no date yet, not a stale
+                    // one — the confirm button disables itself on a null due.
+                    this._customDays = days;
+                    this._due = Number.isFinite(days) && days >= 1 ? addDays(Math.floor(days)) : null;
+                  }}
+                />
+                <span>days from today</span>
+              </label>`
+            : null}
           <label class="date ${this._due ? '' : 'none'}" data-testid="checkout-date">
             ${icon('calendar', 17)}
             <span class="hv-sr-only">Due date</span>
