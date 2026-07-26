@@ -195,9 +195,12 @@ export class HVListRow extends LitElement {
         color: var(--hv-text-secondary);
         padding: 0;
       }
+      /* The most-tapped control in the app, and − sits directly beside + — a
+         mis-tap here moves stock the wrong way, so these get real size rather
+         than an invisible expanded hit area that would overlap its neighbour. */
       :host([mobile]) .stepper button {
-        width: 34px;
-        height: 34px;
+        width: var(--hv-tap-min, 34px);
+        height: var(--hv-tap-min, 34px);
       }
       .stepper button:hover:not([disabled]) {
         background: var(--hv-hover-overlay);
@@ -216,7 +219,7 @@ export class HVListRow extends LitElement {
         background: none;
         color: var(--hv-primary-darker);
         border-radius: var(--hv-radius-chip);
-        min-height: 40px;
+        min-height: var(--hv-tap-min, 40px);
         padding: 0 18px;
         font: 500 13.5px var(--hv-font);
       }
@@ -243,6 +246,17 @@ export class HVListRow extends LitElement {
       .box.on {
         background: var(--hv-primary-dark);
         border-color: var(--hv-primary-dark);
+      }
+      /* A 16px box is far too small for a thumb. Tapping the row toggles the
+         same selection, so an oversized hit area here can only ever agree with
+         what is underneath it — no visual change needed. */
+      :host([mobile]) .box {
+        position: relative;
+      }
+      :host([mobile]) .box::after {
+        content: '';
+        position: absolute;
+        inset: calc((var(--hv-tap-min, 16px) - 16px) / -2);
       }
     `,
   ];

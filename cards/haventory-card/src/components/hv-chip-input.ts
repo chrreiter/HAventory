@@ -40,6 +40,7 @@ export class HVChipInput extends LitElement {
         display: inline-flex;
         align-items: center;
         gap: 3px;
+        min-height: var(--hv-tap-min, auto);
         border: none;
         border-radius: var(--hv-radius-chip);
         background: var(--hv-primary-tint);
@@ -50,9 +51,27 @@ export class HVChipInput extends LitElement {
       .chip svg {
         opacity: 0.75;
       }
+      /* The one control that does not reach 44px. It is a 14px glyph living
+         inside a chip that wraps with a 6px gap, so a 44px hit area would reach
+         well into the chip beside it and remove the wrong tag. 24px is the
+         widest it can grow while still belonging to its own chip, which meets
+         WCAG 2.5.8 even though it misses the 2.5.5 target the rest of the
+         mobile controls now hit. */
+      .chip-remove {
+        position: relative;
+        width: 14px;
+        height: 14px;
+        color: inherit;
+      }
+      .chip-remove::after {
+        content: '';
+        position: absolute;
+        inset: -5px;
+      }
       input {
         flex: 1;
         min-width: 90px;
+        min-height: var(--hv-tap-min, auto);
         border: none;
         outline: none;
         background: none;
@@ -68,6 +87,9 @@ export class HVChipInput extends LitElement {
         color: var(--hv-text-tertiary);
       }
       .suggestion {
+        display: inline-flex;
+        align-items: center;
+        min-height: var(--hv-tap-min, auto);
         border: none;
         background: none;
         padding: 0;
@@ -114,8 +136,7 @@ export class HVChipInput extends LitElement {
           (tag) => html`<span class="chip" data-testid="chip" data-value=${tag}>
             ${tag}
             <button
-              class="hv-icon-button"
-              style="width:14px;height:14px;color:inherit"
+              class="hv-icon-button chip-remove"
               data-testid="chip-remove"
               data-value=${tag}
               aria-label=${`Remove ${tag}`}

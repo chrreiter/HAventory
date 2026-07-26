@@ -54,6 +54,15 @@ export class HVCardShell extends LitElement {
         border-radius: var(--hv-radius-card);
         overflow: hidden;
       }
+      /* Declared once here and inherited into every nested component's shadow
+         DOM — the shared .hv-icon-button, the sheets, the row steppers and the
+         editor all read it, so none of them needs its own copy of "is the card
+         narrow?". It is keyed off the card's measured width rather than a
+         pointer:coarse media query, to stay consistent with every other mobile
+         affordance in this component. */
+      :host([mobile]) {
+        --hv-tap-min: 44px;
+      }
       .header {
         display: flex;
         align-items: center;
@@ -103,6 +112,15 @@ export class HVCardShell extends LitElement {
         color: var(--hv-text-secondary);
         white-space: nowrap;
       }
+      /* 21px tall was well under a thumb, and these are filter toggles. On
+         their own row there is height to spare. */
+      :host([mobile]) .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: var(--hv-tap-min, auto);
+        padding: 0 14px;
+        font-size: 12.5px;
+      }
       .badge.low {
         color: var(--hv-warn);
         background: var(--hv-warn-bg);
@@ -138,8 +156,8 @@ export class HVCardShell extends LitElement {
         opacity: 0.9;
       }
       .add.round {
-        width: 36px;
-        height: 36px;
+        width: var(--hv-tap-min, 36px);
+        height: var(--hv-tap-min, 36px);
         padding: 0;
         border-radius: 50%;
         justify-content: center;
@@ -149,8 +167,8 @@ export class HVCardShell extends LitElement {
          the filter button below it: a borderless glyph beside a filled primary
          button reads as decoration rather than something to press. */
       .header .expand {
-        width: 36px;
-        height: 36px;
+        width: var(--hv-tap-min, 36px);
+        height: var(--hv-tap-min, 36px);
         border: 1px solid var(--hv-divider);
         color: var(--hv-text-secondary);
       }
@@ -184,6 +202,15 @@ export class HVCardShell extends LitElement {
         font: 400 13.5px var(--hv-font);
         color: var(--hv-text);
       }
+      /* The pill looked tappable at 38px, but the input inside it — the part
+         that actually takes the tap — was 18px tall. Let the field own the
+         height so the two agree. */
+      :host([mobile]) .search {
+        padding: 0 14px;
+      }
+      :host([mobile]) .search input {
+        min-height: var(--hv-tap-min, auto);
+      }
       .icon-toggle {
         position: relative;
         flex: none;
@@ -198,8 +225,8 @@ export class HVCardShell extends LitElement {
         padding: 0;
       }
       :host([mobile]) .icon-toggle {
-        width: 40px;
-        height: 40px;
+        width: var(--hv-tap-min, 40px);
+        height: var(--hv-tap-min, 40px);
       }
       .icon-toggle:hover {
         background: var(--hv-hover-overlay);

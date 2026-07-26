@@ -211,9 +211,9 @@ export class HVItemEditor extends LitElement {
         background: var(--hv-hover-overlay);
       }
       :host([mobile]) .combo-arrow {
-        right: 6px;
-        width: 32px;
-        height: 32px;
+        right: 2px;
+        width: var(--hv-tap-min, 32px);
+        height: var(--hv-tap-min, 32px);
       }
       .option {
         display: flex;
@@ -257,6 +257,7 @@ export class HVItemEditor extends LitElement {
         display: inline-flex;
         align-items: center;
         gap: 8px;
+        min-height: var(--hv-tap-min, auto);
         border: none;
         background: none;
         padding: 9px 0;
@@ -311,7 +312,7 @@ export class HVItemEditor extends LitElement {
       }
       .cf-row {
         display: grid;
-        grid-template-columns: minmax(0, 1.2fr) 110px minmax(0, 1.6fr) 34px;
+        grid-template-columns: minmax(0, 1.2fr) 110px minmax(0, 1.6fr) var(--hv-tap-min, 34px);
         gap: 8px;
         align-items: center;
       }
@@ -324,7 +325,7 @@ export class HVItemEditor extends LitElement {
          rather than floating under the one before it. */
       @container (max-width: 520px) {
         .cf-row {
-          grid-template-columns: minmax(0, 1fr) 104px 34px;
+          grid-template-columns: minmax(0, 1fr) 104px var(--hv-tap-min, 34px);
           grid-template-areas:
             'key type remove'
             'value value remove';
@@ -345,8 +346,8 @@ export class HVItemEditor extends LitElement {
       .cf-remove {
         display: inline-grid;
         place-items: center;
-        width: 30px;
-        height: 30px;
+        width: var(--hv-tap-min, 30px);
+        height: var(--hv-tap-min, 30px);
         border: none;
         border-radius: 50%;
         background: none;
@@ -361,6 +362,7 @@ export class HVItemEditor extends LitElement {
         display: inline-flex;
         align-items: center;
         gap: 6px;
+        min-height: var(--hv-tap-min, auto);
         border: 1px dashed var(--hv-primary-tint-border);
         background: none;
         color: var(--hv-primary-dark);
@@ -379,11 +381,20 @@ export class HVItemEditor extends LitElement {
         font: inherit;
         color: var(--hv-primary-dark);
       }
+      /* These sit inline inside a sentence, so they get height and breathing
+         room rather than becoming blocks that break the line up. */
+      :host([mobile]) .key-hints button {
+        display: inline-flex;
+        align-items: center;
+        min-height: var(--hv-tap-min, auto);
+        padding: 0 8px;
+      }
       .more-toggle {
         display: flex;
         align-items: center;
         gap: 10px;
         width: 100%;
+        min-height: var(--hv-tap-min, auto);
         border: none;
         border-top: 1px solid var(--hv-divider);
         background: none;
@@ -410,6 +421,10 @@ export class HVItemEditor extends LitElement {
         color: var(--hv-text-tertiary);
       }
       .save {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: var(--hv-tap-min, auto);
         border: none;
         border-radius: var(--hv-radius-chip);
         background: var(--hv-primary);
@@ -421,6 +436,10 @@ export class HVItemEditor extends LitElement {
         opacity: 0.5;
       }
       .delete {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: var(--hv-tap-min, auto);
         border: 1px solid var(--hv-error-border);
         background: none;
         color: var(--hv-error-soft);

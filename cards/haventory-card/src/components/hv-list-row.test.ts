@@ -246,6 +246,20 @@ describe('hv-list-row: truncation', () => {
     // the text and pushed every row 6px taller.
     expect(rule('.dot')).toMatch(/display: inline-block/);
   });
+
+  // 34x34, fifteen to a screen, with − directly beside + — the control most
+  // likely to be mis-tapped and the one where a mis-tap moves stock.
+  it('sizes the stepper from the inherited touch target on a phone', () => {
+    expect(rule(':host([mobile]) .stepper button')).toMatch(/width: var\(--hv-tap-min, 34px\)/);
+  });
+
+  it('expands the selection checkbox hit area without resizing the box', () => {
+    // The row toggles the same selection, so the grown area can only agree
+    // with what is underneath it.
+    expect(rule(':host([mobile]) .box::after')).toMatch(
+      /inset: calc\(\(var\(--hv-tap-min, 16px\) - 16px\) \/ -2\)/,
+    );
+  });
 });
 
 describe('hv-list-row: selection mode', () => {

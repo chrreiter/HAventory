@@ -1,5 +1,6 @@
 import './hv-card-shell';
 import { makeMockHass, makeItem } from '../test.utils';
+import { base, tokens } from '../ui/tokens';
 import { Store } from '../store/store';
 import type { HVCardShell } from './hv-card-shell';
 import type { Item, Location } from '../store/types';
@@ -458,6 +459,44 @@ describe('hv-card-shell: narrow header', () => {
     });
     expect(sr.querySelector('.badges')).toBeTruthy();
     expect(sr.querySelector('[data-testid="badge-low"]')).toBeTruthy();
+  });
+});
+
+describe('hv-card-shell: touch targets', () => {
+  const shellCss = () => {
+    const styles = (customElements.get('hv-card-shell') as typeof HVCardShell).styles;
+    return (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+  };
+
+  // One declaration on the card host, inherited into every nested shadow root.
+  // It only works because `--hv-tap-min` is absent from `tokens` — every
+  // component redeclares those on its own `:host`, which would shadow an
+  // inherited value at the first boundary.
+  it('publishes a 44px target size to every nested component', () => {
+    expect(shellCss()).toMatch(/:host\(\[mobile\]\) \{ --hv-tap-min: 44px; \}/);
+  });
+
+  it('does not declare the target size in the shared token block', () => {
+    // Guard the mechanism itself: `tokens` is re-applied to every component's
+    // own `:host`, so a `--hv-tap-min` in there would shadow the inherited
+    // value at the first boundary and quietly undo all of this.
+    expect(String(tokens.cssText)).not.toMatch(/--hv-tap-min/);
+    // ...while `base`, which is not a `:host` declaration block, must read it.
+    expect(String(base.cssText)).toMatch(/\.hv-icon-button \{[^}]*width: var\(--hv-tap-min, 34px\)/);
+  });
+
+  it('sizes the header actions from it rather than hard-coding 36px', () => {
+    const css = shellCss();
+    expect(css).toMatch(/\.add\.round \{ width: var\(--hv-tap-min, 36px\)/);
+    expect(css).toMatch(/\.header \.expand \{ width: var\(--hv-tap-min, 36px\)/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.icon-toggle \{ width: var\(--hv-tap-min, 40px\)/);
+  });
+
+  it('gives the stat badges a tappable height on a phone', () => {
+    expect(shellCss()).toMatch(/:host\(\[mobile\]\) \.badge \{[^}]*min-height: var\(--hv-tap-min, auto\)/);
   });
 });
 

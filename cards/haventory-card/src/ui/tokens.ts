@@ -112,6 +112,13 @@ export const tokens = css`
  * Shared primitives every revamped surface reuses: pill buttons, icon buttons,
  * chips, inputs, section labels and the focus ring. Kept separate from `tokens`
  * so a component can take the variables without the opinionated element styles.
+ *
+ * Controls here size themselves from `--hv-tap-min`, which is deliberately *not*
+ * declared in `tokens` above: `tokens` redeclares its properties on every
+ * component's own `:host`, which would stop the value inheriting past the first
+ * shadow boundary. Left undeclared, one `--hv-tap-min: 44px` on the card host
+ * reaches every nested component, so a button several levels down grows for
+ * touch without needing to be told the card is in its mobile layout.
  */
 export const base = css`
   :host {
@@ -136,7 +143,9 @@ export const base = css`
   .hv-pill {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
+    min-height: var(--hv-tap-min, auto);
     border-radius: var(--hv-radius-chip);
     border: none;
     padding: 7px 14px;
@@ -165,6 +174,10 @@ export const base = css`
   }
 
   .hv-text-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--hv-tap-min, auto);
     background: none;
     border: none;
     color: var(--hv-primary-dark);
@@ -182,8 +195,8 @@ export const base = css`
   .hv-icon-button {
     display: inline-grid;
     place-items: center;
-    width: 34px;
-    height: 34px;
+    width: var(--hv-tap-min, 34px);
+    height: var(--hv-tap-min, 34px);
     border-radius: 50%;
     border: none;
     background: transparent;

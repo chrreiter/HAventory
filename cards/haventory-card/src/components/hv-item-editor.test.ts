@@ -363,8 +363,13 @@ describe('hv-item-editor: typed custom fields', () => {
     // `mobile` (which describes the card) must not decide this layout.
     expect(css).toMatch(/\.custom \{[^}]*container-type: inline-size/);
     expect(css).not.toMatch(/:host\(\[mobile\]\) \.cf-row/);
-    // Wide enough: key, type, value and the remove button share one line.
-    expect(css).toMatch(/\.cf-row \{[^}]*grid-template-columns: minmax\(0, 1\.2fr\) 110px minmax\(0, 1\.6fr\) 34px/);
+    // Wide enough: key, type, value and the remove button share one line. The
+    // remove column tracks the inherited touch target so the button and the
+    // track it sits in cannot drift apart when the card is narrow.
+    expect(css).toMatch(
+      /\.cf-row \{[^}]*grid-template-columns: minmax\(0, 1\.2fr\) 110px minmax\(0, 1\.6fr\) var\(--hv-tap-min, 34px\)/,
+    );
+    expect(css).toMatch(/\.cf-remove \{[^}]*width: var\(--hv-tap-min, 30px\)/);
     // Too tight: the value drops under its key and remove spans both rows, so
     // it still reads as belonging to that field.
     expect(css).toMatch(
