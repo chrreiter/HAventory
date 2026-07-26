@@ -367,8 +367,10 @@ export class HVFullView extends LitElement {
         border: none;
         background: none;
         color: var(--hv-chip-text);
-        padding: 2px 8px;
-        font: 400 11px var(--hv-font);
+        /* 2px of padding measured 17px tall, which is a poor target even for a
+           mouse; there is room for this in a 264px column. */
+        padding: 4px 10px;
+        font: 400 11.5px var(--hv-font);
         min-height: var(--hv-tap-min, auto);
       }
       .segmented button.on {
