@@ -63,3 +63,47 @@ describe('hv-overflow-menu', () => {
     expect(picked).toEqual([]);
   });
 });
+
+describe('hv-overflow-menu: narrow screens', () => {
+  const narrow = () => {
+    const styles = (customElements.get('hv-overflow-menu') as typeof HVOverflowMenu).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+    const start = css.indexOf('@media (max-width: 600px)');
+    expect(start, 'no narrow-viewport block').toBeGreaterThan(-1);
+    return css.slice(start);
+  };
+
+  // A 250px anchored dropdown covered most of the list it was acting on, and
+  // "Export current view" wrapped onto two lines inside it.
+  it('becomes a bottom sheet instead of an anchored dropdown', () => {
+    const css = narrow();
+    expect(css).toMatch(/\.menu \{[^}]*position: fixed/);
+    expect(css).toMatch(/\.menu \{[^}]*inset: auto 0 0 0/);
+    expect(css).toMatch(/\.menu \{[^}]*max-width: none/);
+  });
+
+  it('keeps the scrim from swallowing the tap that should close it', () => {
+    // The menu closes on any outside pointerdown, and that check asks whether
+    // the composed path includes this element. A scrim that took the tap would
+    // be inside that path, so tapping away would leave the menu open.
+    expect(narrow()).toMatch(/\.menu::before \{[^}]*pointer-events: none/);
+  });
+
+  it('gives the entries a touch-sized row', () => {
+    expect(narrow()).toMatch(/\.entry \{[^}]*min-height: 48px/);
+  });
+
+  it('still closes on an outside pointerdown once it is a sheet', async () => {
+    const el = await mount([{ id: 'refresh', label: 'Refresh data' }]);
+    expect(el.shadowRoot?.querySelector('[data-testid="overflow-menu"]')).toBeTruthy();
+
+    // jsdom has no PointerEvent; the handler only reads composedPath().
+    document.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    expect(el.shadowRoot?.querySelector('[data-testid="overflow-menu"]')).toBe(null);
+  });
+});

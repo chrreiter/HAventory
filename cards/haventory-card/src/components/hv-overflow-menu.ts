@@ -128,6 +128,60 @@ export class HVOverflowMenu extends LitElement {
         text-transform: uppercase;
         color: var(--hv-text-tertiary);
       }
+
+      /* An anchored 250px dropdown is a desktop shape. At 375px it covered most
+         of the list it was supposed to be acting on and "Export current view"
+         wrapped onto two lines, while the rest of the card answers exactly this
+         need with a bottom sheet. The menu becomes one here.
+
+         A media query rather than the card's mobile flag: once the panel is
+         position: fixed it is placed against the viewport, so the viewport is
+         what decides whether there is room — and it keeps the component free
+         of a mobile property that all three of its callers would have to
+         thread through. */
+      @media (max-width: 600px) {
+        .menu {
+          position: fixed;
+          inset: auto 0 0 0;
+          width: auto;
+          max-width: none;
+          border-radius: var(--hv-radius-sheet) var(--hv-radius-sheet) 0 0;
+          box-shadow: var(--hv-shadow-sheet);
+          padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+          animation: rise var(--hv-motion-sheet) var(--hv-ease-out);
+        }
+        /* Dims the page behind the sheet. pointer-events: none is load-bearing:
+           the menu closes on any outside pointerdown, and that check asks
+           whether the event's composed path includes this element — a scrim
+           that swallowed the tap would be inside the path and would stop the
+           menu closing when you tapped away from it. */
+        .menu::before {
+          content: '';
+          position: fixed;
+          inset: 0;
+          z-index: -1;
+          background: var(--hv-scrim);
+          pointer-events: none;
+        }
+        .entry {
+          min-height: 48px;
+          padding: 10px 18px;
+          font-size: 15px;
+        }
+        .caption {
+          padding: 8px 18px 4px;
+        }
+      }
+      @keyframes rise {
+        from {
+          transform: translateY(16px);
+          opacity: 0;
+        }
+        to {
+          transform: none;
+          opacity: 1;
+        }
+      }
     `,
   ];
 
