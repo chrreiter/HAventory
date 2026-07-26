@@ -69,6 +69,12 @@ than by a component of their own: they are flat lists of `distinct_values` entri
 rows only have to look like `hv-location-tree`'s — which, being in another shadow root,
 could not have shared the rule either way.
 
+Each of the three headings states how many of its thing there is. Categories and tags come
+with their `distinct_values` length; locations are counted by `countLocations` in
+`store/location-tree.ts`, which walks every depth and takes the same optional filter needle
+`hv-location-tree` matches rows with, so the organize dialog's "N locations" can never
+disagree with the tree printed under it.
+
 ### Container vs presentation
 
 `hv-card-shell` and `hv-full-view` are **containers**: they hold the `Store` and call it

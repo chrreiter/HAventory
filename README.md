@@ -271,7 +271,8 @@ Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs t
   a sortable table. Only columns the backend can sort by get a clickable header. The
   sidebar leads with the location tree carrying the backend's own per-location counts and
   an orphans row, then **Categories** and **Tags** as sections of their own; each heading
-  collapses from a chevron, and Locations stays at the top. Category picks one value and
+  collapses from a chevron and states how many there are — locations counted at every
+  depth — and Locations stays at the top. Category picks one value and
   tags accumulate, matching how the backend treats them. With a filter on, each location
   row reads "4 / 37" — matches over total — so you can see where the matches are rather
   than a total that never moves. The counts ignore the *location* filter, since the sidebar
@@ -282,9 +283,9 @@ Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs t
   determinate and cancellable, and the result is reported *per operation*: "39 of 42
   succeeded", every failure named with its reason and a retry scoped to just those.
   Select-all covers loaded rows only and says so, with an explicit "load the rest" path.
-- **Organize dialog** — Locations / Categories / Tags in one place, each row offering the
-  same moves: an "N items" link that opens the filtered list in the full view, plus rename,
-  merge and delete. Locations keep their collapsible tree and edit inline, with a guarded
+- **Organize dialog** — Locations / Categories / Tags in one place, each tab stating its
+  total above the list and each row offering the same moves: an "N items" link that opens
+  the filtered list in the full view, plus rename, merge and delete. Locations keep their collapsible tree and edit inline, with a guarded
   delete that explains what is in the way. Category and tag rename, merge and removal are
   batch rewrites over every affected item; a location merge re-files that location's items,
   re-parents its children and deletes the husk — all with the same progress and
