@@ -53,7 +53,8 @@ describe('hv-card-shell: header', () => {
     expect(sr.querySelector('[data-testid="card-title"]')?.textContent).toContain('Inventory');
     expect(sr.querySelector('[data-testid="badge-total"]')?.textContent).toContain('3 items');
     expect(sr.querySelector('[data-testid="badge-low"]')?.textContent).toContain('1 low');
-    expect(sr.querySelector('[data-testid="badge-out"]')?.textContent).toContain('1 out');
+    // "1 out" reads as "1 out of stock", which is the opposite of what it counts.
+    expect(sr.querySelector('[data-testid="badge-out"]')?.textContent?.trim()).toBe('1 checked out');
   });
 
   it('hides a stat badge that would read zero', async () => {
@@ -459,6 +460,24 @@ describe('hv-card-shell: narrow header', () => {
     });
     expect(sr.querySelector('.badges')).toBeTruthy();
     expect(sr.querySelector('[data-testid="badge-low"]')).toBeTruthy();
+  });
+
+  // Checked-out used to be desktop-only, on the theory that a phone had no room
+  // for a third badge. It does, now that the badges have a row to themselves —
+  // and that row is a filter toggle a phone user could not otherwise reach
+  // without opening the filter sheet.
+  it('badges checked-out on a phone too, and wraps if the row runs out', async () => {
+    const { sr } = await mountShell({ items: [makeItem({ id: '1', checked_out: true })], mobile: true });
+    const badge = sr.querySelector('[data-testid="badge-out"]');
+    expect(badge?.textContent?.trim()).toBe('1 checked out');
+    // Three badges with large counts will not always make one line of a 320px
+    // phone, and an unwrapped row pushes the last one off the side of the card.
+    expect(headerCss()).toMatch(/:host\(\[mobile\]\) \.badges \{[^}]*flex-wrap: wrap/);
+  });
+
+  it('counts a checked-out phone badge as reason enough to draw the row', async () => {
+    const { sr } = await mountShell({ items: [makeItem({ id: '1', checked_out: true })], mobile: true });
+    expect(sr.querySelector('.badges')).toBeTruthy();
   });
 });
 

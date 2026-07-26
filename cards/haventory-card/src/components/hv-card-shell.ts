@@ -106,6 +106,12 @@ export class HVCardShell extends LitElement {
         order: 1;
         flex-basis: 100%;
         margin-left: 0;
+        /* Three of these — low, overdue, checked out — with five-digit counts
+           will not always make one line of a 320px phone. Wrapping costs a
+           second 44px band in the worst case; not wrapping pushes the last one
+           off the side of the card, where it cannot be pressed at all. */
+        flex-wrap: wrap;
+        row-gap: 6px;
       }
       .badge {
         border: 1px solid var(--hv-divider);
@@ -788,7 +794,8 @@ export class HVCardShell extends LitElement {
     const anyBadge =
       !this.mobile ||
       counts.low_stock_count > 0 ||
-      (counts.overdue_count ?? 0) > 0;
+      (counts.overdue_count ?? 0) > 0 ||
+      counts.checked_out_count > 0;
     if (!anyBadge) return null;
     return html`
       <div class="badges">
@@ -817,7 +824,7 @@ export class HVCardShell extends LitElement {
               ${counts.overdue_count} overdue
             </button>`
           : null}
-        ${!this.mobile && counts.checked_out_count > 0
+        ${counts.checked_out_count > 0
           ? html`<button
               class="badge out ${f?.checkedOutOnly ? 'on' : ''}"
               data-testid="badge-out"
@@ -825,7 +832,7 @@ export class HVCardShell extends LitElement {
               title="Show only checked-out items"
               @click=${() => this._setFilters({ checkedOutOnly: !f?.checkedOutOnly })}
             >
-              ${counts.checked_out_count} out
+              ${counts.checked_out_count} checked out
             </button>`
           : null}
       </div>
