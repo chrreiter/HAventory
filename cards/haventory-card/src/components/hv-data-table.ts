@@ -85,7 +85,22 @@ export class HVDataTable extends LitElement {
         flex: 1;
         min-height: 0;
         overflow-y: auto;
-        overscroll-behavior: contain;
+        /*
+         * Contain the vertical overscroll — a flick that runs past the last row
+         * must not scroll the dashboard behind this surface — but only the
+         * vertical.
+         *
+         * The shorthand set both axes, and that is what stopped the sideways
+         * scroll above from working at all. Declaring overflow on one axis
+         * makes the other compute to auto, so this box is a horizontal scroll
+         * container too; it is exactly as wide as its own content, so it has
+         * nothing to scroll, and contain on that axis means a horizontal swipe
+         * starting over a row is neither used nor handed on. The host measured
+         * scrollWidth 874 against clientWidth 390 and stayed at scrollLeft 0
+         * through the whole gesture, so the Tags, Due and Updated columns could
+         * not be reached by any gesture — only by setting scrollLeft in script.
+         */
+        overscroll-behavior-y: contain;
       }
       .row {
         border-bottom: 1px solid var(--hv-row-divider);

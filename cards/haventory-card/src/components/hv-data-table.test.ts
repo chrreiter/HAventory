@@ -36,6 +36,22 @@ describe('hv-data-table: narrow screens', () => {
     expect(css).toMatch(/:host \{[^}]*min-width: 0/);
   });
 
+  // Making the host the sideways scroller was not enough on its own: the rows
+  // live in a vertical scroll box inside it, declaring overflow on one axis
+  // makes the other compute to auto, and that box is exactly as wide as its own
+  // content. So a horizontal swipe starting over a row landed on a scroll
+  // container with nothing to scroll, and `overscroll-behavior: contain` on
+  // both axes meant it was not handed on either. The host measured scrollWidth
+  // 874 against clientWidth 390 and never moved off scrollLeft 0.
+  it('contains the vertical overscroll only, so a sideways swipe reaches the host', () => {
+    const css = tableCss();
+    expect(css).toMatch(/\.body \{[^}]*overscroll-behavior-y: contain/);
+    expect(css).not.toMatch(/\.body \{[^}]*overscroll-behavior: contain/);
+    // The host still contains its own, which is what keeps a flick that runs
+    // out of table off the dashboard behind it.
+    expect(css).toMatch(/:host \{[^}]*overscroll-behavior-x: contain/);
+  });
+
   it('sizes the header and body to the grid minimum so they scroll together', () => {
     // Left at the container width they would stay 375px wide while their
     // tracks painted past the edge, cutting the row dividers short.
