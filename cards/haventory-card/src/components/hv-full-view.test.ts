@@ -345,6 +345,27 @@ describe('hv-full-view: sidebar facets', () => {
     expect(q(sr, '[data-testid="sidebar-new-location"]')).toBeTruthy();
   });
 
+  // Locations could be added to from its heading and the other two could not,
+  // so the one section with a "+" was the only facet you could create without
+  // going to find the organize dialog yourself.
+  it('offers a create action on every heading, not just Locations', async () => {
+    const { el, sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
+    const seen: { id: string; tab?: string }[] = [];
+    el.addEventListener('menu-action', (e) => seen.push((e as CustomEvent).detail));
+
+    expect(q(sr, '[data-testid="sidebar-new-location"]')).toBeTruthy();
+    (q(sr, '[data-testid="sidebar-new-categories"]') as HTMLButtonElement).click();
+    (q(sr, '[data-testid="sidebar-new-tags"]') as HTMLButtonElement).click();
+
+    // A category exists through the items using it, so this opens Organize on
+    // the matching tab rather than inventing a second place to create one.
+    expect(seen).toEqual([
+      { id: 'organize', tab: 'categories' },
+      { id: 'organize', tab: 'tags' },
+    ]);
+    expect(q(sr, '[data-testid="sidebar-new-tags"]')?.getAttribute('title')).toBe('New tag…');
+  });
+
   it('lines the three tallies up in one column', () => {
     // The Locations heading ends in a button and the other two in nothing, so
     // without a reserved slot its number sits an icon-button's width inboard.

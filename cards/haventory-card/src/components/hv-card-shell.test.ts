@@ -1053,6 +1053,27 @@ describe('hv-card-shell: full view', () => {
     expect(fullView(sr).open).toBe(true);
   });
 
+  // The expanded sidebar's Categories and Tags headings each ask for their own
+  // tab; the card menu asks for none and gets Locations, as it always did.
+  it('opens the organize dialog on the tab that was asked for', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1', tags: ['metric'] })] });
+    const organize = () =>
+      sr.querySelector('[data-testid="card-organize"]') as HTMLElement & { open: boolean; tab: string };
+
+    fullView(sr).dispatchEvent(
+      new CustomEvent('menu-action', { detail: { id: 'organize', tab: 'tags' }, bubbles: true, composed: true }),
+    );
+    await settle(el);
+    expect(organize().open).toBe(true);
+    expect(organize().tab).toBe('tags');
+
+    fullView(sr).dispatchEvent(
+      new CustomEvent('menu-action', { detail: { id: 'organize' }, bubbles: true, composed: true }),
+    );
+    await settle(el);
+    expect(organize().tab).toBe('locations');
+  });
+
   it('routes the full view menu through the card, exactly once', async () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     const seen: string[] = [];

@@ -898,7 +898,31 @@ export class HVFullView extends LitElement {
       <div class="sidebar-head">
         ${this._renderSectionToggle(section, label)}
         <span class="section-tally" data-testid=${`sidebar-${section}-tally`}>${values.length}</span>
-        <span class="head-action"></span>
+        <span class="head-action">
+          <!-- Locations could be added to from here and the other two could not,
+               so the one heading with a "+" was also the only facet you could
+               create without hunting for the organize dialog. A category or tag
+               exists through the items using it — there is nothing to create on
+               the server — so this opens Organize on the matching tab, where
+               that is explained, rather than inventing a second place to do it.
+               The ellipsis is the card's usual mark for "opens elsewhere". -->
+          <button
+            class="hv-icon-button"
+            data-testid=${`sidebar-new-${section}`}
+            aria-label=${`New ${section === 'tags' ? 'tag' : 'category'}…`}
+            title=${`New ${section === 'tags' ? 'tag' : 'category'}…`}
+            @click=${() =>
+              this.dispatchEvent(
+                new CustomEvent('menu-action', {
+                  detail: { id: 'organize', tab: section },
+                  bubbles: true,
+                  composed: true,
+                }),
+              )}
+          >
+            ${icon('plus', 20)}
+          </button>
+        </span>
       </div>
       ${open
         ? values.length

@@ -19,6 +19,7 @@ import './hv-item-editor';
 import './hv-detail-sheet';
 import './hv-full-view';
 import './hv-organize-dialog';
+import type { OrganizeTab } from './hv-organize-dialog';
 import './hv-checkout-popover';
 import './hv-diagnostics-panel';
 import './hv-import-sheet';
@@ -362,6 +363,7 @@ export class HVCardShell extends LitElement {
   @state() private _fullViewOpen = false;
   @state() private _startSelecting = false;
   @state() private _organizeOpen = false;
+  @state() private _organizeTab: OrganizeTab = 'locations';
   @state() private _diagnosticsOpen = false;
   @state() private _importOpen = false;
   @state() private _importPreview: ImportPreview | null = null;
@@ -771,6 +773,10 @@ export class HVCardShell extends LitElement {
       return;
     }
     if (id === 'organize') {
+      // The expanded sidebar's facet headings ask for a specific tab; the card
+      // menu asks for none and gets Locations, as it always did.
+      const { tab } = e.detail as { tab?: OrganizeTab };
+      this._organizeTab = tab ?? 'locations';
       this._organizeOpen = true;
       return;
     }
@@ -1337,6 +1343,7 @@ export class HVCardShell extends LitElement {
         data-testid="card-organize"
         ?open=${this._organizeOpen}
         ?mobile=${mobile}
+        .tab=${this._organizeTab}
         .store=${this.store}
         @cancel=${() => {
           this._organizeOpen = false;
