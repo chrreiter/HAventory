@@ -42,14 +42,16 @@ const settle = async (el: HVFullView) => {
 
 const q = (sr: ShadowRoot, sel: string) => sr.querySelector(sel) as HTMLElement | null;
 
+/** jsdom lays out no shadow DOM, so layout rules are asserted on the stylesheet. */
+const fullCss = () => {
+  const styles = (customElements.get('hv-full-view') as typeof HVFullView).styles;
+  return (Array.isArray(styles) ? styles : [styles])
+    .map((s) => String(s.cssText))
+    .join('\n')
+    .replace(/\s+/g, ' ');
+};
+
 describe('hv-full-view: phone-width app bar', () => {
-  const fullCss = () => {
-    const styles = (customElements.get('hv-full-view') as typeof HVFullView).styles;
-    return (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
-  };
   // Everything responsive in this component lives in one media query, because
   // the surface is fixed to the viewport rather than sized by the card.
   const narrow = () => {
@@ -331,6 +333,19 @@ describe('hv-full-view: editing', () => {
 
     expect(store.state.value.items.map((i) => i.name)).toContain('From full view');
     expect(q(sr, '[data-testid="full-editor"]')).toBe(null);
+  });
+
+  // The form sits in a column flex beside a table that wants every pixel. An
+  // `overflow-y: auto` box has an automatic minimum size of zero, so the form
+  // was free to be squeezed — it opened about 130px tall, a field and a half,
+  // and never came near the ceiling meant to bound it.
+  it('refuses to be squeezed by the table below it', () => {
+    const rule = /\.editor-holder \{([^}]*)\}/.exec(fullCss())?.[1] ?? '';
+    expect(rule, 'no .editor-holder rule').not.toBe('');
+    expect(rule).toMatch(/flex: none/);
+    // A ceiling is still wanted — the form is taller than a short viewport.
+    expect(rule).toMatch(/max-height: \d+dvh/);
+    expect(rule).toMatch(/overflow-y: auto/);
   });
 });
 

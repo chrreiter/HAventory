@@ -343,7 +343,17 @@ export class HVFullView extends LitElement {
       }
       .editor-holder {
         border-bottom: 1px solid var(--hv-divider);
-        max-height: 60dvh;
+        /* The form shares a column with a table that wants every pixel it can
+           get, and an overflow-y:auto box has an automatic minimum size of
+           zero — so this one was free to be squeezed to nothing. It opened
+           around 130px tall, a field and a half, while the ceiling below never
+           came into play at all.
+
+           Refusing to shrink turns that ceiling into the actual size and makes
+           the table give the room up instead, which is exactly what already
+           happens for the filter panel above it. */
+        flex: none;
+        max-height: 70dvh;
         overflow-y: auto;
       }
       .new-location {
