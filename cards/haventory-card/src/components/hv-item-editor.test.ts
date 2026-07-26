@@ -352,6 +352,27 @@ describe('hv-item-editor: typed custom fields', () => {
     ]);
   });
 
+  it('keeps Save and Cancel in reach on a phone', async () => {
+    const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+
+    // Sticky has to sit on the wrapping cell: an element sticks only within its
+    // containing block, and `.actions`' parent is exactly as tall as it is.
+    expect(css).toMatch(/:host\(\[mobile\]\) \.actions-cell \{[^}]*position: sticky/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.actions-cell \{[^}]*bottom: -14px/);
+    expect(css).not.toMatch(/:host\(\[mobile\]\) \.actions \{[^}]*position: sticky/);
+
+    // ...and the markup has to carry the class the rule needs.
+    const el = await mount(makeItem({ id: '1' }), { mobile: true });
+    const cell = q(el, '.actions-cell');
+    expect(cell).toBeTruthy();
+    expect(cell?.querySelector('[data-testid="editor-save"]')).toBeTruthy();
+    expect(cell?.querySelector('[data-testid="editor-cancel"]')).toBeTruthy();
+  });
+
   it('lays a row out from its own width, not from the card-wide mobile flag', () => {
     const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
     const css = (Array.isArray(styles) ? styles : [styles])

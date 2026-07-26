@@ -415,6 +415,21 @@ export class HVItemEditor extends LitElement {
         padding-top: 4px;
         flex-wrap: wrap;
       }
+      /* Save and Cancel sat at the bottom of a form inside a nested scroller,
+         so on a phone they were reliably below the fold — you had to scroll an
+         inner container to commit an edit you had already finished.
+         Sticky goes on the wrapping cell rather than on .actions itself: an
+         element only sticks within its containing block, and .actions' parent
+         is exactly as tall as .actions, so it would have had nowhere to move.
+         The cell's containing block is the form grid, which is tall. */
+      :host([mobile]) .actions-cell {
+        position: sticky;
+        bottom: -14px;
+        z-index: 1;
+        background: var(--hv-surface);
+        padding: 10px 0 14px;
+        border-top: 1px solid var(--hv-row-divider);
+      }
       .actions .hint {
         margin-left: auto;
         font-size: 11.5px;
@@ -998,7 +1013,7 @@ export class HVItemEditor extends LitElement {
             ? html`<div class="cell span3">${this._renderMoreFields()}</div>`
             : html`${this._renderStateFields()} ${this._renderCustomFields()}`}
 
-          <div class="cell span3">
+          <div class="cell span3 actions-cell">
             <div class="actions">
               ${this.item
                 ? html`<button
