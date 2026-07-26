@@ -64,13 +64,26 @@ export class HVBottomSheet extends LitElement {
           opacity: 1;
         }
       }
+      /* The bar is 36x4; the area you can actually grab has to be a lot bigger
+         than that. touch-action: none matters as much as the size — without it
+         the browser claims the gesture as a scroll and no pointermove ever
+         arrives. */
+      .grip {
+        flex: none;
+        display: grid;
+        place-items: center;
+        padding: 8px 0 4px;
+        touch-action: none;
+        cursor: grab;
+      }
+      .grip:active {
+        cursor: grabbing;
+      }
       .handle {
         width: 36px;
         height: 4px;
         border-radius: 2px;
         background: var(--hv-divider);
-        margin: 8px auto 4px;
-        flex: none;
       }
       .body {
         overflow-y: auto;
@@ -94,10 +107,18 @@ export class HVBottomSheet extends LitElement {
   @property({ type: Boolean }) noHandle = false;
 
   @state() private _zBase: number | null = null;
+  /** How far the sheet has been dragged down, in px. 0 when not dragging. */
+  @state() private _dragY = 0;
+
+  /** Pointer Y where the current drag began, or null when none is in flight. */
+  private _dragFrom: number | null = null;
+  private _dragStartedAt = 0;
 
   protected willUpdate(changed: Map<string, unknown>) {
-    if (changed.has('open') && this.open) {
-      this._zBase = nextZBase();
+    if (changed.has('open')) {
+      if (this.open) this._zBase = nextZBase();
+      this._dragFrom = null;
+      this._dragY = 0;
     }
   }
 
@@ -106,9 +127,43 @@ export class HVBottomSheet extends LitElement {
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
   };
 
+  // ---------- Drag to dismiss ----------
+  private _onGripDown = (e: PointerEvent) => {
+    this._dragFrom = e.clientY;
+    this._dragStartedAt = e.timeStamp;
+    // Keeps the move/up events coming even if the finger leaves the grip.
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+
+  private _onGripMove = (e: PointerEvent) => {
+    if (this._dragFrom === null) return;
+    // Only downward travel moves the sheet — dragging up would just detach it
+    // from the bottom edge it is anchored to.
+    this._dragY = Math.max(0, e.clientY - this._dragFrom);
+  };
+
+  private _onGripUp = (e: PointerEvent) => {
+    if (this._dragFrom === null) return;
+    const travelled = this._dragY;
+    const elapsed = Math.max(1, e.timeStamp - this._dragStartedAt);
+    this._dragFrom = null;
+    this._dragY = 0;
+
+    const height = (this.renderRoot.querySelector('.sheet') as HTMLElement | null)?.offsetHeight ?? 0;
+    // Either drag it most of the way down, or flick it: a short, fast throw is
+    // how people actually dismiss these, and waiting for a quarter of a tall
+    // sheet to be dragged would make it feel stuck.
+    const farEnough = travelled > Math.max(80, height * 0.25);
+    const flicked = travelled > 24 && travelled / elapsed > 0.5;
+    if (farEnough || flicked) this._cancel();
+  };
+
   render() {
     if (!this.open) return null;
     const z = this._zBase ?? 9998;
+    // Only set while a drag is in flight, so the opening animation — which
+    // animates transform too — is left to run untouched.
+    const drag = this._dragY > 0 ? ` transform: translateY(${this._dragY}px); transition: none;` : '';
     return html`
       <div class="scrim" role="presentation" style="z-index: ${z};" @click=${this._cancel}></div>
       <div
@@ -117,7 +172,7 @@ export class HVBottomSheet extends LitElement {
         aria-modal="true"
         aria-label=${this.label}
         data-testid="bottom-sheet"
-        style="z-index: ${z + 1};"
+        style="z-index: ${z + 1};${drag}"
         @keydown=${(e: KeyboardEvent) => {
           if (e.key === 'Escape') {
             e.preventDefault();
@@ -125,7 +180,19 @@ export class HVBottomSheet extends LitElement {
           }
         }}
       >
-        ${this.noHandle ? null : html`<div class="handle" data-testid="sheet-handle"></div>`}
+        ${this.noHandle
+          ? null
+          : html`<div
+              class="grip"
+              data-testid="sheet-grip"
+              aria-hidden="true"
+              @pointerdown=${this._onGripDown}
+              @pointermove=${this._onGripMove}
+              @pointerup=${this._onGripUp}
+              @pointercancel=${this._onGripUp}
+            >
+              <div class="handle" data-testid="sheet-handle"></div>
+            </div>`}
         <div class="body"><slot></slot></div>
         <slot name="footer"></slot>
       </div>

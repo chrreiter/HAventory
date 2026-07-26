@@ -85,3 +85,97 @@ describe('hv-bottom-sheet', () => {
     expect(zOf(second)).toBeGreaterThan(zOf(first));
   });
 });
+
+describe('hv-bottom-sheet: drag to dismiss', () => {
+  /**
+   * jsdom has no PointerEvent, and the handlers only read clientY, timeStamp
+   * and pointerId — MouseEvent carries the first two and the third is only
+   * passed straight to setPointerCapture, which is stubbed.
+   */
+  async function grip(el: HVBottomSheet) {
+    const node = el.shadowRoot?.querySelector('[data-testid="sheet-grip"]') as HTMLElement;
+    node.setPointerCapture = () => {};
+    return {
+      node,
+      async drag(from: number, to: number) {
+        for (const [type, clientY] of [
+          ['pointerdown', from],
+          ['pointermove', to],
+          ['pointerup', to],
+        ] as const) {
+          node.dispatchEvent(new MouseEvent(type, { clientY, bubbles: true }));
+        }
+        await el.updateComplete;
+      },
+    };
+  }
+
+  // The handle is the universal "drag me down" affordance, and it did nothing
+  // at all: a 260px touch-drag left the sheet exactly where it was.
+  it('dismisses when the sheet is dragged well down', async () => {
+    const el = await mount();
+    let cancelled = 0;
+    el.addEventListener('cancel', () => {
+      cancelled += 1;
+    });
+
+    await (await grip(el)).drag(100, 400);
+
+    expect(cancelled).toBe(1);
+    expect(el.open).toBe(false);
+  });
+
+  it('springs back from a drag too short to mean it', async () => {
+    const el = await mount();
+    let cancelled = 0;
+    el.addEventListener('cancel', () => {
+      cancelled += 1;
+    });
+
+    await (await grip(el)).drag(100, 120);
+
+    expect(cancelled).toBe(0);
+    expect(el.open).toBe(true);
+    // No leftover offset once the finger is up.
+    const sheet = el.shadowRoot?.querySelector('[data-testid="bottom-sheet"]') as HTMLElement;
+    expect(sheet.style.transform).toBe('');
+  });
+
+  it('ignores an upward drag rather than lifting off the bottom edge', async () => {
+    const el = await mount();
+    const { node } = await grip(el);
+    node.dispatchEvent(new MouseEvent('pointerdown', { clientY: 300, bubbles: true }));
+    node.dispatchEvent(new MouseEvent('pointermove', { clientY: 100, bubbles: true }));
+    await el.updateComplete;
+
+    const sheet = el.shadowRoot?.querySelector('[data-testid="bottom-sheet"]') as HTMLElement;
+    expect(sheet.style.transform).toBe('');
+    expect(el.open).toBe(true);
+  });
+
+  it('follows the finger while the drag is in flight', async () => {
+    const el = await mount();
+    const { node } = await grip(el);
+    node.dispatchEvent(new MouseEvent('pointerdown', { clientY: 100, bubbles: true }));
+    node.dispatchEvent(new MouseEvent('pointermove', { clientY: 160, bubbles: true }));
+    await el.updateComplete;
+
+    const sheet = el.shadowRoot?.querySelector('[data-testid="bottom-sheet"]') as HTMLElement;
+    expect(sheet.style.transform).toBe('translateY(60px)');
+  });
+
+  it('does not react to a move that no pointerdown started', async () => {
+    const el = await mount();
+    const { node } = await grip(el);
+    node.dispatchEvent(new MouseEvent('pointermove', { clientY: 900, bubbles: true }));
+    node.dispatchEvent(new MouseEvent('pointerup', { clientY: 900, bubbles: true }));
+    await el.updateComplete;
+
+    expect(el.open).toBe(true);
+  });
+
+  it('has no grip to drag when the handle is suppressed', async () => {
+    const el = await mount({ noHandle: true });
+    expect(el.shadowRoot?.querySelector('[data-testid="sheet-grip"]')).toBe(null);
+  });
+});
