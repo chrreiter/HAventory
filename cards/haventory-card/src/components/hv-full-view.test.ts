@@ -246,6 +246,100 @@ describe('hv-full-view: sidebar', () => {
   });
 });
 
+// The sidebar held locations and nothing else. An inventory with a handful of
+// them, or one browsed with every root collapsed, left most of a 264px column
+// empty while the two other facets people navigate by sat inside the filter
+// panel behind a button.
+describe('hv-full-view: sidebar facets', () => {
+  const faceted = [
+    makeItem({ id: '1', category: 'Tools', tags: ['metric', 'heavy'] }),
+    makeItem({ id: '2', category: 'Tools', tags: ['metric'] }),
+    makeItem({ id: '3', category: 'Cleaning', tags: [] }),
+  ];
+  const rows = (sr: ShadowRoot, section: string) =>
+    [...sr.querySelectorAll(`[data-testid="sidebar-${section}-row"]`)] as HTMLElement[];
+
+  it('lists categories and tags with their counts, locations still first', async () => {
+    const { sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
+
+    expect(rows(sr, 'categories').map((r) => r.dataset.value)).toEqual(['Cleaning', 'Tools']);
+    expect(rows(sr, 'categories')[1].textContent).toContain('2');
+    expect(rows(sr, 'tags').map((r) => r.dataset.value)).toEqual(['heavy', 'metric']);
+    expect(q(sr, '[data-testid="sidebar-tags-tally"]')?.textContent?.trim()).toBe('2');
+
+    // Locations keeps the top of the column.
+    const heads = [...sr.querySelectorAll('.sidebar-head .section-toggle')] as HTMLElement[];
+    expect(heads.map((h) => h.dataset.testid)).toEqual([
+      'sidebar-toggle-locations',
+      'sidebar-toggle-categories',
+      'sidebar-toggle-tags',
+    ]);
+  });
+
+  it('filters to one category and clears it on a second press', async () => {
+    const { el, store, sr } = await mount({ items: faceted });
+
+    rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
+    await settle(el);
+    expect(store.state.value.filters.category).toBe('Tools');
+    expect(rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.classList).toContain('on');
+
+    rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
+    await settle(el);
+    expect(store.state.value.filters.category).toBe(null);
+  });
+
+  // Category is one value and tags are a set, because that is what the backend
+  // does with them — so the rows behave differently on purpose.
+  it('accumulates tags rather than replacing the selection', async () => {
+    const { el, store, sr } = await mount({ items: faceted });
+
+    rows(sr, 'tags').find((r) => r.dataset.value === 'metric')?.click();
+    await settle(el);
+    rows(sr, 'tags').find((r) => r.dataset.value === 'heavy')?.click();
+    await settle(el);
+    expect(store.state.value.filters.tags).toEqual(['metric', 'heavy']);
+
+    rows(sr, 'tags').find((r) => r.dataset.value === 'metric')?.click();
+    await settle(el);
+    expect(store.state.value.filters.tags).toEqual(['heavy']);
+  });
+
+  it('collapses a section from its heading, keeping the heading reachable', async () => {
+    const { el, sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
+    const toggle = q(sr, '[data-testid="sidebar-toggle-tags"]') as HTMLButtonElement;
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+
+    toggle.click();
+    await settle(el);
+
+    expect(rows(sr, 'tags')).toEqual([]);
+    expect(q(sr, '[data-testid="sidebar-toggle-tags"]')?.getAttribute('aria-expanded')).toBe('false');
+    // Only that section went; the others are untouched.
+    expect(rows(sr, 'categories').length).toBe(2);
+    expect(q(sr, '[data-testid="sidebar-tree"]')).toBeTruthy();
+  });
+
+  it('reopens a collapsed Locations section rather than hiding the new-name field in it', async () => {
+    const { el, sr } = await mount({ items: [], locations: [loc('garage', 'Garage')] });
+    (q(sr, '[data-testid="sidebar-toggle-locations"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(q(sr, '[data-testid="sidebar-tree"]')).toBe(null);
+
+    (q(sr, '[data-testid="sidebar-new-location"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="sidebar-new-location-name"]')).toBeTruthy();
+    expect(q(sr, '[data-testid="sidebar-tree"]')).toBeTruthy();
+  });
+
+  it('says so when a facet has nothing in it yet', async () => {
+    const { sr } = await mount({ items: [makeItem({ id: '1', category: null, tags: [] })] });
+    expect(q(sr, '[data-testid="sidebar-categories-empty"]')?.textContent).toContain('No categories yet');
+    expect(q(sr, '[data-testid="sidebar-tags-empty"]')?.textContent).toContain('No tags yet');
+  });
+});
+
 describe('hv-full-view: context bar and table', () => {
   it('breadcrumbs the selected location with its filtered count', async () => {
     const locations = [loc('garage', 'Garage'), loc('shelf-a', 'Shelf A', 'garage')];

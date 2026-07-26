@@ -24,6 +24,9 @@ import type { HVLocationTree } from './hv-location-tree';
 
 const SEARCH_DEBOUNCE_MS = 200;
 
+/** The sidebar's collapsible sections, in the order they appear. */
+type SidebarSection = 'locations' | 'categories' | 'tags';
+
 /**
  * The expanded workspace (mock 1c).
  *
@@ -279,6 +282,83 @@ export class HVFullView extends LitElement {
         gap: 8px;
         padding: 14px 16px 6px;
       }
+      /* The heading is the collapse control, so it is a button — which is why
+         the "+ new location" action stays a sibling rather than a child of it. */
+      .section-toggle {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 1;
+        min-width: 0;
+        min-height: var(--hv-tap-min, auto);
+        border: none;
+        background: none;
+        padding: 0;
+        margin-left: -4px;
+        color: var(--hv-text-secondary);
+        text-align: left;
+      }
+      .section-toggle:hover {
+        color: var(--hv-text);
+      }
+      .section-toggle .hv-label {
+        color: inherit;
+      }
+      .section-tally {
+        flex: none;
+        font-size: 11.5px;
+        color: var(--hv-text-tertiary);
+      }
+      /*
+       * A category or tag row. Deliberately the same shape as a location row in
+       * hv-location-tree — it is the same act, filtering the table down to one
+       * facet — but that tree is another shadow root, so the rule cannot be
+       * shared. Indented to where the tree's names start, past its twisty.
+       */
+      .value-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        box-sizing: border-box;
+        min-height: var(--hv-tap-min, auto);
+        border: none;
+        background: none;
+        text-align: left;
+        font: 400 13.5px var(--hv-font);
+        color: var(--hv-text);
+        padding: 7px 12px 7px 34px;
+        border-radius: var(--hv-radius-input);
+      }
+      .value-row:hover {
+        background: var(--hv-hover-overlay);
+      }
+      .value-row.on {
+        background: var(--hv-primary-tint);
+        color: var(--hv-primary-darker);
+        font-weight: 500;
+        box-shadow: inset -3px 0 0 0 var(--hv-primary);
+      }
+      .value-row .label {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .value-row .tally {
+        flex: none;
+        font-size: 11.5px;
+        color: var(--hv-text-tertiary);
+      }
+      .value-row.on .tally {
+        color: inherit;
+      }
+      .section-empty {
+        padding: 2px 16px 8px 34px;
+        font-size: 12.5px;
+        color: var(--hv-text-tertiary);
+      }
       .main {
         display: flex;
         flex-direction: column;
@@ -391,6 +471,16 @@ export class HVFullView extends LitElement {
   @state() private _editorBusy = false;
   @state() private _creatingLocation = false;
   @state() private _locationError: string | null = null;
+  /**
+   * Locations leads and stays open — it is the primary axis and the one thing
+   * that was always there. The other two open too, since an empty sidebar is
+   * the problem they exist to solve; collapsing either sticks for the session.
+   */
+  @state() private _sections: Record<SidebarSection, boolean> = {
+    locations: true,
+    categories: true,
+    tags: true,
+  };
   @state() private _selecting = false;
   @state() private _bulkProgress: BulkProgress | null = null;
   @state() private _bulkResult: BulkResultView | null = null;
@@ -656,27 +746,123 @@ export class HVFullView extends LitElement {
   }
 
   // ---------- Sections ----------
+  /**
+   * One collapsible sidebar heading. The chevron and the words are one target —
+   * a 20px twisty beside inert text is a worse hit area than the whole row, and
+   * there is nothing else the heading could do.
+   */
+  private _renderSectionToggle(section: SidebarSection, label: string) {
+    const open = this._sections[section];
+    return html`<button
+      class="section-toggle"
+      data-testid=${`sidebar-toggle-${section}`}
+      aria-expanded=${String(open)}
+      @click=${() => {
+        this._sections = { ...this._sections, [section]: !open };
+      }}
+    >
+      ${icon(open ? 'chevronDown' : 'chevronRight', 18)}
+      <span class="hv-label">${label}</span>
+    </button>`;
+  }
+
+  /**
+   * Categories and tags as sidebar rows.
+   *
+   * The sidebar used to hold locations and nothing else, so an inventory with a
+   * handful of them — or one with every root collapsed — left most of a 264px
+   * column empty while the two other facets people actually browse by were
+   * buried in the filter panel.
+   *
+   * Category is single-select and tags are multi-select, because that is what
+   * the backend does with them: `category` is one value, `tags` is a set routed
+   * through tags_any/tags_all. Pressing the active one clears it.
+   */
+  private _renderFacetSection(
+    section: 'categories' | 'tags',
+    label: string,
+    values: { value: string; count: number }[],
+    isOn: (value: string) => boolean,
+    onPick: (value: string) => void,
+  ) {
+    const open = this._sections[section];
+    return html`
+      <div class="sidebar-head">
+        ${this._renderSectionToggle(section, label)}
+        <span class="section-tally" data-testid=${`sidebar-${section}-tally`}>${values.length}</span>
+      </div>
+      ${open
+        ? values.length
+          ? values.map(
+              (v) => html`<button
+                class="value-row ${isOn(v.value) ? 'on' : ''}"
+                data-testid=${`sidebar-${section}-row`}
+                data-value=${v.value}
+                aria-pressed=${String(isOn(v.value))}
+                @click=${() => onPick(v.value)}
+              >
+                ${isOn(v.value) ? icon('check', 15) : null}
+                <span class="label">${v.value}</span>
+                <span class="tally">${v.count}</span>
+              </button>`,
+            )
+          : html`<div class="section-empty" data-testid=${`sidebar-${section}-empty`}>
+              ${section === 'tags' ? 'No tags yet.' : 'No categories yet.'}
+            </div>`
+        : null}
+    `;
+  }
+
   private _renderSidebar() {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
+    const distinct = st?.distinctValuesCache;
+    const selectedTags = new Set(filters.tags);
     return html`
       <div class="sidebar" data-testid="full-sidebar">
         <div class="sidebar-head">
-          <span class="hv-label">Locations</span>
+          ${this._renderSectionToggle('locations', 'Locations')}
           <button
             class="hv-icon-button"
-            style="margin-left:auto"
             data-testid="sidebar-new-location"
             aria-label="New location"
             title="New location"
             @click=${() => {
               this._creatingLocation = !this._creatingLocation;
               this._locationError = null;
+              // Nowhere to put the field if the section is shut.
+              if (this._creatingLocation) this._sections = { ...this._sections, locations: true };
             }}
           >
             ${icon('plus', 20)}
           </button>
         </div>
+        ${this._sections.locations ? this._renderLocationSection() : null}
+        ${this._renderFacetSection(
+          'categories',
+          'Categories',
+          distinct?.categories ?? [],
+          (v) => filters.category === v,
+          (v) => this._setFilters({ category: filters.category === v ? null : v }),
+        )}
+        ${this._renderFacetSection(
+          'tags',
+          'Tags',
+          distinct?.tags ?? [],
+          (v) => selectedTags.has(v),
+          (v) =>
+            this._setFilters({
+              tags: selectedTags.has(v) ? filters.tags.filter((t) => t !== v) : [...filters.tags, v],
+            }),
+        )}
+      </div>
+    `;
+  }
+
+  private _renderLocationSection() {
+    const st = this.st;
+    const filters = st?.filters ?? defaultFilters();
+    return html`
         ${this._creatingLocation
           ? html`<div class="new-location">
               <input
@@ -726,7 +912,6 @@ export class HVFullView extends LitElement {
             })}
           @select-orphans=${() => this._setFilters({ locationId: null, orphansOnly: true })}
         ></hv-location-tree>
-      </div>
     `;
   }
 
