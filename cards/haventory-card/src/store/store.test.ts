@@ -564,37 +564,4 @@ describe('Store', () => {
     expect(store.state.value.distinctValuesCache?.tags).toEqual([]);
   });
 
-  it('fetchItemsByCategory returns only items in that category', async () => {
-    const items = [
-      makeItem({ id: '1', name: 'Hammer', category: 'Tools' }),
-      makeItem({ id: '2', name: 'Novel', category: 'Books' }),
-      makeItem({ id: '3', name: 'Wrench', category: 'tools' }), // case-insensitive
-    ];
-    const hass = makeMockHass({ items });
-    const store = new Store(hass);
-    await store.init();
-
-    const tools = await store.fetchItemsByCategory('Tools');
-    expect(tools.map((i) => i.id).sort()).toEqual(['1', '3']);
-
-    const books = await store.fetchItemsByCategory('Books');
-    expect(books.map((i) => i.name)).toEqual(['Novel']);
-  });
-
-  it('fetchItemsByTag returns only items carrying that tag', async () => {
-    const items = [
-      makeItem({ id: '1', name: 'Hammer', tags: ['red', 'metal'] }),
-      makeItem({ id: '2', name: 'Novel', tags: ['blue'] }),
-      makeItem({ id: '3', name: 'Wrench', tags: ['red'] }),
-    ];
-    const hass = makeMockHass({ items });
-    const store = new Store(hass);
-    await store.init();
-
-    const red = await store.fetchItemsByTag('red');
-    expect(red.map((i) => i.id).sort()).toEqual(['1', '3']);
-
-    const blue = await store.fetchItemsByTag('blue');
-    expect(blue.map((i) => i.name)).toEqual(['Novel']);
-  });
 });

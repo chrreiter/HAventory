@@ -128,10 +128,11 @@ async function waitFor(page, predicate, { timeout = 12000, interval = 250, label
 }
 
 // Locator for the card row carrying a given item name. Playwright CSS selectors
-// pierce the open shadow roots (haventory-card -> hv-inventory-list -> hv-item-row).
-// The item name is always rendered (unlike optional columns), so it is the reliable
-// signal that a live event reached the card's list.
-const rowByName = (page, name) => page.locator('haventory-card hv-item-row', { hasText: name });
+// pierce the open shadow roots (haventory-card -> hv-card-shell -> hv-list ->
+// hv-list-row). The item name is always rendered (unlike the optional columns the
+// full view can hide), so it is the reliable signal that a live event reached the
+// card's list.
+const rowByName = (page, name) => page.locator('haventory-card hv-list-row', { hasText: name });
 
 // --- drive ---------------------------------------------------------------
 const consoleErrors = [];

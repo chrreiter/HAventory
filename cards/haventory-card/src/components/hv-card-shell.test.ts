@@ -279,6 +279,23 @@ describe('hv-card-shell: list and footer', () => {
     expect(list.shadowRoot?.querySelector('[data-testid="list-skeleton"]')).toBeTruthy();
   });
 
+  // The list only reports a scroll ratio; deciding whether that warrants another
+  // page is the store's call, and this wiring is the whole of infinite scroll.
+  it('hands the list scroll position to the store to page on', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const seen: number[] = [];
+    store.prefetchIfNeeded = async (ratio: number) => {
+      seen.push(ratio);
+    };
+
+    (sr.querySelector('hv-list') as HTMLElement).dispatchEvent(
+      new CustomEvent('near-end', { detail: { ratio: 0.82 }, bubbles: true, composed: true }),
+    );
+    await settle(el);
+
+    expect(seen).toEqual([0.82]);
+  });
+
   it('counts loaded rows against the filtered total', async () => {
     const items = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}` }));
     const { sr } = await mountShell({ items });

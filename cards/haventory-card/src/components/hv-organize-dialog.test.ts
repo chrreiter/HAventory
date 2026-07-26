@@ -188,6 +188,101 @@ describe('hv-organize-dialog: locations', () => {
     expect(disabled).toContain('garage');
   });
 
+  // Re-parenting rides along with the rename in one `location/update`. The two
+  // halves that matter — send the move only when the parent really changed, and
+  // send an explicit null for "top level" — were asserted only by the POC's
+  // location selector, which spoke to the host in `update-location` events.
+  describe('re-parenting', () => {
+    const tree = [loc('garage', 'Garage'), loc('shelf-a', 'Shelf A', 'garage'), loc('attic', 'Attic')];
+
+    async function editShelfA() {
+      const ctx = await mount({ locations: tree });
+      const calls: { id: string; changes: Record<string, unknown> }[] = [];
+      const real = ctx.store.updateLocation.bind(ctx.store);
+      ctx.store.updateLocation = (id, changes) => {
+        calls.push({ id, changes: changes as Record<string, unknown> });
+        return real(id, changes);
+      };
+
+      // The tree opens collapsed, so Shelf A is only reachable under Garage.
+      const treeEl = q(ctx.sr, '[data-testid="organize-tree"]') as HTMLElement;
+      (
+        treeEl.shadowRoot?.querySelector(
+          '[data-testid="tree-row"][data-id="garage"] [data-testid="tree-twisty"]',
+        ) as HTMLButtonElement
+      ).click();
+      await settle(ctx.el);
+      (
+        treeEl.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="shelf-a"]') as HTMLButtonElement
+      ).click();
+      await settle(ctx.el);
+      return { ...ctx, calls };
+    }
+
+    async function pickParent(el: HVOrganizeDialog, sr: ShadowRoot, testid: string) {
+      (q(sr, '[data-testid="location-parent"]') as HTMLButtonElement).click();
+      await settle(el);
+      const picker = q(sr, '[data-testid="location-parent-tree"]') as HTMLElement;
+      (picker.shadowRoot?.querySelector(testid) as HTMLButtonElement).click();
+      await settle(el);
+    }
+
+    it('leaves the parent out of a rename that did not move anything', async () => {
+      const { el, sr, calls } = await editShelfA();
+      const name = q(sr, '[data-testid="location-name"]') as HTMLInputElement;
+      name.value = 'Shelf B';
+      name.dispatchEvent(new Event('input'));
+
+      (q(sr, '[data-testid="location-save"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].changes.name).toBe('Shelf B');
+      expect('newParentId' in calls[0].changes).toBe(false);
+    });
+
+    it('moves the subtree when a different parent is picked', async () => {
+      const { el, sr, calls } = await editShelfA();
+      await pickParent(el, sr, '[data-testid="tree-select"][data-id="attic"]');
+
+      (q(sr, '[data-testid="location-save"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      expect(calls[0].changes.newParentId).toBe('attic');
+    });
+
+    it('sends an explicit null when the location is moved to the top level', async () => {
+      const { el, sr, calls } = await editShelfA();
+      await pickParent(el, sr, '[data-testid="tree-all"]');
+
+      (q(sr, '[data-testid="location-save"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      expect(calls[0].changes.newParentId).toBeNull();
+    });
+  });
+
+  it('drops a failed save off the screen when the dialog is reopened', async () => {
+    const { el, store, sr } = await mount({ locations });
+    store.updateLocation = () => Promise.reject(new Error('Location is busy'));
+
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+    (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement).click();
+    await settle(el);
+    (q(sr, '[data-testid="location-save"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="location-error"]')?.textContent).toContain('Location is busy');
+
+    el.open = false;
+    await settle(el);
+    el.open = true;
+    await settle(el);
+
+    expect(q(sr, '[data-testid="location-error"]')).toBe(null);
+    expect(q(sr, '[data-testid="location-editor"]')).toBe(null);
+  });
+
   it('guards a delete with an inline explanation, never a browser confirm', async () => {
     const items = [makeItem({ id: '1', location_id: 'shelf-a' })];
     const { el, store, sr } = await mount({ items, locations });

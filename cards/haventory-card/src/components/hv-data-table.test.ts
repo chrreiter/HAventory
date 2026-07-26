@@ -90,9 +90,26 @@ describe('hv-data-table: sorting', () => {
     (q(el, '[data-field="updated_at"]') as HTMLButtonElement).click();
     (q(el, '[data-field="quantity"]') as HTMLButtonElement).click();
 
-    // Dates read newest-first; counts read smallest-first.
+    // Timestamps read newest-first; counts read smallest-first.
     expect(seen[0]).toEqual({ field: 'updated_at', order: 'desc' });
     expect(seen[1]).toEqual({ field: 'quantity', order: 'asc' });
+  });
+
+  // A deadline is not a timestamp: "newest" due date is the least urgent one.
+  // Opening Due on desc buried the overdue rows the card badges elsewhere.
+  it('opens a deadline column soonest-first, not newest-first', async () => {
+    const el = await mount([{ id: '1' }], {
+      columns: ['due_date', 'inspection_date'],
+      sort: { field: 'name', order: 'asc' },
+    });
+    const seen: Sort[] = [];
+    el.addEventListener('sort-change', (e) => seen.push((e as CustomEvent).detail.sort));
+
+    (q(el, '[data-field="due_date"]') as HTMLButtonElement).click();
+    (q(el, '[data-field="inspection_date"]') as HTMLButtonElement).click();
+
+    expect(seen[0]).toEqual({ field: 'due_date', order: 'asc' });
+    expect(seen[1]).toEqual({ field: 'inspection_date', order: 'asc' });
   });
 });
 

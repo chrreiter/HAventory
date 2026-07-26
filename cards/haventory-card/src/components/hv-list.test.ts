@@ -15,6 +15,29 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
+// Infinite scroll on the standard card hangs off this one event: the list
+// reports how far down the scroller is and the shell decides whether to fetch
+// the next page. Nothing else in the card asserts the ratio it reports.
+describe('hv-list: paging', () => {
+  it('reports how far down the scroller has moved', async () => {
+    const el = await mount();
+    const scroller = el.shadowRoot?.querySelector('[data-testid="list-rows"]') as HTMLElement;
+    expect(scroller).toBeTruthy();
+
+    let ratio = 0;
+    el.addEventListener('near-end', (e) => {
+      ratio = (e as CustomEvent).detail.ratio;
+    });
+
+    Object.defineProperty(scroller, 'scrollTop', { value: 700, configurable: true });
+    Object.defineProperty(scroller, 'clientHeight', { value: 200, configurable: true });
+    Object.defineProperty(scroller, 'scrollHeight', { value: 1000, configurable: true });
+    scroller.dispatchEvent(new Event('scroll'));
+
+    expect(ratio).toBeCloseTo(0.9, 2);
+  });
+});
+
 describe('hv-list: editing', () => {
   // The row list is capped so the card stays compact, but the inline editor
   // renders inside that same scroller. A ~720px form in a 420px window left

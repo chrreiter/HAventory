@@ -175,8 +175,7 @@ node screenshot.mjs --mobile \
   see exactly what a finger produces.
   Direction is the **finger's** direction — `--swipe up` scrolls the list down.
   The list's scroll container is **`hv-list`** (`--swipe 'up@hv-list'`), which is what
-  verifies the header/search stay pinned while only the rows move. Note `hv-list` is the
-  revamped component — `hv-inventory-list` is legacy and is *not* in the rendered tree.
+  verifies the header/search stay pinned while only the rows move.
   Measured limits: ~36 px is eaten by Chromium's touch-slop threshold before scrolling
   starts, and there is **no fling momentum** after `touchEnd` (a 200 px swipe scrolls
   164 px and stops dead). Distance-sensitive or momentum-sensitive behaviour needs a
