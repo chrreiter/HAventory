@@ -111,6 +111,42 @@ describe('hv-item-editor: field parity', () => {
     await el.updateComplete;
     expect((q(el, '[data-testid="editor-due-date"]') as HTMLInputElement).disabled).toBe(false);
   });
+
+  // Three equal thirds of one row read as three settings of the same kind. Two
+  // of them are not: the due date is half of the checkout — disabled without
+  // one, nulled on save — while the inspection date is its own fact.
+  it('keeps the due date inside the checkout and the inspection date outside it', async () => {
+    const el = await mount(makeItem({ id: '1' }));
+
+    const checkout = q(el, '[data-testid="editor-checkout-caption"]')?.closest('.group');
+    expect(checkout).toBeTruthy();
+    expect(checkout?.querySelector('[data-testid="editor-checked-out"]')).toBeTruthy();
+    expect(checkout?.querySelector('[data-testid="editor-due-date"]')).toBeTruthy();
+    expect(checkout?.querySelector('[data-testid="editor-inspection-date"]')).toBe(null);
+
+    const inspection = q(el, '[data-testid="editor-inspection-caption"]')?.closest('.group');
+    expect(inspection).toBeTruthy();
+    expect(inspection).not.toBe(checkout);
+    expect(inspection?.querySelector('[data-testid="editor-inspection-date"]')).toBeTruthy();
+
+    // The box has to name itself to the same reader the border speaks to.
+    expect(checkout?.getAttribute('aria-labelledby')).toBe('editor-checkout-caption');
+    expect(q(el, '[data-testid="editor-inspection-caption"]')?.getAttribute('for')).toBe('editor-inspection');
+  });
+
+  it('stacks the checkout box on a phone rather than halving a date field', () => {
+    const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+
+    // Half of a 375px screen, minus the box padding, is under the ~140px a
+    // native date input needs before it clips its own placeholder.
+    expect(css).toMatch(/\.checkout-body \{[^}]*grid-template-columns: 1fr 1fr/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.checkout-body \{[^}]*grid-template-columns: 1fr;/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.state \{[^}]*grid-template-columns: 1fr;/);
+  });
 });
 
 describe('hv-item-editor: saving', () => {

@@ -118,14 +118,53 @@ export class HVItemEditor extends LitElement {
         grid-template-columns: 1fr 1fr;
         gap: 12px;
       }
-      .trio {
+      /* Checked out, Due date and Inspection date used to be three equal thirds
+         of one row, which said they were three peers. Two of them are not. The
+         boxes below say which belongs to which before a word is read. */
+      .state {
         display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-columns: 2fr 1fr;
         gap: 12px;
+        align-items: start;
+      }
+      :host([mobile]) .state {
+        grid-template-columns: 1fr;
+      }
+      .group {
+        display: grid;
+        gap: 9px;
+        min-width: 0;
+        border: 1px solid var(--hv-divider);
+        border-radius: var(--hv-radius-input);
+        padding: 9px 11px 11px;
+      }
+      .group-caption {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        color: var(--hv-text-secondary);
+      }
+      .group-caption .hv-icon {
+        flex: none;
+        opacity: 0.8;
+      }
+      .group-body {
+        display: grid;
+        gap: 12px;
+        min-width: 0;
+      }
+      .checkout-body {
+        grid-template-columns: 1fr 1fr;
         align-items: end;
       }
-      :host([mobile]) .trio {
-        grid-template-columns: 1fr 1fr;
+      /* A native date input clips its own placeholder much below ~140px, and
+         half of a 375px screen minus the box padding is under that. */
+      :host([mobile]) .checkout-body {
+        grid-template-columns: 1fr;
       }
       label.hv-label {
         display: block;
@@ -765,46 +804,67 @@ export class HVItemEditor extends LitElement {
     </div>`;
   }
 
+  /**
+   * The checkout, and the one date that is not part of it.
+   *
+   * A due date is half of the checkout — it only means anything while an item
+   * is out, which is why it is disabled otherwise and why `commonFields()`
+   * nulls it on save. An inspection date is an unrelated fact about the item.
+   * Laid out as three equal thirds of a row they read as three settings of the
+   * same kind, so the two boxes below carry the distinction visually, on both
+   * widths.
+   */
   private _renderStateFields() {
     const model = this._model;
     return html`<div class="cell span3">
-      <div class="trio">
-        <div class="cell">
-          <span class="hv-label">Checked out</span>
-          <button
-            class="toggle"
-            role="switch"
-            aria-checked=${String(model.checkedOut)}
-            data-testid="editor-checked-out"
-            @click=${() => this._patch({ checkedOut: !model.checkedOut })}
-          >
-            <span class="switch ${model.checkedOut ? 'on' : ''}"></span>
-            <span>${model.checkedOut ? 'Yes' : 'No'}</span>
-          </button>
+      <div class="state">
+        <div class="group" role="group" aria-labelledby="editor-checkout-caption">
+          <span class="group-caption" id="editor-checkout-caption" data-testid="editor-checkout-caption">
+            ${icon('account', 14)} Checkout
+          </span>
+          <div class="group-body checkout-body">
+            <div class="cell">
+              <span class="hv-label">Checked out</span>
+              <button
+                class="toggle"
+                role="switch"
+                aria-checked=${String(model.checkedOut)}
+                data-testid="editor-checked-out"
+                @click=${() => this._patch({ checkedOut: !model.checkedOut })}
+              >
+                <span class="switch ${model.checkedOut ? 'on' : ''}"></span>
+                <span>${model.checkedOut ? 'Yes' : 'No'}</span>
+              </button>
+            </div>
+            <div class="cell">
+              <label class="hv-label" for="editor-due">Due date</label>
+              <input
+                id="editor-due"
+                class="hv-input"
+                type="date"
+                data-testid="editor-due-date"
+                ?disabled=${!model.checkedOut}
+                title=${model.checkedOut ? '' : 'A due date only applies while an item is checked out'}
+                .value=${model.dueDate}
+                @input=${(e: Event) => this._patch({ dueDate: (e.target as HTMLInputElement).value })}
+              />
+            </div>
+          </div>
         </div>
-        <div class="cell">
-          <label class="hv-label" for="editor-due">Due date</label>
-          <input
-            id="editor-due"
-            class="hv-input"
-            type="date"
-            data-testid="editor-due-date"
-            ?disabled=${!model.checkedOut}
-            title=${model.checkedOut ? '' : 'A due date only applies while an item is checked out'}
-            .value=${model.dueDate}
-            @input=${(e: Event) => this._patch({ dueDate: (e.target as HTMLInputElement).value })}
-          />
-        </div>
-        <div class="cell">
-          <label class="hv-label" for="editor-inspection">Inspection date</label>
-          <input
-            id="editor-inspection"
-            class="hv-input"
-            type="date"
-            data-testid="editor-inspection-date"
-            .value=${model.inspectionDate}
-            @input=${(e: Event) => this._patch({ inspectionDate: (e.target as HTMLInputElement).value })}
-          />
+        <div class="group">
+          <label class="group-caption" for="editor-inspection" data-testid="editor-inspection-caption">
+            ${icon('calendar', 14)} Inspection date
+          </label>
+          <div class="group-body">
+            <input
+              id="editor-inspection"
+              class="hv-input"
+              type="date"
+              data-testid="editor-inspection-date"
+              .value=${model.inspectionDate}
+              @input=${(e: Event) => this._patch({ inspectionDate: (e.target as HTMLInputElement).value })}
+            />
+          </div>
         </div>
       </div>
     </div>`;
