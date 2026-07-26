@@ -205,6 +205,12 @@ export class HVCheckoutPopover extends LitElement {
    * an item that is already out.
    */
   @property({ type: String }) mode: 'check-out' | 'set-due-date' = 'check-out';
+  /**
+   * Name to head the dialog with when there is no saved item behind it — the
+   * editor can check out an item it is still in the middle of creating, which
+   * has no id and no row yet.
+   */
+  @property({ type: String }) itemName = '';
 
   @state() private _due: string | null = null;
   @state() private _zBase = 0;
@@ -257,7 +263,8 @@ export class HVCheckoutPopover extends LitElement {
   }
 
   render() {
-    if (!this.open || !this.item) return null;
+    const subject = this.item?.name || this.itemName;
+    if (!this.open || !subject) return null;
     const z = this._zBase || 9998;
     const settingOnly = this.mode === 'set-due-date';
 
@@ -266,7 +273,7 @@ export class HVCheckoutPopover extends LitElement {
         class="card"
         role="dialog"
         aria-modal="true"
-        aria-label=${settingOnly ? 'Set due date' : `Check out ${this.item.name}`}
+        aria-label=${settingOnly ? 'Set due date' : `Check out ${subject}`}
         data-testid="checkout-popover"
         style=${this.mobile ? '' : `z-index:${z + 1}; ${this._position}`}
         @keydown=${(e: KeyboardEvent) => {
@@ -278,7 +285,7 @@ export class HVCheckoutPopover extends LitElement {
       >
         <div class="head">
           <div class="title" data-testid="checkout-title">
-            ${settingOnly ? 'Set a due date' : `Check out ${this.item.name}`}
+            ${settingOnly ? 'Set a due date' : `Check out ${subject}`}
           </div>
           <div class="sub">A due date is optional — it's what makes overdue highlighting work.</div>
         </div>

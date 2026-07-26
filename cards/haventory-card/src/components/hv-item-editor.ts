@@ -19,6 +19,7 @@ import type { CustomFieldRow, CustomFieldType, FieldError, ItemFormModel } from 
 import type { Item, Location, LocationTreeNode } from '../store/types';
 import './hv-chip-input';
 import './hv-location-tree';
+import './hv-checkout-popover';
 
 /**
  * Why the due date is dead until the item is out. Shown as a note under the
@@ -604,6 +605,9 @@ export class HVItemEditor extends LitElement {
     room: number;
   } | null = null;
   private _categoryZ = 0;
+  /** The check-out dialog, and the button it hangs from on a wide screen. */
+  @state() private _checkoutOpen = false;
+  @state() private _checkoutAnchor: DOMRect | null = null;
 
   /**
    * The footer promises "Esc discards", but that is a keydown handler on the
@@ -622,6 +626,7 @@ export class HVItemEditor extends LitElement {
       this._showErrors = false;
       this._locationOpen = false;
       this._moreOpen = false;
+      this._checkoutOpen = false;
       this._closeCategory();
     }
   }
@@ -957,10 +962,10 @@ export class HVItemEditor extends LitElement {
               <button
                 class="field-button checkout-action"
                 data-testid="editor-checked-out"
-                @click=${() => this._patch({ checkedOut: !model.checkedOut })}
+                @click=${this._onCheckoutPressed}
               >
                 ${icon(model.checkedOut ? 'check' : 'account', 16)}
-                <span>${model.checkedOut ? 'Check in' : 'Check out'}</span>
+                <span>${model.checkedOut ? 'Check in' : 'Check out…'}</span>
               </button>
             </div>
             <div class="cell ${model.checkedOut ? '' : 'muted'}">
@@ -980,6 +985,26 @@ export class HVItemEditor extends LitElement {
           ${model.checkedOut
             ? null
             : html`<span class="group-hint" data-testid="editor-due-hint">${DUE_DATE_HINT}</span>`}
+          <hv-checkout-popover
+            data-testid="editor-checkout"
+            .item=${this.item}
+            .itemName=${model.name.trim() || 'this item'}
+            .anchor=${this._checkoutAnchor}
+            ?mobile=${this.mobile}
+            ?open=${this._checkoutOpen}
+            @check-out=${(e: CustomEvent) => {
+              // Purely a form event: nothing outside this editor should act on
+              // it, and the shell would fire the real WS command if it did.
+              e.stopPropagation();
+              const { dueDate } = e.detail as { dueDate: string | null };
+              this._patch({ checkedOut: true, dueDate: dueDate ?? '' });
+              this._checkoutOpen = false;
+            }}
+            @cancel=${(e: Event) => {
+              e.stopPropagation();
+              this._checkoutOpen = false;
+            }}
+          ></hv-checkout-popover>
         </div>
         <div class="group">
           <label class="group-caption" for="editor-inspection" data-testid="editor-inspection-caption">
@@ -999,6 +1024,26 @@ export class HVItemEditor extends LitElement {
       </div>
     </div>`;
   }
+
+  /**
+   * Checking out asks for a due date; checking in just happens.
+   *
+   * The mobile detail sheet has offered this dialog — quick offsets, a date, a
+   * "no due date" way out — since the revamp, while the editor flipped a flag
+   * and left you to find the date field yourself. It is the same component, so
+   * on a wide screen it anchors under the button and on a phone it expands
+   * inside the box. Confirming only patches the form model; the item is written
+   * when the form is saved, which is what lets it work while creating an item
+   * that has no id to check out yet.
+   */
+  private _onCheckoutPressed = (e: Event) => {
+    if (this._model.checkedOut) {
+      this._patch({ checkedOut: false });
+      return;
+    }
+    this._checkoutAnchor = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    this._checkoutOpen = true;
+  };
 
   private _patchRow(id: number, patch: Partial<CustomFieldRow>) {
     this._patch({

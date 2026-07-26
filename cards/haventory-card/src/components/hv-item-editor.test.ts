@@ -1,5 +1,6 @@
 import './hv-item-editor';
 import { makeItem } from '../test.utils';
+import { addDays } from '../ui/relative-time';
 import type { HVItemEditor } from './hv-item-editor';
 import type { Item, ItemCreate, ItemUpdate, LocationTreeNode } from '../store/types';
 
@@ -47,6 +48,19 @@ async function type(el: HVItemEditor, testid: string, value: string) {
   input.value = value;
   input.dispatchEvent(new Event('input'));
   await el.updateComplete;
+}
+
+/** Press Check out and confirm the dialog it opens, with whatever it suggests. */
+async function checkOut(el: HVItemEditor) {
+  (q(el, '[data-testid="editor-checked-out"]') as HTMLButtonElement).click();
+  await el.updateComplete;
+  const popover = q(el, '[data-testid="editor-checkout"]') as HTMLElement & {
+    updateComplete: Promise<unknown>;
+  };
+  await popover.updateComplete;
+  (popover.shadowRoot?.querySelector('[data-testid="checkout-confirm"]') as HTMLButtonElement).click();
+  await el.updateComplete;
+  return popover;
 }
 
 function onSave(el: HVItemEditor) {
@@ -107,9 +121,71 @@ describe('hv-item-editor: field parity', () => {
     const el = await mount(makeItem({ id: '1' }));
     expect((q(el, '[data-testid="editor-due-date"]') as HTMLInputElement).disabled).toBe(true);
 
+    await checkOut(el);
+    expect((q(el, '[data-testid="editor-due-date"]') as HTMLInputElement).disabled).toBe(false);
+  });
+
+  // The mobile sheet has asked for a due date, with quick offsets and a way to
+  // decline one, since the revamp. The editor flipped a flag and left you to
+  // find the date field yourself. Same component, both widths.
+  it('asks for a due date through the same dialog the sheet uses', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'Multimeter', checked_out: false }));
+    expect(q(el, '[data-testid="editor-checked-out"]')?.textContent?.trim()).toBe('Check out…');
+
     (q(el, '[data-testid="editor-checked-out"]') as HTMLButtonElement).click();
     await el.updateComplete;
-    expect((q(el, '[data-testid="editor-due-date"]') as HTMLInputElement).disabled).toBe(false);
+    const popover = q(el, '[data-testid="editor-checkout"]') as HTMLElement & {
+      updateComplete: Promise<unknown>;
+      open: boolean;
+    };
+    await popover.updateComplete;
+    expect(popover.open).toBe(true);
+    expect(popover.shadowRoot?.querySelector('[data-testid="checkout-title"]')?.textContent).toContain(
+      'Check out Multimeter',
+    );
+
+    // Confirming writes the form model, not the item — the same button also
+    // has to work while creating an item that has no id to check out yet.
+    (popover.shadowRoot?.querySelector('[data-testid="checkout-confirm"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(q(el, '[data-testid="editor-checked-out"]')?.textContent?.trim()).toBe('Check in');
+    expect((q(el, '[data-testid="editor-due-date"]') as HTMLInputElement).value).toBe(addDays(7));
+  });
+
+  it('checks out an item that does not exist yet', async () => {
+    const el = await mount(null);
+    await type(el, 'editor-name', 'Torque wrench');
+    (q(el, '[data-testid="editor-checked-out"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const popover = q(el, '[data-testid="editor-checkout"]') as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    await popover.updateComplete;
+    expect(popover.shadowRoot?.querySelector('[data-testid="checkout-title"]')?.textContent).toContain(
+      'Check out Torque wrench',
+    );
+  });
+
+  it('takes no due date for an answer', async () => {
+    const el = await mount(makeItem({ id: '1' }));
+    (q(el, '[data-testid="editor-checked-out"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const popover = q(el, '[data-testid="editor-checkout"]') as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    await popover.updateComplete;
+    (popover.shadowRoot?.querySelector('[data-testid="checkout-no-date"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="editor-checked-out"]')?.textContent?.trim()).toBe('Check in');
+    expect((q(el, '[data-testid="editor-due-date"]') as HTMLInputElement).value).toBe('');
+  });
+
+  it('checks back in without asking anything', async () => {
+    const el = await mount(makeItem({ id: '1', checked_out: true, due_date: '2099-01-01' }));
+    (q(el, '[data-testid="editor-checked-out"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(q(el, '[data-testid="editor-checked-out"]')?.textContent?.trim()).toBe('Check out…');
   });
 
   // The field was already disabled, but a disabled date input keeps the
@@ -125,8 +201,7 @@ describe('hv-item-editor: field parity', () => {
       'A due date applies while the item is checked out.',
     );
 
-    (q(el, '[data-testid="editor-checked-out"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await checkOut(el);
     expect(q(el, '[data-testid="editor-due-date"]')?.closest('.cell')?.classList).not.toContain('muted');
     expect(q(el, '[data-testid="editor-due-hint"]')).toBe(null);
 
@@ -147,10 +222,10 @@ describe('hv-item-editor: field parity', () => {
     const button = q(el, '[data-testid="editor-checked-out"]') as HTMLButtonElement;
     expect(button.tagName).toBe('BUTTON');
     expect(button.getAttribute('role')).toBe(null);
-    expect(button.textContent?.trim()).toBe('Check out');
+    // The ellipsis is the card's own mark for "this opens something".
+    expect(button.textContent?.trim()).toBe('Check out…');
 
-    button.click();
-    await el.updateComplete;
+    await checkOut(el);
     expect(q(el, '[data-testid="editor-checked-out"]')?.textContent?.trim()).toBe('Check in');
   });
 
