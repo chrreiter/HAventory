@@ -305,6 +305,31 @@ describe('hv-full-view: sidebar facets', () => {
     expect(store.state.value.filters.tags).toEqual(['heavy']);
   });
 
+  // The sidebar accumulated tags but never said which way they combined, so a
+  // mode set to "all" in the filter panel silently governed every tag picked
+  // here. Only shown from the second tag on — that is when the two differ.
+  it('shows the tag match mode once two tags are selected', async () => {
+    const { el, store, sr } = await mount({ items: faceted });
+    expect(q(sr, '[data-testid="sidebar-tags-mode"]')).toBe(null);
+
+    rows(sr, 'tags').find((r) => r.dataset.value === 'metric')?.click();
+    await settle(el);
+    expect(q(sr, '[data-testid="sidebar-tags-mode"]'), 'one tag needs no mode').toBe(null);
+
+    rows(sr, 'tags').find((r) => r.dataset.value === 'heavy')?.click();
+    await settle(el);
+    const modes = [...sr.querySelectorAll('[data-testid="sidebar-tags-mode"]')] as HTMLElement[];
+    expect(modes.map((m) => m.dataset.mode)).toEqual(['any', 'all']);
+    expect(modes[0].classList.contains('on')).toBe(true);
+
+    modes[1].click();
+    await settle(el);
+    expect(store.state.value.filters.tagsMode).toBe('all');
+    expect(
+      (sr.querySelectorAll('[data-testid="sidebar-tags-mode"]')[1] as HTMLElement).getAttribute('aria-checked'),
+    ).toBe('true');
+  });
+
   it('collapses a section from its heading, keeping the heading reachable', async () => {
     const { el, sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
     const toggle = q(sr, '[data-testid="sidebar-toggle-tags"]') as HTMLButtonElement;

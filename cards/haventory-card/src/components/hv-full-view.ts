@@ -329,7 +329,10 @@ export class HVFullView extends LitElement {
         display: flex;
         align-items: center;
         gap: 6px;
-        flex: 1;
+        /* Not flex:1: the tags heading puts its Any/All control immediately
+           after the word it qualifies, and a stretching heading would shove it
+           across to the tally. The tally right-aligns by margin instead. */
+        flex: 0 1 auto;
         min-width: 0;
         min-height: var(--hv-tap-min, auto);
         border: none;
@@ -347,8 +350,31 @@ export class HVFullView extends LitElement {
       }
       .section-tally {
         flex: none;
+        margin-left: auto;
         font-size: 11.5px;
         color: var(--hv-text-tertiary);
+      }
+      /* The filter panel's Any/All control, in the sidebar that also selects
+         tags. Same rules, different shadow root. */
+      .segmented {
+        display: inline-flex;
+        flex: none;
+        border: 1px solid var(--hv-divider);
+        border-radius: var(--hv-radius-chip);
+        overflow: hidden;
+      }
+      .segmented button {
+        border: none;
+        background: none;
+        color: var(--hv-chip-text);
+        padding: 2px 8px;
+        font: 400 11px var(--hv-font);
+        min-height: var(--hv-tap-min, auto);
+      }
+      .segmented button.on {
+        background: var(--hv-primary);
+        color: var(--hv-text-on-primary);
+        font-weight: 500;
       }
       /* The three tallies read as one column, so a heading with no trailing
          action still reserves the room one takes — otherwise the Locations
@@ -886,17 +912,45 @@ export class HVFullView extends LitElement {
    * the backend does with them: `category` is one value, `tags` is a set routed
    * through tags_any/tags_all. Pressing the active one clears it.
    */
+  /**
+   * Which way multiple selected tags combine, in the sidebar that selects them.
+   *
+   * The sidebar accumulated tags but said nothing about the mode governing them,
+   * so a filter set to "all" in the filter panel silently kept applying to every
+   * tag picked here. Only shown from the second tag on, since that is when any
+   * and all start meaning different things.
+   */
+  private _renderTagsMode(mode: 'any' | 'all') {
+    return html`<span class="segmented" role="radiogroup" aria-label="Tag match mode">
+      ${(['any', 'all'] as const).map(
+        (m) => html`<button
+          class=${mode === m ? 'on' : ''}
+          role="radio"
+          aria-checked=${String(mode === m)}
+          data-testid="sidebar-tags-mode"
+          data-mode=${m}
+          title=${m === 'any' ? 'Items with any of the selected tags' : 'Items with all of them'}
+          @click=${() => this._setFilters({ tagsMode: m })}
+        >
+          ${m === 'any' ? 'Any' : 'All'}
+        </button>`,
+      )}
+    </span>`;
+  }
+
   private _renderFacetSection(
     section: 'categories' | 'tags',
     label: string,
     values: { value: string; count: number }[],
     isOn: (value: string) => boolean,
     onPick: (value: string) => void,
+    head?: unknown,
   ) {
     const open = this._sections[section];
     return html`
       <div class="sidebar-head">
         ${this._renderSectionToggle(section, label)}
+        ${head ?? null}
         <span class="section-tally" data-testid=${`sidebar-${section}-tally`}>${values.length}</span>
         <span class="head-action">
           <!-- Locations could be added to from here and the other two could not,
@@ -995,6 +1049,7 @@ export class HVFullView extends LitElement {
             this._setFilters({
               tags: selectedTags.has(v) ? filters.tags.filter((t) => t !== v) : [...filters.tags, v],
             }),
+          filters.tags.length > 1 ? this._renderTagsMode(filters.tagsMode) : null,
         )}
       </div>
     `;
