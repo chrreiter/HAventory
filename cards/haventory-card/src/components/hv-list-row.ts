@@ -26,8 +26,13 @@ export function displayPath(item: Item): string {
  * drawer or the bin the item is actually in. The root still says which room and
  * the leaf says where in it; the ancestors between them are what a phone can
  * afford to lose, and the detail sheet still shows the path in full.
+ *
+ * Two, not three: a phone row has about 200px for this line, and a real
+ * three-segment path ("Workshop › Parts Cabinet › Drawer A", plus a category
+ * after it) needs well over that — so at three it still clipped the leaf off
+ * the end, which is the whole thing this is here to prevent.
  */
-export function elidePath(path: string, maxSegments = 3): string {
+export function elidePath(path: string, maxSegments = 2): string {
   const segments = path.split(' › ');
   if (segments.length <= maxSegments) return path;
   return `${segments[0]} › … › ${segments[segments.length - 1]}`;

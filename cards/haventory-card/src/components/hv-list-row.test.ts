@@ -47,13 +47,18 @@ describe('elidePath', () => {
   it('leaves a path that already fits alone', () => {
     expect(elidePath('Garage')).toBe('Garage');
     expect(elidePath('Garage › Shelf A')).toBe('Garage › Shelf A');
-    expect(elidePath('Garage › Shelf A › Bin 2')).toBe('Garage › Shelf A › Bin 2');
   });
 
   // The leaf is the whole point: it is the segment that says where the item
   // actually is, and right-clipping was dropping exactly that.
   it('drops the middle rather than the leaf', () => {
     expect(elidePath('Workshop › Parts Cabinet › Drawer A › Small Bin')).toBe('Workshop › … › Small Bin');
+  });
+
+  // A phone row has ~200px for this line, and three real segments plus a
+  // category needs well over that, so three has to elide as well.
+  it('elides at three segments, not just at four', () => {
+    expect(elidePath('Workshop › Parts Cabinet › Drawer A')).toBe('Workshop › … › Drawer A');
   });
 
   it('keeps both ends however deep the tree gets', () => {
