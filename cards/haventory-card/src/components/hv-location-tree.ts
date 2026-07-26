@@ -3,6 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import type { TemplateResult } from 'lit';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
+import type { IconName } from '../ui/icons';
 import type { LocationTreeNode } from '../store/types';
 
 /**
@@ -168,6 +169,15 @@ export class HVLocationTree extends LitElement {
   @property({ type: String }) selectedId: string | null = null;
   /** Show an "All items" row that clears the location filter. */
   @property({ type: Boolean }) showAll = false;
+  /**
+   * What that row is called, and the glyph beside it. The row always clears the
+   * location, but what clearing *means* depends on who is asking: browsing with
+   * no location means every item, while assigning one means the item ends up
+   * filed nowhere. Calling it "All items" in a picker promised a set and
+   * delivered an empty field.
+   */
+  @property({ type: String }) allLabel = 'All items';
+  @property({ type: String }) allIcon: IconName = 'home';
   /** Show a "No location" row bound to the orphans filter. */
   @property({ type: Boolean }) showOrphans = false;
   /** True when the current selection is the orphans row rather than a location. */
@@ -430,8 +440,8 @@ export class HVLocationTree extends LitElement {
               @click=${() => this._emit('select', { locationId: null, node: null })}
             >
               <span class="twisty placeholder">${icon('chevronRight', 17)}</span>
-              ${icon('home', 18)}
-              <span class="name">All items</span>
+              ${icon(this.allIcon, 18)}
+              <span class="name">${this.allLabel}</span>
               ${this.showCounts && this.totalCount !== null
                 ? this._pairedCount(this.totalCount, this.matchingTotalCount)
                 : null}

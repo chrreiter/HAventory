@@ -115,6 +115,18 @@ describe('hv-location-tree: counts and decorations', () => {
     expect(q(el, '[data-testid="tree-orphans"]')?.textContent).toContain('No location');
     expect(q(el, '[data-testid="tree-orphans"]')?.textContent).toContain('3');
   });
+
+  // The row clears the location either way, but a picker is assigning one, not
+  // browsing: "All items" there read as a set of items and delivered an empty
+  // location field.
+  it('lets the host rename the clear row for a picker', async () => {
+    const el = await mount({ showAll: true, allLabel: 'No location', allIcon: 'close' });
+    const row = q(el, '[data-testid="tree-all"]');
+    expect(row?.textContent).toContain('No location');
+    expect(row?.textContent).not.toContain('All items');
+    expect(row?.querySelector('[data-icon="close"]')).toBeTruthy();
+    expect(row?.querySelector('[data-icon="home"]')).toBe(null);
+  });
 });
 
 // A total that ignores the active filter says nothing about where the matches

@@ -611,6 +611,8 @@ export class HVItemEditor extends LitElement {
               .nodes=${this.locationTree}
               .selectedId=${this._model.locationId}
               showAll
+              allLabel="No location"
+              allIcon="close"
               @select=${(e: CustomEvent) => {
                 this._patch({ locationId: (e.detail as { locationId: string | null }).locationId });
                 this._locationOpen = false;

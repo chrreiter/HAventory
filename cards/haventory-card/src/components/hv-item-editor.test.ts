@@ -196,8 +196,12 @@ describe('hv-item-editor: location and tags', () => {
   });
 
   // The modal had a dedicated Clear button next to the location field; here the
-  // same job belongs to the tree's own "All items" row, and it has to reach the
-  // save payload as a null rather than being quietly dropped.
+  // same job belongs to the tree's own clear row, and it has to reach the save
+  // payload as a null rather than being quietly dropped.
+  //
+  // That row is called "All items" in the sidebar, where clearing the location
+  // does show every item. In a picker it assigns one, so the same wording
+  // promised a set of items and produced an empty field instead.
   it('puts an item back to no location at all', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A', location_id: 'garage' }));
     const saves = onSave(el);
@@ -205,7 +209,10 @@ describe('hv-item-editor: location and tags', () => {
     (q(el, '[data-testid="editor-location"]') as HTMLButtonElement).click();
     await el.updateComplete;
     const treeEl = el.shadowRoot?.querySelector('hv-location-tree') as HTMLElement;
-    (treeEl.shadowRoot?.querySelector('[data-testid="tree-all"]') as HTMLButtonElement).click();
+    const clearRow = treeEl.shadowRoot?.querySelector('[data-testid="tree-all"]') as HTMLButtonElement;
+    expect(clearRow.textContent).toContain('No location');
+    expect(clearRow.textContent).not.toContain('All items');
+    clearRow.click();
     await el.updateComplete;
 
     expect(q(el, '[data-testid="editor-location"]')?.textContent).toContain('No location');
