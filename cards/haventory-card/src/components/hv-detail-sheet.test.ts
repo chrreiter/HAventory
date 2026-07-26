@@ -194,6 +194,23 @@ describe('hv-detail-sheet: edit view', () => {
     expect((saves[0] as { changes: { name: string } }).changes.name).toBe('New');
   });
 
+  // The form carries a Delete of its own. Every other host of the editor
+  // forwarded it; this sheet did not, so the button was inert.
+  it('forwards the form’s own Delete as one request-delete', async () => {
+    const el = await mount({ id: 'item-1', name: 'Multimeter' });
+    const seen = captured(el, ['request-delete', 'delete-item']);
+
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
+    (editor.shadowRoot?.querySelector('[data-testid="editor-delete"]') as HTMLButtonElement).click();
+
+    // One event, and the same one the read view's Delete sends — the host has a
+    // single confirmation path to hang off.
+    expect(seen).toEqual(['request-delete']);
+  });
+
   it('reports whether the form has unsaved changes', async () => {
     const el = await mount({ id: '1', name: 'A' });
     expect(el.dirty).toBe(false);
