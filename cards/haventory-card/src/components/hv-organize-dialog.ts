@@ -2,6 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
+import { counted } from '../ui/plural';
 import { closestMatch } from '../ui/fuzzy';
 import { describeRewrite, filterForValue, rewriteOps } from '../ui/value-rewrite';
 import type { ValueKind } from '../ui/value-rewrite';
@@ -539,8 +540,8 @@ export class HVOrganizeDialog extends LitElement {
       // Guard before asking the backend: it refuses a non-empty location, and
       // saying why up front beats surfacing a validation error after the fact.
       const parts: string[] = [];
-      if (items) parts.push(`${items} item${items === 1 ? '' : 's'}`);
-      if (children) parts.push(`${children} sub-location${children === 1 ? '' : 's'}`);
+      if (items) parts.push(counted(items, 'item'));
+      if (children) parts.push(counted(children, 'sub-location'));
       this._guard = {
         locationId: node.id,
         message: `"${node.name}" still contains ${parts.join(' and ')}. Move or delete them first.`,
@@ -624,7 +625,7 @@ export class HVOrganizeDialog extends LitElement {
           `Moved the items, but "${source.name}" could not be removed.`;
       }
     } else {
-      error = `"${source.name}" was kept: ${failed.length} item${failed.length === 1 ? '' : 's'} could not be moved.`;
+      error = `"${source.name}" was kept: ${counted(failed.length, 'item')} could not be moved.`;
     }
 
     this._rewrite = { label, done: ops.length, total: ops.length, failed, finished: true, error };
@@ -853,7 +854,7 @@ export class HVOrganizeDialog extends LitElement {
     return html`<div class="expander" data-testid="location-sheet">
       <div class="sheet-actions">
         <button data-testid="location-sheet-show" @click=${() => this._showLocation(node.id)}>
-          ${icon('magnify', 20)}Show ${count} item${count === 1 ? '' : 's'}
+          ${icon('magnify', 20)}Show ${counted(count, 'item')}
         </button>
         <button data-testid="location-sheet-edit" @click=${() => this._startLocationEdit(node.id)}>
           ${icon('pencil', 20)}Edit…
@@ -881,8 +882,8 @@ export class HVOrganizeDialog extends LitElement {
     const target = this._mergeTarget ? this._findNode(tree, this._mergeTarget) : null;
     const items = source.direct_item_count ?? 0;
     const children = source.children?.length ?? 0;
-    const parts = [`${items} item${items === 1 ? '' : 's'}`];
-    if (children) parts.push(`${children} sub-location${children === 1 ? '' : 's'}`);
+    const parts = [counted(items, 'item')];
+    if (children) parts.push(counted(children, 'sub-location'));
 
     return html`<div class="expander" data-testid="location-merge">
       <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
@@ -968,7 +969,7 @@ export class HVOrganizeDialog extends LitElement {
           />
         </label>
         <span class="toolbar-count" data-testid="organize-location-count">
-          ${count} location${count === 1 ? '' : 's'}
+          ${counted(count, 'location')}
         </span>
         <button
           class="hv-pill"
@@ -1029,8 +1030,8 @@ export class HVOrganizeDialog extends LitElement {
     const done = rewrite.total - rewrite.failed.length;
     const past = PAST_TENSE[rewrite.label] ?? rewrite.label;
     // The partial case is the only one that needs both numbers.
-    if (rewrite.failed.length) return `${past} ${done} of ${rewrite.total} items`;
-    return `${past} ${rewrite.total} item${rewrite.total === 1 ? '' : 's'}`;
+    if (rewrite.failed.length) return `${past} ${done} of ${counted(rewrite.total, 'item')}`;
+    return `${past} ${counted(rewrite.total, 'item')}`;
   }
 
   private _renderRewrite() {
@@ -1097,7 +1098,7 @@ export class HVOrganizeDialog extends LitElement {
     return html`<div class="expander" data-testid="value-editor" data-mode=${editing.mode}>
       <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
         <span class="value-chip" style=${merging ? 'text-decoration: line-through' : ''}>${value}</span>
-        <span style="font-size:12.5px;color:var(--hv-text-secondary)">${count} items</span>
+        <span style="font-size:12.5px;color:var(--hv-text-secondary)">${counted(count, 'item')}</span>
         ${merging ? icon('arrowRight', 18) : null}
         <label style="display:flex;align-items:center;gap:8px;flex:1;min-width:180px">
           <span class="hv-sr-only">${merging ? 'Merge into' : 'New name'}</span>
@@ -1208,7 +1209,7 @@ export class HVOrganizeDialog extends LitElement {
             }}
           />
         </label>
-        <span class="toolbar-count" data-testid="organize-value-count">${values.length} ${noun}</span>
+        <span class="toolbar-count" data-testid="organize-value-count">${counted(values.length, this._noun, noun)}</span>
         <button
           class="hv-pill"
           data-testid="organize-new-value"
@@ -1239,7 +1240,7 @@ export class HVOrganizeDialog extends LitElement {
                         data-testid="value-count"
                         @click=${() => this._showValue(v.value)}
                       >
-                        ${v.count} items
+                        ${counted(v.count, 'item')}
                       </button>`}
                   <span class="row-actions">
                     ${this._isDraft(v.value)
@@ -1316,7 +1317,7 @@ export class HVOrganizeDialog extends LitElement {
     return html`<div class="expander" data-testid="value-sheet">
       <div class="sheet-actions">
         <button data-testid="sheet-show" @click=${() => this._showValue(value)}>
-          ${icon('magnify', 20)}Show ${count} items
+          ${icon('magnify', 20)}Show ${counted(count, 'item')}
         </button>
         <button data-testid="sheet-rename" @click=${() => this._startValueEdit(value, 'rename')}>
           ${icon('pencil', 20)}Rename…
@@ -1406,7 +1407,7 @@ export class HVOrganizeDialog extends LitElement {
       <hv-confirm
         data-testid="organize-confirm"
         ?open=${this._confirmRemove !== null}
-        .heading=${`Remove "${this._confirmRemove}" from ${removeCount} item${removeCount === 1 ? '' : 's'}?`}
+        .heading=${`Remove "${this._confirmRemove}" from ${counted(removeCount, 'item')}?`}
         message="The value is cleared on every item that carries it. The items themselves are not deleted."
         confirmLabel="Remove"
         destructive

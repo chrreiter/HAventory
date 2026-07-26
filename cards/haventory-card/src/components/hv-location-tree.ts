@@ -5,6 +5,7 @@ import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import type { IconName } from '../ui/icons';
 import { locationMatches } from '../store/location-tree';
+import { counted } from '../ui/plural';
 import type { LocationTreeNode } from '../store/types';
 
 /**
@@ -287,7 +288,7 @@ export class HVLocationTree extends LitElement {
         this._emit('select', { locationId: node.id, node });
       }}
     >
-      ${count} item${count === 1 ? '' : 's'}
+      ${counted(count, 'item')}
     </button>`;
   }
 

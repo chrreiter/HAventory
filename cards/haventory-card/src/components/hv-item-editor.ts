@@ -4,6 +4,7 @@ import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import { relativeTime, formatDate, isOverdue } from '../ui/relative-time';
 import { saveShortcutLabel } from '../ui/keyboard';
+import { counted } from '../ui/plural';
 import {
   customFieldsFrom,
   formFromItem,
@@ -824,9 +825,7 @@ export class HVItemEditor extends LitElement {
         <div class="custom-head">
           <span class="hv-label">Custom fields</span>
           <span class="tally" data-testid="editor-cf-tally">
-            ${used} of ${this.customFieldKeys.length || used} key${
-              (this.customFieldKeys.length || used) === 1 ? '' : 's'
-            } in use
+            ${used} of ${counted(this.customFieldKeys.length || used, 'key')} in use
           </span>
         </div>
         ${rows.map((row) => {

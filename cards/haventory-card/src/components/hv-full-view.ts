@@ -2,6 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
+import { counted, plural } from '../ui/plural';
 import { nextZBase } from '../utils/zindex';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
@@ -974,7 +975,7 @@ export class HVFullView extends LitElement {
                     : html`<span>${seg} › </span>`,
                 )
               : html`<span class="current">All items</span>`}
-          ${st?.total !== null && st?.total !== undefined ? html` · ${st.total} items` : null}
+          ${st?.total !== null && st?.total !== undefined ? html` · ${counted(st.total, 'item')}` : null}
         </span>
         <span class="spacer"></span>
         ${filterCount > 0
@@ -1100,7 +1101,7 @@ export class HVFullView extends LitElement {
             <input
               type="search"
               data-testid="full-search"
-              placeholder=${counts ? `Search all ${counts.items_total} items…` : 'Search items…'}
+              placeholder=${counts ? `Search all ${counted(counts.items_total, 'item')}…` : 'Search items…'}
               .value=${this._searchDraft}
               @input=${(e: Event) => {
                 this._searchDraft = (e.target as HTMLInputElement).value;
@@ -1293,7 +1294,7 @@ export class HVFullView extends LitElement {
         <hv-confirm
           data-testid="bulk-confirm"
           ?open=${this._pendingDelete}
-          .heading=${`Delete ${selection.size} item${selection.size === 1 ? '' : 's'}?`}
+          .heading=${`Delete ${counted(selection.size, 'item')}?`}
           message="This cannot be undone. Items are removed for every connected client. Locations and tags are not affected."
           .warning=${this._checkedOutWarning}
           .confirmLabel=${`Delete ${selection.size}`}
@@ -1313,7 +1314,7 @@ export class HVFullView extends LitElement {
   private get _checkedOutWarning(): string | null {
     const out = this._selectedItems.filter((i) => i.checked_out).length;
     if (!out) return null;
-    return `${out} of them ${out === 1 ? 'is' : 'are'} checked out`;
+    return `${out} of them ${plural(out, 'is', 'are')} checked out`;
   }
 }
 

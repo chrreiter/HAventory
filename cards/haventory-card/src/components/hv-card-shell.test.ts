@@ -57,6 +57,12 @@ describe('hv-card-shell: header', () => {
     expect(sr.querySelector('[data-testid="badge-out"]')?.textContent?.trim()).toBe('1 checked out');
   });
 
+  it('agrees with a one-item inventory', async () => {
+    // The total badge was one of nine strings with "items" hardcoded.
+    const { sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Lonely Hammer' })] });
+    expect(sr.querySelector('[data-testid="badge-total"]')?.textContent?.trim()).toBe('1 item');
+  });
+
   it('hides a stat badge that would read zero', async () => {
     const { sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     expect(sr.querySelector('[data-testid="badge-low"]')).toBe(null);

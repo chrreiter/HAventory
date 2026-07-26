@@ -1,4 +1,5 @@
 import { makeBulkOp } from '../store/store';
+import { plural } from './plural';
 import type { BulkOperation, Item, ItemFilter } from '../store/types';
 
 /**
@@ -73,7 +74,7 @@ export function describeRewrite(
   from: string,
   to: string | null,
 ): string {
-  const noun = count === 1 ? 'item' : 'items';
+  const noun = plural(count, 'item');
   if (to === null) {
     return kind === 'tag'
       ? `Removes "${from}" from ${count} ${noun}.`

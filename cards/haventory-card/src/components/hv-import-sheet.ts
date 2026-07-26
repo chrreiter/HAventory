@@ -2,6 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
+import { counted } from '../ui/plural';
 import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
 import type { ImportBucketCounts, ImportPolicy, ImportPreview, ImportSummary } from '../store/types';
@@ -488,7 +489,7 @@ export class HVImportSheet extends LitElement {
           <h2>This file can't be imported</h2>
         </div>
         <div class="sub">
-          ${preview.errors.length} problem${preview.errors.length === 1 ? '' : 's'} found · nothing was changed
+          ${counted(preview.errors.length, 'problem')} found · nothing was changed
         </div>
       </div>
       <div class="body">
@@ -538,7 +539,7 @@ export class HVImportSheet extends LitElement {
           ? html`<div class="alert warn" data-testid="import-conflicts">
               <span class="glyph">${icon('alert', 18)}</span>
               <span>
-                ${conflicts} conflict${conflicts === 1 ? '' : 's'} — the file and this inventory both changed
+                ${counted(conflicts, 'conflict')} — the file and this inventory both changed
                 ${conflicts === 1 ? 'that entry' : 'those entries'}.
                 ${preview.policy === 'merge'
                   ? "Merge keeps the file's values."
@@ -601,12 +602,12 @@ export class HVImportSheet extends LitElement {
           <span class="glyph">${icon('checkCircle', 18)}</span>
           <span>
             Imported ${summary.items.add} new, updated ${summary.items.update},
-            ${summary.locations.add} location${summary.locations.add === 1 ? '' : 's'} added.
+            ${counted(summary.locations.add, 'location')} added.
           </span>
         </div>
         <div class="fine">
-          The inventory now holds ${summary.totals.items_total} items across
-          ${summary.totals.locations_total} locations. Every connected card has reloaded.
+          The inventory now holds ${counted(summary.totals.items_total, 'item')} across
+          ${counted(summary.totals.locations_total, 'location')}. Every connected card has reloaded.
         </div>
       </div>
       <div class="foot">

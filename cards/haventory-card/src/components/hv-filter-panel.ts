@@ -2,6 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
+import { counted } from '../ui/plural';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import type {
   DistinctValues,
@@ -794,7 +795,7 @@ export class HVFilterPanel extends LitElement {
           ? null
           : html`<div class="footer">
               <span data-testid="filter-summary">
-                ${count} filter${count === 1 ? '' : 's'} active${this.total !== null && this.grandTotal !== null
+                ${counted(count, 'filter')} active${this.total !== null && this.grandTotal !== null
                   ? ` · ${this.total} of ${this.grandTotal} match`
                   : ''}
               </span>

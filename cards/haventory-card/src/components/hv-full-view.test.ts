@@ -371,7 +371,8 @@ describe('hv-full-view: context bar and table', () => {
     await settle(el);
     const crumb = q(sr, '[data-testid="full-breadcrumb"]')?.textContent?.replace(/\s+/g, ' ');
     expect(crumb).toContain('garage › Shelf A');
-    expect(crumb).toContain('1 items');
+    // One item is one item — the crumb used to say "1 items".
+    expect(crumb).toContain('1 item');
   });
 
   it('sorts from the table headers', async () => {

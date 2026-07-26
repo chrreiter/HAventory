@@ -2,6 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
+import { counted, plural } from '../ui/plural';
 import type { IconName } from '../ui/icons';
 import type { BulkFailure, DistinctValues, Item, LocationTreeNode } from '../store/types';
 import './hv-chip-input';
@@ -251,7 +252,7 @@ export class HVBulkBar extends LitElement {
     switch (this._active) {
       case 'move':
         return html`<div class="picker" data-testid="bulk-picker" data-picker="move">
-          <span class="hv-label">Move ${this.selectedCount} items to</span>
+          <span class="hv-label">Move ${counted(this.selectedCount, 'item')} to</span>
           <div class="tree-holder">
             <hv-location-tree
               data-testid="bulk-location-tree"
@@ -266,7 +267,7 @@ export class HVBulkBar extends LitElement {
       case 'remove-tags': {
         const adding = this._active === 'add-tags';
         return html`<div class="picker" data-testid="bulk-picker" data-picker=${this._active}>
-          <span class="hv-label">${adding ? 'Add tags to' : 'Remove tags from'} ${this.selectedCount} items</span>
+          <span class="hv-label">${adding ? 'Add tags to' : 'Remove tags from'} ${counted(this.selectedCount, 'item')}</span>
           <hv-chip-input
             data-testid="bulk-tags"
             .values=${this._tags}
@@ -292,7 +293,7 @@ export class HVBulkBar extends LitElement {
       }
       case 'set-category':
         return html`<div class="picker" data-testid="bulk-picker" data-picker="set-category">
-          <span class="hv-label">Set the category on ${this.selectedCount} items</span>
+          <span class="hv-label">Set the category on ${counted(this.selectedCount, 'item')}</span>
           <div class="row">
             <input
               data-testid="bulk-category"
@@ -320,7 +321,7 @@ export class HVBulkBar extends LitElement {
         </div>`;
       case 'adjust-qty':
         return html`<div class="picker" data-testid="bulk-picker" data-picker="adjust-qty">
-          <span class="hv-label">Adjust the quantity of ${this.selectedCount} items by</span>
+          <span class="hv-label">Adjust the quantity of ${counted(this.selectedCount, 'item')} by</span>
           <div class="row">
             <input
               type="number"
@@ -385,7 +386,7 @@ export class HVBulkBar extends LitElement {
           </div>
           <div class="sub" data-testid="bulk-result-summary">
             ${result.succeeded} of ${result.succeeded + failedCount} succeeded.
-            ${clean ? '' : `${failedCount} failed and ${failedCount === 1 ? 'was' : 'were'} left unchanged.`}
+            ${clean ? '' : `${failedCount} failed and ${plural(failedCount, 'was', 'were')} left unchanged.`}
           </div>
         </div>
       </div>
@@ -404,7 +405,7 @@ export class HVBulkBar extends LitElement {
         : null}
       <div class="result-foot">
         <span class="hint">
-          ${failedCount ? `Selection kept to the ${failedCount} failed row${failedCount === 1 ? '' : 's'}` : ''}
+          ${failedCount ? `Selection kept to the ${counted(failedCount, 'failed row')}` : ''}
         </span>
         <button
           class="hv-text-button"
@@ -439,7 +440,7 @@ export class HVBulkBar extends LitElement {
     return html`
       ${this._renderPicker()}
       <div class="bar" data-testid="bulk-bar" role="toolbar" aria-label="Bulk actions">
-        <span class="lead" data-testid="bulk-lead">Apply to ${this.selectedCount} items</span>
+        <span class="lead" data-testid="bulk-lead">Apply to ${counted(this.selectedCount, 'item')}</span>
         ${ACTIONS.map(
           (action) => html`<button
             class=${this._active === action.id ? 'active' : ''}

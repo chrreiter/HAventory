@@ -2,6 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
+import { counted } from '../ui/plural';
 import { summarizeIssues } from '../ui/health-codes';
 import { relativeTime } from '../ui/relative-time';
 import { nextZBase } from '../utils/zindex';
@@ -342,8 +343,9 @@ export class HVDiagnosticsPanel extends LitElement {
               <div class="fact">
                 <span>Data loaded</span>
                 <span class="value" data-testid="diagnostics-loaded">
-                  ${this.loadedItems} of ${this.counts?.items_total ?? '?'} items ·
-                  ${this.counts?.locations_total ?? '?'} locations
+                  ${this.loadedItems} of
+                  ${this.counts ? counted(this.counts.items_total, 'item') : '? items'} ·
+                  ${this.counts ? counted(this.counts.locations_total, 'location') : '? locations'}
                 </span>
               </div>
               <div class="fact">

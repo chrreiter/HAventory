@@ -658,7 +658,7 @@ describe('hv-organize-dialog: mobile value actions', () => {
 
     const sheet = q(sr, '[data-testid="value-sheet"]') as HTMLElement;
     expect(sheet).toBeTruthy();
-    expect(sheet.querySelector('[data-testid="sheet-show"]')?.textContent).toContain('Show 1 items');
+    expect(sheet.querySelector('[data-testid="sheet-show"]')?.textContent).toContain('Show 1 item');
     // The merge row suggests the likely typo fix up front.
     expect(sheet.querySelector('[data-testid="sheet-merge-suggestion"]')?.textContent).toContain('battery');
   });

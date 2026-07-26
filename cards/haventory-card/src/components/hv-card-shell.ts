@@ -2,6 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
+import { counted, plural } from '../ui/plural';
 import { ResponsiveController } from '../ui/responsive';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
@@ -630,7 +631,7 @@ export class HVCardShell extends LitElement {
     const dropped = (rate?.dropped_commands ?? 0) + (rate?.dropped_events ?? 0);
     if (dropped > 0) return `${dropped} dropped`;
     const issues = st.healthCache?.issues.length ?? 0;
-    if (issues > 0) return `${issues} issue${issues === 1 ? '' : 's'}`;
+    if (issues > 0) return counted(issues, 'issue');
     if (st.degraded.connectionLost) return 'offline';
     return null;
   }
@@ -722,7 +723,7 @@ export class HVCardShell extends LitElement {
         id: 'export-all',
         label: 'Export backup',
         glyph: 'download',
-        sub: total === null ? 'Everything' : `All ${total} items · all locations`,
+        sub: total === null ? 'Everything' : `All ${counted(total, 'item')} · all locations`,
       },
       {
         id: 'export-view',
@@ -731,7 +732,7 @@ export class HVCardShell extends LitElement {
         sub:
           filtered === null
             ? 'Active filter · keeps location paths'
-            : `${filtered} filtered item${filtered === 1 ? '' : 's'} · keeps location paths`,
+            : `${filtered} filtered ${plural(filtered, 'item')} · keeps location paths`,
         disabled: !filtersOn,
       },
       { id: 'import', label: 'Import backup…', glyph: 'upload' },
@@ -801,7 +802,7 @@ export class HVCardShell extends LitElement {
       <div class="badges">
         ${this.mobile
           ? null
-          : html`<span class="badge" data-testid="badge-total">${counts.items_total} items</span>`}
+          : html`<span class="badge" data-testid="badge-total">${counted(counts.items_total, 'item')}</span>`}
         ${counts.low_stock_count > 0
           ? html`<button
               class="badge low ${f?.lowStockOnly ? 'on' : ''}"
@@ -873,7 +874,7 @@ export class HVCardShell extends LitElement {
         kind="warning"
         glyph="clock"
         heading="Busy — retrying"
-        message=${` · ${degraded.retrying} change${degraded.retrying === 1 ? '' : 's'} queued`}
+        message=${` · ${counted(degraded.retrying, 'change')} queued`}
         data-testid="degraded-retrying"
       ></hv-banner>`);
     } else if (degraded.rateLimited) {
@@ -1057,7 +1058,7 @@ export class HVCardShell extends LitElement {
             type="search"
             data-testid="search-input"
             placeholder=${total !== null && total !== undefined
-              ? `Search ${total} matching item${total === 1 ? '' : 's'}…`
+              ? `Search ${total} matching ${plural(total, 'item')}…`
               : 'Search items…'}
             .value=${this._searchDraft}
             @input=${(e: Event) => {
@@ -1198,7 +1199,7 @@ export class HVCardShell extends LitElement {
               >
                 ${this._stagedCount === null
                   ? 'Show items'
-                  : `Show ${this._stagedCount} item${this._stagedCount === 1 ? '' : 's'}`}
+                  : `Show ${counted(this._stagedCount, 'item')}`}
               </button>
             </div>
           </hv-bottom-sheet>`

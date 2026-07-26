@@ -70,6 +70,17 @@ describe('hv-bulk-bar: actions', () => {
     expect(q(el, '[data-testid="bulk-lead"]')?.textContent).toContain('Apply to 42 items');
   });
 
+  // Every label here was a hardcoded "items", so selecting a single row read
+  // "Apply to 1 items" / "Move 1 items to".
+  it('agrees with a selection of one', async () => {
+    const el = await mount({ selectedCount: 1 });
+    expect(q(el, '[data-testid="bulk-lead"]')?.textContent).toContain('Apply to 1 item');
+
+    (q(el, '[data-action="move"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(q(el, '[data-testid="bulk-picker"]')?.textContent).toContain('Move 1 item to');
+  });
+
   it('runs the immediate actions straight away', async () => {
     const el = await mount();
     const seen = runs(el);
