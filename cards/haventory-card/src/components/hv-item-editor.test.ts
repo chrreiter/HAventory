@@ -382,6 +382,24 @@ describe('hv-item-editor: saving', () => {
     expect(/\.actions \.hint \{([^}]*)\}/.exec(editorCss())?.[1]).not.toContain('margin-left');
   });
 
+  // Three buttons in one row, three shapes: measured at a 390px viewport in the
+  // expanded view, Delete was 93x44 with a 1px border and a 999px radius, Cancel
+  // beside it 64x44 borderless with an 8px radius, and Delete's 12.5px/400 text
+  // matched neither. The card's other destructive actions — the detail sheet's
+  // own Delete item, the organize dialog's Delete — are all borderless red.
+  it('styles Delete like every other destructive action in the card', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    expect([...(q(el, '[data-testid="editor-delete"]')?.classList ?? [])]).toEqual([
+      'hv-text-button',
+      'danger',
+    ]);
+    // The same shared class as the Cancel beside it, so the two boxes match.
+    expect(q(el, '[data-testid="editor-cancel"]')?.classList.contains('hv-text-button')).toBe(true);
+    // Which only holds while the shared sheet is what dresses it.
+    expect(editorCss()).toMatch(/\.hv-text-button\.danger \{[^}]*color: var\(--hv-error-soft\)/);
+    expect(editorCss()).not.toMatch(/\.delete \{/);
+  });
+
   it('surfaces a server-side failure without losing the form', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }), { errorMessage: 'Storage is full' });
     expect(q(el, '[data-testid="editor-error"]')?.textContent).toContain('Storage is full');

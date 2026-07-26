@@ -555,18 +555,11 @@ export class HVItemEditor extends LitElement {
       .save[disabled] {
         opacity: 0.5;
       }
-      .delete {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: var(--hv-tap-min, auto);
-        border: 1px solid var(--hv-error-border);
-        background: none;
-        color: var(--hv-error-soft);
-        border-radius: var(--hv-radius-chip);
-        padding: 7px 14px;
-        font: 400 12.5px var(--hv-font);
-      }
+      /* Delete is hv-text-button danger from the shared sheet — the same
+         borderless red every other destructive action in the card uses (the
+         detail sheet's own Delete item, the organize dialog's Delete). It used
+         to be an outlined 12.5px pill, which made it the one button in the row
+         with a border, its own radius and its own font size. */
       .banner {
         margin: 0 18px;
         padding: 9px 12px;
@@ -1260,7 +1253,7 @@ export class HVItemEditor extends LitElement {
             <div class="actions">
               ${this.item
                 ? html`<button
-                    class="delete"
+                    class="hv-text-button danger"
                     data-testid="editor-delete"
                     @click=${() =>
                       this.dispatchEvent(
