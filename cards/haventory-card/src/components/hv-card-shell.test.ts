@@ -512,6 +512,70 @@ describe('hv-card-shell: touch targets', () => {
   });
 });
 
+describe('hv-card-shell: adding an item on a phone', () => {
+  const addSheet = (sr: ShadowRoot) =>
+    sr.querySelector('[data-testid="add-sheet"]') as (HTMLElement & { open: boolean }) | null;
+
+  // Filters and item detail both get sheets on mobile; the add form was the odd
+  // one out, expanding inline and putting the list into a nested scroller with
+  // Save and Cancel below the fold.
+  it('opens a sheet rather than expanding the list', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+    expect(addSheet(sr)?.open).toBe(false);
+
+    (sr.querySelector('[data-testid="add-item"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(addSheet(sr)?.open).toBe(true);
+    // The list must not also be holding an expander open.
+    const list = sr.querySelector('hv-list') as HTMLElement & { addingNew: boolean };
+    expect(list.addingNew).toBe(false);
+  });
+
+  it('lets the sheet draw the title instead of the editor', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+    (sr.querySelector('[data-testid="add-item"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    // The editor's own header leads with an expander chevron, which means
+    // nothing once the form is not an expander.
+    const editor = sr.querySelector('hv-item-editor') as HTMLElement;
+    expect(editor.hasAttribute('noHeader') || editor.hasAttribute('noheader')).toBe(true);
+  });
+
+  it('closes the sheet from its own close button', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+    (sr.querySelector('[data-testid="add-item"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    (sr.querySelector('[data-testid="add-sheet-close"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(addSheet(sr)?.open).toBe(false);
+  });
+
+  it('keeps the form findable from the shell for the unsaved-changes check', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+    (sr.querySelector('[data-testid="add-item"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    // Slotted into the sheet the editor lives in this shadow root, not inside
+    // hv-list's — the dirty check has to look in both or it silently stops
+    // prompting before it throws work away.
+    expect(sr.querySelector('hv-item-editor')).toBeTruthy();
+  });
+
+  it('still expands the row inline on desktop', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    (sr.querySelector('[data-testid="add-item"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(sr.querySelector('[data-testid="add-sheet"]')).toBe(null);
+    const list = sr.querySelector('hv-list') as HTMLElement & { addingNew: boolean };
+    expect(list.addingNew).toBe(true);
+  });
+});
+
 describe('hv-card-shell: mobile', () => {
   it('collapses the header and opens filters as a sheet', async () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });

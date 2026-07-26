@@ -475,10 +475,16 @@ export class HVCardShell extends LitElement {
 
   // ---------- Inline editing ----------
   private get _editor(): HVItemEditor | null {
-    // The expander is rendered by hv-list (inside the row order), so it lives in
-    // that component's shadow root rather than this one's.
+    // Two homes: on a phone the add form is slotted into a sheet in this shadow
+    // root, and on desktop it is an expander rendered by hv-list inside the row
+    // order, so it lives in that component's shadow root instead. Both have to
+    // be findable or the unsaved-changes prompt silently stops firing.
     const list = this.shadowRoot?.querySelector('hv-list');
-    return list?.shadowRoot?.querySelector('hv-item-editor') ?? null;
+    return (
+      this.shadowRoot?.querySelector('hv-item-editor') ??
+      list?.shadowRoot?.querySelector('hv-item-editor') ??
+      null
+    );
   }
 
   /**
@@ -538,10 +544,16 @@ export class HVCardShell extends LitElement {
     this._requestDelete(item);
   };
 
-  private _renderEditor = (itemId: string | null) => {
+  /**
+   * `opts.noHeader` is for the mobile add sheet, which draws its own title bar
+   * — the editor's own header leads with an expander chevron that means
+   * nothing once the form is not an expander.
+   */
+  private _renderEditor = (itemId: string | null, opts: { noHeader?: boolean } = {}) => {
     const st = this.st;
     return html`<hv-item-editor
       data-testid="inline-editor"
+      ?noHeader=${opts.noHeader ?? false}
       .item=${itemId ? (this._itemById(itemId) ?? null) : null}
       .locations=${st?.locationsFlatCache ?? null}
       .locationTree=${st?.locationTreeCache ?? []}
@@ -1079,7 +1091,7 @@ export class HVCardShell extends LitElement {
         .mobile=${mobile}
         .editorTemplate=${this._renderEditor}
         .editingItemId=${this._editing === 'new' ? null : this._editing}
-        .addingNew=${this._editing === 'new'}
+        .addingNew=${!mobile && this._editing === 'new'}
         .emptyKind=${this.emptyKind}
         .emptyLocationName=${(st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId)?.name ??
         null}
@@ -1177,6 +1189,35 @@ export class HVCardShell extends LitElement {
                   : `Show ${this._stagedCount} item${this._stagedCount === 1 ? '' : 's'}`}
               </button>
             </div>
+          </hv-bottom-sheet>`
+        : null}
+
+      ${mobile
+        ? html`<hv-bottom-sheet
+            label="New item"
+            ?open=${this._editing === 'new'}
+            data-testid="add-sheet"
+            @cancel=${() => {
+              this._editing = null;
+              this._editorError = null;
+            }}
+          >
+            <div class="sheet-head">
+              <span class="heading">New item</span>
+              <button
+                class="hv-icon-button"
+                style="margin-left:auto"
+                data-testid="add-sheet-close"
+                aria-label="Close"
+                @click=${() => {
+                  this._editing = null;
+                  this._editorError = null;
+                }}
+              >
+                ${icon('close', 18)}
+              </button>
+            </div>
+            ${this._editing === 'new' ? this._renderEditor(null, { noHeader: true }) : null}
           </hv-bottom-sheet>`
         : null}
 
