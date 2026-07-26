@@ -166,14 +166,22 @@ export class HVFilterPanel extends LitElement {
        * The comparison is a button, not a caption: it says which field this row
        * is about *and* which way the comparison runs, and clicking it flips the
        * direction.
+       *
+       * It used to be styled like the caption it is not — no border, no fill,
+       * a wash on hover and nothing at all otherwise. So the only hint that
+       * "Updated ≥" could be pressed arrived once the pointer was already on
+       * it, and on a touch screen it never arrived. It now carries its own
+       * outline and fill against the field's, which is the smallest thing that
+       * reads as a control at rest.
        */
       .field .direction {
         white-space: nowrap;
-        border: none;
-        background: none;
-        border-radius: 5px;
-        padding: 2px 5px;
-        margin: -2px -2px -2px -3px;
+        box-sizing: border-box;
+        border: 1px solid var(--hv-input-border);
+        background: var(--hv-surface);
+        border-radius: 6px;
+        padding: 2px 7px;
+        margin: -2px 0 -2px -4px;
         font: inherit;
         color: var(--hv-text-secondary);
         /* It sits inline in the field's label, so it takes height from the
@@ -184,9 +192,11 @@ export class HVFilterPanel extends LitElement {
       }
       .field.on .direction {
         color: var(--hv-text);
+        border-color: var(--hv-primary-tint-border);
       }
       .field .direction:hover {
         background: var(--hv-hover-overlay);
+        border-color: var(--hv-primary);
         color: var(--hv-primary-dark);
       }
       /*

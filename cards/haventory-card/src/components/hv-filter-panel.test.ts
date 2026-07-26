@@ -365,6 +365,25 @@ describe('hv-filter-panel: native control affordances', () => {
     const chevronRule = cssText.slice(cssText.indexOf('.field .chevron'));
     expect(chevronRule).toContain('pointer-events: none');
   });
+
+  // "Updated ≥" flips the comparison, but it was drawn as a plain caption with a
+  // hover wash: the only clue it could be pressed arrived after the pointer was
+  // already on it, and a touch screen never provided that clue at all.
+  it('draws the comparison flip as a control at rest, not only on hover', () => {
+    const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
+    const cssText = (Array.isArray(sheet) ? sheet : [sheet])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+
+    const rule = /\.field \.direction \{([^}]*)\}/.exec(cssText)?.[1] ?? '';
+    expect(rule, 'no .field .direction rule').not.toBe('');
+    expect(rule).toMatch(/border: 1px solid/);
+    expect(rule).not.toMatch(/border: none/);
+    expect(rule).toMatch(/background: var\(--hv-surface\)/);
+    // Hover still adds emphasis; it is no longer the only state that has any.
+    expect(cssText).toMatch(/\.field \.direction:hover \{[^}]*border-color/);
+  });
 });
 
 describe('hv-filter-panel: changed', () => {
