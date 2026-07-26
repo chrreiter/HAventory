@@ -161,6 +161,22 @@ export class HVItemEditor extends LitElement {
         grid-template-columns: 1fr 1fr;
         align-items: end;
       }
+      /* Checking out is something you do, not a setting you hold — the same
+         button the detail sheet has offered all along, in the same words. */
+      .checkout-action {
+        justify-content: center;
+        gap: 7px;
+        min-height: var(--hv-tap-min, auto);
+        font-weight: 500;
+        cursor: pointer;
+      }
+      .checkout-action:hover {
+        background: var(--hv-row-hover);
+      }
+      .checkout-action .hv-icon {
+        flex: none;
+        opacity: 0.85;
+      }
       /* A native date input clips its own placeholder much below ~140px, and
          half of a 375px screen minus the box padding is under that. */
       :host([mobile]) .checkout-body {
@@ -813,6 +829,13 @@ export class HVItemEditor extends LitElement {
    * Laid out as three equal thirds of a row they read as three settings of the
    * same kind, so the two boxes below carry the distinction visually, on both
    * widths.
+   *
+   * The state itself is a button rather than a switch. A switch says "this is
+   * a property of the item, set it either way"; checking something out is an
+   * act, and the detail sheet has always put it that way — same words, same
+   * icons, so the two surfaces cannot teach different things. It still writes
+   * `checkedOut` into the form model rather than firing the WS command: this
+   * editor also creates items, which have no id to check out yet.
    */
   private _renderStateFields() {
     const model = this._model;
@@ -824,16 +847,13 @@ export class HVItemEditor extends LitElement {
           </span>
           <div class="group-body checkout-body">
             <div class="cell">
-              <span class="hv-label">Checked out</span>
               <button
-                class="toggle"
-                role="switch"
-                aria-checked=${String(model.checkedOut)}
+                class="field-button checkout-action"
                 data-testid="editor-checked-out"
                 @click=${() => this._patch({ checkedOut: !model.checkedOut })}
               >
-                <span class="switch ${model.checkedOut ? 'on' : ''}"></span>
-                <span>${model.checkedOut ? 'Yes' : 'No'}</span>
+                ${icon(model.checkedOut ? 'check' : 'account', 16)}
+                <span>${model.checkedOut ? 'Check in' : 'Check out'}</span>
               </button>
             </div>
             <div class="cell">

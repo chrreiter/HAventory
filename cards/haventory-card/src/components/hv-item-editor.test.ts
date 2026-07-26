@@ -112,6 +112,21 @@ describe('hv-item-editor: field parity', () => {
     expect((q(el, '[data-testid="editor-due-date"]') as HTMLInputElement).disabled).toBe(false);
   });
 
+  // A switch says "this is a property, set it either way". Checking something
+  // out is an act, and the detail sheet has always said so — same words, same
+  // icons, so the two surfaces cannot teach different things.
+  it('offers checking out as an action, in the same words the sheet uses', async () => {
+    const el = await mount(makeItem({ id: '1', checked_out: false }));
+    const button = q(el, '[data-testid="editor-checked-out"]') as HTMLButtonElement;
+    expect(button.tagName).toBe('BUTTON');
+    expect(button.getAttribute('role')).toBe(null);
+    expect(button.textContent?.trim()).toBe('Check out');
+
+    button.click();
+    await el.updateComplete;
+    expect(q(el, '[data-testid="editor-checked-out"]')?.textContent?.trim()).toBe('Check in');
+  });
+
   // Three equal thirds of one row read as three settings of the same kind. Two
   // of them are not: the due date is half of the checkout — disabled without
   // one, nulled on save — while the inspection date is its own fact.
