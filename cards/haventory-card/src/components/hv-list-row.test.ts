@@ -1,6 +1,6 @@
 import './hv-list-row';
 import { makeItem } from '../test.utils';
-import { displayPath, isLowStock } from './hv-list-row';
+import { displayPath, elidePath, isLowStock } from './hv-list-row';
 import type { HVListRow } from './hv-list-row';
 import type { Item } from '../store/types';
 
@@ -40,6 +40,28 @@ describe('isLowStock / displayPath', () => {
       sort_key: '',
     };
     expect(displayPath(item)).toBe('Garage › Shelf A');
+  });
+});
+
+describe('elidePath', () => {
+  it('leaves a path that already fits alone', () => {
+    expect(elidePath('Garage')).toBe('Garage');
+    expect(elidePath('Garage › Shelf A')).toBe('Garage › Shelf A');
+    expect(elidePath('Garage › Shelf A › Bin 2')).toBe('Garage › Shelf A › Bin 2');
+  });
+
+  // The leaf is the whole point: it is the segment that says where the item
+  // actually is, and right-clipping was dropping exactly that.
+  it('drops the middle rather than the leaf', () => {
+    expect(elidePath('Workshop › Parts Cabinet › Drawer A › Small Bin')).toBe('Workshop › … › Small Bin');
+  });
+
+  it('keeps both ends however deep the tree gets', () => {
+    expect(elidePath('A › B › C › D › E › F')).toBe('A › … › F');
+  });
+
+  it('handles an item with no location at all', () => {
+    expect(elidePath('')).toBe('');
   });
 });
 
@@ -136,6 +158,25 @@ describe('hv-list-row: interaction', () => {
 });
 
 describe('hv-list-row: mobile affordances', () => {
+  const deepPath = {
+    id_path: [],
+    name_path: [],
+    display_path: 'Workshop / Parts Cabinet / Drawer A / Small Bin',
+    sort_key: '',
+  };
+
+  it('elides a deep path so the phone row still names the bin', async () => {
+    const el = await mount({ category: null, location_path: deepPath }, { mobile: true });
+    expect(q(el, '[data-testid="row-secondary"]')?.textContent).toContain('Workshop › … › Small Bin');
+  });
+
+  it('leaves the full path on the desktop row, which has the room', async () => {
+    const el = await mount({ category: null, location_path: deepPath });
+    expect(q(el, '[data-testid="row-secondary"]')?.textContent).toContain(
+      'Workshop › Parts Cabinet › Drawer A › Small Bin',
+    );
+  });
+
   it('marks low stock with a dot instead of a badge', async () => {
     const el = await mount({ quantity: 1, low_stock_threshold: 5 }, { mobile: true });
     expect(q(el, '[data-testid="row-low-dot"]')).toBeTruthy();

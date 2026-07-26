@@ -18,6 +18,22 @@ export function displayPath(item: Item): string {
 }
 
 /**
+ * Drop the middle of a long path so both ends survive a narrow row.
+ *
+ * A path reads root-first and clips from the right, so on a phone the half that
+ * goes is the half worth keeping: "Workshop › Parts Cabinet › Drawer A › Small
+ * Bin" rendered as "Workshop › Parts Cabinet › D…", naming the room but not the
+ * drawer or the bin the item is actually in. The root still says which room and
+ * the leaf says where in it; the ancestors between them are what a phone can
+ * afford to lose, and the detail sheet still shows the path in full.
+ */
+export function elidePath(path: string, maxSegments = 3): string {
+  const segments = path.split(' › ');
+  if (segments.length <= maxSegments) return path;
+  return `${segments[0]} › … › ${segments[segments.length - 1]}`;
+}
+
+/**
  * One row of the standard card list (mocks 1a/1b/1d).
  *
  * Desktop reveals edit and row-menu actions on hover; touch has no hover, so the
@@ -342,7 +358,10 @@ export class HVListRow extends LitElement {
     if (!item) return null;
     const low = isLowStock(item);
     const overdue = isOverdue(item.due_date);
-    const path = displayPath(item);
+    // The desktop row has room for the whole path; the phone row does not, and
+    // clipping it from the right would take the leaf with it.
+    const full = displayPath(item);
+    const path = this.mobile ? elidePath(full) : full;
     const secondary = [path, item.category].filter(Boolean).join(' · ');
 
     return html`
