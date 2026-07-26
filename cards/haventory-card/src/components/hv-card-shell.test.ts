@@ -476,7 +476,7 @@ describe('hv-card-shell: touch targets', () => {
   // component redeclares those on its own `:host`, which would shadow an
   // inherited value at the first boundary.
   it('publishes a 44px target size to every nested component', () => {
-    expect(shellCss()).toMatch(/:host\(\[mobile\]\) \{ --hv-tap-min: 44px; \}/);
+    expect(shellCss()).toMatch(/:host\(\[mobile\]\) \{[^}]*--hv-tap-min: 44px/);
   });
 
   it('does not declare the target size in the shared token block', () => {
@@ -497,6 +497,18 @@ describe('hv-card-shell: touch targets', () => {
 
   it('gives the stat badges a tappable height on a phone', () => {
     expect(shellCss()).toMatch(/:host\(\[mobile\]\) \.badge \{[^}]*min-height: var\(--hv-tap-min, auto\)/);
+  });
+
+  // iOS Safari zooms the page whenever a field under 16px takes focus, and does
+  // not zoom back out. Every field on the card was 12.5–14.5px.
+  it('publishes a 16px field size so iOS does not zoom on focus', () => {
+    expect(shellCss()).toMatch(/:host\(\[mobile\]\) \{[^}]*--hv-input-font: 16px/);
+    expect(String(tokens.cssText)).not.toMatch(/--hv-input-font/);
+    expect(String(base.cssText)).toMatch(/\.hv-input \{[^}]*font: 400 var\(--hv-input-font, 13\.5px\)/);
+  });
+
+  it('keeps the card search field reading from it', () => {
+    expect(shellCss()).toMatch(/\.search input \{[^}]*font: 400 var\(--hv-input-font, 13\.5px\)/);
   });
 });
 

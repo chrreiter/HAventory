@@ -75,7 +75,7 @@ export class HVChipInput extends LitElement {
         border: none;
         outline: none;
         background: none;
-        font: 400 12.5px var(--hv-font);
+        font: 400 var(--hv-input-font, 12.5px) var(--hv-font);
         color: var(--hv-text);
       }
       .suggestions {

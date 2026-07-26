@@ -137,13 +137,13 @@ export class HVItemEditor extends LitElement {
         border: 1px solid var(--hv-input-border);
         border-radius: var(--hv-radius-input);
         padding: 9px 11px;
-        font: 400 13.5px var(--hv-font);
+        font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
         color: var(--hv-text);
       }
       :host([mobile]) .hv-input,
       :host([mobile]) .field-button {
         min-height: 48px;
-        font-size: 14.5px;
+        font-size: var(--hv-input-font, 14.5px);
       }
       textarea.hv-input {
         min-height: 44px;

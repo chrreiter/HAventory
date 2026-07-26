@@ -113,12 +113,13 @@ export const tokens = css`
  * chips, inputs, section labels and the focus ring. Kept separate from `tokens`
  * so a component can take the variables without the opinionated element styles.
  *
- * Controls here size themselves from `--hv-tap-min`, which is deliberately *not*
- * declared in `tokens` above: `tokens` redeclares its properties on every
- * component's own `:host`, which would stop the value inheriting past the first
- * shadow boundary. Left undeclared, one `--hv-tap-min: 44px` on the card host
- * reaches every nested component, so a button several levels down grows for
- * touch without needing to be told the card is in its mobile layout.
+ * Controls here size themselves from `--hv-tap-min` and `--hv-input-font`, both
+ * of which are deliberately *not* declared in `tokens` above: `tokens`
+ * redeclares its properties on every component's own `:host`, which would stop
+ * the value inheriting past the first shadow boundary. Left undeclared, one
+ * declaration on the card host reaches every nested component, so a control
+ * several levels down grows for touch — or stops iOS zooming when it is
+ * focused — without needing to be told the card is in its mobile layout.
  */
 export const base = css`
   :host {
@@ -229,7 +230,7 @@ export const base = css`
     border: 1px solid var(--hv-input-border);
     border-radius: var(--hv-radius-input);
     padding: 9px 11px;
-    font: 400 13.5px var(--hv-font);
+    font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
   }
   .hv-input:focus {
     border-color: var(--hv-primary);

@@ -137,7 +137,7 @@ export class HVFilterPanel extends LitElement {
       :host([mobile]) .field {
         min-height: 46px;
         width: 100%;
-        font-size: 14px;
+        font-size: var(--hv-input-font, 14px);
       }
       .field.on {
         border-color: var(--hv-primary);

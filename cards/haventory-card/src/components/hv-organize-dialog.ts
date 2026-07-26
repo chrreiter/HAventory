@@ -159,7 +159,7 @@ export class HVOrganizeDialog extends LitElement {
         border: none;
         background: none;
         outline: none;
-        font: 400 13.5px var(--hv-font);
+        font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
         color: var(--hv-text);
       }
       .body {

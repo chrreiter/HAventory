@@ -91,7 +91,7 @@ export class HVBulkBar extends LitElement {
         border: 1px solid var(--hv-input-border);
         border-radius: var(--hv-radius-input);
         padding: 8px 10px;
-        font: 400 13.5px var(--hv-font);
+        font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
         color: var(--hv-text);
         min-width: 180px;
       }

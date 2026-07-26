@@ -111,6 +111,7 @@ export class HVCheckoutPopover extends LitElement {
       }
       :host([mobile]) .date {
         min-height: 48px;
+        font-size: var(--hv-input-font, 13.5px);
       }
       .date input {
         flex: 1;

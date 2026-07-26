@@ -62,6 +62,10 @@ export class HVCardShell extends LitElement {
          affordance in this component. */
       :host([mobile]) {
         --hv-tap-min: 44px;
+        /* iOS Safari zooms the whole page when a field smaller than 16px takes
+           focus, and never zooms back out. Every field on the card was between
+           12.5px and 14.5px, so tapping any of them left the user zoomed in. */
+        --hv-input-font: 16px;
       }
       .header {
         display: flex;
@@ -199,7 +203,7 @@ export class HVCardShell extends LitElement {
         border: none;
         background: none;
         outline: none;
-        font: 400 13.5px var(--hv-font);
+        font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
         color: var(--hv-text);
       }
       /* The pill looked tappable at 38px, but the input inside it — the part
