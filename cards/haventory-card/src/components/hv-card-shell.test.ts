@@ -421,6 +421,46 @@ describe('hv-card-shell: banners', () => {
   });
 });
 
+describe('hv-card-shell: narrow header', () => {
+  const headerCss = () => {
+    const styles = (customElements.get('hv-card-shell') as typeof HVCardShell).styles;
+    return (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+  };
+
+  // The title is `flex: 1` among siblings that are all `flex: none`, so it
+  // absorbed every pixel the badges and buttons needed: 40px for a 78px
+  // heading at 375px, and 0px at 320px. jsdom cannot lay this out, so the
+  // stylesheet is what gets asserted.
+  it('wraps the badges onto their own row on a phone', () => {
+    const css = headerCss();
+    expect(css).toMatch(/:host\(\[mobile\]\) \.header \{ flex-wrap: wrap; \}/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.badges \{[^}]*flex-basis: 100%/);
+  });
+
+  it('leaves the desktop header on one row', () => {
+    // `.badges { margin-left: auto }` is what right-aligns them there.
+    expect(headerCss()).toMatch(/\.badges \{ display: flex; align-items: center; gap: 6px; margin-left: auto; \}/);
+  });
+
+  it('renders no badge row at all when a phone has nothing to badge', async () => {
+    const { sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+    // Otherwise the empty wrapper still claims a full-width row under the title.
+    expect(sr.querySelector('.badges')).toBe(null);
+  });
+
+  it('still renders the row when a phone does have something to badge', async () => {
+    const { sr } = await mountShell({
+      items: [makeItem({ id: '1', quantity: 1, low_stock_threshold: 5 })],
+      mobile: true,
+    });
+    expect(sr.querySelector('.badges')).toBeTruthy();
+    expect(sr.querySelector('[data-testid="badge-low"]')).toBeTruthy();
+  });
+});
+
 describe('hv-card-shell: mobile', () => {
   it('collapses the header and opens filters as a sheet', async () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });

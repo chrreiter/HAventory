@@ -81,6 +81,19 @@ export class HVCardShell extends LitElement {
         gap: 6px;
         margin-left: auto;
       }
+      /* The title is the only thing in this row that can give, so every badge
+         and button that will not shrink comes straight out of its width: at
+         375px it had 40px for a 78px heading, at 360px 25px, and at 320px none
+         at all. The badges are filter toggles rather than decoration, so on a
+         phone they take a row of their own and hand the width back. */
+      :host([mobile]) .header {
+        flex-wrap: wrap;
+      }
+      :host([mobile]) .badges {
+        order: 1;
+        flex-basis: 100%;
+        margin-left: 0;
+      }
       .badge {
         border: 1px solid var(--hv-divider);
         background: none;
@@ -722,6 +735,13 @@ export class HVCardShell extends LitElement {
     const counts = st?.statsCounts;
     if (!counts) return null;
     const f = st?.filters;
+    // On mobile the wrapper takes a row of its own, so an empty one would leave
+    // a blank band under the title rather than nothing at all.
+    const anyBadge =
+      !this.mobile ||
+      counts.low_stock_count > 0 ||
+      (counts.overdue_count ?? 0) > 0;
+    if (!anyBadge) return null;
     return html`
       <div class="badges">
         ${this.mobile
