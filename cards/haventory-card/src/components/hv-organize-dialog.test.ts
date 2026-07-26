@@ -663,6 +663,21 @@ describe('hv-organize-dialog: mobile value actions', () => {
     expect(sheet.querySelector('[data-testid="sheet-merge-suggestion"]')?.textContent).toContain('battery');
   });
 
+  // jsdom lays out no shadow DOM, so the row's geometry is asserted on the
+  // stylesheet. At 375px the filter, the count and the create button shared a
+  // 335px row and the field came out 110px wide — its own placeholder clipped.
+  it('gives the filter field a row of its own', () => {
+    const styles = (customElements.get('hv-organize-dialog') as typeof HVOrganizeDialog).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+    expect(css).toMatch(/:host\(\[mobile\]\) \.toolbar \{[^}]*flex-wrap: wrap/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.search \{[^}]*flex-basis: 100%/);
+    // …with the count keeping the button company on the second row.
+    expect(css).toMatch(/:host\(\[mobile\]\) \.toolbar-count \{[^}]*margin-right: auto/);
+  });
+
   it('opens the merge editor from the sheet', async () => {
     const { el, sr } = await mount({ items, tab: 'tags', mobile: true });
     const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'batery')!;

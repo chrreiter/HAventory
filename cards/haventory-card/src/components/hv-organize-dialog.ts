@@ -173,6 +173,18 @@ export class HVOrganizeDialog extends LitElement {
         font-size: 12.5px;
         color: var(--hv-text-secondary);
       }
+      /* Three items in a 335px row left the filter field 110px wide, with its own
+         placeholder clipped to "Filter loca". The field takes the row and the
+         count keeps the button company on the next one. */
+      :host([mobile]) .toolbar {
+        flex-wrap: wrap;
+      }
+      :host([mobile]) .search {
+        flex-basis: 100%;
+      }
+      :host([mobile]) .toolbar-count {
+        margin-right: auto;
+      }
       .body {
         flex: 1;
         min-height: 0;
