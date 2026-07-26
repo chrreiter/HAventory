@@ -17,6 +17,38 @@ async function mount(items: Partial<Item>[], props: Partial<HVDataTable> = {}) {
 const q = (el: HVDataTable, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
 const all = (el: HVDataTable, sel: string) => [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
 
+describe('hv-data-table: narrow screens', () => {
+  const tableCss = () => {
+    const styles = (customElements.get('hv-data-table') as typeof HVDataTable).styles;
+    return (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+  };
+
+  // The template has a hard ~786px minimum, and a grid whose tracks do not fit
+  // overflows its box rather than shrinking. With overflow visible the spill
+  // was clipped by the shell: rows measured clientWidth 634 / scrollWidth 854
+  // at 375px, and three columns could not be reached by any gesture.
+  it('scrolls sideways rather than clipping columns away', () => {
+    const css = tableCss();
+    expect(css).toMatch(/:host \{[^}]*overflow-x: auto/);
+    expect(css).toMatch(/:host \{[^}]*min-width: 0/);
+  });
+
+  it('sizes the header and body to the grid minimum so they scroll together', () => {
+    // Left at the container width they would stay 375px wide while their
+    // tracks painted past the edge, cutting the row dividers short.
+    expect(tableCss()).toMatch(/\.head, \.body \{ min-width: min-content; \}/);
+  });
+
+  it('keeps rows scrolling vertically inside the body', () => {
+    // The horizontal scroller is the host; the body stays the vertical one, so
+    // the header does not scroll away with the rows.
+    expect(tableCss()).toMatch(/\.body \{[^}]*overflow-y: auto/);
+  });
+});
+
 describe('hv-data-table: columns', () => {
   it('renders a header and a cell per selected column', async () => {
     const el = await mount([{ id: '1', name: 'M4 Screws', quantity: 340, category: 'Hardware', tags: ['m4'] }]);

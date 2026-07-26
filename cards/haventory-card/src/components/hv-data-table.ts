@@ -27,6 +27,26 @@ export class HVDataTable extends LitElement {
         display: flex;
         flex-direction: column;
         min-height: 0;
+        min-width: 0;
+        /* The column template has a hard minimum — 786px for the default set,
+           826px with the selection column — and a grid whose tracks do not fit
+           overflows its own box rather than shrinking. With overflow visible
+           that spilled content was simply clipped by the shell: at 375px the
+           rows measured clientWidth 634 against scrollWidth 854, and the Tags,
+           Due and Updated columns could not be reached by any gesture. The
+           table scrolls sideways instead, which keeps whichever columns the
+           user chose rather than quietly dropping them on small screens. */
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+      }
+      /* Sizing the two boxes to the grid's own minimum is what makes the
+         scroll work: left at the container's width they would stay 375px wide
+         while their tracks painted past the edge, so the row dividers and
+         hover backgrounds would stop short of the content. Both use the same
+         template, so both land on the same width and stay aligned. */
+      .head,
+      .body {
+        min-width: min-content;
       }
       .head,
       .row {
