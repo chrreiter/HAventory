@@ -267,12 +267,16 @@ Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs t
   a tree inside the form), checked-out with due date, inspection date, and typed
   custom fields (text / number / yes-no / date). Saves send the item's expected version so
   a concurrent edit surfaces as a conflict.
-- **Full view** — a fullscreen workspace with a coloured app bar, a **location tree
-  sidebar** carrying the backend's own per-location counts, an orphans row, and a sortable
-  table. Only columns the backend can sort by get a clickable header. With a filter on,
-  each sidebar row reads "4 / 37" — matches over total — so you can see where the matches
-  are rather than a total that never moves. The counts ignore the *location* filter, since
-  the sidebar is how you pick one.
+- **Full view** — a fullscreen workspace with a coloured app bar, a **browse sidebar**, and
+  a sortable table. Only columns the backend can sort by get a clickable header. The
+  sidebar leads with the location tree carrying the backend's own per-location counts and
+  an orphans row, then **Categories** and **Tags** as sections of their own; each heading
+  collapses from a chevron, and Locations stays at the top. Category picks one value and
+  tags accumulate, matching how the backend treats them. With a filter on, each location
+  row reads "4 / 37" — matches over total — so you can see where the matches are rather
+  than a total that never moves. The counts ignore the *location* filter, since the sidebar
+  is how you pick one. The app bar's stat pills are the card's: low in amber, overdue in
+  red, checked out, each click-to-filter.
 - **Multi-select and bulk actions** — move, add/remove tags, set category, adjust
   quantity, check out/in and delete over a selection. Work is chunked so progress is
   determinate and cancellable, and the result is reported *per operation*: "39 of 42

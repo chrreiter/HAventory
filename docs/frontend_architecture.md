@@ -59,10 +59,15 @@ haventory-card                     Lovelace element; dispatcher + store owner
     ├── hv-confirm                 in-app confirmation (replaces window.confirm)
     ├── hv-banner                  the one alert treatment
     └── hv-full-view               fullscreen workspace
-        ├── hv-location-tree       sidebar, manage-capable
+        ├── hv-location-tree       sidebar's Locations section, manage-capable
         ├── hv-data-table          sortable table + selection column
         └── hv-bulk-bar            bulk actions, progress, per-operation results
 ```
+
+The sidebar's Categories and Tags sections are rendered by `hv-full-view` itself rather
+than by a component of their own: they are flat lists of `distinct_values` entries, and the
+rows only have to look like `hv-location-tree`'s — which, being in another shadow root,
+could not have shared the rule either way.
 
 ### Container vs presentation
 
