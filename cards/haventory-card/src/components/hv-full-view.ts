@@ -144,6 +144,10 @@ export class HVFullView extends LitElement {
            a flex item that refuses to shrink pushes everything after it off
            the end of a narrow bar. */
         min-width: 0;
+        /* A flex-basis is a content-box width by default, so the full-width
+           basis it takes on a phone came out 24px wider than the line — its own
+           padding — and the bar overflowed its right edge by that much. */
+        box-sizing: border-box;
         max-width: 420px;
         display: flex;
         align-items: center;

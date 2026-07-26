@@ -92,6 +92,9 @@ describe('hv-full-view: phone-width app bar', () => {
   // their own, so the three counts read as two unrelated groups.
   it('gives the search a row to itself so no count pill rides beside it', () => {
     expect(narrow()).toMatch(/\.appbar \.search \{[^}]*flex: 1 0 100%/);
+    // A basis is a content-box width, so without this the field came out 24px
+    // wider than the line it fills and hung off the right edge of the bar.
+    expect(fullCss()).toMatch(/\.appbar \.search \{[^}]*box-sizing: border-box/);
   });
 
   // The bar came to 178px of a 844px screen: 16px search text and three 44px
