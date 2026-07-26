@@ -175,6 +175,17 @@ describe('hv-checkout-popover: placement', () => {
     expect(style).toContain('left: 120px');
   });
 
+  // It always hung below its anchor, which is fine from a row menu near the top
+  // of a list and runs straight off the bottom of the screen once the editor
+  // opens it from a control far down a long form.
+  it('hangs above the control when there is no room under it', async () => {
+    const anchor = { left: 200, top: window.innerHeight - 60, bottom: window.innerHeight - 20 } as DOMRect;
+    const el = await mount({}, { anchor });
+    const style = (q(el, '[data-testid="checkout-popover"]') as HTMLElement).getAttribute('style') ?? '';
+    expect(style).toContain(`bottom: ${66}px`);
+    expect(style).not.toMatch(/top: \d+px/);
+  });
+
   it('keeps itself on screen near the right edge', async () => {
     const anchor = { left: window.innerWidth - 20, bottom: 100 } as DOMRect;
     const el = await mount({}, { anchor });

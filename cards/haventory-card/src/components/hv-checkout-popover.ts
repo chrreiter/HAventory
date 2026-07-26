@@ -258,8 +258,21 @@ export class HVCheckoutPopover extends LitElement {
     const width = 300;
     const gap = 6;
     const viewportWidth = typeof window === 'undefined' ? width : window.innerWidth;
+    const viewportHeight = typeof window === 'undefined' ? 800 : window.innerHeight;
     const left = Math.max(8, Math.min(this.anchor.left, viewportWidth - width - 8));
-    return `top: ${this.anchor.bottom + gap}px; left: ${left}px;`;
+
+    // Roughly what the card measures with the offsets, the date row and three
+    // actions. It used to always hang below its anchor, which was fine from a
+    // row menu near the top of a list and ran off the bottom of the screen the
+    // moment the editor opened it from a control far down a long form. Hanging
+    // it from the anchor's top edge lets its own height decide the rest.
+    const height = 300;
+    const below = viewportHeight - this.anchor.bottom - gap;
+    const above = this.anchor.top - gap;
+    if (below < height && above > below) {
+      return `bottom: ${Math.round(viewportHeight - this.anchor.top + gap)}px; left: ${left}px;`;
+    }
+    return `top: ${Math.round(this.anchor.bottom + gap)}px; left: ${left}px;`;
   }
 
   render() {
