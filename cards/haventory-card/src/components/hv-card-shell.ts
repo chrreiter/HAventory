@@ -992,6 +992,7 @@ export class HVCardShell extends LitElement {
       .locationTree=${st.locationTreeCache ?? []}
       .total=${st.total}
       .grandTotal=${st.statsCounts?.items_total ?? null}
+      .counts=${st.statsCounts}
       .stagedCount=${this._stagedCount}
       ?mobile=${mobile}
       @change=${(e: CustomEvent) => this._setFilters(e.detail as Partial<StoreFilters>)}

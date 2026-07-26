@@ -176,6 +176,56 @@ describe('hv-filter-panel: show only vs sort', () => {
     expect(seen).toEqual([{ lowStockOnly: true }, { lowStockFirst: true }]);
   });
 
+  // These four were the only facet controls in the card with no number beside
+  // them — and the renderer already had a slot for one, filled with a hardcoded
+  // null, while both app bars printed the very same counts a few pixels away.
+  it('states how many items each Show-only facet would keep', async () => {
+    const el = await mount(
+      {},
+      {
+        counts: {
+          items_total: 556,
+          locations_total: 26,
+          low_stock_count: 102,
+          checked_out_count: 82,
+          overdue_count: 32,
+          no_location_count: 26,
+        },
+      },
+    );
+    const tallyOf = (testid: string) =>
+      q(el, `[data-testid="${testid}"]`).querySelector('.tally')?.textContent?.trim();
+
+    expect(tallyOf('filter-low-stock-only')).toBe('102');
+    expect(tallyOf('filter-checked-out')).toBe('82');
+    expect(tallyOf('filter-overdue')).toBe('32');
+    expect(tallyOf('filter-orphans')).toBe('26');
+  });
+
+  it('prints no tally at all when the counts have not arrived', async () => {
+    const el = await mount();
+    expect(q(el, '[data-testid="filter-low-stock-only"]').querySelector('.tally')).toBe(null);
+  });
+
+  it('carries the same tallies into the phone layout', async () => {
+    const el = await mount(
+      {},
+      {
+        mobile: true,
+        counts: {
+          items_total: 9,
+          locations_total: 2,
+          low_stock_count: 4,
+          checked_out_count: 3,
+          overdue_count: 1,
+          no_location_count: 2,
+        },
+      },
+    );
+    expect(q(el, '[data-testid="filter-overdue"]').textContent).toContain('1');
+    expect(q(el, '[data-testid="filter-orphans"]').textContent).toContain('2');
+  });
+
   it('offers every sort field the backend supports', async () => {
     const el = await mount();
     const options = [...q(el, '[data-testid="filter-sort-field"]').querySelectorAll('option')].map(

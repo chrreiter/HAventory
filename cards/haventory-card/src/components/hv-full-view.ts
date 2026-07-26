@@ -1281,6 +1281,7 @@ export class HVFullView extends LitElement {
                     .locationTree=${st?.locationTreeCache ?? []}
                     .total=${st?.total ?? null}
                     .grandTotal=${counts?.items_total ?? null}
+                    .counts=${counts ?? null}
                     .stagedCount=${this._stagedCount}
                     ?mobile=${this._narrow}
                     @change=${(e: CustomEvent) => this._setFilters(e.detail as Partial<StoreFilters>)}

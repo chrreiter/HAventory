@@ -9,6 +9,7 @@ import type {
   Location,
   LocationTreeNode,
   SortField,
+  StatsCounts,
   StoreFilters,
 } from '../store/types';
 import './hv-location-tree';
@@ -349,6 +350,15 @@ export class HVFilterPanel extends LitElement {
   @property({ type: Boolean, reflect: true }) mobile = false;
   /** Live match count for the staged filter — drives "Show N items". */
   @property({ type: Number }) stagedCount: number | null = null;
+  /**
+   * Whole-inventory stat counts, for the "Show only" tallies.
+   *
+   * Those four rows were the only facet controls in the card with no number
+   * beside them — and the renderer already had a slot for one, filled with a
+   * hardcoded `null`, while both app bars showed the same counts a few pixels
+   * away.
+   */
+  @property({ attribute: false }) counts: StatsCounts | null = null;
 
   @state() private _draft: StoreFilters | null = null;
   @state() private _locationOpen = false;
@@ -627,17 +637,19 @@ export class HVFilterPanel extends LitElement {
 
   private _renderShowOnlyGroup() {
     const f = this.working;
-    const counts = { low: null as number | null, out: null as number | null, none: null as number | null };
+    const c = this.counts;
+    const tally = (n: number | null | undefined) =>
+      n === null || n === undefined ? null : html`<span class="tally">${n}</span>`;
     return html`
       <div class="group">
         <span class="hv-label">Show only</span>
         <div class="chips">
           ${this.mobile
             ? html`
-                ${this._renderCheckbox('Low stock', f.lowStockOnly, () => this._patch({ lowStockOnly: !f.lowStockOnly }), { warning: true, tally: counts.low, testid: 'filter-low-stock-only' })}
-                ${this._renderCheckbox('Checked out', f.checkedOutOnly, () => this._patch({ checkedOutOnly: !f.checkedOutOnly }), { tally: counts.out, testid: 'filter-checked-out' })}
-                ${this._renderCheckbox('Overdue', f.overdueOnly, () => this._patch({ overdueOnly: !f.overdueOnly }), { warning: true, testid: 'filter-overdue' })}
-                ${this._renderCheckbox('No location', f.orphansOnly, () => this._patch({ orphansOnly: !f.orphansOnly }), { tally: counts.none, testid: 'filter-orphans' })}
+                ${this._renderCheckbox('Low stock', f.lowStockOnly, () => this._patch({ lowStockOnly: !f.lowStockOnly }), { warning: true, tally: c?.low_stock_count, testid: 'filter-low-stock-only' })}
+                ${this._renderCheckbox('Checked out', f.checkedOutOnly, () => this._patch({ checkedOutOnly: !f.checkedOutOnly }), { tally: c?.checked_out_count, testid: 'filter-checked-out' })}
+                ${this._renderCheckbox('Overdue', f.overdueOnly, () => this._patch({ overdueOnly: !f.overdueOnly }), { warning: true, tally: c?.overdue_count, testid: 'filter-overdue' })}
+                ${this._renderCheckbox('No location', f.orphansOnly, () => this._patch({ orphansOnly: !f.orphansOnly }), { tally: c?.no_location_count, testid: 'filter-orphans' })}
               `
             : html`
                 <button
@@ -645,28 +657,28 @@ export class HVFilterPanel extends LitElement {
                   data-testid="filter-low-stock-only"
                   @click=${() => this._patch({ lowStockOnly: !f.lowStockOnly })}
                 >
-                  ${f.lowStockOnly ? icon('check', 12) : null}Low stock
+                  ${f.lowStockOnly ? icon('check', 12) : null}Low stock${tally(c?.low_stock_count)}
                 </button>
                 <button
                   class="chip ${f.checkedOutOnly ? 'on' : ''}"
                   data-testid="filter-checked-out"
                   @click=${() => this._patch({ checkedOutOnly: !f.checkedOutOnly })}
                 >
-                  ${f.checkedOutOnly ? icon('check', 12) : null}Checked out
+                  ${f.checkedOutOnly ? icon('check', 12) : null}Checked out${tally(c?.checked_out_count)}
                 </button>
                 <button
                   class="chip ${f.overdueOnly ? 'on warning' : ''}"
                   data-testid="filter-overdue"
                   @click=${() => this._patch({ overdueOnly: !f.overdueOnly })}
                 >
-                  ${f.overdueOnly ? icon('check', 12) : null}Overdue
+                  ${f.overdueOnly ? icon('check', 12) : null}Overdue${tally(c?.overdue_count)}
                 </button>
                 <button
                   class="chip ${f.orphansOnly ? 'on' : ''}"
                   data-testid="filter-orphans"
                   @click=${() => this._patch({ orphansOnly: !f.orphansOnly })}
                 >
-                  ${f.orphansOnly ? icon('check', 12) : null}No location
+                  ${f.orphansOnly ? icon('check', 12) : null}No location${tally(c?.no_location_count)}
                 </button>
               `}
         </div>
