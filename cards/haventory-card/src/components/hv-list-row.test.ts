@@ -182,6 +182,16 @@ describe('hv-list-row: mobile affordances', () => {
     );
   });
 
+  // Both lines clip with an ellipsis, and the phone row drops the middle of the
+  // path on purpose — so the whole value has to be readable somewhere.
+  it('carries the unelided path and the full name in tooltips', async () => {
+    const el = await mount({ name: 'Torque Wrench M4 #23', category: 'Tools', location_path: deepPath }, { mobile: true });
+    expect(q(el, '[data-testid="row-name"]')?.getAttribute('title')).toBe('Torque Wrench M4 #23');
+    expect(q(el, '[data-testid="row-secondary"]')?.getAttribute('title')).toBe(
+      'Workshop › Parts Cabinet › Drawer A › Small Bin · Tools',
+    );
+  });
+
   it('marks low stock with a dot instead of a badge', async () => {
     const el = await mount({ quantity: 1, low_stock_threshold: 5 }, { mobile: true });
     expect(q(el, '[data-testid="row-low-dot"]')).toBeTruthy();

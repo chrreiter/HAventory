@@ -271,9 +271,9 @@ export class HVDataTable extends LitElement {
           >${item.quantity}</span
         >`;
       case 'category':
-        return html`<span class="cell" data-testid="cell-category">${item.category || '—'}</span>`;
+        return html`<span class="cell" data-testid="cell-category" title=${item.category ?? ''}>${item.category || '—'}</span>`;
       case 'location':
-        return html`<span class="cell" data-testid="cell-location">${displayPath(item) || '—'}</span>`;
+        return html`<span class="cell" data-testid="cell-location" title=${displayPath(item) ?? ''}>${displayPath(item) || '—'}</span>`;
       case 'tags':
         return html`<span class="tags" data-testid="cell-tags">
           ${item.tags.length ? item.tags.map((t) => html`<span class="tag">${t}</span>`) : html`<span class="cell">—</span>`}
@@ -365,7 +365,7 @@ export class HVDataTable extends LitElement {
                       </button>`
                     : null}
                   <span class="name-cell">
-                    <span class="name" data-testid="table-name">${item.name}</span>
+                    <span class="name" data-testid="table-name" title=${item.name}>${item.name}</span>
                     ${isLowStock(item) ? html`<span class="low-badge">LOW</span>` : null}
                     ${item.checked_out ? html`<span class="out-chip">Checked out</span>` : null}
                   </span>

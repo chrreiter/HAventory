@@ -989,7 +989,10 @@ export class HVFullView extends LitElement {
                 @click=${() => onPick(v.value)}
               >
                 ${isOn(v.value) ? icon('check', 15) : null}
-                <span class="label">${v.value}</span>
+                <!-- These clip with an ellipsis, and a clipped value the user
+                     typed is otherwise unreadable — there is nowhere else in
+                     the sidebar it appears in full. -->
+                <span class="label" title=${v.value}>${v.value}</span>
                 <span class="tally">${v.count}</span>
               </button>`,
             )

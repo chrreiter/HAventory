@@ -382,6 +382,9 @@ export class HVListRow extends LitElement {
     const full = displayPath(item);
     const path = this.mobile ? elidePath(full) : full;
     const secondary = [path, item.category].filter(Boolean).join(' · ');
+    // The tooltip carries the *unelided* path: on a phone the middle of it is
+    // dropped on purpose, and this is where the whole thing can still be read.
+    const secondaryFull = [full, item.category].filter(Boolean).join(' · ');
 
     return html`
       <div
@@ -413,12 +416,13 @@ export class HVListRow extends LitElement {
             </button>`
           : null}
         <span class="names">
-          <span class="name" data-testid="row-name">${item.name}</span>
+          <span class="name" data-testid="row-name" title=${item.name}>${item.name}</span>
           <span
             class="secondary ${item.checked_out && this.mobile ? 'out' : ''} ${overdue && this.mobile
               ? 'overdue'
               : ''}"
             data-testid="row-secondary"
+            title=${secondaryFull}
           >
             ${this.mobile && low && !item.checked_out
               ? html`<span class="dot" data-testid="row-low-dot"></span>`

@@ -335,6 +335,7 @@ export class HVLocationTree extends LitElement {
             class="name"
             data-testid="tree-select"
             data-id=${node.id}
+            title=${node.path?.display_path ?? node.name}
             ?disabled=${isExcluded}
             style="border:none;background:none;padding:0;font:inherit;color:inherit;text-align:left"
             @click=${() => {

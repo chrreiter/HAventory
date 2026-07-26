@@ -101,6 +101,17 @@ describe('hv-location-tree: counts and decorations', () => {
     expect(q(el, '[data-testid="tree-count"]')).toBe(null);
   });
 
+  it('puts the whole path in reach of a pointer', async () => {
+    // Names clip with an ellipsis in a 264px sidebar, and a picker shows the
+    // leaf name only — so the path is where the tooltip earns its keep.
+    const el = await mount();
+    (q(el, '[data-testid="tree-twisty"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(q(el, '[data-testid="tree-select"][data-id="shelf-a"]')?.getAttribute('title')).toBe(
+      'garage / Shelf A',
+    );
+  });
+
   it('chips the area only where one is explicitly set', async () => {
     const el = await mount({ showAreas: true, areas: [{ id: 'area-kitchen', name: 'Kitchen' }] });
     const chips = [...(el.shadowRoot?.querySelectorAll('[data-testid="tree-area"]') ?? [])];

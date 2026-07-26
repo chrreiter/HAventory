@@ -276,6 +276,13 @@ describe('hv-full-view: sidebar facets', () => {
     ]);
   });
 
+  it('puts a clipped facet name in reach of a pointer', async () => {
+    const { sr } = await mount({ items: faceted });
+    const row = rows(sr, 'categories').find((r) => r.dataset.value === 'Cleaning');
+    // The label clips with an ellipsis and appears nowhere else in the sidebar.
+    expect(row?.querySelector('.label')?.getAttribute('title')).toBe('Cleaning');
+  });
+
   it('filters to one category and clears it on a second press', async () => {
     const { el, store, sr } = await mount({ items: faceted });
 
