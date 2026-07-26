@@ -3,10 +3,12 @@ import type { PropertyValues } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { tokens, base } from '../ui/tokens';
+import { renderEmptyState } from '../ui/empty-state';
+import type { EmptyKind, EmptyOffer } from '../ui/empty-state';
 import type { Item } from '../store/types';
 import './hv-list-row';
 
-export type ListEmptyKind = 'no-items' | 'no-matches' | 'empty-location' | 'connection-lost';
+export type ListEmptyKind = EmptyKind;
 
 /**
  * The standard card's list: skeletons while loading, a named empty state, rows,
@@ -142,47 +144,18 @@ export class HVList extends LitElement {
     this.dispatchEvent(new CustomEvent('near-end', { detail: { ratio }, bubbles: true, composed: true }));
   };
 
-  private _offer(id: string, label: string, primary = false) {
-    return html`<button
-      class=${primary ? 'hv-pill' : 'hv-pill outline'}
-      data-testid="empty-action"
-      data-id=${id}
-      @click=${() =>
-        this.dispatchEvent(new CustomEvent('empty-action', { detail: { id }, bubbles: true, composed: true }))}
-    >
-      ${label}
-    </button>`;
-  }
-
+  /**
+   * The wording and the offered actions come from ui/empty-state, so this list
+   * and the expanded view's table cannot describe the same situation two
+   * different ways. Only the CSS is local — style rules do not cross a shadow
+   * boundary.
+   */
   private _renderEmpty() {
-    switch (this.emptyKind) {
-      case 'connection-lost':
-        return html`<div class="empty" role="status" data-testid="list-empty" data-kind="connection-lost">
-          <span class="headline">Can't reach Home Assistant</span>
-          <span>The list will fill in once the connection is back.</span>
-          <div class="offers">${this._offer('refresh', 'Try again', true)}</div>
-        </div>`;
-      case 'no-matches':
-        return html`<div class="empty" role="status" data-testid="list-empty" data-kind="no-matches">
-          <span class="headline">No items match these filters</span>
-          <div class="offers">${this._offer('clear-filters', 'Clear all', true)}</div>
-        </div>`;
-      case 'empty-location':
-        return html`<div class="empty" role="status" data-testid="list-empty" data-kind="empty-location">
-          <span class="headline">Nothing in ${this.emptyLocationName ?? 'this location'}</span>
-          <div class="offers">
-            ${this._offer('add-item', 'Add item here', true)}${this._offer('clear-filters', 'Show everything')}
-          </div>
-        </div>`;
-      default:
-        return html`<div class="empty" role="status" data-testid="list-empty" data-kind="no-items">
-          <span class="headline">No items yet</span>
-          <span>Add your first item, or restore a backup.</span>
-          <div class="offers">
-            ${this._offer('add-item', 'Add your first item', true)}${this._offer('import', 'Import backup')}
-          </div>
-        </div>`;
-    }
+    return renderEmptyState(this.emptyKind, {
+      locationName: this.emptyLocationName,
+      onAction: (id: EmptyOffer['id']) =>
+        this.dispatchEvent(new CustomEvent('empty-action', { detail: { id }, bubbles: true, composed: true })),
+    });
   }
 
   render() {

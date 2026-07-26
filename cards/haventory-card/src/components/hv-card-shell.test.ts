@@ -373,7 +373,7 @@ describe('hv-card-shell: list and footer', () => {
     const { el, store, sr } = await mountShell({ items: [], locations });
     const list = () => sr.querySelector('hv-list') as HTMLElement;
     const kind = () =>
-      (list().shadowRoot?.querySelector('[data-testid="list-empty"]') as HTMLElement)?.dataset.kind;
+      (list().shadowRoot?.querySelector('[data-testid="empty-state"]') as HTMLElement)?.dataset.kind;
 
     expect(kind()).toBe('no-items');
 

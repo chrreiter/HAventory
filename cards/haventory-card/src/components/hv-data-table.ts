@@ -408,7 +408,7 @@ export class HVDataTable extends LitElement {
               `,
             )
           : html`<div class="empty" role="status" data-testid="table-empty">
-              <slot name="empty">Nothing here.</slot>
+              <slot name="empty">No items yet</slot>
             </div>`}
       </div>
     `;

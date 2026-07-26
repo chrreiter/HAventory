@@ -354,8 +354,12 @@ describe('hv-full-view: sidebar facets', () => {
 
   it('says so when a facet has nothing in it yet', async () => {
     const { sr } = await mount({ items: [makeItem({ id: '1', category: null, tags: [] })] });
-    expect(q(sr, '[data-testid="sidebar-categories-empty"]')?.textContent).toContain('No categories yet');
-    expect(q(sr, '[data-testid="sidebar-tags-empty"]')?.textContent).toContain('No tags yet');
+    // Worded as the organize dialog words it: a category exists through the
+    // items using it, so "in use" is the honest phrasing in both places.
+    expect(q(sr, '[data-testid="sidebar-categories-empty"]')?.textContent).toContain(
+      'No categories in use yet',
+    );
+    expect(q(sr, '[data-testid="sidebar-tags-empty"]')?.textContent).toContain('No tags in use yet');
   });
 });
 
@@ -416,6 +420,51 @@ describe('hv-full-view: context bar and table', () => {
     const { sr } = await mount({ items });
     expect(q(sr, '[data-testid="full-footer"]')?.textContent).toContain('Showing 50 of 60');
     expect(q(sr, '[data-testid="full-footer"]')?.textContent).toContain('scroll to load more');
+  });
+});
+
+// The card's list named the situation, explained it and offered a way out. This
+// table answered with one bare sentence and nothing to press — on the surface
+// with a sidebar, an app-bar search and a filter panel, where you are most
+// likely to filter yourself down to nothing.
+describe('hv-full-view: empty table', () => {
+  it('offers a way out of an over-filtered table', async () => {
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
+    store.setFilters({ q: 'nothing matches this' });
+    await settle(el);
+    await settle(el);
+
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    expect(table.shadowRoot?.querySelector('[data-testid="table-empty"]')).toBeTruthy();
+    const empty = q(sr, '[data-testid="empty-state"]') as HTMLElement;
+    expect(empty.dataset.kind).toBe('no-matches');
+    expect(empty.textContent).toContain('No items match these filters');
+
+    (q(sr, '[data-testid="empty-action"][data-id="clear-filters"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(store.state.value.filters.q).toBe('');
+  });
+
+  it('treats a lone location filter as an empty location, and offers to fill it', async () => {
+    const { el, store, sr } = await mount({ items: [], locations: [loc('garage', 'Garage')] });
+    store.setFilters({ locationId: 'garage' });
+    await settle(el);
+    await settle(el);
+
+    const empty = q(sr, '[data-testid="empty-state"]') as HTMLElement;
+    expect(empty.dataset.kind).toBe('empty-location');
+    expect(empty.textContent).toContain('Nothing in Garage');
+
+    (q(sr, '[data-testid="empty-action"][data-id="add-item"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(q(sr, '[data-testid="full-editor"]')).toBeTruthy();
+  });
+
+  it('names an untouched inventory rather than the filters', async () => {
+    const { sr } = await mount({ items: [] });
+    const empty = q(sr, '[data-testid="empty-state"]') as HTMLElement;
+    expect(empty.dataset.kind).toBe('no-items');
+    expect(empty.textContent).toContain('No items yet');
   });
 });
 

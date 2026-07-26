@@ -7,6 +7,8 @@ import { nextZBase } from '../utils/zindex';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { countLocations } from '../store/location-tree';
+import { renderEmptyState } from '../ui/empty-state';
+import type { EmptyKind, EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
 import type { Item, LocationTreeNode, Sort, StoreFilters, StoreState } from '../store/types';
@@ -444,6 +446,29 @@ export class HVFullView extends LitElement {
         border-color: var(--hv-primary);
         background: var(--hv-primary-tint);
         color: var(--hv-primary-darker);
+      }
+      /* The empty state is slotted into the table, so it stays in this tree and
+         is styled here — the same block the card's list draws, since the words
+         and the offers now come from one place. */
+      .empty {
+        display: grid;
+        justify-items: center;
+        gap: 10px;
+        padding: 12px 16px 24px;
+        text-align: center;
+        color: var(--hv-text-secondary);
+        font-size: 13px;
+      }
+      .empty .headline {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--hv-text);
+      }
+      .empty .offers {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: center;
       }
       .panel-holder {
         padding: 0 20px 12px;
@@ -891,7 +916,7 @@ export class HVFullView extends LitElement {
               </button>`,
             )
           : html`<div class="section-empty" data-testid=${`sidebar-${section}-empty`}>
-              ${section === 'tags' ? 'No tags yet.' : 'No categories yet.'}
+              ${section === 'tags' ? 'No tags in use yet.' : 'No categories in use yet.'}
             </div>`
         : null}
     `;
@@ -1039,6 +1064,36 @@ export class HVFullView extends LitElement {
         ${this._stagedCount === null ? 'Show items' : `Show ${counted(this._stagedCount, 'item')}`}
       </button>
     </div>`;
+  }
+
+  /**
+   * Which empty state applies, by the same rule the card's list uses — a lone
+   * location filter is "nothing filed here", anything else is "nothing matched".
+   */
+  private get _emptyKind(): EmptyKind {
+    const st = this.st;
+    if (st?.degraded.connectionLost) return 'connection-lost';
+    const filters = st?.filters ?? defaultFilters();
+    if (filters.locationId && activeFilterCount(filters) === 1) return 'empty-location';
+    if (activeFilterCount(filters) > 0) return 'no-matches';
+    return 'no-items';
+  }
+
+  private _renderEmpty() {
+    const st = this.st;
+    const filters = st?.filters ?? defaultFilters();
+    return renderEmptyState(this._emptyKind, {
+      locationName: (st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId)?.name ?? null,
+      onAction: (id: EmptyOffer['id']) => {
+        if (id === 'clear-filters') this.store?.clearFilters();
+        else if (id === 'add-item') this._editing = 'new';
+        else if (id === 'refresh') void this.store?.refreshAll();
+        else
+          this.dispatchEvent(
+            new CustomEvent('menu-action', { detail: { id }, bubbles: true, composed: true }),
+          );
+      },
+    });
   }
 
   private _renderContextBar() {
@@ -1347,11 +1402,7 @@ export class HVFullView extends LitElement {
               @select-all-loaded=${() => this.store?.selectAllLoaded()}
               @clear-selection=${() => this.store?.clearSelection()}
             >
-              <span slot="empty"
-                >${activeFilterCount(filters) > 0
-                  ? 'No items match these filters.'
-                  : 'Nothing here yet.'}</span
-              >
+              <div slot="empty">${this._renderEmpty()}</div>
             </hv-data-table>
 
             ${this._selecting
