@@ -9,11 +9,10 @@ import { counted } from '../ui/plural';
 import type { LocationTreeNode } from '../store/types';
 
 /**
- * The real location tree the backend has always served and the POC card never
- * rendered (it drew a flat list with fake indentation). Used by the full-view
- * sidebar, the filter panel's location picker, the item editor's location field
- * and the organize dialog — hence the mode/decoration switches rather than four
- * near-identical trees.
+ * The backend's nested location tree, rendered as it is served. One component
+ * serves four callers — the full-view sidebar, the filter panel's location
+ * picker, the item editor's location field and the organize dialog — hence the
+ * mode/decoration switches rather than four near-identical trees.
  *
  * Counts come from the tree nodes themselves (`direct_item_count` /
  * `subtree_item_count`), so nothing is computed client-side.
@@ -123,9 +122,9 @@ export class HVLocationTree extends LitElement {
         display: flex;
         gap: 2px;
       }
-      /* Reveal-on-hover only where hovering exists; on touch these were simply
-         unreachable. Hidden rather than unrendered, so the rest of the row does
-         not jump sideways the moment the pointer arrives. */
+      /* Reveal-on-hover only where hovering exists, or a touch screen could
+         never reach these at all. Hidden rather than unrendered, so the rest of
+         the row does not jump sideways the moment the pointer arrives. */
       @media (hover: hover) {
         .actions {
           visibility: hidden;
@@ -195,13 +194,13 @@ export class HVLocationTree extends LitElement {
   @property({ type: Boolean }) showCounts = false;
   /** Show the "Area: X" chip on locations that set one explicitly. */
   @property({ type: Boolean }) showAreas = false;
-  /** Reveal rename/delete affordances on hover (organize + sidebar management). */
+  /** Reveal the rename/merge/delete affordances on hover. Only the organize dialog sets this. */
   @property({ type: Boolean }) manage = false;
   /**
-   * Touch layout for `manage`: one always-visible ⋮ per row instead of a row of
-   * icons that only a hover can reveal.
+   * Phone layout for `manage`: one always-visible ⋮ per row instead of a row of
+   * icons only a hover can reveal.
    */
-  @property({ type: Boolean }) touch = false;
+  @property({ type: Boolean }) mobile = false;
   /**
    * Disable this node and everything under it. Parent pickers must exclude the
    * location itself and its descendants — the backend rejects cycles.
@@ -213,8 +212,6 @@ export class HVLocationTree extends LitElement {
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
 
   @state() private _expanded = new Set<string>();
-  /** Nodes whose children the filter forced open; kept apart from user intent. */
-  private _autoExpanded = new Set<string>();
 
   /** Open the ancestors of `id` so a selection deep in the tree is visible. */
   revealPathTo(id: string | null) {
@@ -304,9 +301,9 @@ export class HVLocationTree extends LitElement {
     const areaName = this.showAreas ? this._areaName(node.area_id) : null;
 
     return html`
-      <div class="node">
+      <div>
         <div
-          class="row ${selected ? 'selected' : ''} ${this.manage ? 'manage' : ''} ${this.touch
+          class="row ${selected ? 'selected' : ''} ${this.manage ? 'manage' : ''} ${this.mobile
             ? 'touch'
             : ''}"
           role="treeitem"
@@ -347,7 +344,7 @@ export class HVLocationTree extends LitElement {
           </button>
           ${areaName ? html`<span class="area-chip" data-testid="tree-area">Area: ${areaName}</span>` : null}
           ${this.showCounts ? this._renderCount(node, isExcluded) : null}
-          ${this.manage && this.touch
+          ${this.manage && this.mobile
             ? html`<span class="actions">
                 <button
                   class="action"
@@ -363,7 +360,7 @@ export class HVLocationTree extends LitElement {
                 </button>
               </span>`
             : null}
-          ${this.manage && !this.touch
+          ${this.manage && !this.mobile
             ? html`<span class="actions">
                 <button
                   class="action"

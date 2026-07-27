@@ -52,8 +52,7 @@ const ACTIONS: { id: BulkAction; label: string; glyph?: IconName; immediate?: bo
 ];
 
 /**
- * The bulk action bar, its inline pickers, and the per-operation result state
- * (mock 4a).
+ * The bulk action bar, its inline pickers, and the per-operation result state.
  *
  * The result panel is the point: `haventory/items/bulk` returns a result per
  * operation and does not roll back, so partial failure is the normal case. A
@@ -61,7 +60,7 @@ const ACTIONS: { id: BulkAction; label: string; glyph?: IconName; immediate?: bo
  * and it can retry just the failures.
  *
  * Pickers open inline above the bar rather than as dialogs, so the bulk flow
- * never becomes the nested dialog stack the redesign is getting rid of.
+ * never stacks a second dialog over the one the user is already in.
  */
 @customElement('hv-bulk-bar')
 export class HVBulkBar extends LitElement {
@@ -85,8 +84,7 @@ export class HVBulkBar extends LitElement {
         gap: 8px;
         flex-wrap: wrap;
       }
-      .picker input,
-      .picker select {
+      .picker input {
         box-sizing: border-box;
         background: var(--hv-surface);
         border: 1px solid var(--hv-input-border);
@@ -127,7 +125,7 @@ export class HVBulkBar extends LitElement {
         padding: 7px 14px;
         font: 400 12.5px var(--hv-font);
       }
-      .bar button:hover:not([disabled]) {
+      .bar button:hover {
         background: rgba(255, 255, 255, 0.24);
       }
       .bar button.active {
@@ -139,9 +137,6 @@ export class HVBulkBar extends LitElement {
         border: 1px solid rgba(239, 83, 80, 0.7);
         color: #ef9a9a;
         font-weight: 500;
-      }
-      .bar button[disabled] {
-        opacity: 0.5;
       }
       .progress {
         padding: 12px 16px;

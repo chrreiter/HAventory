@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { prettyPath } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue } from '../ui/relative-time';
 import type { Item } from '../store/types';
@@ -14,7 +15,7 @@ export function isLowStock(item: Item): boolean {
 
 /** "Garage › Shelf A" from the denormalized path the backend already ships. */
 export function displayPath(item: Item): string {
-  return (item.location_path?.display_path ?? '').replace(/\s*\/\s*/g, ' › ');
+  return prettyPath(item.location_path?.display_path ?? '');
 }
 
 /**
@@ -39,7 +40,7 @@ export function elidePath(path: string, maxSegments = 2): string {
 }
 
 /**
- * One row of the standard card list (mocks 1a/1b/1d).
+ * One row of the standard card list.
  *
  * Desktop reveals edit and row-menu actions on hover; touch has no hover, so the
  * whole row is the tap target and opens the detail sheet instead. Checked-out

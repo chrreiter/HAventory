@@ -1,5 +1,7 @@
 import { html } from 'lit';
 import type { TemplateResult } from 'lit';
+import { activeFilterCount, defaultFilters } from '../store/store';
+import type { StoreFilters } from '../store/types';
 
 /**
  * The four ways a list of items can be empty, and what to say about each.
@@ -25,6 +27,28 @@ export type EmptyKind = 'no-items' | 'no-matches' | 'empty-location' | 'connecti
 export interface EmptyOffer {
   id: 'clear-filters' | 'add-item' | 'import' | 'refresh';
   label: string;
+}
+
+/**
+ * Which of the four situations an empty list is in.
+ *
+ * An outage outranks every filter-derived reason: clearing a filter would not
+ * bring the rows back. A lone location filter is "nothing filed here" rather
+ * than "nothing matched", because the location is the thing the user chose and
+ * the offer differs.
+ *
+ * Lives here rather than on the components so the card's list and the expanded
+ * view's table cannot answer the same situation two different ways.
+ */
+export function emptyKindFor(state: {
+  degraded: { connectionLost: boolean };
+  filters: StoreFilters;
+} | null | undefined): EmptyKind {
+  if (state?.degraded.connectionLost) return 'connection-lost';
+  const filters = state?.filters ?? defaultFilters();
+  if (filters.locationId && activeFilterCount(filters) === 1) return 'empty-location';
+  if (activeFilterCount(filters) > 0) return 'no-matches';
+  return 'no-items';
 }
 
 export interface EmptyStateCopy {

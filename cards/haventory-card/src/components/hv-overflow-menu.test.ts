@@ -128,4 +128,44 @@ describe('hv-overflow-menu: narrow screens', () => {
 
     expect(el.shadowRoot?.querySelector('[data-testid="overflow-menu"]')).toBe(null);
   });
+
+  it('takes focus when it opens', async () => {
+    // The Escape handler is a keydown listener on the menu, so it only fires
+    // while focus is already inside it — opening has to move focus there.
+    const el = await mount([{ id: 'refresh', label: 'Refresh data' }]);
+    expect(el.shadowRoot?.activeElement).toBe(el.shadowRoot?.querySelector('[data-testid="overflow-menu"]'));
+  });
+
+  it('closes on Escape', async () => {
+    const el = await mount([{ id: 'refresh', label: 'Refresh data' }]);
+
+    (el.shadowRoot?.querySelector('[data-testid="overflow-menu"]') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    await el.updateComplete;
+
+    expect(el.shadowRoot?.querySelector('[data-testid="overflow-menu"]')).toBe(null);
+  });
+
+  it('hands focus back to whatever opened it', async () => {
+    // A real pointer click focuses the trigger before the menu opens; jsdom's
+    // programmatic click does not, so focus it explicitly to reproduce that.
+    const el = document.createElement('hv-overflow-menu') as HVOverflowMenu;
+    el.entries = [{ id: 'refresh', label: 'Refresh data' }];
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const trigger = el.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement;
+    trigger.focus();
+    trigger.click();
+    await el.updateComplete;
+    expect(el.shadowRoot?.activeElement).toBe(el.shadowRoot?.querySelector('[data-testid="overflow-menu"]'));
+
+    (el.shadowRoot?.querySelector('[data-testid="overflow-menu"]') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    await el.updateComplete;
+
+    expect(el.shadowRoot?.activeElement).toBe(trigger);
+  });
 });

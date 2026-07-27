@@ -8,7 +8,6 @@ import type { EmptyKind, EmptyOffer } from '../ui/empty-state';
 import type { Item } from '../store/types';
 import './hv-list-row';
 
-export type ListEmptyKind = EmptyKind;
 
 /**
  * The standard card's list: skeletons while loading, a named empty state, rows,
@@ -115,7 +114,7 @@ export class HVList extends LitElement {
   @property({ type: Boolean }) selectable = false;
   @property({ attribute: false }) selection: Set<string> = new Set();
   @property({ attribute: false }) pendingIds: Set<string> = new Set();
-  @property({ type: String }) emptyKind: ListEmptyKind = 'no-items';
+  @property({ type: String }) emptyKind: EmptyKind = 'no-items';
   /** Location name for the "Nothing in X" empty state. */
   @property({ type: String }) emptyLocationName: string | null = null;
   @property({ type: Number }) skeletonRows = 5;

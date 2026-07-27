@@ -1,13 +1,14 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { nextZBase } from '../utils/zindex';
 import './hv-banner';
 
 /**
- * In-app confirmation dialog, replacing `window.confirm()` everywhere in the
- * revamped UI. The design is explicit about this: destructive actions get a
+ * In-app confirmation dialog for destructive actions. The design is explicit
+ * about this: destructive actions get a
  * styled dialog that can carry a warning strip ("6 of them are checked out"),
  * which a browser confirm cannot express.
  *
@@ -132,12 +133,7 @@ export class HVConfirm extends LitElement {
           aria-modal="true"
           aria-label=${this.heading}
           data-testid="confirm-dialog"
-          @keydown=${(e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              this._cancel();
-            }
-          }}
+          @keydown=${onEscape(() => this._cancel())}
         >
           <h2>${this.heading}</h2>
           ${this.message ? html`<div class="message" data-testid="confirm-message">${this.message}</div>` : null}

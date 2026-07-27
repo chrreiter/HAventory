@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { addDays, formatDate } from '../ui/relative-time';
 import { nextZBase } from '../utils/zindex';
@@ -8,8 +9,9 @@ import { DialogFocus } from '../ui/dialog-focus';
 import type { Item } from '../store/types';
 
 /**
- * A week, a month, a quarter. The first set offered +1 day, which is shorter
- * than most borrowings are ever going to be, and +30 rather than a real month.
+ * A week, a month, a quarter. +31 rather than +30 so "a month" lands a month
+ * later, and nothing shorter than a week — a single day is less than most
+ * borrowings ever run.
  */
 const OFFSETS: { days: number; label: string }[] = [
   { days: 7, label: '+7 days' },
@@ -17,19 +19,19 @@ const OFFSETS: { days: number; label: string }[] = [
   { days: 90, label: '+90 days' },
 ];
 
-/** Default suggestion, matching the mock. */
+/** Offset the popover pre-selects when it opens. */
 const DEFAULT_OFFSET = 7;
 
 /** What the custom field starts at when it is first opened. */
 const DEFAULT_CUSTOM = 14;
 
 /**
- * Check-out with an optional due date (mock 4g).
+ * Check-out with an optional due date.
  *
- * The WS API takes `due_date` as optional — the POC card always checked out with
- * none — but the date is what makes overdue highlighting mean anything. So this
- * invites one with a sensible default instead of demanding it, and keeps "No due
- * date" as a first-class path rather than a cancel.
+ * The WS API takes `due_date` as optional, but the date is what makes overdue
+ * highlighting mean anything. So this invites one with a sensible default
+ * instead of demanding it, and keeps "No due date" as a first-class path rather
+ * than a cancel.
  *
  * Desktop anchors to the control that opened it; mobile fills the width as an
  * inline step.
@@ -273,10 +275,9 @@ export class HVCheckoutPopover extends LitElement {
     const left = Math.max(8, Math.min(this.anchor.left, viewportWidth - width - 8));
 
     // Roughly what the card measures with the offsets, the date row and three
-    // actions. It used to always hang below its anchor, which was fine from a
-    // row menu near the top of a list and ran off the bottom of the screen the
-    // moment the editor opened it from a control far down a long form. Hanging
-    // it from the anchor's top edge lets its own height decide the rest.
+    // actions. Hang it above the anchor when that much room is not left below:
+    // opened from a control far down a long form, a below-only popover runs off
+    // the bottom of the screen.
     const height = 300;
     const below = viewportHeight - this.anchor.bottom - gap;
     const above = this.anchor.top - gap;
@@ -300,12 +301,7 @@ export class HVCheckoutPopover extends LitElement {
         aria-label=${settingOnly ? 'Set due date' : `Check out ${subject}`}
         data-testid="checkout-popover"
         style=${this.mobile ? '' : `z-index:${z + 1}; ${this._position}`}
-        @keydown=${(e: KeyboardEvent) => {
-          if (e.key === 'Escape') {
-            e.preventDefault();
-            this._cancel();
-          }
-        }}
+        @keydown=${onEscape(() => this._cancel())}
       >
         <div class="head">
           <div class="title" data-testid="checkout-title">

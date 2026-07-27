@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { nextZBase } from '../utils/zindex';
@@ -22,7 +23,7 @@ const POLICIES: { id: ImportPolicy; title: string; description: string }[] = [
 ];
 
 /**
- * Restore from a backup (mock 4d).
+ * Restore from a backup.
  *
  * The server-side dry run is mandatory and stays that way: nothing is written
  * until the preview has been seen. An invalid document comes back as a
@@ -637,12 +638,7 @@ export class HVImportSheet extends LitElement {
           aria-modal="true"
           aria-label="Import backup"
           data-testid="import-sheet"
-          @keydown=${(e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              this._close();
-            }
-          }}
+          @keydown=${onEscape(() => this._close())}
         >
           ${body}
         </div>

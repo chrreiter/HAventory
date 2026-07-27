@@ -429,6 +429,83 @@ describe('Store: rate limiting and degraded state', () => {
     expect(store.state.value.degraded.connectionLost).toBe(false);
     expect(store.state.value.degraded.rateLimited).toBe(false);
   });
+
+  it('counts unknown_error toward an outage even though it is a taxonomy code', async () => {
+    // `unknown_error` is in DOMAIN_ERROR_CODES so it renders as a real message,
+    // but it is deliberately excluded from the "socket is fine" reset: it is the
+    // backend's catch-all and says nothing about the transport.
+    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    hass.__failNext(2, { code: 'unknown_error', message: 'boom' });
+    await store.adjustQuantity('1', 1);
+    await store.adjustQuantity('1', 1);
+
+    expect(store.state.value.degraded.connectionLost).toBe(true);
+  });
+
+  it('counts the queued retries and schedules the next one', async () => {
+    // Nothing renders `nextRetryAt` today, so only this pins the backoff
+    // arithmetic and the retry counter to their observable behaviour. The
+    // counter only rises inside the retry window, so sample it from the
+    // subscription rather than racing the awaits.
+    const hass = makeMockHass({ items: [makeItem({ id: '1', quantity: 5 })] });
+    const store = new Store(hass, { retryBaseMs: 5 });
+    await store.init();
+
+    const retrying: number[] = [];
+    const scheduled: (number | null)[] = [];
+    const off = store.state.onChange(() => {
+      retrying.push(store.state.value.degraded.retrying);
+      scheduled.push(store.state.value.degraded.nextRetryAt);
+    });
+
+    hass.__rateLimitNext(1);
+    await store.adjustQuantity('1', 1);
+    off();
+
+    // One refusal, so exactly one retry was queued and a wait was published...
+    expect(Math.max(...retrying)).toBe(1);
+    expect(scheduled.some((t) => typeof t === 'number')).toBe(true);
+    // ...and both are cleared once the call finally settles.
+    expect(store.state.value.degraded.retrying).toBe(0);
+    expect(store.state.value.degraded.nextRetryAt).toBeNull();
+  });
+});
+
+describe('Store: subscription lifecycle', () => {
+  it('replaces subscriptions rather than stacking them', async () => {
+    // subscribeTopics runs again on a location filter change and on refreshAll.
+    // A leaked handle would apply every live event twice.
+    const hass = makeMockHass({ items: [makeItem({ id: '1', quantity: 5 })] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    store.subscribeTopics();
+    store.subscribeTopics();
+
+    hass.__emit('items', 'updated', { item: makeItem({ id: '1', quantity: 9, version: 2 }) });
+
+    const matching = store.state.value.items.filter((i) => i.id === '1');
+    expect(matching).toHaveLength(1);
+    expect(matching[0].quantity).toBe(9);
+  });
+
+  it('stops applying live events once disposed', async () => {
+    // `dispose()` has no caller in the card today; this pins what it does so the
+    // decision to wire it up (or drop it) is made deliberately.
+    const hass = makeMockHass({ items: [makeItem({ id: '1', quantity: 5 })] });
+    const store = new Store(hass, fast);
+    await store.init();
+    expect(store.state.value.connected).toEqual({ items: true, stats: true });
+
+    store.dispose();
+    expect(store.state.value.connected).toEqual({ items: false, stats: false });
+
+    hass.__emit('items', 'updated', { item: makeItem({ id: '1', quantity: 42, version: 2 }) });
+    expect(store.state.value.items[0].quantity).toBe(5);
+  });
 });
 
 describe('Store: location tree and diagnostics data', () => {

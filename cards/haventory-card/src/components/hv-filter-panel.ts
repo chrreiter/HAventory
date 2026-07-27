@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { locationLabel } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { activeFilterCount, defaultFilters } from '../store/store';
@@ -36,8 +37,8 @@ const DATE_KEYS = {
 } as const;
 
 /**
- * Every filter the backend accepts, in one panel (mock 4b) — and the same set as
- * a staged bottom-sheet body on mobile (4c).
+ * Every filter the backend accepts, in one panel — and the same set as a staged
+ * bottom-sheet body on mobile.
  *
  * Two pairs are deliberately kept apart because the backend treats them
  * differently: "Low stock" is a filter (`low_stock_only`) while "Low stock
@@ -140,7 +141,7 @@ export class HVFilterPanel extends LitElement {
        * 13.5px is the chip beside it — the area select sits in the same row as
        * "Any location", and taking the card's 16px input size made the one
        * full-width control on the page shout at the chips, checkboxes and
-       * headings around it. The desktop panel has always matched (both 12.5px).
+       * headings around it. Desktop matches at 12.5px.
        */
       :host([mobile]) .field {
         min-height: 46px;
@@ -181,12 +182,9 @@ export class HVFilterPanel extends LitElement {
        * is about *and* which way the comparison runs, and clicking it flips the
        * direction.
        *
-       * It used to be styled like the caption it is not — no border, no fill,
-       * a wash on hover and nothing at all otherwise. So the only hint that
-       * "Updated ≥" could be pressed arrived once the pointer was already on
-       * it, and on a touch screen it never arrived. It now carries its own
-       * outline and fill against the field's, which is the smallest thing that
-       * reads as a control at rest.
+       * It carries its own outline and fill against the field's, which is the
+       * smallest treatment that reads as a control at rest — a hover-only
+       * affordance never arrives on a touch screen at all.
        */
       .field .direction {
         white-space: nowrap;
@@ -360,8 +358,6 @@ export class HVFilterPanel extends LitElement {
   @property({ type: Number }) grandTotal: number | null = null;
   /** Stage edits and apply on commit (mobile sheet) instead of applying live. */
   @property({ type: Boolean, reflect: true }) mobile = false;
-  /** Live match count for the staged filter — drives "Show N items". */
-  @property({ type: Number }) stagedCount: number | null = null;
   /**
    * Whole-inventory stat counts, for the "Show only" tallies.
    *
@@ -476,7 +472,7 @@ export class HVFilterPanel extends LitElement {
   private _renderLocationGroup() {
     const f = this.working;
     const loc = (this.locations ?? []).find((l) => l.id === f.locationId);
-    const label = loc ? (loc.path?.display_path ?? loc.name).replace(/\s*\/\s*/g, ' › ') : 'Any location';
+    const label = locationLabel(loc, 'Any location');
     return html`
       <div class="group">
         <span class="hv-label">Where</span>

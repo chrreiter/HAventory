@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { locationLabel } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate } from '../ui/relative-time';
 import type { Location, StoreFilters } from '../store/types';
@@ -29,8 +30,8 @@ export interface FilterChip {
 }
 
 /**
- * Build the chip row from filter state. Exported so the card and the full view
- * describe an active filter identically.
+ * Build the chip row from filter state. Both the card and the full view render
+ * <hv-filter-chips>, so an active filter reads identically on either surface.
  */
 export function chipsFor(
   filters: StoreFilters,
@@ -41,7 +42,7 @@ export function chipsFor(
 
   if (filters.locationId) {
     const loc = (ctx.locations ?? []).find((l) => l.id === filters.locationId);
-    const path = loc?.path?.display_path?.replace(/\s*\/\s*/g, ' › ') ?? loc?.name ?? 'Location';
+    const path = locationLabel(loc, 'Location');
     chips.push({
       key: 'locationId',
       label: filters.includeSubtree ? `${path} + sub` : path,

@@ -6,6 +6,7 @@ import { counted, plural } from '../ui/plural';
 import { ResponsiveController } from '../ui/responsive';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
+import { emptyKindFor } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { Item, StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
@@ -27,20 +28,18 @@ import './hv-overflow-menu';
 import type { ColumnKey } from '../store/columns';
 import type { HVFilterPanel } from './hv-filter-panel';
 import type { HVItemEditor } from './hv-item-editor';
-import type { ListEmptyKind } from './hv-list';
 import type { ImportPolicy, ImportPreview, ImportSummary, ItemCreate, ItemUpdate } from '../store/types';
 
 const SEARCH_DEBOUNCE_MS = 200;
 const FILTER_PANEL_STORAGE_KEY = 'haventory:filter-panel-open:v1';
 
 /**
- * The revamped standard card (mocks 1a / 1b / 1d).
+ * The standard card.
  *
- * Unlike the POC's dumb-components-plus-container split, this is a container:
- * it holds the `Store` and drives it directly. The design nests interactions
- * several levels deep (row → editor → location tree), and threading every one
- * of those through re-dispatched events was the main source of the POC's
- * plumbing. Presentation stays in the leaf components.
+ * A container: it holds the `Store` and drives it directly. Interactions nest
+ * several levels deep (row → editor → location tree), and threading each one
+ * back up through re-dispatched events is more plumbing than it is worth.
+ * Presentation stays in the leaf components.
  */
 @customElement('hv-card-shell')
 export class HVCardShell extends LitElement {
@@ -97,10 +96,10 @@ export class HVCardShell extends LitElement {
         margin-left: auto;
       }
       /* The title is the only thing in this row that can give, so every badge
-         and button that will not shrink comes straight out of its width: at
-         375px it had 40px for a 78px heading, at 360px 25px, and at 320px none
-         at all. The badges are filter toggles rather than decoration, so on a
-         phone they take a row of their own and hand the width back. */
+         and button that will not shrink comes straight out of its width —
+         below ~375px there is none of it left. The badges are filter toggles
+         rather than decoration, so on a phone they take a row of their own and
+         hand the width back. */
       :host([mobile]) .header {
         flex-wrap: wrap;
       }
@@ -124,8 +123,8 @@ export class HVCardShell extends LitElement {
         color: var(--hv-text-secondary);
         white-space: nowrap;
       }
-      /* 21px tall was well under a thumb, and these are filter toggles. On
-         their own row there is height to spare. */
+      /* These are filter toggles, not decoration, and on their own row there is
+         height to spare — so they take a full tap-height target. */
       :host([mobile]) .badge {
         display: inline-flex;
         align-items: center;
@@ -214,9 +213,8 @@ export class HVCardShell extends LitElement {
         font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
         color: var(--hv-text);
       }
-      /* The pill looked tappable at 38px, but the input inside it — the part
-         that actually takes the tap — was 18px tall. Let the field own the
-         height so the two agree. */
+      /* The input inside the pill is what actually takes the tap, so the field
+         owns the height rather than the pill around it. */
       :host([mobile]) .search {
         padding: 0 14px;
       }
@@ -325,7 +323,8 @@ export class HVCardShell extends LitElement {
         color: var(--hv-primary-dark);
         padding: 0;
       }
-      /* 45x15 in the filter sheet's header — a text link, but still a control. */
+      /* A text link in the filter sheet's header is still a control, so it gets
+         a tap-sized target. */
       :host([mobile]) .link {
         min-height: var(--hv-tap-min, auto);
         padding: 0 6px;
@@ -378,7 +377,7 @@ export class HVCardShell extends LitElement {
     null;
 
   private readonly responsive = new ResponsiveController(this);
-  private storeUnsub?: () => void;
+  private _storeUnsub?: () => void;
 
   get mobile(): boolean {
     return this.responsive.mobile;
@@ -391,23 +390,23 @@ export class HVCardShell extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this._filterPanelOpen = readPanelPref();
-    if (this.store && !this.storeUnsub) {
+    if (this.store && !this._storeUnsub) {
       // The parent passes a stable `store` object, so a property binding would
       // never re-render this element — it has to watch the store itself.
-      this.storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
-    this.storeUnsub?.();
-    this.storeUnsub = undefined;
+    this._storeUnsub?.();
+    this._storeUnsub = undefined;
   }
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('store') && this.store) {
-      this.storeUnsub?.();
-      this.storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+      this._storeUnsub?.();
+      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
       this._searchDraft = this.store.state.value.filters.q;
     }
     if (changed.has('forceMobile')) this.responsive.setForced(this.forceMobile);
@@ -420,7 +419,7 @@ export class HVCardShell extends LitElement {
   }
 
   // ---------- Filters ----------
-  private emitSearch = debounce((q: string) => this.store?.setFilters({ q }), SEARCH_DEBOUNCE_MS);
+  private _emitSearch = debounce((q: string) => this.store?.setFilters({ q }), SEARCH_DEBOUNCE_MS);
 
   private _setFilters(patch: Partial<StoreFilters>) {
     this.store?.setFilters(patch);
@@ -599,11 +598,6 @@ export class HVCardShell extends LitElement {
       case 'check-in':
         void this.store?.markCheckedIn(item.id, item.version);
         break;
-      case 'check-out':
-        // A due date is optional over the WS API, but it is what makes overdue
-        // highlighting mean anything — so offer the step rather than skipping it.
-        this._checkout = { itemId: item.id, mode: 'check-out', anchor: null };
-        break;
       case 'request-delete':
         this._requestDelete(item);
         break;
@@ -745,8 +739,7 @@ export class HVCardShell extends LitElement {
    * The card's own ⋮, which is the full-view menu minus "Columns…".
    *
    * Column choices only drive the full view's table — the card list draws a
-   * fixed compact row — so offering them here opened a picker that changed
-   * nothing visible on this surface.
+   * fixed compact row — so the card's own menu omits them.
    */
   private get cardMenuEntries(): OverflowMenuEntry[] {
     return this.menuEntries.filter((entry) => !('id' in entry && entry.id === 'columns'));
@@ -970,14 +963,6 @@ export class HVCardShell extends LitElement {
     `;
   }
 
-  private get emptyKind(): ListEmptyKind {
-    const st = this.st;
-    if (st?.degraded.connectionLost) return 'connection-lost';
-    const filters = st?.filters ?? defaultFilters();
-    if (filters.locationId && activeFilterCount(filters) === 1) return 'empty-location';
-    if (activeFilterCount(filters) > 0) return 'no-matches';
-    return 'no-items';
-  }
 
   private _onEmptyAction = (e: CustomEvent) => {
     const { id } = e.detail as { id: string };
@@ -999,7 +984,6 @@ export class HVCardShell extends LitElement {
       .total=${st.total}
       .grandTotal=${st.statsCounts?.items_total ?? null}
       .counts=${st.statsCounts}
-      .stagedCount=${this._stagedCount}
       ?mobile=${mobile}
       @change=${(e: CustomEvent) => this._setFilters(e.detail as Partial<StoreFilters>)}
       @stage=${(e: CustomEvent) => {
@@ -1070,7 +1054,7 @@ export class HVCardShell extends LitElement {
             .value=${this._searchDraft}
             @input=${(e: Event) => {
               this._searchDraft = (e.target as HTMLInputElement).value;
-              this.emitSearch(this._searchDraft);
+              this._emitSearch(this._searchDraft);
             }}
           />
         </label>
@@ -1112,7 +1096,7 @@ export class HVCardShell extends LitElement {
         .editorTemplate=${this._renderEditor}
         .editingItemId=${this._editing === 'new' ? null : this._editing}
         .addingNew=${!mobile && this._editing === 'new'}
-        .emptyKind=${this.emptyKind}
+        .emptyKind=${emptyKindFor(this.st)}
         .emptyLocationName=${(st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId)?.name ??
         null}
         @near-end=${(e: CustomEvent) =>

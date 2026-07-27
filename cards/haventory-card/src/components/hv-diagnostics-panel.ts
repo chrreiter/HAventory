@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { summarizeIssues } from '../ui/health-codes';
@@ -10,13 +11,12 @@ import { DialogFocus } from '../ui/dialog-focus';
 import type { DegradedState, HealthResult, StatsCounts, VersionInfo } from '../store/types';
 
 /**
- * Diagnostics (mock 4f).
+ * Diagnostics.
  *
- * The POC card buried this in a `<details>` full of `JSON.stringify`. It matters
- * because rate limiting can drop subscription events silently — events carry no
- * sequence number, so a card cannot detect a gap — and the only honest recovery
- * is a manual re-read. This panel says whether that is happening, how much has
- * been dropped, and offers the refresh.
+ * This matters because rate limiting can drop subscription events silently —
+ * events carry no sequence number, so a card cannot detect a gap — and the only
+ * honest recovery is a manual re-read. The panel says whether that is
+ * happening, how much has been dropped, and offers the refresh.
  */
 @customElement('hv-diagnostics-panel')
 export class HVDiagnosticsPanel extends LitElement {
@@ -280,12 +280,7 @@ export class HVDiagnosticsPanel extends LitElement {
           aria-modal="true"
           aria-label="Diagnostics"
           data-testid="diagnostics-panel"
-          @keydown=${(e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              this._close();
-            }
-          }}
+          @keydown=${onEscape(() => this._close())}
         >
           <div class="head">
             <span style="color: var(--hv-${bad ? 'warn' : 'success'})">

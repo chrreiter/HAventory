@@ -1,3 +1,4 @@
+import { html } from 'lit';
 import './hv-list';
 import type { HVList } from './hv-list';
 import { makeItem } from '../test.utils';
@@ -72,5 +73,53 @@ describe('hv-list: editing', () => {
     // ...and a taller one applies while an editor is open
     expect(text).toContain('--hv-list-editing-max-height');
     expect(text).toMatch(/:host\(.*\[editing\].*\)\s*\.scroller/);
+  });
+});
+
+// The three render branches are mutually exclusive and only the row branch was
+// covered. The third is the subtle one: an "add item" expander over an empty
+// list must not also draw the empty state telling the user there is nothing yet.
+describe('hv-list: which branch renders', () => {
+  it('draws skeletons while the first page is still loading', async () => {
+    const el = await mount({ items: [], loading: true });
+    expect(el.shadowRoot?.querySelector('[data-testid="list-skeleton"]')).toBeTruthy();
+    expect(el.shadowRoot?.querySelector('[data-testid="empty-state"]')).toBe(null);
+    expect(el.shadowRoot?.querySelector('[data-testid="list-rows"]')).toBe(null);
+  });
+
+  it('keeps the rows while a refresh is in flight', async () => {
+    // `loading` alone is not enough — the skeletons only replace an empty list.
+    const el = await mount({ loading: true });
+    expect(el.shadowRoot?.querySelector('[data-testid="list-rows"]')).toBeTruthy();
+    expect(el.shadowRoot?.querySelector('[data-testid="list-skeleton"]')).toBe(null);
+  });
+
+  it('names the empty situation once loading has finished', async () => {
+    const el = await mount({ items: [], loading: false, emptyKind: 'no-matches' });
+    const empty = el.shadowRoot?.querySelector('[data-testid="empty-state"]') as HTMLElement;
+    expect(empty).toBeTruthy();
+    expect(empty.dataset.kind).toBe('no-matches');
+  });
+
+  it('suppresses the empty state while the add-item expander is open', async () => {
+    const el = await mount({
+      items: [],
+      loading: false,
+      addingNew: true,
+      editorTemplate: () => html`<div data-testid="stub-editor"></div>`,
+    });
+
+    expect(el.shadowRoot?.querySelector('[data-testid="stub-editor"]')).toBeTruthy();
+    expect(el.shadowRoot?.querySelector('[data-testid="empty-state"]')).toBe(null);
+  });
+
+  it('passes the empty state a location name to say where nothing is filed', async () => {
+    const el = await mount({
+      items: [],
+      loading: false,
+      emptyKind: 'empty-location',
+      emptyLocationName: 'Garage',
+    });
+    expect(el.shadowRoot?.querySelector('[data-testid="empty-state"]')?.textContent).toContain('Garage');
   });
 });

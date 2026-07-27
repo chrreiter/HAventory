@@ -1,7 +1,7 @@
 import { css } from 'lit';
 
 /**
- * Design tokens for the revamped card (WP4.1).
+ * Design tokens for the card.
  *
  * Every token binds to the Home Assistant theme variable first and falls back to
  * the hex used in the design mocks, so user themes keep working. Tokens that have
@@ -17,7 +17,7 @@ import { css } from 'lit';
  * and it makes native controls (select arrows, date pickers) paint correctly too.
  * With no host declaration the property stays `normal` and the light half applies.
  *
- * Usage: `static styles = [tokens, css\`...\`]` in every revamped component. The
+ * Usage: `static styles = [tokens, css\`...\`]` in every `hv-*` component. The
  * fragment only declares custom properties on `:host`, so it is safe to compose.
  */
 export const tokens = css`
@@ -109,7 +109,7 @@ export const tokens = css`
 `;
 
 /**
- * Shared primitives every revamped surface reuses: pill buttons, icon buttons,
+ * Shared primitives every `hv-*` surface reuses: pill buttons, icon buttons,
  * chips, inputs, section labels and the focus ring. Kept separate from `tokens`
  * so a component can take the variables without the opinionated element styles.
  *
@@ -235,23 +235,6 @@ export const base = css`
   .hv-input:focus {
     border-color: var(--hv-primary);
     outline: none;
-  }
-
-  .hv-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    border-radius: var(--hv-radius-chip);
-    border: 1px solid var(--hv-divider);
-    background: transparent;
-    color: var(--hv-chip-text);
-    padding: 4px 11px;
-    font-size: 12.5px;
-  }
-  .hv-chip.selected {
-    color: var(--hv-primary-darker);
-    background: var(--hv-primary-tint);
-    border-color: var(--hv-primary);
   }
 
   .hv-sr-only {

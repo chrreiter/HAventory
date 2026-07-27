@@ -9,17 +9,12 @@ non-blocking).
 
 - **Impact** — High / Medium / Low (user-facing or release/correctness/security risk).
 - **Effort** — S (≲ half a day) · M (~1–3 days) · L (multi-day).
-- Status verified against the working tree at `main` @ WP4 (`390cba6`); items 1, 10, 11 and
-  12 were resolved afterwards by the WP4.1 UI revamp.
+- Status verified against the working tree at `main` @ WP4 (`390cba6`).
 
 > Already resolved along the way (not listed below): type-hardening `ws.py`/`repository.py`
 > + dropping the mypy override (done in #91/WP4); the `*.sh` CRLF guard, now present in
 > `.gitattributes` (added in #74, so the #91 note is closed); and the Phase-1 "advanced
 > filters/sorts deferred" note from #18 (delivered by WP2/WP3 + full-text search #49).
->
-> **Resolved by the WP4.1 UI revamp** (frontend only; struck through in the tables below):
-> #1 rate-limited subscriptions, #10 location tree view, #11 bulk operations, #12 unifying
-> the category/tag browsers.
 
 ---
 
@@ -29,7 +24,7 @@ Ordered by impact.
 
 | # | Item | Source PR(s) | Impact | Effort |
 |---|------|--------------|--------|--------|
-| 1 | ~~**Card doesn't handle `rate_limited` on `subscribe`.**~~ **Done (WP4.1).** A refused subscribe now marks the card degraded and drops `connected`; commands retry with backoff; a banner and the diagnostics panel say the list may be stale, with an explicit Refresh. | #91 (WP4) | Medium | S–M |
+| 1 | **Card doesn't handle `rate_limited` on `subscribe`.** If opt-in rate limiting is enabled and tripped, live updates die **silently** — the card should surface the condition and/or retry. | #91 (WP4) | Medium | S–M |
 | 2 | **Triage the 19 Dependabot security alerts on `main`** (`/security/dependabot`). Pre-existing, flagged as unrelated to #76 but still open. | #76 | Medium (security) | S–M |
 | 3 | **Enable release automation.** `release-please` is config-ready but dormant — uncomment the `push` trigger in `.github/workflows/release-please.yml` and run the release flow. Needed to cut a 1.0. | #74, #76 | Medium (release-blocking) | S |
 | 4 | **HACS publication** (Phase 3 "Polish & HACS"). Distribution path for a 1.0. | README Phase 3 | Medium (distribution) | M |
@@ -47,15 +42,15 @@ Ordered by impact.
 | # | Item | Source PR(s) | Impact | Effort |
 |---|------|--------------|--------|--------|
 | 9 | **Reminders / calendar rework onto HA-native primitives** — implement the roadmap's `CalendarEntity` (`calendar.haventory`) + HA automations instead of a bespoke scheduler. Explicitly decided as post-1.0. | #73 (CLAUDE.md pillar #9); #18 ("sensors/calendar evolve post-MVP") | Medium (feature) | M |
-| 10 | ~~**Location tree view**~~ **Done (WP4.1).** `hv-location-tree` renders the real nested tree with the backend's own direct/subtree counts, used by the full-view sidebar, the filter panel, the item editor and the organize dialog. | #32, `docs/frontend_architecture.md` | Medium | M |
-| 11 | ~~**Bulk operations**~~ **Done (WP4.1).** Selection mode in the full view plus a bulk bar over `haventory/items/bulk`, chunked for determinate progress, with per-operation results and retry-failed. | `docs/frontend_architecture.md` (Future Enhancements) | Medium | M |
-| 12 | ~~**Unify `hv-category-browser` + `hv-tag-browser`**~~ **Done (WP4.1).** Both are superseded by the tabbed `hv-organize-dialog`, which also gains rename, merge and guarded removal. The old browsers have since been deleted. Issue #87 can be closed. | #84, issue #87 | Low | M |
+| 10 | **Location tree view** — recursive expand/collapse rendering (list is currently flat; "deferred to Phase 2.5"). | #32, `docs/frontend_architecture.md` | Medium | M |
+| 11 | **Bulk operations** — multi-select with bulk edit/delete. | `docs/frontend_architecture.md` (Future Enhancements) | Medium | M |
+| 12 | **Unify `hv-category-browser` + `hv-tag-browser`** into one kind-parameterized value-browser. Already tracked as **open issue #87**; frontend-only, no behavior change. | #84, issue #87 | Low | M |
 | 13 | **Perf (stretch):** 10k-item `low_stock_first` full-scan path is p50 32 ms vs a 30 ms budget (p95 fine). A cached low-stock-first ordering would close it. | #91 | Low | M |
 | 14 | **Perf:** back-to-back subtree moves within one second pay a +1 s monotonic-bump slow path per item (pathological; one-off moves are fine). A batch-aware bump would fix it. | #91 | Low | M |
 | 15 | **Rate limiting:** a per-connection command token is consumed even when the global bucket then rejects (deliberate check order; could refund). | #91 | Low | S |
 | 16 | **TypeScript 7 adoption** once typescript-eslint supports it (currently capped `<6.1.0`). | #74 | Low | S |
 | 17 | **`tests/conftest.py`** uses `WindowsSelectorEventLoopPolicy` / `set_event_loop_policy`, both deprecated for removal in Python 3.16. Replace when convenient. | #74, #91 | Low | S |
-| 18 | **Other frontend enhancements** (roadmap): drag & drop move/reorder (the handoff's optional "drag items onto a location" is not built), item image upload (HA media), offline/service-worker support, virtual-scroll perf (`@lit-labs/virtualizer` is a declared dependency that nothing imports). *Partly delivered by WP4.1: date filters — updated-since / created-since — and the mobile layout, detail sheet and staged filter sheet are in.* | `docs/frontend_architecture.md` | Low | L (each) |
+| 18 | **Other frontend enhancements** (roadmap): advanced date-range filters, drag & drop move/reorder, item image upload (HA media), mobile touch/swipe optimization, offline/service-worker support, virtual-scroll/lazy-load perf. | `docs/frontend_architecture.md` (Future Enhancements Phase 2.5+) | Low | L (each) |
 | 19 | **O(N²) persistence: every single mutation serializes the *whole* dataset and rewrites the store blob** (immediate persist, serialized by the write lock). Measured per-create p50 climbs 70 ms @250 → 114 ms @500 → 200 ms @1000 items; at a few thousand items a single create trends toward ~1 s. Correctness is unaffected. A debounced/delta persistence path for bulk work would flatten the curve. | WP4 stress test | Medium (scaling) | M |
 | 20 | **No upper bound on `description` length (1 MB accepted) or `custom_fields` key count (~1000 accepted).** A persistence-bloat vector, amplified by #19. Add sane input caps. | WP4 stress test | Low | S |
 | 21 | **Undecodable pagination `cursor` returns a full unfiltered page** (`"garbage"`, `""`, base64-junk) instead of `validation_error`. Reject malformed cursors explicitly. | WP4 stress test | Low | S |

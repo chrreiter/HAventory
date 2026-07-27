@@ -119,6 +119,28 @@ Offline tests stub HA via `tests/conftest.py`.
   work only.
 - **Logging**: avoid reserved `LogRecord` keys in `extra=` — use `item_name` / `location_name`,
   not `name`.
+- **Comments explain constraints, not history.** A comment earns its place by encoding
+  something the code cannot say itself: a browser or platform quirk, an API contract, a
+  required ordering, an accessibility requirement, a deliberate tradeoff whose alternative
+  looks better than it is. Write it in the present tense, about the code as it stands.
+  - Do **not** narrate development history — no references to what a component replaced,
+    what an earlier iteration did, which work package introduced it, or what "used to" be
+    here. That context dies with the branch and leaves a dangling reference. Git history is
+    where it belongs.
+  - Do **not** point at anything a reader of this repository cannot open: design-mock
+    numbers, an external design canvas, or a numbered entry in a tracker or ledger. State
+    the constraint the reference was standing in for.
+  - Do **not** restate the line below. If a comment paraphrases the code, delete the
+    comment or fix the naming.
+  - A comment that is wrong is worse than none. When a comment names a symbol, a type, a
+    caller or a stored shape, that name must still be correct.
+  - `TODO`/`FIXME` markers do not belong in committed code — the repo has zero and keeps it
+    that way. Record follow-ups in `docs/open-items.md` instead.
+  - Component-level JSDoc says what the component is responsible for and what it talks to.
+    Non-obvious CSS gets a why-comment; obvious CSS gets none.
+  - Applies to TypeScript and Python alike. Enforced by review, not by a lint rule — the
+    distinction is a judgment call and a mechanical check would be wrong often enough to be
+    ignored.
 - Naming: domain/package `haventory`, services `haventory.*`, built assets `www/haventory/`,
   calendar entity `calendar.haventory`.
 - Report out-of-scope findings under a "Follow-ups" note rather than fixing them.

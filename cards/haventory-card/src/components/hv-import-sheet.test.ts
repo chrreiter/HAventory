@@ -263,3 +263,32 @@ describe('hv-import-sheet: failures that are not the document', () => {
     expect(q(el, '[data-testid="import-text"]')).toBeTruthy();
   });
 });
+
+describe('hv-import-sheet: keyboard and focus', () => {
+  it('announces itself as a modal dialog', async () => {
+    const el = await mount();
+    const sheet = q(el, '[data-testid="import-sheet"]') as HTMLElement;
+    expect(sheet.getAttribute('role')).toBe('dialog');
+    expect(sheet.getAttribute('aria-modal')).toBe('true');
+    expect(sheet.getAttribute('aria-label')).toBe('Import backup');
+  });
+
+  it('takes focus on open so Escape reaches its handler', async () => {
+    const el = await mount();
+    expect(el.shadowRoot?.activeElement).toBe(q(el, '[data-testid="import-sheet"]'));
+  });
+
+  it('closes on Escape', async () => {
+    const el = await mount();
+    let cancels = 0;
+    el.addEventListener('cancel', () => { cancels += 1; });
+
+    (q(el, '[data-testid="import-sheet"]') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    await el.updateComplete;
+
+    expect(cancels).toBe(1);
+    expect(el.open).toBe(false);
+  });
+});

@@ -12,7 +12,7 @@ import './hv-item-editor';
 import type { HVItemEditor } from './hv-item-editor';
 
 /**
- * The mobile item surface (mocks 1e / 4i): tap a row, get one sheet.
+ * The mobile item surface: tap a row, get one sheet.
  *
  * It lands on a read view — chips summarise state, the quantity hero is the
  * primary action — and swaps in place to the edit form. Nothing here opens a

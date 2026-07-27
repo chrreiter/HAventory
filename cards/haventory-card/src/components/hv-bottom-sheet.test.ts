@@ -178,4 +178,35 @@ describe('hv-bottom-sheet: drag to dismiss', () => {
     const el = await mount({ noHandle: true });
     expect(el.shadowRoot?.querySelector('[data-testid="sheet-grip"]')).toBe(null);
   });
+
+  // Pinning current behaviour, not endorsing it: unlike the six surfaces that use
+  // `ui/dialog-focus`, this sheet never moves focus into itself. Its Escape
+  // handler therefore only fires once focus is already inside — which it is in
+  // practice, because the sheet's own content takes it. Changing this is a
+  // behaviour change and belongs in its own commit.
+  it('leaves focus where it was when it opens', async () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+
+    const el = await mount();
+
+    expect(document.activeElement).toBe(opener);
+    expect(el.shadowRoot?.activeElement).toBe(null);
+    opener.remove();
+  });
+
+  it('closes on Escape raised from inside the sheet', async () => {
+    const el = await mount();
+    let cancels = 0;
+    el.addEventListener('cancel', () => { cancels += 1; });
+
+    (el.shadowRoot?.querySelector('[data-testid="bottom-sheet"]') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    await el.updateComplete;
+
+    expect(cancels).toBe(1);
+    expect(el.open).toBe(false);
+  });
 });

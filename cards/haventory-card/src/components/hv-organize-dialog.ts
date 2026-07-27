@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { closestMatch } from '../ui/fuzzy';
@@ -36,10 +37,9 @@ interface RewriteState {
 }
 
 /**
- * "Organize inventory" (mocks 2b / 2c, and 3a / 3b on mobile).
+ * "Organize inventory".
  *
- * One dialog with three tabs replaces the POC's separate category browser, tag
- * browser and location-selector management duties (open-items #12).
+ * One dialog, three tabs: locations, categories and tags.
  *
  * Locations edit in place with a guarded delete — a location that still holds
  * items or children gets an inline explanation, never a browser confirm.
@@ -86,7 +86,7 @@ export class HVOrganizeDialog extends LitElement {
         box-shadow: var(--hv-shadow-dialog);
         overflow: hidden;
       }
-      /* Mobile is a full-bleed page, not a floating modal (mock 3a). */
+      /* Mobile is a full-bleed page, not a floating modal. */
       :host([mobile]) .panel {
         width: 100%;
         height: 100%;
@@ -164,10 +164,9 @@ export class HVOrganizeDialog extends LitElement {
         font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
         color: var(--hv-text);
       }
-      /* How many of this tab's thing there is. Every tab prints one, so it is a
-         class rather than the inline style the value tabs used to carry — and
-         nowrap, because on a phone the row has no width to spare and "13
-         locations" broke over two lines. */
+      /* How many of this tab's thing there is — every tab prints one, hence a
+         shared class. nowrap because on a phone the row has no width to spare
+         and "13 locations" would break over two lines. */
       .toolbar-count {
         flex: none;
         white-space: nowrap;
@@ -410,7 +409,7 @@ export class HVOrganizeDialog extends LitElement {
   @state() private _mergeTargetOpen = false;
   /** Location whose actions are open in the touch sheet. */
   @state() private _sheetLocation: string | null = null;
-  /** Value row expanded for rename or merge, keyed `${kind}:${value}`. */
+  /** The value row expanded for rename or merge, if any; the kind comes from the active tab. */
   @state() private _editingValue: { value: string; mode: 'rename' | 'merge' } | null = null;
   @state() private _valueDraft = '';
   @state() private _rewrite: RewriteState | null = null;
@@ -421,7 +420,7 @@ export class HVOrganizeDialog extends LitElement {
   @state() private _newValue = '';
   @state() private _newValueError: string | null = null;
 
-  private storeUnsub?: () => void;
+  private _storeUnsub?: () => void;
 
   private get st(): StoreState | null {
     return this.store?.state.value ?? null;
@@ -429,15 +428,15 @@ export class HVOrganizeDialog extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
-    if (this.store && !this.storeUnsub) {
-      this.storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+    if (this.store && !this._storeUnsub) {
+      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
-    this.storeUnsub?.();
-    this.storeUnsub = undefined;
+    this._storeUnsub?.();
+    this._storeUnsub = undefined;
   }
 
 
@@ -452,8 +451,8 @@ export class HVOrganizeDialog extends LitElement {
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('store') && this.store) {
-      this.storeUnsub?.();
-      this.storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+      this._storeUnsub?.();
+      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
     if (changed.has('open') && this.open) {
       this._zBase = nextZBase();
@@ -704,9 +703,8 @@ export class HVOrganizeDialog extends LitElement {
 
     this._rewrite = { label, done: 0, total: ops.length, failed: [], finished: false };
     const outcome = await this.store?.bulkExecute(ops, {
-      onProgress: (done, total, failed) => {
+      onProgress: (done, total) => {
         this._rewrite = { label, done, total, failed: this._rewrite?.failed ?? [], finished: false };
-        void failed;
       },
     });
     this._rewrite = {
@@ -987,7 +985,7 @@ export class HVOrganizeDialog extends LitElement {
           manage
           showCounts
           showAreas
-          ?touch=${this.mobile}
+          ?mobile=${this.mobile}
           .nodes=${tree}
           .areas=${this.st?.areasCache?.areas ?? []}
           .filterText=${this._filter}
@@ -1305,7 +1303,7 @@ export class HVOrganizeDialog extends LitElement {
     `;
   }
 
-  /** Touch has no hover, so the row's actions live in a sheet (mock 3b). */
+  /** Touch has no hover, so the row's actions live in a sheet. */
   private _renderValueSheet(value: string, count: number) {
     const others = (this.tab === 'tags'
       ? (this.st?.distinctValuesCache?.tags ?? [])
@@ -1364,12 +1362,7 @@ export class HVOrganizeDialog extends LitElement {
           aria-modal="true"
           aria-label="Organize inventory"
           data-testid="organize-dialog"
-          @keydown=${(e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              this._close();
-            }
-          }}
+          @keydown=${onEscape(() => this._close())}
         >
           <div class="head">
             ${this.mobile

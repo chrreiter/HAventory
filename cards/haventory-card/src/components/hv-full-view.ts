@@ -1,14 +1,15 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted, plural } from '../ui/plural';
 import { nextZBase } from '../utils/zindex';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { countLocations } from '../store/location-tree';
-import { renderEmptyState } from '../ui/empty-state';
-import type { EmptyKind, EmptyOffer } from '../ui/empty-state';
+import { emptyKindFor, renderEmptyState } from '../ui/empty-state';
+import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
 import type { Item, LocationTreeNode, Sort, StoreFilters, StoreState } from '../store/types';
@@ -48,12 +49,11 @@ const NARROW_QUERY = '(max-width: 700px)';
 type SidebarSection = 'locations' | 'categories' | 'tags';
 
 /**
- * The expanded workspace (mock 1c).
+ * The expanded workspace.
  *
  * The coloured app bar is the mode signal — the standard card never has one, so
  * there is no doubt which surface you are looking at. The sidebar renders the
- * real location tree with the backend's own counts, replacing the flat location
- * dropdown the POC card offered.
+ * real location tree with the backend's own counts.
  */
 @customElement('hv-full-view')
 export class HVFullView extends LitElement {
@@ -541,13 +541,11 @@ export class HVFullView extends LitElement {
        * inside it — except the foot stays pinned, because the panel's whole
        * point is the count on that button.
        *
-       * The ceiling used to sit behind the phone-width breakpoint, which only
-       * ever asked how wide the screen was. Turn the phone sideways, 760x400,
-       * and the panel opened 1007px tall with no ceiling and no scroll box:
-       * 751px of it below the fold again, and no gesture that could reach it.
-       * A 1280x900 desktop was losing the surface's own footer the same way.
-       * The second term measures the column instead, so the context bar above
-       * the panel and the footer below it keep their room at any height.
+       * The second term of the min() measures the column rather than the
+       * viewport, so the context bar above the panel and the footer below it
+       * keep their room at any screen height. A width-only breakpoint would
+       * leave both a 760x400 landscape phone and a 1280x900 desktop with no
+       * effective ceiling at all.
        */
       .panel-holder {
         padding: 0 20px 12px;
@@ -690,7 +688,7 @@ export class HVFullView extends LitElement {
   /** The ops of the last run, so "Retry failed" can replay just the failures. */
   private _lastOps: { label: string; ops: BulkOperation[] } | null = null;
 
-  private storeUnsub?: () => void;
+  private _storeUnsub?: () => void;
   private _prevFocus: HTMLElement | null = null;
 
   private get st(): StoreState | null {
@@ -699,8 +697,8 @@ export class HVFullView extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
-    if (this.store && !this.storeUnsub) {
-      this.storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+    if (this.store && !this._storeUnsub) {
+      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
     this._narrowQuery ??= window.matchMedia?.(NARROW_QUERY) ?? null;
     if (this._narrowQuery) {
@@ -711,8 +709,8 @@ export class HVFullView extends LitElement {
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
-    this.storeUnsub?.();
-    this.storeUnsub = undefined;
+    this._storeUnsub?.();
+    this._storeUnsub = undefined;
     this._narrowQuery?.removeEventListener('change', this._onNarrowChange);
   }
 
@@ -730,8 +728,8 @@ export class HVFullView extends LitElement {
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('store') && this.store) {
-      this.storeUnsub?.();
-      this.storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+      this._storeUnsub?.();
+      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
     if (changed.has('open')) {
       if (this.open) {
@@ -791,7 +789,7 @@ export class HVFullView extends LitElement {
     list[list.length - 1]?.focus();
   }
 
-  private emitSearch = debounce((q: string) => this.store?.setFilters({ q }), SEARCH_DEBOUNCE_MS);
+  private _emitSearch = debounce((q: string) => this.store?.setFilters({ q }), SEARCH_DEBOUNCE_MS);
 
   private _setFilters(patch: Partial<StoreFilters>) {
     this.store?.setFilters(patch);
@@ -984,18 +982,6 @@ export class HVFullView extends LitElement {
   }
 
   /**
-   * Categories and tags as sidebar rows.
-   *
-   * The sidebar used to hold locations and nothing else, so an inventory with a
-   * handful of them — or one with every root collapsed — left most of a 264px
-   * column empty while the two other facets people actually browse by were
-   * buried in the filter panel.
-   *
-   * Category is single-select and tags are multi-select, because that is what
-   * the backend does with them: `category` is one value, `tags` is a set routed
-   * through tags_any/tags_all. Pressing the active one clears it.
-   */
-  /**
    * Which way multiple selected tags combine, in the sidebar that selects them.
    *
    * The sidebar accumulated tags but said nothing about the mode governing them,
@@ -1021,6 +1007,13 @@ export class HVFullView extends LitElement {
     </span>`;
   }
 
+  /**
+   * Categories and tags as sidebar rows.
+   *
+   * Category is single-select and tags are multi-select, because that is what
+   * the backend does with them: `category` is one value, `tags` is a set routed
+   * through tags_any/tags_all. Pressing the active one clears it.
+   */
   private _renderFacetSection(
     section: 'categories' | 'tags',
     label: string,
@@ -1231,23 +1224,10 @@ export class HVFullView extends LitElement {
     </div>`;
   }
 
-  /**
-   * Which empty state applies, by the same rule the card's list uses — a lone
-   * location filter is "nothing filed here", anything else is "nothing matched".
-   */
-  private get _emptyKind(): EmptyKind {
-    const st = this.st;
-    if (st?.degraded.connectionLost) return 'connection-lost';
-    const filters = st?.filters ?? defaultFilters();
-    if (filters.locationId && activeFilterCount(filters) === 1) return 'empty-location';
-    if (activeFilterCount(filters) > 0) return 'no-matches';
-    return 'no-items';
-  }
-
   private _renderEmpty() {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
-    return renderEmptyState(this._emptyKind, {
+    return renderEmptyState(emptyKindFor(this.st), {
       locationName: (st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId)?.name ?? null,
       onAction: (id: EmptyOffer['id']) => {
         if (id === 'clear-filters') this.store?.clearFilters();
@@ -1335,12 +1315,7 @@ export class HVFullView extends LitElement {
         aria-label=${this.heading}
         data-testid="full-view"
         style="z-index: ${z + 1};"
-        @keydown=${(e: KeyboardEvent) => {
-          if (e.key === 'Escape') {
-            e.preventDefault();
-            this._close();
-          }
-        }}
+        @keydown=${onEscape(() => this._close())}
       >
         <span class="sentinel" tabindex="0" @focus=${() => this._focusLast()}></span>
         ${this._selecting ? this._renderSelectionBar() : this._renderAppBar()}
@@ -1413,7 +1388,7 @@ export class HVFullView extends LitElement {
               .value=${this._searchDraft}
               @input=${(e: Event) => {
                 this._searchDraft = (e.target as HTMLInputElement).value;
-                this.emitSearch(this._searchDraft);
+                this._emitSearch(this._searchDraft);
               }}
             />
           </label>
@@ -1503,7 +1478,6 @@ export class HVFullView extends LitElement {
                     .total=${st?.total ?? null}
                     .grandTotal=${counts?.items_total ?? null}
                     .counts=${counts ?? null}
-                    .stagedCount=${this._stagedCount}
                     ?mobile=${this._narrow}
                     @change=${(e: CustomEvent) => this._setFilters(e.detail as Partial<StoreFilters>)}
                     @stage=${(e: CustomEvent) =>
