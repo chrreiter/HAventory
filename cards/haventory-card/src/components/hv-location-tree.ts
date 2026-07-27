@@ -9,11 +9,10 @@ import { counted } from '../ui/plural';
 import type { LocationTreeNode } from '../store/types';
 
 /**
- * The real location tree the backend has always served and the POC card never
- * rendered (it drew a flat list with fake indentation). Used by the full-view
- * sidebar, the filter panel's location picker, the item editor's location field
- * and the organize dialog — hence the mode/decoration switches rather than four
- * near-identical trees.
+ * The backend's nested location tree, rendered as it is served. One component
+ * serves four callers — the full-view sidebar, the filter panel's location
+ * picker, the item editor's location field and the organize dialog — hence the
+ * mode/decoration switches rather than four near-identical trees.
  *
  * Counts come from the tree nodes themselves (`direct_item_count` /
  * `subtree_item_count`), so nothing is computed client-side.
@@ -195,7 +194,7 @@ export class HVLocationTree extends LitElement {
   @property({ type: Boolean }) showCounts = false;
   /** Show the "Area: X" chip on locations that set one explicitly. */
   @property({ type: Boolean }) showAreas = false;
-  /** Reveal rename/delete affordances on hover (organize + sidebar management). */
+  /** Reveal the rename/merge/delete affordances on hover. Only the organize dialog sets this. */
   @property({ type: Boolean }) manage = false;
   /**
    * Touch layout for `manage`: one always-visible ⋮ per row instead of a row of

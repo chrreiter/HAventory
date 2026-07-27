@@ -23,7 +23,7 @@ const POLICIES: { id: ImportPolicy; title: string; description: string }[] = [
 ];
 
 /**
- * Restore from a backup (mock 4d).
+ * Restore from a backup.
  *
  * The server-side dry run is mandatory and stays that way: nothing is written
  * until the preview has been seen. An invalid document comes back as a

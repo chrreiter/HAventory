@@ -7,8 +7,8 @@ import { nextZBase } from '../utils/zindex';
 import './hv-banner';
 
 /**
- * In-app confirmation dialog, replacing `window.confirm()` everywhere in the
- * revamped UI. The design is explicit about this: destructive actions get a
+ * In-app confirmation dialog for destructive actions. The design is explicit
+ * about this: destructive actions get a
  * styled dialog that can carry a warning strip ("6 of them are checked out"),
  * which a browser confirm cannot express.
  *

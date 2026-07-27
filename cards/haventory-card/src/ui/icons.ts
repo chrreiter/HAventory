@@ -13,9 +13,7 @@ import type { TemplateResult } from 'lit';
  * is assertable in tests, at a cost of well under 3 kB.
  *
  * Path data is Material Design Icons (Pictogrammers), Apache License 2.0 —
- * the same licence as this repository. Every path below was taken verbatim
- * from the design canvas so the artwork matches the mocks exactly, except
- * `chevronLeft` / `chevronUp` / `filterVariant`, which the mocks did not use.
+ * the same licence as this repository.
  */
 export const ICONS = {
   plus: 'M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z',

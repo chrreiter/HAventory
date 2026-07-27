@@ -13,7 +13,7 @@ export const MOBILE_BREAKPOINT = 600;
  * wide viewport — so the handoff asks for element-based detection. `ResizeObserver`
  * is used rather than `@container` because jsdom implements neither container
  * queries nor layout, and this way tests can drive the mode deterministically via
- * `setWidth()` or pin it with `force`.
+ * `setWidth()`, or pin it with `setForced()`.
  */
 export class ResponsiveController implements ReactiveController {
   private readonly host: ReactiveControllerHost & Element;
@@ -36,8 +36,8 @@ export class ResponsiveController implements ReactiveController {
 
   /**
    * Pin the mode regardless of measured width; `null` restores measurement.
-   * The card exposes this as a `mobile` property so tests (and a future Lovelace
-   * config option) can force either layout.
+   * `hv-card-shell` feeds this from its own `forceMobile` property, so a test
+   * can pin either layout.
    */
   setForced(value: boolean | null): void {
     if (this.forced === value) return;

@@ -147,7 +147,7 @@ export function activeFilterCount(filters: StoreFilters): number {
   return n;
 }
 
-/** A very small reactive wrapper using a Proxy; components can subscribe to `onChange`. */
+/** Minimal reactive container: `set` merges a patch and notifies every `onChange` subscriber. */
 export interface Observable<T> {
   readonly value: T;
   onChange(cb: () => void): () => void;
@@ -240,17 +240,14 @@ export class Store {
 
   subscribeTopics() {
     const onError = (err: unknown) => this.onSubscribeError(err);
-    // Items
     if (this.itemsUnsub) this.itemsUnsub();
     this.itemsUnsub = this.ws.subscribe('items', (evt: AnyEventPayload) => this.onItemsEvent(evt), {
       location_id: this.state.value.filters.locationId ?? undefined,
       include_subtree: true, // Always include sublocations
       onError,
     });
-    // Stats
     if (this.statsUnsub) this.statsUnsub();
     this.statsUnsub = this.ws.subscribe('stats', (evt: AnyEventPayload) => this.onStatsEvent(evt), { onError });
-    // Locations
     if (this.locationsUnsub) this.locationsUnsub();
     this.locationsUnsub = this.ws.subscribe(
       'locations',
@@ -264,7 +261,7 @@ export class Store {
   /**
    * A rejected subscribe means live updates are gone. Rate limiting is the
    * expected cause; either way the card must stop implying it is live and offer
-   * a manual refresh (docs/open-items.md #1).
+   * a manual refresh.
    */
   private onSubscribeError(err: unknown) {
     const code = errorCode(err);
@@ -276,7 +273,7 @@ export class Store {
     this.pushError(err);
   }
 
-  /** Tear down subscriptions; the card calls this when it disconnects. */
+  /** Tear down the three subscriptions and any pending tree refresh. */
   dispose() {
     this.itemsUnsub?.();
     this.statsUnsub?.();
@@ -503,7 +500,6 @@ export class Store {
     const limit = PAGE_LIMIT;
     const cursor = reset ? undefined : st.cursor || undefined;
 
-    // de-dup by a composite key
     const key = JSON.stringify({ op: 'list', filter, sort, limit, cursor });
     if (this.inflight.has(key)) return this.inflight.get(key) as Promise<void>;
 
@@ -571,7 +567,6 @@ export class Store {
   async prefetchIfNeeded(scrollRatio: number) {
     if (scrollRatio < 0.7) return;
     if (!this.state.value.cursor) return;
-    // Trigger next page load
     await this.listItems(false);
   }
 
@@ -591,7 +586,6 @@ export class Store {
     // The items subscription is scoped by location, so only a location change
     // needs the sockets torn down and rebuilt.
     if (locationChanged) this.subscribeTopics();
-    // Reload with new filters
     void this.listItems(true);
     // Per-location counts are measured against the filter, so they move with it.
     // Coalesced: a filter panel can patch several keys in a row. Re-ordering
@@ -792,7 +786,6 @@ export class Store {
       await this.run(() => this.ws.deleteItem(itemId, expectedVersion));
     } catch (err) {
       this.pushError(err);
-      // rollback
       if (before) this.applyOptimistic(before);
     } finally {
       this.state.value.pendingOps.delete(opId);

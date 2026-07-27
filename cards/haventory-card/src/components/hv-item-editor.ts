@@ -37,13 +37,12 @@ const CUSTOM_FIELD_TYPES: { value: CustomFieldType; label: string }[] = [
 ];
 
 /**
- * The one edit surface (mocks 1f / 4h on desktop, 4i's edit view on mobile).
+ * The one edit surface: the inline expander, the full view and the mobile sheet.
  *
- * It replaces the modal chain the POC had — editing an item opened a dialog,
- * which opened a second dialog to pick a location. Here the row expands in
- * place and the location tree opens *inside* the form.
+ * The row expands in place and the location tree opens *inside* the form, so
+ * picking a location never stacks a second modal over the edit surface.
  *
- * Full field parity with the old modal: name, description, quantity, low-stock
+ * Every editable field lives here: name, description, quantity, low-stock
  * threshold, category (with suggestions), tags, location, checked-out plus due
  * date, inspection date and typed custom fields. On mobile the rarely-touched
  * half collapses behind one "More fields" disclosure rather than being dropped.
@@ -123,9 +122,9 @@ export class HVItemEditor extends LitElement {
         gap: 4px;
         min-width: 0;
       }
-      /* Checked out, Due date and Inspection date used to be three equal thirds
-         of one row, which said they were three peers. Two of them are not. The
-         boxes below say which belongs to which before a word is read. */
+      /* Checked out and Due date are two halves of one fact; Inspection date is
+         unrelated to both. The boxes below carry that split visually, so the
+         three fields are never read as three peer settings of the same kind. */
       .state {
         display: grid;
         grid-template-columns: 2fr 1fr;
@@ -950,8 +949,8 @@ export class HVItemEditor extends LitElement {
    *
    * The state itself is a button rather than a switch. A switch says "this is
    * a property of the item, set it either way"; checking something out is an
-   * act, and the detail sheet has always put it that way — same words, same
-   * icons, so the two surfaces cannot teach different things. It still writes
+   * act, so it matches the detail sheet — same words, same icons, so the two
+   * surfaces cannot teach different things. It still writes
    * `checkedOut` into the form model rather than firing the WS command: this
    * editor also creates items, which have no id to check out yet.
    */
@@ -1034,11 +1033,9 @@ export class HVItemEditor extends LitElement {
   /**
    * Checking out asks for a due date; checking in just happens.
    *
-   * The mobile detail sheet has offered this dialog — quick offsets, a date, a
-   * "no due date" way out — since the revamp, while the editor flipped a flag
-   * and left you to find the date field yourself. It is the same component, so
-   * on a wide screen it anchors under the button and on a phone it expands
-   * inside the box. Confirming only patches the form model; the item is written
+   * The same `hv-checkout-popover` the detail sheet uses — quick offsets, a
+   * date, a "no due date" way out. On a wide screen it anchors under the
+   * button; on a phone it expands inside the box. Confirming only patches the form model; the item is written
    * when the form is saved, which is what lets it work while creating an item
    * that has no id to check out yet.
    */

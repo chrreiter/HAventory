@@ -49,12 +49,11 @@ const NARROW_QUERY = '(max-width: 700px)';
 type SidebarSection = 'locations' | 'categories' | 'tags';
 
 /**
- * The expanded workspace (mock 1c).
+ * The expanded workspace.
  *
  * The coloured app bar is the mode signal — the standard card never has one, so
  * there is no doubt which surface you are looking at. The sidebar renders the
- * real location tree with the backend's own counts, replacing the flat location
- * dropdown the POC card offered.
+ * real location tree with the backend's own counts.
  */
 @customElement('hv-full-view')
 export class HVFullView extends LitElement {
@@ -542,13 +541,11 @@ export class HVFullView extends LitElement {
        * inside it — except the foot stays pinned, because the panel's whole
        * point is the count on that button.
        *
-       * The ceiling used to sit behind the phone-width breakpoint, which only
-       * ever asked how wide the screen was. Turn the phone sideways, 760x400,
-       * and the panel opened 1007px tall with no ceiling and no scroll box:
-       * 751px of it below the fold again, and no gesture that could reach it.
-       * A 1280x900 desktop was losing the surface's own footer the same way.
-       * The second term measures the column instead, so the context bar above
-       * the panel and the footer below it keep their room at any height.
+       * The second term of the min() measures the column rather than the
+       * viewport, so the context bar above the panel and the footer below it
+       * keep their room at any screen height. A width-only breakpoint would
+       * leave both a 760x400 landscape phone and a 1280x900 desktop with no
+       * effective ceiling at all.
        */
       .panel-holder {
         padding: 0 20px 12px;
@@ -985,18 +982,6 @@ export class HVFullView extends LitElement {
   }
 
   /**
-   * Categories and tags as sidebar rows.
-   *
-   * The sidebar used to hold locations and nothing else, so an inventory with a
-   * handful of them — or one with every root collapsed — left most of a 264px
-   * column empty while the two other facets people actually browse by were
-   * buried in the filter panel.
-   *
-   * Category is single-select and tags are multi-select, because that is what
-   * the backend does with them: `category` is one value, `tags` is a set routed
-   * through tags_any/tags_all. Pressing the active one clears it.
-   */
-  /**
    * Which way multiple selected tags combine, in the sidebar that selects them.
    *
    * The sidebar accumulated tags but said nothing about the mode governing them,
@@ -1022,6 +1007,13 @@ export class HVFullView extends LitElement {
     </span>`;
   }
 
+  /**
+   * Categories and tags as sidebar rows.
+   *
+   * Category is single-select and tags are multi-select, because that is what
+   * the backend does with them: `category` is one value, `tags` is a set routed
+   * through tags_any/tags_all. Pressing the active one clears it.
+   */
   private _renderFacetSection(
     section: 'categories' | 'tags',
     label: string,

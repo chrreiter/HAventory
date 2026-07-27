@@ -17,7 +17,6 @@ export class HAventoryCard extends LitElement {
     }
   `;
 
-  // Lovelace config (e.g., title)
   private config?: { title?: string };
 
   private store?: Store;

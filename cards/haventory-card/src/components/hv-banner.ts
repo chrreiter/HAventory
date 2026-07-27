@@ -14,7 +14,7 @@ const DEFAULT_ICON: Record<BannerKind, IconName> = {
 };
 
 /**
- * The one alert treatment for the revamped card: conflicts, storage failures,
+ * The one alert treatment in the card: conflicts, storage failures,
  * rate limiting, connection loss and import reloads all render through this.
  *
  * Purely presentational — the caller supplies the copy and slots in whatever

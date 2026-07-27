@@ -34,13 +34,12 @@ const SEARCH_DEBOUNCE_MS = 200;
 const FILTER_PANEL_STORAGE_KEY = 'haventory:filter-panel-open:v1';
 
 /**
- * The revamped standard card (mocks 1a / 1b / 1d).
+ * The standard card.
  *
- * Unlike the POC's dumb-components-plus-container split, this is a container:
- * it holds the `Store` and drives it directly. The design nests interactions
- * several levels deep (row → editor → location tree), and threading every one
- * of those through re-dispatched events was the main source of the POC's
- * plumbing. Presentation stays in the leaf components.
+ * A container: it holds the `Store` and drives it directly. Interactions nest
+ * several levels deep (row → editor → location tree), and threading each one
+ * back up through re-dispatched events is more plumbing than it is worth.
+ * Presentation stays in the leaf components.
  */
 @customElement('hv-card-shell')
 export class HVCardShell extends LitElement {
@@ -97,10 +96,10 @@ export class HVCardShell extends LitElement {
         margin-left: auto;
       }
       /* The title is the only thing in this row that can give, so every badge
-         and button that will not shrink comes straight out of its width: at
-         375px it had 40px for a 78px heading, at 360px 25px, and at 320px none
-         at all. The badges are filter toggles rather than decoration, so on a
-         phone they take a row of their own and hand the width back. */
+         and button that will not shrink comes straight out of its width —
+         below ~375px there is none of it left. The badges are filter toggles
+         rather than decoration, so on a phone they take a row of their own and
+         hand the width back. */
       :host([mobile]) .header {
         flex-wrap: wrap;
       }
@@ -124,8 +123,8 @@ export class HVCardShell extends LitElement {
         color: var(--hv-text-secondary);
         white-space: nowrap;
       }
-      /* 21px tall was well under a thumb, and these are filter toggles. On
-         their own row there is height to spare. */
+      /* These are filter toggles, not decoration, and on their own row there is
+         height to spare — so they take a full tap-height target. */
       :host([mobile]) .badge {
         display: inline-flex;
         align-items: center;
@@ -214,9 +213,8 @@ export class HVCardShell extends LitElement {
         font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
         color: var(--hv-text);
       }
-      /* The pill looked tappable at 38px, but the input inside it — the part
-         that actually takes the tap — was 18px tall. Let the field own the
-         height so the two agree. */
+      /* The input inside the pill is what actually takes the tap, so the field
+         owns the height rather than the pill around it. */
       :host([mobile]) .search {
         padding: 0 14px;
       }
@@ -325,7 +323,8 @@ export class HVCardShell extends LitElement {
         color: var(--hv-primary-dark);
         padding: 0;
       }
-      /* 45x15 in the filter sheet's header — a text link, but still a control. */
+      /* A text link in the filter sheet's header is still a control, so it gets
+         a tap-sized target. */
       :host([mobile]) .link {
         min-height: var(--hv-tap-min, auto);
         padding: 0 6px;
@@ -740,8 +739,7 @@ export class HVCardShell extends LitElement {
    * The card's own ⋮, which is the full-view menu minus "Columns…".
    *
    * Column choices only drive the full view's table — the card list draws a
-   * fixed compact row — so offering them here opened a picker that changed
-   * nothing visible on this surface.
+   * fixed compact row — so the card's own menu omits them.
    */
   private get cardMenuEntries(): OverflowMenuEntry[] {
     return this.menuEntries.filter((entry) => !('id' in entry && entry.id === 'columns'));

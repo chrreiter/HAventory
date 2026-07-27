@@ -30,7 +30,7 @@ function isItem(entry: OverflowMenuEntry): entry is OverflowMenuItem {
 }
 
 /**
- * The ⋮ menu that replaces the POC header's row of five buttons.
+ * The ⋮ menu for the card and full-view headers, and for each list row.
  *
  * Self-contained: it renders its own trigger and an anchored popover. HA's
  * `ha-button-menu`/`mwc-list-item` are not used because they only exist inside

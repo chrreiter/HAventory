@@ -40,7 +40,7 @@ export function elidePath(path: string, maxSegments = 2): string {
 }
 
 /**
- * One row of the standard card list (mocks 1a/1b/1d).
+ * One row of the standard card list.
  *
  * Desktop reveals edit and row-menu actions on hover; touch has no hover, so the
  * whole row is the tap target and opens the detail sheet instead. Checked-out

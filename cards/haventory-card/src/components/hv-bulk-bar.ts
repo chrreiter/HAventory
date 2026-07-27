@@ -52,8 +52,7 @@ const ACTIONS: { id: BulkAction; label: string; glyph?: IconName; immediate?: bo
 ];
 
 /**
- * The bulk action bar, its inline pickers, and the per-operation result state
- * (mock 4a).
+ * The bulk action bar, its inline pickers, and the per-operation result state.
  *
  * The result panel is the point: `haventory/items/bulk` returns a result per
  * operation and does not roll back, so partial failure is the normal case. A
@@ -61,7 +60,7 @@ const ACTIONS: { id: BulkAction; label: string; glyph?: IconName; immediate?: bo
  * and it can retry just the failures.
  *
  * Pickers open inline above the bar rather than as dialogs, so the bulk flow
- * never becomes the nested dialog stack the redesign is getting rid of.
+ * never stacks a second dialog over the one the user is already in.
  */
 @customElement('hv-bulk-bar')
 export class HVBulkBar extends LitElement {

@@ -183,8 +183,8 @@ export class WSClient {
 
   /**
    * Rename, re-area and/or re-parent in one call. `newParentId` moves the whole
-   * subtree; passing it here avoids the second `move_subtree` round trip the POC
-   * UI made, so an edit lands atomically.
+   * subtree, so an edit that also re-parents lands atomically instead of needing
+   * a second `move_subtree` round trip.
    */
   updateLocation(
     locationId: string,

@@ -6,7 +6,7 @@ import { nextZBase } from '../utils/zindex';
 
 /**
  * The mobile surface for everything that would be a popup on desktop: the item
- * detail sheet, the filter sheet and the organize action sheet. The design's
+ * detail sheet, the filter sheet and the add-item sheet. The design's
  * central rule is "one surface, no popup chain" — nested content expands inside
  * this sheet rather than opening a second dialog.
  *

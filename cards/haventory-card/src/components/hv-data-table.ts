@@ -11,7 +11,7 @@ import { displayPath, isLowStock } from './hv-list-row';
 import type { Item, Sort, SortField } from '../store/types';
 
 /**
- * The full view's table (mocks 1c / 4a).
+ * The full view's table.
  *
  * Only the columns the backend can actually sort by get a clickable header —
  * category, location and tags have no sort field, and a header that looks

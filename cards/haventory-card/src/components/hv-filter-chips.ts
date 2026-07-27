@@ -30,8 +30,8 @@ export interface FilterChip {
 }
 
 /**
- * Build the chip row from filter state. Exported so the card and the full view
- * describe an active filter identically.
+ * Build the chip row from filter state. Both the card and the full view render
+ * <hv-filter-chips>, so an active filter reads identically on either surface.
  */
 export function chipsFor(
   filters: StoreFilters,

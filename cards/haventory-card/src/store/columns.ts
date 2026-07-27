@@ -95,8 +95,8 @@ function safeLocalStorage(): Storage | null {
 
 /**
  * Load the persisted column selection, falling back to the defaults on any
- * problem. The stored shape is `{ expanded: [...] }` — it also carried a
- * `standard` set for the POC card's list, which is read straight past.
+ * problem. The stored record is `{ expanded: [...] }`; any other key in it is
+ * ignored, so an older or newer payload never breaks the load.
  */
 export function loadColumnPrefs(): ColumnKey[] {
   const store = safeLocalStorage();

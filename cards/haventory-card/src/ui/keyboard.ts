@@ -2,10 +2,9 @@
  * Naming the save shortcut in the language of the keyboard actually in front of
  * the user.
  *
- * The binding itself has always accepted either modifier — the editor tests
- * `e.metaKey || e.ctrlKey` — so Ctrl+Enter has worked on a PC since day one. Only
- * the footer hint was wrong: it printed the Apple glyphs unconditionally, so a
- * Windows dashboard advertised a ⌘ key it does not have.
+ * The save binding accepts either modifier (`e.metaKey || e.ctrlKey`), so
+ * Ctrl+Enter saves on every platform. Only the printed hint varies, and getting
+ * it wrong advertises a ⌘ key the keyboard may not have.
  *
  * A dashboard is opened from whatever is to hand, and a card cannot see the
  * hardware — only what the browser reports about the OS it runs on. So the rule

@@ -37,8 +37,8 @@ const DATE_KEYS = {
 } as const;
 
 /**
- * Every filter the backend accepts, in one panel (mock 4b) — and the same set as
- * a staged bottom-sheet body on mobile (4c).
+ * Every filter the backend accepts, in one panel — and the same set as a staged
+ * bottom-sheet body on mobile.
  *
  * Two pairs are deliberately kept apart because the backend treats them
  * differently: "Low stock" is a filter (`low_stock_only`) while "Low stock
@@ -141,7 +141,7 @@ export class HVFilterPanel extends LitElement {
        * 13.5px is the chip beside it — the area select sits in the same row as
        * "Any location", and taking the card's 16px input size made the one
        * full-width control on the page shout at the chips, checkboxes and
-       * headings around it. The desktop panel has always matched (both 12.5px).
+       * headings around it. Desktop matches at 12.5px.
        */
       :host([mobile]) .field {
         min-height: 46px;
@@ -182,12 +182,9 @@ export class HVFilterPanel extends LitElement {
        * is about *and* which way the comparison runs, and clicking it flips the
        * direction.
        *
-       * It used to be styled like the caption it is not — no border, no fill,
-       * a wash on hover and nothing at all otherwise. So the only hint that
-       * "Updated ≥" could be pressed arrived once the pointer was already on
-       * it, and on a touch screen it never arrived. It now carries its own
-       * outline and fill against the field's, which is the smallest thing that
-       * reads as a control at rest.
+       * It carries its own outline and fill against the field's, which is the
+       * smallest treatment that reads as a control at rest — a hover-only
+       * affordance never arrives on a touch screen at all.
        */
       .field .direction {
         white-space: nowrap;
