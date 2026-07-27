@@ -1,25 +1,51 @@
-// Screenshot the HAventory Lovelace card inside a real Home Assistant frontend.
+// Screenshot / drive the HAventory Lovelace card inside a real Home Assistant frontend.
 //
 // Bypasses the HA login form by injecting the long-lived token into the
 // frontend's `hassTokens` localStorage entry before any page script runs.
 //
 // Usage (from the skill dir, .claude/skills/run-haventory/):
-//   node screenshot.mjs [--out <file.png>] [--path <ha-url-path>] [--search <text>]
-// Defaults: --out screenshot.png, --path /lovelace/default_view
-// --search types into the card's search box before shooting (drives the real
-// filter pipeline: card -> WS -> repository index -> filtered render).
+//   node screenshot.mjs [--out <file.png>] [--path <ha-url-path>] [--full]
+//                       [--device <name> | --mobile | --viewport <WxH>] [--dsf <n>]
+//                       [--dark] [--scheme light|dark]
+//                       [--search <text>] [--tap <selector>]
+//                       [--swipe <dir>[@<selector>]] [--wait <ms>]
+//
+// Defaults: --out screenshot.png, --path /lovelace/default_view, desktop 1280x900.
+//
+// Mobile view + touch:
+//   --mobile            shorthand for --device "iPhone 15"
+//   --device <name>     any Playwright device descriptor ("Pixel 8", "iPad Mini",
+//                       "Galaxy S24", "iPhone 15 Pro landscape", ...). Sets viewport,
+//                       device pixel ratio, mobile UA and — importantly — hasTouch,
+//                       so the page takes the touch/coarse-pointer code paths and HA
+//                       itself switches to its narrow (sidebar-collapsed) layout.
+//   --viewport 390x844  raw size with touch enabled, when no descriptor fits.
+//   `node screenshot.mjs --devices` lists the descriptor names.
+//
+// --search/--tap/--swipe run in the order given on the command line, so you can
+// chain them (e.g. --tap open a sheet, then --swipe down to dismiss it). With touch
+// emulation on, --tap dispatches a real tap and --swipe dispatches a genuine
+// touchStart/touchMove*/touchEnd sequence over CDP (fling velocity included), which
+// is what scroll containers, `touch-action` rules and any gesture handler actually see.
 //
 // Reads HA_BASE_URL / HA_TOKEN from the environment or the repo-root .env.
 // Prints browser console errors (the card logs there) — useful when the card
 // renders blank.
 
-import { chromium } from "playwright";
+import { chromium, devices } from "playwright";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const skillDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(skillDir, "..", "..", "..");
+
+const args = process.argv.slice(2);
+
+if (args.includes("--devices")) {
+  console.log(Object.keys(devices).join("\n"));
+  process.exit(0);
+}
 
 // --- config: env wins, .env fills the gaps -------------------------------
 try {
@@ -37,17 +63,81 @@ if (!token) {
   process.exit(2);
 }
 
-const args = process.argv.slice(2);
+// --- args ----------------------------------------------------------------
 const flag = (name, dflt) => {
   const i = args.indexOf(name);
   return i >= 0 && args[i + 1] ? args[i + 1] : dflt;
 };
+const has = (name) => args.includes(name);
+
 const outFile = path.resolve(skillDir, flag("--out", "screenshot.png"));
 const urlPath = flag("--path", "/lovelace/default_view");
+const fullPage = has("--full");
+const haDark = has("--dark");
+const colorScheme = flag("--scheme", haDark ? "dark" : "light");
+
+// Ordered action list, so --tap/--swipe/--search/--wait compose left to right.
+const ACTION_FLAGS = new Set(["--search", "--tap", "--swipe", "--wait"]);
+const actions = [];
+for (let i = 0; i < args.length; i++) {
+  if (ACTION_FLAGS.has(args[i]) && args[i + 1] !== undefined) {
+    actions.push({ kind: args[i].slice(2), value: args[i + 1] });
+    i++;
+  }
+}
+
+// --- viewport / touch emulation ------------------------------------------
+let contextOptions = { viewport: { width: 1280, height: 900 }, serviceWorkers: "block" };
+let emulationLabel = "desktop 1280x900 (no touch)";
+
+const deviceName = has("--mobile") ? "iPhone 15" : flag("--device", null);
+const viewportArg = flag("--viewport", null);
+
+if (deviceName) {
+  const descriptor = devices[deviceName];
+  if (!descriptor) {
+    const near = Object.keys(devices).filter((d) =>
+      d.toLowerCase().includes(deviceName.toLowerCase().split(" ")[0]),
+    );
+    console.error(`Unknown device "${deviceName}".` + (near.length ? ` Did you mean: ${near.slice(0, 8).join(", ")}` : ""));
+    console.error("Full list: node screenshot.mjs --devices");
+    process.exit(2);
+  }
+  contextOptions = { ...descriptor, ...contextOptions, viewport: descriptor.viewport };
+  emulationLabel = `${deviceName} ${descriptor.viewport.width}x${descriptor.viewport.height} @${descriptor.deviceScaleFactor}x (touch)`;
+} else if (viewportArg) {
+  const m = viewportArg.match(/^(\d+)x(\d+)$/);
+  if (!m) {
+    console.error(`--viewport expects WxH, e.g. 390x844 (got "${viewportArg}")`);
+    process.exit(2);
+  }
+  contextOptions = {
+    ...contextOptions,
+    viewport: { width: Number(m[1]), height: Number(m[2]) },
+    hasTouch: true,
+    isMobile: true,
+    deviceScaleFactor: 2,
+  };
+  emulationLabel = `${m[1]}x${m[2]} (touch)`;
+}
+
+const dsf = flag("--dsf", null);
+if (dsf) contextOptions.deviceScaleFactor = Number(dsf);
+contextOptions.colorScheme = colorScheme;
+
+const touchEnabled = Boolean(contextOptions.hasTouch);
 
 // --- drive ---------------------------------------------------------------
-const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+// `hasTouch` alone gives navigator.maxTouchPoints=1 and `(pointer: coarse)`, but
+// leaves `'ontouchstart' in window` FALSE — code that feature-detects touch that
+// way would take the desktop path. --touch-events=enabled installs the global.
+const browser = await chromium.launch({ args: touchEnabled ? ["--touch-events=enabled"] : [] });
+// HA's service worker activates ~30-90s into a fresh context and reloads the
+// page, which kills the JS execution context mid-run and looks exactly like a
+// card crash. Blocking it costs one harmless `navigator.serviceWorker` console
+// error from HA's own bundle.
+const context = await browser.newContext(contextOptions);
+const page = await context.newPage();
 
 const consoleErrors = [];
 page.on("console", (msg) => {
@@ -56,8 +146,10 @@ page.on("console", (msg) => {
 
 // The HA frontend trusts hassTokens if `expires` is in the future; the
 // long-lived token works as access_token. clientId must be `${origin}/`.
+// HA's own dark mode is independent of the OS colour scheme — it reads the
+// `selectedTheme` localStorage entry, so set both to test a real dark card.
 await page.addInitScript(
-  ([hassUrl, accessToken]) => {
+  ([hassUrl, accessToken, dark]) => {
     localStorage.setItem(
       "hassTokens",
       JSON.stringify({
@@ -70,8 +162,9 @@ await page.addInitScript(
         clientId: hassUrl + "/",
       }),
     );
+    if (dark) localStorage.setItem("selectedTheme", JSON.stringify({ dark: true }));
   },
-  [base, token],
+  [base, token, haDark],
 );
 
 await page.goto(base + urlPath, { waitUntil: "domcontentloaded" });
@@ -86,15 +179,88 @@ if (page.url().includes("/auth/authorize")) {
 await page.waitForSelector("haventory-card", { timeout: 30000 });
 await page.waitForTimeout(2500); // let the card's WS subscription deliver data
 
-const searchText = flag("--search", null);
-if (searchText !== null) {
-  const search = page.locator('haventory-card input[placeholder="Search"]');
-  await search.fill(searchText);
-  await page.waitForTimeout(1500); // debounce + round-trip through the WS filter
+// --- touch gestures ------------------------------------------------------
+// Playwright's public API has tap() but no drag-with-a-finger, so swipes go
+// through CDP. These are real touch events: the DOM sees
+// touchstart/touchmove*/touchend and the browser scrolls the container, which is
+// what `touch-action: pan-y` and any gesture handler react to.
+// Measured caveat: ~36px of the travel is eaten by Chromium's touch-slop
+// threshold before scrolling starts, and there is NO fling momentum after
+// touchEnd (scrollTop stops dead). Distances are therefore approximate and
+// momentum-dependent behaviour needs a real device.
+let cdp = null;
+async function dispatchTouch(type, points) {
+  cdp ??= await context.newCDPSession(page);
+  await cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
+}
+const finger = (x, y) => [{ x: Math.round(x), y: Math.round(y), radiusX: 12, radiusY: 12, force: 1, id: 1 }];
+
+async function swipe(spec) {
+  // spec: "<up|down|left|right>[@<selector>][:<distance-px>]"
+  const [dirPart, selPart] = spec.split("@");
+  const [dir, distStr] = dirPart.split(":");
+  const selector = selPart || "haventory-card";
+  const box = await page.locator(selector).first().boundingBox();
+  if (!box) throw new Error(`--swipe target not visible: ${selector}`);
+
+  const vp = page.viewportSize();
+  const cx = Math.min(Math.max(box.x + box.width / 2, 4), vp.width - 4);
+  const cy = Math.min(Math.max(box.y + box.height / 2, 4), vp.height - 4);
+  const span = { up: box.height, down: box.height, left: box.width, right: box.width }[dir];
+  if (span === undefined) throw new Error(`--swipe direction must be up|down|left|right (got "${dir}")`);
+  // Stay inside the viewport: half the visible extent, capped.
+  const limit = dir === "up" || dir === "down" ? Math.min(cy, vp.height - cy) : Math.min(cx, vp.width - cx);
+  const distance = Number(distStr) || Math.min(span * 0.6, limit - 8);
+
+  const delta = {
+    up: { x: 0, y: -distance },
+    down: { x: 0, y: distance },
+    left: { x: -distance, y: 0 },
+    right: { x: distance, y: 0 },
+  }[dir];
+
+  const steps = 16;
+  await dispatchTouch("touchStart", finger(cx, cy));
+  for (let i = 1; i <= steps; i++) {
+    await dispatchTouch("touchMove", finger(cx + (delta.x * i) / steps, cy + (delta.y * i) / steps));
+    await page.waitForTimeout(16); // ~60fps -> realistic fling velocity
+  }
+  await dispatchTouch("touchEnd", []);
+  await page.waitForTimeout(400); // momentum / animation settle
+  console.log(`swipe ${dir} ${Math.round(distance)}px on ${selector}`);
 }
 
-await page.screenshot({ path: outFile, fullPage: false });
-console.log(`screenshot: ${outFile}`);
+// --- run the requested actions in order ----------------------------------
+for (const action of actions) {
+  if (action.kind === "search") {
+    // Revamped card: [data-testid="search-input"], placeholder is dynamic
+    // ("Search 560 matching items…"). Legacy POC card: placeholder="Search".
+    const search = page
+      .locator('haventory-card [data-testid="search-input"], haventory-card input[placeholder^="Search"]')
+      .first();
+    await search.fill(action.value);
+    await page.waitForTimeout(1500); // debounce + round-trip through the WS filter
+  } else if (action.kind === "tap") {
+    const target = page.locator(action.value).first();
+    await target.waitFor({ state: "visible", timeout: 10000 });
+    if (touchEnabled) await target.tap();
+    else await target.click();
+    await page.waitForTimeout(600);
+    console.log(`${touchEnabled ? "tap" : "click"}: ${action.value}`);
+  } else if (action.kind === "swipe") {
+    if (!touchEnabled) {
+      console.error("--swipe needs touch emulation: add --mobile, --device <name> or --viewport WxH");
+      await browser.close();
+      process.exit(2);
+    }
+    await swipe(action.value);
+  } else if (action.kind === "wait") {
+    await page.waitForTimeout(Number(action.value));
+  }
+}
+
+await page.screenshot({ path: outFile, fullPage });
+console.log(`screenshot: ${outFile}  [${emulationLabel}, scheme=${colorScheme}${haDark ? ", HA theme=dark" : ""}]`);
 if (consoleErrors.length) {
   console.log(`browser console errors (${consoleErrors.length}):`);
   for (const e of consoleErrors.slice(0, 10)) console.log(`  ${e}`);

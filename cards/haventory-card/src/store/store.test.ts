@@ -506,37 +506,62 @@ describe('Store', () => {
     ]);
   });
 
-  it('fetchItemsByCategory returns only items in that category', async () => {
-    const items = [
-      makeItem({ id: '1', name: 'Hammer', category: 'Tools' }),
-      makeItem({ id: '2', name: 'Novel', category: 'Books' }),
-      makeItem({ id: '3', name: 'Wrench', category: 'tools' }), // case-insensitive
-    ];
-    const hass = makeMockHass({ items });
-    const store = new Store(hass);
+  // A category or tag exists only through the items carrying it — the backend
+  // has no registry to create an empty one in. A value the user names up front
+  // is therefore kept on the card until an item adopts it.
+  it('lists a newly named category alongside the ones in use, at zero', async () => {
+    const store = new Store(makeMockHass({ items: [makeItem({ id: '1', category: 'Tools' })] }));
     await store.init();
 
-    const tools = await store.fetchItemsByCategory('Tools');
-    expect(tools.map((i) => i.id).sort()).toEqual(['1', '3']);
-
-    const books = await store.fetchItemsByCategory('Books');
-    expect(books.map((i) => i.name)).toEqual(['Novel']);
+    expect(store.addDraftValue('category', 'Consumables')).toBe(true);
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([
+      { value: 'Consumables', count: 0 },
+      { value: 'Tools', count: 1 },
+    ]);
   });
 
-  it('fetchItemsByTag returns only items carrying that tag', async () => {
-    const items = [
-      makeItem({ id: '1', name: 'Hammer', tags: ['red', 'metal'] }),
-      makeItem({ id: '2', name: 'Novel', tags: ['blue'] }),
-      makeItem({ id: '3', name: 'Wrench', tags: ['red'] }),
-    ];
-    const hass = makeMockHass({ items });
-    const store = new Store(hass);
+  it('normalizes a new tag the way the backend would', async () => {
+    const store = new Store(makeMockHass({ items: [] }));
     await store.init();
 
-    const red = await store.fetchItemsByTag('red');
-    expect(red.map((i) => i.id).sort()).toEqual(['1', '3']);
-
-    const blue = await store.fetchItemsByTag('blue');
-    expect(blue.map((i) => i.name)).toEqual(['Novel']);
+    store.addDraftValue('tag', '  Power Tools  ');
+    expect(store.state.value.distinctValuesCache?.tags).toEqual([{ value: 'power tools', count: 0 }]);
   });
+
+  it('refuses a name that already exists, whatever its casing', async () => {
+    const store = new Store(makeMockHass({ items: [makeItem({ id: '1', category: 'Tools' })] }));
+    await store.init();
+
+    expect(store.addDraftValue('category', 'tools')).toBe(false);
+    expect(store.addDraftValue('category', '   ')).toBe(false);
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([{ value: 'Tools', count: 1 }]);
+  });
+
+  it('stops carrying the draft once an item actually uses it', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass);
+    await store.init();
+    store.addDraftValue('category', 'Consumables');
+
+    await store.createItem({ name: 'Sponges', category: 'Consumables' });
+    hass.__emit('items', 'created', {
+      item: makeItem({ id: '99', name: 'Sponges', category: 'Consumables' }),
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    // One entry, with the server's count — not a duplicate sitting at zero.
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([
+      { value: 'Consumables', count: 1 },
+    ]);
+  });
+
+  it('discards a draft again', async () => {
+    const store = new Store(makeMockHass({ items: [] }));
+    await store.init();
+    store.addDraftValue('tag', 'seasonal');
+    store.removeDraftValue('tag', 'seasonal');
+
+    expect(store.state.value.distinctValuesCache?.tags).toEqual([]);
+  });
+
 });

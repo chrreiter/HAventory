@@ -41,6 +41,7 @@ from .models import (
     is_canonical_utc_timestamp,
     iso_utc_now,
     item_is_low_stock,
+    item_is_overdue,
     monotonic_timestamp_after,
     new_uuid4,
     normalize_search_text,
@@ -48,6 +49,7 @@ from .models import (
     normalize_text_for_sort,
     parse_uuid4,
     sort_items,
+    today_utc_date,
     validate_location_name,
 )
 
@@ -1139,9 +1141,45 @@ class Repository:
             "items_total": len(self._items_by_id),
             "low_stock_count": len(self._low_stock_item_ids),
             "checked_out_count": len(self._checked_out_item_ids),
+            "overdue_count": self._count_overdue(),
             "locations_total": len(self._locations_by_id),
             "no_location_count": len(self._items_by_id) - items_with_location,
         }
+
+    def _count_overdue(self) -> int:
+        """Count items whose due date has passed.
+
+        Deliberately not indexed: "overdue" moves with the calendar, so an index
+        would go stale at midnight with no mutation to invalidate it. A due date
+        only exists on a checked-out item, so the walk is over that set rather
+        than the whole inventory.
+        """
+
+        today = today_utc_date()
+        return sum(
+            1
+            for iid in self._checked_out_item_ids
+            if (it := self._items_by_id.get(iid)) is not None and item_is_overdue(it, today=today)
+        )
+
+    def count_matching_by_location(self, flt: ItemFilter | None = None) -> dict[str | None, int]:
+        """Count filter matches grouped by the item's own location.
+
+        Keyed by location id, with ``None`` for items that have none. Counts are
+        *direct*: callers that want a subtree total roll them up themselves,
+        which is what building a tree does anyway. Deliberately does not sort —
+        this answers "how many", not "which ones".
+        """
+
+        candidates = self._get_filtered_candidates(flt)
+        source: Iterable[Item] = (
+            candidates if candidates is not None else self._items_by_id.values()
+        )
+        counts: dict[str | None, int] = {}
+        for item in filter_items(source, flt):
+            key = str(item.location_id) if item.location_id is not None else None
+            counts[key] = counts.get(key, 0) + 1
+        return counts
 
     def get_location_item_counts(self, location_id: str | uuid.UUID) -> dict[str, int]:
         """Return item counts for a location.

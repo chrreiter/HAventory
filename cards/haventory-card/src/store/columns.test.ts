@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   COLUMN_PREFS_STORAGE_KEY,
-  DEFAULT_COLUMN_PREFS,
-  gridTemplateFor,
+  DEFAULT_COLUMNS,
   loadColumnPrefs,
   normalizeColumns,
   saveColumnPrefs,
+  tableTemplateFor,
 } from './columns';
 
 describe('columns model', () => {
@@ -20,37 +20,68 @@ describe('columns model', () => {
     expect(normalizeColumns(undefined)).toEqual([]);
   });
 
-  it('builds a grid template with name + columns + actions', () => {
-    expect(gridTemplateFor(['quantity'], { compact: true }))
-      .toBe('minmax(120px, 2fr) 50px 120px');
-    expect(gridTemplateFor(['quantity', 'category', 'location'], { compact: false }))
-      .toBe('minmax(120px, 2fr) 50px minmax(80px, 1fr) minmax(100px, 2fr) 160px');
-  });
-
   it('returns defaults when nothing is stored', () => {
-    expect(loadColumnPrefs()).toEqual(DEFAULT_COLUMN_PREFS);
+    expect(loadColumnPrefs()).toEqual(DEFAULT_COLUMNS);
   });
 
-  it('round-trips saved preferences (normalized)', () => {
-    saveColumnPrefs({ standard: ['category', 'quantity'], expanded: ['tags', 'due_date'] });
-    expect(loadColumnPrefs()).toEqual({
-      standard: ['quantity', 'category'],
-      expanded: ['tags', 'due_date'],
-    });
+  it('round-trips a saved selection (normalized)', () => {
+    saveColumnPrefs(['tags', 'due_date', 'quantity']);
+    expect(loadColumnPrefs()).toEqual(['quantity', 'tags', 'due_date']);
   });
 
   it('falls back to defaults on corrupt stored JSON', () => {
     localStorage.setItem(COLUMN_PREFS_STORAGE_KEY, '{not valid json');
-    expect(loadColumnPrefs()).toEqual(DEFAULT_COLUMN_PREFS);
+    expect(loadColumnPrefs()).toEqual(DEFAULT_COLUMNS);
   });
 
-  it('fills a missing view from defaults and sanitizes unknown keys', () => {
+  it('sanitizes unknown keys out of a stored selection', () => {
+    localStorage.setItem(COLUMN_PREFS_STORAGE_KEY, JSON.stringify({ expanded: ['bogus', 'tags'] }));
+    expect(loadColumnPrefs()).toEqual(['tags']);
+  });
+
+  // Preferences written by the POC card carried a `standard` set beside this
+  // one. Nothing renders it now, so it is read straight past rather than
+  // migrated — the selection that survives still comes back intact.
+  it('reads a selection stored alongside the retired standard set', () => {
     localStorage.setItem(
       COLUMN_PREFS_STORAGE_KEY,
-      JSON.stringify({ standard: ['bogus', 'tags'] }),
+      JSON.stringify({ standard: ['quantity'], expanded: ['category', 'updated_at'] }),
     );
-    const prefs = loadColumnPrefs();
-    expect(prefs.standard).toEqual(['tags']);
-    expect(prefs.expanded).toEqual(DEFAULT_COLUMN_PREFS.expanded);
+    expect(loadColumnPrefs()).toEqual(['category', 'updated_at']);
+  });
+
+  it('falls back when the stored object names no selection at all', () => {
+    localStorage.setItem(COLUMN_PREFS_STORAGE_KEY, JSON.stringify({ standard: ['quantity'] }));
+    expect(loadColumnPrefs()).toEqual(DEFAULT_COLUMNS);
+  });
+});
+
+/**
+ * Sum the smallest width each track can take: the first argument of a
+ * `minmax()`, or the whole track when it is a fixed pixel size. A grid cannot
+ * lay out narrower than this, and below it the tracks overflow the container
+ * instead of shrinking — which is why `hv-data-table` has to scroll sideways.
+ */
+function minWidthOf(template: string): number {
+  return template
+    .split(/\s+(?![^(]*\))/)
+    .map((track) => Number(/^minmax\((\d+)px,/.exec(track)?.[1] ?? /^(\d+)px$/.exec(track)?.[1] ?? 0))
+    .reduce((a, b) => a + b, 0);
+}
+
+describe('table column widths', () => {
+  // Pinned as a number so that adding a column, or widening one, shows up here
+  // as a deliberate change rather than as another phone-width overflow.
+  it('cannot lay the default table out narrower than a phone', () => {
+    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }))).toBe(786);
+    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: true }))).toBe(826);
+  });
+
+  it('only fits a phone when almost every column is turned off', () => {
+    // Name (180) + Qty (70) + the actions gutter (110). That clears 375px with
+    // 15px to spare and still overflows a 320px screen — so trimming columns
+    // was never a reliable answer, and it would have discarded a choice the
+    // user made. The table scrolls sideways instead.
+    expect(minWidthOf(tableTemplateFor(['quantity'], { selectable: false }))).toBe(360);
   });
 });

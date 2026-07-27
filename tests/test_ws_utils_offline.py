@@ -85,6 +85,7 @@ async def test_stats_returns_counts() -> None:
         "items_total",
         "low_stock_count",
         "checked_out_count",
+        "overdue_count",
         "locations_total",
         "no_location_count",
     }

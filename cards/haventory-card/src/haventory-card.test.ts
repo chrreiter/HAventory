@@ -1,346 +1,226 @@
 import './index';
-import { makeMockHass, makeItem } from './test.utils';
-import { Store } from './store/store';
 import { getStubConfig } from './index';
+import { makeMockHass, makeItem } from './test.utils';
+import { COLUMN_PREFS_STORAGE_KEY, DEFAULT_COLUMNS } from './store/columns';
+import type { HAventoryCard } from './index';
 
-describe('HAventoryCard', () => {
-  it('renders header and search bar', async () => {
-    const el = document.createElement('haventory-card') as HTMLElement & {
-      updateComplete?: Promise<unknown>;
-    };
-    document.body.appendChild(el);
+type Card = HAventoryCard & { updateComplete: Promise<unknown>; hass?: unknown };
 
-    await customElements.whenDefined('haventory-card');
+async function mountCard(config: unknown = {}, opts: { items?: ReturnType<typeof makeItem>[] } = {}) {
+  const el = document.createElement('haventory-card') as Card;
+  document.body.appendChild(el);
+  await customElements.whenDefined('haventory-card');
+  el.setConfig(config);
+  el.hass = makeMockHass({ items: opts.items ?? [] });
+  await el.updateComplete;
+  return { el, sr: el.shadowRoot as ShadowRoot };
+}
 
-    if ('updateComplete' in el && el.updateComplete) {
-      await el.updateComplete;
+const settle = async (el: Card) => {
+  await new Promise((r) => setTimeout(r, 0));
+  await el.updateComplete;
+};
+
+afterEach(() => {
+  document.body.innerHTML = '';
+  localStorage.clear();
+});
+
+// `haventory-card` is what Home Assistant instantiates; everything the user
+// sees lives in `hv-card-shell`. What is left here is the contract with
+// Lovelace — config, sizing, picker metadata — plus the two surfaces the shell
+// hands back up because they belong to the browser rather than the card.
+describe('haventory-card: the Lovelace element', () => {
+  it('renders the shell and nothing of its own', async () => {
+    const { sr } = await mountCard();
+    expect(sr.querySelector('[data-testid="card-shell"]')).toBeTruthy();
+  });
+
+  it('passes the configured title down as the heading', async () => {
+    const { sr } = await mountCard({ title: 'My Custom Inventory' });
+    const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { heading: string };
+    expect(shell.heading).toBe('My Custom Inventory');
+  });
+
+  it('falls back to a default heading', async () => {
+    const { sr } = await mountCard();
+    const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { heading: string };
+    expect(shell.heading).toBe('Inventory');
+  });
+
+  it('takes an empty config, and a null one', async () => {
+    for (const config of [{}, null]) {
+      const { sr } = await mountCard(config);
+      expect(sr.querySelector('[data-testid="card-shell"]')).toBeTruthy();
+      document.body.innerHTML = '';
     }
-
-    const sr = el.shadowRoot as ShadowRoot;
-    expect(sr.textContent || '').toContain('HAventory');
-    expect(sr.querySelector('hv-search-bar')).toBeTruthy();
-    expect(sr.querySelector('hv-inventory-list')).toBeTruthy();
   });
 
-  it('overlay toggles and Esc closes; focus returns to toggle; banners render', async () => {
-    const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
+  // A card that threw on an unrecognised key would break the dashboard it sits
+  // on — including for anyone whose YAML still names the retired `ui` option.
+  it('ignores config keys it does not read, rather than rejecting them', async () => {
+    const { sr } = await mountCard({ title: 'Kept', ui: 'legacy', whatever: { nested: true } });
+    const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { heading: string };
+    expect(shell.heading).toBe('Kept');
+  });
+
+  it('ignores a title that is not a string', async () => {
+    const { sr } = await mountCard({ title: 42 });
+    const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { heading: string };
+    expect(shell.heading).toBe('Inventory');
+  });
+
+  it('rejects a config that is not an object at all', async () => {
+    const el = document.createElement('haventory-card') as Card;
     document.body.appendChild(el);
     await customElements.whenDefined('haventory-card');
-
-    const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'A' })] });
-    (el as any).hass = hass;
-
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-    const sr = el.shadowRoot as ShadowRoot;
-
-    const toggle = sr.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement;
-    toggle.click();
-    // Overlay should exist and contain content
-    await el.updateComplete;
-    const overlay = sr.querySelector('.overlay') as HTMLElement;
-    expect(overlay).toBeTruthy();
-    expect(overlay.textContent || '').toContain('HAventory');
-
-    // Inject a conflict to render banner
-    const store = (el as any).store as Store;
-    store['pushError']({ code: 'conflict', message: 'conflict', context: {} }, { itemId: '1', changes: { name: 'B' } } as any);
-    (el as any).requestUpdate?.();
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-    expect((sr.querySelector('.overlay')?.textContent || '')).toContain('conflict');
-
-    // Send Esc key to close overlay
-    overlay.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-    // Toggle should regain focus
-    expect(document.activeElement === toggle || (sr.activeElement === toggle)).toBeTruthy();
+    expect(() => el.setConfig('nope')).toThrow(/Invalid config/);
   });
 
-  it('shows add button in overlay header and opens dialog', async () => {
-    // Expanded view should surface the Add button in the header with prominent styling
-    const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
-    document.body.appendChild(el);
-    await customElements.whenDefined('haventory-card');
-
-    const hass = makeMockHass({ items: [] });
-    (el as any).hass = hass;
-
-    const store = (el as any).store as Store;
-    await store.init();
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    const sr = el.shadowRoot as ShadowRoot;
-    const toggle = sr.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement;
-    toggle.click();
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    const overlay = sr.querySelector('.overlay') as HTMLElement;
-    expect(overlay).toBeTruthy();
-
-    const overlayAddBtn = overlay.querySelector('.ov-header .btn-add') as HTMLButtonElement;
-    expect(overlayAddBtn).toBeTruthy();
-    expect(overlayAddBtn.classList.contains('btn-add')).toBe(true);
-
-    overlayAddBtn.click();
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    const dialog = sr.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: any };
-    expect(dialog.open).toBe(true);
-    expect(dialog.item).toBe(null);
+  it('reports a card size for the dashboard layout', async () => {
+    const { el } = await mountCard();
+    expect(el.getCardSize()).toBeGreaterThan(0);
   });
 
-  it('opens dialog in create mode when + button clicked', async () => {
-    // Add button should open dialog with no item (create mode)
-    const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
-    document.body.appendChild(el);
-    await customElements.whenDefined('haventory-card');
+  it('offers a stub config and registers itself with the card picker', async () => {
+    expect(getStubConfig().type).toBe('custom:haventory-card');
 
-    const hass = makeMockHass({ items: [] });
-    (el as any).hass = hass;
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    const sr = el.shadowRoot as ShadowRoot;
-    const addBtn = sr.querySelector('button[aria-label="Add item"]') as HTMLButtonElement;
-    expect(addBtn).toBeTruthy();
-
-    addBtn.click();
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    const dialog = sr.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: any };
-    expect(dialog.open).toBe(true);
-    expect(dialog.item).toBe(null);
-  });
-
-  it('opens dialog with item data when edit event received', async () => {
-    // Edit event from inventory list should open dialog with item data
-    const testItem = makeItem({ id: 'item-1', name: 'Test Item', quantity: 5 });
-    const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
-    document.body.appendChild(el);
-    await customElements.whenDefined('haventory-card');
-
-    const hass = makeMockHass({ items: [testItem] });
-    (el as any).hass = hass;
-
-    // Wait for store to initialize
-    const store = (el as any).store as Store;
-    await store.init();
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    const sr = el.shadowRoot as ShadowRoot;
-    const list = sr.querySelector('hv-inventory-list') as HTMLElement;
-
-    // Dispatch edit event
-    list.dispatchEvent(new CustomEvent('edit', { detail: { itemId: 'item-1' }, bubbles: true, composed: true }));
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    const dialog = sr.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: any };
-    expect(dialog.open).toBe(true);
-    expect(dialog.item?.id).toBe('item-1');
-    expect(dialog.item?.name).toBe('Test Item');
-  });
-
-  it('calls store.adjustQuantity when increment event received', async () => {
-    // Increment events should trigger store's adjustQuantity method
-    const testItem = makeItem({ id: 'item-1', name: 'Test', quantity: 10 });
-    const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
-    document.body.appendChild(el);
-    await customElements.whenDefined('haventory-card');
-
-    const hass = makeMockHass({ items: [testItem] });
-    (el as any).hass = hass;
-
-    const store = (el as any).store as Store;
-    await store.init();
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    // Spy on adjustQuantity
-    let adjustCalled = false;
-    let adjustArgs: any[] = [];
-    const originalAdjust = store.adjustQuantity.bind(store);
-    store.adjustQuantity = async (...args: any[]) => {
-      adjustCalled = true;
-      adjustArgs = args;
-      return originalAdjust(...(args as Parameters<typeof originalAdjust>));
-    };
-
-    const sr = el.shadowRoot as ShadowRoot;
-    const list = sr.querySelector('hv-inventory-list') as HTMLElement;
-
-    // Dispatch increment event
-    list.dispatchEvent(new CustomEvent('increment', { detail: { itemId: 'item-1' }, bubbles: true, composed: true }));
-
-    await new Promise((r) => setTimeout(r, 10));
-    expect(adjustCalled).toBe(true);
-    expect(adjustArgs[0]).toBe('item-1');
-    expect(adjustArgs[1]).toBe(1); // increment by 1
-  });
-
-  it('calls store.checkOut when toggle-checkout event received for non-checked-out item', async () => {
-    // Toggle checkout on non-checked-out item should call checkOut
-    const testItem = makeItem({ id: 'item-1', name: 'Test', checked_out: false });
-    const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
-    document.body.appendChild(el);
-    await customElements.whenDefined('haventory-card');
-
-    const hass = makeMockHass({ items: [testItem] });
-    (el as any).hass = hass;
-
-    const store = (el as any).store as Store;
-    await store.init();
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    // Spy on checkOut
-    let checkOutCalled = false;
-    let checkOutItemId: string | null = null;
-    const originalCheckOut = store.checkOut.bind(store);
-    store.checkOut = async (itemId: string, ...args: any[]) => {
-      checkOutCalled = true;
-      checkOutItemId = itemId;
-      return originalCheckOut(itemId, ...args);
-    };
-
-    const sr = el.shadowRoot as ShadowRoot;
-    const list = sr.querySelector('hv-inventory-list') as HTMLElement;
-
-    // Dispatch toggle-checkout event
-    list.dispatchEvent(new CustomEvent('toggle-checkout', { detail: { itemId: 'item-1' }, bubbles: true, composed: true }));
-
-    await new Promise((r) => setTimeout(r, 10));
-    expect(checkOutCalled).toBe(true);
-    expect(checkOutItemId).toBe('item-1');
-  });
-
-  it('updates store filters when search bar emits change', async () => {
-    // Search bar change event should update store filters
-    const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
-    document.body.appendChild(el);
-    await customElements.whenDefined('haventory-card');
-
-    const hass = makeMockHass({ items: [] });
-    (el as any).hass = hass;
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    const sr = el.shadowRoot as ShadowRoot;
-    const searchBar = sr.querySelector('hv-search-bar') as HTMLElement;
-    const store = (el as any).store as Store;
-
-    // Dispatch change event with filter update
-    searchBar.dispatchEvent(new CustomEvent('change', { detail: { checkedOutOnly: true }, bubbles: true, composed: true }));
-
-    await new Promise((r) => setTimeout(r, 50));
-    expect(store.state.value.filters.checkedOutOnly).toBe(true);
-  });
-
-  it('uses custom title from config', async () => {
-    // setConfig should allow custom title
-    const el = document.createElement('haventory-card') as HTMLElement & {
-      updateComplete?: Promise<unknown>;
-      setConfig: (cfg: any) => void;
-      requestUpdate: () => void;
-    };
-    document.body.appendChild(el);
-    await customElements.whenDefined('haventory-card');
-
-    el.setConfig({ title: 'My Custom Inventory' });
-    el.requestUpdate();
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    const sr = el.shadowRoot as ShadowRoot;
-    expect(sr.textContent || '').toContain('My Custom Inventory');
-  });
-
-  it('resets dialog to create mode when Add item clicked after editing', async () => {
-    // After editing an item and closing dialog, clicking Add item should reset dialog.item to null
-    const testItem = makeItem({ id: 'item-1', name: 'Existing Item', quantity: 5 });
-    const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
-    document.body.appendChild(el);
-    await customElements.whenDefined('haventory-card');
-
-    const hass = makeMockHass({ items: [testItem] });
-    (el as any).hass = hass;
-
-    const store = (el as any).store as Store;
-    await store.init();
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    const sr = el.shadowRoot as ShadowRoot;
-    const dialog = sr.querySelector('hv-item-dialog') as HTMLElement & { open: boolean; item: any };
-
-    // Edit the item (simulate edit event)
-    const list = sr.querySelector('hv-inventory-list') as HTMLElement;
-    list.dispatchEvent(new CustomEvent('edit', { detail: { itemId: 'item-1' }, bubbles: true, composed: true }));
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    // Verify dialog is in edit mode with the item
-    expect(dialog.open).toBe(true);
-    expect(dialog.item?.id).toBe('item-1');
-
-    // Close the dialog (simulate cancel/close)
-    dialog.open = false;
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    // The dialog.item still holds the old item reference after close
-    expect(dialog.item?.id).toBe('item-1');
-
-    // Click Add item button (compact view)
-    const addBtn = sr.querySelector('button[aria-label="Add item"]') as HTMLButtonElement;
-    expect(addBtn).toBeTruthy();
-    addBtn.click();
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    // Verify dialog is now in create mode (item should be null, not the old item)
-    expect(dialog.open).toBe(true);
-    expect(dialog.item).toBe(null);
-  });
-
-  it('shows storage health in the expanded diagnostics panel', async () => {
-    const el = document.createElement('haventory-card') as HTMLElement & { updateComplete?: Promise<unknown>; hass?: any };
-    document.body.appendChild(el);
-    await customElements.whenDefined('haventory-card');
-
-    const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'A' })] });
-    (el as any).hass = hass;
-
-    const store = (el as any).store as Store;
-    await store.init();
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    const sr = el.shadowRoot as ShadowRoot;
-    (sr.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement).click();
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    const diag = sr.querySelector('[data-testid="diagnostics-panel"]') as HTMLElement;
-    expect(diag).toBeTruthy();
-    const health = diag.querySelector('[data-testid="storage-health"]') as HTMLElement;
-    expect(health).toBeTruthy();
-    expect(health.textContent || '').toContain('Healthy');
-    expect(health.textContent || '').toMatch(/generation\s+\d+/i);
-
-    // Degraded backend → refresh button surfaces issues
-    hass.__setHealth({ healthy: false, issues: ['item_id_key_mismatch', 'item_references_missing_location'] });
-    const refreshBtn = diag.querySelector('[data-testid="health-refresh"]') as HTMLButtonElement;
-    expect(refreshBtn).toBeTruthy();
-    refreshBtn.click();
-    await new Promise((r) => setTimeout(r, 10));
-    if ('updateComplete' in el && el.updateComplete) { await el.updateComplete; }
-
-    const healthAfter = sr.querySelector('[data-testid="storage-health"]') as HTMLElement;
-    expect(healthAfter.textContent || '').toContain('2 issue');
-    expect(healthAfter.textContent || '').toContain('item_id_key_mismatch');
-  });
-
-  it('exposes stub config and registers customCards metadata', async () => {
-    // getStubConfig returns a Lovelace stub pointing to this card
-    const cfg = getStubConfig();
-    expect(cfg.type).toBe('custom:haventory-card');
-
-    // customCards registration
-    const before = (window as any).customCards ? [...(window as any).customCards] : [];
-    // Re-require index to trigger registration
+    const before = window.customCards ? [...window.customCards] : [];
     await import('./index');
-    const cards = (window as any).customCards || [];
-    expect(cards.some((c: any) => c.type === 'haventory-card')).toBe(true);
+    expect((window.customCards ?? []).some((c) => c?.type === 'haventory-card')).toBe(true);
+    window.customCards = before;
+  });
+});
 
-    // Restore original state to avoid side-effects on other tests
-    (window as any).customCards = before;
+describe('haventory-card: host-owned surfaces', () => {
+  it('opens the column picker when the shell asks for it, and persists the choice', async () => {
+    const { el, sr } = await mountCard();
+    const picker = () => sr.querySelector('hv-column-picker') as HTMLElement & { open: boolean };
+    expect(picker().open).toBe(false);
+
+    sr.querySelector('[data-testid="card-shell"]')!.dispatchEvent(
+      new CustomEvent('menu-action', { detail: { id: 'columns' }, bubbles: true, composed: true }),
+    );
+    await settle(el);
+    expect(picker().open).toBe(true);
+
+    picker().dispatchEvent(
+      new CustomEvent('change', {
+        detail: { columns: ['quantity', 'tags'] },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    await settle(el);
+
+    const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { columns: string[] };
+    expect(shell.columns).toEqual(['quantity', 'tags']);
+    expect(JSON.parse(localStorage.getItem(COLUMN_PREFS_STORAGE_KEY) ?? '{}')).toEqual({
+      expanded: ['quantity', 'tags'],
+    });
+  });
+
+  it('starts the table from the columns saved last time', async () => {
+    localStorage.setItem(COLUMN_PREFS_STORAGE_KEY, JSON.stringify({ expanded: ['category'] }));
+    const { sr } = await mountCard();
+    const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { columns: string[] };
+    expect(shell.columns).toEqual(['category']);
+  });
+
+  it('closes the picker on cancel without changing anything', async () => {
+    const { el, sr } = await mountCard();
+    sr.querySelector('[data-testid="card-shell"]')!.dispatchEvent(
+      new CustomEvent('menu-action', { detail: { id: 'columns' }, bubbles: true, composed: true }),
+    );
+    await settle(el);
+
+    sr.querySelector('hv-column-picker')!.dispatchEvent(
+      new CustomEvent('cancel', { bubbles: true, composed: true }),
+    );
+    await settle(el);
+
+    const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { columns: string[] };
+    expect((sr.querySelector('hv-column-picker') as HTMLElement & { open: boolean }).open).toBe(false);
+    expect(shell.columns).toEqual([...DEFAULT_COLUMNS]);
+  });
+
+  // Export is the one action that has to leave the page, so the card — not the
+  // shell — owns it. The download itself is stubbed; what matters is that the
+  // right scope reaches the store and the file is named from the export stamp.
+  it('downloads an export for the scope the menu asked for', async () => {
+    for (const [id, scope] of [
+      ['export-all', 'all'],
+      ['export-view', 'view'],
+    ] as const) {
+      const { el, sr } = await mountCard({}, { items: [makeItem({ id: '1' })] });
+      const downloads: { filename: string; text: string }[] = [];
+      (el as unknown as { _triggerDownload: (f: string, t: string) => void })._triggerDownload = (
+        filename,
+        text,
+      ) => {
+        downloads.push({ filename, text });
+      };
+      const scopes: unknown[] = [];
+      const store = (el as unknown as { store: { exportDocument: (s: unknown) => Promise<unknown> } }).store;
+      const real = store.exportDocument.bind(store);
+      store.exportDocument = (s: unknown) => {
+        scopes.push(s);
+        return real(s);
+      };
+
+      sr.querySelector('[data-testid="card-shell"]')!.dispatchEvent(
+        new CustomEvent('menu-action', { detail: { id }, bubbles: true, composed: true }),
+      );
+      await settle(el);
+      await settle(el);
+
+      expect(scopes, id).toEqual([scope]);
+      expect(downloads, id).toHaveLength(1);
+      expect(downloads[0].filename, id).toMatch(/^haventory-export-.*\.json$/);
+      expect(JSON.parse(downloads[0].text), id).toHaveProperty('haventory_export_version');
+      document.body.innerHTML = '';
+    }
+  });
+
+  it('keeps the card up when an export fails', async () => {
+    const { el, sr } = await mountCard();
+    const store = (el as unknown as { store: { exportDocument: () => Promise<unknown> } }).store;
+    store.exportDocument = () => Promise.reject(new Error('storage_error'));
+
+    sr.querySelector('[data-testid="card-shell"]')!.dispatchEvent(
+      new CustomEvent('menu-action', { detail: { id: 'export-all' }, bubbles: true, composed: true }),
+    );
+    await settle(el);
+    await settle(el);
+
+    expect(sr.querySelector('[data-testid="card-shell"]')).toBeTruthy();
+  });
+
+  it('does nothing for a menu action it does not own', async () => {
+    const { el, sr } = await mountCard();
+    sr.querySelector('[data-testid="card-shell"]')!.dispatchEvent(
+      new CustomEvent('menu-action', { detail: { id: 'organize' }, bubbles: true, composed: true }),
+    );
+    await settle(el);
+
+    expect((sr.querySelector('hv-column-picker') as HTMLElement & { open: boolean }).open).toBe(false);
+  });
+});
+
+describe('haventory-card: store lifecycle', () => {
+  it('builds the store from hass and hands it to the shell', async () => {
+    const { sr } = await mountCard({}, { items: [makeItem({ id: '1', name: 'Hammer' })] });
+    const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { store?: unknown };
+    expect(shell.store).toBeTruthy();
+  });
+
+  it('drops its state subscription when it leaves the DOM', async () => {
+    const { el } = await mountCard();
+    el.remove();
+    await el.updateComplete;
+    // Re-attaching resubscribes rather than leaving the card frozen.
+    document.body.appendChild(el);
+    await el.updateComplete;
+    expect(el.isConnected).toBe(true);
   });
 });

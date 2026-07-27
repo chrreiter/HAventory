@@ -139,6 +139,26 @@ async def test_orphaned_only_filter_through_list_items() -> None:
 
 
 @pytest.mark.asyncio
+async def test_overdue_count_and_filter_track_check_in() -> None:
+    """`overdue_count` counts past-due items and follows the check-out state."""
+
+    repo = Repository()
+    late = repo.create_item(ItemCreate(name="Late Drill", checked_out=True, due_date="2000-01-01"))
+    repo.create_item(ItemCreate(name="Soon Drill", checked_out=True, due_date="2999-12-31"))
+    repo.create_item(ItemCreate(name="Out Drill", checked_out=True))
+    repo.create_item(ItemCreate(name="Home Drill"))
+
+    assert repo.get_counts()["overdue_count"] == 1
+    out = repo.list_items(flt=ItemFilter(overdue_only=True))
+    assert [x.name for x in out["items"]] == ["Late Drill"]
+
+    # Checking in clears the due date, so the overdue population empties with it.
+    repo.check_in(late.id)
+    assert repo.get_counts()["overdue_count"] == 0
+    assert repo.list_items(flt=ItemFilter(overdue_only=True))["items"] == []
+
+
+@pytest.mark.asyncio
 async def test_prefilter_by_area_and_and_logic_with_location() -> None:
     """Pre-filter by area id and support AND with location_id."""
 

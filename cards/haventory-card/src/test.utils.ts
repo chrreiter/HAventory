@@ -19,32 +19,74 @@ interface MockConfig {
   conflictOnUpdate?: boolean;
 }
 
-export function makeMockHass(initial?: MockConfig): HassLike & {
+type HealthPatch = {
+  healthy?: boolean;
+  issues?: string[];
+  generation?: number;
+  rate_limit?: { enabled: boolean; dropped_commands: number; dropped_events: number };
+};
+
+export interface MockHass extends HassLike {
   __emit(topic: AnyEventPayload['topic'], action: string, payload: Record<string, unknown>): void;
   __setConflict(on: boolean): void;
   __setItems(items: Item[]): void;
-  __setHealth(patch: { healthy?: boolean; issues?: string[]; generation?: number }): void;
-} {
+  __setLocations(locations: Location[]): void;
+  __setHealth(patch: HealthPatch): void;
+  /** Reject the next `n` commands with `rate_limited`, then behave normally. */
+  __rateLimitNext(n: number): void;
+  /** Reject the next `n` commands with an arbitrary error (transport by default). */
+  __failNext(n: number, err?: unknown): void;
+  /** Make every subsequent `haventory/subscribe` reject with `err`. */
+  __failSubscribe(err: unknown | null): void;
+  /** Every callWS `type` seen so far, in order. */
+  __calls: string[];
+}
+
+export function makeMockHass(initial?: MockConfig): MockHass {
   let items: Item[] = initial?.items ? [...initial.items] : [];
   let locations: Location[] = initial?.locations ? [...initial.locations] : [];
   let conflictOnUpdate = !!initial?.conflictOnUpdate;
-  let healthOverride: { healthy?: boolean; issues?: string[]; generation?: number } | null = null;
+  let healthOverride: HealthPatch | null = null;
+  let rateLimitRemaining = 0;
+  let failRemaining = 0;
+  let failError: unknown = new Error('connection lost');
+  let subscribeError: unknown | null = null;
   const subs: Record<string, SubCb[]> = {};
+  const calls: string[] = [];
 
-  const hass: HassLike & {
-    __emit: (topic: AnyEventPayload['topic'], action: string, payload: Record<string, unknown>) => void;
-    __setConflict: (on: boolean) => void;
-    __setItems: (it: Item[]) => void;
-    __setHealth: (patch: { healthy?: boolean; issues?: string[]; generation?: number }) => void;
-  } = {
+  const findItem = (msg: Record<string, unknown>): Item => {
+    const itemId = String((msg as any).item_id);
+    const it = items.find((i) => i.id === itemId);
+    if (!it) throw { code: 'not_found', message: 'not found' };
+    return it;
+  };
+  const replaceItem = (next: Item): Item => {
+    const idx = items.findIndex((i) => i.id === next.id);
+    const stamped = { ...next, updated_at: new Date().toISOString(), version: next.version + 1 };
+    if (idx >= 0) items[idx] = stamped;
+    return stamped;
+  };
+
+  const hass: MockHass = {
+    __calls: calls,
     async callWS<T>(msg: Record<string, unknown>): Promise<T> {
       const type = String(msg.type || '');
+      calls.push(type);
+      if (rateLimitRemaining > 0) {
+        rateLimitRemaining -= 1;
+        throw { code: 'rate_limited', message: 'rate limit exceeded; retry later' };
+      }
+      if (failRemaining > 0) {
+        failRemaining -= 1;
+        throw failError;
+      }
       switch (type) {
         case 'haventory/stats': {
           const counts: StatsCounts = {
             items_total: items.length,
             low_stock_count: items.filter((i) => typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number)).length,
             checked_out_count: items.filter((i) => i.checked_out).length,
+            overdue_count: items.filter((i) => isMockOverdue(i)).length,
             locations_total: locations.length,
             no_location_count: items.filter((i) => i.location_id == null).length,
           };
@@ -55,6 +97,7 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
             items_total: items.length,
             low_stock_count: items.filter((i) => typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number)).length,
             checked_out_count: items.filter((i) => i.checked_out).length,
+            overdue_count: items.filter((i) => isMockOverdue(i)).length,
             locations_total: locations.length,
             no_location_count: items.filter((i) => i.location_id == null).length,
           };
@@ -63,7 +106,15 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
             issues: healthOverride?.issues ?? [],
             counts,
             generation: healthOverride?.generation ?? 1,
+            rate_limit: healthOverride?.rate_limit ?? {
+              enabled: false,
+              dropped_commands: 0,
+              dropped_events: 0,
+            },
           } as unknown as T;
+        }
+        case 'haventory/version': {
+          return { integration_version: '0.0.1', schema_version: 4 } as unknown as T;
         }
         case 'haventory/areas/list': {
           return { areas: [] } as unknown as T;
@@ -155,10 +206,74 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
           return { categories, tags, custom_field_keys } as unknown as T;
         }
         case 'haventory/location/tree': {
-          return [] as unknown as T;
+          // Mirror the backend: nested nodes carrying direct and subtree counts,
+          // plus the matching pair when (and only when) a filter is sent.
+          const directCount = (id: string) => items.filter((i) => i.location_id === id).length;
+          const treeFilter = (msg as any).filter as unknown;
+          const matched = treeFilter ? applyMockFilter(items, treeFilter) : null;
+          const matchingDirect = (id: string) =>
+            (matched ?? []).filter((i) => i.location_id === id).length;
+          // Guard against a fixture that parents a location to itself: the real
+          // backend rejects cycles, but a test can hand us one.
+          const seen = new Set<string>();
+          const build = (parentId: string | null): any[] =>
+            locations
+              .filter((l) => (l.parent_id ?? null) === parentId && !seen.has(l.id))
+              .sort((a, b) => a.id.localeCompare(b.id))
+              .map((l) => {
+                seen.add(l.id);
+                const children = build(l.id);
+                const direct = directCount(l.id);
+                const node: Record<string, unknown> = {
+                  id: l.id,
+                  name: l.name,
+                  parent_id: l.parent_id ?? null,
+                  area_id: l.area_id ?? null,
+                  path: l.path,
+                  direct_item_count: direct,
+                  subtree_item_count:
+                    direct + children.reduce((sum, c) => sum + (c.subtree_item_count as number), 0),
+                  children,
+                };
+                if (matched) {
+                  const mDirect = matchingDirect(l.id);
+                  node.matching_direct_count = mDirect;
+                  node.matching_subtree_count =
+                    mDirect + children.reduce((sum, c) => sum + ((c.matching_subtree_count as number) ?? 0), 0);
+                }
+                return node;
+              });
+          return build(null) as unknown as T;
         }
         case 'haventory/location/list': {
           return locations as unknown as T;
+        }
+        case 'haventory/location/get': {
+          const locationId = String((msg as any).location_id);
+          const loc = locations.find((l) => l.id === locationId);
+          if (!loc) throw { code: 'not_found', message: 'location not found' };
+          return loc as unknown as T;
+        }
+        case 'haventory/location/update': {
+          const locationId = String((msg as any).location_id);
+          const loc = locations.find((l) => l.id === locationId);
+          if (!loc) throw { code: 'not_found', message: 'location not found' };
+          const next: Location = { ...loc };
+          if ('name' in msg) next.name = String((msg as any).name);
+          if ('area_id' in msg) next.area_id = ((msg as any).area_id ?? null) as string | null;
+          if ('new_parent_id' in msg) {
+            const newParentId = ((msg as any).new_parent_id ?? null) as string | null;
+            if (newParentId === locationId) {
+              throw { code: 'validation_error', message: 'a location cannot be its own parent' };
+            }
+            next.parent_id = newParentId;
+            next.path = {
+              ...next.path,
+              id_path: newParentId ? [newParentId, next.id] : [next.id],
+            };
+          }
+          locations = locations.map((l) => (l.id === locationId ? next : l));
+          return next as unknown as T;
         }
         case 'haventory/location/create': {
           const id = `${Date.now()}`;
@@ -279,33 +394,118 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
           items = items.filter((i) => i.id !== itemId);
           return null as unknown as T;
         }
-        case 'haventory/item/check_out':
-        case 'haventory/item/check_in':
-        case 'haventory/item/adjust_quantity':
-        case 'haventory/item/set_quantity':
+        case 'haventory/item/check_out': {
+          const it = findItem(msg);
+          return replaceItem({
+            ...it,
+            checked_out: true,
+            due_date: ((msg as any).due_date ?? null) as string | null,
+          }) as unknown as T;
+        }
+        case 'haventory/item/check_in': {
+          const it = findItem(msg);
+          // Checking in clears the due date — it only exists while an item is out.
+          return replaceItem({ ...it, checked_out: false, due_date: null }) as unknown as T;
+        }
+        case 'haventory/item/adjust_quantity': {
+          const it = findItem(msg);
+          const delta = Number((msg as any).delta ?? 0);
+          const next = it.quantity + delta;
+          if (next < 0) throw { code: 'validation_error', message: 'quantity must be >= 0' };
+          return replaceItem({ ...it, quantity: next }) as unknown as T;
+        }
+        case 'haventory/item/set_quantity': {
+          const it = findItem(msg);
+          const quantity = Number((msg as any).quantity ?? 0);
+          if (quantity < 0) throw { code: 'validation_error', message: 'quantity must be >= 0' };
+          return replaceItem({ ...it, quantity }) as unknown as T;
+        }
         case 'haventory/item/set_low_stock_threshold': {
-          // For tests, return the first item unchanged
-          const itemId = String((msg as any).item_id);
-          const it = items.find((i) => i.id === itemId);
-          if (!it) throw { code: 'not_found', message: 'not found' };
-          return it as unknown as T;
+          const it = findItem(msg);
+          return replaceItem({
+            ...it,
+            low_stock_threshold: ((msg as any).low_stock_threshold ?? null) as number | null,
+          }) as unknown as T;
+        }
+        case 'haventory/item/add_tags': {
+          const it = findItem(msg);
+          const incoming = (((msg as any).tags as string[]) ?? []).map((t) => t.trim().toLowerCase());
+          return replaceItem({ ...it, tags: [...new Set([...it.tags, ...incoming])] }) as unknown as T;
+        }
+        case 'haventory/item/remove_tags': {
+          const it = findItem(msg);
+          const drop = new Set((((msg as any).tags as string[]) ?? []).map((t) => t.trim().toLowerCase()));
+          return replaceItem({ ...it, tags: it.tags.filter((t) => !drop.has(t)) }) as unknown as T;
+        }
+        case 'haventory/item/update_custom_fields': {
+          const it = findItem(msg);
+          const next = { ...it.custom_fields, ...(((msg as any).set as Record<string, never>) ?? {}) };
+          for (const key of ((msg as any).unset as string[]) ?? []) delete next[key];
+          return replaceItem({ ...it, custom_fields: next }) as unknown as T;
         }
         case 'haventory/item/move': {
-          // Update location_id and return updated item
-          const itemId = String((msg as any).item_id);
-          const locationId = (msg as any).location_id ?? null;
-          const it = items.find((i) => i.id === itemId);
-          if (!it) throw { code: 'not_found', message: 'not found' };
-          const moved = { ...it, location_id: locationId, updated_at: new Date().toISOString() };
-          const idx = items.findIndex((i) => i.id === itemId);
-          items[idx] = moved;
-          return moved as unknown as T;
+          const it = findItem(msg);
+          const locationId = ((msg as any).location_id ?? null) as string | null;
+          return replaceItem({ ...it, location_id: locationId }) as unknown as T;
+        }
+        case 'haventory/items/bulk': {
+          // Mirror the backend: run each op independently, key results by op_id,
+          // never roll back. Note the per-op error key is `context`, not `data`.
+          const operations = ((msg as any).operations as
+            | { op_id: string; kind: string; payload: Record<string, unknown> }[]
+            | undefined) ?? [];
+          const results: Record<string, unknown> = {};
+          for (const op of operations) {
+            const kind = String(op.kind || '');
+            const payload = { ...(op.payload ?? {}) };
+            const dispatch: Record<string, string> = {
+              item_update: 'haventory/item/update',
+              item_delete: 'haventory/item/delete',
+              item_move: 'haventory/item/move',
+              item_adjust_quantity: 'haventory/item/adjust_quantity',
+              item_set_quantity: 'haventory/item/set_quantity',
+              item_check_out: 'haventory/item/check_out',
+              item_check_in: 'haventory/item/check_in',
+              item_add_tags: 'haventory/item/add_tags',
+              item_remove_tags: 'haventory/item/remove_tags',
+              item_update_custom_fields: 'haventory/item/update_custom_fields',
+              item_set_low_stock_threshold: 'haventory/item/set_low_stock_threshold',
+            };
+            const inner = dispatch[kind];
+            if (!inner) {
+              results[op.op_id] = {
+                success: false,
+                error: { code: 'validation_error', message: `unknown kind ${kind}`, context: { kind } },
+              };
+              continue;
+            }
+            try {
+              const result = await hass.callWS<unknown>({ type: inner, ...payload });
+              results[op.op_id] = { success: true, result };
+            } catch (err) {
+              const anyErr = err as { code?: string; message?: string };
+              results[op.op_id] = {
+                success: false,
+                error: {
+                  code: anyErr?.code ?? 'unknown_error',
+                  message: anyErr?.message ?? 'failed',
+                  context: { op_id: op.op_id, kind },
+                },
+              };
+            }
+          }
+          return { results } as unknown as T;
         }
       }
       throw new Error(`Unhandled callWS type: ${type}`);
     },
     connection: {
       subscribeMessage(cb: SubCb, msg: Record<string, unknown>) {
+        if (subscribeError !== null) {
+          // Real HA rejects the subscribe promise; the client must not treat the
+          // topic as live.
+          return Promise.reject(subscribeError);
+        }
         const topic = String((msg as any).topic || '');
         subs[topic] ||= [];
         subs[topic].push(cb);
@@ -322,12 +522,24 @@ export function makeMockHass(initial?: MockConfig): HassLike & {
     },
     __setConflict(on: boolean) { conflictOnUpdate = on; },
     __setItems(it: Item[]) { items = [...it]; },
-    __setHealth(patch: { healthy?: boolean; issues?: string[]; generation?: number }) {
+    __setLocations(locs: Location[]) { locations = [...locs]; },
+    __setHealth(patch: HealthPatch) {
       healthOverride = { ...(healthOverride ?? {}), ...patch };
     },
+    __rateLimitNext(n: number) { rateLimitRemaining = n; },
+    __failNext(n: number, err?: unknown) {
+      failRemaining = n;
+      if (err !== undefined) failError = err;
+    },
+    __failSubscribe(err: unknown | null) { subscribeError = err; },
   };
 
   return hass;
+}
+
+/** Mirror of the backend's overdue rule: a due date strictly before today (UTC). */
+function isMockOverdue(item: Item): boolean {
+  return !!item.due_date && item.due_date < new Date().toISOString().slice(0, 10);
 }
 
 /** Faithful-but-small mirror of the backend ItemFilter semantics (AND of all predicates). */
@@ -336,10 +548,15 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     q?: string;
     checked_out?: boolean;
     orphaned_only?: boolean;
+    overdue_only?: boolean;
     location_id?: string | null;
     include_subtree?: boolean;
     category?: string;
     tags_any?: string[];
+    updated_after?: string;
+    updated_before?: string;
+    created_after?: string;
+    created_before?: string;
   } | null;
   if (!filter) return list;
   return list.filter((it) => {
@@ -363,6 +580,12 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     }
     if (typeof filter.checked_out === 'boolean' && it.checked_out !== filter.checked_out) return false;
     if (filter.orphaned_only && it.location_id !== null) return false;
+    if (filter.overdue_only && !isMockOverdue(it)) return false;
+    // Canonical 'Z' timestamps compare lexicographically; both bounds are exclusive.
+    if (filter.updated_after && !(it.updated_at > filter.updated_after)) return false;
+    if (filter.updated_before && !(it.updated_at < filter.updated_before)) return false;
+    if (filter.created_after && !(it.created_at > filter.created_after)) return false;
+    if (filter.created_before && !(it.created_at < filter.created_before)) return false;
     if (filter.location_id) {
       const inSubtree = it.location_id === filter.location_id
         || (it.location_path?.id_path ?? []).includes(filter.location_id);

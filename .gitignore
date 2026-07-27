@@ -240,3 +240,7 @@ Thumbs.db
 
 # Frontend build artifacts
 cards/www/
+
+# Node — the card has its own .gitignore, but tooling run from the repo root
+# (npx, vitest) can drop a node_modules/ here too.
+node_modules/

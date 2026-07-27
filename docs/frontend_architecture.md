@@ -2,738 +2,312 @@
 
 ## Overview
 
-The HAventory Lovelace card is a custom Home Assistant dashboard component built with modern web technologies:
+The HAventory Lovelace card is a Home Assistant dashboard component built with:
 
-- **Framework**: Lit 3 (web components)
-- **Language**: TypeScript
-- **Build Tool**: Vite 8
-- **Testing**: Vitest 4 with jsdom
-- **Virtualization**: `@lit-labs/virtualizer` for efficient list rendering
+- **Framework**: Lit 3 (web components, shadow DOM)
+- **Language**: TypeScript 6 (`strict`)
+- **Build**: Vite 8 → a single ESM bundle at `cards/www/haventory/haventory-card.js`
+- **Tests**: Vitest 4 with jsdom
 
-The card provides a complete inventory management interface with real-time updates via WebSocket.
+It provides the full inventory UI, updating live over the HAventory WebSocket API.
 
 ---
 
-## Component Hierarchy
+## Entry point
 
-```
-haventory-card (main container)
-├── hv-search-bar (filters and search)
-├── hv-inventory-list (virtualized list)
-│   └── hv-item-row (individual item rows) × N
-├── hv-item-dialog (add/edit modal)
-├── hv-location-selector (location picker modal)
-├── hv-category-browser (browse-by-category modal)
-├── hv-tag-browser (browse-by-tag modal)
-├── hv-column-picker (column-selection modal)
-└── hv-import-dialog (restore-from-backup modal with preview step)
+`src/index.ts` defines `haventory-card` — the element Home Assistant knows about. It owns
+the `Store` (created on the first `hass` assignment), the Lovelace interface
+(`setConfig`, `getCardSize`, `getStubConfig`, `window.customCards`), and nothing else of
+substance:
+
+```ts
+setConfig(cfg) → { title?: string }   // every other key is ignored, not rejected
+render()       → <hv-card-shell> + <hv-column-picker>
 ```
 
----
-
-## Component Details
-
-### `haventory-card` (Main Container)
-
-**Purpose**: Root component managing overall state, store, and layout modes.
-
-**Modes**:
-- **Collapsed**: Inline card view (default)
-- **Expanded**: Full-screen overlay with focus trap
-
-**State**:
-- `store`: Central data store instance
-- `expanded`: Boolean for overlay mode
-- `_locationSelectorOpen`: Location picker visibility
-
-**Key Features**:
-- Initializes store on `hass` property change
-- Renders overlay into `#haventory-overlay-root` (appended to `document.body`)
-- Focus trap with sentinel elements (Tab/Shift+Tab cycling, Esc to close)
-- Conflict resolution banners with "View latest" / "Re-apply" actions
-- Header action row: Add item, Categories, Tags, Columns, Export (downloads a
-  timestamped JSON backup via `store.exportDocument()`), Import (opens
-  `hv-import-dialog`), Expand/Collapse
-
-**Responsive Layout**:
-- Collapsed: Compact header + filters + list
-- Expanded: Two-column layout (sidebar filters + wide list) + optional diagnostics panel
+It renders `<hv-card-shell>` and keeps only the two surfaces the shell hands back up: the
+column picker and the export download (which needs a DOM anchor click). It also publishes
+the active HA theme as `color-scheme` on the host, which every nested component inherits.
 
 ---
 
-### `hv-search-bar`
-
-**Purpose**: Search input and filter controls.
-
-**Properties**:
-- `q`: Search query string
-- `areaId`: Selected area (UUID or null)
-- `locationId`: Selected location (UUID or null)
-- `includeSubtree`: Boolean for subtree filtering
-- `checkedOutOnly`: Boolean for checked-out filter
-- `lowStockFirst`: Boolean for low-stock sorting
-- `orphansOnly`: Boolean for the "No location" (orphaned items) filter
-- `sort`: Sort configuration (field + order)
-- `areas`: Array of `{id, name}` area options
-- `locations`: Array of location objects with `{id, name, path}`
-
-**Interactions**:
-- Search input: debounced 200ms, emits `change` event with `{q: string}`
-- Dropdowns & checkboxes: emit `change` event immediately
-- All changes emit `CustomEvent<SearchBarChangeDetail>`
-
-**Rendering**:
-- Populates Area dropdown from `areas` array
-- Populates Location dropdown from `locations` array (shows `display_path`)
-- Sort options: Name, Updated, Created, Quantity, Due date, Inspection
-
----
-
-### `hv-inventory-list`
-
-**Purpose**: Virtualized container for item rows.
-
-**Properties**:
-- `items`: Array of items to display
-- `areas`: Passed through to rows
-- `locations`: Passed through to rows
-- `columns`: `ColumnKey[]` — the optional middle columns to show (Name and
-  Actions are always present). Passed through to rows; also drives the header
-  and the shared grid template (`gridTemplateFor`).
-
-**Features**:
-- Uses `@lit-labs/virtualizer` with `lit-virtualizer` element
-- Fixed height: 420px with overflow scroll
-- Renders only visible rows + buffer
-- Header row with column labels; the middle columns are user-selectable (see
-  `hv-column-picker` and Column preferences below)
-
-**Events**:
-- `near-end`: Emitted on scroll with `{ratio}` (triggers prefetch at ~70%)
-- Bubbles row events: `decrement`, `increment`, `toggle-checkout`, `edit`, `request-delete`
-
-**Performance**:
-- Handles 1000+ items smoothly
-- Only renders ~10-15 visible rows at a time
-
----
-
-### `hv-item-row`
-
-**Purpose**: Individual item row with inline actions.
-
-**Properties**:
-- `item`: Full Item object
-- `areas`: Array for area resolution
-- `locations`: Array for area resolution
-
-**Display**:
-- **Name** + LOW badge (if `quantity ≤ low_stock_threshold`)
-- **Area label**: `[Area: {name}]` resolved via `resolveAreaName()`
-- **Quantity**
-- **Category**
-- **Location path**: `display_path`
-- **Actions**: [−] [+] [Out/In] [Edit]
-
-**Area Resolution Logic**:
-```typescript
-1. Get item.location_id
-2. Find location in locations array
-3. Get location.area_id
-4. Find area in areas array
-5. Return area.name
-```
-
-**Keyboard Shortcuts**:
-- `Enter`: Open edit dialog
-- `Delete`: Request deletion (with confirmation)
-- `+` or `=`: Increment quantity
-- `-`: Decrement quantity
-
-**Events**:
-- `decrement`, `increment`, `toggle-checkout`, `edit`, `request-delete`
-
----
-
-### `hv-item-dialog`
-
-**Purpose**: Modal for creating/editing items.
-
-**Properties**:
-- `open`: Boolean visibility
-- `item`: Item object (null for create mode)
-- `error`: Error message string
-- `categorySuggestions`: `string[]` of existing category values (autocomplete source)
-- `tagSuggestions`: `string[]` of existing tag values (autocomplete source)
-- `debounceMs`: debounce delay before recomputing suggestions (default 120)
-- `customFieldKeys`: `string[]` of existing custom-field keys across the dataset
-  (from `distinct_values.custom_field_keys`), offered as key suggestions
-
-**Fields**:
-- **Name*** (required)
-- **Description** (optional multiline text)
-- **Quantity** (default 1)
-- **Low-stock threshold**
-- **Category** (autocomplete against `categorySuggestions`)
-- **Tags** (comma-separated, converted to array; autocomplete against
-  `tagSuggestions`, matching only the last comma-separated token and excluding
-  tags already entered)
-- **Location** (opens `hv-location-selector`)
-- **Checked-out** (checkbox)
-- **Due date** (enabled only when checked out)
-- **Inspection date** (always enabled, independent of check-out state)
-- **Custom fields** (define/edit/remove; see below)
-
-**Custom fields**: A repeatable editor of `{key, type, value}` rows. Types are
-`string` / `number` / `boolean` / `date`, each with a type-appropriate value
-input (text / number / checkbox / date). Types are inferred when loading an
-existing item (booleans, numbers, and `YYYY-MM-DD` strings → `date`, else
-`string`); `date` values are stored as strings since the backend only persists
-scalars. Rows with an empty key are ignored; a non-numeric `number` field blocks
-save with an inline error. Key inputs offer a `<datalist>` of existing keys
-(`customFieldKeys`). On save: **create** sends `custom_fields`; **edit** sends
-`custom_fields_set` (the full desired map) plus `custom_fields_unset` (keys
-removed relative to the original item).
-
-**Autocomplete**: The Category and Tags inputs render a suggestion dropdown
-(`role="listbox"`) sourced from `haventory/distinct_values` via
-`store.distinctValuesCache`. Matching is case-insensitive substring, debounced by
-`debounceMs`, capped at 8 results. Keyboard: `ArrowUp`/`ArrowDown` move the
-highlight, `Enter` accepts the highlighted suggestion, `Esc` closes the dropdown
-only (without closing the dialog). Selecting a category replaces the field;
-selecting a tag replaces the in-progress token and appends a separator so more
-tags can follow.
-
-**Validation**:
-- Name required (non-empty after trim)
-- Quantity ≥ 0
-- Low-stock threshold ≥ 0 or null
-- Displays inline error banner on validation failure
-
-**Events**:
-- `save`: Emits item data (create or update payload)
-- `cancel`: Close without saving
-- `delete-item`: Delete existing item (only in edit mode)
-- `open-location-selector`: Open location picker
-
-**Keyboard**:
-- `Esc`: Close dialog (or, when a suggestion dropdown is open, close the dropdown only)
-
----
-
-### `hv-location-selector`
-
-**Purpose**: Modal location picker with search.
-
-**Properties**:
-- `open`: Boolean visibility
-- `locations`: Array of locations (flat list)
-- `tree`: Unused (reserved for future tree rendering)
-
-**Features**:
-- Search input: filters by name or display_path (case-insensitive)
-- Radio buttons for location selection
-- "Include sublocations" checkbox
-- Per-row edit (✎) and delete (🗑) buttons
-- Edit form: rename, area, and "Parent location" select (moves the whole
-  subtree; the select excludes the location itself and its descendants)
-- Delete of a non-empty location is rejected by the backend
-  (`validation_error`); the card surfaces a guidance banner via
-  `setActionError()` telling the user to empty the location first
-- Currently flat list (tree view deferred to Phase 2.5)
-
-**Events**:
-- `select`: Emits `{locationId, includeSubtree}`
-- `update-location`: Emits `{locationId, name, areaId, newParentId?}` —
-  `newParentId` present only when the parent changed (null = top level)
-- `delete-location`: Emits `{locationId, name}`
-- `cancel`: Close without selection
-
-**Keyboard**:
-- `Esc`: Close selector
-
----
-
-### `hv-category-browser`
-
-**Purpose**: Dedicated modal for browsing items by category, opened from the
-card header ("Categories" button).
-
-**Properties**:
-- `open`: Boolean visibility
-- `categories`: `DistinctValue[]` (value + count) from `store.distinctValuesCache`
-- `selectedCategory`: `string | null` — the drilled-in category (null = list level)
-- `items`: `Item[]` — items filed under `selectedCategory` (fetched by the container)
-- `loading`: Boolean — drill-down fetch in progress
-
-**Two levels**:
-1. **Category list** — all used categories with item counts, filterable via a
-   search box. Empty states for "no categories" and "no matches".
-2. **Drill-down** — the items in the selected category (name, quantity, location),
-   fetched by the container via `store.fetchItemsByCategory()` (a snapshot, first
-   page capped at 500). A "‹ Categories" button returns to the list.
-
-**Events**:
-- `select-category`: `{category}` — a category was chosen (container fetches items)
-- `clear-category`: return to the category list
-- `open-item`: `{itemId}` — a drill-down item was clicked (container opens the item dialog)
-- `cancel`: close the browser
-
-**Keyboard**:
-- `Esc`: step back to the category list when drilled in; otherwise close
-
----
-
-### `hv-tag-browser`
-
-**Purpose**: Dedicated modal for browsing items by tag, opened from the card
-header ("Tags" button). Mirrors `hv-category-browser`.
-
-**Properties**:
-- `open`: Boolean visibility
-- `tags`: `DistinctValue[]` (value + count) from `store.distinctValuesCache`
-- `selectedTag`: `string | null` — the drilled-in tag (null = list level)
-- `items`: `Item[]` — items carrying `selectedTag` (fetched by the container)
-- `loading`: Boolean — drill-down fetch in progress
-
-**Two levels**: a filterable list of all used tags with item counts, and a
-drill-down of the items carrying the selected tag (fetched via
-`store.fetchItemsByTag()`, a snapshot capped at 500).
-
-**Events**: `select-tag` `{tag}`, `clear-tag`, `open-item` `{itemId}`, `cancel`.
-
-**Keyboard**:
-- `Esc`: step back to the tag list when drilled in; otherwise close
-
-> The category and tag browsers are deliberately parallel components, matching
-> this codebase's per-component modal convention (see also `hv-item-dialog` /
-> `hv-location-selector`). A future refactor could unify them into one
-> value-browser parameterized by kind.
-
----
-
-### `hv-column-picker`
-
-**Purpose**: Small modal to choose which optional columns are shown, opened from
-the "Columns" button in the card header (standard view) and in the expanded
-overlay header (expanded view).
-
-**Properties**:
-- `open`: Boolean visibility
-- `columns`: `ColumnKey[]` — the current selection for the scope being edited
-- `heading`: label (e.g. "Standard view columns" / "Expanded view columns")
-
-**Events**:
-- `change`: `{columns}` — emitted on every toggle with the new, canonically
-  ordered selection (the container persists it)
-- `cancel`: close the picker
-
----
-
-### `hv-import-dialog`
-
-**Purpose**: Restore-from-backup modal (data safety), opened from the "Import"
-button in the card header. Presentational: the container performs the WebSocket
-calls and pushes results back via properties (mirroring `hv-location-selector`).
-
-**Properties**:
-- `open`: Boolean visibility
-- `preview`: `ImportPreview | null` — validation/classification report from the container
-- `summary`: `ImportSummary | null` — success summary after an executed import
-- `busy`: Boolean — a WS call is in flight (disables actions)
-- `errorMessage`: container-level error (e.g. a WS failure) to surface
-
-**Flow**:
-1. User pastes a JSON backup document or loads it from a file picker.
-2. User picks a conflict policy (`merge` / `replace` / `skip`; default `merge`).
-3. **Preview** — emits `preview`; the container calls `store.previewImport()`
-   (`haventory/import/preview`, no mutation) and pushes the report back:
-   add/update/conflict/unchanged counts per entity type, or a structured error
-   list (`{path, message}` rows) when the document is invalid.
-4. **Import** — emits `execute`; the container calls `store.executeImport()`
-   (`haventory/import/execute`), shows the returned summary, and the store
-   refreshes every cache (the backend also broadcasts `items/reloaded` /
-   `locations/reloaded` to other clients).
-
-**Events**:
-- `preview`: `{document, policy}` — validate + classify without mutating
-- `execute`: `{document, policy}` — apply the import
-- `cancel`: close the dialog
-
-The Export counterpart needs no dialog: the header button downloads the
-`haventory/export` result as a timestamped `.json` file.
-
----
-
-## Column preferences (`store/columns.ts`)
-
-The optional middle columns are `quantity`, `category`, `location`, `tags`,
-`due_date` (Name and Actions are always shown). Users pick an independent set
-for the **standard** (card) view and the **expanded** view.
-
-- `COLUMN_DEFS` — canonical order + labels + grid sizing.
-- `normalizeColumns()` — filter to known keys, dedupe, enforce canonical order.
-- `gridTemplateFor(columns, {compact})` — the shared `grid-template-columns`
-  value (name + selected columns + actions) used by both the list header and the
-  rows so they stay aligned.
-- `DEFAULT_COLUMN_PREFS` — `{ standard: ['quantity'], expanded: ['quantity',
-  'category', 'location'] }`, mirroring the pre-feature layout.
-
-**Persistence**: choices are stored in **`localStorage`** under
-`haventory:columns:v1` (per browser). This was chosen over card config so users
-can change columns live without editing the dashboard YAML; loads/saves are
-best-effort and fall back to defaults if storage is unavailable or corrupt.
-
----
-
-## Store Architecture
-
-### `Store` Class
-
-**Purpose**: Central state management and WebSocket client wrapper.
-
-**State** (Observable):
-```typescript
-{
-  items: Item[],
-  cursor: string | null,
-  filters: StoreFilters,
-  selection: Set<string>,
-  pendingOps: Map<string, PendingOp>,
-  errorQueue: ErrorEntry[],
-  areasCache: AreasListResult | null,
-  locationTreeCache: unknown[] | null,
-  locationsFlatCache: Location[] | null,
-  statsCounts: StatsCounts | null,
-  healthCache: HealthResult | null,
-  connected: { items: boolean, stats: boolean }
-}
-```
-
-**Initialization** (`init()`):
-1. Fetch `stats()`, `listAreas()`, `getLocationTree()`, `listLocations()`
-2. Load first page of items (50, sorted by updated_at desc)
-3. Subscribe to `items`, `locations`, and `stats` topics (`locations` events
-   refresh the location caches; a `reloaded` event on either topic — emitted
-   after an import — triggers a wholesale refresh of items and caches)
-
-**CRUD Operations**:
-- `createItem()`, `updateItem()`, `deleteItem()`
-- `adjustQuantity()`, `setQuantity()`
-- `checkOut()`, `markCheckedIn()`
-- `setLowStockThreshold()`, `moveItem()`
-
-**Import / export**:
-- `exportDocument()` — full JSON backup via `haventory/export`
-- `previewImport(document, policy)` — validate + classify, no mutation
-- `executeImport(document, policy)` — apply, then refresh all caches and the item list
-
-**Optimistic Updates**:
-1. Apply change to local state immediately
-2. Send WS request
-3. On success: reconcile with server response
-4. On error: rollback + add to error queue
-
-**Conflict Handling**:
-- Detect `conflict` error code
-- Add to `errorQueue` with `kind: 'conflict'`
-- Store `itemId` and `changes` for retry
-- UI shows banner with "View latest" / "Re-apply" buttons
-
-**Pagination**:
-- Page size: 50 items
-- Prefetch triggered at ~70% scroll (`prefetchIfNeeded()`)
-- Cursor-based (opaque string from backend)
-- Merges new pages into existing list
-
-**Filtering**:
-- `setFilters()`: resets cursor and items, triggers new list call
-- Debounced search: 200ms delay on `q` changes
-- Re-subscribes to items topic with new `location_id` / `include_subtree`
-
----
-
-### `WSClient` Class
-
-**Purpose**: WebSocket message abstraction.
-
-**Methods**:
-- Utility: `ping()`, `version()`, `stats()`, `health()`, `distinctValues()`
-- Items: `listItems()`, `getItem()`, `createItem()`, `updateItem()`, `deleteItem()`
-- Quantities: `adjustQuantity()`, `setQuantity()`
-- Check-out: `checkOut()`, `markCheckedIn()`
-- Other: `setLowStockThreshold()`, `moveItem()`
-- Locations: `listLocations()`, `getLocationTree()`, `createLocation()`,
-  `updateLocation()`, `deleteLocation()`, `moveLocationSubtree()`
-- Areas: `listAreas()`
-- Import/export: `exportDocument()`, `importPreview()`, `importExecute()`
-- Subscriptions: `subscribe()` (returns `Unsubscribe` function)
-
-**WebSocket Integration**:
-- Uses Home Assistant's `hass.callWS<T>(message)` for requests
-- Uses `hass.connection.subscribeMessage(callback, message)` for subscriptions
-- Returns typed results via generics
-
----
-
-## Data Flow
-
-### Startup Flow
+## Component map
 
 ```
-1. User opens dashboard with haventory-card
-2. Card receives `hass` property
-3. Card creates Store instance
-4. Store.init():
-   a. Fetch stats, areas, locations (parallel)
-   b. Fetch first page of items (50)
-   c. Subscribe to items, locations & stats topics
-5. Card renders with populated data
+haventory-card                     Lovelace element; dispatcher + store owner
+└── hv-card-shell                  container: header, search, filters, list, footer
+    ├── hv-overflow-menu           the ⋮ menu (also used by the app bar and rows)
+    ├── hv-filter-chips            removable chips for every active filter
+    ├── hv-filter-panel            the complete filter set; desktop panel / mobile sheet
+    │   └── hv-location-tree       recursive tree with backend counts
+    ├── hv-list                    rows, skeletons, empty states, near-end scroll
+    │   ├── hv-list-row            stepper, badges, hover actions, row ⋮
+    │   └── hv-item-editor         inline expander (the one edit form)
+    │       ├── hv-chip-input      tag chips with suggestions
+    │       └── hv-location-tree
+    ├── hv-detail-sheet            mobile: read view + edit view in one sheet
+    │   ├── hv-item-editor
+    │   └── hv-checkout-popover    inline due-date step
+    ├── hv-checkout-popover        desktop: anchored due-date step
+    ├── hv-organize-dialog         Locations / Categories / Tags
+    ├── hv-import-sheet            input → preview → summary (+ invalid-document state)
+    ├── hv-diagnostics-panel       health, drop counters, subscriptions, copy report
+    ├── hv-confirm                 in-app confirmation (replaces window.confirm)
+    ├── hv-banner                  the one alert treatment
+    └── hv-full-view               fullscreen workspace
+        ├── hv-location-tree       sidebar's Locations section, manage-capable
+        ├── hv-filter-panel        same panel, staged behind a commit row on a phone
+        ├── hv-item-editor         inline above the table (the same one edit form)
+        ├── hv-data-table          sortable table + selection column
+        └── hv-bulk-bar            bulk actions, progress, per-operation results
 ```
 
-### User Action Flow (Example: Edit Item)
+The sidebar's Categories and Tags sections are rendered by `hv-full-view` itself rather
+than by a component of their own: they are flat lists of `distinct_values` entries, and the
+rows only have to look like `hv-location-tree`'s — which, being in another shadow root,
+could not have shared the rule either way.
 
-```
-1. User clicks "Edit" button on row
-2. Row emits 'edit' event with itemId
-3. Card finds item in store.state.value.items
-4. Card sets dialog.item = item, dialog.open = true
-5. Dialog renders with item data
-6. User modifies fields and clicks "Save"
-7. Dialog emits 'save' event with changes
-8. Card calls store.updateItem(itemId, changes)
-9. Store:
-   a. Applies optimistic update to state
-   b. Sends haventory/item/update via WS
-   c. On success: reconciles with server response
-   d. On conflict: adds to errorQueue
-10. State change triggers re-render
-11. Updated row appears immediately (optimistic)
-12. WS event confirms change (reconciliation)
-```
+Each of the three headings states how many of its thing there is, and offers a create
+action. Categories and tags come with their `distinct_values` length; locations are counted
+by `countLocations` in `store/location-tree.ts`, which walks every depth and takes the same
+optional filter needle `hv-location-tree` matches rows with, so the organize dialog's
+"N locations" can never disagree with the tree printed under it. Creating differs by facet
+because the backend does: a location is a real object and is created inline, while a
+category or tag exists only through the items using it, so those buttons ask the card to
+open `hv-organize-dialog` on the matching tab (`menu-action` with `{ id: 'organize', tab }`).
 
-### Real-time Event Flow
+### Two different "is this a phone?" signals
 
-```
-1. Another client creates an item
-2. Backend broadcasts 'items/created' event
-3. Store's subscription callback receives event
-4. Store.onItemsEvent(evt):
-   a. Extracts item from event
-   b. Finds index in local items array
-   c. Updates or inserts item
-5. Observable notifies listeners
-6. Card re-renders with new item
-```
+Most components take a `mobile` **property** fed by `hv-card-shell`'s *measured width* — a
+card in a narrow dashboard column is a phone layout regardless of the viewport. `hv-full-view`
+is the exception: it is fixed to the viewport, so it switches on a `@media (max-width: 700px)`
+query instead.
 
-### Filter Change Flow
+That split bit once. `hv-item-editor` and `hv-filter-panel` are property-driven but are also
+children of `hv-full-view`, which never set the property — so at 375px the expanded view drew
+the editor's three-column desktop grid in 156px + 78px + 78px. `hv-full-view` now reads the
+same breakpoint with `matchMedia` (`NARROW_QUERY`, kept in step with the media query) and
+hands it down. Note what came with it: `hv-filter-panel` in `mobile` mode *stages* its edits
+and drops its own footer, expecting the host to provide one, so the expanded view also grew
+the Clear all / Cancel / "Show N items" row the card's filter sheet has.
 
-```
-1. User selects Area in dropdown
-2. hv-search-bar emits 'change' with {areaId}
-3. Card calls store.setFilters({areaId})
-4. Store:
-   a. Merges filter patch into state
-   b. Resets cursor to null
-   c. Clears items array
-   d. Resubscribes to items topic (with new filters)
-   e. Calls listItems(reset=true)
-5. Backend returns filtered items
-6. Store updates items in state
-7. List re-renders with filtered results
-```
+### Shared wording
+
+`ui/empty-state.ts` owns the four empty-list situations — nothing yet, nothing matched,
+nothing filed here, no connection — as copy, offered actions **and** the rule that picks
+between them (`emptyKindFor`), so `hv-list` and the `hv-data-table` inside `hv-full-view`
+cannot answer the same situation two different ways. `ui/plural.ts` owns count agreement
+(`counted(n, 'item')`), and `ui/location-path.ts` owns the `/` → `›` separator every surface
+that prints a location path uses. Only the CSS is per-component — style rules cannot cross a
+shadow boundary, which is also why the sidebar's value rows restate `hv-location-tree`'s row
+styling.
+
+### Container vs presentation
+
+`hv-card-shell` and `hv-full-view` are **containers**: they hold the `Store` and call it
+directly. Everything else is presentational and communicates by events.
+
+Interactions nest several levels deep (row → editor → location tree → selection), and
+threading each one back through the root element as a re-dispatched event is more plumbing
+than it is worth.
+
+Because the shell receives a stable `store` object, a property binding would never
+re-render it — so each container subscribes to `store.state.onChange` itself in
+`connectedCallback` and unsubscribes on disconnect.
 
 ---
 
-## Testing Strategy
+## Shared UI layer (`src/ui/`)
 
-### Unit Tests (Vitest)
+| Module | What it does |
+|---|---|
+| `tokens.ts` | Every design token as a `--hv-*` custom property, bound to the HA theme variable first with the mock hex as fallback, plus dark-mode and reduced-motion overrides. `base` adds the pill/icon-button/chip/input primitives. Composed as `static styles = [tokens, base, css\`…\`]`. |
+| `icons.ts` | ~30 MDI glyphs as inline path data, rendered as `<svg fill="currentColor">`. See the deviation note below. |
+| `responsive.ts` | `ResponsiveController` — a Lit reactive controller that drives mobile mode from the card's own measured width (≤600px). |
+| `relative-time.ts` | "2 h ago" / "Jul 31" formatting, overdue checks, and the `+N days` arithmetic the check-out chips use. |
+| `item-form.ts` | Form model and payload building for the edit surfaces: validation per field, typed custom fields, tag normalization, and the `custom_fields_set` / `custom_fields_unset` diff. |
+| `value-rewrite.ts` | Tag/category rename, merge and removal as batches of item updates. |
+| `health-codes.ts` | Turns the health payload's repeated bare issue codes into one counted sentence each. |
+| `fuzzy.ts` | Nearest-existing-value suggestion for the merge flow. |
+| `empty-state.ts` | The four empty-list situations: which one applies (`emptyKindFor`), its copy and offered actions, and the markup. |
+| `location-path.ts` | The `/` → `›` convention for a location path, and a location's label with a caller-supplied fallback. |
+| `dialog-focus.ts` | Initial focus and focus return for modal surfaces. Opening must move focus into the panel or its Escape handler never fires. |
+| `keyboard.ts` | `onEscape()` for the surfaces where Escape means exactly "close", and the platform-correct save-shortcut label. |
+| `plural.ts` | Count agreement for every count string in the card. |
+| `theme.ts` | Whether the card is painted on a light or dark surface, read from HA's own theme variables rather than `prefers-color-scheme`. |
 
-**Coverage**: 153 tests across 15 files (as of the WP2 follow-ups). Run
-`npm run test:coverage` for the current coverage report — exact counts and
-percentages are not tracked here to keep this document from going stale.
+### Deviation: inline SVG instead of `<ha-icon>`
 
-**Test Files** (what each covers):
-1. `store.test.ts` — initialization, pagination/prefetch, CRUD with
-   optimistic updates and rollback, conflict handling, filter changes
-   (including orphans, q, and date sorts end-to-end through the mock),
-   location delete/move, health cache, event-driven reloads.
-2. `hv-search-bar.test.ts` — all controls render, debounced search (200ms),
-   dropdown/checkbox changes, sort selection and per-field default order.
-3. `hv-item-row.test.ts` / `hv-item-row.columns.test.ts` — field rendering,
-   LOW badge, area resolution, button actions, keyboard shortcuts,
-   column-driven cell rendering.
-4. `hv-inventory-list.test.ts` — virtualized rendering, near-end detection,
-   column-driven headers.
-5. `hv-item-dialog.test.ts` / `.autocomplete.test.ts` /
-   `.custom-fields.test.ts` — validation, due-date enable/disable,
-   category/tag suggestion dropdowns, custom-field editor rows and
-   set/unset payloads.
-6. `hv-location-selector.test.ts` — open/close, list rendering and search,
-   select/cancel, create/edit forms, delete + parent-move flows,
-   error banners, keyboard handling.
-7. `hv-category-browser.test.ts` / `hv-tag-browser.test.ts` — browse lists
-   with counts, filtering, drill-down into item lists.
-8. `hv-column-picker.test.ts` — column selection and persistence events.
-9. `hv-import-dialog.test.ts` / `store/import-export.test.ts` — import dialog
-   paste/file-load, policy selection, preview/execute flows, and store-level
-   export/import round-trips.
-10. `haventory-card.test.ts` — header/search rendering, overlay + focus trap,
-    banners, dialog flows, diagnostics/health panel.
-11. `debounce.test.ts` — utility behavior.
-
-**Mock Strategy**:
-- `makeMockHass()`: Simulates Home Assistant's `hass` object
-- In-memory WS handlers with controlled responses; `item/list` honors
-  filter + sort with the backend's semantics (AND predicates — q,
-  checked_out, orphaned_only, location/subtree, category, tags_any —
-  nullable dates last, id-asc tie-break) so store tests exercise real
-  narrowing
-- Conflict simulation via `conflictOnUpdate` flag; health override via
-  `__setHealth`; `distinct_values` derived live from the mock item set
+The design handoff specifies `<ha-icon icon="mdi:…">`. That element only resolves inside
+the Home Assistant frontend: in Vitest/jsdom it is an unresolved custom element that renders
+nothing, and it would leave the card silently icon-less anywhere HA has not loaded its icon
+set. The glyphs are therefore inlined (path data taken verbatim from the design canvas;
+Material Design Icons, Apache-2.0). `ha-button-menu` / `mwc-list-item` are likewise replaced
+by `hv-overflow-menu`.
 
 ---
 
-## Build & Deployment
+## Store (`src/store/`)
 
-### Development
+### `Store`
+
+Holds all app state in a small observable (`createObservable`), fetches over `WSClient`, and
+applies optimistic writes with rollback.
+
+**State** (`StoreState`): `items`, `cursor`, `total`, `loading`, `filters`, `selection`,
+`pendingOps`, `errorQueue`, `areasCache`, `locationTreeCache`, `locationsFlatCache`,
+`statsCounts`, `healthCache`, `versionInfo`, `distinctValuesCache`, `connected`, `degraded`.
+
+**Notable methods**
+
+| Method | Notes |
+|---|---|
+| `init()` | Parallel cache warm-up, first list, then subscribe. |
+| `listItems(reset)` | Page size 50. Keeps `total` — the filtered match count across all pages. |
+| `countMatching(filters)` | Prices an unapplied filter with a `limit: 1` probe. Powers the mobile sheet's "Show N items". |
+| `listAllMatching(filter)` / `loadAllPages()` | Omitting `limit` returns every match; used by "Load all N to select" and by tag/category rewrites. |
+| `setFilters(patch)` | Clears the selection (a row that is no longer listed cannot stay selected) and only rebuilds subscriptions when the *location* scope changes. |
+| `bulkExecute(ops, opts)` | Chunks `haventory/items/bulk` (25 ops per call), reports progress, and returns `{succeeded, failed, cancelled}`. |
+| `refreshAll()` | Clears the degraded flags, reloads every cache, and re-subscribes. The contract's prescribed recovery. |
+| `exportDocument(scope)` | `'view'` forwards the active filter. |
+| selection API | `toggleSelected`, `setSelected`, `clearSelection`, `selectAllLoaded`, `loadAllThenSelectAll`. |
+
+**Filter translation.** `toWireFilter(filters)` is the single mapping from card state to the
+backend's `ItemFilter`, exported so the count probe and "Export current view" send exactly
+what the list is showing. `include_subtree` is always sent explicitly, because the list
+filter defaults it to `false` server-side while subscriptions default it to `true`.
+
+**Rate limiting and degraded state.** Every WS call goes through `run()`, which retries a
+`rate_limited` rejection with backoff before surfacing it, and classifies failures: a code
+from the backend's taxonomy means the socket is fine, anything else counts toward
+`degraded.connectionLost`. A *rejected subscribe* — which otherwise kills live updates
+silently — marks the card degraded and drops `connected`.
+
+**Why the card offers a manual Refresh.** Subscription events carry no sequence number or
+generation, and the rate limiter can drop them silently, so a client cannot detect a gap.
+Re-listing on demand is the documented recovery, so it is a first-class action rather than
+a hidden one.
+
+### `WSClient`
+
+A typed wrapper over `hass.callWS` for each `haventory/*` command, plus `subscribe()`, which
+takes an `onError` callback so a refused subscribe is observable.
+
+It is a deliberate 1:1 mirror of the command catalogue in `backend_api_contract.md`: it
+wraps 32 of the backend's 34 commands, omitting only `haventory/cleanup` and
+`haventory/unsubscribe` (the latter handled by HA's own `subscribeMessage`). A few wrappers
+have no caller in the card today; they complete the mirror and are kept on purpose.
+
+### Column preferences (`src/store/columns.ts`)
+
+`ColumnKey` covers quantity, category, location, tags, due date, inspection date and
+updated. Each definition carries a `tableSize` for the full-view table and — only where the
+backend can actually sort by it — a `sortField`. Category, location and tags have none, so
+their headers are not clickable: a header that looks interactive but does nothing is worse
+than a plain one.
+
+Preferences persist in `localStorage` under `haventory:columns:v1` as `{ expanded: [...] }`.
+Any other key in that record is ignored, so an older or newer payload never breaks the load.
+
+---
+
+## Behaviour worth knowing
+
+- **One edit form.** `hv-item-editor` is used by the inline expander, the full view and the
+  mobile sheet. On mobile it stacks and collapses description / dates / custom fields
+  behind a single "More fields" disclosure.
+- **Only one expander at a time.** Opening another while the current one is dirty asks
+  first.
+- **Optimistic writes** stay as they were; a rejected save keeps the expander open with the
+  user's text in it, and conflicts render as a banner with *View latest* / *Re-apply*.
+- **Bulk work is chunked**, so progress is determinate and cancel stops cleanly after the
+  in-flight chunk. Nothing is rolled back — the endpoint is not transactional, and the UI
+  says so.
+- **Per-operation results.** `haventory/items/bulk` returns a result per operation and
+  partial failure is normal, so the result panel names every failed row, translates its
+  error, and offers a retry scoped to those. Retries rebuild their operations rather than
+  replaying them, because an `op_id` must never be reused (duplicates collapse silently
+  server-side).
+- **Tag and category rename/merge have no endpoint.** They are batch rewrites over every
+  affected item, each carrying `expected_version`.
+- **Location deletes are guarded client-side** before the request, using the tree's own
+  counts, so the reason is shown inline instead of a validation error after the fact.
+- **Parent pickers exclude the location and its descendants** — the backend rejects cycles.
+
+---
+
+## Data flow
+
+**Startup** — `hass` set → `new Store(hass)` → `init()` warms stats, health, areas, tree,
+flat locations, distinct values and version in parallel → `listItems(true)` → subscribe to
+items / locations / stats.
+
+**A user action** — container calls the store → store applies the change optimistically and
+notifies → container re-renders → WS resolves → store applies the server's copy (or rolls
+back and pushes an error).
+
+**A live event** — `WSClient` delivers the inner payload → store merges it into `items` →
+subscribers re-render. Item create/delete/move also schedules a coalesced `location/tree`
+refetch, because per-location counts are not pushed.
+
+**A filter change** — `setFilters` resets the cursor, clears the list and the selection,
+re-subscribes if the location scope changed, and re-lists.
+
+---
+
+## Testing
+
+Component tests follow one pattern: `document.createElement`, set properties, await
+`updateComplete`, query the shadow root by `data-testid`, dispatch real events. Every
+interactive element carries a testid.
+
+`src/test.utils.ts` provides `makeMockHass()` — an in-memory backend mirroring the WS
+contract, including `items/bulk` with per-op results, a real nested `location/tree` with
+counts, and hooks for the failure paths: `__rateLimitNext`, `__failNext`, `__failSubscribe`,
+`__setHealth`, `__setItems`, `__setLocations`, plus a `__calls` log. It **throws on an
+unhandled command**, so adding a WS call without extending the mock fails loudly.
+
+Things jsdom cannot do, and how the tests handle it:
+
+- **No CSS evaluation in shadow DOM** — tests assert the hook a stylesheet keys off (e.g.
+  the reflected `mobile` attribute), never a computed style.
+- **No layout** — `ResponsiveController` is driven through `setWidth()` / `setForced()`
+  rather than a real `ResizeObserver`.
+- **No drag and drop** — dragging items onto tree nodes (an optional item in the handoff)
+  is not implemented.
+
+Run:
 
 ```bash
 cd cards/haventory-card
-npm ci                    # Install dependencies
-npm run dev              # Dev server with HMR
-npm run lint             # ESLint
-npm run typecheck        # tsc --noEmit (not yet part of the gate)
-npm test                 # Run tests once
-npm run test:watch       # Watch mode
-npm run test:coverage    # With coverage report
-```
-
-### Production Build
-
-```bash
+npx eslint .
+npx vitest run
+npm run typecheck
 npm run build
-# Output: www/haventory/haventory-card.js
 ```
 
-**Vite Configuration**:
-- Entry: `src/index.ts`
-- Output: Single bundle (no code splitting for simplicity)
-- Target: ES2020+ (modern browsers, matches HA requirements)
-- Source maps: Enabled
+---
 
-### Integration with Home Assistant
+## Key design decisions
 
-1. Built file copied to `www/haventory/`
-2. Home Assistant serves from `/local/haventory/haventory-card.js`
-3. Card registered via Lovelace as `custom:haventory-card`
-4. No configuration required (zero-config MVP)
+**Lit** — small, standards-based, and already how HA's own frontend is written; shadow DOM
+keeps card styles from leaking into a dashboard.
+
+**Containers hold the store** — see above; the alternative was re-dispatching every nested
+interaction through the root element.
+
+**Optimistic updates** — the backend rewrites its whole store blob on each mutation, so a
+round trip is not free; the UI stays responsive and rolls back on failure.
+
+**Tokens over hardcoded colours** — every value binds to an HA theme variable first, so user
+themes keep working. Accents with no HA equivalent (tints, hover washes, warning surfaces)
+track `prefers-color-scheme`.
 
 ---
 
-## Performance Characteristics
+## Known gaps
 
-### Rendering
-
-- **Initial load**: <200ms for 50-item viewport (p95)
-- **Scroll**: 60fps steady-state (virtualization)
-- **Search debounce**: 200ms (prevents excessive filtering)
-- **Prefetch threshold**: 70% scroll position
-
-### Network
-
-- **WS round-trip** (LAN): <200ms p95
-- **Optimistic updates**: 0ms perceived latency
-- **Subscription overhead**: Minimal (single connection)
-
-### Memory
-
-- **List virtualization**: Renders ~15 DOM nodes for 1000+ items
-- **Observable pattern**: Lightweight reactivity without framework overhead
-- **Cache strategy**: Areas and locations cached for session
-
----
-
-## Future Enhancements (Phase 2.5+)
-
-1. **Tree View for Locations**: Recursive rendering with expand/collapse
-2. **Bulk Operations**: Multi-select with bulk edit/delete
-3. **Advanced Filters**: Tag-based, category, date ranges
-4. **Drag & Drop**: Reorder, move items between locations
-5. **Image Upload**: Item photos stored in HA media
-6. **Mobile Optimization**: Touch gestures, swipe actions
-7. **Offline Support**: Service worker for basic offline access
-8. **Performance**: Virtual scrolling optimizations, lazy loading
-
----
-
-## Key Design Decisions
-
-### Why Lit?
-
-- **Native web components**: No framework lock-in
-- **Small bundle size**: ~15KB (vs 50KB+ for React/Vue)
-- **SSR ready**: Home Assistant uses web components
-- **TypeScript support**: First-class
-- **Performance**: Efficient re-rendering with template caching
-
-### Why `@lit-labs/virtualizer`?
-
-- **Scalability**: Handles 1000+ items without performance degradation
-- **Lit integration**: Native support for Lit templates
-- **Accessibility**: Maintains proper ARIA roles
-- **Small footprint**: Adds ~5KB to bundle
-
-### Why Observable Pattern?
-
-- **Simplicity**: No complex state management library needed
-- **Type safety**: Full TypeScript inference
-- **Reactivity**: Components re-render on state changes
-- **Testability**: Easy to mock and verify state transitions
-
-### Why Optimistic Updates?
-
-- **UX**: Instant feedback on user actions
-- **Network resilience**: Works offline temporarily
-- **Conflict handling**: Backend version checks prevent data loss
-- **Rollback**: Errors automatically revert optimistic changes
-
----
-
-## Troubleshooting
-
-### Card Not Showing
-
-1. Check `www/haventory/haventory-card.js` exists
-2. Verify Lovelace config: `type: custom:haventory-card`
-3. Check browser console for load errors
-4. Clear browser cache
-
-### WebSocket Errors
-
-1. Verify Home Assistant is running
-2. Check HAventory integration is loaded (`hass.services.haventory`)
-3. Check browser console for WS errors
-4. Review HA logs: `grep haventory /config/home-assistant.log`
-
-### Search Not Working
-
-1. Check debounce: wait 200ms after typing
-2. Verify store is initialized (`store.state.value.items.length > 0`)
-3. Check filter state in browser DevTools
-
-### Area Labels Missing
-
-1. Verify `areasCache` is populated (`store.state.value.areasCache`)
-2. Check `locationsFlatCache` has `area_id` fields
-3. Ensure items have `location_id` set
-4. Check area resolution in `hv-item-row.resolveAreaName()`
-
----
-
-## References
-
-- **Lit Documentation**: https://lit.dev
-- **Home Assistant Frontend**: https://developers.home-assistant.io/docs/frontend
-- **WebSocket API Contract**: `docs/backend_api_contract.md`
-- **Data Shapes**: `docs/data_shapes.md`
+- Drag-and-drop of items onto sidebar tree nodes (optional in the handoff) is not built.
+- `@lit-labs/virtualizer` is still a dependency but unused; large lists rely on paging.
+- The backend cannot sort by category, location or tags, filter by due date, or bulk-create
+  items — the UI is shaped around those limits rather than hiding them.

@@ -1592,7 +1592,9 @@ async def ws_location_list(
     conn.send_message(websocket_api.result_message(msg.get("id", 0), data))
 
 
-@websocket_api.websocket_command({"type": "haventory/location/tree"})
+@websocket_api.websocket_command(
+    {vol.Required("type"): "haventory/location/tree", vol.Optional("filter"): dict}
+)
 @websocket_api.async_response
 @ws_guard("location_tree", ())
 async def ws_location_tree(
@@ -1604,10 +1606,19 @@ async def ws_location_tree(
     locs_by_id = indexes["locations_by_id"]
     children_by_parent = repo._children_ids_by_parent_id
 
+    # With a filter, every node also reports how much of it the filter keeps, so
+    # a sidebar can read "4 / 37" instead of a total that never moves. Counted
+    # once here and rolled up, rather than one query per location.
+    item_filter = msg.get("filter")
+    matching_direct = (
+        repo.count_matching_by_location(item_filter) if item_filter is not None else None
+    )
+
     def build_node(loc_id: str) -> dict[str, Any]:
         loc = locs_by_id[loc_id]
         counts = repo.get_location_item_counts(loc_id)
-        return {
+        children = [build_node(cid) for cid in sorted(children_by_parent.get(loc_id, set()))]
+        node = {
             "id": str(loc.id),
             "name": loc.name,
             "parent_id": str(loc.parent_id) if loc.parent_id is not None else None,
@@ -1620,8 +1631,15 @@ async def ws_location_tree(
             },
             "direct_item_count": counts["direct"],
             "subtree_item_count": counts["subtree"],
-            "children": [build_node(cid) for cid in sorted(children_by_parent.get(loc_id, set()))],
+            "children": children,
         }
+        if matching_direct is not None:
+            direct = matching_direct.get(loc_id, 0)
+            node["matching_direct_count"] = direct
+            node["matching_subtree_count"] = direct + sum(
+                int(c["matching_subtree_count"]) for c in children
+            )
+        return node
 
     roots = sorted(children_by_parent.get(None, set()))
     tree = [build_node(r) for r in roots]

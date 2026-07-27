@@ -130,11 +130,15 @@ class ItemFilter(TypedDict, total=False):
     low_stock_first: bool
     # When true, only items without a location (location_id is None)
     orphaned_only: bool
+    # When true, only items whose due_date has passed (see filter_items)
+    overdue_only: bool
     location_id: str | None
     area_id: str
     include_subtree: bool
     updated_after: str
     created_after: str
+    updated_before: str
+    created_before: str
 
 
 class Sort(TypedDict):
@@ -693,6 +697,26 @@ def item_is_low_stock(item: Item) -> bool:
     return item.quantity <= thr
 
 
+def today_utc_date() -> str:
+    """Today's date as YYYY-MM-DD in UTC — the reference point for "overdue"."""
+    return datetime.now(UTC).date().isoformat()
+
+
+def item_is_overdue(item: Item, *, today: str = "") -> bool:
+    """Return True when the item's due date has passed.
+
+    A due date only exists while an item is checked out (see
+    ``validate_due_date_rules``), so this needs no separate checked-out test.
+    Both sides are YYYY-MM-DD, which compares correctly as text. ``today``
+    defaults to the current UTC date; callers filtering many items pass it in
+    once rather than re-reading the clock per item.
+    """
+
+    if not item.due_date:
+        return False
+    return item.due_date < (today or today_utc_date())
+
+
 def _item_matches_location(item: Item, location_id: str | None, include_subtree: bool) -> bool:
     if location_id is None:
         return True
@@ -719,8 +743,10 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     - checked_out: exact match
     - low_stock_only: quantity <= threshold (0 valid, None disables)
     - orphaned_only: only items without a location (location_id is None)
+    - overdue_only: due_date set and strictly before today (UTC)
     - location_id: equals; include_subtree optionally includes descendants (by prefix of id_path)
-    - updated_after/created_after: ISO-8601 UTC with 'Z'
+    - updated_after/created_after: ISO-8601 UTC with 'Z', strictly greater-than
+    - updated_before/created_before: ISO-8601 UTC with 'Z', strictly less-than
     """
 
     if not flt:
@@ -733,16 +759,24 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     checked_out = flt.get("checked_out") if "checked_out" in flt else None
     low_stock_only = bool(flt.get("low_stock_only")) if "low_stock_only" in flt else False
     orphaned_only = bool(flt.get("orphaned_only")) if "orphaned_only" in flt else False
+    overdue_only = bool(flt.get("overdue_only")) if "overdue_only" in flt else False
     location_id = flt.get("location_id") if "location_id" in flt else None
     include_subtree = bool(flt.get("include_subtree")) if "include_subtree" in flt else False
     updated_after = flt.get("updated_after") if "updated_after" in flt else None
     created_after = flt.get("created_after") if "created_after" in flt else None
+    updated_before = flt.get("updated_before") if "updated_before" in flt else None
+    created_before = flt.get("created_before") if "created_before" in flt else None
 
     # Validate filter bounds (raises ValidationError for malformed input).
-    if updated_after:
-        _parse_iso8601_utc(updated_after, field_name="updated_after")
-    if created_after:
-        _parse_iso8601_utc(created_after, field_name="created_after")
+    for bound, name in (
+        (updated_after, "updated_after"),
+        (created_after, "created_after"),
+        (updated_before, "updated_before"),
+        (created_before, "created_before"),
+    ):
+        if bound:
+            _parse_iso8601_utc(bound, field_name=name)
+    today = today_utc_date() if overdue_only else ""
 
     predicates_active = (
         bool(q)
@@ -752,9 +786,12 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
         or checked_out is not None
         or low_stock_only
         or orphaned_only
+        or overdue_only
         or location_id is not None
         or updated_after is not None
         or created_after is not None
+        or updated_before is not None
+        or created_before is not None
     )
     if not predicates_active:
         # e.g. flt only carries presentation hints such as low_stock_first
@@ -769,11 +806,16 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
         matches_checked = (checked_out is None) or (it.checked_out == bool(checked_out))
         matches_low_stock = (not low_stock_only) or item_is_low_stock(it)
         matches_orphaned = (not orphaned_only) or (it.location_id is None)
+        matches_overdue = (not overdue_only) or item_is_overdue(it, today=today)
         matches_location = _item_matches_location(it, location_id, include_subtree)
         # Canonical fixed-width 'Z' timestamps compare lexicographically, so no
         # per-item parsing is needed (the filter bound was validated above).
-        matches_updated = (updated_after is None) or (it.updated_at > updated_after)
-        matches_created = (created_after is None) or (it.created_at > created_after)
+        matches_updated = ((updated_after is None) or (it.updated_at > updated_after)) and (
+            (updated_before is None) or (it.updated_at < updated_before)
+        )
+        matches_created = ((created_after is None) or (it.created_at > created_after)) and (
+            (created_before is None) or (it.created_at < created_before)
+        )
         ok = (
             matches_q
             and matches_any
@@ -782,6 +824,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
             and matches_checked
             and matches_low_stock
             and matches_orphaned
+            and matches_overdue
             and matches_location
             and matches_updated
             and matches_created

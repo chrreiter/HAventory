@@ -248,23 +248,89 @@ item and deletes it (best-effort cleanup even on failure).
 
 ### Frontend (Lovelace card)
 
-- Lit + TypeScript + Vite; tests with Vitest. Build outputs to `www/haventory/`.
-- Real-time via WebSocket; optimistic UI; virtualization for large lists.
-- Sorting by name, updated, created, quantity, **due date**, and **inspection date**
-  (date sorts place undated items last); filters include checked-out, low-stock-first,
-  and **"No location"** (orphaned items).
-- Location management in the picker: create, rename, re-area, **delete** (backend
-  rejects deleting non-empty locations — the card explains how to proceed), and
-  **move a whole subtree** to a new parent, with descendant paths updating live.
-- Expanded view includes a diagnostics panel with **storage health**
-  (`haventory/health`: status, issues, generation) and a refresh action.
-- **Export / Import** buttons in the card header: Export downloads a JSON backup;
-  Import opens a dialog with a **preview step** (adds/updates/conflicts per policy),
-  `merge` / `replace` / `skip` policy selection, and structured error display before
-  anything is written.
+Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs to
+`www/haventory/`. Real-time over WebSocket with optimistic writes throughout.
+
+- **Standard card** — one Add button and a single ⋮ menu (Select items, Organize, Refresh,
+  Diagnostics, Export backup / Export current view, Import); Columns is offered in the full
+  view, which is the only surface it changes. Live stat badges — items, low stock, overdue,
+  checked out — are click-to-filter. Rows carry a quantity stepper, a LOW badge, an overdue
+  check-out chip, and hover actions.
+- **Filters** — a collapsible panel exposing the whole backend filter object: location
+  (from a real tree), area, include-subtree, category chips with counts, tag chips with an
+  any/all toggle, low-stock-only, checked-out, overdue and no-location — each with the
+  count of what it would keep — plus updated / created windows (each row's ≥ flips to ≤ for
+  "before") and sort across all six sortable fields.
+  "Low stock" (a filter) and "Low stock first" (an ordering) are separate, independently
+  clearable controls. Active filters appear as removable chips.
+- **Editing** — the row expands in place; there is no dialog chain. Full field parity:
+  name, description, quantity, low-stock threshold, category, tags, location (picked from
+  a tree inside the form), checked-out with due date, inspection date, and typed
+  custom fields (text / number / yes-no / date). Saves send the item's expected version so
+  a concurrent edit surfaces as a conflict.
+- **Full view** — a fullscreen workspace with a coloured app bar, a **browse sidebar**, and
+  a sortable table. Only columns the backend can sort by get a clickable header. The
+  sidebar leads with the location tree carrying the backend's own per-location counts and
+  an orphans row, then **Categories** and **Tags** as sections of their own; each heading
+  collapses from a chevron and states how many there are — locations counted at every
+  depth — and Locations stays at the top. Category picks one value and
+  tags accumulate, matching how the backend treats them. With a filter on, each location
+  row reads "4 / 37" — matches over total — so you can see where the matches are rather
+  than a total that never moves. The counts ignore the *location* filter, since the sidebar
+  is how you pick one. Each heading also offers a create action: Locations opens an inline
+  name field, while Categories and Tags open the organize dialog on their own tab — a
+  category exists through the items using it, so that is where making one is explained.
+  From the second selected tag on, the Tags heading carries the same any/all control the
+  filter panel has, since that is the mode governing what the sidebar just selected. The
+  app bar's stat pills are the card's: low in amber, overdue in red, checked out, each
+  click-to-filter. An empty table names the reason and offers a way out — the same
+  wording and the same offers as the card's list.
+
+  At phone width the sidebar folds away and the surface hands its own breakpoint down to
+  the edit form and the filter panel, so both take their phone layouts: one field per row,
+  and filters staged behind a "Show N items" commit row exactly as in the card's sheet.
+- **Multi-select and bulk actions** — move, add/remove tags, set category, adjust
+  quantity, check out/in and delete over a selection. Work is chunked so progress is
+  determinate and cancellable, and the result is reported *per operation*: "39 of 42
+  succeeded", every failure named with its reason and a retry scoped to just those.
+  Select-all covers loaded rows only and says so, with an explicit "load the rest" path.
+- **Organize dialog** — Locations / Categories / Tags in one place, each tab stating its
+  total above the list and each row offering the same moves: an "N items" link that opens
+  the filtered list in the full view, plus rename, merge and delete. Locations keep their collapsible tree and edit inline, with a guarded
+  delete that explains what is in the way. Category and tag rename, merge and removal are
+  batch rewrites over every affected item; a location merge re-files that location's items,
+  re-parents its children and deletes the husk — all with the same progress and
+  partial-failure reporting.
+- **Check-out** invites an optional due date (+1 / +7 / +30 day suggestions) rather than
+  silently checking out with none — the date is what makes overdue highlighting mean
+  anything. "No due date" stays a first-class choice.
+- **Mobile** — the card switches layout from its own width. Tapping a row opens one bottom
+  sheet holding everything about the item; filters open as a staged sheet whose apply
+  button shows the live matching count. Every surface honours the same 44px touch minimum
+  and 16px field text (iOS zooms a page whose fields are smaller and never zooms back).
+- **Import** keeps the mandatory server-side dry run: paste or pick a file, choose
+  merge / replace / skip, preview add/update/conflict counts per items and locations, then
+  import. An invalid document is shown as a list of JSON paths, not one flat message.
+- **Diagnostics and degraded states** — the ⋮ menu carries a Diagnostics panel (health,
+  rate-limit drop counters, subscription state, copyable report) badged only when
+  something is wrong, plus banners for connection loss, rate limiting and the
+  payload-free reload an import broadcasts. Because subscription events carry no sequence
+  number, a dropped one is undetectable — so the card says the list may be stale and
+  offers an explicit Refresh.
+- Deletes use an in-app confirmation, not `window.confirm`.
 - Card auto-registered as a Lovelace resource on integration setup.
 - **Note:** after first install, a browser refresh (F5 / Ctrl+Shift+R) is required for the
   card to appear in the picker (standard for all custom cards).
+
+#### Card configuration
+
+```yaml
+type: custom:haventory-card
+title: Inventory   # optional; defaults to "Inventory"
+```
+
+`title` is the only option the card reads. Any other key is ignored rather than rejected,
+so a stale dashboard config never breaks the card.
 
 ### CI/CD & Ops
 
@@ -302,10 +368,12 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
   (categories grouped case-insensitively) plus distinct custom-field keys — powers
   category/tag autocomplete, the browser views, and custom-field key suggestions.
 
-### ✅ Phase 2: Frontend Lovelace Card (Complete)
-- Lit 3 + TypeScript components (`haventory-card`, `hv-search-bar`, `hv-inventory-list`,
-  `hv-item-row`, `hv-item-dialog`, `hv-location-selector`); real-time sync; optimistic
-  updates with conflict resolution; Vite build → `www/haventory/haventory-card.js`.
+### ✅ Phase 2: Frontend Lovelace Card (Complete — superseded by Phase 2.5)
+> Historical: this describes the proof-of-concept card. Phase 2.5 replaced its components;
+> the capabilities below carried over, the surfaces they are reached through did not.
+
+- Lit 3 + TypeScript components; real-time sync; optimistic updates with conflict
+  resolution; Vite build → `www/haventory/haventory-card.js`.
 - Item dialog offers debounced, keyboard-navigable category/tag autocomplete sourced from
   `haventory/distinct_values`.
 - Dedicated **category browser** (header → "Categories"): lists used categories with item
@@ -318,6 +386,20 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
 - **Custom fields UI** in the item dialog: define/edit/remove typed fields
   (string/number/boolean/date) with type-appropriate inputs; existing field keys across the
   dataset are offered as suggestions.
+
+### ✅ Phase 2.5: UI revamp (WP4.1)
+- The proof-of-concept card was replaced with the redesigned UI: decluttered header with a
+  single ⋮ menu, complete filter panel, inline row editing, a full view with a real
+  location tree sidebar and a sortable table, multi-select with per-operation bulk results,
+  a tabbed organize dialog, an optional check-out due date, a two-step import flow, and
+  diagnostics plus degraded-state banners. Mobile gets its own layout, detail sheet and
+  staged filter sheet.
+- Closes the standing gaps for the location tree view, bulk operations, unified
+  category/tag browsing, and the card's silent failure when a subscription is
+  rate-limited.
+- Verified against a running Home Assistant frontend, after which the proof-of-concept
+  components and the `ui: legacy` option that reached them were removed — there is one
+  card now, not two.
 
 ### 🚧 Phase 3: Polish & HACS (Planned)
 - HACS publication; release automation (release-please); additional optimizations.

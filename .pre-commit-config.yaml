@@ -14,7 +14,9 @@ repos:
     hooks:
       - id: codespell
         args:
-          - --ignore-words-list=hass
+          # "batery" is deliberate: it is the typo'd tag the organize dialog's
+          # merge suggestion is tested against.
+          - --ignore-words-list=hass,batery
         exclude: |
           (?x)^(
             cards/www/|

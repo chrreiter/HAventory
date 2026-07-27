@@ -60,8 +60,9 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - Result: `{integration_version: string, schema_version: number}`
 
 - `haventory/stats`
-  - Result: `{items_total: number, low_stock_count: number, checked_out_count: number, locations_total: number, no_location_count: number}`
+  - Result: `{items_total: number, low_stock_count: number, checked_out_count: number, overdue_count: number, locations_total: number, no_location_count: number}`
   - `no_location_count` is the number of items without a location (`location_id == null`, i.e. the `orphaned_only` filter's population).
+  - `overdue_count` is the number of items whose `due_date` is strictly before today in UTC (the `overdue_only` filter's population). It is derived from the calendar, not from stored state, so it can change without any mutation — no event is emitted when the date rolls over.
 
 - `haventory/distinct_values`
   - Request: `{id, type: "haventory/distinct_values"}` (no payload; extra fields → `validation_error`)
@@ -188,9 +189,10 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - Result: `<Location[]>` (flat list)
 
 - `haventory/location/tree`
-  - Payload: `{}`
+  - Payload: `{filter?: <ItemFilter>}`
   - Result: Array of tree nodes: `{id, name, parent_id, path: <LocationPath>, direct_item_count, subtree_item_count, children: <Node[]>}`
   - `direct_item_count` counts items whose `location_id` is exactly that node; `subtree_item_count` counts items in the node or any descendant (`subtree_item_count >= direct_item_count`). Counts change on item create/delete/move — clients showing them should refresh the tree on item events (or on `stats/counts`), not only on location events.
+  - With a `filter`, each node additionally carries `matching_direct_count` and `matching_subtree_count` — the same two counts restricted to items the filter keeps — so a location sidebar can show "4 / 37" rather than a total that ignores the active filter. The unfiltered counts are still returned unchanged. Both keys are absent when no `filter` is sent. A filter that names `location_id` is honoured like any other, so a sidebar wanting per-location counts should leave the location dimension out of the filter it sends.
 
 - `haventory/areas/list`
   - Payload: `{}`

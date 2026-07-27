@@ -56,12 +56,47 @@ restarts HA (~30 s), and initialises the config entry via WS. Run from Git Bash:
 ```bash
 set -a; . ./.env; set +a
 bash scripts/reload_addon.sh --container home-assistant --sleep 30 --tail-logs
+uv run python .claude/skills/run-haventory/pin_resource.py   # <- always
 ```
 
 Success looks like: `{"ok": true, "version": {...}}` plus a
 `Storage health: schema_version=N items=N locations=N` debug log line.
 Backend-only change and HA already has the current card? The same script is still the
 path — it redeploys both; there is no partial-deploy variant.
+
+**`pin_resource.py` is not optional after a card change.** HA serves `/local/` with
+`Cache-Control: public, max-age=2678400` (31 days, no revalidation), so the browser
+keeps running the *old* card from disk cache even though the new file is on the server.
+The script re-registers the Lovelace resource as
+`/local/haventory/haventory-card.js?v=<content-hash>` — a new build is a new URL, which
+no cache can satisfy — and collapses the duplicate resource HA's restart re-adds. To
+confirm the server itself has the new bytes:
+
+```bash
+sha256sum cards/www/haventory/haventory-card.js
+curl -s "$HA_BASE_URL/local/haventory/haventory-card.js" | sha256sum   # must match
+```
+
+### Wipe HAventory from the dev HA (fresh-start testing)
+
+`smoke_online.sh` with `HA_CONTAINER` set only removes the store file. For a full purge —
+data, config entry, Lovelace resource, deployed code — remove the config entry via REST
+first (so the integration unloads and can't flush the store back out on shutdown):
+
+```bash
+ENTRY=$(curl -s -H "Authorization: Bearer $HA_TOKEN" \
+  "$HA_BASE_URL/api/config/config_entries/entry" \
+  | python -c 'import json,sys; print(next(e["entry_id"] for e in json.load(sys.stdin) if e["domain"]=="haventory"))')
+curl -s -X DELETE -H "Authorization: Bearer $HA_TOKEN" \
+  "$HA_BASE_URL/api/config/config_entries/entry/$ENTRY"
+docker exec home-assistant sh -lc \
+  'rm -f /config/.storage/haventory_store*; rm -rf /config/custom_components/haventory /config/www/haventory'
+```
+
+Then redeploy as above. A clean result logs `Storage health: schema_version=N items=0
+locations=0`. (`grep -il haventory /config/.storage/*` still matches
+`core.entity_registry` if the HA instance itself is named "HAventory Dev" — that is the
+weather entity's `original_name`, not a leftover.)
 
 ## Run (agent path)
 
@@ -103,6 +138,62 @@ prints browser console errors — check them when the card renders blank.
 (card → WS → repository index → filtered render), so it doubles as a UI smoke:
 searching `sponges` must reduce the list to the one matching item.
 
+#### Mobile view + touch/swipe
+
+```bash
+node screenshot.mjs --mobile                          # iPhone 15 (390x844, touch on)
+node screenshot.mjs --device "Pixel 8" --out m.png    # any Playwright descriptor
+node screenshot.mjs --devices                         # list descriptor names
+node screenshot.mjs --viewport 390x844                # raw size, touch on
+node screenshot.mjs --mobile --dark                   # HA dark theme + dark OS scheme
+```
+
+`--mobile`/`--device`/`--viewport` enable `hasTouch` + `isMobile`, so the page takes
+the touch / `pointer: coarse` code paths **and HA itself switches to its narrow,
+sidebar-collapsed layout** — the card is then laid out exactly as on a phone.
+(Playwright's `hasTouch` sets `maxTouchPoints` and `(pointer: coarse)` but leaves
+`'ontouchstart' in window` **false**, so the script also launches Chromium with
+`--touch-events=enabled` — code that feature-detects touch that way would otherwise
+take the desktop path.)
+
+`--search`, `--tap`, `--swipe` and `--wait` run **in the order given on the command
+line**, so gestures chain:
+
+```bash
+node screenshot.mjs --mobile \
+  --tap 'haventory-card [data-testid="add-item"]' \
+  --wait 800 \
+  --swipe 'down@hv-item-editor' \
+  --out sheet-dismiss.png
+```
+
+- `--tap <selector>` dispatches a real tap when touch is on (falls back to click on desktop).
+- `--swipe <dir>[:<px>][@<selector>]` — `up|down|left|right`, default target
+  `haventory-card`, default distance 60 % of the target box. Implemented over CDP
+  `Input.dispatchTouchEvent` (touchStart → 16 × touchMove @60 fps → touchEnd), so it is a
+  genuine touch stream: scroll containers, `touch-action` rules and any gesture handler
+  see exactly what a finger produces.
+  Direction is the **finger's** direction — `--swipe up` scrolls the list down.
+  The list's scroll container is **`hv-list`** (`--swipe 'up@hv-list'`), which is what
+  verifies the header/search stay pinned while only the rows move.
+  Measured limits: ~36 px is eaten by Chromium's touch-slop threshold before scrolling
+  starts, and there is **no fling momentum** after `touchEnd` (a 200 px swipe scrolls
+  164 px and stops dead). Distance-sensitive or momentum-sensitive behaviour needs a
+  real device.
+- `--full` captures the full scrollable page; `--dsf <n>` overrides the pixel ratio
+  (device descriptors default to 3x, which makes big PNGs).
+
+Limitation: this is **Chromium** emulation. iPhone descriptors set an iOS viewport and UA
+but not WebKit's engine, so iOS-only issues (safe-area insets, `100vh`/`dvh` behaviour,
+momentum-scroll quirks) still need a real device — see "Real phone on the LAN" below.
+
+#### Real phone on the LAN (ground truth)
+
+The container publishes 8123 on the host, so a phone on the same network can hit
+`http://<host-LAN-IP>:8123` directly (`ipconfig` for the IP; Windows Firewall must allow
+inbound 8123 on the private profile). This is the only way to test real fingers, momentum
+scrolling, iOS Safari, and the HA Companion app's webview.
+
 ## Test
 
 Offline suites (no HA needed — full gate incl. lint is in CLAUDE.md):
@@ -128,6 +219,18 @@ clean-start mode), then `Online smoke test completed successfully.`
 
 ## Gotchas
 
+- **A card change you can't see in the browser is almost always the 31-day
+  `/local/` cache** — run `pin_resource.py` (see Deploy) before concluding the fix
+  didn't work. Hard-reload (Ctrl+Shift+R) also works, once.
+- **HA's service worker reloads the page ~30–90 s into a fresh browser context**,
+  destroying Playwright's JS execution context mid-run. It looks exactly like a card
+  crash but leaves no console output and no HA log entry. `screenshot.mjs` blocks
+  service workers for this reason; the resulting single `navigator.serviceWorker is
+  undefined` console error comes from HA's own bundle, not the card.
+- **HA dark mode is independent of the OS `prefers-color-scheme`** — a card has to be
+  checked in all four combinations. Drive HA's side with a `selectedTheme`
+  localStorage entry (`{"dark":true}`) before load, the OS side with
+  `page.emulateMedia({ colorScheme })`.
 - **`HA_CONTAINER` turns `smoke_online.sh` destructive**: when set, the script
   `rm -f`s `haventory_store` inside that container and restarts HA before testing —
   all dev items/locations are gone. Leave it unset unless you *want* a wiped store.

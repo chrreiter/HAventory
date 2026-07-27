@@ -1,13 +1,13 @@
-// Simple global z-index allocator so the last opened modal sits on top.
-// Allocates pairs (backdrop, surface) using base and base+1.
-
 const Z_BASE_START = 10000;
 const Z_INCREMENT = 2;
 const GLOBAL_KEY = '__haventoryZBase';
 
 /**
- * Returns the next base z-index to use for a modal.
- * The backdrop should use this value; the surface should use base + 1.
+ * The next base z-index for a modal, so the last one opened sits on top.
+ *
+ * Allocated in pairs: the backdrop takes this value and the surface takes
+ * base + 1. The counter lives on `window` because each card instance has its
+ * own module scope but they share one stacking context.
  */
 export function nextZBase(): number {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
