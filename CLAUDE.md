@@ -198,11 +198,10 @@ Full report is in the WP0.5 session; the durable conclusions:
   config-entry update listener and uses no advanced-mode config flow.
 - **Fixed (mechanical):** `config_flow.py` now annotates the flow step with
   `ConfigFlowResult` (HA's recommended type since 2024.4) instead of importing `FlowResult`.
-- **Flagged for WP1 (not fixed — needs a small guarded change):** `storage.py` uses bare
-  `asyncio.create_task(...)` for the debounced persist. HA guidance is to use hass/entry
-  tracked task helpers (`hass.async_create_background_task(coro, name=...)`). Not a
-  deprecation and not broken (the task ref is held in `hass.data`, so no GC), but tracked
-  tasks are cancelled/awaited on shutdown. Effort: S.
+- ~~**Flagged for WP1 (not fixed — needs a small guarded change):** `storage.py` uses bare
+  `asyncio.create_task(...)` for the debounced persist.~~ — fixed: the debounced persist is
+  scheduled via `hass.async_create_background_task(coro, name=...)`, so a pending debounce
+  is cancelled/awaited on shutdown.
 - **Optional nice-to-haves (not required):** add `"single_config_entry": true` to
   `manifest.json` (matches the flow's single-instance guard); frontend card could opt into
   the 2026.6 picker via `getEntitySuggestion`. Neither affects current functionality.
@@ -271,8 +270,9 @@ Adopted tooling (latest stable at review time; verified against release pages / 
 
 - ~~**Type-harden** `ws.py` + `repository.py` and drop the mypy per-module override~~ —
   done in WP4 (per-module strict on the core four + `stubs/`).
-- **`storage.py`**: switch the debounced persist from bare `asyncio.create_task` to
-  `hass.async_create_background_task(...)` (WP0.5 finding; effort S).
+- ~~**`storage.py`**: switch the debounced persist from bare `asyncio.create_task` to
+  `hass.async_create_background_task(...)` (WP0.5 finding; effort S)~~ — done: the persist
+  task is HA-tracked.
 - **TypeScript 7**: adopt once typescript-eslint supports it (currently capped `<6.1.0`).
 - **`tsc --noEmit`** is clean as of WP2 follow-ups (`npm run typecheck`); not yet part of the
   gate — adding it is a WP4/WP5 call.

@@ -63,7 +63,10 @@ logger:
 
 Run `debug` for groups A–H. Before the group-J soak, confirm the debug log volume is
 sane over 24 h; if it is not, drop to `info` for the soak and note that in the results.
-Review logs for anything logged at WARNING+ and for accidental PII.
+Review logs for accidental PII and for anything at WARNING+ that is **not** a
+contract-defined client-recoverable rejection — `validation_error`, `not_found`, `conflict`
+and `rate_limited` each log exactly one WARNING line, no traceback, by design (item 32); a
+traceback from `custom_components.haventory` is always a finding (exit criterion 4).
 
 **2. Objective consistency check.** `haventory/health` (`ws.py`) validates the **in-memory**
 repository — index cross-references and the `counts` aggregates. Called *after a restart* it
@@ -106,7 +109,7 @@ client + OS version, date. Put it in the results log.
 |----|----------|---------------|---------|
 | A1 | Fresh install on a clean HA (ENV-B): HACS/manual copy → restart → add integration via config flow → add card via the UI card picker | Integration sets up without error; card appears in the picker; empty state renders with no locations and no console error | ✅ |
 | A2 | Card resource auto-registration (storage-mode Lovelace) | `/local/haventory/haventory-card.js` present exactly once in `.storage/lovelace_resources`; card loads without a manual step | ✅ |
-| A3 | YAML-mode Lovelace (ENV-B, `lovelace: mode: yaml`) | Registration is skipped with a clear log line; following the documented manual resource steps makes the card load (see open item 28) | ✅ |
+| A3 | YAML-mode Lovelace (ENV-B, `lovelace: mode: yaml`) | Registration is skipped with a clear log line; following the README's "YAML-mode dashboards" steps makes the card load (item 28, documented by #125) | ✅ |
 | A4 | Attempt a second config entry | Rejected as single-instance; no duplicate storage or resource | |
 | A5 | First-run with a pre-existing store (upgrade-in-place from a dev instance) | Existing items/locations load; `health` healthy | ✅ |
 
@@ -135,7 +138,7 @@ client + OS version, date. Put it in the results log.
 | C4 | Restart HA while the card is open | Card reconnects; no error spam; data correct after reconnect | ✅ |
 | C5 | Background the companion app 30+ min, then resume (iOS especially) | Socket re-established; list is current, not stale | ✅ |
 | C6 | Remote access over Nabu Casa / reverse proxy / VPN | Card asset loads over the external URL; subscriptions work; latency is tolerable for quantity adjustments | ✅ |
-| C7 | Enable rate limiting via the options flow, then trip it | The card surfaces the condition rather than dying silently — see open item 1; if it does not, either fix or ship with rate limiting off **and document it** | ✅ |
+| C7 | Enable rate limiting via the options flow, then trip it | The card shows the "Live updates paused" banner, retries the subscribe up to 4 times with backoff, and recovers on its own once the limiter admits it — or pauses visibly with a working Refresh action after the budget is spent (item 1, fixed by #128) | ✅ |
 
 ### D — Lifecycle: restart, update, rollback
 
@@ -150,8 +153,8 @@ Run `haventory/health` after **each** of these, and snapshot the store around D7
 | D5 | HA **next beta** | Same; any breakage is filed before it reaches stable | |
 | D6 | Minimum supported HA (ENV-C). **Blocked on open item 29** — the floor has not been set yet, and `hacs.json`'s `2026.7.0` is stale. Run this against whatever number the post-feature-freeze decision lands on | Integration sets up and the full CRUD path works on the declared floor; if it does not, the floor is wrong and must be raised before release | ✅ |
 | D7 | Integration update N → N+1 **with real data**, including a schema migration | Migration runs once, is idempotent on a second restart, data intact, `health` healthy | ✅ |
-| D8 | Integration **rollback** N+1 → N (ENV-B only) | Newer-schema data is either migrated down or **refused loudly** — it must not be silently relabeled. *Known defect*, open item 25 | ✅ |
-| D9 | Card update with a warm browser cache: update the integration, then reload normally (no hard refresh), on desktop **and** in the companion app | New card version actually loads; check `haventory/version` vs. the card build. *Suspected failure* — the resource URL has no cache-busting query, open item 26 | ✅ |
+| D8 | Integration **rollback** N+1 → N (ENV-B only) | Newer-schema data is **refused loudly**: setup fails with `ConfigEntryError` naming both versions and the store file is left byte-identical — never migrated down, never silently relabeled (decided; item 25 fixed by #120) | ✅ |
+| D9 | Card update with a warm browser cache: update the integration, then reload normally (no hard refresh), on desktop **and** in the companion app | New card version actually loads; check `haventory/version` vs. the card build. The resource is now registered as `…haventory-card.js?v=<manifest version>` and a stale entry is rewritten in place (item 26, fixed by #122) | ✅ |
 
 ### E — Backup & restore
 
@@ -160,7 +163,7 @@ Run `haventory/health` after **each** of these, and snapshot the store around D7
 | E1 | Take a full HA backup; inspect the archive | Contains `.storage/haventory_store`, `.storage/lovelace_resources`, and `www/haventory/haventory-card.js` | ✅ |
 | E2 | Backup taken **while HAventory is being written to** (run a bulk import during the backup), restore into ENV-D | Restored store is valid JSON; `health` healthy; item count matches the pre-backup count ±the in-flight batch | ✅ |
 | E3 | Restore an **older** backup into the **current** integration (ENV-D) | Forward migration runs on load; data intact; `health` healthy | ✅ |
-| E4 | Restore a **newer-schema** backup into an **older** integration (ENV-D) | Same expectation as D8 — migrate down or refuse; never silently relabel (open item 25) | ✅ |
+| E4 | Restore a **newer-schema** backup into an **older** integration (ENV-D) | Same expectation as D8 — refuse loudly; never migrate down, never silently relabel (item 25, fixed by #120) | ✅ |
 | E5 | Partial/selective backup | Document the minimum set a user must select to fully restore HAventory (store + Lovelace resources + `www` asset, or "reinstall the integration and restore only the store") | ✅ |
 
 ### F — Data integrity & scale
