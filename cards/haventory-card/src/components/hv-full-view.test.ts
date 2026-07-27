@@ -618,6 +618,23 @@ describe('hv-full-view: editing', () => {
     expect(rule).toMatch(/overflow-y: auto/);
   });
 
+  // The app bar's minimum is 778px — close, title, the search box's own floor,
+  // three pills, Add item, the ⋮ — so a 760px landscape phone was 18px short of
+  // the layout. Hidden on both axes, those 18px could not be reached: the ⋮ was
+  // sliced in half and the editor's Save sat flush against the screen edge.
+  it('can be panned sideways when the layout is wider than the screen', () => {
+    const rule = /\.shell \{([^}]*)\}/.exec(fullCss())?.[1] ?? '';
+    expect(rule, 'no .shell rule').not.toBe('');
+    expect(rule).toMatch(/overflow-x: auto/);
+    // Vertical stays clipped: the surface is the viewport, and the boxes
+    // inside it (the form holder, the filter panel, the table) scroll
+    // themselves.
+    expect(rule).toMatch(/overflow-y: hidden/);
+    expect(rule).not.toMatch(/overflow: hidden/);
+    // Without this a pan that runs out of surface scrolls the dashboard behind.
+    expect(rule).toMatch(/overscroll-behavior: contain/);
+  });
+
   // Turn a phone on its side and the viewport is 400px tall, not 844. The app
   // bar (64), the context bar (68) and the footer (41) leave 227px; a 70dvh
   // ceiling asked for 280, so the holder ran past the bottom of a shell that

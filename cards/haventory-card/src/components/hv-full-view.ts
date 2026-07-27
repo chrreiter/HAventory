@@ -76,7 +76,19 @@ export class HVFullView extends LitElement {
         grid-template-rows: auto 1fr;
         background: var(--hv-surface);
         color: var(--hv-text);
-        overflow: hidden;
+        /* The app bar does not compress below 778px — close, the title, the
+           search box's own minimum, three count pills, Add item and the ⋮ —
+           and the grid column takes that minimum whatever the screen is. On a
+           phone held sideways, 760px, the surface was therefore 18px wider
+           than the viewport, and with overflow hidden those 18px did not
+           exist: the ⋮ was sliced down the middle, the editor's Save sat flush
+           against the screen edge, and no gesture could bring either back.
+
+           Vertical stays clipped — this surface *is* the viewport and the
+           boxes inside it do their own scrolling — but when the layout
+           genuinely does not fit sideways it can now be panned to. */
+        overflow-x: auto;
+        overflow-y: hidden;
         overscroll-behavior: contain;
         box-shadow: var(--hv-shadow-overlay);
       }
