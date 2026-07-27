@@ -122,11 +122,6 @@ export class HVItemEditor extends LitElement {
         gap: 4px;
         min-width: 0;
       }
-      .pair {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-      }
       /* Checked out, Due date and Inspection date used to be three equal thirds
          of one row, which said they were three peers. Two of them are not. The
          boxes below say which belongs to which before a word is read. */
@@ -687,17 +682,16 @@ export class HVItemEditor extends LitElement {
   private _text(
     field: keyof ItemFormModel,
     label: string,
-    opts: { type?: string; span?: number; testid: string; placeholder?: string } = { testid: '' },
+    opts: { type?: string; testid: string } = { testid: '' },
   ) {
     const error = this._errorFor(field as string);
-    return html`<div class="cell ${opts.span === 2 ? 'span2' : opts.span === 3 ? 'span3' : ''} ${error ? 'invalid' : ''}">
+    return html`<div class="cell ${error ? 'invalid' : ''}">
       <label class="hv-label" for=${opts.testid}>${label}</label>
       <input
         id=${opts.testid}
         class="hv-input"
         type=${opts.type ?? 'text'}
         data-testid=${opts.testid}
-        placeholder=${opts.placeholder ?? ''}
         .value=${String(this._model[field] ?? '')}
         @input=${(e: Event) => {
           const raw = (e.target as HTMLInputElement).value;

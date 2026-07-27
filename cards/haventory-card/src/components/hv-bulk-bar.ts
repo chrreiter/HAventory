@@ -85,8 +85,7 @@ export class HVBulkBar extends LitElement {
         gap: 8px;
         flex-wrap: wrap;
       }
-      .picker input,
-      .picker select {
+      .picker input {
         box-sizing: border-box;
         background: var(--hv-surface);
         border: 1px solid var(--hv-input-border);
@@ -127,7 +126,7 @@ export class HVBulkBar extends LitElement {
         padding: 7px 14px;
         font: 400 12.5px var(--hv-font);
       }
-      .bar button:hover:not([disabled]) {
+      .bar button:hover {
         background: rgba(255, 255, 255, 0.24);
       }
       .bar button.active {
@@ -139,9 +138,6 @@ export class HVBulkBar extends LitElement {
         border: 1px solid rgba(239, 83, 80, 0.7);
         color: #ef9a9a;
         font-weight: 500;
-      }
-      .bar button[disabled] {
-        opacity: 0.5;
       }
       .progress {
         padding: 12px 16px;

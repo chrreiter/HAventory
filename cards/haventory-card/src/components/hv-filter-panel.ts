@@ -360,8 +360,6 @@ export class HVFilterPanel extends LitElement {
   @property({ type: Number }) grandTotal: number | null = null;
   /** Stage edits and apply on commit (mobile sheet) instead of applying live. */
   @property({ type: Boolean, reflect: true }) mobile = false;
-  /** Live match count for the staged filter — drives "Show N items". */
-  @property({ type: Number }) stagedCount: number | null = null;
   /**
    * Whole-inventory stat counts, for the "Show only" tallies.
    *

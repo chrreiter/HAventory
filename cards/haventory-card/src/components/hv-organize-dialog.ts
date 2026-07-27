@@ -704,9 +704,8 @@ export class HVOrganizeDialog extends LitElement {
 
     this._rewrite = { label, done: 0, total: ops.length, failed: [], finished: false };
     const outcome = await this.store?.bulkExecute(ops, {
-      onProgress: (done, total, failed) => {
+      onProgress: (done, total) => {
         this._rewrite = { label, done, total, failed: this._rewrite?.failed ?? [], finished: false };
-        void failed;
       },
     });
     this._rewrite = {

@@ -599,11 +599,6 @@ export class HVCardShell extends LitElement {
       case 'check-in':
         void this.store?.markCheckedIn(item.id, item.version);
         break;
-      case 'check-out':
-        // A due date is optional over the WS API, but it is what makes overdue
-        // highlighting mean anything — so offer the step rather than skipping it.
-        this._checkout = { itemId: item.id, mode: 'check-out', anchor: null };
-        break;
       case 'request-delete':
         this._requestDelete(item);
         break;
@@ -999,7 +994,6 @@ export class HVCardShell extends LitElement {
       .total=${st.total}
       .grandTotal=${st.statsCounts?.items_total ?? null}
       .counts=${st.statsCounts}
-      .stagedCount=${this._stagedCount}
       ?mobile=${mobile}
       @change=${(e: CustomEvent) => this._setFilters(e.detail as Partial<StoreFilters>)}
       @stage=${(e: CustomEvent) => {

@@ -20,7 +20,6 @@ import type {
   ListItemsResult,
   Location,
   LocationTreeNode,
-  Sort,
   StatsCounts,
   StoreFilters,
   StoreState,
@@ -29,8 +28,6 @@ import type {
 import { WSClient } from './ws';
 import { DEFAULT_SORT } from './sort';
 import { sortLocationTree } from './location-tree';
-
-/** Max items fetched for a single-category/tag browse drill-down (snapshot). */
 
 /** Page size for the main list. */
 const PAGE_LIMIT = 50;
@@ -555,8 +552,8 @@ export class Store {
    * return the whole match set — that is what "Load all N to select" and the
    * tag/category merge rewrites need, since selection cannot span unloaded pages.
    */
-  async listAllMatching(filter: ItemFilter, sort?: Sort): Promise<Item[]> {
-    const res = await this.ws.listItems(filter, sort);
+  async listAllMatching(filter: ItemFilter): Promise<Item[]> {
+    const res = await this.ws.listItems(filter);
     return res.items;
   }
 

@@ -237,23 +237,6 @@ export const base = css`
     outline: none;
   }
 
-  .hv-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    border-radius: var(--hv-radius-chip);
-    border: 1px solid var(--hv-divider);
-    background: transparent;
-    color: var(--hv-chip-text);
-    padding: 4px 11px;
-    font-size: 12.5px;
-  }
-  .hv-chip.selected {
-    color: var(--hv-primary-darker);
-    background: var(--hv-primary-tint);
-    border-color: var(--hv-primary);
-  }
-
   .hv-sr-only {
     position: absolute;
     width: 1px;

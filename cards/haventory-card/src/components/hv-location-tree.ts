@@ -213,8 +213,6 @@ export class HVLocationTree extends LitElement {
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
 
   @state() private _expanded = new Set<string>();
-  /** Nodes whose children the filter forced open; kept apart from user intent. */
-  private _autoExpanded = new Set<string>();
 
   /** Open the ancestors of `id` so a selection deep in the tree is visible. */
   revealPathTo(id: string | null) {
@@ -304,7 +302,7 @@ export class HVLocationTree extends LitElement {
     const areaName = this.showAreas ? this._areaName(node.area_id) : null;
 
     return html`
-      <div class="node">
+      <div>
         <div
           class="row ${selected ? 'selected' : ''} ${this.manage ? 'manage' : ''} ${this.touch
             ? 'touch'
