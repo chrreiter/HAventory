@@ -18,6 +18,15 @@ const q = (el: HVDetailSheet, sel: string) => el.shadowRoot?.querySelector(sel) 
 const all = (el: HVDetailSheet, sel: string) =>
   [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
 
+/** jsdom lays out no shadow DOM, so type sizes are asserted on the sheet. */
+const sheetCss = () => {
+  const styles = (customElements.get('hv-detail-sheet') as typeof HVDetailSheet).styles;
+  return (Array.isArray(styles) ? styles : [styles])
+    .map((s) => String(s.cssText))
+    .join('\n')
+    .replace(/\s+/g, ' ');
+};
+
 function captured(el: HVDetailSheet, names: string[]) {
   const seen: string[] = [];
   for (const name of names) el.addEventListener(name, () => seen.push(name));
@@ -57,6 +66,27 @@ describe('hv-detail-sheet: read view', () => {
     expect(q(el, '[data-testid="sheet-qty"]')?.textContent).toBe('2');
     expect(q(el, '[data-testid="sheet-qty"]')?.classList.contains('low')).toBe(true);
     expect(q(el, '[data-testid="sheet-threshold"]')?.textContent).toContain('low-stock at 8');
+  });
+
+  // The two things this view exists to show were 2.7 sizes apart: the location
+  // path at 12.5px was the smallest text on the sheet, while the quantity at
+  // 34px was half again bigger than the item's own name.
+  it('sizes the path and the quantity off one scale', () => {
+    const css = sheetCss();
+    const size = (selector: string) => {
+      const rule = new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+      return Number(/font-size: ([\d.]+)px/.exec(rule)?.[1]);
+    };
+    const path = size('\\.bar \\.crumb');
+    const qty = size('\\.hero \\.qty');
+    const name = size('\\.title h2');
+
+    // Body size, like the description under it — not the smallest text here.
+    expect(path).toBe(13.5);
+    // Still the biggest number on the surface, but no louder than the item it
+    // belongs to.
+    expect(qty).toBeLessThanOrEqual(name);
+    expect(qty / path).toBeLessThan(2);
   });
 
   it('emits quantity changes', async () => {

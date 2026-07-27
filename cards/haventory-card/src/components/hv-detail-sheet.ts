@@ -39,7 +39,12 @@ export class HVDetailSheet extends LitElement {
       .bar .crumb {
         flex: 1;
         min-width: 0;
-        font-size: 12.5px;
+        /* This and the quantity below are the two things the read view is for,
+           and they were 12.5px and 34px — a factor of 2.7 apart, with the path
+           the smallest text on the sheet and the number half again bigger than
+           anything else on it. Both now sit on the sheet's own scale: the path
+           reads at body size, like the description under it. */
+        font-size: 13.5px;
         color: var(--hv-text-secondary);
         overflow: hidden;
         text-overflow: ellipsis;
@@ -152,7 +157,11 @@ export class HVDetailSheet extends LitElement {
         min-width: 90px;
       }
       .hero .qty {
-        font-size: 34px;
+        /* The top of the sheet's scale, which is the item's own name — the
+           readout is still the biggest number on the surface and still the
+           thing the two 52px buttons point at, without out-shouting the item
+           it belongs to. See the note on .bar .crumb. */
+        font-size: 22px;
         font-weight: 500;
         line-height: 1;
       }
