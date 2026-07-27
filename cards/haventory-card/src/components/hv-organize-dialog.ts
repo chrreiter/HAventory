@@ -420,7 +420,7 @@ export class HVOrganizeDialog extends LitElement {
   @state() private _newValue = '';
   @state() private _newValueError: string | null = null;
 
-  private storeUnsub?: () => void;
+  private _storeUnsub?: () => void;
 
   private get st(): StoreState | null {
     return this.store?.state.value ?? null;
@@ -428,15 +428,15 @@ export class HVOrganizeDialog extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
-    if (this.store && !this.storeUnsub) {
-      this.storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+    if (this.store && !this._storeUnsub) {
+      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
-    this.storeUnsub?.();
-    this.storeUnsub = undefined;
+    this._storeUnsub?.();
+    this._storeUnsub = undefined;
   }
 
 
@@ -451,8 +451,8 @@ export class HVOrganizeDialog extends LitElement {
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('store') && this.store) {
-      this.storeUnsub?.();
-      this.storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+      this._storeUnsub?.();
+      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
     if (changed.has('open') && this.open) {
       this._zBase = nextZBase();
@@ -985,7 +985,7 @@ export class HVOrganizeDialog extends LitElement {
           manage
           showCounts
           showAreas
-          ?touch=${this.mobile}
+          ?mobile=${this.mobile}
           .nodes=${tree}
           .areas=${this.st?.areasCache?.areas ?? []}
           .filterText=${this._filter}

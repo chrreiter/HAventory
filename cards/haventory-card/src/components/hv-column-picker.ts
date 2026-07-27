@@ -133,7 +133,7 @@ export class HVColumnPicker extends LitElement {
     }
   }
 
-  private _onCancel = () => {
+  private _close = () => {
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
     this.open = false;
   };
@@ -150,10 +150,10 @@ export class HVColumnPicker extends LitElement {
     if (!this.open) return null;
     const selected = new Set(normalizeColumns(this.columns));
     return html`
-      <div class="backdrop" role="presentation" style="z-index: ${this._zBase ?? 9998};" @click=${this._onCancel}></div>
+      <div class="backdrop" role="presentation" style="z-index: ${this._zBase ?? 9998};" @click=${this._close}></div>
       <div class="panel-wrap" role="none" style="z-index: ${(this._zBase ?? 9998) + 1};">
         <div class="panel" role="dialog" aria-modal="true" aria-label="Column selection"
-          @keydown=${onEscape(() => this._onCancel())}>
+          @keydown=${onEscape(() => this._close())}>
           <h2>${this.heading}</h2>
           <ul data-testid="column-options">
             ${COLUMN_DEFS.map((c) => {
@@ -176,7 +176,7 @@ export class HVColumnPicker extends LitElement {
             })}
           </ul>
           <div class="actions">
-            <button class="hv-pill" data-testid="column-picker-done" @click=${this._onCancel}>Done</button>
+            <button class="hv-pill" data-testid="column-picker-done" @click=${this._close}>Done</button>
           </div>
         </div>
       </div>

@@ -377,7 +377,7 @@ export class HVCardShell extends LitElement {
     null;
 
   private readonly responsive = new ResponsiveController(this);
-  private storeUnsub?: () => void;
+  private _storeUnsub?: () => void;
 
   get mobile(): boolean {
     return this.responsive.mobile;
@@ -390,23 +390,23 @@ export class HVCardShell extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this._filterPanelOpen = readPanelPref();
-    if (this.store && !this.storeUnsub) {
+    if (this.store && !this._storeUnsub) {
       // The parent passes a stable `store` object, so a property binding would
       // never re-render this element — it has to watch the store itself.
-      this.storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
-    this.storeUnsub?.();
-    this.storeUnsub = undefined;
+    this._storeUnsub?.();
+    this._storeUnsub = undefined;
   }
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('store') && this.store) {
-      this.storeUnsub?.();
-      this.storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+      this._storeUnsub?.();
+      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
       this._searchDraft = this.store.state.value.filters.q;
     }
     if (changed.has('forceMobile')) this.responsive.setForced(this.forceMobile);
@@ -419,7 +419,7 @@ export class HVCardShell extends LitElement {
   }
 
   // ---------- Filters ----------
-  private emitSearch = debounce((q: string) => this.store?.setFilters({ q }), SEARCH_DEBOUNCE_MS);
+  private _emitSearch = debounce((q: string) => this.store?.setFilters({ q }), SEARCH_DEBOUNCE_MS);
 
   private _setFilters(patch: Partial<StoreFilters>) {
     this.store?.setFilters(patch);
@@ -1054,7 +1054,7 @@ export class HVCardShell extends LitElement {
             .value=${this._searchDraft}
             @input=${(e: Event) => {
               this._searchDraft = (e.target as HTMLInputElement).value;
-              this.emitSearch(this._searchDraft);
+              this._emitSearch(this._searchDraft);
             }}
           />
         </label>

@@ -688,7 +688,7 @@ export class HVFullView extends LitElement {
   /** The ops of the last run, so "Retry failed" can replay just the failures. */
   private _lastOps: { label: string; ops: BulkOperation[] } | null = null;
 
-  private storeUnsub?: () => void;
+  private _storeUnsub?: () => void;
   private _prevFocus: HTMLElement | null = null;
 
   private get st(): StoreState | null {
@@ -697,8 +697,8 @@ export class HVFullView extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
-    if (this.store && !this.storeUnsub) {
-      this.storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+    if (this.store && !this._storeUnsub) {
+      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
     this._narrowQuery ??= window.matchMedia?.(NARROW_QUERY) ?? null;
     if (this._narrowQuery) {
@@ -709,8 +709,8 @@ export class HVFullView extends LitElement {
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
-    this.storeUnsub?.();
-    this.storeUnsub = undefined;
+    this._storeUnsub?.();
+    this._storeUnsub = undefined;
     this._narrowQuery?.removeEventListener('change', this._onNarrowChange);
   }
 
@@ -728,8 +728,8 @@ export class HVFullView extends LitElement {
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('store') && this.store) {
-      this.storeUnsub?.();
-      this.storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+      this._storeUnsub?.();
+      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
     if (changed.has('open')) {
       if (this.open) {
@@ -789,7 +789,7 @@ export class HVFullView extends LitElement {
     list[list.length - 1]?.focus();
   }
 
-  private emitSearch = debounce((q: string) => this.store?.setFilters({ q }), SEARCH_DEBOUNCE_MS);
+  private _emitSearch = debounce((q: string) => this.store?.setFilters({ q }), SEARCH_DEBOUNCE_MS);
 
   private _setFilters(patch: Partial<StoreFilters>) {
     this.store?.setFilters(patch);
@@ -1388,7 +1388,7 @@ export class HVFullView extends LitElement {
               .value=${this._searchDraft}
               @input=${(e: Event) => {
                 this._searchDraft = (e.target as HTMLInputElement).value;
-                this.emitSearch(this._searchDraft);
+                this._emitSearch(this._searchDraft);
               }}
             />
           </label>

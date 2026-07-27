@@ -122,9 +122,9 @@ export class HVLocationTree extends LitElement {
         display: flex;
         gap: 2px;
       }
-      /* Reveal-on-hover only where hovering exists; on touch these were simply
-         unreachable. Hidden rather than unrendered, so the rest of the row does
-         not jump sideways the moment the pointer arrives. */
+      /* Reveal-on-hover only where hovering exists, or a touch screen could
+         never reach these at all. Hidden rather than unrendered, so the rest of
+         the row does not jump sideways the moment the pointer arrives. */
       @media (hover: hover) {
         .actions {
           visibility: hidden;
@@ -197,10 +197,10 @@ export class HVLocationTree extends LitElement {
   /** Reveal the rename/merge/delete affordances on hover. Only the organize dialog sets this. */
   @property({ type: Boolean }) manage = false;
   /**
-   * Touch layout for `manage`: one always-visible ⋮ per row instead of a row of
-   * icons that only a hover can reveal.
+   * Phone layout for `manage`: one always-visible ⋮ per row instead of a row of
+   * icons only a hover can reveal.
    */
-  @property({ type: Boolean }) touch = false;
+  @property({ type: Boolean }) mobile = false;
   /**
    * Disable this node and everything under it. Parent pickers must exclude the
    * location itself and its descendants — the backend rejects cycles.
@@ -303,7 +303,7 @@ export class HVLocationTree extends LitElement {
     return html`
       <div>
         <div
-          class="row ${selected ? 'selected' : ''} ${this.manage ? 'manage' : ''} ${this.touch
+          class="row ${selected ? 'selected' : ''} ${this.manage ? 'manage' : ''} ${this.mobile
             ? 'touch'
             : ''}"
           role="treeitem"
@@ -344,7 +344,7 @@ export class HVLocationTree extends LitElement {
           </button>
           ${areaName ? html`<span class="area-chip" data-testid="tree-area">Area: ${areaName}</span>` : null}
           ${this.showCounts ? this._renderCount(node, isExcluded) : null}
-          ${this.manage && this.touch
+          ${this.manage && this.mobile
             ? html`<span class="actions">
                 <button
                   class="action"
@@ -360,7 +360,7 @@ export class HVLocationTree extends LitElement {
                 </button>
               </span>`
             : null}
-          ${this.manage && !this.touch
+          ${this.manage && !this.mobile
             ? html`<span class="actions">
                 <button
                   class="action"
