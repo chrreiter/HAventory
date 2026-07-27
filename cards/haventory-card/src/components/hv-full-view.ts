@@ -597,7 +597,18 @@ export class HVFullView extends LitElement {
            the table give the room up instead, which is exactly what already
            happens for the filter panel above it. */
         flex: none;
-        max-height: 70dvh;
+        /* A ceiling in dvh alone says nothing about the room this column has.
+           Turn a phone on its side — 760x400 — and the app bar (64), the
+           context bar (68) and the footer (41) leave 227px, while 70dvh asks
+           for 280: the holder ran 13px past the bottom of the screen and took
+           the footer with it. The shell clips and cannot scroll, so the sticky
+           Save/Cancel bar this box pins to its own bottom edge was cut off with
+           no gesture that could reach it.
+
+           The second term measures the column itself, so the app bar's height
+           is already accounted for however it lays out; the 116px is the
+           context bar above the form plus the footer below it. */
+        max-height: min(70dvh, calc(100% - 116px));
         overflow-y: auto;
       }
       .new-location {

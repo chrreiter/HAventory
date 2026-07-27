@@ -614,8 +614,32 @@ describe('hv-full-view: editing', () => {
     expect(rule, 'no .editor-holder rule').not.toBe('');
     expect(rule).toMatch(/flex: none/);
     // A ceiling is still wanted — the form is taller than a short viewport.
-    expect(rule).toMatch(/max-height: \d+dvh/);
+    expect(rule).toMatch(/max-height: min\(\d+dvh/);
     expect(rule).toMatch(/overflow-y: auto/);
+  });
+
+  // Turn a phone on its side and the viewport is 400px tall, not 844. The app
+  // bar (64), the context bar (68) and the footer (41) leave 227px; a 70dvh
+  // ceiling asked for 280, so the holder ran past the bottom of a shell that
+  // clips and cannot scroll — the footer and the sticky Save/Cancel bar were
+  // both off the screen with no gesture that could reach them.
+  it('leaves the footer its room on a landscape phone', () => {
+    const rule = /\.editor-holder \{([^}]*)\}/.exec(fullCss())?.[1] ?? '';
+    const ceiling = /max-height: min\((\d+)dvh, calc\(100% - (\d+)px\)\)/.exec(rule);
+    expect(ceiling, `ceiling ignores the room the column has: ${rule}`).not.toBe(null);
+
+    // Measured against the column, not the viewport, so however the app bar
+    // lays out is already priced in. What is reserved is what sits inside this
+    // column around the form: the context bar and the footer.
+    const reserved = Number(ceiling?.[2]);
+    expect(reserved).toBeGreaterThanOrEqual(109);
+
+    // 400px landscape: the column is 336 tall, so the form stops at 220 and
+    // both the sticky action bar and the footer stay on the screen.
+    const column = 400 - 64;
+    expect(Math.min((Number(ceiling?.[1]) / 100) * 400, column - reserved)).toBeLessThanOrEqual(
+      column - 68 - 41,
+    );
   });
 });
 
