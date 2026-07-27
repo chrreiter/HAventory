@@ -436,6 +436,27 @@ describe('hv-card-shell: list and footer', () => {
     await settle(el);
     expect(store.state.value.filters.q).toBe('');
   });
+
+  // The offer names the same action as the ⋮ menu's "Import backup…", and the
+  // shell owns that sheet. Handing the id up to the host instead drops it: the
+  // host's switch knows only the surfaces it owns, so the press does nothing.
+  it('opens the import sheet from the untouched-inventory offer', async () => {
+    const { el, sr } = await mountShell({ items: [] });
+    const handedUp: string[] = [];
+    el.addEventListener('menu-action', (e) => handedUp.push((e as CustomEvent).detail.id));
+
+    const list = sr.querySelector('hv-list') as HTMLElement;
+    const offer = list.shadowRoot?.querySelector('[data-id="import"]') as HTMLButtonElement;
+    expect(offer).toBeTruthy();
+
+    offer.click();
+    await settle(el);
+
+    expect((sr.querySelector('[data-testid="card-import"]') as HTMLElement & { open: boolean }).open).toBe(
+      true,
+    );
+    expect(handedUp).toEqual([]);
+  });
 });
 
 describe('hv-card-shell: banners', () => {

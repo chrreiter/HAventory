@@ -55,6 +55,27 @@ export class HVCardShell extends LitElement {
         border-radius: var(--hv-radius-card);
         overflow: hidden;
       }
+      /* The ⋮ menu is an absolutely positioned dropdown inside this box, so the
+         overflow rule above — which is what keeps the list's rows inside the
+         rounded corners — clips it. A card holding few enough items to be shorter
+         than the open menu cuts it off at the bottom edge, and the entries it
+         loses are the last ones: Export and Import. An empty card is the worst
+         case at 269px against a 381px menu.
+
+         Reserving the height the menu needs is what keeps every entry reachable.
+         Measured from the card's top edge: 56px of header above the trigger, a
+         6px gap, then the menu itself; the remainder covers a second line under
+         "Export current view", which the sub-label takes when the filtered count
+         is long.
+
+         Only above 600px, matching hv-overflow-menu's own breakpoint: below it
+         the menu is a fixed bottom sheet anchored to the viewport, which nothing
+         here clips and which would not justify a 470px card on a phone. */
+      @media (min-width: 601px) {
+        :host {
+          min-height: 470px;
+        }
+      }
       /* Declared once here and inherited into every nested component's shadow
          DOM — the shared .hv-icon-button, the sheets, the row steppers and the
          editor all read it, so none of them needs its own copy of "is the card
@@ -749,7 +770,21 @@ export class HVCardShell extends LitElement {
     // The full view re-dispatches its own menu selections through here; stop the
     // original so the host card does not also see it directly.
     e.stopPropagation();
-    const { id } = e.detail as { id: string };
+    const { id, tab } = e.detail as { id: string; tab?: OrganizeTab };
+    this._runMenuAction(id, tab);
+  };
+
+  /**
+   * What an action id means, for every surface that can name one.
+   *
+   * The ⋮ menus and the empty state's offers share an id vocabulary, and the
+   * shell owns some of those surfaces (import, organize, diagnostics) while the
+   * host card owns others (the column picker, the export download). Both entry
+   * points route through here so they cannot disagree about which is which — an
+   * id the shell handles must not be handed upward, where the host's switch
+   * would drop it on the floor.
+   */
+  private _runMenuAction(id: string, tab?: OrganizeTab) {
     if (id === 'refresh') {
       void this._refresh();
       return;
@@ -768,7 +803,6 @@ export class HVCardShell extends LitElement {
     if (id === 'organize') {
       // The expanded sidebar's facet headings ask for a specific tab; the card
       // menu asks for none and gets Locations, as it always did.
-      const { tab } = e.detail as { tab?: OrganizeTab };
       this._organizeTab = tab ?? 'locations';
       this._organizeOpen = true;
       return;
@@ -781,7 +815,7 @@ export class HVCardShell extends LitElement {
     }
     // Everything else is owned by the host card, which knows about dialogs.
     this.dispatchEvent(new CustomEvent('menu-action', { detail: { id }, bubbles: true, composed: true }));
-  };
+  }
 
   // ---------- Render helpers ----------
   private _renderBadges() {
@@ -969,7 +1003,7 @@ export class HVCardShell extends LitElement {
     if (id === 'clear-filters') this.store?.clearFilters();
     else if (id === 'refresh') void this.store?.refreshAll();
     else if (id === 'add-item') this._startEdit('new');
-    else this.dispatchEvent(new CustomEvent('menu-action', { detail: { id }, bubbles: true, composed: true }));
+    else this._runMenuAction(id);
   };
 
   private _renderFilterPanel(mobile: boolean) {
