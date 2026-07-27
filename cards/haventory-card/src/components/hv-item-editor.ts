@@ -540,6 +540,18 @@ export class HVItemEditor extends LitElement {
         font-size: 11.5px;
         color: var(--hv-text-tertiary);
       }
+      /* The property that drops the hint describes how wide the surface is,
+         and turning a phone sideways makes it 760px wide — so the expanded
+         view went back to telling a screen with no keyboard on it to press Esc
+         and Ctrl+Enter. Whether there is a keyboard to press was never a width
+         question, so ask the pointer instead: coarse in both orientations,
+         fine on the desktop where the hint belongs. The chords themselves stay
+         bound either way, for a phone that is docked to a keyboard. */
+      @media (hover: none), (pointer: coarse) {
+        .actions .hint {
+          display: none;
+        }
+      }
       .save {
         display: inline-flex;
         align-items: center;

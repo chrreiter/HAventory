@@ -367,6 +367,15 @@ describe('hv-item-editor: saving', () => {
     expect(saves).toHaveLength(1);
   });
 
+  // Same phone, turned sideways: 760px wide, so the mobile property is false
+  // and the expanded view drew the hint again — on a screen with no keyboard.
+  it('drops the keyboard hint on any touch screen, however wide', () => {
+    const css = editorCss();
+    const block = /@media \(hover: none\), \(pointer: coarse\) \{(.*?\})\s*\}/.exec(css)?.[1] ?? '';
+    expect(block, 'no coarse-pointer block in the editor stylesheet').not.toBe('');
+    expect(block).toMatch(/\.actions \.hint \{[^}]*display: none/);
+  });
+
   // The auto margin that holds Cancel and Save against the right edge used to
   // ride on the hint, so hiding the hint dropped them back beside Delete.
   it('keeps Cancel and Save off the left edge once the hint is gone', async () => {
