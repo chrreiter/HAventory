@@ -188,6 +188,49 @@ describe('hv-organize-dialog: locations', () => {
     expect(store.state.value.locationsFlatCache?.some((l) => l.name === 'Attic')).toBe(true);
   });
 
+  // The area dropdown's empty value has to say what it does. The backend keeps a tree's
+  // area on the tree root and resolves it downwards, so a nested location inherits from
+  // the tree rather than from the parent named in the picker below it, and a top-level
+  // location has nothing above it to inherit from at all.
+  describe('area default option', () => {
+    const areaDefault = (sr: ShadowRoot) =>
+      (q(sr, '[data-testid="location-area"]') as HTMLSelectElement).options[0]?.textContent?.trim();
+
+    it('reads as "No area" for a new location, which starts at the top level', async () => {
+      const { el, sr } = await mount({ locations });
+      (q(sr, '[data-testid="organize-new-location"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      expect(areaDefault(sr)).toBe('No area');
+    });
+
+    it('reads as "No area" when editing a location that has no parent', async () => {
+      const { el, sr } = await mount({ locations });
+      const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+      (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      expect(areaDefault(sr)).toBe('No area');
+    });
+
+    it('names the location tree, not the immediate parent, once there is a parent', async () => {
+      const { el, sr } = await mount({ locations });
+      const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+      (
+        tree.shadowRoot?.querySelector(
+          '[data-testid="tree-row"][data-id="garage"] [data-testid="tree-twisty"]',
+        ) as HTMLButtonElement
+      ).click();
+      await settle(el);
+      (
+        tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="shelf-a"]') as HTMLButtonElement
+      ).click();
+      await settle(el);
+
+      expect(areaDefault(sr)).toBe('Inherit from location tree');
+    });
+  });
+
   it('excludes the location itself from its own parent picker, so no cycle is possible', async () => {
     const { el, sr } = await mount({ locations });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
