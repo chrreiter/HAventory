@@ -222,6 +222,24 @@ describe('hv-bulk-bar: per-operation result', () => {
     expect(failures[1]).toContain('Rate limited');
   });
 
+  it('agrees with a single failure, irregular verb and all', async () => {
+    // The only irregular-verb call site in the card (`was`/`were`), and the
+    // only place `counted` is asked for "1 failed row". Both are rendered with
+    // plural counts everywhere else, so nothing else would catch a regression.
+    const el = await mount({
+      selectedItems: [makeItem({ id: 'a', name: 'Multimeter' })],
+      result: { label: 'Move', succeeded: 4, failed: [failure('a', 'conflict')] },
+    });
+
+    const summary = q(el, '[data-testid="bulk-result-summary"]')?.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(summary).toContain('1 failed and was left unchanged');
+    expect(summary).not.toContain('were left unchanged');
+
+    const foot = el.shadowRoot?.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(foot).toContain('1 failed row');
+    expect(foot).not.toContain('1 failed rows');
+  });
+
   it('offers a retry scoped to the failures', async () => {
     const el = await mount({ result: { label: 'Move', succeeded: 1, failed: [failure('a', 'conflict')] } });
     let retries = 0;

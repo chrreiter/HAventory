@@ -59,7 +59,7 @@ describe('hv-column-picker', () => {
     expect(received).toEqual(['quantity']);
   });
 
-  it('closes on Done and on Escape', async () => {
+  it('closes on Done', async () => {
     const el = await mount({ columns: [] });
     const sr = el.shadowRoot as ShadowRoot;
     let cancels = 0;
@@ -67,6 +67,26 @@ describe('hv-column-picker', () => {
     (sr.querySelector('[data-testid="column-picker-done"]') as HTMLButtonElement).click();
     expect(cancels).toBe(1);
     expect(el.open).toBe(false);
+  });
+
+  it('closes on Escape', async () => {
+    const el = await mount({ columns: [] });
+    const sr = el.shadowRoot as ShadowRoot;
+    let cancels = 0;
+    el.addEventListener('cancel', () => { cancels += 1; });
+
+    (sr.querySelector('[role="dialog"]') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+
+    expect(cancels).toBe(1);
+    expect(el.open).toBe(false);
+  });
+
+  it('puts focus in the dialog when it opens, so Escape can reach it', async () => {
+    // The Escape handler lives on the panel; without this the key never arrives.
+    const el = await mount({ columns: [] });
+    expect(el.shadowRoot?.activeElement).toBe(el.shadowRoot?.querySelector('[role="dialog"]'));
   });
 
   // This dialog styled itself from HA's variables instead of the card's tokens,

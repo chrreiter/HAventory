@@ -386,6 +386,46 @@ describe('hv-card-shell: list and footer', () => {
     expect(kind()).toBe('empty-location');
   });
 
+  it('says the connection is gone ahead of any filter-derived reason', async () => {
+    // What a user actually sees when the socket dies: the outage outranks
+    // "nothing matched", because clearing a filter would not bring the list back.
+    const { el, store, hass, sr } = await mountShell({ items: [], locations: [] });
+    const kind = () =>
+      ((sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector(
+        '[data-testid="empty-state"]',
+      ) as HTMLElement)?.dataset.kind;
+
+    store.setFilters({ q: 'nothing' });
+    await settle(el);
+    expect(kind()).toBe('no-matches');
+
+    hass.__failNext(2, new Error('socket closed'));
+    await store.refreshStats().catch(() => undefined);
+    await store.refreshStats().catch(() => undefined);
+    await settle(el);
+
+    expect(store.state.value.degraded.connectionLost).toBe(true);
+    expect(kind()).toBe('connection-lost');
+  });
+
+  it('offers a retry from the connection-lost state', async () => {
+    const { el, store, hass, sr } = await mountShell({ items: [] });
+    hass.__failNext(2, new Error('socket closed'));
+    await store.refreshStats().catch(() => undefined);
+    await store.refreshStats().catch(() => undefined);
+    await settle(el);
+
+    const list = sr.querySelector('hv-list') as HTMLElement;
+    const offer = list.shadowRoot?.querySelector('[data-testid="empty-action"]') as HTMLButtonElement;
+    expect(offer).toBeTruthy();
+
+    offer.click();
+    await settle(el);
+
+    // The offered recovery is the documented one: re-read everything.
+    expect(store.state.value.degraded.connectionLost).toBe(false);
+  });
+
   it('offers a way out of the no-matches state', async () => {
     const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     store.setFilters({ q: 'nothing at all' });
@@ -414,6 +454,42 @@ describe('hv-card-shell: banners', () => {
 
     (sr.querySelector('[data-testid="banner-dismiss"]') as HTMLButtonElement).click();
     await settle(el);
+    expect(sr.querySelector('[data-testid="banner-entry"]')).toBe(null);
+  });
+
+  it('re-applies the rejected change against the newer server version', async () => {
+    // Re-apply deliberately calls updateItem with no expectedVersion: the whole
+    // point is to land on top of whatever the other client wrote. Passing the
+    // stale version here would make the retry fail exactly as the first attempt
+    // did, so the missing third argument is load-bearing.
+    const { el, store, hass, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'A' })] });
+    store['pushError'](
+      { code: 'conflict', message: 'version conflict' },
+      { itemId: '1', changes: { name: 'B' } },
+    );
+    await settle(el);
+
+    hass.__setConflict(false);
+    (sr.querySelector('[data-testid="banner-reapply"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(store.state.value.items.find((i) => i.id === '1')?.name).toBe('B');
+    expect(sr.querySelector('[data-testid="banner-entry"]')).toBe(null);
+  });
+
+  it('re-reads the item behind a conflict when asked for the latest', async () => {
+    const { el, store, hass, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'A' })] });
+    store['pushError'](
+      { code: 'conflict', message: 'version conflict' },
+      { itemId: '1', changes: { name: 'B' } },
+    );
+    await settle(el);
+    const before = hass.__calls.length;
+
+    (sr.querySelector('[data-testid="banner-view-latest"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(hass.__calls.slice(before)).toContain('haventory/item/get');
     expect(sr.querySelector('[data-testid="banner-entry"]')).toBe(null);
   });
 
