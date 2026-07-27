@@ -216,8 +216,9 @@ This is what the WS-level scripts cannot check: whether the sheet *describes* th
 backend actually applies. `replace` overwrites the ids the document carries and deletes
 nothing, which is only visible by reading the sheet next to the counts it produces.
 
-On Windows pass the document as a native path with forward slashes
-(`"C:/Users/you/backup.json"`); a `/c/...` MSYS path reaches Node as `C:\c\...`.
+From Git Bash, pass the document as a native path with forward slashes
+(`"C:/Users/you/backup.json"`) and prefix the command with `MSYS_NO_PATHCONV=1` if you
+override `--path` — see the path-conversion gotcha below.
 
 ## Test
 
@@ -244,6 +245,15 @@ clean-start mode), then `Online smoke test completed successfully.`
 
 ## Gotchas
 
+- **Git Bash rewrites any argument that looks like an absolute POSIX path** (MSYS path
+  conversion), so a leading-slash flag value never reaches the script intact:
+  `node screenshot.mjs --path /lovelace/wide` navigates to
+  `http://localhost:8123C:/Program Files/Git/lovelace/wide`, and a `/c/Users/...`
+  document path arrives as `C:\c\Users\...`. Prefix the command with
+  `MSYS_NO_PATHCONV=1`, or pass file paths natively with forward slashes
+  (`"C:/Users/you/backup.json"`). Only values starting with `/` are affected, and the
+  defaults never cross the command line — which is why `--path` looks fine right up
+  until the first time you set it.
 - **A card change you can't see in the browser is almost always the 31-day
   `/local/` cache** — run `pin_resource.py` (see Deploy) before concluding the fix
   didn't work. Hard-reload (Ctrl+Shift+R) also works, once.
