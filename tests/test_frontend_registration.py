@@ -157,6 +157,84 @@ async def test_skips_when_resource_already_exists(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "registered_url",
+    [
+        "/local/haventory/haventory-card.js?v=38b725595b78",
+        "/local/haventory/haventory-card.js?v=1&foo=bar",
+        "/local/haventory/haventory-card.js#frag",
+    ],
+)
+async def test_skips_when_resource_registered_with_cache_busting_query(
+    tmp_path, monkeypatch, registered_url
+):
+    """A versioned resource URL is the same resource => no duplicate.
+
+    `/local/` is served with a month-long `max-age`, so a `?v=<hash>` query is
+    the only way to make browsers pick up a rebuilt bundle. Registering a second
+    resource for the same file loads the card module twice, and the second
+    `customElements.define` throws.
+    """
+    mock_lovelace_key = "lovelace_data_key"
+    lovelace_module = types.SimpleNamespace(LOVELACE_DATA=mock_lovelace_key)
+    monkeypatch.setitem(sys.modules, "homeassistant.components.lovelace", lovelace_module)
+
+    if "custom_components.haventory" in sys.modules:
+        del sys.modules["custom_components.haventory"]
+    hav_init = importlib.import_module("custom_components.haventory")
+
+    asset_dir = tmp_path / "www" / "haventory"
+    asset_dir.mkdir(parents=True)
+    (asset_dir / "haventory-card.js").write_text("// test asset")
+
+    hass = HassStub(str(tmp_path))
+    hass.config = HassStub._Config(str(tmp_path))
+
+    lovelace_data = MockLovelaceData()
+    lovelace_data.resources._items = [{"id": "existing", "url": registered_url, "type": "module"}]
+    hass.data[mock_lovelace_key] = lovelace_data
+
+    await hav_init._register_frontend_module(hass)
+
+    assert lovelace_data.resources.created == []
+
+
+@pytest.mark.asyncio
+async def test_registers_alongside_unrelated_resources(tmp_path, monkeypatch):
+    """Another integration's card, and a malformed entry, must not block us."""
+    mock_lovelace_key = "lovelace_data_key"
+    lovelace_module = types.SimpleNamespace(LOVELACE_DATA=mock_lovelace_key)
+    monkeypatch.setitem(sys.modules, "homeassistant.components.lovelace", lovelace_module)
+
+    if "custom_components.haventory" in sys.modules:
+        del sys.modules["custom_components.haventory"]
+    hav_init = importlib.import_module("custom_components.haventory")
+
+    asset_dir = tmp_path / "www" / "haventory"
+    asset_dir.mkdir(parents=True)
+    (asset_dir / "haventory-card.js").write_text("// test asset")
+
+    hass = HassStub(str(tmp_path))
+    hass.config = HassStub._Config(str(tmp_path))
+
+    lovelace_data = MockLovelaceData()
+    lovelace_data.resources._items = [
+        {"id": "other", "url": "/local/other-card.js", "type": "module"},
+        # Same basename, different integration.
+        {"id": "lookalike", "url": "/hacsfiles/elsewhere/haventory-card.js", "type": "module"},
+        {"id": "malformed", "type": "module"},
+        {"id": "wrong_type", "url": None, "type": "module"},
+    ]
+    hass.data[mock_lovelace_key] = lovelace_data
+
+    await hav_init._register_frontend_module(hass)
+
+    assert [c["url"] for c in lovelace_data.resources.created] == [
+        "/local/haventory/haventory-card.js"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_skips_when_lovelace_not_initialized(tmp_path, monkeypatch):
     """Lovelace not initialized => skips gracefully."""
     # Mock lovelace BEFORE importing

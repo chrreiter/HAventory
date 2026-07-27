@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any
+from urllib.parse import urlsplit
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -165,6 +166,21 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+def _points_at_card(resource_url: Any, card_url: str) -> bool:
+    """Does an already-registered Lovelace resource serve the HAventory card?
+
+    Compare paths, not whole URLs: a resource may carry a cache-busting query
+    (`?v=<hash>`), and `/local/` is served with a month-long `max-age`, so that
+    query is the only way to make a browser pick up a rebuilt bundle. Matching
+    the full string would treat a versioned entry as somebody else's resource
+    and register a second one for the same file — the card module then loads
+    twice and the second `customElements.define` throws.
+    """
+    if not isinstance(resource_url, str):
+        return False
+    return urlsplit(resource_url).path == urlsplit(card_url).path
+
+
 async def _register_frontend_module(hass: HomeAssistant) -> None:
     """Register the built HAventory card asset as a Lovelace resource if present."""
     url = "/local/haventory/haventory-card.js"
@@ -213,10 +229,11 @@ async def _register_frontend_module(hass: HomeAssistant) -> None:
     # Check if resource already exists
     existing = resources.async_items() or []
     for item in existing:
-        if item.get("url") == url:
+        registered_url = item.get("url")
+        if _points_at_card(registered_url, url):
             LOGGER.debug(
                 "HAventory card resource already registered",
-                extra={"domain": DOMAIN, "op": "frontend_register", "url": url},
+                extra={"domain": DOMAIN, "op": "frontend_register", "url": registered_url},
             )
             return
 
