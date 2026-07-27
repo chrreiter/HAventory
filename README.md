@@ -245,6 +245,26 @@ item and deletes it (best-effort cleanup even on failure).
   independently of a full-instance snapshot. See
   [`docs/backend_api_contract.md`](docs/backend_api_contract.md) and
   [`docs/data_shapes.md`](docs/data_shapes.md).
+  - **Import matches entities by id, and only by id — never by name.** Every incoming item
+    and location is looked up by its id: an id already in the inventory is the same entity
+    (left `unchanged`, `update`d, or reported as a `conflict` under `skip`), an id that is
+    absent is added. Names are not consulted under any policy, which is deliberate —
+    matching by name would silently fuse two genuinely different "Shelf A"s.
+  - **So restoring a backup onto hand-rebuilt locations or items duplicates them; it does
+    not merge onto them.** Anything you delete and recreate by hand comes back with a fresh
+    id, so the backup's copies count as new entities and you end up with two of each.
+    The duplicates are not inert: each imported item carries the backup's `location_id`, so
+    the items repoint onto the *newly added* duplicate location, and the location you
+    rebuilt keeps its name while its contents move to its twin. Measured against a running
+    instance: a 40-location backup previewed against a 53-location inventory gives
+    `locations add=0 unchanged=40` when the ids are intact, but `add=17 unchanged=23` — 70
+    locations with 17 duplicate name pairs, and 402 items moving from `unchanged` to
+    `update` — when 17 of those locations had been rebuilt by hand first.
+  - **Safe restore paths:** restore into an **empty inventory**, or restore a backup whose
+    ids are still intact (the entities were never deleted and recreated). Either way run
+    `import/preview` first and read the `add` counts: entities you expect the import to
+    match onto must appear under `unchanged`/`update`, and a location you already have
+    showing up under `add` means you are about to duplicate it.
 
 ### Frontend (Lovelace card)
 
