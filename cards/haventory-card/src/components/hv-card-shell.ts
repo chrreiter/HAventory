@@ -55,6 +55,27 @@ export class HVCardShell extends LitElement {
         border-radius: var(--hv-radius-card);
         overflow: hidden;
       }
+      /* The ⋮ menu is an absolutely positioned dropdown inside this box, so the
+         overflow rule above — which is what keeps the list's rows inside the
+         rounded corners — clips it. A card holding few enough items to be shorter
+         than the open menu cuts it off at the bottom edge, and the entries it
+         loses are the last ones: Export and Import. An empty card is the worst
+         case at 269px against a 381px menu.
+
+         Reserving the height the menu needs is what keeps every entry reachable.
+         Measured from the card's top edge: 56px of header above the trigger, a
+         6px gap, then the menu itself; the remainder covers a second line under
+         "Export current view", which the sub-label takes when the filtered count
+         is long.
+
+         Only above 600px, matching hv-overflow-menu's own breakpoint: below it
+         the menu is a fixed bottom sheet anchored to the viewport, which nothing
+         here clips and which would not justify a 470px card on a phone. */
+      @media (min-width: 601px) {
+        :host {
+          min-height: 470px;
+        }
+      }
       /* Declared once here and inherited into every nested component's shadow
          DOM — the shared .hv-icon-button, the sheets, the row steppers and the
          editor all read it, so none of them needs its own copy of "is the card
