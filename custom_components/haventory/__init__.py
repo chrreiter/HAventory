@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 
 try:
@@ -24,10 +24,16 @@ except ImportError:  # pragma: no cover - older HA versions
 from . import services as services_mod
 from . import ws as ws_mod
 from .const import DOMAIN
-from .exceptions import StorageError
+from .exceptions import SchemaDowngradeError, StorageError
 from .rate_limit import RateLimitConfig, RateLimiter
 from .repository import Repository
-from .storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore, async_persist_immediate
+from .storage import (
+    CURRENT_SCHEMA_VERSION,
+    STORAGE_KEY,
+    DomainStore,
+    async_persist_immediate,
+    schema_downgrade_message,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,6 +67,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         payload = await store.async_load()
         _validate_storage_payload(payload, schema_version=store.schema_version)
         _log_storage_health(payload, schema_version=store.schema_version)
+    except SchemaDowngradeError as exc:
+        LOGGER.error(
+            "Refusing to set up against storage written by a newer HAventory version",
+            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
+            exc_info=True,
+        )
+        # ConfigEntryError, not ConfigEntryNotReady: retrying cannot teach this build
+        # a newer schema, and the message reaches the user in the entry's error state.
+        raise ConfigEntryError(str(exc)) from exc
     except StorageError as exc:
         LOGGER.error(
             "Storage validation failed during setup",
@@ -265,7 +280,14 @@ def _validate_storage_payload(payload: dict[str, Any], *, schema_version: int) -
     if not isinstance(payload, dict):
         raise StorageError("storage payload is not a dict")
 
-    if int(payload.get("schema_version", -1)) != int(schema_version):
+    stored_version = int(payload.get("schema_version", -1))
+    if stored_version > int(schema_version):
+        raise SchemaDowngradeError(
+            schema_downgrade_message(
+                stored_version=stored_version, supported_version=int(schema_version)
+            )
+        )
+    if stored_version != int(schema_version):
         raise StorageError("storage payload schema_version mismatch")
 
     items = payload.get("items")

@@ -215,7 +215,10 @@ item and deletes it (best-effort cleanup even on failure).
 ### Backend (custom component)
 
 - `custom_components/haventory/` with `manifest.json`, `__init__.py`, `config_flow.py`, `services.yaml`.
-- Store: `hass.data[DOMAIN]["store"]` with versioned schema and safe writes.
+- Store: `hass.data[DOMAIN]["store"]` with versioned schema and safe writes. Migrations are
+  forward-only: a store written by a **newer** HAventory version is refused (setup fails with
+  an "upgrade HAventory" message) and never rewritten, so a rollback cannot relabel data the
+  running build cannot read.
 - Persistence architecture:
   - **WebSocket / service handlers**: immediate saves via `async_persist_repo` — storage
     errors propagate to clients as `storage_error`.
@@ -481,3 +484,8 @@ and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discus
 - Container logs: `docker logs -f <container>` (or `-n 200` for recent)
 - HA log file (if enabled): `/config/home-assistant.log` inside the container
 - HAventory storage file: `/config/.storage/haventory_store`
+- **"stored data uses schema version N, which is newer than this build supports"**: the store
+  was written by a newer HAventory version — typically after rolling the integration back, or
+  after restoring a backup taken on a newer version. The entry stops with that error and the
+  store is left untouched; re-install the newer version to read it, or replace
+  `haventory_store` with a backup taken on the running version.

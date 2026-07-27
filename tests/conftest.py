@@ -101,8 +101,12 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     class ConfigEntryNotReady(HomeAssistantError):  # type: ignore[override]
         pass
 
+    class ConfigEntryError(HomeAssistantError):  # type: ignore[override]
+        pass
+
     ha_exceptions.HomeAssistantError = HomeAssistantError
     ha_exceptions.ConfigEntryNotReady = ConfigEntryNotReady
+    ha_exceptions.ConfigEntryError = ConfigEntryError
     sys.modules["homeassistant.exceptions"] = ha_exceptions
 
     # homeassistant.config_entries

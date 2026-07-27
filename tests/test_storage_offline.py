@@ -6,13 +6,16 @@ Scenarios:
 - Migration hook is invoked when schema_version differs
 - Migration failure raises StorageError and does not persist changes
 - Corrupted payload (non-dict) raises StorageError
+- A payload written by a newer schema is refused without rewriting the store
 """
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 import pytest
 from custom_components.haventory import migrations
-from custom_components.haventory.exceptions import StorageError
+from custom_components.haventory.exceptions import SchemaDowngradeError, StorageError
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
 from homeassistant.core import HomeAssistant
@@ -197,6 +200,84 @@ async def test_migration_from_v1_to_current_preserves_payload() -> None:
     # on-disk should be updated to current schema_version
     persisted = await raw_store.async_load()
     assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stored_version", range(CURRENT_SCHEMA_VERSION + 1))
+async def test_equal_and_older_versions_still_load(stored_version: int) -> None:
+    """Every version up to and including the current one loads and ends up current."""
+
+    hass = HomeAssistant()
+    key = f"test_store_forward_load_v{stored_version}"
+    store = DomainStore(hass, key=key)
+
+    pre_payload = {
+        "schema_version": stored_version,
+        "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 5}},
+        "locations": {"l1": {"id": "l1", "name": "Garage"}},
+    }
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save(deepcopy(pre_payload))
+
+    loaded = await store.async_load()
+
+    assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert loaded["items"] == pre_payload["items"]
+    assert loaded["locations"] == pre_payload["locations"]
+
+
+@pytest.mark.asyncio
+async def test_newer_schema_version_is_refused_and_store_untouched() -> None:
+    """A payload from a newer build is refused; the store is left byte-for-byte intact."""
+
+    hass = HomeAssistant()
+    key = "test_store_newer_schema_refused"
+    store = DomainStore(hass, key=key)
+
+    newer_version = CURRENT_SCHEMA_VERSION + 1
+    pre_payload = {
+        "schema_version": newer_version,
+        "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 5, "future_field": True}},
+        "locations": {"l1": {"id": "l1", "name": "Garage"}},
+    }
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save(deepcopy(pre_payload))
+
+    with pytest.raises(SchemaDowngradeError) as excinfo:
+        await store.async_load()
+
+    # The message names both versions so the user knows which build to run.
+    message = str(excinfo.value)
+    assert str(newer_version) in message
+    assert str(CURRENT_SCHEMA_VERSION) in message
+
+    # A downgrade refusal is a storage failure, so existing handlers still map it.
+    assert isinstance(excinfo.value, StorageError)
+
+    # Nothing was rewritten: version, unknown fields and all.
+    assert await raw_store.async_load() == pre_payload
+
+
+@pytest.mark.asyncio
+async def test_newer_schema_version_never_reaches_migrations(monkeypatch) -> None:
+    """The refusal happens before ``migrations.migrate`` is consulted."""
+
+    hass = HomeAssistant()
+    key = "test_store_newer_schema_skips_migrate"
+    store = DomainStore(hass, key=key)
+
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save(
+        {"schema_version": CURRENT_SCHEMA_VERSION + 3, "items": {}, "locations": {}}
+    )
+
+    def _fail(_payload, *, from_version, to_version):  # type: ignore[no-untyped-def]
+        raise AssertionError("migrations.migrate must not run for a newer payload")
+
+    monkeypatch.setattr(migrations, "migrate", _fail)
+
+    with pytest.raises(SchemaDowngradeError):
+        await store.async_load()
 
 
 @pytest.mark.asyncio
