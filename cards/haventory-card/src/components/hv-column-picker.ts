@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
@@ -152,7 +153,7 @@ export class HVColumnPicker extends LitElement {
       <div class="backdrop" role="presentation" style="z-index: ${this._zBase ?? 9998};" @click=${this._onCancel}></div>
       <div class="panel-wrap" role="none" style="z-index: ${(this._zBase ?? 9998) + 1};">
         <div class="panel" role="dialog" aria-modal="true" aria-label="Column selection"
-          @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); this._onCancel(); } }}>
+          @keydown=${onEscape(() => this._onCancel())}>
           <h2>${this.heading}</h2>
           <ul data-testid="column-options">
             ${COLUMN_DEFS.map((c) => {

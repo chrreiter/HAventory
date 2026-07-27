@@ -1,5 +1,6 @@
 import { makeBulkOp } from '../store/store';
 import { plural } from './plural';
+import { normalizeTags } from './item-form';
 import type { BulkOperation, Item, ItemFilter } from '../store/types';
 
 /**
@@ -19,16 +20,6 @@ export type ValueKind = 'tag' | 'category';
 /** The list filter that finds every item carrying a value. */
 export function filterForValue(kind: ValueKind, value: string): ItemFilter {
   return kind === 'tag' ? { tags_any: [value] } : { category: value };
-}
-
-/** Tags as the backend keeps them: lowercase, deduplicated, original order. */
-function normalize(tags: readonly string[]): string[] {
-  const out: string[] = [];
-  for (const raw of tags) {
-    const tag = raw.trim().toLowerCase();
-    if (tag && !out.includes(tag)) out.push(tag);
-  }
-  return out;
 }
 
 /**
@@ -51,8 +42,8 @@ export function rewriteOps(
       const source = from.trim().toLowerCase();
       if (!item.tags.some((t) => t.toLowerCase() === source)) continue;
       const kept = item.tags.filter((t) => t.toLowerCase() !== source);
-      const next = normalize(target ? [...kept, target] : kept);
-      if (next.join(' ') === normalize(item.tags).join(' ')) continue;
+      const next = normalizeTags(target ? [...kept, target] : kept);
+      if (next.join(' ') === normalizeTags(item.tags).join(' ')) continue;
       ops.push(
         makeBulkOp('item_update', { item_id: item.id, tags: next, expected_version: item.version }),
       );

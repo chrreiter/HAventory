@@ -6,6 +6,7 @@ import { counted, plural } from '../ui/plural';
 import { ResponsiveController } from '../ui/responsive';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
+import { emptyKindFor } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { Item, StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
@@ -27,7 +28,6 @@ import './hv-overflow-menu';
 import type { ColumnKey } from '../store/columns';
 import type { HVFilterPanel } from './hv-filter-panel';
 import type { HVItemEditor } from './hv-item-editor';
-import type { ListEmptyKind } from './hv-list';
 import type { ImportPolicy, ImportPreview, ImportSummary, ItemCreate, ItemUpdate } from '../store/types';
 
 const SEARCH_DEBOUNCE_MS = 200;
@@ -965,14 +965,6 @@ export class HVCardShell extends LitElement {
     `;
   }
 
-  private get emptyKind(): ListEmptyKind {
-    const st = this.st;
-    if (st?.degraded.connectionLost) return 'connection-lost';
-    const filters = st?.filters ?? defaultFilters();
-    if (filters.locationId && activeFilterCount(filters) === 1) return 'empty-location';
-    if (activeFilterCount(filters) > 0) return 'no-matches';
-    return 'no-items';
-  }
 
   private _onEmptyAction = (e: CustomEvent) => {
     const { id } = e.detail as { id: string };
@@ -1106,7 +1098,7 @@ export class HVCardShell extends LitElement {
         .editorTemplate=${this._renderEditor}
         .editingItemId=${this._editing === 'new' ? null : this._editing}
         .addingNew=${!mobile && this._editing === 'new'}
-        .emptyKind=${this.emptyKind}
+        .emptyKind=${emptyKindFor(this.st)}
         .emptyLocationName=${(st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId)?.name ??
         null}
         @near-end=${(e: CustomEvent) =>

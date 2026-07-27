@@ -1,14 +1,15 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted, plural } from '../ui/plural';
 import { nextZBase } from '../utils/zindex';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { countLocations } from '../store/location-tree';
-import { renderEmptyState } from '../ui/empty-state';
-import type { EmptyKind, EmptyOffer } from '../ui/empty-state';
+import { emptyKindFor, renderEmptyState } from '../ui/empty-state';
+import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
 import type { Item, LocationTreeNode, Sort, StoreFilters, StoreState } from '../store/types';
@@ -1231,23 +1232,10 @@ export class HVFullView extends LitElement {
     </div>`;
   }
 
-  /**
-   * Which empty state applies, by the same rule the card's list uses — a lone
-   * location filter is "nothing filed here", anything else is "nothing matched".
-   */
-  private get _emptyKind(): EmptyKind {
-    const st = this.st;
-    if (st?.degraded.connectionLost) return 'connection-lost';
-    const filters = st?.filters ?? defaultFilters();
-    if (filters.locationId && activeFilterCount(filters) === 1) return 'empty-location';
-    if (activeFilterCount(filters) > 0) return 'no-matches';
-    return 'no-items';
-  }
-
   private _renderEmpty() {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
-    return renderEmptyState(this._emptyKind, {
+    return renderEmptyState(emptyKindFor(this.st), {
       locationName: (st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId)?.name ?? null,
       onAction: (id: EmptyOffer['id']) => {
         if (id === 'clear-filters') this.store?.clearFilters();
@@ -1335,12 +1323,7 @@ export class HVFullView extends LitElement {
         aria-label=${this.heading}
         data-testid="full-view"
         style="z-index: ${z + 1};"
-        @keydown=${(e: KeyboardEvent) => {
-          if (e.key === 'Escape') {
-            e.preventDefault();
-            this._close();
-          }
-        }}
+        @keydown=${onEscape(() => this._close())}
       >
         <span class="sentinel" tabindex="0" @focus=${() => this._focusLast()}></span>
         ${this._selecting ? this._renderSelectionBar() : this._renderAppBar()}

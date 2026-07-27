@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { closestMatch } from '../ui/fuzzy';
@@ -1363,12 +1364,7 @@ export class HVOrganizeDialog extends LitElement {
           aria-modal="true"
           aria-label="Organize inventory"
           data-testid="organize-dialog"
-          @keydown=${(e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              this._close();
-            }
-          }}
+          @keydown=${onEscape(() => this._close())}
         >
           <div class="head">
             ${this.mobile

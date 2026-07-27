@@ -42,6 +42,23 @@ export function hasCommandKey(nav: KeyboardPlatform = navigator): boolean {
   return /\b(Macintosh|Mac OS X|iPhone|iPad|iPod)\b/.test(nav.userAgent ?? '');
 }
 
+/**
+ * A `keydown` listener that closes a surface on Escape.
+ *
+ * `preventDefault` matters: without it the key also reaches whatever is behind
+ * the surface, so dismissing a dialog opened from another one would close both.
+ * Only for surfaces where Escape means exactly "close" — anything that has to
+ * discriminate (the item editor also handles Ctrl/Cmd+Enter, and its category
+ * dropdown swallows Escape so the edit survives) writes its own.
+ */
+export function onEscape(close: () => void): (e: KeyboardEvent) => void {
+  return (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    close();
+  };
+}
+
 /** How to write "save" as a chord: `⌘↵` on a Mac, `Ctrl+Enter` everywhere else. */
 export function saveShortcutLabel(nav: KeyboardPlatform = navigator): string {
   return hasCommandKey(nav) ? '⌘↵' : 'Ctrl+Enter';

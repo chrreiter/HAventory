@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { nextZBase } from '../utils/zindex';
@@ -637,12 +638,7 @@ export class HVImportSheet extends LitElement {
           aria-modal="true"
           aria-label="Import backup"
           data-testid="import-sheet"
-          @keydown=${(e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              this._close();
-            }
-          }}
+          @keydown=${onEscape(() => this._close())}
         >
           ${body}
         </div>

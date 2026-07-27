@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { locationLabel } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate } from '../ui/relative-time';
 import type { Location, StoreFilters } from '../store/types';
@@ -41,7 +42,7 @@ export function chipsFor(
 
   if (filters.locationId) {
     const loc = (ctx.locations ?? []).find((l) => l.id === filters.locationId);
-    const path = loc?.path?.display_path?.replace(/\s*\/\s*/g, ' › ') ?? loc?.name ?? 'Location';
+    const path = locationLabel(loc, 'Location');
     chips.push({
       key: 'locationId',
       label: filters.includeSubtree ? `${path} + sub` : path,

@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { locationLabel } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { relativeTime, formatDate, isOverdue } from '../ui/relative-time';
 import { saveShortcutLabel } from '../ui/keyboard';
@@ -708,7 +709,7 @@ export class HVItemEditor extends LitElement {
 
   private _renderLocationField() {
     const loc = (this.locations ?? []).find((l) => l.id === this._model.locationId);
-    const label = loc ? (loc.path?.display_path ?? loc.name).replace(/\s*\/\s*/g, ' › ') : 'No location';
+    const label = locationLabel(loc, 'No location');
     return html`<div class="cell span2">
       <span class="hv-label">Location</span>
       <button

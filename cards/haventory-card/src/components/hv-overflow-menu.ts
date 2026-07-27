@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import type { IconName } from '../ui/icons';
 import { nextZBase } from '../utils/zindex';
@@ -276,12 +277,7 @@ export class HVOverflowMenu extends LitElement {
             role="menu"
             data-testid="overflow-menu"
             style="z-index: ${z + 1};"
-            @keydown=${(e: KeyboardEvent) => {
-              if (e.key === 'Escape') {
-                e.preventDefault();
-                this.close();
-              }
-            }}
+            @keydown=${onEscape(() => this.close())}
           >
             ${this.entries.map((entry) => {
               if ('divider' in entry) return html`<div class="divider" role="separator"></div>`;

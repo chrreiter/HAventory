@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { addDays, formatDate } from '../ui/relative-time';
 import { nextZBase } from '../utils/zindex';
@@ -300,12 +301,7 @@ export class HVCheckoutPopover extends LitElement {
         aria-label=${settingOnly ? 'Set due date' : `Check out ${subject}`}
         data-testid="checkout-popover"
         style=${this.mobile ? '' : `z-index:${z + 1}; ${this._position}`}
-        @keydown=${(e: KeyboardEvent) => {
-          if (e.key === 'Escape') {
-            e.preventDefault();
-            this._cancel();
-          }
-        }}
+        @keydown=${onEscape(() => this._cancel())}
       >
         <div class="head">
           <div class="title" data-testid="checkout-title">

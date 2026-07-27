@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { summarizeIssues } from '../ui/health-codes';
@@ -280,12 +281,7 @@ export class HVDiagnosticsPanel extends LitElement {
           aria-modal="true"
           aria-label="Diagnostics"
           data-testid="diagnostics-panel"
-          @keydown=${(e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              this._close();
-            }
-          }}
+          @keydown=${onEscape(() => this._close())}
         >
           <div class="head">
             <span style="color: var(--hv-${bad ? 'warn' : 'success'})">

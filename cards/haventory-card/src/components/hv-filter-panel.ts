@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { locationLabel } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { activeFilterCount, defaultFilters } from '../store/store';
@@ -474,7 +475,7 @@ export class HVFilterPanel extends LitElement {
   private _renderLocationGroup() {
     const f = this.working;
     const loc = (this.locations ?? []).find((l) => l.id === f.locationId);
-    const label = loc ? (loc.path?.display_path ?? loc.name).replace(/\s*\/\s*/g, ' › ') : 'Any location';
+    const label = locationLabel(loc, 'Any location');
     return html`
       <div class="group">
         <span class="hv-label">Where</span>
