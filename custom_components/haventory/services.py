@@ -18,7 +18,15 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
-from .exceptions import ConflictError, NotFoundError, StorageError, ValidationError
+from .exceptions import (
+    ConflictError,
+    NotFoundError,
+    StorageError,
+    ValidationError,
+    error_code,
+    log_exc_info,
+    log_severity,
+)
 from .repository import UNSET, Repository
 from .storage import async_persist_repo as _storage_async_persist_repo
 
@@ -140,10 +148,15 @@ def _get_repo(hass: HomeAssistant) -> Repository:
 
 
 def _log_domain_error(op: str, context: dict[str, Any], exc: Exception) -> None:
-    level = logging.WARNING
-    if isinstance(exc, ConflictError | StorageError):
-        level = logging.ERROR
-    LOGGER.log(level, str(exc), extra={"domain": DOMAIN, "op": op, **context}, exc_info=True)
+    # A schema rejection is a validation_error by any other name; voluptuous
+    # just raises it before the domain layer gets a chance to.
+    code = "validation_error" if isinstance(exc, vol.Invalid) else error_code(exc)
+    LOGGER.log(
+        log_severity(code),
+        str(exc),
+        extra={"domain": DOMAIN, "op": op, **context},
+        exc_info=log_exc_info(code),
+    )
 
 
 def _raise_service_error(op: str, context: dict[str, Any], exc: Exception) -> None:

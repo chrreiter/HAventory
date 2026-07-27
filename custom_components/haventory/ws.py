@@ -20,7 +20,15 @@ from . import import_export
 from . import storage as storage_mod
 from .areas import async_get_area_registry
 from .const import DOMAIN, INTEGRATION_VERSION
-from .exceptions import ConflictError, NotFoundError, StorageError, ValidationError
+from .exceptions import (
+    ConflictError,
+    NotFoundError,
+    StorageError,
+    ValidationError,
+    error_code,
+    log_exc_info,
+    log_severity,
+)
 from .import_export import POLICIES, Policy
 from .models import Item, ItemUpdate, Location, normalize_tags
 from .rate_limit import RateLimiter
@@ -43,18 +51,6 @@ def _rate_limiter(hass: HomeAssistant) -> RateLimiter | None:
     bucket = hass.data.get(DOMAIN) or {}
     limiter = bucket.get("rate_limiter")
     return limiter if isinstance(limiter, RateLimiter) else None
-
-
-def _error_code(exc: Exception) -> str:
-    if isinstance(exc, ValidationError):
-        return "validation_error"
-    if isinstance(exc, NotFoundError):
-        return "not_found"
-    if isinstance(exc, ConflictError):
-        return "conflict"
-    if isinstance(exc, StorageError):
-        return "storage_error"
-    return "unknown_error"
 
 
 def _ctx(op: str, **extra: Any) -> dict[str, Any]:
@@ -94,11 +90,14 @@ def _error_envelope(
 
 
 def _error_message(_id: int, exc: Exception, *, context: dict[str, Any]) -> dict[str, Any]:
-    level = logging.WARNING
-    if isinstance(exc, ConflictError | StorageError):
-        level = logging.ERROR
-    LOGGER.log(level, str(exc), extra={"domain": DOMAIN, **(context or {})}, exc_info=True)
-    return _error_envelope(_id, _error_code(exc), str(exc), context or None)
+    code = error_code(exc)
+    LOGGER.log(
+        log_severity(code),
+        str(exc),
+        extra={"domain": DOMAIN, **(context or {})},
+        exc_info=log_exc_info(code),
+    )
+    return _error_envelope(_id, code, str(exc), context or None)
 
 
 # -----------------------------
@@ -1372,19 +1371,24 @@ async def ws_items_bulk(
                 if k in payload:
                     ctx[k] = payload.get(k)
 
-            LOGGER.error(
+            # One rejected op is classified on its own code, not on the batch:
+            # a stale version inside a bulk is no more of a fault than it is
+            # on its own.
+            code = error_code(exc)
+            LOGGER.log(
+                log_severity(code),
                 "Bulk operation failed, continuing with remaining ops",
                 extra={
                     "domain": DOMAIN,
                     "op": "items_bulk_op_failed",
                     **ctx,
                 },
-                exc_info=True,
+                exc_info=log_exc_info(code),
             )
 
             results[op_id] = {
                 "success": False,
-                "error": {"code": _error_code(exc), "message": str(exc), "context": ctx},
+                "error": {"code": code, "message": str(exc), "context": ctx},
             }
         except Exception:
             # A malformed payload must fail only its own op, never the batch,
