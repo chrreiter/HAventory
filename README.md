@@ -29,6 +29,26 @@ HAventory isn't in the HACS default store yet. To install from this repository:
 Minimum Home Assistant version: **2026.7**. Developers: see the Developer Checklist below
 and [CONTRIBUTING.md](CONTRIBUTING.md).
 
+### Removing HAventory
+
+Deleting the integration under **Settings → Devices & Services** removes the Lovelace
+resource entry HAventory registered for `/local/haventory/haventory-card.js`, so no
+dashboard is left loading a card that is about to disappear. (If your Lovelace runs in YAML
+mode the entry is yours, in `configuration.yaml` — delete the `resources:` line by hand.)
+
+**Your inventory is deliberately kept.** Items and locations live in the Home Assistant
+store file `<config>/.storage/haventory_store`, which removal does not touch: adding the
+integration again restores everything, which is what you want when you remove it to
+reinstall, move to another HACS channel, or clear a bad config entry.
+
+To delete the data as well — after exporting a backup, if you might want it later:
+
+1. Remove the integration and stop Home Assistant.
+2. Delete `<config>/.storage/haventory_store`.
+3. Uninstalling for good? Also delete `<config>/www/haventory/` (the card bundle; HACS
+   removes `custom_components/haventory/` but not the built asset).
+4. Start Home Assistant.
+
 ---
 
 ## Developer Checklist
