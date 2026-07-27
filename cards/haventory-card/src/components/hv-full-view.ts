@@ -318,38 +318,6 @@ export class HVFullView extends LitElement {
           display: none;
         }
 
-        /*
-         * Every filter the backend accepts, stacked in one column, is around
-         * 1600px of form. Nothing in this column was a scroll container and the
-         * shell is fixed to the viewport and clips, so on a 756px screen 1138px
-         * of the panel simply did not exist: the sort controls, the date rows
-         * and the Show N items button sat about a thousand pixels below the
-         * bottom edge, reachable by no gesture at all, and the table under it
-         * was squeezed to zero.
-         *
-         * Same shape as the editor holder above — a ceiling with a scroll box
-         * inside it — except the foot stays pinned, because the panel's whole
-         * point is the count on that button.
-         */
-        .panel-holder {
-          display: flex;
-          flex-direction: column;
-          flex: none;
-          min-height: 0;
-          max-height: 62dvh;
-        }
-        .panel-scroll {
-          flex: 1;
-          min-height: 0;
-          overflow-y: auto;
-          /* Stop a flick that runs out of panel from scrolling the surface
-             underneath it. */
-          overscroll-behavior-y: contain;
-        }
-        .panel-foot {
-          flex: none;
-        }
-
         /* Selection mode reuses this bar and broke in its own way. .subcount
            was the only shrinkable item in a row of flex:none siblings, so it
            collapsed to its longest word and stacked "of 556 / matching / the /
@@ -560,15 +528,52 @@ export class HVFullView extends LitElement {
         flex-wrap: wrap;
         justify-content: center;
       }
+      /*
+       * Every filter the backend accepts, stacked in one column, is around
+       * 1600px of form. Nothing in this column was a scroll container and the
+       * shell is fixed to the viewport and clips, so on a 756px screen 1138px
+       * of the panel simply did not exist: the sort controls, the date rows
+       * and the Show N items button sat about a thousand pixels below the
+       * bottom edge, reachable by no gesture at all, and the table under it
+       * was squeezed to zero.
+       *
+       * Same shape as the editor holder below — a ceiling with a scroll box
+       * inside it — except the foot stays pinned, because the panel's whole
+       * point is the count on that button.
+       *
+       * The ceiling used to sit behind the phone-width breakpoint, which only
+       * ever asked how wide the screen was. Turn the phone sideways, 760x400,
+       * and the panel opened 1007px tall with no ceiling and no scroll box:
+       * 751px of it below the fold again, and no gesture that could reach it.
+       * A 1280x900 desktop was losing the surface's own footer the same way.
+       * The second term measures the column instead, so the context bar above
+       * the panel and the footer below it keep their room at any height.
+       */
       .panel-holder {
         padding: 0 20px 12px;
+        display: flex;
+        flex-direction: column;
+        flex: none;
+        min-height: 0;
+        /* The ceiling is a content-box measurement by default, so the 12px of
+           padding below the panel was added back on top of it and the footer
+           hung 5px off the bottom of a landscape screen. */
+        box-sizing: border-box;
+        max-height: min(80dvh, calc(100% - 116px));
       }
       .panel-scroll {
+        flex: 1;
         min-width: 0;
+        min-height: 0;
+        overflow-y: auto;
+        /* Stop a flick that runs out of panel from scrolling the surface
+           underneath it. */
+        overscroll-behavior-y: contain;
       }
       /* Only rendered on a phone, where the panel stages its edits. */
       .panel-foot {
         display: flex;
+        flex: none;
         align-items: center;
         gap: 8px;
         padding: 10px 0 2px;

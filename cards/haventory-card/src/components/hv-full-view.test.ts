@@ -111,12 +111,21 @@ describe('hv-full-view: phone-width app bar', () => {
   // on a 756px screen 1138px of it was unreachable — including the apply
   // button, which measured 1039px below the bottom edge — and the table under
   // it was squeezed to zero height.
+  // Not in the narrow block: the ceiling belongs at every width. Sideways, the
+  // same phone is 760px wide and the panel opened 1007px tall in a 400px
+  // screen — 751px of it below a fold nothing could scroll past — and a
+  // 1280x900 desktop was losing the surface's own footer the same way.
   it('gives the filter panel a ceiling and something to scroll', () => {
-    const css = narrow();
-    expect(css).toMatch(/\.panel-holder \{[^}]*max-height: 62dvh/);
-    expect(css).toMatch(/\.panel-holder \{[^}]*flex-direction: column/);
+    const css = fullCss();
+    const rule = /\.panel-holder \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(rule).toMatch(/flex-direction: column/);
+    expect(rule).toMatch(/max-height: min\(\d+dvh, calc\(100% - \d+px\)\)/);
     expect(css).toMatch(/\.panel-scroll \{[^}]*overflow-y: auto/);
     expect(css).toMatch(/\.panel-scroll \{[^}]*min-height: 0/);
+    // The ceiling has to hold on a landscape phone, where the column is 336px
+    // tall: 80dvh of 400 is 320, so the second term is what bounds it.
+    const [, dvh, reserved] = /max-height: min\((\d+)dvh, calc\(100% - (\d+)px\)\)/.exec(rule) ?? [];
+    expect(Math.min((Number(dvh) / 100) * 400, 336 - Number(reserved))).toBeLessThanOrEqual(336 - 68 - 41);
   });
 
   it('keeps the apply button out of the scroll, where the count is visible', async () => {
@@ -129,7 +138,7 @@ describe('hv-full-view: phone-width app bar', () => {
     // The commit row is a sibling of the scroll box, not inside it, so the
     // count on the apply button stays visible while the filters move.
     expect(scroll.querySelector('.panel-foot')).toBe(null);
-    expect(narrow()).toMatch(/\.panel-foot \{[^}]*flex: none/);
+    expect(fullCss()).toMatch(/\.panel-foot \{[^}]*flex: none/);
   });
 
   it('keeps the count pills shorter than the actions above them', () => {
