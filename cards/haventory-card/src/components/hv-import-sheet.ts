@@ -8,16 +8,20 @@ import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
 import type { ImportBucketCounts, ImportPolicy, ImportPreview, ImportSummary } from '../store/types';
 
+// Every policy decides one thing: what happens to an item the file and the
+// inventory both have. None of them deletes anything — an item absent from the
+// file is always left alone — so each description says so, because "Replace"
+// on its own reads like a whole-inventory swap.
 const POLICIES: { id: ImportPolicy; title: string; description: string }[] = [
   {
     id: 'merge',
     title: 'Merge',
-    description: 'Keep existing items, update the ones present in the file, add the rest',
+    description: 'Update matching items field by field, combining tags; add the rest',
   },
   {
     id: 'replace',
     title: 'Replace',
-    description: 'Delete everything not in the file — the file becomes the whole inventory',
+    description: "Overwrite matching items with the file's version; add the rest",
   },
   { id: 'skip', title: 'Skip', description: "Only add items that don't exist yet" },
 ];
