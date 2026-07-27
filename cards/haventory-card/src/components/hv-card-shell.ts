@@ -749,7 +749,21 @@ export class HVCardShell extends LitElement {
     // The full view re-dispatches its own menu selections through here; stop the
     // original so the host card does not also see it directly.
     e.stopPropagation();
-    const { id } = e.detail as { id: string };
+    const { id, tab } = e.detail as { id: string; tab?: OrganizeTab };
+    this._runMenuAction(id, tab);
+  };
+
+  /**
+   * What an action id means, for every surface that can name one.
+   *
+   * The ⋮ menus and the empty state's offers share an id vocabulary, and the
+   * shell owns some of those surfaces (import, organize, diagnostics) while the
+   * host card owns others (the column picker, the export download). Both entry
+   * points route through here so they cannot disagree about which is which — an
+   * id the shell handles must not be handed upward, where the host's switch
+   * would drop it on the floor.
+   */
+  private _runMenuAction(id: string, tab?: OrganizeTab) {
     if (id === 'refresh') {
       void this._refresh();
       return;
@@ -768,7 +782,6 @@ export class HVCardShell extends LitElement {
     if (id === 'organize') {
       // The expanded sidebar's facet headings ask for a specific tab; the card
       // menu asks for none and gets Locations, as it always did.
-      const { tab } = e.detail as { tab?: OrganizeTab };
       this._organizeTab = tab ?? 'locations';
       this._organizeOpen = true;
       return;
@@ -781,7 +794,7 @@ export class HVCardShell extends LitElement {
     }
     // Everything else is owned by the host card, which knows about dialogs.
     this.dispatchEvent(new CustomEvent('menu-action', { detail: { id }, bubbles: true, composed: true }));
-  };
+  }
 
   // ---------- Render helpers ----------
   private _renderBadges() {
@@ -969,7 +982,7 @@ export class HVCardShell extends LitElement {
     if (id === 'clear-filters') this.store?.clearFilters();
     else if (id === 'refresh') void this.store?.refreshAll();
     else if (id === 'add-item') this._startEdit('new');
-    else this.dispatchEvent(new CustomEvent('menu-action', { detail: { id }, bubbles: true, composed: true }));
+    else this._runMenuAction(id);
   };
 
   private _renderFilterPanel(mobile: boolean) {
