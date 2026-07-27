@@ -473,6 +473,8 @@ and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discus
 - WebSocket API contract: `docs/backend_api_contract.md`
 - Data shapes (Item/Location/filter/sort/events): `docs/data_shapes.md`
 - Frontend architecture: `docs/frontend_architecture.md`
+- Release testing plan (manual v1.0 readiness run): `docs/release_testing_plan.md`
+- Open items / future work: `docs/open-items.md`
 
 ## Troubleshooting
 
