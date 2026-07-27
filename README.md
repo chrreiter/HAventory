@@ -31,6 +31,42 @@ and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
+## Known limitations
+
+What HAventory does *not* do today, stated up front so none of it is a surprise:
+
+- **Scale: a few thousand items.** Every mutation re-serializes the entire inventory and
+  rewrites the store blob, so write latency grows with the total item count. Measured p50
+  per create: ~70 ms at 250 items, ~114 ms at 500, ~200 ms at 1000; on that curve a single
+  create trends toward ~1 s at a few thousand items. Reads don't share the problem (query
+  paths are benchmarked at 10 000 items), correctness is unaffected at any size, and no
+  limit is enforced — writes simply get slower. Treat a few thousand items as the
+  comfortable ceiling.
+- **No automation triggers.** The integration creates no entities and fires no events on
+  the Home Assistant bus. Automations and scripts can *call* the `haventory.*` services,
+  but nothing can trigger *on* an inventory change — there is no state object to watch and
+  no event type to listen for. Change notification is WebSocket subscriptions only, for
+  clients holding an open connection.
+- **No admin gating.** No WebSocket command declares `require_admin`, so any logged-in
+  Home Assistant user — not only administrators — can read and mutate the whole inventory.
+  It is a household-wide tool, not a per-user one.
+- **Rate limiting is opt-in and off by default.** Out of the box nothing bounds how fast a
+  client may issue commands or how many subscription events it is sent. Enabling it under
+  Settings → Devices & services → HAventory → **Configure** turns on per-connection and
+  global token buckets: excess commands are rejected with a `rate_limited` error and
+  excess subscription broadcasts are dropped. Dropped broadcasts are silent on the wire —
+  events carry no sequence number, so a missing one cannot be detected by its absence.
+- **Import identity is the id, never the name.** The `merge` / `replace` / `skip` policies
+  all classify an incoming item or location by its id. Restoring a backup onto entities
+  you rebuilt by hand — which carry fresh uuids — therefore duplicates them instead of
+  merging, and the backup's items follow their stored `location_id` onto the duplicate.
+  Restore into an empty inventory, or onto one whose ids are still intact.
+
+These are tracked, with their measurements and proposed fixes, in
+[`docs/open-items.md`](docs/open-items.md).
+
+---
+
 ## Developer Checklist
 
 Use this checklist when working on HAventory. Keep it up to date if conventions change.
