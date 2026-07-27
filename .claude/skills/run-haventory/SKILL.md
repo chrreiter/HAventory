@@ -194,6 +194,31 @@ The container publishes 8123 on the host, so a phone on the same network can hit
 inbound 8123 on the private profile). This is the only way to test real fingers, momentum
 scrolling, iOS Safari, and the HA Companion app's webview.
 
+### Drive the import sheet
+
+`drive_import.mjs` puts a backup document through the card's own Import UI — overflow menu →
+paste → policy → Preview → optionally Import — and screenshots each step. Preview only unless
+`--apply` is passed, because the server-side dry run is the point:
+
+```bash
+cd .claude/skills/run-haventory
+node drive_import.mjs ~/backup.json                        # preview with merge
+node drive_import.mjs ~/backup.json --policy replace       # preview with replace
+node drive_import.mjs ~/backup.json --apply --out restore  # WRITES; screenshots the result
+```
+
+Defaults: `--policy merge`, `--out import`, `--path /lovelace/wide`. The document is pasted
+verbatim and deliberately **not** validated first, so malformed input can be used to drive the
+card's parse-error and server-rejection paths. `--apply` mutates the instance and import is
+all-or-nothing with no undo — export first.
+
+This is what the WS-level scripts cannot check: whether the sheet *describes* the policy the
+backend actually applies. `replace` overwrites the ids the document carries and deletes
+nothing, which is only visible by reading the sheet next to the counts it produces.
+
+On Windows pass the document as a native path with forward slashes
+(`"C:/Users/you/backup.json"`); a `/c/...` MSYS path reaches Node as `C:\c\...`.
+
 ## Test
 
 Offline suites (no HA needed — full gate incl. lint is in CLAUDE.md):
@@ -243,8 +268,15 @@ clean-start mode), then `Online smoke test completed successfully.`
   with the long-lived token as `access_token`, a future `expires`, and
   `clientId === origin + "/"` (what `screenshot.mjs` does). No password needed, no
   login form automation.
-- **Playwright selectors pierce shadow DOM** — `haventory-card` and its inner
-  `input[placeholder="Search"]` are directly selectable despite Lit shadow roots.
+- **Playwright selectors pierce shadow DOM but text extraction does not** —
+  `haventory-card` and its inner `input[placeholder="Search"]` are directly selectable
+  despite Lit shadow roots, yet `locator.innerText()` on a shadow host reads its *light*
+  DOM and comes back empty. To read what a component renders, go through the root:
+  `locator.evaluate((el) => el.shadowRoot.textContent)`.
+- **`fill()` is unusable for a whole-inventory document** — a ~1 MB export types through
+  the input pipeline for minutes and blows past Playwright's 30 s default. Set `value` and
+  dispatch the `input` event the component listens for instead; that is one round trip
+  (~6 s for 981 KiB, versus a 180 s timeout).
 - **`reload_addon.sh` overwrites the container's `configuration.yaml`** with
   `dev/ha_config_for_dev.yaml` (previous one backed up as `.bak` inside the container).
   Fine for the dev container; don't point it at a container whose config you care about.
