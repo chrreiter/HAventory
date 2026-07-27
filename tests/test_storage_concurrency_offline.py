@@ -27,6 +27,24 @@ from homeassistant.core import HomeAssistant
 RAPID_MUTATION_COUNT = 3
 
 
+class _TrackedTaskHass:
+    """hass double that records the background tasks it is handed.
+
+    Mirrors ``HomeAssistant.async_create_background_task``'s signature so the
+    debounced persist path is driven through the same call it makes against a
+    real core, and keeps every scheduled task addressable for assertions.
+    """
+
+    def __init__(self) -> None:
+        self.data: dict = {}
+        self.background_tasks: list[tuple[str, asyncio.Task]] = []
+
+    def async_create_background_task(self, target, name, eager_start=True):
+        task = asyncio.create_task(target, name=name)
+        self.background_tasks.append((name, task))
+        return task
+
+
 @pytest.mark.asyncio
 async def test_persist_lock_prevents_concurrent_saves():
     """Concurrent persist calls are serialized by lock, preventing race conditions."""
@@ -61,7 +79,7 @@ async def test_persist_lock_prevents_concurrent_saves():
 @pytest.mark.asyncio
 async def test_debounce_coalesces_rapid_changes():
     """Rapid persist requests are coalesced into a single save operation."""
-    hass = MagicMock()
+    hass = _TrackedTaskHass()
     hass.data = {"haventory": {}}
 
     # Create mock store that counts save calls
@@ -93,7 +111,7 @@ async def test_debounce_coalesces_rapid_changes():
 @pytest.mark.asyncio
 async def test_debounce_cancels_pending_task():
     """New persist request cancels previous pending task."""
-    hass = MagicMock()
+    hass = _TrackedTaskHass()
     hass.data = {"haventory": {}}
 
     mock_store = AsyncMock(spec=DomainStore)
@@ -125,7 +143,7 @@ async def test_debounce_cancels_pending_task():
 @pytest.mark.asyncio
 async def test_immediate_persist_bypasses_debounce():
     """Immediate persist cancels pending debounced task and saves immediately."""
-    hass = MagicMock()
+    hass = _TrackedTaskHass()
     hass.data = {"haventory": {}}
 
     mock_store = AsyncMock(spec=DomainStore)
@@ -151,6 +169,91 @@ async def test_immediate_persist_bypasses_debounce():
     # Should have saved immediately, not after debounce delay
     elapsed = save_times[0] - start_time
     assert elapsed < PERSIST_DEBOUNCE_DELAY
+
+
+@pytest.mark.asyncio
+async def test_debounce_schedules_ha_tracked_background_task(monkeypatch):
+    """The debounced persist is scheduled through hass, not asyncio directly.
+
+    A task handed to Home Assistant is cancelled and awaited on shutdown; a bare
+    asyncio task is not, so the scheduling call itself is the contract here.
+    """
+    monkeypatch.setattr(storage_mod, "PERSIST_DEBOUNCE_DELAY", 0.05)
+
+    hass = _TrackedTaskHass()
+    saved: list[dict] = []
+
+    async def record_save(data):
+        saved.append(data)
+
+    mock_store = AsyncMock(spec=DomainStore)
+    mock_store.async_save = record_save
+    repo = Repository()
+    repo.create_item(ItemCreate(name="Tracked"))
+    hass.data[DOMAIN] = {"store": mock_store, "repository": repo}
+
+    await async_request_persist(hass)
+
+    assert len(hass.background_tasks) == 1
+    name, task = hass.background_tasks[0]
+    assert DOMAIN in name
+    assert hass.data[DOMAIN]["persist_task"] is task
+
+    await asyncio.sleep(0.2)
+
+    assert task.done()
+    assert len(saved) == 1
+    assert len(saved[0]["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_debounce_coalesces_across_tracked_tasks(monkeypatch):
+    """Every request gets its own tracked task, but only the last one persists."""
+    monkeypatch.setattr(storage_mod, "PERSIST_DEBOUNCE_DELAY", 0.05)
+
+    hass = _TrackedTaskHass()
+    saved: list[dict] = []
+
+    async def record_save(data):
+        saved.append(data)
+
+    mock_store = AsyncMock(spec=DomainStore)
+    mock_store.async_save = record_save
+    hass.data[DOMAIN] = {"store": mock_store, "repository": Repository()}
+
+    for _ in range(RAPID_MUTATION_COUNT):
+        await async_request_persist(hass)
+        await asyncio.sleep(0.01)
+
+    await asyncio.sleep(0.2)
+
+    assert len(hass.background_tasks) == RAPID_MUTATION_COUNT
+    assert all(task.done() for _, task in hass.background_tasks)
+    assert len(saved) == 1
+
+
+@pytest.mark.asyncio
+async def test_debounced_tracked_task_reports_failure_without_raising(monkeypatch, caplog):
+    """A failing debounced persist is logged inside the task, never propagated.
+
+    The tracked task belongs to Home Assistant once scheduled, so a storage
+    failure has to surface as a log record rather than as a task exception.
+    """
+    caplog.set_level(logging.ERROR)
+    monkeypatch.setattr(storage_mod, "PERSIST_DEBOUNCE_DELAY", 0.05)
+
+    hass = _TrackedTaskHass()
+    # No "store" entry: async_persist_repo raises StorageError.
+    hass.data[DOMAIN] = {"repository": Repository()}
+
+    await async_request_persist(hass)
+    _, task = hass.background_tasks[0]
+
+    await asyncio.sleep(0.2)
+
+    assert task.done()
+    assert task.exception() is None
+    assert any("Debounced persist task failed" in rec.message for rec in caplog.records)
 
 
 @pytest.mark.asyncio
@@ -259,7 +362,7 @@ async def test_debounce_request_logs(caplog):
     """Debounced persist requests log appropriately."""
     caplog.set_level(logging.DEBUG)
 
-    hass = MagicMock()
+    hass = _TrackedTaskHass()
     hass.data = {"haventory": {}}
 
     mock_store = AsyncMock(spec=DomainStore)

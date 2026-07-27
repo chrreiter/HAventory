@@ -261,9 +261,10 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
 async def async_request_persist(hass: HomeAssistant) -> None:
     """Request a debounced persistence operation.
 
-    Cancels any pending persist task and schedules a new one after the debounce
-    delay. This coalesces rapid changes into a single persistence operation,
-    reducing disk I/O while maintaining data safety.
+    Cancels any pending persist task and schedules a new one — as a Home
+    Assistant tracked background task — after the debounce delay. This coalesces
+    rapid changes into a single persistence operation, reducing disk I/O while
+    maintaining data safety.
 
     The debounce delay is PERSIST_DEBOUNCE_DELAY (1.0 seconds by default).
     """
@@ -305,7 +306,12 @@ async def async_request_persist(hass: HomeAssistant) -> None:
         },
     )
 
-    bucket["persist_task"] = asyncio.create_task(_delayed_persist())
+    # Schedule through HA rather than asyncio directly: hass tracks the task and
+    # cancels/awaits it during shutdown, so a pending debounce cannot outlive the
+    # event loop.
+    bucket["persist_task"] = hass.async_create_background_task(
+        _delayed_persist(), name=f"{DOMAIN} debounced persist"
+    )
 
 
 async def async_persist_immediate(hass: HomeAssistant) -> None:
