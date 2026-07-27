@@ -11,10 +11,6 @@ The HAventory Lovelace card is a Home Assistant dashboard component built with:
 
 It provides the full inventory UI, updating live over the HAventory WebSocket API.
 
-> **WP4.1 replaced the proof-of-concept UI with the redesigned one.** The old card was kept
-> reachable behind `ui: legacy` until the revamp had been verified against a running Home
-> Assistant; both it and the option are gone. Everything described here is the only UI.
-
 ---
 
 ## Entry point
@@ -35,7 +31,7 @@ the active HA theme as `color-scheme` on the host, which every nested component 
 
 ---
 
-## Component map (revamped UI)
+## Component map
 
 ```
 haventory-card                     Lovelace element; dispatcher + store owner
@@ -98,22 +94,22 @@ the Clear all / Cancel / "Show N items" row the card's filter sheet has.
 ### Shared wording
 
 `ui/empty-state.ts` owns the four empty-list situations — nothing yet, nothing matched,
-nothing filed here, no connection — as copy plus offered actions, because `hv-list` and the
-`hv-data-table` inside `hv-full-view` were describing the same states in different words with
-different offers. `ui/plural.ts` owns count agreement (`counted(n, 'item')`); nineteen call
-sites hand-rolled `n === 1 ? '' : 's'` before, and nine of them were wrong. Only the CSS is
-per-component — style rules cannot cross a shadow boundary, which is also why the sidebar's
-value rows restate `hv-location-tree`'s row styling.
+nothing filed here, no connection — as copy, offered actions **and** the rule that picks
+between them (`emptyKindFor`), so `hv-list` and the `hv-data-table` inside `hv-full-view`
+cannot answer the same situation two different ways. `ui/plural.ts` owns count agreement
+(`counted(n, 'item')`), and `ui/location-path.ts` owns the `/` → `›` separator every surface
+that prints a location path uses. Only the CSS is per-component — style rules cannot cross a
+shadow boundary, which is also why the sidebar's value rows restate `hv-location-tree`'s row
+styling.
 
 ### Container vs presentation
 
 `hv-card-shell` and `hv-full-view` are **containers**: they hold the `Store` and call it
 directly. Everything else is presentational and communicates by events.
 
-This is a deliberate change from the POC, where every component was dumb and the root
-element re-dispatched everything. The redesign nests interactions several levels deep (row
-→ editor → location tree → selection), and threading each one through the root was the main
-source of the POC's plumbing.
+Interactions nest several levels deep (row → editor → location tree → selection), and
+threading each one back through the root element as a re-dispatched event is more plumbing
+than it is worth.
 
 Because the shell receives a stable `store` object, a property binding would never
 re-render it — so each container subscribes to `store.state.onChange` itself in
@@ -133,6 +129,12 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 | `value-rewrite.ts` | Tag/category rename, merge and removal as batches of item updates. |
 | `health-codes.ts` | Turns the health payload's repeated bare issue codes into one counted sentence each. |
 | `fuzzy.ts` | Nearest-existing-value suggestion for the merge flow. |
+| `empty-state.ts` | The four empty-list situations: which one applies (`emptyKindFor`), its copy and offered actions, and the markup. |
+| `location-path.ts` | The `/` → `›` convention for a location path, and a location's label with a caller-supplied fallback. |
+| `dialog-focus.ts` | Initial focus and focus return for modal surfaces. Opening must move focus into the panel or its Escape handler never fires. |
+| `keyboard.ts` | `onEscape()` for the surfaces where Escape means exactly "close", and the platform-correct save-shortcut label. |
+| `plural.ts` | Count agreement for every count string in the card. |
+| `theme.ts` | Whether the card is painted on a light or dark surface, read from HA's own theme variables rather than `prefers-color-scheme`. |
 
 ### Deviation: inline SVG instead of `<ha-icon>`
 
@@ -189,19 +191,23 @@ a hidden one.
 ### `WSClient`
 
 A typed wrapper over `hass.callWS` for each `haventory/*` command, plus `subscribe()`, which
-now takes an `onError` callback so a refused subscribe is observable.
+takes an `onError` callback so a refused subscribe is observable.
+
+It is a deliberate 1:1 mirror of the command catalogue in `backend_api_contract.md`: it
+wraps 32 of the backend's 34 commands, omitting only `haventory/cleanup` and
+`haventory/unsubscribe` (the latter handled by HA's own `subscribeMessage`). A few wrappers
+have no caller in the card today; they complete the mirror and are kept on purpose.
 
 ### Column preferences (`src/store/columns.ts`)
 
 `ColumnKey` covers quantity, category, location, tags, due date, inspection date and
-updated. Each definition carries a compact `size`, a `tableSize` for the full-view table,
-and — only where the backend can actually sort by it — a `sortField`. Category, location and
-tags have none, so their headers are not clickable: a header that looks interactive but does
-nothing is worse than a plain one.
+updated. Each definition carries a `tableSize` for the full-view table and — only where the
+backend can actually sort by it — a `sortField`. Category, location and tags have none, so
+their headers are not clickable: a header that looks interactive but does nothing is worse
+than a plain one.
 
-Preferences persist in `localStorage` under `haventory:columns:v1`, per scope
-(`standard` / `expanded`). `LEGACY_DEFAULT_COLUMNS` pins what the pre-WP4.1 components fall
-back to, so the redesigned defaults can move independently.
+Preferences persist in `localStorage` under `haventory:columns:v1` as `{ expanded: [...] }`.
+Any other key in that record is ignored, so an older or newer payload never breaks the load.
 
 ---
 
@@ -282,29 +288,6 @@ npm run build
 
 ---
 
-## What the proof-of-concept UI became
-
-The POC's components were deleted once the revamp had been verified against a running
-Home Assistant. Where each one's job went:
-
-| Removed | Replaced by |
-|---|---|
-| `hv-search-bar` | `hv-filter-panel` + `hv-filter-chips`, with search in the shell header |
-| `hv-inventory-list` | `hv-list` (card) and `hv-data-table` (full view) |
-| `hv-item-row` | `hv-list-row` |
-| `hv-item-dialog` | `hv-item-editor`, expanded inline instead of over the card |
-| `hv-location-selector` | `hv-location-tree`, embedded wherever a location is picked |
-| `hv-category-browser`, `hv-tag-browser` | `hv-organize-dialog`, one tabbed surface |
-| `hv-import-dialog` | `hv-import-sheet`, a two-step flow |
-
-`hv-column-picker` was shared with the revamp and stays, now styled from the same tokens as
-everything else rather than straight from HA's variables. The behaviours those suites were
-the only test of moved onto the components above rather than being dropped — the
-re-parenting contract, clearing an item's location, the card list's paging signal, and the
-per-field default sort direction.
-
----
-
 ## Key design decisions
 
 **Lit** — small, standards-based, and already how HA's own frontend is written; shadow DOM
@@ -324,7 +307,6 @@ track `prefers-color-scheme`.
 
 ## Known gaps
 
-- Not yet verified against a running Home Assistant frontend (see the README).
 - Drag-and-drop of items onto sidebar tree nodes (optional in the handoff) is not built.
 - `@lit-labs/virtualizer` is still a dependency but unused; large lists rely on paging.
 - The backend cannot sort by category, location or tags, filter by due date, or bulk-create
