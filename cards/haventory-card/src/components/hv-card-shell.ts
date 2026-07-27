@@ -902,6 +902,30 @@ export class HVCardShell extends LitElement {
           Reconnect
         </button>
       </hv-banner>`);
+    } else if (degraded.liveUpdates !== 'live') {
+      // Ranked above the generic rate-limit warning below: that one says events
+      // *may* have been dropped, this one says there are no events at all.
+      const retrying = degraded.liveUpdates === 'retrying';
+      banners.push(html`<hv-banner
+        kind="warning"
+        glyph="clock"
+        heading="Live updates paused"
+        message=${retrying
+          ? ' · rate limited. Retrying automatically; this list may be out of date until then.'
+          : ' · rate limited. This list may be out of date until you refresh.'}
+        data-testid="degraded-live-updates"
+      >
+        ${retrying
+          ? null
+          : html`<button
+              slot="actions"
+              class="hv-pill outline"
+              data-testid="degraded-live-refresh"
+              @click=${() => void this._refresh()}
+            >
+              Refresh
+            </button>`}
+      </hv-banner>`);
     } else if (degraded.retrying > 0) {
       banners.push(html`<hv-banner
         kind="warning"

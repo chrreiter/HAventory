@@ -406,7 +406,20 @@ export interface DegradedState {
   nextRetryAt: number | null;
   /** True while reloading after an import replaced the dataset. */
   reloading: boolean;
+  /** Whether the topic subscriptions are up, being re-opened, or given up on. */
+  liveUpdates: LiveUpdateState;
+  /** Epoch ms of the next automatic re-subscribe, when one is scheduled. */
+  nextLiveRetryAt: number | null;
 }
+
+/**
+ * State of the three topic subscriptions.
+ *
+ * `retrying` means a refused subscribe is being re-attempted on a bounded
+ * backoff; `paused` means the budget is spent, so only an explicit refresh
+ * brings live updates back.
+ */
+export type LiveUpdateState = 'live' | 'retrying' | 'paused';
 
 export interface StoreState {
   items: Item[];
