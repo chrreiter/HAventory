@@ -73,7 +73,17 @@ describe('hv-import-sheet: step 1', () => {
     expect(policies.map((p) => p.dataset.policy)).toEqual(['merge', 'replace', 'skip']);
     expect(policies[0].getAttribute('aria-checked')).toBe('true');
     // Each explains what it does, rather than relying on the word alone.
-    expect(policies[1].textContent).toContain('Delete everything not in the file');
+    expect(policies[1].textContent).toContain("Overwrite matching items with the file's version");
+  });
+
+  it('promises no deletion, because no policy deletes', async () => {
+    // `replace` overwrites the ids the file carries and leaves every other item
+    // alone; a user who reads it as a whole-inventory swap would import a small
+    // file expecting a prune and silently keep everything else.
+    const el = await mount();
+    for (const policy of all(el, '[data-testid="import-policy"]')) {
+      expect(policy.textContent?.toLowerCase()).not.toMatch(/delete|remove|wipe|erase/);
+    }
   });
 
   it('cannot preview an empty document', async () => {
