@@ -461,8 +461,12 @@ describe('hv-filter-panel: native control affordances', () => {
       .join('\n')
       .replace(/\s+/g, ' ');
 
+    // The selector is matched as a literal, so every regex metacharacter in it
+    // has to reach the pattern escaped — the backslash included, or an escape
+    // introduced here would itself be read as syntax.
+    const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const size = (selector: string) => {
-      const rule = new RegExp(`${selector.replace(/[.[\]()]/g, '\\$&')} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+      const rule = new RegExp(`${escapeRe(selector)} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
       return /font(?:-size)?:[^;]*?(\d+(?:\.\d+)?)px/.exec(rule)?.[1] ?? null;
     };
 
