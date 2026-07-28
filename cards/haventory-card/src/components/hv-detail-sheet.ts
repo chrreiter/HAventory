@@ -120,6 +120,16 @@ export class HVDetailSheet extends LitElement {
         font-weight: 700;
         letter-spacing: 0.4px;
       }
+      /* Amber, not the red the overdue chip takes: red on this card means an
+         item is out and late back, while an inspection that has come due is a
+         chore on something still on the shelf — the same kind of signal as low
+         stock. Keeping the two hues apart is what lets both chips sit in this
+         row without reading as one alarm. */
+      .chip.inspect {
+        background: var(--hv-warn-bg);
+        color: var(--hv-warn-deep);
+        font-weight: 500;
+      }
       .hero {
         margin: 0 14px 14px;
         background: var(--hv-surface-raised);
@@ -204,6 +214,12 @@ export class HVDetailSheet extends LitElement {
       }
       .fact .value.yes {
         color: var(--hv-success);
+      }
+      /* An inspection date that has passed asks for something to be done, so
+         it does not read as a neutral fact. Same amber as the chip above it. */
+      .fact .value.late {
+        color: var(--hv-warn-deep);
+        font-weight: 500;
       }
       .actions {
         display: grid;
@@ -316,6 +332,9 @@ export class HVDetailSheet extends LitElement {
   private _renderRead(item: Item) {
     const low = isLowStock(item);
     const overdue = isOverdue(item.due_date);
+    // `inspection_date` is when the item is next due for inspection, so the
+    // same passed-date test the due date gets answers "needs inspecting".
+    const inspectionDue = isOverdue(item.inspection_date);
     const path = displayPath(item);
     const customEntries = Object.entries(item.custom_fields ?? {});
 
@@ -345,6 +364,11 @@ export class HVDetailSheet extends LitElement {
                 ${overdue ? 'Overdue' : 'Checked out'}${item.due_date
                   ? ` · due ${formatDate(item.due_date)}`
                   : ''}
+              </span>`
+            : null}
+          ${inspectionDue
+            ? html`<span class="chip inspect" data-testid="sheet-inspection-due">
+                Inspection due · ${formatDate(item.inspection_date)}
               </span>`
             : null}
           ${item.category ? html`<span class="chip" data-testid="sheet-category">${item.category}</span>` : null}
@@ -391,8 +415,8 @@ export class HVDetailSheet extends LitElement {
           <span class="value ${item.due_date ? '' : 'unset'}">${item.due_date ? formatDate(item.due_date) : 'Not set'}</span>
         </div>
         <div class="fact" data-testid="sheet-fact" data-key="inspection">
-          <span>Last inspected</span>
-          <span class="value ${item.inspection_date ? '' : 'unset'}"
+          <span>Next inspection</span>
+          <span class="value ${item.inspection_date ? '' : 'unset'} ${inspectionDue ? 'late' : ''}"
             >${item.inspection_date ? formatDate(item.inspection_date) : 'Not set'}</span
           >
         </div>

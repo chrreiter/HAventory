@@ -70,6 +70,8 @@ class Item:
     quantity: int = 1
     checked_out: bool = False
     due_date: str | None = None  # YYYY-MM-DD
+    # When the item is next due for inspection — a forward-looking date, so a
+    # value before today means the inspection is outstanding.
     inspection_date: str | None = None  # YYYY-MM-DD
     location_id: uuid.UUID | None = None
     tags: list[str] = field(default_factory=list)
@@ -132,6 +134,8 @@ class ItemFilter(TypedDict, total=False):
     orphaned_only: bool
     # When true, only items whose due_date has passed (see filter_items)
     overdue_only: bool
+    # When true, only items whose inspection_date has passed (see filter_items)
+    inspection_overdue_only: bool
     location_id: str | None
     area_id: str
     include_subtree: bool
@@ -307,7 +311,12 @@ def validate_due_date_rules(*, checked_out: bool, due_date: str | None) -> str |
 
 
 def validate_inspection_date(inspection_date: str | None) -> str | None:
-    """Validate inspection_date format (YYYY-MM-DD) if provided."""
+    """Validate inspection_date format (YYYY-MM-DD) if provided.
+
+    The date is when the item is next due for inspection; a past date is
+    accepted and means the inspection is overdue.
+    """
+
     if inspection_date is None:
         return None
     return normalize_date_yyyy_mm_dd(inspection_date)
@@ -717,6 +726,19 @@ def item_is_overdue(item: Item, *, today: str = "") -> bool:
     return item.due_date < (today or today_utc_date())
 
 
+def item_inspection_is_overdue(item: Item, *, today: str = "") -> bool:
+    """Return True when the item is past the date it was next due for inspection.
+
+    Independent of the check-out state: an inspection is a fact about the item,
+    not about a borrowing, so this walks any item that carries a date. Same
+    text comparison and same ``today`` convention as ``item_is_overdue``.
+    """
+
+    if not item.inspection_date:
+        return False
+    return item.inspection_date < (today or today_utc_date())
+
+
 def _item_matches_location(item: Item, location_id: str | None, include_subtree: bool) -> bool:
     if location_id is None:
         return True
@@ -744,6 +766,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     - low_stock_only: quantity <= threshold (0 valid, None disables)
     - orphaned_only: only items without a location (location_id is None)
     - overdue_only: due_date set and strictly before today (UTC)
+    - inspection_overdue_only: inspection_date set and strictly before today (UTC)
     - location_id: equals; include_subtree optionally includes descendants (by prefix of id_path)
     - updated_after/created_after: ISO-8601 UTC with 'Z', strictly greater-than
     - updated_before/created_before: ISO-8601 UTC with 'Z', strictly less-than
@@ -760,6 +783,9 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     low_stock_only = bool(flt.get("low_stock_only")) if "low_stock_only" in flt else False
     orphaned_only = bool(flt.get("orphaned_only")) if "orphaned_only" in flt else False
     overdue_only = bool(flt.get("overdue_only")) if "overdue_only" in flt else False
+    inspection_overdue_only = (
+        bool(flt.get("inspection_overdue_only")) if "inspection_overdue_only" in flt else False
+    )
     location_id = flt.get("location_id") if "location_id" in flt else None
     include_subtree = bool(flt.get("include_subtree")) if "include_subtree" in flt else False
     updated_after = flt.get("updated_after") if "updated_after" in flt else None
@@ -776,7 +802,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     ):
         if bound:
             _parse_iso8601_utc(bound, field_name=name)
-    today = today_utc_date() if overdue_only else ""
+    today = today_utc_date() if (overdue_only or inspection_overdue_only) else ""
 
     predicates_active = (
         bool(q)
@@ -787,6 +813,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
         or low_stock_only
         or orphaned_only
         or overdue_only
+        or inspection_overdue_only
         or location_id is not None
         or updated_after is not None
         or created_after is not None
@@ -807,6 +834,9 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
         matches_low_stock = (not low_stock_only) or item_is_low_stock(it)
         matches_orphaned = (not orphaned_only) or (it.location_id is None)
         matches_overdue = (not overdue_only) or item_is_overdue(it, today=today)
+        matches_inspection = (not inspection_overdue_only) or item_inspection_is_overdue(
+            it, today=today
+        )
         matches_location = _item_matches_location(it, location_id, include_subtree)
         # Canonical fixed-width 'Z' timestamps compare lexicographically, so no
         # per-item parsing is needed (the filter bound was validated above).
@@ -825,6 +855,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
             and matches_low_stock
             and matches_orphaned
             and matches_overdue
+            and matches_inspection
             and matches_location
             and matches_updated
             and matches_created

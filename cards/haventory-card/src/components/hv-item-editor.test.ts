@@ -260,6 +260,70 @@ describe('hv-item-editor: field parity', () => {
     expect(q(el, '[data-testid="editor-inspection-caption"]')?.getAttribute('for')).toBe('editor-inspection');
   });
 
+  // The field is when the item is next due for inspection, so the caption says
+  // that rather than leaving "Inspection date" to be read either way.
+  it('captions the inspection field for the date it holds', async () => {
+    const el = await mount(makeItem({ id: '1' }));
+    const caption = q(el, '[data-testid="editor-inspection-caption"]')?.textContent?.trim();
+    expect(caption).toBe('Next inspection');
+  });
+
+  // An interval is known in weeks or months; a date three months out is
+  // arithmetic. Same jumps as the check-out popover, since it is one gesture.
+  it('offers the same quick offsets the check-out popover does', async () => {
+    const el = await mount(makeItem({ id: '1', inspection_date: null }));
+    expect(all(el, '[data-testid="editor-inspection-offset"]').map((b) => b.dataset.days)).toEqual([
+      '7',
+      '31',
+      '90',
+    ]);
+
+    const dateInput = () => q(el, '[data-testid="editor-inspection-date"]') as HTMLInputElement;
+    (all(el, '[data-testid="editor-inspection-offset"]')[1] as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(dateInput().value).toBe(addDays(31));
+    expect(all(el, '[data-testid="editor-inspection-offset"]')[1].classList.contains('on')).toBe(true);
+  });
+
+  it('takes an interval of your own behind +X days', async () => {
+    const el = await mount(makeItem({ id: '1', inspection_date: null }));
+    expect(q(el, '[data-testid="editor-inspection-custom"]')).toBe(null);
+
+    (q(el, '[data-testid="editor-inspection-offset-custom"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const dateInput = () => q(el, '[data-testid="editor-inspection-date"]') as HTMLInputElement;
+    expect(dateInput().value).toBe(addDays(14));
+
+    const input = q(el, '[data-testid="editor-inspection-custom"]')?.querySelector(
+      'input',
+    ) as HTMLInputElement;
+    input.value = '180';
+    input.dispatchEvent(new Event('input'));
+    await el.updateComplete;
+    expect(dateInput().value).toBe(addDays(180));
+    // No preset can claim the date while the custom field owns it.
+    expect(
+      all(el, '[data-testid="editor-inspection-offset"]').some((b) => b.classList.contains('on')),
+    ).toBe(false);
+
+    // An emptied box means no date yet rather than the last one it wrote.
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    await el.updateComplete;
+    expect(dateInput().value).toBe('');
+  });
+
+  it('saves the date an offset picked', async () => {
+    const el = await mount(makeItem({ id: 'item-1', inspection_date: null, version: 3 }));
+    const saves = onSave(el);
+
+    (all(el, '[data-testid="editor-inspection-offset"]')[0] as HTMLButtonElement).click();
+    await el.updateComplete;
+    (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
+
+    expect(saves[0].changes?.inspection_date).toBe(addDays(7));
+  });
+
   it('stacks the checkout box on a phone rather than halving a date field', () => {
     const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
     const css = (Array.isArray(styles) ? styles : [styles])

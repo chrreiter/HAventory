@@ -3,27 +3,18 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
-import { addDays, formatDate } from '../ui/relative-time';
+import {
+  DEFAULT_CUSTOM_DAYS,
+  QUICK_DAY_OFFSETS,
+  addDays,
+  formatDate,
+} from '../ui/relative-time';
 import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
 import type { Item } from '../store/types';
 
-/**
- * A week, a month, a quarter. +31 rather than +30 so "a month" lands a month
- * later, and nothing shorter than a week — a single day is less than most
- * borrowings ever run.
- */
-const OFFSETS: { days: number; label: string }[] = [
-  { days: 7, label: '+7 days' },
-  { days: 31, label: '+31 days' },
-  { days: 90, label: '+90 days' },
-];
-
 /** Offset the popover pre-selects when it opens. */
 const DEFAULT_OFFSET = 7;
-
-/** What the custom field starts at when it is first opened. */
-const DEFAULT_CUSTOM = 14;
 
 /**
  * Check-out with an optional due date.
@@ -229,7 +220,7 @@ export class HVCheckoutPopover extends LitElement {
   @state() private _zBase = 0;
   /** The +X days field is showing, and owns the date instead of a preset. */
   @state() private _customOpen = false;
-  @state() private _customDays = DEFAULT_CUSTOM;
+  @state() private _customDays = DEFAULT_CUSTOM_DAYS;
 
 
   /** Opening a surface must put focus in it, or Escape never reaches it. */
@@ -246,7 +237,7 @@ export class HVCheckoutPopover extends LitElement {
       this._zBase = nextZBase();
       this._due = this.item?.due_date || addDays(DEFAULT_OFFSET);
       this._customOpen = false;
-      this._customDays = DEFAULT_CUSTOM;
+      this._customDays = DEFAULT_CUSTOM_DAYS;
     }
   }
 
@@ -311,7 +302,7 @@ export class HVCheckoutPopover extends LitElement {
         </div>
         <div class="body">
           <div class="offsets">
-            ${OFFSETS.map((offset) => {
+            ${QUICK_DAY_OFFSETS.map((offset) => {
               const value = addDays(offset.days);
               return html`<button
                 class="offset ${!this._customOpen && this._due === value ? 'on' : ''}"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from custom_components.haventory.exceptions import ValidationError
@@ -278,6 +279,55 @@ async def test_filter_overdue_only() -> None:
 
     # Off (or absent) it is not a predicate at all, so nothing is excluded.
     assert filter_items(every, ItemFilter(overdue_only=False)) == every
+
+
+def _utc_day_offset(days: int) -> str:
+    """A UTC calendar date `days` from today, as YYYY-MM-DD."""
+
+    return (datetime.now(UTC).date() + timedelta(days=days)).isoformat()
+
+
+@pytest.mark.asyncio
+async def test_filter_inspection_overdue_only_is_strictly_before_today() -> None:
+    """`inspection_overdue_only` keeps items whose next inspection is already past."""
+
+    yesterday = create_item_from_create(
+        {"name": "Yesterday", "inspection_date": _utc_day_offset(-1)}
+    )
+    today = create_item_from_create({"name": "Today", "inspection_date": _utc_day_offset(0)})
+    tomorrow = create_item_from_create({"name": "Tomorrow", "inspection_date": _utc_day_offset(1)})
+    undated = create_item_from_create({"name": "Undated"})
+    every = [yesterday, today, tomorrow, undated]
+
+    # An inspection due today has not been missed yet — the comparison is strict.
+    kept = filter_items(every, ItemFilter(inspection_overdue_only=True))
+    assert [x.name for x in kept] == ["Yesterday"]
+
+    # Off (or absent) it is not a predicate at all, so nothing is excluded.
+    assert filter_items(every, ItemFilter(inspection_overdue_only=False)) == every
+
+
+@pytest.mark.asyncio
+async def test_filter_inspection_overdue_is_independent_of_checkout() -> None:
+    """An inspection is a fact about the item, so the two date filters are separate."""
+
+    shelved = create_item_from_create({"name": "Shelved", "inspection_date": _utc_day_offset(-1)})
+    borrowed = create_item_from_create(
+        {
+            "name": "Borrowed",
+            "checked_out": True,
+            "due_date": _utc_day_offset(-1),
+            "inspection_date": _utc_day_offset(30),
+        }
+    )
+    every = [shelved, borrowed]
+
+    inspection = filter_items(every, ItemFilter(inspection_overdue_only=True))
+    assert [x.name for x in inspection] == ["Shelved"]
+    assert [x.name for x in filter_items(every, ItemFilter(overdue_only=True))] == ["Borrowed"]
+
+    # Both predicates at once is an AND, and nothing here is late on both counts.
+    assert filter_items(every, ItemFilter(overdue_only=True, inspection_overdue_only=True)) == []
 
 
 @pytest.mark.asyncio

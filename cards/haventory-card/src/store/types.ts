@@ -81,6 +81,11 @@ export interface ItemFilter {
   orphaned_only?: boolean;
   /** Only items whose `due_date` is strictly before today (UTC). */
   overdue_only?: boolean;
+  /**
+   * Only items whose `inspection_date` is strictly before today (UTC) — i.e.
+   * the next inspection is already missed. Independent of check-out state.
+   */
+  inspection_overdue_only?: boolean;
   location_id?: string | null;
   area_id?: string;
   include_subtree?: boolean;
@@ -115,6 +120,12 @@ export interface StatsCounts {
    * because older backends do not send it.
    */
   overdue_count?: number;
+  /**
+   * Items past the date they were next due for inspection, across the whole
+   * inventory. Calendar-derived like `overdue_count`, and optional for the
+   * same reason: an older backend does not send it.
+   */
+  inspection_overdue_count?: number;
   locations_total: number;
   /** Items without a location (location_id == null). */
   no_location_count: number;
@@ -375,6 +386,8 @@ export interface StoreFilters {
   lowStockOnly: boolean;
   /** Only items past their due date. */
   overdueOnly: boolean;
+  /** Only items past the date they were next due for inspection. */
+  inspectionDueOnly: boolean;
   category: string | null;
   tags: string[];
   tagsMode: TagMatchMode;

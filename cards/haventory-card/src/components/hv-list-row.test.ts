@@ -1,6 +1,7 @@
 import './hv-list-row';
 import { makeItem } from '../test.utils';
 import { displayPath, elidePath, isLowStock } from './hv-list-row';
+import { toIsoDate } from '../ui/relative-time';
 import type { HVListRow } from './hv-list-row';
 import type { Item } from '../store/types';
 
@@ -109,6 +110,56 @@ describe('hv-list-row: content', () => {
   it('does not call a future due date overdue', async () => {
     const el = await mount({ checked_out: true, due_date: '2099-01-01' });
     expect(q(el, '[data-testid="row-checked-out"]')?.classList.contains('overdue')).toBe(false);
+  });
+
+  // `inspection_date` says when the item is next due for inspection, so a date
+  // behind us is a chore waiting — on an item nobody has to have borrowed.
+  it('badges a row whose next inspection has passed', async () => {
+    const el = await mount({ inspection_date: '2020-01-01' });
+    expect(q(el, '[data-testid="row-inspection-due"]')?.textContent?.trim()).toBe('Inspection due');
+    expect(q(el, '[data-testid="row-checked-out"]')).toBe(null);
+  });
+
+  it('leaves a future or unset inspection date unbadged', async () => {
+    for (const mobile of [false, true]) {
+      const future = await mount({ inspection_date: '2099-01-01' }, { mobile });
+      expect(q(future, '[data-testid="row-inspection-due"]'), `mobile=${mobile}`).toBe(null);
+
+      const unset = await mount({ inspection_date: null }, { mobile });
+      expect(q(unset, '[data-testid="row-inspection-due"]'), `mobile=${mobile}`).toBe(null);
+    }
+  });
+
+  // The standard card is in its phone layout at any ordinary dashboard width,
+  // and that branch hangs no chips off the row at all — so the one line it has
+  // says it instead, and the badge is not invisible on the commonest surface.
+  it('says it on the phone row, where there is no room for a chip', async () => {
+    const el = await mount({ inspection_date: '2020-05-06' }, { mobile: true });
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(q(el, '[data-testid="row-inspection-due"]')).toBeTruthy();
+    expect(secondary?.textContent).toContain('Inspection due');
+    expect(secondary?.classList.contains('inspect')).toBe(true);
+  });
+
+  // Someone holding the item outranks a chore on the shelf, so the line keeps
+  // saying who has it.
+  it('yields the phone line to the checkout state', async () => {
+    const el = await mount(
+      { checked_out: true, due_date: '2099-01-01', inspection_date: '2020-05-06' },
+      { mobile: true },
+    );
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(secondary?.textContent).toContain('Checked out');
+    expect(secondary?.textContent).not.toContain('Inspection due');
+  });
+
+  // Today's inspection has not been missed — same strictly-before boundary the
+  // backend count and filter use, so the row and the pill cannot disagree.
+  it('does not badge an inspection due today', async () => {
+    for (const mobile of [false, true]) {
+      const el = await mount({ inspection_date: toIsoDate() }, { mobile });
+      expect(q(el, '[data-testid="row-inspection-due"]'), `mobile=${mobile}`).toBe(null);
+    }
   });
 });
 

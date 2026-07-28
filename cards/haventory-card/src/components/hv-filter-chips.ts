@@ -16,6 +16,7 @@ export type FilterChipKey =
   | 'lowStockOnly'
   | 'lowStockFirst'
   | 'overdueOnly'
+  | 'inspectionDueOnly'
   | 'category'
   | 'tags'
   | 'updatedAfter'
@@ -67,6 +68,8 @@ export function chipsFor(
   if (filters.lowStockFirst) chips.push({ key: 'lowStockFirst', label: 'Low stock first', tone: 'primary' });
   if (filters.checkedOutOnly) chips.push({ key: 'checkedOutOnly', label: 'Checked out', tone: 'primary' });
   if (filters.overdueOnly) chips.push({ key: 'overdueOnly', label: 'Overdue', tone: 'warning' });
+  if (filters.inspectionDueOnly)
+    chips.push({ key: 'inspectionDueOnly', label: 'Inspection due', tone: 'warning' });
   if (filters.orphansOnly) chips.push({ key: 'orphansOnly', label: 'No location', tone: 'primary' });
   // One chip per bound rather than one per field: each is separately clearable,
   // so a range narrowed too far can be half-undone.

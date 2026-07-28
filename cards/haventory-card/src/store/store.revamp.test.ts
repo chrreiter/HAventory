@@ -65,6 +65,7 @@ describe('toWireFilter', () => {
       lowStockFirst: true,
       orphansOnly: true,
       overdueOnly: true,
+      inspectionDueOnly: true,
       category: 'Hardware',
       updatedAfter: '2026-07-01T00:00:00Z',
       createdAfter: '2026-01-01T00:00:00Z',
@@ -80,6 +81,7 @@ describe('toWireFilter', () => {
       low_stock_first: true,
       orphaned_only: true,
       overdue_only: true,
+      inspection_overdue_only: true,
       category: 'Hardware',
       updated_after: '2026-07-01T00:00:00Z',
       created_after: '2026-01-01T00:00:00Z',
@@ -93,6 +95,7 @@ describe('toWireFilter', () => {
     expect(wire.updated_before).toBeUndefined();
     expect(wire.created_before).toBeUndefined();
     expect(wire.overdue_only).toBeUndefined();
+    expect(wire.inspection_overdue_only).toBeUndefined();
   });
 
   it('keeps low-stock-only and low-stock-first independent', () => {
@@ -132,6 +135,10 @@ describe('activeFilterCount', () => {
 
   it('counts each date bound and the overdue toggle', () => {
     expect(activeFilterCount({ ...defaultFilters(), overdueOnly: true })).toBe(1);
+    // The two date filters answer different questions, so they narrow twice.
+    expect(
+      activeFilterCount({ ...defaultFilters(), overdueOnly: true, inspectionDueOnly: true }),
+    ).toBe(2);
     // A window is two separate bounds, each separately clearable.
     expect(
       activeFilterCount({

@@ -7,6 +7,7 @@ and derived counts (checked_out and low_stock).
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from custom_components.haventory.exceptions import ConflictError, NotFoundError
@@ -156,6 +157,63 @@ async def test_overdue_count_and_filter_track_check_in() -> None:
     repo.check_in(late.id)
     assert repo.get_counts()["overdue_count"] == 0
     assert repo.list_items(flt=ItemFilter(overdue_only=True))["items"] == []
+
+
+def _utc_day_offset(days: int) -> str:
+    """A UTC calendar date `days` from today, as YYYY-MM-DD."""
+
+    return (datetime.now(UTC).date() + timedelta(days=days)).isoformat()
+
+
+@pytest.mark.asyncio
+async def test_inspection_overdue_count_walks_the_whole_inventory() -> None:
+    """`inspection_overdue_count` spans every item, not just the checked-out ones."""
+
+    repo = Repository()
+    repo.create_item(ItemCreate(name="Ladder", inspection_date=_utc_day_offset(-1)))
+    repo.create_item(
+        ItemCreate(
+            name="Extinguisher",
+            checked_out=True,
+            due_date=_utc_day_offset(7),
+            inspection_date=_utc_day_offset(-30),
+        )
+    )
+    repo.create_item(ItemCreate(name="Harness", inspection_date=_utc_day_offset(0)))
+    repo.create_item(ItemCreate(name="Rope", inspection_date=_utc_day_offset(365)))
+    repo.create_item(ItemCreate(name="Bucket"))
+
+    counts = repo.get_counts()
+    # Two past dates, one on a shelved item and one on a borrowed one. The
+    # inspection due today is not late yet.
+    INSPECTION_OVERDUE = 2
+    assert counts["inspection_overdue_count"] == INSPECTION_OVERDUE
+    # Nothing is past its *due* date: the two counts answer different questions.
+    assert counts["overdue_count"] == 0
+
+    out = repo.list_items(flt=ItemFilter(inspection_overdue_only=True))
+    assert sorted(x.name for x in out["items"]) == ["Extinguisher", "Ladder"]
+    assert out["total"] == INSPECTION_OVERDUE
+
+
+@pytest.mark.asyncio
+async def test_inspection_overdue_count_follows_the_stored_date() -> None:
+    """Rescheduling or clearing the date moves the item out of the population."""
+
+    repo = Repository()
+    ladder = repo.create_item(ItemCreate(name="Ladder", inspection_date=_utc_day_offset(-1)))
+    assert repo.get_counts()["inspection_overdue_count"] == 1
+
+    inspected = repo.update_item(
+        ladder.id, ItemUpdate(inspection_date=_utc_day_offset(365)), expected_version=ladder.version
+    )
+    assert repo.get_counts()["inspection_overdue_count"] == 0
+
+    repo.update_item(
+        inspected.id, ItemUpdate(inspection_date=None), expected_version=inspected.version
+    )
+    assert repo.get_counts()["inspection_overdue_count"] == 0
+    assert repo.list_items(flt=ItemFilter(inspection_overdue_only=True))["items"] == []
 
 
 @pytest.mark.asyncio

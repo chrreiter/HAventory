@@ -94,6 +94,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             low_stock_count: items.filter((i) => typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number)).length,
             checked_out_count: items.filter((i) => i.checked_out).length,
             overdue_count: items.filter((i) => isMockOverdue(i)).length,
+            inspection_overdue_count: items.filter((i) => isMockInspectionDue(i)).length,
             locations_total: locations.length,
             no_location_count: items.filter((i) => i.location_id == null).length,
           };
@@ -105,6 +106,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             low_stock_count: items.filter((i) => typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number)).length,
             checked_out_count: items.filter((i) => i.checked_out).length,
             overdue_count: items.filter((i) => isMockOverdue(i)).length,
+            inspection_overdue_count: items.filter((i) => isMockInspectionDue(i)).length,
             locations_total: locations.length,
             no_location_count: items.filter((i) => i.location_id == null).length,
           };
@@ -558,6 +560,11 @@ function isMockOverdue(item: Item): boolean {
   return !!item.due_date && item.due_date < new Date().toISOString().slice(0, 10);
 }
 
+/** Same rule against `inspection_date`, over every item rather than the out ones. */
+function isMockInspectionDue(item: Item): boolean {
+  return !!item.inspection_date && item.inspection_date < new Date().toISOString().slice(0, 10);
+}
+
 /** Faithful-but-small mirror of the backend ItemFilter semantics (AND of all predicates). */
 function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
   const filter = (rawFilter ?? null) as {
@@ -565,6 +572,7 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     checked_out?: boolean;
     orphaned_only?: boolean;
     overdue_only?: boolean;
+    inspection_overdue_only?: boolean;
     location_id?: string | null;
     include_subtree?: boolean;
     category?: string;
@@ -597,6 +605,7 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     if (typeof filter.checked_out === 'boolean' && it.checked_out !== filter.checked_out) return false;
     if (filter.orphaned_only && it.location_id !== null) return false;
     if (filter.overdue_only && !isMockOverdue(it)) return false;
+    if (filter.inspection_overdue_only && !isMockInspectionDue(it)) return false;
     // Canonical 'Z' timestamps compare lexicographically; both bounds are exclusive.
     if (filter.updated_after && !(it.updated_at > filter.updated_after)) return false;
     if (filter.updated_before && !(it.updated_at < filter.updated_before)) return false;

@@ -91,6 +91,14 @@ describe('chipsFor', () => {
     expect(byKey).toMatchObject({ lowStockOnly: 'warning', overdueOnly: 'warning', checkedOutOnly: 'primary' });
   });
 
+  // Pressing the app-bar pill sets a server-side filter; without a chip the
+  // list would be narrowed with nothing on screen saying so, and no way back
+  // except finding the pill again.
+  it('shows the inspection filter as its own removable chip', () => {
+    const chips = chipsFor({ ...defaultFilters(), inspectionDueOnly: true });
+    expect(chips).toEqual([{ key: 'inspectionDueOnly', label: 'Inspection due', tone: 'warning' }]);
+  });
+
   it('emits one chip per date bound so a range can be half-undone', () => {
     const filters = {
       ...defaultFilters(),
@@ -124,7 +132,7 @@ describe('clearedValueFor', () => {
   });
 
   it('clears the boolean toggles to false', () => {
-    for (const key of ['checkedOutOnly', 'orphansOnly', 'lowStockOnly', 'lowStockFirst', 'overdueOnly'] as const) {
+    for (const key of ['checkedOutOnly', 'orphansOnly', 'lowStockOnly', 'lowStockFirst', 'overdueOnly', 'inspectionDueOnly'] as const) {
       expect(clearedValueFor(key)).toEqual({ [key]: false });
     }
   });
