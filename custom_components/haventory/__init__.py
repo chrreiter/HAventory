@@ -188,6 +188,22 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+async def async_remove_entry(hass: HomeAssistant, _entry: ConfigEntry) -> None:
+    """Clean up after the config entry has been removed from Home Assistant.
+
+    Removal takes back the one thing setup put into another component's state:
+    the Lovelace resource registered for the card. Left behind it points at an
+    asset that disappears with the integration, and a dead `module` resource
+    fails to load on every dashboard render.
+
+    The HA `Store` file is deliberately kept, so re-adding the integration
+    restores the inventory. Purging it is a manual step (README → Installation
+    → "Removing HAventory").
+    """
+
+    await _unregister_frontend_module(hass)
+
+
 def _card_resource_url() -> str:
     """`/local` URL for the card bundle, carrying the manifest version as `?v=`.
 
@@ -229,6 +245,36 @@ def _points_at_card(resource_url: Any, card_url: str) -> bool:
     if not isinstance(resource_url, str):
         return False
     return urlsplit(resource_url).path == urlsplit(card_url).path
+
+
+async def _async_lovelace_resources(hass: HomeAssistant, *, op: str) -> Any:
+    """Return the loaded Lovelace resource collection, or None if out of reach.
+
+    Lovelace may be missing entirely (older HA), not yet initialized, or set up
+    without a resource collection. None of those are errors for us — the card is
+    optional and the caller simply has nothing to do.
+    """
+    if LOVELACE_DATA is None:
+        LOGGER.debug(
+            "Lovelace component not available",
+            extra={"domain": DOMAIN, "op": op},
+        )
+        return None
+
+    lovelace_data = hass.data.get(LOVELACE_DATA)
+    resources = getattr(lovelace_data, "resources", None) if lovelace_data else None
+    if resources is None:
+        LOGGER.debug(
+            "Lovelace not initialized or resources unavailable",
+            extra={"domain": DOMAIN, "op": op},
+        )
+        return None
+
+    if hasattr(resources, "loaded") and not resources.loaded:
+        await resources.async_load()
+        resources.loaded = True
+
+    return resources
 
 
 async def _rewrite_card_resource(resources: Any, stale: dict[str, Any], url: str) -> None:
@@ -289,27 +335,9 @@ async def _register_frontend_module(hass: HomeAssistant) -> None:
         )
         return
 
-    # Access the Lovelace resource collection
-    if LOVELACE_DATA is None:
-        LOGGER.debug(
-            "Lovelace component not available; skipping resource registration",
-            extra={"domain": DOMAIN, "op": "frontend_register"},
-        )
-        return
-
-    lovelace_data = hass.data.get(LOVELACE_DATA)
-    resources = getattr(lovelace_data, "resources", None) if lovelace_data else None
+    resources = await _async_lovelace_resources(hass, op="frontend_register")
     if resources is None:
-        LOGGER.debug(
-            "Lovelace not initialized or resources unavailable; skipping registration",
-            extra={"domain": DOMAIN, "op": "frontend_register"},
-        )
         return
-
-    # Ensure resources are loaded before checking
-    if hasattr(resources, "loaded") and not resources.loaded:
-        await resources.async_load()
-        resources.loaded = True
 
     # Check if resource already exists
     existing = resources.async_items() or []
@@ -345,6 +373,52 @@ async def _register_frontend_module(hass: HomeAssistant) -> None:
             extra={"domain": DOMAIN, "op": "frontend_register", "url": url, "path": fs_path},
             exc_info=True,
         )
+
+
+async def _unregister_frontend_module(hass: HomeAssistant) -> None:
+    """Drop the Lovelace resource entries that serve the HAventory card."""
+    resources = await _async_lovelace_resources(hass, op="frontend_unregister")
+    if resources is None:
+        return
+
+    # YAML mode: resources come from configuration.yaml and the collection is
+    # read-only, so the entry is the user's to remove.
+    if not hasattr(resources, "async_delete_item"):
+        LOGGER.info(
+            "Lovelace in YAML mode; remove the HAventory card resource manually",
+            extra={"domain": DOMAIN, "op": "frontend_unregister", "url": _CARD_URL_PATH},
+        )
+        return
+
+    # Snapshot the collection: deleting mutates what async_items() reflects.
+    for item in list(resources.async_items() or []):
+        if not _points_at_card(item.get("url"), _CARD_URL_PATH):
+            continue
+        item_id = item.get("id")
+        if item_id is None:  # pragma: no cover - defensive
+            continue
+        try:
+            await resources.async_delete_item(item_id)
+            LOGGER.info(
+                "Removed HAventory card Lovelace resource",
+                extra={
+                    "domain": DOMAIN,
+                    "op": "frontend_unregister",
+                    "url": item.get("url"),
+                    "resource_id": item_id,
+                },
+            )
+        except Exception:  # pragma: no cover - defensive
+            LOGGER.warning(
+                "Failed to remove frontend resource",
+                extra={
+                    "domain": DOMAIN,
+                    "op": "frontend_unregister",
+                    "url": item.get("url"),
+                    "resource_id": item_id,
+                },
+                exc_info=True,
+            )
 
 
 def _validate_storage_payload(payload: dict[str, Any], *, schema_version: int) -> None:
