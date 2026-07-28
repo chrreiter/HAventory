@@ -748,6 +748,11 @@ export class HVOrganizeDialog extends LitElement {
     const node = nodeId === 'new' ? null : this._findNode(tree, nodeId);
     const parent = this._locParent ? this._findNode(tree, this._locParent) : null;
     const areas = this.st?.areasCache?.areas ?? [];
+    // The backend holds a tree's area on its root and resolves it downwards, so a nested
+    // location's effective area comes from the tree rather than from its immediate parent
+    // — naming the parent here would point at the wrong node. A top-level location has
+    // nothing above it to resolve from, so for it the empty value just means no area.
+    const areaDefaultLabel = parent ? 'Inherit from location tree' : 'No area';
 
     return html`<div class="expander" data-testid="location-editor">
       <div class="grid2">
@@ -773,9 +778,7 @@ export class HVOrganizeDialog extends LitElement {
               this._locArea = (e.target as HTMLSelectElement).value || null;
             }}
           >
-            <option value="" ?selected=${!this._locArea}>
-              Inherit${parent ? ` (${parent.name})` : ''}
-            </option>
+            <option value="" ?selected=${!this._locArea}>${areaDefaultLabel}</option>
             ${areas.map(
               (a) => html`<option value=${a.id} ?selected=${this._locArea === a.id}>${a.name}</option>`,
             )}

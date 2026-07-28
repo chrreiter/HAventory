@@ -89,6 +89,10 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def __init__(self) -> None:
             self.data = {}
 
+        def async_create_background_task(self, target, name, eager_start=True):
+            """Stand in for HA's tracked-task helper; the real one also cancels on shutdown."""
+            return asyncio.create_task(target, name=name)
+
     ha_core.HomeAssistant = HomeAssistant
     sys.modules["homeassistant.core"] = ha_core
 
@@ -101,8 +105,12 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     class ConfigEntryNotReady(HomeAssistantError):  # type: ignore[override]
         pass
 
+    class ConfigEntryError(HomeAssistantError):  # type: ignore[override]
+        pass
+
     ha_exceptions.HomeAssistantError = HomeAssistantError
     ha_exceptions.ConfigEntryNotReady = ConfigEntryNotReady
+    ha_exceptions.ConfigEntryError = ConfigEntryError
     sys.modules["homeassistant.exceptions"] = ha_exceptions
 
     # homeassistant.config_entries

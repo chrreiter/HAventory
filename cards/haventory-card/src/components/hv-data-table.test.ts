@@ -17,15 +17,15 @@ async function mount(items: Partial<Item>[], props: Partial<HVDataTable> = {}) {
 const q = (el: HVDataTable, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
 const all = (el: HVDataTable, sel: string) => [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
 
-describe('hv-data-table: narrow screens', () => {
-  const tableCss = () => {
-    const styles = (customElements.get('hv-data-table') as typeof HVDataTable).styles;
-    return (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
-  };
+const tableCss = () => {
+  const styles = (customElements.get('hv-data-table') as typeof HVDataTable).styles;
+  return (Array.isArray(styles) ? styles : [styles])
+    .map((s) => String(s.cssText))
+    .join('\n')
+    .replace(/\s+/g, ' ');
+};
 
+describe('hv-data-table: narrow screens', () => {
   // The template has a hard ~786px minimum, and a grid whose tracks do not fit
   // overflows its box rather than shrinking. With overflow visible the spill
   // was clipped by the shell: rows measured clientWidth 634 / scrollWidth 854
@@ -66,7 +66,7 @@ describe('hv-data-table: narrow screens', () => {
   });
 
   it('gives the sort headers a tappable height', () => {
-    expect(tableCss()).toMatch(/\.head button \{[^}]*min-height: var\(--hv-tap-min, auto\)/);
+    expect(tableCss()).toMatch(/\.head button\.sort \{[^}]*min-height: var\(--hv-tap-min, auto\)/);
   });
 
   it('keeps rows scrolling vertically inside the body', () => {
@@ -258,6 +258,39 @@ describe('hv-data-table: selection mode', () => {
     (q(el, '[data-testid="table-select-all"]') as HTMLButtonElement).click();
 
     expect(seen).toEqual(['select-all', 'clear']);
+  });
+
+  // jsdom does not run the shadow-DOM cascade, so nothing here can read the
+  // painted border. The two halves that produce it are assertable separately:
+  // the box keeps `.box` in every state, and the sort-header reset that would
+  // otherwise outrank it is keyed to a class the box does not carry.
+  it('keeps the header checkbox on .box through none, some and all', async () => {
+    const el = await mount([{ id: '1' }, { id: '2' }], { selectable: true });
+    const master = () => q(el, '[data-testid="table-select-all"]') as HTMLElement;
+    expect([...master().classList]).toEqual(['box']);
+
+    el.selection = new Set(['1']);
+    await el.updateComplete;
+    expect([...master().classList]).toEqual(['box', 'mixed']);
+
+    el.selection = new Set(['1', '2']);
+    await el.updateComplete;
+    expect([...master().classList]).toEqual(['box', 'on']);
+  });
+
+  it('keeps the sort-header reset off the header checkbox', async () => {
+    const css = tableCss();
+    // Unscoped, this rule matches every button in the header — the select-all
+    // included — and its 0-1-1 beats `.box`, so the unchecked box paints
+    // neither border nor fill and the target is invisible until it is used.
+    expect(css).not.toMatch(/\.head button \{/);
+    expect(css).toMatch(/\.head button\.sort \{[^}]*border: none/);
+    expect(css).toMatch(/\.box \{[^}]*border: 1\.5px solid var\(--hv-text-tertiary\)/);
+    expect(css).toMatch(/\.box\.on, \.box\.mixed \{[^}]*background: var\(--hv-primary-dark\)/);
+
+    const el = await mount([{ id: '1' }], { selectable: true });
+    for (const b of all(el, '[data-testid="table-sort"]')) expect(b.classList.contains('sort')).toBe(true);
+    expect(q(el, '[data-testid="table-select-all"]')?.classList.contains('sort')).toBe(false);
   });
 
   it('hides the row action buttons while selecting', async () => {

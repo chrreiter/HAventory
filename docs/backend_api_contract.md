@@ -235,6 +235,16 @@ data. See `data_shapes.md` for the full document, preview, and summary shapes.
     the structured problems; **state is not mutated**. If persistence fails after the
     in-memory swap, the repository is rolled back to its pre-import snapshot and the
     error surfaces as `storage_error` — a bad import never leaves partial state.
+  - **Identity is the entity id, and only the id.** An incoming item or location whose id is
+    already present *is* the existing entity and is resolved by the policy below; one whose
+    id is absent is a new entity and is added. Names are never compared, under any policy —
+    matching by name would silently fuse two genuinely different "Shelf A"s. The corollary
+    is that importing a document onto entities that were deleted and recreated by hand (and
+    so carry fresh ids) duplicates them rather than merging: the incoming copies classify as
+    `add`, and every incoming item follows its own `location_id` onto the incoming location,
+    leaving the hand-rebuilt one holding nothing. `import/preview` shows this before the
+    write — entities you expect to already exist appear under `unchanged`/`update`, never
+    under `add`.
   - Conflict policies (for ids already present): `skip` keeps the existing entity;
     `replace` overwrites it with the incoming one; `merge` overlays incoming onto
     existing (scalar fields from incoming; item `tags` unioned; item `custom_fields`
