@@ -80,6 +80,8 @@ def log_exc_info(code: str) -> bool | None:
     """
 
     return True if code in OPERATOR_ACTIONABLE_CODES else None
+
+
 class SchemaDowngradeError(StorageError):
     """Raised when persisted data carries a schema version this build cannot read.
 
