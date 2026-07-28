@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import os
 import sys
+import threading
 import types
 from pathlib import Path
 from typing import Any
@@ -16,6 +18,10 @@ CARD_PATH = "/local/haventory/haventory-card.js"
 MANIFEST_PATH = (
     Path(__file__).resolve().parents[1] / "custom_components" / "haventory" / "manifest.json"
 )
+
+# Distinguishes "leave the loader stub at its default (the shipped manifest)" from
+# "register None", which makes the lookup raise the way an absent integration does.
+_NO_OVERRIDE = object()
 
 
 def manifest_version() -> str:
@@ -92,6 +98,7 @@ class HassStub:
     def __init__(self, base_path: str) -> None:
         self.data: dict[str, Any] = {}
         self._base_path = base_path
+        self.executor_jobs: list[Any] = []
 
     class _Config:
         def __init__(self, base_path: str) -> None:
@@ -108,16 +115,49 @@ class HassStub:
     def config(self, value):
         self._config = value
 
+    async def async_add_executor_job(self, target, *args):
+        """Mirror HA's executor offload, recording what got handed off.
 
-def make_hass(tmp_path, *, with_asset: bool = True) -> HassStub:
-    """Hass stub whose config dir is `tmp_path`, optionally holding the built card."""
+        A real worker thread, not an inline call: it is what lets a test tell an
+        event-loop file read apart from an offloaded one.
+        """
+        self.executor_jobs.append(target)
+        return await asyncio.get_running_loop().run_in_executor(None, target, *args)
+
+
+def make_hass(tmp_path, *, with_asset: bool = True, manifest: Any = _NO_OVERRIDE) -> HassStub:
+    """Hass stub whose config dir is `tmp_path`, optionally holding the built card.
+
+    `manifest` seeds what the loader hands back for the `haventory` domain: omit it
+    for the shipped manifest, pass a dict to choose the version, pass None to make
+    the lookup fail the way it does for an integration HA has not loaded.
+    """
     if with_asset:
         asset_dir = tmp_path / "www" / "haventory"
         asset_dir.mkdir(parents=True, exist_ok=True)
         (asset_dir / "haventory-card.js").write_text("// test asset")
     hass = HassStub(str(tmp_path))
     hass.config = HassStub._Config(str(tmp_path))
+    if manifest is not _NO_OVERRIDE:
+        hass.data["__integration_manifests__"] = {"haventory": manifest}
     return hass
+
+
+def track_manifest_reads(monkeypatch) -> list[int]:
+    """Record the thread of every `Path.read_text` call from here on.
+
+    HA's blocking-call protection flags exactly this call when it happens on the
+    event loop thread, and answers it with a stack trace on every startup.
+    """
+    threads: list[int] = []
+    real_read_text = Path.read_text
+
+    def tracking_read_text(self, *args, **kwargs):
+        threads.append(threading.get_ident())
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", tracking_read_text)
+    return threads
 
 
 @pytest.mark.asyncio
@@ -138,13 +178,9 @@ async def test_registers_lovelace_resource_when_present(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_registered_url_carries_the_manifest_version(tmp_path, monkeypatch):
-    """The `?v=` value comes from the manifest, not from a constant in the code."""
+    """The `?v=` value comes from the loaded manifest, not from a constant in the code."""
     hav_init = import_haventory(monkeypatch, "lovelace_data_key")
-    manifest = tmp_path / "manifest.json"
-    manifest.write_text(json.dumps({"domain": "haventory", "version": "9.9.9"}), encoding="utf-8")
-    monkeypatch.setattr(hav_init, "_MANIFEST_PATH", manifest)
-
-    hass = make_hass(tmp_path)
+    hass = make_hass(tmp_path, manifest={"domain": "haventory", "version": "9.9.9"})
     lovelace_data = MockLovelaceData()
     hass.data["lovelace_data_key"] = lovelace_data
 
@@ -154,12 +190,81 @@ async def test_registered_url_carries_the_manifest_version(tmp_path, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_the_loaded_manifest_is_read_without_touching_the_filesystem(tmp_path, monkeypatch):
+    """The version comes out of memory: no file read at all, on the loop or off it.
+
+    Home Assistant already parsed `manifest.json` when it loaded the integration.
+    Reading it again during `async_setup_entry` runs on the event loop thread,
+    where HA's loop protection answers it with a stack-trace warning on every
+    startup, so the registered URL must not depend on a file read.
+    """
+    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
+    hass = make_hass(tmp_path, manifest={"domain": "haventory", "version": "9.9.9"})
+    lovelace_data = MockLovelaceData()
+    hass.data["lovelace_data_key"] = lovelace_data
+    read_threads = track_manifest_reads(monkeypatch)
+
+    await hav_init._register_frontend_module(hass)
+
+    assert [c["url"] for c in lovelace_data.resources.created] == [f"{CARD_PATH}?v=9.9.9"]
+    assert read_threads == []
+    assert hass.executor_jobs == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        # Domain unknown to the loader, which raises rather than returning.
+        None,
+        # Loaded, but carrying nothing usable as a version.
+        {"domain": "haventory"},
+        {"domain": "haventory", "version": ""},
+        {"domain": "haventory", "version": 9},
+    ],
+)
+async def test_falls_back_to_reading_the_manifest_off_the_loop(tmp_path, monkeypatch, manifest):
+    """No version from the loader => read the file, but in the executor."""
+    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
+    manifest_file = tmp_path / "manifest.json"
+    manifest_file.write_text(
+        json.dumps({"domain": "haventory", "version": "8.8.8"}), encoding="utf-8"
+    )
+    monkeypatch.setattr(hav_init, "_MANIFEST_PATH", manifest_file)
+
+    hass = make_hass(tmp_path, manifest=manifest)
+    lovelace_data = MockLovelaceData()
+    hass.data["lovelace_data_key"] = lovelace_data
+    read_threads = track_manifest_reads(monkeypatch)
+
+    await hav_init._register_frontend_module(hass)
+
+    assert [c["url"] for c in lovelace_data.resources.created] == [f"{CARD_PATH}?v=8.8.8"]
+    assert hass.executor_jobs == [hav_init._read_manifest_version]
+    assert read_threads and threading.get_ident() not in read_threads
+
+
+@pytest.mark.asyncio
 async def test_registers_bare_url_when_manifest_version_unavailable(tmp_path, monkeypatch):
-    """An unreadable manifest degrades to the unversioned URL instead of failing setup."""
+    """Neither source yields a version => unversioned URL, rather than a failed setup."""
     hav_init = import_haventory(monkeypatch, "lovelace_data_key")
     monkeypatch.setattr(hav_init, "_MANIFEST_PATH", tmp_path / "no-such-manifest.json")
 
-    hass = make_hass(tmp_path)
+    hass = make_hass(tmp_path, manifest=None)
+    lovelace_data = MockLovelaceData()
+    hass.data["lovelace_data_key"] = lovelace_data
+
+    await hav_init._register_frontend_module(hass)
+
+    assert [c["url"] for c in lovelace_data.resources.created] == [CARD_PATH]
+
+
+@pytest.mark.asyncio
+async def test_registers_bare_url_when_no_executor_is_available(tmp_path, monkeypatch):
+    """A hass without an executor still registers the card, just without `?v=`."""
+    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
+    hass = make_hass(tmp_path, manifest=None)
+    monkeypatch.delattr(HassStub, "async_add_executor_job")
     lovelace_data = MockLovelaceData()
     hass.data["lovelace_data_key"] = lovelace_data
 
@@ -224,11 +329,7 @@ async def test_updates_existing_entry_when_the_version_changed(
     throws.
     """
     hav_init = import_haventory(monkeypatch, "lovelace_data_key")
-    manifest = tmp_path / "manifest.json"
-    manifest.write_text(json.dumps({"domain": "haventory", "version": "9.9.9"}), encoding="utf-8")
-    monkeypatch.setattr(hav_init, "_MANIFEST_PATH", manifest)
-
-    hass = make_hass(tmp_path)
+    hass = make_hass(tmp_path, manifest={"domain": "haventory", "version": "9.9.9"})
     lovelace_data = MockLovelaceData()
     lovelace_data.resources._items = [
         {"id": "existing", "url": registered_url, "type": "module"},

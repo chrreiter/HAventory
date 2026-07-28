@@ -17,6 +17,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
+from homeassistant.loader import async_get_integration
 
 try:
     from homeassistant.components.lovelace import LOVELACE_DATA
@@ -204,29 +205,57 @@ async def async_remove_entry(hass: HomeAssistant, _entry: ConfigEntry) -> None:
     await _unregister_frontend_module(hass)
 
 
-def _card_resource_url() -> str:
+def _read_manifest_version() -> str:
+    """Parse the version out of the shipped manifest file. Blocks — run it in the executor."""
+    try:
+        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return ""
+    raw = manifest.get("version")
+    return raw if isinstance(raw, str) else ""
+
+
+async def _async_manifest_version(hass: HomeAssistant) -> str:
+    """Version this integration declares, or `""` when it cannot be determined.
+
+    Home Assistant parses `manifest.json` when it loads the integration and keeps
+    the result, so the version is already in memory. Reading the file here instead
+    would be blocking I/O on the event loop, which HA's loop protection reports as
+    a warning with a full stack trace on every startup. The executor read is the
+    fallback for the case where the loader has no manifest to hand us.
+    """
+    try:
+        integration = await async_get_integration(hass, DOMAIN)
+        raw = integration.manifest.get("version")
+    except Exception:
+        LOGGER.debug(
+            "Integration manifest unavailable from the loader; reading the file instead",
+            extra={"domain": DOMAIN, "op": "frontend_register"},
+        )
+    else:
+        if isinstance(raw, str) and raw:
+            return raw
+
+    try:
+        return await hass.async_add_executor_job(_read_manifest_version)
+    except Exception:
+        LOGGER.debug(
+            "Could not read the integration manifest; registering the card unversioned",
+            extra={"domain": DOMAIN, "op": "frontend_register", "path": str(_MANIFEST_PATH)},
+        )
+        return ""
+
+
+async def _async_card_resource_url(hass: HomeAssistant) -> str:
     """`/local` URL for the card bundle, carrying the manifest version as `?v=`.
 
     `/local/` is served with a month-long `max-age`, so without the query a browser
     — or the companion app's webview, which is harder to clear — keeps serving the
     bundle from before an integration update and runs an old card against a new
-    backend. Falls back to the bare path if the manifest cannot be read, since a
-    missing cache-buster must not stop the card from being registered at all.
+    backend. Falls back to the bare path if the version cannot be determined, since
+    a missing cache-buster must not stop the card from being registered at all.
     """
-    version = ""
-    # Blocking read of a file shipped inside the integration, once per setup; not
-    # worth an executor round-trip (and the test Hass stub has no executor).
-    try:
-        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
-    except OSError, ValueError:
-        LOGGER.debug(
-            "Could not read the integration manifest; registering the card unversioned",
-            extra={"domain": DOMAIN, "op": "frontend_register", "path": str(_MANIFEST_PATH)},
-        )
-    else:
-        raw = manifest.get("version")
-        version = raw if isinstance(raw, str) else ""
-
+    version = await _async_manifest_version(hass)
     if not version:
         return _CARD_URL_PATH
     return f"{_CARD_URL_PATH}?v={quote(version, safe='')}"
@@ -314,7 +343,7 @@ async def _rewrite_card_resource(resources: Any, stale: dict[str, Any], url: str
 
 async def _register_frontend_module(hass: HomeAssistant) -> None:
     """Register the built HAventory card asset as a Lovelace resource if present."""
-    url = _card_resource_url()
+    url = await _async_card_resource_url(hass)
 
     # Get filesystem path - handle missing config gracefully for tests
     try:
