@@ -116,6 +116,13 @@ jobs:
           cache-dependency-path: cards/haventory-card/package-lock.json
       - name: Install
         run: npm ci --no-audit --no-fund
+      - name: Audit (npm advisories, high+)
+        # The repository's Dependabot auto-triage rule dismisses development-scope
+        # alerts, so the alert dashboard cannot be trusted to surface a vulnerable
+        # dev dependency — this blocking step is where the lockfile is checked.
+        # Kept explicit rather than folded into the install above, whose
+        # `--no-audit` keeps install output free of advisory noise.
+        run: npm audit --audit-level=high
       - name: Lint
         run: npx eslint .
       - name: Types (tsc --noEmit)
