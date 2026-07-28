@@ -72,7 +72,8 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
 4. Open the PR — fill in the template, use a Conventional Commit title, and link
    any issues it closes (`Closes #123`). CODEOWNERS review is requested
    automatically.
-5. A maintainer reviews; CI must pass before merge.
+5. A maintainer reviews. A ruleset protects `main`: merging needs a pull request and
+   green CI, CodeQL, dependency-review and PR-title checks.
 
 ## Releases
 

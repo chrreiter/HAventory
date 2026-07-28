@@ -264,6 +264,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
+    { name = "pyyaml" },
     { name = "ruff" },
     { name = "voluptuous" },
 ]
@@ -278,6 +279,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
+    { name = "pyyaml" },
     { name = "ruff", specifier = "==0.15.22" },
     { name = "voluptuous" },
 ]
