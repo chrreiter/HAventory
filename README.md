@@ -465,6 +465,13 @@ so a stale dashboard config never breaks the card.
   (`.github/labeler.yml`), labels-as-code (`.github/labels.yml`), CODEOWNERS review
   requests, and issue/PR templates.
 - Dependabot: grouped updates for `github-actions`, `npm` (card), and `uv` (Python).
+- `main` is protected by a checked-in ruleset (`.github/rulesets/main.json`): pull request
+  required, the CI/CodeQL/dependency-review/PR-title checks required, no force-push or
+  deletion. Edit it under *Settings → Rules → Rulesets*, or `PUT` the file to
+  `repos/{owner}/{repo}/rulesets/{id}`; the required checks must keep matching the job
+  names in `.github/workflows/`, or a pull request can never satisfy them.
+- The repository's social preview is `docs/assets/social-preview.png`, rendered from the
+  `.html` beside it. GitHub has no API for it — upload it under *Settings → General*.
 - Release automation via **release-please** is config-ready but deferred (WP5) — enable it
   by uncommenting the `push` trigger in `.github/workflows/release-please.yml`.
 - Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md).
