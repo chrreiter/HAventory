@@ -55,10 +55,17 @@ non-blocking).
 > worker thread and never awaited the coroutine they returned; registration now binds
 > `async def` adapters, guarded by a real-HA service-call suite and an offline
 > every-handler-is-a-coroutine-function check) and **41** (#137, README truth-ups; the
-> deferred (c) — the measured scale ceiling — lives on as item 56). Item **7** (#138) is
-> the batch's last PR: it checks the `main` ruleset into the repo with a check-name guard
-> test and enables Discussions, but the item closes only after two owner-only steps — the
-> rewritten item 7 row below carries the residue. The follow-ups these PRs reported are
+> deferred (c) — the measured scale ceiling — lives on as item 56). Item **7** closed with
+> **#138** plus the two owner-only steps: #138 checked the `main` ruleset into
+> `.github/rulesets/main.json` (with the offline guard test that re-derives the check
+> names from the workflows) and enabled Discussions; the owner then applied the ruleset
+> and uploaded the social preview, both verified live 2026-07-28 — the
+> `rules/branches/main` API returns all four rules (PR required, ten required status
+> checks, deletion + force-push blocks) exactly matching the committed file, and the repo
+> page serves the custom `og:image`. (Known limitation, accepted: nothing re-diffs the
+> live ruleset against the committed file after that one-time verification — drift on the
+> GitHub side is invisible; the guard test only protects the committed side.) The
+> follow-ups these PRs reported are
 > items **56–63**; #136's stub-divergence finding was folded into item 51.
 
 ---
@@ -71,9 +78,8 @@ Ordered by impact.
 |---|------|--------------|--------|--------|
 | 3 | **Enable release automation.** `release-please` is config-ready but dormant — uncomment the `push` trigger in `.github/workflows/release-please.yml` and run the release flow. Needed to cut a 1.0. | #74, #76 | Medium (release-blocking) | S |
 | 4 | **HACS publication** (Phase 3 "Polish & HACS"). Distribution path for a 1.0. | README Phase 3 | Medium (distribution) | M |
-| 57 | **Dev-scope Dependabot auto-dismissals are invisible — gate with `npm audit`.** The #135 triage found that GHSA-mh99-v99m-4gvg (high, `brace-expansion`) was filed and auto-dismissed **within the same second** by the repo's development-scope auto-triage rule, so a live vulnerability sat in the lockfile while the dashboard read "0 open" — exactly how item 2 came to look like stale backlog. Two independent closes, either sufficient: add `npm audit --audit-level=high` to the `frontend` CI job (recommended — fails loudly and locally), or turn the auto-dismissal rule off in repo settings and triage dev-scope alerts by hand (GitHub-UI work adjacent to item 7). | PR #135 follow-up | Medium (security visibility) | S |
+| 57 | **Dev-scope Dependabot auto-dismissals are invisible — gate with `npm audit`.** The #135 triage found that GHSA-mh99-v99m-4gvg (high, `brace-expansion`) was filed and auto-dismissed **within the same second** by the repo's development-scope auto-triage rule, so a live vulnerability sat in the lockfile while the dashboard read "0 open" — exactly how item 2 came to look like stale backlog. Two independent closes, either sufficient: add `npm audit --audit-level=high` to the `frontend` CI job (recommended — fails loudly and locally), or turn the auto-dismissal rule off in repo settings and triage dev-scope alerts by hand (GitHub-UI work of the same kind item 7's hardening was). | PR #135 follow-up | Medium (security visibility) | S |
 | 58 | **`store.revamp.test.ts › "waits out the retry-after hint the envelope carries"` is timing-flaky.** It runs on real timers; it failed once locally under memory pressure (expected 3 subscribe calls, saw 6) and passes in isolation and in CI — it will fail again on a loaded runner. Worth fixing (fake timers or a tolerant assertion) before the release phase leans on repeated full-gate runs. | PR #138 follow-up | Low–Med (CI reliability) | S |
-| 7 | **Repo hardening — two owner-only steps remain.** #138 landed everything committable: the `main` ruleset declared in `.github/rulesets/main.json` (PR required at 0 approvals, ten required status checks, deletion/force-push blocks) with an offline guard test that re-derives the check names from the workflows; Discussions enabled; secret scanning + push protection and the `labels` run verified already done. Remaining: (a) **apply the ruleset** — `gh api -X PUT repos/chrreiter/HAventory/rulesets/7776748 --input .github/rulesets/main.json`, or Settings → Rules → set enforcement Active with the ten checks (leave "require branches up to date" off); (b) **upload the social preview** — Settings → General → Social preview → `docs/assets/social-preview.png` (no API exists). Notes from #138: nothing diffs the live ruleset against the committed file (the one-time apply/diff scripts were deliberately dropped); merge-method settings, `delete_branch_on_merge`, auto-merge and the empty wiki were left as-is. | #76, PR #138 | Low | S (manual) |
 
 ### Release-readiness tasks (from the 2026-07-25 review)
 
