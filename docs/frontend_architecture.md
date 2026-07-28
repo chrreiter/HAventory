@@ -168,7 +168,7 @@ applies optimistic writes with rollback.
 | `listAllMatching(filter)` / `loadAllPages()` | Omitting `limit` returns every match; used by "Load all N to select" and by tag/category rewrites. |
 | `setFilters(patch)` | Clears the selection (a row that is no longer listed cannot stay selected) and only rebuilds subscriptions when the *location* scope changes. |
 | `bulkExecute(ops, opts)` | Chunks `haventory/items/bulk` (25 ops per call), reports progress, and returns `{succeeded, failed, cancelled}`. |
-| `refreshAll()` | Clears the degraded flags, reloads every cache, and re-subscribes. The contract's prescribed recovery. |
+| `refreshAll()` | Clears the degraded flags, reloads every cache, and re-subscribes with a fresh retry budget. The contract's prescribed recovery. |
 | `exportDocument(scope)` | `'view'` forwards the active filter. |
 | selection API | `toggleSelected`, `setSelected`, `clearSelection`, `selectAllLoaded`, `loadAllThenSelectAll`. |
 
@@ -180,8 +180,21 @@ filter defaults it to `false` server-side while subscriptions default it to `tru
 **Rate limiting and degraded state.** Every WS call goes through `run()`, which retries a
 `rate_limited` rejection with backoff before surfacing it, and classifies failures: a code
 from the backend's taxonomy means the socket is fine, anything else counts toward
-`degraded.connectionLost`. A *rejected subscribe* — which otherwise kills live updates
-silently — marks the card degraded and drops `connected`.
+`degraded.connectionLost`.
+
+A *rejected subscribe* kills live updates outright — no event will ever arrive to hint at
+it — so it is handled separately. The three topics are opened as one **round**, because the
+limiter bills each subscribe separately and can admit `items` while refusing `stats`; live
+updates only count as restored once every subscribe in the newest round is accepted, which
+`WSClient.subscribe`'s `onOpen` reports. A round refused with `rate_limited` is re-opened
+automatically up to four times, waiting the envelope's retry-after hint when it carries one
+(`retry_after_ms`, or `retry_after` in seconds, read from `data`, `context` or the top level
+and clamped to 30 s) and otherwise backing off exponentially. `degraded.liveUpdates` tracks
+this as `'live' | 'retrying' | 'paused'`, with `degraded.nextLiveRetryAt` for the scheduled
+attempt; the shell renders it as a non-blocking banner that clears itself when a retry gets
+back in. Once the budget is spent the state goes `'paused'`, the refusal reaches the error
+queue once, and the banner's Refresh (i.e. `refreshAll()`) is the way back. Any other
+refusal is an outage: reported immediately, never retried.
 
 **Why the card offers a manual Refresh.** Subscription events carry no sequence number or
 generation, and the rate limiter can drop them silently, so a client cannot detect a gap.
@@ -191,7 +204,8 @@ a hidden one.
 ### `WSClient`
 
 A typed wrapper over `hass.callWS` for each `haventory/*` command, plus `subscribe()`, which
-takes an `onError` callback so a refused subscribe is observable.
+takes `onError` and `onOpen` callbacks so both a refused and an accepted subscribe are
+observable.
 
 It is a deliberate 1:1 mirror of the command catalogue in `backend_api_contract.md`: it
 wraps 32 of the backend's 34 commands, omitting only `haventory/cleanup` and
