@@ -105,7 +105,12 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   Settings → Devices & services → HAventory → **Configure** turns on per-connection and
   global token buckets: excess commands are rejected with a `rate_limited` error and
   excess subscription broadcasts are dropped. Dropped broadcasts are silent on the wire —
-  events carry no sequence number, so a missing one cannot be detected by its absence.
+  events carry no sequence number, so a missing one cannot be detected by its absence. A
+  limiter tight enough to refuse the card's *subscribe* is not silent, though: the card
+  re-opens the refused round up to four times, waiting out a retry-after hint when the
+  refusal carries one and backing off exponentially when it does not, and once that budget
+  is spent it says **Live updates paused** and offers a Refresh — so a list that has
+  stopped updating never passes for one with nothing to report.
 - **Import identity is the id, never the name.** The `merge` / `replace` / `skip` policies
   all classify an incoming item or location by its id. Restoring a backup onto entities
   you rebuilt by hand — which carry fresh uuids — therefore duplicates them instead of
@@ -581,7 +586,9 @@ and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discus
 ## Conventions
 
 - Domain/package: `haventory` under `custom_components/haventory`; services `haventory.*`;
-  built assets `www/haventory/`; calendar entity `calendar.haventory`.
+  built assets `www/haventory/`; calendar entity `calendar.haventory` — a reserved name for
+  the post-1.0 calendar work ([open item 9](docs/open-items.md)), not an entity that exists
+  today.
 - Logging: avoid reserved `LogRecord` keys in logger extras — use `item_name` /
   `location_name`, not `name`.
 
