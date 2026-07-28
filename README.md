@@ -317,6 +317,12 @@ item and deletes it (best-effort cleanup even on failure).
   validation/repository/storage errors so HA surfaces them.
 - Areas via `homeassistant.helpers.area_registry.async_get(hass)`; never auto-create areas.
 - Case-insensitive search; denormalized `location_path` on items; item `version` for optimistic concurrency.
+- Two calendar-derived counts on `haventory/stats`, each with a matching `item/list` filter:
+  `overdue_count` / `overdue_only` for a passed `due_date` (checked-out items only, since
+  that is where a due date can exist), and `inspection_overdue_count` /
+  `inspection_overdue_only` for a passed `inspection_date` — the date the item is next due
+  for inspection, over the whole inventory, since an inspection is independent of any
+  check-out. Both move with the calendar and emit no event when the date rolls over.
 - **WebSocket rate limiting (opt-in, off by default)**: per-connection **and** global
   token buckets for commands (excess requests get a `rate_limited` error) and for
   subscription broadcasts (excess events are dropped, never breaking the command).
@@ -363,18 +369,19 @@ Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs t
 - **Standard card** — one Add button and a single ⋮ menu (Select items, Organize, Refresh,
   Diagnostics, Export backup / Export current view, Import); Columns is offered in the full
   view, which is the only surface it changes. Live stat badges — items, low stock, overdue,
-  checked out — are click-to-filter. Rows carry a quantity stepper, a LOW badge, an overdue
-  check-out chip, and hover actions.
+  due for inspection, checked out — are click-to-filter. Rows carry a quantity stepper, a
+  LOW badge, an overdue check-out chip, an "Inspection due" chip, and hover actions.
 - **Filters** — a collapsible panel exposing the whole backend filter object: location
   (from a real tree), area, include-subtree, category chips with counts, tag chips with an
-  any/all toggle, low-stock-only, checked-out, overdue and no-location — each with the
-  count of what it would keep — plus updated / created windows (each row's ≥ flips to ≤ for
+  any/all toggle, low-stock-only, checked-out, overdue, inspection-due and no-location —
+  each with the count of what it would keep — plus updated / created windows (each row's ≥ flips to ≤ for
   "before") and sort across all six sortable fields.
   "Low stock" (a filter) and "Low stock first" (an ordering) are separate, independently
   clearable controls. Active filters appear as removable chips.
 - **Editing** — the row expands in place; there is no dialog chain. Full field parity:
   name, description, quantity, low-stock threshold, category, tags, location (picked from
-  a tree inside the form), checked-out with due date, inspection date, and typed
+  a tree inside the form), checked-out with due date, next inspection (with the same
+  +7 / +31 / +90 / +X quick offsets the check-out popover offers), and typed
   custom fields (text / number / yes-no / date). Saves send the item's expected version so
   a concurrent edit surfaces as a conflict.
 - **Full view** — a fullscreen workspace with a coloured app bar, a **browse sidebar**, and
@@ -391,8 +398,8 @@ Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs t
   category exists through the items using it, so that is where making one is explained.
   From the second selected tag on, the Tags heading carries the same any/all control the
   filter panel has, since that is the mode governing what the sidebar just selected. The
-  app bar's stat pills are the card's: low in amber, overdue in red, checked out, each
-  click-to-filter. An empty table names the reason and offers a way out — the same
+  app bar's stat pills are the card's: low in amber, overdue in red, to-inspect in amber,
+  checked out, each click-to-filter. An empty table names the reason and offers a way out — the same
   wording and the same offers as the card's list.
 
   At phone width the sidebar folds away and the surface hands its own breakpoint down to
@@ -410,8 +417,8 @@ Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs t
   batch rewrites over every affected item; a location merge re-files that location's items,
   re-parents its children and deletes the husk — all with the same progress and
   partial-failure reporting.
-- **Check-out** invites an optional due date (+1 / +7 / +30 day suggestions) rather than
-  silently checking out with none — the date is what makes overdue highlighting mean
+- **Check-out** invites an optional due date (+7 / +31 / +90 / +X day suggestions) rather
+  than silently checking out with none — the date is what makes overdue highlighting mean
   anything. "No due date" stays a first-class choice.
 - **Mobile** — the card switches layout from its own width. Tapping a row opens one bottom
   sheet holding everything about the item; filters open as a staged sheet whose apply
