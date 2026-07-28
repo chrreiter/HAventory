@@ -128,10 +128,11 @@ export class HVCardShell extends LitElement {
         order: 1;
         flex-basis: 100%;
         margin-left: 0;
-        /* Three of these — low, overdue, checked out — with five-digit counts
-           will not always make one line of a 320px phone. Wrapping costs a
-           second 44px band in the worst case; not wrapping pushes the last one
-           off the side of the card, where it cannot be pressed at all. */
+        /* Four of these — low, overdue, to inspect, checked out — with
+           five-digit counts will not make one line of a 320px phone. Wrapping
+           costs a second 44px band in the worst case; not wrapping pushes the
+           last one off the side of the card, where it cannot be pressed at
+           all. */
         flex-wrap: wrap;
         row-gap: 6px;
       }
@@ -166,6 +167,13 @@ export class HVCardShell extends LitElement {
       .badge.overdue {
         color: var(--hv-error-deep);
         background: var(--hv-error-bg);
+        border-color: transparent;
+      }
+      /* Amber like low stock rather than red like overdue: red says an item is
+         out and late back, amber says something on the shelf wants doing. */
+      .badge.inspect {
+        color: var(--hv-warn-deep);
+        background: var(--hv-warn-bg);
         border-color: transparent;
       }
       .badge.on {
@@ -829,6 +837,7 @@ export class HVCardShell extends LitElement {
       !this.mobile ||
       counts.low_stock_count > 0 ||
       (counts.overdue_count ?? 0) > 0 ||
+      (counts.inspection_overdue_count ?? 0) > 0 ||
       counts.checked_out_count > 0;
     if (!anyBadge) return null;
     return html`
@@ -856,6 +865,17 @@ export class HVCardShell extends LitElement {
               @click=${() => this._setFilters({ overdueOnly: !f?.overdueOnly })}
             >
               ${counts.overdue_count} overdue
+            </button>`
+          : null}
+        ${(counts.inspection_overdue_count ?? 0) > 0
+          ? html`<button
+              class="badge inspect ${f?.inspectionDueOnly ? 'on' : ''}"
+              data-testid="badge-inspection"
+              aria-pressed=${String(!!f?.inspectionDueOnly)}
+              title="Show only items due for inspection"
+              @click=${() => this._setFilters({ inspectionDueOnly: !f?.inspectionDueOnly })}
+            >
+              ${counts.inspection_overdue_count} to inspect
             </button>`
           : null}
         ${counts.checked_out_count > 0

@@ -38,8 +38,10 @@ export const COLUMN_DEFS: readonly ColumnDef[] = [
   { key: 'due_date', label: 'Due', tableSize: '100px', sortField: 'due_date' },
   {
     key: 'inspection_date',
-    label: 'Inspected',
-    tableSize: '100px',
+    label: 'Next inspection',
+    // Wider than the other date columns because the header is what sets the
+    // floor here, not the "Jul 31" it sits above.
+    tableSize: '124px',
     sortField: 'inspection_date',
   },
   { key: 'updated_at', label: 'Updated', tableSize: '96px', sortField: 'updated_at' },

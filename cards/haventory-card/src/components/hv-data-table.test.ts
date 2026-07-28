@@ -172,6 +172,28 @@ describe('hv-data-table: sorting', () => {
   });
 });
 
+describe('hv-data-table: inspection column', () => {
+  // The header used to read "Inspected", past tense, over a date the rest of
+  // the card treats as the next one due.
+  it('heads the column with the date it holds', async () => {
+    const el = await mount([{ id: '1' }], { columns: ['inspection_date'] });
+    expect(q(el, '[data-field="inspection_date"]')?.textContent?.trim()).toBe('Next inspection');
+  });
+
+  it('marks a cell whose inspection has come due, and only that one', async () => {
+    const el = await mount(
+      [
+        { id: '1', inspection_date: '2020-01-01' },
+        { id: '2', inspection_date: '2099-01-01' },
+        { id: '3', inspection_date: null },
+      ],
+      { columns: ['inspection_date'] },
+    );
+    const cells = all(el, '[data-testid="cell-inspection_date"]');
+    expect(cells.map((c) => c.classList.contains('due'))).toEqual([true, false, false]);
+  });
+});
+
 describe('hv-data-table: rows', () => {
   it('emits row actions with the item id', async () => {
     const el = await mount([{ id: 'item-1', quantity: 5 }]);

@@ -564,3 +564,50 @@ describe('hv-filter-panel: overdue', () => {
     expect(seen[0]).toEqual({ overdueOnly: true });
   });
 });
+
+describe('hv-filter-panel: inspection due', () => {
+  // The sort menu is the one place the field is named rather than described,
+  // so it has to carry the same forward-looking wording as the editor.
+  it('names the inspection sort field for the date it holds', async () => {
+    const el = await mount();
+    const labels = [...q(el, '[data-testid="filter-sort-field"]').querySelectorAll('option')].map(
+      (o) => (o as HTMLOptionElement).textContent?.trim(),
+    );
+    expect(labels).toContain('Next inspection');
+    expect(labels).not.toContain('Inspection date');
+  });
+
+  it('offers the filter on both widths, tallied from the backend count', async () => {
+    for (const mobile of [false, true]) {
+      const el = await mount(
+        {},
+        {
+          mobile,
+          counts: {
+            items_total: 9,
+            locations_total: 2,
+            low_stock_count: 4,
+            checked_out_count: 3,
+            overdue_count: 1,
+            inspection_overdue_count: 5,
+            no_location_count: 2,
+          },
+        },
+      );
+      const chip = q(el, '[data-testid="filter-inspection-due"]');
+      expect(chip.textContent, `mobile=${mobile}`).toContain('Inspection due');
+      expect(chip.textContent, `mobile=${mobile}`).toContain('5');
+
+      // The phone branch stages its edits behind the "Show N items" row; the
+      // desktop one applies straight away.
+      const applied: Partial<StoreFilters>[] = [];
+      el.addEventListener('change', (e) => applied.push((e as CustomEvent).detail));
+      el.addEventListener('stage', (e) =>
+        applied.push((e as CustomEvent).detail.filters as StoreFilters),
+      );
+      (chip as HTMLButtonElement).click();
+      expect(applied[0], `mobile=${mobile}`).toMatchObject({ inspectionDueOnly: true });
+      el.remove();
+    }
+  });
+});

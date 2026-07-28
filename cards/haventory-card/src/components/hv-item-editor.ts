@@ -3,7 +3,14 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { locationLabel } from '../ui/location-path';
 import { icon } from '../ui/icons';
-import { relativeTime, formatDate, isOverdue } from '../ui/relative-time';
+import {
+  DEFAULT_CUSTOM_DAYS,
+  QUICK_DAY_OFFSETS,
+  addDays,
+  formatDate,
+  isOverdue,
+  relativeTime,
+} from '../ui/relative-time';
 import { saveShortcutLabel } from '../ui/keyboard';
 import { counted } from '../ui/plural';
 import { nextZBase } from '../utils/zindex';
@@ -122,7 +129,7 @@ export class HVItemEditor extends LitElement {
         gap: 4px;
         min-width: 0;
       }
-      /* Checked out and Due date are two halves of one fact; Inspection date is
+      /* Checked out and Due date are two halves of one fact; Next inspection is
          unrelated to both. The boxes below carry that split visually, so the
          three fields are never read as three peer settings of the same kind. */
       .state {
@@ -185,6 +192,58 @@ export class HVItemEditor extends LitElement {
         font-size: 11.5px;
         line-height: 1.4;
         color: var(--hv-text-tertiary);
+      }
+      /* Same chips, same states as the check-out popover's: one gesture, so it
+         must not look like two. */
+      .offsets {
+        display: flex;
+        gap: 7px;
+        flex-wrap: wrap;
+      }
+      .offset {
+        border: 1px solid var(--hv-divider);
+        background: none;
+        color: var(--hv-chip-text);
+        border-radius: var(--hv-radius-chip);
+        padding: 6px 13px;
+        font: 400 12.5px var(--hv-font);
+        cursor: pointer;
+      }
+      :host([mobile]) .offset {
+        min-height: var(--hv-tap-min, auto);
+        padding: 0 15px;
+        font-size: 13.5px;
+      }
+      .offset.on {
+        background: var(--hv-primary-dark);
+        border-color: var(--hv-primary-dark);
+        color: #fff;
+        font-weight: 500;
+      }
+      .custom-days {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border: 1px solid var(--hv-divider);
+        border-radius: var(--hv-radius-input);
+        font-size: 13px;
+        color: var(--hv-text-secondary);
+      }
+      .custom-days input {
+        width: 72px;
+        box-sizing: border-box;
+        border: 1px solid var(--hv-input-border);
+        border-radius: var(--hv-radius-input);
+        background: var(--hv-surface);
+        color: var(--hv-text);
+        padding: 5px 8px;
+        font: 400 13.5px var(--hv-font);
+      }
+      :host([mobile]) .custom-days input {
+        min-height: 44px;
+        width: 88px;
+        font-size: var(--hv-input-font, 14.5px);
       }
       /* A native date input clips its own placeholder much below ~140px, and
          half of a 375px screen minus the box padding is under that. */
@@ -614,6 +673,9 @@ export class HVItemEditor extends LitElement {
   /** The check-out dialog, and the button it hangs from on a wide screen. */
   @state() private _checkoutOpen = false;
   @state() private _checkoutAnchor: DOMRect | null = null;
+  /** The inspection field's "+X days" row is showing, and owns the date. */
+  @state() private _inspectionCustomOpen = false;
+  @state() private _inspectionCustomDays = DEFAULT_CUSTOM_DAYS;
 
   /**
    * The footer promises "Esc discards", but that is a keydown handler on the
@@ -942,10 +1004,11 @@ export class HVItemEditor extends LitElement {
    *
    * A due date is half of the checkout — it only means anything while an item
    * is out, which is why it is disabled otherwise and why `commonFields()`
-   * nulls it on save. An inspection date is an unrelated fact about the item.
-   * Laid out as three equal thirds of a row they read as three settings of the
-   * same kind, so the two boxes below carry the distinction visually, on both
-   * widths.
+   * nulls it on save. The inspection date is unrelated to any of that: it is
+   * when the item is next due for inspection, and it stands whether or not
+   * anyone has borrowed it. Laid out as three equal thirds of a row they read
+   * as three settings of the same kind, so the two boxes below carry the
+   * distinction visually, on both widths.
    *
    * The state itself is a button rather than a switch. A switch says "this is
    * a property of the item, set it either way"; checking something out is an
@@ -1013,7 +1076,7 @@ export class HVItemEditor extends LitElement {
         </div>
         <div class="group">
           <label class="group-caption" for="editor-inspection" data-testid="editor-inspection-caption">
-            ${icon('calendar', 14)} Inspection date
+            ${icon('calendar', 14)} Next inspection
           </label>
           <div class="group-body">
             <input
@@ -1024,6 +1087,7 @@ export class HVItemEditor extends LitElement {
               .value=${model.inspectionDate}
               @input=${(e: Event) => this._patch({ inspectionDate: (e.target as HTMLInputElement).value })}
             />
+            ${this._renderInspectionOffsets(model.inspectionDate)}
           </div>
         </div>
       </div>
@@ -1039,6 +1103,70 @@ export class HVItemEditor extends LitElement {
    * when the form is saved, which is what lets it work while creating an item
    * that has no id to check out yet.
    */
+  /**
+   * The same quick jumps the check-out popover offers, on the one date it does
+   * not own. An inspection interval is the kind of thing you know in weeks or
+   * months rather than as a calendar square, and typing a date three months out
+   * means doing the arithmetic yourself. Pressing an offset writes the date into
+   * the field above, so the two controls are one value with two ways in.
+   *
+   * The custom row only appears once "+X days" is pressed: it is the escape
+   * hatch for an interval the three presets do not cover, not a fourth preset.
+   */
+  private _renderInspectionOffsets(current: string) {
+    return html`
+      <div class="offsets" data-testid="editor-inspection-offsets">
+        ${QUICK_DAY_OFFSETS.map((offset) => {
+          const value = addDays(offset.days);
+          return html`<button
+            class="offset ${!this._inspectionCustomOpen && current === value ? 'on' : ''}"
+            data-testid="editor-inspection-offset"
+            data-days=${offset.days}
+            @click=${() => {
+              this._inspectionCustomOpen = false;
+              this._patch({ inspectionDate: value });
+            }}
+          >
+            ${offset.label}
+          </button>`;
+        })}
+        <button
+          class="offset ${this._inspectionCustomOpen ? 'on' : ''}"
+          data-testid="editor-inspection-offset-custom"
+          @click=${() => {
+            this._inspectionCustomOpen = true;
+            this._patch({ inspectionDate: addDays(this._inspectionCustomDays) });
+          }}
+        >
+          +X days
+        </button>
+      </div>
+      ${this._inspectionCustomOpen
+        ? html`<label class="custom-days" data-testid="editor-inspection-custom">
+            <input
+              type="number"
+              min="1"
+              max="3650"
+              inputmode="numeric"
+              aria-label="Days from today"
+              .value=${String(this._inspectionCustomDays)}
+              @input=${(e: Event) => {
+                const days = Number((e.target as HTMLInputElement).value);
+                this._inspectionCustomDays = days;
+                // An empty or nonsense box means no date yet rather than a
+                // stale one, so the field clears instead of keeping the last.
+                this._patch({
+                  inspectionDate:
+                    Number.isFinite(days) && days >= 1 ? addDays(Math.floor(days)) : '',
+                });
+              }}
+            />
+            <span>days from today</span>
+          </label>`
+        : null}
+    `;
+  }
+
   private _onCheckoutPressed = (e: Event) => {
     if (this._model.checkedOut) {
       this._patch({ checkedOut: false });

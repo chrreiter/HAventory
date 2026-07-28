@@ -166,6 +166,12 @@ export class HVDataTable extends LitElement {
         color: var(--hv-error);
         font-weight: 500;
       }
+      /* Amber rather than the due column's red: a passed inspection date is a
+         chore on an item still on the shelf, not an item that is late back. */
+      .cell.inspection.due {
+        color: var(--hv-warn);
+        font-weight: 500;
+      }
       .cell.updated {
         font-size: 12.5px;
         color: var(--hv-text-tertiary);
@@ -306,7 +312,11 @@ export class HVDataTable extends LitElement {
           >${formatDate(item.due_date)}</span
         >`;
       case 'inspection_date':
-        return html`<span class="cell" data-testid="cell-inspection_date">${formatDate(item.inspection_date)}</span>`;
+        return html`<span
+          class="cell inspection ${isOverdue(item.inspection_date) ? 'due' : ''}"
+          data-testid="cell-inspection_date"
+          >${formatDate(item.inspection_date)}</span
+        >`;
       case 'updated_at':
         return html`<span class="cell updated" data-testid="cell-updated_at">${relativeTime(item.updated_at)}</span>`;
     }

@@ -804,6 +804,30 @@ describe('hv-full-view: app bar filters', () => {
     expect(q(sr, '[data-testid="full-badge-out"]')).toBeTruthy();
   });
 
+  // An inspection that has come due is independent of any check-out, so the
+  // pill counts shelved items the overdue pill never sees.
+  it('carries the inspection count, and filters the list on it', async () => {
+    const due = [
+      makeItem({ id: '1', inspection_date: '2000-01-01' }),
+      makeItem({ id: '2', inspection_date: '2999-12-31' }),
+    ];
+    const { el, store, sr } = await mount({ items: due });
+    const pill = q(sr, '[data-testid="full-badge-inspection"]') as HTMLButtonElement;
+    expect(pill?.textContent).toContain('1 to inspect');
+    expect(q(sr, '[data-testid="full-badge-overdue"]')).toBe(null);
+
+    pill.click();
+    await settle(el);
+    expect(store.state.value.filters.inspectionDueOnly).toBe(true);
+    expect(q(sr, '[data-testid="full-badge-inspection"]')?.getAttribute('aria-pressed')).toBe('true');
+    expect(store.state.value.items.map((i) => i.id)).toEqual(['1']);
+  });
+
+  it('drops the inspection pill when nothing is due', async () => {
+    const { sr } = await mount({ items: [makeItem({ id: '1', inspection_date: '2999-12-31' })] });
+    expect(q(sr, '[data-testid="full-badge-inspection"]')).toBe(null);
+  });
+
   // "82 out" reads as "82 out of stock", which is the opposite of what it counts.
   it('spells out what the checked-out pill counts', async () => {
     const { sr } = await mount({ items: flagged });

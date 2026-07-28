@@ -120,6 +120,12 @@ export class HVListRow extends LitElement {
         color: var(--hv-error);
         font-weight: 500;
       }
+      /* Amber, not that red: red here means an item is out and late back, while
+         an inspection that has come due is a chore on something on the shelf. */
+      .secondary.inspect {
+        color: var(--hv-warn-deep);
+        font-weight: 500;
+      }
       .dot {
         display: inline-block;
         vertical-align: middle;
@@ -151,6 +157,19 @@ export class HVListRow extends LitElement {
         color: #fff;
         background: var(--hv-error);
         border-color: var(--hv-error);
+      }
+      /* Amber, not the out-chip's red: red on this card is reserved for an item
+         that is out and late back, while an inspection that has come due is a
+         chore on something still on the shelf. */
+      .inspect-chip {
+        flex: none;
+        font: 500 11px var(--hv-font);
+        color: var(--hv-warn-deep);
+        background: var(--hv-warn-bg);
+        border: 1px solid var(--hv-warn-border);
+        border-radius: var(--hv-radius-chip);
+        padding: 2px 8px;
+        white-space: nowrap;
       }
       .hover-actions {
         flex: none;
@@ -378,6 +397,9 @@ export class HVListRow extends LitElement {
     if (!item) return null;
     const low = isLowStock(item);
     const overdue = isOverdue(item.due_date);
+    // `inspection_date` is when the item is next due for inspection, so a date
+    // already behind us means it is waiting to be done.
+    const inspectionDue = isOverdue(item.inspection_date);
     // The desktop row has room for the whole path; the phone row does not, and
     // clipping it from the right would take the leaf with it.
     const full = displayPath(item);
@@ -386,6 +408,11 @@ export class HVListRow extends LitElement {
     // The tooltip carries the *unelided* path: on a phone the middle of it is
     // dropped on purpose, and this is where the whole thing can still be read.
     const secondaryFull = [full, item.category].filter(Boolean).join(' · ');
+    // A phone row has one line for all of this and no room for the chips the
+    // wide row hangs on the right, so the line says the most interrupting
+    // thing it has: who has the item, then what the item is waiting for, then
+    // where it lives. The path is a tap away in the detail sheet either way.
+    const mobileState = item.checked_out ? 'out' : inspectionDue ? 'inspect' : '';
 
     return html`
       <div
@@ -419,7 +446,7 @@ export class HVListRow extends LitElement {
         <span class="names">
           <span class="name" data-testid="row-name" title=${item.name}>${item.name}</span>
           <span
-            class="secondary ${item.checked_out && this.mobile ? 'out' : ''} ${overdue && this.mobile
+            class="secondary ${this.mobile ? mobileState : ''} ${overdue && this.mobile
               ? 'overdue'
               : ''}"
             data-testid="row-secondary"
@@ -432,7 +459,9 @@ export class HVListRow extends LitElement {
               ? html`${overdue ? 'Overdue' : 'Checked out'}${item.due_date
                   ? ` · due ${formatDate(item.due_date)}`
                   : ''}`
-              : secondary || 'No location'}
+              : this.mobile && inspectionDue
+                ? html`<span data-testid="row-inspection-due">Inspection due</span> · ${formatDate(item.inspection_date)}`
+                : secondary || 'No location'}
           </span>
         </span>
         ${this.pending ? html`<span class="pending" data-testid="row-pending">pending</span>` : null}
@@ -442,6 +471,11 @@ export class HVListRow extends LitElement {
         ${!this.mobile && item.checked_out
           ? html`<span class="out-chip ${overdue ? 'overdue' : ''}" data-testid="row-checked-out">
               ${overdue ? `Overdue · ${formatDate(item.due_date)}` : 'Checked out'}
+            </span>`
+          : null}
+        ${!this.mobile && inspectionDue
+          ? html`<span class="inspect-chip" data-testid="row-inspection-due">
+              Inspection due
             </span>`
           : null}
         ${this.selectable

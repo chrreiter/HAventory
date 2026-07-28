@@ -145,6 +145,7 @@ export function toWireFilter(filters: StoreFilters): ItemFilter {
     low_stock_first: filters.lowStockFirst || undefined,
     orphaned_only: filters.orphansOnly || undefined,
     overdue_only: filters.overdueOnly || undefined,
+    inspection_overdue_only: filters.inspectionDueOnly || undefined,
     category: filters.category || undefined,
     updated_after: filters.updatedAfter || undefined,
     created_after: filters.createdAfter || undefined,
@@ -170,6 +171,7 @@ export function defaultFilters(): StoreFilters {
     orphansOnly: false,
     lowStockOnly: false,
     overdueOnly: false,
+    inspectionDueOnly: false,
     category: null,
     tags: [],
     tagsMode: 'any',
@@ -192,6 +194,7 @@ export function activeFilterCount(filters: StoreFilters): number {
   if (filters.lowStockOnly) n += 1;
   if (filters.lowStockFirst) n += 1;
   if (filters.overdueOnly) n += 1;
+  if (filters.inspectionDueOnly) n += 1;
   if (filters.category) n += 1;
   if (filters.tags.length) n += 1;
   if (filters.updatedAfter) n += 1;

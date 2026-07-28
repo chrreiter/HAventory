@@ -12,7 +12,7 @@ const DAY = 24 * HOUR;
 const WEEK = 7 * DAY;
 const YEAR = 365 * DAY;
 
-/** Parse an ISO timestamp, returning null for missing or unparseable input. */
+/** Parse an ISO timestamp, returning null for missing or unparsable input. */
 export function parseTs(iso: string | null | undefined): number | null {
   if (!iso) return null;
   const ms = Date.parse(iso);
@@ -21,7 +21,7 @@ export function parseTs(iso: string | null | undefined): number | null {
 
 /**
  * Format `iso` relative to `now` (defaults to the current time).
- * Returns an em dash for missing or unparseable timestamps so callers can drop
+ * Returns an em dash for missing or unparsable timestamps so callers can drop
  * it straight into a cell.
  */
 export function relativeTime(iso: string | null | undefined, now: number = Date.now()): string {
@@ -69,7 +69,25 @@ export function toIsoDate(ms: number = Date.now()): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/** `YYYY-MM-DD` offset by whole days from `from` — powers the +1/+7/+30 chips. */
+/** `YYYY-MM-DD` offset by whole days from `from` — powers the quick-offset chips. */
 export function addDays(days: number, from: number = Date.now()): string {
   return toIsoDate(from + days * DAY);
 }
+
+/**
+ * The quick offsets every forward-dating control offers: a week, a month, a
+ * quarter. +31 rather than +30 so "a month" lands a month later, and nothing
+ * shorter than a week — a single day is less than most borrowings ever run,
+ * and less than any inspection interval worth recording.
+ *
+ * Shared so the check-out popover and the editor's inspection field cannot
+ * drift into offering different jumps for the same gesture.
+ */
+export const QUICK_DAY_OFFSETS: readonly { days: number; label: string }[] = [
+  { days: 7, label: '+7 days' },
+  { days: 31, label: '+31 days' },
+  { days: 90, label: '+90 days' },
+];
+
+/** What a "+X days" field starts at when it is first opened. */
+export const DEFAULT_CUSTOM_DAYS = 14;

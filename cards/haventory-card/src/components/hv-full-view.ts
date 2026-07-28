@@ -213,6 +213,13 @@ export class HVFullView extends LitElement {
         background: var(--hv-error);
         color: #fff;
       }
+      /* Amber like low stock, not red like overdue: red is reserved here for an
+         item that is out and late back, while an inspection that has come due
+         is a chore on something still on the shelf. */
+      .appbar .pill.inspect {
+        background: var(--hv-amber);
+        color: #3b2600;
+      }
       .appbar .add {
         flex: none;
         display: inline-flex;
@@ -1413,6 +1420,17 @@ export class HVFullView extends LitElement {
                 @click=${() => this._setFilters({ overdueOnly: !filters.overdueOnly })}
               >
                 ${counts.overdue_count} overdue
+              </button>`
+            : null}
+          ${counts && (counts.inspection_overdue_count ?? 0) > 0
+            ? html`<button
+                class="pill inspect ${filters.inspectionDueOnly ? 'on' : ''}"
+                data-testid="full-badge-inspection"
+                aria-pressed=${String(filters.inspectionDueOnly)}
+                title="Show only items due for inspection"
+                @click=${() => this._setFilters({ inspectionDueOnly: !filters.inspectionDueOnly })}
+              >
+                ${counts.inspection_overdue_count} to inspect
               </button>`
             : null}
           ${counts && counts.checked_out_count > 0
