@@ -26,7 +26,7 @@ from homeassistant.helpers.storage import Store
 
 from . import migrations
 from .const import DOMAIN
-from .exceptions import StorageError
+from .exceptions import SchemaDowngradeError, StorageError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,6 +47,21 @@ def _empty_payload() -> dict[str, Any]:
     """
 
     return {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+
+
+def schema_downgrade_message(*, stored_version: int, supported_version: int) -> str:
+    """Build the refusal shown when stored data outranks this build.
+
+    Shared by the storage layer and setup validation so both refusal paths tell
+    the user the same thing.
+    """
+
+    return (
+        f"stored data uses schema version {stored_version}, which is newer than this "
+        f"build supports ({supported_version}); HAventory will not downgrade it. "
+        "Upgrade HAventory to a version that understands this data, or restore a backup "
+        "taken with this version. The stored data was left unchanged."
+    )
 
 
 def _get_persist_lock(hass: HomeAssistant) -> asyncio.Lock:
@@ -133,6 +148,9 @@ class DomainStore:
 
         If a migration occurs, persist the migrated payload back to storage.
         Returns the migrated (or original) payload.
+
+        Raises ``SchemaDowngradeError`` when ``raw`` was written by a newer schema
+        version than this build supports, leaving the stored payload untouched.
         """
 
         if not isinstance(raw, dict):  # Corrupted or unexpected
@@ -160,6 +178,24 @@ class DomainStore:
             }
             normalized.update(raw)
             return normalized
+
+        if from_version > to_version:
+            # Migrations are forward-only, so a newer payload would pass through
+            # untouched and then be stamped with (and saved under) this build's
+            # version — relabelling data we cannot read. Refuse without writing.
+            _LOGGER.error(
+                "Refusing to load storage written by a newer schema version",
+                extra={
+                    "domain": DOMAIN,
+                    "op": "migrate",
+                    "from_version": from_version,
+                    "to_version": to_version,
+                    "storage_key": self.key,
+                },
+            )
+            raise SchemaDowngradeError(
+                schema_downgrade_message(stored_version=from_version, supported_version=to_version)
+            )
 
         try:
             migrated = migrations.migrate(raw, from_version=from_version, to_version=to_version)
@@ -261,9 +297,10 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
 async def async_request_persist(hass: HomeAssistant) -> None:
     """Request a debounced persistence operation.
 
-    Cancels any pending persist task and schedules a new one after the debounce
-    delay. This coalesces rapid changes into a single persistence operation,
-    reducing disk I/O while maintaining data safety.
+    Cancels any pending persist task and schedules a new one — as a Home
+    Assistant tracked background task — after the debounce delay. This coalesces
+    rapid changes into a single persistence operation, reducing disk I/O while
+    maintaining data safety.
 
     The debounce delay is PERSIST_DEBOUNCE_DELAY (1.0 seconds by default).
     """
@@ -305,7 +342,12 @@ async def async_request_persist(hass: HomeAssistant) -> None:
         },
     )
 
-    bucket["persist_task"] = asyncio.create_task(_delayed_persist())
+    # Schedule through HA rather than asyncio directly: hass tracks the task and
+    # cancels/awaits it during shutdown, so a pending debounce cannot outlive the
+    # event loop.
+    bucket["persist_task"] = hass.async_create_background_task(
+        _delayed_persist(), name=f"{DOMAIN} debounced persist"
+    )
 
 
 async def async_persist_immediate(hass: HomeAssistant) -> None:

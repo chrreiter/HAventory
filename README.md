@@ -29,6 +29,72 @@ HAventory isn't in the HACS default store yet. To install from this repository:
 Minimum Home Assistant version: **2026.7**. Developers: see the Developer Checklist below
 and [CONTRIBUTING.md](CONTRIBUTING.md).
 
+### YAML-mode dashboards
+
+Step 5 assumes the default storage mode, where the integration registers the card as a
+Lovelace resource for you. In YAML mode, Home Assistant reads the resource list from
+`configuration.yaml` and no integration can add to it, so HAventory skips registration
+(logging `Lovelace in YAML mode; manual resource configuration required` at debug level).
+Nothing else reports the problem: the card is simply missing from the picker, and any
+dashboard already using it shows *Custom element doesn't exist: haventory-card*.
+
+You are in YAML mode if `configuration.yaml` has a `lovelace:` block with `mode: yaml`.
+In the UI, with **Advanced Mode** enabled on your profile, **Settings → Dashboards → ⋮**
+offers no **Resources** entry and the dashboard has no edit (pencil) button.
+
+Register the card yourself next to that `mode:` key:
+
+```yaml
+lovelace:
+  mode: yaml
+  resources:
+    - url: /local/haventory/haventory-card.js
+      type: module
+```
+
+Restart Home Assistant, then refresh your browser (Ctrl/Cmd+Shift+R).
+
+The mode of the *main* dashboard is what decides this. An extra YAML dashboard declared
+under `lovelace: dashboards:` while the main one stays in storage mode still uses the
+UI-managed resource list, so it needs nothing. In storage mode a `resources:` block in
+`configuration.yaml` is ignored — Home Assistant warns and keeps using the UI list.
+
+---
+
+## Known limitations
+
+What HAventory does *not* do today, stated up front so none of it is a surprise:
+
+- **Scale: a few thousand items.** Every mutation re-serializes the entire inventory and
+  rewrites the store blob, so write latency grows with the total item count. Measured p50
+  per create: ~70 ms at 250 items, ~114 ms at 500, ~200 ms at 1000; on that curve a single
+  create trends toward ~1 s at a few thousand items. Reads don't share the problem (query
+  paths are benchmarked at 10 000 items), correctness is unaffected at any size, and no
+  limit is enforced — writes simply get slower. Treat a few thousand items as the
+  comfortable ceiling.
+- **No automation triggers.** The integration creates no entities and fires no events on
+  the Home Assistant bus. Automations and scripts can *call* the `haventory.*` services,
+  but nothing can trigger *on* an inventory change — there is no state object to watch and
+  no event type to listen for. Change notification is WebSocket subscriptions only, for
+  clients holding an open connection.
+- **No admin gating.** No WebSocket command declares `require_admin`, so any logged-in
+  Home Assistant user — not only administrators — can read and mutate the whole inventory.
+  It is a household-wide tool, not a per-user one.
+- **Rate limiting is opt-in and off by default.** Out of the box nothing bounds how fast a
+  client may issue commands or how many subscription events it is sent. Enabling it under
+  Settings → Devices & services → HAventory → **Configure** turns on per-connection and
+  global token buckets: excess commands are rejected with a `rate_limited` error and
+  excess subscription broadcasts are dropped. Dropped broadcasts are silent on the wire —
+  events carry no sequence number, so a missing one cannot be detected by its absence.
+- **Import identity is the id, never the name.** The `merge` / `replace` / `skip` policies
+  all classify an incoming item or location by its id. Restoring a backup onto entities
+  you rebuilt by hand — which carry fresh uuids — therefore duplicates them instead of
+  merging, and the backup's items follow their stored `location_id` onto the duplicate.
+  Restore into an empty inventory, or onto one whose ids are still intact.
+
+These are tracked, with their measurements and proposed fixes, in
+[`docs/open-items.md`](docs/open-items.md).
+
 ---
 
 ## Developer Checklist
@@ -215,7 +281,10 @@ item and deletes it (best-effort cleanup even on failure).
 ### Backend (custom component)
 
 - `custom_components/haventory/` with `manifest.json`, `__init__.py`, `config_flow.py`, `services.yaml`.
-- Store: `hass.data[DOMAIN]["store"]` with versioned schema and safe writes.
+- Store: `hass.data[DOMAIN]["store"]` with versioned schema and safe writes. Migrations are
+  forward-only: a store written by a **newer** HAventory version is refused (setup fails with
+  an "upgrade HAventory" message) and never rewritten, so a rollback cannot relabel data the
+  running build cannot read.
 - Persistence architecture:
   - **WebSocket / service handlers**: immediate saves via `async_persist_repo` — storage
     errors propagate to clients as `storage_error`.
@@ -245,6 +314,26 @@ item and deletes it (best-effort cleanup even on failure).
   independently of a full-instance snapshot. See
   [`docs/backend_api_contract.md`](docs/backend_api_contract.md) and
   [`docs/data_shapes.md`](docs/data_shapes.md).
+  - **Import matches entities by id, and only by id — never by name.** Every incoming item
+    and location is looked up by its id: an id already in the inventory is the same entity
+    (left `unchanged`, `update`d, or reported as a `conflict` under `skip`), an id that is
+    absent is added. Names are not consulted under any policy, which is deliberate —
+    matching by name would silently fuse two genuinely different "Shelf A"s.
+  - **So restoring a backup onto hand-rebuilt locations or items duplicates them; it does
+    not merge onto them.** Anything you delete and recreate by hand comes back with a fresh
+    id, so the backup's copies count as new entities and you end up with two of each.
+    The duplicates are not inert: each imported item carries the backup's `location_id`, so
+    the items repoint onto the *newly added* duplicate location, and the location you
+    rebuilt keeps its name while its contents move to its twin. Measured against a running
+    instance: a 40-location backup previewed against a 53-location inventory gives
+    `locations add=0 unchanged=40` when the ids are intact, but `add=17 unchanged=23` — 70
+    locations with 17 duplicate name pairs, and 402 items moving from `unchanged` to
+    `update` — when 17 of those locations had been rebuilt by hand first.
+  - **Safe restore paths:** restore into an **empty inventory**, or restore a backup whose
+    ids are still intact (the entities were never deleted and recreated). Either way run
+    `import/preview` first and read the `add` counts: entities you expect the import to
+    match onto must appear under `unchanged`/`update`, and a location you already have
+    showing up under `add` means you are about to duplicate it.
 
 ### Frontend (Lovelace card)
 
@@ -481,3 +570,8 @@ and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discus
 - Container logs: `docker logs -f <container>` (or `-n 200` for recent)
 - HA log file (if enabled): `/config/home-assistant.log` inside the container
 - HAventory storage file: `/config/.storage/haventory_store`
+- **"stored data uses schema version N, which is newer than this build supports"**: the store
+  was written by a newer HAventory version — typically after rolling the integration back, or
+  after restoring a backup taken on a newer version. The entry stops with that error and the
+  store is left untouched; re-install the newer version to read it, or replace
+  `haventory_store` with a backup taken on the running version.

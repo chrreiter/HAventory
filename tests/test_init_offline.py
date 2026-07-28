@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 
 import custom_components.haventory as haven_init
 import pytest
+from custom_components.haventory.exceptions import SchemaDowngradeError
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
+from homeassistant.helpers.storage import Store as HAStore
 
 
 @pytest.mark.asyncio
@@ -53,6 +56,54 @@ async def test_setup_entry_invalid_version_raises(monkeypatch) -> None:
 
     with pytest.raises(ConfigEntryNotReady):
         await haven_init.async_setup_entry(hass, entry)
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_refuses_newer_schema_and_leaves_store_intact(monkeypatch) -> None:
+    """Data written by a newer build aborts setup permanently and is never rewritten."""
+
+    hass = HomeAssistant()
+    entry = ConfigEntry()
+    key = "test_init_newer_schema_refused"
+    monkeypatch.setattr(haven_init, "STORAGE_KEY", key)
+
+    newer_version = CURRENT_SCHEMA_VERSION + 1
+    pre_payload = {
+        "schema_version": newer_version,
+        "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 5}},
+        "locations": {"l1": {"id": "l1", "name": "Garage"}},
+    }
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save(deepcopy(pre_payload))
+
+    # ConfigEntryError, not ConfigEntryNotReady: retrying cannot make this build
+    # understand newer data, so HA must stop instead of backing off forever.
+    with pytest.raises(ConfigEntryError) as excinfo:
+        await haven_init.async_setup_entry(hass, entry)
+
+    message = str(excinfo.value)
+    assert str(newer_version) in message
+    assert str(CURRENT_SCHEMA_VERSION) in message
+    assert "Upgrade HAventory" in message
+
+    assert await raw_store.async_load() == pre_payload
+    assert "repository" not in hass.data[haven_init.DOMAIN]
+
+
+@pytest.mark.asyncio
+async def test_validate_storage_payload_reports_newer_version_specifically() -> None:
+    """A newer payload reaching validation is refused with the downgrade message."""
+
+    payload = {
+        "schema_version": CURRENT_SCHEMA_VERSION + 2,
+        "items": {},
+        "locations": {},
+    }
+
+    with pytest.raises(SchemaDowngradeError) as excinfo:
+        haven_init._validate_storage_payload(payload, schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert str(CURRENT_SCHEMA_VERSION + 2) in str(excinfo.value)
 
 
 @pytest.mark.asyncio

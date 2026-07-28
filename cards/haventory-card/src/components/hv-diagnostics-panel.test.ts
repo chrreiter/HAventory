@@ -1,6 +1,6 @@
 import './hv-diagnostics-panel';
 import type { HVDiagnosticsPanel } from './hv-diagnostics-panel';
-import type { HealthResult, StatsCounts } from '../store/types';
+import type { DegradedState, HealthResult, StatsCounts } from '../store/types';
 
 const counts: StatsCounts = {
   items_total: 250,
@@ -21,12 +21,14 @@ function health(patch: Partial<HealthResult> = {}): HealthResult {
   };
 }
 
-const NO_DEGRADATION = {
+const NO_DEGRADATION: DegradedState = {
   rateLimited: false,
   connectionLost: false,
   retrying: 0,
   nextRetryAt: null,
   reloading: false,
+  liveUpdates: 'live',
+  nextLiveRetryAt: null,
 };
 
 async function mount(props: Partial<HVDiagnosticsPanel> = {}) {

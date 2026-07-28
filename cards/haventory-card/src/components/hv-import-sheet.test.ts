@@ -73,7 +73,16 @@ describe('hv-import-sheet: step 1', () => {
     expect(policies.map((p) => p.dataset.policy)).toEqual(['merge', 'replace', 'skip']);
     expect(policies[0].getAttribute('aria-checked')).toBe('true');
     // Each explains what it does, rather than relying on the word alone.
-    expect(policies[1].textContent).toContain("Overwrite matching items with the file's version");
+    expect(policies[1].textContent).toContain("Overwrite items matched by id with the file's version");
+  });
+
+  it('says what an item is matched on, because it is the id and not the name', async () => {
+    // A user who reads "matching" as matching by name will rebuild entities by
+    // hand and expect a restore to merge onto them; it adds duplicates instead.
+    const el = await mount();
+    for (const policy of all(el, '[data-testid="import-policy"]')) {
+      expect(policy.textContent).toMatch(/\bid\b/);
+    }
   });
 
   it('promises no deletion, because no policy deletes', async () => {

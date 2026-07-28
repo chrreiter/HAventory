@@ -58,16 +58,70 @@ const CONNECTION_LOST_THRESHOLD = 2;
 /** Attempts (including the first) for a command rejected with `rate_limited`. */
 const RATE_LIMIT_ATTEMPTS = 4;
 
+/**
+ * Automatic re-subscribes after a `rate_limited` refusal, before the card gives
+ * up and waits for the user. Bounded because a limiter tight enough to refuse
+ * every attempt will not be talked round by a card that keeps knocking.
+ */
+const SUBSCRIBE_RETRY_ATTEMPTS = 4;
+
+/**
+ * Ceiling on a single re-subscribe wait. Also clamps a server-sent retry-after
+ * hint, so a wrong or hostile value cannot park live updates indefinitely.
+ */
+const SUBSCRIBE_RETRY_MAX_MS = 30_000;
+
+/** Topics `subscribeTopics` opens as one round: items, stats, locations. */
+const SUBSCRIBE_TOPIC_COUNT = 3;
+
 const NO_DEGRADATION: DegradedState = {
   rateLimited: false,
   connectionLost: false,
   retrying: 0,
   nextRetryAt: null,
   reloading: false,
+  liveUpdates: 'live',
+  nextLiveRetryAt: null,
 };
 
 function errorCode(err: unknown): string {
   return String((err as { code?: unknown } | undefined)?.code ?? 'unknown_error');
+}
+
+function nonNegativeNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/**
+ * A retry-after hint in milliseconds, or null when the envelope carries none.
+ *
+ * The error taxonomy defines no retry-after field, so this is read defensively:
+ * from `data` (where the contract puts structured context), from `context` (the
+ * name the card's own error entries use) and from the top level, accepting
+ * either milliseconds or the HTTP convention of seconds. A backend that starts
+ * sending one is honoured without a contract change; until then the caller
+ * falls back to its own backoff.
+ */
+function retryAfterHintMs(err: unknown): number | null {
+  const envelope = err as { data?: unknown; context?: unknown } | undefined;
+  for (const source of [envelope, envelope?.data, envelope?.context]) {
+    if (!source || typeof source !== 'object') continue;
+    const bag = source as Record<string, unknown>;
+    const ms = nonNegativeNumber(bag.retry_after_ms);
+    if (ms !== null) return ms;
+    const seconds = nonNegativeNumber(bag.retry_after);
+    if (seconds !== null) return seconds * 1000;
+  }
+  return null;
+}
+
+/**
+ * How long to wait before re-opening a refused subscription: the server's hint
+ * when it sends one, otherwise exponential backoff off the card's base delay.
+ */
+export function subscribeRetryDelayMs(err: unknown, attempt: number, baseMs: number): number {
+  const delay = retryAfterHintMs(err) ?? baseMs * 2 ** attempt;
+  return Math.min(delay, SUBSCRIBE_RETRY_MAX_MS);
 }
 
 /**
@@ -187,6 +241,15 @@ export class Store {
   private retryBaseMs: number;
   private consecutiveTransportFailures = 0;
   private treeRefreshHandle: ReturnType<typeof setTimeout> | null = null;
+  /** Identifies the newest subscribe round, so a superseded one stops reporting. */
+  private subscribeRound = 0;
+  /** Subscribes in the current round that have not resolved or been refused yet. */
+  private subscribePending = 0;
+  /** First refusal seen in the current round, if any. */
+  private subscribeRefusal: { err: unknown } | null = null;
+  /** Automatic re-subscribes already spent on the current outage. */
+  private subscribeAttempt = 0;
+  private subscribeRetryHandle: ReturnType<typeof setTimeout> | null = null;
   /** Last untouched `distinct_values` result, so drafts can be re-merged. */
   private serverDistinct: DistinctValues | null = null;
   /** Values named in the organize dialog that no item carries yet. */
@@ -238,39 +301,103 @@ export class Store {
     this.subscribeTopics();
   }
 
+  /** (Re)open the topic subscriptions, starting the retry budget over. */
   subscribeTopics() {
-    const onError = (err: unknown) => this.onSubscribeError(err);
+    this.openSubscriptions(true);
+  }
+
+  /**
+   * Open the three topic subscriptions as one round.
+   *
+   * The round, not the individual topic, is the unit of health: the rate limiter
+   * bills each subscribe separately, so it can let `items` through and refuse
+   * `stats` a moment later. Live updates only count as restored once every
+   * subscribe in the newest round has been accepted.
+   */
+  private openSubscriptions(resetRetryBudget: boolean) {
+    this.cancelSubscribeRetry();
+    if (resetRetryBudget) this.subscribeAttempt = 0;
+    const round = ++this.subscribeRound;
+    this.subscribePending = SUBSCRIBE_TOPIC_COUNT;
+    this.subscribeRefusal = null;
+    const onOpen = () => this.onSubscribeSettled(round, null);
+    const onError = (err: unknown) => this.onSubscribeSettled(round, { err });
+
     if (this.itemsUnsub) this.itemsUnsub();
     this.itemsUnsub = this.ws.subscribe('items', (evt: AnyEventPayload) => this.onItemsEvent(evt), {
       location_id: this.state.value.filters.locationId ?? undefined,
       include_subtree: true, // Always include sublocations
       onError,
+      onOpen,
     });
     if (this.statsUnsub) this.statsUnsub();
-    this.statsUnsub = this.ws.subscribe('stats', (evt: AnyEventPayload) => this.onStatsEvent(evt), { onError });
+    this.statsUnsub = this.ws.subscribe('stats', (evt: AnyEventPayload) => this.onStatsEvent(evt), {
+      onError,
+      onOpen,
+    });
     if (this.locationsUnsub) this.locationsUnsub();
     this.locationsUnsub = this.ws.subscribe(
       'locations',
       (evt: AnyEventPayload) => this.onLocationsEvent(evt),
-      { onError },
+      { onError, onOpen },
     );
+  }
 
-    this.stateObs.set({ connected: { items: true, stats: true } });
+  /** Fold one subscribe outcome into its round, and act once the round is complete. */
+  private onSubscribeSettled(round: number, refusal: { err: unknown } | null) {
+    if (round !== this.subscribeRound) return; // a newer round has taken over
+    if (refusal && !this.subscribeRefusal) this.subscribeRefusal = refusal;
+    if (this.subscribePending > 0) this.subscribePending -= 1;
+    if (this.subscribePending > 0) return;
+
+    const refused = this.subscribeRefusal;
+    if (!refused) {
+      this.subscribeAttempt = 0;
+      this.stateObs.set({ connected: { items: true, stats: true } });
+      this.setDegraded({ liveUpdates: 'live', nextLiveRetryAt: null });
+      return;
+    }
+    this.onSubscribeRefused(refused.err);
   }
 
   /**
-   * A rejected subscribe means live updates are gone. Rate limiting is the
-   * expected cause; either way the card must stop implying it is live and offer
-   * a manual refresh.
+   * A refused subscribe means live updates are gone, silently — no event will
+   * ever arrive to hint at it.
+   *
+   * `rate_limited` is the expected refusal and the contract's guidance is to
+   * retry later, so the card backs off and says it is retrying instead of
+   * dropping an error on a user who has done nothing wrong. Once the budget is
+   * spent it stops, reports the refusal and leaves the manual refresh as the way
+   * back. Any other refusal is an outage and is reported at once.
    */
-  private onSubscribeError(err: unknown) {
-    const code = errorCode(err);
-    this.setDegraded({
-      rateLimited: code === 'rate_limited' ? true : this.state.value.degraded.rateLimited,
-      connectionLost: code === 'rate_limited' ? this.state.value.degraded.connectionLost : true,
-    });
+  private onSubscribeRefused(err: unknown) {
     this.stateObs.set({ connected: { items: false, stats: false } });
-    this.pushError(err);
+
+    if (errorCode(err) !== 'rate_limited') {
+      this.setDegraded({ connectionLost: true, liveUpdates: 'paused', nextLiveRetryAt: null });
+      this.pushError(err);
+      return;
+    }
+
+    if (this.subscribeAttempt >= SUBSCRIBE_RETRY_ATTEMPTS) {
+      this.setDegraded({ rateLimited: true, liveUpdates: 'paused', nextLiveRetryAt: null });
+      this.pushError(err);
+      return;
+    }
+
+    const delay = subscribeRetryDelayMs(err, this.subscribeAttempt, this.retryBaseMs);
+    this.subscribeAttempt += 1;
+    this.setDegraded({ rateLimited: true, liveUpdates: 'retrying', nextLiveRetryAt: Date.now() + delay });
+    this.subscribeRetryHandle = setTimeout(() => {
+      this.subscribeRetryHandle = null;
+      this.openSubscriptions(false);
+    }, delay);
+  }
+
+  private cancelSubscribeRetry() {
+    if (this.subscribeRetryHandle === null) return;
+    clearTimeout(this.subscribeRetryHandle);
+    this.subscribeRetryHandle = null;
   }
 
   /** Tear down the three subscriptions and any pending tree refresh. */
@@ -279,6 +406,9 @@ export class Store {
     this.statsUnsub?.();
     this.locationsUnsub?.();
     this.itemsUnsub = this.statsUnsub = this.locationsUnsub = null;
+    // Nothing is listening after this, so a queued re-subscribe must not fire.
+    this.subscribeRound += 1;
+    this.cancelSubscribeRetry();
     if (this.treeRefreshHandle !== null) {
       clearTimeout(this.treeRefreshHandle);
       this.treeRefreshHandle = null;
@@ -644,7 +774,9 @@ export class Store {
       cur.connectionLost === next.connectionLost &&
       cur.retrying === next.retrying &&
       cur.nextRetryAt === next.nextRetryAt &&
-      cur.reloading === next.reloading;
+      cur.reloading === next.reloading &&
+      cur.liveUpdates === next.liveUpdates &&
+      cur.nextLiveRetryAt === next.nextLiveRetryAt;
     if (same) return;
     this.stateObs.set({ degraded: next });
   }
