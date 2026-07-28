@@ -40,6 +40,7 @@ from .models import (
     filter_items,
     is_canonical_utc_timestamp,
     iso_utc_now,
+    item_inspection_is_overdue,
     item_is_low_stock,
     item_is_overdue,
     monotonic_timestamp_after,
@@ -1142,6 +1143,7 @@ class Repository:
             "low_stock_count": len(self._low_stock_item_ids),
             "checked_out_count": len(self._checked_out_item_ids),
             "overdue_count": self._count_overdue(),
+            "inspection_overdue_count": self._count_inspection_overdue(),
             "locations_total": len(self._locations_by_id),
             "no_location_count": len(self._items_by_id) - items_with_location,
         }
@@ -1160,6 +1162,20 @@ class Repository:
             1
             for iid in self._checked_out_item_ids
             if (it := self._items_by_id.get(iid)) is not None and item_is_overdue(it, today=today)
+        )
+
+    def _count_inspection_overdue(self) -> int:
+        """Count items past the date they were next due for inspection.
+
+        Unindexed for the same reason as ``_count_overdue`` — the answer moves
+        with the calendar, and no mutation invalidates it at midnight. The walk
+        covers the whole inventory rather than a subset: an inspection date is
+        independent of any check-out, so any item can carry one.
+        """
+
+        today = today_utc_date()
+        return sum(
+            1 for it in self._items_by_id.values() if item_inspection_is_overdue(it, today=today)
         )
 
     def count_matching_by_location(self, flt: ItemFilter | None = None) -> dict[str | None, int]:

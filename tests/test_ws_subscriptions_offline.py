@@ -4,11 +4,13 @@ Scenarios:
 - subscribe/unsubscribe lifecycle and echo policy
 - item events delivered with correct shape; stats counts emitted on mutations
 - location_id + include_subtree filters constrain delivered events
+- inspection_overdue_only narrows item events the way item/list narrows a page
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Coroutine
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -322,6 +324,76 @@ async def test_location_filters_subtree_and_direct_only() -> None:
         if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
     }
     assert ids == {SUB_ID_SUBTREE}
+
+
+def _utc_day_offset(days: int) -> str:
+    """A UTC calendar date `days` from today, as YYYY-MM-DD."""
+
+    return (datetime.now(UTC).date() + timedelta(days=days)).isoformat()
+
+
+@pytest.mark.asyncio
+async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
+    """`inspection_overdue_only` narrows item events the same way `item/list` does."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    conn = _ConnStub()
+
+    SUB_ID_INSPECTION = 401
+    SUB_ID_EVERYTHING = 402
+    await _send(
+        hass,
+        conn,
+        SUB_ID_INSPECTION,
+        "haventory/subscribe",
+        topic="items",
+        inspection_overdue_only=True,
+    )
+    await _send(hass, conn, SUB_ID_EVERYTHING, "haventory/subscribe", topic="items")
+
+    def item_event_ids() -> set[object]:
+        return {
+            m.get("id")
+            for m in conn.messages
+            if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
+        }
+
+    # A missed inspection reaches both subscriptions.
+    conn.messages.clear()
+    late = await _send(
+        hass,
+        conn,
+        3,
+        "haventory/item/create",
+        name="Ladder",
+        inspection_date=_utc_day_offset(-1),
+    )
+    assert late["success"] is True
+    assert item_event_ids() == {SUB_ID_INSPECTION, SUB_ID_EVERYTHING}
+
+    # Due today is not late yet, so the filtered subscription hears nothing —
+    # the same strictly-before boundary the filter and the count use.
+    conn.messages.clear()
+    due_today = await _send(
+        hass,
+        conn,
+        4,
+        "haventory/item/create",
+        name="Harness",
+        inspection_date=_utc_day_offset(0),
+    )
+    assert due_today["success"] is True
+    assert item_event_ids() == {SUB_ID_EVERYTHING}
+
+    # And an item with no inspection date at all never matches.
+    conn.messages.clear()
+    undated = await _send(hass, conn, 5, "haventory/item/create", name="Bucket")
+    assert undated["success"] is True
+    assert item_event_ids() == {SUB_ID_EVERYTHING}
 
 
 @pytest.mark.asyncio
