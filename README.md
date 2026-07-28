@@ -29,6 +29,36 @@ HAventory isn't in the HACS default store yet. To install from this repository:
 Minimum Home Assistant version: **2026.7**. Developers: see the Developer Checklist below
 and [CONTRIBUTING.md](CONTRIBUTING.md).
 
+### YAML-mode dashboards
+
+Step 5 assumes the default storage mode, where the integration registers the card as a
+Lovelace resource for you. In YAML mode, Home Assistant reads the resource list from
+`configuration.yaml` and no integration can add to it, so HAventory skips registration
+(logging `Lovelace in YAML mode; manual resource configuration required` at debug level).
+Nothing else reports the problem: the card is simply missing from the picker, and any
+dashboard already using it shows *Custom element doesn't exist: haventory-card*.
+
+You are in YAML mode if `configuration.yaml` has a `lovelace:` block with `mode: yaml`.
+In the UI, with **Advanced Mode** enabled on your profile, **Settings → Dashboards → ⋮**
+offers no **Resources** entry and the dashboard has no edit (pencil) button.
+
+Register the card yourself next to that `mode:` key:
+
+```yaml
+lovelace:
+  mode: yaml
+  resources:
+    - url: /local/haventory/haventory-card.js
+      type: module
+```
+
+Restart Home Assistant, then refresh your browser (Ctrl/Cmd+Shift+R).
+
+The mode of the *main* dashboard is what decides this. An extra YAML dashboard declared
+under `lovelace: dashboards:` while the main one stays in storage mode still uses the
+UI-managed resource list, so it needs nothing. In storage mode a `resources:` block in
+`configuration.yaml` is ignored — Home Assistant warns and keeps using the UI list.
+
 ---
 
 ## Developer Checklist
