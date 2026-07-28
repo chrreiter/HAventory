@@ -295,8 +295,8 @@ Run:
 ```bash
 cd cards/haventory-card
 npx eslint .
-npx vitest run
 npm run typecheck
+npx vitest run
 npm run build
 ```
 

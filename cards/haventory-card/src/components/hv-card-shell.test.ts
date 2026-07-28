@@ -68,6 +68,7 @@ describe('hv-card-shell: header', () => {
     expect(sr.querySelector('[data-testid="badge-low"]')).toBe(null);
     expect(sr.querySelector('[data-testid="badge-out"]')).toBe(null);
     expect(sr.querySelector('[data-testid="badge-overdue"]')).toBe(null);
+    expect(sr.querySelector('[data-testid="badge-inspection"]')).toBe(null);
   });
 
   // A due date that has passed was invisible from the card: the row said
@@ -85,6 +86,29 @@ describe('hv-card-shell: header', () => {
       badge.click();
       await settle(el);
       expect(store.state.value.filters.overdueOnly).toBe(true);
+      el.remove();
+    }
+  });
+
+  // `inspection_date` is when the item is next due for inspection, so a date
+  // behind us is work waiting — and the count is over the whole inventory,
+  // not just what is checked out.
+  it('counts items due for inspection in a badge of their own, on any width', async () => {
+    const items = [
+      makeItem({ id: '1', inspection_date: '2000-01-01' }),
+      makeItem({ id: '2', checked_out: true, inspection_date: '2000-06-01' }),
+      makeItem({ id: '3', inspection_date: '2999-12-31' }),
+    ];
+    for (const mobile of [false, true]) {
+      const { el, store, sr } = await mountShell({ items, mobile });
+      const badge = sr.querySelector('[data-testid="badge-inspection"]') as HTMLButtonElement;
+      expect(badge?.textContent, `mobile=${mobile}`).toContain('2 to inspect');
+
+      badge.click();
+      await settle(el);
+      expect(store.state.value.filters.inspectionDueOnly).toBe(true);
+      // Pressing it filters server-side, so the list narrows to the two.
+      expect(store.state.value.items.map((i) => i.id).sort()).toEqual(['1', '2']);
       el.remove();
     }
   });

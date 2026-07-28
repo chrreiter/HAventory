@@ -41,6 +41,7 @@ uv run mypy
 
 # Frontend (in cards/haventory-card)
 npx eslint .
+npm run typecheck
 npx vitest run
 npm run build
 ```

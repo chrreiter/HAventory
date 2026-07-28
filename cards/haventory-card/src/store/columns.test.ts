@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
+  COLUMN_DEFS,
   COLUMN_PREFS_STORAGE_KEY,
   DEFAULT_COLUMNS,
   loadColumnPrefs,
@@ -53,6 +54,14 @@ describe('columns model', () => {
   it('falls back when the stored object names no selection at all', () => {
     localStorage.setItem(COLUMN_PREFS_STORAGE_KEY, JSON.stringify({ standard: ['quantity'] }));
     expect(loadColumnPrefs()).toEqual(DEFAULT_COLUMNS);
+  });
+
+  // "Inspected" read as the date of the last inspection; the field holds the
+  // next one due, which is what every other surface now says.
+  it('labels the inspection column for the date it holds', () => {
+    const col = COLUMN_DEFS.find((c) => c.key === 'inspection_date');
+    expect(col?.label).toBe('Next inspection');
+    expect(col?.sortField).toBe('inspection_date');
   });
 });
 

@@ -36,6 +36,11 @@ Object shape for persisted items and API results:
 }
 ```
 
+`inspection_date` is a **forward-looking** date: when the item is next due for inspection.
+A value strictly before today (UTC) means that inspection is overdue — the population behind
+the `inspection_overdue_only` filter and the `inspection_overdue_count` stat. It is
+independent of `checked_out` and of `due_date`; any item can carry one.
+
 Input shapes:
 - ItemCreate (request payload subset; only `name` required):
   - `name: string`
@@ -115,6 +120,7 @@ counts items at the node or any descendant (so it is always >= the direct count)
   - `low_stock_only?: boolean`
   - `orphaned_only?: boolean` (only items without a location, i.e. `location_id == null`)
   - `overdue_only?: boolean` (only items whose `due_date` is strictly before today, UTC)
+  - `inspection_overdue_only?: boolean` (only items whose `inspection_date` is strictly before today, UTC; independent of check-out state)
   - `location_id?: uuid-v4|null`
   - `area_id?: string`
   - `include_subtree?: boolean`
@@ -143,6 +149,7 @@ Counts object used in `stats` results and events:
   "low_stock_count": 0,
   "checked_out_count": 0,
   "overdue_count": 0,
+  "inspection_overdue_count": 0,
   "locations_total": 0,
   "no_location_count": 0
 }
@@ -151,6 +158,8 @@ Counts object used in `stats` results and events:
 `no_location_count` is the number of items without a location (`location_id == null`).
 `overdue_count` is the number of items whose `due_date` is strictly before today (UTC);
 it moves with the calendar, so the same data can report a different count tomorrow.
+`inspection_overdue_count` is the same question asked of `inspection_date`, over the whole
+inventory rather than only the checked-out items, and moves with the calendar the same way.
 
 ### Distinct values
 

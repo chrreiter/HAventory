@@ -30,7 +30,7 @@ from .exceptions import (
     log_severity,
 )
 from .import_export import POLICIES, Policy
-from .models import Item, ItemUpdate, Location, normalize_tags
+from .models import Item, ItemUpdate, Location, normalize_tags, today_utc_date
 from .rate_limit import RateLimiter
 from .repository import UNSET, InternalIndexes, Repository
 from .storage import CURRENT_SCHEMA_VERSION
@@ -409,6 +409,7 @@ class _Subscription(TypedDict, total=False):
     topic: str
     location_id: str | None
     include_subtree: bool
+    inspection_overdue_only: bool
 
 
 def _subs_bucket(
@@ -556,7 +557,24 @@ def _send_event_message(
         )
 
 
+def _payload_inspection_is_overdue(item: dict[str, Any]) -> bool:
+    """Whether a serialized item is past its next-inspection date.
+
+    The matcher is handed the event payload rather than the stored ``Item``, so
+    it cannot call ``item_inspection_is_overdue`` — but it must agree with it,
+    and with ``inspection_overdue_only`` on ``item/list``. Same comparison:
+    YYYY-MM-DD text, strictly before today in UTC.
+    """
+
+    date = item.get("inspection_date")
+    if not isinstance(date, str) or not date:
+        return False
+    return date < today_utc_date()
+
+
 def _item_matches_filter(item: dict[str, Any], sub: _Subscription) -> bool:
+    if sub.get("inspection_overdue_only") and not _payload_inspection_is_overdue(item):
+        return False
     loc_filter = sub.get("location_id")
     if not loc_filter:
         return True
@@ -899,6 +917,7 @@ async def ws_health(
         vol.Required("topic"): str,
         vol.Optional("location_id"): object,
         vol.Optional("include_subtree"): bool,
+        vol.Optional("inspection_overdue_only"): bool,
     }
 )
 @websocket_api.async_response
@@ -916,6 +935,8 @@ async def ws_subscribe(
         sub["location_id"] = msg.get("location_id")
     if "include_subtree" in msg:
         sub["include_subtree"] = bool(msg.get("include_subtree"))
+    if "inspection_overdue_only" in msg:
+        sub["inspection_overdue_only"] = bool(msg.get("inspection_overdue_only"))
     sub_id = int(msg.get("id", 0))
     subs_all = _subs_bucket(hass)
     subs_for_conn = subs_all.setdefault(conn, {})

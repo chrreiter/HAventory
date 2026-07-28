@@ -22,7 +22,7 @@ const SORT_FIELDS: { field: SortField; label: string }[] = [
   { field: 'name', label: 'Name' },
   { field: 'quantity', label: 'Quantity' },
   { field: 'due_date', label: 'Due date' },
-  { field: 'inspection_date', label: 'Inspection date' },
+  { field: 'inspection_date', label: 'Next inspection' },
 ];
 
 /** How many category chips to show before collapsing the rest behind "More…". */
@@ -657,6 +657,7 @@ export class HVFilterPanel extends LitElement {
                 ${this._renderCheckbox('Low stock', f.lowStockOnly, () => this._patch({ lowStockOnly: !f.lowStockOnly }), { warning: true, tally: c?.low_stock_count, testid: 'filter-low-stock-only' })}
                 ${this._renderCheckbox('Checked out', f.checkedOutOnly, () => this._patch({ checkedOutOnly: !f.checkedOutOnly }), { tally: c?.checked_out_count, testid: 'filter-checked-out' })}
                 ${this._renderCheckbox('Overdue', f.overdueOnly, () => this._patch({ overdueOnly: !f.overdueOnly }), { warning: true, tally: c?.overdue_count, testid: 'filter-overdue' })}
+                ${this._renderCheckbox('Inspection due', f.inspectionDueOnly, () => this._patch({ inspectionDueOnly: !f.inspectionDueOnly }), { warning: true, tally: c?.inspection_overdue_count, testid: 'filter-inspection-due' })}
                 ${this._renderCheckbox('No location', f.orphansOnly, () => this._patch({ orphansOnly: !f.orphansOnly }), { tally: c?.no_location_count, testid: 'filter-orphans' })}
               `
             : html`
@@ -680,6 +681,13 @@ export class HVFilterPanel extends LitElement {
                   @click=${() => this._patch({ overdueOnly: !f.overdueOnly })}
                 >
                   ${f.overdueOnly ? icon('check', 12) : null}Overdue${tally(c?.overdue_count)}
+                </button>
+                <button
+                  class="chip ${f.inspectionDueOnly ? 'on warning' : ''}"
+                  data-testid="filter-inspection-due"
+                  @click=${() => this._patch({ inspectionDueOnly: !f.inspectionDueOnly })}
+                >
+                  ${f.inspectionDueOnly ? icon('check', 12) : null}Inspection due${tally(c?.inspection_overdue_count)}
                 </button>
                 <button
                   class="chip ${f.orphansOnly ? 'on' : ''}"

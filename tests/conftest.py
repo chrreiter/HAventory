@@ -102,7 +102,19 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             """
             return await asyncio.get_running_loop().run_in_executor(None, target, *args)
 
+    class ServiceCall:  # type: ignore[override]
+        """Stand in for HA's service-call payload.
+
+        Offline this is annotation-only — ``services.py`` imports the name and the
+        offline tests invoke handlers directly — so only the read-only ``data``
+        mapping is modelled, not HA's full constructor.
+        """
+
+        def __init__(self, data=None) -> None:
+            self.data = types.MappingProxyType(dict(data or {}))
+
     ha_core.HomeAssistant = HomeAssistant
+    ha_core.ServiceCall = ServiceCall
     sys.modules["homeassistant.core"] = ha_core
 
     # homeassistant.exceptions

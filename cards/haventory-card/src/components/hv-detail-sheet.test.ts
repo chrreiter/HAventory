@@ -127,6 +127,23 @@ describe('hv-detail-sheet: read view', () => {
     expect(facts.find((f) => f.dataset.key === 'inspection')?.textContent).toContain('Not set');
   });
 
+  // The row used to read "Last inspected" while the editor's field called the
+  // same value an inspection date — two readings of one stored date.
+  it('names the inspection fact for the date it holds', async () => {
+    const el = await mount({ inspection_date: '2099-03-04' });
+    const fact = all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === 'inspection');
+    expect(fact?.textContent).toContain('Next inspection');
+    expect(fact?.textContent).not.toContain('Last inspected');
+    expect(q(el, '[data-testid="sheet-inspection-due"]')).toBe(null);
+  });
+
+  it('chips an inspection that has come due, and marks the fact', async () => {
+    const el = await mount({ inspection_date: '2020-05-06' });
+    expect(q(el, '[data-testid="sheet-inspection-due"]')?.textContent).toContain('Inspection due');
+    const fact = all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === 'inspection');
+    expect(fact?.querySelector('.value')?.classList.contains('late')).toBe(true);
+  });
+
   it('shows the version alongside when it was updated', async () => {
     const el = await mount({ version: 14 });
     expect(q(el, '[data-testid="sheet-updated"]')?.textContent).toContain('v14');
