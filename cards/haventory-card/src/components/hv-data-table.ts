@@ -65,7 +65,13 @@ export class HVDataTable extends LitElement {
         color: var(--hv-text-secondary);
         flex: none;
       }
-      .head button {
+      /* This reset must stay keyed to the sort buttons' own class. Written as
+         .head button it also reaches the select-all box, which is a button in
+         this header too, and at 0-1-1 it outranks .box's own 0-1-0 border and
+         background — leaving the checkbox with nothing drawn at all until a
+         selection exists. The border-color on .box.on cannot bring back a
+         border-style of none, so the outline would never return. */
+      .head button.sort {
         display: inline-flex;
         align-items: center;
         gap: 3px;
@@ -78,7 +84,7 @@ export class HVDataTable extends LitElement {
         text-transform: inherit;
         letter-spacing: inherit;
       }
-      .head button.sorted {
+      .head button.sort.sorted {
         color: var(--hv-primary-dark);
       }
       .body {
@@ -269,7 +275,7 @@ export class HVDataTable extends LitElement {
   private _sortHeader(field: SortField, label: string) {
     const active = this.sort?.field === field;
     return html`<button
-      class=${active ? 'sorted' : ''}
+      class="sort ${active ? 'sorted' : ''}"
       data-testid="table-sort"
       data-field=${field}
       aria-sort=${active ? (this.sort.order === 'asc' ? 'ascending' : 'descending') : 'none'}

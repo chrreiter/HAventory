@@ -254,6 +254,12 @@ export class WSClient {
        * `rate_limited`, which otherwise kills live updates silently.
        */
       onError?: (err: unknown) => void;
+      /**
+       * Called once the backend has accepted the subscribe. The only positive
+       * signal there is: a caller retrying a refused subscribe needs to know
+       * when the topic is live again, and no event may ever arrive to prove it.
+       */
+      onOpen?: () => void;
     }
   ): Unsubscribe {
     const id = nextSubscriptionId++;
@@ -275,25 +281,31 @@ export class WSClient {
 
     // Home Assistant may return either an unsubscribe function or a Promise<unsubscribe>.
     if (typeof unsubOrPromise === 'function') {
+      opts?.onOpen?.();
       return unsubOrPromise as unknown as Unsubscribe;
     }
 
     // Handle Promise<Unsubscribe> with early-cancel support.
     let resolvedUnsub: Unsubscribe | null = null;
     let cancelRequested = false;
-    Promise.resolve(unsubOrPromise)
-      .then((fn) => {
+    // The rejection handler is `then`'s second argument rather than a trailing
+    // `catch`, so a throw from `onOpen` cannot be misread as a refused subscribe.
+    Promise.resolve(unsubOrPromise).then(
+      (fn) => {
         resolvedUnsub = fn as Unsubscribe;
         if (cancelRequested && resolvedUnsub) {
           try { resolvedUnsub(); } catch { /* ignore */ }
+          return;
         }
-      })
-      .catch((err: unknown) => {
+        opts?.onOpen?.();
+      },
+      (err: unknown) => {
         // A rejected subscribe means no live updates at all. Report it so the
-        // card can go degraded and offer a manual refresh instead of quietly
-        // showing stale data.
+        // card can retry, go degraded and offer a manual refresh instead of
+        // quietly showing stale data.
         opts?.onError?.(err);
-      });
+      },
+    );
 
     return () => {
       if (resolvedUnsub) {

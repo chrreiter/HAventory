@@ -1325,6 +1325,49 @@ describe('hv-card-shell: degraded states', () => {
     );
   });
 
+  it('says live updates are paused while a refused subscribe is being retried', async () => {
+    const { el, store, hass, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    // One round refused, so the store is mid-backoff when the card renders.
+    hass.__failSubscribeNext(3, { code: 'rate_limited', message: 'rate limit exceeded; retry later' });
+    store.subscribeTopics();
+    await el.updateComplete;
+    await Promise.resolve();
+    await Promise.resolve();
+    await el.updateComplete;
+
+    const paused = banner(sr, 'degraded-live-updates');
+    expect(paused).toBeTruthy();
+    expect(paused?.shadowRoot?.textContent).toContain('Live updates paused');
+    expect(paused?.shadowRoot?.textContent).toContain('Retrying automatically');
+    // Non-blocking: the list is still there and there is nothing to dismiss.
+    expect(sr.querySelector('[data-testid="card-list"], [data-testid="card-table"]')).toBeTruthy();
+
+    // The retry succeeds, so the indicator goes away on its own.
+    await settle(el);
+    await settle(el);
+    expect(store.state.value.degraded.liveUpdates).toBe('live');
+    expect(banner(sr, 'degraded-live-updates')).toBe(null);
+  });
+
+  it('offers a refresh once the automatic retries are spent', async () => {
+    const { el, store, hass, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    hass.__failSubscribe({ code: 'rate_limited', message: 'rate limit exceeded; retry later' });
+    store.subscribeTopics();
+    for (let i = 0; i < 12; i++) await settle(el);
+
+    expect(store.state.value.degraded.liveUpdates).toBe('paused');
+    const paused = banner(sr, 'degraded-live-updates');
+    expect(paused?.shadowRoot?.textContent).toContain('may be out of date until you refresh');
+
+    hass.__failSubscribe(null);
+    (banner(sr, 'degraded-live-refresh') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    expect(store.state.value.degraded.liveUpdates).toBe('live');
+    expect(banner(sr, 'degraded-live-updates')).toBe(null);
+  });
+
   it('announces a wholesale reload after an import', async () => {
     const { el, hass, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     const seen: boolean[] = [];

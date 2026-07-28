@@ -38,8 +38,12 @@ export interface MockHass extends HassLike {
   __failNext(n: number, err?: unknown): void;
   /** Make every subsequent `haventory/subscribe` reject with `err`. */
   __failSubscribe(err: unknown | null): void;
+  /** Reject the next `n` `haventory/subscribe` calls with `err`, then behave normally. */
+  __failSubscribeNext(n: number, err: unknown): void;
   /** Every callWS `type` seen so far, in order. */
   __calls: string[];
+  /** Every subscribed topic seen so far, in order — refused attempts included. */
+  __subscribeCalls: string[];
 }
 
 export function makeMockHass(initial?: MockConfig): MockHass {
@@ -51,8 +55,10 @@ export function makeMockHass(initial?: MockConfig): MockHass {
   let failRemaining = 0;
   let failError: unknown = new Error('connection lost');
   let subscribeError: unknown | null = null;
+  let subscribeFailRemaining = 0;
   const subs: Record<string, SubCb[]> = {};
   const calls: string[] = [];
+  const subscribeCalls: string[] = [];
 
   const findItem = (msg: Record<string, unknown>): Item => {
     const itemId = String((msg as any).item_id);
@@ -69,6 +75,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
 
   const hass: MockHass = {
     __calls: calls,
+    __subscribeCalls: subscribeCalls,
     async callWS<T>(msg: Record<string, unknown>): Promise<T> {
       const type = String(msg.type || '');
       calls.push(type);
@@ -501,12 +508,14 @@ export function makeMockHass(initial?: MockConfig): MockHass {
     },
     connection: {
       subscribeMessage(cb: SubCb, msg: Record<string, unknown>) {
-        if (subscribeError !== null) {
+        const topic = String((msg as any).topic || '');
+        subscribeCalls.push(topic);
+        if (subscribeFailRemaining > 0) {
           // Real HA rejects the subscribe promise; the client must not treat the
           // topic as live.
+          subscribeFailRemaining -= 1;
           return Promise.reject(subscribeError);
         }
-        const topic = String((msg as any).topic || '');
         subs[topic] ||= [];
         subs[topic].push(cb);
         return () => {
@@ -531,7 +540,14 @@ export function makeMockHass(initial?: MockConfig): MockHass {
       failRemaining = n;
       if (err !== undefined) failError = err;
     },
-    __failSubscribe(err: unknown | null) { subscribeError = err; },
+    __failSubscribe(err: unknown | null) {
+      subscribeError = err;
+      subscribeFailRemaining = err === null ? 0 : Number.POSITIVE_INFINITY;
+    },
+    __failSubscribeNext(n: number, err: unknown) {
+      subscribeError = err;
+      subscribeFailRemaining = n;
+    },
   };
 
   return hass;

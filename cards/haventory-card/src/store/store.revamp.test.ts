@@ -5,6 +5,7 @@ import {
   activeFilterCount,
   defaultFilters,
   makeBulkOp,
+  subscribeRetryDelayMs,
   toWireFilter,
 } from './store';
 import type { Location } from './types';
@@ -27,6 +28,23 @@ function loc(id: string, name: string, parentId: string | null = null): Location
 
 /** Stores under test never wait on real backoff. */
 const fast = { retryBaseMs: 0 };
+
+const RATE_LIMITED = { code: 'rate_limited', message: 'rate limit exceeded; retry later' };
+
+/** Let queued microtasks and any zero-delay timers run. */
+async function flush(rounds = 1): Promise<void> {
+  for (let i = 0; i < rounds; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * Drain the microtasks a rejected `subscribeMessage` promise takes to reach the
+ * store, without letting a scheduled re-subscribe fire.
+ */
+async function settleSubscribes(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
 
 describe('toWireFilter', () => {
   it('sends include_subtree explicitly', () => {
@@ -382,12 +400,146 @@ describe('Store: rate limiting and degraded state', () => {
     const store = new Store(hass, fast);
 
     await store.init();
-    await Promise.resolve();
-    await Promise.resolve();
+    await settleSubscribes();
 
     // Live updates are gone; the card must stop claiming it is connected.
     expect(store.state.value.degraded.rateLimited).toBe(true);
     expect(store.state.value.connected.items).toBe(false);
+    // ...and it says so as a state the UI can render, not just a log line.
+    expect(store.state.value.degraded.liveUpdates).toBe('retrying');
+  });
+
+  it('retries a rate-limited subscribe and goes live again', async () => {
+    const hass = makeMockHass({ items: [] });
+    // One whole round refused — three topics — then the limiter lets us back in.
+    hass.__failSubscribeNext(3, RATE_LIMITED);
+    const store = new Store(hass, fast);
+
+    await store.init();
+    await settleSubscribes();
+    expect(store.state.value.degraded.liveUpdates).toBe('retrying');
+    expect(store.state.value.degraded.nextLiveRetryAt).not.toBeNull();
+
+    await flush(3);
+
+    // The indicator is cleared by the retry succeeding, not by the user acting.
+    expect(store.state.value.degraded.liveUpdates).toBe('live');
+    expect(store.state.value.degraded.nextLiveRetryAt).toBeNull();
+    expect(store.state.value.connected.items).toBe(true);
+    expect(store.state.value.errorQueue).toEqual([]);
+    // Two rounds of three, so the retry really did re-open every topic...
+    expect(hass.__subscribeCalls).toHaveLength(6);
+    // ...and events flow again, which is the whole point of retrying.
+    hass.__emit('items', 'created', { item: makeItem({ id: '9' }) });
+    expect(store.state.value.items.map((i) => i.id)).toContain('9');
+  });
+
+  it('gives up after a bounded number of retries and surfaces the pause', async () => {
+    const hass = makeMockHass({ items: [] });
+    hass.__failSubscribe(RATE_LIMITED);
+    const store = new Store(hass, fast);
+
+    await store.init();
+    await flush(12);
+
+    expect(store.state.value.degraded.liveUpdates).toBe('paused');
+    expect(store.state.value.degraded.rateLimited).toBe(true);
+    // Nothing further is scheduled: only the user can restart this.
+    expect(store.state.value.degraded.nextLiveRetryAt).toBeNull();
+    expect(store.state.value.connected.items).toBe(false);
+    // The refusal reaches the user exactly once — when retrying is over, not on
+    // every attempt.
+    expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['rate_limited']);
+    // The first round plus four retries, three topics each. The cap is the point:
+    // a card that kept knocking would be indistinguishable from the load that
+    // tripped the limiter.
+    expect(hass.__subscribeCalls).toHaveLength(15);
+
+    // The budget stays spent until something restarts it.
+    await flush(6);
+    expect(hass.__subscribeCalls).toHaveLength(15);
+  });
+
+  it('clears the paused indicator when a manual refresh gets back in', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+    hass.__failSubscribe(RATE_LIMITED);
+    const store = new Store(hass, fast);
+    await store.init();
+    await flush(12);
+    expect(store.state.value.degraded.liveUpdates).toBe('paused');
+
+    hass.__failSubscribe(null);
+    await store.refreshAll();
+    await flush();
+
+    expect(store.state.value.degraded.liveUpdates).toBe('live');
+    expect(store.state.value.degraded.rateLimited).toBe(false);
+    expect(store.state.value.connected.items).toBe(true);
+    hass.__emit('items', 'created', { item: makeItem({ id: '2' }) });
+    expect(store.state.value.items.map((i) => i.id)).toContain('2');
+  });
+
+  it('waits out the retry-after hint the envelope carries', async () => {
+    const hass = makeMockHass({ items: [] });
+    hass.__failSubscribeNext(3, { ...RATE_LIMITED, data: { op: 'subscribe', retry_after_ms: 40 } });
+    const store = new Store(hass, fast);
+
+    await store.init();
+    await settleSubscribes();
+
+    // The hint wins over the store's own (zero, in tests) backoff.
+    const wait = (store.state.value.degraded.nextLiveRetryAt ?? 0) - Date.now();
+    expect(wait).toBeGreaterThan(20);
+    expect(store.state.value.degraded.liveUpdates).toBe('retrying');
+
+    // Not retried before the hint elapses...
+    await flush(2);
+    expect(hass.__subscribeCalls).toHaveLength(3);
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(hass.__subscribeCalls).toHaveLength(6);
+    expect(store.state.value.degraded.liveUpdates).toBe('live');
+  });
+
+  it('reports a non-rate-limit subscribe refusal instead of retrying it', async () => {
+    // Only `rate_limited` says "try again later"; anything else is an outage the
+    // user needs to see, and quietly re-knocking would hide it.
+    const hass = makeMockHass({ items: [] });
+    hass.__failSubscribe({ code: 'unknown_error', message: 'unexpected error; see Home Assistant logs' });
+    const store = new Store(hass, fast);
+
+    await store.init();
+    await flush(3);
+
+    expect(store.state.value.degraded.connectionLost).toBe(true);
+    expect(store.state.value.degraded.liveUpdates).toBe('paused');
+    expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['unknown_error']);
+    expect(hass.__subscribeCalls).toHaveLength(3);
+  });
+});
+
+describe('subscribeRetryDelayMs', () => {
+  it('prefers the envelope hint over the backoff, in either unit', () => {
+    expect(subscribeRetryDelayMs({ code: 'rate_limited', data: { retry_after_ms: 250 } }, 0, 400)).toBe(250);
+    // Seconds, the HTTP Retry-After convention.
+    expect(subscribeRetryDelayMs({ code: 'rate_limited', data: { retry_after: 2 } }, 0, 400)).toBe(2000);
+    // The card's own error entries name the bag `context`.
+    expect(subscribeRetryDelayMs({ code: 'rate_limited', context: { retry_after_ms: 30 } }, 3, 400)).toBe(30);
+  });
+
+  it('backs off exponentially when the envelope carries no hint', () => {
+    const delays = [0, 1, 2, 3].map((attempt) => subscribeRetryDelayMs({ code: 'rate_limited' }, attempt, 400));
+    expect(delays).toEqual([400, 800, 1600, 3200]);
+  });
+
+  it('clamps a hint that would park live updates for hours', () => {
+    expect(subscribeRetryDelayMs({ data: { retry_after: 86_400 } }, 0, 400)).toBe(30_000);
+  });
+
+  it('ignores a hint that is not a usable number', () => {
+    expect(subscribeRetryDelayMs({ data: { retry_after_ms: 'soon' } }, 0, 400)).toBe(400);
+    expect(subscribeRetryDelayMs({ data: { retry_after: -5 } }, 0, 400)).toBe(400);
+    expect(subscribeRetryDelayMs({ data: { retry_after: Number.NaN } }, 1, 400)).toBe(800);
   });
 
   it('declares the connection lost after consecutive transport failures', async () => {

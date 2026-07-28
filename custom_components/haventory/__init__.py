@@ -6,14 +6,16 @@ the core data structures in hass.data.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 
 try:
@@ -24,12 +26,21 @@ except ImportError:  # pragma: no cover - older HA versions
 from . import services as services_mod
 from . import ws as ws_mod
 from .const import DOMAIN
-from .exceptions import StorageError
+from .exceptions import SchemaDowngradeError, StorageError
 from .rate_limit import RateLimitConfig, RateLimiter
 from .repository import Repository
-from .storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore, async_persist_immediate
+from .storage import (
+    CURRENT_SCHEMA_VERSION,
+    STORAGE_KEY,
+    DomainStore,
+    async_persist_immediate,
+    schema_downgrade_message,
+)
 
 LOGGER = logging.getLogger(__name__)
+
+_MANIFEST_PATH = Path(__file__).with_name("manifest.json")
+_CARD_URL_PATH = "/local/haventory/haventory-card.js"
 
 
 # This integration is config-entry only; no YAML configuration is accepted.
@@ -61,6 +72,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         payload = await store.async_load()
         _validate_storage_payload(payload, schema_version=store.schema_version)
         _log_storage_health(payload, schema_version=store.schema_version)
+    except SchemaDowngradeError as exc:
+        LOGGER.error(
+            "Refusing to set up against storage written by a newer HAventory version",
+            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
+            exc_info=True,
+        )
+        # ConfigEntryError, not ConfigEntryNotReady: retrying cannot teach this build
+        # a newer schema, and the message reaches the user in the entry's error state.
+        raise ConfigEntryError(str(exc)) from exc
     except StorageError as exc:
         LOGGER.error(
             "Storage validation failed during setup",
@@ -125,7 +145,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         await async_persist_immediate(hass)
     except Exception:  # pragma: no cover - defensive
-        LOGGER.warning(
+        # Unload is the last chance to write; a failure here silently drops
+        # whatever was still unsaved, which nobody but an operator can recover.
+        LOGGER.error(
             "Failed to persist during unload",
             extra={"domain": DOMAIN, "op": "unload"},
             exc_info=True,
@@ -166,6 +188,50 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+async def async_remove_entry(hass: HomeAssistant, _entry: ConfigEntry) -> None:
+    """Clean up after the config entry has been removed from Home Assistant.
+
+    Removal takes back the one thing setup put into another component's state:
+    the Lovelace resource registered for the card. Left behind it points at an
+    asset that disappears with the integration, and a dead `module` resource
+    fails to load on every dashboard render.
+
+    The HA `Store` file is deliberately kept, so re-adding the integration
+    restores the inventory. Purging it is a manual step (README → Installation
+    → "Removing HAventory").
+    """
+
+    await _unregister_frontend_module(hass)
+
+
+def _card_resource_url() -> str:
+    """`/local` URL for the card bundle, carrying the manifest version as `?v=`.
+
+    `/local/` is served with a month-long `max-age`, so without the query a browser
+    — or the companion app's webview, which is harder to clear — keeps serving the
+    bundle from before an integration update and runs an old card against a new
+    backend. Falls back to the bare path if the manifest cannot be read, since a
+    missing cache-buster must not stop the card from being registered at all.
+    """
+    version = ""
+    # Blocking read of a file shipped inside the integration, once per setup; not
+    # worth an executor round-trip (and the test Hass stub has no executor).
+    try:
+        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        LOGGER.debug(
+            "Could not read the integration manifest; registering the card unversioned",
+            extra={"domain": DOMAIN, "op": "frontend_register", "path": str(_MANIFEST_PATH)},
+        )
+    else:
+        raw = manifest.get("version")
+        version = raw if isinstance(raw, str) else ""
+
+    if not version:
+        return _CARD_URL_PATH
+    return f"{_CARD_URL_PATH}?v={quote(version, safe='')}"
+
+
 def _points_at_card(resource_url: Any, card_url: str) -> bool:
     """Does an already-registered Lovelace resource serve the HAventory card?
 
@@ -181,9 +247,74 @@ def _points_at_card(resource_url: Any, card_url: str) -> bool:
     return urlsplit(resource_url).path == urlsplit(card_url).path
 
 
+async def _async_lovelace_resources(hass: HomeAssistant, *, op: str) -> Any:
+    """Return the loaded Lovelace resource collection, or None if out of reach.
+
+    Lovelace may be missing entirely (older HA), not yet initialized, or set up
+    without a resource collection. None of those are errors for us — the card is
+    optional and the caller simply has nothing to do.
+    """
+    if LOVELACE_DATA is None:
+        LOGGER.debug(
+            "Lovelace component not available",
+            extra={"domain": DOMAIN, "op": op},
+        )
+        return None
+
+    lovelace_data = hass.data.get(LOVELACE_DATA)
+    resources = getattr(lovelace_data, "resources", None) if lovelace_data else None
+    if resources is None:
+        LOGGER.debug(
+            "Lovelace not initialized or resources unavailable",
+            extra={"domain": DOMAIN, "op": op},
+        )
+        return None
+
+    if hasattr(resources, "loaded") and not resources.loaded:
+        await resources.async_load()
+        resources.loaded = True
+
+    return resources
+
+
+async def _rewrite_card_resource(resources: Any, stale: dict[str, Any], url: str) -> None:
+    """Point an entry left over from an earlier version at the current card URL.
+
+    Rewriting rather than adding: a second entry for the same file loads the card
+    module twice, and the second `customElements.define` throws.
+    """
+    stale_id = stale.get("id")
+    # No update API means YAML mode, where resources are user-managed; no id means
+    # the entry cannot be addressed. Either way, leave it as it stands.
+    if stale_id is None or not hasattr(resources, "async_update_item"):
+        LOGGER.debug(
+            "Cannot rewrite the registered card resource; leaving it as-is",
+            extra={"domain": DOMAIN, "op": "frontend_register", "url": stale.get("url")},
+        )
+        return
+
+    try:
+        await resources.async_update_item(stale_id, {"res_type": "module", "url": url})
+        LOGGER.info(
+            "Updated HAventory card Lovelace resource to the current version",
+            extra={
+                "domain": DOMAIN,
+                "op": "frontend_register",
+                "url": url,
+                "previous_url": stale.get("url"),
+            },
+        )
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.warning(
+            "Failed to update frontend resource",
+            extra={"domain": DOMAIN, "op": "frontend_register", "url": url},
+            exc_info=True,
+        )
+
+
 async def _register_frontend_module(hass: HomeAssistant) -> None:
     """Register the built HAventory card asset as a Lovelace resource if present."""
-    url = "/local/haventory/haventory-card.js"
+    url = _card_resource_url()
 
     # Get filesystem path - handle missing config gracefully for tests
     try:
@@ -204,38 +335,23 @@ async def _register_frontend_module(hass: HomeAssistant) -> None:
         )
         return
 
-    # Access the Lovelace resource collection
-    if LOVELACE_DATA is None:
-        LOGGER.debug(
-            "Lovelace component not available; skipping resource registration",
-            extra={"domain": DOMAIN, "op": "frontend_register"},
-        )
-        return
-
-    lovelace_data = hass.data.get(LOVELACE_DATA)
-    resources = getattr(lovelace_data, "resources", None) if lovelace_data else None
+    resources = await _async_lovelace_resources(hass, op="frontend_register")
     if resources is None:
-        LOGGER.debug(
-            "Lovelace not initialized or resources unavailable; skipping registration",
-            extra={"domain": DOMAIN, "op": "frontend_register"},
-        )
         return
-
-    # Ensure resources are loaded before checking
-    if hasattr(resources, "loaded") and not resources.loaded:
-        await resources.async_load()
-        resources.loaded = True
 
     # Check if resource already exists
     existing = resources.async_items() or []
-    for item in existing:
-        registered_url = item.get("url")
-        if _points_at_card(registered_url, url):
+    registered = [item for item in existing if _points_at_card(item.get("url"), url)]
+
+    if registered:
+        if any(item.get("url") == url for item in registered):
             LOGGER.debug(
-                "HAventory card resource already registered",
-                extra={"domain": DOMAIN, "op": "frontend_register", "url": registered_url},
+                "HAventory card resource already registered at the current version",
+                extra={"domain": DOMAIN, "op": "frontend_register", "url": url},
             )
-            return
+        else:
+            await _rewrite_card_resource(resources, registered[0], url)
+        return
 
     # Create the resource (only works for storage mode, not YAML mode)
     if not hasattr(resources, "async_create_item"):
@@ -259,13 +375,66 @@ async def _register_frontend_module(hass: HomeAssistant) -> None:
         )
 
 
+async def _unregister_frontend_module(hass: HomeAssistant) -> None:
+    """Drop the Lovelace resource entries that serve the HAventory card."""
+    resources = await _async_lovelace_resources(hass, op="frontend_unregister")
+    if resources is None:
+        return
+
+    # YAML mode: resources come from configuration.yaml and the collection is
+    # read-only, so the entry is the user's to remove.
+    if not hasattr(resources, "async_delete_item"):
+        LOGGER.info(
+            "Lovelace in YAML mode; remove the HAventory card resource manually",
+            extra={"domain": DOMAIN, "op": "frontend_unregister", "url": _CARD_URL_PATH},
+        )
+        return
+
+    # Snapshot the collection: deleting mutates what async_items() reflects.
+    for item in list(resources.async_items() or []):
+        if not _points_at_card(item.get("url"), _CARD_URL_PATH):
+            continue
+        item_id = item.get("id")
+        if item_id is None:  # pragma: no cover - defensive
+            continue
+        try:
+            await resources.async_delete_item(item_id)
+            LOGGER.info(
+                "Removed HAventory card Lovelace resource",
+                extra={
+                    "domain": DOMAIN,
+                    "op": "frontend_unregister",
+                    "url": item.get("url"),
+                    "resource_id": item_id,
+                },
+            )
+        except Exception:  # pragma: no cover - defensive
+            LOGGER.warning(
+                "Failed to remove frontend resource",
+                extra={
+                    "domain": DOMAIN,
+                    "op": "frontend_unregister",
+                    "url": item.get("url"),
+                    "resource_id": item_id,
+                },
+                exc_info=True,
+            )
+
+
 def _validate_storage_payload(payload: dict[str, Any], *, schema_version: int) -> None:
     """Validate loaded storage payload shape and version."""
 
     if not isinstance(payload, dict):
         raise StorageError("storage payload is not a dict")
 
-    if int(payload.get("schema_version", -1)) != int(schema_version):
+    stored_version = int(payload.get("schema_version", -1))
+    if stored_version > int(schema_version):
+        raise SchemaDowngradeError(
+            schema_downgrade_message(
+                stored_version=stored_version, supported_version=int(schema_version)
+            )
+        )
+    if stored_version != int(schema_version):
         raise StorageError("storage payload schema_version mismatch")
 
     items = payload.get("items")

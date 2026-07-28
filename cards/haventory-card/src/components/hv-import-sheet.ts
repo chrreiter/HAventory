@@ -9,21 +9,29 @@ import { DialogFocus } from '../ui/dialog-focus';
 import type { ImportBucketCounts, ImportPolicy, ImportPreview, ImportSummary } from '../store/types';
 
 // Every policy decides one thing: what happens to an item the file and the
-// inventory both have. None of them deletes anything — an item absent from the
-// file is always left alone — so each description says so, because "Replace"
-// on its own reads like a whole-inventory swap.
+// inventory both have — "both have" meaning the same id, never the same name, so
+// an item rebuilt by hand carries a fresh id and is added alongside the file's
+// copy rather than matched to it. Each description names the id as the match key,
+// because "matching" on its own reads as matching by name. None of the policies
+// deletes anything — an item absent from the file is always left alone — so each
+// description says so too, because "Replace" on its own reads like a
+// whole-inventory swap.
 const POLICIES: { id: ImportPolicy; title: string; description: string }[] = [
   {
     id: 'merge',
     title: 'Merge',
-    description: 'Update matching items field by field, combining tags; add the rest',
+    description: 'Update items matched by id field by field, combining tags; add the rest',
   },
   {
     id: 'replace',
     title: 'Replace',
-    description: "Overwrite matching items with the file's version; add the rest",
+    description: "Overwrite items matched by id with the file's version; add the rest",
   },
-  { id: 'skip', title: 'Skip', description: "Only add items that don't exist yet" },
+  {
+    id: 'skip',
+    title: 'Skip',
+    description: "Only add items whose id isn't in the inventory yet; leave matched items as they are",
+  },
 ];
 
 /**
