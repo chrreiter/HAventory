@@ -37,6 +37,7 @@ deprecated since Python 3.14 and slated for removal in 3.16.
 """
 
 import asyncio
+import json
 import os
 import platform
 import sys
@@ -92,6 +93,14 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def async_create_background_task(self, target, name, eager_start=True):
             """Stand in for HA's tracked-task helper; the real one also cancels on shutdown."""
             return asyncio.create_task(target, name=name)
+
+        async def async_add_executor_job(self, target, *args):
+            """Stand in for HA's executor offload; the real one uses HA's own thread pool.
+
+            Running the callable on a genuine worker thread keeps the offline suite
+            honest about what does and does not touch the event loop thread.
+            """
+            return await asyncio.get_running_loop().run_in_executor(None, target, *args)
 
     ha_core.HomeAssistant = HomeAssistant
     sys.modules["homeassistant.core"] = ha_core
@@ -316,6 +325,49 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
 
     ha_helpers_area_registry.async_get = async_get
     sys.modules["homeassistant.helpers.area_registry"] = ha_helpers_area_registry
+
+    # homeassistant.loader
+    ha_loader = types.ModuleType("homeassistant.loader")
+
+    _SHIPPED_MANIFEST = json.loads(
+        (ROOT / "custom_components" / "haventory" / "manifest.json").read_text(encoding="utf-8")
+    )
+
+    class IntegrationNotFound(Exception):  # type: ignore[override]
+        def __init__(self, domain: str) -> None:
+            super().__init__(f"Integration '{domain}' not found.")
+            self.domain = domain
+
+    class Integration:  # type: ignore[override]
+        def __init__(self, domain: str, manifest: dict) -> None:
+            self.domain = domain
+            self.manifest = manifest
+
+    async def async_get_integration(hass: HomeAssistant, domain: str):  # type: ignore[override]
+        """Hand back the manifest HA parsed at load time, doing no file I/O.
+
+        Tests override per-hass through ``hass.data["__integration_manifests__"]``;
+        mapping a domain to None makes the lookup raise, the way it does in real HA
+        for an integration that is not installed.
+        """
+        overrides = getattr(hass, "data", None)
+        if isinstance(overrides, dict) and domain in (
+            overrides.get("__integration_manifests__") or {}
+        ):
+            manifest = overrides["__integration_manifests__"][domain]
+        elif domain == _SHIPPED_MANIFEST.get("domain"):
+            manifest = _SHIPPED_MANIFEST
+        else:
+            manifest = None
+
+        if manifest is None:
+            raise IntegrationNotFound(domain)
+        return Integration(domain, manifest)
+
+    ha_loader.IntegrationNotFound = IntegrationNotFound
+    ha_loader.Integration = Integration
+    ha_loader.async_get_integration = async_get_integration
+    sys.modules["homeassistant.loader"] = ha_loader
 
 
 if _INTEGRATION_MODE:
