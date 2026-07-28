@@ -161,14 +161,19 @@ uv run ruff check .
 uv run mypy
 
 # Frontend (in cards/haventory-card)
+npm audit --audit-level=high
 npx eslint .
 npm run typecheck
 npx vitest run
 npm run build
 ```
 
+The audit is the only place a development-scope npm vulnerability becomes visible: the
+repository's Dependabot auto-triage rule dismisses dev-scope alerts, so the alert
+dashboard is not ground truth for the card's lockfile — CI is.
+
 Or all at once: `scripts/ci_local.sh` (backend lint + types + tests w/ coverage, then
-frontend install + lint + types + test + build). Lint only: `scripts/lint.sh`. Backend tests
+frontend install + audit + lint + types + test + build). Lint only: `scripts/lint.sh`. Backend tests
 only: `scripts/test.sh`. Frontend tests: `scripts/test_frontend.sh [--coverage|--watch]`.
 
 ### Testing
@@ -458,7 +463,7 @@ so a stale dashboard config never breaks the card.
 
 - GitHub Actions (`ubuntu-latest`): backend (uv, ruff + mypy + pytest w/ coverage, Python
   3.14), a dedicated **integration** job (in-process HA via phacc, Python 3.14),
-  frontend (eslint + tsc + vitest + build, Node 22/24 matrix), actionlint,
+  frontend (npm audit + eslint + tsc + vitest + build, Node 22/24 matrix), actionlint,
   hassfest + HACS validation, CodeQL, OpenSSF Scorecard, and dependency review.
   Third-party actions are SHA-pinned; first-party `actions/*` use `@v7`.
 - PR hygiene: Conventional-Commit PR-title check, path-based auto-labeling

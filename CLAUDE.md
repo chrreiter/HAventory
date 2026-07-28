@@ -67,6 +67,7 @@ uv run mypy
 
 Frontend (in `cards/haventory-card`):
 ```bash
+npm audit --audit-level=high   # dev-scope alerts are auto-dismissed on GitHub; CI is the gate
 npx eslint .
 npm run typecheck
 npx vitest run
