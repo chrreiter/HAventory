@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>HAventory social preview</title>
+    <style>
+      /* Source for social-preview.png. GitHub renders the social preview at
+         1280x640 and crops nothing, but link unfurls in chat clients scale it
+         down hard — hence the large type and the generous 80px margin. */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+
+      body {
+        width: 1280px;
+        height: 640px;
+        display: flex;
+        align-items: center;
+        gap: 64px;
+        padding: 80px;
+        background:
+          radial-gradient(900px 520px at 88% 14%, rgba(3, 169, 244, 0.22), transparent 62%),
+          linear-gradient(150deg, #16181c 0%, #111 55%, #0d0e10 100%);
+        color: #e1e1e1;
+        font-family: 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .copy {
+        flex: 1;
+        min-width: 0;
+      }
+
+      h1 {
+        font-size: 92px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        line-height: 1;
+        color: #fff;
+      }
+
+      h1 b {
+        color: #4fc3f7;
+        font-weight: 700;
+      }
+
+      p {
+        margin-top: 20px;
+        font-size: 32px;
+        line-height: 1.35;
+        color: #9b9b9b;
+      }
+
+      ul {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        /* Narrower than the column so the four pills wrap 2+2 instead of 3+1. */
+        max-width: 560px;
+        margin-top: 40px;
+        padding: 0;
+        list-style: none;
+      }
+
+      li {
+        padding: 10px 20px;
+        border: 1px solid rgba(3, 169, 244, 0.5);
+        border-radius: 999px;
+        background: rgba(3, 169, 244, 0.14);
+        color: #cfe9fa;
+        font-size: 22px;
+      }
+
+      .mark {
+        flex: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="copy">
+      <h1>HA<b>ventory</b></h1>
+      <p>Household inventory tracking for Home Assistant</p>
+      <ul>
+        <li>Nested locations</li>
+        <li>Quantities &amp; low stock</li>
+        <li>Inspection dates</li>
+        <li>Instant search</li>
+      </ul>
+    </div>
+
+    <svg class="mark" width="320" height="320" viewBox="0 0 240 240" fill="none" aria-hidden="true">
+      <g stroke="#4fc3f7" stroke-width="4" stroke-linecap="round">
+        <g opacity="0.55">
+          <rect x="16" y="112" width="96" height="80" rx="12" />
+          <path d="M28 136h72" />
+          <rect x="50" y="158" width="28" height="9" rx="4.5" />
+          <rect x="128" y="112" width="96" height="80" rx="12" />
+          <path d="M140 136h72" />
+          <rect x="162" y="158" width="28" height="9" rx="4.5" />
+        </g>
+        <rect x="72" y="24" width="96" height="80" rx="12" fill="rgba(3,169,244,0.16)" />
+        <path d="M84 48h72" />
+        <rect x="106" y="70" width="28" height="9" rx="4.5" />
+        <path d="M12 204h216" opacity="0.35" />
+      </g>
+    </svg>
+  </body>
+</html>
