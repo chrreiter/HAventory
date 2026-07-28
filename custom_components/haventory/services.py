@@ -12,10 +12,11 @@ surfaces them to the caller.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 
 from .const import DOMAIN
 from .exceptions import (
@@ -342,6 +343,44 @@ async def service_location_delete(hass: HomeAssistant, data: dict) -> None:
 # Registration
 # -----------------------------
 
+ServiceHandler = Callable[[HomeAssistant, dict[str, Any]], Coroutine[Any, Any, None]]
+
+# Service name -> (handler, voluptuous schema). Home Assistant validates the call
+# against the schema before invoking the handler; the handler re-validates because
+# it is also called directly (tests, and any in-process caller).
+SERVICES: tuple[tuple[str, ServiceHandler, vol.Schema], ...] = (
+    ("item_create", service_item_create, SCHEMA_ITEM_CREATE),
+    ("item_update", service_item_update, SCHEMA_ITEM_UPDATE),
+    ("item_delete", service_item_delete, SCHEMA_ITEM_DELETE),
+    ("item_move", service_item_move, SCHEMA_ITEM_MOVE),
+    ("item_adjust_quantity", service_item_adjust_quantity, SCHEMA_ITEM_ADJUST_QTY),
+    ("item_set_quantity", service_item_set_quantity, SCHEMA_ITEM_SET_QTY),
+    ("item_check_out", service_item_check_out, SCHEMA_ITEM_CHECK_OUT),
+    ("item_check_in", service_item_check_in, SCHEMA_ITEM_CHECK_IN),
+    ("location_create", service_location_create, SCHEMA_LOCATION_CREATE),
+    ("location_update", service_location_update, SCHEMA_LOCATION_UPDATE),
+    ("location_delete", service_location_delete, SCHEMA_LOCATION_DELETE),
+)
+
+
+def _bind(
+    hass: HomeAssistant, handler: ServiceHandler
+) -> Callable[[ServiceCall], Coroutine[Any, Any, None]]:
+    """Adapt a ``(hass, data)`` handler to the ``ServiceCall`` signature HA invokes.
+
+    The returned callable **must be a coroutine function**. Home Assistant classifies
+    every service handler with ``HassJob``: anything that is neither a coroutine
+    function nor a ``@callback`` is dispatched via ``async_add_executor_job``. A
+    plain ``lambda call: handler(hass, ...)`` therefore runs on a worker thread,
+    where it only *constructs* the coroutine — which HA then returns as the service
+    response and never awaits, so the mutation silently never happens.
+    """
+
+    async def _handle(call: ServiceCall) -> None:
+        await handler(hass, dict(call.data))
+
+    return _handle
+
 
 def setup(hass: HomeAssistant) -> None:
     """Register haventory.* services on Home Assistant."""
@@ -356,71 +395,7 @@ def setup(hass: HomeAssistant) -> None:
         bucket["services_registered"] = True
         return
 
-    # Home Assistant will validate inputs according to these schemas before
-    # invoking the handler. Handlers are exported above for testability.
-    hass.services.async_register(
-        DOMAIN,
-        "item_create",
-        lambda call: service_item_create(hass, dict(call.data)),
-        SCHEMA_ITEM_CREATE,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        "item_update",
-        lambda call: service_item_update(hass, dict(call.data)),
-        SCHEMA_ITEM_UPDATE,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        "item_delete",
-        lambda call: service_item_delete(hass, dict(call.data)),
-        SCHEMA_ITEM_DELETE,
-    )
-    hass.services.async_register(
-        DOMAIN, "item_move", lambda call: service_item_move(hass, dict(call.data)), SCHEMA_ITEM_MOVE
-    )
-    hass.services.async_register(
-        DOMAIN,
-        "item_adjust_quantity",
-        lambda call: service_item_adjust_quantity(hass, dict(call.data)),
-        SCHEMA_ITEM_ADJUST_QTY,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        "item_set_quantity",
-        lambda call: service_item_set_quantity(hass, dict(call.data)),
-        SCHEMA_ITEM_SET_QTY,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        "item_check_out",
-        lambda call: service_item_check_out(hass, dict(call.data)),
-        SCHEMA_ITEM_CHECK_OUT,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        "item_check_in",
-        lambda call: service_item_check_in(hass, dict(call.data)),
-        SCHEMA_ITEM_CHECK_IN,
-    )
-
-    hass.services.async_register(
-        DOMAIN,
-        "location_create",
-        lambda call: service_location_create(hass, dict(call.data)),
-        SCHEMA_LOCATION_CREATE,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        "location_update",
-        lambda call: service_location_update(hass, dict(call.data)),
-        SCHEMA_LOCATION_UPDATE,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        "location_delete",
-        lambda call: service_location_delete(hass, dict(call.data)),
-        SCHEMA_LOCATION_DELETE,
-    )
+    for name, handler, schema in SERVICES:
+        hass.services.async_register(DOMAIN, name, _bind(hass, handler), schema)
 
     bucket["services_registered"] = True

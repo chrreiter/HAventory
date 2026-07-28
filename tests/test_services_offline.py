@@ -8,6 +8,8 @@ Scenarios:
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 import voluptuous as vol
 from custom_components.haventory import services as services_mod
@@ -157,6 +159,16 @@ async def test_service_registration_and_schema_errors(monkeypatch, caplog) -> No
         "location_update",
         "location_delete",
     }.issubset(names)
+
+    # Home Assistant classifies each handler with HassJob and dispatches anything
+    # that is neither a coroutine function nor a @callback to the executor, where
+    # a handler that merely returns a coroutine is never awaited. Registering an
+    # `async def` is what keeps the service from silently doing nothing; the
+    # end-to-end proof lives in tests/integration/test_services.py.
+    not_awaitable = [
+        n for (_d, n, h, _s) in hass.services._registered if not inspect.iscoroutinefunction(h)
+    ]
+    assert not not_awaitable
 
     # Grab a handler and feed invalid payload to trigger vol.Invalid
     caplog.clear()
