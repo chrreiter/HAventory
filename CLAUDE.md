@@ -68,6 +68,7 @@ uv run mypy
 Frontend (in `cards/haventory-card`):
 ```bash
 npx eslint .
+npm run typecheck
 npx vitest run
 npm run build
 ```
@@ -274,8 +275,9 @@ Adopted tooling (latest stable at review time; verified against release pages / 
   `hass.async_create_background_task(...)` (WP0.5 finding; effort S)~~ — done: the persist
   task is HA-tracked.
 - **TypeScript 7**: adopt once typescript-eslint supports it (currently capped `<6.1.0`).
-- **`tsc --noEmit`** is clean as of WP2 follow-ups (`npm run typecheck`); not yet part of the
-  gate — adding it is a WP4/WP5 call.
+- ~~**`tsc --noEmit`** is clean as of WP2 follow-ups (`npm run typecheck`); not yet part of the
+  gate — adding it is a WP4/WP5 call.~~ — done: `npm run typecheck` runs in the `frontend` CI
+  job and in `scripts/lint.sh` / `scripts/ci_local.sh`.
 - **release-please** wiring lands in WP5.
 - ~~**Windows-only test scaffolding**: `tests/conftest.py` uses
   `asyncio.WindowsSelectorEventLoopPolicy` / `set_event_loop_policy`, both deprecated for

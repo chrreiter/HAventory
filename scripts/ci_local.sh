@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run the full local gate: backend lint + types + tests (with coverage), then
-# frontend install + lint + tests + build. Mirrors the CI pipeline.
+# frontend install + lint + types + tests + build. Mirrors the CI pipeline.
 source "$(dirname "$0")/common.sh"
 
 cd "$REPO_ROOT"
@@ -35,8 +35,8 @@ PY
 fi
 
 if command -v npm >/dev/null 2>&1; then
-  info 'Frontend: install, lint, test, build...'
-  (cd "$CARD_DIR" && npm ci --no-audit --no-fund && npm run lint && npm test -- --coverage && npm run build)
+  info 'Frontend: install, lint, types, test, build...'
+  (cd "$CARD_DIR" && npm ci --no-audit --no-fund && npm run lint && npm run typecheck && npm test -- --coverage && npm run build)
 else
   err 'npm not found; skipping frontend tasks.'
 fi

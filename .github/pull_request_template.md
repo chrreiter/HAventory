@@ -17,7 +17,7 @@ Closes #
 <!-- Both gates must be green. Paste the commands you ran / their results. -->
 
 - [ ] Backend: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q`, `uv run ruff check .`, `uv run mypy`
-- [ ] Frontend (`cards/haventory-card`): `npx eslint .`, `npx vitest run`, `npm run build`
+- [ ] Frontend (`cards/haventory-card`): `npx eslint .`, `npm run typecheck`, `npx vitest run`, `npm run build`
 
 ## Checklist
 
