@@ -89,6 +89,10 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def __init__(self) -> None:
             self.data = {}
 
+        def async_create_background_task(self, target, name, eager_start=True):
+            """Stand in for HA's tracked-task helper; the real one also cancels on shutdown."""
+            return asyncio.create_task(target, name=name)
+
     ha_core.HomeAssistant = HomeAssistant
     sys.modules["homeassistant.core"] = ha_core
 
