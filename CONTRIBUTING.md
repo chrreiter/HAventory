@@ -40,6 +40,7 @@ uv run ruff check .
 uv run mypy
 
 # Frontend (in cards/haventory-card)
+npm audit --audit-level=high
 npx eslint .
 npm run typecheck
 npx vitest run
