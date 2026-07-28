@@ -66,7 +66,14 @@ non-blocking).
 > live ruleset against the committed file after that one-time verification — drift on the
 > GitHub side is invisible; the guard test only protects the committed side.) The
 > follow-ups these PRs reported are
-> items **56–63**; #136's stub-divergence finding was folded into item 51.
+> items **56–63**; #136's stub-divergence finding was folded into item 51. Items **57**
+> and **58** then closed the same evening — the first PRs merged under the active ruleset:
+> **#139** put the `npm audit --audit-level=high` step in the `frontend` CI job (mirrored
+> in `scripts/ci_local.sh`; the auto-dismissal rule stays on, the gate is the compensating
+> control), and **#140** moved the retry-after test onto fake timers with `Date` mocked
+> beside `setTimeout`, pinning the exact 40 ms boundary (no retry at 39 ms, retry at 40)
+> and proving stability over 50 runs under deliberate CPU saturation. Their follow-ups
+> are items **64–65**.
 
 ---
 
@@ -78,8 +85,6 @@ Ordered by impact.
 |---|------|--------------|--------|--------|
 | 3 | **Enable release automation.** `release-please` is config-ready but dormant — uncomment the `push` trigger in `.github/workflows/release-please.yml` and run the release flow. Needed to cut a 1.0. | #74, #76 | Medium (release-blocking) | S |
 | 4 | **HACS publication** (Phase 3 "Polish & HACS"). Distribution path for a 1.0. | README Phase 3 | Medium (distribution) | M |
-| 57 | **Dev-scope Dependabot auto-dismissals are invisible — gate with `npm audit`.** The #135 triage found that GHSA-mh99-v99m-4gvg (high, `brace-expansion`) was filed and auto-dismissed **within the same second** by the repo's development-scope auto-triage rule, so a live vulnerability sat in the lockfile while the dashboard read "0 open" — exactly how item 2 came to look like stale backlog. Two independent closes, either sufficient: add `npm audit --audit-level=high` to the `frontend` CI job (recommended — fails loudly and locally), or turn the auto-dismissal rule off in repo settings and triage dev-scope alerts by hand (GitHub-UI work of the same kind item 7's hardening was). | PR #135 follow-up | Medium (security visibility) | S |
-| 58 | **`store.revamp.test.ts › "waits out the retry-after hint the envelope carries"` is timing-flaky.** It runs on real timers; it failed once locally under memory pressure (expected 3 subscribe calls, saw 6) and passes in isolation and in CI — it will fail again on a loaded runner. Worth fixing (fake timers or a tolerant assertion) before the release phase leans on repeated full-gate runs. | PR #138 follow-up | Low–Med (CI reliability) | S |
 
 ### Release-readiness tasks (from the 2026-07-25 review)
 
@@ -146,6 +151,8 @@ Ordered by impact.
 | 61 | **pre-commit has no frontend hooks** — no eslint, no tsc, no vitest — so the card half of the gate is CI- and script-only for local commits. Adding npm-backed hooks is a new pattern for that config, not a tweak. | PR #134 follow-up | Low | S–M |
 | 62 | **The card build warns `inlineDynamicImports` is deprecated** — switch the Vite config to `codeSplitting: false`. Pre-existing and harmless today; becomes an error in a future Vite major. | PR #135 follow-up | Low | S |
 | 63 | **`CLAUDE.md`'s Naming line still lists a bare `calendar.haventory`** — the same "entity that doesn't exist yet" ambiguity item 41(b) fixed in the README (#137 added "reserved for the post-1.0 calendar work, item 9"); apply the same clause in the next docs sweep. | PR #137 follow-up | Low | S |
+| 64 | **The `npm audit` gate stops at high/critical — moderate dev-scope advisories stay invisible.** #139 runs `--audit-level=high`, and the Dependabot auto-triage rule still dismisses every development-scope alert, so a moderate dev-scope advisory surfaces nowhere: auto-dismissed on the dashboard, below the CI gate's threshold. Tightening to `--audit-level=moderate` is a noise-tolerance call — moderate advisories in dev toolchains are frequent and often unfixable upstream; decide once the gate has some history. Sibling note from the same PR: the audit runs identically on both Node matrix legs; a single-leg gate would halve the (cheap) duplicate work. | PR #139 follow-up | Low (security posture) | S |
+| 65 | **~1.5 s of one-sided wall-clock waits in the frontend suite could ride fake timers.** #140's sweep confirmed the remaining real-timer waits are slow, not flaky — each is one-sided ("has happened by now" / "still unchanged by now"), a shape extra scheduling delay can only strengthen: `store.revamp.test.ts:728`/`:748` (400 ms each, covering the 250 ms `scheduleTreeRefresh` debounce) and `:803` (5 ms), plus `hv-card-shell.test.ts:252`/`:763` and `hv-full-view.test.ts:853` (250 ms each). Converting them to the #140 fake-timer pattern cuts ~1.5 s off every vitest run. | PR #140 follow-up | Low (suite speed) | S |
 
 ---
 
