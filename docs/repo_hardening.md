@@ -75,7 +75,8 @@ defaults, Dependabot's) are never removed.
 script only reports on:
 
 1. *Settings → General → Social preview → Edit → Upload an image*.
-2. Upload [`assets/social-preview.png`](assets/social-preview.png) (1280×640).
+2. Upload [`assets/social-preview.png`](assets/social-preview.png) — 2560×1280, which is
+   GitHub's 1280×640 at 2x so the image stays sharp on HiDPI displays.
 
 The PNG is generated from [`assets/social-preview.html`](assets/social-preview.html):
 
@@ -83,5 +84,5 @@ The PNG is generated from [`assets/social-preview.html`](assets/social-preview.h
 node scripts/render_social_preview.mjs
 ```
 
-Fonts come from the rendering machine, so a regenerated file can differ slightly from the
-committed one.
+The page loads Roboto from Google Fonts, so rendering needs network access; the script
+waits for the webfont before the screenshot rather than baking in a fallback face.

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Rasterize docs/assets/social-preview.html to the 1280x640 PNG GitHub wants
-// under Settings > General > Social preview (which has no API — the upload
-// stays manual; see docs/repo_hardening.md).
+// Rasterize docs/assets/social-preview.html to the PNG GitHub wants under
+// Settings > General > Social preview (which has no API — the upload stays
+// manual; see docs/repo_hardening.md).
 //
 //   node scripts/render_social_preview.mjs
 //
-// Fonts come from the rendering machine, so a regenerated PNG can differ
-// slightly from the committed one; commit the result either way.
+// Rendered at 2x GitHub's 1280x640 so the image stays sharp on HiDPI displays.
+// The page pulls Roboto from Google Fonts, so this needs network access.
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
@@ -19,8 +19,14 @@ const target = fileURLToPath(new URL('../docs/assets/social-preview.png', import
 
 const browser = await chromium.launch();
 try {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 640 } });
-  await page.goto(source.href, { waitUntil: 'load' });
+  const page = await browser.newPage({
+    viewport: { width: 1280, height: 640 },
+    deviceScaleFactor: 2,
+  });
+  await page.goto(source.href, { waitUntil: 'networkidle' });
+  // Screenshotting before the webfont swaps in would bake the fallback face
+  // into the PNG.
+  await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: target, type: 'png' });
   console.log(`wrote ${target}`);
 } finally {
