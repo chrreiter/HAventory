@@ -12,8 +12,8 @@ non-blocking).
 - **Impact** — High / Medium / Low (user-facing or release/correctness/security risk).
 - **Effort** — S (≲ half a day) · M (~1–3 days) · L (multi-day).
 - Status verified against the working tree at `main` @ WP4 (`390cba6`), then reconciled
-  against the **2026-07-27 fix batch** (PRs #120–#130). The batch edits below assume those
-  eleven PRs merge — this file's update is meant to land **after** them.
+  against the **2026-07-27 fix batch** (PRs #120–#130) and the **2026-07-28 WP5
+  burn-down** (PRs #134–#138).
 - **Item numbers are stable and append-only** — new items get the next free number
   rather than renumbering the list, so references from PRs and docs keep resolving.
   Read each table's own ordering, not the numbering, for priority.
@@ -44,6 +44,23 @@ non-blocking).
 > same strictly-before comparison the backend makes. No storage migration — only the
 > meaning of the existing field was settled.
 
+> The **WP5 pre-release burn-down (2026-07-28)** — four more one-item PRs — resolved items
+> **5** (#134, `tsc --noEmit` gated in CI and mirrored in `scripts/lint.sh` /
+> `ci_local.sh`), **2** (#135 — all 30 Dependabot alerts triaged: 29 genuinely fixed by the
+> WP1 toolchain bumps, and the one live one, `brace-expansion` GHSA-mh99-v99m-4gvg (high,
+> dev-only), had been auto-dismissed within a second of filing and still sat in the
+> lockfile — fixed by a transitive bump to 5.0.8, `npm audit` now clean), **6** (#136 —
+> writing the guard test exposed that **every `haventory.*` service was a silent no-op on
+> real HA**: lambda handlers were classified `HassJobType.Executor`, so HA ran them on a
+> worker thread and never awaited the coroutine they returned; registration now binds
+> `async def` adapters, guarded by a real-HA service-call suite and an offline
+> every-handler-is-a-coroutine-function check) and **41** (#137, README truth-ups; the
+> deferred (c) — the measured scale ceiling — lives on as item 56). Item **7** (#138) is
+> the batch's last PR: it checks the `main` ruleset into the repo with a check-name guard
+> test and enables Discussions, but the item closes only after two owner-only steps — the
+> rewritten item 7 row below carries the residue. The follow-ups these PRs reported are
+> items **56–63**; #136's stub-divergence finding was folded into item 51.
+
 ---
 
 ## Pre-v1.0
@@ -52,31 +69,30 @@ Ordered by impact.
 
 | # | Item | Source PR(s) | Impact | Effort |
 |---|------|--------------|--------|--------|
-| 2 | **Triage the 19 Dependabot security alerts on `main`** (`/security/dependabot`). Pre-existing, flagged as unrelated to #76 but still open. | #76 | Medium (security) | S–M |
 | 3 | **Enable release automation.** `release-please` is config-ready but dormant — uncomment the `push` trigger in `.github/workflows/release-please.yml` and run the release flow. Needed to cut a 1.0. | #74, #76 | Medium (release-blocking) | S |
 | 4 | **HACS publication** (Phase 3 "Polish & HACS"). Distribution path for a 1.0. | README Phase 3 | Medium (distribution) | M |
-| 41 | **Post-batch README truth-ups.** Three small accuracy fixes that only make sense once the 2026-07-27 batch is merged: (a) the Known limitations rate-limiting entry (#129) deliberately describes backend posture only — add the card behavior #128 shipped (a rate-limited `subscribe` is retried up to 4 times, honouring a retry-after hint when the envelope carries one, then pauses visibly with a Refresh action); (b) `## Conventions` lists `calendar.haventory` while Known limitations states the integration creates no entities — both true today, so add "reserved for the post-1.0 calendar work (item 9)" to the Conventions line; (c) the published scale ceiling is extrapolated from item 19's stress curve — replace it with the measured number once release-test F3 runs. The #129 follow-up also notes the *Implementation Status → Phase 2.5* claim about the rate-limited-subscribe gap: stale against pre-batch `main`, accurate once #128 merges — verify, don't edit. | PR #128/#129 follow-ups | Low–Med (docs accuracy) | S |
-| 5 | **Add `tsc --noEmit` (typecheck) to the CI gate.** It is clean (#89/#91) but still not gated, so card type regressions can slip through. | #74, `docs/frontend_architecture.md` | Low–Med | S |
-| 6 | **Pin the service-registration pattern with a test.** `services.py` registers sync lambdas that return coroutines; the integration suite passes, but a targeted service-call integration test would guard it. | #91 | Low–Med (correctness) | S |
-| 7 | **GitHub repo hardening (manual, GitHub UI):** branch protection/ruleset on `main`, secret scanning + push protection, enable Discussions, run the `labels` workflow once, set a social-preview image. | #76 | Low | S (manual) |
+| 57 | **Dev-scope Dependabot auto-dismissals are invisible — gate with `npm audit`.** The #135 triage found that GHSA-mh99-v99m-4gvg (high, `brace-expansion`) was filed and auto-dismissed **within the same second** by the repo's development-scope auto-triage rule, so a live vulnerability sat in the lockfile while the dashboard read "0 open" — exactly how item 2 came to look like stale backlog. Two independent closes, either sufficient: add `npm audit --audit-level=high` to the `frontend` CI job (recommended — fails loudly and locally), or turn the auto-dismissal rule off in repo settings and triage dev-scope alerts by hand (GitHub-UI work adjacent to item 7). | PR #135 follow-up | Medium (security visibility) | S |
+| 58 | **`store.revamp.test.ts › "waits out the retry-after hint the envelope carries"` is timing-flaky.** It runs on real timers; it failed once locally under memory pressure (expected 3 subscribe calls, saw 6) and passes in isolation and in CI — it will fail again on a loaded runner. Worth fixing (fake timers or a tolerant assertion) before the release phase leans on repeated full-gate runs. | PR #138 follow-up | Low–Med (CI reliability) | S |
+| 7 | **Repo hardening — two owner-only steps remain.** #138 landed everything committable: the `main` ruleset declared in `.github/rulesets/main.json` (PR required at 0 approvals, ten required status checks, deletion/force-push blocks) with an offline guard test that re-derives the check names from the workflows; Discussions enabled; secret scanning + push protection and the `labels` run verified already done. Remaining: (a) **apply the ruleset** — `gh api -X PUT repos/chrreiter/HAventory/rulesets/7776748 --input .github/rulesets/main.json`, or Settings → Rules → set enforcement Active with the ten checks (leave "require branches up to date" off); (b) **upload the social preview** — Settings → General → Social preview → `docs/assets/social-preview.png` (no API exists). Notes from #138: nothing diffs the live ruleset against the committed file (the one-time apply/diff scripts were deliberately dropped); merge-method settings, `delete_branch_on_merge`, auto-merge and the empty wiki were left as-is. | #76, PR #138 | Low | S (manual) |
 
 ### Release-readiness tasks (from the 2026-07-25 review)
 
 Work items — **not** tests — surfaced while drafting
 [`release_testing_plan.md`](release_testing_plan.md), plus later findings of the same
 release-blocking kind. The confirmed defects in this group (25, 26) and the documentation
-gaps (28, 31, 40) were fixed by the 2026-07-27 batch; what remains are the two release
-chores below — 29 after feature freeze, 30 via item 3's release automation. Ordered by
-impact.
+gaps (28, 31, 40) were fixed by the 2026-07-27 batch; what remains are the release chores
+below — 29 after feature freeze, 30 via item 3's release automation, 56 once release-test
+F3 has produced its number. Ordered by impact.
 
 | # | Item | Source | Impact | Effort |
 |---|------|--------|--------|--------|
 | 29 | **Set the real minimum supported HA version — the current `2026.7.0` is a stale leftover.** `hacs.json` `homeassistant: "2026.7.0"` predates the current feature set and was never verified against a running instance (CI runs the HA-less offline suite; the integration suite pins whatever `requirements-integration.txt` resolves — currently `2026.7.3`). **Sequencing: do this after v1.0 is feature-complete**, once every HA API the integration actually touches is known; deriving the floor earlier just re-stales it. Then (a) update `hacs.json`, (b) update every other place the number is repeated — `README.md` (2×), `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/bug_report.yml` (2×), and the explanatory comments in `pyproject.toml` and `.github/workflows/ci.yml` — (c) pin `requirements-integration.txt` / the integration-test HA to that floor so CI defends it, and (d) verify a real instance at the floor via release-test D6. Note the coupling: HA ≥ 2026.3 forces Python 3.14, and the source uses PEP 758 syntax that does not parse on ≤ 3.13, so choosing a floor below 2026.3 is a toolchain change, not a one-line edit. | release review 2026-07-25 | Medium (release claim) | S–M |
 | 30 | **Version numbers are still `0.0.1`.** `manifest.json` `version` (and `INTEGRATION_VERSION`, surfaced by `haventory/version` and stamped into export documents) must be bumped for the release and kept in sync with the release tag — which is what item 3 (release-please) is meant to automate. Add a check that the manifest version, `.release-please-manifest.json`, and the tag agree. | release review 2026-07-25 | Medium (release-blocking) | S |
+| 56 | **Publish the measured scale ceiling once release-test F3 runs** — the deferred (c) of item 41. The README's Known-limitations ceiling is still item 19's extrapolated curve (~70 ms/create @250, ~114 @500, ~200 @1000, trending to ~1 s at a few thousand), correctly labelled as an extrapolation; F3 ("Scale on real hardware") produces the measured degradation point that replaces it. One README edit after the F3 pass of the release run. | PR #137 follow-up (item 41c) | Low–Med (docs accuracy / release claim) | S (after F3) |
 
-> Items 2 (Dependabot alerts), 3 (release-please) and 4 (HACS publication) above are also
-> release-readiness tasks and are referenced from the test plan; they are already tracked
-> and are not duplicated here.
+> Items 3 (release-please) and 4 (HACS publication) above are also release-readiness
+> tasks and are referenced from the test plan; they are already tracked and are not
+> duplicated here.
 
 ---
 
@@ -114,11 +130,16 @@ Ordered by impact.
 | 42 | **Storage crashes generically on a corrupt (non-integer) `schema_version`.** `int(raw.get("schema_version", 0))` in `storage.py` raises `ValueError`/`TypeError` on a hand-edited `"schema_version": "4"` or `null`, surfacing as the catch-all `ConfigEntryNotReady("storage load failed")` rather than a specific corruption message; `import_export.py` already type-checks its version fields, storage could match. Related trap: `migrations.migrate`'s downgrade pass-through is unreachable from production now that storage refuses first (#120) — a second caller would reintroduce the silent relabel. | PR #120 follow-ups | Low | S |
 | 45 | **The YAML-mode registration skip logs at DEBUG**, so a YAML-mode user sees nothing at default log levels. The README now documents the situation (#125), but an INFO/WARNING line — it is an actionable misconfiguration for anyone expecting the card — would make the integration self-documenting. | PR #125 follow-up | Low | S |
 | 50 | **Two severity calls the #124 logging audit deliberately left open:** the frontend-resource registration failure logs WARNING + traceback although the card never loading is arguably operator-actionable (ERROR — but it is outside the error taxonomy's codes and the integration still functions); and `ws_items_bulk`'s "completed with no successful operations" WARNING summary is redundant with the per-op WARNING lines it follows. | PR #124 follow-ups | Low | S |
-| 51 | **Real-HA integration coverage for the batch's stub-tested paths.** Three changes are asserted against stubs/mocks only, since no batch session could provision `.venv-integration`: `async_remove_entry` against a real `ResourceStorageCollection.async_delete_item` (#121), the tracked-task debounced persist (#123), and the `ConfigEntryError` downgrade refusal (#120). Add cases under `tests/integration/`; until then a local `scripts/test_integration.sh` run covers the gap. | PR #120/#121/#123 follow-ups | Low | S–M |
+| 51 | **Real-HA integration coverage for the batch's stub-tested paths.** Three changes are asserted against stubs/mocks only, since no batch session could provision `.venv-integration`: `async_remove_entry` against a real `ResourceStorageCollection.async_delete_item` (#121), the tracked-task debounced persist (#123), and the `ConfigEntryError` downgrade refusal (#120). Add cases under `tests/integration/`; until then a local `scripts/test_integration.sh` run covers the gap. #136 sharpened the stakes: the offline `HomeAssistant` stub has no service registry, so `services.setup()` early-returns offline and no offline test can observe real registration semantics — exactly how the never-awaited executor-dispatched service handlers stayed invisible until the item-6 integration test ran (and HA's `_execute_service` executor fallback fails silently, so the same mistake in a future registration would be invisible again outside an integration test). Worth a wider sweep of what else the stubs let through; the three cases above now have a proven-green environment to land in. | PR #120/#121/#123 follow-ups, #136 | Low | S–M |
 | 44 | **`run-haventory`'s `pin_resource.py` fights the versioned resource URL.** Since #122, setup rewrites any stale `?v=` entry to `?v=<manifest version>`, so a dev-pinned `?v=<content hash>` is undone on every HA restart — the pin must be re-run per restart, not just per build; the helper's docstring also still describes the old exact-string matching. A content-hash cache-buster in the integration would serve the dev loop better. | PR #122 follow-ups | Low (dev tooling) | S |
 | 53 | **Type-loose WS frames bypass `ws_guard` and land in HA core's log at ERROR.** A frame that fails the voluptuous schema in `ws.py` is rejected by HA core *before* `ws_guard` runs, and `homeassistant.components.websocket_api.http.connection` logs it at ERROR with the client payload (e.g. `expected int for dictionary value @ data['quantity']. Got 1.5`) — exactly the client mistakes item 32 downgraded to WARNING re-enter the log as ERROR through the front door (4 such lines in the 2026-07-28 session, all from deliberate fuzz). `ws.py` already widens some fields to `object` (`description`, `location_id`, `low_stock_threshold`) and validates them in the model layer; doing the same for `quantity` / `delta` / `operations` / required `name` would route them through `ws_guard` as typed `validation_error` WARNINGs. Deliberate trade-off, flagged rather than decided: schema-level typing is free documentation, so this is a judgment call, not an obvious win. | local verification run 2026-07-28 (F1) | Low–Med (support burden) | S–M |
 | 54 | **`stress.py`'s idle control WS connection dies on any layer longer than ~90 s.** aiohttp only answers server pings while a `receive()` is in flight, and nothing awaits the control connection while the workers run, so HA closes it after ~90 s idle. Reproduced standalone; in the 2026-07-28 run the bulk-1000 layer finished all 1000 creates with 0 errors, then failed its post-run health check (`ClientConnectionResetError: Cannot write to closing transport`), skipping its delete/cleanup and leaving 1000 `stress_test_` items to sweep by hand. Not an HAventory bug — but it will keep masquerading as one. Fix: pump the control connection periodically, or open it lazily after the workload. | local verification run 2026-07-28 (F3) | Low (test harness) | S |
 | 55 | **Adopt the 2026-07-28 verification harnesses into the `run-haventory` skill.** Three Playwright harnesses (`rl_banner.mjs` — WS tracing + shadow-DOM-piercing banner enumeration for the rate-limit lifecycle, `visual_pass.mjs`, `import_policies.mjs`) and two Python drivers were written for the batch verification and preserved only in the run's evidence folder; adding them to the skill would make the checks repeatable. Record two gotchas while there: HA's `Store` debounce delays `.storage/lovelace_resources` disk writes ~15 s, so reading the file right after a restart shows the old URL while the in-memory collection is already correct (do not misread as a cache-busting regression); and `scripts/test_integration.sh` runs fine inside a throwaway `python:3.14-slim` container when the host cannot provide Python 3.14 + PyPI access — the proven path on Windows hosts whose WSL lacks DNS. | local verification run 2026-07-28 | Low (dev tooling) | S–M |
+| 59 | **Dependabot opens no update PRs for `requirements-integration.txt`.** `.github/dependabot.yml` declares `github-actions`, `npm` and `uv` ecosystems but no `pip` entry. The dependency graph does scan the file (`homeassistant` and `pytest-homeassistant-custom-component` are in the SBOM), so a vulnerability there would alert — what's missing is the automated fix PR. Add a `pip` ecosystem block for `/`; sequence **after item 29** pins the file to the minimum-HA floor, so version-bump PRs don't fight the pin. | PR #135 follow-up | Low | S |
+| 60 | **The tsc gate covers `src/` only.** `tsconfig.json`'s `include` leaves `vite.config.ts`, `eslint.config.js` and the `e2e/*.mjs` Playwright drivers un-typechecked by the item-5 gate (#134); widening needs `allowJs`/`checkJs` decisions for the plain-`.mjs` drivers. Minor sibling from the same PR: the typecheck runs identically on both Node matrix legs (~5 s each, `tsc` output does not vary with the Node runtime) — hoist to a single leg if the matrix ever gets expensive. | PR #134 follow-ups | Low | S–M |
+| 61 | **pre-commit has no frontend hooks** — no eslint, no tsc, no vitest — so the card half of the gate is CI- and script-only for local commits. Adding npm-backed hooks is a new pattern for that config, not a tweak. | PR #134 follow-up | Low | S–M |
+| 62 | **The card build warns `inlineDynamicImports` is deprecated** — switch the Vite config to `codeSplitting: false`. Pre-existing and harmless today; becomes an error in a future Vite major. | PR #135 follow-up | Low | S |
+| 63 | **`CLAUDE.md`'s Naming line still lists a bare `calendar.haventory`** — the same "entity that doesn't exist yet" ambiguity item 41(b) fixed in the README (#137 added "reserved for the post-1.0 calendar work, item 9"); apply the same clause in the next docs sweep. | PR #137 follow-up | Low | S |
 
 ---
 
