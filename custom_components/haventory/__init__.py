@@ -145,7 +145,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         await async_persist_immediate(hass)
     except Exception:  # pragma: no cover - defensive
-        LOGGER.warning(
+        # Unload is the last chance to write; a failure here silently drops
+        # whatever was still unsaved, which nobody but an operator can recover.
+        LOGGER.error(
             "Failed to persist during unload",
             extra={"domain": DOMAIN, "op": "unload"},
             exc_info=True,
