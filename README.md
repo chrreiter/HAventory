@@ -157,12 +157,13 @@ uv run mypy
 
 # Frontend (in cards/haventory-card)
 npx eslint .
+npm run typecheck
 npx vitest run
 npm run build
 ```
 
 Or all at once: `scripts/ci_local.sh` (backend lint + types + tests w/ coverage, then
-frontend install + lint + test + build). Lint only: `scripts/lint.sh`. Backend tests
+frontend install + lint + types + test + build). Lint only: `scripts/lint.sh`. Backend tests
 only: `scripts/test.sh`. Frontend tests: `scripts/test_frontend.sh [--coverage|--watch]`.
 
 ### Testing
@@ -452,7 +453,7 @@ so a stale dashboard config never breaks the card.
 
 - GitHub Actions (`ubuntu-latest`): backend (uv, ruff + mypy + pytest w/ coverage, Python
   3.14), a dedicated **integration** job (in-process HA via phacc, Python 3.14),
-  frontend (eslint + vitest + build, Node 22/24 matrix), actionlint,
+  frontend (eslint + tsc + vitest + build, Node 22/24 matrix), actionlint,
   hassfest + HACS validation, CodeQL, OpenSSF Scorecard, and dependency review.
   Third-party actions are SHA-pinned; first-party `actions/*` use `@v7`.
 - PR hygiene: Conventional-Commit PR-title check, path-based auto-labeling

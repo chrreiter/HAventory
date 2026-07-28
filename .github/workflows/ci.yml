@@ -118,6 +118,10 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Lint
         run: npx eslint .
+      - name: Types (tsc --noEmit)
+        # The build below cannot catch this: Vite transpiles through esbuild,
+        # which strips types without checking them.
+        run: npm run typecheck
       - name: Test (vitest w/ coverage)
         run: npx vitest run --coverage
       - name: Frontend coverage summary
