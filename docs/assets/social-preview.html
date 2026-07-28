@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <title>HAventory social preview</title>
-    <!-- Roboto is Home Assistant's own typeface; rendering therefore needs
-         network access, and scripts/render_social_preview.mjs waits for
-         document.fonts.ready before the screenshot. -->
+    <!-- Roboto is Home Assistant's own typeface. Capturing this page needs
+         network access, and the webfont has to have loaded before the shot or
+         the fallback face is baked into the PNG. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -13,9 +13,9 @@
       rel="stylesheet"
     />
     <style>
-      /* Source for social-preview.png. GitHub renders the social preview at
-         1280x640; link unfurls in chat clients scale it down hard, hence the
-         large type and the 80px margin. */
+      /* Source for social-preview.png, which is this page captured at 2x.
+         GitHub renders the social preview at 1280x640 and link unfurls in chat
+         clients scale it down hard, hence the large type and the 80px margin. */
       * {
         box-sizing: border-box;
         margin: 0;

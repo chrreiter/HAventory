@@ -27,8 +27,6 @@ dev = [
   "pre-commit",
   "voluptuous",
   "aiohttp>=3.9.1",
-  # tests/test_repo_hardening_offline.py parses .github/workflows/*.yml.
-  "pyyaml",
 ]
 
 [tool.uv]

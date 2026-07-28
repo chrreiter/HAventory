@@ -467,8 +467,11 @@ so a stale dashboard config never breaks the card.
 - Dependabot: grouped updates for `github-actions`, `npm` (card), and `uv` (Python).
 - `main` is protected by a checked-in ruleset (`.github/rulesets/main.json`): pull request
   required, the CI/CodeQL/dependency-review/PR-title checks required, no force-push or
-  deletion. Report or apply it with `scripts/repo_hardening.sh` — see
-  [`docs/repo_hardening.md`](docs/repo_hardening.md).
+  deletion. Edit it under *Settings → Rules → Rulesets*, or `PUT` the file to
+  `repos/{owner}/{repo}/rulesets/{id}`; the required checks must keep matching the job
+  names in `.github/workflows/`, or a pull request can never satisfy them.
+- The repository's social preview is `docs/assets/social-preview.png`, rendered from the
+  `.html` beside it. GitHub has no API for it — upload it under *Settings → General*.
 - Release automation via **release-please** is config-ready but deferred (WP5) — enable it
   by uncommenting the `push` trigger in `.github/workflows/release-please.yml`.
 - Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -602,7 +605,6 @@ and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discus
 - Data shapes (Item/Location/filter/sort/events): `docs/data_shapes.md`
 - Frontend architecture: `docs/frontend_architecture.md`
 - Release testing plan (manual v1.0 readiness run): `docs/release_testing_plan.md`
-- Repository settings (branch ruleset, labels, social preview): `docs/repo_hardening.md`
 - Open items / future work: `docs/open-items.md`
 
 ## Troubleshooting

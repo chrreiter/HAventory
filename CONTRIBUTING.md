@@ -73,8 +73,7 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
    any issues it closes (`Closes #123`). CODEOWNERS review is requested
    automatically.
 5. A maintainer reviews. A ruleset protects `main`: merging needs a pull request and
-   green CI, CodeQL, dependency-review and PR-title checks — see
-   [`docs/repo_hardening.md`](docs/repo_hardening.md).
+   green CI, CodeQL, dependency-review and PR-title checks.
 
 ## Releases
 
