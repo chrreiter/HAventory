@@ -487,25 +487,37 @@ describe('Store: rate limiting and degraded state', () => {
   });
 
   it('waits out the retry-after hint the envelope carries', async () => {
-    const hass = makeMockHass({ items: [] });
-    hass.__failSubscribeNext(3, { ...RATE_LIMITED, data: { op: 'subscribe', retry_after_ms: 40 } });
-    const store = new Store(hass, fast);
+    // `nextLiveRetryAt` is `Date.now() + delay` and the retry itself rides
+    // `setTimeout`, so both have to move on one clock for the wait to be exact
+    // instead of a race against the scheduler. `settleSubscribes()` keeps
+    // working across the switch — it is pure microtasks, which fake timers
+    // leave alone.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const hass = makeMockHass({ items: [] });
+      hass.__failSubscribeNext(3, { ...RATE_LIMITED, data: { op: 'subscribe', retry_after_ms: 40 } });
+      const store = new Store(hass, fast);
 
-    await store.init();
-    await settleSubscribes();
+      await store.init();
+      await settleSubscribes();
 
-    // The hint wins over the store's own (zero, in tests) backoff.
-    const wait = (store.state.value.degraded.nextLiveRetryAt ?? 0) - Date.now();
-    expect(wait).toBeGreaterThan(20);
-    expect(store.state.value.degraded.liveUpdates).toBe('retrying');
+      // The hint wins over the store's own (zero, in tests) backoff.
+      const wait = (store.state.value.degraded.nextLiveRetryAt ?? 0) - Date.now();
+      expect(wait).toBe(40);
+      expect(store.state.value.degraded.liveUpdates).toBe('retrying');
 
-    // Not retried before the hint elapses...
-    await flush(2);
-    expect(hass.__subscribeCalls).toHaveLength(3);
+      // Not retried before the hint elapses...
+      await vi.advanceTimersByTimeAsync(39);
+      expect(hass.__subscribeCalls).toHaveLength(3);
 
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(hass.__subscribeCalls).toHaveLength(6);
-    expect(store.state.value.degraded.liveUpdates).toBe('live');
+      // ...and retried on the very millisecond it does.
+      await vi.advanceTimersByTimeAsync(1);
+      await settleSubscribes();
+      expect(hass.__subscribeCalls).toHaveLength(6);
+      expect(store.state.value.degraded.liveUpdates).toBe('live');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('reports a non-rate-limit subscribe refusal instead of retrying it', async () => {
