@@ -10,7 +10,7 @@ Home Assistant custom integration (domain `haventory`) for household inventory t
 plus a Lit + TypeScript Lovelace card. Local-push, single-instance, HA `Store`-backed
 persistence — no external services.
 
-**Targets:** Linux dev + `ubuntu-latest` CI. Minimum Home Assistant **2026.3.1** ⇒ Python
+**Targets:** Linux dev + `ubuntu-latest` CI. Minimum Home Assistant **2026.6.0** ⇒ Python
 **3.14** everywhere (uv provisions the interpreter automatically; the source uses 3.14-only
 PEP 758 syntax). Node **22.13+ / 24 LTS** for the card.
 
@@ -26,9 +26,9 @@ HAventory isn't in the HACS default store yet. To install from this repository:
 4. Add it via **Settings → Devices & Services → Add Integration → HAventory**.
 5. Refresh your browser (Ctrl/Cmd+Shift+R) so the Lovelace card appears in the picker.
 
-Minimum Home Assistant version: **2026.3.1** — the first release series requiring Python
-3.14, which the source needs. Developers: see the Developer Checklist below
-and [CONTRIBUTING.md](CONTRIBUTING.md).
+Minimum Home Assistant version: **2026.6.0** — the oldest release that both runs the
+integration and carries no known security advisory. Developers: see the Developer
+Checklist below and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### YAML-mode dashboards
 

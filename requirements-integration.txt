@@ -26,7 +26,8 @@
 # when the declared minimum moves; `tests/test_min_ha_version.py` fails if the two
 # drift apart.
 #
-# 2026.3.1, not 2026.3.0: no phacc build pins 2026.3.0, so 2026.3.1 is the lowest
-# floor this suite can actually run against.
-homeassistant==2026.3.1
+# 2026.6.0 rather than 2026.3.x, which the API touch points would also allow:
+# every release below 2026.6.0 is affected by GHSA-x84v-g949-293w (high, fixed in
+# 2026.6.0), and the dependency-review check fails the pin outright.
+homeassistant==2026.6.0
 pytest-homeassistant-custom-component

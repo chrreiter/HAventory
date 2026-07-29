@@ -12,7 +12,7 @@ Out of scope: feature work, and anything tracked as **post-v1.0** in
 alongside this plan) also live in `open-items.md` — this file is tests only.
 
 **Sequencing.** The run belongs after feature freeze. D6's prerequisite is met: the minimum
-supported HA version is **2026.3.1** (open item 29, derived at feature freeze from the HA
+supported HA version is **2026.6.0** (open item 29, derived at feature freeze from the HA
 APIs the integration actually touches — see CLAUDE.md), so D6 runs against that number.
 
 ---
@@ -39,7 +39,7 @@ A release is "ready" when **all** of the following hold:
 |-----|------|----------|
 | **ENV-A** | Personal production HA instance, real data, real hardware | Everything except destructive scenarios (D8, E2–E4) |
 | **ENV-B** | Throwaway HA in Docker (`scripts/reload_addon.sh`, `run-haventory` skill) | Destructive + adversarial scenarios; YAML-mode Lovelace |
-| **ENV-C** | Docker HA pinned to the **declared minimum supported version**, `2026.3.1` (`hacs.json` `homeassistant`) | D6 — validates the floor |
+| **ENV-C** | Docker HA pinned to the **declared minimum supported version**, `2026.6.0` (`hacs.json` `homeassistant`) | D6 — validates the floor |
 | **ENV-D** | Docker HA restored from an **ENV-A production backup** | E2–E4 restore scenarios, without risking ENV-A |
 
 Clients to cover: desktop Chrome, one of Firefox/Safari desktop, **iOS companion app**,
@@ -149,7 +149,7 @@ Run `haventory/health` after **each** of these, and snapshot the store around D7
 | D3 | Config-entry reload (no HA restart) | Reload succeeds; subscriptions re-established; no duplicate WS handler registration | ✅ |
 | D4 | HA minor update (current stable → next stable) with HAventory installed | Setup succeeds; no deprecation warnings from `custom_components.haventory` | ✅ |
 | D5 | HA **next beta** | Same; any breakage is filed before it reaches stable | |
-| D6 | Minimum supported HA `2026.3.1` (ENV-C). The phacc suite already runs the integration in-process at this version in CI; D6 is the live counterpart — a real container, the card, and the browser | Integration sets up and the full CRUD path works on the declared floor; if it does not, the floor is wrong and must be raised before release | ✅ |
+| D6 | Minimum supported HA `2026.6.0` (ENV-C). The phacc suite already runs the integration in-process at this version in CI; D6 is the live counterpart — a real container, the card, and the browser | Integration sets up and the full CRUD path works on the declared floor; if it does not, the floor is wrong and must be raised before release | ✅ |
 | D7 | Integration update N → N+1 **with real data**, including a schema migration | Migration runs once, is idempotent on a second restart, data intact, `health` healthy | ✅ |
 | D8 | Integration **rollback** N+1 → N (ENV-B only) | Newer-schema data is **refused loudly**: setup fails with `ConfigEntryError` naming both versions and the store file is left byte-identical — never migrated down, never silently relabeled (decided; item 25 fixed by #120) | ✅ |
 | D9 | Card update with a warm browser cache: update the integration, then reload normally (no hard refresh), on desktop **and** in the companion app | New card version actually loads; check `haventory/version` vs. the card build. The resource is now registered as `…haventory-card.js?v=<manifest version>` and a stale entry is rewritten in place (item 26, fixed by #122) | ✅ |

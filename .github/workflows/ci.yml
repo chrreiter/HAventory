@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The declared HA 2026.3.1 runtime. The source is 3.14-only (PEP 758
+        # The declared HA 2026.6.0 runtime. The source is 3.14-only (PEP 758
         # `except A, B:` syntax emitted by the 2026 ruff formatter).
         python-version: [ '3.14' ]
     env:

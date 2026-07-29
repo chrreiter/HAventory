@@ -3,7 +3,7 @@
 #
 # Brings up a real Home Assistant (current stable on Python 3.14, provisioned by
 # uv) with the integration symlinked in, so edits are picked up on restart. This
-# runs current stable, not the declared 2026.3.1 floor — the floor is what the
+# runs current stable, not the declared 2026.6.0 floor — the floor is what the
 # phacc suite pins. Requires network access.
 set -euo pipefail
 

@@ -8,7 +8,7 @@ HAventory is a Home Assistant **custom integration** (domain `haventory`) for ho
 inventory tracking, plus a Lovelace **card** frontend. Local-push, single-instance, HA
 `Store`-backed persistence — no external services.
 
-Targets: minimum Home Assistant **2026.3.1** ⇒ **Python 3.14 everywhere**
+Targets: minimum Home Assistant **2026.6.0** ⇒ **Python 3.14 everywhere**
 (`requires-python >=3.14`, ruff `target-version = py314`, mypy `3.14`, CI 3.14; the source
 uses 3.14-only PEP 758 syntax). uv provisions the interpreter automatically. Node
 **22.13+ / 24 LTS** (`engines: ^22.13 || >=24`). Toolchain: **uv** (env + lockfile +
@@ -165,18 +165,27 @@ blog.
 
 ### Minimum supported HA + Python (SET at feature freeze, 2026-07-29)
 
-- **Minimum supported HA:** **`2026.3.1`**. Derived from the touch points, not from "a recent
-  stable release": every HA symbol the integration uses (`websocket_api` registration +
-  decorators, `helpers.storage.Store`, the config-entry lifecycle, `ConfigFlowResult`,
-  `ConfigEntryError`, `helpers.area_registry.async_get`, `loader.async_get_integration`,
-  `hass.async_create_background_task`, `LOVELACE_DATA` + `ResourceStorageCollection`'s
-  `async_items` / `async_create_item` / `async_update_item` / `async_delete_item`) is present
-  and unchanged in 2026.3.1, verified against that release's wheel. The floor is set by the
-  **Python coupling**, not by any API: 2026.3 is the first series requiring Python 3.14, and
-  the source uses PEP 758 syntax that does not parse on 3.13. `2026.3.1` rather than
-  `2026.3.0` because no phacc build pins 2026.3.0, so 2026.3.1 is the lowest version CI can
-  run against.
+- **Minimum supported HA:** **`2026.6.0`**. Three constraints stack, each stricter than the
+  last:
+  1. **APIs** — every HA symbol the integration uses (`websocket_api` registration +
+     decorators, `helpers.storage.Store`, the config-entry lifecycle, `ConfigFlowResult`,
+     `ConfigEntryError`, `helpers.area_registry.async_get`, `loader.async_get_integration`,
+     `hass.async_create_background_task`, `LOVELACE_DATA` + `ResourceStorageCollection`'s
+     `async_items` / `async_create_item` / `async_update_item` / `async_delete_item`) is
+     present and unchanged as far back as **2026.3.1**, verified against both that release's
+     wheel and 2026.6.0's (the 2026.6 dashboard overhaul left the resource collection API
+     untouched). So the APIs alone would allow 2026.3.
+  2. **Python** — 2026.3 is the first series requiring Python 3.14, and the source uses PEP
+     758 syntax that does not parse on 3.13. Nothing below 2026.3 is possible at all.
+  3. **Security** — every release below 2026.6.0 is affected by GHSA-x84v-g949-293w (high,
+     CVE-2026-54317, fixed in 2026.6.0). A declared floor is a recommendation about what to
+     run, so it does not point at a version with a known unpatched advisory. This is the
+     binding constraint, and `dependency-review` enforces it: pinning
+     `requirements-integration.txt` any lower fails CI.
 - **Python:** **`3.14`** (forced by HA ≥ 2026.3). Non-negotiable given the min-HA choice.
+
+Re-check constraint 3 when raising the floor next: it moves with new advisories, so the
+"oldest release with no known advisory" is not a fixed number.
 
 The floor is defended by CI: `requirements-integration.txt` pins HA to it, so the in-process
 phacc suite runs at the floor, and `tests/test_min_ha_version.py` fails if any declaration
