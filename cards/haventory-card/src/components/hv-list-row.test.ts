@@ -249,12 +249,21 @@ describe('hv-list-row: mobile affordances', () => {
     expect(q(el, '[data-testid="row-low"]')).toBe(null);
   });
 
+  // Pinned clock: the due date has to stay in the future *and* in the current
+  // year for the label to read "due Jul 28" — a literal date drifts into
+  // "Overdue" and into the with-year format as the real calendar moves.
   it('replaces the stepper with Check in for a checked-out row', async () => {
-    const el = await mount({ checked_out: true, due_date: '2026-07-28' }, { mobile: true });
-    expect(q(el, '[data-testid="row-stepper"]')).toBe(null);
-    const btn = q(el, '[data-testid="row-check-in"]');
-    expect(btn?.textContent).toContain('Check in');
-    expect(el.shadowRoot?.textContent).toContain('Checked out · due Jul 28');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 6, 20));
+    try {
+      const el = await mount({ checked_out: true, due_date: '2026-07-28' }, { mobile: true });
+      expect(q(el, '[data-testid="row-stepper"]')).toBe(null);
+      const btn = q(el, '[data-testid="row-check-in"]');
+      expect(btn?.textContent).toContain('Check in');
+      expect(el.shadowRoot?.textContent).toContain('Checked out · due Jul 28');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // A passed date used to render exactly like an upcoming one — same wording,
