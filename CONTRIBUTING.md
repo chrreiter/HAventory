@@ -17,7 +17,7 @@ Contributions of all kinds are welcome — bug reports, features, docs, and code
 ## Development setup
 
 Prerequisites: [uv](https://docs.astral.sh/uv/), Node 22.13+ (or 24 LTS), git.
-Targets are **Home Assistant 2026.7+** ⇒ **Python 3.14** and **Node 22.13+/24**.
+Targets are **Home Assistant 2026.3.1+** ⇒ **Python 3.14** and **Node 22.13+/24**.
 
 ```bash
 # One-shot bootstrap: uv env + card deps + pre-commit hooks

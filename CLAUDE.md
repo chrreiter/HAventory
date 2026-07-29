@@ -8,7 +8,7 @@ HAventory is a Home Assistant **custom integration** (domain `haventory`) for ho
 inventory tracking, plus a Lovelace **card** frontend. Local-push, single-instance, HA
 `Store`-backed persistence — no external services.
 
-Targets (as of WP1): minimum Home Assistant **2026.7** ⇒ **Python 3.14 everywhere**
+Targets: minimum Home Assistant **2026.3.1** ⇒ **Python 3.14 everywhere**
 (`requires-python >=3.14`, ruff `target-version = py314`, mypy `3.14`, CI 3.14; the source
 uses 3.14-only PEP 758 syntax). uv provisions the interpreter automatically. Node
 **22.13+ / 24 LTS** (`engines: ^22.13 || >=24`). Toolchain: **uv** (env + lockfile +
@@ -163,14 +163,24 @@ blog.
   (2026-03-04). Every HA release from 2026.3 onward requires Python 3.14. This is not
   optional: declaring a min HA of 2026.3+ forces Python 3.14 on the toolchain.
 
-### Decisions to adopt at release (min HA + Python)
+### Minimum supported HA + Python (SET at feature freeze, 2026-07-29)
 
-- **Minimum supported HA:** **`2026.7`** (current stable at review time; policy = "a recent
-  stable release"). Re-confirm against whatever is current stable on the actual release date.
+- **Minimum supported HA:** **`2026.3.1`**. Derived from the touch points, not from "a recent
+  stable release": every HA symbol the integration uses (`websocket_api` registration +
+  decorators, `helpers.storage.Store`, the config-entry lifecycle, `ConfigFlowResult`,
+  `ConfigEntryError`, `helpers.area_registry.async_get`, `loader.async_get_integration`,
+  `hass.async_create_background_task`, `LOVELACE_DATA` + `ResourceStorageCollection`'s
+  `async_items` / `async_create_item` / `async_update_item` / `async_delete_item`) is present
+  and unchanged in 2026.3.1, verified against that release's wheel. The floor is set by the
+  **Python coupling**, not by any API: 2026.3 is the first series requiring Python 3.14, and
+  the source uses PEP 758 syntax that does not parse on 3.13. `2026.3.1` rather than
+  `2026.3.0` because no phacc build pins 2026.3.0, so 2026.3.1 is the lowest version CI can
+  run against.
 - **Python:** **`3.14`** (forced by HA ≥ 2026.3). Non-negotiable given the min-HA choice.
 
-> Status: RECOMMENDED, pending owner confirmation of the exact min-HA number. The Python
-> floor is determined by the min-HA choice and is not a free variable.
+The floor is defended by CI: `requirements-integration.txt` pins HA to it, so the in-process
+phacc suite runs at the floor, and `tests/test_min_ha_version.py` fails if any declaration
+site drifts from `hacs.json`. Current stable is covered by the dogfood run instead.
 
 ### Toolchain targets for WP1 (record now, change lands in WP1 — not WP0.5)
 

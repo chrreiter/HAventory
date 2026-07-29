@@ -266,6 +266,6 @@ Note: a successful import emits `items/reloaded` and `locations/reloaded` (no `i
 
 ### Compatibility
 
-- Target HA: ≥ 2026.7; Python 3.14 (WP1 floors — see CLAUDE.md). The offline suite validates
+- Target HA: ≥ 2026.3.1; Python 3.14 (see CLAUDE.md). The offline suite validates
   the envelope against the stubs in `tests/conftest.py`; the phacc integration suite
   (`tests/integration/`) validates it against a real in-process HA core.
