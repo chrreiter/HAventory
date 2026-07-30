@@ -7,8 +7,11 @@ option keys/defaults for WebSocket rate limiting.
 # Integration domain used across all modules and entity unique IDs
 DOMAIN: str = "haventory"
 
-# Public integration version (kept in sync with manifest.json)
-INTEGRATION_VERSION: str = "0.0.1"
+# Public integration version, surfaced by `haventory/version` and stamped into
+# export documents. release-please rewrites the literal below on the annotation;
+# tests/test_release_version_consistency.py fails if it ever disagrees with
+# manifest.json.
+INTEGRATION_VERSION: str = "0.0.1"  # x-release-please-version
 
 # -----------------------------
 # WebSocket rate limiting (config-entry options)

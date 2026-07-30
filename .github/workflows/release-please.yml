@@ -1,17 +1,13 @@
 name: release-please
 
-# DORMANT until WP5 / Phase 3 (see CONTRIBUTING.md → Releases).
-#
-# This workflow is config-ready but does NOT run automatically: it has only a
-# manual `workflow_dispatch` trigger. To turn on automated release PRs, add the
-# `push` trigger to `main` (uncomment below). Running it (manually or on push)
-# opens a release PR that bumps versions across manifest.json / pyproject.toml /
-# card package.json and publishes a GitHub Release with notes generated from
-# Conventional Commit history.
+# Keeps a release PR open and up to date as conventional commits land on main;
+# merging it tags the release and publishes a GitHub Release with generated
+# notes. See CONTRIBUTING.md → Releases for the flow and for what each version
+# bump means here.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
-  # push:
-  #   branches: [main]
 
 permissions:
   contents: read
@@ -24,6 +20,26 @@ jobs:
       pull-requests: write
     steps:
       - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071  # v4.4.1
+        id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # The tag is the one version string release-please writes outside a file,
+      # so it is the one that can disagree with the five it writes inside them.
+      # It has to be checked here rather than from a `push: tags:` workflow:
+      # the tag is pushed with GITHUB_TOKEN, and GitHub does not start new
+      # workflow runs for events that token raises, so such a workflow would
+      # never fire. The file-to-file half of the check runs on the release PR
+      # itself, in the backend job (tests/test_release_version_consistency.py).
+      - name: Check out the published tag
+        if: steps.release.outputs.release_created == 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.release.outputs.tag_name }}
+
+      - name: Tag matches the declared version
+        if: steps.release.outputs.release_created == 'true'
+        run: python3 scripts/check_version_consistency.py --tag "$TAG"
+        env:
+          TAG: ${{ steps.release.outputs.tag_name }}
