@@ -20,6 +20,7 @@ repos:
         exclude: |
           (?x)^(
             cards/www/|
+            custom_components/haventory/haventory-card\.js|
             cards/haventory-card/package-lock\.json
           )
         additional_dependencies: ["tomli"]
@@ -30,10 +31,12 @@ repos:
       - id: end-of-file-fixer
         exclude: |
           (?x)^(
-            cards/www/
+            cards/www/|
+            custom_components/haventory/haventory-card\.js
           )
       - id: trailing-whitespace
         exclude: |
           (?x)^(
-            cards/www/
+            cards/www/|
+            custom_components/haventory/haventory-card\.js
           )

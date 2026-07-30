@@ -423,3 +423,131 @@ async def test_skips_when_resources_is_none(tmp_path, monkeypatch):
     hass.data["lovelace_data_key"] = types.SimpleNamespace(resources=None)
 
     await hav_init._register_frontend_module(hass)
+
+
+# --- card deployment into www/ -------------------------------------------
+#
+# HACS installs an Integration-category repo by copying `custom_components/`
+# only, so the card has to travel inside the integration and be placed in
+# `config/www/` at setup. Without that step every install registers nothing and
+# the card never appears — the failure the tests below exist to prevent.
+
+BUNDLED_CARD = (
+    Path(__file__).resolve().parents[1] / "custom_components" / "haventory" / "haventory-card.js"
+)
+# The real bundle is a few hundred KiB; this only has to rule out a placeholder
+# or a truncated copy, not pin a size the build is free to change.
+MIN_PLAUSIBLE_BUNDLE_BYTES = 1024
+
+
+def test_card_bundle_ships_with_the_integration():
+    """The built card is checked in beside the integration, or no install gets it."""
+    assert BUNDLED_CARD.is_file(), (
+        f"{BUNDLED_CARD} is missing — run `npm run build` in cards/haventory-card and commit it"
+    )
+    assert BUNDLED_CARD.stat().st_size > MIN_PLAUSIBLE_BUNDLE_BYTES, (
+        "bundled card is implausibly small"
+    )
+
+
+def test_sync_writes_when_the_destination_is_absent(tmp_path, monkeypatch):
+    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
+    bundled = tmp_path / "src" / "haventory-card.js"
+    bundled.parent.mkdir()
+    bundled.write_bytes(b"// build A")
+    destination = tmp_path / "www" / "haventory" / "haventory-card.js"
+
+    assert hav_init._sync_card_asset(bundled, destination) is True
+    assert destination.read_bytes() == b"// build A"
+
+
+def test_sync_overwrites_a_different_build(tmp_path, monkeypatch):
+    """An upgrade ships new bytes; the copy in www/ has to follow or the card is stale."""
+    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
+    bundled = tmp_path / "src" / "haventory-card.js"
+    bundled.parent.mkdir()
+    bundled.write_bytes(b"// build B")
+    destination = tmp_path / "www" / "haventory" / "haventory-card.js"
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(b"// build A")
+
+    assert hav_init._sync_card_asset(bundled, destination) is True
+    assert destination.read_bytes() == b"// build B"
+
+
+def test_sync_leaves_an_identical_file_alone(tmp_path, monkeypatch):
+    """Identical bytes => no write, so an unchanged install does not rewrite 400 KiB."""
+    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
+    bundled = tmp_path / "src" / "haventory-card.js"
+    bundled.parent.mkdir()
+    bundled.write_bytes(b"// build A")
+    destination = tmp_path / "www" / "haventory" / "haventory-card.js"
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(b"// build A")
+    before = destination.stat().st_mtime_ns
+
+    assert hav_init._sync_card_asset(bundled, destination) is False
+    assert destination.stat().st_mtime_ns == before
+
+
+def test_sync_is_a_no_op_without_a_bundle(tmp_path, monkeypatch):
+    """A source checkout with no build present must not crash setup."""
+    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
+    destination = tmp_path / "www" / "haventory" / "haventory-card.js"
+
+    assert hav_init._sync_card_asset(tmp_path / "missing.js", destination) is False
+    assert not destination.exists()
+
+
+@pytest.mark.asyncio
+async def test_deploy_offloads_the_copy_to_the_executor(tmp_path, monkeypatch):
+    """Reading and writing 400 KiB on the event loop is exactly what HA warns about."""
+    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
+    hass = make_hass(tmp_path, with_asset=False)
+
+    await hav_init._async_deploy_card_asset(hass)
+
+    assert hav_init._sync_card_asset in hass.executor_jobs
+
+
+@pytest.mark.asyncio
+async def test_deploy_installs_the_bundled_card(tmp_path, monkeypatch):
+    """End state: the card is in www/ even though nothing else put it there."""
+    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
+    hass = make_hass(tmp_path, with_asset=False)
+    destination = tmp_path / "www" / "haventory" / "haventory-card.js"
+    assert not destination.exists()
+
+    await hav_init._async_deploy_card_asset(hass)
+
+    assert destination.read_bytes() == BUNDLED_CARD.read_bytes()
+
+
+@pytest.mark.asyncio
+async def test_deployed_card_is_then_registrable(tmp_path, monkeypatch):
+    """The two steps compose: registration is a no-op unless the deploy ran first."""
+    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
+    hass = make_hass(tmp_path, with_asset=False)
+    lovelace_data = MockLovelaceData()
+    hass.data["lovelace_data_key"] = lovelace_data
+
+    await hav_init._async_deploy_card_asset(hass)
+    await hav_init._register_frontend_module(hass)
+
+    assert [c["url"] for c in lovelace_data.resources.created] == [
+        f"{CARD_PATH}?v={manifest_version()}"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_deploy_survives_an_unwritable_www(tmp_path, monkeypatch):
+    """A read-only config costs the dashboard, not the inventory: setup carries on."""
+    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
+    hass = make_hass(tmp_path, with_asset=False)
+
+    def refuse(*_args, **_kwargs):
+        raise PermissionError("read-only config")
+
+    monkeypatch.setattr(hav_init, "_sync_card_asset", refuse)
+
+    await hav_init._async_deploy_card_asset(hass)

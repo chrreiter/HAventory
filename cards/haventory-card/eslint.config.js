@@ -74,5 +74,13 @@ export default [
     files: ['e2e/**/*.mjs'],
     languageOptions: { ecmaVersion: 'latest', sourceType: 'module' },
     rules: { 'no-undef': 'off' }
+  },
+
+  // Build-time Node scripts. Same reasoning as the block above: they run under
+  // Node, never in the bundle, so `console` and friends are not undefined here.
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: { ecmaVersion: 'latest', sourceType: 'module' },
+    rules: { 'no-undef': 'off' }
   }
 ];

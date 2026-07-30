@@ -1,2 +1,7 @@
 # Shell scripts must stay LF — CRLF breaks bash (incl. Git Bash on Windows).
 *.sh text eol=lf
+
+# The shipped card bundle is build output, checked in so HACS installs carry it.
+# No EOL conversion: the working-tree bytes must equal what the build wrote, or
+# CI's staleness check would compare line endings instead of content.
+custom_components/haventory/haventory-card.js -text

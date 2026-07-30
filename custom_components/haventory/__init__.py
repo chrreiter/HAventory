@@ -42,6 +42,11 @@ LOGGER = logging.getLogger(__name__)
 
 _MANIFEST_PATH = Path(__file__).with_name("manifest.json")
 _CARD_URL_PATH = "/local/haventory/haventory-card.js"
+_CARD_FILENAME = "haventory-card.js"
+# The card ships inside the integration directory because that is the only thing
+# HACS copies for an Integration-category repository. It is served from
+# `config/www/`, which nothing copies it into, so setup does that itself.
+_BUNDLED_CARD_PATH = Path(__file__).with_name(_CARD_FILENAME)
 
 
 # This integration is config-entry only; no YAML configuration is accepted.
@@ -115,7 +120,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register WebSocket commands
     ws_mod.setup(hass)
 
-    # Auto-register frontend card asset if present
+    # Install the bundled card into www/, then register it. Order matters: the
+    # registration below is a no-op unless the file is already on disk.
+    await _async_deploy_card_asset(hass)
     await _register_frontend_module(hass)
 
     return True
@@ -338,6 +345,66 @@ async def _rewrite_card_resource(resources: Any, stale: dict[str, Any], url: str
             "Failed to update frontend resource",
             extra={"domain": DOMAIN, "op": "frontend_register", "url": url},
             exc_info=True,
+        )
+
+
+def _sync_card_asset(bundled: Path, destination: Path) -> bool:
+    """Copy the bundled card to `destination` when it differs. Blocks — use the executor.
+
+    Returns True when the file was written. Compares content rather than mtime:
+    an install copies the bundle around, so timestamps say nothing about which
+    build a file holds, and rewriting 400 KiB on every start would be wasteful
+    where an upgrade is the only time the bytes actually change.
+    """
+    if not bundled.is_file():
+        return False
+    payload = bundled.read_bytes()
+    if destination.is_file() and destination.read_bytes() == payload:
+        return False
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(payload)
+    return True
+
+
+async def _async_deploy_card_asset(hass: HomeAssistant) -> None:
+    """Put the card the integration ships where Home Assistant serves it from.
+
+    HACS installs an Integration-category repository by copying
+    `custom_components/<domain>/` and nothing else — it never writes to
+    `config/www/`. Without this the card would simply never appear: the resource
+    registration below finds no file, skips, and the only symptom is an empty
+    card picker.
+
+    A failure here is not fatal. The integration is fully usable over its
+    services and WebSocket API without the card, so a read-only or full
+    `config/www` costs the dashboard, not the inventory.
+    """
+    try:
+        destination = Path(hass.config.path("www", "haventory", _CARD_FILENAME))
+    except AttributeError:
+        LOGGER.debug(
+            "hass.config not available; skipping card deployment",
+            extra={"domain": DOMAIN, "op": "frontend_deploy"},
+        )
+        return
+
+    try:
+        written = await hass.async_add_executor_job(
+            _sync_card_asset, _BUNDLED_CARD_PATH, destination
+        )
+    except OSError:
+        LOGGER.warning(
+            "Could not copy the HAventory card into the www folder; "
+            "the card will not load until it is placed there by hand",
+            extra={"domain": DOMAIN, "op": "frontend_deploy", "path": str(destination)},
+            exc_info=True,
+        )
+        return
+
+    if written:
+        LOGGER.info(
+            "Installed the HAventory card into the www folder",
+            extra={"domain": DOMAIN, "op": "frontend_deploy", "path": str(destination)},
         )
 
 

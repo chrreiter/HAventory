@@ -26,6 +26,11 @@ HAventory isn't in the HACS default store yet. To install from this repository:
 4. Add it via **Settings → Devices & Services → Add Integration → HAventory**.
 5. Refresh your browser (Ctrl/Cmd+Shift+R) so the Lovelace card appears in the picker.
 
+The card ships inside the integration and is copied to `<config>/www/haventory/` the first
+time the entry is set up, then registered as a Lovelace resource — there is nothing to
+download or place by hand. An upgrade replaces the copy, and the resource URL carries the
+version as `?v=`, so the browser picks up the new bundle instead of a cached one.
+
 Minimum Home Assistant version: **2026.6.0** — the oldest release that both runs the
 integration and carries no known security advisory. Developers: see the Developer
 Checklist below and [CONTRIBUTING.md](CONTRIBUTING.md).

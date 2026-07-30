@@ -50,6 +50,13 @@ npm run build
 Or run everything at once with `scripts/ci_local.sh`. CI runs the same checks
 plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
 
+**`npm run build` also refreshes `custom_components/haventory/haventory-card.js`, and that
+copy is checked in — commit it with any card change.** HACS installs an
+Integration-category repository by copying `custom_components/` and nothing else, so a card
+that lives only in `cards/www/` (git-ignored) never reaches a user; setup copies the bundled
+one into `<config>/www/haventory/`. A tracked build artifact can drift from its source, so
+CI rebuilds and fails on any diff rather than trusting the commit.
+
 ## Conventions
 
 - **Test-driven**: every feature/fix ships with tests — happy path plus at least

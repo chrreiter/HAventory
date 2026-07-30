@@ -142,6 +142,18 @@ jobs:
           path: cards/haventory-card/coverage/**
       - name: Build
         run: npm run build
+      - name: Shipped card bundle is current
+        # `npm run build` refreshes custom_components/haventory/haventory-card.js,
+        # which is checked in because HACS only copies custom_components/ for an
+        # Integration-category repo. A tracked build artifact can silently go
+        # stale against its source, and the symptom would be a released card that
+        # is a version behind — so a diff here is a failure, not a fixup.
+        working-directory: ${{ github.workspace }}
+        run: |
+          if ! git diff --exit-code --stat custom_components/haventory/haventory-card.js; then
+            echo '::error::The shipped card bundle is stale. Run `npm run build` in cards/haventory-card and commit the result.'
+            exit 1
+          fi
 
   actionlint:
     runs-on: ubuntu-latest
