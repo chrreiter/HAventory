@@ -18,9 +18,16 @@
 #         .venv-integration/bin/python -m pytest -o asyncio_mode=auto tests/integration
 #     or simply: scripts/test_integration.sh
 #
-# Version policy: pin the Home Assistant core to the WP0.5 minimum-supported
-# stable (2026.7.3). Because each phacc release pins one exact HA version, this HA
-# pin uniquely selects the matching phacc build — no separate phacc version guess
-# is needed. Bump both together (raise the HA pin) when the minimum-HA target moves.
-homeassistant==2026.7.3
+# Version policy: pin the Home Assistant core to the DECLARED MINIMUM supported
+# version (hacs.json `homeassistant`), so this suite defends the floor rather than
+# re-testing whatever is current. Because each phacc release pins one exact HA
+# version, this HA pin uniquely selects the matching phacc build — no separate
+# phacc version guess is needed. Raise both together (by raising the HA pin) only
+# when the declared minimum moves; `tests/test_min_ha_version.py` fails if the two
+# drift apart.
+#
+# 2026.6.0 rather than 2026.3.x, which the API touch points would also allow:
+# every release below 2026.6.0 is affected by GHSA-x84v-g949-293w (high, fixed in
+# 2026.6.0), and the dependency-review check fails the pin outright.
+homeassistant==2026.6.0
 pytest-homeassistant-custom-component

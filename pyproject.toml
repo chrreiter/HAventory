@@ -5,7 +5,7 @@ description = "Home Assistant custom integration for household inventory trackin
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "chrreiter" }]
-# Matches the declared HA runtime (min HA 2026.7 => Python 3.14). uv provisions
+# Matches the declared HA runtime (min HA 2026.6.0 => Python 3.14). uv provisions
 # 3.14 automatically (`uv sync` / `uv python install 3.14`); dev environments
 # must allow the interpreter download or preinstall 3.14.
 requires-python = ">=3.14"
@@ -76,7 +76,7 @@ quote-style = "preserve"
 "scripts/**" = ["ASYNC240", "ASYNC250"]
 
 [tool.mypy]
-# python_version matches requires-python / ruff target (HA 2026.7 => 3.14).
+# python_version matches requires-python / ruff target (HA 2026.6.0 => 3.14).
 python_version = "3.14"
 files = ["custom_components/haventory"]
 namespace_packages = true

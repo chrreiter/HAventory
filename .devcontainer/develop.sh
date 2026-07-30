@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Run Home Assistant with HAventory (+ HACS) against the working tree.
 #
-# This is the WP4 E2E hook: it brings up a real Home Assistant (the declared
-# 2026.7 / Python 3.14 runtime, provisioned by uv) with the integration
-# symlinked in, so edits are picked up on restart. Requires network access.
+# Brings up a real Home Assistant (current stable on Python 3.14, provisioned by
+# uv) with the integration symlinked in, so edits are picked up on restart. This
+# runs current stable, not the declared 2026.6.0 floor — the floor is what the
+# phacc suite pins. Requires network access.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
