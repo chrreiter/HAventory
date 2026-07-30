@@ -220,6 +220,111 @@ From Git Bash, pass the document as a native path with forward slashes
 (`"C:/Users/you/backup.json"`) and prefix the command with `MSYS_NO_PATHCONV=1` if you
 override `--path` — see the path-conversion gotcha below.
 
+## Verification harnesses
+
+Four checks that need a real instance and a real browser, each with its own oracle so a
+run either passes or says why not. All are read-only except `lifecycle_probe.py`.
+
+| harness | what it proves |
+|---|---|
+| `rl_banner.mjs` | the card's rate-limit degraded-banner lifecycle, with the WS frames that caused each state |
+| `visual_pass.mjs` | every card surface still opens, at desktop and mobile widths |
+| `import_policies.mjs` | the import sheet describes the conflict policy the backend actually applied |
+| `log_sweep.py` | the container log obeys the error taxonomy's severity policy |
+| `lifecycle_probe.py` | resource cache-bust rewriting, schema-downgrade refusal, entry removal/re-add |
+
+### Rate-limit banner lifecycle
+
+```bash
+cd .claude/skills/run-haventory
+node rl_banner.mjs                       # both scenarios; leaves rate limiting OFF
+node rl_banner.mjs --scenario exhausted   # just the paused -> Refresh half
+node rl_banner.mjs --observe 30           # watch only; never touches the options flow
+```
+
+Squeezes the real per-connection command budget through the options flow so the card's
+`subscribe` is refused, then reads what it renders. A refusal is retried four times
+(400/800/1600/3200 ms), so there are two outcomes to check and both are: a retry that wins
+must clear the banner with no user action and offer no button, and a budget that outlasts
+the whole window must switch the wording to "until you refresh" and grow a Refresh that
+restores live updates. Prints a WS trace next to the banner timeline — a paused banner with
+no `rate_limited` frame behind it is a card bug, one with a refusal behind it is the card
+doing its job. A scenario whose budget never provoked its state is reported
+**INCONCLUSIVE**, not as a pass.
+
+Rate limiting is reset to OFF on the way out, including after a failure — every other
+harness assumes it is off.
+
+### Visual surface pass
+
+```bash
+cd .claude/skills/run-haventory
+node visual_pass.mjs --out before     # then make the change, redeploy
+node visual_pass.mjs --out after      # and compare the two folders
+node visual_pass.mjs --only mobile --surfaces detail-sheet,filter-sheet
+node visual_pass.mjs --list           # surface names
+```
+
+Fourteen desktop surfaces and eight mobile ones, each a recipe of clicks against the card's
+own `data-testid`s. It is a DOM check as much as a screenshot run: a surface counts as
+captured only if its root element exists afterwards, so a renamed testid fails loudly
+instead of silently photographing the wrong screen. Exit is non-zero if any surface failed
+to open or the browser logged a console error. The narrow layout is a different component
+tree (sheets, not panels), which is why the two lists differ rather than sharing one.
+
+### Import policy cross-check
+
+```bash
+cd .claude/skills/run-haventory
+node import_policies.mjs              # synthesizes a document from live data
+node import_policies.mjs --doc backup.json
+```
+
+Runs all three policies twice — once through `haventory/import/preview` on a direct WS
+connection, once through the card's sheet — and compares the eight bucket counts the sheet
+renders against the ones the server returned, plus the conflict sentence against the policy
+it was computed under. Writes nothing: preview is a server-side dry run and there is no
+`--apply`. With no `--doc` it builds its own document by exporting the live inventory,
+cutting it to a handful of entities and editing some of them, which is the only way to get
+entries in all four buckets without mutating anything.
+
+### Log severity sweep
+
+```bash
+uv run python .claude/skills/run-haventory/log_sweep.py --since 30m
+uv run python .claude/skills/run-haventory/log_sweep.py --all --show 20
+```
+
+Groups the container log into records (so a traceback stays with its header) and sorts them
+three ways: **BLOCKING** — an HAventory traceback, an `unknown_error`, or a
+client-recoverable code logged at ERROR; **EXPECTED** — the contract's WARNING rejections,
+which fuzz layers produce by the hundred; **KNOWN** — type-loose frames HA core rejects
+before `ws_guard` runs (open item 53), surfaced without failing the sweep. Exits 1 on any
+blocking finding. Run it after every online layer: offline stubs stay green while real HA
+throws, which is how the `__slots__` bug was found.
+
+### Lifecycle probe (restarts HA, edits `.storage`)
+
+```bash
+uv run python .claude/skills/run-haventory/lifecycle_probe.py resources --yes
+uv run python .claude/skills/run-haventory/lifecycle_probe.py downgrade --yes
+uv run python .claude/skills/run-haventory/lifecycle_probe.py entry --yes
+uv run python .claude/skills/run-haventory/lifecycle_probe.py all --yes
+```
+
+`resources` sets the Lovelace resource to each shape a restart can find — hand-pinned
+`?v=<hash>`, stale `?v=<old version>`, bare URL — restarts, and asserts one entry survives
+**under the original resource id**; a second entry would load the card module twice and the
+second `customElements.define` would throw. `downgrade` writes a higher `schema_version`
+into the store and asserts the entry lands in `setup_error` (not `setup_retry` — retrying
+cannot teach this build a newer schema) with the payload untouched. `entry` removes the
+config entry, checks the resource went with it and the store did not, then re-adds through
+the config flow and checks exactly one resource comes back.
+
+`downgrade` and `entry` snapshot the store first and restore it on the way out, including
+on failure — but each subcommand restarts the container several times, so point it only at
+the disposable dev instance.
+
 ## Test
 
 Offline suites (no HA needed — full gate incl. lint is in CLAUDE.md):
@@ -229,8 +334,15 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
 (cd cards/haventory-card && npx vitest run)
 ```
 
-Expected (as of WP4): backend ~200 passed / 22 skipped in ~7 s; frontend 163 passed
-across 17 files in ~11 s.
+Expected at feature freeze: backend 350 passed / 22 skipped in ~11 s; frontend 812 passed
+across 42 files in ~30 s.
+
+The in-process HA integration suite (`scripts/test_integration.sh`, real HA core via
+phacc) does **not** run on this Windows host: the script builds a POSIX venv path and HA
+core imports `fcntl`. A throwaway `python:3.14-slim` container is the proven way to run it
+here — one `docker run` with the repo bind-mounted, `pip install -r
+requirements-integration.txt`, then `pytest -o asyncio_mode=auto tests/integration`. That
+path also covers hosts whose WSL has no DNS.
 
 Online smoke against the running container (non-destructive as long as
 `HA_CONTAINER` is unset — verify with `echo $HA_CONTAINER` first):
@@ -257,6 +369,12 @@ clean-start mode), then `Online smoke test completed successfully.`
 - **A card change you can't see in the browser is almost always the 31-day
   `/local/` cache** — run `pin_resource.py` (see Deploy) before concluding the fix
   didn't work. Hard-reload (Ctrl+Shift+R) also works, once.
+- **`.storage/lovelace_resources` on disk lags the running instance by ~15 s.** HA's
+  `Store` debounces its writes, so reading that file right after a restart shows the
+  *previous* resource URL while the in-memory collection already serves the new one.
+  Ask the running instance (`lovelace/resources` over WS, as `pin_resource.py` and
+  `lifecycle_probe.py` do) rather than the file — a stale read here looks exactly like
+  the cache-busting rewrite having failed, and it has not.
 - **HA's service worker reloads the page ~30–90 s into a fresh browser context**,
   destroying Playwright's JS execution context mid-run. It looks exactly like a card
   crash but leaves no console output and no HA log entry. `screenshot.mjs` blocks
