@@ -11,10 +11,9 @@ break-it driver), the **live-update browser smoke** `cards/haventory-card/e2e/li
 and the **online WS pytest smokes** (`-m online`).
 
 All paths are relative to the repo root. This is a **Windows host**: run `.sh`/`.py` through
-Git Bash. The project `.venv` is broken here (OneDrive can't delete its `lib64` symlink), so
-**every Python gate runs through an ephemeral `uv run --no-project` env** — the offline
-`.venv` is never used. Canonical clean-Linux/CI commands live in the README ("The gate");
-the ones below are the verified Windows forms.
+Git Bash. Plain `uv run` works against the project `.venv` — the `--no-project` form below is
+still correct and is what to fall back to if the venv is ever unusable again, but it is no
+longer required. Canonical clean-Linux/CI commands live in the README ("The gate").
 
 ## Prerequisites
 
@@ -34,7 +33,7 @@ Both halves must be green. Backend, from the repo root:
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --no-project --python 3.14 \
   --with pytest --with pytest-asyncio --with voluptuous --with aiohttp \
   python -m pytest -q
-# → 265 passed, 22 skipped
+# → 350 passed, 22 skipped
 
 uv run --no-project --python 3.14 --with ruff==0.15.22 ruff check custom_components tests
 # → All checks passed!
@@ -49,7 +48,7 @@ Frontend, from `cards/haventory-card`:
 npm ci            # first run, or if node_modules is partial (missing rolldown binding)
 npm run lint      # eslint  → clean
 npm run typecheck # tsc --noEmit → clean
-npm test          # vitest  → 165 passed
+npm test          # vitest  → 812 passed across 42 files
 npm run build     # vite → ../www/haventory/haventory-card.js (git-ignored)
 ```
 
@@ -100,7 +99,7 @@ $RUN subteardown   # HA-core unsubscribe_events teardown (the card's path)
 $RUN statsprobe    # stats broadcast: ~1 counts event per mutation
 $RUN ratelimit     # enable a tight per-conn budget, hammer, disable, confirm recovery
 $RUN races         # rename→version invalidation, concurrent rename, adjust serialization
-$RUN bulk 1000     # create 250→500→1000 (latency curve) + delete; ~25s
+$RUN bulk 1000     # create 250→500→1000 (latency curve) + delete; ~3½ min on a 2000-item store
 MSYS_NO_PATHCONV=1 HA_CONTAINER=home-assistant $RUN restart   # DESTRUCTIVE, last
 $RUN cleanup       # sweep any leftover stress_test_ data
 ```
@@ -120,11 +119,13 @@ $RUN cleanup       # sweep any leftover stress_test_ data
 | `cleanup` | delete everything prefixed `stress_test_` |
 
 **A run is not clean until you scan the server logs** — offline stubs can stay green while
-real HA throws (that is how the `__slots__` bug #97 was found):
+real HA throws (that is how the `__slots__` bug #97 was found). The sibling skill's sweep
+sorts the log by the taxonomy's severity policy instead of by keyword, so the fuzz layers'
+hundreds of contract-defined WARNINGs do not bury the one line that matters:
 
 ```bash
-docker logs home-assistant --since 30m 2>&1 | grep -iE 'traceback|AttributeError|unknown_error'
-# expected: only ValidationError/NotFoundError/ConflictError tracebacks from the fuzz layers
+uv run python .claude/skills/run-haventory/log_sweep.py --since 30m
+# → BLOCKING: 0 ... verdict: PASS
 ```
 
 ## Run (agent path): live-update browser smoke
@@ -166,8 +167,9 @@ not re-verified here.
 
 ## Gotchas
 
-- **Broken project `.venv`** — plain `uv run <x>` fails with `failed to remove file .venv/lib64:
-  Zugriff verweigert` (OneDrive won't delete the symlink). Always add `--no-project`.
+- **`--no-project` is the fallback, not the rule** — plain `uv run` works. If it ever fails with
+  `failed to remove file .venv/lib64: Zugriff verweigert` (OneDrive refusing to delete the
+  symlink), add `--no-project` and the `--with` list to run from an ephemeral env instead.
 - **Offline suite needs Python 3.14** (PEP 758 source) and `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`;
   `--with aiohttp` is only so the `*_online.py` / stress modules import at collection time.
 - **Frontend `node_modules` is often partial** (missing `@rolldown/binding-win32-x64-msvc` →
@@ -188,7 +190,8 @@ not re-verified here.
 
 ## Troubleshooting
 
-- **`failed to remove file .venv/lib64: Zugriff verweigert`** — you dropped `--no-project`. Add it.
+- **`failed to remove file .venv/lib64: Zugriff verweigert`** — the project venv is unusable
+  again; re-run with `--no-project` plus the `--with` list.
 - **`Cannot find module '@rolldown/binding-win32-x64-msvc'`** — `npm ci` in `cards/haventory-card`.
 - **`No module named 'aiohttp'`** during pytest collection — add `--with aiohttp` to the uv run.
 - **`GetFileAttributesEx C:\c:` on `docker cp`** — host-path mangling under Git Bash; use the
