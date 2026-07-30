@@ -31,6 +31,7 @@ Run:  uv run --no-project --with aiohttp python .claude/skills/test-haventory/st
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import statistics
@@ -143,6 +144,35 @@ async def connect() -> WSConn:
 
 
 # ----------------------------------------------------------------------------- helpers
+
+
+@contextlib.asynccontextmanager
+async def keepalive(conn: WSConn, interval: float = 30.0):
+    """Keep an otherwise idle control connection alive across a long workload.
+
+    aiohttp only answers the server's WebSocket pings while a receive() is in
+    flight. Nothing awaits the control connection while the workers run, so HA
+    closes it after ~90s and the post-run health check dies with
+    ClientConnectionResetError("Cannot write to closing transport") — which reads
+    as a backend fault and is not one. Pumping a cheap command keeps a receive()
+    in flight.
+
+    Nothing else may use `conn` for the duration: WSConn is single-task by
+    design, and two callers interleaving on one socket would cross their frames.
+    """
+
+    async def _pump() -> None:
+        while True:
+            await asyncio.sleep(interval)
+            await conn.call("haventory/ping")
+
+    task = asyncio.create_task(_pump())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
 async def health(conn: WSConn) -> dict:
@@ -880,9 +910,13 @@ async def cmd_bulk(target: int = 1000, conns: int = 8) -> None:
             ids: list[str] = []
             errs: list[dict] = []
             t0 = time.monotonic()
-            await asyncio.gather(
-                *[_create_worker(pool[i], shards[i], None, lat, ids, errs) for i in range(conns)]
-            )
+            async with keepalive(control):
+                await asyncio.gather(
+                    *[
+                        _create_worker(pool[i], shards[i], None, lat, ids, errs)
+                        for i in range(conns)
+                    ]
+                )
             wall = time.monotonic() - t0
             created_total.extend(ids)
             all_latencies.extend(lat)
@@ -933,7 +967,8 @@ async def cmd_bulk(target: int = 1000, conns: int = 8) -> None:
                     del_err.append({"id": iid, "error": fr.get("error")})
 
         t0 = time.monotonic()
-        await asyncio.gather(*[_del_worker(pool[i], del_shards[i]) for i in range(conns)])
+        async with keepalive(control):
+            await asyncio.gather(*[_del_worker(pool[i], del_shards[i]) for i in range(conns)])
         wall = time.monotonic() - t0
         after2 = await health(control)
         print(f"  deleted={del_ok[0]} errors={len(del_err)} wall={wall:.2f}s")
