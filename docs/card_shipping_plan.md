@@ -13,7 +13,7 @@ Ship the built card **inside** `custom_components/haventory/` (the only tree HAC
 copies for an integration-category repo), serve it from there over a registered
 static path, and load it through **two** mechanisms with one identical URL:
 
-1. the existing Lovelace resource registration (kept — covers Cast and safe mode,
+1. the existing Lovelace resource registration (kept — covers HA Cast,
    storage-mode only), and
 2. `homeassistant.components.frontend.add_extra_js_url` (added — public API whose
    docstring names custom integrations as the caller; covers YAML resource mode and
@@ -34,7 +34,9 @@ Package the bundle via HACS `zip_release`: CI builds the card and attaches
 - **A single loader** is strictly worse than two: the Lovelace resource collection is
   internal API (`lovelace` is `quality_scale: internal`) and cannot work in YAML
   resource mode (`ResourceYAMLCollection` has no `async_create_item`); `add_extra_js_url`
-  is skipped in safe mode and not honored by HA Cast. Together they cover everything.
+  is not honored by HA Cast. Together they cover everything that can load a custom card
+  at all — safe mode disables custom integrations entirely, so neither loader nor the
+  static route exists there, whatever ships.
   Registering the **same URL string** twice is safe — the browser module map dedupes;
   two *different* URLs for the same element throw `customElements.define` errors.
 
@@ -118,7 +120,7 @@ option, and nothing in the dogfood plan installs via HACS-from-branch (the dev l
 | R8 | `zip_release` 404s branch installs | `hide_default_branch: true` + README states releases-only | HACS source (`async_install_repository` takes the zip branch unconditionally) |
 | R9 | User installs in the window between release creation and asset upload | Draft release → upload asset → publish, all in one job | release workflow review |
 | R10 | `on: release` workflow never fires (GITHUB_TOKEN) | Build/upload inside the release-please job, gated on `release_created` | same class of fix as the existing tag check |
-| R11 | Safe mode drops `extra_module_url`s | Lovelace resource loader still present | design |
+| R11 | Safe mode leaves the card unloaded | Nothing to mitigate: safe mode disables custom integrations, so the static route and both loaders are absent by design | design |
 | R12 | HA Cast ignores `extra_module_url`s | Lovelace resource loader still present | design |
 | R13 | Wrong zip nesting (extractall does no prefix stripping) | Zip from **inside** `custom_components/haventory`; workflow asserts `manifest.json` and `www/haventory-card.js` at zip root | workflow step |
 | R14 | Old dev installs keep an orphan `www/haventory/` | README keeps a one-line legacy cleanup note; new installs write nothing to `www/` | docs |

@@ -38,7 +38,7 @@ directory, and nothing is left behind there when you uninstall.
 
 Two mechanisms then point the frontend at that one URL, so every way of viewing a
 dashboard is covered: a Lovelace resource entry (registered automatically in the default
-storage mode — this is what HA Cast and safe mode read) and the frontend's extra-module
+storage mode — this is what HA Cast reads) and the frontend's extra-module
 list (which needs no stored state and works in YAML resource mode). Both receive the same
 URL, so the card is only ever defined once.
 

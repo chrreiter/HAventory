@@ -2,7 +2,7 @@
 
 The bundle ships inside the integration package and is served from there over a
 registered static path. Two loaders then point the frontend at it — the Lovelace
-resource collection (storage mode only; covers HA Cast and safe mode) and the
+resource collection (storage mode only; covers HA Cast) and the
 frontend's extra-module URL (covers YAML resource mode) — and they must receive
 the *same* URL string, or the card module is evaluated twice and the second
 ``customElements.define`` throws.

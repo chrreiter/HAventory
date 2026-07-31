@@ -395,8 +395,8 @@ def _register_extra_js_url(hass: HomeAssistant, url: str) -> None:
     """Have the frontend load the card as an extra module on every dashboard.
 
     This is the loader that reaches YAML resource mode, where the resource
-    collection is read-only, and it persists nothing. Safe mode and HA Cast
-    ignore it, which is what the Lovelace resource is still there for.
+    collection is read-only, and it persists nothing. HA Cast ignores it,
+    which is what the Lovelace resource is still there for.
     """
     if add_extra_js_url is None:
         LOGGER.debug(
