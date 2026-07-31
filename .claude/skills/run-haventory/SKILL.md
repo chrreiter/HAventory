@@ -50,13 +50,13 @@ cd .claude/skills/run-haventory && npm install --no-audit --no-fund && npx playw
 
 ## Deploy current branch into HA
 
-Builds the card (`npm ci` + `vite build`), copies integration + card into the container,
-restarts HA (~30 s), and initialises the config entry via WS. Run from Git Bash:
+Builds the card **into** `custom_components/haventory/www/` so it rides along with the
+component copy, then copies the integration into the container, restarts HA (~30 s), and
+initialises the config entry via WS. Run from Git Bash:
 
 ```bash
 set -a; . ./.env; set +a
 bash scripts/reload_addon.sh --container home-assistant --sleep 30 --tail-logs
-uv run python .claude/skills/run-haventory/pin_resource.py   # <- always
 ```
 
 Success looks like: `{"ok": true, "version": {...}}` plus a
@@ -64,17 +64,14 @@ Success looks like: `{"ok": true, "version": {...}}` plus a
 Backend-only change and HA already has the current card? The same script is still the
 path — it redeploys both; there is no partial-deploy variant.
 
-**`pin_resource.py` is not optional after a card change.** HA serves `/local/` with
-`Cache-Control: public, max-age=2678400` (31 days, no revalidation), so the browser
-keeps running the *old* card from disk cache even though the new file is on the server.
-The script re-registers the Lovelace resource as
-`/local/haventory/haventory-card.js?v=<content-hash>` — a new build is a new URL, which
-no cache can satisfy — and collapses the duplicate resource HA's restart re-adds. To
-confirm the server itself has the new bytes:
+The integration serves the bundle itself at `/haventory_static/haventory-card.js`, with
+**no `Cache-Control` header**, so the browser revalidates and a rebuild is picked up on a
+normal reload — there is nothing to pin. To confirm the server has the new bytes:
 
 ```bash
-sha256sum cards/www/haventory/haventory-card.js
-curl -s "$HA_BASE_URL/local/haventory/haventory-card.js" | sha256sum   # must match
+curl -sI "$HA_BASE_URL/haventory_static/haventory-card.js" | grep -i cache-control   # no output
+sha256sum custom_components/haventory/www/haventory-card.js
+curl -s "$HA_BASE_URL/haventory_static/haventory-card.js" | sha256sum   # must match
 ```
 
 ### Wipe HAventory from the dev HA (fresh-start testing)
@@ -92,6 +89,9 @@ curl -s -X DELETE -H "Authorization: Bearer $HA_TOKEN" \
 docker exec home-assistant sh -lc \
   'rm -f /config/.storage/haventory_store*; rm -rf /config/custom_components/haventory /config/www/haventory'
 ```
+
+(`/config/www/haventory` is only there on instances deployed before the bundle moved into
+the integration package; new deploys write nothing to `www/`.)
 
 Then redeploy as above. A clean result logs `Storage health: schema_version=N items=0
 locations=0`. (`grep -il haventory /config/.storage/*` still matches
@@ -313,9 +313,11 @@ uv run python .claude/skills/run-haventory/lifecycle_probe.py all --yes
 ```
 
 `resources` sets the Lovelace resource to each shape a restart can find — hand-pinned
-`?v=<hash>`, stale `?v=<old version>`, bare URL — restarts, and asserts one entry survives
-**under the original resource id**; a second entry would load the card module twice and the
-second `customElements.define` would throw. `downgrade` writes a higher `schema_version`
+`?v=<hash>`, stale `?v=<old version>`, bare URL, plus the two legacy
+`/local/haventory/haventory-card.js` shapes an install predating the integration-served
+bundle carries — restarts, and asserts one entry survives **under the original resource
+id**; a second entry would load the card module twice and the second
+`customElements.define` would throw. `downgrade` writes a higher `schema_version`
 into the store and asserts the entry lands in `setup_error` (not `setup_retry` — retrying
 cannot teach this build a newer schema) with the payload untouched. `entry` removes the
 config entry, checks the resource went with it and the store did not, then re-adds through
@@ -366,15 +368,16 @@ clean-start mode), then `Online smoke test completed successfully.`
   (`"C:/Users/you/backup.json"`). Only values starting with `/` are affected, and the
   defaults never cross the command line — which is why `--path` looks fine right up
   until the first time you set it.
-- **A card change you can't see in the browser is almost always the 31-day
-  `/local/` cache** — run `pin_resource.py` (see Deploy) before concluding the fix
-  didn't work. Hard-reload (Ctrl+Shift+R) also works, once.
+- **A card change you can't see in the browser**: the bundle is served without
+  `Cache-Control`, so the browser revalidates and a plain reload is normally enough.
+  Check the deployed bytes with the `sha256sum` pair under Deploy before concluding the
+  fix didn't work; a hard reload (Ctrl+Shift+R) settles the rest.
 - **`.storage/lovelace_resources` on disk lags the running instance by ~15 s.** HA's
   `Store` debounces its writes, so reading that file right after a restart shows the
   *previous* resource URL while the in-memory collection already serves the new one.
-  Ask the running instance (`lovelace/resources` over WS, as `pin_resource.py` and
-  `lifecycle_probe.py` do) rather than the file — a stale read here looks exactly like
-  the cache-busting rewrite having failed, and it has not.
+  Ask the running instance (`lovelace/resources` over WS, as `lifecycle_probe.py` does)
+  rather than the file — a stale read here looks exactly like the cache-busting rewrite
+  having failed, and it has not.
 - **HA's service worker reloads the page ~30–90 s into a fresh browser context**,
   destroying Playwright's JS execution context mid-run. It looks exactly like a card
   crash but leaves no console output and no HA log entry. `screenshot.mjs` blocks

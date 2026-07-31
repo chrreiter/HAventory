@@ -31,3 +31,12 @@
 # 2026.6.0), and the dependency-review check fails the pin outright.
 homeassistant==2026.6.0
 pytest-homeassistant-custom-component
+
+# The wheel HA's `frontend` component declares in its own manifest `requirements`.
+# A real Home Assistant installs component requirements at startup; this harness
+# does not, so without it `frontend` fails to set up with
+# `ModuleNotFoundError: hass_frontend` — and HAventory, which lists `frontend`
+# among its manifest dependencies, never gets set up at all. The pin must match
+# what the HA release above asks for; `tests/integration/test_frontend.py`
+# compares the two and fails when they drift.
+home-assistant-frontend==20260527.4

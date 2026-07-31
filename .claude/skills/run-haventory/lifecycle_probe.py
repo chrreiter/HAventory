@@ -210,9 +210,13 @@ async def check_resources() -> list[Result]:
         print(f"  starting from id={original['id']} url={original['url']}")
 
         variants = [
-            ("pinned", "/local/haventory/haventory-card.js?v=deadbeefcafe"),
-            ("stale", "/local/haventory/haventory-card.js?v=0.0.0"),
-            ("bare", "/local/haventory/haventory-card.js"),
+            ("pinned", "/haventory_static/haventory-card.js?v=deadbeefcafe"),
+            ("stale", "/haventory_static/haventory-card.js?v=0.0.0"),
+            ("bare", "/haventory_static/haventory-card.js"),
+            # Installs predating the move of the bundle into the integration
+            # package: the entry must migrate in place, not gain a sibling.
+            ("legacy", "/local/haventory/haventory-card.js"),
+            ("legacy-versioned", "/local/haventory/haventory-card.js?v=0.0.1"),
         ]
         for label, url in variants:
             ws = await connect(session)

@@ -1,6 +1,6 @@
 # Card shipping plan — HACS install with zero manual card steps
 
-Status: **planned, not implemented**. This document is the implementation contract for
+Status: **PR-1 implemented; PR-2 outstanding**. This document is the implementation contract for
 closing the release blocker recorded in the release-automation PR: a HACS install of
 v0.1.0 would ship no card at all, silently. It supersedes both fix shapes sketched
 there ("copy into `www/` at setup" and "serve from the integration directory") with a
@@ -13,7 +13,7 @@ Ship the built card **inside** `custom_components/haventory/` (the only tree HAC
 copies for an integration-category repo), serve it from there over a registered
 static path, and load it through **two** mechanisms with one identical URL:
 
-1. the existing Lovelace resource registration (kept — covers Cast and safe mode,
+1. the existing Lovelace resource registration (kept — covers HA Cast,
    storage-mode only), and
 2. `homeassistant.components.frontend.add_extra_js_url` (added — public API whose
    docstring names custom integrations as the caller; covers YAML resource mode and
@@ -34,7 +34,9 @@ Package the bundle via HACS `zip_release`: CI builds the card and attaches
 - **A single loader** is strictly worse than two: the Lovelace resource collection is
   internal API (`lovelace` is `quality_scale: internal`) and cannot work in YAML
   resource mode (`ResourceYAMLCollection` has no `async_create_item`); `add_extra_js_url`
-  is skipped in safe mode and not honored by HA Cast. Together they cover everything.
+  is not honored by HA Cast. Together they cover everything that can load a custom card
+  at all — safe mode disables custom integrations entirely, so neither loader nor the
+  static route exists there, whatever ships.
   Registering the **same URL string** twice is safe — the browser module map dedupes;
   two *different* URLs for the same element throw `customElements.define` errors.
 
@@ -111,14 +113,14 @@ option, and nothing in the dogfood plan installs via HACS-from-branch (the dev l
 | R1 | Two loaders → double module eval → `customElements.define` throws | Byte-identical URL from a single builder; browser module map dedupes | offline test asserts both loaders get the same string |
 | R2 | Existing installs keep a stale `/local/...` resource → duplicate define | Migration rewrites the legacy resource in place | offline test with a pre-seeded legacy resource |
 | R3 | Entry reload re-registers the static path → `RuntimeError` (file paths, order-dependent) | Register the directory, once, behind a `hass.data[DOMAIN]` flag that survives unload | offline test: set up → unload → set up again |
-| R4 | `add_extra_js_url` requires frontend's UrlManager; minimal harnesses (offline stubs, phacc) may lack it | Manifest `dependencies` order real setups; code degrades to DEBUG log when the import/state is missing, mirroring the existing lovelace guards | offline test + run the phacc suite |
+| R4 | `add_extra_js_url` requires frontend's UrlManager; minimal harnesses (offline stubs, phacc) may lack it | Manifest `dependencies` order real setups; code degrades to DEBUG log when the import/state is missing, mirroring the existing lovelace guards | offline test + run the phacc suite — **which found a harder failure than the graceful one**: a hard `dependencies` entry means HA refuses to set up HAventory *at all* when `frontend` cannot set up, and phacc installs no `home-assistant-frontend` wheel (a real HA installs component requirements at startup; the harness does not), so every integration test failed with `ModuleNotFoundError: hass_frontend`. Fixed by pinning the wheel in `requirements-integration.txt`, guarded against drift by `tests/integration/test_frontend.py` |
 | R5 | Dev deploys ship no/stale card once the bundle moves | `reload_addon.sh` builds **before** `docker cp` of the component (bundle rides along); `develop.sh` cp path updated; separate `www/` copy removed | live check via the run-haventory skill |
 | R6 | Heuristic caching serves a stale bundle after upgrade | Keep `?v=<manifest version>` on the URL | header check with `curl -I` |
 | R7 | Companion app caches the index embedding old URLs | Path-stable URL + revalidation serves current bytes anyway | reasoning above; live check optional |
 | R8 | `zip_release` 404s branch installs | `hide_default_branch: true` + README states releases-only | HACS source (`async_install_repository` takes the zip branch unconditionally) |
 | R9 | User installs in the window between release creation and asset upload | Draft release → upload asset → publish, all in one job | release workflow review |
 | R10 | `on: release` workflow never fires (GITHUB_TOKEN) | Build/upload inside the release-please job, gated on `release_created` | same class of fix as the existing tag check |
-| R11 | Safe mode drops `extra_module_url`s | Lovelace resource loader still present | design |
+| R11 | Safe mode leaves the card unloaded | Nothing to mitigate: safe mode disables custom integrations, so the static route and both loaders are absent by design | design |
 | R12 | HA Cast ignores `extra_module_url`s | Lovelace resource loader still present | design |
 | R13 | Wrong zip nesting (extractall does no prefix stripping) | Zip from **inside** `custom_components/haventory`; workflow asserts `manifest.json` and `www/haventory-card.js` at zip root | workflow step |
 | R14 | Old dev installs keep an orphan `www/haventory/` | README keeps a one-line legacy cleanup note; new installs write nothing to `www/` | docs |

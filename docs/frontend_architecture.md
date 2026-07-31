@@ -6,7 +6,9 @@ The HAventory Lovelace card is a Home Assistant dashboard component built with:
 
 - **Framework**: Lit 3 (web components, shadow DOM)
 - **Language**: TypeScript 6 (`strict`)
-- **Build**: Vite 8 → a single ESM bundle at `cards/www/haventory/haventory-card.js`
+- **Build**: Vite 8 → a single ESM bundle at
+  `custom_components/haventory/www/haventory-card.js`, which the integration serves at
+  `/haventory_static/haventory-card.js`
 - **Tests**: Vitest 4 with jsdom
 
 It provides the full inventory UI, updating live over the HAventory WebSocket API.

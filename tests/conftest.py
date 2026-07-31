@@ -37,6 +37,7 @@ deprecated since Python 3.14 and slated for removal in 3.16.
 """
 
 import asyncio
+import dataclasses
 import json
 import os
 import platform
@@ -303,6 +304,59 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     ha_ws.error_message = error_message
     ha_ws.async_register_command = async_register_command
     sys.modules["homeassistant.components.websocket_api"] = ha_ws
+
+    # homeassistant.components.http
+    ha_http = types.ModuleType("homeassistant.components.http")
+
+    @dataclasses.dataclass
+    class StaticPathConfig:  # type: ignore[override]
+        """One entry of what ``hass.http.async_register_static_paths`` takes."""
+
+        url_path: str
+        path: str
+        cache_headers: bool = True
+
+    ha_http.StaticPathConfig = StaticPathConfig
+    sys.modules["homeassistant.components.http"] = ha_http
+
+    # homeassistant.components.frontend
+    ha_frontend = types.ModuleType("homeassistant.components.frontend")
+
+    DATA_EXTRA_MODULE_URL = "frontend_extra_module_url"
+
+    class UrlManager:  # type: ignore[override]
+        """The extra-module URL set the frontend keeps in ``hass.data``.
+
+        Removal of a URL that is not registered is a no-op, as in real HA
+        (which recomputes the frozenset by difference).
+        """
+
+        def __init__(self, urls: list[str] | None = None) -> None:
+            self.urls: set[str] = set(urls or [])
+
+        def add(self, url: str) -> None:
+            self.urls.add(url)
+
+        def remove(self, url: str) -> None:
+            self.urls.discard(url)
+
+    def add_extra_js_url(hass: HomeAssistant, url: str) -> None:  # type: ignore[override]
+        """Register an extra frontend module URL.
+
+        The manager is created by the frontend component's own setup, so this
+        raises ``KeyError`` on a hass whose frontend never set up — exactly what
+        a minimal harness looks like, and what callers have to survive.
+        """
+        hass.data[DATA_EXTRA_MODULE_URL].add(url)
+
+    def remove_extra_js_url(hass: HomeAssistant, url: str) -> None:  # type: ignore[override]
+        hass.data[DATA_EXTRA_MODULE_URL].remove(url)
+
+    ha_frontend.DATA_EXTRA_MODULE_URL = DATA_EXTRA_MODULE_URL
+    ha_frontend.UrlManager = UrlManager
+    ha_frontend.add_extra_js_url = add_extra_js_url
+    ha_frontend.remove_extra_js_url = remove_extra_js_url
+    sys.modules["homeassistant.components.frontend"] = ha_frontend
 
     # homeassistant.helpers.area_registry
     ha_helpers_area_registry = types.ModuleType("homeassistant.helpers.area_registry")
