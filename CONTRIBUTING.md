@@ -93,11 +93,38 @@ edits a version by hand.
 3. Review that PR like any other. CI runs on it, which is where a version file
    that release-please *failed* to rewrite gets caught
    (`tests/test_release_version_consistency.py`).
-4. Merging it tags the release and publishes a GitHub Release with the generated
+4. Merging it tags the release and **drafts** a GitHub Release with the generated
    notes. The same workflow run then checks that the tag names the version the
    repository declares. (That check lives in the release workflow rather than in
    a `push: tags:` one because the tag is pushed with `GITHUB_TOKEN`, and GitHub
-   does not start new workflow runs for events that token raises.)
+   does not start new workflow runs for events that token raises. Everything in
+   step 5 sits in that same job for the same reason.)
+5. Still in that run, from the tag checkout: the card is built, the whole of
+   `custom_components/haventory/` is zipped into `haventory.zip`,
+   `scripts/check_release_zip.py` asserts the archive would extract to a working
+   integration, the asset is attached to the release, and the draft is published
+   last.
+
+That last order is what makes a release safe to install. `zip_release` in
+`hacs.json` means HACS installs the attached zip and *nothing else* — not the
+repository tree — so a release whose asset is missing or wrongly nested installs
+an integration that does nothing and reports success. Drafting first closes the
+window: HACS never shows a draft, so the release only becomes installable once
+its bundle is on it. The tag exists that early because `force-tag-creation` makes
+release-please push it explicitly; a draft release on its own creates no tag.
+
+If the run fails after the tag and before the publish, nobody sees a broken
+release — the draft stays a draft. Re-running the job does not retry it
+(release-please has already marked the PR released, so it creates nothing the
+second time). Recover by hand from a checkout of the tag:
+
+```bash
+(cd cards/haventory-card && npm ci && npm run build)
+(cd custom_components/haventory && zip -r ../../haventory.zip . -x '*__pycache__*')
+uv run python scripts/check_release_zip.py haventory.zip
+gh release upload vX.Y.Z haventory.zip --clobber
+gh release edit vX.Y.Z --draft=false
+```
 
 ### What each commit type does to the version
 
