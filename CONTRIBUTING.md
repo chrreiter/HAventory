@@ -93,6 +93,16 @@ edits a version by hand.
 3. Review that PR like any other. CI runs on it, which is where a version file
    that release-please *failed* to rewrite gets caught
    (`tests/test_release_version_consistency.py`).
+
+   The release PR is opened by `github-actions[bot]`, which the required checks
+   have to accommodate: GitHub creates no `pull_request_target` run for a PR
+   that GITHUB_TOKEN opened, so a required check on such a workflow would wait
+   for a status that never arrives. `pr-title.yml` therefore runs on
+   `pull_request`. If a future required check reports on every PR *except* the
+   release one, that is the cause — either move it to `pull_request`, or give
+   release-please its own token (`token:` on the action step, a PAT or GitHub
+   App installation token with contents and pull-requests write), which makes
+   its PRs raise events like anyone else's.
 4. Merging it tags the release and **drafts** a GitHub Release with the generated
    notes. The same workflow run then checks that the tag names the version the
    repository declares. (That check lives in the release workflow rather than in

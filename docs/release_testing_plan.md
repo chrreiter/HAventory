@@ -12,8 +12,10 @@ Out of scope: feature work, and anything tracked as **post-v1.0** in
 alongside this plan) also live in `open-items.md` — this file is tests only.
 
 **Sequencing.** The run belongs after feature freeze. D6's prerequisite is met: the minimum
-supported HA version is **2026.6.0** (open item 29, derived at feature freeze from the HA
-APIs the integration actually touches — see CLAUDE.md), so D6 runs against that number.
+supported HA version is **2026.6.0** — set at feature freeze from the HA APIs the
+integration actually touches and the security floor below which every release carries a
+known advisory (see CLAUDE.md) — so D6 runs against that number. D6 is the live half of
+that claim; the in-process suite already runs the integration at the floor in CI.
 
 ---
 
