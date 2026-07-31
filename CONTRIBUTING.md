@@ -160,7 +160,7 @@ and it is sticky: left in place, every later release repeats the same version.
 
 ### The version files
 
-Five files carry the version, each rewritten by a different release-please
+Six files carry the version, each rewritten by a different release-please
 mechanism, so each can fail to update independently:
 
 | File | Mechanism |
@@ -169,11 +169,24 @@ mechanism, so each can fail to update independently:
 | `custom_components/haventory/manifest.json` | `extra-files` json + jsonpath |
 | `cards/haventory-card/package.json` | `extra-files` json + jsonpath |
 | `custom_components/haventory/const.py` (`INTEGRATION_VERSION`) | `extra-files` generic + an `x-release-please-version` line annotation |
+| `uv.lock` | `extra-files` toml + jsonpath |
 | `.release-please-manifest.json` | release-please's own bookkeeping |
 
 `INTEGRATION_VERSION` is the one users see: `haventory/version` returns it and
-every export document is stamped with it. `scripts/check_version_consistency.py`
-compares all five (and, on a tag build, the tag) — run it locally any time:
+every export document is stamped with it.
+
+`uv.lock` is the odd one: nothing reads its version, but uv writes `pyproject`'s
+version into the project's own `[[package]]` entry, so a lockfile left at the
+previous release is rewritten by the next `uv` command and dirties the tree for
+whoever runs it. Its jsonpath —
+`$.package[?(@.name.value=='haventory')].version` — needs the `.value` hop
+because release-please's TOML updater parses string values into
+`{start, end, value}` spans in order to rewrite them in place; a path without it
+matches nothing, and release-please treats no match as a warning rather than an
+error. That is the failure this check exists to make loud.
+
+`scripts/check_version_consistency.py` compares all six (and, on a tag build,
+the tag) — run it locally any time:
 
 ```bash
 uv run python scripts/check_version_consistency.py

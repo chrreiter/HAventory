@@ -23,6 +23,11 @@
         {
           "type": "generic",
           "path": "custom_components/haventory/const.py"
+        },
+        {
+          "type": "toml",
+          "path": "uv.lock",
+          "jsonpath": "$.package[?(@.name.value=='haventory')].version"
         }
       ]
     }

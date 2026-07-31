@@ -8,6 +8,7 @@ fix. The tag half of the same check runs on the tag build; see
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -17,6 +18,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from check_version_consistency import collect_versions, tag_version  # noqa: E402
+
+# The two sources release-please rewrites outside `extra-files`: the `python`
+# release type owns pyproject, and the manifest file is its own bookkeeping.
+NOT_EXTRA_FILES = {"pyproject.toml", ".release-please-manifest.json"}
 
 
 def test_every_version_file_agrees() -> None:
@@ -30,8 +35,24 @@ def test_every_version_file_agrees() -> None:
         "pyproject.toml",
         "cards/haventory-card/package.json",
         "custom_components/haventory/const.py",
+        "uv.lock",
     }
     assert len(set(versions.values())) == 1, f"version mismatch: {versions}"
+
+
+def test_release_please_rewrites_every_collected_file() -> None:
+    """Every file this check compares must be one release-please actually writes.
+
+    Checking agreement only catches a file release-please forgot once the two
+    have already diverged. This catches the wiring itself: a version file added
+    to the check but never listed in ``extra-files`` would sit at the old
+    version until the first release proved it.
+    """
+    config = json.loads((REPO_ROOT / "release-please-config.json").read_text(encoding="utf-8"))
+    extra_files = config["packages"]["."]["extra-files"]
+    listed = {entry["path"] if isinstance(entry, dict) else entry for entry in extra_files}
+
+    assert listed == set(collect_versions()) - NOT_EXTRA_FILES
 
 
 def test_tag_version_strips_the_prefix() -> None:
