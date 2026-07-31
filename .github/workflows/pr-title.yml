@@ -1,8 +1,18 @@
 name: pr-title
 
 # Enforce Conventional Commit PR titles (the input release-please consumes).
+#
+# `pull_request`, not `pull_request_target`: release-please opens its release PR
+# as github-actions[bot] with GITHUB_TOKEN, and GitHub creates no
+# `pull_request_target` run for it — so this job, which the ruleset requires,
+# would never report a status and the release PR could never merge. A
+# `pull_request` run is created for that same PR. Nothing is given up here: the
+# job reads the PR title and needs neither the base-branch checkout nor the
+# secrets `pull_request_target` exists to provide. `labeler.yml` keeps
+# `pull_request_target` because applying labels to a fork's PR needs a write
+# token, which `pull_request` does not hand to fork runs.
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, edited, synchronize, reopened]
 
 permissions:
