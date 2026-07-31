@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Assert every version string in the repository agrees — and matches the tag.
 
-Five files carry the release version, and release-please rewrites each of them
+Six files carry the release version, and release-please rewrites each of them
 through a different mechanism: the `python` release type handles
 ``pyproject.toml``, two ``extra-files`` JSON entries handle the integration
 manifest and the card's ``package.json``, a generic annotation handles
-``const.py``, and the manifest file is release-please's own bookkeeping. Any one
-of them can silently stop being rewritten — a moved line drops a generic
-annotation, a renamed key orphans a jsonpath — and the failure mode is a release
-that ships mismatched versions rather than an error.
+``const.py``, a TOML jsonpath handles ``uv.lock``, and the manifest file is
+release-please's own bookkeeping. Any one of them can silently stop being
+rewritten — a moved line drops a generic annotation, a renamed key orphans a
+jsonpath — and the failure mode is a release that ships mismatched versions
+rather than an error.
 
 Run with no arguments to check the files against each other. Pass ``--tag`` (or
 set ``GITHUB_REF_NAME`` on a tag build) to also require the git tag to name the
@@ -38,6 +39,21 @@ def _pyproject_version() -> str:
         return str(tomllib.load(handle)["project"]["version"])
 
 
+def _uv_lock_version() -> str:
+    """The version recorded for the project's own entry in the lockfile.
+
+    uv writes ``pyproject``'s version into this entry, so a lockfile left behind
+    at the previous release does not merely disagree — the next ``uv`` command
+    rewrites it and dirties the working tree.
+    """
+    with (REPO_ROOT / "uv.lock").open("rb") as handle:
+        packages = tomllib.load(handle)["package"]
+    for package in packages:
+        if package["name"] == "haventory":
+            return str(package["version"])
+    raise AssertionError("uv.lock: no [[package]] entry named 'haventory'")
+
+
 def _const_version() -> str:
     text = (REPO_ROOT / "custom_components/haventory/const.py").read_text(encoding="utf-8")
     match = re.search(r'^INTEGRATION_VERSION:\s*str\s*=\s*"([^"]+)"', text, flags=re.MULTILINE)
@@ -56,6 +72,7 @@ def collect_versions() -> dict[str, str]:
         "pyproject.toml": _pyproject_version(),
         "cards/haventory-card/package.json": _json_version("cards/haventory-card/package.json"),
         "custom_components/haventory/const.py": _const_version(),
+        "uv.lock": _uv_lock_version(),
     }
 
 
