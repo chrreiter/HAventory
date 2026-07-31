@@ -39,6 +39,11 @@ Package the bundle via HACS `zip_release`: CI builds the card and attaches
   static route exists there, whatever ships.
   Registering the **same URL string** twice is safe — the browser module map dedupes;
   two *different* URLs for the same element throw `customElements.define` errors.
+  Dedupe cuts both ways, though, and the identical URL is what makes the second cut:
+  the module evaluates **once**, for whichever loader fetches it first, so the later
+  loader never re-runs it. The extra-JS loader usually wins that race, which puts the
+  card's `customElements.define` at an unpredictable point in frontend boot rather
+  than reliably after it — see R16 for the failure that follows and its fix.
 
 ### Precedent (verified against source, 2026-07-30)
 
@@ -114,6 +119,7 @@ option, and nothing in the dogfood plan installs via HACS-from-branch (the dev l
 | # | Risk | Mitigation | Verified how |
 |---|---|---|---|
 | R1 | Two loaders → double module eval → `customElements.define` throws | Byte-identical URL from a single builder; browser module map dedupes | offline test asserts both loaders get the same string |
+| R1b | Dedupe also means **only one** loader ever evaluates the module — whichever fetches first — so the card is defined at an unpredictable point in frontend boot | `defineCardElement()` records the registry it defined into and re-asserts the definition when the current registry is no longer that one (see R16) | 5 unit tests + 5 cold loads per engine on a real HACS install |
 | R2 | Existing installs keep a stale `/local/...` resource → duplicate define | Migration rewrites the legacy resource in place | offline test with a pre-seeded legacy resource |
 | R3 | Entry reload re-registers the static path → `RuntimeError` (file paths, order-dependent) | Register the directory, once, behind a `hass.data[DOMAIN]` flag that survives unload | offline test: set up → unload → set up again |
 | R4 | `add_extra_js_url` requires frontend's UrlManager; minimal harnesses (offline stubs, phacc) may lack it | Manifest `dependencies` order real setups; code degrades to DEBUG log when the import/state is missing, mirroring the existing lovelace guards | offline test + run the phacc suite — **which found a harder failure than the graceful one**: a hard `dependencies` entry means HA refuses to set up HAventory *at all* when `frontend` cannot set up, and phacc installs no `home-assistant-frontend` wheel (a real HA installs component requirements at startup; the harness does not), so every integration test failed with `ModuleNotFoundError: hass_frontend`. Fixed by pinning the wheel in `requirements-integration.txt`, guarded against drift by `tests/integration/test_frontend.py` |
@@ -128,6 +134,7 @@ option, and nothing in the dogfood plan installs via HACS-from-branch (the dev l
 | R13 | Wrong zip nesting (extractall does no prefix stripping) | Zip from **inside** `custom_components/haventory`; workflow asserts `manifest.json` and `www/haventory-card.js` at zip root | workflow step |
 | R14 | Old dev installs keep an orphan `www/haventory/` | README keeps a one-line legacy cleanup note; new installs write nothing to `www/` | docs |
 | R15 | Stray release asset named `haventory-card.js` would bind HACS's download counter | `filename` names the zip, which `zip_release` makes the installed asset | hacs.json diff |
+| R16 | HA's frontend installs its own `CustomElementRegistry` during boot; a definition made before the swap stays in the registry HA replaced, where the dashboard never looks — the card renders as "custom element doesn't exist" | `defineCardElement()` re-asserts the definition on the first observed registry change, within a 15 s window | 5 cold loads per engine, before/after, on a real HACS install of the release asset |
 
 Out-of-scope follow-up (record in `docs/open-items.md` when implementing): the manual
 `resources.async_load()` in `_async_lovelace_resources` is redundant at the 2026.6.0
