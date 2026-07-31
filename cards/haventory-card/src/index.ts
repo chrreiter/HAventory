@@ -4,6 +4,7 @@ import { Store } from './store/store';
 import type { ColumnKey } from './store/columns';
 import { loadColumnPrefs, saveColumnPrefs } from './store/columns';
 import { resolveColorScheme } from './ui/theme';
+import { defineCardElement } from './register';
 import './components/hv-column-picker';
 import './components/hv-card-shell';
 
@@ -181,7 +182,7 @@ export class HAventoryCard extends LitElement {
   }
 }
 
-customElements.define('haventory-card', HAventoryCard);
+defineCardElement('haventory-card', HAventoryCard);
 
 // Lovelace card picker metadata
 export function getStubConfig() {
