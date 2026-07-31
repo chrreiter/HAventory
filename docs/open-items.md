@@ -48,6 +48,20 @@ non-blocking).
 > turned the `push` trigger on, so that row is removed below, and the HACS upgrade-leftover
 > caveat the same review surfaced is item **57**.
 
+> A **truth-up pass (2026-07-31)**, prompted by item 3's staleness, checked the rest of the
+> ledger against `main` and closed three more rows whose work had already landed
+> unattributed. Item **5** — `npm run typecheck` is a blocking step in the `frontend` CI job
+> and in `scripts/lint.sh` / `scripts/ci_local.sh`, so `tsc --noEmit` is gated. Item **17** —
+> `tests/conftest.py` hands pytest-asyncio a `SelectorEventLoop` *factory* through the
+> `pytest_asyncio_loop_factories` hook and mutates no process-wide policy; the two deprecated
+> names now appear there only in a comment explaining what it deliberately avoids. Item
+> **29** — the floor was set to `2026.6.0` at feature freeze, every declaration site carries
+> that number, `tests/test_min_ha_version.py` fails if any of them drift, and
+> `requirements-integration.txt` pins the in-process suite to it so CI runs against the floor
+> rather than whatever is current. Item 29's last part, a *live* instance at the floor, is
+> release-test **D6** and stays tracked in [`release_testing_plan.md`](release_testing_plan.md)
+> rather than here.
+
 ---
 
 ## Pre-v1.0
@@ -60,7 +74,6 @@ Ordered by impact.
 | 4 | **HACS publication** (Phase 3 "Polish & HACS"). Distribution path for a 1.0. The delivery mechanics landed with #148 — `zip_release`: the release workflow builds the card, attaches `haventory.zip`, drafts first and publishes last; what remains is cutting v0.1.0, verifying a clean-HA install through HACS as a custom repository (release-test A1), and submission to the HACS default store. | README Phase 3, #148 | Medium (distribution) | M |
 | 36 | **`inspection_date` has no agreed meaning, and the card says both.** The backend only validates the shape — `inspection_date: str \| None` (`models.py:73`), `validate_inspection_date` (`models.py:309-313`) checks `YYYY-MM-DD` and nothing else — so the meaning lives entirely in the wording, and the wording disagrees with itself: the editor labels the box **"Inspection date"** (`hv-item-editor.ts:1011`) and the sort menu agrees (`hv-filter-panel.ts:24`), while the table column header reads **"Inspected"** (`columns.ts:41`) and the mobile detail sheet's fact row reads **"Last inspected"** (`hv-detail-sheet.ts:384-389`) — past tense, the opposite reading. **Owner's decision (2026-07-26): it is a future date** — when the item is next due for inspection — the same shape as the checkout's due date, and it needs an "inspection overdue" badge to match. Split of the work: **card-only** — settle on one forward-looking label across editor, column, sort menu and sheet; badge a row whose `inspection_date` is in the past, which `isOverdue` (`ui/relative-time.ts`) already computes for `due_date` on an item the card is holding; sorting needs nothing (`sortField: 'inspection_date'` exists). **Backend, and therefore a contract change** — an app-bar pill needs a whole-inventory count, and `Repository.get_counts()` (`repository.py:1138-1147`) returns only `items_total`, `low_stock_count`, `checked_out_count`, `overdue_count`, `locations_total`, `no_location_count`; pressing that pill needs a server-side filter, and `ItemFilter` (`models.py:120-142`) has `overdue_only` for `due_date` alone. Mirror `_count_overdue` (`repository.py:1149-1163`), which is deliberately unindexed because "overdue" moves with the calendar and no mutation invalidates it at midnight — but walk the whole inventory rather than only `_checked_out_item_ids`, since an inspection is independent of any checkout. Two notes: the export column list already carries `inspection_date` (`import_export.py:72`), so no migration is needed — only the meaning changes, and existing rows may hold *past* dates entered under the old reading; and once it is a future date, the checkout dialog's quick offsets (+7 / +31 / +90 / +X days, `hv-checkout-popover.ts`) are the obvious way to set it, which the owner suggested and which is deliberately not built until this is settled. | card UI consistency review 2026-07-26 | Medium (user-facing) | M |
 | 41 | **Post-batch README truth-ups.** Three small accuracy fixes that only make sense once the 2026-07-27 batch is merged: (a) the Known limitations rate-limiting entry (#129) deliberately describes backend posture only — add the card behavior #128 shipped (a rate-limited `subscribe` is retried up to 4 times, honouring a retry-after hint when the envelope carries one, then pauses visibly with a Refresh action); (b) `## Conventions` lists `calendar.haventory` while Known limitations states the integration creates no entities — both true today, so add "reserved for the post-1.0 calendar work (item 9)" to the Conventions line; (c) the published scale ceiling is extrapolated from item 19's stress curve — replace it with the measured number once release-test F3 runs. The #129 follow-up also notes the *Implementation Status → Phase 2.5* claim about the rate-limited-subscribe gap: stale against pre-batch `main`, accurate once #128 merges — verify, don't edit. | PR #128/#129 follow-ups | Low–Med (docs accuracy) | S |
-| 5 | **Add `tsc --noEmit` (typecheck) to the CI gate.** It is clean (#89/#91) but still not gated, so card type regressions can slip through. | #74, `docs/frontend_architecture.md` | Low–Med | S |
 | 6 | **Pin the service-registration pattern with a test.** `services.py` registers sync lambdas that return coroutines; the integration suite passes, but a targeted service-call integration test would guard it. | #91 | Low–Med (correctness) | S |
 | 7 | **GitHub repo hardening (manual, GitHub UI):** branch protection/ruleset on `main`, secret scanning + push protection, enable Discussions, run the `labels` workflow once, set a social-preview image. | #76 | Low | S (manual) |
 
@@ -69,13 +82,14 @@ Ordered by impact.
 Work items — **not** tests — surfaced while drafting
 [`release_testing_plan.md`](release_testing_plan.md), plus later findings of the same
 release-blocking kind. The confirmed defects in this group (25, 26) and the documentation
-gaps (28, 31, 40) were fixed by the 2026-07-27 batch; what remains are the two release
-chores below — 29 after feature freeze, 30 via the release automation that has been live
-since #142. Ordered by impact.
+gaps (28, 31, 40) were fixed by the 2026-07-27 batch, and item 29 (set the real minimum
+supported HA version) was settled at feature freeze — `2026.6.0`, defended by
+`tests/test_min_ha_version.py`. What remains is the one release chore below: the version
+bump itself, which the release automation live since #142 performs on merge of its
+release PR.
 
 | # | Item | Source | Impact | Effort |
 |---|------|--------|--------|--------|
-| 29 | **Set the real minimum supported HA version — the current `2026.7.0` is a stale leftover.** `hacs.json` `homeassistant: "2026.7.0"` predates the current feature set and was never verified against a running instance (CI runs the HA-less offline suite; the integration suite pins whatever `requirements-integration.txt` resolves — currently `2026.7.3`). **Sequencing: do this after v1.0 is feature-complete**, once every HA API the integration actually touches is known; deriving the floor earlier just re-stales it. Then (a) update `hacs.json`, (b) update every other place the number is repeated — `README.md` (2×), `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/bug_report.yml` (2×), and the explanatory comments in `pyproject.toml` and `.github/workflows/ci.yml` — (c) pin `requirements-integration.txt` / the integration-test HA to that floor so CI defends it, and (d) verify a real instance at the floor via release-test D6. Note the coupling: HA ≥ 2026.3 forces Python 3.14, and the source uses PEP 758 syntax that does not parse on ≤ 3.13, so choosing a floor below 2026.3 is a toolchain change, not a one-line edit. | release review 2026-07-25 | Medium (release claim) | S–M |
 | 30 | **Version numbers are still `0.0.1`.** `manifest.json` `version` (and `INTEGRATION_VERSION`, surfaced by `haventory/version` and stamped into export documents) must be bumped for the release and kept in sync with the release tag — which release-please (live since #142) automates on merge of its release PR. The agreement check exists: `scripts/check_version_consistency.py` runs in the release workflow and `tests/test_release_version_consistency.py` guards the file-to-file half in CI, so what remains is the bump itself. | release review 2026-07-25 | Medium (release-blocking) | S |
 
 > Items 2 (Dependabot alerts) and 4 (HACS publication) above are also release-readiness
@@ -98,7 +112,6 @@ Ordered by impact.
 | 14 | **Perf:** back-to-back subtree moves within one second pay a +1 s monotonic-bump slow path per item (pathological; one-off moves are fine). A batch-aware bump would fix it. | #91 | Low | M |
 | 15 | **Rate limiting:** a per-connection command token is consumed even when the global bucket then rejects (deliberate check order; could refund). | #91 | Low | S |
 | 16 | **TypeScript 7 adoption** once typescript-eslint supports it (currently capped `<6.1.0`). | #74 | Low | S |
-| 17 | **`tests/conftest.py`** uses `WindowsSelectorEventLoopPolicy` / `set_event_loop_policy`, both deprecated for removal in Python 3.16. Replace when convenient. | #74, #91 | Low | S |
 | 18 | **Other frontend enhancements** (roadmap): advanced date-range filters, drag & drop move/reorder, item image upload (HA media), mobile touch/swipe optimization, offline/service-worker support, virtual-scroll/lazy-load perf. | `docs/frontend_architecture.md` (Future Enhancements Phase 2.5+) | Low | L (each) |
 | 19 | **O(N²) persistence: every single mutation serializes the *whole* dataset and rewrites the store blob** (immediate persist, serialized by the write lock). Measured per-create p50 climbs 70 ms @250 → 114 ms @500 → 200 ms @1000 items; at a few thousand items a single create trends toward ~1 s. Correctness is unaffected. A debounced/delta persistence path for bulk work would flatten the curve. | WP4 stress test | Medium (scaling) | M |
 | 20 | **No upper bound on `description` length (1 MB accepted) or `custom_fields` key count (~1000 accepted).** A persistence-bloat vector, amplified by #19. Add sane input caps. | WP4 stress test | Low | S |
@@ -130,10 +143,9 @@ Ordered by impact.
 ## Notes on sources
 
 - **WP4 (#91)** is the richest source: its "Follow-ups (out of scope)" section supplies
-  items 1, 6, 8, 13, 14, 15, 17.
+  items 1, 6, 8, 13, 14, 15.
 - **WP1 (#74)** and **WP0.5 (#73)** contributed the toolchain/deprecation follow-ups
-  (items 3, 5, 8, 16, 17), most of which are also mirrored in the `CLAUDE.md`
-  "WP1 follow-ups" list.
+  (items 8, 16), most of which are also mirrored in the `CLAUDE.md` "WP1 follow-ups" list.
 - **#76** (GitHub project setup) contributed the repo-hygiene + Dependabot items (2, 7).
 - **Docs** (`frontend_architecture.md` "Future Enhancements", the `Phase 2.5+` list) and
   the **README** Phase 3 roadmap supply the larger post-1.0 UI features (items 4, 10, 11, 18);
