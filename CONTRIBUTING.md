@@ -120,6 +120,7 @@ second time). Recover by hand from a checkout of the tag:
 
 ```bash
 (cd cards/haventory-card && npm ci && npm run build)
+rm -f haventory.zip  # `zip -r` updates an existing archive; stale entries would ship
 (cd custom_components/haventory && zip -r ../../haventory.zip . -x '*__pycache__*')
 uv run python scripts/check_release_zip.py haventory.zip
 gh release upload vX.Y.Z haventory.zip --clobber
