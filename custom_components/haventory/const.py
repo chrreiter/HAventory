@@ -11,7 +11,7 @@ DOMAIN: str = "haventory"
 # export documents. release-please rewrites the literal below on the annotation;
 # tests/test_release_version_consistency.py fails if it ever disagrees with
 # manifest.json.
-INTEGRATION_VERSION: str = "0.0.1"  # x-release-please-version
+INTEGRATION_VERSION: str = "0.1.0"  # x-release-please-version
 
 # -----------------------------
 # WebSocket rate limiting (config-entry options)
