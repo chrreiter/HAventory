@@ -4,5 +4,7 @@
   "content_in_root": false,
   "country": ["all"],
   "homeassistant": "2026.6.0",
-  "filename": "haventory-card.js"
+  "zip_release": true,
+  "filename": "haventory.zip",
+  "hide_default_branch": true
 }

@@ -242,6 +242,9 @@ Thumbs.db
 # shipped from there; the bundle itself is never committed.
 custom_components/haventory/www/
 
+# The HACS install bundle, built on a tag and attached to the release.
+haventory.zip
+
 # Node — the card has its own .gitignore, but tooling run from the repo root
 # (npx, vitest) can drop a node_modules/ here too.
 node_modules/

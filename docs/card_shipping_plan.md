@@ -1,6 +1,6 @@
 # Card shipping plan — HACS install with zero manual card steps
 
-Status: **PR-1 implemented; PR-2 outstanding**. This document is the implementation contract for
+Status: **PR-1 and PR-2 implemented**. This document is the implementation contract for
 closing the release blocker recorded in the release-automation PR: a HACS install of
 v0.1.0 would ship no card at all, silently. It supersedes both fix shapes sketched
 there ("copy into `www/` at setup" and "serve from the integration directory") with a
@@ -85,7 +85,10 @@ a second repo would mean the second install step this plan exists to avoid.
   GitHub does not start workflows for events raised by that token (the same trap the
   tag-check already documents). Release is created as a **draft**, the asset is
   uploaded, then the draft is published — HACS skips drafts, so the release only
-  becomes installable once its asset exists (no race window).
+  becomes installable once its asset exists (no race window). Draft mode leaves
+  `release_created` and `tag_name` reporting exactly as before, but a draft release
+  creates no git tag, so `force-tag-creation` is set alongside `draft` to keep the
+  tag checkout the version check runs from.
 
 ## Staged delivery — main stays running after every merge
 
@@ -124,7 +127,7 @@ option, and nothing in the dogfood plan installs via HACS-from-branch (the dev l
 | R12 | HA Cast ignores `extra_module_url`s | Lovelace resource loader still present | design |
 | R13 | Wrong zip nesting (extractall does no prefix stripping) | Zip from **inside** `custom_components/haventory`; workflow asserts `manifest.json` and `www/haventory-card.js` at zip root | workflow step |
 | R14 | Old dev installs keep an orphan `www/haventory/` | README keeps a one-line legacy cleanup note; new installs write nothing to `www/` | docs |
-| R15 | Stray release asset named `haventory-card.js` would bind HACS's download counter | The inert `filename` key is removed in PR-1 | hacs.json diff |
+| R15 | Stray release asset named `haventory-card.js` would bind HACS's download counter | `filename` names the zip, which `zip_release` makes the installed asset | hacs.json diff |
 
 Out-of-scope follow-up (record in `docs/open-items.md` when implementing): the manual
 `resources.async_load()` in `_async_lovelace_resources` is redundant at the 2026.6.0
@@ -142,6 +145,7 @@ PR-1: `custom_components/haventory/__init__.py`, `custom_components/haventory/ma
 `README.md`, `CLAUDE.md`, `docs/frontend_architecture.md`, `docs/release_testing_plan.md` (E5).
 
 PR-2: `hacs.json`, `release-please-config.json`, `.github/workflows/release-please.yml`,
+`scripts/check_release_zip.py`, `tests/test_release_zip.py`, `.gitignore`,
 `CONTRIBUTING.md`, `README.md` (install section).
 
 ---

@@ -1,9 +1,10 @@
 name: release-please
 
 # Keeps a release PR open and up to date as conventional commits land on main;
-# merging it tags the release and publishes a GitHub Release with generated
-# notes. See CONTRIBUTING.md → Releases for the flow and for what each version
-# bump means here.
+# merging it tags the release, drafts a GitHub Release with generated notes,
+# attaches the zip that HACS installs, and publishes the result. See
+# CONTRIBUTING.md → Releases for the flow and for what each version bump means
+# here.
 on:
   push:
     branches: [main]
@@ -42,4 +43,52 @@ jobs:
         if: steps.release.outputs.release_created == 'true'
         run: python3 scripts/check_version_consistency.py --tag "$TAG"
         env:
+          TAG: ${{ steps.release.outputs.tag_name }}
+
+      # Everything below builds the one artifact a HACS install reads. With
+      # `zip_release`, HACS takes the asset named in hacs.json and nothing else:
+      # the default branch is hidden, and the card bundle is git-ignored, so a
+      # release without this asset installs an integration whose card never
+      # loads. It is built here, in this job, for the same reason the tag check
+      # is: an `on: release` workflow would never start, because release-please
+      # publishes with GITHUB_TOKEN.
+      - name: Set up Node
+        if: steps.release.outputs.release_created == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: cards/haventory-card/package-lock.json
+
+      - name: Build the card
+        if: steps.release.outputs.release_created == 'true'
+        run: npm ci --no-audit --no-fund && npm run build
+        working-directory: cards/haventory-card
+
+      - name: Package the integration
+        if: steps.release.outputs.release_created == 'true'
+        # Zipped from *inside* the integration directory: HACS extracts the
+        # asset straight into `custom_components/haventory/` and strips no
+        # prefix, so one level of extra nesting installs an empty integration
+        # and reports success. `unzip -l` puts the layout in the run log; the
+        # check is what fails the job.
+        run: |
+          (cd custom_components/haventory && zip -r ../../haventory.zip . -x '*__pycache__*')
+          unzip -l haventory.zip
+          python3 scripts/check_release_zip.py haventory.zip
+
+      - name: Attach the asset, then publish the release
+        if: steps.release.outputs.release_created == 'true'
+        # release-please creates the release as a draft (`draft` in
+        # release-please-config.json), and HACS skips drafts — so the release
+        # becomes installable only here, once its asset is attached. The tag
+        # exists at this point because `force-tag-creation` makes release-please
+        # push it explicitly; a draft release alone creates no tag, and the
+        # checkout above needs one.
+        run: |
+          gh release upload "$TAG" haventory.zip --clobber
+          gh release edit "$TAG" --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.release.outputs.tag_name }}

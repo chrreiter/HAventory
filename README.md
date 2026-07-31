@@ -26,6 +26,11 @@ HAventory isn't in the HACS default store yet. To install from this repository:
 4. Add it via **Settings → Devices & Services → Add Integration → HAventory**.
 5. Refresh your browser (Ctrl/Cmd+Shift+R) so the Lovelace card appears in the picker.
 
+HACS installs **released versions only**: it downloads the `haventory.zip` attached to a
+GitHub release, which already contains the built card. Installing from the default branch
+is deliberately not offered — the card bundle is a build artifact and is not in git, so a
+branch install would come up without a card and report success.
+
 Minimum Home Assistant version: **2026.6.0** — the oldest release that both runs the
 integration and carries no known security advisory. Developers: see the Developer
 Checklist below and [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -482,8 +487,10 @@ so a stale dashboard config never breaks the card.
   names in `.github/workflows/`, or a pull request can never satisfy them.
 - The repository's social preview is `docs/assets/social-preview.png`, rendered from the
   `.html` beside it. GitHub has no API for it — upload it under *Settings → General*.
-- Release automation via **release-please** is config-ready but deferred (WP5) — enable it
-  by uncommenting the `push` trigger in `.github/workflows/release-please.yml`.
+- Release automation via **release-please**: merging its release PR tags the version,
+  drafts the GitHub Release, builds and attaches `haventory.zip` — the bundle HACS
+  installs — and publishes the draft last. See [CONTRIBUTING.md](CONTRIBUTING.md) →
+  Releases.
 - Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md).
 - Conventional Commits; update this README when behavior changes.
 
