@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/chrreiter/HAventory/compare/v0.1.0...v0.1.1) (2026-07-31)
+
+
+### Bug Fixes
+
+* **card:** survive Home Assistant's custom element registry swap ([#151](https://github.com/chrreiter/HAventory/issues/151)) ([ea416df](https://github.com/chrreiter/HAventory/commit/ea416df277de1018d4b147b224484b2d16414a78))
+
 ## [0.1.0](https://github.com/chrreiter/HAventory/compare/v0.0.1...v0.1.0) (2026-07-31)
 
 
