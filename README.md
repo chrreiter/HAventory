@@ -30,42 +30,44 @@ Minimum Home Assistant version: **2026.6.0** — the oldest release that both ru
 integration and carries no known security advisory. Developers: see the Developer
 Checklist below and [CONTRIBUTING.md](CONTRIBUTING.md).
 
-### YAML-mode dashboards
+### How the card gets loaded
 
-Step 5 assumes the default storage mode, where the integration registers the card as a
-Lovelace resource for you. In YAML mode, Home Assistant reads the resource list from
-`configuration.yaml` and no integration can add to it, so HAventory skips registration
-(logging `Lovelace in YAML mode; manual resource configuration required` at debug level).
-Nothing else reports the problem: the card is simply missing from the picker, and any
-dashboard already using it shows *Custom element doesn't exist: haventory-card*.
+The card bundle ships inside the integration, and the integration serves it at
+`/haventory_static/haventory-card.js`. Nothing is copied into your `<config>/www/`
+directory, and nothing is left behind there when you uninstall.
 
-You are in YAML mode if `configuration.yaml` has a `lovelace:` block with `mode: yaml`.
-In the UI, with **Advanced Mode** enabled on your profile, **Settings → Dashboards → ⋮**
-offers no **Resources** entry and the dashboard has no edit (pencil) button.
+Two mechanisms then point the frontend at that one URL, so every way of viewing a
+dashboard is covered: a Lovelace resource entry (registered automatically in the default
+storage mode — this is what HA Cast and safe mode read) and the frontend's extra-module
+list (which needs no stored state and works in YAML resource mode). Both receive the same
+URL, so the card is only ever defined once.
 
-Register the card yourself next to that `mode:` key:
+**YAML-mode dashboards** therefore need no manual step either. You are in YAML mode if
+`configuration.yaml` has a `lovelace:` block with `mode: yaml`; in the UI, with
+**Advanced Mode** enabled on your profile, **Settings → Dashboards → ⋮** offers no
+**Resources** entry and the dashboard has no edit (pencil) button. Home Assistant reads
+that resource list from `configuration.yaml` and no integration can add to it, so
+HAventory skips resource registration there and logs it at debug level — the extra-module
+loader carries the card instead.
+
+If you did add a `resources:` entry by hand under an earlier version, point it at the new
+URL or delete it; a second entry for the same module makes the browser define the card
+twice and the second definition fails:
 
 ```yaml
 lovelace:
   mode: yaml
   resources:
-    - url: /local/haventory/haventory-card.js
+    - url: /haventory_static/haventory-card.js
       type: module
 ```
 
-Restart Home Assistant, then refresh your browser (Ctrl/Cmd+Shift+R).
-
-The mode of the *main* dashboard is what decides this. An extra YAML dashboard declared
-under `lovelace: dashboards:` while the main one stays in storage mode still uses the
-UI-managed resource list, so it needs nothing. In storage mode a `resources:` block in
-`configuration.yaml` is ignored — Home Assistant warns and keeps using the UI list.
-
 ### Removing HAventory
 
-Deleting the integration under **Settings → Devices & Services** removes the Lovelace
-resource entry HAventory registered for `/local/haventory/haventory-card.js`, so no
-dashboard is left loading a card that is about to disappear. (If your Lovelace runs in YAML
-mode the entry is yours, in `configuration.yaml` — delete the `resources:` line by hand.)
+Deleting the integration under **Settings → Devices & Services** takes back both loaders —
+the Lovelace resource entry and the extra-module URL — so no dashboard is left loading a
+card that is about to disappear. (If your Lovelace runs in YAML mode any entry is yours, in
+`configuration.yaml` — delete the `resources:` line by hand.)
 
 **Your inventory is deliberately kept.** Items and locations live in the Home Assistant
 store file `<config>/.storage/haventory_store`, which removal does not touch: adding the
@@ -76,9 +78,10 @@ To delete the data as well — after exporting a backup, if you might want it la
 
 1. Remove the integration and stop Home Assistant.
 2. Delete `<config>/.storage/haventory_store`.
-3. Uninstalling for good? Also delete `<config>/www/haventory/` (the card bundle; HACS
-   removes `custom_components/haventory/` but not the built asset).
-4. Start Home Assistant.
+3. Start Home Assistant.
+
+Upgrading from a version that copied the card into `<config>/www/haventory/`? That copy is
+no longer used and can be deleted; the integration ignores it either way.
 
 ---
 
@@ -376,7 +379,8 @@ item and deletes it (best-effort cleanup even on failure).
 ### Frontend (Lovelace card)
 
 Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs to
-`www/haventory/`. Real-time over WebSocket with optimistic writes throughout.
+`custom_components/haventory/www/`. Real-time over WebSocket with optimistic writes
+throughout.
 
 - **Standard card** — one Add button and a single ⋮ menu (Select items, Organize, Refresh,
   Diagnostics, Export backup / Export current view, Import); Columns is offered in the full
@@ -508,7 +512,7 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
 > the capabilities below carried over, the surfaces they are reached through did not.
 
 - Lit 3 + TypeScript components; real-time sync; optimistic updates with conflict
-  resolution; Vite build → `www/haventory/haventory-card.js`.
+  resolution; Vite build → `custom_components/haventory/www/haventory-card.js`.
 - Item dialog offers debounced, keyboard-navigable category/tag autocomplete sourced from
   `haventory/distinct_values`.
 - Dedicated **category browser** (header → "Categories"): lists used categories with item
@@ -599,7 +603,8 @@ and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discus
 ## Conventions
 
 - Domain/package: `haventory` under `custom_components/haventory`; services `haventory.*`;
-  built assets `www/haventory/`; calendar entity `calendar.haventory` — a reserved name for
+  built assets `custom_components/haventory/www/`, served at `/haventory_static/`;
+  calendar entity `calendar.haventory` — a reserved name for
   the post-1.0 calendar work ([open item 9](docs/open-items.md)), not an entity that exists
   today.
 - Logging: avoid reserved `LogRecord` keys in logger extras — use `item_name` /

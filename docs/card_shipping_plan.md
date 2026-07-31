@@ -1,6 +1,6 @@
 # Card shipping plan — HACS install with zero manual card steps
 
-Status: **planned, not implemented**. This document is the implementation contract for
+Status: **PR-1 implemented; PR-2 outstanding**. This document is the implementation contract for
 closing the release blocker recorded in the release-automation PR: a HACS install of
 v0.1.0 would ship no card at all, silently. It supersedes both fix shapes sketched
 there ("copy into `www/` at setup" and "serve from the integration directory") with a
@@ -111,7 +111,7 @@ option, and nothing in the dogfood plan installs via HACS-from-branch (the dev l
 | R1 | Two loaders → double module eval → `customElements.define` throws | Byte-identical URL from a single builder; browser module map dedupes | offline test asserts both loaders get the same string |
 | R2 | Existing installs keep a stale `/local/...` resource → duplicate define | Migration rewrites the legacy resource in place | offline test with a pre-seeded legacy resource |
 | R3 | Entry reload re-registers the static path → `RuntimeError` (file paths, order-dependent) | Register the directory, once, behind a `hass.data[DOMAIN]` flag that survives unload | offline test: set up → unload → set up again |
-| R4 | `add_extra_js_url` requires frontend's UrlManager; minimal harnesses (offline stubs, phacc) may lack it | Manifest `dependencies` order real setups; code degrades to DEBUG log when the import/state is missing, mirroring the existing lovelace guards | offline test + run the phacc suite |
+| R4 | `add_extra_js_url` requires frontend's UrlManager; minimal harnesses (offline stubs, phacc) may lack it | Manifest `dependencies` order real setups; code degrades to DEBUG log when the import/state is missing, mirroring the existing lovelace guards | offline test + run the phacc suite — **which found a harder failure than the graceful one**: a hard `dependencies` entry means HA refuses to set up HAventory *at all* when `frontend` cannot set up, and phacc installs no `home-assistant-frontend` wheel (a real HA installs component requirements at startup; the harness does not), so every integration test failed with `ModuleNotFoundError: hass_frontend`. Fixed by pinning the wheel in `requirements-integration.txt`, guarded against drift by `tests/integration/test_frontend.py` |
 | R5 | Dev deploys ship no/stale card once the bundle moves | `reload_addon.sh` builds **before** `docker cp` of the component (bundle rides along); `develop.sh` cp path updated; separate `www/` copy removed | live check via the run-haventory skill |
 | R6 | Heuristic caching serves a stale bundle after upgrade | Keep `?v=<manifest version>` on the URL | header check with `curl -I` |
 | R7 | Companion app caches the index embedding old URLs | Path-stable URL + revalidation serves current bytes anyway | reasoning above; live check optional |

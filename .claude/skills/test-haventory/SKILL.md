@@ -49,7 +49,7 @@ npm ci            # first run, or if node_modules is partial (missing rolldown b
 npm run lint      # eslint  → clean
 npm run typecheck # tsc --noEmit → clean
 npm test          # vitest  → 812 passed across 42 files
-npm run build     # vite → ../www/haventory/haventory-card.js (git-ignored)
+npm run build     # vite → ../../custom_components/haventory/www/ (git-ignored)
 ```
 
 Warm the hooks before committing (never `--no-verify`):
@@ -64,12 +64,12 @@ The online surfaces test the **running container**, so deploy the working tree i
 `docker cp` of host paths mangles under Git Bash, so use a tar pipe (verified this session):
 
 ```bash
+# Build first: the bundle lands in custom_components/haventory/www/ and ships
+# with the component in the same tar.
+npm --prefix cards/haventory-card run build >/dev/null
 tar -C custom_components -cf - haventory | MSYS_NO_PATHCONV=1 \
   docker exec -i home-assistant sh -lc \
   'cd /config/custom_components && tar -xf - && find haventory -type d -name __pycache__ -prune -exec rm -rf {} +'
-npm --prefix cards/haventory-card run build >/dev/null
-tar -C cards/www -cf - haventory | MSYS_NO_PATHCONV=1 \
-  docker exec -i home-assistant sh -lc 'mkdir -p /config/www && cd /config/www && tar -xf -'
 docker restart home-assistant
 # then poll readiness (needs HA_TOKEN/HA_BASE_URL exported from .env):
 for i in $(seq 1 45); do \

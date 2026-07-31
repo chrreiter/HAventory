@@ -48,8 +48,12 @@ Vitest `4`. Version 0.0.1, unreleased.
 
 ### Frontend — `cards/haventory-card/`
 Lit 3 + TypeScript + Vite Lovelace card. Source in `src/` (`haventory-card` container,
-`hv-*` components, `store/` for WS client + state). Builds to `www/haventory/haventory-card.js`
-(git-ignored; produced in CI and by `npm run build`).
+`hv-*` components, `store/` for WS client + state). Builds to
+`custom_components/haventory/www/haventory-card.js` (git-ignored; produced in CI and by
+`npm run build`) — inside the integration package, which is the only tree HACS copies. The
+integration serves that directory at `/haventory_static/` and loads the card through both
+a Lovelace resource and `frontend.add_extra_js_url`, on one identical URL. See
+`docs/card_shipping_plan.md`.
 
 ### Docs — `docs/` (link here, don't duplicate)
 - `backend_api_contract.md` — WebSocket envelope, error taxonomy, command catalog, events.
@@ -143,8 +147,9 @@ Offline tests stub HA via `tests/conftest.py`.
   - Applies to TypeScript and Python alike. Enforced by review, not by a lint rule — the
     distinction is a judgment call and a mechanical check would be wrong often enough to be
     ignored.
-- Naming: domain/package `haventory`, services `haventory.*`, built assets `www/haventory/`,
-  calendar entity `calendar.haventory`.
+- Naming: domain/package `haventory`, services `haventory.*`, built assets
+  `custom_components/haventory/www/` served at `/haventory_static/`, calendar entity
+  `calendar.haventory`.
 - Report out-of-scope findings under a "Follow-ups" note rather than fixing them.
 
 See the README "Developer Checklist" for the full backend/frontend/CI checklist.

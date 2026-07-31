@@ -106,8 +106,8 @@ client + OS version, date. Put it in the results log.
 | ID | Scenario | Pass criteria | Blocker |
 |----|----------|---------------|---------|
 | A1 | Fresh install on a clean HA (ENV-B): HACS/manual copy → restart → add integration via config flow → add card via the UI card picker | Integration sets up without error; card appears in the picker; empty state renders with no locations and no console error | ✅ |
-| A2 | Card resource auto-registration (storage-mode Lovelace) | `/local/haventory/haventory-card.js` present exactly once in `.storage/lovelace_resources`; card loads without a manual step | ✅ |
-| A3 | YAML-mode Lovelace (ENV-B, `lovelace: mode: yaml`) | Registration is skipped with a clear log line; following the README's "YAML-mode dashboards" steps makes the card load (item 28, documented by #125) | ✅ |
+| A2 | Card resource auto-registration (storage-mode Lovelace) | `/haventory_static/haventory-card.js?v=<version>` present exactly once in `.storage/lovelace_resources`; `curl -I` on it returns 200 with **no** `Cache-Control` header; card loads without a manual step | ✅ |
+| A3 | YAML-mode Lovelace (ENV-B, `lovelace: mode: yaml`) | Resource registration is skipped with a clear log line, and the card still loads — the frontend extra-module URL covers YAML mode, so there is no manual step here either | ✅ |
 | A4 | Attempt a second config entry | Rejected as single-instance; no duplicate storage or resource | |
 | A5 | First-run with a pre-existing store (upgrade-in-place from a dev instance) | Existing items/locations load; `health` healthy | ✅ |
 
@@ -158,11 +158,11 @@ Run `haventory/health` after **each** of these, and snapshot the store around D7
 
 | ID | Scenario | Pass criteria | Blocker |
 |----|----------|---------------|---------|
-| E1 | Take a full HA backup; inspect the archive | Contains `.storage/haventory_store`, `.storage/lovelace_resources`, and `www/haventory/haventory-card.js` | ✅ |
+| E1 | Take a full HA backup; inspect the archive | Contains `.storage/haventory_store`, `.storage/lovelace_resources`, and `custom_components/haventory/www/haventory-card.js` | ✅ |
 | E2 | Backup taken **while HAventory is being written to** (run a bulk import during the backup), restore into ENV-D | Restored store is valid JSON; `health` healthy; item count matches the pre-backup count ±the in-flight batch | ✅ |
 | E3 | Restore an **older** backup into the **current** integration (ENV-D) | Forward migration runs on load; data intact; `health` healthy | ✅ |
 | E4 | Restore a **newer-schema** backup into an **older** integration (ENV-D) | Same expectation as D8 — refuse loudly; never migrate down, never silently relabel (item 25, fixed by #120) | ✅ |
-| E5 | Partial/selective backup | Document the minimum set a user must select to fully restore HAventory (store + Lovelace resources + `www` asset, or "reinstall the integration and restore only the store") | ✅ |
+| E5 | Partial/selective backup | Document the minimum set a user must select to fully restore HAventory. The card bundle now rides inside `custom_components/haventory/`, so the set is the store plus the integration folder — or "reinstall the integration and restore only the store". The Lovelace resource is rebuilt on setup and no longer has to be backed up | ✅ |
 
 ### F — Data integrity & scale
 
