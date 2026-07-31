@@ -1,23 +1,36 @@
 """Offline tests for the config-entry removal contract.
 
-Removing the integration takes back the Lovelace resource it registered and
-keeps the persisted inventory, so a re-add restores the data.
+Removing the integration takes back both frontend registrations it made — the
+Lovelace resource and the frontend's extra-module URL — and keeps the persisted
+inventory, so a re-add restores the data.
 """
 
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 import types
+from pathlib import Path
 from typing import Any
 
 import pytest
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
+from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, UrlManager
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-CARD_URL = "/local/haventory/haventory-card.js"
+CARD_URL = "/haventory_static/haventory-card.js"
+# What installs from before the bundle moved into the package registered.
+LEGACY_CARD_URL = "/local/haventory/haventory-card.js"
 LOVELACE_KEY = "lovelace_data_key"
+
+
+def current_card_url() -> str:
+    """The versioned URL setup would have registered, from the shipped manifest."""
+    manifest = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
+    version = json.loads((manifest / "manifest.json").read_text(encoding="utf-8"))["version"]
+    return f"{CARD_URL}?v={version}"
 
 
 class MockResourceCollection:
@@ -70,9 +83,10 @@ def _import_with_lovelace(monkeypatch):
     return importlib.import_module("custom_components.haventory")
 
 
-def _hass_with_resources(resources: Any) -> HomeAssistant:
+def _hass_with_resources(resources: Any, *, module_urls: list[str] | None = None) -> HomeAssistant:
     hass = HomeAssistant()
     hass.data[LOVELACE_KEY] = types.SimpleNamespace(resources=resources)
+    hass.data[DATA_EXTRA_MODULE_URL] = UrlManager(module_urls)
     return hass
 
 
@@ -97,12 +111,44 @@ async def test_remove_entry_deletes_card_resource(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_remove_entry_removes_the_frontend_module_url(monkeypatch) -> None:
+    """The extra-module URL goes too, or the frontend keeps requesting a dead asset."""
+
+    hav_init = _import_with_lovelace(monkeypatch)
+    resources = MockResourceCollection([{"id": "haventory", "url": current_card_url()}])
+    hass = _hass_with_resources(
+        resources, module_urls=[current_card_url(), "/other_static/other-card.js"]
+    )
+
+    await hav_init.async_remove_entry(hass, ConfigEntry())
+
+    assert hass.data[DATA_EXTRA_MODULE_URL].urls == {"/other_static/other-card.js"}
+
+
+@pytest.mark.asyncio
+async def test_remove_entry_removes_the_module_url_recorded_at_setup(monkeypatch) -> None:
+    """Whatever setup registered is what removal takes back, version and all."""
+
+    hav_init = _import_with_lovelace(monkeypatch)
+    registered = f"{CARD_URL}?v=0.0.99"
+    hass = _hass_with_resources(MockResourceCollection(), module_urls=[registered])
+    hass.data[hav_init.DOMAIN] = {"extra_js_url": registered}
+
+    await hav_init.async_remove_entry(hass, ConfigEntry())
+
+    assert hass.data[DATA_EXTRA_MODULE_URL].urls == set()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "registered_url",
     [
         f"{CARD_URL}?v=38b725595b78",
         f"{CARD_URL}?v=1&foo=bar",
         f"{CARD_URL}#frag",
+        # An install that never got past the legacy `/local` URL.
+        LEGACY_CARD_URL,
+        f"{LEGACY_CARD_URL}?v=0.0.1",
     ],
 )
 async def test_remove_entry_deletes_versioned_card_resource(monkeypatch, registered_url) -> None:

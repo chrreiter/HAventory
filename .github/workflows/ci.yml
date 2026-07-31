@@ -78,6 +78,18 @@ jobs:
           enable-cache: true
       - name: Install Python 3.14
         run: uv python install 3.14
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: cards/haventory-card/package-lock.json
+      - name: Build the card the integration serves
+        # The bundle is git-ignored, and the integration skips its frontend
+        # registration when it is absent — without this step the frontend tests
+        # would skip rather than run, silently dropping the coverage this job
+        # exists for.
+        run: npm ci --no-audit --no-fund && npm run build
+        working-directory: cards/haventory-card
       - name: Create integration environment (phacc + real HA core)
         run: |
           uv venv --python 3.14 .venv-integration
