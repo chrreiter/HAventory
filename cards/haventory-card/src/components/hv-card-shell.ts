@@ -8,28 +8,24 @@ import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { emptyKindFor } from '../ui/empty-state';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
+import { HostSurfaces } from '../host-surfaces';
 import type { Store } from '../store/store';
 import type { Item, StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 import './hv-banner';
 import './hv-bottom-sheet';
-import './hv-confirm';
 import './hv-filter-chips';
 import './hv-filter-panel';
 import './hv-list';
 import './hv-item-editor';
 import './hv-detail-sheet';
 import './hv-full-view';
-import './hv-organize-dialog';
 import type { OrganizeTab } from './hv-organize-dialog';
 import './hv-checkout-popover';
-import './hv-diagnostics-panel';
-import './hv-import-sheet';
 import './hv-overflow-menu';
-import type { ColumnKey } from '../store/columns';
 import type { HVFilterPanel } from './hv-filter-panel';
 import type { HVItemEditor } from './hv-item-editor';
-import type { ImportPolicy, ImportPreview, ImportSummary, ItemCreate, ItemUpdate } from '../store/types';
+import type { ItemCreate, ItemUpdate } from '../store/types';
 
 const SEARCH_DEBOUNCE_MS = 200;
 const FILTER_PANEL_STORAGE_KEY = 'haventory:filter-panel-open:v1';
@@ -367,21 +363,12 @@ export class HVCardShell extends LitElement {
   @property({ type: String }) heading = DEFAULT_CARD_TITLE;
   /** Force a layout instead of measuring; `null` measures. */
   @property({ attribute: false }) forceMobile: boolean | null = null;
-  /** Column selection for the full-view table (the card list has its own row). */
-  @property({ attribute: false }) columns: ColumnKey[] = [];
 
   @state() private _filterPanelOpen = false;
   @state() private _filterSheetOpen = false;
   @state() private _stagedCount: number | null = null;
   /** The sheet's in-flight filter set, so its header counts what you staged. */
   @state() private _stagedFilters: StoreFilters | null = null;
-  @state() private _confirm: {
-    heading: string;
-    message: string;
-    confirmLabel?: string;
-    destructive?: boolean;
-    onConfirm: () => void;
-  } | null = null;
   @state() private _searchDraft = '';
   /** Row expanded into the inline editor, or `'new'` for the add-item expander. */
   @state() private _editing: string | 'new' | null = null;
@@ -391,20 +378,24 @@ export class HVCardShell extends LitElement {
   @state() private _detailItemId: string | null = null;
   @state() private _fullViewOpen = false;
   @state() private _startSelecting = false;
-  @state() private _organizeOpen = false;
-  @state() private _organizeTab: OrganizeTab = 'locations';
-  @state() private _diagnosticsOpen = false;
-  @state() private _importOpen = false;
-  @state() private _importPreview: ImportPreview | null = null;
-  @state() private _importSummary: ImportSummary | null = null;
-  @state() private _importBusy = false;
-  @state() private _importError: string | null = null;
-  @state() private _refreshBusy = false;
-  /** When the caches were last known-good, for the diagnostics "since" tile. */
-  @state() private _lastRefresh: string | null = null;
   /** Item whose check-out / due-date step is open, with where to anchor it. */
   @state() private _checkout: { itemId: string; mode: 'check-out' | 'set-due-date'; anchor: DOMRect | null } | null =
     null;
+
+  /** The dialogs both hosts share — confirm, organize, import, diagnostics. */
+  readonly surfaces = new HostSurfaces(this, () => this.store, {
+    isMobile: () => this.mobile,
+    onItemDeleted: (itemId) => {
+      if (this._editing === itemId) this._editing = null;
+      if (this._detailItemId === itemId) this._detailItemId = null;
+    },
+    onBrowse: () => {
+      // Organizing is a full-screen job, so the filter it hands back belongs
+      // on the full-screen surface too — dropping back to the small card
+      // means immediately expanding again to see what you just picked.
+      this._fullViewOpen = true;
+    },
+  });
 
   private readonly responsive = new ResponsiveController(this);
   private _storeUnsub?: () => void;
@@ -479,17 +470,7 @@ export class HVCardShell extends LitElement {
   }
 
   private _requestDelete(item: Item) {
-    this._confirm = {
-      heading: `Delete "${item.name}"?`,
-      message: 'This cannot be undone. The item is removed for every connected client.',
-      confirmLabel: 'Delete',
-      destructive: true,
-      onConfirm: () => {
-        if (this._editing === item.id) this._editing = null;
-        if (this._detailItemId === item.id) this._detailItemId = null;
-        void this.store?.deleteItem(item.id, item.version);
-      },
-    };
+    this.surfaces.requestDeleteById(item.id);
   }
 
   private _itemById(itemId: string): Item | undefined {
@@ -538,7 +519,7 @@ export class HVCardShell extends LitElement {
   private _startEdit(next: string | 'new' | null) {
     if (this._editing === next) return;
     if (this._editing !== null && this._editor?.dirty) {
-      this._confirm = {
+      this.surfaces.confirm({
         heading: 'Discard your changes?',
         message: 'The item you are editing has unsaved changes.',
         confirmLabel: 'Discard',
@@ -547,7 +528,7 @@ export class HVCardShell extends LitElement {
           this._editorError = null;
           this._editing = next;
         },
-      };
+      });
       return;
     }
     this._editorError = null;
@@ -649,122 +630,6 @@ export class HVCardShell extends LitElement {
   };
 
   // ---------- Overflow menu ----------
-  /** Short badge for the Diagnostics menu row, or null when all is well. */
-  private get diagnosticsBadge(): string | null {
-    const st = this.st;
-    if (!st) return null;
-    const rate = st.healthCache?.rate_limit;
-    const dropped = (rate?.dropped_commands ?? 0) + (rate?.dropped_events ?? 0);
-    if (dropped > 0) return `${dropped} dropped`;
-    const issues = st.healthCache?.issues.length ?? 0;
-    if (issues > 0) return counted(issues, 'issue');
-    if (st.degraded.connectionLost) return 'offline';
-    return null;
-  }
-
-  private async _refresh() {
-    this._refreshBusy = true;
-    try {
-      await this.store?.refreshAll();
-      this._lastRefresh = new Date().toISOString();
-    } finally {
-      this._refreshBusy = false;
-    }
-  }
-
-  private async _onImportPreview(e: CustomEvent) {
-    const { document, policy } = e.detail as { document: unknown; policy: ImportPolicy };
-    this._importBusy = true;
-    this._importError = null;
-    this._importSummary = null;
-    try {
-      this._importPreview = (await this.store?.previewImport(document, policy)) ?? null;
-    } catch (err) {
-      this._importPreview = null;
-      this._importError = (err as { message?: string })?.message ?? 'Could not check that document.';
-    } finally {
-      this._importBusy = false;
-    }
-  }
-
-  private async _onImportExecute(e: CustomEvent) {
-    const { document, policy } = e.detail as { document: unknown; policy: ImportPolicy };
-    this._importBusy = true;
-    this._importError = null;
-    try {
-      this._importSummary = (await this.store?.executeImport(document, policy)) ?? null;
-      this._lastRefresh = new Date().toISOString();
-    } catch (err) {
-      const anyErr = err as {
-        code?: string;
-        message?: string;
-        data?: { errors?: { path: string; message: string }[] };
-      };
-      if (anyErr?.code === 'validation_error' && anyErr.data?.errors?.length) {
-        // The backend rejected the document itself — show the structured list
-        // rather than flattening it into one message.
-        this._importPreview = {
-          valid: false,
-          errors: anyErr.data.errors,
-          policy,
-          document: {
-            haventory_export_version: null,
-            schema_version: null,
-            exported_at: null,
-            integration_version: null,
-          },
-          items: { add: [], update: [], conflict: [], unchanged: [] },
-          locations: { add: [], update: [], conflict: [], unchanged: [] },
-          counts: {},
-        };
-      } else {
-        this._importError = anyErr?.message ?? 'The import failed.';
-      }
-    } finally {
-      this._importBusy = false;
-    }
-  }
-
-  private get menuEntries(): OverflowMenuEntry[] {
-    const st = this.st;
-    const total = st?.statsCounts?.items_total ?? null;
-    const filtered = st?.total ?? null;
-    const filtersOn = activeFilterCount(st?.filters ?? defaultFilters()) > 0;
-    return [
-      { id: 'select-items', label: 'Select items…', glyph: 'select' },
-      { id: 'organize', label: 'Organize…', glyph: 'mapMarker', meta: 'Locations · Tags · Categories' },
-      { id: 'columns', label: 'Columns…', glyph: 'viewColumn' },
-      { divider: true },
-      { id: 'refresh', label: 'Refresh data', glyph: 'refresh', meta: 'Items · locations · stats' },
-      {
-        id: 'diagnostics',
-        label: 'Diagnostics',
-        glyph: 'alertCircle',
-        // Badge only when there is actually something wrong — otherwise it is a plain row.
-        ...(this.diagnosticsBadge ? { badge: this.diagnosticsBadge } : {}),
-      },
-      { divider: true },
-      { caption: 'Data' },
-      {
-        id: 'export-all',
-        label: 'Export backup',
-        glyph: 'download',
-        sub: total === null ? 'Everything' : `All ${counted(total, 'item')} · all locations`,
-      },
-      {
-        id: 'export-view',
-        label: 'Export current view',
-        glyph: 'download',
-        sub:
-          filtered === null
-            ? 'Active filter · keeps location paths'
-            : `${filtered} filtered ${plural(filtered, 'item')} · keeps location paths`,
-        disabled: !filtersOn,
-      },
-      { id: 'import', label: 'Import backup…', glyph: 'upload' },
-    ];
-  }
-
   /**
    * The card's own ⋮, which is the full-view menu minus "Columns…".
    *
@@ -772,12 +637,12 @@ export class HVCardShell extends LitElement {
    * fixed compact row — so the card's own menu omits them.
    */
   private get cardMenuEntries(): OverflowMenuEntry[] {
-    return this.menuEntries.filter((entry) => !('id' in entry && entry.id === 'columns'));
+    return this.surfaces.menuEntries().filter((entry) => !('id' in entry && entry.id === 'columns'));
   }
 
   private _onMenuSelect = (e: CustomEvent) => {
     // The full view re-dispatches its own menu selections through here; stop the
-    // original so the host card does not also see it directly.
+    // original so it does not leak out of the card as if it were public API.
     e.stopPropagation();
     const { id, tab } = e.detail as { id: string; tab?: OrganizeTab };
     this._runMenuAction(id, tab);
@@ -786,44 +651,18 @@ export class HVCardShell extends LitElement {
   /**
    * What an action id means, for every surface that can name one.
    *
-   * The ⋮ menus and the empty state's offers share an id vocabulary, and the
-   * shell owns some of those surfaces (import, organize, diagnostics) while the
-   * host card owns others (the column picker, the export download). Both entry
-   * points route through here so they cannot disagree about which is which — an
-   * id the shell handles must not be handed upward, where the host's switch
-   * would drop it on the floor.
+   * The ⋮ menus and the empty state's offers share an id vocabulary. Almost all
+   * of it is answered by the shared host surfaces; the one id that is about
+   * this element rather than a dialog is handled here.
    */
   private _runMenuAction(id: string, tab?: OrganizeTab) {
-    if (id === 'refresh') {
-      void this._refresh();
-      return;
-    }
-    if (id === 'diagnostics') {
-      this._diagnosticsOpen = true;
-      return;
-    }
-    if (id === 'import') {
-      this._importPreview = null;
-      this._importSummary = null;
-      this._importError = null;
-      this._importOpen = true;
-      return;
-    }
-    if (id === 'organize') {
-      // The expanded sidebar's facet headings ask for a specific tab; the card
-      // menu asks for none and gets Locations, as it always did.
-      this._organizeTab = tab ?? 'locations';
-      this._organizeOpen = true;
-      return;
-    }
     if (id === 'select-items') {
       // Selection lives in the full view, where there is room for the bulk bar.
       this._startSelecting = true;
       this._fullViewOpen = true;
       return;
     }
-    // Everything else is owned by the host card, which knows about dialogs.
-    this.dispatchEvent(new CustomEvent('menu-action', { detail: { id }, bubbles: true, composed: true }));
+    this.surfaces.handleAction(id, tab);
   }
 
   // ---------- Render helpers ----------
@@ -918,7 +757,7 @@ export class HVCardShell extends LitElement {
           slot="actions"
           class="hv-pill outline"
           data-testid="degraded-reconnect"
-          @click=${() => void this._refresh()}
+          @click=${() => void this.surfaces.refresh()}
         >
           Reconnect
         </button>
@@ -942,7 +781,7 @@ export class HVCardShell extends LitElement {
               slot="actions"
               class="hv-pill outline"
               data-testid="degraded-live-refresh"
-              @click=${() => void this._refresh()}
+              @click=${() => void this.surfaces.refresh()}
             >
               Refresh
             </button>`}
@@ -967,7 +806,7 @@ export class HVCardShell extends LitElement {
           slot="actions"
           class="hv-pill outline"
           data-testid="degraded-refresh"
-          @click=${() => void this._refresh()}
+          @click=${() => void this.surfaces.refresh()}
         >
           Refresh
         </button>
@@ -1216,8 +1055,8 @@ export class HVCardShell extends LitElement {
         ?open=${this._fullViewOpen}
         .store=${this.store}
         .heading=${this.heading}
-        .columns=${this.columns}
-        .menuEntries=${this.menuEntries}
+        .columns=${this.surfaces.columns}
+        .menuEntries=${this.surfaces.menuEntries()}
         ?startSelecting=${this._startSelecting}
         @close=${() => {
           this._fullViewOpen = false;
@@ -1338,45 +1177,6 @@ export class HVCardShell extends LitElement {
           ></hv-detail-sheet>`
         : null}
 
-      <hv-import-sheet
-        data-testid="card-import"
-        ?open=${this._importOpen}
-        .preview=${this._importPreview}
-        .summary=${this._importSummary}
-        .busy=${this._importBusy}
-        .errorMessage=${this._importError}
-        @preview=${(e: CustomEvent) => void this._onImportPreview(e)}
-        @execute=${(e: CustomEvent) => void this._onImportExecute(e)}
-        @invalidate-preview=${() => {
-          // A preview is only valid for the policy it was run with.
-          this._importPreview = null;
-          this._importError = null;
-        }}
-        @cancel=${() => {
-          this._importOpen = false;
-          this._importPreview = null;
-          this._importSummary = null;
-          this._importError = null;
-        }}
-      ></hv-import-sheet>
-
-      <hv-diagnostics-panel
-        data-testid="card-diagnostics"
-        ?open=${this._diagnosticsOpen}
-        .health=${st?.healthCache ?? null}
-        .counts=${st?.statsCounts ?? null}
-        .version=${st?.versionInfo ?? null}
-        .degraded=${st?.degraded ?? null}
-        .connected=${st?.connected ?? null}
-        .loadedItems=${loaded}
-        .lastRefresh=${this._lastRefresh}
-        .busy=${this._refreshBusy}
-        @refresh=${() => void this._refresh()}
-        @cancel=${() => {
-          this._diagnosticsOpen = false;
-        }}
-      ></hv-diagnostics-panel>
-
       <hv-checkout-popover
         data-testid="card-checkout"
         ?open=${this._checkout !== null}
@@ -1402,38 +1202,7 @@ export class HVCardShell extends LitElement {
         }}
       ></hv-checkout-popover>
 
-      <hv-organize-dialog
-        data-testid="card-organize"
-        ?open=${this._organizeOpen}
-        ?mobile=${mobile}
-        .tab=${this._organizeTab}
-        .store=${this.store}
-        @cancel=${() => {
-          this._organizeOpen = false;
-        }}
-        @browse=${() => {
-          // Organizing is a full-screen job, so the filter it hands back belongs
-          // on the full-screen surface too — dropping back to the small card
-          // means immediately expanding again to see what you just picked.
-          this._fullViewOpen = true;
-        }}
-      ></hv-organize-dialog>
-
-      <hv-confirm
-        data-testid="card-confirm"
-        ?open=${this._confirm !== null}
-        .heading=${this._confirm?.heading ?? ''}
-        .message=${this._confirm?.message ?? ''}
-        .confirmLabel=${this._confirm?.confirmLabel ?? 'Delete'}
-        .destructive=${this._confirm?.destructive ?? true}
-        @confirm=${() => {
-          this._confirm?.onConfirm();
-          this._confirm = null;
-        }}
-        @cancel=${() => {
-          this._confirm = null;
-        }}
-      ></hv-confirm>
+      ${this.surfaces.renderSurfaces()}
     `;
   }
 

@@ -740,6 +740,50 @@ describe('hv-full-view: editing', () => {
     expect(q(sr, '[data-testid="full-editor"]')).toBe(null);
   });
 
+  // Without this the editor renders `.item` as null once the row is gone —
+  // and a null item is the create form. On the panel there is no shell to
+  // clean up after the editor, so the view closes it itself.
+  it('closes the editor when the item being edited is deleted', async () => {
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(q(sr, '[data-testid="full-editor"]')).toBeTruthy();
+
+    await store.deleteItem('1', 1);
+    await settle(el);
+
+    expect(q(sr, '[data-testid="full-editor"]')).toBe(null);
+  });
+
+  it('keeps the editor open when some other item is deleted', async () => {
+    const { el, store, sr } = await mount({
+      items: [makeItem({ id: '1', name: 'Wood Glue' }), makeItem({ id: '2', name: 'Clamps' })],
+    });
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(q(sr, '[data-testid="full-editor"]')).toBeTruthy();
+
+    await store.deleteItem('2', 1);
+    await settle(el);
+
+    expect(q(sr, '[data-testid="full-editor"]')).toBeTruthy();
+  });
+
+  it('closes the editor when a filter change drops the item from the list', async () => {
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    store.setFilters({ q: 'matches nothing at all' });
+    await settle(el);
+    await settle(el);
+
+    expect(q(sr, '[data-testid="full-editor"]')).toBe(null);
+  });
+
   // The form sits in a column flex beside a table that wants every pixel. An
   // `overflow-y: auto` box has an automatic minimum size of zero, so the form
   // was free to be squeezed — it opened about 130px tall, a field and a half,

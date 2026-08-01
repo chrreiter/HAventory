@@ -238,11 +238,114 @@ describe('haventory-panel: host-owned surfaces', () => {
 
   it('does nothing for an action no surface here owns', async () => {
     const { el, sr, view } = await mountPanel();
-    raise(view(), 'organize');
+    raise(view(), 'not-a-surface');
     await settle(el);
 
     expect((sr.querySelector('hv-column-picker') as HTMLElement & { open: boolean }).open).toBe(false);
     expect(view()).toBeTruthy();
+  });
+});
+
+describe('haventory-panel: the shared dialog surfaces', () => {
+  const raise = (view: FullView, detail: Record<string, unknown>) =>
+    view.dispatchEvent(new CustomEvent('menu-action', { detail, bubbles: true, composed: true }));
+  const dialog = (sr: ShadowRoot, testid: string) =>
+    sr.querySelector(`[data-testid="${testid}"]`) as HTMLElement & { open: boolean; tab?: string };
+
+  it('confirms a delete raised by the view, then sends the version-checked delete', async () => {
+    const { el, sr, view } = await mountPanel({ items: [makeItem({ id: '1', name: 'Hammer' })] });
+    await settle(el);
+    const deletes: unknown[][] = [];
+    const store = (el as unknown as { store: { deleteItem: (...args: unknown[]) => Promise<void> } }).store;
+    store.deleteItem = (...args: unknown[]) => {
+      deletes.push(args);
+      return Promise.resolve();
+    };
+
+    view().dispatchEvent(
+      new CustomEvent('request-delete', { detail: { itemId: '1' }, bubbles: true, composed: true }),
+    );
+    await settle(el);
+
+    const confirm = dialog(sr, 'host-confirm');
+    expect(confirm.open).toBe(true);
+    expect((confirm as unknown as { heading: string }).heading).toContain('Hammer');
+    expect(deletes).toEqual([]);
+
+    confirm.dispatchEvent(new CustomEvent('confirm', { bubbles: true, composed: true }));
+    await settle(el);
+
+    expect(deletes).toEqual([['1', 1]]);
+    expect(dialog(sr, 'host-confirm').open).toBe(false);
+  });
+
+  it('lets a cancelled delete change nothing', async () => {
+    const { el, sr, view } = await mountPanel({ items: [makeItem({ id: '1', name: 'Hammer' })] });
+    await settle(el);
+    const deletes: unknown[] = [];
+    const store = (el as unknown as { store: { deleteItem: (...args: unknown[]) => Promise<void> } }).store;
+    store.deleteItem = (...args: unknown[]) => {
+      deletes.push(args);
+      return Promise.resolve();
+    };
+
+    view().dispatchEvent(
+      new CustomEvent('request-delete', { detail: { itemId: '1' }, bubbles: true, composed: true }),
+    );
+    await settle(el);
+    dialog(sr, 'host-confirm').dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
+    await settle(el);
+
+    expect(dialog(sr, 'host-confirm').open).toBe(false);
+    expect(deletes).toEqual([]);
+  });
+
+  it('ignores a delete for an item that is already gone', async () => {
+    const { el, sr, view } = await mountPanel();
+    view().dispatchEvent(
+      new CustomEvent('request-delete', { detail: { itemId: 'ghost' }, bubbles: true, composed: true }),
+    );
+    await settle(el);
+    expect(dialog(sr, 'host-confirm').open).toBe(false);
+  });
+
+  // The sidebar's "+" beside Categories and Tags names this action with a tab.
+  it('opens the organize dialog on the tab that was asked for', async () => {
+    const { el, sr, view } = await mountPanel({ items: [makeItem({ id: '1', tags: ['metric'] })] });
+    raise(view(), { id: 'organize', tab: 'tags' });
+    await settle(el);
+    expect(dialog(sr, 'host-organize').open).toBe(true);
+    expect(dialog(sr, 'host-organize').tab).toBe('tags');
+  });
+
+  it('defaults the organize dialog to Locations when no tab is named', async () => {
+    const { el, sr, view } = await mountPanel();
+    raise(view(), { id: 'organize' });
+    await settle(el);
+    expect(dialog(sr, 'host-organize').tab).toBe('locations');
+  });
+
+  it('opens the import sheet from the fresh-install empty state', async () => {
+    const { el, sr, view } = await mountPanel({ items: [] });
+    await settle(el);
+
+    // The offer is real UI inside the view, not a synthetic event: what a fresh
+    // install sees first has to actually work here.
+    const offer = view().shadowRoot?.querySelector(
+      '[data-testid="empty-action"][data-id="import"]',
+    ) as HTMLButtonElement;
+    expect(offer).toBeTruthy();
+    offer.click();
+    await settle(el);
+
+    expect(dialog(sr, 'host-import').open).toBe(true);
+  });
+
+  it('opens diagnostics from the menu', async () => {
+    const { el, sr, view } = await mountPanel();
+    raise(view(), { id: 'diagnostics' });
+    await settle(el);
+    expect(dialog(sr, 'host-diagnostics').open).toBe(true);
   });
 });
 
@@ -252,9 +355,20 @@ describe('haventory-panel: the ⋮ menu', () => {
       .map((e) => e.id)
       .filter(Boolean);
 
-  it('offers only the entries this host can answer', async () => {
+  // One builder serves the card's full view and the panel, so the two hosts
+  // cannot drift apart on what the menu offers.
+  it('offers the same entries as the card full view', async () => {
     const { view } = await mountPanel();
-    expect(ids(view())).toEqual(['select-items', 'columns', 'refresh', 'export-all', 'export-view']);
+    expect(ids(view())).toEqual([
+      'select-items',
+      'organize',
+      'columns',
+      'refresh',
+      'diagnostics',
+      'export-all',
+      'export-view',
+      'import',
+    ]);
   });
 
   // The filtered export would be the whole inventory again, so it stays out of

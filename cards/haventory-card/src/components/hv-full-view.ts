@@ -43,9 +43,10 @@ const SEARCH_DEBOUNCE_MS = 200;
  * over its own field and Category too narrow to show a value. A media query
  * cannot set a property, so the same breakpoint is read here and handed down.
  *
- * Keep this string and the media query in agreement.
+ * Keep this string and the media query in agreement. Exported so the sidebar
+ * panel can put the dialogs it hosts on the same breakpoint as this view.
  */
-const NARROW_QUERY = '(max-width: 700px)';
+export const NARROW_QUERY = '(max-width: 700px)';
 
 /** The sidebar's collapsible sections, in the order they appear. */
 type SidebarSection = 'locations' | 'categories' | 'tags';
@@ -771,6 +772,20 @@ export class HVFullView extends LitElement {
     if (changed.has('store') && this.store) {
       this._storeUnsub?.();
       this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+    }
+    // An editor whose item has left the store — deleted here, by another
+    // client, or filtered out of the list — would otherwise render `.item` as
+    // null, which is the create form. Gated on `loading`: a filter change
+    // empties the list while the next page is fetched, and that absence says
+    // nothing yet.
+    if (
+      this._editing !== null &&
+      this._editing !== 'new' &&
+      this.st !== null &&
+      !this.st.loading &&
+      !this.st.items.some((i) => i.id === this._editing)
+    ) {
+      this._editing = null;
     }
     if (changed.has('open')) {
       if (this.open) {

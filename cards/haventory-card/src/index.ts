@@ -4,7 +4,6 @@ import { Store } from './store/store';
 import { resolveColorScheme } from './ui/theme';
 import { DEFAULT_CARD_TITLE } from './ui/card-title';
 import { defineCardElement } from './register';
-import { HostSurfaces } from './host-surfaces';
 import './components/hv-card-shell';
 // The sidebar panel is a second element out of this one bundle, so importing it
 // here is what puts it in the build.
@@ -25,7 +24,6 @@ export class HAventoryCard extends LitElement {
   private store?: Store;
   private _storeUnsub?: () => void;
   private _hass?: HassLike;
-  readonly surfaces = new HostSurfaces(this, () => this.store);
 
   // Lovelace interface: called by HA when the card is created/configured
   public setConfig(cfg: unknown): void {
@@ -105,9 +103,8 @@ export class HAventoryCard extends LitElement {
 
   /**
    * `haventory-card` stays the custom element HA knows about and is a thin
-   * host: `hv-card-shell` owns the store, the layout and item editing, while
-   * the surfaces that belong to the browser rather than the card — the column
-   * picker and the export download — stay here.
+   * wrapper: it owns the `Store` and the Lovelace interface, while the shell
+   * owns the layout, item editing and the shared host surfaces.
    */
   render() {
     return html`
@@ -115,13 +112,7 @@ export class HAventoryCard extends LitElement {
         data-testid="card-shell"
         .store=${this.store}
         .heading=${this._heading()}
-        .columns=${this.surfaces.columns}
-        @menu-action=${(e: CustomEvent) => {
-          this.surfaces.handleAction((e.detail as { id: string }).id);
-        }}
       ></hv-card-shell>
-
-      ${this.surfaces.renderColumnPicker()}
     `;
   }
 

@@ -1,13 +1,14 @@
 import { LitElement, css, html } from 'lit';
 import { property } from 'lit/decorators.js';
 import type { HassLike } from './store/types';
-import { Store, activeFilterCount, defaultFilters } from './store/store';
+import { Store } from './store/store';
 import { resolveColorScheme } from './ui/theme';
 import { DEFAULT_CARD_TITLE } from './ui/card-title';
 import { defineCardElement } from './register';
 import { HostSurfaces } from './host-surfaces';
-import type { OverflowMenuEntry } from './components/hv-overflow-menu';
+import type { OrganizeTab } from './components/hv-organize-dialog';
 import './components/hv-full-view';
+import { NARROW_QUERY } from './components/hv-full-view';
 
 /** The slice of Home Assistant's panel object this element reads. */
 interface PanelInfo {
@@ -19,10 +20,10 @@ interface PanelInfo {
  *
  * Home Assistant's custom-panel loader creates this element, sets `hass`,
  * `narrow`, `route` and `panel` on it, and gives it the whole content area.
- * That makes it a host in the same sense `haventory-card` is: it owns the
- * `Store` and the surfaces that belong to the browser, and hands the inventory
- * itself to `hv-full-view` — embedded rather than modal, since a page has
- * nowhere to close to.
+ * It owns the `Store` (the same lifecycle `haventory-card` has) and a
+ * `HostSurfaces` instance (the same one `hv-card-shell` holds on the card
+ * side), and hands the inventory itself to `hv-full-view` — embedded rather
+ * than modal, since a page has nowhere to close to.
  */
 export class HAventoryPanel extends LitElement {
   static styles = css`
@@ -53,7 +54,19 @@ export class HAventoryPanel extends LitElement {
   private store?: Store;
   private _storeUnsub?: () => void;
   private _hass?: HassLike;
-  readonly surfaces = new HostSurfaces(this, () => this.store);
+  private _phoneQuery?: MediaQueryList | null;
+  private readonly _onPhoneChange = () => this.requestUpdate();
+
+  /**
+   * No `onItemDeleted` hook — the embedded view closes its own editor when the
+   * item vanishes. No `onBrowse` — the full view here is the page itself, so
+   * there is nothing to open when the organize dialog hands back a filter.
+   */
+  readonly surfaces = new HostSurfaces(this, () => this.store, {
+    // The dialogs share the embedded view's own phone breakpoint, not HA's
+    // `narrow` — that flag is about the sidebar and flips at a tablet width.
+    isMobile: () => this._phoneQuery?.matches ?? false,
+  });
 
   get hass(): HassLike | undefined {
     return this._hass;
@@ -84,6 +97,8 @@ export class HAventoryPanel extends LitElement {
         this.requestUpdate();
       });
     }
+    this._phoneQuery ??= window.matchMedia?.(NARROW_QUERY) ?? null;
+    this._phoneQuery?.addEventListener('change', this._onPhoneChange);
     this._syncColorScheme();
   }
 
@@ -93,6 +108,7 @@ export class HAventoryPanel extends LitElement {
       this._storeUnsub();
       this._storeUnsub = undefined;
     }
+    this._phoneQuery?.removeEventListener('change', this._onPhoneChange);
   }
 
   firstUpdated(): void {
@@ -121,11 +137,13 @@ export class HAventoryPanel extends LitElement {
         .store=${this.store}
         .heading=${this._heading()}
         .columns=${this.surfaces.columns}
-        .menuEntries=${this._menuEntries()}
-        @menu-action=${(e: CustomEvent) => this._onMenuAction((e.detail as { id: string }).id)}
+        .menuEntries=${this.surfaces.menuEntries()}
+        @menu-action=${this._onMenuAction}
+        @request-delete=${(e: CustomEvent) =>
+          this.surfaces.requestDeleteById((e.detail as { itemId: string }).itemId)}
       ></hv-full-view>
 
-      ${this.surfaces.renderColumnPicker()}
+      ${this.surfaces.renderSurfaces()}
     `;
   }
 
@@ -144,36 +162,13 @@ export class HAventoryPanel extends LitElement {
   }
 
   /**
-   * The ⋮ menu, holding only what this host can answer.
-   *
-   * Organize, Import and Diagnostics open dialogs that `hv-card-shell` owns, and
-   * there is no shell on this page — an entry naming one would do nothing.
+   * `select-items` never reaches this handler — the view answers it in place —
+   * so the shared surfaces cover the entire remaining vocabulary.
    */
-  private _menuEntries(): OverflowMenuEntry[] {
-    const st = this.store?.state.value;
-    const filtersOn = activeFilterCount(st?.filters ?? defaultFilters()) > 0;
-    return [
-      { id: 'select-items', label: 'Select items…', glyph: 'select' },
-      { id: 'columns', label: 'Columns…', glyph: 'viewColumn' },
-      { divider: true },
-      { id: 'refresh', label: 'Refresh data', glyph: 'refresh', meta: 'Items · locations · stats' },
-      { divider: true },
-      { caption: 'Data' },
-      { id: 'export-all', label: 'Export backup', glyph: 'download', sub: 'All items · all locations' },
-      {
-        id: 'export-view',
-        label: 'Export current view',
-        glyph: 'download',
-        sub: 'Active filter · keeps location paths',
-        disabled: !filtersOn,
-      },
-    ];
-  }
-
-  private _onMenuAction(id: string): void {
-    if (this.surfaces.handleAction(id)) return;
-    if (id === 'refresh') void this.store?.refreshAll();
-  }
+  private _onMenuAction = (e: CustomEvent): void => {
+    const { id, tab } = e.detail as { id: string; tab?: OrganizeTab };
+    this.surfaces.handleAction(id, tab);
+  };
 }
 
 defineCardElement('haventory-panel', HAventoryPanel);

@@ -157,10 +157,31 @@ container). Signatures are identical at both ends.
 - New `src/haventory-panel.ts`: registered via `defineCardElement`; `hass` setter
   creates the `Store` once (same lifecycle as `HAventoryCard`); renders
   `<hv-full-view embedded open .store .heading .columns .menuEntries>` plus the
-  host-owned surfaces the card owns today (column picker, export download) — factor
-  those into a shared helper rather than duplicating them. Heading:
-  `panel?.config?.title`, falling back to the default. Imported from `index.ts` so it
-  ships in the same bundle.
+  host-owned surfaces. Heading: `panel?.config?.title`, falling back to the default.
+  Imported from `index.ts` so it ships in the same bundle.
+- **Full surface parity via `src/host-surfaces.ts`.** `hv-full-view` raises actions it
+  cannot answer itself — the column picker, the export download, the item editor's
+  Delete (`request-delete`), the sidebar's "+" beside Categories/Tags (`menu-action`
+  `organize` with a tab), the empty state's "Import backup" offer, Diagnostics,
+  Refresh. Every one of them is host-agnostic, so the `HostSurfaces` class owns them
+  all: the column picker + export download, a confirm surface (the delete
+  confirmation, plus the generic prompt the card's discard-changes check reuses), the
+  organize dialog, the import sheet (preview/execute state included), the diagnostics
+  panel together with the refresh busy/timestamp it displays, and the shared ⋮
+  menu-entry builder — so the two hosts cannot drift apart on what the menu offers.
+  An instance lives in each element that directly hosts the inventory UI:
+  `hv-card-shell` for the card and `haventory-panel` for the panel (`haventory-card`
+  itself is a thin store-owning wrapper). Host-specific behaviour enters through
+  constructor hooks: `isMobile` (the shell's measured width; the panel's
+  `NARROW_QUERY` viewport match), `onItemDeleted` (the shell closes editors pointing
+  at the item), `onBrowse` (the card opens its full view; the panel's is always
+  open). The only action that stays host-specific is `select-items`, which is about
+  *where* selection happens rather than a dialog.
+- `hv-full-view` closes its inline editor when the item being edited disappears from
+  the store — a confirmed delete (or another client's) would otherwise leave the
+  editor rendering a null item, which is the create form. On the panel there is no
+  shell to clean up after the editor, so the view has to do it; the card gets the
+  same fix.
 
 ### Options flow + strings
 
@@ -193,11 +214,17 @@ container). Signatures are identical at both ends.
 | R10 | Narrow mode leaves no way to open the sidebar from the panel | `hass-toggle-menu` menu button, asserted in a vitest case; live check at a phone viewport |
 | R11 | `embedded` regresses the card's overlay full view | Vitest covers both variants; the overlay path keeps its existing tests |
 | R12 | HACS zip / release flow misses the panel | Nothing to do — the panel lives in the existing bundle; `check_release_zip.py` already asserts the bundle in the asset |
+| R13 | Moving confirm/organize/import/diagnostics out of `hv-card-shell` regresses the card's dialogs | The dialogs still render inside the shell's shadow root (via its `HostSurfaces` instance), so the shell's existing dialog tests run against the moved surfaces; the panel gets its own cases for the same flows |
 
 ## Staged delivery — main stays running after every merge
 
-**PR-1 — frontend: embedded full view + panel element.** Card behavior unchanged;
-the new element ships in the bundle but nothing instantiates it yet. Inert.
+**PR-1 — frontend: embedded full view + panel element + host-surface parity.** The
+new element ships in the bundle but nothing instantiates it yet — inert. The card's
+behaviour is unchanged apart from one deliberate fix (the full view's editor closes
+when the edited item is deleted); its dialog surfaces move homes internally
+(`hv-card-shell` → its `HostSurfaces` instance) without changing what they do. The
+parity work lands here rather than PR-2 precisely because it refactors the card:
+better before the panel is live than after.
 
 **PR-2 — backend: registration + options toggle + strings + tests + docs.** Turns
 the feature on. Includes the live verification pass.
@@ -209,6 +236,11 @@ the feature on. Includes the live verification pass.
   so a user who renamed the card to "Pantry" sees "Pantry" in the sidebar.
 - Icon `mdi:package-variant-closed`; URL path `haventory`; `require_admin=False`.
 - Panel renders the **extended view**, not a page-sized card.
+- The panel offers the **full ⋮ menu** — organize, import and diagnostics included.
+  Every surface `hv-full-view` can raise is owned by `host-surfaces.ts` and rendered
+  by both hosts; a panel entry that silently did nothing (or a visible control with
+  no handler) is not acceptable, least of all the empty state's "Import backup",
+  which is the first thing a fresh install sees.
 - No auto-added Overview shortcut — per-user data, no public API, and silently
   editing a user's personalized page would be wrong even if it worked.
 
@@ -241,18 +273,32 @@ the feature on. Includes the live verification pass.
 >    `Store` once on first `hass`, subscribe/unsubscribe on connect/disconnect).
 >    Render `<hv-full-view embedded open>` wired with `.store`, `.heading`
 >    (`panel?.config?.title` string, else the default title), `.columns` +
->    `.menuEntries` and the column-picker / export-download handling the card host
->    owns today — extract the shared host-surface logic from `index.ts` into a module
->    both elements use instead of copying it. Import the new module from `index.ts`
->    so it lands in the bundle.
-> 4. Tests (TDD; happy path + edge cases per repo convention), vitest:
+>    `.menuEntries` and the host-owned surfaces. Import the new module from
+>    `index.ts` so it lands in the bundle.
+> 4. Host-surface parity (`src/host-surfaces.ts`): one `HostSurfaces` class owning
+>    every surface `hv-full-view` raises but cannot answer — column picker, export
+>    download, the delete confirmation (plus the generic confirm the shell's
+>    discard-changes prompt reuses), the organize dialog, the import sheet, the
+>    diagnostics panel with its refresh state, and the shared ⋮ menu-entry builder.
+>    The instance lives in `hv-card-shell` and in `haventory-panel`; `index.ts`
+>    becomes a thin store-owning wrapper. Host differences enter as constructor
+>    hooks (`isMobile`, `onItemDeleted`, `onBrowse`); `select-items` stays
+>    host-specific. `hv-full-view` additionally closes its inline editor when the
+>    edited item disappears from the store, so a confirmed delete does not leave the
+>    create form behind.
+> 5. Tests (TDD; happy path + edge cases per repo convention), vitest:
 >    embedded mode renders without backdrop/dialog semantics and ignores Escape;
 >    overlay mode still closes on Escape and backdrop click; the menu button appears
 >    only when `embedded && narrow` and dispatches `hass-toggle-menu`; the panel
 >    element builds a store from `hass`, falls back on a missing
 >    `panel.config.title`, and survives `hass` updates without rebuilding the store;
->    `register.test.ts` gains the `haventory-panel` case.
-> 5. Gates before every commit (both must be green): backend
+>    `register.test.ts` gains the `haventory-panel` case; the panel answers every
+>    action the view can raise — delete lands in the confirm-then-store flow,
+>    the sidebar "+" opens Organize on the right tab, the empty state's offer opens
+>    the import sheet, Diagnostics opens, and the ⋮ menus of card full view and
+>    panel cannot drift apart; the card's dialog flows still pass against the moved
+>    surfaces.
+> 6. Gates before every commit (both must be green): backend
 >    `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q`, `uv run ruff check .`,
 >    `uv run ruff format --check .`, `uv run mypy`; frontend (in
 >    `cards/haventory-card`) `npx eslint .`, `npm run typecheck`, `npx vitest run`,
