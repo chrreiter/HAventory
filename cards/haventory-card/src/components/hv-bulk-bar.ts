@@ -4,7 +4,7 @@ import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import { counted, plural } from '../ui/plural';
 import type { IconName } from '../ui/icons';
-import type { BulkFailure, DistinctValues, Item, LocationTreeNode } from '../store/types';
+import type { AreaRef, BulkFailure, DistinctValues, Item, LocationTreeNode } from '../store/types';
 import './hv-chip-input';
 import './hv-location-tree';
 
@@ -228,6 +228,8 @@ export class HVBulkBar extends LitElement {
   @property({ type: Number }) selectedCount = 0;
   @property({ attribute: false }) selectedItems: Item[] = [];
   @property({ attribute: false }) locationTree: LocationTreeNode[] = [];
+  /** HA areas, so the move picker files its roots under the right one. */
+  @property({ attribute: false }) areas: AreaRef[] = [];
   @property({ attribute: false }) distinct: DistinctValues | null = null;
   @property({ attribute: false }) progress: BulkProgress | null = null;
   @property({ attribute: false }) result: BulkResultView | null = null;
@@ -252,6 +254,7 @@ export class HVBulkBar extends LitElement {
             <hv-location-tree
               data-testid="bulk-location-tree"
               .nodes=${this.locationTree}
+              .areas=${this.areas}
               showAll
               @select=${(e: CustomEvent) =>
                 this._run({ action: 'move', locationId: (e.detail as { locationId: string | null }).locationId })}

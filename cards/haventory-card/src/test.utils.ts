@@ -1,5 +1,6 @@
 import type {
   AnyEventPayload,
+  AreaRef,
   ExportDocument,
   HassLike,
   ImportPreview,
@@ -19,6 +20,8 @@ interface MockConfig {
   conflictOnUpdate?: boolean;
   /** What `haventory/config` reports as the configured card heading. */
   cardTitle?: string;
+  /** What `haventory/areas/list` reports — the HA area registry, read-only. */
+  areas?: AreaRef[];
 }
 
 type HealthPatch = {
@@ -132,7 +135,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           return { card_title: cardTitle } as unknown as T;
         }
         case 'haventory/areas/list': {
-          return { areas: [] } as unknown as T;
+          return { areas: initial?.areas ?? [] } as unknown as T;
         }
         case 'haventory/export': {
           const doc: ExportDocument = {

@@ -4,15 +4,24 @@ import type { TemplateResult } from 'lit';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import type { IconName } from '../ui/icons';
-import { locationMatches } from '../store/location-tree';
+import { groupRootsByArea, locationMatches } from '../store/location-tree';
+import { renderAreaChip } from '../ui/location-path';
 import { counted } from '../ui/plural';
-import type { LocationTreeNode } from '../store/types';
+import type { AreaGroup } from '../store/location-tree';
+import type { AreaRef, LocationTreeNode } from '../store/types';
+
+/** The tail of ungrouped roots, keyed like a group so it collapses like one. */
+const NO_AREA_KEY = 'no-area';
 
 /**
  * The backend's nested location tree, rendered as it is served. One component
  * serves four callers — the full-view sidebar, the filter panel's location
  * picker, the item editor's location field and the organize dialog — hence the
  * mode/decoration switches rather than four near-identical trees.
+ *
+ * Top-level locations are filed under the HA area they belong to, so a tree
+ * answers "which room is this in" without leaving for the area registry. An
+ * inventory that assigns no areas gets no headers and renders flat.
  *
  * Counts come from the tree nodes themselves (`direct_item_count` /
  * `subtree_item_count`), so nothing is computed client-side.
@@ -109,13 +118,35 @@ export class HVLocationTree extends LitElement {
       .row.manage .actions {
         margin-left: auto;
       }
-      .area-chip {
-        flex: none;
-        font-size: 11px;
-        color: var(--hv-chip-text);
-        background: var(--hv-chip-bg);
-        border-radius: var(--hv-radius-chip);
-        padding: 2px 8px;
+      /* An area heads a group of locations rather than being one, so it reads
+         as a band across the tree and never as a row a location could sit at. */
+      .row.area-head {
+        font-weight: 500;
+        color: var(--hv-text-secondary);
+      }
+      .row.area-head:hover {
+        background: none;
+      }
+      .row.area-head.selectable:hover {
+        background: var(--hv-hover-overlay);
+      }
+      .area-name {
+        flex: 1;
+        min-width: 0;
+        border: none;
+        background: none;
+        padding: 0;
+        font: inherit;
+        color: inherit;
+        text-align: left;
+      }
+      .area-none {
+        flex: 1;
+        min-width: 0;
+        font-size: 11.5px;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+        color: var(--hv-text-tertiary);
       }
       .actions {
         flex: none;
@@ -192,8 +223,14 @@ export class HVLocationTree extends LitElement {
    */
   @property({ type: Number }) matchingTotalCount: number | null = null;
   @property({ type: Boolean }) showCounts = false;
-  /** Show the "Area: X" chip on locations that set one explicitly. */
-  @property({ type: Boolean }) showAreas = false;
+  /**
+   * Let an area header be picked, filtering the list to that area. Only a
+   * browsing tree sets this: a picker assigns a `location_id`, and an area is
+   * not one.
+   */
+  @property({ type: Boolean }) areaSelectable = false;
+  /** The area the list is currently filtered to, for the header's selected state. */
+  @property({ type: String }) selectedAreaId: string | null = null;
   /** Reveal the rename/merge/delete affordances on hover. Only the organize dialog sets this. */
   @property({ type: Boolean }) manage = false;
   /**
@@ -208,18 +245,43 @@ export class HVLocationTree extends LitElement {
   @property({ type: String }) excludeSubtreeOf: string | null = null;
   /** Substring filter over name and display path. */
   @property({ type: String }) filterText = '';
-  /** Resolve an area id to its name for the "Area: X" chip. */
-  @property({ attribute: false }) areas: { id: string; name: string }[] = [];
+  /** Resolves the area ids on the nodes to names for the group headers. */
+  @property({ attribute: false }) areas: AreaRef[] = [];
 
   @state() private _expanded = new Set<string>();
+  /**
+   * Collapsed area groups, tracked by absence rather than presence like the
+   * locations above: a group is scaffolding over the tree, so hiding what the
+   * user came for until they open every band would be the wrong default.
+   */
+  @state() private _collapsedAreas = new Set<string>();
 
-  /** Open the ancestors of `id` so a selection deep in the tree is visible. */
+  /** Open the ancestors of `id`, and its area group, so a deep selection is visible. */
   revealPathTo(id: string | null) {
     if (!id) return;
     const path = this._findPath(this.nodes, id) ?? [];
+    if (!path.length) return;
     const next = new Set(this._expanded);
     for (const node of path.slice(0, -1)) next.add(node.id);
     this._expanded = next;
+
+    const groupKey = this._groupKeyOf(path[0]);
+    if (this._collapsedAreas.has(groupKey)) {
+      const areas = new Set(this._collapsedAreas);
+      areas.delete(groupKey);
+      this._collapsedAreas = areas;
+    }
+  }
+
+  private _groupKeyOf(root: LocationTreeNode): string {
+    return root.area_id ? `area:${root.area_id}` : NO_AREA_KEY;
+  }
+
+  private _toggleArea(key: string) {
+    const next = new Set(this._collapsedAreas);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    this._collapsedAreas = next;
   }
 
   private _findPath(nodes: LocationTreeNode[], id: string): LocationTreeNode[] | null {
@@ -252,11 +314,6 @@ export class HVLocationTree extends LitElement {
   private _visible(node: LocationTreeNode): boolean {
     if (this._matches(node)) return true;
     return (node.children ?? []).some((c) => this._visible(c));
-  }
-
-  private _areaName(areaId: string | null): string | null {
-    if (!areaId) return null;
-    return this.areas.find((a) => a.id === areaId)?.name ?? areaId;
   }
 
   /**
@@ -298,7 +355,6 @@ export class HVLocationTree extends LitElement {
     const open = filtering ? true : this._expanded.has(node.id);
     const isExcluded = excluded || node.id === this.excludeSubtreeOf;
     const selected = !this.orphansSelected && this.selectedId === node.id;
-    const areaName = this.showAreas ? this._areaName(node.area_id) : null;
 
     return html`
       <div>
@@ -309,6 +365,7 @@ export class HVLocationTree extends LitElement {
           role="treeitem"
           aria-selected=${String(selected)}
           aria-expanded=${hasChildren ? String(open) : 'undefined'}
+          aria-level=${depth + 1}
           data-testid="tree-row"
           data-id=${node.id}
           data-depth=${depth}
@@ -342,7 +399,6 @@ export class HVLocationTree extends LitElement {
           >
             ${node.name}
           </button>
-          ${areaName ? html`<span class="area-chip" data-testid="tree-area">Area: ${areaName}</span>` : null}
           ${this.showCounts ? this._renderCount(node, isExcluded) : null}
           ${this.manage && this.mobile
             ? html`<span class="actions">
@@ -416,6 +472,87 @@ export class HVLocationTree extends LitElement {
   }
 
   /**
+   * An area group's row: what its whole set of trees holds, over every root it
+   * covers — including any the active filter hid, which is what the total half
+   * of the pair is for.
+   */
+  private _renderAreaCount(roots: LocationTreeNode[]) {
+    const total = roots.reduce((sum, r) => sum + (r.subtree_item_count ?? r.direct_item_count ?? 0), 0);
+    const counted = roots.filter((r) => r.matching_subtree_count !== undefined);
+    const matching = counted.length
+      ? counted.reduce((sum, r) => sum + (r.matching_subtree_count ?? 0), 0)
+      : null;
+    return html`<span class="count" data-testid="tree-area-count"
+      >${matching === null ? total : `${matching} / ${total}`}</span
+    >`;
+  }
+
+  /**
+   * The band a group of top-level locations sits under. Never a location: it
+   * carries no id a picker could assign, and only a browsing tree
+   * (`areaSelectable`) makes it pressable at all.
+   */
+  private _renderAreaHeader(
+    group: AreaGroup | null,
+    roots: LocationTreeNode[],
+    open: boolean,
+    key: string,
+  ) {
+    const pickable = this.areaSelectable && group !== null;
+    const selected =
+      pickable && this.selectedAreaId === group.id && this.selectedId === null && !this.orphansSelected;
+    const label = group
+      ? renderAreaChip(group.name)
+      : html`<span class="area-none">No area</span>`;
+
+    return html`<div
+      class="row area-head ${selected ? 'selected' : ''} ${pickable ? 'selectable' : ''}"
+      role="treeitem"
+      aria-selected=${String(selected)}
+      aria-expanded=${String(open)}
+      aria-level="1"
+      data-testid="tree-area-head"
+      data-area=${group?.id ?? NO_AREA_KEY}
+    >
+      <button
+        class="twisty"
+        data-testid="tree-area-twisty"
+        data-area=${group?.id ?? NO_AREA_KEY}
+        aria-label=${open ? `Collapse ${group?.name ?? 'No area'}` : `Expand ${group?.name ?? 'No area'}`}
+        @click=${(e: Event) => {
+          e.stopPropagation();
+          this._toggleArea(key);
+        }}
+      >
+        ${icon(open ? 'chevronDown' : 'chevronRight', 17)}
+      </button>
+      ${pickable
+        ? html`<button
+            class="area-name"
+            data-testid="tree-area-select"
+            data-area=${group.id}
+            @click=${() => this._emit('select-area', { areaId: group.id })}
+          >
+            ${label}
+          </button>`
+        : html`<span class="area-name">${label}</span>`}
+      ${this.showCounts ? this._renderAreaCount(roots) : null}
+    </div>`;
+  }
+
+  /** One group's header and, while it is open, the roots filed under it. */
+  private _renderAreaSection(group: AreaGroup | null, roots: LocationTreeNode[], filtering: boolean) {
+    const visible = roots.filter((r) => this._visible(r));
+    if (!visible.length) return null;
+    const key = group ? `area:${group.id}` : NO_AREA_KEY;
+    const open = filtering || !this._collapsedAreas.has(key);
+    return html`<div>
+      ${this._renderAreaHeader(group, roots, open, key)}
+      ${open ? visible.map((r) => this._renderNode(r, 1, false)) : null}
+    </div>`;
+  }
+
+  /**
    * How many matches are on items with no location: the whole-inventory match
    * count less everything the roots already account for. Every item is either
    * filed somewhere or an orphan, so the remainder needs no extra query.
@@ -427,7 +564,16 @@ export class HVLocationTree extends LitElement {
   }
 
   render() {
-    const rendered = this.nodes.map((n) => this._renderNode(n, 0, false)).filter(Boolean);
+    const { areaGroups, ungrouped } = groupRootsByArea(this.nodes, this.areas);
+    const filtering = this.filterText.trim().length > 0;
+    // With no area anywhere there is nothing to group by, and a lone "No area"
+    // band over the whole tree would name a distinction that does not exist.
+    const rendered = areaGroups.length
+      ? [
+          ...areaGroups.map((g) => this._renderAreaSection(g, g.roots, filtering)),
+          this._renderAreaSection(null, ungrouped, filtering),
+        ].filter(Boolean)
+      : this.nodes.map((n) => this._renderNode(n, 0, false)).filter(Boolean);
     return html`
       <div role="tree" aria-label="Locations">
         ${this.showAll

@@ -1234,6 +1234,8 @@ export class HVFullView extends LitElement {
           .selectedId=${filters.locationId}
           .orphansSelected=${filters.orphansOnly}
           .areas=${st?.areasCache?.areas ?? []}
+          .selectedAreaId=${filters.areaId}
+          areaSelectable
           showAll
           showOrphans
           showCounts
@@ -1246,6 +1248,12 @@ export class HVFullView extends LitElement {
               orphansOnly: false,
             })}
           @select-orphans=${() => this._setFilters({ locationId: null, orphansOnly: true })}
+          @select-area=${(e: CustomEvent) =>
+            this._setFilters({
+              areaId: (e.detail as { areaId: string }).areaId,
+              locationId: null,
+              orphansOnly: false,
+            })}
         ></hv-location-tree>
     `;
   }
@@ -1594,6 +1602,7 @@ export class HVFullView extends LitElement {
               ? html`<div class="editor-holder">
                   <hv-item-editor
                     data-testid="full-editor"
+                    .areas=${st?.areasCache?.areas ?? []}
                     .item=${this._editing === 'new'
                       ? null
                       : (st?.items.find((i) => i.id === this._editing) ?? null)}
@@ -1647,6 +1656,7 @@ export class HVFullView extends LitElement {
             ${this._selecting
               ? html`<hv-bulk-bar
                   data-testid="full-bulk-bar"
+                  .areas=${st?.areasCache?.areas ?? []}
                   .selectedCount=${selection.size}
                   .selectedItems=${this._selectedItems}
                   .locationTree=${st?.locationTreeCache ?? []}

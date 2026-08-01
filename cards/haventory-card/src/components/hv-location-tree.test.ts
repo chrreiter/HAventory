@@ -28,7 +28,7 @@ const tree: LocationTreeNode[] = [
     node('shelf-a', 'Shelf A', 'garage', [38, 38]),
     node('shelf-b', 'Shelf B', 'garage', [25, 25], [node('bin-3', 'Bin 3', 'shelf-b', [0, 0])]),
   ]),
-  node('kitchen', 'Kitchen', null, [57, 57], [], 'area-kitchen'),
+  node('kitchen', 'Kitchen', null, [57, 57]),
 ];
 
 async function mount(props: Partial<HVLocationTree> = {}) {
@@ -110,13 +110,6 @@ describe('hv-location-tree: counts and decorations', () => {
     expect(q(el, '[data-testid="tree-select"][data-id="shelf-a"]')?.getAttribute('title')).toBe(
       'garage / Shelf A',
     );
-  });
-
-  it('chips the area only where one is explicitly set', async () => {
-    const el = await mount({ showAreas: true, areas: [{ id: 'area-kitchen', name: 'Kitchen' }] });
-    const chips = [...(el.shadowRoot?.querySelectorAll('[data-testid="tree-area"]') ?? [])];
-    expect(chips).toHaveLength(1);
-    expect(chips[0].textContent).toContain('Area: Kitchen');
   });
 
   it('adds All items and No location rows on request', async () => {
@@ -253,6 +246,163 @@ describe('hv-location-tree: filtering and cycle guard', () => {
     });
     (q(el, '[data-testid="tree-select"][data-id="garage"]') as HTMLButtonElement).click();
     expect(fired).toBe(0);
+  });
+});
+
+describe('hv-location-tree: area grouping', () => {
+  const AREAS = [
+    { id: 'area-kitchen', name: 'Kitchen' },
+    { id: 'area-garage', name: 'Garage' },
+  ];
+  const areaTree: LocationTreeNode[] = [
+    node('fridge', 'Fridge', null, [3, 9], [node('top', 'Top Shelf', 'fridge', [6, 6])], 'area-kitchen'),
+    node('bench', 'Bench', null, [2, 2], [], 'area-garage'),
+    node('attic', 'Attic', null, [5, 5]),
+  ];
+  const mountAreas = (props: Partial<HVLocationTree> = {}) =>
+    mount({ nodes: areaTree, areas: AREAS, ...props });
+
+  const heads = (el: HVLocationTree) =>
+    [...(el.shadowRoot?.querySelectorAll('[data-testid="tree-area-head"]') ?? [])] as HTMLElement[];
+  const headNames = (el: HVLocationTree) => heads(el).map((h) => h.textContent?.replace(/\s+/g, ' ').trim());
+
+  it('files each root under its area, areas first and in name order', async () => {
+    const el = await mountAreas();
+    expect(headNames(el)).toEqual(['Area: Garage', 'Area: Kitchen', 'No area']);
+    expect(ids(el)).toEqual(['bench', 'fridge', 'attic']);
+  });
+
+  it('marks an area with the chip every surface uses, not as a path segment', async () => {
+    const el = await mountAreas();
+    expect(heads(el)[0].querySelector('.hv-area-chip')).toBeTruthy();
+    expect(heads(el)[0].querySelector('[data-icon="home"]')).toBeTruthy();
+  });
+
+  it('leaves an inventory that assigns no areas exactly as it was', async () => {
+    const el = await mount();
+    expect(heads(el)).toEqual([]);
+    expect(rows(el).map((r) => r.dataset.depth)).toEqual(['0', '0']);
+  });
+
+  it('indents a grouped root one level below its header', async () => {
+    const el = await mountAreas();
+    expect(rows(el).map((r) => r.dataset.depth)).toEqual(['1', '1', '1']);
+  });
+
+  it('opens its members by default and hides them once collapsed', async () => {
+    const el = await mountAreas();
+    const twisty = el.shadowRoot?.querySelector(
+      '[data-testid="tree-area-twisty"][data-area="area-kitchen"]',
+    ) as HTMLButtonElement;
+    twisty.click();
+    await el.updateComplete;
+    expect(ids(el)).toEqual(['bench', 'attic']);
+    expect(headNames(el)).toEqual(['Area: Garage', 'Area: Kitchen', 'No area']);
+
+    twisty.click();
+    await el.updateComplete;
+    expect(ids(el)).toEqual(['bench', 'fridge', 'attic']);
+  });
+
+  it('is a label, not a control, unless the host says otherwise', async () => {
+    const el = await mountAreas();
+    const fired: string[] = [];
+    el.addEventListener('select', () => fired.push('select'));
+    el.addEventListener('select-area', () => fired.push('select-area'));
+    (heads(el)[0].querySelector('[data-testid="tree-area-select"]') as HTMLElement | null)?.click();
+    heads(el)[0].click();
+    expect(fired).toEqual([]);
+  });
+
+  it('filters by area when the host browses rather than assigns', async () => {
+    const el = await mountAreas({ areaSelectable: true });
+    let areaId: string | null = null;
+    const fired: string[] = [];
+    el.addEventListener('select', () => fired.push('select'));
+    el.addEventListener('select-area', (e) => {
+      fired.push('select-area');
+      areaId = (e as CustomEvent).detail.areaId;
+    });
+    (heads(el)[1].querySelector('[data-testid="tree-area-select"]') as HTMLButtonElement).click();
+    expect(fired).toEqual(['select-area']);
+    expect(areaId).toBe('area-kitchen');
+  });
+
+  it('never offers the no-area tail as a filter — it is the absence of one', async () => {
+    const el = await mountAreas({ areaSelectable: true });
+    let fired = 0;
+    el.addEventListener('select-area', () => {
+      fired += 1;
+    });
+    const tail = heads(el)[2];
+    (tail.querySelector('[data-testid="tree-area-select"]') as HTMLElement | null)?.click();
+    tail.click();
+    expect(fired).toBe(0);
+  });
+
+  it('marks the area the list is filtered to, and yields to a picked location', async () => {
+    const el = await mountAreas({ areaSelectable: true, selectedAreaId: 'area-kitchen' });
+    expect(heads(el)[1].classList.contains('selected')).toBe(true);
+
+    el.selectedId = 'bench';
+    await el.updateComplete;
+    expect(heads(el)[1].classList.contains('selected')).toBe(false);
+  });
+
+  it('totals its members on the header, matching half included', async () => {
+    const el = await mountAreas({ showCounts: true });
+    const headCount = (i: number) => heads(el)[i].querySelector('[data-testid="tree-area-count"]')?.textContent?.trim();
+    expect(headCount(1)).toBe('9');
+
+    el.nodes = areaTree.map((n) => ({ ...n, matching_subtree_count: n.id === 'fridge' ? 4 : 1 }));
+    await el.updateComplete;
+    expect(headCount(1)).toBe('4 / 9');
+  });
+
+  it('keeps a header while a member still matches the filter, and drops it when none do', async () => {
+    const el = await mountAreas({ filterText: 'top shelf' });
+    expect(headNames(el)).toEqual(['Area: Kitchen']);
+    expect(ids(el)).toEqual(['fridge', 'top']);
+
+    el.filterText = 'kitchen';
+    await el.updateComplete;
+    // The header names the area; the rows name locations. Only rows match.
+    expect(headNames(el)).toEqual([]);
+    expect(q(el, '[data-testid="tree-empty"]')).toBeTruthy();
+  });
+
+  it('reopens a collapsed group to reveal a location inside it', async () => {
+    const el = await mountAreas();
+    (
+      el.shadowRoot?.querySelector(
+        '[data-testid="tree-area-twisty"][data-area="area-kitchen"]',
+      ) as HTMLButtonElement
+    ).click();
+    await el.updateComplete;
+    expect(ids(el)).not.toContain('fridge');
+
+    el.revealPathTo('top');
+    await el.updateComplete;
+    expect(ids(el)).toContain('top');
+  });
+
+  it('never disables a header, whatever subtree the picker excludes', async () => {
+    const el = await mountAreas({ excludeSubtreeOf: 'fridge' });
+    expect(heads(el).some((h) => h.hasAttribute('disabled'))).toBe(false);
+    expect(rows(el).find((r) => r.dataset.id === 'fridge')?.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('tells assistive tech the header is a level above its members', async () => {
+    const el = await mountAreas();
+    expect(heads(el)[0].getAttribute('role')).toBe('treeitem');
+    expect(heads(el)[0].getAttribute('aria-expanded')).toBe('true');
+    expect(heads(el)[0].getAttribute('aria-level')).toBe('1');
+    expect(rows(el)[0].getAttribute('aria-level')).toBe('2');
+  });
+
+  it('leaves an ungrouped tree at the top level for assistive tech', async () => {
+    const el = await mount();
+    expect(rows(el)[0].getAttribute('aria-level')).toBe('1');
   });
 });
 

@@ -512,6 +512,7 @@ export class HVFilterPanel extends LitElement {
               <hv-location-tree
                 data-testid="filter-location-tree"
                 .nodes=${this.locationTree}
+                .areas=${this.areas}
                 .selectedId=${f.locationId}
                 showAll
                 showCounts

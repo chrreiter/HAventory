@@ -24,7 +24,7 @@ import {
   validateForm,
 } from '../ui/item-form';
 import type { CustomFieldRow, CustomFieldType, FieldError, ItemFormModel } from '../ui/item-form';
-import type { Item, Location, LocationTreeNode } from '../store/types';
+import type { AreaRef, Item, Location, LocationTreeNode } from '../store/types';
 import './hv-chip-input';
 import './hv-location-tree';
 import './hv-checkout-popover';
@@ -641,6 +641,8 @@ export class HVItemEditor extends LitElement {
   @property({ attribute: false }) item: Item | null = null;
   @property({ attribute: false }) locations: Location[] | null = null;
   @property({ attribute: false }) locationTree: LocationTreeNode[] = [];
+  /** HA areas, so the location picker files its roots under the right one. */
+  @property({ attribute: false }) areas: AreaRef[] = [];
   @property({ attribute: false }) categorySuggestions: string[] = [];
   @property({ attribute: false }) tagSuggestions: string[] = [];
   @property({ attribute: false }) customFieldKeys: string[] = [];
@@ -788,6 +790,7 @@ export class HVItemEditor extends LitElement {
             <hv-location-tree
               data-testid="editor-location-tree"
               .nodes=${this.locationTree}
+              .areas=${this.areas}
               .selectedId=${this._model.locationId}
               showAll
               allLabel="No location"

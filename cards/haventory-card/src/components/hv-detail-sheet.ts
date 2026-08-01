@@ -5,7 +5,7 @@ import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import { inferType } from '../ui/item-form';
 import { displayPath, isLowStock } from './hv-list-row';
-import type { Item, Location, LocationTreeNode, ScalarValue } from '../store/types';
+import type { AreaRef, Item, Location, LocationTreeNode, ScalarValue } from '../store/types';
 import './hv-bottom-sheet';
 import './hv-checkout-popover';
 import './hv-item-editor';
@@ -269,6 +269,8 @@ export class HVDetailSheet extends LitElement {
   @property({ type: Boolean, reflect: true }) open = false;
   @property({ attribute: false }) locations: Location[] | null = null;
   @property({ attribute: false }) locationTree: LocationTreeNode[] = [];
+  /** HA areas, for the editor this sheet hosts. */
+  @property({ attribute: false }) areas: AreaRef[] = [];
   @property({ attribute: false }) categorySuggestions: string[] = [];
   @property({ attribute: false }) tagSuggestions: string[] = [];
   @property({ attribute: false }) customFieldKeys: string[] = [];
@@ -510,6 +512,7 @@ export class HVDetailSheet extends LitElement {
         </button>
       </div>
       <hv-item-editor
+        .areas=${this.areas}
         data-testid="sheet-editor"
         mobile
         noHeader
