@@ -39,4 +39,4 @@ pytest-homeassistant-custom-component
 # among its manifest dependencies, never gets set up at all. The pin must match
 # what the HA release above asks for; `tests/integration/test_frontend.py`
 # compares the two and fails when they drift.
-home-assistant-frontend==20260527.4
+home-assistant-frontend==20260624.6
