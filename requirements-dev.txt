@@ -4,7 +4,7 @@
 # Kept as a pip-compatible fallback for environments without uv.
 aiohappyeyeballs==2.7.1
     # via aiohttp
-aiohttp==3.14.2
+aiohttp==3.14.3
 aiosignal==1.4.0
     # via aiohttp
 ast-serialize==0.6.0
@@ -73,7 +73,7 @@ python-discovery==1.5.0
     # via virtualenv
 pyyaml==6.0.3
     # via pre-commit
-ruff==0.15.22
+ruff==0.16.0
 typing-extensions==4.16.0
     # via mypy
 virtualenv==21.7.0
