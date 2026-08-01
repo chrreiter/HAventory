@@ -11,15 +11,22 @@ type Chips = HTMLElement & {
   updateComplete?: Promise<unknown>;
 };
 
-function loc(id: string, name: string, displayPath: string): Location {
+function loc(id: string, name: string, displayPath: string, extra: Partial<Location> = {}): Location {
   return {
     id,
     name,
     parent_id: null,
     area_id: null,
     path: { id_path: [id], name_path: [name], display_path: displayPath, sort_key: displayPath.toLowerCase() },
+    ...extra,
   };
 }
+
+/** A shelf inside a garage, where only the garage carries the area. */
+const nested = (areaId: string | null): Location[] => [
+  loc('garage', 'Garage', 'Garage', { area_id: areaId }),
+  loc('shelf', 'Shelf A', 'Garage / Shelf A', { parent_id: 'garage' }),
+];
 
 async function mount(props: Partial<Chips>): Promise<Chips> {
   const el = document.createElement('hv-filter-chips') as Chips;
@@ -61,6 +68,36 @@ describe('chipsFor', () => {
   it('falls back to a generic label when the location is not in the cache', () => {
     const filters = { ...defaultFilters(), locationId: 'gone', includeSubtree: false };
     expect(chipsFor(filters, { locations: [] })[0].label).toBe('Location');
+  });
+
+  it('names the area a location inherits from its tree, in the chip row own wording', () => {
+    const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: false };
+    const [chip] = chipsFor(filters, {
+      locations: nested('a1'),
+      areas: [{ id: 'a1', name: 'Kitchen' }],
+    });
+    expect(chip.label).toBe('Area: Kitchen · Garage › Shelf A');
+  });
+
+  it('keeps the subtree marker last, behind the area and the path', () => {
+    const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: true };
+    const [chip] = chipsFor(filters, {
+      locations: nested('a1'),
+      areas: [{ id: 'a1', name: 'Kitchen' }],
+    });
+    expect(chip.label).toBe('Area: Kitchen · Garage › Shelf A + sub');
+  });
+
+  it('leaves a location in no area labelled exactly as before', () => {
+    const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: false };
+    expect(chipsFor(filters, { locations: nested(null), areas: [] })[0].label).toBe('Garage › Shelf A');
+  });
+
+  it('names an area the registry has dropped by its id, so the chip never reads as arealess', () => {
+    const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: false };
+    expect(chipsFor(filters, { locations: nested('a-gone'), areas: [] })[0].label).toBe(
+      'Area: a-gone · Garage › Shelf A',
+    );
   });
 
   it('resolves an area name, falling back to its id', () => {

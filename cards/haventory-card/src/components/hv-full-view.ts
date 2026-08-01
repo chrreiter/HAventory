@@ -10,6 +10,8 @@ import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { countLocations } from '../store/location-tree';
 import { emptyKindFor, renderEmptyState } from '../ui/empty-state';
+import { areaNameById, effectiveAreaIdForLocation } from '../ui/area';
+import { renderAreaChip } from '../ui/location-path';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
@@ -512,6 +514,9 @@ export class HVFullView extends LitElement {
       .crumb .current {
         font-weight: 500;
         color: var(--hv-text);
+      }
+      .crumb .hv-area-chip {
+        margin-right: 6px;
       }
       .filters-button {
         display: inline-flex;
@@ -1312,8 +1317,14 @@ export class HVFullView extends LitElement {
   private _renderContextBar() {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
-    const loc = (st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId);
+    const locations = st?.locationsFlatCache ?? [];
+    const loc = locations.find((l) => l.id === filters.locationId);
     const segments = loc ? (loc.path?.display_path ?? loc.name).split('/').map((s) => s.trim()) : [];
+    // The crumb prints each path segment as its own span, so the area needs the
+    // chip to stay out of that sequence rather than reading as a first segment.
+    const areaName = loc
+      ? areaNameById(st?.areasCache?.areas ?? [], effectiveAreaIdForLocation(locations, loc.id))
+      : null;
     const filterCount = activeFilterCount(filters);
 
     return html`
@@ -1322,11 +1333,11 @@ export class HVFullView extends LitElement {
           ${filters.orphansOnly
             ? html`<span class="current">No location</span>`
             : segments.length
-              ? segments.map((seg, i) =>
+              ? html`${renderAreaChip(areaName)}${segments.map((seg, i) =>
                   i === segments.length - 1
                     ? html`<span class="current">${seg}</span>`
                     : html`<span>${seg} › </span>`,
-                )
+                )}`
               : html`<span class="current">All items</span>`}
           ${st?.total !== null && st?.total !== undefined ? html` · ${counted(st.total, 'item')}` : null}
         </span>

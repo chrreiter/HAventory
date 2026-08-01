@@ -2,7 +2,15 @@ import './hv-item-editor';
 import { makeItem } from '../test.utils';
 import { addDays } from '../ui/relative-time';
 import type { HVItemEditor } from './hv-item-editor';
-import type { Item, ItemCreate, ItemUpdate, LocationTreeNode } from '../store/types';
+import type { Item, ItemCreate, ItemUpdate, Location, LocationTreeNode } from '../store/types';
+
+const garage: Location = {
+  id: 'garage',
+  name: 'Garage',
+  parent_id: null,
+  area_id: null,
+  path: { id_path: ['garage'], name_path: ['Garage'], display_path: 'Garage', sort_key: 'garage' },
+};
 
 const tree: LocationTreeNode[] = [
   {
@@ -21,15 +29,7 @@ async function mount(item: Item | null, props: Partial<HVItemEditor> = {}) {
   const el = document.createElement('hv-item-editor') as HVItemEditor;
   el.item = item;
   el.locationTree = tree;
-  el.locations = [
-    {
-      id: 'garage',
-      name: 'Garage',
-      parent_id: null,
-      area_id: null,
-      path: { id_path: ['garage'], name_path: ['Garage'], display_path: 'Garage', sort_key: 'garage' },
-    },
-  ];
+  el.locations = [garage];
   el.categorySuggestions = ['Hardware', 'Tools'];
   el.tagSuggestions = ['metric', 'm4'];
   el.customFieldKeys = ['serial', 'warranty_until'];
@@ -526,6 +526,25 @@ describe('hv-item-editor: location and tags', () => {
 
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
     expect(saves[0].changes?.location_id).toBeNull();
+  });
+
+  it('marks the area behind the chosen location, apart from the path itself', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A', location_id: 'garage' }), {
+      locations: [{ ...garage, area_id: 'area-kitchen' }],
+      areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
+    });
+    const field = q(el, '[data-testid="editor-location"]');
+    expect(field?.querySelector('.hv-area-chip')?.textContent).toContain('Kitchen');
+    expect(field?.querySelector('.value')?.textContent).toBe('Garage');
+  });
+
+  it('shows no area chip for a location in no area', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A', location_id: 'garage' }), {
+      areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
+    });
+    const field = q(el, '[data-testid="editor-location"]');
+    expect(field?.querySelector('.hv-area-chip')).toBeNull();
+    expect(field?.querySelector('.value')?.textContent).toBe('Garage');
   });
 
   it('edits tags as chips and lowercases them on commit', async () => {

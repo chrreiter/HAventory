@@ -1,7 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { locationLabel } from '../ui/location-path';
+import { locationPathParts, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import {
   DEFAULT_CUSTOM_DAYS,
@@ -771,8 +771,9 @@ export class HVItemEditor extends LitElement {
   }
 
   private _renderLocationField() {
-    const loc = (this.locations ?? []).find((l) => l.id === this._model.locationId);
-    const label = locationLabel(loc, 'No location');
+    const locations = this.locations ?? [];
+    const loc = locations.find((l) => l.id === this._model.locationId);
+    const parts = locationPathParts(loc, locations, this.areas, 'No location');
     return html`<div class="cell span2">
       <span class="hv-label">Location</span>
       <button
@@ -783,7 +784,8 @@ export class HVItemEditor extends LitElement {
           this._locationOpen = !this._locationOpen;
         }}
       >
-        ${icon('mapMarker', 15)}<span class="value">${label}</span>${icon('chevronDown', 15)}
+        ${icon('mapMarker', 15)}${renderAreaChip(parts.areaName)}<span class="value">${parts.path}</span
+        >${icon('chevronDown', 15)}
       </button>
       ${this._locationOpen
         ? html`<div class="tree-holder">

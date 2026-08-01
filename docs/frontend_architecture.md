@@ -126,6 +126,55 @@ that prints a location path uses. Only the CSS is per-component — style rules 
 shadow boundary, which is also why the sidebar's value rows restate `hv-location-tree`'s row
 styling.
 
+### The area beside a location
+
+An item arrives with `effective_area_id` already resolved; a `Location` carries `area_id`
+only on the root of its tree, because assigning an area moves it there and clears every
+node below. So there are two resolutions, and `ui/area.ts` owns both: `areaNameById` for
+the item half, and `effectiveAreaIdForLocation` — a cycle-guarded walk up a location's
+ancestors — for the location half. Nothing is computed server-side beyond what is already
+on the wire; no command changed.
+
+`ui/location-path.ts` composes the result. `itemPathParts` and `locationPathParts` split
+"where" into `{ areaName, path }`, `pathTitle` writes both as one string
+(`Area: Kitchen · Garage › Shelf A`) for a `title` attribute, and `renderAreaChip` is the
+single visual treatment — a home glyph and the name, styled by `.hv-area-chip` in `tokens`'
+`base` so every shadow root draws it identically. That chip is how an area is told apart
+from a path segment: an area is never printed as one. It renders nothing when there is no
+area, so callers embed it unguarded and a location outside every area reads exactly as it
+did before areas were shown at all.
+
+Two surfaces spell the area out in words instead — `hv-filter-chips`' location chip and
+`hv-filter-panel`'s selected-location label. Both already sit inside a chip, and a chip
+within a chip is noise, so they print `pathTitle`'s text form, which is also the wording
+the area *filter*'s own chip has always used. `hv-list-row` does the same on a phone for a
+different reason: with no room for a chip the area goes in as the leading text segment,
+where `elidePath` keeps it.
+
+Threading is by property, outward from the two containers that hold `areasCache`.
+`hv-card-shell` and `hv-full-view` pass `.areas` to `hv-list` (which forwards to
+`hv-list-row`), `hv-data-table`, `hv-detail-sheet`, `hv-item-editor`, `hv-filter-panel`,
+`hv-filter-chips`, `hv-bulk-bar` and every `hv-location-tree`; `hv-organize-dialog` passes
+it to its three trees. Resolution happens in the component that renders — a `find` over a
+handful of areas per render, not memoized.
+
+### Location trees group by area
+
+`hv-location-tree` partitions the roots it is handed with `groupRootsByArea`
+(`store/location-tree.ts`, pure and DOM-free) and draws one header row per area, ordered by
+area name with the same collator that sorts the tree. Roots belonging to no area follow
+under a "No area" header, which appears only when at least one area group does — an
+inventory that uses no areas renders as it did before. Headers are `treeitem`s one level
+above their members, collapse like any node (a `_collapsedAreas` set, so absence means
+open), sum their members' subtree counts, and stay visible while any member survives the
+text filter without matching it themselves.
+
+A header is never a location: it carries no id a picker could assign. Only the full-view
+sidebar sets `areaSelectable`, where pressing a header emits `select-area` and sets
+`filters.areaId` — a filter the item query already accepts, so the row does something real.
+In the editor, bulk-move and organize pickers the headers are inert labels that only
+collapse.
+
 ### Container vs presentation
 
 `hv-card-shell` and `hv-full-view` are **containers**: they hold the `Store` and call it
@@ -154,7 +203,8 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 | `health-codes.ts` | Turns the health payload's repeated bare issue codes into one counted sentence each. |
 | `fuzzy.ts` | Nearest-existing-value suggestion for the merge flow. |
 | `empty-state.ts` | The four empty-list situations: which one applies (`emptyKindFor`), its copy and offered actions, and the markup. |
-| `location-path.ts` | The `/` → `›` convention for a location path, and a location's label with a caller-supplied fallback. |
+| `area.ts` | Resolving the HA area behind a location: id → name, and the ancestor walk that mirrors the backend's own resolver. |
+| `location-path.ts` | The `/` → `›` convention for a location path, a location's label with a caller-supplied fallback, and the area-beside-the-path composition (`itemPathParts` / `locationPathParts` / `pathTitle` / `renderAreaChip`). |
 | `dialog-focus.ts` | Initial focus and focus return for modal surfaces. Opening must move focus into the panel or its Escape handler never fires. |
 | `keyboard.ts` | `onEscape()` for the surfaces where Escape means exactly "close", and the platform-correct save-shortcut label. |
 | `plural.ts` | Count agreement for every count string in the card. |

@@ -668,6 +668,37 @@ describe('hv-full-view: context bar and table', () => {
     expect(crumb).toContain('1 item');
   });
 
+  it('marks the area behind the crumb, where a segment span would read as part of the path', async () => {
+    const locations = [
+      { ...loc('garage', 'Garage'), area_id: 'area-kitchen' },
+      loc('shelf-a', 'Shelf A', 'garage'),
+    ];
+    const { el, store, sr } = await mount({
+      items: [makeItem({ id: '1', location_id: 'shelf-a' })],
+      locations,
+      areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
+    });
+
+    store.setFilters({ locationId: 'shelf-a' });
+    await settle(el);
+    const crumb = q(sr, '[data-testid="full-breadcrumb"]');
+    expect(crumb?.querySelector('.hv-area-chip')?.textContent).toContain('Kitchen');
+    expect(crumb?.textContent?.replace(/\s+/g, ' ')).toContain('garage › Shelf A');
+  });
+
+  it('leaves the crumb of an arealess tree exactly as it was', async () => {
+    const locations = [loc('garage', 'Garage'), loc('shelf-a', 'Shelf A', 'garage')];
+    const { el, store, sr } = await mount({
+      items: [makeItem({ id: '1', location_id: 'shelf-a' })],
+      locations,
+      areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
+    });
+
+    store.setFilters({ locationId: 'shelf-a' });
+    await settle(el);
+    expect(q(sr, '[data-testid="full-breadcrumb"]')?.querySelector('.hv-area-chip')).toBeNull();
+  });
+
   it('sorts from the table headers', async () => {
     const { el, store, sr } = await mount({ items: [makeItem({ id: '1' })] });
     const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
