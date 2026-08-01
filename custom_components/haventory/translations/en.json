@@ -20,7 +20,7 @@
     "step": {
       "init": {
         "title": "HAventory Options",
-        "description": "Set the heading the card carries.\n\n**WebSocket rate limiting** (below) caps how fast one client may use HAventory. It is off by default and normal use of the card never comes close, so most installations should leave it off. Turn it on when something you don't fully control talks to HAventory — a wall panel stuck reconnecting, a script in a loop, a client you are developing — and a runaway client is refused instead of tying up Home Assistant. Leave it off while running large imports or stress tests.\n\n[What each setting means, and how to tell whether limiting is firing](https://github.com/chrreiter/HAventory/blob/main/docs/rate_limiting.md)",
+        "description": "Set the heading the card carries.\n\n**WebSocket rate limiting** (below) caps how fast one client may use HAventory. It is off by default and normal use of the card never comes close, so most installations should leave it off. Turn it on when something you don't fully control talks to HAventory — a wall panel stuck reconnecting, a script in a loop, a client you are developing — and a runaway client is refused instead of tying up Home Assistant. Leave it off while running large imports or stress tests.\n\n[What each setting means, and how to tell whether limiting is firing]({docs_url})",
         "data": {
           "card_title": "Card title"
         },

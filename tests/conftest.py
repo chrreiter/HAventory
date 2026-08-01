@@ -176,8 +176,13 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
                 "options": dict(options or {}),
             }
 
-        def async_show_form(self, *, step_id: str, data_schema=None):
-            return {"type": "form", "step_id": step_id, "data_schema": data_schema}
+        def async_show_form(self, *, step_id: str, data_schema=None, description_placeholders=None):
+            return {
+                "type": "form",
+                "step_id": step_id,
+                "data_schema": data_schema,
+                "description_placeholders": description_placeholders,
+            }
 
     class OptionsFlow:  # type: ignore[override]
         # The real OptionsFlow resolves config_entry via hass; tests assign it.
@@ -186,8 +191,13 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def async_create_entry(self, *, title: str, data: dict):
             return {"type": "create_entry", "title": title, "data": data}
 
-        def async_show_form(self, *, step_id: str, data_schema=None):
-            return {"type": "form", "step_id": step_id, "data_schema": data_schema}
+        def async_show_form(self, *, step_id: str, data_schema=None, description_placeholders=None):
+            return {
+                "type": "form",
+                "step_id": step_id,
+                "data_schema": data_schema,
+                "description_placeholders": description_placeholders,
+            }
 
     ha_config_entries.ConfigEntry = ConfigEntry
     ha_config_entries.ConfigFlow = ConfigFlow

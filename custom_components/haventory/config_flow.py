@@ -40,6 +40,11 @@ if TYPE_CHECKING:
 # the stored options — and everything reading them — stay flat.
 SECTION_RATE_LIMIT = "rate_limit"
 
+# Filled into the options step's `{docs_url}`. Translation strings may not
+# contain URLs (hassfest rejects them), so the link target is supplied as a
+# description placeholder instead.
+RATE_LIMIT_DOCS_URL = "https://github.com/chrreiter/HAventory/blob/main/docs/rate_limiting.md"
+
 # (option key, default) pairs for the numeric rate-limit tunables.
 _RATE_LIMIT_NUMBER_OPTIONS: tuple[tuple[str, float], ...] = (
     (CONF_RATE_LIMIT_COMMANDS_PER_SECOND, DEFAULT_RATE_LIMIT_COMMANDS_PER_SECOND),
@@ -137,7 +142,11 @@ class HAventoryOptionsFlowHandler(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=options)
 
         current = dict(getattr(self.config_entry, "options", None) or {})
-        return self.async_show_form(step_id="init", data_schema=_options_schema(current))
+        return self.async_show_form(
+            step_id="init",
+            data_schema=_options_schema(current),
+            description_placeholders={"docs_url": RATE_LIMIT_DOCS_URL},
+        )
 
 
 class HAventoryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]  # HA ConfigFlow domain= kwarg; HA is not installed for mypy

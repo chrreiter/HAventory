@@ -10,8 +10,11 @@ Scenarios:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from custom_components.haventory.config_flow import (
+    RATE_LIMIT_DOCS_URL,
     HAventoryConfigFlow,
     HAventoryOptionsFlowHandler,
 )
@@ -114,6 +117,35 @@ async def test_options_flow_edits_the_card_title() -> None:
     result = await flow.async_step_init(user_input={CONF_CARD_TITLE: " Garage  "})
     assert result["type"] == "create_entry"
     assert result["data"][CONF_CARD_TITLE] == "Garage"
+
+
+@pytest.mark.asyncio
+async def test_options_form_fills_the_docs_link() -> None:
+    """The step text links the rate-limit docs through a placeholder.
+
+    Translation strings may not carry URLs — hassfest rejects them — so the
+    link target arrives as `description_placeholders`. Without it the form
+    renders a literal `{docs_url}`.
+    """
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({})
+
+    form = await flow.async_step_init(user_input=None)
+    assert form["description_placeholders"] == {"docs_url": RATE_LIMIT_DOCS_URL}
+
+
+def test_translation_strings_carry_no_urls() -> None:
+    """hassfest fails the build on a URL in a translation string.
+
+    It only runs in CI, so catch the mistake here: a link belongs in a
+    `{placeholder}` the flow fills, never inline in the string.
+    """
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
+    for path in (root / "strings.json", root / "translations" / "en.json"):
+        text = path.read_text(encoding="utf-8")
+        assert "http://" not in text and "https://" not in text, f"{path.name} contains a URL"
 
 
 @pytest.mark.asyncio
