@@ -1,13 +1,13 @@
 import { LitElement, css, html } from 'lit';
 import type { HassLike } from './store/types';
 import { Store } from './store/store';
-import type { ColumnKey } from './store/columns';
-import { loadColumnPrefs, saveColumnPrefs } from './store/columns';
 import { resolveColorScheme } from './ui/theme';
 import { DEFAULT_CARD_TITLE } from './ui/card-title';
 import { defineCardElement } from './register';
-import './components/hv-column-picker';
 import './components/hv-card-shell';
+// The sidebar panel is a second element out of this one bundle, so importing it
+// here is what puts it in the build.
+import './haventory-panel';
 
 export class HAventoryCard extends LitElement {
   static styles = css`
@@ -24,8 +24,6 @@ export class HAventoryCard extends LitElement {
   private store?: Store;
   private _storeUnsub?: () => void;
   private _hass?: HassLike;
-  private _columns: ColumnKey[] = loadColumnPrefs();
-  private _columnPickerOpen = false;
 
   // Lovelace interface: called by HA when the card is created/configured
   public setConfig(cfg: unknown): void {
@@ -105,9 +103,8 @@ export class HAventoryCard extends LitElement {
 
   /**
    * `haventory-card` stays the custom element HA knows about and is a thin
-   * host: `hv-card-shell` owns the store, the layout and item editing, while
-   * the surfaces that belong to the browser rather than the card — the column
-   * picker and the export download — stay here.
+   * wrapper: it owns the `Store` and the Lovelace interface, while the shell
+   * owns the layout, item editing and the shared host surfaces.
    */
   render() {
     return html`
@@ -115,20 +112,7 @@ export class HAventoryCard extends LitElement {
         data-testid="card-shell"
         .store=${this.store}
         .heading=${this._heading()}
-        .columns=${this._columns}
-        @menu-action=${(e: CustomEvent) => this._onShellAction((e.detail as { id: string }).id)}
       ></hv-card-shell>
-
-      <hv-column-picker
-        .open=${this._columnPickerOpen}
-        .columns=${this._columns}
-        heading="Full view columns"
-        @change=${(e: CustomEvent) => this._setColumns(e.detail.columns as ColumnKey[])}
-        @cancel=${() => {
-          this._columnPickerOpen = false;
-          this.requestUpdate();
-        }}
-      ></hv-column-picker>
     `;
   }
 
@@ -139,56 +123,6 @@ export class HAventoryCard extends LitElement {
    */
   private _heading(): string {
     return this.config?.title ?? this.store?.state.value.cardTitle ?? DEFAULT_CARD_TITLE;
-  }
-
-  /** Actions the shell hands up because they open a host-owned surface. */
-  private _onShellAction(id: string) {
-    switch (id) {
-      case 'columns':
-        this._columnPickerOpen = true;
-        this.requestUpdate();
-        break;
-      case 'export-all':
-        void this._exportDownload('all');
-        break;
-      case 'export-view':
-        void this._exportDownload('view');
-        break;
-    }
-  }
-
-  private async _exportDownload(scope: 'all' | 'view' = 'all') {
-    try {
-      const doc = await this.store?.exportDocument(scope);
-      if (!doc) return;
-      const json = JSON.stringify(doc, null, 2);
-      const stamp = (doc.exported_at ?? '').replace(/[:]/g, '-') || 'backup';
-      this._triggerDownload(`haventory-export-${stamp}.json`, json);
-    } catch (err: unknown) {
-      // The shell owns the card's error surface; export failures are rare and
-      // not worth a banner, so they go to the console for diagnostics.
-      console.error('HAventory export failed', err);
-    }
-  }
-
-  /** Trigger a browser download of the given text as a JSON file. Isolated for testing. */
-  protected _triggerDownload(filename: string, text: string) {
-    const blob = new Blob([text], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  private _setColumns(columns: ColumnKey[]) {
-    this._columns = columns;
-    saveColumnPrefs(columns);
-    this.requestUpdate();
   }
 }
 

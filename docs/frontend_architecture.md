@@ -24,20 +24,32 @@ substance:
 
 ```ts
 setConfig(cfg) → { title?: string }   // every other key is ignored, not rejected
-render()       → <hv-card-shell> + <hv-column-picker>
+render()       → <hv-card-shell>
 ```
 
-It renders `<hv-card-shell>` and keeps only the two surfaces the shell hands back up: the
-column picker and the export download (which needs a DOM anchor click). It also publishes
-the active HA theme as `color-scheme` on the host, which every nested component inherits.
+It also publishes the active HA theme as `color-scheme` on the host, which every nested
+component inherits.
+
+`src/haventory-panel.ts` defines `haventory-panel` — the same bundle's second element,
+which HA's custom-panel loader instantiates for the sidebar page. It mirrors the card's
+store lifecycle and renders `<hv-full-view embedded open>`.
+
+Both hosts hold a `HostSurfaces` instance (`src/host-surfaces.ts`): every surface
+`hv-full-view` can raise but not answer itself — the column picker, the export download,
+the delete/discard confirmation, the organize dialog, the import sheet, the diagnostics
+panel with its refresh state, and the shared ⋮ menu-entry builder. On the card side the
+instance lives in `hv-card-shell`; on the panel it lives in the panel element directly.
+Host differences enter as constructor hooks (`isMobile`, `onItemDeleted`, `onBrowse`).
 
 ---
 
 ## Component map
 
 ```
-haventory-card                     Lovelace element; dispatcher + store owner
-└── hv-card-shell                  container: header, search, filters, list, footer
+haventory-card                     Lovelace element; store owner
+└── hv-card-shell                  container: header, search, filters, list, footer;
+    │                              holds the HostSurfaces instance (the four dialogs
+    │                              below it render through that)
     ├── hv-overflow-menu           the ⋮ menu (also used by the app bar and rows)
     ├── hv-filter-chips            removable chips for every active filter
     ├── hv-filter-panel            the complete filter set; desktop panel / mobile sheet

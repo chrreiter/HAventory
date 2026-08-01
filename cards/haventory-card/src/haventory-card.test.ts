@@ -30,9 +30,9 @@ afterEach(() => {
 });
 
 // `haventory-card` is what Home Assistant instantiates; everything the user
-// sees lives in `hv-card-shell`. What is left here is the contract with
-// Lovelace — config, sizing, picker metadata — plus the two surfaces the shell
-// hands back up because they belong to the browser rather than the card.
+// sees lives in `hv-card-shell`, including the shared host surfaces. What is
+// left here is the contract with Lovelace — config, sizing, picker metadata —
+// and the proof that the wiring holds end-to-end through the real element.
 describe('haventory-card: the Lovelace element', () => {
   it('renders the shell and nothing of its own', async () => {
     const { sr } = await mountCard();
@@ -112,15 +112,28 @@ describe('haventory-card: the Lovelace element', () => {
   });
 });
 
-describe('haventory-card: host-owned surfaces', () => {
-  it('opens the column picker when the shell asks for it, and persists the choice', async () => {
+// The host surfaces live in the shell; these cases prove the wiring holds
+// end-to-end through the element Home Assistant actually creates — an action
+// raised inside the full view lands on a working surface.
+describe('haventory-card: host surfaces through the real element', () => {
+  type Shell = HTMLElement & {
+    shadowRoot: ShadowRoot;
+    surfaces: { columns: string[]; download: (filename: string, text: string) => void };
+  };
+  const shellOf = (sr: ShadowRoot) => sr.querySelector('[data-testid="card-shell"]') as Shell;
+  const raise = (shell: Shell, id: string) =>
+    shell.shadowRoot
+      .querySelector('[data-testid="card-full-view"]')!
+      .dispatchEvent(new CustomEvent('menu-action', { detail: { id }, bubbles: true, composed: true }));
+
+  it('opens the column picker from the full view, and persists the choice', async () => {
     const { el, sr } = await mountCard();
-    const picker = () => sr.querySelector('hv-column-picker') as HTMLElement & { open: boolean };
+    const shell = shellOf(sr);
+    const picker = () =>
+      shell.shadowRoot.querySelector('hv-column-picker') as HTMLElement & { open: boolean };
     expect(picker().open).toBe(false);
 
-    sr.querySelector('[data-testid="card-shell"]')!.dispatchEvent(
-      new CustomEvent('menu-action', { detail: { id: 'columns' }, bubbles: true, composed: true }),
-    );
+    raise(shell, 'columns');
     await settle(el);
     expect(picker().open).toBe(true);
 
@@ -133,8 +146,7 @@ describe('haventory-card: host-owned surfaces', () => {
     );
     await settle(el);
 
-    const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { columns: string[] };
-    expect(shell.columns).toEqual(['quantity', 'tags']);
+    expect(shell.surfaces.columns).toEqual(['quantity', 'tags']);
     expect(JSON.parse(localStorage.getItem(COLUMN_PREFS_STORAGE_KEY) ?? '{}')).toEqual({
       expanded: ['quantity', 'tags'],
     });
@@ -143,41 +155,37 @@ describe('haventory-card: host-owned surfaces', () => {
   it('starts the table from the columns saved last time', async () => {
     localStorage.setItem(COLUMN_PREFS_STORAGE_KEY, JSON.stringify({ expanded: ['category'] }));
     const { sr } = await mountCard();
-    const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { columns: string[] };
-    expect(shell.columns).toEqual(['category']);
+    expect(shellOf(sr).surfaces.columns).toEqual(['category']);
   });
 
   it('closes the picker on cancel without changing anything', async () => {
     const { el, sr } = await mountCard();
-    sr.querySelector('[data-testid="card-shell"]')!.dispatchEvent(
-      new CustomEvent('menu-action', { detail: { id: 'columns' }, bubbles: true, composed: true }),
-    );
+    const shell = shellOf(sr);
+    raise(shell, 'columns');
     await settle(el);
 
-    sr.querySelector('hv-column-picker')!.dispatchEvent(
-      new CustomEvent('cancel', { bubbles: true, composed: true }),
-    );
+    shell.shadowRoot
+      .querySelector('hv-column-picker')!
+      .dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
     await settle(el);
 
-    const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { columns: string[] };
-    expect((sr.querySelector('hv-column-picker') as HTMLElement & { open: boolean }).open).toBe(false);
-    expect(shell.columns).toEqual([...DEFAULT_COLUMNS]);
+    expect(
+      (shell.shadowRoot.querySelector('hv-column-picker') as HTMLElement & { open: boolean }).open,
+    ).toBe(false);
+    expect(shell.surfaces.columns).toEqual([...DEFAULT_COLUMNS]);
   });
 
-  // Export is the one action that has to leave the page, so the card — not the
-  // shell — owns it. The download itself is stubbed; what matters is that the
-  // right scope reaches the store and the file is named from the export stamp.
+  // The download itself is stubbed; what matters is that the right scope
+  // reaches the store and the file is named from the export stamp.
   it('downloads an export for the scope the menu asked for', async () => {
     for (const [id, scope] of [
       ['export-all', 'all'],
       ['export-view', 'view'],
     ] as const) {
       const { el, sr } = await mountCard({}, { items: [makeItem({ id: '1' })] });
+      const shell = shellOf(sr);
       const downloads: { filename: string; text: string }[] = [];
-      (el as unknown as { _triggerDownload: (f: string, t: string) => void })._triggerDownload = (
-        filename,
-        text,
-      ) => {
+      shell.surfaces.download = (filename, text) => {
         downloads.push({ filename, text });
       };
       const scopes: unknown[] = [];
@@ -188,9 +196,7 @@ describe('haventory-card: host-owned surfaces', () => {
         return real(s);
       };
 
-      sr.querySelector('[data-testid="card-shell"]')!.dispatchEvent(
-        new CustomEvent('menu-action', { detail: { id }, bubbles: true, composed: true }),
-      );
+      raise(shell, id);
       await settle(el);
       await settle(el);
 
@@ -207,23 +213,23 @@ describe('haventory-card: host-owned surfaces', () => {
     const store = (el as unknown as { store: { exportDocument: () => Promise<unknown> } }).store;
     store.exportDocument = () => Promise.reject(new Error('storage_error'));
 
-    sr.querySelector('[data-testid="card-shell"]')!.dispatchEvent(
-      new CustomEvent('menu-action', { detail: { id: 'export-all' }, bubbles: true, composed: true }),
-    );
+    raise(shellOf(sr), 'export-all');
     await settle(el);
     await settle(el);
 
     expect(sr.querySelector('[data-testid="card-shell"]')).toBeTruthy();
   });
 
-  it('does nothing for a menu action it does not own', async () => {
+  it('opens the organize dialog inside the shell', async () => {
     const { el, sr } = await mountCard();
-    sr.querySelector('[data-testid="card-shell"]')!.dispatchEvent(
-      new CustomEvent('menu-action', { detail: { id: 'organize' }, bubbles: true, composed: true }),
-    );
+    const shell = shellOf(sr);
+    raise(shell, 'organize');
     await settle(el);
 
-    expect((sr.querySelector('hv-column-picker') as HTMLElement & { open: boolean }).open).toBe(false);
+    expect(
+      (shell.shadowRoot.querySelector('[data-testid="host-organize"]') as HTMLElement & { open: boolean })
+        .open,
+    ).toBe(true);
   });
 });
 

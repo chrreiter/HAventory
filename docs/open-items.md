@@ -48,6 +48,12 @@ non-blocking).
 > turned the `push` trigger on, so that row is removed below, and the HACS upgrade-leftover
 > caveat the same review surfaced is item **57**.
 
+> Item **59** (the sidebar panel's dead surfaces) was resolved inside item 58's PR-1:
+> `host-surfaces.ts` now owns every surface `hv-full-view` can raise — the confirm, the
+> organize dialog, the import sheet, diagnostics with its refresh state, and the shared
+> ⋮ menu builder — with an instance in `hv-card-shell` and in `haventory-panel`, so the
+> panel answers the full menu vocabulary. Its row is removed below.
+
 > A **truth-up pass (2026-07-31)**, prompted by item 3's staleness, checked the rest of the
 > ledger against `main` and closed three more rows whose work had already landed
 > unattributed. Item **5** — `npm run typecheck` is a blocking step in the `frontend` CI job
