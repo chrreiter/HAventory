@@ -6,7 +6,9 @@ The HAventory Lovelace card is a Home Assistant dashboard component built with:
 
 - **Framework**: Lit 3 (web components, shadow DOM)
 - **Language**: TypeScript 6 (`strict`)
-- **Build**: Vite 8 → a single ESM bundle at `cards/www/haventory/haventory-card.js`
+- **Build**: Vite 8 → a single ESM bundle at
+  `custom_components/haventory/www/haventory-card.js`, which the integration serves at
+  `/haventory_static/haventory-card.js`
 - **Tests**: Vitest 4 with jsdom
 
 It provides the full inventory UI, updating live over the HAventory WebSocket API.
@@ -22,20 +24,32 @@ substance:
 
 ```ts
 setConfig(cfg) → { title?: string }   // every other key is ignored, not rejected
-render()       → <hv-card-shell> + <hv-column-picker>
+render()       → <hv-card-shell>
 ```
 
-It renders `<hv-card-shell>` and keeps only the two surfaces the shell hands back up: the
-column picker and the export download (which needs a DOM anchor click). It also publishes
-the active HA theme as `color-scheme` on the host, which every nested component inherits.
+It also publishes the active HA theme as `color-scheme` on the host, which every nested
+component inherits.
+
+`src/haventory-panel.ts` defines `haventory-panel` — the same bundle's second element,
+which HA's custom-panel loader instantiates for the sidebar page. It mirrors the card's
+store lifecycle and renders `<hv-full-view embedded open>`.
+
+Both hosts hold a `HostSurfaces` instance (`src/host-surfaces.ts`): every surface
+`hv-full-view` can raise but not answer itself — the column picker, the export download,
+the delete/discard confirmation, the organize dialog, the import sheet, the diagnostics
+panel with its refresh state, and the shared ⋮ menu-entry builder. On the card side the
+instance lives in `hv-card-shell`; on the panel it lives in the panel element directly.
+Host differences enter as constructor hooks (`isMobile`, `onItemDeleted`, `onBrowse`).
 
 ---
 
 ## Component map
 
 ```
-haventory-card                     Lovelace element; dispatcher + store owner
-└── hv-card-shell                  container: header, search, filters, list, footer
+haventory-card                     Lovelace element; store owner
+└── hv-card-shell                  container: header, search, filters, list, footer;
+    │                              holds the HostSurfaces instance (the four dialogs
+    │                              below it render through that)
     ├── hv-overflow-menu           the ⋮ menu (also used by the app bar and rows)
     ├── hv-filter-chips            removable chips for every active filter
     ├── hv-filter-panel            the complete filter set; desktop panel / mobile sheet

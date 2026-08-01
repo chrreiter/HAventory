@@ -11,11 +11,11 @@ Out of scope: feature work, and anything tracked as **post-v1.0** in
 [`open-items.md`](open-items.md). Pre-v1.0 *tasks* (fixes/docs/release chores identified
 alongside this plan) also live in `open-items.md` — this file is tests only.
 
-**Sequencing.** The run belongs after v1.0 feature freeze. One scenario has a hard
-prerequisite: **D6 cannot run until the minimum supported HA version is actually decided**
-(open item 29) — the `2026.7.0` currently in `hacs.json` is a stale leftover from an earlier
-work package, not a verified floor, and the real number can only be derived once the final
-feature set fixes which HA APIs are used.
+**Sequencing.** The run belongs after feature freeze. D6's prerequisite is met: the minimum
+supported HA version is **2026.6.0** — set at feature freeze from the HA APIs the
+integration actually touches and the security floor below which every release carries a
+known advisory (see CLAUDE.md) — so D6 runs against that number. D6 is the live half of
+that claim; the in-process suite already runs the integration at the floor in CI.
 
 ---
 
@@ -41,7 +41,7 @@ A release is "ready" when **all** of the following hold:
 |-----|------|----------|
 | **ENV-A** | Personal production HA instance, real data, real hardware | Everything except destructive scenarios (D8, E2–E4) |
 | **ENV-B** | Throwaway HA in Docker (`scripts/reload_addon.sh`, `run-haventory` skill) | Destructive + adversarial scenarios; YAML-mode Lovelace |
-| **ENV-C** | Docker HA pinned to the **minimum supported version — once that number is actually set** (open item 29). The `2026.7.0` currently in `hacs.json` is a stale leftover, not a verified floor; the real minimum is decided after v1.0 is feature-complete | D6 — validates the floor |
+| **ENV-C** | Docker HA pinned to the **declared minimum supported version**, `2026.6.0` (`hacs.json` `homeassistant`) | D6 — validates the floor |
 | **ENV-D** | Docker HA restored from an **ENV-A production backup** | E2–E4 restore scenarios, without risking ENV-A |
 
 Clients to cover: desktop Chrome, one of Firefox/Safari desktop, **iOS companion app**,
@@ -108,8 +108,8 @@ client + OS version, date. Put it in the results log.
 | ID | Scenario | Pass criteria | Blocker |
 |----|----------|---------------|---------|
 | A1 | Fresh install on a clean HA (ENV-B): HACS/manual copy → restart → add integration via config flow → add card via the UI card picker | Integration sets up without error; card appears in the picker; empty state renders with no locations and no console error | ✅ |
-| A2 | Card resource auto-registration (storage-mode Lovelace) | `/local/haventory/haventory-card.js` present exactly once in `.storage/lovelace_resources`; card loads without a manual step | ✅ |
-| A3 | YAML-mode Lovelace (ENV-B, `lovelace: mode: yaml`) | Registration is skipped with a clear log line; following the README's "YAML-mode dashboards" steps makes the card load (item 28, documented by #125) | ✅ |
+| A2 | Card resource auto-registration (storage-mode Lovelace) | `/haventory_static/haventory-card.js?v=<version>` present exactly once in `.storage/lovelace_resources`; `curl -I` on it returns 200 with **no** `Cache-Control` header; card loads without a manual step | ✅ |
+| A3 | YAML-mode Lovelace (ENV-B, `lovelace: mode: yaml`) | Resource registration is skipped with a clear log line, and the card still loads — the frontend extra-module URL covers YAML mode, so there is no manual step here either | ✅ |
 | A4 | Attempt a second config entry | Rejected as single-instance; no duplicate storage or resource | |
 | A5 | First-run with a pre-existing store (upgrade-in-place from a dev instance) | Existing items/locations load; `health` healthy | ✅ |
 
@@ -151,7 +151,7 @@ Run `haventory/health` after **each** of these, and snapshot the store around D7
 | D3 | Config-entry reload (no HA restart) | Reload succeeds; subscriptions re-established; no duplicate WS handler registration | ✅ |
 | D4 | HA minor update (current stable → next stable) with HAventory installed | Setup succeeds; no deprecation warnings from `custom_components.haventory` | ✅ |
 | D5 | HA **next beta** | Same; any breakage is filed before it reaches stable | |
-| D6 | Minimum supported HA (ENV-C). **Blocked on open item 29** — the floor has not been set yet, and `hacs.json`'s `2026.7.0` is stale. Run this against whatever number the post-feature-freeze decision lands on | Integration sets up and the full CRUD path works on the declared floor; if it does not, the floor is wrong and must be raised before release | ✅ |
+| D6 | Minimum supported HA `2026.6.0` (ENV-C). The phacc suite already runs the integration in-process at this version in CI; D6 is the live counterpart — a real container, the card, and the browser | Integration sets up and the full CRUD path works on the declared floor; if it does not, the floor is wrong and must be raised before release | ✅ |
 | D7 | Integration update N → N+1 **with real data**, including a schema migration | Migration runs once, is idempotent on a second restart, data intact, `health` healthy | ✅ |
 | D8 | Integration **rollback** N+1 → N (ENV-B only) | Newer-schema data is **refused loudly**: setup fails with `ConfigEntryError` naming both versions and the store file is left byte-identical — never migrated down, never silently relabeled (decided; item 25 fixed by #120) | ✅ |
 | D9 | Card update with a warm browser cache: update the integration, then reload normally (no hard refresh), on desktop **and** in the companion app | New card version actually loads; check `haventory/version` vs. the card build. The resource is now registered as `…haventory-card.js?v=<manifest version>` and a stale entry is rewritten in place (item 26, fixed by #122) | ✅ |
@@ -160,11 +160,11 @@ Run `haventory/health` after **each** of these, and snapshot the store around D7
 
 | ID | Scenario | Pass criteria | Blocker |
 |----|----------|---------------|---------|
-| E1 | Take a full HA backup; inspect the archive | Contains `.storage/haventory_store`, `.storage/lovelace_resources`, and `www/haventory/haventory-card.js` | ✅ |
+| E1 | Take a full HA backup; inspect the archive | Contains `.storage/haventory_store`, `.storage/lovelace_resources`, and `custom_components/haventory/www/haventory-card.js` | ✅ |
 | E2 | Backup taken **while HAventory is being written to** (run a bulk import during the backup), restore into ENV-D | Restored store is valid JSON; `health` healthy; item count matches the pre-backup count ±the in-flight batch | ✅ |
 | E3 | Restore an **older** backup into the **current** integration (ENV-D) | Forward migration runs on load; data intact; `health` healthy | ✅ |
 | E4 | Restore a **newer-schema** backup into an **older** integration (ENV-D) | Same expectation as D8 — refuse loudly; never migrate down, never silently relabel (item 25, fixed by #120) | ✅ |
-| E5 | Partial/selective backup | Document the minimum set a user must select to fully restore HAventory (store + Lovelace resources + `www` asset, or "reinstall the integration and restore only the store") | ✅ |
+| E5 | Partial/selective backup | Document the minimum set a user must select to fully restore HAventory. The card bundle now rides inside `custom_components/haventory/`, so the set is the store plus the integration folder — or "reinstall the integration and restore only the store". The Lovelace resource is rebuilt on setup and no longer has to be backed up | ✅ |
 
 ### F — Data integrity & scale
 

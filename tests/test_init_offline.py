@@ -7,6 +7,7 @@ from copy import deepcopy
 
 import custom_components.haventory as haven_init
 import pytest
+from custom_components.haventory.const import CONF_CARD_TITLE, DEFAULT_CARD_TITLE
 from custom_components.haventory.exceptions import SchemaDowngradeError
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
@@ -120,3 +121,39 @@ async def test_setup_entry_invalid_collections_raise(monkeypatch) -> None:
 
     with pytest.raises(ConfigEntryNotReady):
         await haven_init.async_setup_entry(hass, entry)
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_publishes_card_title(monkeypatch) -> None:
+    """The card title option is resolved into hass.data for haventory/config."""
+
+    hass = HomeAssistant()
+    entry = ConfigEntry(options={CONF_CARD_TITLE: "Pantry"})
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    assert await haven_init.async_setup_entry(hass, entry) is True
+    assert hass.data[haven_init.DOMAIN]["card_title"] == "Pantry"
+
+    entry.options[CONF_CARD_TITLE] = "Garage"
+    await haven_init._async_options_updated(hass, entry)
+    assert hass.data[haven_init.DOMAIN]["card_title"] == "Garage"
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_defaults_card_title_for_older_entries(monkeypatch) -> None:
+    """An entry created before the option existed still gets a usable heading."""
+
+    hass = HomeAssistant()
+    entry = ConfigEntry()
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    assert await haven_init.async_setup_entry(hass, entry) is True
+    assert hass.data[haven_init.DOMAIN]["card_title"] == DEFAULT_CARD_TITLE

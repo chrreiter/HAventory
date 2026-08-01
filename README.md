@@ -10,7 +10,7 @@ Home Assistant custom integration (domain `haventory`) for household inventory t
 plus a Lit + TypeScript Lovelace card. Local-push, single-instance, HA `Store`-backed
 persistence — no external services.
 
-**Targets:** Linux dev + `ubuntu-latest` CI. Minimum Home Assistant **2026.7** ⇒ Python
+**Targets:** Linux dev + `ubuntu-latest` CI. Minimum Home Assistant **2026.6.0** ⇒ Python
 **3.14** everywhere (uv provisions the interpreter automatically; the source uses 3.14-only
 PEP 758 syntax). Node **22.13+ / 24 LTS** for the card.
 
@@ -26,45 +26,53 @@ HAventory isn't in the HACS default store yet. To install from this repository:
 4. Add it via **Settings → Devices & Services → Add Integration → HAventory**.
 5. Refresh your browser (Ctrl/Cmd+Shift+R) so the Lovelace card appears in the picker.
 
-Minimum Home Assistant version: **2026.7**. Developers: see the Developer Checklist below
-and [CONTRIBUTING.md](CONTRIBUTING.md).
+HACS installs **released versions only**: it downloads the `haventory.zip` attached to a
+GitHub release, which already contains the built card. Installing from the default branch
+is deliberately not offered — the card bundle is a build artifact and is not in git, so a
+branch install would come up without a card and report success.
 
-### YAML-mode dashboards
+Minimum Home Assistant version: **2026.6.0** — the oldest release that both runs the
+integration and carries no known security advisory. Developers: see the Developer
+Checklist below and [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Step 5 assumes the default storage mode, where the integration registers the card as a
-Lovelace resource for you. In YAML mode, Home Assistant reads the resource list from
-`configuration.yaml` and no integration can add to it, so HAventory skips registration
-(logging `Lovelace in YAML mode; manual resource configuration required` at debug level).
-Nothing else reports the problem: the card is simply missing from the picker, and any
-dashboard already using it shows *Custom element doesn't exist: haventory-card*.
+### How the card gets loaded
 
-You are in YAML mode if `configuration.yaml` has a `lovelace:` block with `mode: yaml`.
-In the UI, with **Advanced Mode** enabled on your profile, **Settings → Dashboards → ⋮**
-offers no **Resources** entry and the dashboard has no edit (pencil) button.
+The card bundle ships inside the integration, and the integration serves it at
+`/haventory_static/haventory-card.js`. Nothing is copied into your `<config>/www/`
+directory, and nothing is left behind there when you uninstall.
 
-Register the card yourself next to that `mode:` key:
+Two mechanisms then point the frontend at that one URL, so every way of viewing a
+dashboard is covered: a Lovelace resource entry (registered automatically in the default
+storage mode — this is what HA Cast reads) and the frontend's extra-module
+list (which needs no stored state and works in YAML resource mode). Both receive the same
+URL, so the card is only ever defined once.
+
+**YAML-mode dashboards** therefore need no manual step either. You are in YAML mode if
+`configuration.yaml` has a `lovelace:` block with `mode: yaml`; in the UI, with
+**Advanced Mode** enabled on your profile, **Settings → Dashboards → ⋮** offers no
+**Resources** entry and the dashboard has no edit (pencil) button. Home Assistant reads
+that resource list from `configuration.yaml` and no integration can add to it, so
+HAventory skips resource registration there and logs it at debug level — the extra-module
+loader carries the card instead.
+
+If you did add a `resources:` entry by hand under an earlier version, point it at the new
+URL or delete it; a second entry for the same module makes the browser define the card
+twice and the second definition fails:
 
 ```yaml
 lovelace:
   mode: yaml
   resources:
-    - url: /local/haventory/haventory-card.js
+    - url: /haventory_static/haventory-card.js
       type: module
 ```
 
-Restart Home Assistant, then refresh your browser (Ctrl/Cmd+Shift+R).
-
-The mode of the *main* dashboard is what decides this. An extra YAML dashboard declared
-under `lovelace: dashboards:` while the main one stays in storage mode still uses the
-UI-managed resource list, so it needs nothing. In storage mode a `resources:` block in
-`configuration.yaml` is ignored — Home Assistant warns and keeps using the UI list.
-
 ### Removing HAventory
 
-Deleting the integration under **Settings → Devices & Services** removes the Lovelace
-resource entry HAventory registered for `/local/haventory/haventory-card.js`, so no
-dashboard is left loading a card that is about to disappear. (If your Lovelace runs in YAML
-mode the entry is yours, in `configuration.yaml` — delete the `resources:` line by hand.)
+Deleting the integration under **Settings → Devices & Services** takes back both loaders —
+the Lovelace resource entry and the extra-module URL — so no dashboard is left loading a
+card that is about to disappear. (If your Lovelace runs in YAML mode any entry is yours, in
+`configuration.yaml` — delete the `resources:` line by hand.)
 
 **Your inventory is deliberately kept.** Items and locations live in the Home Assistant
 store file `<config>/.storage/haventory_store`, which removal does not touch: adding the
@@ -75,9 +83,10 @@ To delete the data as well — after exporting a backup, if you might want it la
 
 1. Remove the integration and stop Home Assistant.
 2. Delete `<config>/.storage/haventory_store`.
-3. Uninstalling for good? Also delete `<config>/www/haventory/` (the card bundle; HACS
-   removes `custom_components/haventory/` but not the built asset).
-4. Start Home Assistant.
+3. Start Home Assistant.
+
+Upgrading from a version that copied the card into `<config>/www/haventory/`? That copy is
+no longer used and can be deleted; the integration ignores it either way.
 
 ---
 
@@ -110,7 +119,8 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   re-opens the refused round up to four times, waiting out a retry-after hint when the
   refusal carries one and backing off exponentially when it does not, and once that budget
   is spent it says **Live updates paused** and offers a Refresh — so a list that has
-  stopped updating never passes for one with nothing to report.
+  stopped updating never passes for one with nothing to report. What the settings mean, and
+  when turning them on is worth it: [`docs/rate_limiting.md`](docs/rate_limiting.md).
 - **Import identity is the id, never the name.** The `merge` / `replace` / `skip` policies
   all classify an incoming item or location by its id. Restoring a backup onto entities
   you rebuilt by hand — which carry fresh uuids — therefore duplicates them instead of
@@ -339,7 +349,8 @@ item and deletes it (best-effort cleanup even on failure).
   subscription broadcasts (excess events are dropped, never breaking the command).
   Enable and tune it under Settings → Devices & services → HAventory → **Configure**;
   `haventory/health` reports drop counters. Leave it disabled for stress testing
-  (`scripts/stress_test.py`). Semantics and defaults:
+  (`scripts/stress_test.py`). What each setting means and when to enable it:
+  [`docs/rate_limiting.md`](docs/rate_limiting.md); wire-level semantics and defaults:
   [`docs/backend_api_contract.md`](docs/backend_api_contract.md) → "Rate limiting".
 - **JSON import/export (data safety)** via `haventory/export`, `haventory/import/preview`,
   and `haventory/import/execute`: back up to a versioned document before a breaking update
@@ -375,7 +386,8 @@ item and deletes it (best-effort cleanup even on failure).
 ### Frontend (Lovelace card)
 
 Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs to
-`www/haventory/`. Real-time over WebSocket with optimistic writes throughout.
+`custom_components/haventory/www/`. Real-time over WebSocket with optimistic writes
+throughout.
 
 - **Standard card** — one Add button and a single ⋮ menu (Select items, Organize, Refresh,
   Diagnostics, Export backup / Export current view, Import); Columns is offered in the full
@@ -453,11 +465,17 @@ Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs t
 
 ```yaml
 type: custom:haventory-card
-title: Inventory   # optional; defaults to "Inventory"
+title: Pantry   # optional; overrides the integration-wide card title
 ```
 
 `title` is the only option the card reads. Any other key is ignored rather than rejected,
 so a stale dashboard config never breaks the card.
+
+Without it, the card uses the name set under Settings → Devices & services → HAventory →
+**Configure** (asked for at setup too, and defaulting to "HAventory"), so one setting
+renames every card. Per-dashboard `title:` wins over it — use that when two dashboards
+should name the same inventory differently. An open dashboard picks up a changed name on
+its next refresh or reload; the change is not pushed live.
 
 ### CI/CD & Ops
 
@@ -477,8 +495,10 @@ so a stale dashboard config never breaks the card.
   names in `.github/workflows/`, or a pull request can never satisfy them.
 - The repository's social preview is `docs/assets/social-preview.png`, rendered from the
   `.html` beside it. GitHub has no API for it — upload it under *Settings → General*.
-- Release automation via **release-please** is config-ready but deferred (WP5) — enable it
-  by uncommenting the `push` trigger in `.github/workflows/release-please.yml`.
+- Release automation via **release-please**: merging its release PR tags the version,
+  drafts the GitHub Release, builds and attaches `haventory.zip` — the bundle HACS
+  installs — and publishes the draft last. See [CONTRIBUTING.md](CONTRIBUTING.md) →
+  Releases.
 - Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md).
 - Conventional Commits; update this README when behavior changes.
 
@@ -507,7 +527,7 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
 > the capabilities below carried over, the surfaces they are reached through did not.
 
 - Lit 3 + TypeScript components; real-time sync; optimistic updates with conflict
-  resolution; Vite build → `www/haventory/haventory-card.js`.
+  resolution; Vite build → `custom_components/haventory/www/haventory-card.js`.
 - Item dialog offers debounced, keyboard-navigable category/tag autocomplete sourced from
   `haventory/distinct_values`.
 - Dedicated **category browser** (header → "Categories"): lists used categories with item
@@ -598,7 +618,8 @@ and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discus
 ## Conventions
 
 - Domain/package: `haventory` under `custom_components/haventory`; services `haventory.*`;
-  built assets `www/haventory/`; calendar entity `calendar.haventory` — a reserved name for
+  built assets `custom_components/haventory/www/`, served at `/haventory_static/`;
+  calendar entity `calendar.haventory` — a reserved name for
   the post-1.0 calendar work ([open item 9](docs/open-items.md)), not an entity that exists
   today.
 - Logging: avoid reserved `LogRecord` keys in logger extras — use `item_name` /
@@ -607,6 +628,7 @@ and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discus
 ## Developer docs
 
 - WebSocket API contract: `docs/backend_api_contract.md`
+- WebSocket rate limiting (what the options mean, when to enable): `docs/rate_limiting.md`
 - Data shapes (Item/Location/filter/sort/events): `docs/data_shapes.md`
 - Frontend architecture: `docs/frontend_architecture.md`
 - Release testing plan (manual v1.0 readiness run): `docs/release_testing_plan.md`

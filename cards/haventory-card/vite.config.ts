@@ -31,7 +31,10 @@ export default defineConfig({
     minify: true,
     sourcemap: false,
     target: 'es2020',  // Match HA browser support
-    outDir: '../www/haventory',
+    // Inside the integration package: that directory is the only tree HACS
+    // copies for an integration-category repo, and the integration serves it
+    // over its own static path.
+    outDir: '../../custom_components/haventory/www',
     emptyOutDir: false
   }
 });

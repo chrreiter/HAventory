@@ -8,7 +8,7 @@ HAventory is a Home Assistant **custom integration** (domain `haventory`) for ho
 inventory tracking, plus a Lovelace **card** frontend. Local-push, single-instance, HA
 `Store`-backed persistence — no external services.
 
-Targets (as of WP1): minimum Home Assistant **2026.7** ⇒ **Python 3.14 everywhere**
+Targets: minimum Home Assistant **2026.6.0** ⇒ **Python 3.14 everywhere**
 (`requires-python >=3.14`, ruff `target-version = py314`, mypy `3.14`, CI 3.14; the source
 uses 3.14-only PEP 758 syntax). uv provisions the interpreter automatically. Node
 **22.13+ / 24 LTS** (`engines: ^22.13 || >=24`). Toolchain: **uv** (env + lockfile +
@@ -48,8 +48,12 @@ Vitest `4`. Version 0.0.1, unreleased.
 
 ### Frontend — `cards/haventory-card/`
 Lit 3 + TypeScript + Vite Lovelace card. Source in `src/` (`haventory-card` container,
-`hv-*` components, `store/` for WS client + state). Builds to `www/haventory/haventory-card.js`
-(git-ignored; produced in CI and by `npm run build`).
+`hv-*` components, `store/` for WS client + state). Builds to
+`custom_components/haventory/www/haventory-card.js` (git-ignored; produced in CI and by
+`npm run build`) — inside the integration package, which is the only tree HACS copies. The
+integration serves that directory at `/haventory_static/` and loads the card through both
+a Lovelace resource and `frontend.add_extra_js_url`, on one identical URL. See
+`docs/card_shipping_plan.md`.
 
 ### Docs — `docs/` (link here, don't duplicate)
 - `backend_api_contract.md` — WebSocket envelope, error taxonomy, command catalog, events.
@@ -143,8 +147,9 @@ Offline tests stub HA via `tests/conftest.py`.
   - Applies to TypeScript and Python alike. Enforced by review, not by a lint rule — the
     distinction is a judgment call and a mechanical check would be wrong often enough to be
     ignored.
-- Naming: domain/package `haventory`, services `haventory.*`, built assets `www/haventory/`,
-  calendar entity `calendar.haventory`.
+- Naming: domain/package `haventory`, services `haventory.*`, built assets
+  `custom_components/haventory/www/` served at `/haventory_static/`, calendar entity
+  `calendar.haventory`.
 - Report out-of-scope findings under a "Follow-ups" note rather than fixing them.
 
 See the README "Developer Checklist" for the full backend/frontend/CI checklist.
@@ -163,14 +168,33 @@ blog.
   (2026-03-04). Every HA release from 2026.3 onward requires Python 3.14. This is not
   optional: declaring a min HA of 2026.3+ forces Python 3.14 on the toolchain.
 
-### Decisions to adopt at release (min HA + Python)
+### Minimum supported HA + Python (SET at feature freeze, 2026-07-29)
 
-- **Minimum supported HA:** **`2026.7`** (current stable at review time; policy = "a recent
-  stable release"). Re-confirm against whatever is current stable on the actual release date.
+- **Minimum supported HA:** **`2026.6.0`**. Three constraints stack, each stricter than the
+  last:
+  1. **APIs** — every HA symbol the integration uses (`websocket_api` registration +
+     decorators, `helpers.storage.Store`, the config-entry lifecycle, `ConfigFlowResult`,
+     `ConfigEntryError`, `helpers.area_registry.async_get`, `loader.async_get_integration`,
+     `hass.async_create_background_task`, `LOVELACE_DATA` + `ResourceStorageCollection`'s
+     `async_items` / `async_create_item` / `async_update_item` / `async_delete_item`) is
+     present and unchanged as far back as **2026.3.1**, verified against both that release's
+     wheel and 2026.6.0's (the 2026.6 dashboard overhaul left the resource collection API
+     untouched). So the APIs alone would allow 2026.3.
+  2. **Python** — 2026.3 is the first series requiring Python 3.14, and the source uses PEP
+     758 syntax that does not parse on 3.13. Nothing below 2026.3 is possible at all.
+  3. **Security** — every release below 2026.6.0 is affected by GHSA-x84v-g949-293w (high,
+     CVE-2026-54317, fixed in 2026.6.0). A declared floor is a recommendation about what to
+     run, so it does not point at a version with a known unpatched advisory. This is the
+     binding constraint, and `dependency-review` enforces it: pinning
+     `requirements-integration.txt` any lower fails CI.
 - **Python:** **`3.14`** (forced by HA ≥ 2026.3). Non-negotiable given the min-HA choice.
 
-> Status: RECOMMENDED, pending owner confirmation of the exact min-HA number. The Python
-> floor is determined by the min-HA choice and is not a free variable.
+Re-check constraint 3 when raising the floor next: it moves with new advisories, so the
+"oldest release with no known advisory" is not a fixed number.
+
+The floor is defended by CI: `requirements-integration.txt` pins HA to it, so the in-process
+phacc suite runs at the floor, and `tests/test_min_ha_version.py` fails if any declaration
+site drifts from `hacs.json`. Current stable is covered by the dogfood run instead.
 
 ### Toolchain targets for WP1 (record now, change lands in WP1 — not WP0.5)
 

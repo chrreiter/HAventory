@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # Run Home Assistant with HAventory (+ HACS) against the working tree.
 #
-# This is the WP4 E2E hook: it brings up a real Home Assistant (the declared
-# 2026.7 / Python 3.14 runtime, provisioned by uv) with the integration
-# symlinked in, so edits are picked up on restart. Requires network access.
+# Brings up a real Home Assistant (current stable on Python 3.14, provisioned by
+# uv) with the integration symlinked in, so edits are picked up on restart. This
+# runs current stable, not the declared 2026.6.0 floor — the floor is what the
+# phacc suite pins. Requires network access.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG="${HA_CONFIG_DIR:-$ROOT/.ha-config}"
 PY_VER="${HA_PYTHON:-3.14}"
 
-mkdir -p "$CONFIG/custom_components" "$CONFIG/www"
+mkdir -p "$CONFIG/custom_components"
 
 # Symlink the integration so a restart picks up local changes.
 ln -sfn "$ROOT/custom_components/haventory" "$CONFIG/custom_components/haventory"
@@ -22,10 +23,10 @@ if [ ! -d "$CONFIG/custom_components/hacs" ]; then
     || echo "[develop] HACS install failed; continuing without it."
 fi
 
-# Build + deploy the Lovelace card.
+# Build the Lovelace card. It lands in custom_components/haventory/www/, which
+# the symlink above already exposes to Home Assistant — nothing to copy.
 echo "[develop] Building card..."
 ( cd "$ROOT/cards/haventory-card" && npm ci --no-audit --no-fund && npm run build )
-cp -r "$ROOT/cards/www/haventory" "$CONFIG/www/" 2>/dev/null || true
 
 echo "[develop] Starting Home Assistant (Python $PY_VER) at http://localhost:8123 ..."
 exec uv run --python "$PY_VER" --with homeassistant hass --config "$CONFIG"

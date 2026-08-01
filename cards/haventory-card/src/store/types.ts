@@ -172,6 +172,12 @@ export interface VersionInfo {
   schema_version: number;
 }
 
+/** Result of haventory/config: the config-entry settings the card renders. */
+export interface IntegrationConfig {
+  /** Heading set in the integration's options flow. */
+  card_title: string;
+}
+
 /**
  * A node of haventory/location/tree. Unlike the flat `location/list`, tree nodes
  * carry the per-location counts the sidebar and organize dialog display.
@@ -457,6 +463,8 @@ export interface StoreState {
   statsCounts: StatsCounts | null;
   healthCache: HealthResult | null;
   versionInfo: VersionInfo | null;
+  /** Heading configured in the integration, or null until it has been read. */
+  cardTitle: string | null;
   // Distinct categories/tags with counts, sourcing category/tag autocomplete.
   distinctValuesCache: DistinctValues | null;
   connected: { items: boolean; stats: boolean };

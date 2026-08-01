@@ -278,6 +278,7 @@ export class Store {
       statsCounts: null,
       healthCache: null,
       versionInfo: null,
+      cardTitle: null,
       distinctValuesCache: null,
       connected: { items: false, stats: false },
       degraded: { ...NO_DEGRADATION },
@@ -299,6 +300,7 @@ export class Store {
       this.refreshLocationsFlat(),
       this.refreshDistinctValues(),
       this.refreshVersion(),
+      this.refreshConfig(),
     ]);
     await this.listItems(true);
     this.subscribeTopics();
@@ -587,6 +589,19 @@ export class Store {
   async refreshVersion() {
     const info = await this.run(() => this.ws.version());
     this.stateObs.set({ versionInfo: info });
+  }
+
+  /**
+   * Card heading configured in the integration's options flow.
+   *
+   * Cosmetic, so a backend that does not answer the command — an integration
+   * older than this bundle — leaves the card on its built-in heading instead
+   * of failing the whole init.
+   */
+  async refreshConfig() {
+    const config = await this.run(() => this.ws.config()).catch(() => null);
+    const title = config?.card_title;
+    if (typeof title === 'string' && title) this.stateObs.set({ cardTitle: title });
   }
 
   /**
@@ -1153,6 +1168,7 @@ export class Store {
       this.refreshLocationsFlat(),
       this.refreshLocationTree(),
       this.refreshDistinctValues(),
+      this.refreshConfig(),
     ]);
     await this.listItems(true);
   }

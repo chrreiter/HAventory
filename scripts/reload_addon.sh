@@ -64,23 +64,18 @@ if [ "$CLEAN" -eq 1 ]; then
   docker exec "$CONTAINER" sh -lc "find '$target_root' -type d -name __pycache__ -prune -exec rm -rf {} +" >/dev/null 2>&1 || true
 fi
 
-info 'Copying integration into container...'
-docker cp "$local_component" "$CONTAINER:$target_root" >/dev/null
-ok "Copied to $target_root"
-
-# Build + deploy the card.
+# Build the card first: it lands in custom_components/haventory/www/ and rides
+# along with the component copy below. Building afterwards would deploy the
+# previous build.
 if command -v npm >/dev/null 2>&1; then
   info 'Building frontend card (npm ci --no-audit --no-fund && npm run build)...'
   (cd "$CARD_DIR" && npm ci --no-audit --no-fund >/dev/null && npm run build --silent >/dev/null) \
     || err 'card build failed'
 fi
-local_card="$REPO_ROOT/cards/www/haventory"
-if [ -d "$local_card" ]; then
-  info 'Copying card assets into container...'
-  docker exec "$CONTAINER" sh -lc "mkdir -p '$remote_cfg/www'" >/dev/null
-  docker cp "$local_card" "$CONTAINER:$remote_cfg/www" >/dev/null
-  ok "Copied to $remote_cfg/www/haventory"
-fi
+
+info 'Copying integration (incl. the card bundle) into container...'
+docker cp "$local_component" "$CONTAINER:$target_root" >/dev/null
+ok "Copied to $target_root"
 
 # Deploy config.
 if [ "$USE_DEV_CONFIG" -eq 1 ]; then

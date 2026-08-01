@@ -2,8 +2,9 @@
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "release-type": "python",
   "bump-minor-pre-major": true,
-  "bump-patch-for-minor-pre-major": true,
   "include-component-in-tag": false,
+  "draft": true,
+  "force-tag-creation": true,
   "packages": {
     ".": {
       "package-name": "haventory",
@@ -18,6 +19,15 @@
           "type": "json",
           "path": "cards/haventory-card/package.json",
           "jsonpath": "$.version"
+        },
+        {
+          "type": "generic",
+          "path": "custom_components/haventory/const.py"
+        },
+        {
+          "type": "toml",
+          "path": "uv.lock",
+          "jsonpath": "$.package[?(@.name.value=='haventory')].version"
         }
       ]
     }

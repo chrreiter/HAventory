@@ -182,7 +182,10 @@ describe('hv-card-shell: overflow menu', () => {
     expect(await idsOf(full.shadowRoot?.querySelector('[data-testid="full-overflow"]'))).toContain('columns');
   });
 
-  it('handles Refresh itself and hands the rest to the host card', async () => {
+  // Every id the menu can name is answered inside the shell — by the store,
+  // by a shared host surface, or by the shell itself. Nothing bounces off the
+  // element above, whose only job is the store and the heading.
+  it('answers every menu action itself, letting none escape upward', async () => {
     const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     const actions: string[] = [];
     el.addEventListener('menu-action', (e) => actions.push((e as CustomEvent).detail.id));
@@ -190,6 +193,10 @@ describe('hv-card-shell: overflow menu', () => {
     let refreshed = 0;
     store.refreshAll = async () => {
       refreshed += 1;
+    };
+    const downloads: string[] = [];
+    el.surfaces.download = (filename) => {
+      downloads.push(filename);
     };
 
     const menu = sr.querySelector('[data-testid="card-overflow"]') as HTMLElement;
@@ -203,24 +210,23 @@ describe('hv-card-shell: overflow menu', () => {
     pick('refresh');
     await settle(el);
     expect(refreshed).toBe(1);
-    expect(actions).toEqual([]);
 
-    // Import opens the shell's own sheet rather than bouncing off the host.
     open();
     await settle(el);
     pick('import');
     await settle(el);
-    expect(actions).toEqual([]);
-    expect((sr.querySelector('[data-testid="card-import"]') as HTMLElement & { open: boolean }).open).toBe(
+    expect((sr.querySelector('[data-testid="host-import"]') as HTMLElement & { open: boolean }).open).toBe(
       true,
     );
 
-    // Export still belongs to the host, which owns the download.
     open();
     await settle(el);
     pick('export-all');
     await settle(el);
-    expect(actions).toEqual(['export-all']);
+    await settle(el);
+    expect(downloads).toHaveLength(1);
+
+    expect(actions).toEqual([]);
   });
 
   it('disables "Export current view" until a filter is actually narrowing the list', async () => {
@@ -383,7 +389,7 @@ describe('hv-card-shell: list and footer', () => {
     );
     await settle(el);
 
-    const confirm = sr.querySelector('[data-testid="card-confirm"]') as HTMLElement & { open: boolean };
+    const confirm = sr.querySelector('[data-testid="host-confirm"]') as HTMLElement & { open: boolean };
     expect(confirm.open).toBe(true);
     expect(confirm.shadowRoot?.textContent).toContain('Wood Glue');
 
@@ -461,9 +467,9 @@ describe('hv-card-shell: list and footer', () => {
     expect(store.state.value.filters.q).toBe('');
   });
 
-  // The offer names the same action as the ⋮ menu's "Import backup…", and the
-  // shell owns that sheet. Handing the id up to the host instead drops it: the
-  // host's switch knows only the surfaces it owns, so the press does nothing.
+  // The offer names the same action as the ⋮ menu's "Import backup…", and both
+  // must land on the shared import surface — an id handed upward instead would
+  // find no listener there and the press would do nothing.
   it('opens the import sheet from the untouched-inventory offer', async () => {
     const { el, sr } = await mountShell({ items: [] });
     const handedUp: string[] = [];
@@ -476,7 +482,7 @@ describe('hv-card-shell: list and footer', () => {
     offer.click();
     await settle(el);
 
-    expect((sr.querySelector('[data-testid="card-import"]') as HTMLElement & { open: boolean }).open).toBe(
+    expect((sr.querySelector('[data-testid="host-import"]') as HTMLElement & { open: boolean }).open).toBe(
       true,
     );
     expect(handedUp).toEqual([]);
@@ -960,7 +966,7 @@ describe('hv-card-shell: inline editing', () => {
     await settle(el);
 
     // Still on the first item, with a prompt in the way.
-    const confirm = sr.querySelector('[data-testid="card-confirm"]') as HTMLElement & { open: boolean };
+    const confirm = sr.querySelector('[data-testid="host-confirm"]') as HTMLElement & { open: boolean };
     expect(confirm.open).toBe(true);
     expect(editor(sr)?.shadowRoot?.textContent).toContain('One — editing');
 
@@ -977,7 +983,7 @@ describe('hv-card-shell: inline editing', () => {
     (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-delete"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const confirm = sr.querySelector('[data-testid="card-confirm"]') as HTMLElement & { open: boolean };
+    const confirm = sr.querySelector('[data-testid="host-confirm"]') as HTMLElement & { open: boolean };
     expect(confirm.open).toBe(true);
     (confirm.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
     await settle(el);
@@ -1087,7 +1093,7 @@ describe('hv-card-shell: mobile detail sheet', () => {
     (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-delete"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const confirm = sr.querySelector('[data-testid="card-confirm"]') as HTMLElement & { open: boolean };
+    const confirm = sr.querySelector('[data-testid="host-confirm"]') as HTMLElement & { open: boolean };
     expect(confirm.open).toBe(true);
     (confirm.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
     await settle(el);
@@ -1164,7 +1170,7 @@ describe('hv-card-shell: full view', () => {
   // at the filter it just applied means expanding again straight away.
   it('opens when the organize dialog hands back a filtered view', async () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1', category: 'Tools' })] });
-    const organize = sr.querySelector('[data-testid="card-organize"]') as HTMLElement & { open: boolean };
+    const organize = sr.querySelector('[data-testid="host-organize"]') as HTMLElement & { open: boolean };
     organize.open = true;
     await settle(el);
 
@@ -1179,7 +1185,7 @@ describe('hv-card-shell: full view', () => {
   it('opens the organize dialog on the tab that was asked for', async () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1', tags: ['metric'] })] });
     const organize = () =>
-      sr.querySelector('[data-testid="card-organize"]') as HTMLElement & { open: boolean; tab: string };
+      sr.querySelector('[data-testid="host-organize"]') as HTMLElement & { open: boolean; tab: string };
 
     fullView(sr).dispatchEvent(
       new CustomEvent('menu-action', { detail: { id: 'organize', tab: 'tags' }, bubbles: true, composed: true }),
@@ -1195,7 +1201,7 @@ describe('hv-card-shell: full view', () => {
     expect(organize().tab).toBe('locations');
   });
 
-  it('routes the full view menu through the card, exactly once', async () => {
+  it('answers the full view menu inside the shell, letting nothing escape', async () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     const seen: string[] = [];
     el.addEventListener('menu-action', (e) => seen.push((e as CustomEvent).detail.id));
@@ -1209,7 +1215,8 @@ describe('hv-card-shell: full view', () => {
     columnsBtn.click();
     await settle(el);
 
-    expect(seen).toEqual(['columns']);
+    expect((sr.querySelector('hv-column-picker') as HTMLElement & { open: boolean }).open).toBe(true);
+    expect(seen).toEqual([]);
   });
 });
 
@@ -1306,7 +1313,7 @@ describe('hv-card-shell: check-out with a due date', () => {
     (menu.shadowRoot?.querySelector('[data-id="delete"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const confirm = sr.querySelector('[data-testid="card-confirm"]') as HTMLElement & { open: boolean };
+    const confirm = sr.querySelector('[data-testid="host-confirm"]') as HTMLElement & { open: boolean };
     expect(confirm.open).toBe(true);
     (confirm.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
     await settle(el);
@@ -1448,7 +1455,7 @@ describe('hv-card-shell: diagnostics and import', () => {
     (menu.shadowRoot?.querySelector('[data-id="diagnostics"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const panel = sr.querySelector('[data-testid="card-diagnostics"]') as HTMLElement & { open: boolean };
+    const panel = sr.querySelector('[data-testid="host-diagnostics"]') as HTMLElement & { open: boolean };
     expect(panel.open).toBe(true);
     expect(panel.shadowRoot?.querySelector('[data-testid="diagnostics-version"]')?.textContent).toContain(
       '0.0.1',
@@ -1461,7 +1468,7 @@ describe('hv-card-shell: diagnostics and import', () => {
     (menu.shadowRoot?.querySelector('[data-id="import"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const sheet = sr.querySelector('[data-testid="card-import"]') as HTMLElement & { open: boolean };
+    const sheet = sr.querySelector('[data-testid="host-import"]') as HTMLElement & { open: boolean };
     expect(sheet.open).toBe(true);
 
     const text = sheet.shadowRoot?.querySelector('[data-testid="import-text"]') as HTMLTextAreaElement;
@@ -1501,7 +1508,7 @@ describe('hv-card-shell: diagnostics and import', () => {
     (menu.shadowRoot?.querySelector('[data-id="import"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const sheet = sr.querySelector('[data-testid="card-import"]') as HTMLElement;
+    const sheet = sr.querySelector('[data-testid="host-import"]') as HTMLElement;
     const text = sheet.shadowRoot?.querySelector('[data-testid="import-text"]') as HTMLTextAreaElement;
     text.value = '{"items":[]}';
     text.dispatchEvent(new Event('input'));

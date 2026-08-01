@@ -3,6 +3,8 @@
   "render_readme": true,
   "content_in_root": false,
   "country": ["all"],
-  "homeassistant": "2026.7.0",
-  "filename": "haventory-card.js"
+  "homeassistant": "2026.6.0",
+  "zip_release": true,
+  "filename": "haventory.zip",
+  "hide_default_branch": true
 }

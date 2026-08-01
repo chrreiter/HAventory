@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build the HAventory Lovelace card (cards/haventory-card -> www/haventory).
+# Build the HAventory Lovelace card
+# (cards/haventory-card -> custom_components/haventory/www/haventory-card.js).
 source "$(dirname "$0")/common.sh"
 
 if ! command -v npm >/dev/null 2>&1; then

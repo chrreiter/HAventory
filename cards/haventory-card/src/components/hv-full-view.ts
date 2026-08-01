@@ -1,5 +1,6 @@
-import { LitElement, css, html } from 'lit';
+import { LitElement, css, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { ifDefined } from 'lit/directives/if-defined.js';
 import { tokens, base } from '../ui/tokens';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
@@ -9,6 +10,7 @@ import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { countLocations } from '../store/location-tree';
 import { emptyKindFor, renderEmptyState } from '../ui/empty-state';
+import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
@@ -41,9 +43,10 @@ const SEARCH_DEBOUNCE_MS = 200;
  * over its own field and Category too narrow to show a value. A media query
  * cannot set a property, so the same breakpoint is read here and handed down.
  *
- * Keep this string and the media query in agreement.
+ * Keep this string and the media query in agreement. Exported so the sidebar
+ * panel can put the dialogs it hosts on the same breakpoint as this view.
  */
-const NARROW_QUERY = '(max-width: 700px)';
+export const NARROW_QUERY = '(max-width: 700px)';
 
 /** The sidebar's collapsible sections, in the order they appear. */
 type SidebarSection = 'locations' | 'categories' | 'tags';
@@ -91,6 +94,20 @@ export class HVFullView extends LitElement {
         overflow-y: hidden;
         overscroll-behavior: contain;
         box-shadow: var(--hv-shadow-overlay);
+      }
+      /* Embedded, this surface is a page rather than an overlay: the host sizes
+         it and there is nothing behind it to lift off. Only the box changes —
+         the grid rows and the horizontal pan above are what the layout inside
+         depends on, and they still apply. */
+      :host([embedded]) {
+        display: block;
+        height: 100%;
+      }
+      :host([embedded]) .shell {
+        position: relative;
+        inset: auto;
+        height: 100%;
+        box-shadow: none;
       }
       .appbar {
         display: flex;
@@ -654,12 +671,30 @@ export class HVFullView extends LitElement {
 
   @property({ attribute: false }) store!: Store;
   @property({ type: Boolean, reflect: true }) open = false;
-  @property({ type: String }) heading = 'Inventory';
+  @property({ type: String }) heading = DEFAULT_CARD_TITLE;
   @property({ attribute: false }) columns: ColumnKey[] = [];
   /** Extra entries the host adds to the app bar's ⋮ menu. */
   @property({ attribute: false }) menuEntries: OverflowMenuEntry[] = [];
   /** Open straight into selection mode (the card's "Select items…" entry). */
   @property({ type: Boolean }) startSelecting = false;
+  /**
+   * Fill the host instead of taking over the viewport.
+   *
+   * The overlay variant is a modal takeover of the page the card sits on. A
+   * Home Assistant panel is the page: it owns the whole content area, has
+   * nowhere to close to, and shares the tab order and the Escape key with
+   * whatever else the frontend puts on screen. So the modal apparatus —
+   * backdrop, dialog role, focus sentinels, Escape-to-close, the close button —
+   * comes off, and only that.
+   */
+  @property({ type: Boolean, reflect: true }) embedded = false;
+  /**
+   * Home Assistant's own narrow flag, forwarded by the panel host.
+   *
+   * Distinct from `_narrow` below, which is this surface's own phone
+   * breakpoint: HA sets this whenever the sidebar is collapsed, at any width.
+   */
+  @property({ type: Boolean }) narrow = false;
 
   @state() private _zBase = 0;
   @state() private _filtersOpen = false;
@@ -738,6 +773,20 @@ export class HVFullView extends LitElement {
       this._storeUnsub?.();
       this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
+    // An editor whose item has left the store — deleted here, by another
+    // client, or filtered out of the list — would otherwise render `.item` as
+    // null, which is the create form. Gated on `loading`: a filter change
+    // empties the list while the next page is fetched, and that absence says
+    // nothing yet.
+    if (
+      this._editing !== null &&
+      this._editing !== 'new' &&
+      this.st !== null &&
+      !this.st.loading &&
+      !this.st.items.some((i) => i.id === this._editing)
+    ) {
+      this._editing = null;
+    }
     if (changed.has('open')) {
       if (this.open) {
         this._zBase = nextZBase();
@@ -759,7 +808,11 @@ export class HVFullView extends LitElement {
   protected updated(changed: Map<string, unknown>) {
     if (changed.has('open')) {
       if (this.open) {
-        this._focusFirst();
+        // Pulling focus in is dialog behaviour, and there is no trap here to
+        // pull it into. Embedded it would also fire on plain navigation, where
+        // landing the caret in the app bar's search field raises a phone's
+        // keyboard over the list the user came to read.
+        if (!this.embedded) this._focusFirst();
         // Reveal the selected branch so the sidebar isn't showing roots only.
         this._tree?.revealPathTo(this.st?.filters.locationId ?? null);
       } else if (this._prevFocus?.isConnected) {
@@ -1312,22 +1365,25 @@ export class HVFullView extends LitElement {
   render() {
     if (!this.open) return null;
     const z = this._zBase || 9998;
+    const modal = !this.embedded;
 
     return html`
-      <div class="backdrop" role="presentation" style="z-index: ${z};" @click=${this._close}></div>
+      ${modal
+        ? html`<div class="backdrop" role="presentation" style="z-index: ${z};" @click=${this._close}></div>`
+        : null}
       <div
         class="shell"
-        role="dialog"
-        aria-modal="true"
+        role=${ifDefined(modal ? 'dialog' : undefined)}
+        aria-modal=${ifDefined(modal ? 'true' : undefined)}
         aria-label=${this.heading}
         data-testid="full-view"
-        style="z-index: ${z + 1};"
-        @keydown=${onEscape(() => this._close())}
+        style=${modal ? `z-index: ${z + 1};` : ''}
+        @keydown=${modal ? onEscape(() => this._close()) : nothing}
       >
-        <span class="sentinel" tabindex="0" @focus=${() => this._focusLast()}></span>
+        ${modal ? html`<span class="sentinel" tabindex="0" @focus=${() => this._focusLast()}></span>` : null}
         ${this._selecting ? this._renderSelectionBar() : this._renderAppBar()}
         ${this._renderBody()}
-        <span class="sentinel" tabindex="0" @focus=${() => this._focusFirst()}></span>
+        ${modal ? html`<span class="sentinel" tabindex="0" @focus=${() => this._focusFirst()}></span>` : null}
       </div>
     `;
   }
@@ -1375,15 +1431,39 @@ export class HVFullView extends LitElement {
     `;
   }
 
+  /**
+   * The way back to a collapsed sidebar, which a panel has to offer itself.
+   *
+   * A custom panel is handed the whole content area, so once Home Assistant
+   * hides the sidebar — which is what `narrow` means — nothing else on screen
+   * can bring it back. `hass-toggle-menu` is the event `home-assistant-main`
+   * listens for; with no detail it toggles the drawer. It leaves this shadow
+   * root only because it is composed.
+   */
+  private _renderMenuButton() {
+    if (!this.narrow) return null;
+    return html`<button
+      class="tap"
+      data-testid="panel-menu"
+      aria-label="Open the Home Assistant menu"
+      title="Menu"
+      @click=${() => this.dispatchEvent(new Event('hass-toggle-menu', { bubbles: true, composed: true }))}
+    >
+      ${icon('menu', 20)}
+    </button>`;
+  }
+
   private _renderAppBar() {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
     const counts = st?.statsCounts;
     return html`
         <div class="appbar">
-          <button class="tap" data-testid="expand-toggle" aria-label="Close full view" @click=${this._close}>
-            ${icon('close', 20)}
-          </button>
+          ${this.embedded
+            ? this._renderMenuButton()
+            : html`<button class="tap" data-testid="expand-toggle" aria-label="Close full view" @click=${this._close}>
+                ${icon('close', 20)}
+              </button>`}
           <h2>${this.heading}</h2>
           <label class="search">
             ${icon('magnify', 18)}
