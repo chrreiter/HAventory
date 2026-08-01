@@ -671,5 +671,10 @@ export function makeItem(partial?: Partial<Item>): Item {
     updated_at: partial?.updated_at ?? now,
     version: partial?.version ?? 1,
     location_path: partial?.location_path ?? { id_path: [], name_path: [], display_path: '', sort_key: '' },
+    // Optional on the wire, so it stays off the object unless a caller asks for
+    // it — an item built without one looks exactly like an older backend's.
+    ...(partial?.effective_area_id === undefined
+      ? {}
+      : { effective_area_id: partial.effective_area_id }),
   };
 }

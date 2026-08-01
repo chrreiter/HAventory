@@ -131,8 +131,14 @@ export interface StatsCounts {
   no_location_count: number;
 }
 
+/** An HA area as `haventory/areas` reports it: registry id and display name. */
+export interface AreaRef {
+  id: string;
+  name: string;
+}
+
 export interface AreasListResult {
-  areas: { id: string; name: string }[];
+  areas: AreaRef[];
 }
 
 /** A distinct field value with its usage count (see haventory/distinct_values). */
