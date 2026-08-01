@@ -35,6 +35,32 @@ Minimum Home Assistant version: **2026.6.0** — the oldest release that both ru
 integration and carries no known security advisory. Developers: see the Developer
 Checklist below and [CONTRIBUTING.md](CONTRIBUTING.md).
 
+### Finding HAventory after install
+
+HAventory adds itself to the **sidebar** during setup, so there is somewhere to click
+before you have built a dashboard. The entry opens the full view as a page of its own —
+the same workspace the card's ⋮ → full view opens, with the same menu, dialogs and
+editors — and carries whatever name you gave the card.
+
+- **Turning it off:** Settings → Devices & services → HAventory → **Configure** →
+  *Show HAventory in the sidebar*. The entry appears and disappears as you save the form;
+  no restart, no reload. Renaming the card renames the sidebar entry the same way.
+- **Hiding it for one user only:** the option above is instance-wide. Home Assistant's own
+  **Edit sidebar** mode hides any entry for the logged-in user alone, and that setting
+  follows the user across their devices.
+- **If you are on the page when it is turned off**, Home Assistant shows "panel not found"
+  the next time you navigate; nothing breaks and turning it back on restores the page.
+
+**Pinning HAventory onto the Overview.** Home Assistant's redesigned Overview — the
+landing page on a fresh install — is not a Lovelace dashboard and hosts **no cards at
+all**, core or custom, so the HAventory card cannot be placed there. What it does take is
+a shortcut to a panel: open the Overview, **Edit** it, choose **Add shortcut**, and pick
+**HAventory** from the list. That tile is per-user (Home Assistant stores it with your
+profile), which is why HAventory cannot add it for you.
+
+On a dashboard you created yourself the card works as it always has: **Add card** →
+search *HAventory*.
+
 ### How the card gets loaded
 
 The card bundle ships inside the integration, and the integration serves it at
@@ -45,7 +71,8 @@ Two mechanisms then point the frontend at that one URL, so every way of viewing 
 dashboard is covered: a Lovelace resource entry (registered automatically in the default
 storage mode — this is what HA Cast reads) and the frontend's extra-module
 list (which needs no stored state and works in YAML resource mode). Both receive the same
-URL, so the card is only ever defined once.
+URL, so the card is only ever defined once. The sidebar page loads that same URL as its
+module — same string again, so the browser reuses the bundle it already has.
 
 **YAML-mode dashboards** therefore need no manual step either. You are in YAML mode if
 `configuration.yaml` has a `lovelace:` block with `mode: yaml`; in the UI, with
@@ -70,9 +97,10 @@ lovelace:
 ### Removing HAventory
 
 Deleting the integration under **Settings → Devices & Services** takes back both loaders —
-the Lovelace resource entry and the extra-module URL — so no dashboard is left loading a
-card that is about to disappear. (If your Lovelace runs in YAML mode any entry is yours, in
-`configuration.yaml` — delete the `resources:` line by hand.)
+the Lovelace resource entry and the extra-module URL — plus the sidebar entry, so nothing
+is left pointing at a card that is about to disappear. (If your Lovelace runs in YAML mode
+any entry is yours, in `configuration.yaml` — delete the `resources:` line by hand. An
+Overview shortcut is yours too, and is removed the same way it was added.)
 
 **Your inventory is deliberately kept.** Items and locations live in the Home Assistant
 store file `<config>/.storage/haventory_store`, which removal does not touch: adding the
@@ -389,6 +417,11 @@ Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs t
 `custom_components/haventory/www/`. Real-time over WebSocket with optimistic writes
 throughout.
 
+- **Sidebar page** — HAventory gets an entry in Home Assistant's sidebar, opening the full
+  view as a page of its own with the same ⋮ menu, dialogs and editors the card's full view
+  has. It loads the one card bundle and is named after the card title. Turn it off under
+  Settings → Devices & services → HAventory → **Configure**; see
+  [Finding HAventory after install](#finding-haventory-after-install).
 - **Standard card** — one Add button and a single ⋮ menu (Select items, Organize, Refresh,
   Diagnostics, Export backup / Export current view, Import); Columns is offered in the full
   view, which is the only surface it changes. Live stat badges — items, low stock, overdue,

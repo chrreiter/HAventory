@@ -14,7 +14,8 @@ non-blocking).
 - Status verified against the working tree at `main` @ WP4 (`390cba6`), then reconciled
   against the **2026-07-27 fix batch** (PRs #120–#130), the **2026-07-28 WP5 burn-down**
   (PRs #134–#140), the **card-shipping rework** (#141–#148), and a **2026-08-01 cleanup
-  pass** against `main` @ `08218f0` (post-#159).
+  pass** against `main` @ `08218f0` (post-#159), refreshed against `d65ff64` once the
+  sidebar panel's PR-2 (#160) landed.
 - **Item numbers are stable and append-only** — new items get the next free number
   rather than renumbering the list, so references from PRs and docs keep resolving.
   Read each table's own ordering, not the numbering, for priority. (The one exception —
@@ -106,6 +107,16 @@ non-blocking).
 > ⋮ menu builder — with an instance in `hv-card-shell` and in `haventory-panel`, so the
 > panel answers the full menu vocabulary. Its row is removed below.
 
+> Item **58** (the sidebar panel) is delivered. **#159** shipped the frontend half — the
+> `embedded` full view, the `haventory-panel` element, and the host-surface parity that
+> closed item 59 — and **#160** registers that element at `/haventory` through
+> `panel_custom`, on the same module URL both card loaders receive, converging
+> remove-then-register so a reload cannot hit `Overwriting panel haventory`, under a
+> `sidebar_panel_enabled` option (default on) that applies live through the existing
+> update listener. The phacc suite asserts the real registration at the 2026.6.0 floor.
+> Its row is removed below and [`sidebar-panel.md`](sidebar-panel.md) is marked
+> delivered; the two follow-ups #160 reported are items **68** and **69**.
+
 > A **cleanup pass (2026-08-01)**, run against `main` @ `08218f0` after #159, reconciled
 > this ledger's two parallel lineages — the WP5 burn-down notes had lived on an unmerged
 > branch while the card-shipping and sidebar work updated `main`'s copy — and closed eight
@@ -143,7 +154,6 @@ Ordered by impact.
 | # | Item | Source PR(s) | Impact | Effort |
 |---|------|--------------|--------|--------|
 | 4 | **HACS publication** (Phase 3 "Polish & HACS"). Distribution path for a 1.0. The delivery mechanics landed with #148 — `zip_release`: the release workflow builds the card, attaches `haventory.zip`, drafts first and publishes last — and release-please has since cut v0.1.0 and v0.1.1; what remains is verifying a clean-HA install through HACS as a custom repository (release-test A1) and submission to the HACS default store. | README Phase 3, #148 | Medium (distribution) | M |
-| 58 | **Sidebar panel — HAventory's place in the redesigned frontend.** HA's new Overview (the built-in `home` panel, default for new installations since the 2026.6 dashboard overhaul; verified against 2026.7.4) has **no card surface at all**: its editor offers favorites, fixed summaries and navigation *shortcuts* only, and its config is per-user (`frontend/set_user_data`), so an integration can inject nothing server-side. The one first-class integration point is a navigation path — so register a `/haventory` sidebar panel (`panel_custom.async_register_panel`, API verified identical at the 2026.6.0 floor and current stable) rendering the card's extended view full-page from the existing bundle. HAventory then appears in the sidebar on install, and the Overview's "Add shortcut" picker — which enumerates `hass.panels` — can pin it to the Overview page. An options-flow boolean (default on) registers/removes the panel live through the existing update listener; per-user hiding already exists natively in HA's sidebar edit mode. Full plan, feasibility evidence and staged implementation prompts: [`sidebar-panel.md`](sidebar-panel.md). **PR-1 (#159) has landed** — the `embedded` full view, the `haventory-panel` element and host-surface parity are on `main` — so what remains is PR-2: backend registration, the options-flow toggle, strings, tests and docs. | owner report 2026-08-01 (fresh-install test: card not addable to the new Overview) | Medium (user-facing discoverability) | M |
 | 68 | **`scripts/create_test_items.py` crashes on a Windows console mid-run.** It prints a `✓` per created item (`create_test_items.py:229`); under cp1252, the default Windows console encoding, that raises `UnicodeEncodeError: 'charmap' codec can't encode character '✓'` and aborts the run partway — with the items up to that point already created, so the seed is partial rather than cleanly absent. `PYTHONIOENCODING=utf-8` works around it; the fix is ASCII output or an explicit UTF-8 stream wrapper on stdout. | PR #160 follow-up | Low (dev tooling) | S |
 | 69 | **The screenshot harness cannot reach the sidebar panel.** `.claude/skills/run-haventory/screenshot.mjs` hardcodes `waitForSelector("haventory-card")` (`screenshot.mjs:179`), so `--path /haventory` — where only `haventory-panel` exists — times out; PR #160's panel screenshots needed a throwaway script. An `--element` flag (or a `--panel` mode) defaulting to the current selector would let the skill cover the panel surface, and `visual_pass.mjs` could then gain the panel's surfaces too. | PR #160 follow-up | Low (dev tooling) | S |
 

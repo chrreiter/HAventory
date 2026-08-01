@@ -1,11 +1,16 @@
 """Tests for how the HAventory card bundle is served and loaded.
 
 The bundle ships inside the integration package and is served from there over a
-registered static path. Two loaders then point the frontend at it — the Lovelace
-resource collection (storage mode only; covers HA Cast) and the
-frontend's extra-module URL (covers YAML resource mode) — and they must receive
-the *same* URL string, or the card module is evaluated twice and the second
-``customElements.define`` throws.
+registered static path. Three consumers then point the frontend at it — the
+Lovelace resource collection (storage mode only; covers HA Cast), the frontend's
+extra-module URL (covers YAML resource mode), and the sidebar panel's
+``module_url`` — and they must receive the *same* URL string, or the card module
+is evaluated more than once and the second ``customElements.define`` throws.
+
+The sidebar panel section additionally covers the lifecycle the options toggle
+drives: registration has to be idempotent, because HA raises
+``ValueError: Overwriting panel haventory`` on a second registration of a path
+that is already taken.
 """
 
 from __future__ import annotations
@@ -13,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import logging
 import sys
 import threading
 import types
@@ -20,7 +26,15 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, UrlManager
+from custom_components.haventory.const import (
+    CONF_CARD_TITLE,
+    CONF_SIDEBAR_PANEL_ENABLED,
+    DEFAULT_CARD_TITLE,
+    PANEL_ELEMENT_NAME,
+    PANEL_ICON,
+    PANEL_URL_PATH,
+)
+from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, DATA_PANELS, UrlManager
 from homeassistant.config_entries import ConfigEntry
 
 STATIC_URL_PATH = "/haventory_static"
@@ -177,6 +191,22 @@ def install_bundle(monkeypatch, hav_init, tmp_path, *, built: bool = True) -> Pa
 
 def extra_js_urls(hass: HassStub) -> set[str]:
     return set(hass.data[DATA_EXTRA_MODULE_URL].urls)
+
+
+def registered_panel(hass: HassStub) -> Any:
+    """The HAventory entry in the frontend's panel registry, or None."""
+    return hass.data.get(DATA_PANELS, {}).get(PANEL_URL_PATH)
+
+
+def panel_registration_attempts(hass: HassStub) -> list[str]:
+    """Every ``async_register_panel`` call, successful or not (see conftest)."""
+    return hass.data.get("__panel_registrations__", [])
+
+
+async def setup_frontend(hav_init, hass: HassStub, entry: ConfigEntry) -> None:
+    """The two frontend steps of ``async_setup_entry``, in the order it runs them."""
+    await hav_init._register_frontend_module(hass)
+    await hav_init._async_apply_sidebar_panel(hass, entry)
 
 
 def track_manifest_reads(monkeypatch) -> list[int]:
@@ -637,3 +667,160 @@ async def test_frontend_without_a_url_manager_degrades_gracefully(hav_init):
     assert [c["url"] for c in lovelace_data.resources.created] == [
         f"{CARD_PATH}?v={manifest_version()}"
     ]
+
+
+# --------------------------------------------------------------------------- #
+# The sidebar panel
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_registers_the_sidebar_panel_against_the_card_bundle(hav_init):
+    """The panel is a custom panel loading the card bundle, named by the card title.
+
+    Its `module_url` is the string the extra-module loader got, character for
+    character: a second URL for the same module makes the browser evaluate the
+    bundle twice, and `defineCardElement` has nothing to say about a second
+    evaluation of itself.
+    """
+    hass = make_hass()
+
+    await setup_frontend(hav_init, hass, ConfigEntry())
+
+    expected_url = f"{CARD_PATH}?v={manifest_version()}"
+    panel = registered_panel(hass)
+    assert panel.component_name == "custom"
+    assert panel.frontend_url_path == PANEL_URL_PATH
+    assert panel.sidebar_title == DEFAULT_CARD_TITLE
+    assert panel.sidebar_icon == PANEL_ICON
+    assert panel.require_admin is False
+    assert panel.config == {
+        "title": DEFAULT_CARD_TITLE,
+        "_panel_custom": {
+            "name": PANEL_ELEMENT_NAME,
+            "embed_iframe": False,
+            "trust_external": False,
+            "module_url": expected_url,
+        },
+    }
+    assert extra_js_urls(hass) == {expected_url}
+
+
+@pytest.mark.asyncio
+async def test_applying_twice_over_leaves_one_panel(hav_init):
+    """Registering onto a path already taken raises in HA — so remove first, always."""
+    hass = make_hass()
+    entry = ConfigEntry()
+
+    await setup_frontend(hav_init, hass, entry)
+    await hav_init._async_apply_sidebar_panel(hass, entry)
+
+    assert list(hass.data[DATA_PANELS]) == [PANEL_URL_PATH]
+    assert panel_registration_attempts(hass) == [PANEL_URL_PATH] * 2
+
+
+@pytest.mark.asyncio
+async def test_reload_re_registers_the_panel_exactly_once(hav_init):
+    """Setup → unload → setup: two registrations attempted, one panel live, nothing raised."""
+    hass = make_hass()
+    entry = ConfigEntry()
+
+    await setup_frontend(hav_init, hass, entry)
+    await hav_init.async_unload_entry(hass, entry)
+    await setup_frontend(hav_init, hass, entry)
+
+    assert list(hass.data[DATA_PANELS]) == [PANEL_URL_PATH]
+    assert panel_registration_attempts(hass) == [PANEL_URL_PATH] * 2
+
+
+@pytest.mark.asyncio
+async def test_unload_takes_the_sidebar_entry_back(hav_init):
+    """A sidebar entry outliving its backend opens a page that cannot load."""
+    hass = make_hass()
+    entry = ConfigEntry()
+
+    await setup_frontend(hav_init, hass, entry)
+    assert registered_panel(hass) is not None
+
+    await hav_init.async_unload_entry(hass, entry)
+
+    assert registered_panel(hass) is None
+    assert hass.data[hav_init.DOMAIN].get("panel_registered") is None
+
+
+@pytest.mark.asyncio
+async def test_toggling_the_option_removes_and_restores_the_entry(hav_init):
+    """The toggle applies through the options listener — no entry reload, no restart."""
+    hass = make_hass()
+    entry = ConfigEntry(options={CONF_SIDEBAR_PANEL_ENABLED: True})
+
+    await setup_frontend(hav_init, hass, entry)
+    assert registered_panel(hass) is not None
+
+    entry.options[CONF_SIDEBAR_PANEL_ENABLED] = False
+    await hav_init._async_options_updated(hass, entry)
+    assert registered_panel(hass) is None
+
+    entry.options[CONF_SIDEBAR_PANEL_ENABLED] = True
+    await hav_init._async_options_updated(hass, entry)
+    assert registered_panel(hass) is not None
+
+
+@pytest.mark.asyncio
+async def test_renaming_the_card_renames_the_sidebar_entry(hav_init):
+    """One name for both surfaces: the panel carries the card title, live."""
+    hass = make_hass()
+    entry = ConfigEntry(options={CONF_CARD_TITLE: "Pantry"})
+
+    await setup_frontend(hav_init, hass, entry)
+    assert registered_panel(hass).sidebar_title == "Pantry"
+
+    entry.options[CONF_CARD_TITLE] = "Garage"
+    await hav_init._async_options_updated(hass, entry)
+
+    panel = registered_panel(hass)
+    assert panel.sidebar_title == "Garage"
+    assert panel.config["title"] == "Garage"
+
+
+@pytest.mark.asyncio
+async def test_an_explicit_opt_out_registers_no_panel(hav_init):
+    """Off in the options means off at setup too, not just on the toggle path."""
+    hass = make_hass()
+
+    await setup_frontend(hav_init, hass, ConfigEntry(options={CONF_SIDEBAR_PANEL_ENABLED: False}))
+
+    assert registered_panel(hass) is None
+    assert panel_registration_attempts(hass) == []
+    # The card itself is unaffected: only the sidebar entry is opted out of.
+    assert extra_js_urls(hass) == {f"{CARD_PATH}?v={manifest_version()}"}
+
+
+@pytest.mark.asyncio
+async def test_missing_panel_custom_degrades_to_a_debug_log(monkeypatch, tmp_path, caplog):
+    """`panel_custom` is an internal component — treat its absence as our problem, not HA's."""
+    monkeypatch.delitem(sys.modules, "homeassistant.components.panel_custom")
+    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
+    install_bundle(monkeypatch, hav_init, tmp_path)
+    assert hav_init.async_register_panel is None
+
+    hass = make_hass()
+    with caplog.at_level(logging.DEBUG, logger="custom_components.haventory"):
+        await setup_frontend(hav_init, hass, ConfigEntry())
+
+    assert registered_panel(hass) is None
+    assert any("panel_custom" in record.message for record in caplog.records)
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
+@pytest.mark.asyncio
+async def test_no_sidebar_panel_without_a_built_bundle(monkeypatch, tmp_path):
+    """The panel is the bundle's second element; with no bundle there is nothing to show."""
+    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
+    install_bundle(monkeypatch, hav_init, tmp_path, built=False)
+    hass = make_hass()
+
+    await setup_frontend(hav_init, hass, ConfigEntry())
+
+    assert registered_panel(hass) is None
+    assert panel_registration_attempts(hass) == []

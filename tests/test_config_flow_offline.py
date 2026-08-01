@@ -18,7 +18,11 @@ from custom_components.haventory.config_flow import (
     HAventoryConfigFlow,
     HAventoryOptionsFlowHandler,
 )
-from custom_components.haventory.const import CONF_CARD_TITLE, DEFAULT_CARD_TITLE
+from custom_components.haventory.const import (
+    CONF_CARD_TITLE,
+    CONF_SIDEBAR_PANEL_ENABLED,
+    DEFAULT_CARD_TITLE,
+)
 from homeassistant.config_entries import ConfigEntry
 
 
@@ -117,6 +121,49 @@ async def test_options_flow_edits_the_card_title() -> None:
     result = await flow.async_step_init(user_input={CONF_CARD_TITLE: " Garage  "})
     assert result["type"] == "create_entry"
     assert result["data"][CONF_CARD_TITLE] == "Garage"
+
+
+@pytest.mark.asyncio
+async def test_sidebar_toggle_defaults_on_for_an_entry_that_predates_it() -> None:
+    """No stored value reads as on: the sidebar entry is what makes HAventory findable."""
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({CONF_CARD_TITLE: "Pantry"})
+
+    form = await flow.async_step_init(user_input=None)
+    assert _schema_default(form["data_schema"], CONF_SIDEBAR_PANEL_ENABLED) is True
+
+
+@pytest.mark.asyncio
+async def test_sidebar_toggle_offers_and_stores_an_opt_out() -> None:
+    """An explicit off survives a trip through the form rather than reverting to the default."""
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({CONF_SIDEBAR_PANEL_ENABLED: False})
+
+    form = await flow.async_step_init(user_input=None)
+    assert _schema_default(form["data_schema"], CONF_SIDEBAR_PANEL_ENABLED) is False
+
+    result = await flow.async_step_init(
+        user_input={CONF_CARD_TITLE: "Pantry", CONF_SIDEBAR_PANEL_ENABLED: False}
+    )
+    assert result["data"][CONF_SIDEBAR_PANEL_ENABLED] is False
+
+
+@pytest.mark.asyncio
+async def test_sidebar_toggle_sits_outside_the_rate_limit_section() -> None:
+    """Visibility of the integration has nothing to do with rate limiting.
+
+    Nested in the section, the option would also be folded by `_flatten_options`
+    only as a side effect of that grouping — and hidden behind a collapsed
+    header the moment the limiter is at its defaults.
+    """
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({})
+
+    form = await flow.async_step_init(user_input=None)
+    assert CONF_SIDEBAR_PANEL_ENABLED in _schema_keys(form["data_schema"])
 
 
 @pytest.mark.asyncio

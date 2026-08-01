@@ -35,9 +35,30 @@ except ImportError:  # pragma: no cover - minimal harness without the frontend c
     add_extra_js_url = None  # type: ignore[assignment]
     remove_extra_js_url = None  # type: ignore[assignment]
 
+# Separate from the import above so a frontend that carries only one of the two
+# still hands us the other, rather than losing both to a single ImportError.
+try:
+    from homeassistant.components.frontend import async_remove_panel
+except ImportError:  # pragma: no cover - minimal harness without the frontend component
+    async_remove_panel = None  # type: ignore[assignment]
+
+try:
+    from homeassistant.components.panel_custom import async_register_panel
+except ImportError:  # pragma: no cover - minimal harness without panel_custom
+    async_register_panel = None  # type: ignore[assignment]
+
 from . import services as services_mod
 from . import ws as ws_mod
-from .const import CONF_CARD_TITLE, DEFAULT_CARD_TITLE, DOMAIN
+from .const import (
+    CONF_CARD_TITLE,
+    CONF_SIDEBAR_PANEL_ENABLED,
+    DEFAULT_CARD_TITLE,
+    DEFAULT_SIDEBAR_PANEL_ENABLED,
+    DOMAIN,
+    PANEL_ELEMENT_NAME,
+    PANEL_ICON,
+    PANEL_URL_PATH,
+)
 from .exceptions import SchemaDowngradeError, StorageError
 from .rate_limit import RateLimitConfig, RateLimiter
 from .repository import Repository
@@ -72,6 +93,10 @@ _CARD_URL_PATHS = frozenset({_CARD_URL_PATH, _LEGACY_CARD_URL_PATH})
 # registered under.
 _STATIC_PATH_KEY = "static_path_registered"
 _EXTRA_JS_URL_KEY = "extra_js_url"
+
+# Whether the sidebar panel is currently registered. Entry-scoped: unload takes
+# the panel back, so a reload starts from nothing registered.
+_PANEL_REGISTERED_KEY = "panel_registered"
 
 
 # This integration is config-entry only; no YAML configuration is accepted.
@@ -151,6 +176,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Serve the bundled card and point the frontend at it
     await _register_frontend_module(hass)
 
+    # The sidebar entry loads the same bundle, so it can only be registered once
+    # that bundle is being served.
+    await _async_apply_sidebar_panel(hass, entry)
+
     return True
 
 
@@ -168,12 +197,15 @@ def _resolve_card_title(entry: ConfigEntry) -> str:
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Apply changed options: card title plus a rebuilt WS rate limiter."""
+    """Apply changed options: card title, sidebar panel, rebuilt WS rate limiter."""
     bucket = hass.data.setdefault(DOMAIN, {})
     bucket["card_title"] = _resolve_card_title(entry)
     bucket["rate_limiter"] = RateLimiter(
         RateLimitConfig.from_options(getattr(entry, "options", None))
     )
+    # Covers the toggle and a renamed card alike: the sidebar entry carries the
+    # card title, and re-registering is how a changed one reaches the sidebar.
+    await _async_apply_sidebar_panel(hass, entry)
     LOGGER.info(
         "Applied updated HAventory options",
         extra={"domain": DOMAIN, "op": "options_updated"},
@@ -206,6 +238,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # static route stays, along with the flag that records it: aiohttp cannot
     # unregister a route, and a reload must not try to add it twice.
     _remove_extra_js_url(hass)
+
+    # A sidebar entry outliving the backend it opens is a link to a page that
+    # cannot load; setup registers it again.
+    _remove_sidebar_panel(hass)
 
     # Clear registration flags
     bucket.pop("services_registered", None)
@@ -465,6 +501,115 @@ def _remove_extra_js_url(hass: HomeAssistant, fallback_url: str | None = None) -
     LOGGER.debug(
         "Removed the HAventory card frontend module URL",
         extra={"domain": DOMAIN, "op": "frontend_unregister", "url": url},
+    )
+
+
+def _sidebar_panel_enabled(entry: ConfigEntry) -> bool:
+    """Whether the config entry asks for a sidebar entry.
+
+    Entries created before the option existed carry no value for it, and the
+    panel is what makes a fresh install discoverable — so absence reads as on.
+    Only an explicit opt-out turns it off.
+    """
+    options = getattr(entry, "options", None) or {}
+    return bool(options.get(CONF_SIDEBAR_PANEL_ENABLED, DEFAULT_SIDEBAR_PANEL_ENABLED))
+
+
+def _remove_sidebar_panel(hass: HomeAssistant) -> None:
+    """Take the sidebar entry back, whether or not one is registered.
+
+    `warn_if_unknown=False`: this also runs as the first half of a register, and
+    on the first setup of an install there is nothing there to remove.
+    """
+    hass.data.setdefault(DOMAIN, {}).pop(_PANEL_REGISTERED_KEY, None)
+    if async_remove_panel is None:
+        return
+
+    try:
+        async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.debug(
+            "Could not remove the HAventory sidebar panel",
+            extra={"domain": DOMAIN, "op": "panel_unregister", "url": PANEL_URL_PATH},
+            exc_info=True,
+        )
+
+
+async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Converge the sidebar entry on what the options and the build ask for.
+
+    Removing first makes every path — first setup, reload, options toggle,
+    rename — the same one call, and is what keeps a second registration from
+    raising `ValueError: Overwriting panel haventory`. Both calls fire the
+    frontend's panel-update event, so the sidebar follows without a restart.
+    """
+    bucket = hass.data.setdefault(DOMAIN, {})
+    _remove_sidebar_panel(hass)
+
+    if not _sidebar_panel_enabled(entry):
+        LOGGER.debug(
+            "Sidebar panel disabled in the options; not registering",
+            extra={"domain": DOMAIN, "op": "panel_register"},
+        )
+        return
+
+    # The panel is the card bundle's second element, so without a build there is
+    # nothing for it to load — same graceful skip the card loaders take.
+    if not os.path.isfile(_CARD_BUNDLE_PATH):  # noqa: ASYNC240
+        LOGGER.debug(
+            "Card bundle not built; skipping sidebar panel registration",
+            extra={
+                "domain": DOMAIN,
+                "op": "panel_register",
+                "path": str(_CARD_BUNDLE_PATH),
+            },
+        )
+        return
+
+    if async_register_panel is None:
+        LOGGER.debug(
+            "panel_custom component not available; HAventory gets no sidebar entry",
+            extra={"domain": DOMAIN, "op": "panel_register", "url": PANEL_URL_PATH},
+        )
+        return
+
+    title = _resolve_card_title(entry)
+    # The exact string both card loaders receive: a second URL for the same
+    # module defeats the browser's module map and defines the element twice.
+    url = await _async_card_url(hass)
+
+    try:
+        await async_register_panel(
+            hass,
+            frontend_url_path=PANEL_URL_PATH,
+            webcomponent_name=PANEL_ELEMENT_NAME,
+            sidebar_title=title,
+            sidebar_icon=PANEL_ICON,
+            module_url=url,
+            embed_iframe=False,
+            trust_external=False,
+            # The panel element reads its heading from here, the way the card
+            # reads it from `haventory/config`.
+            config={"title": title},
+            require_admin=False,
+        )
+    except Exception:
+        LOGGER.warning(
+            "Failed to register the HAventory sidebar panel",
+            extra={"domain": DOMAIN, "op": "panel_register", "url": PANEL_URL_PATH},
+            exc_info=True,
+        )
+        return
+
+    bucket[_PANEL_REGISTERED_KEY] = True
+    LOGGER.debug(
+        "Registered the HAventory sidebar panel",
+        extra={
+            "domain": DOMAIN,
+            "op": "panel_register",
+            "url": PANEL_URL_PATH,
+            "module_url": url,
+        },
     )
 
 

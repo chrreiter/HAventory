@@ -8,7 +8,8 @@
   "dependencies": [
     "http",
     "frontend",
-    "lovelace"
+    "lovelace",
+    "panel_custom"
   ],
   "documentation": "https://github.com/chrreiter/HAventory#readme",
   "integration_type": "service",

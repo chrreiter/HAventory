@@ -1,9 +1,10 @@
 # Sidebar panel plan — a first-class place in the post-Overview-redesign frontend
 
-Status: **planned, not started** (pre-v1.0, tracked as item 58 in
-[`open-items.md`](open-items.md)). This document is the implementation contract:
-research findings, the two feasibility questions answered with evidence, the design,
-a regression register, and staged Opus 5 implementation prompts in the appendices.
+Status: **delivered** — PR-1 (frontend) and PR-2 (registration + options toggle) are both
+on `main`; item 58 is closed in [`open-items.md`](open-items.md). This document is the
+implementation contract it was built to: research findings, the two feasibility questions
+answered with evidence, the design, a regression register, and the staged Opus 5
+implementation prompts in the appendices.
 
 ## Why — the new Overview has no card surface (findings, 2026-08-01)
 
