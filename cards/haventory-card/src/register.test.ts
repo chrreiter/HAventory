@@ -82,3 +82,20 @@ describe('defineCardElement', () => {
     expect(afterLateSwap).not.toHaveBeenCalled();
   });
 });
+
+// Both of the bundle's Home Assistant-facing elements go through the helper
+// above. A bare `customElements.define` would land in whichever registry
+// happened to be current and stay there.
+describe('the elements Home Assistant instantiates', () => {
+  it.each([
+    ['./index', 'haventory-card'],
+    ['./haventory-panel', 'haventory-panel'],
+  ])('registers %s through defineCardElement', async (module, tag) => {
+    vi.resetModules();
+    const define = useRegistry();
+
+    await import(module);
+
+    expect(define.mock.calls.map(([name]) => name)).toContain(tag);
+  });
+});

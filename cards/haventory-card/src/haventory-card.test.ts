@@ -174,10 +174,7 @@ describe('haventory-card: host-owned surfaces', () => {
     ] as const) {
       const { el, sr } = await mountCard({}, { items: [makeItem({ id: '1' })] });
       const downloads: { filename: string; text: string }[] = [];
-      (el as unknown as { _triggerDownload: (f: string, t: string) => void })._triggerDownload = (
-        filename,
-        text,
-      ) => {
+      el.surfaces.download = (filename, text) => {
         downloads.push({ filename, text });
       };
       const scopes: unknown[] = [];

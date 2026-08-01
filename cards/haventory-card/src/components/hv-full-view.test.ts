@@ -20,7 +20,9 @@ function loc(id: string, name: string, parentId: string | null = null): Location
   };
 }
 
-async function mount(opts: { items?: Item[]; locations?: Location[] } = {}) {
+async function mount(
+  opts: { items?: Item[]; locations?: Location[]; embedded?: boolean; narrow?: boolean } = {},
+) {
   const hass = makeMockHass({ items: opts.items ?? [], locations: opts.locations ?? [] });
   const store = new Store(hass, { retryBaseMs: 0 });
   await store.init();
@@ -28,6 +30,8 @@ async function mount(opts: { items?: Item[]; locations?: Location[] } = {}) {
   const el = document.createElement('hv-full-view') as HVFullView;
   el.store = store;
   el.columns = ['quantity', 'category'];
+  if (opts.embedded) el.embedded = true;
+  if (opts.narrow) el.narrow = true;
   el.open = true;
   document.body.appendChild(el);
   await el.updateComplete;
@@ -235,6 +239,128 @@ describe('hv-full-view: shell', () => {
   it('keeps the expand-toggle testid the POC card used', async () => {
     const { sr } = await mount();
     expect(q(sr, '[data-testid="expand-toggle"]')).toBeTruthy();
+  });
+});
+
+// The same surface, hosted by a Home Assistant panel rather than by the card.
+// It is a page there: nothing sits behind it, it has nowhere to close to, and
+// it shares the tab order and the Escape key with the rest of the frontend.
+describe('hv-full-view: embedded', () => {
+  it('renders neither backdrop nor focus sentinels', async () => {
+    const { sr } = await mount({ embedded: true });
+    expect(q(sr, '.backdrop')).toBe(null);
+    expect(sr.querySelectorAll('.sentinel')).toHaveLength(0);
+  });
+
+  it('drops the dialog semantics but keeps the surface', async () => {
+    const { sr } = await mount({ embedded: true, items: [makeItem({ id: '1' })] });
+    const shell = q(sr, '[data-testid="full-view"]') as HTMLElement;
+    expect(shell.hasAttribute('role')).toBe(false);
+    expect(shell.hasAttribute('aria-modal')).toBe(false);
+    expect(shell.getAttribute('aria-label')).toBe('HAventory');
+    expect(q(sr, '.appbar')).toBeTruthy();
+    expect(q(sr, '[data-testid="full-table"]')).toBeTruthy();
+    expect(q(sr, '[data-testid="full-sidebar"]')).toBeTruthy();
+  });
+
+  it('has no close button — a page has nowhere to close to', async () => {
+    const { sr } = await mount({ embedded: true });
+    expect(q(sr, '[data-testid="expand-toggle"]')).toBe(null);
+  });
+
+  // Swallowing Escape here would take the key away from whatever Home Assistant
+  // has open over the panel.
+  it('ignores Escape, and lets it through', async () => {
+    const { el, sr } = await mount({ embedded: true });
+    let closes = 0;
+    el.addEventListener('close', () => {
+      closes += 1;
+    });
+
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    (q(sr, '[data-testid="full-view"]') as HTMLElement).dispatchEvent(event);
+    await el.updateComplete;
+
+    expect(closes).toBe(0);
+    expect(el.open).toBe(true);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('does not pull focus into itself the way a dialog does', async () => {
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    outside.focus();
+
+    const { el } = await mount({ embedded: true });
+    await el.updateComplete;
+
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+
+  it('is sized by its host rather than by the viewport', () => {
+    const css = fullCss();
+    expect(css).toContain(':host([embedded]) { display: block; height: 100%; }');
+    expect(css).toContain(
+      ':host([embedded]) .shell { position: relative; inset: auto; height: 100%; box-shadow: none; }',
+    );
+  });
+
+  // The embedded rules override the shell's box and nothing else: the grid rows
+  // and the sideways pan are what the layout inside depends on.
+  it('keeps the shell a two-row grid that can be panned sideways', () => {
+    const css = fullCss();
+    expect(css).toContain('.shell { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr;');
+    expect(css).toContain('overflow-x: auto;');
+  });
+
+  it('leaves the overlay variant modal', async () => {
+    const { sr } = await mount();
+    const shell = q(sr, '[data-testid="full-view"]') as HTMLElement;
+    expect(shell.getAttribute('role')).toBe('dialog');
+    expect(shell.getAttribute('aria-modal')).toBe('true');
+    expect(q(sr, '.backdrop')).toBeTruthy();
+    expect(sr.querySelectorAll('.sentinel')).toHaveLength(2);
+    expect(q(sr, '[data-testid="expand-toggle"]')).toBeTruthy();
+  });
+});
+
+describe('hv-full-view: the narrow-mode sidebar affordance', () => {
+  it('leads the app bar with a menu button when embedded and narrow', async () => {
+    const { sr } = await mount({ embedded: true, narrow: true });
+    const bar = q(sr, '.appbar') as HTMLElement;
+    expect(bar.firstElementChild?.getAttribute('data-testid')).toBe('panel-menu');
+  });
+
+  it('offers no menu button when the sidebar is already showing', async () => {
+    const { sr } = await mount({ embedded: true });
+    expect(q(sr, '[data-testid="panel-menu"]')).toBe(null);
+  });
+
+  // Narrow is Home Assistant's flag, so it means nothing to the card's overlay —
+  // which has its own close button in that slot.
+  it('offers no menu button in the overlay variant', async () => {
+    const { sr } = await mount({ narrow: true });
+    expect(q(sr, '[data-testid="panel-menu"]')).toBe(null);
+    expect(q(sr, '[data-testid="expand-toggle"]')).toBeTruthy();
+  });
+
+  // `home-assistant-main` listens for this by name and toggles its drawer; with
+  // no detail it flips whatever the drawer is currently doing.
+  it('asks Home Assistant to toggle its menu', async () => {
+    const { el, sr } = await mount({ embedded: true, narrow: true });
+    const seen: Event[] = [];
+    const onToggle = (e: Event) => seen.push(e);
+    window.addEventListener('hass-toggle-menu', onToggle);
+
+    (q(sr, '[data-testid="panel-menu"]') as HTMLButtonElement).click();
+    window.removeEventListener('hass-toggle-menu', onToggle);
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].composed).toBe(true);
+    expect(seen[0].bubbles).toBe(true);
+    expect((seen[0] as CustomEvent).detail).toBeUndefined();
+    el.remove();
   });
 });
 
