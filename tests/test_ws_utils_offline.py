@@ -3,6 +3,7 @@
 Scenarios:
 - ping returns echo and timestamp
 - version reports integration_version and schema_version
+- config reports the configured card title, and the default when unset
 - stats returns repository counts
 - health returns healthy True for fresh repo and details with counts
 """
@@ -10,7 +11,7 @@ Scenarios:
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.const import DOMAIN, INTEGRATION_VERSION
+from custom_components.haventory.const import DEFAULT_CARD_TITLE, DOMAIN, INTEGRATION_VERSION
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 from custom_components.haventory.ws import setup as ws_setup
@@ -68,6 +69,34 @@ async def test_version_reports_integration_and_schema() -> None:
     assert res["result"]["integration_version"] == INTEGRATION_VERSION
     # In offline tests, store may not exist; default to CURRENT_SCHEMA_VERSION
     assert int(res["result"]["schema_version"]) == int(CURRENT_SCHEMA_VERSION)
+
+
+@pytest.mark.asyncio
+async def test_config_reports_configured_card_title() -> None:
+    """haventory/config hands the card the title set in the options flow."""
+
+    hass = HomeAssistant()
+    bucket = hass.data.setdefault(DOMAIN, {})
+    bucket["repository"] = Repository()
+    bucket["card_title"] = "Pantry"
+    ws_setup(hass)
+
+    res = await _send(hass, 5, "haventory/config")
+    assert res["success"] is True
+    assert res["result"] == {"card_title": "Pantry"}
+
+
+@pytest.mark.asyncio
+async def test_config_falls_back_to_default_card_title() -> None:
+    """An entry predating the option has no stored title; the default stands in."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    ws_setup(hass)
+
+    res = await _send(hass, 6, "haventory/config")
+    assert res["success"] is True
+    assert res["result"] == {"card_title": DEFAULT_CARD_TITLE}
 
 
 @pytest.mark.asyncio

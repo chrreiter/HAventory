@@ -9,6 +9,7 @@ import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { countLocations } from '../store/location-tree';
 import { emptyKindFor, renderEmptyState } from '../ui/empty-state';
+import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
@@ -654,7 +655,7 @@ export class HVFullView extends LitElement {
 
   @property({ attribute: false }) store!: Store;
   @property({ type: Boolean, reflect: true }) open = false;
-  @property({ type: String }) heading = 'Inventory';
+  @property({ type: String }) heading = DEFAULT_CARD_TITLE;
   @property({ attribute: false }) columns: ColumnKey[] = [];
   /** Extra entries the host adds to the app bar's ⋮ menu. */
   @property({ attribute: false }) menuEntries: OverflowMenuEntry[] = [];

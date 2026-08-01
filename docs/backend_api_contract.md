@@ -42,7 +42,7 @@ Transport-level errors produced by Home Assistant itself (before a handler runs)
 
 ### Rate limiting
 
-**Off by default.** Enable and tune it in the integration's options flow (Settings → Devices & services → HAventory → Configure). Token buckets (sustained rate + burst) apply per connection **and** globally, separately for commands and for subscription broadcasts:
+**Off by default.** Enable and tune it in the integration's options flow (Settings → Devices & services → HAventory → Configure); [`rate_limiting.md`](rate_limiting.md) covers the same settings for the person filling in that form. Token buckets (sustained rate + burst) apply per connection **and** globally, separately for commands and for subscription broadcasts:
 
 - Commands: when a budget is exhausted, the command is not executed and the client receives an error envelope with code `rate_limited`, message `"rate limit exceeded; retry later"`, and `data.op`. Retry after a short backoff.
 - Broadcasts: when the global event budget is exhausted the event is dropped for all subscribers; when a connection's event budget is exhausted the event is dropped for that connection only. Event delivery is best-effort — a client that must not miss state re-lists on demand (`item/list`, `location/tree`, `stats`).
@@ -58,6 +58,12 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 
 - `haventory/version`
   - Result: `{integration_version: string, schema_version: number}`
+
+- `haventory/config`
+  - Request: `{id, type: "haventory/config"}` (no payload)
+  - Result: `{card_title: string}`
+  - `card_title` is the heading set in the integration's options flow (Settings → Devices & services → HAventory → **Configure**), defaulting to `"HAventory"`. Only display settings appear here — rate-limit tunables stay server-side.
+  - Read at card init and on refresh, not pushed: changing the option emits no event, so an open dashboard shows the new heading after a refresh or reload.
 
 - `haventory/stats`
   - Result: `{items_total: number, low_stock_count: number, checked_out_count: number, overdue_count: number, inspection_overdue_count: number, locations_total: number, no_location_count: number}`

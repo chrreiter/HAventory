@@ -762,6 +762,32 @@ describe('Store: location tree and diagnostics data', () => {
     });
     expect(store.state.value.versionInfo?.integration_version).toBe('0.0.1');
   });
+
+  it('reads the card heading configured in the integration', async () => {
+    const hass = makeMockHass({ items: [], cardTitle: 'Pantry' });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    expect(store.state.value.cardTitle).toBe('Pantry');
+  });
+
+  // The card bundle is served by the integration, so this only happens with a
+  // stale cached bundle — and a missing heading must not cost the user their
+  // items, which init loads after this call.
+  it('still loads when the backend does not know haventory/config', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+    const realCallWS = hass.callWS.bind(hass);
+    hass.callWS = (async (msg: Record<string, unknown>) => {
+      if (msg.type === 'haventory/config') throw { code: 'unknown_command', message: 'nope' };
+      return realCallWS(msg);
+    }) as typeof hass.callWS;
+
+    const store = new Store(hass, fast);
+    await store.init();
+
+    expect(store.state.value.cardTitle).toBeNull();
+    expect(store.state.value.items).toHaveLength(1);
+  });
 });
 
 describe('Store: export scopes', () => {

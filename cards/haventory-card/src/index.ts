@@ -4,6 +4,7 @@ import { Store } from './store/store';
 import type { ColumnKey } from './store/columns';
 import { loadColumnPrefs, saveColumnPrefs } from './store/columns';
 import { resolveColorScheme } from './ui/theme';
+import { DEFAULT_CARD_TITLE } from './ui/card-title';
 import { defineCardElement } from './register';
 import './components/hv-column-picker';
 import './components/hv-card-shell';
@@ -113,7 +114,7 @@ export class HAventoryCard extends LitElement {
       <hv-card-shell
         data-testid="card-shell"
         .store=${this.store}
-        .heading=${this.config?.title ?? 'Inventory'}
+        .heading=${this._heading()}
         .columns=${this._columns}
         @menu-action=${(e: CustomEvent) => this._onShellAction((e.detail as { id: string }).id)}
       ></hv-card-shell>
@@ -129,6 +130,15 @@ export class HAventoryCard extends LitElement {
         }}
       ></hv-column-picker>
     `;
+  }
+
+  /**
+   * The heading, most specific source first: this dashboard's `title:`, then
+   * the name configured in the integration's options flow, then the fallback
+   * that covers the moment before the store has answered.
+   */
+  private _heading(): string {
+    return this.config?.title ?? this.store?.state.value.cardTitle ?? DEFAULT_CARD_TITLE;
   }
 
   /** Actions the shell hands up because they open a host-owned surface. */

@@ -1,7 +1,7 @@
 """Constants for the HAventory integration.
 
-Defines the integration domain, the public integration version, and the
-option keys/defaults for WebSocket rate limiting.
+Defines the integration domain, the public integration version, the card
+title option, and the option keys/defaults for WebSocket rate limiting.
 """
 
 # Integration domain used across all modules and entity unique IDs
@@ -12,6 +12,16 @@ DOMAIN: str = "haventory"
 # tests/test_release_version_consistency.py fails if it ever disagrees with
 # manifest.json.
 INTEGRATION_VERSION: str = "0.1.1"  # x-release-please-version
+
+# -----------------------------
+# Card title (config-entry option)
+# -----------------------------
+# Heading the Lovelace card and its full view show. Set during setup, changed
+# in the options flow, and read by the card through `haventory/config`. A
+# per-dashboard `title:` in the card's YAML still wins over it.
+
+CONF_CARD_TITLE: str = "card_title"
+DEFAULT_CARD_TITLE: str = "HAventory"
 
 # -----------------------------
 # WebSocket rate limiting (config-entry options)

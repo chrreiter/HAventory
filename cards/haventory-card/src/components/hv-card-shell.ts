@@ -7,6 +7,7 @@ import { ResponsiveController } from '../ui/responsive';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { emptyKindFor } from '../ui/empty-state';
+import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import type { Store } from '../store/store';
 import type { Item, StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
@@ -363,7 +364,7 @@ export class HVCardShell extends LitElement {
 
   /** Required. The shell subscribes to it itself — see `connectedCallback`. */
   @property({ attribute: false }) store!: Store;
-  @property({ type: String }) heading = 'Inventory';
+  @property({ type: String }) heading = DEFAULT_CARD_TITLE;
   /** Force a layout instead of measuring; `null` measures. */
   @property({ attribute: false }) forceMobile: boolean | null = null;
   /** Column selection for the full-view table (the card list has its own row). */

@@ -37,7 +37,7 @@ except ImportError:  # pragma: no cover - minimal harness without the frontend c
 
 from . import services as services_mod
 from . import ws as ws_mod
-from .const import DOMAIN
+from .const import CONF_CARD_TITLE, DEFAULT_CARD_TITLE, DOMAIN
 from .exceptions import SchemaDowngradeError, StorageError
 from .rate_limit import RateLimitConfig, RateLimiter
 from .repository import Repository
@@ -128,11 +128,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady("storage load failed") from exc
     hass.data[DOMAIN]["repository"] = Repository.from_state(payload)
 
+    # Heading served to the card by `haventory/config`.
+    hass.data[DOMAIN]["card_title"] = _resolve_card_title(entry)
+
     # WebSocket rate limiting (off by default; configured via the options flow)
     hass.data[DOMAIN]["rate_limiter"] = RateLimiter(
         RateLimitConfig.from_options(getattr(entry, "options", None))
     )
-    # Rebuild the limiter when options change. Guarded with getattr so the
+    # Re-read the options when they change. Guarded with getattr so the
     # minimal offline-test ConfigEntry stubs keep working.
     add_listener = getattr(entry, "add_update_listener", None)
     on_unload = getattr(entry, "async_on_unload", None)
@@ -151,9 +154,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+def _resolve_card_title(entry: ConfigEntry) -> str:
+    """Read the configured card title, falling back to the default.
+
+    Entries created before the option existed simply have no value for it, so
+    an unset or blank title is the default rather than an empty heading.
+    """
+    options = getattr(entry, "options", None) or {}
+    title = options.get(CONF_CARD_TITLE)
+    if isinstance(title, str) and title.strip():
+        return title.strip()
+    return DEFAULT_CARD_TITLE
+
+
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Apply changed options by rebuilding the WS rate limiter."""
-    hass.data.setdefault(DOMAIN, {})["rate_limiter"] = RateLimiter(
+    """Apply changed options: card title plus a rebuilt WS rate limiter."""
+    bucket = hass.data.setdefault(DOMAIN, {})
+    bucket["card_title"] = _resolve_card_title(entry)
+    bucket["rate_limiter"] = RateLimiter(
         RateLimitConfig.from_options(getattr(entry, "options", None))
     )
     LOGGER.info(
@@ -196,6 +214,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Drop ephemeral data
     bucket.pop("subscriptions", None)
     bucket.pop("rate_limiter", None)
+    bucket.pop("card_title", None)
 
     # Test stub cleanup: remove our handlers from __ws_commands__
     try:  # pragma: no cover - exercised in offline tests only

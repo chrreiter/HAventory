@@ -17,6 +17,8 @@ interface MockConfig {
   items?: Item[];
   locations?: Location[];
   conflictOnUpdate?: boolean;
+  /** What `haventory/config` reports as the configured card heading. */
+  cardTitle?: string;
 }
 
 type HealthPatch = {
@@ -50,6 +52,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
   let items: Item[] = initial?.items ? [...initial.items] : [];
   let locations: Location[] = initial?.locations ? [...initial.locations] : [];
   let conflictOnUpdate = !!initial?.conflictOnUpdate;
+  const cardTitle = initial?.cardTitle ?? 'HAventory';
   let healthOverride: HealthPatch | null = null;
   let rateLimitRemaining = 0;
   let failRemaining = 0;
@@ -124,6 +127,9 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         }
         case 'haventory/version': {
           return { integration_version: '0.0.1', schema_version: 4 } as unknown as T;
+        }
+        case 'haventory/config': {
+          return { card_title: cardTitle } as unknown as T;
         }
         case 'haventory/areas/list': {
           return { areas: [] } as unknown as T;

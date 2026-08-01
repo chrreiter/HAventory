@@ -119,7 +119,8 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   re-opens the refused round up to four times, waiting out a retry-after hint when the
   refusal carries one and backing off exponentially when it does not, and once that budget
   is spent it says **Live updates paused** and offers a Refresh — so a list that has
-  stopped updating never passes for one with nothing to report.
+  stopped updating never passes for one with nothing to report. What the settings mean, and
+  when turning them on is worth it: [`docs/rate_limiting.md`](docs/rate_limiting.md).
 - **Import identity is the id, never the name.** The `merge` / `replace` / `skip` policies
   all classify an incoming item or location by its id. Restoring a backup onto entities
   you rebuilt by hand — which carry fresh uuids — therefore duplicates them instead of
@@ -348,7 +349,8 @@ item and deletes it (best-effort cleanup even on failure).
   subscription broadcasts (excess events are dropped, never breaking the command).
   Enable and tune it under Settings → Devices & services → HAventory → **Configure**;
   `haventory/health` reports drop counters. Leave it disabled for stress testing
-  (`scripts/stress_test.py`). Semantics and defaults:
+  (`scripts/stress_test.py`). What each setting means and when to enable it:
+  [`docs/rate_limiting.md`](docs/rate_limiting.md); wire-level semantics and defaults:
   [`docs/backend_api_contract.md`](docs/backend_api_contract.md) → "Rate limiting".
 - **JSON import/export (data safety)** via `haventory/export`, `haventory/import/preview`,
   and `haventory/import/execute`: back up to a versioned document before a breaking update
@@ -463,11 +465,17 @@ throughout.
 
 ```yaml
 type: custom:haventory-card
-title: Inventory   # optional; defaults to "Inventory"
+title: Pantry   # optional; overrides the integration-wide card title
 ```
 
 `title` is the only option the card reads. Any other key is ignored rather than rejected,
 so a stale dashboard config never breaks the card.
+
+Without it, the card uses the name set under Settings → Devices & services → HAventory →
+**Configure** (asked for at setup too, and defaulting to "HAventory"), so one setting
+renames every card. Per-dashboard `title:` wins over it — use that when two dashboards
+should name the same inventory differently. An open dashboard picks up a changed name on
+its next refresh or reload; the change is not pushed live.
 
 ### CI/CD & Ops
 
@@ -620,6 +628,7 @@ and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discus
 ## Developer docs
 
 - WebSocket API contract: `docs/backend_api_contract.md`
+- WebSocket rate limiting (what the options mean, when to enable): `docs/rate_limiting.md`
 - Data shapes (Item/Location/filter/sort/events): `docs/data_shapes.md`
 - Frontend architecture: `docs/frontend_architecture.md`
 - Release testing plan (manual v1.0 readiness run): `docs/release_testing_plan.md`
