@@ -388,11 +388,91 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     def remove_extra_js_url(hass: HomeAssistant, url: str) -> None:  # type: ignore[override]
         hass.data[DATA_EXTRA_MODULE_URL].remove(url)
 
+    # The frontend's panel registry, keyed by URL path exactly as in real HA.
+    DATA_PANELS = "frontend_panels"
+
+    def async_remove_panel(  # type: ignore[override]
+        hass: HomeAssistant, frontend_url_path: str, *, warn_if_unknown: bool = True
+    ) -> None:
+        """Drop a panel, tolerating one that was never registered.
+
+        Real HA only logs a warning for an unknown path, so removal is never an
+        error here either — which is what makes remove-before-register safe.
+        """
+        hass.data.setdefault(DATA_PANELS, {}).pop(frontend_url_path, None)
+
     ha_frontend.DATA_EXTRA_MODULE_URL = DATA_EXTRA_MODULE_URL
+    ha_frontend.DATA_PANELS = DATA_PANELS
     ha_frontend.UrlManager = UrlManager
     ha_frontend.add_extra_js_url = add_extra_js_url
     ha_frontend.remove_extra_js_url = remove_extra_js_url
+    ha_frontend.async_remove_panel = async_remove_panel
     sys.modules["homeassistant.components.frontend"] = ha_frontend
+
+    # homeassistant.components.panel_custom
+    ha_panel_custom = types.ModuleType("homeassistant.components.panel_custom")
+
+    async def async_register_panel(  # type: ignore[override]  # noqa: PLR0913 - mirrors HA's signature
+        hass: HomeAssistant,
+        frontend_url_path: str,
+        webcomponent_name: str,
+        sidebar_title: str | None = None,
+        sidebar_icon: str | None = None,
+        js_url: str | None = None,
+        module_url: str | None = None,
+        embed_iframe: bool = False,
+        trust_external: bool = False,
+        config: dict | None = None,
+        require_admin: bool = False,
+        config_panel_domain: str | None = None,
+    ) -> None:
+        """Register a custom panel the way HA's helper does.
+
+        Reproduces the two behaviours callers have to live with: the panel is
+        stored as a ``component_name="custom"`` entry whose config carries the
+        ``_panel_custom`` block (module URL and element name included), and a
+        second registration for a path already taken raises rather than
+        replacing — the trap an idempotent registration exists to avoid.
+        """
+        if js_url is None and module_url is None:
+            raise ValueError("Either js_url, module_url or html_url is required.")
+        if config is not None and not isinstance(config, dict):
+            raise ValueError("Config needs to be a dictionary.")
+
+        custom: dict = {
+            "name": webcomponent_name,
+            "embed_iframe": embed_iframe,
+            "trust_external": trust_external,
+        }
+        if js_url is not None:
+            custom["js_url"] = js_url
+        if module_url is not None:
+            custom["module_url"] = module_url
+
+        panel_config = dict(config or {})
+        panel_config["_panel_custom"] = custom
+
+        panels = hass.data.setdefault(DATA_PANELS, {})
+        if frontend_url_path in panels:
+            raise ValueError(f"Overwriting panel {frontend_url_path}")
+
+        panels[frontend_url_path] = types.SimpleNamespace(
+            component_name="custom",
+            sidebar_title=sidebar_title,
+            sidebar_icon=sidebar_icon,
+            sidebar_default_visible=True,
+            show_in_sidebar=True,
+            frontend_url_path=frontend_url_path,
+            config=panel_config,
+            require_admin=require_admin,
+            config_panel_domain=config_panel_domain,
+        )
+        # Every call, not just the ones that stick: a test asserting "registered
+        # exactly once" needs the attempts, which the registry alone cannot show.
+        hass.data.setdefault("__panel_registrations__", []).append(frontend_url_path)
+
+    ha_panel_custom.async_register_panel = async_register_panel
+    sys.modules["homeassistant.components.panel_custom"] = ha_panel_custom
 
     # homeassistant.helpers.area_registry
     ha_helpers_area_registry = types.ModuleType("homeassistant.helpers.area_registry")

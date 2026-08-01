@@ -22,7 +22,8 @@ Vitest `4`. Version 0.0.1, unreleased.
 ### Backend — `custom_components/haventory/`
 - `__init__.py` — integration setup/teardown, `hass.data[DOMAIN]` wiring, persistence helpers
   (`async_persist_repo`, `async_persist_immediate`, `async_request_persist`), Lovelace resource
-  registration.
+  registration, and the sidebar panel (`_async_apply_sidebar_panel`: `panel_custom` at
+  `/haventory`, remove-then-register, driven by the `sidebar_panel_enabled` option).
 - `models.py` — `Item` / `Location` dataclasses, validation, serializers. Items carry a
   denormalized `location_path` (rebuilt on location changes) and a `version` int (starts at 1,
   bumped on each mutation) for **optimistic concurrency**.

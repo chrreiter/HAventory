@@ -19,6 +19,7 @@ from .const import (
     CONF_RATE_LIMIT_GLOBAL_COMMANDS_PER_SECOND,
     CONF_RATE_LIMIT_GLOBAL_EVENTS_BURST,
     CONF_RATE_LIMIT_GLOBAL_EVENTS_PER_SECOND,
+    CONF_SIDEBAR_PANEL_ENABLED,
     DEFAULT_CARD_TITLE,
     DEFAULT_RATE_LIMIT_COMMANDS_BURST,
     DEFAULT_RATE_LIMIT_COMMANDS_PER_SECOND,
@@ -29,6 +30,7 @@ from .const import (
     DEFAULT_RATE_LIMIT_GLOBAL_COMMANDS_PER_SECOND,
     DEFAULT_RATE_LIMIT_GLOBAL_EVENTS_BURST,
     DEFAULT_RATE_LIMIT_GLOBAL_EVENTS_PER_SECOND,
+    DEFAULT_SIDEBAR_PANEL_ENABLED,
     DOMAIN,
 )
 
@@ -111,6 +113,15 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
                 CONF_CARD_TITLE,
                 default=clean_card_title(current.get(CONF_CARD_TITLE, DEFAULT_CARD_TITLE)),
             ): str,
+            # Top level rather than inside the section below: it decides whether
+            # HAventory is visible at all, which is nothing to do with rate
+            # limiting. Entries predating the option have no value and read as on.
+            vol.Required(
+                CONF_SIDEBAR_PANEL_ENABLED,
+                default=bool(
+                    current.get(CONF_SIDEBAR_PANEL_ENABLED, DEFAULT_SIDEBAR_PANEL_ENABLED)
+                ),
+            ): bool,
             # Collapsed while the whole block is untouched, so the common case
             # is a form with one field; a customized limiter opens expanded
             # rather than hiding the values behind a header. No default on the
