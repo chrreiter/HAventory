@@ -24,6 +24,24 @@ CONF_CARD_TITLE: str = "card_title"
 DEFAULT_CARD_TITLE: str = "HAventory"
 
 # -----------------------------
+# Sidebar panel (config-entry option)
+# -----------------------------
+# HAventory as a page of its own, registered with `panel_custom` and rendered by
+# the `haventory-panel` element out of the card bundle. On by default: the
+# redesigned Overview has no card surface at all, so the sidebar entry is the
+# only thing that makes a fresh install discoverable. An explicit opt-out is
+# kept; an entry created before the option existed has no value and reads as on.
+
+CONF_SIDEBAR_PANEL_ENABLED: str = "sidebar_panel_enabled"
+DEFAULT_SIDEBAR_PANEL_ENABLED: bool = True
+
+# The panel's URL path doubles as its key in the frontend's panel registry, so
+# it is also what a removal has to name.
+PANEL_URL_PATH: str = "haventory"
+PANEL_ELEMENT_NAME: str = "haventory-panel"
+PANEL_ICON: str = "mdi:package-variant-closed"
+
+# -----------------------------
 # WebSocket rate limiting (config-entry options)
 # -----------------------------
 # Off by default so no development or test workflow is disturbed; enable via

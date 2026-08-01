@@ -34,6 +34,16 @@ component inherits.
 which HA's custom-panel loader instantiates for the sidebar page. It mirrors the card's
 store lifecycle and renders `<hv-full-view embedded open>`.
 
+The integration registers that panel at `/haventory` through `panel_custom`, handing it
+the *same* module URL both card loaders get (`__init__.py`, `_async_apply_sidebar_panel`),
+so the browser's module map evaluates the bundle once whichever surface is opened first.
+The registration's `config` carries `{"title": <card title option>}`, which is where the
+panel's `panel.config.title` heading comes from; the sidebar entry itself is named by the
+same option. Registration is remove-then-register, because HA raises on a second
+registration of a URL path that is already taken. The `sidebar_panel_enabled` option turns
+it off, and both calls fire the frontend's panel-update event, so the sidebar follows
+without a restart.
+
 Both hosts hold a `HostSurfaces` instance (`src/host-surfaces.ts`): every surface
 `hv-full-view` can raise but not answer itself — the column picker, the export download,
 the delete/discard confirmation, the organize dialog, the import sheet, the diagnostics

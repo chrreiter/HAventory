@@ -13,7 +13,14 @@ from importlib.metadata import version
 from pathlib import Path
 
 import pytest
-from custom_components.haventory.const import DOMAIN
+from custom_components.haventory.const import (
+    CONF_SIDEBAR_PANEL_ENABLED,
+    DEFAULT_CARD_TITLE,
+    DOMAIN,
+    PANEL_ELEMENT_NAME,
+    PANEL_ICON,
+    PANEL_URL_PATH,
+)
 from homeassistant.components import frontend
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -35,8 +42,8 @@ needs_bundle = pytest.mark.skipif(
 )
 
 
-async def _setup(hass: HomeAssistant) -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
+async def _setup(hass: HomeAssistant, options: dict | None = None) -> MockConfigEntry:
+    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory", options=options or {})
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -122,3 +129,64 @@ async def test_unload_hands_back_the_module_url(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
 
     assert set(hass.data[frontend.DATA_EXTRA_MODULE_URL].urls) == set()
+
+
+@needs_bundle
+async def test_the_sidebar_panel_lands_in_the_real_panel_registry(hass: HomeAssistant) -> None:
+    """`panel_custom` puts a real `Panel` in `hass.data`, built the way HA builds them.
+
+    The offline suite asserts this against a stub of `async_register_panel`;
+    only the real helper proves the `_panel_custom` block HA's frontend reads is
+    the one we asked for, module URL and element name included.
+    """
+    await _setup(hass)
+
+    panel = hass.data[frontend.DATA_PANELS][PANEL_URL_PATH]
+
+    assert panel.component_name == "custom"
+    assert panel.sidebar_title == DEFAULT_CARD_TITLE
+    assert panel.sidebar_icon == PANEL_ICON
+    assert panel.require_admin is False
+    assert panel.config["title"] == DEFAULT_CARD_TITLE
+    assert panel.config["_panel_custom"] == {
+        "name": PANEL_ELEMENT_NAME,
+        "embed_iframe": False,
+        "trust_external": False,
+        "module_url": next(iter(hass.data[frontend.DATA_EXTRA_MODULE_URL].urls)),
+    }
+
+
+@needs_bundle
+async def test_reload_does_not_hit_the_overwriting_panel_error(hass: HomeAssistant) -> None:
+    """`async_register_built_in_panel` raises on a path already taken.
+
+    Unguarded, that raise comes out of `async_setup_entry` and leaves the entry
+    in a retry loop with no sidebar entry at all.
+    """
+    entry = await _setup(hass)
+
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert PANEL_URL_PATH in hass.data[frontend.DATA_PANELS]
+
+
+@needs_bundle
+async def test_unload_removes_the_sidebar_panel(hass: HomeAssistant) -> None:
+    """No backend, no sidebar entry: the page it opens could not load anyway."""
+    entry = await _setup(hass)
+    assert PANEL_URL_PATH in hass.data[frontend.DATA_PANELS]
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert PANEL_URL_PATH not in hass.data[frontend.DATA_PANELS]
+
+
+@needs_bundle
+async def test_an_opted_out_entry_registers_no_panel(hass: HomeAssistant) -> None:
+    """The toggle is honoured at setup, and takes nothing else down with it."""
+    await _setup(hass, {CONF_SIDEBAR_PANEL_ENABLED: False})
+
+    assert PANEL_URL_PATH not in hass.data[frontend.DATA_PANELS]
+    assert hass.data[frontend.DATA_EXTRA_MODULE_URL].urls

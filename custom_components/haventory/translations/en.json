@@ -20,12 +20,14 @@
     "step": {
       "init": {
         "title": "HAventory Options",
-        "description": "Set the heading the card carries.",
+        "description": "Set the heading the card carries and whether HAventory has its own sidebar entry.",
         "data": {
-          "card_title": "Card title"
+          "card_title": "Card title",
+          "sidebar_panel_enabled": "Show HAventory in the sidebar"
         },
         "data_description": {
-          "card_title": "Heading shown on the HAventory card. A dashboard card with its own title: option keeps that one. Reload the dashboard to see a change."
+          "card_title": "Heading shown on the HAventory card. A dashboard card with its own title: option keeps that one. Reload the dashboard to see a change.",
+          "sidebar_panel_enabled": "Gives HAventory a page of its own, named after the card title above. This applies to everyone using this Home Assistant; each user can still hide the entry through the sidebar's own Edit sidebar mode. The entry appears and disappears as you save this form — no restart. On the Overview page, Edit then Add shortcut can also pin HAventory as a tile."
         },
         "sections": {
           "rate_limit": {
