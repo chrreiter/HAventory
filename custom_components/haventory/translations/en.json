@@ -3,7 +3,13 @@
     "step": {
       "user": {
         "title": "HAventory",
-        "description": "Set up HAventory integration for inventory management in Home Assistant."
+        "description": "Set up HAventory integration for inventory management in Home Assistant.",
+        "data": {
+          "card_title": "Card title"
+        },
+        "data_description": {
+          "card_title": "Heading shown on the HAventory card. Changeable later under Configure."
+        }
       }
     },
     "create_entry": {
@@ -14,17 +20,40 @@
     "step": {
       "init": {
         "title": "HAventory Options",
-        "description": "Configure WebSocket rate limiting. Limits are off by default; when enabled, excess commands receive a rate_limited error and excess subscription events are dropped.",
+        "description": "Set the heading the card carries.\n\n**WebSocket rate limiting** (below) caps how fast one client may use HAventory. It is off by default and normal use of the card never comes close, so most installations should leave it off. Turn it on when something you don't fully control talks to HAventory — a wall panel stuck reconnecting, a script in a loop, a client you are developing — and a runaway client is refused instead of tying up Home Assistant. Leave it off while running large imports or stress tests.\n\n[What each setting means, and how to tell whether limiting is firing](https://github.com/chrreiter/HAventory/blob/main/docs/rate_limiting.md)",
         "data": {
-          "rate_limit_enabled": "Enable WebSocket rate limiting",
-          "rate_limit_commands_per_second": "Commands per second (per connection)",
-          "rate_limit_commands_burst": "Command burst (per connection)",
-          "rate_limit_global_commands_per_second": "Commands per second (global)",
-          "rate_limit_global_commands_burst": "Command burst (global)",
-          "rate_limit_events_per_second": "Events per second (per connection)",
-          "rate_limit_events_burst": "Event burst (per connection)",
-          "rate_limit_global_events_per_second": "Events per second (global)",
-          "rate_limit_global_events_burst": "Event burst (global)"
+          "card_title": "Card title"
+        },
+        "data_description": {
+          "card_title": "Heading shown on the HAventory card. A dashboard card with its own title: option keeps that one. Reload the dashboard to see a change."
+        },
+        "sections": {
+          "rate_limit": {
+            "name": "WebSocket rate limiting",
+            "description": "Over-budget commands are refused instead of executed, and surplus live-update events are dropped. A refused command reaches the card as an error; a dropped event means that client stops hearing about changes until it reloads. Each limit is a bucket that refills steadily: “per second” is the sustained rate, “burst” is how many may arrive back-to-back after an idle moment. “One client” is a single browser tab, app or script; “all clients” is everyone together. The defaults are sized so ordinary card use never reaches them.",
+            "data": {
+              "rate_limit_enabled": "Enable WebSocket rate limiting",
+              "rate_limit_commands_per_second": "Commands per second (one client)",
+              "rate_limit_commands_burst": "Command burst (one client)",
+              "rate_limit_global_commands_per_second": "Commands per second (all clients)",
+              "rate_limit_global_commands_burst": "Command burst (all clients)",
+              "rate_limit_events_per_second": "Live-update events per second (one client)",
+              "rate_limit_events_burst": "Live-update event burst (one client)",
+              "rate_limit_global_events_per_second": "Live-update events per second (all clients)",
+              "rate_limit_global_events_burst": "Live-update event burst (all clients)"
+            },
+            "data_description": {
+              "rate_limit_enabled": "While off, nothing is limited and the values below are ignored.",
+              "rate_limit_commands_per_second": "Sustained requests one client may send. Default 20.",
+              "rate_limit_commands_burst": "Requests one client may send back-to-back after being idle. Default 60.",
+              "rate_limit_global_commands_per_second": "Sustained requests across all clients together. Default 100.",
+              "rate_limit_global_commands_burst": "Requests all clients together may send back-to-back. Default 200.",
+              "rate_limit_events_per_second": "Sustained events one client may be sent. Default 50.",
+              "rate_limit_events_burst": "Events one client may be sent back-to-back after a quiet spell. Default 200.",
+              "rate_limit_global_events_per_second": "Sustained events across all clients together. Default 500.",
+              "rate_limit_global_events_burst": "Events all clients together may be sent back-to-back. Default 1000."
+            }
+          }
         }
       }
     }

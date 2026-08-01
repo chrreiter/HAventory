@@ -165,8 +165,19 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def async_abort(self, *, reason: str):
             return {"type": "abort", "reason": reason}
 
-        def async_create_entry(self, *, title: str, data: dict):
-            return {"type": "create_entry", "title": title, "data": data}
+        # `options` mirrors the real ConfigFlow.async_create_entry, which seeds
+        # the entry's options at creation time and always puts them (empty when
+        # unset) in the flow result.
+        def async_create_entry(self, *, title: str, data: dict, options: dict | None = None):
+            return {
+                "type": "create_entry",
+                "title": title,
+                "data": data,
+                "options": dict(options or {}),
+            }
+
+        def async_show_form(self, *, step_id: str, data_schema=None):
+            return {"type": "form", "step_id": step_id, "data_schema": data_schema}
 
     class OptionsFlow:  # type: ignore[override]
         # The real OptionsFlow resolves config_entry via hass; tests assign it.
@@ -189,8 +200,23 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     class FlowResult(dict):  # type: ignore[override]
         pass
 
+    class section:  # type: ignore[override]
+        """Voluptuous validator wrapping a nested schema, as HA's does.
+
+        Real HA hands the second argument (``{"collapsed": ...}``) to the
+        frontend only; validation is the inner schema's, unchanged.
+        """
+
+        def __init__(self, schema, options=None) -> None:  # type: ignore[no-untyped-def]
+            self.schema = schema
+            self.options = options or {}
+
+        def __call__(self, value):  # type: ignore[no-untyped-def]
+            return self.schema(value)
+
     sys.modules["homeassistant.data_entry_flow"] = ha_data_entry_flow
     ha_data_entry_flow.FlowResult = FlowResult
+    ha_data_entry_flow.section = section
 
     # homeassistant.helpers and homeassistant.helpers.storage
     ha_helpers = types.ModuleType("homeassistant.helpers")

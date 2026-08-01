@@ -9,6 +9,7 @@ import type {
   ImportPolicy,
   ImportPreview,
   ImportSummary,
+  IntegrationConfig,
   Item,
   ItemCreate,
   ItemFilter,
@@ -40,6 +41,10 @@ export class WSClient {
 
   version() {
     return this.hass.callWS<VersionInfo>({ type: 'haventory/version' });
+  }
+
+  config() {
+    return this.hass.callWS<IntegrationConfig>({ type: 'haventory/config' });
   }
 
   stats() {

@@ -6,12 +6,15 @@ import type { HAventoryCard } from './index';
 
 type Card = HAventoryCard & { updateComplete: Promise<unknown>; hass?: unknown };
 
-async function mountCard(config: unknown = {}, opts: { items?: ReturnType<typeof makeItem>[] } = {}) {
+async function mountCard(
+  config: unknown = {},
+  opts: { items?: ReturnType<typeof makeItem>[]; cardTitle?: string } = {},
+) {
   const el = document.createElement('haventory-card') as Card;
   document.body.appendChild(el);
   await customElements.whenDefined('haventory-card');
   el.setConfig(config);
-  el.hass = makeMockHass({ items: opts.items ?? [] });
+  el.hass = makeMockHass({ items: opts.items ?? [], cardTitle: opts.cardTitle });
   await el.updateComplete;
   return { el, sr: el.shadowRoot as ShadowRoot };
 }
@@ -45,7 +48,23 @@ describe('haventory-card: the Lovelace element', () => {
   it('falls back to a default heading', async () => {
     const { sr } = await mountCard();
     const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { heading: string };
-    expect(shell.heading).toBe('Inventory');
+    expect(shell.heading).toBe('HAventory');
+  });
+
+  it('takes the heading from the integration when the dashboard sets no title', async () => {
+    const { el, sr } = await mountCard({}, { cardTitle: 'Pantry' });
+    await settle(el);
+    const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { heading: string };
+    expect(shell.heading).toBe('Pantry');
+  });
+
+  // Two dashboards can name the same inventory differently, so the card's own
+  // config outranks the integration-wide setting.
+  it('prefers the dashboard title over the integration heading', async () => {
+    const { el, sr } = await mountCard({ title: 'Garage shelf' }, { cardTitle: 'Pantry' });
+    await settle(el);
+    const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { heading: string };
+    expect(shell.heading).toBe('Garage shelf');
   });
 
   it('takes an empty config, and a null one', async () => {
@@ -65,9 +84,10 @@ describe('haventory-card: the Lovelace element', () => {
   });
 
   it('ignores a title that is not a string', async () => {
-    const { sr } = await mountCard({ title: 42 });
+    const { el, sr } = await mountCard({ title: 42 }, { cardTitle: 'Pantry' });
+    await settle(el);
     const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { heading: string };
-    expect(shell.heading).toBe('Inventory');
+    expect(shell.heading).toBe('Pantry');
   });
 
   it('rejects a config that is not an object at all', async () => {

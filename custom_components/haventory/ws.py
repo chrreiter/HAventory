@@ -19,7 +19,7 @@ from homeassistant.core import HomeAssistant
 from . import import_export
 from . import storage as storage_mod
 from .areas import async_get_area_registry
-from .const import DOMAIN, INTEGRATION_VERSION
+from .const import DEFAULT_CARD_TITLE, DOMAIN, INTEGRATION_VERSION
 from .exceptions import (
     ConflictError,
     NotFoundError,
@@ -734,6 +734,25 @@ async def ws_version(
     result = {
         "integration_version": INTEGRATION_VERSION,
         "schema_version": _schema_version_from_hass(hass),
+    }
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+
+
+@websocket_api.websocket_command({"type": "haventory/config"})
+@websocket_api.async_response
+@ws_guard("config", ())
+async def ws_config(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Return the config-entry settings the frontend renders, not the whole options set.
+
+    Rate-limit tunables stay server-side; only the card title is a display
+    concern the card cannot know on its own.
+    """
+    bucket = hass.data.get(DOMAIN) or {}
+    title = bucket.get("card_title")
+    result = {
+        "card_title": title if isinstance(title, str) and title else DEFAULT_CARD_TITLE,
     }
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
@@ -1908,6 +1927,7 @@ def setup(hass: HomeAssistant) -> None:
     handlers = [
         ws_ping,
         ws_version,
+        ws_config,
         ws_stats,
         ws_distinct_values,
         ws_health,
