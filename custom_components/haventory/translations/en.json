@@ -20,7 +20,7 @@
     "step": {
       "init": {
         "title": "HAventory Options",
-        "description": "Set the heading the card carries.\n\n**WebSocket rate limiting** (below) caps how fast one client may use HAventory. It is off by default and normal use of the card never comes close, so most installations should leave it off. Turn it on when something you don't fully control talks to HAventory — a wall panel stuck reconnecting, a script in a loop, a client you are developing — and a runaway client is refused instead of tying up Home Assistant. Leave it off while running large imports or stress tests.\n\n[What each setting means, and how to tell whether limiting is firing]({docs_url})",
+        "description": "Set the heading the card carries.",
         "data": {
           "card_title": "Card title"
         },
@@ -30,7 +30,7 @@
         "sections": {
           "rate_limit": {
             "name": "WebSocket rate limiting",
-            "description": "Over-budget commands are refused instead of executed, and surplus live-update events are dropped. A refused command reaches the card as an error; a dropped event means that client stops hearing about changes until it reloads. Each limit is a bucket that refills steadily: “per second” is the sustained rate, “burst” is how many may arrive back-to-back after an idle moment. “One client” is a single browser tab, app or script; “all clients” is everyone together. The defaults are sized so ordinary card use never reaches them.",
+            "description": "Caps how fast one client may use HAventory: over-budget commands are refused instead of executed, and surplus live-update events are dropped. Off by default — ordinary card use never comes close. Turn it on when something you don't fully control talks to HAventory, such as a wall panel stuck reconnecting or a script in a loop; leave it off during large imports and stress tests. What each setting means, and how to tell whether limiting is firing: {docs_url}",
             "data": {
               "rate_limit_enabled": "Enable WebSocket rate limiting",
               "rate_limit_commands_per_second": "Commands per second (one client)",

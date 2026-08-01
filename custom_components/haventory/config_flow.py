@@ -40,9 +40,11 @@ if TYPE_CHECKING:
 # the stored options — and everything reading them — stay flat.
 SECTION_RATE_LIMIT = "rate_limit"
 
-# Filled into the options step's `{docs_url}`. Translation strings may not
+# Filled into the rate-limit section's `{docs_url}`. Translation strings may not
 # contain URLs (hassfest rejects them), so the link target is supplied as a
-# description placeholder instead.
+# description placeholder instead. A section description renders as plain text —
+# unlike a step description, markdown in it is shown verbatim and newlines
+# collapse — so it carries the bare URL and stays one paragraph.
 RATE_LIMIT_DOCS_URL = "https://github.com/chrreiter/HAventory/blob/main/docs/rate_limiting.md"
 
 # (option key, default) pairs for the numeric rate-limit tunables.
