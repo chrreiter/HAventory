@@ -1008,6 +1008,7 @@ export class HVCardShell extends LitElement {
       ${this._renderDegradedBanners()} ${this._renderBanners()}
 
       <hv-list
+        .areas=${st?.areasCache?.areas ?? []}
         data-testid="card-list"
         .items=${st?.items ?? []}
         .loading=${st?.loading ?? true}

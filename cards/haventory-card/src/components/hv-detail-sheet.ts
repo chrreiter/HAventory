@@ -4,7 +4,8 @@ import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import { inferType } from '../ui/item-form';
-import { displayPath, isLowStock } from './hv-list-row';
+import { isLowStock } from './hv-list-row';
+import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import type { AreaRef, Item, Location, LocationTreeNode, ScalarValue } from '../store/types';
 import './hv-bottom-sheet';
 import './hv-checkout-popover';
@@ -337,7 +338,7 @@ export class HVDetailSheet extends LitElement {
     // `inspection_date` is when the item is next due for inspection, so the
     // same passed-date test the due date gets answers "needs inspecting".
     const inspectionDue = isOverdue(item.inspection_date);
-    const path = displayPath(item);
+    const parts = itemPathParts(item, this.areas);
     const customEntries = Object.entries(item.custom_fields ?? {});
 
     return html`
@@ -345,7 +346,9 @@ export class HVDetailSheet extends LitElement {
         <button class="tap" data-testid="sheet-close" aria-label="Close" @click=${this._close}>
           ${icon('close', 22)}
         </button>
-        <span class="crumb" data-testid="sheet-path">${path || 'No location'}</span>
+        <span class="crumb" data-testid="sheet-path" title=${pathTitle(parts)}
+          >${renderAreaChip(parts.areaName)}${parts.path || 'No location'}</span
+        >
         <button
           class="text-action"
           data-testid="sheet-edit"

@@ -25,6 +25,35 @@ const tableCss = () => {
     .replace(/\s+/g, ' ');
 };
 
+describe('hv-data-table: area', () => {
+  const AREAS = [{ id: 'area-kitchen', name: 'Kitchen' }];
+  const pantry = { id_path: [], name_path: [], display_path: 'Fridge / Pantry', sort_key: '' };
+
+  it('names the room in the location cell, beside the path', async () => {
+    const el = await mount([{ id: '1', effective_area_id: 'area-kitchen', location_path: pantry }], {
+      columns: ['location'],
+      areas: AREAS,
+    });
+    const cell = q(el, '[data-testid="cell-location"]');
+    expect(cell?.querySelector('.hv-area-chip')?.textContent).toContain('Kitchen');
+    expect(cell?.textContent).toContain('Fridge › Pantry');
+    expect(cell?.getAttribute('title')).toBe('Area: Kitchen · Fridge › Pantry');
+  });
+
+  it('leaves a cell with no area exactly as it was', async () => {
+    const el = await mount([{ id: '1', location_path: pantry }], { columns: ['location'], areas: AREAS });
+    const cell = q(el, '[data-testid="cell-location"]');
+    expect(cell?.querySelector('.hv-area-chip')).toBe(null);
+    expect(cell?.textContent?.trim()).toBe('Fridge › Pantry');
+    expect(cell?.getAttribute('title')).toBe('Fridge › Pantry');
+  });
+
+  it('still says nothing is filed there with an em dash', async () => {
+    const el = await mount([{ id: '1' }], { columns: ['location'], areas: AREAS });
+    expect(q(el, '[data-testid="cell-location"]')?.textContent?.trim()).toBe('—');
+  });
+});
+
 describe('hv-data-table: narrow screens', () => {
   // The template has a hard ~786px minimum, and a grid whose tracks do not fit
   // overflows its box rather than shrinking. With overflow visible the spill

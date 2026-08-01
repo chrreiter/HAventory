@@ -33,6 +33,32 @@ function captured(el: HVDetailSheet, names: string[]) {
   return seen;
 }
 
+describe('hv-detail-sheet: area', () => {
+  const AREAS = [{ id: 'area-garage', name: 'Garage' }];
+
+  it('names the room on the path crumb', async () => {
+    const el = await mount(
+      {
+        effective_area_id: 'area-garage',
+        location_path: { id_path: [], name_path: [], display_path: 'Workbench / Shelf B', sort_key: '' },
+      },
+      { areas: AREAS },
+    );
+    const crumb = q(el, '[data-testid="sheet-path"]');
+    expect(crumb?.querySelector('.hv-area-chip')?.textContent).toContain('Garage');
+    expect(crumb?.textContent).toContain('Workbench › Shelf B');
+  });
+
+  it('says only "No location" for an item filed nowhere', async () => {
+    // The backend derives the area from the location, so one cannot outlive
+    // the other.
+    const el = await mount({ location_id: null }, { areas: AREAS });
+    const crumb = q(el, '[data-testid="sheet-path"]');
+    expect(crumb?.textContent?.trim()).toBe('No location');
+    expect(crumb?.querySelector('.hv-area-chip')).toBe(null);
+  });
+});
+
 describe('hv-detail-sheet: read view', () => {
   it('leads with the name, path and state chips', async () => {
     const el = await mount({

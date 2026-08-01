@@ -1632,6 +1632,7 @@ export class HVFullView extends LitElement {
               : null}
 
             <hv-data-table
+              .areas=${st?.areasCache?.areas ?? []}
               data-testid="full-table"
               .items=${(st?.items ?? []) as Item[]}
               .columns=${this.columns}

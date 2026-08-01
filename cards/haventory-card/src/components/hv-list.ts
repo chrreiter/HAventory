@@ -5,7 +5,7 @@ import { repeat } from 'lit/directives/repeat.js';
 import { tokens, base } from '../ui/tokens';
 import { renderEmptyState } from '../ui/empty-state';
 import type { EmptyKind, EmptyOffer } from '../ui/empty-state';
-import type { Item } from '../store/types';
+import type { AreaRef, Item } from '../store/types';
 import './hv-list-row';
 
 
@@ -110,6 +110,8 @@ export class HVList extends LitElement {
   @property({ attribute: false }) items: Item[] = [];
   @property({ type: Boolean, reflect: true }) fill = false;
   @property({ type: Boolean }) mobile = false;
+  /** HA areas, forwarded to each row so it can name the item's area. */
+  @property({ attribute: false }) areas: AreaRef[] = [];
   @property({ type: Boolean }) loading = false;
   @property({ type: Boolean }) selectable = false;
   @property({ attribute: false }) selection: Set<string> = new Set();
@@ -186,6 +188,7 @@ export class HVList extends LitElement {
                 this.editorTemplate(it.id)
               : html`<hv-list-row
                   .item=${it}
+                  .areas=${this.areas}
                   ?mobile=${this.mobile}
                   ?selectable=${this.selectable}
                   ?selected=${this.selection.has(it.id)}
