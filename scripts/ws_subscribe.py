@@ -1,18 +1,18 @@
 r"""WebSocket subscription helper for HAventory topics.
 
-Environment variables (PowerShell examples):
-  $env:HA_BASE_URL = 'http://localhost:8123'
-  $env:HA_TOKEN = '<your-long-lived-token>'
-  $env:HAV_TOPIC = 'items'   # or 'locations' or 'stats'
-  $env:HAV_LOCATION_ID = ''  # for topic 'locations' (optional)
-  $env:HAV_INCLUDE_SUBTREE = 'true'  # for topic 'locations' (optional)
-  $env:HAV_MAX_EVENTS = '5'  # stop after receiving N events (default: 5)
+Environment variables:
+  export HA_BASE_URL='http://localhost:8123'
+  export HA_TOKEN='<your-long-lived-token>'
+  export HAV_TOPIC='items'            # or 'locations' or 'stats'
+  export HAV_LOCATION_ID=''           # for topic 'locations' (optional)
+  export HAV_INCLUDE_SUBTREE='true'   # for topic 'locations' (optional)
+  export HAV_MAX_EVENTS='5'           # stop after receiving N events (default: 5)
 
 Optional mutations after subscribe:
-  $env:HAV_MUTATIONS = '[{"id": 2001, "type": "haventory/item/create", "name": "Hammer"}]'
+  export HAV_MUTATIONS='[{"id": 2001, "type": "haventory/item/create", "name": "Hammer"}]'
 
 Run:
-  python .\scripts\ws_subscribe.py | cat
+  uv run python scripts/ws_subscribe.py
 
 Notes:
 - Converts http(s) base URL into ws(s) automatically.

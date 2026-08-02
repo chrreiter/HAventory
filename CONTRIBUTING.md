@@ -19,6 +19,11 @@ Contributions of all kinds are welcome — bug reports, features, docs, and code
 Prerequisites: [uv](https://docs.astral.sh/uv/), Node 22.13+ (or 24 LTS), git.
 Targets are **Home Assistant 2026.6.0+** ⇒ **Python 3.14** and **Node 22.13+/24**.
 
+The development toolchain is **Linux/bash only** — the scripts, the test
+scaffolding and CI all assume it, and nothing here is tested on a Windows host.
+On Windows, develop inside WSL2. (This is about contributing, not about running
+HAventory: the integration itself runs wherever Home Assistant does.)
+
 ```bash
 # One-shot bootstrap: uv env + card deps + pre-commit hooks
 scripts/setup.sh
