@@ -131,10 +131,11 @@ TDD spec, including the integration-suite case). Verify the card-correctness ass
 it flags (what ws.py broadcasts on location/update) before relying on it.
 ```
 
-### Item 46
+### Item 46 — delivered
 
 **Effective-area preview in the location editor.** Plan:
-[`item46_area_preview_plan.md`](item46_area_preview_plan.md).
+[`item46_area_preview_plan.md`](item46_area_preview_plan.md); the outcome is in
+`open-items.md`'s item 46 resolution note. Kept for the record — nothing left to paste.
 
 ```text
 You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
