@@ -241,9 +241,11 @@ export class Store {
   private itemsUnsub: Unsubscribe | null = null;
   private statsUnsub: Unsubscribe | null = null;
   private locationsUnsub: Unsubscribe | null = null;
+  private areaRegistryUnsub: Unsubscribe | null = null;
   private retryBaseMs: number;
   private consecutiveTransportFailures = 0;
   private treeRefreshHandle: ReturnType<typeof setTimeout> | null = null;
+  private areasRefreshHandle: ReturnType<typeof setTimeout> | null = null;
   /** Identifies the newest subscribe round, so a superseded one stops reporting. */
   private subscribeRound = 0;
   /** Subscribes in the current round that have not resolved or been refused yet. */
@@ -304,6 +306,30 @@ export class Store {
     ]);
     await this.listItems(true);
     this.subscribeTopics();
+    this.watchAreaRegistry();
+  }
+
+  /**
+   * Keep the area cache honest for as long as the card is mounted.
+   *
+   * The store is built once per element and a dashboard stays open for days, so
+   * a one-shot fetch would name areas by whatever the registry said at boot —
+   * every path the card prints carries an area, so a rename would go stale
+   * everywhere at once, and a deletion would show a raw id. Areas move rarely
+   * and the list is small, so the event only triggers a refetch.
+   */
+  private watchAreaRegistry() {
+    if (this.areaRegistryUnsub) this.areaRegistryUnsub();
+    this.areaRegistryUnsub = this.ws.subscribeAreaRegistry(() => this.scheduleAreasRefresh());
+  }
+
+  /** Coalesce area refetches: editing a handful of areas fires one event each. */
+  private scheduleAreasRefresh(delayMs = 250) {
+    if (this.areasRefreshHandle !== null) clearTimeout(this.areasRefreshHandle);
+    this.areasRefreshHandle = setTimeout(() => {
+      this.areasRefreshHandle = null;
+      void this.refreshAreas().catch(() => undefined);
+    }, delayMs);
   }
 
   /** (Re)open the topic subscriptions, starting the retry budget over. */
@@ -410,13 +436,19 @@ export class Store {
     this.itemsUnsub?.();
     this.statsUnsub?.();
     this.locationsUnsub?.();
+    this.areaRegistryUnsub?.();
     this.itemsUnsub = this.statsUnsub = this.locationsUnsub = null;
+    this.areaRegistryUnsub = null;
     // Nothing is listening after this, so a queued re-subscribe must not fire.
     this.subscribeRound += 1;
     this.cancelSubscribeRetry();
     if (this.treeRefreshHandle !== null) {
       clearTimeout(this.treeRefreshHandle);
       this.treeRefreshHandle = null;
+    }
+    if (this.areasRefreshHandle !== null) {
+      clearTimeout(this.areasRefreshHandle);
+      this.areasRefreshHandle = null;
     }
     this.stateObs.set({ connected: { items: false, stats: false } });
   }

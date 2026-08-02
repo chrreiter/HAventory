@@ -679,6 +679,94 @@ describe('Store: subscription lifecycle', () => {
   });
 });
 
+// Areas are Home Assistant's, and the card prints their names beside every
+// location path. A dashboard stays open for days, so a boot-time snapshot would
+// keep naming an area the registry has since renamed or dropped.
+describe('Store: HA area registry watch', () => {
+  const AREA_EVENT = 'area_registry_updated';
+
+  it('refetches the areas when the registry changes', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const store = new Store(hass, fast);
+      await store.init();
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+
+      hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
+      hass.__emitHaEvent(AREA_EVENT, { action: 'update', area_id: 'kitchen' });
+      await vi.advanceTimersByTimeAsync(300);
+
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Scullery');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('coalesces a burst of registry events into one refetch', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const store = new Store(hass, fast);
+      await store.init();
+      const before = hass.__calls.filter((c) => c === 'haventory/areas/list').length;
+
+      hass.__emitHaEvent(AREA_EVENT, { action: 'create', area_id: 'a' });
+      hass.__emitHaEvent(AREA_EVENT, { action: 'create', area_id: 'b' });
+      hass.__emitHaEvent(AREA_EVENT, { action: 'remove', area_id: 'c' });
+      await vi.advanceTimersByTimeAsync(300);
+
+      const after = hass.__calls.filter((c) => c === 'haventory/areas/list').length;
+      expect(after - before).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops watching the registry once disposed', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const store = new Store(hass, fast);
+      await store.init();
+      expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(1);
+
+      hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
+      hass.__emitHaEvent(AREA_EVENT, { action: 'update', area_id: 'kitchen' });
+      store.dispose();
+      await vi.advanceTimersByTimeAsync(300);
+
+      // Both halves: the pending refetch is cancelled, and a later event finds
+      // nobody listening.
+      expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(0);
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps working when Home Assistant refuses the registry subscription', async () => {
+    const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+    const failing = {
+      ...hass,
+      connection: {
+        subscribeMessage(cb: (event: never) => void, msg: Record<string, unknown>) {
+          if (msg.type === 'subscribe_events') return Promise.reject(new Error('nope'));
+          return hass.connection.subscribeMessage(cb as never, msg);
+        },
+      },
+    };
+    const store = new Store(failing, fast);
+
+    await store.init();
+
+    // No throw, no degraded state: the card keeps the areas it fetched, which
+    // is everything it had before it listened at all.
+    expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+    expect(store.state.value.connected).toEqual({ items: true, stats: true });
+  });
+});
+
 describe('Store: location tree and diagnostics data', () => {
   it('exposes tree nodes with per-location counts', async () => {
     const locations = [loc('garage', 'Garage'), loc('shelf-a', 'Shelf A', 'garage')];

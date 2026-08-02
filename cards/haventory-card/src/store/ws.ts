@@ -320,4 +320,43 @@ export class WSClient {
       }
     };
   }
+
+  /**
+   * Watch Home Assistant's area registry.
+   *
+   * Areas belong to HA, not to HAventory: renaming or deleting one moves no
+   * inventory data, so no `haventory/subscribe` topic reports it. This is HA's
+   * own event bus, subscribed the way the frontend's `subscribeEvents` does.
+   * The callback takes no payload — the event says only that the registry
+   * moved, and the caller refetches.
+   *
+   * A refused subscribe is swallowed: the card keeps the areas it already
+   * holds, which is the whole of what it had before it listened at all.
+   */
+  subscribeAreaRegistry(cb: () => void): Unsubscribe {
+    const unsubOrPromise = this.hass.connection.subscribeMessage(() => cb(), {
+      type: 'subscribe_events',
+      event_type: 'area_registry_updated',
+    });
+
+    if (typeof unsubOrPromise === 'function') return unsubOrPromise as unknown as Unsubscribe;
+
+    let resolvedUnsub: Unsubscribe | null = null;
+    let cancelRequested = false;
+    Promise.resolve(unsubOrPromise).then(
+      (fn) => {
+        resolvedUnsub = fn as Unsubscribe;
+        if (cancelRequested) resolvedUnsub();
+      },
+      () => undefined,
+    );
+
+    return () => {
+      if (resolvedUnsub) {
+        resolvedUnsub();
+      } else {
+        cancelRequested = true;
+      }
+    };
+  }
 }
