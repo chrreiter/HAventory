@@ -279,15 +279,70 @@ to mean the `v0.2.0` run: item **60** (F3 produces the measured scale ceiling), 
 (the scoping-only toolchain goes after that run), item **4** (release-test A1 is the custom-repo
 install the dogfood starts from; the default-store submission is the post-1.0 half).
 
+### Task definitions — every task from here to v1.0.0
+
+The **roadmap artifact is fully folded into this repo as of 2026-08-02** and is superseded
+for anything task-shaped: its WP8/WP9 prompts predate the staging revision above, its §06
+post-1.0 surface is now items 9 (extended) and 84–88 below, its §07 durable facts are the
+policy blocks below, and its live §08 risks are the watch-list below. Every remaining task
+until v1.0.0 has a paste-ready prompt in [`v1_prompts.md`](v1_prompts.md); the complex ones
+have a companion plan doc:
+
+| # | Task | Ships in / when | Definition |
+|---|---|---|---|
+| 69 | screenshot harness reaches the panel | `v0.2.0` | prompt |
+| 34 | filter-chip pressed state (a11y) | `v0.2.0` | prompt |
+| 43 | WS refuses after entry removal | `v0.2.0` | prompt |
+| 57 | stale-file sweep for HACS upgrades | `v0.2.0` | prompt |
+| 23 | rename must not bump subtree versions | `v0.2.0` | [`item23_rename_version_plan.md`](item23_rename_version_plan.md) |
+| 46 | effective-area preview in the editor | `v0.2.0` | [`item46_area_preview_plan.md`](item46_area_preview_plan.md) |
+| 79 | execute the validation run (groups A–J, ENV-A/B/C/D) | against `v0.2.0`; fixes → `0.2.x` | prompt (program: [`release_testing_plan.md`](release_testing_plan.md)) |
+| 60 | publish the measured scale ceiling | after 79's F3 | prompt |
+| 82 | README promotion: screenshots + consistency pass | after the `v0.2.0` payload; before 83 | prompt |
+| 70 | retire the scoping-only toolchain | after 69 + 79 | [`item70_toolchain_retirement_plan.md`](item70_toolchain_retirement_plan.md) |
+| 80 | schema exercise (`v4 → v5` on the live store) | next 0.x minor after the last feature release | [`schema_exercise_plan.md`](schema_exercise_plan.md) |
+| 81 | schema collapse to v1 + export→import crossing | another 0.x minor; **breaking, owner go** | [`schema_collapse_plan.md`](schema_collapse_plan.md) |
+| 83 | cut `v1.0.0` (no change) | after 81's watch window | prompt |
+| 4 | HACS default-store listing (submission half) | after 1.0 | prompt |
+
+**Versioning policy** (from the roadmap's §07; governs every release above): semver on the
+HACS cadence — **PATCH** bugfix with no schema change; **MINOR** backward-compatible,
+including automatic migrations; **MAJOR** breaking / non-auto-migratable (the item-81
+collapse is exempted only because nothing 0.x is published beyond the owner's install).
+Pre-releases `-alpha/-beta/-rc`; deprecations survive ≥ 1 MINOR with warnings; the
+changelog carries migration notes. Performance budgets, for the record: 2k items / 60
+locations typical, 10k / 200 stretch; item list 50-row filtered+sorted page p50 ≤ 30 ms /
+p95 ≤ 75 ms; subtree move (≤ 200 locations, ≤ 5k items) p50 ≤ 80 ms / p95 ≤ 150 ms; card
+first 50-row render ≤ 200 ms p95, 60 fps scroll, type-ahead round trip ≤ 200 ms p95.
+
+**Risk watch-list** (the roadmap's §08 entries still live; "release-please has never run"
+retired when v0.1.0/v0.1.1 cut cleanly):
+
+- HA ships monthly — re-skim the dev blog + breaking changes before each release; the
+  min-HA floor (2026.6.0) and the phacc pin age, and the floor moves with new advisories.
+- The collapse (81) is the one breaking step: **export before installing it** — storage
+  refuses downgrades (#120); a missed export means manual store surgery.
+- The dogfood loop has no natural end — each watch window is defined up front (N days,
+  zero new Blocker/Major), so the 1.0 date doesn't drift on vibes.
+- Workflow-file pushes need the GitHub App's `workflows` permission — a rejected push
+  means outputting the diff for the owner to apply, not failing.
+- Dependabot alerts are invisible from cloud sessions — that triage is local-only or
+  needs the alert list pasted in.
+- Log-review literacy for the run: exit criterion 4 counts `custom_components.haventory`
+  tracebacks only; item-32 WARNINGs and item-53 core ERRORs are expected, not findings.
+- brands + HACS default-store reviews run on external timelines — file early (item 4);
+  the custom-repo path works meanwhile.
+
 ---
 
 ## Pre-v1.0
 
-These ship in **`v0.2.0`** — see the staging above. Ordered by impact.
+These ship in **`v0.2.0`** (item 70 alone follows item 79's run — see its sequencing).
+Ordered by impact. Item 4 moved to the release-stage table below, where its remaining
+(post-1.0 submission) half belongs.
 
 | # | Item | Source PR(s) | Impact | Effort |
 |---|------|--------------|--------|--------|
-| 4 | **HACS publication** (Phase 3 "Polish & HACS"). Distribution path for a 1.0. The delivery mechanics landed with #148 — `zip_release`: the release workflow builds the card, attaches `haventory.zip`, drafts first and publishes last — and release-please has since cut v0.1.0 and v0.1.1; what remains is verifying a clean-HA install through HACS as a custom repository (release-test A1) and submission to the HACS default store. | README Phase 3, #148 | Medium (distribution) | M |
 | 69 | **The screenshot harness cannot reach the sidebar panel.** `.claude/skills/run-haventory/screenshot.mjs` hardcodes `waitForSelector("haventory-card")` (`screenshot.mjs:179`), so `--path /haventory` — where only `haventory-panel` exists — times out; PR #160's panel screenshots needed a throwaway script. An `--element` flag (or a `--panel` mode) defaulting to the current selector would let the skill cover the panel surface, and `visual_pass.mjs` could then gain the panel's surfaces too. **Gates the launch material:** the sidebar panel is the surface the README and the announcement posts lead with — HAventory as a page of its own — and it is precisely the one the harness cannot photograph today. Do this before item 70, which retires the harness once the assets exist. | PR #160 follow-up | Medium (release assets) | S |
 | 70 | **Strip the scoping-only toolchain before 1.0.** A new contributor currently has to work out for themselves which half of `docs/` and `scripts/` is still live: the repo carries planning and one-off exploration artifacts that were load-bearing while the work was in flight and are dead weight once it ships. **Delivered plan docs** — `docs/sidebar-panel.md` (25 KB, its own status line reads *delivered*; nothing outside this ledger links it) and `docs/card_shipping_plan.md` (20 KB, status *PR-1 and PR-2 implemented*; linked from `CLAUDE.md:57`, from the card-shipping note above and from item 56's row). **Exception:** `docs/release_testing_plan.md` is the validation run itself — executed against `v0.2.0` per the staging above: item 4 is gated on its A1, item 60 on its F3, and closed item 29's last part was deferred into it as D6 — so it goes *after* that run, not before. **Exploration scripts** to triage the same way: `stress_test.py`, `create_test_items.py`, `ws_probe.py`, `ws_subscribe.py`, `ws_init_haventory.py`, and the agent harnesses under `.claude/skills/` (`run-haventory`'s `screenshot.mjs` / `visual_pass.mjs` / `log_sweep.py` / `driver.py` and `test-haventory`'s `stress.py`). Nothing here is a free delete: every script except `common.sh` (sourced by the others) has at least one inbound reference from CI, `CONTRIBUTING.md`, `README.md` or `CLAUDE.md`, and `tests/test_ws_logging_offline.py:12` cites the release plan in a docstring — so each removal takes its references with it, and whatever survives earns one line in `CONTRIBUTING.md` saying what it is for. **Sequence this after item 69**, not before: it repairs the screenshot harness that produces the README and announcement-post imagery, so this removal is what closes the door behind it. Retiring the harness first would only mean rebuilding it the next time a screenshot is needed. | owner 2026-08-01 (contributor onboarding) | Medium (contributor onboarding) | M |
 | 34 | **The desktop filter panel's chips expose no pressed state to assistive tech.** Seven chips in `hv-filter-panel.ts` carry their selected state in an `on` CSS class and nothing else — no `aria-pressed`, no `role` (re-verified 2026-08-01: the file contains zero `aria-pressed`). The *same four* "Show only" facets in that component's mobile branch use `role="checkbox"` + `aria-checked`, and both app bars' stat pills plus the sidebar facet rows use `aria-pressed`, so the desktop panel is the sole surface where a screen reader cannot tell an active filter from an inactive one. Add `aria-pressed` to all seven (or `role="checkbox"`/`aria-checked` to match the mobile branch — pick one and use it for both branches). Promoted to pre-v1.0 (2026-08-02): it is the only surface with this gap, and S. | card UI consistency review 2026-07-26 | Low–Med (accessibility) | S |
@@ -296,22 +351,25 @@ These ship in **`v0.2.0`** — see the staging above. Ordered by impact.
 | 23 | **Location rename bumps every subtree item's `version`** (denormalized `location_path` rewrite), so a client holding a stale `expected_version` for an unrelated field gets a spurious `conflict`. Indexes stay consistent — it's a UX surprise, not corruption. A path-only rewrite need not bump the optimistic-concurrency version. | WP4 stress test | Low | M |
 | 57 | **A HACS upgrade never deletes files inside the integration directory.** With `zip_release`, HACS backs up the previous install and then runs `zipfile.extractall` straight over `<config>/custom_components/haventory/` without clearing it first (HACS `repositories/base.py`), so any file a newer release deletes or renames survives every user's upgrade; the dev container shows the same leftover class because `docker cp` also merges rather than replaces. Inert until a release actually removes a module or renames the card bundle — from that release on, either sweep the known stale paths at setup or call the leftover out in the release notes. `scripts/check_release_zip.py` cannot catch this: it validates the asset's layout, not the install directory's history. | PR #148 review | Low (upgrade hygiene) | S |
 
-### Release-readiness tasks (from the 2026-07-25 review)
+### Release-stage tasks (executed in staging order, not by impact)
 
-Work items — **not** tests — surfaced while drafting
-[`release_testing_plan.md`](release_testing_plan.md), plus later findings of the same
-release-blocking kind. All of the original group is now closed: the confirmed defects
-(25, 26) and documentation gaps (28, 31, 40) by the 2026-07-27 batch, item 29 at feature
-freeze (`2026.6.0`, defended by `tests/test_min_ha_version.py`), and item 30 by the
-release automation cutting v0.1.0/v0.1.1. What remains is the one docs chore below,
-gated on the release run's F3.
+The stages of the staging table above, as numbered items. Originally the
+"release-readiness" group from the 2026-07-25 review: all of that group is closed — the
+confirmed defects (25, 26) and documentation gaps (28, 31, 40) by the 2026-07-27 batch,
+item 29 at feature freeze (`2026.6.0`, defended by `tests/test_min_ha_version.py`), item
+30 by the release automation cutting v0.1.0/v0.1.1 — and the stage items **79–83** were
+registered in the 2026-08-02 fold-in of the roadmap artifact. Prompts for every row live
+in [`v1_prompts.md`](v1_prompts.md).
 
 | # | Item | Source | Impact | Effort |
 |---|------|--------|--------|--------|
-| 60 | **Publish the measured scale ceiling once release-test F3 runs** — the deferred (c) of item 41. The README's Known-limitations entry gives measured per-create latencies up to 1000 items (~70 ms @250, ~114 @500, ~200 @1000) and extrapolates beyond ("on that curve a single create trends toward ~1 s at a few thousand items"); F3 ("Scale on real hardware") produces the measured degradation point that replaces the trend claim. One README edit after the F3 pass of the release run. | PR #137 follow-up (item 41c) | Low–Med (docs accuracy / release claim) | S (after F3) |
-
-> Item 4 (HACS publication) above is also a release-readiness task and is referenced from
-> the test plan; it is already tracked and is not duplicated here.
+| 79 | **Execute the validation run against `v0.2.0`** — [`release_testing_plan.md`](release_testing_plan.md) in full: scenario groups A–J on ENV-A (real production instance) / ENV-B (throwaway Docker) / ENV-C (floor-pinned 2026.6.0; D6 is the live half of the min-HA claim) / ENV-D (backup restore), the group-J soak included, all six exit criteria. The `v0.2.0` install via HACS custom repository is release-test A1 and closes item 4's verification half; F3 produces item 60's numbers. Findings are triaged here with impact ratings; fixes ship one PR each as `0.2.x` patches, re-running affected scenarios until the plan is clean. Runs in **local** Claude Code next to the Docker host / real HA — not a web session. | roadmap WP8, restaged 2026-08-02 | High (the release gate) | L |
+| 60 | **Publish the measured scale ceiling once release-test F3 runs** — the deferred (c) of item 41. The README's Known-limitations entry gives measured per-create latencies up to 1000 items (~70 ms @250, ~114 @500, ~200 @1000) and extrapolates beyond ("on that curve a single create trends toward ~1 s at a few thousand items"); F3 ("Scale on real hardware") produces the measured degradation point that replaces the trend claim. One README edit after the F3 pass of item 79's run. | PR #137 follow-up (item 41c) | Low–Med (docs accuracy / release claim) | S (after F3) |
+| 82 | **README promotion: real screenshots + docs consistency pass.** The README leads with what HAventory looks like — 2–3 real captures from a seeded instance (sidebar panel full view, card list with the editor open, phone layout are the strong candidates; the owner approves the set), wired into the README top, plus a consistency pass over README / CONTRIBUTING / `docs/`. Needs item 69's harness fix; any time after the `v0.2.0` payload lands, required before item 83. `CLAUDE.md`'s own staleness sweep stays item 65. | roadmap WP9 step 1, restaged 2026-08-02 | Medium (launch material) | S–M |
+| 80 | **Schema exercise: the first real migration (`v4 → v5`), proven on the live production store.** Every existing migration is a `setdefault`/no-op, so the machinery has never moved real data; before the collapse and before strangers' stores depend on it, one deliberate forward, idempotent migration ships as the next 0.x minor *after the last feature release* and upgrades the owner's live store in place, verified by counts before/after, spot checks and a JSON export diff, then an owner-defined watch window. Design: [`schema_exercise_plan.md`](schema_exercise_plan.md). | roadmap WP8 schema half, restaged 2026-08-02 | High (migration confidence) | M |
+| 81 | **Schema collapse to v1 + the export→import crossing** — the one deliberately breaking release. `CURRENT_SCHEMA_VERSION` → 1 at the post-exercise shape, `migrations.py` emptied, higher-versioned stores refused (#120); the owner's store crosses via JSON export (taken **before** installing) → clean install → import, **rehearsed first** on a copy of the real export in a throwaway Docker HA; release-tests D7/D8/E3/E4 re-run against the collapsed schema; owner's explicit go before merge; watch window after. Design: [`schema_collapse_plan.md`](schema_collapse_plan.md). | roadmap WP9 step 2, restaged 2026-08-02 | High (breaking step) | M |
+| 83 | **Cut `v1.0.0` — carrying nothing.** After item 81's watch window closes, the version bump that declares the proven 0.x stable: release-please needs an explicit one-shot instruction to cross 1.0 (`bump-minor-pre-major` stops at 0.x; verify the `release-as` mechanism against the release-please docs, configure exactly one 1.0.0 cut, revert the config after so the next fix is 1.0.1). Release notes summarize the 1.0 feature set and carry the one-time crossing instruction for anyone still on 0.x. | roadmap WP9 step 3, restaged 2026-08-02 | High (the release) | S |
+| 4 | **HACS default-store listing** (Phase 3 "Polish & HACS"). The delivery mechanics landed with #148 (`zip_release`: the release workflow builds the card, attaches `haventory.zip`, drafts first and publishes last) and release-please has cut v0.1.0/v0.1.1; the custom-repo install verification (release-test A1) happens inside item 79's run. What remains is the **post-1.0 submission half**: repo prep per the current HACS publisher docs, the `home-assistant/brands` PR (owner supplies/approves artwork), the default-store submission PR, both external reviews tracked to merge — filed early, since they run on external timelines — then the README install section switches to store-first. | README Phase 3, #148 | Medium (distribution) | M |
 
 ---
 
@@ -321,7 +379,7 @@ Ordered by impact.
 
 | # | Item | Source PR(s) | Impact | Effort |
 |---|------|--------------|--------|--------|
-| 9 | **Reminders / calendar rework onto HA-native primitives** — implement the roadmap's `CalendarEntity` (`calendar.haventory`) + HA automations instead of a bespoke scheduler. Explicitly decided as post-1.0. | #73 (CLAUDE.md pillar #9); #18 ("sensors/calendar evolve post-MVP") | Medium (feature) | M |
+| 9 | **Reminders / calendar rework onto HA-native primitives** — implement the roadmap's `CalendarEntity` (`calendar.haventory`) + HA automations instead of a bespoke scheduler. Explicitly decided as post-1.0. Design decisions preserved from the roadmap (§06, folded in 2026-08-02): next date + interval (days/weeks/months) first, RRULE later; notifications via `notify.notify`; summary sensors via `DataUpdateCoordinator`, one "HAventory" device with stable `unique_id`s; WS command names `haventory/reminder/*` and `haventory/calendar/list_events` are reserved for it. | #73 (CLAUDE.md pillar #9); #18 ("sensors/calendar evolve post-MVP"); roadmap §06 | Medium (feature) | M |
 | 13 | **Perf (stretch):** 10k-item `low_stock_first` full-scan path is p50 32 ms vs a 30 ms budget (p95 fine). A cached low-stock-first ordering would close it. | #91 | Low | M |
 | 14 | **Perf:** back-to-back subtree moves within one second pay a +1 s monotonic-bump slow path per item (pathological; one-off moves are fine). A batch-aware bump would fix it. | #91 | Low | M |
 | 15 | **Rate limiting:** a per-connection command token is consumed even when the global bucket then rejects (deliberate check order; could refund). | #91 | Low | S |
@@ -353,6 +411,11 @@ Ordered by impact.
 | 76 | **On a phone row the area is a path segment — R3's one exception.** `hv-list-row` joins the area to the path with the same `›` that separates path segments (`const mobilePath = elidePath([parts.areaName, parts.path].filter(Boolean).join(' › '))`), so "Kitchen › … › Small Bin" reads as though Kitchen were a HAventory location — exactly what item 38's R3 rules out everywhere else, where the shared chip or the spelled-out `Area: X` marks it. Deliberate and the least-bad option at that width: the secondary line fits neither a chip nor the extra words, and the area has to be *inside* the elided string to survive `elidePath`, which keeps the first and last segments. Wanted instead is a marker that costs no line width and survives elision — the `⌂` glyph `renderAreaChip` already uses, a different separator after the area, or a weight change on the leading segment. Desktop, table, sheet, breadcrumb and both chip surfaces are unaffected. | #162 collection pass 2026-08-02 | Low (visual clarity) | S |
 | 77 | **The suite's teardown sweep covers `setInterval` only.** #164 stopped `register.ts`'s recheck from ticking into a torn-down jsdom by tracking the intervals a spec file opens and cancelling the survivors in an `afterAll`. A `setTimeout` still pending at that moment fails exactly the same way — a callback touching `customElements`, `document` or any other window global raises where vitest counts it as an uncaught exception and exits 1 with every test passing. The card schedules plenty: `Store`'s retry backoff, the 250 ms `scheduleTreeRefresh` / `scheduleAreasRefresh` debounces, the banner timers. None has been observed leaking — the store's timers are cleared by `dispose()`, and the debounces are short enough to land inside their own test — which is why this is post-v1.0 rather than a second half of item 74. The fix is the same shape as the one that is there: wrap `setTimeout` beside `setInterval` and sweep both. | PR #164 follow-up | Low (CI reliability) | S |
 | 78 | **A refused area-registry subscription never retries.** #165 has the store listen to Home Assistant's `area_registry_updated` and refetch the area list on it, and deliberately swallows a rejected subscribe — the card then holds the areas it fetched at boot, which is what it had before it listened at all. But that is a permanent state for the life of the element: the three HAventory topic subscriptions retry on a budget (`subscribeRetryDelayMs`, the round-based health in `openSubscriptions`), while this one gets a single attempt, so one refusal at boot — a rate limiter, a connection reopening mid-subscribe — freezes area names until the page is reloaded. Whether it deserves the topics' full round machinery is the open question; a single delayed retry would cover the realistic case. Note the two are not symmetric: a refused topic subscription stops live updates and raises a banner, while this one degrades silently by design, so any retry here should stay quiet too. | PR #165 follow-up | Low | S |
+| 84 | **History + CSV export.** Append-only logs for inspections and item actions, served by a new `haventory/history/list`; retention 20 changes per item and 1000 global FIFO, always keeping ≥ 1 entry per item; CSV export beside the JSON export WP3.5 shipped. Contract + storage-shape work (a history store is new persisted state — schema-versioned like everything else). | roadmap §06 (folded in 2026-08-02) | Medium (feature) | L |
+| 85 | **Localization and docs surface.** Translations beyond EN (`translations/` carries only `en.json`-equivalents today); optionally an MkDocs site and a public `ROADMAP.md` generated from this ledger's post-v1.0 tables once there is an audience for one. | roadmap §06 (folded in 2026-08-02) | Low | M |
+| 86 | **Item status field (OK / Missing / Needs Repair).** A stored, filterable per-item state beside quantity/checkout — schema change (new item field + migration), `ItemFilter` + card surfaces. | roadmap §06 (folded in 2026-08-02) | Medium (feature) | M |
+| 87 | **Area filter on `haventory/subscribe`.** The subscribe schema takes `location_id` / `include_subtree` / `inspection_overdue_only` only (verified 2026-08-02: `ws.py` `_item_matches_filter` knows nothing of areas), while `item/list` accepts `area_id` — so a card filtered to an area still receives every item event and filters client-side. Additive: `area_id` on the subscribe schema + the matcher resolving through the item's `effective_area_id`, mirrored in both contract docs. | roadmap §06 (folded in 2026-08-02) | Low–Med | S–M |
+| 88 | **Quality backlog from the roadmap:** property-based tests (hypothesis) for the repository's index invariants, Playwright visual regression over the card's surfaces, opt-in telemetry. Three separate efforts filed as one placeholder; split when one is picked up. | roadmap §06 (folded in 2026-08-02) | Low | M–L (each) |
 
 ---
 
@@ -453,3 +516,13 @@ Ordered by impact.
   its PR-body "Follow-ups" sections (originally numbered 56–65 on the branch that carried
   the reconciliation; renumbered in the 2026-08-01 cleanup after `main` independently
   assigned 56–59 — see the numbering note above).
+- The **roadmap-artifact fold-in (2026-08-02)** supplied items **79–88** and made this file
+  the single source of truth for everything task-shaped. The "HAventory — Revival Plan"
+  artifact's WP8/WP9 stage tasks became items 79–83 (restaged per the owner's 2026-08-02
+  revision — the staging section above), its §06 post-1.0 surface became the item-9
+  extension and items 84–88, its §07 versioning policy and performance budgets moved into
+  the staging section's policy block, and its §08 risks became the risk watch-list (minus
+  the retired "release-please has never run"). The artifact remains as the historical
+  record of WP0–WP7 and the prompt conventions; for tasks, staging and status it is
+  superseded by this file plus [`v1_prompts.md`](v1_prompts.md) and the five plan docs the
+  task-definitions table links.
