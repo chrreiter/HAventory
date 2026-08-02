@@ -1,7 +1,7 @@
 import './hv-filter-panel';
 import type { HVFilterPanel } from './hv-filter-panel';
 import { defaultFilters } from '../store/store';
-import type { DistinctValues, LocationTreeNode, StoreFilters } from '../store/types';
+import type { DistinctValues, Location, LocationTreeNode, StoreFilters } from '../store/types';
 
 const distinct: DistinctValues = {
   categories: [
@@ -68,6 +68,31 @@ function changes(el: HVFilterPanel) {
 
 const q = (el: HVFilterPanel, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement;
 const all = (el: HVFilterPanel, sel: string) => [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
+const label = (el: HVFilterPanel, testid: string) =>
+  (q(el, `[data-testid="${testid}"]`).textContent ?? '').replace(/\s+/g, ' ').trim();
+
+/** The flat cache behind `tree`, where only the root carries the area. */
+const nestedLocations = (areaId: string | null): Location[] => [
+  {
+    id: 'garage',
+    name: 'Garage',
+    parent_id: null,
+    area_id: areaId,
+    path: { id_path: ['garage'], name_path: ['Garage'], display_path: 'Garage', sort_key: 'garage' },
+  },
+  {
+    id: 'shelf-a',
+    name: 'Shelf A',
+    parent_id: 'garage',
+    area_id: null,
+    path: {
+      id_path: ['garage', 'shelf-a'],
+      name_path: ['Garage', 'Shelf A'],
+      display_path: 'Garage / Shelf A',
+      sort_key: 'garage/shelf a',
+    },
+  },
+];
 
 describe('hv-filter-panel: category', () => {
   it('shows counted chips and collapses the tail behind More…', async () => {
@@ -312,6 +337,23 @@ describe('hv-filter-panel: dates and location', () => {
       },
     );
     expect(q(el, '[data-testid="filter-location"]').textContent).toContain('Garage › Shelf A');
+  });
+
+  it('names the area the picked location inherits, matching the chip row wording', async () => {
+    const el = await mount({ locationId: 'shelf-a' }, { locations: nestedLocations('area-garage') });
+    expect(label(el, 'filter-location')).toContain('Area: Garage · Garage › Shelf A');
+  });
+
+  it('leaves a location in no area labelled exactly as before', async () => {
+    const el = await mount({ locationId: 'shelf-a' }, { locations: nestedLocations(null) });
+    expect(label(el, 'filter-location')).toContain('Garage › Shelf A');
+    expect(label(el, 'filter-location')).not.toContain('Area:');
+  });
+
+  it('says nothing about an area while no location is picked', async () => {
+    const el = await mount({}, { locations: nestedLocations('area-garage') });
+    expect(label(el, 'filter-location')).toContain('Any location');
+    expect(label(el, 'filter-location')).not.toContain('Area:');
   });
 });
 

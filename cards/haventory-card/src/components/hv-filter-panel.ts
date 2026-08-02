@@ -1,7 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { locationLabel } from '../ui/location-path';
+import { locationPathParts, pathTitle } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { activeFilterCount, defaultFilters } from '../store/store';
@@ -471,8 +471,11 @@ export class HVFilterPanel extends LitElement {
 
   private _renderLocationGroup() {
     const f = this.working;
-    const loc = (this.locations ?? []).find((l) => l.id === f.locationId);
-    const label = locationLabel(loc, 'Any location');
+    const locations = this.locations ?? [];
+    const loc = locations.find((l) => l.id === f.locationId);
+    // Named in words, not in a nested chip: this label lives inside a chip, and
+    // it has to read the same as the chip row the applied filter turns into.
+    const label = pathTitle(locationPathParts(loc, locations, this.areas, 'Any location'));
     return html`
       <div class="group">
         <span class="hv-label">Where</span>
@@ -512,6 +515,7 @@ export class HVFilterPanel extends LitElement {
               <hv-location-tree
                 data-testid="filter-location-tree"
                 .nodes=${this.locationTree}
+                .areas=${this.areas}
                 .selectedId=${f.locationId}
                 showAll
                 showCounts

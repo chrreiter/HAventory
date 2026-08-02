@@ -1,7 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { locationLabel } from '../ui/location-path';
+import { locationPathParts, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import {
   DEFAULT_CUSTOM_DAYS,
@@ -24,7 +24,7 @@ import {
   validateForm,
 } from '../ui/item-form';
 import type { CustomFieldRow, CustomFieldType, FieldError, ItemFormModel } from '../ui/item-form';
-import type { Item, Location, LocationTreeNode } from '../store/types';
+import type { AreaRef, Item, Location, LocationTreeNode } from '../store/types';
 import './hv-chip-input';
 import './hv-location-tree';
 import './hv-checkout-popover';
@@ -641,6 +641,8 @@ export class HVItemEditor extends LitElement {
   @property({ attribute: false }) item: Item | null = null;
   @property({ attribute: false }) locations: Location[] | null = null;
   @property({ attribute: false }) locationTree: LocationTreeNode[] = [];
+  /** HA areas, so the location picker files its roots under the right one. */
+  @property({ attribute: false }) areas: AreaRef[] = [];
   @property({ attribute: false }) categorySuggestions: string[] = [];
   @property({ attribute: false }) tagSuggestions: string[] = [];
   @property({ attribute: false }) customFieldKeys: string[] = [];
@@ -769,8 +771,9 @@ export class HVItemEditor extends LitElement {
   }
 
   private _renderLocationField() {
-    const loc = (this.locations ?? []).find((l) => l.id === this._model.locationId);
-    const label = locationLabel(loc, 'No location');
+    const locations = this.locations ?? [];
+    const loc = locations.find((l) => l.id === this._model.locationId);
+    const parts = locationPathParts(loc, locations, this.areas, 'No location');
     return html`<div class="cell span2">
       <span class="hv-label">Location</span>
       <button
@@ -781,13 +784,15 @@ export class HVItemEditor extends LitElement {
           this._locationOpen = !this._locationOpen;
         }}
       >
-        ${icon('mapMarker', 15)}<span class="value">${label}</span>${icon('chevronDown', 15)}
+        ${icon('mapMarker', 15)}${renderAreaChip(parts.areaName)}<span class="value">${parts.path}</span
+        >${icon('chevronDown', 15)}
       </button>
       ${this._locationOpen
         ? html`<div class="tree-holder">
             <hv-location-tree
               data-testid="editor-location-tree"
               .nodes=${this.locationTree}
+              .areas=${this.areas}
               .selectedId=${this._model.locationId}
               showAll
               allLabel="No location"

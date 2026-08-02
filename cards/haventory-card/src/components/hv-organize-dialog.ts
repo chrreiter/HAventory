@@ -807,6 +807,7 @@ export class HVOrganizeDialog extends LitElement {
                 <hv-location-tree
                   data-testid="location-parent-tree"
                   .nodes=${tree}
+                  .areas=${this.st?.areasCache?.areas ?? []}
                   .selectedId=${this._locParent}
                   .excludeSubtreeOf=${node?.id ?? null}
                   showAll
@@ -908,6 +909,7 @@ export class HVOrganizeDialog extends LitElement {
             <hv-location-tree
               data-testid="merge-target-tree"
               .nodes=${tree}
+              .areas=${this.st?.areasCache?.areas ?? []}
               .selectedId=${this._mergeTarget}
               .excludeSubtreeOf=${source.id}
               @select=${(e: CustomEvent) => {
@@ -987,7 +989,6 @@ export class HVOrganizeDialog extends LitElement {
           data-testid="organize-tree"
           manage
           showCounts
-          showAreas
           ?mobile=${this.mobile}
           .nodes=${tree}
           .areas=${this.st?.areasCache?.areas ?? []}

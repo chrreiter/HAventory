@@ -1,4 +1,4 @@
-import { countLocations, locationMatches, sortLocationTree } from './location-tree';
+import { countLocations, groupRootsByArea, locationMatches, sortLocationTree } from './location-tree';
 import type { LocationTreeNode } from './types';
 
 function node(name: string, children: LocationTreeNode[] = []): LocationTreeNode {
@@ -90,5 +90,85 @@ describe('countLocations', () => {
     const bare = { ...node('Garage') } as Partial<LocationTreeNode>;
     delete bare.children;
     expect(countLocations([bare as LocationTreeNode])).toBe(1);
+  });
+});
+
+describe('groupRootsByArea', () => {
+  const inArea = (name: string, areaId: string | null, children: LocationTreeNode[] = []) => ({
+    ...node(name, children),
+    area_id: areaId,
+  });
+  const AREAS = [
+    { id: 'area-kitchen', name: 'Kitchen' },
+    { id: 'area-garage', name: 'Garage' },
+    { id: 'area-r10', name: 'Room 10' },
+    { id: 'area-r2', name: 'Room 2' },
+  ];
+
+  it('collects the roots of each area and names the group', () => {
+    const { areaGroups, ungrouped } = groupRootsByArea(
+      [inArea('Fridge', 'area-kitchen'), inArea('Pantry', 'area-kitchen'), inArea('Workbench', 'area-garage')],
+      AREAS,
+    );
+    expect(areaGroups.map((g) => [g.name, names(g.roots)])).toEqual([
+      ['Garage', ['Workbench']],
+      ['Kitchen', ['Fridge', 'Pantry']],
+    ]);
+    expect(ungrouped).toEqual([]);
+  });
+
+  it('orders groups by area name, digits in human order', () => {
+    const grouped = groupRootsByArea([inArea('A', 'area-r10'), inArea('B', 'area-r2')], AREAS);
+    expect(grouped.areaGroups.map((g) => g.name)).toEqual(['Room 2', 'Room 10']);
+  });
+
+  it('keeps roots with no area out of the groups, in the order they arrived', () => {
+    const grouped = groupRootsByArea(
+      [inArea('Attic', null), inArea('Fridge', 'area-kitchen'), inArea('Shed', null)],
+      AREAS,
+    );
+    expect(names(grouped.areaGroups[0].roots)).toEqual(['Fridge']);
+    expect(names(grouped.ungrouped)).toEqual(['Attic', 'Shed']);
+  });
+
+  it('has no groups at all for an inventory that assigns no areas', () => {
+    const roots = [inArea('Office', null), inArea('Basement', null)];
+    const grouped = groupRootsByArea(roots, AREAS);
+    expect(grouped.areaGroups).toEqual([]);
+    expect(grouped.ungrouped).toEqual(roots);
+  });
+
+  it('groups an area the cache does not know under its raw id', () => {
+    const grouped = groupRootsByArea([inArea('Fridge', 'area-gone')], AREAS);
+    expect(grouped.areaGroups.map((g) => [g.id, g.name])).toEqual([['area-gone', 'area-gone']]);
+  });
+
+  it('breaks ties on the area id so equally-named areas keep a stable order', () => {
+    const dupes = [
+      { id: 'area-b', name: 'Loft' },
+      { id: 'area-a', name: 'Loft' },
+    ];
+    const grouped = groupRootsByArea([inArea('X', 'area-b'), inArea('Y', 'area-a')], dupes);
+    expect(grouped.areaGroups.map((g) => g.id)).toEqual(['area-a', 'area-b']);
+  });
+
+  it('reads the area off the root only, since that is where the backend keeps it', () => {
+    // A tree's area lives on its root and every descendant inherits it, so a
+    // child carrying one would mean two groups for one tree.
+    const child = inArea('Shelf', 'area-garage');
+    const grouped = groupRootsByArea([inArea('Attic', null, [child])], AREAS);
+    expect(grouped.areaGroups).toEqual([]);
+    expect(names(grouped.ungrouped)).toEqual(['Attic']);
+  });
+
+  it('does not mutate the input', () => {
+    const input = [inArea('Fridge', 'area-kitchen'), inArea('Attic', null)];
+    const before = JSON.stringify(input);
+    groupRootsByArea(input, AREAS);
+    expect(JSON.stringify(input)).toBe(before);
+  });
+
+  it('handles an empty tree', () => {
+    expect(groupRootsByArea([], AREAS)).toEqual({ areaGroups: [], ungrouped: [] });
   });
 });

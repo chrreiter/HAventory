@@ -6,8 +6,10 @@ import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import { COLUMN_DEFS, normalizeColumns, tableTemplateFor } from '../store/columns';
 import { getDefaultOrderFor } from '../store/sort';
+import type { AreaRef } from '../store/types';
 import type { ColumnKey } from '../store/columns';
-import { displayPath, isLowStock } from './hv-list-row';
+import { isLowStock } from './hv-list-row';
+import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import type { Item, Sort, SortField } from '../store/types';
 
 /**
@@ -155,6 +157,9 @@ export class HVDataTable extends LitElement {
         white-space: nowrap;
         color: var(--hv-text-secondary);
       }
+      .cell .hv-area-chip {
+        margin-right: 6px;
+      }
       .cell.qty {
         color: var(--hv-text);
       }
@@ -255,6 +260,8 @@ export class HVDataTable extends LitElement {
   @property({ attribute: false }) columns: ColumnKey[] = [];
   @property({ attribute: false }) sort!: Sort;
   @property({ type: Boolean }) selectable = false;
+  /** HA areas, to name the one each item's location resolves to. */
+  @property({ attribute: false }) areas: AreaRef[] = [];
   @property({ attribute: false }) selection: Set<string> = new Set();
 
   private get _columns(): ColumnKey[] {
@@ -299,8 +306,12 @@ export class HVDataTable extends LitElement {
         >`;
       case 'category':
         return html`<span class="cell" data-testid="cell-category" title=${item.category ?? ''}>${item.category || '—'}</span>`;
-      case 'location':
-        return html`<span class="cell" data-testid="cell-location" title=${displayPath(item) ?? ''}>${displayPath(item) || '—'}</span>`;
+      case 'location': {
+        const parts = itemPathParts(item, this.areas);
+        return html`<span class="cell" data-testid="cell-location" title=${pathTitle(parts)}
+          >${renderAreaChip(parts.areaName)}${parts.path || '—'}</span
+        >`;
+      }
       case 'tags':
         return html`<span class="tags" data-testid="cell-tags">
           ${item.tags.length ? item.tags.map((t) => html`<span class="tag">${t}</span>`) : html`<span class="cell">—</span>`}

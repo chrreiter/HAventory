@@ -1,6 +1,6 @@
 import './hv-list-row';
 import { makeItem } from '../test.utils';
-import { displayPath, elidePath, isLowStock } from './hv-list-row';
+import { elidePath, isLowStock } from './hv-list-row';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVListRow } from './hv-list-row';
 import type { Item } from '../store/types';
@@ -22,7 +22,7 @@ function captured(el: HVListRow, names: string[]) {
   return seen;
 }
 
-describe('isLowStock / displayPath', () => {
+describe('isLowStock', () => {
   it('treats a null threshold as never low', () => {
     expect(isLowStock(makeItem({ quantity: 0, low_stock_threshold: null }))).toBe(false);
   });
@@ -30,17 +30,6 @@ describe('isLowStock / displayPath', () => {
   it('is low at or below the threshold', () => {
     expect(isLowStock(makeItem({ quantity: 3, low_stock_threshold: 3 }))).toBe(true);
     expect(isLowStock(makeItem({ quantity: 4, low_stock_threshold: 3 }))).toBe(false);
-  });
-
-  it('renders the backend path with the design separator', () => {
-    const item = makeItem({});
-    item.location_path = {
-      id_path: ['g', 's'],
-      name_path: ['Garage', 'Shelf A'],
-      display_path: 'Garage / Shelf A',
-      sort_key: '',
-    };
-    expect(displayPath(item)).toBe('Garage › Shelf A');
   });
 });
 
@@ -213,6 +202,43 @@ describe('hv-list-row: interaction', () => {
   });
 });
 
+describe('hv-list-row: area', () => {
+  const AREAS = [{ id: 'area-kitchen', name: 'Kitchen' }];
+  const pantry = { id_path: [], name_path: [], display_path: 'Fridge / Pantry', sort_key: '' };
+
+  it('marks which room the item is in, beside the path', async () => {
+    const el = await mount(
+      { effective_area_id: 'area-kitchen', category: 'Consumables', location_path: pantry },
+      { areas: AREAS },
+    );
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(secondary?.querySelector('.hv-area-chip')?.textContent).toContain('Kitchen');
+    expect(secondary?.textContent).toContain('Fridge › Pantry · Consumables');
+    expect(secondary?.getAttribute('title')).toBe('Area: Kitchen · Fridge › Pantry · Consumables');
+  });
+
+  it('shows an area the cache has no name for rather than dropping it', async () => {
+    const el = await mount({ effective_area_id: 'area-gone', location_path: pantry }, { areas: AREAS });
+    expect(q(el, '[data-testid="row-secondary"]')?.querySelector('.hv-area-chip')?.textContent).toContain(
+      'area-gone',
+    );
+  });
+
+  it('reads exactly as before for an item in no area', async () => {
+    const el = await mount({ category: 'Consumables', location_path: pantry }, { areas: AREAS });
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(secondary?.querySelector('.hv-area-chip')).toBe(null);
+    expect(secondary?.textContent?.trim()).toBe('Fridge › Pantry · Consumables');
+    expect(secondary?.getAttribute('title')).toBe('Fridge › Pantry · Consumables');
+  });
+
+  it('reads exactly as before for a host that passes no areas at all', async () => {
+    const el = await mount({ effective_area_id: 'area-kitchen', location_path: pantry });
+    // The id is all there is to show without the cache, but the row still works.
+    expect(q(el, '[data-testid="row-secondary"]')?.textContent).toContain('Fridge › Pantry');
+  });
+});
+
 describe('hv-list-row: mobile affordances', () => {
   const deepPath = {
     id_path: [],
@@ -231,6 +257,28 @@ describe('hv-list-row: mobile affordances', () => {
     expect(q(el, '[data-testid="row-secondary"]')?.textContent).toContain(
       'Workshop › Parts Cabinet › Drawer A › Small Bin',
     );
+  });
+
+  it('spends the phone row on the room, which the elision keeps', async () => {
+    // No chip fits this line, so the area goes in as the leading segment — the
+    // half elidePath keeps.
+    const el = await mount(
+      { category: null, effective_area_id: 'area-workshop', location_path: deepPath },
+      { mobile: true, areas: [{ id: 'area-workshop', name: 'Garage' }] },
+    );
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(secondary?.textContent).toContain('Garage › … › Small Bin');
+    expect(secondary?.querySelector('.hv-area-chip')).toBe(null);
+  });
+
+  it('leaves a checked-out phone row saying what it always said', async () => {
+    const el = await mount(
+      { checked_out: true, due_date: '2099-07-31', effective_area_id: 'area-workshop', location_path: deepPath },
+      { mobile: true, areas: [{ id: 'area-workshop', name: 'Garage' }] },
+    );
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(secondary?.textContent).toContain('Checked out');
+    expect(secondary?.textContent).not.toContain('Garage');
   });
 
   // Both lines clip with an ellipsis, and the phone row drops the middle of the

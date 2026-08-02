@@ -1,21 +1,16 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { prettyPath } from '../ui/location-path';
+import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue } from '../ui/relative-time';
-import type { Item } from '../store/types';
+import type { AreaRef, Item } from '../store/types';
 import './hv-overflow-menu';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 
 /** True when an item is at or under its low-stock threshold. */
 export function isLowStock(item: Item): boolean {
   return typeof item.low_stock_threshold === 'number' && item.quantity <= item.low_stock_threshold;
-}
-
-/** "Garage › Shelf A" from the denormalized path the backend already ships. */
-export function displayPath(item: Item): string {
-  return prettyPath(item.location_path?.display_path ?? '');
 }
 
 /**
@@ -110,6 +105,9 @@ export class HVListRow extends LitElement {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+      .secondary .hv-area-chip {
+        margin-right: 6px;
       }
       .secondary.out {
         color: var(--hv-primary-dark);
@@ -288,6 +286,8 @@ export class HVListRow extends LitElement {
 
   @property({ attribute: false }) item!: Item;
   @property({ type: Boolean, reflect: true }) mobile = false;
+  /** HA areas, to name the one the item's location resolves to. */
+  @property({ attribute: false }) areas: AreaRef[] = [];
   /** Selection mode: show a checkbox and suppress row navigation. */
   @property({ type: Boolean }) selectable = false;
   @property({ type: Boolean }) selected = false;
@@ -400,14 +400,17 @@ export class HVListRow extends LitElement {
     // `inspection_date` is when the item is next due for inspection, so a date
     // already behind us means it is waiting to be done.
     const inspectionDue = isOverdue(item.inspection_date);
-    // The desktop row has room for the whole path; the phone row does not, and
-    // clipping it from the right would take the leaf with it.
-    const full = displayPath(item);
-    const path = this.mobile ? elidePath(full) : full;
-    const secondary = [path, item.category].filter(Boolean).join(' · ');
+    const parts = itemPathParts(item, this.areas);
+    // The desktop row has room for the whole path and the area chip beside it.
+    const secondary = [parts.path, item.category].filter(Boolean).join(' · ');
+    // A phone line fits neither, so the area goes in as the leading text
+    // segment — the half elidePath keeps — and the room survives a path deep
+    // enough to lose its middle.
+    const mobilePath = elidePath([parts.areaName, parts.path].filter(Boolean).join(' › '));
+    const mobileSecondary = [mobilePath, item.category].filter(Boolean).join(' · ');
     // The tooltip carries the *unelided* path: on a phone the middle of it is
     // dropped on purpose, and this is where the whole thing can still be read.
-    const secondaryFull = [full, item.category].filter(Boolean).join(' · ');
+    const secondaryFull = [pathTitle(parts), item.category].filter(Boolean).join(' · ');
     // A phone row has one line for all of this and no room for the chips the
     // wide row hangs on the right, so the line says the most interrupting
     // thing it has: who has the item, then what the item is waiting for, then
@@ -461,7 +464,9 @@ export class HVListRow extends LitElement {
                   : ''}`
               : this.mobile && inspectionDue
                 ? html`<span data-testid="row-inspection-due">Inspection due</span> · ${formatDate(item.inspection_date)}`
-                : secondary || 'No location'}
+                : this.mobile
+                  ? mobileSecondary || 'No location'
+                  : html`${renderAreaChip(parts.areaName)}${secondary || 'No location'}`}
           </span>
         </span>
         ${this.pending ? html`<span class="pending" data-testid="row-pending">pending</span>` : null}

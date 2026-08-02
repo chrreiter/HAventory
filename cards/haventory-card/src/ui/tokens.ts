@@ -237,6 +237,25 @@ export const base = css`
     outline: none;
   }
 
+  /* The HA area beside a location path. An area is not a path segment and must
+     never read as one, so every surface that prints a path marks it the same
+     way — hence the shared rule rather than a per-component chip. */
+  .hv-area-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    padding: 2px 8px;
+    border-radius: var(--hv-radius-chip);
+    background: var(--hv-chip-bg);
+    color: var(--hv-chip-text);
+    font-size: 11px;
+    /* Sits inside single-line rows that clip with an ellipsis; a wrap would
+       grow the line box those rows size themselves from. */
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+
   .hv-sr-only {
     position: absolute;
     width: 1px;

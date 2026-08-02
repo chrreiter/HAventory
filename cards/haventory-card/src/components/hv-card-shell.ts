@@ -577,6 +577,7 @@ export class HVCardShell extends LitElement {
     const st = this.st;
     return html`<hv-item-editor
       data-testid="inline-editor"
+      .areas=${st?.areasCache?.areas ?? []}
       ?noHeader=${opts.noHeader ?? false}
       .item=${itemId ? (this._itemById(itemId) ?? null) : null}
       .locations=${st?.locationsFlatCache ?? null}
@@ -1007,6 +1008,7 @@ export class HVCardShell extends LitElement {
       ${this._renderDegradedBanners()} ${this._renderBanners()}
 
       <hv-list
+        .areas=${st?.areasCache?.areas ?? []}
         data-testid="card-list"
         .items=${st?.items ?? []}
         .loading=${st?.loading ?? true}
@@ -1145,6 +1147,7 @@ export class HVCardShell extends LitElement {
 
       ${mobile
         ? html`<hv-detail-sheet
+            .areas=${st?.areasCache?.areas ?? []}
             data-testid="card-detail-sheet"
             ?open=${this._detailItemId !== null}
             .item=${this._detailItemId ? (this._itemById(this._detailItemId) ?? null) : null}

@@ -21,9 +21,19 @@ function loc(id: string, name: string, parentId: string | null = null): Location
 }
 
 async function mount(
-  opts: { items?: Item[]; locations?: Location[]; embedded?: boolean; narrow?: boolean } = {},
+  opts: {
+    items?: Item[];
+    locations?: Location[];
+    areas?: { id: string; name: string }[];
+    embedded?: boolean;
+    narrow?: boolean;
+  } = {},
 ) {
-  const hass = makeMockHass({ items: opts.items ?? [], locations: opts.locations ?? [] });
+  const hass = makeMockHass({
+    items: opts.items ?? [],
+    locations: opts.locations ?? [],
+    areas: opts.areas ?? [],
+  });
   const store = new Store(hass, { retryBaseMs: 0 });
   await store.init();
 
@@ -384,6 +394,43 @@ describe('hv-full-view: sidebar', () => {
     expect(tree.shadowRoot?.querySelector('[data-testid="tree-orphans"]')?.textContent).toContain('1');
   });
 
+  it('drives the area filter from a sidebar area header', async () => {
+    // Browsing is the one surface where an area row means something to press:
+    // the item filter already takes an area, so the header is a way into it.
+    const areaLocations = [{ ...loc('garage', 'Garage'), area_id: 'area-garage' }, loc('kitchen', 'Kitchen')];
+    const { el, store, sr } = await mount({
+      items: [makeItem({ id: '1', location_id: 'garage' })],
+      locations: areaLocations,
+      areas: [{ id: 'area-garage', name: 'Garage' }],
+    });
+    const tree = q(sr, '[data-testid="sidebar-tree"]') as HTMLElement;
+
+    const head = tree.shadowRoot?.querySelector('[data-testid="tree-area-select"]') as HTMLButtonElement;
+    expect(head).toBeTruthy();
+    head.click();
+    await settle(el);
+    expect(store.state.value.filters.areaId).toBe('area-garage');
+  });
+
+  it('assigns only real locations from the pickers, never an area', async () => {
+    const areaLocations = [{ ...loc('garage', 'Garage'), area_id: 'area-garage' }];
+    const { el, sr } = await mount({
+      items: [makeItem({ id: '1', location_id: 'garage' })],
+      locations: areaLocations,
+      areas: [{ id: 'area-garage', name: 'Garage' }],
+    });
+    (q(sr, '[data-testid="full-add-item"]') as HTMLButtonElement).click();
+    await settle(el);
+    const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement;
+    (editor.shadowRoot?.querySelector('[data-testid="editor-location"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const picker = editor.shadowRoot?.querySelector('[data-testid="editor-location-tree"]') as HTMLElement;
+    const head = picker.shadowRoot?.querySelector('[data-testid="tree-area-head"]');
+    expect(head, 'the picker groups by area too').toBeTruthy();
+    expect(picker.shadowRoot?.querySelector('[data-testid="tree-area-select"]')).toBe(null);
+  });
+
   it('drives the location filter from the tree', async () => {
     const { el, store, sr } = await mount({ items: [makeItem({ id: '1' })], locations });
     const tree = q(sr, '[data-testid="sidebar-tree"]') as HTMLElement;
@@ -619,6 +666,37 @@ describe('hv-full-view: context bar and table', () => {
     expect(crumb).toContain('garage › Shelf A');
     // One item is one item — the crumb used to say "1 items".
     expect(crumb).toContain('1 item');
+  });
+
+  it('marks the area behind the crumb, where a segment span would read as part of the path', async () => {
+    const locations = [
+      { ...loc('garage', 'Garage'), area_id: 'area-kitchen' },
+      loc('shelf-a', 'Shelf A', 'garage'),
+    ];
+    const { el, store, sr } = await mount({
+      items: [makeItem({ id: '1', location_id: 'shelf-a' })],
+      locations,
+      areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
+    });
+
+    store.setFilters({ locationId: 'shelf-a' });
+    await settle(el);
+    const crumb = q(sr, '[data-testid="full-breadcrumb"]');
+    expect(crumb?.querySelector('.hv-area-chip')?.textContent).toContain('Kitchen');
+    expect(crumb?.textContent?.replace(/\s+/g, ' ')).toContain('garage › Shelf A');
+  });
+
+  it('leaves the crumb of an arealess tree exactly as it was', async () => {
+    const locations = [loc('garage', 'Garage'), loc('shelf-a', 'Shelf A', 'garage')];
+    const { el, store, sr } = await mount({
+      items: [makeItem({ id: '1', location_id: 'shelf-a' })],
+      locations,
+      areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
+    });
+
+    store.setFilters({ locationId: 'shelf-a' });
+    await settle(el);
+    expect(q(sr, '[data-testid="full-breadcrumb"]')?.querySelector('.hv-area-chip')).toBeNull();
   });
 
   it('sorts from the table headers', async () => {

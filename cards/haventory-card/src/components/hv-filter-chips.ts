@@ -1,7 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { locationLabel } from '../ui/location-path';
+import { locationPathParts, pathTitle } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate } from '../ui/relative-time';
 import type { Location, StoreFilters } from '../store/types';
@@ -42,8 +42,12 @@ export function chipsFor(
   if (filters.q) chips.push({ key: 'q', label: `"${filters.q}"`, tone: 'primary' });
 
   if (filters.locationId) {
-    const loc = (ctx.locations ?? []).find((l) => l.id === filters.locationId);
-    const path = locationLabel(loc, 'Location');
+    const locations = ctx.locations ?? [];
+    const loc = locations.find((l) => l.id === filters.locationId);
+    // A chip is already the smallest thing on this row, so the area is named in
+    // words rather than nested in a chip of its own — the same "Area: X" the
+    // area filter's own chip prints two lines down.
+    const path = pathTitle(locationPathParts(loc, locations, ctx.areas ?? [], 'Location'));
     chips.push({
       key: 'locationId',
       label: filters.includeSubtree ? `${path} + sub` : path,
