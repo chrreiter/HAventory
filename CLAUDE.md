@@ -103,10 +103,11 @@ Convenience wrappers live in `scripts/*.sh` (`setup.sh`, `lint.sh`, `test.sh`,
 and need a real HA instance plus `RUN_ONLINE=1`, `HA_BASE_URL`, `HA_TOKEN` — see the README.
 Offline tests stub HA via `tests/conftest.py`.
 
-> WP1 retired the `scripts/*.ps1` PowerShell tooling and moved CI off `windows-latest` —
-> everything is Linux/bash now. The cross-platform Python helpers (`ws_probe.py`,
-> `ws_subscribe.py`, `ws_init_haventory.py`, `stress_test.py`, `create_test_items.py`) are
-> unchanged; run them via `uv run python scripts/<name>.py`.
+> Everything is Linux/bash: `scripts/` holds no `.ps1`, CI runs on `ubuntu-latest`, and
+> there is **no Windows host support** — the helpers assume a UTF-8 terminal and the test
+> scaffolding carries no platform branch. Develop on Windows through WSL2. The Python
+> helpers (`ws_probe.py`, `ws_subscribe.py`, `ws_init_haventory.py`, `stress_test.py`,
+> `create_test_items.py`) run via `uv run python scripts/<name>.py`.
 
 ## Conventions
 
@@ -307,7 +308,5 @@ Adopted tooling (latest stable at review time; verified against release pages / 
 - **release-please** wiring lands in WP5.
 - ~~**Windows-only test scaffolding**: `tests/conftest.py` uses
   `asyncio.WindowsSelectorEventLoopPolicy` / `set_event_loop_policy`, both deprecated for
-  removal in Python 3.16~~ — fixed: `tests/conftest.py` now implements the
-  `pytest_asyncio_loop_factories` hook (Windows-only) to hand pytest-asyncio a
-  `asyncio.SelectorEventLoop` factory directly, instead of mutating the process-wide event
-  loop policy.
+  removal in Python 3.16~~ — gone: Windows host support was dropped, so `tests/conftest.py`
+  carries no platform branch at all (the selector-loop factory it had used went with it).

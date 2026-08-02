@@ -10,7 +10,7 @@ Home Assistant custom integration (domain `haventory`) for household inventory t
 plus a Lit + TypeScript Lovelace card. Local-push, single-instance, HA `Store`-backed
 persistence — no external services.
 
-**Targets:** Linux dev + `ubuntu-latest` CI. Minimum Home Assistant **2026.6.0** ⇒ Python
+**Targets:** Linux dev (Windows via WSL2) + `ubuntu-latest` CI. Minimum Home Assistant **2026.6.0** ⇒ Python
 **3.14** everywhere (uv provisions the interpreter automatically; the source uses 3.14-only
 PEP 758 syntax). Node **22.13+ / 24 LTS** for the card.
 
@@ -595,7 +595,8 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
 
 ## Dev helper scripts
 
-All scripts are Linux/bash under `scripts/` (the former `.ps1` scripts were retired in WP1).
+All scripts are Linux/bash under `scripts/`, and the Python helpers assume a UTF-8
+terminal. There is no Windows host support — use WSL2.
 
 ### Reload into a running HA dev container
 
