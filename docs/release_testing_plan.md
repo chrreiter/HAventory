@@ -1,6 +1,7 @@
 # Release Testing Plan — v1.0 readiness
 
-Manual validation of HAventory on **real** Home Assistant instances before tagging a 1.0.
+Manual validation of HAventory on **real** Home Assistant instances, executed against the
+`v0.2.0` release on the way to a 1.0.
 
 The automated suites (offline gate, in-process integration tests, online WS smokes, the
 adversarial stress regimen) are assumed green before this plan starts — see the README
@@ -10,6 +11,15 @@ real hardware, real phones, real networks, real upgrades, real backups.
 Out of scope: feature work, and anything tracked as **post-v1.0** in
 [`open-items.md`](open-items.md). Pre-v1.0 *tasks* (fixes/docs/release chores identified
 alongside this plan) also live in `open-items.md` — this file is tests only.
+
+**Which release this runs against.** `v0.2.0` — the release carrying every pending fix and
+the pre-v1.0 feature additions. That is the owner's 2026-08-02 staging revision: the two
+schema releases (the `v4 → v5` exercise, then the collapse to a clean v1) follow it as
+further 0.x minors and get a migration-integrity pass and a watch window rather than a rerun
+of this plan, and `1.0.0` is then a bump carrying no change — so this plan is executed once,
+here, and 1.0 inherits its evidence. The staging table in
+[`open-items.md`](open-items.md#release-staging) is authoritative if this paragraph ever
+falls behind it.
 
 **Sequencing.** The run belongs after feature freeze. D6's prerequisite is met: the minimum
 supported HA version is **2026.6.0** — set at feature freeze from the HA APIs the
