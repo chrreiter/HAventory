@@ -15,8 +15,9 @@ repos:
       - id: codespell
         args:
           # "batery" is deliberate: it is the typo'd tag the organize dialog's
-          # merge suggestion is tested against.
-          - --ignore-words-list=hass,batery
+          # merge suggestion is tested against. "afterAll" is vitest's teardown
+          # hook, which the docs name.
+          - --ignore-words-list=hass,batery,afterall
         exclude: |
           (?x)^(
             custom_components/haventory/www/|
