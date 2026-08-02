@@ -23,26 +23,6 @@ Conventions every prompt below assumes (stated once here, per `CLAUDE.md`):
 
 ## v0.2.0 payload
 
-### Item 69
-
-**Screenshot harness: reach the sidebar panel.**
-
-```text
-You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-docs/open-items.md item 69 is the spec. .claude/skills/run-haventory/screenshot.mjs
-hardcodes waitForSelector("haventory-card") (screenshot.mjs:179), so shooting
---path /haventory — where only <haventory-panel> exists — times out.
-
-Add an --element flag (default: "haventory-card", so every existing invocation is
-byte-identical in behavior) and thread it through the wait/screenshot logic. Update the
-skill's documentation for the flag, and extend visual_pass.mjs to cover the panel
-surface (/haventory with --element haventory-panel) alongside the card passes.
-
-Verify against the dev HA container (run-haventory skill): one card screenshot and one
-panel screenshot, both landing non-empty. This unblocks the README/announcement imagery
-(item 82) and precedes the toolchain retirement (item 70).
-```
-
 ### Item 34
 
 **Desktop filter chips: expose pressed state to assistive tech.**
