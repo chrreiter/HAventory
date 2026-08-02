@@ -294,6 +294,26 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
             raise StorageError("failed to persist repository") from exc
 
 
+def cancel_pending_persist(hass: HomeAssistant, *, op: str = "persist_cancel") -> None:
+    """Cancel a scheduled debounced persist, if one is pending.
+
+    Anything about to write itself — or about to take away the repository the
+    write would read — has to clear the pending task first, or it fires against
+    state that has moved on.
+    """
+    bucket = hass.data.setdefault(DOMAIN, {})
+
+    existing_task = bucket.get("persist_task")
+    if existing_task is None or existing_task.done():
+        return
+
+    existing_task.cancel()
+    _LOGGER.debug(
+        "Cancelled pending persist task",
+        extra={"domain": DOMAIN, "op": op},
+    )
+
+
 async def async_request_persist(hass: HomeAssistant) -> None:
     """Request a debounced persistence operation.
 
@@ -306,14 +326,7 @@ async def async_request_persist(hass: HomeAssistant) -> None:
     """
     bucket = hass.data.setdefault(DOMAIN, {})
 
-    # Cancel any pending persist task
-    existing_task = bucket.get("persist_task")
-    if existing_task is not None and not existing_task.done():
-        existing_task.cancel()
-        _LOGGER.debug(
-            "Cancelled pending persist task",
-            extra={"domain": DOMAIN, "op": "persist_debounce_cancel"},
-        )
+    cancel_pending_persist(hass, op="persist_debounce_cancel")
 
     async def _delayed_persist() -> None:
         """Execute persistence after debounce delay."""
@@ -357,16 +370,7 @@ async def async_persist_immediate(hass: HomeAssistant) -> None:
     synchronously. Use this for critical paths like shutdown where we need
     to ensure data is written to disk before the process exits.
     """
-    bucket = hass.data.setdefault(DOMAIN, {})
-
-    # Cancel any pending debounced task
-    existing_task = bucket.get("persist_task")
-    if existing_task is not None and not existing_task.done():
-        existing_task.cancel()
-        _LOGGER.debug(
-            "Cancelled pending persist task for immediate persist",
-            extra={"domain": DOMAIN, "op": "persist_immediate_cancel"},
-        )
+    cancel_pending_persist(hass, op="persist_immediate_cancel")
 
     _LOGGER.debug(
         "Immediate persist requested",

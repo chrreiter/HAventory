@@ -102,6 +102,11 @@ is left pointing at a card that is about to disappear. (If your Lovelace runs in
 any entry is yours, in `configuration.yaml` — delete the `resources:` line by hand. An
 Overview shortcut is yours too, and is removed the same way it was added.)
 
+**The API stops answering at once.** Home Assistant keeps a WebSocket command registered
+until it restarts, so a dashboard still open in another tab can go on talking to HAventory
+after you remove it. It is refused rather than served: every command comes back as an
+error, and nothing more is written to your inventory. Reload that tab and the card is gone.
+
 **Your inventory is deliberately kept.** Items and locations live in the Home Assistant
 store file `<config>/.storage/haventory_store`, which removal does not touch: adding the
 integration again restores everything, which is what you want when you remove it to

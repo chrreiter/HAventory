@@ -67,6 +67,7 @@ from .storage import (
     STORAGE_KEY,
     DomainStore,
     async_persist_immediate,
+    cancel_pending_persist,
     schema_downgrade_message,
 )
 
@@ -212,6 +213,31 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
     )
 
 
+async def _async_flush_pending_writes(hass: HomeAssistant, *, op: str) -> None:
+    """Write out whatever is still unsaved, before the state that holds it goes.
+
+    A pending debounce is cleared either way: with nothing loaded there is
+    nothing to write, and leaving the task scheduled would only fire it against
+    a repository that is on its way out.
+    """
+
+    bucket = hass.data.get(DOMAIN) or {}
+    if bucket.get("store") is None or bucket.get("repository") is None:
+        cancel_pending_persist(hass, op=op)
+        return
+
+    try:
+        await async_persist_immediate(hass)
+    except Exception:  # pragma: no cover - defensive
+        # This is the last chance to write; a failure here silently drops
+        # whatever was still unsaved, which nobody but an operator can recover.
+        LOGGER.error(
+            "Failed to persist during teardown",
+            extra={"domain": DOMAIN, "op": op},
+            exc_info=True,
+        )
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry.
 
@@ -222,17 +248,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     bucket = hass.data.get(DOMAIN) or {}
 
-    # Ensure any pending changes are persisted before unload
-    try:
-        await async_persist_immediate(hass)
-    except Exception:  # pragma: no cover - defensive
-        # Unload is the last chance to write; a failure here silently drops
-        # whatever was still unsaved, which nobody but an operator can recover.
-        LOGGER.error(
-            "Failed to persist during unload",
-            extra={"domain": DOMAIN, "op": "unload"},
-            exc_info=True,
-        )
+    await _async_flush_pending_writes(hass, op="unload")
 
     # Hand back the frontend module URL; setup re-adds it on the next load. The
     # static route stays, along with the flag that records it: aiohttp cannot
@@ -279,6 +295,30 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+def _drop_entry_runtime(hass: HomeAssistant) -> None:
+    """Leave the domain bucket holding only what outlives the config entry.
+
+    Home Assistant has no API for unregistering a WebSocket command, so ours go
+    on listening after the integration is removed. Emptying the bucket is what
+    makes them refuse: `ws._repo` raises `StorageError` without a repository, so
+    every command answers a `storage_error` envelope instead of letting a
+    dashboard left open read — and write — an inventory nothing owns any more.
+    The same lookup backs the `haventory.*` service handlers.
+
+    `_STATIC_PATH_KEY` is kept: it records an aiohttp route, which cannot be
+    unregistered and so outlives every entry. Dropping the flag would make a
+    re-add in the same run serve `/haventory_static` a second time.
+    """
+
+    bucket = hass.data.get(DOMAIN)
+    if not isinstance(bucket, dict):
+        return
+
+    kept = {key: bucket[key] for key in (_STATIC_PATH_KEY,) if key in bucket}
+    bucket.clear()
+    bucket.update(kept)
+
+
 async def async_remove_entry(hass: HomeAssistant, _entry: ConfigEntry) -> None:
     """Clean up after the config entry has been removed from Home Assistant.
 
@@ -287,12 +327,18 @@ async def async_remove_entry(hass: HomeAssistant, _entry: ConfigEntry) -> None:
     behind, either points at an asset that disappears with the integration, and
     a dead `module` URL fails to load on every dashboard render.
 
+    It then flushes whatever was still unsaved and drops the loaded runtime, so
+    the API stops answering for an integration that is gone rather than serving
+    on until the next restart.
+
     The HA `Store` file is deliberately kept, so re-adding the integration
     restores the inventory. Purging it is a manual step (README → Installation
     → "Removing HAventory").
     """
 
     await _unregister_frontend_module(hass)
+    await _async_flush_pending_writes(hass, op="remove")
+    _drop_entry_runtime(hass)
 
 
 def _read_manifest_version() -> str:
