@@ -117,20 +117,6 @@ list survives. Note in the PR body: from now on, any PR deleting a shipped integ
 file must add it to the sweep list (one CONTRIBUTING sentence).
 ```
 
-### Item 23
-
-**Location rename must not bump subtree item versions.** Plan:
-[`item23_rename_version_plan.md`](item23_rename_version_plan.md).
-
-```text
-You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-Read docs/item23_rename_version_plan.md — it is the design; implement it as written
-(path-only rewrites update location_path + search tokens, version and updated_at stay
-untouched; contract docs updated in the three places it names; the test list is the
-TDD spec, including the integration-suite case). Verify the card-correctness assumption
-it flags (what ws.py broadcasts on location/update) before relying on it.
-```
-
 ### Item 46
 
 **Effective-area preview in the location editor.** Plan:

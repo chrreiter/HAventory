@@ -264,6 +264,11 @@ Note: a successful import emits `items/reloaded` and `locations/reloaded` (no `i
 ### Versioning and concurrency
 
 - Items include `version: number`. Mutating commands accept `expected_version?: number` and raise `conflict` on mismatch.
+- `version` counts *item* mutations only. `location/update` (and `location/move_subtree`)
+  rewrites the derived `location_path` of every item in the subtree without bumping their
+  `version` or `updated_at`, so an `expected_version` taken before a rename is still
+  accepted after it. Clients learn about the new paths from the `locations` event, not from
+  per-item events — none are emitted for the rewrite.
 - Locations are not versioned in Phase 1.
 
 ### Timestamps

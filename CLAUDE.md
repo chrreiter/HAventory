@@ -26,7 +26,8 @@ Vitest `4`. Version 0.0.1, unreleased.
   `/haventory`, remove-then-register, driven by the `sidebar_panel_enabled` option).
 - `models.py` — `Item` / `Location` dataclasses, validation, serializers. Items carry a
   denormalized `location_path` (rebuilt on location changes) and a `version` int (starts at 1,
-  bumped on each mutation) for **optimistic concurrency**.
+  bumped on each *item* mutation — derived `location_path` rewrites excluded) for
+  **optimistic concurrency**.
 - `repository.py` — in-memory indexed repository (the source of truth at runtime). Owns the
   search indexes; **search is case-insensitive** (casefold + NFKD accent-stripping) — see
   `_normalize_for_search`. Maintains a generation counter for optimistic locking / debugging.

@@ -365,7 +365,10 @@ item and deletes it (best-effort cleanup even on failure).
 - Services via `hass.services.async_register` with `voluptuous` schemas; handlers re-raise
   validation/repository/storage errors so HA surfaces them.
 - Areas via `homeassistant.helpers.area_registry.async_get(hass)`; never auto-create areas.
-- Case-insensitive search; denormalized `location_path` on items; item `version` for optimistic concurrency.
+- Case-insensitive search; denormalized `location_path` on items; item `version` for optimistic
+  concurrency. `version` counts *item* mutations only — renaming or moving a location rewrites
+  the derived `location_path` across its whole subtree without bumping `version` or restamping
+  `updated_at`, so an expected version taken before the rename is still accepted after it.
 - Two calendar-derived counts on `haventory/stats`, each with a matching `item/list` filter:
   `overdue_count` / `overdue_only` for a passed `due_date` (checked-out items only, since
   that is where a due date can exist), and `inspection_overdue_count` /

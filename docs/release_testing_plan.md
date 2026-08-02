@@ -184,7 +184,7 @@ Run `haventory/health` after **each** of these, and snapshot the store around D7
 | F2 | `health` after each of D1–D9 and E2–E4 | `healthy: true`, empty `issues` | ✅ |
 | F3 | Scale on **real** hardware: load ~2× the real inventory and measure create/update/list latency | Latency is acceptable at the target size; record the size at which it degrades and publish it as a supported ceiling. Known: whole-dataset rewrite per mutation, ~200 ms/create @1000 items (open item 19) | ✅ |
 | F4 | Store file size across the run | Growth is proportional to content — no unbounded growth from repeated edits | |
-| F5 | Rename a location near the root of a deep tree | All descendant items' `location_path` rewritten; `health` healthy. Note the known version-bump side effect (open item 23) | |
+| F5 | Rename a location near the root of a deep tree | All descendant items' `location_path` rewritten; their `version` and `updated_at` unchanged (item 23); `health` healthy | |
 
 ### G — Multi-client & permissions
 

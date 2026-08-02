@@ -235,6 +235,20 @@ non-blocking).
 > - **The last two PRs' own follow-ups recorded** as items **77** and **78**. Both are
 >   post-v1.0: neither has been observed failing, and both are S if one ever does.
 
+> Item **23** (a location rename bumped every subtree item's `version`) is resolved, as
+> designed in [`item23_rename_version_plan.md`](item23_rename_version_plan.md).
+> `location_path` is derived data — the backend computes it from the tree and no client can
+> write it — so `_update_items_location_paths_for_locations` now rewrites the path and its
+> search tokens and nothing else: `version` and `updated_at` both stay put, and an
+> `expected_version` a client took before a rename is still accepted after it. `updated_at`
+> was left alone deliberately, so a rename cannot shuffle the "recently updated" sort with
+> rows nobody touched. The card was never the delivery channel for this: `location/update`
+> broadcasts on the `locations` topic only, and the store answers `renamed` / `moved` with a
+> tree + flat refetch and a full item reload. Contract stated in `data_shapes.md` and
+> `backend_api_contract.md`, invariant sharpened in `CLAUDE.md`; the stress harness's RACE 1
+> and release-test F5 now assert the new rule instead of the old hazard. Its row is removed
+> below and its prompt out of [`v1_prompts.md`](v1_prompts.md).
+
 ---
 
 ## Release staging
@@ -294,7 +308,6 @@ have a companion plan doc:
 | 34 | filter-chip pressed state (a11y) | `v0.2.0` | prompt |
 | 43 | WS refuses after entry removal | `v0.2.0` | prompt |
 | 57 | stale-file sweep for HACS upgrades | `v0.2.0` | prompt |
-| 23 | rename must not bump subtree versions | `v0.2.0` | [`item23_rename_version_plan.md`](item23_rename_version_plan.md) |
 | 46 | effective-area preview in the editor | `v0.2.0` | [`item46_area_preview_plan.md`](item46_area_preview_plan.md) |
 | 79 | execute the validation run (groups A–J, ENV-A/B/C/D) | against `v0.2.0`; fixes → `0.2.x` | prompt (program: [`release_testing_plan.md`](release_testing_plan.md)) |
 | 60 | publish the measured scale ceiling | after 79's F3 | prompt |
@@ -348,7 +361,6 @@ Ordered by impact. Item 4 moved to the release-stage table below, where its rema
 | 34 | **The desktop filter panel's chips expose no pressed state to assistive tech.** Seven chips in `hv-filter-panel.ts` carry their selected state in an `on` CSS class and nothing else — no `aria-pressed`, no `role` (re-verified 2026-08-01: the file contains zero `aria-pressed`). The *same four* "Show only" facets in that component's mobile branch use `role="checkbox"` + `aria-checked`, and both app bars' stat pills plus the sidebar facet rows use `aria-pressed`, so the desktop panel is the sole surface where a screen reader cannot tell an active filter from an inactive one. Add `aria-pressed` to all seven (or `role="checkbox"`/`aria-checked` to match the mobile branch — pick one and use it for both branches). Promoted to pre-v1.0 (2026-08-02): it is the only surface with this gap, and S. | card UI consistency review 2026-07-26 | Low–Med (accessibility) | S |
 | 46 | **Area propagation is surprising at the point of use — the effective-area preview from item 37.** Choosing the relabeled default option (#126) on a nested location does more than "stop inheriting": `Repository.update_location` runs `_propagate_area_to_root(key, None)`, clearing the area from the whole tree, and picking an explicit area moves the assignment to the tree root — nothing in the dialog warns about either. Item 37's live-preview idea lands here, with its recorded caution: an honest preview of the non-default options is a whole-tree effect and worth designing deliberately. The mechanics are no longer in the way — item 38's `effectiveAreaIdForLocation` (`ui/area.ts`) is the walk-up-to-root the dialog lacked, over the flat location cache it already holds, so neither a `location/tree` contract change nor new plumbing is needed; what is left is deciding what the dialog should say. Cosmetic while there: with no HA areas the dropdown renders a one-entry select. | item 37 + PR #126 follow-ups | Low–Med | M |
 | 43 | **The WS API keeps answering — and writing the kept store — after config-entry removal, until restart.** `async_remove_entry` (#121) removes the Lovelace resource but leaves `hass.data[DOMAIN]["store"]`/`["repository"]` in place, and HA has no way to unregister WS commands, so an open dashboard can keep mutating the inventory after the integration is removed; a restart finishes the teardown. Decide whether handlers should refuse once the entry is gone. Promoted to pre-v1.0 (2026-08-02): removing an integration and finding it still writing is a first-impression bug once strangers are installing it. | PR #121 follow-up | Low–Med | S–M |
-| 23 | **Location rename bumps every subtree item's `version`** (denormalized `location_path` rewrite), so a client holding a stale `expected_version` for an unrelated field gets a spurious `conflict`. Indexes stay consistent — it's a UX surprise, not corruption. A path-only rewrite need not bump the optimistic-concurrency version. | WP4 stress test | Low | M |
 | 57 | **A HACS upgrade never deletes files inside the integration directory.** With `zip_release`, HACS backs up the previous install and then runs `zipfile.extractall` straight over `<config>/custom_components/haventory/` without clearing it first (HACS `repositories/base.py`), so any file a newer release deletes or renames survives every user's upgrade; the dev container shows the same leftover class because `docker cp` also merges rather than replaces. Inert until a release actually removes a module or renames the card bundle — from that release on, either sweep the known stale paths at setup or call the leftover out in the release notes. `scripts/check_release_zip.py` cannot catch this: it validates the asset's layout, not the install directory's history. | PR #148 review | Low (upgrade hygiene) | S |
 
 ### Release-stage tasks (executed in staging order, not by impact)
