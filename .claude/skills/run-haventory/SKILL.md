@@ -1,13 +1,14 @@
 ---
 name: run-haventory
-description: Run, deploy, drive, and screenshot HAventory against the local dev Home Assistant (Docker). Use when asked to start/run the integration, deploy the integration or card into HA, poke the WebSocket API, verify a change in the real running app, or take a screenshot of the Lovelace card.
+description: Run, deploy, drive, and screenshot HAventory against the local dev Home Assistant (Docker). Use when asked to start/run the integration, deploy the integration or card into HA, poke the WebSocket API, verify a change in the real running app, or take a screenshot of the Lovelace card or the sidebar panel.
 ---
 
 HAventory is a Home Assistant custom integration + Lovelace card. "Running the app"
 means a **real HA instance in Docker** (container `home-assistant`, `http://localhost:8123`)
 with the integration and built card deployed into it. Drive the backend over the HA
 WebSocket API via `.claude/skills/run-haventory/driver.py`; drive/screenshot the card
-in the real HA frontend via `.claude/skills/run-haventory/screenshot.mjs` (Playwright).
+or the sidebar panel in the real HA frontend via
+`.claude/skills/run-haventory/screenshot.mjs` (Playwright).
 
 All paths below are relative to the repo root. This is a **Windows host**: run the
 `.sh` scripts through Git Bash (they work there), everything else is shell-agnostic.
@@ -122,7 +123,7 @@ Command catalog + payload shapes: `docs/backend_api_contract.md` and `docs/data_
 Subscriptions (watch events while mutating): `uv run python scripts/ws_subscribe.py`
 (env-driven, see its docstring). Seed data: `uv run python scripts/create_test_items.py`.
 
-### Screenshot / drive the card in the real HA frontend
+### Screenshot / drive the card or panel in the real HA frontend
 
 From the skill dir (`cd .claude/skills/run-haventory`):
 
@@ -137,6 +138,20 @@ prints browser console errors — check them when the card renders blank.
 `custom:haventory-card`. `--search` exercises the real pipeline
 (card → WS → repository index → filtered render), so it doubles as a UI smoke:
 searching `sponges` must reduce the list to the one matching item.
+
+#### The sidebar panel
+
+```bash
+node screenshot.mjs --path /haventory --element haventory-panel --out panel.png
+```
+
+`--element` names the root the run waits for and scopes `--search`/`--swipe` to; it
+defaults to `haventory-card`. The sidebar panel is a **different custom element** —
+`/haventory` renders `<haventory-panel>` and no card at all — so shooting it without
+`--element` only ever times out. Both flags are needed together; the script says which
+roots exist when the wait times out. From Git Bash, prefix the command with
+`MSYS_NO_PATHCONV=1` — `--path /haventory` is exactly the leading-slash value the
+path-conversion gotcha below mangles.
 
 #### Mobile view + touch/swipe
 
@@ -228,7 +243,7 @@ run either passes or says why not. All are read-only except `lifecycle_probe.py`
 | harness | what it proves |
 |---|---|
 | `rl_banner.mjs` | the card's rate-limit degraded-banner lifecycle, with the WS frames that caused each state |
-| `visual_pass.mjs` | every card surface still opens, at desktop and mobile widths |
+| `visual_pass.mjs` | every card surface still opens, at desktop and mobile widths, and every panel surface on `/haventory` |
 | `import_policies.mjs` | the import sheet describes the conflict policy the backend actually applied |
 | `log_sweep.py` | the container log obeys the error taxonomy's severity policy |
 | `lifecycle_probe.py` | resource cache-bust rewriting, schema-downgrade refusal, entry removal/re-add |
@@ -262,15 +277,19 @@ cd .claude/skills/run-haventory
 node visual_pass.mjs --out before     # then make the change, redeploy
 node visual_pass.mjs --out after      # and compare the two folders
 node visual_pass.mjs --only mobile --surfaces detail-sheet,filter-sheet
+node visual_pass.mjs --only panel     # just the sidebar panel on /haventory
 node visual_pass.mjs --list           # surface names
 ```
 
-Fourteen desktop surfaces and eight mobile ones, each a recipe of clicks against the card's
-own `data-testid`s. It is a DOM check as much as a screenshot run: a surface counts as
-captured only if its root element exists afterwards, so a renamed testid fails loudly
-instead of silently photographing the wrong screen. Exit is non-zero if any surface failed
-to open or the browser logged a console error. The narrow layout is a different component
-tree (sheets, not panels), which is why the two lists differ rather than sharing one.
+Fourteen desktop surfaces, eight mobile ones and ten on the sidebar panel, each a recipe of
+clicks against the card's own `data-testid`s. It is a DOM check as much as a screenshot
+run: a surface counts as captured only if its root element exists afterwards, so a renamed
+testid fails loudly instead of silently photographing the wrong screen. Exit is non-zero if
+any surface failed to open or the browser logged a console error. The narrow layout is a
+different component tree (sheets, not panels), which is why the two card lists differ rather
+than sharing one; the panel pass runs against `haventory-panel` on `/haventory` and needs no
+`wide` dashboard, since HA gives a panel the whole content area. Files are prefixed `d-`,
+`m-` and `p-`.
 
 ### Import policy cross-check
 
