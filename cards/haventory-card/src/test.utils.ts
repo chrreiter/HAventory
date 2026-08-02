@@ -681,9 +681,27 @@ function applyMockSort(list: Item[], rawSort: unknown): Item[] {
   });
 }
 
+/**
+ * Fixture stamps are fixed rather than "now".
+ *
+ * The default item order is `updated_at` descending with an id-ascending
+ * tie-break, so two wall-clock fixtures order by id only while both stamps land
+ * inside the same millisecond, and by construction order when they straddle
+ * one — the same list, two orders, decided by how busy the machine is. A
+ * constant makes every default fixture tie, so the tie-break always decides. A
+ * test that needs a distinct stamp passes one; the mock backend still stamps
+ * its own mutations from the clock, so a mutated item still sorts above these.
+ */
+const FIXTURE_TS = '2026-01-01T00:00:00.000Z';
+
+/** Counts anonymous fixtures, which the clock cannot number uniquely: two
+ * `makeItem()` calls in one millisecond used to share an id. Zero-padded so
+ * lexical order — what the id tie-break compares — follows creation order. */
+let anonymousItems = 0;
+
 export function makeItem(partial?: Partial<Item>): Item {
-  const id = partial?.id ?? `${Date.now()}`;
-  const now = new Date().toISOString();
+  const id = partial?.id ?? `fixture-item-${String((anonymousItems += 1)).padStart(4, '0')}`;
+  const now = FIXTURE_TS;
   return {
     id: String(id),
     name: partial?.name ?? 'Item',
