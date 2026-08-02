@@ -1010,7 +1010,7 @@ async def cmd_races() -> None:
             )["result"]
             item_versions[it["id"]] = it["version"]
         first_id = next(iter(item_versions))
-        stale_v = item_versions[first_id]
+        held_v = item_versions[first_id]
 
         # rename the location on conn A
         ren = await a.call(
@@ -1018,11 +1018,11 @@ async def cmd_races() -> None:
         )
         print(f"  rename success={ren.get('success')}")
 
-        # conn B updates an item with the now-stale expected_version
+        # conn B updates an item with the version it read before the rename
         upd = await b.call(
             "haventory/item/update",
             item_id=first_id,
-            expected_version=stale_v,
+            expected_version=held_v,
             description="post-rename",
         )
         code = upd.get("error", {}).get("code") if not upd.get("success") else "SUCCESS"
