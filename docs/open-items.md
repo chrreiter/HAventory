@@ -235,6 +235,23 @@ non-blocking).
 > - **The last two PRs' own follow-ups recorded** as items **77** and **78**. Both are
 >   post-v1.0: neither has been observed failing, and both are S if one ever does.
 
+> **Item 57** (a HACS upgrade never deletes files inside the integration directory) is
+> resolved. Half of it was a measurement, and it came back clean: the `haventory.zip` assets
+> published for `v0.1.0` and `v0.1.1` carry the same eighteen members, and every one of them
+> still exists on `main` — nothing shipped has been dropped or renamed yet, so no install is
+> carrying a leftover today. The other half is what makes the first release that *does* drop
+> one safe: `stale_files.py` holds `RETIRED_PATHS`, an explicit — and, per that measurement,
+> currently empty — list of the relative paths earlier releases shipped and this one does
+> not, which `async_setup_entry` sweeps before it serves anything. Executor-offloaded, files
+> only, tolerant of absence, and refusing any entry that resolves outside the integration
+> directory, because the sweep deletes from a directory sitting in the operator's config
+> tree. Two guard tests keep the list honest: no entry may name a file this release still
+> ships (that would delete it from every install that upgrades), and every entry must be a
+> relative POSIX path the sweep will actually accept, so a typo cannot sit there as a silent
+> no-op. The rule that fills the list lives in `CONTRIBUTING.md` — a PR deleting or renaming
+> a file inside `custom_components/haventory/` appends its old path in the same PR. Its rows
+> are removed from both tables below.
+
 ---
 
 ## Release staging
@@ -293,7 +310,6 @@ have a companion plan doc:
 | 69 | screenshot harness reaches the panel | `v0.2.0` | prompt |
 | 34 | filter-chip pressed state (a11y) | `v0.2.0` | prompt |
 | 43 | WS refuses after entry removal | `v0.2.0` | prompt |
-| 57 | stale-file sweep for HACS upgrades | `v0.2.0` | prompt |
 | 23 | rename must not bump subtree versions | `v0.2.0` | [`item23_rename_version_plan.md`](item23_rename_version_plan.md) |
 | 46 | effective-area preview in the editor | `v0.2.0` | [`item46_area_preview_plan.md`](item46_area_preview_plan.md) |
 | 79 | execute the validation run (groups A–J, ENV-A/B/C/D) | against `v0.2.0`; fixes → `0.2.x` | prompt (program: [`release_testing_plan.md`](release_testing_plan.md)) |
@@ -349,7 +365,6 @@ Ordered by impact. Item 4 moved to the release-stage table below, where its rema
 | 46 | **Area propagation is surprising at the point of use — the effective-area preview from item 37.** Choosing the relabeled default option (#126) on a nested location does more than "stop inheriting": `Repository.update_location` runs `_propagate_area_to_root(key, None)`, clearing the area from the whole tree, and picking an explicit area moves the assignment to the tree root — nothing in the dialog warns about either. Item 37's live-preview idea lands here, with its recorded caution: an honest preview of the non-default options is a whole-tree effect and worth designing deliberately. The mechanics are no longer in the way — item 38's `effectiveAreaIdForLocation` (`ui/area.ts`) is the walk-up-to-root the dialog lacked, over the flat location cache it already holds, so neither a `location/tree` contract change nor new plumbing is needed; what is left is deciding what the dialog should say. Cosmetic while there: with no HA areas the dropdown renders a one-entry select. | item 37 + PR #126 follow-ups | Low–Med | M |
 | 43 | **The WS API keeps answering — and writing the kept store — after config-entry removal, until restart.** `async_remove_entry` (#121) removes the Lovelace resource but leaves `hass.data[DOMAIN]["store"]`/`["repository"]` in place, and HA has no way to unregister WS commands, so an open dashboard can keep mutating the inventory after the integration is removed; a restart finishes the teardown. Decide whether handlers should refuse once the entry is gone. Promoted to pre-v1.0 (2026-08-02): removing an integration and finding it still writing is a first-impression bug once strangers are installing it. | PR #121 follow-up | Low–Med | S–M |
 | 23 | **Location rename bumps every subtree item's `version`** (denormalized `location_path` rewrite), so a client holding a stale `expected_version` for an unrelated field gets a spurious `conflict`. Indexes stay consistent — it's a UX surprise, not corruption. A path-only rewrite need not bump the optimistic-concurrency version. | WP4 stress test | Low | M |
-| 57 | **A HACS upgrade never deletes files inside the integration directory.** With `zip_release`, HACS backs up the previous install and then runs `zipfile.extractall` straight over `<config>/custom_components/haventory/` without clearing it first (HACS `repositories/base.py`), so any file a newer release deletes or renames survives every user's upgrade; the dev container shows the same leftover class because `docker cp` also merges rather than replaces. Inert until a release actually removes a module or renames the card bundle — from that release on, either sweep the known stale paths at setup or call the leftover out in the release notes. `scripts/check_release_zip.py` cannot catch this: it validates the asset's layout, not the install directory's history. | PR #148 review | Low (upgrade hygiene) | S |
 
 ### Release-stage tasks (executed in staging order, not by impact)
 

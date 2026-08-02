@@ -92,31 +92,6 @@ of item 51's stub-only paths, so note in the PR body that it closes the
 async_remove_entry third of item 51.
 ```
 
-### Item 57
-
-**Sweep stale files left behind by HACS upgrades.**
-
-```text
-You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-docs/open-items.md item 57 is the spec. HACS zip_release upgrades extract over
-<config>/custom_components/haventory/ without clearing it, so any file a release
-deletes or renames survives every user's upgrade forever.
-
-1. Determine whether any file shipped in v0.1.0/v0.1.1's haventory.zip no longer exists
-   on current main (compare the release assets' file lists against the tree — the
-   release workflow builds the zip, scripts/check_release_zip.py knows the layout).
-2. Implement the sweep: at setup, remove known-stale paths inside the integration
-   directory from an explicit allowlist of retired relative paths (never a wildcard —
-   an operator's own files must survive). Executor-offloaded file I/O, tolerant of
-   absence, logged at DEBUG.
-3. Seed the allowlist with whatever (1) found; leave a clearly-marked list to append to
-   in future releases that delete files.
-
-TDD offline: stale path present → removed on setup; absent → no-op; a path NOT on the
-list survives. Note in the PR body: from now on, any PR deleting a shipped integration
-file must add it to the sweep list (one CONTRIBUTING sentence).
-```
-
 ### Item 23
 
 **Location rename must not bump subtree item versions.** Plan:
