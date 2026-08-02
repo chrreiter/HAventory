@@ -158,6 +158,12 @@ Threading is by property, outward from the two containers that hold `areasCache`
 it to its three trees. Resolution happens in the component that renders — a `find` over a
 handful of areas per render, not memoized.
 
+`areasCache` is kept current for as long as the card is mounted. Areas are Home
+Assistant's, so no `haventory/subscribe` topic reports a rename or a deletion; the store
+subscribes to HA's own `area_registry_updated` event (`WSClient.subscribeAreaRegistry`)
+and refetches the list, coalescing a burst into one call the way the location tree does.
+A refused subscription is swallowed — the card keeps the areas it already fetched.
+
 ### Location trees group by area
 
 `hv-location-tree` partitions the roots it is handed with `groupRootsByArea`
@@ -328,7 +334,7 @@ Any other key in that record is ignored, so an older or newer payload never brea
 
 **Startup** — `hass` set → `new Store(hass)` → `init()` warms stats, health, areas, tree,
 flat locations, distinct values and version in parallel → `listItems(true)` → subscribe to
-items / locations / stats.
+items / locations / stats, and to HA's `area_registry_updated`.
 
 **A user action** — container calls the store → store applies the change optimistically and
 notifies → container re-renders → WS resolves → store applies the server's copy (or rolls

@@ -49,6 +49,12 @@ export interface MockHass extends HassLike {
   __calls: string[];
   /** Every subscribed topic seen so far, in order — refused attempts included. */
   __subscribeCalls: string[];
+  /** Deliver a Home Assistant core event to whoever subscribed to it. */
+  __emitHaEvent(eventType: string, data?: Record<string, unknown>): void;
+  /** Open core-event subscriptions for `eventType` — 0 once a store disposes. */
+  __haEventSubscriberCount(eventType: string): number;
+  /** Replace what `haventory/areas/list` reports, as an HA area edit would. */
+  __setAreas(areas: AreaRef[]): void;
 }
 
 export function makeMockHass(initial?: MockConfig): MockHass {
@@ -56,6 +62,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
   let locations: Location[] = initial?.locations ? [...initial.locations] : [];
   let conflictOnUpdate = !!initial?.conflictOnUpdate;
   const cardTitle = initial?.cardTitle ?? 'HAventory';
+  let areas: AreaRef[] = initial?.areas ? [...initial.areas] : [];
   let healthOverride: HealthPatch | null = null;
   let rateLimitRemaining = 0;
   let failRemaining = 0;
@@ -63,6 +70,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
   let subscribeError: unknown | null = null;
   let subscribeFailRemaining = 0;
   const subs: Record<string, SubCb[]> = {};
+  const haEventSubs: Record<string, SubCb[]> = {};
   const calls: string[] = [];
   const subscribeCalls: string[] = [];
 
@@ -135,7 +143,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           return { card_title: cardTitle } as unknown as T;
         }
         case 'haventory/areas/list': {
-          return { areas: initial?.areas ?? [] } as unknown as T;
+          return { areas } as unknown as T;
         }
         case 'haventory/export': {
           const doc: ExportDocument = {
@@ -519,6 +527,17 @@ export function makeMockHass(initial?: MockConfig): MockHass {
     },
     connection: {
       subscribeMessage(cb: SubCb, msg: Record<string, unknown>) {
+        // Home Assistant's own event bus, not a `haventory/subscribe` topic:
+        // core events are neither billed by the rate limiter nor part of a
+        // subscribe round, so they stay out of `__subscribeCalls` too.
+        if (String(msg.type || '') === 'subscribe_events') {
+          const eventType = String((msg as any).event_type || '');
+          haEventSubs[eventType] ||= [];
+          haEventSubs[eventType].push(cb);
+          return () => {
+            haEventSubs[eventType] = (haEventSubs[eventType] || []).filter((x) => x !== cb);
+          };
+        }
         const topic = String((msg as any).topic || '');
         subscribeCalls.push(topic);
         if (subscribeFailRemaining > 0) {
@@ -540,6 +559,14 @@ export function makeMockHass(initial?: MockConfig): MockHass {
       const event = { domain: 'haventory', topic, action, ts: new Date().toISOString(), ...payload } as AnyEventPayload;
       callbacks.forEach((cb) => cb(event));
     },
+    __emitHaEvent(eventType: string, data: Record<string, unknown> = {}) {
+      const event = { event_type: eventType, data } as unknown as AnyEventPayload;
+      (haEventSubs[eventType] || []).forEach((cb) => cb(event));
+    },
+    __haEventSubscriberCount(eventType: string) {
+      return (haEventSubs[eventType] || []).length;
+    },
+    __setAreas(next: AreaRef[]) { areas = [...next]; },
     __setConflict(on: boolean) { conflictOnUpdate = on; },
     __setItems(it: Item[]) { items = [...it]; },
     __setLocations(locs: Location[]) { locations = [...locs]; },
