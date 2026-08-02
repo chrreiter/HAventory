@@ -245,9 +245,10 @@ non-blocking).
 > rows nobody touched. The card was never the delivery channel for this: `location/update`
 > broadcasts on the `locations` topic only, and the store answers `renamed` / `moved` with a
 > tree + flat refetch and a full item reload. Contract stated in `data_shapes.md` and
-> `backend_api_contract.md`, invariant sharpened in `CLAUDE.md`; the stress harness's RACE 1
-> and release-test F5 now assert the new rule instead of the old hazard. Its row is removed
-> below and its prompt out of [`v1_prompts.md`](v1_prompts.md).
+> `backend_api_contract.md`, invariant sharpened in `CLAUDE.md` and `README.md`; the
+> `test-haventory` harness's RACE 1 and release-test F5 now assert the new rule instead of
+> the old hazard. Its row is removed below and its prompt out of
+> [`v1_prompts.md`](v1_prompts.md).
 
 ---
 
