@@ -26,7 +26,7 @@ Notes:
 - `validation_error`: Invalid input or invariant violation
 - `not_found`: Referenced entity does not exist
 - `conflict`: Version mismatch on optimistic concurrency
-- `storage_error`: Persistence or setup issue
+- `storage_error`: Persistence or setup issue, including a command that arrives after the config entry was removed — see "After removal"
 - `rate_limited`: Command rejected by the (opt-in) WebSocket rate limiter — see "Rate limiting"
 - `unknown_error`: Fallback for unexpected exceptions
 
@@ -39,6 +39,17 @@ Guarantees (every `haventory/*` command is wrapped by the same guard):
 - In `haventory/items/bulk`, a failing operation (including an unexpectedly malformed **payload**) fails only its own per-op result; the remaining operations still run and successful ones persist. Note the batch **envelope** is validated first: a structurally malformed operation *entry* (non-object entry, missing/invalid `op_id`, non-string `kind`, non-object `payload`) cannot be reported per-op and rejects the whole command with `validation_error`.
 
 Transport-level errors produced by Home Assistant itself (before a handler runs) are outside this taxonomy and can also be observed by clients: `invalid_format` (request failed the command's voluptuous schema) and `unknown_command` (integration not loaded or unknown `type`).
+
+### After removal
+
+Home Assistant has no API for unregistering a WebSocket command, so every `haventory/*` command stays dispatchable until the next restart — including after the config entry has been removed. Removal drops the loaded runtime (repository, store, limiter, subscriptions), and the guard turns that into a refusal:
+
+- **Every command** answers `storage_error`, `ping`, `version` and `config` included: they read no inventory, but a half-answering API for a removed integration is worse than none.
+- **Nothing is written.** A mutation is refused before it reaches the repository, so the kept store file stops changing at the moment of removal.
+- **Live subscriptions stop delivering** and are not torn down message-by-message; a client sees its next command refused.
+- **Re-adding the integration restores everything** — the API and the inventory, which removal deliberately leaves on disk (README → "Removing HAventory").
+
+Clients cannot tell this apart from any other `storage_error` by code alone; treating it as "HAventory is unavailable, stop retrying and tell the user" is the intended handling either way.
 
 ### Rate limiting
 

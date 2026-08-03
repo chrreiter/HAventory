@@ -49,3 +49,114 @@ export function effectiveAreaIdForLocation(
   }
   return null;
 }
+
+/** What saving the location editor's area select would actually do. */
+export interface AreaChangePreview {
+  /**
+   * `none` — the backend compares the selection against the location's own
+   * stored area and does nothing when they match. `clear-tree` and
+   * `assign-root` both rewrite every location in the tree.
+   */
+  kind: 'none' | 'clear-tree' | 'assign-root';
+  /** Where the area is stored afterwards; null for a tree with no resolvable root. */
+  rootId: string | null;
+  rootName: string | null;
+  /** Locations the save touches, the one being created included. */
+  treeSize: number;
+  /** The area the edited location resolves to once saved. */
+  effectiveAreaId: string | null;
+  /** Whether the edited location is itself the root holding the area. */
+  editsRoot: boolean;
+}
+
+/** The location the editor is about to save, as its fields stand in the dialog. */
+export interface EditedLocation {
+  /** null while creating one, which stores no area yet. */
+  id: string | null;
+  /** The parent as picked, not as recorded: the editor saves both halves in one call. */
+  parentId: string | null;
+}
+
+/**
+ * The root of `start`'s tree, or null when the chain cannot be walked.
+ *
+ * Same reasoning as the area walk above: more steps than there are locations
+ * means the parent chain cycles.
+ */
+function rootIdFor(parentOf: ReadonlyMap<string, string | null>, start: string): string | null {
+  let cursor: string | null = start;
+  let root: string | null = null;
+  for (let step = 0; cursor !== null && step <= parentOf.size; step += 1) {
+    if (!parentOf.has(cursor)) return null;
+    root = cursor;
+    cursor = parentOf.get(cursor) ?? null;
+  }
+  return cursor === null ? root : null;
+}
+
+/**
+ * Locations under `rootId`, itself included. Walks down behind a visited set, so
+ * a cycle in the data cannot make it count a node twice or loop.
+ */
+function subtreeSize(childrenOf: ReadonlyMap<string | null, string[]>, rootId: string): number {
+  const seen = new Set<string>([rootId]);
+  const queue = [rootId];
+  for (let i = 0; i < queue.length; i += 1) {
+    for (const child of childrenOf.get(queue[i]) ?? []) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      queue.push(child);
+    }
+  }
+  return seen.size;
+}
+
+/**
+ * What the location editor's area select does on save.
+ *
+ * The select reads like a per-location field and is not one: an area belongs to
+ * a whole location tree. Assigning one moves it to the tree's root and clears it
+ * from every node below; clearing one empties the tree. Both consequences reach
+ * locations that are nowhere on screen, which is what this describes.
+ */
+export function areaChangePreview(
+  locations: readonly Location[],
+  edited: EditedLocation,
+  selectedAreaId: string | null,
+): AreaChangePreview {
+  const byId = new Map(locations.map((l) => [l.id, l]));
+  const parentOf = new Map<string, string | null>(locations.map((l) => [l.id, l.parent_id]));
+  if (edited.id !== null) parentOf.set(edited.id, edited.parentId);
+
+  const storedAreaId = edited.id !== null ? (byId.get(edited.id)?.area_id ?? null) : null;
+  const kind =
+    selectedAreaId === storedAreaId ? 'none' : selectedAreaId === null ? 'clear-tree' : 'assign-root';
+
+  const childrenOf = new Map<string | null, string[]>();
+  for (const [id, parentId] of parentOf) {
+    const siblings = childrenOf.get(parentId);
+    if (siblings) siblings.push(id);
+    else childrenOf.set(parentId, [id]);
+  }
+
+  // A location being created has no id to walk from, so its parent anchors the
+  // tree — and a top-level one anchors nothing, standing alone until it is saved.
+  const anchor = edited.id ?? edited.parentId;
+  const rootId = anchor === null ? null : rootIdFor(parentOf, anchor);
+  const pending = edited.id === null ? 1 : 0;
+
+  return {
+    kind,
+    rootId,
+    rootName: rootId === null ? null : (byId.get(rootId)?.name ?? null),
+    treeSize: rootId === null ? 1 : subtreeSize(childrenOf, rootId) + pending,
+    // Clearing empties the tree; anything else leaves the location resolving to
+    // the selection, or — with nothing selected and nothing to change — to
+    // whatever the tree it is saved into already has.
+    effectiveAreaId:
+      kind === 'clear-tree'
+        ? null
+        : (selectedAreaId ?? effectiveAreaIdForLocation(locations, edited.parentId)),
+    editsRoot: edited.id !== null && rootId === edited.id,
+  };
+}

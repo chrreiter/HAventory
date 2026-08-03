@@ -7,6 +7,9 @@ import { counted } from '../ui/plural';
 import { closestMatch } from '../ui/fuzzy';
 import { describeRewrite, filterForValue, rewriteOps } from '../ui/value-rewrite';
 import type { ValueKind } from '../ui/value-rewrite';
+import { areaChangePreview, areaNameById } from '../ui/area';
+import type { AreaChangePreview } from '../ui/area';
+import { renderAreaChip } from '../ui/location-path';
 import { countLocations } from '../store/location-tree';
 import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
@@ -270,6 +273,11 @@ export class HVOrganizeDialog extends LitElement {
         display: grid;
         gap: 4px;
         min-width: 0;
+        /* The area cell carries a preview line the name cell has no counterpart
+           for, so the two are not the same height; packed to the start, the
+           shorter one's field stays beside the other's instead of sinking to the
+           bottom of the row. */
+        align-content: start;
       }
       .cell.wide {
         grid-column: span 2;
@@ -743,6 +751,42 @@ export class HVOrganizeDialog extends LitElement {
   }
 
   // ---------- Render ----------
+  /**
+   * The consequence of the area select, spelled out before Save.
+   *
+   * An area belongs to a location tree, not to a location: assigning one moves it
+   * to the tree's root and clears every node below, and clearing one empties the
+   * tree. Both reach locations the editor does not show.
+   */
+  private _renderAreaPreview(preview: AreaChangePreview) {
+    const areas = this.st?.areasCache?.areas ?? [];
+    const chip = renderAreaChip(areaNameById(areas, preview.effectiveAreaId));
+    const wholeTree = preview.treeSize > 1 && preview.rootName !== null;
+    const size = counted(preview.treeSize, 'location');
+
+    let line;
+    if (preview.kind === 'assign-root') {
+      line = wholeTree
+        ? html`Assigns ${chip} to the whole ${preview.rootName} tree, ${size}.${preview.editsRoot
+              ? ''
+              : ` The area is stored on ${preview.rootName}, not on this one.`}`
+        : html`Assigns ${chip} to this location.`;
+    } else if (preview.kind === 'clear-tree') {
+      line = wholeTree
+        ? html`Removes the area from the whole ${preview.rootName} tree, ${size}.`
+        : html`Removes the area from this location.`;
+    } else if (this._locArea === null && preview.effectiveAreaId !== null) {
+      // Nothing to warn about — the save is a no-op — but a location that stores no
+      // area of its own still resolves to one, and the empty option it sits on says
+      // only where that comes from, never which area it is.
+      line = html`Inherits ${chip} from its location tree.`;
+    } else {
+      return null;
+    }
+
+    return html`<span class="note" data-testid="location-area-preview">${line}</span>`;
+  }
+
   private _renderLocationEditor(nodeId: string | 'new') {
     const tree = this.st?.locationTreeCache ?? [];
     const node = nodeId === 'new' ? null : this._findNode(tree, nodeId);
@@ -753,10 +797,15 @@ export class HVOrganizeDialog extends LitElement {
     // — naming the parent here would point at the wrong node. A top-level location has
     // nothing above it to resolve from, so for it the empty value just means no area.
     const areaDefaultLabel = parent ? 'Inherit from location tree' : 'No area';
+    const preview = areaChangePreview(
+      this.st?.locationsFlatCache ?? [],
+      { id: nodeId === 'new' ? null : nodeId, parentId: this._locParent },
+      this._locArea,
+    );
 
     return html`<div class="expander" data-testid="location-editor">
       <div class="grid2">
-        <div class="cell">
+        <div class="cell ${areas.length ? '' : 'wide'}">
           <label class="hv-label" for="org-loc-name">Name</label>
           <input
             id="org-loc-name"
@@ -768,22 +817,29 @@ export class HVOrganizeDialog extends LitElement {
             }}
           />
         </div>
-        <div class="cell">
-          <label class="hv-label" for="org-loc-area">Area (HA)</label>
-          <select
-            id="org-loc-area"
-            class="control"
-            data-testid="location-area"
-            @change=${(e: Event) => {
-              this._locArea = (e.target as HTMLSelectElement).value || null;
-            }}
-          >
-            <option value="" ?selected=${!this._locArea}>${areaDefaultLabel}</option>
-            ${areas.map(
-              (a) => html`<option value=${a.id} ?selected=${this._locArea === a.id}>${a.name}</option>`,
-            )}
-          </select>
-        </div>
+        ${
+          // An inventory whose Home Assistant defines no areas has nothing to pick
+          // from, and the select would offer its own empty option alone.
+          areas.length
+            ? html`<div class="cell">
+                <label class="hv-label" for="org-loc-area">Area (HA)</label>
+                <select
+                  id="org-loc-area"
+                  class="control"
+                  data-testid="location-area"
+                  @change=${(e: Event) => {
+                    this._locArea = (e.target as HTMLSelectElement).value || null;
+                  }}
+                >
+                  <option value="" ?selected=${!this._locArea}>${areaDefaultLabel}</option>
+                  ${areas.map(
+                    (a) => html`<option value=${a.id} ?selected=${this._locArea === a.id}>${a.name}</option>`,
+                  )}
+                </select>
+                ${this._renderAreaPreview(preview)}
+              </div>`
+            : null
+        }
         <div class="cell wide">
           <span class="hv-label">
             Parent location

@@ -16,7 +16,7 @@ repos:
         args:
           # "batery" is deliberate: it is the typo'd tag the organize dialog's
           # merge suggestion is tested against. "afterall" is vitest's teardown
-          # hook, named in prose in docs/open-items.md.
+          # hook `afterAll`, which the tracker names.
           - --ignore-words-list=hass,batery,afterall
         exclude: |
           (?x)^(
