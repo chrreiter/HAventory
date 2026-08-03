@@ -254,13 +254,24 @@ export class HVLocationTree extends LitElement {
   @property({ type: Number }) matchingTotalCount: number | null = null;
   @property({ type: Boolean }) showCounts = false;
   /**
-   * Let an area header be picked, filtering the list to that area. Only a
-   * browsing tree sets this: a picker assigns a `location_id`, and an area is
-   * not one.
+   * Let an area header be picked, emitting `select-area` instead of `select`.
+   *
+   * What picking one means belongs to the caller: browsing filters the list to
+   * the area, while the parent picker files the location at the top level of it.
+   * Trees that hand back a `location_id` — the item editor's, the merge target —
+   * leave this off, because an area is not a location and holds no items itself.
    */
   @property({ type: Boolean }) areaSelectable = false;
-  /** The area the list is currently filtered to, for the header's selected state. */
+  /** The area currently chosen, for the header's selected state. */
   @property({ type: String }) selectedAreaId: string | null = null;
+  /**
+   * Band every area Home Assistant knows, not only the ones already holding a
+   * location tree. An area with nothing in it is still somewhere a tree can be
+   * filed, which is the whole point of picking one — so the parent picker sets
+   * this and browsing does not. A filter suspends it: an empty band matches
+   * nothing and would only stand between the user and the rows that do.
+   */
+  @property({ type: Boolean }) showEmptyAreas = false;
   /** Reveal the rename/merge/delete affordances on hover. Only the organize dialog sets this. */
   @property({ type: Boolean }) manage = false;
   /**
@@ -532,6 +543,7 @@ export class HVLocationTree extends LitElement {
     roots: LocationTreeNode[],
     open: boolean,
     key: string,
+    empty: boolean,
   ) {
     const pickable = this.areaSelectable && group !== null;
     const selected =
@@ -544,24 +556,28 @@ export class HVLocationTree extends LitElement {
       class="row area-head ${selected ? 'selected' : ''} ${pickable ? 'selectable' : ''}"
       role="treeitem"
       aria-selected=${String(selected)}
-      aria-expanded=${String(open)}
-      aria-controls=${areaRootsId(key)}
+      aria-expanded=${ifDefined(empty ? undefined : String(open))}
+      aria-controls=${ifDefined(empty ? undefined : areaRootsId(key))}
       aria-level="1"
       data-testid="tree-area-head"
       data-area=${group?.id ?? NO_AREA_KEY}
     >
-      <button
-        class="twisty"
-        data-testid="tree-area-twisty"
-        data-area=${group?.id ?? NO_AREA_KEY}
-        aria-label=${open ? `Collapse ${group?.name ?? 'No area'}` : `Expand ${group?.name ?? 'No area'}`}
-        @click=${(e: Event) => {
-          e.stopPropagation();
-          this._toggleArea(key);
-        }}
-      >
-        ${icon(open ? 'chevronDown' : 'chevronRight', 17)}
-      </button>
+      ${empty
+        ? html`<span class="twisty placeholder">${icon('chevronRight', 17)}</span>`
+        : html`<button
+            class="twisty"
+            data-testid="tree-area-twisty"
+            data-area=${group?.id ?? NO_AREA_KEY}
+            aria-label=${open
+              ? `Collapse ${group?.name ?? 'No area'}`
+              : `Expand ${group?.name ?? 'No area'}`}
+            @click=${(e: Event) => {
+              e.stopPropagation();
+              this._toggleArea(key);
+            }}
+          >
+            ${icon(open ? 'chevronDown' : 'chevronRight', 17)}
+          </button>`}
       ${pickable
         ? html`<button
             class="area-name"
@@ -579,14 +595,19 @@ export class HVLocationTree extends LitElement {
   /** One group's header and, while it is open, the roots filed under it. */
   private _renderAreaSection(group: AreaGroup | null, roots: LocationTreeNode[], filtering: boolean) {
     const visible = roots.filter((r) => this._visible(r));
-    if (!visible.length) return null;
+    // An area holding nothing is still a target where areas are pickable; with
+    // no roots under it there is nothing to disclose, so it heads no container.
+    const empty = visible.length === 0;
+    if (empty && !(this.showEmptyAreas && group !== null && !filtering)) return null;
     const key = group ? `area:${group.id}` : NO_AREA_KEY;
-    const open = filtering || !this._collapsedAreas.has(key);
+    const open = !empty && (filtering || !this._collapsedAreas.has(key));
     return html`<div>
-      ${this._renderAreaHeader(group, roots, open, key)}
-      <div id=${areaRootsId(key)} ?hidden=${!open}>
-        ${open ? visible.map((r) => this._renderNode(r, 1, false)) : null}
-      </div>
+      ${this._renderAreaHeader(group, roots, open, key, empty)}
+      ${empty
+        ? null
+        : html`<div id=${areaRootsId(key)} ?hidden=${!open}>
+            ${open ? visible.map((r) => this._renderNode(r, 1, false)) : null}
+          </div>`}
     </div>`;
   }
 
@@ -602,8 +623,10 @@ export class HVLocationTree extends LitElement {
   }
 
   render() {
-    const { areaGroups, ungrouped } = groupRootsByArea(this.nodes, this.areas);
     const filtering = this.filterText.trim().length > 0;
+    const { areaGroups, ungrouped } = groupRootsByArea(this.nodes, this.areas, {
+      includeEmptyAreas: this.showEmptyAreas && !filtering,
+    });
     // With no area anywhere there is nothing to group by, and a lone "No area"
     // band over the whole tree would name a distinction that does not exist.
     const rendered = areaGroups.length

@@ -16,7 +16,14 @@ import { DialogFocus } from '../ui/dialog-focus';
 import { describeFailure } from './hv-bulk-bar';
 import { makeBulkOp } from '../store/store';
 import type { Store } from '../store/store';
-import type { BulkFailure, DistinctValue, Item, LocationTreeNode, StoreState } from '../store/types';
+import type {
+  AreaRef,
+  BulkFailure,
+  DistinctValue,
+  Item,
+  LocationTreeNode,
+  StoreState,
+} from '../store/types';
 import './hv-confirm';
 import './hv-location-tree';
 
@@ -465,6 +472,13 @@ export class HVOrganizeDialog extends LitElement {
     this._dialogFocus.sync(this.open, () =>
       this.renderRoot.querySelector<HTMLElement>('[data-testid="organize-dialog"]'),
     );
+    // A native select stops following its options' `selected` attributes once it
+    // has been touched, so an area chosen in the parent tree is written to the
+    // live element rather than left to the bindings to express.
+    const areaSelect = this.renderRoot.querySelector<HTMLSelectElement>(
+      '[data-testid="location-area"]',
+    );
+    if (areaSelect) areaSelect.value = this._locArea ?? '';
   }
 
   protected willUpdate(changed: Map<string, unknown>) {
@@ -797,6 +811,19 @@ export class HVOrganizeDialog extends LitElement {
     return html`<span class="note" data-testid="location-area-preview">${line}</span>`;
   }
 
+  /**
+   * What the parent button reads.
+   *
+   * A top-level location names the area it is filed under as well: the picker
+   * sets both, and the button would otherwise look untouched after an area was
+   * chosen in it.
+   */
+  private _parentLabel(parent: LocationTreeNode | null, areas: readonly AreaRef[]): string {
+    if (parent) return parent.name;
+    const areaName = areaNameById(areas, this._locArea);
+    return areaName ? `Top level · ${areaName}` : 'Top level';
+  }
+
   private _renderLocationEditor(nodeId: string | 'new') {
     const tree = this.st?.locationTreeCache ?? [];
     const node = nodeId === 'new' ? null : this._findNode(tree, nodeId);
@@ -866,7 +893,7 @@ export class HVOrganizeDialog extends LitElement {
               this._locParentOpen = !this._locParentOpen;
             }}
           >
-            ${icon('mapMarker', 15)}<span class="value">${parent?.name ?? 'Top level'}</span>
+            ${icon('mapMarker', 15)}<span class="value">${this._parentLabel(parent, areas)}</span>
             ${icon('chevronDown', 15)}
           </button>
           <div class="tree-holder" id=${LOC_PARENT_TREE_ID} ?hidden=${!this._locParentOpen}>
@@ -874,12 +901,24 @@ export class HVOrganizeDialog extends LitElement {
               ? html`<hv-location-tree
                   data-testid="location-parent-tree"
                   .nodes=${tree}
-                  .areas=${this.st?.areasCache?.areas ?? []}
+                  .areas=${areas}
                   .selectedId=${this._locParent}
+                  .selectedAreaId=${this._locParent === null ? this._locArea : null}
                   .excludeSubtreeOf=${node?.id ?? null}
                   showAll
+                  allLabel="Top level"
+                  areaSelectable
+                  showEmptyAreas
                   @select=${(e: CustomEvent) => {
                     this._locParent = (e.detail as { locationId: string | null }).locationId;
+                    this._locParentOpen = false;
+                  }}
+                  @select-area=${(e: CustomEvent) => {
+                    // An area heads the top level rather than sitting in the
+                    // tree, so picking one is both halves of the move: out to
+                    // the top level, and into that area.
+                    this._locParent = null;
+                    this._locArea = (e.detail as { areaId: string }).areaId;
                     this._locParentOpen = false;
                   }}
                 ></hv-location-tree>`
@@ -991,7 +1030,14 @@ export class HVOrganizeDialog extends LitElement {
         ${target
           ? `${parts.join(' and ')} move to "${target.name}", then "${source.name}" is deleted.
              Items in sub-locations stay where they are; their paths just change.`
-          : 'Pick a location to continue.'}
+          : // An area heads the tree without being part of it and holds no items
+            // of its own, so it is the one row here that cannot take a merge.
+            // Editing the location is where a whole subtree moves into an area.
+            `Pick a location to continue.${
+              (this.st?.areasCache?.areas?.length ?? 0) > 0
+                ? ' Areas group location trees and hold no items themselves, so the contents need a location to go to — to move this one into an area instead, edit it and pick the area as its parent.'
+                : ''
+            }`}
       </span>
       <div class="actions">
         <span class="spacer"></span>

@@ -238,11 +238,17 @@ above their members, collapse like any node (a `_collapsedAreas` set, so absence
 open), sum their members' subtree counts, and stay visible while any member survives the
 text filter without matching it themselves.
 
-A header is never a location: it carries no id a picker could assign. Only the full-view
-sidebar sets `areaSelectable`, where pressing a header emits `select-area` and sets
-`filters.areaId` — a filter the item query already accepts, so the row does something real.
-In the editor, bulk-move and organize pickers the headers are inert labels that only
-collapse.
+A header is never a location: it carries no id a picker could assign, so `areaSelectable`
+makes it emit `select-area` rather than `select`, and what that means belongs to the host.
+The full-view sidebar sets `filters.areaId` from it — a filter the item query already
+accepts. The organize dialog's **parent** picker files the location at the top level of the
+area, which is both halves of moving a subtree between areas in one gesture; it also sets
+`showEmptyAreas`, so `groupRootsByArea` bands every area in the registry and not only the
+ones already holding a tree (an area you cannot reach until something is in it is no target
+at all). An empty band heads nothing, so it renders without a twisty and without
+`aria-expanded`/`aria-controls`, and a text filter suspends the empty bands entirely.
+Everywhere a `location_id` is what comes back — the item editor, bulk move, the merge
+target — headers stay inert labels that only collapse: an area holds no items itself.
 
 ### Container vs presentation
 
@@ -363,6 +369,10 @@ updated. Each definition carries a `tableSize` for the full-view table and — o
 backend can actually sort by it — a `sortField`. Category, location and tags have none, so
 their headers are not clickable: a header that looks interactive but does nothing is worse
 than a plain one.
+
+`DEFAULT_COLUMNS` is every key: a browser that has made no choice sees the whole record,
+and the picker is what thins it. The full set is wider than a phone and wider than many
+desktops, which `hv-data-table` answers by scrolling sideways rather than dropping columns.
 
 Preferences persist in `localStorage` under `haventory:columns:v1` as `{ expanded: [...] }`.
 Any other key in that record is ignored, so an older or newer payload never breaks the load.

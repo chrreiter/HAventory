@@ -502,7 +502,12 @@ throughout.
   you save it: an area belongs to a whole tree, so the line under the select names the tree
   root it will be stored on and how many locations that reaches — and on a location that
   merely inherits, it names the area it inherits. With no Home Assistant areas defined the
-  field is not shown at all.
+  field is not shown at all. The **Parent location** picker offers the areas alongside the
+  locations, including areas nothing is filed under yet: picking one moves the whole
+  subtree out to the top level *and* into that area, which is how a tree changes rooms.
+  The merge target picker offers locations only — an area heads the tree without being part
+  of it and holds no items itself, so a merge, which has to hand this location's items to
+  something, always names a location.
 - **Check-out** invites an optional due date (+7 / +31 / +90 / +X day suggestions) rather
   than silently checking out with none — the date is what makes overdue highlighting mean
   anything. "No due date" stays a first-class choice.

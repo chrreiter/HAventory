@@ -454,6 +454,38 @@ describe('hv-location-tree: area grouping', () => {
     expect(areaId).toBe('area-kitchen');
   });
 
+  // Filing a tree under an area is how it gets there, so an area that holds
+  // nothing yet has to be reachable — otherwise only areas already in use are.
+  it('bands an area holding nothing when the host files locations under areas', async () => {
+    const empty = [{ id: 'area-cellar', name: 'Cellar' }, ...AREAS];
+    const el = await mountAreas({ areas: empty, areaSelectable: true, showEmptyAreas: true });
+    expect(headNames(el)).toEqual(['Area: Cellar', 'Area: Garage', 'Area: Kitchen', 'No area']);
+
+    const cellar = heads(el)[0];
+    // Nothing under it to disclose: no twisty, and no container to point at.
+    expect(cellar.querySelector('[data-testid="tree-area-twisty"]')).toBeNull();
+    expect(cellar.getAttribute('aria-expanded')).toBeNull();
+    expect(cellar.getAttribute('aria-controls')).toBeNull();
+
+    let areaId: string | null = null;
+    el.addEventListener('select-area', (e) => {
+      areaId = (e as CustomEvent).detail.areaId;
+    });
+    (cellar.querySelector('[data-testid="tree-area-select"]') as HTMLButtonElement).click();
+    expect(areaId).toBe('area-cellar');
+  });
+
+  it('drops the empty bands while a filter is on, since none of them can match', async () => {
+    const empty = [{ id: 'area-cellar', name: 'Cellar' }, ...AREAS];
+    const el = await mountAreas({ areas: empty, showEmptyAreas: true, filterText: 'bench' });
+    expect(headNames(el)).toEqual(['Area: Garage']);
+  });
+
+  it('bands only the areas in use when the host is browsing', async () => {
+    const el = await mountAreas({ areas: [{ id: 'area-cellar', name: 'Cellar' }, ...AREAS] });
+    expect(headNames(el)).toEqual(['Area: Garage', 'Area: Kitchen', 'No area']);
+  });
+
   it('never offers the no-area tail as a filter — it is the absence of one', async () => {
     const el = await mountAreas({ areaSelectable: true });
     let fired = 0;

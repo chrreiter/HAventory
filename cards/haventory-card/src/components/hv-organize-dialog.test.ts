@@ -453,6 +453,75 @@ describe('hv-organize-dialog: locations', () => {
     });
   });
 
+  // An area heads the top level rather than sitting anywhere in the tree, so
+  // moving a subtree into one is both halves at once: out to the top level, and
+  // into that area. The picker is where both are said in one gesture.
+  describe('filing a subtree under an area', () => {
+    const tree = [loc('garage', 'Garage', null, 'area-garage'), loc('shelf-a', 'Shelf A', 'garage')];
+
+    async function openParentPicker() {
+      const ctx = await mount({ locations: tree });
+      const calls: { id: string; changes: Record<string, unknown> }[] = [];
+      const real = ctx.store.updateLocation.bind(ctx.store);
+      ctx.store.updateLocation = (id, changes) => {
+        calls.push({ id, changes: changes as Record<string, unknown> });
+        return real(id, changes);
+      };
+
+      const treeEl = q(ctx.sr, '[data-testid="organize-tree"]') as HTMLElement;
+      (
+        treeEl.shadowRoot?.querySelector(
+          '[data-testid="tree-row"][data-id="garage"] [data-testid="tree-twisty"]',
+        ) as HTMLButtonElement
+      ).click();
+      await settle(ctx.el);
+      (
+        treeEl.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="shelf-a"]') as HTMLButtonElement
+      ).click();
+      await settle(ctx.el);
+      (q(ctx.sr, '[data-testid="location-parent"]') as HTMLButtonElement).click();
+      await settle(ctx.el);
+      const picker = q(ctx.sr, '[data-testid="location-parent-tree"]') as HTMLElement;
+      return { ...ctx, calls, picker };
+    }
+
+    it('offers every area, including the one nothing is filed under yet', async () => {
+      const { picker } = await openParentPicker();
+      const offered = [
+        ...(picker.shadowRoot?.querySelectorAll('[data-testid="tree-area-select"]') ?? []),
+      ].map((b) => (b as HTMLElement).dataset.area);
+      expect(offered).toEqual(['area-garage', 'area-kitchen']);
+    });
+
+    it('moves the subtree to the top level of the area picked, in one save', async () => {
+      const { el, sr, picker, calls } = await openParentPicker();
+      (
+        picker.shadowRoot?.querySelector(
+          '[data-testid="tree-area-select"][data-area="area-kitchen"]',
+        ) as HTMLButtonElement
+      ).click();
+      await settle(el);
+
+      // Both halves of the move, on both controls that state them.
+      expect(q(sr, '[data-testid="location-parent"]')?.textContent).toContain('Top level · Kitchen');
+      expect((q(sr, '[data-testid="location-area"]') as HTMLSelectElement).value).toBe('area-kitchen');
+      expect(q(sr, '[data-testid="location-area-preview"]')?.textContent).toContain('Kitchen');
+
+      (q(sr, '[data-testid="location-save"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      expect(calls[0].changes.newParentId).toBeNull();
+      expect(calls[0].changes.areaId).toBe('area-kitchen');
+    });
+
+    it('calls the row that clears the parent what it does in a parent picker', async () => {
+      const { picker } = await openParentPicker();
+      expect(
+        picker.shadowRoot?.querySelector('[data-testid="tree-all"]')?.textContent?.trim(),
+      ).toContain('Top level');
+    });
+  });
+
   it('drops a failed save off the screen when the dialog is reopened', async () => {
     const { el, store, sr } = await mount({ locations });
     store.updateLocation = () => Promise.reject(new Error('Location is busy'));
@@ -560,6 +629,8 @@ describe('hv-organize-dialog: locations', () => {
     (tree.shadowRoot?.querySelector('[data-testid="tree-merge"][data-id="garage"]') as HTMLButtonElement).click();
     await settle(el);
     expect(q(sr, '[data-testid="merge-effect"]')?.textContent).toContain('Pick a location');
+    // The one row in that picker a merge cannot land on, and why.
+    expect(q(sr, '[data-testid="merge-effect"]')?.textContent).toContain('hold no items themselves');
 
     (q(sr, '[data-testid="merge-target"]') as HTMLButtonElement).click();
     await settle(el);
