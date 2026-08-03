@@ -129,7 +129,7 @@ container). Signatures are identical at both ends.
 - **Register on setup** (after `_register_frontend_module`), when the option is on
   and the bundle exists (missing bundle keeps the graceful DEBUG skip):
   `frontend_url_path="haventory"`, `webcomponent_name="haventory-panel"`,
-  `sidebar_title=<card title option>`, `sidebar_icon="mdi:package-variant-closed"`,
+  `sidebar_title=<card title option>`, `sidebar_icon="haventory:logo"`,
   `module_url=<card URL>`, `embed_iframe=False`, `trust_external=False`,
   `require_admin=False`, `config={"title": <card title option>}` (the panel element
   reads `panel.config.title` for its heading, mirroring `haventory/config` for the
@@ -235,7 +235,8 @@ the feature on. Includes the live verification pass.
 - Toggle **default on** — discoverability is the feature; opt-out is respected.
 - Sidebar title follows the existing **card title option** (falls back "HAventory"),
   so a user who renamed the card to "Pantry" sees "Pantry" in the sidebar.
-- Icon `mdi:package-variant-closed`; URL path `haventory`; `require_admin=False`.
+- Icon `haventory:logo` — the HAventory mark, registered as a custom icon set by the
+  card bundle; URL path `haventory`; `require_admin=False`.
 - Panel renders the **extended view**, not a page-sized card.
 - The panel offers the **full ⋮ menu** — organize, import and diagnostics included.
   Every surface `hv-full-view` can raise is owned by `host-surfaces.ts` and rendered
@@ -320,8 +321,7 @@ the feature on. Includes the live verification pass.
 > Scope:
 > 1. `const.py`: `CONF_SIDEBAR_PANEL_ENABLED = "sidebar_panel_enabled"`,
 >    `DEFAULT_SIDEBAR_PANEL_ENABLED = True`, `PANEL_URL_PATH = "haventory"`,
->    `PANEL_ELEMENT_NAME = "haventory-panel"`, `PANEL_ICON =
->    "mdi:package-variant-closed"`.
+>    `PANEL_ELEMENT_NAME = "haventory-panel"`, `PANEL_ICON = "haventory:logo"`.
 > 2. `__init__.py`: a `_async_apply_sidebar_panel(hass, entry)` helper that computes
 >    desired state (option on + bundle present) and converges to it:
 >    remove any existing `haventory` panel (`frontend.async_remove_panel`,

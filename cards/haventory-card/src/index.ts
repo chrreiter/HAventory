@@ -3,6 +3,7 @@ import type { HassLike } from './store/types';
 import { Store } from './store/store';
 import { resolveColorScheme } from './ui/theme';
 import { DEFAULT_CARD_TITLE } from './ui/card-title';
+import { registerBrandIcon } from './ui/brand-icon';
 import { defineCardElement } from './register';
 import './components/hv-card-shell';
 // The sidebar panel is a second element out of this one bundle, so importing it
@@ -127,6 +128,10 @@ export class HAventoryCard extends LitElement {
 }
 
 defineCardElement('haventory-card', HAventoryCard);
+
+// From the entry module, because the sidebar entry carries the mark on every
+// page — including the ones no card is on.
+registerBrandIcon();
 
 // Lovelace card picker metadata
 export function getStubConfig() {

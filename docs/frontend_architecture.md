@@ -265,6 +265,7 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 |---|---|
 | `tokens.ts` | Every design token as a `--hv-*` custom property, bound to the HA theme variable first with the mock hex as fallback, plus dark-mode and reduced-motion overrides. `base` adds the pill/icon-button/chip/input primitives. Composed as `static styles = [tokens, base, css\`…\`]`. |
 | `icons.ts` | ~30 MDI glyphs as inline path data, rendered as `<svg fill="currentColor">`. See the deviation note below. |
+| `brand-icon.ts` | The HAventory mark as one path, published to HA's icon registry (`window.customIcons`) under the `haventory:` prefix so the sidebar entry can name it. The backend's `PANEL_ICON` is the matching string. |
 | `responsive.ts` | `ResponsiveController` — a Lit reactive controller that drives mobile mode from the card's own measured width (≤600px). |
 | `relative-time.ts` | "2 h ago" / "Jul 31" formatting, overdue checks, and the `+N days` arithmetic the check-out chips use. |
 | `item-form.ts` | Form model and payload building for the edit surfaces: validation per field, typed custom fields, tag normalization, and the `custom_fields_set` / `custom_fields_unset` diff. |

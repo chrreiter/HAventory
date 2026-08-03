@@ -40,7 +40,7 @@ Checklist below and [CONTRIBUTING.md](CONTRIBUTING.md).
 HAventory adds itself to the **sidebar** during setup, so there is somewhere to click
 before you have built a dashboard. The entry opens the full view as a page of its own —
 the same workspace the card's ⋮ → full view opens, with the same menu, dialogs and
-editors — and carries whatever name you gave the card.
+editors — and carries the HAventory mark and whatever name you gave the card.
 
 - **Turning it off:** Settings → Devices & services → HAventory → **Configure** →
   *Show HAventory in the sidebar*. The entry appears and disappears as you save the form;

@@ -39,7 +39,12 @@ DEFAULT_SIDEBAR_PANEL_ENABLED: bool = True
 # it is also what a removal has to name.
 PANEL_URL_PATH: str = "haventory"
 PANEL_ELEMENT_NAME: str = "haventory-panel"
-PANEL_ICON: str = "mdi:package-variant-closed"
+# The HAventory mark, which the card bundle publishes as an icon set under the
+# `haventory:` prefix (`cards/haventory-card/src/ui/brand-icon.ts`) — a
+# non-`mdi:` prefix resolves out of the frontend's own icon registry, nowhere
+# else, so the two spellings have to agree. Nothing resolves it without the
+# bundle, and without the bundle there is no panel to put an icon on.
+PANEL_ICON: str = "haventory:logo"
 
 # -----------------------------
 # WebSocket rate limiting (config-entry options)
