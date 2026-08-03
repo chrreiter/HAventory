@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 import voluptuous as vol
 from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.exceptions import NotFoundError, ValidationError
+from custom_components.haventory.exceptions import NotFoundError, StorageError, ValidationError
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import STORAGE_KEY
 from homeassistant.core import HomeAssistant
@@ -146,6 +146,29 @@ async def test_service_call_surfaces_domain_errors(hass: HomeAssistant) -> None:
 
     with pytest.raises(NotFoundError):
         await _call(hass, "item_update", {"item_id": "does-not-exist", "name": "Nope"})
+
+
+async def test_service_call_after_removal_refuses(hass: HomeAssistant, hass_storage) -> None:
+    """Services outlive the entry the same way commands do, and refuse the same way.
+
+    ``hass.services.async_remove`` is never called, so the catalog stays; what
+    changes is that the handlers no longer have a repository to reach.
+    """
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    await _call(hass, "item_create", {"name": "Torch"})
+
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert "item_create" in hass.services.async_services_for_domain(DOMAIN)
+    with pytest.raises(StorageError):
+        await _call(hass, "item_create", {"name": "Ghost"})
+
+    assert [i["name"] for i in hass_storage[STORAGE_KEY]["data"]["items"].values()] == ["Torch"]
 
 
 async def test_service_call_rejects_a_bad_payload(hass: HomeAssistant) -> None:

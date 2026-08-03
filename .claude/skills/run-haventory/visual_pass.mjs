@@ -1,5 +1,5 @@
-// Walk the card's surfaces at desktop and mobile widths, screenshotting each and
-// reporting whether it actually opened.
+// Walk HAventory's surfaces — the card at desktop and mobile widths, and the
+// sidebar panel — screenshotting each and reporting whether it actually opened.
 //
 // A single screenshot proves one view renders; this proves the set of them do,
 // which is what a UI change needs before and after. Each surface is a named
@@ -11,9 +11,9 @@
 // exits non-zero if any surface, at any width, failed to open.
 //
 // Usage (from the skill dir, .claude/skills/run-haventory/):
-//   node visual_pass.mjs                       # desktop + mobile into ./visual/
+//   node visual_pass.mjs                       # desktop + mobile + panel into ./visual/
 //   node visual_pass.mjs --out before          # ./before/  (then --out after to compare)
-//   node visual_pass.mjs --only desktop        # or --only mobile
+//   node visual_pass.mjs --only desktop        # or --only mobile, --only panel
 //   node visual_pass.mjs --surfaces list,search,full-view
 //   node visual_pass.mjs --dark                # HA dark theme + dark OS scheme
 //   node visual_pass.mjs --list                # print the surface names and exit
@@ -39,7 +39,7 @@ const flag = (name, dflt) => {
 };
 
 // --- surface recipes ------------------------------------------------------
-// `open` is a list of steps run in order against the card:
+// `open` is a list of steps run in order against the pass's root element:
 //   ["click", <sel>]  ["hover", <sel>]  ["fill", <sel>, <text>]  ["key", <key>]  ["wait", <ms>]
 // `expect` is the selector that must be visible once the recipe has run.
 // Selectors pierce shadow DOM, so nested components address directly.
@@ -51,14 +51,19 @@ const flag = (name, dflt) => {
 // the full view rather than assuming the previous surface left it up.
 //
 // Surfaces are named after what a reader would call the screen, and prefixed
-// d-/m- in the file name so a desktop and a mobile capture of the same surface
-// sort next to each other.
+// d-/m-/p- in the file name so the desktop, mobile and panel captures of the
+// same surface sort next to each other.
 //
 // The card chooses its layout from ITS OWN width, not the viewport's, so the
 // desktop pass runs on the `wide` dashboard view: in a normal dashboard column
 // even a 1440px window gets the narrow branch, where the filter panel is a modal
 // sheet and the full-view link is absent entirely.
+//
+// Each pass names the root element it waits for and scopes its selectors to:
+// the sidebar panel at /haventory is a different custom element and renders no
+// card at all, so waiting for `haventory-card` there only ever times out.
 const CARD = "haventory-card";
+const PANEL = "haventory-panel";
 const OVERFLOW = `${CARD} [data-testid="card-overflow"] button`;
 const menu = (id) => `${CARD} [data-testid="overflow-item"][data-id="${id}"]`;
 
@@ -232,9 +237,86 @@ const MOBILE_SURFACES = [
   },
 ];
 
+// The sidebar panel embeds the same full view the card opens in a modal, so its
+// inner testids are the full view's — but the surrounding host is `haventory-panel`
+// with its own dialog set, which is exactly what these recipes prove. The panel's
+// overflow lives on the full view's app bar, not behind the card's `card-overflow`.
+const PANEL_OVERFLOW = `${PANEL} [data-testid="full-overflow"] [data-testid="overflow-trigger"]`;
+const panelMenu = (id) => `${PANEL} [data-testid="overflow-item"][data-id="${id}"]`;
+
+const PANEL_SURFACES = [
+  { id: "01-page", open: [], expect: `${PANEL} [data-testid="full-table"]` },
+  {
+    id: "02-filters",
+    open: [["click", `${PANEL} [data-testid="full-filters-toggle"]`], ["wait", 500]],
+    expect: `${PANEL} [data-testid="full-filter-panel"]`,
+  },
+  {
+    id: "03-search",
+    open: [
+      ["fill", `${PANEL} [data-testid="full-search"]`, "box"],
+      ["wait", 1500],
+    ],
+    expect: `${PANEL} [data-testid="full-table"]`,
+  },
+  {
+    id: "04-add-editor",
+    open: [["click", `${PANEL} [data-testid="full-add-item"]`], ["wait", 600]],
+    expect: `${PANEL} [data-testid="item-editor"]`,
+  },
+  {
+    id: "05-row-editor",
+    // The table's row actions are `visibility: hidden` until the row is
+    // hovered, so the edit button has to be revealed before it can be clicked.
+    open: [
+      ["hover", `${PANEL} [data-testid="table-row"]`],
+      ["click", `${PANEL} [data-testid="table-edit"]`],
+      ["wait", 600],
+    ],
+    expect: `${PANEL} [data-testid="item-editor"]`,
+  },
+  {
+    id: "06-overflow",
+    open: [["click", PANEL_OVERFLOW]],
+    expect: `${PANEL} [data-testid="overflow-menu"]`,
+  },
+  {
+    id: "07-organize",
+    open: [
+      ["click", PANEL_OVERFLOW],
+      ["click", panelMenu("organize")],
+      ["wait", 800],
+    ],
+    expect: `${PANEL} [data-testid="organize-dialog"]`,
+  },
+  {
+    id: "08-columns",
+    open: [["click", `${PANEL} [data-testid="columns-expanded"]`], ["wait", 600]],
+    expect: `${PANEL} [data-testid="column-options"]`,
+  },
+  {
+    id: "09-diagnostics",
+    open: [
+      ["click", PANEL_OVERFLOW],
+      ["click", panelMenu("diagnostics")],
+      ["wait", 800],
+    ],
+    expect: `${PANEL} [data-testid="diagnostics-status"]`,
+  },
+  {
+    id: "10-import",
+    open: [
+      ["click", PANEL_OVERFLOW],
+      ["click", panelMenu("import")],
+    ],
+    expect: `${PANEL} [data-testid="import-text"]`,
+  },
+];
+
 if (args.includes("--list")) {
   console.log("desktop:", DESKTOP_SURFACES.map((s) => s.id).join(", "));
   console.log("mobile: ", MOBILE_SURFACES.map((s) => s.id).join(", "));
+  console.log("panel:  ", PANEL_SURFACES.map((s) => s.id).join(", "));
   process.exit(0);
 }
 
@@ -267,6 +349,7 @@ const PASSES = [
   {
     key: "desktop",
     prefix: "d",
+    root: CARD,
     surfaces: DESKTOP_SURFACES,
     urlPath: "/lovelace/wide",
     contextOptions: { viewport: { width: 1440, height: 900 } },
@@ -274,9 +357,20 @@ const PASSES = [
   {
     key: "mobile",
     prefix: "m",
+    root: CARD,
     surfaces: MOBILE_SURFACES,
     urlPath: "/lovelace/default_view",
     contextOptions: { ...devices["iPhone 15"], deviceScaleFactor: 2 },
+  },
+  {
+    // The panel needs no `wide` dashboard: Home Assistant gives it the whole
+    // content area, so a normal window is already the layout it ships with.
+    key: "panel",
+    prefix: "p",
+    root: PANEL,
+    surfaces: PANEL_SURFACES,
+    urlPath: "/haventory",
+    contextOptions: { viewport: { width: 1440, height: 900 } },
   },
 ].filter((p) => !only || p.key === only);
 
@@ -328,14 +422,14 @@ for (const pass of PASSES) {
   );
 
   const url = base + (urlPathOverride ?? pass.urlPath);
-  const loadCard = async () => {
+  const loadRoot = async () => {
     await page.goto(url, { waitUntil: "domcontentloaded" });
     if (page.url().includes("/auth/authorize")) {
       console.error("Redirected to the login page — hassTokens injection was rejected. Is HA_TOKEN valid?");
       await browser.close();
       process.exit(1);
     }
-    await page.waitForSelector(CARD, { timeout: 30000 });
+    await page.waitForSelector(pass.root, { timeout: 30000 });
     await page.waitForTimeout(2500); // let the WS subscription deliver the first page
   };
 
@@ -358,7 +452,7 @@ for (const pass of PASSES) {
     const name = `${pass.prefix}-${surface.id}`;
     const file = path.join(outDir, `${name}.png`);
     try {
-      await loadCard();
+      await loadRoot();
       for (const s of surface.open) await step(s);
       await page.waitForSelector(surface.expect, { timeout: 10000 });
       await page.waitForTimeout(500); // let transitions settle before the capture
