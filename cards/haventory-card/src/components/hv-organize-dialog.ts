@@ -22,6 +22,16 @@ import './hv-location-tree';
 
 export type OrganizeTab = 'locations' | 'categories' | 'tags';
 
+/**
+ * The trees the two location pickers open, named so `aria-controls` can point at
+ * them. Each holder stays in the tree whether or not it is open — an
+ * `aria-controls` that resolves to nothing announces the control as controlling
+ * nothing — and only the tree inside comes and goes, so closing a picker still
+ * discards its scroll and filter.
+ */
+const LOC_PARENT_TREE_ID = 'location-parent-tree-holder';
+const MERGE_TARGET_TREE_ID = 'merge-target-tree-holder';
+
 /** The three batch rewrites, and how each reads once it is over. */
 const PAST_TENSE: Record<string, string> = {
   Merge: 'Merged',
@@ -851,6 +861,7 @@ export class HVOrganizeDialog extends LitElement {
             class="control"
             data-testid="location-parent"
             aria-expanded=${String(this._locParentOpen)}
+            aria-controls=${LOC_PARENT_TREE_ID}
             @click=${() => {
               this._locParentOpen = !this._locParentOpen;
             }}
@@ -858,9 +869,9 @@ export class HVOrganizeDialog extends LitElement {
             ${icon('mapMarker', 15)}<span class="value">${parent?.name ?? 'Top level'}</span>
             ${icon('chevronDown', 15)}
           </button>
-          ${this._locParentOpen
-            ? html`<div class="tree-holder">
-                <hv-location-tree
+          <div class="tree-holder" id=${LOC_PARENT_TREE_ID} ?hidden=${!this._locParentOpen}>
+            ${this._locParentOpen
+              ? html`<hv-location-tree
                   data-testid="location-parent-tree"
                   .nodes=${tree}
                   .areas=${this.st?.areasCache?.areas ?? []}
@@ -871,9 +882,9 @@ export class HVOrganizeDialog extends LitElement {
                     this._locParent = (e.detail as { locationId: string | null }).locationId;
                     this._locParentOpen = false;
                   }}
-                ></hv-location-tree>
-              </div>`
-            : null}
+                ></hv-location-tree>`
+              : null}
+          </div>
         </div>
       </div>
       ${this._locError
@@ -952,6 +963,7 @@ export class HVOrganizeDialog extends LitElement {
           style="flex:1;min-width:180px"
           data-testid="merge-target"
           aria-expanded=${String(this._mergeTargetOpen)}
+          aria-controls=${MERGE_TARGET_TREE_ID}
           @click=${() => {
             this._mergeTargetOpen = !this._mergeTargetOpen;
           }}
@@ -960,9 +972,9 @@ export class HVOrganizeDialog extends LitElement {
           ${icon('chevronDown', 15)}
         </button>
       </div>
-      ${this._mergeTargetOpen
-        ? html`<div class="tree-holder">
-            <hv-location-tree
+      <div class="tree-holder" id=${MERGE_TARGET_TREE_ID} ?hidden=${!this._mergeTargetOpen}>
+        ${this._mergeTargetOpen
+          ? html`<hv-location-tree
               data-testid="merge-target-tree"
               .nodes=${tree}
               .areas=${this.st?.areasCache?.areas ?? []}
@@ -972,9 +984,9 @@ export class HVOrganizeDialog extends LitElement {
                 this._mergeTarget = (e.detail as { locationId: string | null }).locationId;
                 this._mergeTargetOpen = false;
               }}
-            ></hv-location-tree>
-          </div>`
-        : null}
+            ></hv-location-tree>`
+          : null}
+      </div>
       <span class="note" data-testid="merge-effect">
         ${target
           ? `${parts.join(' and ')} move to "${target.name}", then "${source.name}" is deleted.

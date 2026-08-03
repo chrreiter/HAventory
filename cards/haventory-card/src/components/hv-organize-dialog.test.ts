@@ -331,6 +331,38 @@ describe('hv-organize-dialog: locations', () => {
     });
   });
 
+  // aria-expanded on its own says only that something opened; which element it
+  // opened was left to whatever happened to follow the picker in reading order.
+  it('names the holder each location picker discloses, open or shut', async () => {
+    const items = [makeItem({ id: '1', location_id: 'shelf-a' })];
+    const { el, sr } = await mount({ items, locations });
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+
+    for (const [action, picker, id] of [
+      ['tree-edit', 'location-parent', 'location-parent-tree-holder'],
+      ['tree-merge', 'merge-target', 'merge-target-tree-holder'],
+    ]) {
+      (tree.shadowRoot?.querySelector(`[data-testid="${action}"][data-id="garage"]`) as HTMLButtonElement).click();
+      await settle(el);
+      const control = () => q(sr, `[data-testid="${picker}"]`) as HTMLButtonElement;
+
+      expect(control().getAttribute('aria-controls'), picker).toBe(id);
+      expect(control().getAttribute('aria-expanded'), picker).toBe('false');
+      // The id has to resolve in both states — a picker pointing at nothing
+      // announces as controlling nothing — so the holder outlives the tree.
+      const shut = sr.getElementById(id);
+      expect(shut, `${picker} shut`).toBeTruthy();
+      expect(shut?.querySelector('hv-location-tree'), `${picker}: no tree while shut`).toBe(null);
+
+      control().click();
+      await settle(el);
+
+      expect(control().getAttribute('aria-expanded'), picker).toBe('true');
+      expect(control().getAttribute('aria-controls'), picker).toBe(id);
+      expect(sr.getElementById(id)?.querySelector('hv-location-tree'), `${picker} open`).toBeTruthy();
+    }
+  });
+
   it('excludes the location itself from its own parent picker, so no cycle is possible', async () => {
     const { el, sr } = await mount({ locations });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;

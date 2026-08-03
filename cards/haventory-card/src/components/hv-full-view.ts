@@ -62,6 +62,12 @@ type SidebarSection = 'locations' | 'categories' | 'tags';
 const sectionPanelId = (section: SidebarSection) => `sidebar-section-${section}`;
 
 /**
+ * What the context bar's Filters button discloses, on the same terms: the holder
+ * stays in the tree shut or open, and only the panel inside it comes and goes.
+ */
+const FILTER_PANEL_ID = 'full-view-filter-panel';
+
+/**
  * The expanded workspace.
  *
  * The coloured app bar is the mode signal — the standard card never has one, so
@@ -595,6 +601,13 @@ export class HVFullView extends LitElement {
            hung 5px off the bottom of a landscape screen. */
         box-sizing: border-box;
         max-height: min(80dvh, calc(100% - 116px));
+      }
+      /* The holder outlives the panel inside it so the id the Filters button
+         names always resolves. The display above would otherwise beat the
+         browser's own rule for [hidden] and leave the empty box laying out its
+         padding. */
+      .panel-holder[hidden] {
+        display: none;
       }
       .panel-scroll {
         flex: 1;
@@ -1369,6 +1382,7 @@ export class HVFullView extends LitElement {
           class="filters-button ${this._filtersOpen ? 'on' : ''}"
           data-testid="full-filters-toggle"
           aria-expanded=${String(this._filtersOpen)}
+          aria-controls=${FILTER_PANEL_ID}
           @click=${() => {
             this._filtersOpen = !this._filtersOpen;
             // The phone panel stages its edits, so its button has a number to
@@ -1595,8 +1609,9 @@ export class HVFullView extends LitElement {
           ${this._renderSidebar()}
           <div class="main">
             ${this._renderContextBar()}
-            ${this._filtersOpen
-              ? html`<div class="panel-holder">
+            <div class="panel-holder" id=${FILTER_PANEL_ID} ?hidden=${!this._filtersOpen}>
+              ${this._filtersOpen
+                ? html`
                   <div class="panel-scroll">
                   <hv-filter-panel
                     data-testid="full-filter-panel"
@@ -1620,8 +1635,9 @@ export class HVFullView extends LitElement {
                   ></hv-filter-panel>
                   </div>
                   ${this._narrow ? this._renderPanelFoot() : null}
-                </div>`
-              : null}
+                `
+                : null}
+            </div>
             ${this._editing !== null
               ? html`<div class="editor-holder">
                   <hv-item-editor

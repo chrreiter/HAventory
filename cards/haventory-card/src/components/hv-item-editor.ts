@@ -44,6 +44,17 @@ const CUSTOM_FIELD_TYPES: { value: CustomFieldType; label: string }[] = [
 ];
 
 /**
+ * What the form's three disclosures open, named so `aria-controls` can point at
+ * them. Each target stays in the tree whether or not it is open — an
+ * `aria-controls` that resolves to nothing announces the control as controlling
+ * nothing — and only the contents come and go, so closing still discards the
+ * state inside. Shadow scoping keeps the ids unique with several editors mounted.
+ */
+const LOCATION_TREE_ID = 'editor-location-tree-holder';
+const CATEGORY_LIST_ID = 'editor-category-list';
+const MORE_FIELDS_ID = 'editor-more-fields';
+
+/**
  * The one edit surface: the inline expander, the full view and the mobile sheet.
  *
  * The row expands in place and the location tree opens *inside* the form, so
@@ -542,6 +553,13 @@ export class HVItemEditor extends LitElement {
         min-height: var(--hv-tap-min, auto);
         padding: 0 8px;
       }
+      /* The fields it holds are cells of the form's grid, and a box around them
+         would take their place in it and collapse the gaps between them. This
+         element exists only to carry the id the More fields toggle names, so it
+         lays nothing out — empty, it takes no room either. */
+      .more-fields {
+        display: contents;
+      }
       .more-toggle {
         display: flex;
         align-items: center;
@@ -780,6 +798,7 @@ export class HVItemEditor extends LitElement {
         class="field-button ${this._model.locationId ? '' : 'empty'}"
         data-testid="editor-location"
         aria-expanded=${String(this._locationOpen)}
+        aria-controls=${LOCATION_TREE_ID}
         @click=${() => {
           this._locationOpen = !this._locationOpen;
         }}
@@ -787,9 +806,9 @@ export class HVItemEditor extends LitElement {
         ${icon('mapMarker', 15)}${renderAreaChip(parts.areaName)}<span class="value">${parts.path}</span
         >${icon('chevronDown', 15)}
       </button>
-      ${this._locationOpen
-        ? html`<div class="tree-holder">
-            <hv-location-tree
+      <div class="tree-holder" id=${LOCATION_TREE_ID} ?hidden=${!this._locationOpen}>
+        ${this._locationOpen
+          ? html`<hv-location-tree
               data-testid="editor-location-tree"
               .nodes=${this.locationTree}
               .areas=${this.areas}
@@ -801,9 +820,9 @@ export class HVItemEditor extends LitElement {
                 this._patch({ locationId: (e.detail as { locationId: string | null }).locationId });
                 this._locationOpen = false;
               }}
-            ></hv-location-tree>
-          </div>`
-        : null}
+            ></hv-location-tree>`
+          : null}
+      </div>
     </div>`;
   }
 
@@ -938,7 +957,7 @@ export class HVItemEditor extends LitElement {
           autocomplete="off"
           aria-autocomplete="list"
           aria-expanded=${String(this._categoryOpen)}
-          aria-controls="editor-category-list"
+          aria-controls=${CATEGORY_LIST_ID}
           aria-activedescendant=${this._categoryOpen && this._categoryIndex >= 0
             ? `editor-category-option-${this._categoryIndex}`
             : ''}
@@ -970,15 +989,16 @@ export class HVItemEditor extends LitElement {
             </button>`
           : null}
       </div>
-      ${this._categoryOpen
-        ? html`<div
-            class="list-holder floating"
-            role="listbox"
-            id="editor-category-list"
-            data-testid="editor-category-list"
-            style=${this._categoryStyle}
-          >
-            ${options.length
+      <div
+        class="list-holder floating"
+        role="listbox"
+        id=${CATEGORY_LIST_ID}
+        data-testid="editor-category-list"
+        ?hidden=${!this._categoryOpen}
+        style=${this._categoryStyle}
+      >
+        ${this._categoryOpen
+          ? html`${options.length
               ? options.map(
                   (c, i) => html`<button
                     class="option ${i === this._categoryIndex ? 'active' : ''} ${
@@ -998,9 +1018,9 @@ export class HVItemEditor extends LitElement {
                 )
               : html`<div class="option-empty" data-testid="editor-category-empty">
                   No existing category matches “${typed}” — saving adds it as a new one.
-                </div>`}
-          </div>`
-        : null}
+                </div>`}`
+          : null}
+      </div>
     </div>`;
   }
 
@@ -1292,6 +1312,7 @@ export class HVItemEditor extends LitElement {
         class="more-toggle"
         data-testid="editor-more-toggle"
         aria-expanded=${String(this._moreOpen)}
+        aria-controls=${MORE_FIELDS_ID}
         @click=${() => {
           this._moreOpen = !this._moreOpen;
         }}
@@ -1299,21 +1320,24 @@ export class HVItemEditor extends LitElement {
         ${icon(this._moreOpen ? 'chevronDown' : 'chevronRight', 19)} More fields
         <span class="summary">${summary || 'description · dates · custom fields'}</span>
       </button>
-      ${this._moreOpen
-        ? html`
-            <div class="cell span3">
-              <label class="hv-label" for="editor-description">Description</label>
-              <textarea
-                id="editor-description"
-                class="hv-input"
-                data-testid="editor-description"
-                .value=${model.description}
-                @input=${(e: Event) => this._patch({ description: (e.target as HTMLTextAreaElement).value })}
-              ></textarea>
-            </div>
-            ${this._renderStateFields()} ${this._renderCustomFields()}
-          `
-        : null}
+      <div class="more-fields" id=${MORE_FIELDS_ID}>
+        ${this._moreOpen
+          ? html`
+              <div class="cell span3">
+                <label class="hv-label" for="editor-description">Description</label>
+                <textarea
+                  id="editor-description"
+                  class="hv-input"
+                  data-testid="editor-description"
+                  .value=${model.description}
+                  @input=${(e: Event) =>
+                    this._patch({ description: (e.target as HTMLTextAreaElement).value })}
+                ></textarea>
+              </div>
+              ${this._renderStateFields()} ${this._renderCustomFields()}
+            `
+          : null}
+      </div>
     `;
   }
 

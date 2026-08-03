@@ -281,6 +281,65 @@ describe('hv-card-shell: search and filters', () => {
     expect(sr.querySelector('[data-testid="filter-active-dot"]')).toBeTruthy();
   });
 
+  // aria-expanded on its own says only that something opened; which element it
+  // opened was left to whatever happened to follow the button in reading order.
+  it('names the surface the filter button discloses, at either width', async () => {
+    const id = 'card-filter-surface';
+    for (const mobile of [false, true]) {
+      const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile });
+      const toggle = () => sr.querySelector('[data-testid="filter-toggle"]') as HTMLButtonElement;
+      // What the surface holds while it is shut. On a phone that surface is the
+      // sheet, which is slotted whether or not it shows, so its own state tells.
+      const showing = () => {
+        const surface = sr.getElementById(id) as (HTMLElement & { open?: boolean }) | null;
+        return mobile ? !!surface?.open : !!surface?.querySelector('hv-filter-panel');
+      };
+
+      // The desktop panel remembers whether it was left open, so this starts
+      // from whatever that remembered and proves the pairing across the flip.
+      for (const step of ['as mounted', 'after the flip']) {
+        const was = { expanded: toggle().getAttribute('aria-expanded'), showing: showing() };
+        const where = `mobile=${mobile}, ${step}`;
+        expect(toggle().getAttribute('aria-controls'), where).toBe(id);
+        // The id has to resolve in both states — a button pointing at nothing
+        // announces as controlling nothing — so the surface outlives the panel.
+        expect(sr.getElementById(id), where).toBeTruthy();
+
+        toggle().click();
+        await settle(el);
+        // Only the contents come and go; the element the button names stays.
+        expect(showing(), `${where}, contents flipped`).toBe(!was.showing);
+        expect(sr.getElementById(id), `${where}, still there`).toBeTruthy();
+        // The phone's button reads the desktop panel's remembered state as well
+        // as the sheet's, so its announcement is not the sheet's alone and the
+        // surface above is what says whether the press landed.
+        if (!mobile) {
+          expect(toggle().getAttribute('aria-expanded'), `${where}, flipped`).toBe(
+            String(was.expanded !== 'true'),
+          );
+        }
+      }
+      el.remove();
+    }
+  });
+
+  it('names the full view the expand button discloses, open or shut', async () => {
+    const id = 'card-full-view-surface';
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const toggle = () => sr.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement;
+
+    expect(toggle().getAttribute('aria-controls')).toBe(id);
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    expect(sr.getElementById(id), 'shut').toBeTruthy();
+
+    toggle().click();
+    await settle(el);
+
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(toggle().getAttribute('aria-controls')).toBe(id);
+    expect(sr.getElementById(id), 'open').toBe(sr.querySelector('[data-testid="card-full-view"]'));
+  });
+
   it('shows a removable chip per active filter and clears them', async () => {
     const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', category: 'Tools' })] });
     store.setFilters({ category: 'Tools', checkedOutOnly: true });

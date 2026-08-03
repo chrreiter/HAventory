@@ -502,6 +502,29 @@ describe('hv-item-editor: location and tags', () => {
     expect(saves[0].changes?.location_id).toBe('garage');
   });
 
+  // aria-expanded on its own says only that something opened; which element it
+  // opened was left to whatever happened to follow the button in reading order.
+  it('names the holder the location field discloses, open or shut', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    const field = () => q(el, '[data-testid="editor-location"]') as HTMLButtonElement;
+    const id = 'editor-location-tree-holder';
+
+    expect(field().getAttribute('aria-controls')).toBe(id);
+    expect(field().getAttribute('aria-expanded')).toBe('false');
+    // The id has to resolve in both states — a button pointing at nothing
+    // announces as controlling nothing — so the holder outlives the tree in it.
+    const shut = el.shadowRoot?.getElementById(id);
+    expect(shut, 'holder shut').toBeTruthy();
+    expect(shut?.querySelector('hv-location-tree'), 'no tree while shut').toBe(null);
+
+    field().click();
+    await el.updateComplete;
+
+    expect(field().getAttribute('aria-expanded')).toBe('true');
+    expect(field().getAttribute('aria-controls')).toBe(id);
+    expect(el.shadowRoot?.getElementById(id)?.querySelector('hv-location-tree')).toBeTruthy();
+  });
+
   // The modal had a dedicated Clear button next to the location field; here the
   // same job belongs to the tree's own clear row, and it has to reach the save
   // payload as a null rather than being quietly dropped.
@@ -567,6 +590,17 @@ describe('hv-item-editor: category picker', () => {
   const options = (el: HVItemEditor) =>
     all(el, '[data-testid="editor-category-option"]').map((o) => o.dataset.value);
 
+  /**
+   * The listbox is the element the combobox names, so it stays put and empties
+   * out instead of leaving — shut means hidden with nothing in it, not gone.
+   */
+  function expectListShut(el: HVItemEditor) {
+    const list = q(el, '[data-testid="editor-category-list"]') as HTMLElement | null;
+    expect(list).toBeTruthy();
+    expect(list?.hidden).toBe(true);
+    expect(list?.children).toHaveLength(0);
+  }
+
   async function focusCategory(el: HVItemEditor) {
     const input = q(el, '[data-testid="editor-category"]') as HTMLInputElement;
     input.focus();
@@ -576,7 +610,7 @@ describe('hv-item-editor: category picker', () => {
 
   it('shows every existing category on focus, before a single keystroke', async () => {
     const el = await mount(null);
-    expect(q(el, '[data-testid="editor-category-list"]')).toBe(null);
+    expectListShut(el);
 
     await focusCategory(el);
     expect(options(el)).toEqual(['Hardware', 'Tools']);
@@ -607,6 +641,28 @@ describe('hv-item-editor: category picker', () => {
     expect(css).not.toMatch(/\.tree-holder[^{]*\{[^}]*position: fixed/);
   });
 
+  // The combobox always named its listbox, but the listbox left the DOM with
+  // the options — so while shut the name pointed at nothing.
+  it('names a listbox that is there whether or not it is showing', async () => {
+    const el = await mount(null);
+    const input = () => q(el, '[data-testid="editor-category"]') as HTMLInputElement;
+    const id = 'editor-category-list';
+
+    expect(input().getAttribute('aria-controls')).toBe(id);
+    expect(input().getAttribute('aria-expanded')).toBe('false');
+    expect(el.shadowRoot?.getElementById(id), 'listbox shut').toBeTruthy();
+    expectListShut(el);
+
+    await focusCategory(el);
+
+    expect(input().getAttribute('aria-expanded')).toBe('true');
+    expect(input().getAttribute('aria-controls')).toBe(id);
+    const open = el.shadowRoot?.getElementById(id);
+    expect(open?.getAttribute('role'), 'the popup itself, not a wrapper').toBe('listbox');
+    expect(open?.hidden).toBe(false);
+    expect(options(el)).toEqual(['Hardware', 'Tools']);
+  });
+
   it('narrows the list while typing', async () => {
     const el = await mount(null);
     await focusCategory(el);
@@ -627,7 +683,7 @@ describe('hv-item-editor: category picker', () => {
     // The same button closes it again.
     (q(el, '[data-testid="editor-category-toggle"]') as HTMLButtonElement).click();
     await el.updateComplete;
-    expect(q(el, '[data-testid="editor-category-list"]')).toBe(null);
+    expectListShut(el);
   });
 
   it('fills the field from a picked option and saves it', async () => {
@@ -639,7 +695,7 @@ describe('hv-item-editor: category picker', () => {
     await el.updateComplete;
 
     expect((q(el, '[data-testid="editor-category"]') as HTMLInputElement).value).toBe('Tools');
-    expect(q(el, '[data-testid="editor-category-list"]')).toBe(null);
+    expectListShut(el);
 
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
     expect(saves[0].changes?.category).toBe('Tools');
@@ -665,7 +721,7 @@ describe('hv-item-editor: category picker', () => {
     await el.updateComplete;
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await el.updateComplete;
-    expect(q(el, '[data-testid="editor-category-list"]')).toBe(null);
+    expectListShut(el);
     expect(cancels).toBe(0);
   });
 
@@ -680,7 +736,7 @@ describe('hv-item-editor: category picker', () => {
     const el = await mount(null, { categorySuggestions: [] });
     expect(q(el, '[data-testid="editor-category-toggle"]')).toBe(null);
     await focusCategory(el);
-    expect(q(el, '[data-testid="editor-category-list"]')).toBe(null);
+    expectListShut(el);
   });
 });
 
@@ -822,6 +878,36 @@ describe('hv-item-editor: mobile layout', () => {
     expect(q(el, '[data-testid="editor-description"]')).toBeTruthy();
     expect(q(el, '[data-testid="editor-cf-add"]')).toBeTruthy();
     expect(q(el, '[data-testid="editor-inspection-date"]')).toBeTruthy();
+  });
+
+  // aria-expanded on its own says only that something opened; which element it
+  // opened was left to whatever happened to follow the toggle in reading order.
+  it('names what More fields discloses, open or shut', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }), { mobile: true });
+    const toggle = () => q(el, '[data-testid="editor-more-toggle"]') as HTMLButtonElement;
+    const id = 'editor-more-fields';
+
+    expect(toggle().getAttribute('aria-controls')).toBe(id);
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    // The id has to resolve in both states — a toggle pointing at nothing
+    // announces as controlling nothing — so the holder outlives the fields.
+    const shut = el.shadowRoot?.getElementById(id);
+    expect(shut, 'holder shut').toBeTruthy();
+    expect(shut?.children, 'no fields while shut').toHaveLength(0);
+
+    toggle().click();
+    await el.updateComplete;
+
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(toggle().getAttribute('aria-controls')).toBe(id);
+    const open = el.shadowRoot?.getElementById(id);
+    expect(open?.querySelector('[data-testid="editor-description"]'), 'fields open inside it').toBeTruthy();
+  });
+
+  // The fields are cells of the form's grid; a holder that laid itself out would
+  // take their place in it and swallow the gaps between them.
+  it('keeps the holder out of the grid its fields belong to', () => {
+    expect(editorCss()).toMatch(/\.more-fields \{[^}]*display: contents/);
   });
 
   it('summarises what is inside the disclosure', async () => {
