@@ -17,6 +17,11 @@
 //   node visual_pass.mjs --surfaces list,search,full-view
 //   node visual_pass.mjs --dark                # HA dark theme + dark OS scheme
 //   node visual_pass.mjs --list                # print the surface names and exit
+//   node visual_pass.mjs --path desktop=/other/wide   # one pass onto another view
+//
+// The four passes open three different URLs, so `--path` names the pass it
+// applies to and may be repeated. A bare `--path <url>` is taken only alongside
+// `--only`, where there is exactly one pass for it to mean.
 //
 // Everything it drives is read-only: it opens panels, sheets and editors but
 // never saves, imports or deletes. The one exception is the search box, which is
@@ -25,12 +30,13 @@
 // Reads HA_BASE_URL / HA_TOKEN from the environment or the repo-root .env.
 
 import { chromium, devices } from "playwright";
-import { readFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+import { cardPath, haConfig, parsePathOverrides } from "./card_views.mjs";
+
 const skillDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(skillDir, "..", "..", "..");
 
 const args = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -57,9 +63,10 @@ const flag = (name, dflt) => {
 // captures of the same surface sort next to each other.
 //
 // The card chooses its layout from ITS OWN width, not the viewport's, so the
-// desktop pass runs on the `wide` dashboard view: in a normal dashboard column
-// even a 1440px window gets the narrow branch, where the filter panel is a modal
-// sheet and the full-view link is absent entirely.
+// desktop pass runs on a panel-mode view: in a normal dashboard column even a
+// 1440px window gets the narrow branch, where the filter panel is a modal sheet
+// and the full-view link is absent entirely. Which view that is, on this
+// instance, is discovered — see card_views.mjs.
 //
 // Each pass names the root element it waits for and scopes its selectors to:
 // the sidebar panel at /haventory is a different custom element and renders no
@@ -387,46 +394,33 @@ if (args.includes("--list")) {
   process.exit(0);
 }
 
-// --- config: env wins, .env fills the gaps -------------------------------
-try {
-  for (const line of readFileSync(path.join(repoRoot, ".env"), "utf8").split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
-  }
-} catch {
-  /* no .env — rely on real env vars */
-}
-const base = (process.env.HA_BASE_URL ?? "http://localhost:8123").replace(/\/$/, "");
-const token = process.env.HA_TOKEN;
+const { base, token } = haConfig();
 if (!token) {
   console.error("Missing HA_TOKEN (env or repo-root .env)");
   process.exit(2);
 }
 
 const outDir = path.resolve(skillDir, flag("--out", "visual"));
-// Per-pass by default; --path forces one view for both, which is how you check
-// a single dashboard layout rather than the two the card is designed for.
-const urlPathOverride = flag("--path", null);
 const haDark = args.includes("--dark");
 const only = flag("--only", null);
 const wanted = flag("--surfaces", null)?.split(",").map((s) => s.trim());
 mkdirSync(outDir, { recursive: true });
 
-// Home Assistant's default dashboard is the generated one and holds no HAventory
-// card, so both card passes run on the `dev` dashboard: its `wide` view is
-// panel-mode (the card gets the window's full width), and view 0 is a sections
-// grid (the narrow column a card normally sits in). Views without a `path` are
-// addressed by index. SKILL.md documents the dashboard the dev instance needs.
-const WIDE_VIEW = "/dashboard-dev/wide";
-const COLUMN_VIEW = "/dashboard-dev/0";
+// The sidebar panel is Home Assistant's own route into the integration, so it
+// needs no dashboard at all — and it gets the whole content area, which is why
+// both panel passes use it at both widths.
+const PANEL_ROUTE = "/haventory";
 
-const PASSES = [
+// `shape` is what the pass needs of a dashboard view (see card_views.mjs); the
+// panel passes name a route instead, because theirs is not a dashboard.
+const ALL_PASSES = [
   {
     key: "desktop",
     prefix: "d",
     root: CARD,
     surfaces: DESKTOP_SURFACES,
-    urlPath: WIDE_VIEW,
+    shape: "wide",
+    layout: "desktop",
     contextOptions: { viewport: { width: 1440, height: 900 } },
   },
   {
@@ -434,17 +428,16 @@ const PASSES = [
     prefix: "m",
     root: CARD,
     surfaces: MOBILE_SURFACES,
-    urlPath: COLUMN_VIEW,
+    shape: "column",
+    layout: "mobile",
     contextOptions: { ...devices["iPhone 15"], deviceScaleFactor: 2 },
   },
   {
-    // The panel needs no `wide` dashboard: Home Assistant gives it the whole
-    // content area, so a normal window is already the layout it ships with.
     key: "panel",
     prefix: "p",
     root: PANEL,
     surfaces: PANEL_SURFACES,
-    urlPath: "/haventory",
+    route: PANEL_ROUTE,
     contextOptions: { viewport: { width: 1440, height: 900 } },
   },
   {
@@ -455,7 +448,7 @@ const PASSES = [
     prefix: "pm",
     root: PANEL,
     surfaces: PANEL_MOBILE_SURFACES,
-    urlPath: "/haventory",
+    route: PANEL_ROUTE,
     contextOptions: {
       viewport: { width: 375, height: 812 },
       hasTouch: true,
@@ -463,7 +456,32 @@ const PASSES = [
       deviceScaleFactor: 2,
     },
   },
-].filter((p) => !only || p.key === only);
+];
+
+const PASS_KEYS = ALL_PASSES.map((p) => p.key);
+// An unrecognised --only would otherwise select no pass at all and the run would
+// report 0/0 captured and exit 0 — a typo that reads as a clean run.
+if (only && !PASS_KEYS.includes(only)) {
+  console.error(`--only ${only}: unknown pass (expected ${PASS_KEYS.join(", ")})`);
+  process.exit(2);
+}
+
+const { overrides, error } = parsePathOverrides(args, PASS_KEYS, only);
+if (error) {
+  console.error(error);
+  process.exit(2);
+}
+
+const PASSES = ALL_PASSES.filter((p) => !only || p.key === only);
+for (const pass of PASSES) {
+  const override = overrides[pass.key] ?? null;
+  if (pass.route && !override) {
+    pass.urlPath = pass.route;
+    console.log(`view (${pass.key}): ${pass.route}  ← the integration's own panel route`);
+  } else {
+    pass.urlPath = await cardPath(pass.shape, { override, label: pass.key });
+  }
+}
 
 const results = [];
 const browser = await chromium.launch({ args: ["--touch-events=enabled"] });
@@ -512,7 +530,7 @@ for (const pass of PASSES) {
     [base, token, haDark],
   );
 
-  const url = base + (urlPathOverride ?? pass.urlPath);
+  const url = base + pass.urlPath;
   const loadRoot = async () => {
     await page.goto(url, { waitUntil: "domcontentloaded" });
     if (page.url().includes("/auth/authorize")) {
@@ -537,6 +555,32 @@ for (const pass of PASSES) {
     if (touch) return el.tap();
     return el.click();
   };
+
+  // A view of the wrong shape still renders the card, and enough testids are
+  // shared between the two branches that the recipes below would pass while
+  // photographing the other layout — the failure this pass exists to rule out.
+  // The shell reflects the branch it measured itself into, so ask it once, up
+  // front, and fail the pass instead of the reader's trust.
+  if (pass.layout) {
+    const name = `${pass.prefix}-layout`;
+    try {
+      await loadRoot();
+      const mobile = await page
+        .locator(CARD)
+        .first()
+        .evaluate((el) => el.shadowRoot?.querySelector("hv-card-shell")?.hasAttribute("mobile") ?? null);
+      if (mobile !== (pass.layout === "mobile")) {
+        throw new Error(
+          `card took its ${mobile ? "narrow" : "desktop"} branch on ${pass.urlPath}, but this pass needs the ${pass.layout} one`,
+        );
+      }
+      console.log(`  PASS  ${name} (${pass.layout} branch on ${pass.urlPath})`);
+      results.push({ name, ok: true });
+    } catch (err) {
+      console.log(`  FAIL  ${name}: ${err.message.split("\n")[0]}`);
+      results.push({ name, ok: false, error: err.message.split("\n")[0] });
+    }
+  }
 
   for (const surface of pass.surfaces) {
     if (wanted && !wanted.some((w) => surface.id.includes(w))) continue;

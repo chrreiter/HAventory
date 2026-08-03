@@ -12,7 +12,8 @@
 //                       [--search <text>] [--tap <selector>]
 //                       [--swipe <dir>[@<selector>]] [--wait <ms>]
 //
-// Defaults: --out screenshot.png, --path /dashboard-dev/0, desktop 1280x900.
+// Defaults: --out screenshot.png, desktop 1280x900, and — without --path — the
+// dashboard view discovered to hold the card in a normal column (card_views.mjs).
 //
 // --element names the root the run waits for and scopes --search/--swipe to. The
 // dashboard card is the default; the sidebar panel at /haventory renders
@@ -40,12 +41,12 @@
 // renders blank.
 
 import { chromium, devices } from "playwright";
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+import { cardPath, haConfig } from "./card_views.mjs";
+
 const skillDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(skillDir, "..", "..", "..");
 
 const args = process.argv.slice(2);
 
@@ -54,17 +55,7 @@ if (args.includes("--devices")) {
   process.exit(0);
 }
 
-// --- config: env wins, .env fills the gaps -------------------------------
-try {
-  for (const line of readFileSync(path.join(repoRoot, ".env"), "utf8").split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
-  }
-} catch {
-  /* no .env — rely on real env vars */
-}
-const base = (process.env.HA_BASE_URL ?? "http://localhost:8123").replace(/\/$/, "");
-const token = process.env.HA_TOKEN;
+const { base, token } = haConfig();
 if (!token) {
   console.error("Missing HA_TOKEN (env or repo-root .env)");
   process.exit(2);
@@ -78,11 +69,10 @@ const flag = (name, dflt) => {
 const has = (name) => args.includes(name);
 
 const outFile = path.resolve(skillDir, flag("--out", "screenshot.png"));
-// The default dashboard is HA's generated one and carries no HAventory card, so
-// the card lives on a `dev` dashboard: view 0 is a sections grid, which is the
-// narrow column a card normally sits in. Views without a `path` are addressed by
-// index. See SKILL.md for the dashboard the dev instance is expected to have.
-const urlPath = flag("--path", "/dashboard-dev/0");
+// With no --path, ask the instance which dashboard view holds the card in a
+// normal column — the shape a single screenshot is normally after. The sidebar
+// panel is not a dashboard view and is reached with an explicit --path.
+const urlPath = flag("--path", null) ?? (await cardPath("column"));
 const rootElement = flag("--element", "haventory-card");
 const fullPage = has("--full");
 const haDark = has("--dark");

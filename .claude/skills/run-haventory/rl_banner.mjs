@@ -14,7 +14,11 @@
 //   node rl_banner.mjs --scenario retrying   # refuse the first round, let a retry win
 //   node rl_banner.mjs --scenario exhausted  # refuse every retry, then Refresh
 //   node rl_banner.mjs --observe 30          # watch only; never touches the options flow
-//   node rl_banner.mjs --path /dashboard-dev/wide --out rl
+//   node rl_banner.mjs --out rl               # screenshot prefix
+//
+// With no --path it opens whichever dashboard view is discovered to hold the
+// card in a normal column (card_views.mjs); the banner is not width-dependent,
+// so any view that renders the card will do.
 //
 // Scenarios (both drive the options flow over REST, exactly as the integration's
 // own config flow does, and always reset rate limiting to OFF on the way out):
@@ -33,26 +37,16 @@
 // Reads HA_BASE_URL / HA_TOKEN from the environment or the repo-root .env.
 
 import { chromium } from "playwright";
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+import { cardPath, haConfig } from "./card_views.mjs";
+
 const skillDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(skillDir, "..", "..", "..");
 
 const args = process.argv.slice(2);
 
-// --- config: env wins, .env fills the gaps -------------------------------
-try {
-  for (const line of readFileSync(path.join(repoRoot, ".env"), "utf8").split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
-  }
-} catch {
-  /* no .env — rely on real env vars */
-}
-const base = (process.env.HA_BASE_URL ?? "http://localhost:8123").replace(/\/$/, "");
-const token = process.env.HA_TOKEN;
+const { base, token } = haConfig();
 if (!token) {
   console.error("Missing HA_TOKEN (env or repo-root .env)");
   process.exit(2);
@@ -63,7 +57,7 @@ const flag = (name, dflt) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : dflt;
 };
 
-const urlPath = flag("--path", "/dashboard-dev/0");
+const urlPath = flag("--path", null) ?? (await cardPath("column"));
 const outPrefix = flag("--out", "rl");
 const observeSecs = args.includes("--observe") ? Number(flag("--observe", "30")) : null;
 const scenarioArg = flag("--scenario", null);
