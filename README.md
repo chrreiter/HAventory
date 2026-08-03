@@ -499,7 +499,10 @@ throughout.
   From the second selected tag on, the Tags heading carries the same any/all control the
   filter panel has, since that is the mode governing what the sidebar just selected. The
   app bar's stat pills are the card's: low in amber, overdue in red, to-inspect in amber,
-  checked out, each click-to-filter. An empty table names the reason and offers a way out — the same
+  checked out, each click-to-filter. Beside them, **Missing** and **Needs repair** price the
+  two flagged statuses in the status chip's own amber; each appears only while something
+  carries that flag, and the two are mutually exclusive because the filter takes one status.
+  An empty table names the reason and offers a way out — the same
   wording and the same offers as the card's list.
 
   At phone width the sidebar folds away and the surface hands its own breakpoint down to

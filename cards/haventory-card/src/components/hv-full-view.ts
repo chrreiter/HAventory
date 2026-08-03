@@ -255,6 +255,44 @@ export class HVFullView extends LitElement {
         background: var(--hv-amber);
         color: #3b2600;
       }
+      /* The same amber the status chip carries on rows, in the table and in the
+         detail sheet — one tone for "flagged, but still a chore" wherever a
+         status is marked. The two pills say which flag in words; giving them a
+         hue of their own would be a second status vocabulary on one screen. */
+      .appbar .pill.status {
+        background: var(--hv-amber);
+        color: #3b2600;
+      }
+      /*
+       * Above the phone breakpoint — the complement of NARROW_QUERY, whose own
+       * block below owns everything at or under it.
+       *
+       * The search is the only item on this bar that can shrink: every pill,
+       * the title and both trailing buttons are flex:none. So each pill added
+       * comes out of the search box, and with all six showing it collapsed to
+       * "Search all 1(" in a 1024px content area. A floor stops that, and the
+       * bar takes a second line instead — which is what the phone layout
+       * already does with these same pills.
+       */
+      @media (min-width: 701px) {
+        .appbar {
+          flex-wrap: wrap;
+        }
+        .appbar .search {
+          min-width: 260px;
+        }
+        /* The spacer can only push on the line it sits on, so once the bar
+           wraps it holds the first line open while the actions it was meant to
+           push land left-aligned under the title. Carrying the margin on the
+           actions themselves keeps them at the right edge of whichever line
+           they end up on, and reads the same as today when nothing wraps. */
+        .appbar .spacer {
+          display: none;
+        }
+        .appbar .add {
+          margin-left: auto;
+        }
+      }
       .appbar .add {
         flex: none;
         display: inline-flex;
@@ -1555,6 +1593,33 @@ export class HVFullView extends LitElement {
     </button>`;
   }
 
+  /**
+   * One flagged status as an app-bar toggle, beside the derived counts.
+   *
+   * Only `missing` and `needs_repair` get one: they are the exceptions worth
+   * interrupting for, and an "OK" pill would price the other 99% of a healthy
+   * inventory. Single-select like every other status surface, so pressing one
+   * while the other is on replaces it rather than asking for items that are
+   * somehow both.
+   */
+  private _renderStatusPill(status: 'missing' | 'needs_repair', count: number | undefined) {
+    // Absent rather than zero: the same rule the overdue and inspection pills
+    // follow, so the bar only ever carries counts worth acting on.
+    if (!count) return null;
+    const on = (this.st?.filters ?? defaultFilters()).status === status;
+    const noun = statusLabel(status).toLowerCase();
+    return html`<button
+      class="pill status ${on ? 'on' : ''}"
+      data-testid="full-badge-status"
+      data-value=${status}
+      aria-pressed=${String(on)}
+      title=${`Show only items marked ${noun}`}
+      @click=${() => this._setFilters({ status: on ? null : status })}
+    >
+      ${count} ${noun}
+    </button>`;
+  }
+
   private _renderAppBar() {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
@@ -1626,6 +1691,8 @@ export class HVFullView extends LitElement {
                 ${counts.checked_out_count} checked out
               </button>`
             : null}
+          ${this._renderStatusPill('missing', counts?.missing_count)}
+          ${this._renderStatusPill('needs_repair', counts?.needs_repair_count)}
           <button
             class="add"
             data-testid="full-add-item"

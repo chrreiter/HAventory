@@ -1,4 +1,5 @@
 import './hv-full-view';
+import { NARROW_QUERY } from './hv-full-view';
 import { makeMockHass, makeItem } from '../test.utils';
 import { Store } from '../store/store';
 import type { HVFullView } from './hv-full-view';
@@ -81,9 +82,10 @@ describe('hv-full-view: phone-width app bar', () => {
     expect(narrow()).toMatch(/\.appbar \{[^}]*flex-wrap: wrap/);
   });
 
-  it('lets the search field shrink at any width', () => {
+  it('lets the search field shrink to nothing at phone widths', () => {
     // `flex: 1` alone leaves min-width at auto, so the field refuses to
-    // compress below its content and shoves its siblings off the bar.
+    // compress below its content and shoves its siblings off the bar. The
+    // desktop block puts a floor back under it — see the wide-bar describe.
     expect(fullCss()).toMatch(/\.appbar \.search \{[^}]*min-width: 0/);
   });
 
@@ -206,6 +208,43 @@ describe('hv-full-view: phone-width app bar', () => {
 
     const loadAll = q(sr, '[data-testid="selection-load-all"]');
     expect(loadAll?.classList.contains('load-all')).toBe(true);
+  });
+});
+
+// The search is the only item on the bar that can shrink — every pill, the
+// title and both trailing buttons are flex:none — so each pill added comes out
+// of it. With all six showing it collapsed to "Search all 1(" in a 1024px
+// content area, which is what this block exists to stop.
+describe('hv-full-view: wide app bar', () => {
+  const wide = () => {
+    const css = fullCss();
+    const start = css.indexOf('@media (min-width: 701px)');
+    expect(start, 'no wide-viewport block').toBeGreaterThan(-1);
+    // Stop at the phone block so a rule from it can never satisfy these.
+    const end = css.indexOf('@media (max-width: 700px)', start);
+    return end > start ? css.slice(start, end) : css.slice(start);
+  };
+
+  // The complement of NARROW_QUERY: the two blocks must not both apply, and
+  // must not leave a width where neither does.
+  it('picks up exactly where the phone block leaves off', () => {
+    expect(NARROW_QUERY).toBe('(max-width: 700px)');
+    expect(fullCss()).toContain('@media (min-width: 701px)');
+  });
+
+  it('puts a floor under the search rather than letting the pills eat it', () => {
+    expect(wide()).toMatch(/\.appbar \.search \{[^}]*min-width: 260px/);
+  });
+
+  it('lets the bar take a second line once the pills stop fitting', () => {
+    expect(wide()).toMatch(/\.appbar \{[^}]*flex-wrap: wrap/);
+  });
+
+  // A spacer can only push on the line it is on, so once the bar wraps it holds
+  // the first line open while the actions land left-aligned under the title.
+  it('carries the right-alignment on the actions, not on a spacer', () => {
+    expect(wide()).toMatch(/\.appbar \.spacer \{[^}]*display: none/);
+    expect(wide()).toMatch(/\.appbar \.add \{[^}]*margin-left: auto/);
   });
 });
 
@@ -1179,6 +1218,60 @@ describe('hv-full-view: app bar filters', () => {
     await settle(el);
     expect(store.state.value.filters.overdueOnly).toBe(true);
     expect(q(sr, '[data-testid="full-badge-overdue"]')?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  // The bar priced every derived exception — low, overdue, due for inspection,
+  // checked out — and none of the stored one, so the two flags a person sets by
+  // hand were the only ones with no way back to them from here.
+  it('carries the two flagged statuses, and filters on them', async () => {
+    const statuses = [
+      makeItem({ id: '1', status: 'missing' }),
+      makeItem({ id: '2', status: 'needs_repair' }),
+      makeItem({ id: '3', status: 'needs_repair' }),
+      makeItem({ id: '4' }),
+    ];
+    const pill = (sr: ShadowRoot, value: string) =>
+      sr.querySelector(`[data-testid="full-badge-status"][data-value="${value}"]`) as HTMLButtonElement;
+    const { el, store, sr } = await mount({ items: statuses });
+
+    expect(pill(sr, 'missing').textContent?.replace(/\s+/g, ' ').trim()).toBe('1 missing');
+    expect(pill(sr, 'needs_repair').textContent?.replace(/\s+/g, ' ').trim()).toBe('2 needs repair');
+
+    pill(sr, 'missing').click();
+    await settle(el);
+    expect(store.state.value.filters.status).toBe('missing');
+    expect(pill(sr, 'missing').getAttribute('aria-pressed')).toBe('true');
+
+    pill(sr, 'missing').click();
+    await settle(el);
+    expect(store.state.value.filters.status).toBe(null);
+  });
+
+  // Single-select, so the two pills are mutually exclusive — pressing one while
+  // the other is on replaces it rather than asking for items that are both.
+  it('replaces the active status pill rather than adding to it', async () => {
+    const statuses = [makeItem({ id: '1', status: 'missing' }), makeItem({ id: '2', status: 'needs_repair' })];
+    const pill = (sr: ShadowRoot, value: string) =>
+      sr.querySelector(`[data-testid="full-badge-status"][data-value="${value}"]`) as HTMLButtonElement;
+    const { el, store, sr } = await mount({ items: statuses });
+
+    pill(sr, 'missing').click();
+    await settle(el);
+    pill(sr, 'needs_repair').click();
+    await settle(el);
+
+    expect(store.state.value.filters.status).toBe('needs_repair');
+    expect(pill(sr, 'missing').getAttribute('aria-pressed')).toBe('false');
+    expect(pill(sr, 'needs_repair').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  // "OK" is not an exception, and on a healthy inventory a status pill at all
+  // would be the loudest thing on a bar with nothing to report.
+  it('drops each status pill when nothing carries that flag', async () => {
+    const { sr } = await mount({ items: [makeItem({ id: '1', status: 'missing' })] });
+    expect(q(sr, '[data-testid="full-badge-status"][data-value="missing"]')).toBeTruthy();
+    expect(q(sr, '[data-testid="full-badge-status"][data-value="needs_repair"]')).toBe(null);
+    expect(q(sr, '[data-testid="full-badge-status"][data-value="ok"]')).toBe(null);
   });
 
   it('drops the overdue pill when nothing is overdue', async () => {
