@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0](https://github.com/chrreiter/HAventory/compare/v0.2.0...v0.3.0) (2026-08-03)
+
+
+### Features
+
+* allow filing locations under empty areas in organize dialog ([#185](https://github.com/chrreiter/HAventory/issues/185)) ([f6059fc](https://github.com/chrreiter/HAventory/commit/f6059fca684acba2aaf7f688fc9ad5f0fd94bc8a))
+* **card:** make item status a table column and a sidebar facet ([#240](https://github.com/chrreiter/HAventory/issues/240)) ([3e1cefe](https://github.com/chrreiter/HAventory/commit/3e1cefefb8b4076e8d194962924c2b9531953ac2))
+* item status field (OK / Missing / Needs Repair) ([#238](https://github.com/chrreiter/HAventory/issues/238)) ([a8982f6](https://github.com/chrreiter/HAventory/commit/a8982f6b3a9075598b1a351b520d2b522fd3a365))
+
+
+### Documentation
+
+* make CLAUDE.md release-stable and re-verify its claims ([#215](https://github.com/chrreiter/HAventory/issues/215)) ([336cc58](https://github.com/chrreiter/HAventory/commit/336cc584e3dc7cec0f855c277b09e255ad0026aa)), closes [#213](https://github.com/chrreiter/HAventory/issues/213)
+* point already-open tabs at a reload or the sidebar entry after install ([#237](https://github.com/chrreiter/HAventory/issues/237)) ([7349037](https://github.com/chrreiter/HAventory/commit/7349037ba40ea7a59e884d444e97e0f1ea7be883))
+
 ## [0.2.0](https://github.com/chrreiter/HAventory/compare/v0.1.1...v0.2.0) (2026-08-03)
 
 
