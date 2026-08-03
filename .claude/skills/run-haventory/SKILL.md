@@ -151,8 +151,8 @@ card-driving harness therefore defaults to the separate **`dev`** dashboard
 | 0 (no `path`) | `/dashboard-dev/0` | `sections` grid, card in a normal column | `screenshot.mjs`, `visual_pass.mjs` mobile, `import_policies.mjs`, `rl_banner.mjs` |
 | `wide` | `/dashboard-dev/wide` | `type: panel`, card gets the full window width | `visual_pass.mjs` desktop, `drive_import.mjs` |
 
-Both views hold a bare `{type: custom:haventory-card}`. A view without a `path` is
-addressed by **index**, which is why the first one is `/0`.
+Each view holds one `{type: custom:haventory-card}` and nothing else that matters. A view
+without a `path` is addressed by **index**, which is why the first one is `/0`.
 
 The two shapes are not interchangeable: the card picks its layout from **its own**
 rendered width, so in a sections column even a 1440px window gets the narrow branch.
