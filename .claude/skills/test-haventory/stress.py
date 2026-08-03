@@ -994,7 +994,7 @@ async def cmd_races() -> None:
     a = await connect()
     b = await connect()
     try:
-        print("== RACE 1: location rename invalidates subtree item versions ==")
+        print("== RACE 1: location rename leaves subtree item versions valid ==")
         await assert_healthy(control, "races/before")
         loc = (await control.call("haventory/location/create", name=PREFIX + "race_loc"))["result"]
         loc_id = loc["id"]
@@ -1010,7 +1010,7 @@ async def cmd_races() -> None:
             )["result"]
             item_versions[it["id"]] = it["version"]
         first_id = next(iter(item_versions))
-        stale_v = item_versions[first_id]
+        held_v = item_versions[first_id]
 
         # rename the location on conn A
         ren = await a.call(
@@ -1018,28 +1018,38 @@ async def cmd_races() -> None:
         )
         print(f"  rename success={ren.get('success')}")
 
-        # conn B updates an item with the now-stale expected_version
+        # conn B updates an item with the version it read before the rename
         upd = await b.call(
             "haventory/item/update",
             item_id=first_id,
-            expected_version=stale_v,
+            expected_version=held_v,
             description="post-rename",
         )
         code = upd.get("error", {}).get("code") if not upd.get("success") else "SUCCESS"
         print(
-            f"  item/update with stale expected_version -> {code} "
-            f"({'EXPECTED conflict (documented hazard)' if code == 'conflict' else 'no invalidation'})"
+            f"  item/update with pre-rename expected_version -> {code} "
+            f"({'OK, token survived the rename' if code == 'SUCCESS' else '**INVALIDATED**'})"
         )
 
-        # verify every subtree item's version bumped by exactly 1
-        bumped = 0
+        # The path rewrite is derived data: every subtree item keeps the version
+        # it had before the rename. The one just updated is the exception —
+        # that was a real mutation — and every path must carry the new name.
+        held = 0
+        repathed = 0
         for iid, v0 in item_versions.items():
             cur = (await control.call("haventory/item/get", item_id=iid))["result"]
-            if cur["version"] == v0 + 1:
-                bumped += 1
+            expected = v0 + 1 if iid == first_id and code == "SUCCESS" else v0
+            if cur["version"] == expected:
+                held += 1
+            if "race_loc_renamed" in cur["location_path"]["display_path"]:
+                repathed += 1
         print(
-            f"  subtree items version-bumped by exactly 1: {bumped}/{len(item_versions)} "
-            f"{'OK' if bumped == len(item_versions) else '**PARTIAL**'}"
+            f"  subtree items keeping their version: {held}/{len(item_versions)} "
+            f"{'OK' if held == len(item_versions) else '**BUMPED**'}"
+        )
+        print(
+            f"  subtree items carrying the new path: {repathed}/{len(item_versions)} "
+            f"{'OK' if repathed == len(item_versions) else '**STALE PATH**'}"
         )
         await assert_healthy(control, "races/after-rename")
 

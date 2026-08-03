@@ -1,7 +1,8 @@
 # Item 23 — location rename must not bump subtree item versions
 
-Status: **planned** (pre-v1.0, ships in v0.2.0). Tracker row: `open-items.md` item 23.
-Paste-ready prompt: [`v1_prompts.md`](v1_prompts.md#item-23).
+Status: **delivered** — implemented as written; item 23 is closed in
+[`open-items.md`](open-items.md). This document is the implementation contract it was
+built to.
 
 ## The defect
 
@@ -28,12 +29,12 @@ not an item mutation, so:
 
 ## Why the card stays correct
 
-The card does not learn about renamed paths through item versions. A `location/update`
-broadcasts a `locations` event; the store refetches the tree and flat list on it, and the
-item list's paths come back fresh on the next list/refetch. Verify during implementation
-that subscription payloads for *items* are not the delivery channel for path changes
-(check what `ws.py` broadcasts on `location/update`) — if any surface turns out to rely
-on an item event per rewritten item, that surface's refresh path is in scope.
+The card does not learn about renamed paths through item versions — confirmed on both
+sides. `ws_location_update` (and `ws_location_move_subtree`) broadcasts only on the
+`locations` topic, `renamed` / `moved`, never a per-item event for the rewrite; the
+store's `onLocationsEvent` answers either action with a flat-list + tree refetch *and* a
+full `listItems(true)`, so rows carry the new path from that reload, not from a version
+change.
 
 ## Contract touch points
 
