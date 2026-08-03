@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "HAventory",
-        "description": "Set up HAventory for inventory management in Home Assistant. Both answers below, and everything else, can be changed later under Configure.",
+        "description": "Set up HAventory for inventory management in Home Assistant. Both answers below, and everything else, can be changed later under Configure. Heads-up for afterwards: a browser page that is already open picks up the card only when it next loads — one reload, or a visit to the new HAventory sidebar entry, brings it in.",
         "data": {
           "card_title": "Card title",
           "sidebar_panel_enabled": "Show HAventory in the sidebar"
@@ -15,7 +15,7 @@
       }
     },
     "create_entry": {
-      "default": "Successfully configured HAventory. Reload this browser page once: the card and its sidebar icon are loaded when a page opens, so a page that was already open has neither yet."
+      "default": "Successfully configured HAventory. Reload this browser page once: the card and its sidebar icon are loaded when a page opens, so a page that was already open has neither yet. Opening the new HAventory sidebar entry does the same job — panel and card ship in one bundle, and an open dashboard shows the card the moment that bundle loads."
     }
   },
   "options": {

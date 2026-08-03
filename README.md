@@ -47,7 +47,11 @@ dialogs and editors — and carries the HAventory mark and whatever name you gav
   JavaScript to a page when that page loads, so a tab that was already open when HAventory
   was installed or updated has neither the card nor the artwork behind its sidebar icon
   yet — the entry shows up without its mark until the next load. One ordinary reload is
-  all it takes; no cache clearing, and nothing to repeat later.
+  all it takes; no cache clearing, and nothing to repeat later. Clicking the bare sidebar
+  entry works too: panel and card ship in one bundle, and a dashboard replaces its "custom
+  element doesn't exist" tile with the real card the moment that bundle loads. Either way,
+  a page that has shown the card once keeps it for as long as it stays open — the backend
+  restarting or updating underneath changes nothing until the page next loads.
 
 - **Turning it off:** Settings → Devices & services → HAventory → **Configure** →
   *Show HAventory in the sidebar*. The entry appears and disappears as you save the form;
