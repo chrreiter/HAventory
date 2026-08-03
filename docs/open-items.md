@@ -18,7 +18,8 @@ non-blocking).
   sidebar panel's PR-2 (#160) landed, re-checked against `main` @ `9180d8f` in the
   **#162 collection pass** (2026-08-02), and re-checked again against `main` @ `04ff0b3` in
   the **close-out pass** of the same day (after #163–#165). Reconciled against
-  `main` @ `0583c29` after the **v0.2.0 payload batch** (#167–#172) landed.
+  `main` @ `0583c29` after the **v0.2.0 payload batch** (#167–#172) landed, and against
+  `main` @ `28f5ccd` after the pre-release follow-up fixes (#173–#178).
 - **Item numbers are stable and append-only** — new items get the next free number
   rather than renumbering the list, so references from PRs and docs keep resolving.
   Read each table's own ordering, not the numbering, for priority. (The one exception —
@@ -511,6 +512,8 @@ Ordered by impact.
 | 86 | **Item status field (OK / Missing / Needs Repair).** A stored, filterable per-item state beside quantity/checkout — schema change (new item field + migration), `ItemFilter` + card surfaces. | roadmap §06 (folded in 2026-08-02) | Medium (feature) | M |
 | 87 | **Area filter on `haventory/subscribe`.** The subscribe schema takes `location_id` / `include_subtree` / `inspection_overdue_only` only (verified 2026-08-02: `ws.py` `_item_matches_filter` knows nothing of areas), while `item/list` accepts `area_id` — so a card filtered to an area still receives every item event and filters client-side. Additive: `area_id` on the subscribe schema + the matcher resolving through the item's `effective_area_id`, mirrored in both contract docs. | roadmap §06 (folded in 2026-08-02) | Low–Med | S–M |
 | 88 | **Quality backlog from the roadmap:** property-based tests (hypothesis) for the repository's index invariants, Playwright visual regression over the card's surfaces, opt-in telemetry. Three separate efforts filed as one placeholder; split when one is picked up. | roadmap §06 (folded in 2026-08-02) | Low | M–L (each) |
+| 89 | **Two "desktop" visual-pass surfaces are not branch-discriminating.** `d-02-filter-panel` and `d-11-full-view` pass in the card's narrow branch too — `filter-panel` is reused inside the mobile filter sheet, and the full view is a modal at any width — so on their own they cannot catch a desktop pass running on the wrong layout. #178's `d-layout` assertion covers the shape for the whole pass; sharper would be each of the two asserting something the narrow branch lacks (the panel applying live with no Apply footer, the full view's sidebar). | PR #178 follow-up | Low (tooling) | S |
+| 90 | **Harness discovery cannot choose between dashboards.** `card_views.mjs` takes the first matching view in `lovelace/dashboards/list` order when several dashboards hold the card; an instance with the card on more than one has no way to say which it means short of a per-pass `--path`. Fine for the dev instance (one card-bearing dashboard); a `--dashboard <url_path>` filter would close it if that ever changes. | PR #178 follow-up | Low (tooling) | S |
 
 ---
 
