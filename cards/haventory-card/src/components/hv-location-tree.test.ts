@@ -1,5 +1,6 @@
 import './hv-location-tree';
 import type { HVLocationTree } from './hv-location-tree';
+import { base } from '../ui/tokens';
 import type { LocationTreeNode } from '../store/types';
 
 function node(
@@ -386,6 +387,21 @@ describe('hv-location-tree: area grouping', () => {
     const el = await mountAreas();
     expect(heads(el)[0].querySelector('.hv-area-chip')).toBeTruthy();
     expect(heads(el)[0].querySelector('[data-icon="home"]')).toBeTruthy();
+  });
+
+  // Both trees that head their roots with a chip are this component — the
+  // full view's sidebar and the organize dialog's — so its size is settled
+  // here, once, for both.
+  it('sets that chip at row size, leaving the shared chip its smaller one', () => {
+    const styles = (customElements.get('hv-location-tree') as typeof HVLocationTree).styles;
+    const sheets = Array.isArray(styles) ? styles : [styles];
+    const own = String(sheets[sheets.length - 1].cssText).replace(/\s+/g, ' ');
+    // Tracks whatever `.row` is set to rather than restating a number beside it.
+    expect(own).toMatch(/\.area-name \.hv-area-chip \{ font-size: inherit/);
+    expect(own).toMatch(/\.row \{[^}]*font: 400 [\d.]+px/);
+    // The other surfaces put this chip beside a path it qualifies, where it is
+    // an annotation and stays smaller than the line carrying it.
+    expect(String(base.cssText)).toMatch(/\.hv-area-chip \{[^}]*font-size: 11px/);
   });
 
   it('leaves an inventory that assigns no areas exactly as it was', async () => {
