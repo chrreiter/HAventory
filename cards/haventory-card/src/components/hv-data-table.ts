@@ -30,8 +30,8 @@ export class HVDataTable extends LitElement {
         flex-direction: column;
         min-height: 0;
         min-width: 0;
-        /* The column template has a hard minimum — 786px for the default set,
-           826px with the selection column — and a grid whose tracks do not fit
+        /* The column template has a hard minimum — 1020px for the default set,
+           1060px with the selection column — and a grid whose tracks do not fit
            overflows its own box rather than shrinking. With overflow visible
            that spilled content was simply clipped by the shell: at 375px the
            rows measured clientWidth 634 against scrollWidth 854, and the Tags,

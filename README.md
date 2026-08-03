@@ -464,7 +464,10 @@ throughout.
   custom fields (text / number / yes-no / date). Saves send the item's expected version so
   a concurrent edit surfaces as a conflict.
 - **Full view** — a fullscreen workspace with a coloured app bar, a **browse sidebar**, and
-  a sortable table. Only columns the backend can sort by get a clickable header. The
+  a sortable table. Only columns the backend can sort by get a clickable header. A browser
+  that has made no choice yet shows every optional column — quantity, category, location,
+  tags, due, next inspection, updated — and the ⋮ → **Columns** picker is where you thin
+  that down; the table scrolls sideways rather than dropping a column you kept. The
   sidebar leads with the location tree carrying the backend's own per-location counts and
   an orphans row, then **Categories** and **Tags** as sections of their own; each heading
   collapses from a chevron and states how many there are — locations counted at every

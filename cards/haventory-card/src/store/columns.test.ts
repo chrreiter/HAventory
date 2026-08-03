@@ -25,6 +25,11 @@ describe('columns model', () => {
     expect(loadColumnPrefs()).toEqual(DEFAULT_COLUMNS);
   });
 
+  // A fresh browser shows the whole record; thinning it down is the picker's job.
+  it('defaults to every column', () => {
+    expect(DEFAULT_COLUMNS).toEqual(COLUMN_DEFS.map((c) => c.key));
+  });
+
   it('round-trips a saved selection (normalized)', () => {
     saveColumnPrefs(['tags', 'due_date', 'quantity']);
     expect(loadColumnPrefs()).toEqual(['quantity', 'tags', 'due_date']);
@@ -82,8 +87,8 @@ describe('table column widths', () => {
   // Pinned as a number so that adding a column, or widening one, shows up here
   // as a deliberate change rather than as another phone-width overflow.
   it('cannot lay the default table out narrower than a phone', () => {
-    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }))).toBe(786);
-    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: true }))).toBe(826);
+    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }))).toBe(1020);
+    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: true }))).toBe(1060);
   });
 
   it('only fits a phone when almost every column is turned off', () => {

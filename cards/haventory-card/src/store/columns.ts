@@ -49,14 +49,14 @@ export const COLUMN_DEFS: readonly ColumnDef[] = [
 
 const COLUMN_ORDER: ColumnKey[] = COLUMN_DEFS.map((c) => c.key);
 
-/** The table opens on Name | Qty | Category | Tags | Due | Updated. */
-export const DEFAULT_COLUMNS: readonly ColumnKey[] = [
-  'quantity',
-  'category',
-  'tags',
-  'due_date',
-  'updated_at',
-];
+/**
+ * A browser that has made no choice yet gets every column.
+ *
+ * Showing the whole record is what makes the optional columns discoverable at
+ * all; the picker is there to thin it down. The table scrolls sideways when the
+ * full set is wider than the viewport, so no column is unreachable.
+ */
+export const DEFAULT_COLUMNS: readonly ColumnKey[] = COLUMN_DEFS.map((c) => c.key);
 
 export const COLUMN_PREFS_STORAGE_KEY = 'haventory:columns:v1';
 
