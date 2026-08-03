@@ -8,7 +8,10 @@ from copy import deepcopy
 import custom_components.haventory as haven_init
 import pytest
 from custom_components.haventory.const import CONF_CARD_TITLE, DEFAULT_CARD_TITLE
-from custom_components.haventory.exceptions import SchemaDowngradeError
+from custom_components.haventory.exceptions import (
+    CorruptSchemaVersionError,
+    SchemaDowngradeError,
+)
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
 from homeassistant.config_entries import ConfigEntry
@@ -105,6 +108,54 @@ async def test_validate_storage_payload_reports_newer_version_specifically() -> 
         haven_init._validate_storage_payload(payload, schema_version=CURRENT_SCHEMA_VERSION)
 
     assert str(CURRENT_SCHEMA_VERSION + 2) in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_refuses_corrupt_schema_version_and_leaves_store_intact(
+    monkeypatch,
+) -> None:
+    """A non-integer schema_version stops setup with the corruption message."""
+
+    hass = HomeAssistant()
+    entry = ConfigEntry()
+    key = "test_init_corrupt_schema_version"
+    monkeypatch.setattr(haven_init, "STORAGE_KEY", key)
+
+    pre_payload = {
+        "schema_version": None,
+        "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 5}},
+        "locations": {"l1": {"id": "l1", "name": "Garage"}},
+    }
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save(deepcopy(pre_payload))
+
+    # ConfigEntryError, not ConfigEntryNotReady: backing off forever cannot repair
+    # a corrupt file, and the generic "storage load failed" hid what was wrong.
+    with pytest.raises(ConfigEntryError) as excinfo:
+        await haven_init.async_setup_entry(hass, entry)
+
+    message = str(excinfo.value)
+    assert "schema_version" in message
+    assert "None" in message
+
+    assert await raw_store.async_load() == pre_payload
+    assert "repository" not in hass.data[haven_init.DOMAIN]
+
+
+@pytest.mark.asyncio
+async def test_validate_storage_payload_rejects_a_numeric_string_version() -> None:
+    """``"5"`` is corruption, not the current version — validation must not coerce it."""
+
+    payload = {
+        "schema_version": str(CURRENT_SCHEMA_VERSION),
+        "items": {},
+        "locations": {},
+    }
+
+    with pytest.raises(CorruptSchemaVersionError) as excinfo:
+        haven_init._validate_storage_payload(payload, schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert repr(str(CURRENT_SCHEMA_VERSION)) in str(excinfo.value)
 
 
 @pytest.mark.asyncio

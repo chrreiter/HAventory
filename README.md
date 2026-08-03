@@ -734,3 +734,8 @@ and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discus
   after restoring a backup taken on a newer version. The entry stops with that error and the
   store is left untouched; re-install the newer version to read it, or replace
   `haventory_store` with a backup taken on the running version.
+- **"stored data has a corrupt schema_version (…); expected an integer"**: `haventory_store`
+  holds something other than a whole number under `schema_version` — a hand edit, a truncated
+  write, or a quoted number such as `"5"`, which is not the same as `5` and is not assumed to
+  mean it. The entry stops with that error and the store is left untouched; fix the value in
+  the file, or replace `haventory_store` with a backup.

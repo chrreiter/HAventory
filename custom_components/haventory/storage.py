@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any, Final, cast
 
@@ -26,7 +27,12 @@ from homeassistant.helpers.storage import Store
 
 from . import migrations
 from .const import DOMAIN
-from .exceptions import NotLoadedError, SchemaDowngradeError, StorageError
+from .exceptions import (
+    CorruptSchemaVersionError,
+    NotLoadedError,
+    SchemaDowngradeError,
+    StorageError,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,6 +44,12 @@ STORAGE_KEY: Final[str] = "haventory_store"
 
 # Debounce delay for persistence operations (seconds)
 PERSIST_DEBOUNCE_DELAY: Final[float] = 1.0
+
+# How much of a corrupt ``schema_version`` the refusal quotes back. The value is
+# whatever the file holds, and the message reaches the config entry's error state
+# in the UI, so a misplaced items dict landing on that key must not paste the
+# whole inventory into it.
+_MAX_REPORTED_VERSION_CHARS: Final[int] = 60
 
 
 def _empty_payload() -> dict[str, Any]:
@@ -62,6 +74,38 @@ def schema_downgrade_message(*, stored_version: int, supported_version: int) -> 
         "Upgrade HAventory to a version that understands this data, or restore a backup "
         "taken with this version. The stored data was left unchanged."
     )
+
+
+def _corrupt_schema_version_message(value: object) -> str:
+    """Build the refusal shown when ``schema_version`` is not an integer."""
+
+    shown = repr(value)
+    if len(shown) > _MAX_REPORTED_VERSION_CHARS:
+        shown = shown[: _MAX_REPORTED_VERSION_CHARS - 1] + "…"
+    return (
+        f"stored data has a corrupt schema_version ({shown}); expected an integer. "
+        "HAventory will not guess which schema this data uses. Repair the stored file "
+        "or restore a backup, then reload HAventory. The stored data was left unchanged."
+    )
+
+
+def read_schema_version(payload: Mapping[str, Any], *, missing: int) -> int:
+    """Read ``schema_version`` out of a stored payload, refusing to guess.
+
+    A hand-edited or truncated store can hold anything under this key, and
+    ``int()`` treats the two failure modes inconsistently: it raises on ``None``
+    or ``"abc"``, and silently invents a version for anything it can parse —
+    ``"4"`` becoming 4, ``True`` becoming 1 — so the data would be read, and
+    rewritten, under a version the file never claimed. Only a genuine ``int`` is
+    a version here; ``missing`` is what an absent key means to the caller.
+    """
+
+    if "schema_version" not in payload:
+        return missing
+    value = payload["schema_version"]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise CorruptSchemaVersionError(_corrupt_schema_version_message(value))
+    return value
 
 
 def _get_persist_lock(hass: HomeAssistant) -> asyncio.Lock:
@@ -118,7 +162,7 @@ class DomainStore:
             return _empty_payload()
 
         # Defensive: missing schema_version means treat as version 0
-        from_version = int(raw.get("schema_version", 0)) if isinstance(raw, dict) else 0
+        from_version = read_schema_version(raw, missing=0) if isinstance(raw, dict) else 0
 
         if from_version != self._schema_version:
             migrated = await self.async_migrate_if_needed(raw)
@@ -150,7 +194,9 @@ class DomainStore:
         Returns the migrated (or original) payload.
 
         Raises ``SchemaDowngradeError`` when ``raw`` was written by a newer schema
-        version than this build supports, leaving the stored payload untouched.
+        version than this build supports, and ``CorruptSchemaVersionError`` when
+        it carries no readable version at all. Both leave the stored payload
+        untouched.
         """
 
         if not isinstance(raw, dict):  # Corrupted or unexpected
@@ -167,7 +213,7 @@ class DomainStore:
             )
             raise StorageError("corrupted storage payload: not a dict")
 
-        from_version = int(raw.get("schema_version", 0))
+        from_version = read_schema_version(raw, missing=0)
         to_version = self._schema_version
         if from_version == to_version:
             # Normalize missing keys even when versions match
