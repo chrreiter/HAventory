@@ -349,9 +349,11 @@ npm i && npx playwright install chromium   # one-time
 npm run test:e2e                            # skips cleanly if RUN_ONLINE is unset
 ```
 
-The card must be deployed on a dashboard at `--path` (default `/lovelace/default_view`),
-e.g. via `scripts/reload_addon.sh`. The test is idempotent — it creates a uniquely-named
-item and deletes it (best-effort cleanup even on failure).
+The card must be on a dashboard (deploy e.g. via `scripts/reload_addon.sh`), but no path is
+assumed: the run walks the instance's dashboards for a view holding a `custom:haventory-card`
+in a normal column — the narrow layout the assertions target — and prints the one it chose.
+`--path <ha-url-path>` forces a different view. The test is idempotent — it creates a
+uniquely-named item and deletes it (best-effort cleanup even on failure).
 
 #### Coverage
 

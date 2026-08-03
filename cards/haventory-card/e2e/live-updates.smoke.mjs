@@ -25,17 +25,15 @@
 // (`npx playwright install chromium`).
 //
 // Usage (from cards/haventory-card/):
-//   RUN_ONLINE=1 node e2e/live-updates.smoke.mjs [--path /lovelace/default_view]
+//   RUN_ONLINE=1 node e2e/live-updates.smoke.mjs [--path <ha-url-path>]
 //   RUN_ONLINE=1 npm run test:e2e
+//
+// Which dashboard view holds the card is discovered from the instance rather than
+// assumed — see card_views.mjs. `--path` forces one.
 //
 // Exit codes: 0 = pass or skipped, 1 = a live-update assertion failed, 2 = misconfig.
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, '..', '..', '..');
+import { cardPath, haConfig } from '../../../.claude/skills/run-haventory/card_views.mjs';
 
 // --- opt-in gate ---------------------------------------------------------
 if (!process.env.RUN_ONLINE) {
@@ -44,16 +42,7 @@ if (!process.env.RUN_ONLINE) {
 }
 
 // --- config: env wins, repo-root .env fills the gaps ---------------------
-try {
-  for (const line of readFileSync(path.join(repoRoot, '.env'), 'utf8').split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
-  }
-} catch {
-  /* no .env — rely on real env vars */
-}
-const base = (process.env.HA_BASE_URL ?? 'http://localhost:8123').replace(/\/$/, '');
-const token = process.env.HA_TOKEN;
+const { base, token } = haConfig();
 if (!token) {
   console.error('FAIL(config): missing HA_TOKEN (env or repo-root .env).');
   process.exit(2);
@@ -64,7 +53,6 @@ const flag = (name, dflt) => {
   const i = args.indexOf(name);
   return i >= 0 && args[i + 1] ? args[i + 1] : dflt;
 };
-const urlPath = flag('--path', '/lovelace/default_view');
 
 // Playwright is an optional peer of this smoke — resolve it lazily so a plain
 // `npm run test:e2e` on a machine without a browser skips cleanly instead of crashing.
@@ -75,6 +63,12 @@ try {
   console.log('SKIP: Playwright is not installed. Run `npm i` then `npx playwright install chromium`.');
   process.exit(0);
 }
+
+// The card picks its layout from its own rendered width, and every assertion below
+// is on `hv-list-row` — the narrow branch. A `type: panel` view hands the card the
+// whole content area and renders the table instead, so this asks for a view that
+// holds the card in a normal column.
+const urlPath = await cardPath('column', { override: flag('--path', null) });
 
 // Unique, greppable names so we never collide with real data and cleanup is targeted.
 // Date.now() is fine here — this is a standalone Node script, not a workflow.
