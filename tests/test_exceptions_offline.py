@@ -9,10 +9,13 @@ from __future__ import annotations
 import pytest
 from custom_components.haventory.exceptions import (
     ConflictError,
+    CorruptSchemaVersionError,
     HaventoryError,
     NotFoundError,
+    SchemaDowngradeError,
     StorageError,
     ValidationError,
+    error_code,
 )
 
 
@@ -50,3 +53,15 @@ async def test_storage_error_message_and_type():
     exc = StorageError(message)
     assert isinstance(exc, HaventoryError)
     assert str(exc) == message
+
+
+@pytest.mark.asyncio
+async def test_schema_refusals_stay_storage_errors():
+    # Both refusals ride the contract's storage_error code rather than widening
+    # the taxonomy the WebSocket clients know.
+    for cls in (SchemaDowngradeError, CorruptSchemaVersionError):
+        message = f"{cls.__name__} message"
+        exc = cls(message)
+        assert isinstance(exc, StorageError)
+        assert str(exc) == message
+        assert error_code(exc) == "storage_error"
