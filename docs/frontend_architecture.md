@@ -151,10 +151,25 @@ header carries `aria-checked="mixed"` for a partial page), and `hv-column-picker
 A control that expands something carries `aria-expanded` **and** `aria-controls`, and the
 element it names stays in the tree whether or not it is open — an `aria-controls` that
 resolves to nothing announces the control as controlling nothing. Only the contents come and
-go, so collapsing still discards the state inside. Both filter surfaces are wired this way:
-`hv-filter-panel`'s location chip points at its tree holder, and `hv-full-view`'s three
-sidebar headings each point at `sidebar-section-<section>`. Ids are shadow-scoped, so the
-desktop panel and the phone sheet can both be mounted without colliding.
+go, so collapsing still discards the state inside. Every disclosure in the card is wired this
+way: `hv-filter-panel`'s location chip, `hv-full-view`'s sidebar headings and Filters button,
+`hv-card-shell`'s expand and filter buttons, `hv-item-editor`'s location, category and "More
+fields" fields, `hv-organize-dialog`'s two location pickers, and `hv-location-tree`'s rows and
+area bands. Ids are shadow-scoped, so the desktop panel and the phone sheet can both be
+mounted without colliding. `hv-overflow-menu` is the one disclosure outside this rule: a menu
+button announces its popup with `aria-haspopup`, so its menu is free to leave the DOM.
+
+Where the target keeps a rendered box of its own it is held in the tree with `hidden`, so an
+empty one neither paints nor takes a grid gap; a holder that sets a `display` of its own
+needs a `[hidden]` rule to go with it, because an author rule outranks the browser's. Where
+the contents belong to a layout the holder must not join — the item editor's "More fields"
+are cells of the form grid — the holder takes `display: contents` instead and stays empty.
+
+Two ids are generated rather than fixed, both in `hv-location-tree`: a row names a container
+derived from its node id, and an area band names one derived from its collapse key. Anything
+outside the id alphabet is escaped as `_<code point>_`, escaping `_` itself, which keeps the
+mapping one-to-one — two nodes cannot collapse onto one container — and keeps the result
+usable as a selector. A row with no children discloses nothing and so names nothing.
 
 ### The area beside a location
 

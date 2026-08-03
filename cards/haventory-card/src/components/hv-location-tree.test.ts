@@ -249,6 +249,81 @@ describe('hv-location-tree: filtering and cycle guard', () => {
   });
 });
 
+// aria-expanded on its own says only that something opened; which element it
+// opened was left to whatever happened to follow the row in reading order — and
+// a collapsed node renders no descendants at all, so there was nothing to name.
+describe('hv-location-tree: what a row discloses', () => {
+  const row = (el: HVLocationTree, id: string) =>
+    q(el, `[data-testid="tree-row"][data-id="${id}"]`) as HTMLElement;
+  const twisty = (el: HVLocationTree, id: string) =>
+    q(el, `[data-testid="tree-row"][data-id="${id}"] [data-testid="tree-twisty"]`) as HTMLButtonElement;
+
+  it('names the container its children go in, collapsed or expanded', async () => {
+    const el = await mount();
+    const id = row(el, 'garage').getAttribute('aria-controls') as string;
+    expect(id).toBeTruthy();
+    expect(row(el, 'garage').getAttribute('aria-expanded')).toBe('false');
+
+    // The id has to resolve in both states — a row pointing at nothing announces
+    // as controlling nothing — so the container stays behind, emptied.
+    const shut = el.shadowRoot?.getElementById(id);
+    expect(shut, 'container while collapsed').toBeTruthy();
+    expect(shut?.querySelector('[data-testid="tree-row"]'), 'no children while collapsed').toBe(null);
+
+    twisty(el, 'garage').click();
+    await el.updateComplete;
+
+    expect(row(el, 'garage').getAttribute('aria-expanded')).toBe('true');
+    expect(row(el, 'garage').getAttribute('aria-controls')).toBe(id);
+    const open = el.shadowRoot?.getElementById(id);
+    expect(
+      [...(open?.querySelectorAll('[data-testid="tree-row"]') ?? [])].map((r) => (r as HTMLElement).dataset.id),
+    ).toEqual(['shelf-a', 'shelf-b']);
+  });
+
+  it('gives each node a container of its own that survives a re-render', async () => {
+    const el = await mount();
+    el.revealPathTo('bin-3');
+    await el.updateComplete;
+
+    const named = Object.fromEntries(rows(el).map((r) => [r.dataset.id, r.getAttribute('aria-controls')]));
+    expect(named.garage).toBeTruthy();
+    expect(named['shelf-b']).toBeTruthy();
+    expect(named.garage, 'two nodes, two containers').not.toBe(named['shelf-b']);
+    // A leaf discloses nothing, so it names nothing rather than a dead id.
+    expect(named['shelf-a']).toBe(null);
+    expect(named['bin-3']).toBe(null);
+
+    const before = named.garage;
+    el.showCounts = !el.showCounts;
+    await el.updateComplete;
+    expect(row(el, 'garage').getAttribute('aria-controls'), 'derived from the node id, not the render').toBe(
+      before,
+    );
+  });
+
+  // Location ids are uuids today, so the escaping is what keeps this honest for
+  // ids from anywhere else: distinct keys can never land on one container, and
+  // what comes out has to be usable as a selector.
+  it('keeps two ids apart however the raw ids are punctuated', async () => {
+    const kid = (parent: string) => [node(`${parent}/kid`, 'Kid', parent, [1, 1])];
+    const el = await mount({
+      nodes: [
+        node('a b', 'Spaced', null, [1, 2], kid('a b')),
+        node('a-b', 'Hyphened', null, [1, 2], kid('a-b')),
+      ],
+    });
+
+    const spaced = row(el, 'a b').getAttribute('aria-controls') as string;
+    const hyphened = row(el, 'a-b').getAttribute('aria-controls') as string;
+    expect(spaced).not.toBe(hyphened);
+    for (const id of [spaced, hyphened]) {
+      expect(el.shadowRoot?.getElementById(id), id).toBeTruthy();
+      expect(el.shadowRoot?.querySelector(`#${id}`), `${id} as a selector`).toBeTruthy();
+    }
+  });
+});
+
 describe('hv-location-tree: area grouping', () => {
   const AREAS = [
     { id: 'area-kitchen', name: 'Kitchen' },
@@ -270,6 +345,29 @@ describe('hv-location-tree: area grouping', () => {
     const el = await mountAreas();
     expect(headNames(el)).toEqual(['Area: Garage', 'Area: Kitchen', 'No area']);
     expect(ids(el)).toEqual(['bench', 'fridge', 'attic']);
+  });
+
+  // A band collapses the same way a node does, and its key carries a colon that
+  // could not be written into a selector as it stands.
+  it('names the roots each band discloses, collapsed or expanded', async () => {
+    const el = await mountAreas();
+    const head = () => heads(el)[0];
+    const id = head().getAttribute('aria-controls') as string;
+    expect(id).toBeTruthy();
+    expect(head().getAttribute('aria-expanded')).toBe('true');
+    expect(el.shadowRoot?.getElementById(id)?.querySelector('[data-testid="tree-row"]')).toBeTruthy();
+    expect(el.shadowRoot?.querySelector(`#${id}`), 'usable as a selector').toBeTruthy();
+    // Each band names its own, so collapsing one says nothing about the others.
+    expect(new Set(heads(el).map((h) => h.getAttribute('aria-controls'))).size).toBe(heads(el).length);
+
+    (head().querySelector('[data-testid="tree-area-twisty"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    expect(head().getAttribute('aria-expanded')).toBe('false');
+    expect(head().getAttribute('aria-controls')).toBe(id);
+    const shut = el.shadowRoot?.getElementById(id);
+    expect(shut, 'container while collapsed').toBeTruthy();
+    expect(shut?.querySelector('[data-testid="tree-row"]'), 'no roots while collapsed').toBe(null);
   });
 
   it('marks an area with the chip every surface uses, not as a path segment', async () => {

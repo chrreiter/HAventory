@@ -1020,6 +1020,41 @@ describe('hv-full-view: phone-width children', () => {
     }
   });
 
+  // aria-expanded on its own says only that something opened; which element it
+  // opened was left to whatever happened to follow the button in reading order.
+  it('names the holder the Filters button discloses, open or shut', async () => {
+    const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
+    const toggle = () => q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement;
+    const id = 'full-view-filter-panel';
+
+    expect(toggle().getAttribute('aria-controls')).toBe(id);
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    // The id has to resolve in both states — a button pointing at nothing
+    // announces as controlling nothing — so the holder outlives the panel.
+    const shut = sr.getElementById(id);
+    expect(shut, 'holder shut').toBeTruthy();
+    expect(shut?.querySelector('[data-testid="full-filter-panel"]'), 'no panel while shut').toBe(null);
+
+    toggle().click();
+    await settle(el);
+
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(toggle().getAttribute('aria-controls')).toBe(id);
+    expect(sr.getElementById(id)?.querySelector('[data-testid="full-filter-panel"]')).toBeTruthy();
+  });
+
+  // The holder sets a display of its own, which outranks the browser's rule for
+  // [hidden] — without this it would lay out its padding while empty.
+  it('takes the shut holder out of the layout it would otherwise pad', async () => {
+    const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
+    expect((sr.getElementById('full-view-filter-panel') as HTMLElement).hidden).toBe(true);
+    expect(fullCss()).toMatch(/\.panel-holder\[hidden\] \{[^}]*display: none/);
+
+    (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect((sr.getElementById('full-view-filter-panel') as HTMLElement).hidden).toBe(false);
+  });
+
   it('keeps the desktop panel live-applying, with no commit row', async () => {
     const restore = stubViewport(false);
     try {

@@ -31,6 +31,22 @@ const SEARCH_DEBOUNCE_MS = 200;
 const FILTER_PANEL_STORAGE_KEY = 'haventory:filter-panel-open:v1';
 
 /**
+ * What the header's expand button discloses, named so `aria-controls` can point
+ * at it. The surface is in the tree whether or not it is open — an
+ * `aria-controls` that resolves to nothing announces the button as controlling
+ * nothing — and `open` decides what it draws.
+ */
+const FULL_VIEW_ID = 'card-full-view-surface';
+
+/**
+ * What the filter button discloses. Which element that is depends on the width:
+ * the panel under the search row on a desktop, the bottom sheet on a phone. Only
+ * one of the two is ever rendered, so both carry the same id and the button can
+ * name it without knowing which it got.
+ */
+const FILTER_SURFACE_ID = 'card-filter-surface';
+
+/**
  * The standard card.
  *
  * A container: it holds the `Store` and drives it directly. Interactions nest
@@ -941,6 +957,7 @@ export class HVCardShell extends LitElement {
           data-testid="expand-toggle"
           aria-label="Open full view"
           aria-expanded=${String(this._fullViewOpen)}
+          aria-controls=${FULL_VIEW_ID}
           title="Open full view"
           @click=${() => {
             this._fullViewOpen = true;
@@ -986,6 +1003,7 @@ export class HVCardShell extends LitElement {
           data-testid="filter-toggle"
           aria-label="Filters"
           aria-expanded=${String(this._filterPanelOpen || this._filterSheetOpen)}
+          aria-controls=${FILTER_SURFACE_ID}
           title="Filters"
           @click=${this._toggleFilterSurface}
         >
@@ -1006,9 +1024,11 @@ export class HVCardShell extends LitElement {
             ></hv-filter-chips>
           </div>`
         : null}
-      ${!mobile && this._filterPanelOpen
-        ? html`<div class="panel-holder">${this._renderFilterPanel(false)}</div>`
-        : null}
+      ${mobile
+        ? null
+        : html`<div class="panel-holder" id=${FILTER_SURFACE_ID} ?hidden=${!this._filterPanelOpen}>
+            ${this._filterPanelOpen ? this._renderFilterPanel(false) : null}
+          </div>`}
       ${this._renderDegradedBanners()} ${this._renderBanners()}
 
       <hv-list
@@ -1057,6 +1077,7 @@ export class HVCardShell extends LitElement {
         : null}
 
       <hv-full-view
+        id=${FULL_VIEW_ID}
         data-testid="card-full-view"
         ?open=${this._fullViewOpen}
         .store=${this.store}
@@ -1073,6 +1094,7 @@ export class HVCardShell extends LitElement {
       ></hv-full-view>
       ${mobile
         ? html`<hv-bottom-sheet
+            id=${FILTER_SURFACE_ID}
             label="Filters"
             ?open=${this._filterSheetOpen}
             data-testid="filter-sheet"

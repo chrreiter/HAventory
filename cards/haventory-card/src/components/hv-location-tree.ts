@@ -1,5 +1,6 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { ifDefined } from 'lit/directives/if-defined.js';
 import type { TemplateResult } from 'lit';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
@@ -12,6 +13,28 @@ import type { AreaRef, LocationTreeNode } from '../store/types';
 
 /** The tail of ungrouped roots, keyed like a group so it collapses like one. */
 const NO_AREA_KEY = 'no-area';
+
+/**
+ * The container a row discloses, named so `aria-controls` can point at it. A
+ * collapsed row renders no descendants at all, so the container stays behind
+ * empty rather than leaving with them — an `aria-controls` that resolves to
+ * nothing announces the row as controlling nothing.
+ *
+ * The id has to survive being written into a selector and has to be the row's
+ * alone. The prefix keeps a uuid that opens with a digit from opening the id,
+ * and every character outside the id alphabet — the colon in an area key,
+ * whatever a later id scheme brings — becomes `_<code point>_`. Escaping `_`
+ * itself is what keeps that mapping one-to-one, so two keys cannot collapse
+ * onto one container.
+ */
+const containerId = (prefix: string, key: string) =>
+  `${prefix}-${key.replace(/[^A-Za-z0-9-]/g, (c) => `_${c.charCodeAt(0).toString(16)}_`)}`;
+
+/** Where a node's children go, derived from the node id so it never moves. */
+const nodeChildrenId = (nodeId: string) => containerId('tree-children', nodeId);
+
+/** Where an area band's roots go, derived from the key the band collapses under. */
+const areaRootsId = (key: string) => containerId('tree-area-roots', key);
 
 /**
  * The backend's nested location tree, rendered as it is served. One component
@@ -365,6 +388,7 @@ export class HVLocationTree extends LitElement {
           role="treeitem"
           aria-selected=${String(selected)}
           aria-expanded=${hasChildren ? String(open) : 'undefined'}
+          aria-controls=${ifDefined(hasChildren ? nodeChildrenId(node.id) : undefined)}
           aria-level=${depth + 1}
           data-testid="tree-row"
           data-id=${node.id}
@@ -461,7 +485,11 @@ export class HVLocationTree extends LitElement {
             : null}
         </div>
         <slot name=${`after-${node.id}`}></slot>
-        ${open ? children.map((c) => this._renderNode(c, depth + 1, isExcluded)) : null}
+        ${hasChildren
+          ? html`<div id=${nodeChildrenId(node.id)} ?hidden=${!open}>
+              ${open ? children.map((c) => this._renderNode(c, depth + 1, isExcluded)) : null}
+            </div>`
+          : null}
       </div>
     `;
   }
@@ -510,6 +538,7 @@ export class HVLocationTree extends LitElement {
       role="treeitem"
       aria-selected=${String(selected)}
       aria-expanded=${String(open)}
+      aria-controls=${areaRootsId(key)}
       aria-level="1"
       data-testid="tree-area-head"
       data-area=${group?.id ?? NO_AREA_KEY}
@@ -548,7 +577,9 @@ export class HVLocationTree extends LitElement {
     const open = filtering || !this._collapsedAreas.has(key);
     return html`<div>
       ${this._renderAreaHeader(group, roots, open, key)}
-      ${open ? visible.map((r) => this._renderNode(r, 1, false)) : null}
+      <div id=${areaRootsId(key)} ?hidden=${!open}>
+        ${open ? visible.map((r) => this._renderNode(r, 1, false)) : null}
+      </div>
     </div>`;
   }
 
