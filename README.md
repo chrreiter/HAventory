@@ -479,13 +479,17 @@ throughout.
   a concurrent edit surfaces as a conflict.
 - **Full view** — a fullscreen workspace with a coloured app bar, a **browse sidebar**, and
   a sortable table. Only columns the backend can sort by get a clickable header. A browser
-  that has made no choice yet shows every optional column — quantity, category, location,
-  tags, due, next inspection, updated — and the ⋮ → **Columns** picker is where you thin
-  that down; the table scrolls sideways rather than dropping a column you kept. The
+  that has made no choice yet shows every optional column — quantity, status, category,
+  location, tags, due, next inspection, updated — and the ⋮ → **Columns** picker is where
+  you thin that down; the table scrolls sideways rather than dropping a column you kept.
+  The Status column names every row, OK included, and the name's amber status chip stands
+  down while it is shown so no row says the same word twice. The
   sidebar leads with the location tree carrying the backend's own per-location counts and
-  an orphans row, then **Categories** and **Tags** as sections of their own; each heading
-  collapses from a chevron and states how many there are — locations counted at every
-  depth — and Locations stays at the top. Category picks one value and
+  an orphans row, then **Status**, **Categories** and **Tags** as sections of their own;
+  each heading collapses from a chevron and states how many there are — locations counted
+  at every depth, Status excepted since it always holds the same three rows — and
+  Locations stays at the top. Status prices OK as whatever the two flagged counts leave
+  over. Category and status each pick one value and
   tags accumulate, matching how the backend treats them. With a filter on, each location
   row reads "4 / 37" — matches over total — so you can see where the matches are rather
   than a total that never moves. The counts ignore the *location* filter, since the sidebar
@@ -495,7 +499,10 @@ throughout.
   From the second selected tag on, the Tags heading carries the same any/all control the
   filter panel has, since that is the mode governing what the sidebar just selected. The
   app bar's stat pills are the card's: low in amber, overdue in red, to-inspect in amber,
-  checked out, each click-to-filter. An empty table names the reason and offers a way out — the same
+  checked out, each click-to-filter. Beside them, **Missing** and **Needs repair** price the
+  two flagged statuses in the status chip's own amber; each appears only while something
+  carries that flag, and the two are mutually exclusive because the filter takes one status.
+  An empty table names the reason and offers a way out — the same
   wording and the same offers as the card's list.
 
   At phone width the sidebar folds away and the surface hands its own breakpoint down to
