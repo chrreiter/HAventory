@@ -19,6 +19,7 @@ import asyncio
 import importlib
 import json
 import logging
+import re
 import sys
 import threading
 import types
@@ -41,9 +42,8 @@ STATIC_URL_PATH = "/haventory_static"
 CARD_PATH = f"{STATIC_URL_PATH}/haventory-card.js"
 # Where installs from before the bundle moved into the package loaded it from.
 LEGACY_CARD_PATH = "/local/haventory/haventory-card.js"
-MANIFEST_PATH = (
-    Path(__file__).resolve().parents[1] / "custom_components" / "haventory" / "manifest.json"
-)
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MANIFEST_PATH = REPO_ROOT / "custom_components" / "haventory" / "manifest.json"
 
 # Distinguishes "leave the loader stub at its default (the shipped manifest)" from
 # "register None", which makes the lookup raise the way an absent integration does.
@@ -672,6 +672,25 @@ async def test_frontend_without_a_url_manager_degrades_gracefully(hav_init):
 # --------------------------------------------------------------------------- #
 # The sidebar panel
 # --------------------------------------------------------------------------- #
+
+
+def test_the_sidebar_icon_is_the_one_the_card_bundle_publishes() -> None:
+    """``PANEL_ICON`` names an icon set that only the card bundle registers.
+
+    A non-``mdi:`` prefix is resolved against the frontend's icon registry, so
+    the sidebar shows the mark only while the two spellings agree — and a
+    disagreement is silent, costing the entry its icon and nothing else.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "brand-icon.ts").read_text(
+        encoding="utf-8"
+    )
+
+    def declared(name: str) -> str:
+        match = re.search(rf"^export const {name} = '([^']+)';$", source, re.MULTILINE)
+        assert match is not None, f"{name} is no longer declared in brand-icon.ts"
+        return match.group(1)
+
+    assert PANEL_ICON == f"{declared('HAVENTORY_ICONSET')}:{declared('HAVENTORY_ICON_NAME')}"
 
 
 @pytest.mark.asyncio
