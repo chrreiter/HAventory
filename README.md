@@ -37,10 +37,17 @@ Checklist below and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Finding HAventory after install
 
-HAventory adds itself to the **sidebar** during setup, so there is somewhere to click
-before you have built a dashboard. The entry opens the full view as a page of its own —
-the same workspace the card's ⋮ → full view opens, with the same menu, dialogs and
-editors — and carries the HAventory mark and whatever name you gave the card.
+Setup asks two things — what the card is called, and whether HAventory gets a **sidebar**
+entry (yes by default, so there is somewhere to click before you have built a dashboard).
+Both are editable afterwards under **Configure**. The entry opens the full view as a page
+of its own — the same workspace the card's ⋮ → full view opens, with the same menu,
+dialogs and editors — and carries the HAventory mark and whatever name you gave the card.
+
+- **Reload the browser page once after installing.** Home Assistant hands an integration's
+  JavaScript to a page when that page loads, so a tab that was already open when HAventory
+  was installed or updated has neither the card nor the artwork behind its sidebar icon
+  yet — the entry shows up without its mark until the next load. One ordinary reload is
+  all it takes; no cache clearing, and nothing to repeat later.
 
 - **Turning it off:** Settings → Devices & services → HAventory → **Configure** →
   *Show HAventory in the sidebar*. The entry appears and disappears as you save the form;

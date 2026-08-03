@@ -36,8 +36,8 @@ Overview offers is **a navigation path worth adding as a shortcut** — which me
 
 Register a **HAventory sidebar panel** at `/haventory` that renders the card's
 extended view (`hv-full-view`) as a full page, served from the existing card bundle.
-Expose a **"Show HAventory in the sidebar" toggle in the options flow** (default on)
-that registers/removes the panel live. This yields:
+Expose a **"Show HAventory in the sidebar" toggle** (default on) in the setup step and
+in the options flow, which registers/removes the panel live. This yields:
 
 - HAventory in the sidebar automatically on install — zero-config discoverability,
   for every user of the instance.
@@ -236,7 +236,12 @@ the feature on. Includes the live verification pass.
 - Sidebar title follows the existing **card title option** (falls back "HAventory"),
   so a user who renamed the card to "Pantry" sees "Pantry" in the sidebar.
 - Icon `haventory:logo` — the HAventory mark, registered as a custom icon set by the
-  card bundle; URL path `haventory`; `require_admin=False`.
+  card bundle; URL path `haventory`; `require_admin=False`. The artwork therefore
+  reaches a browser only with the bundle, and the bundle only when a page loads:
+  installing while a tab is open puts the entry in that tab's sidebar without its
+  mark, because `ha-icon` resolves an icon once and does not re-resolve when a set
+  registers later. One ordinary page reload is the whole of it; the setup step's
+  closing message says so.
 - Panel renders the **extended view**, not a page-sized card.
 - The panel offers the **full ⋮ menu** — organize, import and diagnostics included.
   Every surface `hv-full-view` can raise is owned by `host-surfaces.ts` and rendered

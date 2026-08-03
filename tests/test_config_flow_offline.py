@@ -22,6 +22,7 @@ from custom_components.haventory.const import (
     CONF_CARD_TITLE,
     CONF_SIDEBAR_PANEL_ENABLED,
     DEFAULT_CARD_TITLE,
+    DEFAULT_SIDEBAR_PANEL_ENABLED,
 )
 from homeassistant.config_entries import ConfigEntry
 
@@ -69,12 +70,19 @@ async def test_user_step_creates_entry(monkeypatch) -> None:
     assert result["type"] == "create_entry"
     assert result["title"] == DEFAULT_CARD_TITLE
     assert result["data"] == {}
-    assert result["options"] == {CONF_CARD_TITLE: DEFAULT_CARD_TITLE}
+    assert result["options"] == {
+        CONF_CARD_TITLE: DEFAULT_CARD_TITLE,
+        CONF_SIDEBAR_PANEL_ENABLED: DEFAULT_SIDEBAR_PANEL_ENABLED,
+    }
 
 
 @pytest.mark.asyncio
-async def test_user_step_asks_for_the_card_title(monkeypatch) -> None:
-    """Setup opens a form rather than creating an unnamed entry outright."""
+async def test_user_step_asks_for_the_title_and_the_sidebar(monkeypatch) -> None:
+    """Setup opens a form rather than creating an unnamed entry outright.
+
+    Both fields the options flow opens with are asked here, so the sidebar entry
+    is a decision at setup rather than a discovery under Configure.
+    """
 
     flow = HAventoryConfigFlow()
     monkeypatch.setattr(flow, "_async_current_entries", lambda: [], raising=False)
@@ -82,7 +90,11 @@ async def test_user_step_asks_for_the_card_title(monkeypatch) -> None:
     result = await flow.async_step_user(user_input=None)
     assert result["type"] == "form"
     assert result["step_id"] == "user"
-    assert _schema_keys(result["data_schema"]) == {CONF_CARD_TITLE}
+    assert _schema_keys(result["data_schema"]) == {CONF_CARD_TITLE, CONF_SIDEBAR_PANEL_ENABLED}
+    assert (
+        _schema_default(result["data_schema"], CONF_SIDEBAR_PANEL_ENABLED)
+        is DEFAULT_SIDEBAR_PANEL_ENABLED
+    )
 
 
 @pytest.mark.asyncio
@@ -94,7 +106,24 @@ async def test_user_step_uses_the_submitted_title(monkeypatch) -> None:
 
     result = await flow.async_step_user(user_input={CONF_CARD_TITLE: "  Pantry  "})
     assert result["title"] == "Pantry"
-    assert result["options"] == {CONF_CARD_TITLE: "Pantry"}
+    assert result["options"][CONF_CARD_TITLE] == "Pantry"
+
+
+@pytest.mark.asyncio
+async def test_user_step_stores_a_declined_sidebar(monkeypatch) -> None:
+    """Answering "no" at setup has to survive as the stored option.
+
+    Absence reads as on everywhere the panel is applied, so an opt-out only
+    holds if the setup step writes it down.
+    """
+
+    flow = HAventoryConfigFlow()
+    monkeypatch.setattr(flow, "_async_current_entries", lambda: [], raising=False)
+
+    result = await flow.async_step_user(
+        user_input={CONF_CARD_TITLE: "Pantry", CONF_SIDEBAR_PANEL_ENABLED: False}
+    )
+    assert result["options"][CONF_SIDEBAR_PANEL_ENABLED] is False
 
 
 @pytest.mark.asyncio
@@ -105,7 +134,7 @@ async def test_blank_title_falls_back_to_the_default(monkeypatch) -> None:
     monkeypatch.setattr(flow, "_async_current_entries", lambda: [], raising=False)
 
     result = await flow.async_step_user(user_input={CONF_CARD_TITLE: "   "})
-    assert result["options"] == {CONF_CARD_TITLE: DEFAULT_CARD_TITLE}
+    assert result["options"][CONF_CARD_TITLE] == DEFAULT_CARD_TITLE
 
 
 @pytest.mark.asyncio

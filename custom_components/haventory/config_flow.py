@@ -74,8 +74,19 @@ def clean_card_title(value: Any) -> str:
 
 
 def _user_schema() -> vol.Schema:
-    """Build the setup-step schema (the card title is all there is to ask)."""
-    return vol.Schema({vol.Required(CONF_CARD_TITLE, default=DEFAULT_CARD_TITLE): str})
+    """Build the setup-step schema: what the card is called, and where it lives.
+
+    The same two fields the options flow opens with, so setup decides them once
+    rather than leaving the sidebar entry to be discovered under Configure.
+    """
+    return vol.Schema(
+        {
+            vol.Required(CONF_CARD_TITLE, default=DEFAULT_CARD_TITLE): str,
+            vol.Required(
+                CONF_SIDEBAR_PANEL_ENABLED, default=DEFAULT_SIDEBAR_PANEL_ENABLED
+            ): bool,
+        }
+    )
 
 
 def _rate_limit_schema(current: dict[str, Any]) -> vol.Schema:
@@ -175,9 +186,9 @@ class HAventoryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ig
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the initial step.
 
-        Single-instance setup: the only thing to ask for is the name the card
-        should carry, which seeds both the entry title and the card-title
-        option the options flow edits later.
+        Single-instance setup: the name the card carries seeds both the entry
+        title and the card-title option, and the sidebar answer is stored as the
+        same option the options flow edits later.
         """
         if self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
@@ -186,4 +197,11 @@ class HAventoryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ig
             return self.async_show_form(step_id="user", data_schema=_user_schema())
 
         title = clean_card_title(user_input.get(CONF_CARD_TITLE))
-        return self.async_create_entry(title=title, data={}, options={CONF_CARD_TITLE: title})
+        sidebar = bool(
+            user_input.get(CONF_SIDEBAR_PANEL_ENABLED, DEFAULT_SIDEBAR_PANEL_ENABLED)
+        )
+        return self.async_create_entry(
+            title=title,
+            data={},
+            options={CONF_CARD_TITLE: title, CONF_SIDEBAR_PANEL_ENABLED: sidebar},
+        )
