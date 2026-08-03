@@ -130,9 +130,14 @@ styling.
 
 A filter that is on announces with `aria-pressed`, everywhere: both app bars' stat pills,
 the sidebar's category and tag rows, and every chip and row in `hv-filter-panel`. The panel
-draws the same "Show only" facets as chips on a desktop and as checkbox-styled rows in the
-phone sheet, so the shared word is what stops one facet from announcing as a checkbox at one
-width and a toggle at another — colour alone says nothing to a screen reader.
+draws the same "Show only" facets as chips on a desktop and as full-width rows in the phone
+sheet, so the shared word is what stops one facet from announcing as a checkbox at one width
+and a toggle at another — colour alone says nothing to a screen reader.
+
+The paint follows the same rule. A row in the sheet carries the `chip` class beside its own,
+so it takes the chip's outline and on-state tokens rather than drawing a checkbox's box; the
+one thing it adds is a fixed-width mark, which holds a stacked column's labels on one left
+edge as rows are pressed. Anything still drawing a box is selecting, not filtering.
 
 The other two vocabularies mark genuinely different widgets, and neither is a filter:
 `role="radio"` for a segmented picker whose options are exclusive (tag match mode in both
@@ -140,6 +145,16 @@ the panel and the sidebar, sort direction, the import sheet's policy) plus `role
 for the item editor's boolean custom field, and `role="checkbox"` for *selecting* rows
 rather than filtering them — `hv-list-row`, `hv-data-table`'s header and row boxes (the
 header carries `aria-checked="mixed"` for a partial page), and `hv-column-picker`.
+
+### What a disclosure opens
+
+A control that expands something carries `aria-expanded` **and** `aria-controls`, and the
+element it names stays in the tree whether or not it is open — an `aria-controls` that
+resolves to nothing announces the control as controlling nothing. Only the contents come and
+go, so collapsing still discards the state inside. Both filter surfaces are wired this way:
+`hv-filter-panel`'s location chip points at its tree holder, and `hv-full-view`'s three
+sidebar headings each point at `sidebar-section-<section>`. Ids are shadow-scoped, so the
+desktop panel and the phone sheet can both be mounted without colliding.
 
 ### The area beside a location
 

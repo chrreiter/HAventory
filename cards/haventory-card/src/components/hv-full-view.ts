@@ -54,6 +54,14 @@ export const NARROW_QUERY = '(max-width: 700px)';
 type SidebarSection = 'locations' | 'categories' | 'tags';
 
 /**
+ * The element a section heading discloses, named so `aria-controls` can point at
+ * it. Each panel stays in the tree whether or not its section is open — an
+ * `aria-controls` that resolves to nothing announces the heading as controlling
+ * nothing — and only its contents come and go.
+ */
+const sectionPanelId = (section: SidebarSection) => `sidebar-section-${section}`;
+
+/**
  * The expanded workspace.
  *
  * The coloured app bar is the mode signal — the standard card never has one, so
@@ -1037,6 +1045,7 @@ export class HVFullView extends LitElement {
       class="section-toggle"
       data-testid=${`sidebar-toggle-${section}`}
       aria-expanded=${String(open)}
+      aria-controls=${sectionPanelId(section)}
       @click=${() => {
         this._sections = { ...this._sections, [section]: !open };
       }}
@@ -1119,28 +1128,30 @@ export class HVFullView extends LitElement {
           </button>
         </span>
       </div>
-      ${open
-        ? values.length
-          ? values.map(
-              (v) => html`<button
-                class="value-row ${isOn(v.value) ? 'on' : ''}"
-                data-testid=${`sidebar-${section}-row`}
-                data-value=${v.value}
-                aria-pressed=${String(isOn(v.value))}
-                @click=${() => onPick(v.value)}
-              >
-                ${isOn(v.value) ? icon('check', 15) : null}
-                <!-- These clip with an ellipsis, and a clipped value the user
-                     typed is otherwise unreadable — there is nowhere else in
-                     the sidebar it appears in full. -->
-                <span class="label" title=${v.value}>${v.value}</span>
-                <span class="tally">${v.count}</span>
-              </button>`,
-            )
-          : html`<div class="section-empty" data-testid=${`sidebar-${section}-empty`}>
-              ${section === 'tags' ? 'No tags in use yet' : 'No categories in use yet'}
-            </div>`
-        : null}
+      <div id=${sectionPanelId(section)} ?hidden=${!open}>
+        ${open
+          ? values.length
+            ? values.map(
+                (v) => html`<button
+                  class="value-row ${isOn(v.value) ? 'on' : ''}"
+                  data-testid=${`sidebar-${section}-row`}
+                  data-value=${v.value}
+                  aria-pressed=${String(isOn(v.value))}
+                  @click=${() => onPick(v.value)}
+                >
+                  ${isOn(v.value) ? icon('check', 15) : null}
+                  <!-- These clip with an ellipsis, and a clipped value the user
+                       typed is otherwise unreadable — there is nowhere else in
+                       the sidebar it appears in full. -->
+                  <span class="label" title=${v.value}>${v.value}</span>
+                  <span class="tally">${v.count}</span>
+                </button>`,
+              )
+            : html`<div class="section-empty" data-testid=${`sidebar-${section}-empty`}>
+                ${section === 'tags' ? 'No tags in use yet' : 'No categories in use yet'}
+              </div>`
+          : null}
+      </div>
     `;
   }
 
@@ -1176,7 +1187,9 @@ export class HVFullView extends LitElement {
             </button>
           </span>
         </div>
-        ${this._sections.locations ? this._renderLocationSection() : null}
+        <div id=${sectionPanelId('locations')} ?hidden=${!this._sections.locations}>
+          ${this._sections.locations ? this._renderLocationSection() : null}
+        </div>
         ${this._renderFacetSection(
           'categories',
           'Categories',
