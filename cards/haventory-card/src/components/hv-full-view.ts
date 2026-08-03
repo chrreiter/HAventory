@@ -13,6 +13,8 @@ import { emptyKindFor, renderEmptyState } from '../ui/empty-state';
 import { areaNameById, effectiveAreaIdForLocation } from '../ui/area';
 import { renderAreaChip } from '../ui/location-path';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
+import { ITEM_STATUSES, statusLabel } from '../ui/status';
+import type { ItemStatus } from '../store/types';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
@@ -51,7 +53,7 @@ const SEARCH_DEBOUNCE_MS = 200;
 export const NARROW_QUERY = '(max-width: 700px)';
 
 /** The sidebar's collapsible sections, in the order they appear. */
-type SidebarSection = 'locations' | 'categories' | 'tags';
+type SidebarSection = 'locations' | 'status' | 'categories' | 'tags';
 
 /**
  * The element a section heading discloses, named so `aria-controls` can point at
@@ -736,6 +738,7 @@ export class HVFullView extends LitElement {
    */
   @state() private _sections: Record<SidebarSection, boolean> = {
     locations: true,
+    status: true,
     categories: true,
     tags: true,
   };
@@ -1095,6 +1098,58 @@ export class HVFullView extends LitElement {
   }
 
   /**
+   * The stored item status as a sidebar facet.
+   *
+   * Single-select, because the backend filter takes exactly one status, and
+   * pressing the active row clears it — the same contract category has. Unlike
+   * the other two facets the rows are a closed set the backend defines rather
+   * than values discovered from the inventory, so there is nothing to create
+   * and no empty state to fall back to.
+   */
+  private _renderStatusSection() {
+    const st = this.st;
+    const filters = st?.filters ?? defaultFilters();
+    const counts = st?.statsCounts;
+    // Only the two flagged states are priced by the counts payload; OK is
+    // whatever is left of the inventory. An older backend sends neither, and
+    // then no row claims a number rather than every row claiming a wrong one.
+    const missing = counts?.missing_count;
+    const needsRepair = counts?.needs_repair_count;
+    const tallyFor = (s: ItemStatus): number | null => {
+      if (missing === undefined || needsRepair === undefined) return null;
+      if (s === 'missing') return missing;
+      if (s === 'needs_repair') return needsRepair;
+      return Math.max(0, counts!.items_total - missing - needsRepair);
+    };
+    return html`
+      <div class="sidebar-head">
+        ${this._renderSectionToggle('status', 'Status')}
+        <!-- The other sections tally how many rows they hold; this one always
+             holds three, so the number would say the same thing forever. -->
+      </div>
+      <div id=${sectionPanelId('status')} ?hidden=${!this._sections.status}>
+        ${this._sections.status
+          ? ITEM_STATUSES.map((s) => {
+              const on = filters.status === s;
+              const tally = tallyFor(s);
+              return html`<button
+                class="value-row ${on ? 'on' : ''}"
+                data-testid="sidebar-status-row"
+                data-value=${s}
+                aria-pressed=${String(on)}
+                @click=${() => this._setFilters({ status: on ? null : s })}
+              >
+                ${on ? icon('check', 15) : null}
+                <span class="label">${statusLabel(s)}</span>
+                ${tally === null ? null : html`<span class="tally">${tally}</span>`}
+              </button>`;
+            })
+          : null}
+      </div>
+    `;
+  }
+
+  /**
    * Categories and tags as sidebar rows.
    *
    * Category is single-select and tags are multi-select, because that is what
@@ -1203,6 +1258,7 @@ export class HVFullView extends LitElement {
         <div id=${sectionPanelId('locations')} ?hidden=${!this._sections.locations}>
           ${this._sections.locations ? this._renderLocationSection() : null}
         </div>
+        ${this._renderStatusSection()}
         ${this._renderFacetSection(
           'categories',
           'Categories',

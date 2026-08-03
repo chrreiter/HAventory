@@ -506,6 +506,7 @@ describe('hv-full-view: sidebar facets', () => {
     const heads = [...sr.querySelectorAll('.sidebar-head .section-toggle')] as HTMLElement[];
     expect(heads.map((h) => h.dataset.testid)).toEqual([
       'sidebar-toggle-locations',
+      'sidebar-toggle-status',
       'sidebar-toggle-categories',
       'sidebar-toggle-tags',
     ]);
@@ -579,7 +580,7 @@ describe('hv-full-view: sidebar facets', () => {
     const toggle = (section: string) =>
       q(sr, `[data-testid="sidebar-toggle-${section}"]`) as HTMLButtonElement;
 
-    for (const section of ['locations', 'categories', 'tags']) {
+    for (const section of ['locations', 'status', 'categories', 'tags']) {
       const id = `sidebar-section-${section}`;
       expect(toggle(section).getAttribute('aria-controls'), section).toBe(id);
       expect(toggle(section).getAttribute('aria-expanded'), `${section} open`).toBe('true');
@@ -676,6 +677,78 @@ describe('hv-full-view: sidebar facets', () => {
     );
     // Captions take no full stop; prose notes do.
     expect(q(sr, '[data-testid="sidebar-tags-empty"]')?.textContent?.trim()).toBe('No tags in use yet');
+  });
+});
+
+describe('hv-full-view: sidebar status', () => {
+  const flagged = [
+    makeItem({ id: '1', status: 'missing' }),
+    makeItem({ id: '2', status: 'needs_repair' }),
+    makeItem({ id: '3', status: 'needs_repair' }),
+    makeItem({ id: '4' }),
+  ];
+  const rows = (sr: ShadowRoot) =>
+    [...sr.querySelectorAll('[data-testid="sidebar-status-row"]')] as HTMLElement[];
+  const tallies = (sr: ShadowRoot) =>
+    rows(sr).map((r) => r.querySelector('.tally')?.textContent?.trim() ?? null);
+
+  // The counts payload prices only the two flagged states; OK is the rest of
+  // the inventory, which is the one number here that has to be derived.
+  it('lists the three statuses with their counts', async () => {
+    const { sr } = await mount({ items: flagged });
+    expect(rows(sr).map((r) => r.dataset.value)).toEqual(['ok', 'missing', 'needs_repair']);
+    expect(tallies(sr)).toEqual(['1', '1', '2']);
+  });
+
+  it('filters to one status and clears it on a second press', async () => {
+    const { el, store, sr } = await mount({ items: flagged });
+    const missing = () => rows(sr).find((r) => r.dataset.value === 'missing');
+
+    missing()?.click();
+    await settle(el);
+    expect(store.state.value.filters.status).toBe('missing');
+    expect(missing()?.classList).toContain('on');
+
+    missing()?.click();
+    await settle(el);
+    expect(store.state.value.filters.status).toBe(null);
+  });
+
+  // Single-select, because the backend filter takes exactly one status — so a
+  // second pick replaces the first rather than adding to it, as category does.
+  it('replaces the selection rather than accumulating it', async () => {
+    const { el, store, sr } = await mount({ items: flagged });
+
+    rows(sr).find((r) => r.dataset.value === 'missing')?.click();
+    await settle(el);
+    rows(sr).find((r) => r.dataset.value === 'needs_repair')?.click();
+    await settle(el);
+
+    expect(store.state.value.filters.status).toBe('needs_repair');
+    expect(rows(sr).filter((r) => r.classList.contains('on')).map((r) => r.dataset.value)).toEqual([
+      'needs_repair',
+    ]);
+  });
+
+  // An older backend sends neither count. Then no row claims a number, rather
+  // than every row claiming one derived from the halves that did arrive.
+  it('drops every tally when the backend prices no statuses', async () => {
+    const { el, store, sr } = await mount({ items: flagged });
+    const counts = store.state.value.statsCounts as unknown as Record<string, unknown>;
+    delete counts.missing_count;
+    delete counts.needs_repair_count;
+    el.requestUpdate();
+    await settle(el);
+
+    expect(tallies(sr)).toEqual([null, null, null]);
+  });
+
+  // Categories and tags tally how many rows they hold; this section always
+  // holds three, so the same number in that slot would be noise.
+  it('heads the section without a tally', async () => {
+    const { sr } = await mount({ items: flagged });
+    expect(q(sr, '[data-testid="sidebar-status-tally"]')).toBe(null);
+    expect(q(sr, '[data-testid="sidebar-toggle-status"]')?.textContent).toContain('Status');
   });
 });
 
