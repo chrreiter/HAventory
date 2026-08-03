@@ -10,6 +10,7 @@ Scenarios:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -222,6 +223,23 @@ def test_translation_strings_carry_no_urls() -> None:
     for path in (root / "strings.json", root / "translations" / "en.json"):
         text = path.read_text(encoding="utf-8")
         assert "http://" not in text and "https://" not in text, f"{path.name} contains a URL"
+
+
+def test_translation_flow_sections_match_strings() -> None:
+    """`translations/en.json` must repeat the flow text `strings.json` declares.
+
+    Home Assistant renders the config and options flows from the translation
+    file; `strings.json` is only the source hassfest validates. An edit that
+    lands in one file but not the other ships a screen with the stale text and
+    nothing fails. `en.json` legitimately carries more than `strings.json`
+    (the `services` section), so only the sections both must share are compared.
+    """
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
+    strings = json.loads((root / "strings.json").read_text(encoding="utf-8"))
+    en = json.loads((root / "translations" / "en.json").read_text(encoding="utf-8"))
+    for section in ("config", "options"):
+        assert en.get(section) == strings.get(section), f"{section!r} sections differ"
 
 
 @pytest.mark.asyncio
