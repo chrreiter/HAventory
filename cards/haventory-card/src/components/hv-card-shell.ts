@@ -947,6 +947,10 @@ export class HVCardShell extends LitElement {
     const loaded = st?.items.length ?? 0;
     const total = st?.total;
     const mobile = this.mobile;
+    // The filter button reports the surface its own width uses. The desktop
+    // panel's open state is remembered across sessions, so reading it on a
+    // phone would announce a surface this width never shows.
+    const filterSurfaceOpen = mobile ? this._filterSheetOpen : this._filterPanelOpen;
 
     return html`
       <div class="header">
@@ -999,10 +1003,10 @@ export class HVCardShell extends LitElement {
           />
         </label>
         <button
-          class="icon-toggle ${this._filterPanelOpen || this._filterSheetOpen ? 'on' : ''}"
+          class="icon-toggle ${filterSurfaceOpen ? 'on' : ''}"
           data-testid="filter-toggle"
           aria-label="Filters"
-          aria-expanded=${String(this._filterPanelOpen || this._filterSheetOpen)}
+          aria-expanded=${String(filterSurfaceOpen)}
           aria-controls=${FILTER_SURFACE_ID}
           title="Filters"
           @click=${this._toggleFilterSurface}

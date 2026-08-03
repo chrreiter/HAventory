@@ -302,6 +302,18 @@ describe('hv-location-tree: what a row discloses', () => {
     );
   });
 
+  it('omits aria-expanded on a leaf row instead of writing a non-value', async () => {
+    const el = await mount();
+    el.revealPathTo('bin-3');
+    await el.updateComplete;
+
+    // ARIA has no "undefined" token: a leaf treeitem carries no aria-expanded
+    // at all, the same way it names no container.
+    expect(row(el, 'shelf-a').hasAttribute('aria-expanded')).toBe(false);
+    expect(row(el, 'bin-3').hasAttribute('aria-expanded')).toBe(false);
+    expect(row(el, 'garage').getAttribute('aria-expanded')).toBe('true');
+  });
+
   // Location ids are uuids today, so the escaping is what keeps this honest for
   // ids from anywhere else: distinct keys can never land on one container, and
   // what comes out has to be usable as a selector.

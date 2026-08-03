@@ -310,16 +310,37 @@ describe('hv-card-shell: search and filters', () => {
         // Only the contents come and go; the element the button names stays.
         expect(showing(), `${where}, contents flipped`).toBe(!was.showing);
         expect(sr.getElementById(id), `${where}, still there`).toBeTruthy();
-        // The phone's button reads the desktop panel's remembered state as well
-        // as the sheet's, so its announcement is not the sheet's alone and the
-        // surface above is what says whether the press landed.
-        if (!mobile) {
-          expect(toggle().getAttribute('aria-expanded'), `${where}, flipped`).toBe(
-            String(was.expanded !== 'true'),
-          );
-        }
+        // The button reports the surface its own width uses, so the press
+        // shows in the announcement at either width.
+        expect(toggle().getAttribute('aria-expanded'), `${where}, flipped`).toBe(
+          String(!was.showing),
+        );
       }
       el.remove();
+    }
+  });
+
+  it('keeps the remembered desktop panel out of the phone button announcement', async () => {
+    // A desktop session that left the panel open is remembered across loads;
+    // the phone's button reports its own sheet, which starts shut regardless.
+    window.localStorage.setItem('haventory:filter-panel-open:v1', '1');
+    try {
+      const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+      const toggle = () => sr.querySelector('[data-testid="filter-toggle"]') as HTMLButtonElement;
+
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+      expect(toggle().classList.contains('on')).toBe(false);
+
+      toggle().click();
+      await settle(el);
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+
+      toggle().click();
+      await settle(el);
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+      el.remove();
+    } finally {
+      window.localStorage.removeItem('haventory:filter-panel-open:v1');
     }
   });
 
