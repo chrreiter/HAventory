@@ -446,6 +446,15 @@ export class HVFilterPanel extends LitElement {
     this._patch({ tags: [...this.working.tags, tag] });
   }
 
+  /**
+   * A labelled on/off filter row.
+   *
+   * Its state is `aria-pressed`, not a checkbox role: every filter toggle in the
+   * card announces as a pressed toggle button — the app bars' stat pills, the
+   * sidebar's facet rows, this panel's chips — and the "Show only" facets render
+   * as rows here and as chips on a wider screen, so a single facet would
+   * otherwise change vocabulary with the viewport it is read on.
+   */
   private _renderCheckbox(
     label: string,
     on: boolean,
@@ -454,8 +463,7 @@ export class HVFilterPanel extends LitElement {
   ) {
     return html`<button
       class="check"
-      role="checkbox"
-      aria-checked=${String(on)}
+      aria-pressed=${String(on)}
       data-testid=${opts.testid ?? 'filter-check'}
       @click=${onToggle}
     >
@@ -546,6 +554,7 @@ export class HVFilterPanel extends LitElement {
               class="chip ${f.category === c.value ? 'on' : ''}"
               data-testid="filter-category"
               data-value=${c.value}
+              aria-pressed=${String(f.category === c.value)}
               @click=${() => this._patch({ category: f.category === c.value ? null : c.value })}
             >
               ${f.category === c.value ? icon('check', 12) : null}${c.value}
@@ -606,6 +615,7 @@ export class HVFilterPanel extends LitElement {
               class="chip ${selected.has(t.value) ? 'on' : ''}"
               data-testid="filter-tag"
               data-value=${t.value}
+              aria-pressed=${String(selected.has(t.value))}
               @click=${() => this._toggleTag(t.value)}
             >
               ${selected.has(t.value) ? icon('check', 12) : null}${t.value}
@@ -617,6 +627,7 @@ export class HVFilterPanel extends LitElement {
               class="chip on"
               data-testid="filter-tag"
               data-value=${t}
+              aria-pressed="true"
               @click=${() => this._toggleTag(t)}
             >
               ${icon('check', 12)}${t}
@@ -668,6 +679,7 @@ export class HVFilterPanel extends LitElement {
                 <button
                   class="chip ${f.lowStockOnly ? 'on warning' : ''}"
                   data-testid="filter-low-stock-only"
+                  aria-pressed=${String(f.lowStockOnly)}
                   @click=${() => this._patch({ lowStockOnly: !f.lowStockOnly })}
                 >
                   ${f.lowStockOnly ? icon('check', 12) : null}Low stock${tally(c?.low_stock_count)}
@@ -675,6 +687,7 @@ export class HVFilterPanel extends LitElement {
                 <button
                   class="chip ${f.checkedOutOnly ? 'on' : ''}"
                   data-testid="filter-checked-out"
+                  aria-pressed=${String(f.checkedOutOnly)}
                   @click=${() => this._patch({ checkedOutOnly: !f.checkedOutOnly })}
                 >
                   ${f.checkedOutOnly ? icon('check', 12) : null}Checked out${tally(c?.checked_out_count)}
@@ -682,6 +695,7 @@ export class HVFilterPanel extends LitElement {
                 <button
                   class="chip ${f.overdueOnly ? 'on warning' : ''}"
                   data-testid="filter-overdue"
+                  aria-pressed=${String(f.overdueOnly)}
                   @click=${() => this._patch({ overdueOnly: !f.overdueOnly })}
                 >
                   ${f.overdueOnly ? icon('check', 12) : null}Overdue${tally(c?.overdue_count)}
@@ -689,6 +703,7 @@ export class HVFilterPanel extends LitElement {
                 <button
                   class="chip ${f.inspectionDueOnly ? 'on warning' : ''}"
                   data-testid="filter-inspection-due"
+                  aria-pressed=${String(f.inspectionDueOnly)}
                   @click=${() => this._patch({ inspectionDueOnly: !f.inspectionDueOnly })}
                 >
                   ${f.inspectionDueOnly ? icon('check', 12) : null}Inspection due${tally(c?.inspection_overdue_count)}
@@ -696,6 +711,7 @@ export class HVFilterPanel extends LitElement {
                 <button
                   class="chip ${f.orphansOnly ? 'on' : ''}"
                   data-testid="filter-orphans"
+                  aria-pressed=${String(f.orphansOnly)}
                   @click=${() => this._patch({ orphansOnly: !f.orphansOnly })}
                 >
                   ${f.orphansOnly ? icon('check', 12) : null}No location${tally(c?.no_location_count)}

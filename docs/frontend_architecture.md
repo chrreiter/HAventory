@@ -126,6 +126,21 @@ that prints a location path uses. Only the CSS is per-component — style rules 
 shadow boundary, which is also why the sidebar's value rows restate `hv-location-tree`'s row
 styling.
 
+### How a control says it is on
+
+A filter that is on announces with `aria-pressed`, everywhere: both app bars' stat pills,
+the sidebar's category and tag rows, and every chip and row in `hv-filter-panel`. The panel
+draws the same "Show only" facets as chips on a desktop and as checkbox-styled rows in the
+phone sheet, so the shared word is what stops one facet from announcing as a checkbox at one
+width and a toggle at another — colour alone says nothing to a screen reader.
+
+The other two vocabularies mark genuinely different widgets, and neither is a filter:
+`role="radio"` for a segmented picker whose options are exclusive (tag match mode in both
+the panel and the sidebar, sort direction, the import sheet's policy) plus `role="switch"`
+for the item editor's boolean custom field, and `role="checkbox"` for *selecting* rows
+rather than filtering them — `hv-list-row`, `hv-data-table`'s header and row boxes (the
+header carries `aria-checked="mixed"` for a partial page), and `hv-column-picker`.
+
 ### The area beside a location
 
 An item arrives with `effective_area_id` already resolved; a `Location` carries `area_id`

@@ -653,3 +653,125 @@ describe('hv-filter-panel: inspection due', () => {
     }
   });
 });
+
+/**
+ * The seven chips that hold a filter's on/off state, and the filter that turns
+ * each one on. The location chip and "More…" are not among them: the first is a
+ * disclosure that names the location it holds, the second only reveals the rest
+ * of the category tail.
+ */
+const STATEFUL_CHIPS: { name: string; sel: string; on: Partial<StoreFilters> }[] = [
+  {
+    name: 'category',
+    sel: '[data-testid="filter-category"][data-value="Hardware"]',
+    on: { category: 'Hardware' },
+  },
+  { name: 'tag', sel: '[data-testid="filter-tag"][data-value="metric"]', on: { tags: ['metric'] } },
+  { name: 'low stock', sel: '[data-testid="filter-low-stock-only"]', on: { lowStockOnly: true } },
+  { name: 'checked out', sel: '[data-testid="filter-checked-out"]', on: { checkedOutOnly: true } },
+  { name: 'overdue', sel: '[data-testid="filter-overdue"]', on: { overdueOnly: true } },
+  {
+    name: 'inspection due',
+    sel: '[data-testid="filter-inspection-due"]',
+    on: { inspectionDueOnly: true },
+  },
+  { name: 'no location', sel: '[data-testid="filter-orphans"]', on: { orphansOnly: true } },
+];
+
+describe('hv-filter-panel: pressed state', () => {
+  // Colour was the whole signal on the desktop panel, so a screen reader could
+  // not tell an active filter from an inactive one — while the same facets
+  // announced their state in the sheet, on both app bars and in the sidebar.
+  it('announces every chip pressed or not, on both widths', async () => {
+    for (const mobile of [false, true]) {
+      for (const chip of STATEFUL_CHIPS) {
+        const off = await mount({}, { mobile });
+        expect(
+          q(off, chip.sel).getAttribute('aria-pressed'),
+          `${chip.name} off, mobile=${mobile}`,
+        ).toBe('false');
+        off.remove();
+
+        const on = await mount(chip.on, { mobile });
+        expect(
+          q(on, chip.sel).getAttribute('aria-pressed'),
+          `${chip.name} on, mobile=${mobile}`,
+        ).toBe('true');
+        on.remove();
+      }
+    }
+  });
+
+  it('keeps the announced state in step with the paint, chip for chip', async () => {
+    const el = await mount({ category: 'Tools', tags: ['m4'], overdueOnly: true });
+    // A chip paints itself; a checkbox row paints the box inside it.
+    const painted = (b: HTMLElement) => b.classList.contains('on') || !!b.querySelector('.box.on');
+    const toggles = all(el, 'button.chip, button.check').filter(
+      (b) => b.dataset.testid !== 'filter-location' && b.dataset.testid !== 'filter-category-more',
+    );
+
+    expect(toggles.length).toBeGreaterThanOrEqual(STATEFUL_CHIPS.length);
+    for (const toggle of toggles) {
+      expect(toggle.getAttribute('aria-pressed'), toggle.dataset.testid).toBe(
+        String(painted(toggle)),
+      );
+    }
+    // Not vacuous: this mount has some on and some off.
+    const states = toggles.map((t) => t.getAttribute('aria-pressed'));
+    expect(states).toContain('true');
+    expect(states).toContain('false');
+  });
+
+  it('flips as the filter is applied, not only on mount', async () => {
+    const el = await mount();
+    const chip = () => q(el, '[data-testid="filter-overdue"]');
+    expect(chip().getAttribute('aria-pressed')).toBe('false');
+
+    (chip() as HTMLButtonElement).click();
+    // Desktop applies through the host, which hands the new filters back down.
+    el.filters = { ...el.filters, overdueOnly: true };
+    await el.updateComplete;
+    expect(chip().getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('presses a selected tag no item currently carries', async () => {
+    const el = await mount({ tags: ['nobody-uses-this'] });
+    expect(
+      q(el, '[data-testid="filter-tag"][data-value="nobody-uses-this"]').getAttribute(
+        'aria-pressed',
+      ),
+    ).toBe('true');
+  });
+
+  it('marks the two toggle rows too, on both widths', async () => {
+    for (const mobile of [false, true]) {
+      const fresh = await mount({}, { mobile });
+      const state = (el: HVFilterPanel, testid: string) =>
+        q(el, `[data-testid="${testid}"]`).getAttribute('aria-pressed');
+
+      // Sub-locations are included by default; low-stock-first is not.
+      expect(state(fresh, 'filter-include-subtree'), `mobile=${mobile}`).toBe('true');
+      expect(state(fresh, 'filter-low-stock-first'), `mobile=${mobile}`).toBe('false');
+      fresh.remove();
+
+      const flipped = await mount({ includeSubtree: false, lowStockFirst: true }, { mobile });
+      expect(state(flipped, 'filter-include-subtree'), `mobile=${mobile}`).toBe('false');
+      expect(state(flipped, 'filter-low-stock-first'), `mobile=${mobile}`).toBe('true');
+      flipped.remove();
+    }
+  });
+
+  // One vocabulary for the whole card: the same facet must not be a checkbox in
+  // the sheet and a toggle button on the panel.
+  it('leaves no control announcing as a checkbox', async () => {
+    for (const mobile of [false, true]) {
+      const el = await mount({}, { mobile });
+      expect(all(el, '[role="checkbox"]'), `mobile=${mobile}`).toEqual([]);
+      // Tag match mode and sort direction are radiogroups, where aria-checked
+      // is the right word for the same idea.
+      const checked = all(el, '[aria-checked]').filter((n) => n.getAttribute('role') !== 'radio');
+      expect(checked, `mobile=${mobile}`).toEqual([]);
+      el.remove();
+    }
+  });
+});
