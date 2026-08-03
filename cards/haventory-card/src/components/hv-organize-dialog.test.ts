@@ -2,7 +2,7 @@ import './hv-organize-dialog';
 import { makeMockHass, makeItem } from '../test.utils';
 import { Store } from '../store/store';
 import type { HVOrganizeDialog, OrganizeTab } from './hv-organize-dialog';
-import type { Item, Location } from '../store/types';
+import type { AreaRef, Item, Location } from '../store/types';
 
 function loc(id: string, name: string, parentId: string | null = null, areaId: string | null = null): Location {
   const display = parentId ? `${parentId} / ${name}` : name;
@@ -20,10 +20,26 @@ function loc(id: string, name: string, parentId: string | null = null, areaId: s
   };
 }
 
+/** The registry every area-facing test picks from; empty is its own case. */
+const AREAS = [
+  { id: 'area-garage', name: 'Garage area' },
+  { id: 'area-kitchen', name: 'Kitchen' },
+];
+
 async function mount(
-  opts: { items?: Item[]; locations?: Location[]; tab?: OrganizeTab; mobile?: boolean } = {},
+  opts: {
+    items?: Item[];
+    locations?: Location[];
+    areas?: AreaRef[];
+    tab?: OrganizeTab;
+    mobile?: boolean;
+  } = {},
 ) {
-  const hass = makeMockHass({ items: opts.items ?? [], locations: opts.locations ?? [] });
+  const hass = makeMockHass({
+    items: opts.items ?? [],
+    locations: opts.locations ?? [],
+    areas: opts.areas ?? AREAS,
+  });
   const store = new Store(hass, { retryBaseMs: 0 });
   await store.init();
 
@@ -228,6 +244,90 @@ describe('hv-organize-dialog: locations', () => {
       await settle(el);
 
       expect(areaDefault(sr)).toBe('Inherit from location tree');
+    });
+  });
+
+  // The select reads like a per-location field and is not one: the backend keeps a
+  // tree's area on its root, so saving one rewrites every location in the tree —
+  // including the ones the editor does not show.
+  describe('area change preview', () => {
+    const previewText = (sr: ShadowRoot) =>
+      q(sr, '[data-testid="location-area-preview"]')?.textContent?.replace(/\s+/g, ' ').trim();
+
+    async function editLocation(id: 'garage' | 'shelf-a', opts: { areas?: AreaRef[] } = {}) {
+      const ctx = await mount({ locations, areas: opts.areas });
+      const tree = q(ctx.sr, '[data-testid="organize-tree"]') as HTMLElement;
+      if (id === 'shelf-a') {
+        // The tree opens collapsed, so Shelf A is only reachable under Garage.
+        (
+          tree.shadowRoot?.querySelector(
+            '[data-testid="tree-row"][data-id="garage"] [data-testid="tree-twisty"]',
+          ) as HTMLButtonElement
+        ).click();
+        await settle(ctx.el);
+      }
+      (tree.shadowRoot?.querySelector(`[data-testid="tree-edit"][data-id="${id}"]`) as HTMLButtonElement).click();
+      await settle(ctx.el);
+      return ctx;
+    }
+
+    async function pickArea(el: HVOrganizeDialog, sr: ShadowRoot, areaId: string) {
+      const select = q(sr, '[data-testid="location-area"]') as HTMLSelectElement;
+      select.value = areaId;
+      select.dispatchEvent(new Event('change'));
+      await settle(el);
+    }
+
+    it('says an area picked on a nested location lands on the tree root', async () => {
+      const { el, sr } = await editLocation('shelf-a');
+      await pickArea(el, sr, 'area-kitchen');
+
+      const text = previewText(sr);
+      expect(text).toContain('Kitchen');
+      expect(text).toContain('the whole Garage tree, 2 locations');
+      expect(text).toContain('stored on Garage, not on this one');
+      // The area name gets the same chip every other surface prints it in.
+      expect(q(sr, '[data-testid="location-area-preview"]')?.querySelector('.hv-area-chip')).toBeTruthy();
+    });
+
+    it('says clearing the area empties the whole tree, and updates as the select changes', async () => {
+      const { el, sr } = await editLocation('garage');
+      expect(previewText(sr)).toBeUndefined();
+
+      await pickArea(el, sr, 'area-kitchen');
+      expect(previewText(sr)).toContain('Assigns');
+
+      await pickArea(el, sr, '');
+      expect(previewText(sr)).toBe('Removes the area from the whole Garage tree, 2 locations.');
+    });
+
+    it('drops the tree wording for a location that is a tree of one', async () => {
+      const { el, sr } = await mount({ locations: [loc('attic', 'Attic')] });
+      const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+      (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="attic"]') as HTMLButtonElement).click();
+      await settle(el);
+      await pickArea(el, sr, 'area-kitchen');
+
+      expect(previewText(sr)).toBe('Assigns Area: Kitchen to this location.');
+    });
+
+    it('names the area a nested location inherits, which the select cannot show', async () => {
+      // "Inherit from location tree" says where the area comes from but never what it is.
+      const { sr } = await editLocation('shelf-a');
+      expect(previewText(sr)).toBe('Inherits Area: Garage area from its location tree.');
+    });
+
+    it('stays quiet for a selection that changes nothing on save', async () => {
+      const { sr } = await editLocation('garage');
+      expect(q(sr, '[data-testid="location-area-preview"]')).toBe(null);
+    });
+
+    it('hides the area field altogether when Home Assistant defines no areas', async () => {
+      const { sr } = await editLocation('garage', { areas: [] });
+      expect(q(sr, '[data-testid="location-area"]')).toBe(null);
+      expect(q(sr, '[data-testid="location-area-preview"]')).toBe(null);
+      // With nothing beside it, the name field takes the row rather than half of it.
+      expect(q(sr, '[data-testid="location-name"]')?.parentElement?.classList.contains('wide')).toBe(true);
     });
   });
 

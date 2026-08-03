@@ -43,7 +43,6 @@ from .models import (
     item_inspection_is_overdue,
     item_is_low_stock,
     item_is_overdue,
-    monotonic_timestamp_after,
     new_uuid4,
     normalize_search_text,
     normalize_tags,
@@ -802,23 +801,25 @@ class Repository:
         """Refresh ``location_path`` for items under any of the given locations.
 
         Fast path for subtree renames/moves. All items in one location share
-        that location's (already recomputed) ``path``, and only three things
-        change per item: the denormalized ``location_path``, the version /
-        ``updated_at`` bump, and the path-derived text tokens. Everything else
-        is either untouched (location/category/tag/checkout/low-stock buckets,
-        name sort keys) or rebuilt wholesale by the caller via
+        that location's (already recomputed) ``path``, and only two things
+        change per item: the denormalized ``location_path`` and the
+        path-derived text tokens. Everything else is either untouched
+        (location/category/tag/checkout/low-stock buckets, name sort keys) or
+        rebuilt wholesale by the caller via
         ``_rebuild_location_hierarchy_indexes`` (subtree index). The effective
         area is re-resolved once per location and items are re-bucketed only
         when it actually changed.
+
+        ``version`` and ``updated_at`` deliberately stay put. ``location_path``
+        is derived from the location tree — no client can write it — so its
+        rewrite is not an item mutation: bumping ``version`` here would
+        invalidate every optimistic-concurrency token in the subtree, and
+        re-stamping ``updated_at`` would shuffle the "recently updated" sort
+        with rows nobody touched.
         """
 
         if not affected_location_ids:
             return
-
-        # One clock read for the whole batch; per-item monotonicity is still
-        # guaranteed because each item only needs to exceed its own previous
-        # updated_at.
-        now_ts = iso_utc_now()
 
         for loc_id in affected_location_ids:
             item_ids = self._items_by_location_id.get(loc_id)
@@ -846,8 +847,6 @@ class Repository:
                 # dataclasses.replace on this hot path.
                 updated = copy.copy(old_item)
                 updated.location_path = new_path
-                updated.updated_at = monotonic_timestamp_after(old_item.updated_at, now_ts=now_ts)
-                updated.version = old_item.version + 1
                 self._items_by_id[item_id] = updated
 
                 tokens = self._item_text_tokens.get(item_id)
@@ -1407,7 +1406,7 @@ class Repository:
         # Update affected items (now that live maps are consistent)
         affected = {key}
         affected.update(self._collect_descendant_ids(key))
-        # Only rebuild item location_path (and bump versions) when the path can change:
+        # Only rebuild item location_path when the path can actually change:
         # - name change affects display paths
         # - parent change affects ancestry
         if parent_changed or name_changed:

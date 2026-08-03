@@ -102,6 +102,11 @@ is left pointing at a card that is about to disappear. (If your Lovelace runs in
 any entry is yours, in `configuration.yaml` — delete the `resources:` line by hand. An
 Overview shortcut is yours too, and is removed the same way it was added.)
 
+**The API stops answering at once.** Home Assistant keeps a WebSocket command registered
+until it restarts, so a dashboard still open in another tab can go on talking to HAventory
+after you remove it. It is refused rather than served: every command comes back as an
+error, and nothing more is written to your inventory. Reload that tab and the card is gone.
+
 **Your inventory is deliberately kept.** Items and locations live in the Home Assistant
 store file `<config>/.storage/haventory_store`, which removal does not touch: adding the
 integration again restores everything, which is what you want when you remove it to
@@ -365,7 +370,10 @@ item and deletes it (best-effort cleanup even on failure).
 - Services via `hass.services.async_register` with `voluptuous` schemas; handlers re-raise
   validation/repository/storage errors so HA surfaces them.
 - Areas via `homeassistant.helpers.area_registry.async_get(hass)`; never auto-create areas.
-- Case-insensitive search; denormalized `location_path` on items; item `version` for optimistic concurrency.
+- Case-insensitive search; denormalized `location_path` on items; item `version` for optimistic
+  concurrency. `version` counts *item* mutations only — renaming or moving a location rewrites
+  the derived `location_path` across its whole subtree without bumping `version` or restamping
+  `updated_at`, so an expected version taken before the rename is still accepted after it.
 - Two calendar-derived counts on `haventory/stats`, each with a matching `item/list` filter:
   `overdue_count` / `overdue_only` for a passed `due_date` (checked-out items only, since
   that is where a due date can exist), and `inspection_overdue_count` /
@@ -472,7 +480,11 @@ throughout.
   delete that explains what is in the way. Category and tag rename, merge and removal are
   batch rewrites over every affected item; a location merge re-files that location's items,
   re-parents its children and deletes the husk — all with the same progress and
-  partial-failure reporting.
+  partial-failure reporting. A location's Area field says what picking one will do before
+  you save it: an area belongs to a whole tree, so the line under the select names the tree
+  root it will be stored on and how many locations that reaches — and on a location that
+  merely inherits, it names the area it inherits. With no Home Assistant areas defined the
+  field is not shown at all.
 - **Check-out** invites an optional due date (+7 / +31 / +90 / +X day suggestions) rather
   than silently checking out with none — the date is what makes overdue highlighting mean
   anything. "No due date" stays a first-class choice.

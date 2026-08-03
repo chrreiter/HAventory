@@ -46,6 +46,20 @@ def _repo(hass: HomeAssistant) -> Repository:
     return cast("Repository", repo)
 
 
+def _require_loaded(hass: HomeAssistant) -> None:
+    """Refuse the command when no config entry owns the data any more.
+
+    Home Assistant cannot unregister a WebSocket command, so these keep
+    listening after the integration is removed — and removal empties the domain
+    bucket for exactly this check to find. It sits in the guard rather than in
+    the handlers so the whole surface goes quiet at once: the commands that read
+    no inventory (ping, version, config) would otherwise keep answering for an
+    integration that is gone.
+    """
+
+    _repo(hass)
+
+
 def _rate_limiter(hass: HomeAssistant) -> RateLimiter | None:
     """Return the configured rate limiter, or None when limiting is off."""
     bucket = hass.data.get(DOMAIN) or {}
@@ -171,6 +185,7 @@ def ws_guard(
                 _send_error(conn, err)
                 return err
             try:
+                _require_loaded(hass)
                 return await func(hass, conn, msg)
             except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
                 ctx = _context_from_msg(op, msg, context_fields)

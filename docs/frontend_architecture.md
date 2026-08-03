@@ -179,6 +179,24 @@ subscribes to HA's own `area_registry_updated` event (`WSClient.subscribeAreaReg
 and refetches the list, coalescing a burst into one call the way the location tree does.
 A refused subscription is swallowed — the card keeps the areas it already fetched.
 
+### The location editor states what its area select does
+
+An area belongs to a tree, not to a location, so the organize dialog's area `<select>`
+reaches further than it looks: an explicit pick moves the assignment to the tree root and
+clears every node below, and giving one up empties the tree. `areaChangePreview`
+(`ui/area.ts`, pure) turns the pending edit into `{ kind, rootId, rootName, treeSize,
+effectiveAreaId, editsRoot }`, and `hv-organize-dialog` renders one muted line under the
+select, updating on change, with the area in the shared `.hv-area-chip`.
+
+Two things it has to get right. `kind` is `none` unless the selection differs from the
+location's **own stored** `area_id` — the backend's own test — which on a nested location
+is null, so the inherit option is a no-op there rather than a tree-wide clear; that case
+prints the area being inherited instead, which the select itself cannot name. And it walks
+the parent **as picked in the dialog**: a re-parent and an area change travel in one
+`location/update` and the backend propagates after the move, so the area lands on the root
+of the tree the save produces. With no areas defined there is nothing to pick and no
+consequence to state, and the field is left out entirely.
+
 ### Location trees group by area
 
 `hv-location-tree` partitions the roots it is handed with `groupRootsByArea`

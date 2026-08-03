@@ -36,6 +36,12 @@ Object shape for persisted items and API results:
 }
 ```
 
+`location_path` is **derived**: the backend computes it from the location tree and no client
+can write it. Renaming or moving a location therefore rewrites it on every item in that
+subtree **without bumping `version` or restamping `updated_at`** — a derived-data refresh is
+not an item mutation, so tokens held for optimistic concurrency survive the rename, and the
+"recently updated" sort is not shuffled by rows nobody touched.
+
 `inspection_date` is a **forward-looking** date: when the item is next due for inspection.
 A value strictly before today (UTC) means that inspection is overdue — the population behind
 the `inspection_overdue_only` filter and the `inspection_overdue_count` stat. It is

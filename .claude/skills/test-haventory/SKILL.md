@@ -98,7 +98,7 @@ $RUN bulkfuzz      # adversarial haventory/items/bulk
 $RUN subteardown   # HA-core unsubscribe_events teardown (the card's path)
 $RUN statsprobe    # stats broadcast: ~1 counts event per mutation
 $RUN ratelimit     # enable a tight per-conn budget, hammer, disable, confirm recovery
-$RUN races         # rename→version invalidation, concurrent rename, adjust serialization
+$RUN races         # rename vs. item versions, concurrent rename, adjust serialization
 $RUN bulk 1000     # create 250→500→1000 (latency curve) + delete; ~3½ min on a 2000-item store
 MSYS_NO_PATHCONV=1 HA_CONTAINER=home-assistant $RUN restart   # DESTRUCTIVE, last
 $RUN cleanup       # sweep any leftover stress_test_ data
@@ -179,8 +179,7 @@ not re-verified here.
 - **`ratelimit` rebuilds the limiter on save** (buckets refill, counters zero) — it samples
   `dropped_commands` before disabling and always resets rate limiting OFF, even on failure.
 - **Expected non-bugs the layers surface — do NOT file as regressions** (tracked in
-  `docs/open-items.md`): duplicate bulk `op_id` → silent last-wins loss (#22); a location
-  rename invalidates every subtree item's `expected_version` → `conflict` (#23); bulk-create
+  `docs/open-items.md`): duplicate bulk `op_id` → silent last-wins loss (#22); bulk-create
   p50 grows superlinearly (O(N²) persist, #19) — a **WARN**, not a failure.
 - **E2E: assert on the item NAME, not the quantity cell** — the card renders quantity only
   when that column is active, but the name always renders.
