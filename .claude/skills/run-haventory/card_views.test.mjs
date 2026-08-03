@@ -9,8 +9,13 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 import { cardViewsOf, holdsCard, parsePathOverrides, pickView } from "./card_views.mjs";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 // The dev dashboard's real config, as `lovelace/config` returns it.
 const DEV_DASHBOARD = {
@@ -122,3 +127,37 @@ test("parsePathOverrides finds nothing to do when --path is absent", () => {
     error: null,
   });
 });
+
+// --- every harness asks, none assumes -------------------------------------
+//
+// A harness that writes its own dashboard URL is right until the instance is
+// rearranged, and then it fails as "haventory-card never appeared" — which reads
+// like a card that stopped registering, not like a URL that stopped existing.
+// The live-update smoke sat on `/lovelace/default_view` and failed exactly that
+// way. So the rule is the whole point of this module: harnesses ask it.
+//
+// The card's e2e smoke is in the card package rather than beside the others,
+// which is precisely why it drifted unnoticed — it is checked here with them.
+const HARNESSES = [
+  ...readdirSync(here)
+    .filter((f) => f.endsWith(".mjs") && !f.startsWith("card_views"))
+    .map((f) => path.join(here, f)),
+  path.resolve(here, "..", "..", "..", "cards", "haventory-card", "e2e", "live-updates.smoke.mjs"),
+];
+
+// Only `//` comments appear in these files, so dropping those lines leaves the
+// code — a path named in prose is documentation, not a destination.
+const codeOf = (file) =>
+  readFileSync(file, "utf8")
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*\/\//.test(line))
+    .join("\n");
+
+for (const file of HARNESSES.filter((f) => codeOf(f).includes("page.goto("))) {
+  const name = path.basename(file);
+  test(`${name} takes its URL from card_views, never its own`, () => {
+    const code = codeOf(file);
+    assert.match(code, /import \{[^}]*\bcardPath\b[^}]*\} from ["'][^"']*card_views\.mjs["']/);
+    assert.doesNotMatch(code, /["'`][^"'`]*\/(lovelace|dashboard-)[^"'`]*["'`]/);
+  });
+}
