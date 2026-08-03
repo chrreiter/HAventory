@@ -477,7 +477,11 @@ throughout.
   delete that explains what is in the way. Category and tag rename, merge and removal are
   batch rewrites over every affected item; a location merge re-files that location's items,
   re-parents its children and deletes the husk — all with the same progress and
-  partial-failure reporting.
+  partial-failure reporting. A location's Area field says what picking one will do before
+  you save it: an area belongs to a whole tree, so the line under the select names the tree
+  root it will be stored on and how many locations that reaches — and on a location that
+  merely inherits, it names the area it inherits. With no Home Assistant areas defined the
+  field is not shown at all.
 - **Check-out** invites an optional due date (+7 / +31 / +90 / +X day suggestions) rather
   than silently checking out with none — the date is what makes overdue highlighting mean
   anything. "No due date" stays a first-class choice.
