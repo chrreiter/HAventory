@@ -145,7 +145,9 @@ Offline tests stub HA via `tests/conftest.py`.
   - A comment that is wrong is worse than none. When a comment names a symbol, a type, a
     caller or a stored shape, that name must still be correct.
   - `TODO`/`FIXME` markers do not belong in committed code — the repo has zero and keeps it
-    that way. Record follow-ups in `docs/open-items.md` instead.
+    that way. Record follow-ups as GitHub issues (🔧 Task template). Pre-v1.0 release work
+    is the one exception: it stays in `docs/open-items.md` until 1.0, and no new features
+    land before then.
   - Component-level JSDoc says what the component is responsible for and what it talks to.
     Non-obvious CSS gets a why-comment; obvious CSS gets none.
   - Applies to TypeScript and Python alike. Enforced by review, not by a lint rule — the

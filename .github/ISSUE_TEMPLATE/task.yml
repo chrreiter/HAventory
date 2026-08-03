@@ -1,0 +1,40 @@
+name: 🔧 Task / tracked work item
+description: Maintainer-tracked work — hardening, polish, tooling, deferred follow-ups. For a problem you hit, use the bug template; for an idea, the feature template.
+labels: []
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What & why
+      description: What needs doing, and the constraint or gap that motivates it. Include code pointers where they exist.
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: Where this came from — a PR's follow-up note, a review, a test run (e.g. "PR #140 follow-up", "release-readiness review").
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      description: User-facing or release/correctness/security risk.
+      options:
+        - High
+        - Medium
+        - Low
+    validations:
+      required: true
+  - type: dropdown
+    id: effort
+    attributes:
+      label: Effort
+      options:
+        - S (≲ half a day)
+        - M (~1–3 days)
+        - L (multi-day)
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes / acceptance
+      description: Open design questions, sequencing constraints, and what "done" looks like.
