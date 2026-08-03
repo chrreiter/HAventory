@@ -82,9 +82,7 @@ def _user_schema() -> vol.Schema:
     return vol.Schema(
         {
             vol.Required(CONF_CARD_TITLE, default=DEFAULT_CARD_TITLE): str,
-            vol.Required(
-                CONF_SIDEBAR_PANEL_ENABLED, default=DEFAULT_SIDEBAR_PANEL_ENABLED
-            ): bool,
+            vol.Required(CONF_SIDEBAR_PANEL_ENABLED, default=DEFAULT_SIDEBAR_PANEL_ENABLED): bool,
         }
     )
 
@@ -197,9 +195,7 @@ class HAventoryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ig
             return self.async_show_form(step_id="user", data_schema=_user_schema())
 
         title = clean_card_title(user_input.get(CONF_CARD_TITLE))
-        sidebar = bool(
-            user_input.get(CONF_SIDEBAR_PANEL_ENABLED, DEFAULT_SIDEBAR_PANEL_ENABLED)
-        )
+        sidebar = bool(user_input.get(CONF_SIDEBAR_PANEL_ENABLED, DEFAULT_SIDEBAR_PANEL_ENABLED))
         return self.async_create_entry(
             title=title,
             data={},
