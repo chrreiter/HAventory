@@ -23,6 +23,7 @@ from .const import DEFAULT_CARD_TITLE, DOMAIN, INTEGRATION_VERSION
 from .exceptions import (
     ConflictError,
     NotFoundError,
+    NotLoadedError,
     StorageError,
     ValidationError,
     error_code,
@@ -42,19 +43,19 @@ def _repo(hass: HomeAssistant) -> Repository:
     bucket = hass.data.get(DOMAIN) or {}
     repo = bucket.get("repository")
     if repo is None:
-        raise StorageError("repository not initialized; run integration setup")
+        raise NotLoadedError("repository not initialized; run integration setup")
     return cast("Repository", repo)
 
 
 def _require_loaded(hass: HomeAssistant) -> None:
-    """Refuse the command when no config entry owns the data any more.
+    """Refuse the command when no config entry owns the data.
 
     Home Assistant cannot unregister a WebSocket command, so these keep
-    listening after the integration is removed — and removal empties the domain
-    bucket for exactly this check to find. It sits in the guard rather than in
-    the handlers so the whole surface goes quiet at once: the commands that read
-    no inventory (ping, version, config) would otherwise keep answering for an
-    integration that is gone.
+    listening after the integration is unloaded, disabled or removed — and each
+    of those empties the domain bucket for exactly this check to find. It sits in
+    the guard rather than in the handlers so the whole surface goes quiet at
+    once: the commands that read no inventory (ping, version, config) would
+    otherwise keep answering for a backend that owns nothing.
     """
 
     _repo(hass)
@@ -106,10 +107,10 @@ def _error_envelope(
 def _error_message(_id: int, exc: Exception, *, context: dict[str, Any]) -> dict[str, Any]:
     code = error_code(exc)
     LOGGER.log(
-        log_severity(code),
+        log_severity(code, exc),
         str(exc),
         extra={"domain": DOMAIN, **(context or {})},
-        exc_info=log_exc_info(code),
+        exc_info=log_exc_info(code, exc),
     )
     return _error_envelope(_id, code, str(exc), context or None)
 
@@ -692,6 +693,39 @@ def _broadcast_event(
             "Failed to broadcast WS event",
             extra={"domain": DOMAIN, "op": "broadcast_event", "topic": topic, "action": action},
         )
+
+
+# Action every open subscription receives when the config entry serving it goes
+# away. A subscription is bound to a WebSocket connection, which outlives the
+# entry, so without it nothing on the wire marks the end: no further event ever
+# arrives and a client cannot tell that from an inventory nobody is editing.
+BACKEND_UNAVAILABLE_ACTION = "unavailable"
+
+
+def notify_backend_unavailable(hass: HomeAssistant) -> None:
+    """Tell every open subscription that it has stopped delivering.
+
+    Teardown calls this while the registry is still populated; the subscriptions
+    themselves go with the rest of the runtime immediately after.
+
+    Deliberately not routed through ``_broadcast_event``: this is a lifecycle
+    signal rather than inventory traffic, so it ignores the rate limiter. A
+    connection whose event budget happened to be spent would otherwise be the one
+    client left believing its topics are still live.
+    """
+
+    for conn, subs in list(_subs_bucket(hass).items()):
+        for sub_id, sub in list(subs.items()):
+            _send_event_message(
+                conn,
+                sub_id,
+                {
+                    "domain": DOMAIN,
+                    "topic": sub.get("topic"),
+                    "action": BACKEND_UNAVAILABLE_ACTION,
+                    "ts": _now_ts(),
+                },
+            )
 
 
 def _broadcast_counts(hass: HomeAssistant) -> None:
@@ -1431,14 +1465,14 @@ async def ws_items_bulk(
             # on its own.
             code = error_code(exc)
             LOGGER.log(
-                log_severity(code),
+                log_severity(code, exc),
                 "Bulk operation failed, continuing with remaining ops",
                 extra={
                     "domain": DOMAIN,
                     "op": "items_bulk_op_failed",
                     **ctx,
                 },
-                exc_info=log_exc_info(code),
+                exc_info=log_exc_info(code, exc),
             )
 
             results[op_id] = {

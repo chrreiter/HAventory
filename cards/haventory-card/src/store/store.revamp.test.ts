@@ -537,6 +537,131 @@ describe('Store: rate limiting and degraded state', () => {
   });
 });
 
+describe('Store: the backend going away and coming back', () => {
+  const UNAVAILABLE = { code: 'storage_error', message: 'repository not initialized; run integration setup' };
+
+  /** What a config-entry teardown puts on every open subscription. */
+  function tearDown(hass: ReturnType<typeof makeMockHass>) {
+    hass.__emit('items', 'unavailable', {});
+    hass.__emit('locations', 'unavailable', {});
+    hass.__emit('stats', 'unavailable', {});
+  }
+
+  it('re-opens the subscriptions a reload took away', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+    const store = new Store(hass, fast);
+    await store.init();
+    expect(hass.__subscribeCalls).toHaveLength(3);
+
+    tearDown(hass);
+    await flush(3);
+
+    // One more round, and live updates are back without the user touching
+    // anything — a reload must not cost a manual refresh.
+    expect(hass.__subscribeCalls).toHaveLength(6);
+    expect(store.state.value.degraded.liveUpdates).toBe('live');
+    expect(store.state.value.degraded.liveUpdatesReason).toBeNull();
+    expect(store.state.value.connected.items).toBe(true);
+    expect(store.state.value.errorQueue).toEqual([]);
+    hass.__emit('items', 'created', { item: makeItem({ id: '9' }) });
+    expect(store.state.value.items.map((i) => i.id)).toContain('9');
+  });
+
+  it('waits out the window in which the backend is still refusing', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    // Setup has not finished, so the first two re-subscribe rounds are refused
+    // exactly the way a command is during a reload.
+    hass.__failSubscribeNext(6, UNAVAILABLE);
+    tearDown(hass);
+    await settleSubscribes();
+    expect(store.state.value.degraded.liveUpdates).toBe('retrying');
+    expect(store.state.value.degraded.liveUpdatesReason).toBe('unavailable');
+    // Not rate limiting — the banner must not blame a limiter that is off.
+    expect(store.state.value.degraded.rateLimited).toBe(false);
+
+    await flush(6);
+
+    expect(store.state.value.degraded.liveUpdates).toBe('live');
+    expect(store.state.value.degraded.liveUpdatesReason).toBeNull();
+    // Nothing reached the user: waiting out a reload is not an error.
+    expect(store.state.value.errorQueue).toEqual([]);
+  });
+
+  it('re-reads the inventory once the backend answers again', async () => {
+    // A backend that went away and came back re-read its store, and every event
+    // in between went to a subscription that no longer existed.
+    const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'Before' })] });
+    const store = new Store(hass, fast);
+    await store.init();
+    expect(store.state.value.items.map((i) => i.name)).toEqual(['Before']);
+
+    hass.__setItems([makeItem({ id: '2', name: 'After' })]);
+    tearDown(hass);
+    await flush(4);
+
+    expect(store.state.value.items.map((i) => i.name)).toEqual(['After']);
+  });
+
+  it('gives up once the budget is spent, and says what stopped', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    // Disabled or removed rather than reloading: nothing is coming back.
+    hass.__failSubscribe(UNAVAILABLE);
+    tearDown(hass);
+    await flush(20);
+
+    expect(store.state.value.degraded.liveUpdates).toBe('paused');
+    expect(store.state.value.degraded.liveUpdatesReason).toBe('unavailable');
+    expect(store.state.value.degraded.nextLiveRetryAt).toBeNull();
+    expect(store.state.value.connected.items).toBe(false);
+    // Reported once, when retrying is over — not on every attempt.
+    expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['storage_error']);
+    // The first round from init plus a bounded seven, three topics each.
+    expect(hass.__subscribeCalls).toHaveLength(24);
+
+    // The budget stays spent until something restarts it.
+    await flush(6);
+    expect(hass.__subscribeCalls).toHaveLength(24);
+  });
+
+  it('treats one teardown as one outage, however many topics report it', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    // All three topics carry the same signal; three re-subscribe rounds for one
+    // reload would triple the load on a backend that is still starting up.
+    tearDown(hass);
+    await flush(3);
+
+    expect(hass.__subscribeCalls).toHaveLength(6);
+  });
+
+  it('starts a fresh budget for a second teardown', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    tearDown(hass);
+    await flush(3);
+    expect(store.state.value.degraded.liveUpdates).toBe('live');
+
+    // A dashboard open for days sees more than one reload; the second must not
+    // inherit an exhausted budget from the first.
+    hass.__failSubscribeNext(3, UNAVAILABLE);
+    tearDown(hass);
+    await flush(4);
+
+    expect(store.state.value.degraded.liveUpdates).toBe('live');
+    expect(store.state.value.errorQueue).toEqual([]);
+  });
+});
+
 describe('subscribeRetryDelayMs', () => {
   it('prefers the envelope hint over the backoff, in either unit', () => {
     expect(subscribeRetryDelayMs({ code: 'rate_limited', data: { retry_after_ms: 250 } }, 0, 400)).toBe(250);

@@ -18,6 +18,7 @@ import type {
   ItemFilter,
   ItemUpdate,
   ListItemsResult,
+  LiveUpdatePause,
   Location,
   LocationTreeNode,
   StatsCounts,
@@ -66,6 +67,17 @@ const RATE_LIMIT_ATTEMPTS = 4;
 const SUBSCRIBE_RETRY_ATTEMPTS = 4;
 
 /**
+ * Re-subscribes allowed while the backend reports itself unavailable.
+ *
+ * Larger than the rate-limited budget because it is spent on a different bet: a
+ * config-entry reload refuses for as long as setup takes, and giving up inside
+ * that window would leave a card that only ever needed to wait stuck asking for
+ * a manual refresh. Still bounded — a disabled or removed integration is not
+ * coming back on its own, and the banner has to stop promising otherwise.
+ */
+const SUBSCRIBE_UNAVAILABLE_ATTEMPTS = 7;
+
+/**
  * Ceiling on a single re-subscribe wait. Also clamps a server-sent retry-after
  * hint, so a wrong or hostile value cannot park live updates indefinitely.
  */
@@ -74,6 +86,9 @@ const SUBSCRIBE_RETRY_MAX_MS = 30_000;
 /** Topics `subscribeTopics` opens as one round: items, stats, locations. */
 const SUBSCRIBE_TOPIC_COUNT = 3;
 
+/** Event action the backend sends every open subscription as its entry tears down. */
+const BACKEND_UNAVAILABLE_ACTION = 'unavailable';
+
 const NO_DEGRADATION: DegradedState = {
   rateLimited: false,
   connectionLost: false,
@@ -81,6 +96,7 @@ const NO_DEGRADATION: DegradedState = {
   nextRetryAt: null,
   reloading: false,
   liveUpdates: 'live',
+  liveUpdatesReason: null,
   nextLiveRetryAt: null,
 };
 
@@ -353,25 +369,49 @@ export class Store {
     this.subscribeRefusal = null;
     const onOpen = () => this.onSubscribeSettled(round, null);
     const onError = (err: unknown) => this.onSubscribeSettled(round, { err });
+    // The backend's teardown signal arrives on whichever topics are open, and
+    // says the same thing on each — handle it once, ahead of the topic handlers,
+    // which only know how to fold an inventory payload into the view.
+    const onEvent = (handle: (evt: AnyEventPayload) => void) => (evt: AnyEventPayload) => {
+      if (evt.action === BACKEND_UNAVAILABLE_ACTION) this.onBackendUnavailable();
+      else handle(evt);
+    };
 
     if (this.itemsUnsub) this.itemsUnsub();
-    this.itemsUnsub = this.ws.subscribe('items', (evt: AnyEventPayload) => this.onItemsEvent(evt), {
+    this.itemsUnsub = this.ws.subscribe('items', onEvent((evt) => this.onItemsEvent(evt)), {
       location_id: this.state.value.filters.locationId ?? undefined,
       include_subtree: true, // Always include sublocations
       onError,
       onOpen,
     });
     if (this.statsUnsub) this.statsUnsub();
-    this.statsUnsub = this.ws.subscribe('stats', (evt: AnyEventPayload) => this.onStatsEvent(evt), {
+    this.statsUnsub = this.ws.subscribe('stats', onEvent((evt) => this.onStatsEvent(evt)), {
       onError,
       onOpen,
     });
     if (this.locationsUnsub) this.locationsUnsub();
     this.locationsUnsub = this.ws.subscribe(
       'locations',
-      (evt: AnyEventPayload) => this.onLocationsEvent(evt),
+      onEvent((evt) => this.onLocationsEvent(evt)),
       { onError, onOpen },
     );
+  }
+
+  /**
+   * The config entry serving these subscriptions is tearing down.
+   *
+   * A reload is the common case and it ends by itself, so the card waits it out
+   * on the same backoff a refused subscribe uses rather than reporting an error
+   * for something that will be over in a moment. The first attempt is scheduled
+   * rather than immediate: the backend is mid-teardown and would certainly
+   * refuse. Disabled and removed look identical from here, and end as the
+   * budget running out.
+   */
+  private onBackendUnavailable() {
+    if (this.state.value.degraded.liveUpdatesReason === 'unavailable') return;
+    this.stateObs.set({ connected: { items: false, stats: false } });
+    this.subscribeAttempt = 0;
+    this.scheduleReopen('unavailable', null);
   }
 
   /** Fold one subscribe outcome into its round, and act once the round is complete. */
@@ -383,9 +423,14 @@ export class Store {
 
     const refused = this.subscribeRefusal;
     if (!refused) {
+      const wasUnavailable = this.state.value.degraded.liveUpdatesReason === 'unavailable';
       this.subscribeAttempt = 0;
       this.stateObs.set({ connected: { items: true, stats: true } });
-      this.setDegraded({ liveUpdates: 'live', nextLiveRetryAt: null });
+      this.setDegraded({ liveUpdates: 'live', liveUpdatesReason: null, nextLiveRetryAt: null });
+      // A backend that went away and came back was reading its store afresh, and
+      // every event in between was addressed to subscriptions that no longer
+      // existed. Nothing on screen is trustworthy until it has been re-read.
+      if (wasUnavailable) void this.reloadAll().catch(() => undefined);
       return;
     }
     this.onSubscribeRefused(refused.err);
@@ -395,30 +440,57 @@ export class Store {
    * A refused subscribe means live updates are gone, silently — no event will
    * ever arrive to hint at it.
    *
-   * `rate_limited` is the expected refusal and the contract's guidance is to
-   * retry later, so the card backs off and says it is retrying instead of
-   * dropping an error on a user who has done nothing wrong. Once the budget is
-   * spent it stops, reports the refusal and leaves the manual refresh as the way
-   * back. Any other refusal is an outage and is reported at once.
+   * Two refusals are worth waiting out. `rate_limited` is the expected one and
+   * the contract's guidance is to retry later; `storage_error` is what a backend
+   * with no config entry answers, which a reload clears on its own. Either way
+   * the card backs off and says it is retrying instead of dropping an error on a
+   * user who has done nothing wrong. Once the budget is spent it stops, reports
+   * the refusal and leaves the manual refresh as the way back. Any other refusal
+   * is an outage and is reported at once.
    */
   private onSubscribeRefused(err: unknown) {
     this.stateObs.set({ connected: { items: false, stats: false } });
 
-    if (errorCode(err) !== 'rate_limited') {
-      this.setDegraded({ connectionLost: true, liveUpdates: 'paused', nextLiveRetryAt: null });
+    const code = errorCode(err);
+    const reason: LiveUpdatePause | null =
+      code === 'rate_limited' ? 'rate_limited' : code === 'storage_error' ? 'unavailable' : null;
+    if (reason === null) {
+      this.setDegraded({
+        connectionLost: true,
+        liveUpdates: 'paused',
+        liveUpdatesReason: null,
+        nextLiveRetryAt: null,
+      });
       this.pushError(err);
       return;
     }
 
-    if (this.subscribeAttempt >= SUBSCRIBE_RETRY_ATTEMPTS) {
-      this.setDegraded({ rateLimited: true, liveUpdates: 'paused', nextLiveRetryAt: null });
+    // Sticky, and set here rather than alongside the pause: it says events may
+    // have been dropped, which stays true for the rest of the session however
+    // the subscriptions end up.
+    if (reason === 'rate_limited') this.setDegraded({ rateLimited: true });
+
+    const budget =
+      reason === 'unavailable' ? SUBSCRIBE_UNAVAILABLE_ATTEMPTS : SUBSCRIBE_RETRY_ATTEMPTS;
+    if (this.subscribeAttempt >= budget) {
+      this.setDegraded({ liveUpdates: 'paused', liveUpdatesReason: reason, nextLiveRetryAt: null });
       this.pushError(err);
       return;
     }
 
+    this.scheduleReopen(reason, err);
+  }
+
+  /** Book the next re-subscribe and say so, so the banner can show the wait. */
+  private scheduleReopen(reason: LiveUpdatePause, err: unknown) {
     const delay = subscribeRetryDelayMs(err, this.subscribeAttempt, this.retryBaseMs);
     this.subscribeAttempt += 1;
-    this.setDegraded({ rateLimited: true, liveUpdates: 'retrying', nextLiveRetryAt: Date.now() + delay });
+    this.setDegraded({
+      liveUpdates: 'retrying',
+      liveUpdatesReason: reason,
+      nextLiveRetryAt: Date.now() + delay,
+    });
+    this.cancelSubscribeRetry();
     this.subscribeRetryHandle = setTimeout(() => {
       this.subscribeRetryHandle = null;
       this.openSubscriptions(false);
@@ -826,6 +898,7 @@ export class Store {
       cur.nextRetryAt === next.nextRetryAt &&
       cur.reloading === next.reloading &&
       cur.liveUpdates === next.liveUpdates &&
+      cur.liveUpdatesReason === next.liveUpdatesReason &&
       cur.nextLiveRetryAt === next.nextLiveRetryAt;
     if (same) return;
     this.stateObs.set({ degraded: next });

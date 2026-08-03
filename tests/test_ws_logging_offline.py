@@ -5,9 +5,10 @@ One policy governs every error the API boundary logs:
 - ERROR only where an operator has to act — ``storage_error`` and
   ``unknown_error``.
 - WARNING for contract-defined, client-recoverable rejections —
-  ``validation_error``, ``not_found``, ``conflict``, ``rate_limited``.
-- ``exc_info`` only where a traceback says something the message does not,
-  which is the same two operator-actionable codes.
+  ``validation_error``, ``not_found``, ``conflict``, ``rate_limited``, and the
+  ``storage_error`` a teardown leaves behind, which is a state somebody chose
+  rather than a failure.
+- ``exc_info`` only where a traceback says something the message does not.
 
 The conflict and not-found cases are load-bearing: ``release_testing_plan.md``
 exit criterion 4 forbids any traceback from ``custom_components.haventory`` in
@@ -23,7 +24,7 @@ import pytest
 import voluptuous as vol
 from custom_components.haventory import services as services_mod
 from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.exceptions import StorageError
+from custom_components.haventory.exceptions import NotLoadedError, StorageError
 from custom_components.haventory.rate_limit import RateLimitConfig, RateLimiter
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
@@ -211,6 +212,116 @@ async def test_unknown_error_logs_error_with_traceback(caplog, monkeypatch) -> N
     assert record.op == "item_create"
     assert record.levelno == logging.ERROR
     assert record.exc_info is not None
+
+
+# -----------------------------
+# The refusal a teardown leaves behind: same envelope, quieter log
+# -----------------------------
+
+
+def _make_unloaded_hass() -> HomeAssistant:
+    """Commands registered with nothing behind them — what a teardown leaves."""
+
+    hass = HomeAssistant()
+    ws_setup(hass)
+    return hass
+
+
+@pytest.mark.asyncio
+async def test_not_loaded_refusal_logs_warning_without_traceback(caplog) -> None:
+    """An entry that is unloaded, disabled or removed is a state, not a fault.
+
+    Nothing broke and no cause chain exists to print; the operator's move is to
+    re-enable the entry, and the client's is to stop asking.
+    """
+
+    hass = _make_unloaded_hass()
+    caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
+
+    res = await _send(hass, 1, "haventory/item/create", name="X")
+    assert res["success"] is False and res["error"]["code"] == "storage_error"
+
+    record = _only(caplog)
+    assert record.op == "item_create"
+    assert record.levelno == logging.WARNING
+    assert record.exc_info is None
+
+
+@pytest.mark.asyncio
+async def test_not_loaded_refusal_keeps_the_storage_error_envelope() -> None:
+    """The wire contract does not move with the log level.
+
+    ``NotLoadedError`` is a ``StorageError``, so clients that key on the code go
+    on seeing exactly what they saw before.
+    """
+
+    hass = _make_unloaded_hass()
+    conn = _ConnStub()
+
+    res = await _send(hass, 1, "haventory/item/list", conn=conn)
+
+    assert res["error"]["code"] == "storage_error"
+    assert res["error"]["data"]["op"] == "item_list"
+    assert res["error"]["message"]
+    assert conn.messages[-1] == res
+
+
+@pytest.mark.asyncio
+async def test_a_retrying_client_leaves_no_tracebacks(caplog) -> None:
+    """The flood case: a dashboard that keeps knocking must not fill the log.
+
+    ``release_testing_plan.md`` exit criterion 4 audits the Home Assistant log
+    for tracebacks from this integration, and a card left open across a removal
+    retries for as long as the tab does.
+    """
+
+    hass = _make_unloaded_hass()
+    caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
+
+    retries = 12
+    for i in range(retries):
+        assert (await _send(hass, i, "haventory/stats"))["error"]["code"] == "storage_error"
+
+    records = _records(caplog)
+    assert len(records) == retries
+    assert {r.levelno for r in records} == {logging.WARNING}
+    assert all(r.exc_info is None for r in records)
+
+
+@pytest.mark.asyncio
+async def test_a_real_storage_failure_still_logs_error_with_traceback(caplog, monkeypatch) -> None:
+    """The quieter rule is scoped to the refusal, not to the code it maps to."""
+
+    hass = _make_hass()
+
+    async def _raise(*_args: Any, **_kwargs: Any) -> None:
+        raise StorageError("failed to persist repository")
+
+    monkeypatch.setattr(hass.data[DOMAIN]["store"], "async_save", _raise)
+    caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
+
+    res = await _send(hass, 1, "haventory/item/create", name="X")
+    assert res["success"] is False and res["error"]["code"] == "storage_error"
+
+    record = _only(caplog)
+    assert record.levelno == logging.ERROR
+    assert record.exc_info is not None
+
+
+@pytest.mark.asyncio
+async def test_service_not_loaded_refusal_logs_warning_without_traceback(caplog) -> None:
+    """The service boundary grades the same refusal the same way."""
+
+    hass = _make_unloaded_hass()
+    caplog.set_level(logging.DEBUG, logger=SERVICES_LOGGER)
+
+    with pytest.raises(NotLoadedError):
+        await services_mod.service_item_create(hass, {"name": "X"})
+
+    record = _only(caplog, SERVICES_LOGGER)
+    assert record.op == "item_create"
+    assert record.levelno == logging.WARNING
+    assert record.exc_info is None
 
 
 # -----------------------------

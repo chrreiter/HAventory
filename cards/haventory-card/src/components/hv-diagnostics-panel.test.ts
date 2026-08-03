@@ -28,6 +28,7 @@ const NO_DEGRADATION: DegradedState = {
   nextRetryAt: null,
   reloading: false,
   liveUpdates: 'live',
+  liveUpdatesReason: null,
   nextLiveRetryAt: null,
 };
 

@@ -1399,6 +1399,21 @@ describe('hv-card-shell: degraded states', () => {
     expect(banner(sr, 'degraded-live-updates')).toBe(null);
   });
 
+  it('blames the backend, not a limiter, when HAventory itself went away', async () => {
+    // The two pauses look identical to the subscription machinery and nothing
+    // alike to the person reading the banner: one means events may be dropped,
+    // the other that there is no backend to send them.
+    const { el, store, hass, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    hass.__failSubscribe({ code: 'storage_error', message: 'repository not initialized' });
+    hass.__emit('items', 'unavailable', {});
+    for (let i = 0; i < 20; i++) await settle(el);
+
+    expect(store.state.value.degraded.liveUpdates).toBe('paused');
+    const paused = banner(sr, 'degraded-live-updates');
+    expect(paused?.shadowRoot?.textContent).toContain('HAventory is not available');
+    expect(paused?.shadowRoot?.textContent).not.toContain('rate limited');
+  });
+
   it('announces a wholesale reload after an import', async () => {
     const { el, hass, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     const seen: boolean[] = [];

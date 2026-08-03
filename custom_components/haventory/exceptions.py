@@ -38,6 +38,17 @@ class StorageError(HaventoryError):
     """Raised when storage operations fail or data is corrupted."""
 
 
+class NotLoadedError(StorageError):
+    """Raised when no config entry owns the data: unloaded, disabled or removed.
+
+    A ``StorageError`` so the wire contract does not move: the client sees the
+    taxonomy's ``storage_error``, which is what "HAventory is unavailable" has
+    always meant. The subclass exists for the log alone — nothing has broken and
+    there is no server-side fault to investigate, so a dashboard that keeps
+    retrying must not fill the Home Assistant log with tracebacks.
+    """
+
+
 # Codes an operator has to act on. Everything else in the contract's taxonomy —
 # validation_error, not_found, conflict, rate_limited — is a rejection the
 # caller can recover from by fixing and resending the request, so it must not
@@ -59,13 +70,28 @@ def error_code(exc: BaseException) -> str:
     return "unknown_error"
 
 
-def log_severity(code: str) -> int:
+def _is_client_recoverable(code: str, exc: BaseException | None) -> bool:
+    """Whether the rejection is the caller's to act on rather than an operator's.
+
+    ``NotLoadedError`` carries the contract's ``storage_error`` code but is not
+    a fault: the entry is unloaded, disabled or removed, which is a state
+    somebody chose. Only the client (stop asking) or the operator (re-enable the
+    entry) can move it, and neither learns anything from a traceback — so it is
+    graded on the exception rather than on the code it maps to.
+    """
+
+    if isinstance(exc, NotLoadedError):
+        return True
+    return code not in OPERATOR_ACTIONABLE_CODES
+
+
+def log_severity(code: str, exc: BaseException | None = None) -> int:
     """Return the log level a boundary rejection carrying ``code`` is logged at."""
 
-    return logging.ERROR if code in OPERATOR_ACTIONABLE_CODES else logging.WARNING
+    return logging.WARNING if _is_client_recoverable(code, exc) else logging.ERROR
 
 
-def log_exc_info(code: str) -> bool | None:
+def log_exc_info(code: str, exc: BaseException | None = None) -> bool | None:
     """Return the ``exc_info`` argument for a boundary log carrying ``code``.
 
     A traceback earns its place only when it says something the message does
@@ -79,7 +105,7 @@ def log_exc_info(code: str) -> bool | None:
     leave a falsy-but-present ``exc_info`` slot behind instead of no slot.
     """
 
-    return True if code in OPERATOR_ACTIONABLE_CODES else None
+    return None if _is_client_recoverable(code, exc) else True
 
 
 class SchemaDowngradeError(StorageError):
