@@ -400,8 +400,9 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
   `item/list` `status` filter, counted on `haventory/stats` as `missing_count` /
   `needs_repair_count` (stored state, so unlike the calendar counts every change emits
   an event), and settable everywhere an item is written — WS create/update, the
-  `haventory.item_create` / `haventory.item_update` services, and import. A store or
-  export written before the field existed reads as `ok`.
+  `haventory.item_create` / `haventory.item_update` services, and import. A store written
+  before the field existed is migrated on load (schema v5 backfills `ok`); an export
+  without it reads as `ok` too.
 - **WebSocket rate limiting (opt-in, off by default)**: per-connection **and** global
   token buckets for commands (excess requests get a `rate_limited` error) and for
   subscription broadcasts (excess events are dropped, never breaking the command).

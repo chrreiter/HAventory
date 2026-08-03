@@ -31,7 +31,7 @@ from .exceptions import NotLoadedError, SchemaDowngradeError, StorageError
 _LOGGER = logging.getLogger(__name__)
 
 # Current schema version for persisted payloads
-CURRENT_SCHEMA_VERSION: Final[int] = 4
+CURRENT_SCHEMA_VERSION: Final[int] = 5
 
 # Storage key under which the persisted dataset is saved
 STORAGE_KEY: Final[str] = "haventory_store"

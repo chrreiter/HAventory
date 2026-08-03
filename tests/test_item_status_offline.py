@@ -1,15 +1,16 @@
 """Offline tests for the per-item status field (ok / missing / needs_repair).
 
 Scenarios cover creation defaults and validation, updates, filtering (scan and
-index paths), repository counts and round-trip, tolerant loading of payloads
-written before the field existed, WS command surfaces, import/export, and the
-service schemas.
+index paths), repository counts and round-trip, the v4 -> v5 migration that
+backfills the field, tolerant loading of payloads written before it existed,
+WS command surfaces, import/export, and the service schemas.
 """
 
 from __future__ import annotations
 
 import pytest
 from custom_components.haventory import import_export as ie
+from custom_components.haventory import migrations
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.models import (
@@ -28,6 +29,7 @@ from custom_components.haventory.services import SCHEMA_ITEM_CREATE, SCHEMA_ITEM
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store as HAStore
 
 # -----------------------------
 # Models
@@ -187,6 +189,66 @@ def test_load_state_tolerates_missing_and_unknown_status() -> None:
     counts = restored.get_counts()
     assert counts["missing_count"] == 0
     assert counts["needs_repair_count"] == 0
+
+
+# -----------------------------
+# Migration (v4 -> v5)
+# -----------------------------
+
+
+def _v4_payload() -> dict:
+    return {
+        "schema_version": 4,
+        "items": {
+            "a": {"id": "a", "name": "Hammer"},
+            "b": {"id": "b", "name": "Drill", "status": "needs_repair"},
+            "c": {"id": "c", "name": "Wrench", "status": "shattered"},
+        },
+        "locations": {},
+    }
+
+
+def test_migrate_4_to_5_backfills_and_coerces_status() -> None:
+    migrated = migrations.migrate_4_to_5(_v4_payload())
+    items = migrated["items"]
+    assert items["a"]["status"] == "ok"
+    assert items["b"]["status"] == "needs_repair"
+    assert items["c"]["status"] == "ok"
+
+
+def test_migrate_4_to_5_is_idempotent() -> None:
+    once = migrations.migrate_4_to_5(_v4_payload())
+    twice = migrations.migrate_4_to_5(once)
+    assert twice == once
+
+
+def test_migrate_chain_from_v0_stamps_status_and_version() -> None:
+    payload = {"schema_version": 0, "items": {"a": {"id": "a", "name": "Hammer"}}}
+    migrated = migrations.migrate(payload, from_version=0, to_version=CURRENT_SCHEMA_VERSION)
+    assert migrated["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert migrated["items"]["a"]["status"] == "ok"
+    assert migrated["locations"] == {}
+
+
+@pytest.mark.asyncio
+async def test_domain_store_migrates_v4_store_on_load() -> None:
+    """A store written at v4 loads at v5 with every item's status backfilled."""
+
+    hass = HomeAssistant()
+    key = "test_status_migration_v4_store"
+    store = DomainStore(hass, key=key)
+    raw_store = HAStore(hass, 1, key)
+    await raw_store.async_save(_v4_payload())
+
+    loaded = await store.async_load()
+    assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert loaded["items"]["a"]["status"] == "ok"
+    assert loaded["items"]["b"]["status"] == "needs_repair"
+
+    # The migrated payload was persisted back, not just returned.
+    on_disk = await raw_store.async_load()
+    assert on_disk["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert on_disk["items"]["a"]["status"] == "ok"
 
 
 # -----------------------------

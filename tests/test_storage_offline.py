@@ -195,7 +195,9 @@ async def test_migration_from_v1_to_current_preserves_payload() -> None:
     migrated = await store.async_load()
 
     assert migrated["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert migrated["items"] == pre_payload["items"]
+    # v4 -> v5 backfills the per-item status; everything else passes through.
+    expected_items = {"i1": {**pre_payload["items"]["i1"], "status": "ok"}}
+    assert migrated["items"] == expected_items
     assert migrated["locations"] == pre_payload["locations"]
     # on-disk should be updated to current schema_version
     persisted = await raw_store.async_load()
@@ -222,7 +224,12 @@ async def test_equal_and_older_versions_still_load(stored_version: int) -> None:
     loaded = await store.async_load()
 
     assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert loaded["items"] == pre_payload["items"]
+    # Anything below v5 runs migrate_4_to_5's status backfill on the way up; a
+    # payload already at the current version is normalized, never migrated.
+    expected_items = deepcopy(pre_payload["items"])
+    if stored_version < CURRENT_SCHEMA_VERSION:
+        expected_items["i1"]["status"] = "ok"
+    assert loaded["items"] == expected_items
     assert loaded["locations"] == pre_payload["locations"]
 
 

@@ -51,8 +51,10 @@ independent of `checked_out` and of `due_date`; any item can carry one.
 `status` is a stored per-item condition, always exactly one of `ok`, `missing`,
 `needs_repair`. It is **non-nullable** — setting `ok` is how a flagged state clears — and
 independent of `checked_out`/`quantity` (a checked-out item is not "missing"; missing means
-its whereabouts are unknown). Payloads persisted before the field existed read as `ok` on
-load; an explicit unknown or null value in a write is rejected as `validation_error`.
+its whereabouts are unknown). Stores written before the field existed are migrated on load
+(schema v5's `migrate_4_to_5` backfills `ok`), and loading additionally tolerates a missing
+or unknown value as `ok`; an explicit unknown or null value in a write is rejected as
+`validation_error`.
 
 Input shapes:
 - ItemCreate (request payload subset; only `name` required):

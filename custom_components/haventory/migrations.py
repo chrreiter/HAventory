@@ -8,7 +8,7 @@ without changing the outcome.
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
+from typing import Any, Final
 
 
 def migrate(payload: dict[str, Any], *, from_version: int, to_version: int) -> dict[str, Any]:
@@ -62,3 +62,25 @@ def migrate_1_to_2(payload: dict[str, Any]) -> dict[str, Any]:
 def migrate_2_to_3(payload: dict[str, Any]) -> dict[str, Any]:
     """No-op migration to v3 (inspection_date is optional)."""
     return deepcopy(payload) if isinstance(payload, dict) else {}
+
+
+# The item statuses as schema v5 defines them. Frozen here rather than read
+# from models so this step keeps its meaning if the live set grows later.
+_V5_ITEM_STATUSES: Final[tuple[str, ...]] = ("ok", "missing", "needs_repair")
+
+
+def migrate_4_to_5(payload: dict[str, Any]) -> dict[str, Any]:
+    """Backfill the per-item ``status`` field for schema v5.
+
+    From v5 every item carries exactly one status; an item written before the
+    field existed — or holding a value v5 does not know — becomes ``"ok"``.
+    Idempotent: an item already carrying a known status is left untouched.
+    """
+
+    data = deepcopy(payload) if isinstance(payload, dict) else {}
+    items = data.get("items")
+    if isinstance(items, dict):
+        for item in items.values():
+            if isinstance(item, dict) and item.get("status") not in _V5_ITEM_STATUSES:
+                item["status"] = "ok"
+    return data
