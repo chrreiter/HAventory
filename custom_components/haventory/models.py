@@ -24,6 +24,12 @@ from .exceptions import ValidationError
 # Scalar values allowed inside custom_fields.
 ScalarValue = str | int | float | bool
 
+# Stored per-item condition. Every item carries exactly one; "ok" is the
+# default, so a payload written before the field existed reads as "ok".
+ItemStatus = Literal["ok", "missing", "needs_repair"]
+ITEM_STATUSES: Final[tuple[ItemStatus, ...]] = ("ok", "missing", "needs_repair")
+DEFAULT_ITEM_STATUS: Final[ItemStatus] = "ok"
+
 
 @dataclass(frozen=True)
 class LocationPath:
@@ -68,6 +74,7 @@ class Item:
     name: str
     description: str | None = None
     quantity: int = 1
+    status: ItemStatus = DEFAULT_ITEM_STATUS
     checked_out: bool = False
     due_date: str | None = None  # YYYY-MM-DD
     # When the item is next due for inspection — a forward-looking date, so a
@@ -92,6 +99,7 @@ class ItemCreate(TypedDict, total=False):
     name: str
     description: str | None
     quantity: int
+    status: ItemStatus
     checked_out: bool
     due_date: str | None
     inspection_date: str | None
@@ -108,6 +116,7 @@ class ItemUpdate(TypedDict, total=False):
     name: str
     description: str | None
     quantity: int
+    status: ItemStatus
     checked_out: bool
     due_date: str | None
     inspection_date: str | None
@@ -126,6 +135,7 @@ class ItemFilter(TypedDict, total=False):
     tags_any: list[str]
     tags_all: list[str]
     category: str
+    status: ItemStatus
     checked_out: bool
     low_stock_only: bool
     # When true, do not filter; instead, prefer low-stock items first in ordering
@@ -310,6 +320,31 @@ def validate_due_date_rules(*, checked_out: bool, due_date: str | None) -> str |
     return normalize_date_yyyy_mm_dd(due_date)
 
 
+def validate_item_status(value: object) -> ItemStatus:
+    """Validate an item status and return it.
+
+    Status is non-nullable: an item always has one, so ``None`` is rejected the
+    same as any other unknown value ("ok" is the way to clear a flagged state).
+    """
+
+    if isinstance(value, str) and value in ITEM_STATUSES:
+        return value
+    raise ValidationError(f"status must be one of: {', '.join(ITEM_STATUSES)}")
+
+
+def coerce_item_status(value: object) -> ItemStatus:
+    """Return ``value`` when it is a known status, otherwise the default.
+
+    The tolerant twin of :func:`validate_item_status`, for loading persisted
+    payloads: a store written before the field existed (or hand-edited into an
+    unknown value) reads as "ok" rather than failing the whole item.
+    """
+
+    if isinstance(value, str) and value in ITEM_STATUSES:
+        return value
+    return DEFAULT_ITEM_STATUS
+
+
 def validate_inspection_date(inspection_date: str | None) -> str | None:
     """Validate inspection_date format (YYYY-MM-DD) if provided.
 
@@ -426,6 +461,7 @@ def create_item_from_create(
     if isinstance(raw_quantity, bool):
         raise ValidationError("quantity must be an integer >= 0")
     quantity = int(raw_quantity)
+    status = validate_item_status(payload.get("status", DEFAULT_ITEM_STATUS))
     checked_out = bool(payload.get("checked_out", False))
     due_date = payload.get("due_date")
     inspection_date = payload.get("inspection_date")
@@ -460,6 +496,7 @@ def create_item_from_create(
         name=name,
         description=description,
         quantity=quantity,
+        status=status,
         checked_out=checked_out,
         due_date=normalized_due_date,
         inspection_date=normalized_inspection_date,
@@ -497,6 +534,11 @@ def _update_quantity(new_item: Item, update: ItemUpdate) -> None:
         if not _is_int_not_bool(q) or q < 0:
             raise ValidationError("quantity must be an integer >= 0")
         new_item.quantity = q
+
+
+def _update_status(new_item: Item, update: ItemUpdate) -> None:
+    if "status" in update:
+        new_item.status = validate_item_status(update["status"])
 
 
 def _update_checkout_and_due_date(new_item: Item, update: ItemUpdate) -> None:
@@ -574,6 +616,7 @@ def apply_item_update(
 
     _update_name_and_description(new_item, update)
     _update_quantity(new_item, update)
+    _update_status(new_item, update)
     _update_checkout_and_due_date(new_item, update)
     _update_inspection_date(new_item, update)
     _update_location_and_path(new_item, update, locations_by_id)
@@ -762,6 +805,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     - tags_any: at least one matches
     - tags_all: all must be present
     - category: case-insensitive equals
+    - status: exact match against one of the known statuses
     - checked_out: exact match
     - low_stock_only: quantity <= threshold (0 valid, None disables)
     - orphaned_only: only items without a location (location_id is None)
@@ -779,6 +823,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     tags_any = normalize_tags(flt.get("tags_any")) if "tags_any" in flt else []
     tags_all = normalize_tags(flt.get("tags_all")) if "tags_all" in flt else []
     category = (flt.get("category") or "").strip().casefold() if "category" in flt else ""
+    status = validate_item_status(flt["status"]) if "status" in flt else None
     checked_out = flt.get("checked_out") if "checked_out" in flt else None
     low_stock_only = bool(flt.get("low_stock_only")) if "low_stock_only" in flt else False
     orphaned_only = bool(flt.get("orphaned_only")) if "orphaned_only" in flt else False
@@ -809,6 +854,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
         or bool(tags_any)
         or bool(tags_all)
         or bool(category)
+        or status is not None
         or checked_out is not None
         or low_stock_only
         or orphaned_only
@@ -830,6 +876,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
         matches_any = (not tags_any) or any(tag in it.tags for tag in tags_any)
         matches_all = (not tags_all) or all(tag in it.tags for tag in tags_all)
         matches_category = (not category) or ((it.category or "").strip().casefold() == category)
+        matches_status = (status is None) or (it.status == status)
         matches_checked = (checked_out is None) or (it.checked_out == bool(checked_out))
         matches_low_stock = (not low_stock_only) or item_is_low_stock(it)
         matches_orphaned = (not orphaned_only) or (it.location_id is None)
@@ -851,6 +898,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
             and matches_any
             and matches_all
             and matches_category
+            and matches_status
             and matches_checked
             and matches_low_stock
             and matches_orphaned

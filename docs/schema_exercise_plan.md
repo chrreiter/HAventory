@@ -19,8 +19,10 @@ The migration must be **real** (the payload's shape actually changes), **forward
 
 ## The shape change
 
-No feature currently pending needs a schema change (the v0.2.0 payload is deliberately
-schema-neutral). Default choice — useful, minimal, honest:
+No feature release moves the schema version (the feature payloads are deliberately
+schema-neutral — the item `status` field, for example, shipped as a tolerant read: the
+serializer always writes it, and a payload without it loads as `ok`). Default choice —
+useful, minimal, honest:
 
 - Add a top-level **`meta`** object to the store payload:
   `{"store_created_at": <ISO — backfilled as null when unknown>, "last_migration":
@@ -30,7 +32,9 @@ schema-neutral). Default choice — useful, minimal, honest:
 
 If a genuinely useful shape change is pending by the time this runs (an items/locations
 field change a post-v0.2.0 feature needs), it takes this slot instead — the point is the
-rehearsal, not the `meta` block. The prompt asks before choosing.
+rehearsal, not the `meta` block. One standing candidate: an explicit backfill of the item
+`status` field (`migrate_4_to_5` stamping `"ok"` onto any item without one), which turns
+that field's tolerant-read fallback into stored fact. The prompt asks before choosing.
 
 ## Delivery
 

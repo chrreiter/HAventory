@@ -43,7 +43,9 @@ from typing import Any, Literal
 from .const import INTEGRATION_VERSION
 from .exceptions import ValidationError
 from .models import (
+    DEFAULT_ITEM_STATUS,
     EMPTY_LOCATION_PATH,
+    ITEM_STATUSES,
     Item,
     Location,
     build_location_path_from_map,
@@ -67,6 +69,7 @@ _ITEM_SOURCE_FIELDS: tuple[str, ...] = (
     "name",
     "description",
     "quantity",
+    "status",
     "checked_out",
     "due_date",
     "inspection_date",
@@ -95,6 +98,7 @@ def _serialize_item_doc(item: Item) -> dict[str, Any]:
         "name": item.name,
         "description": item.description,
         "quantity": int(item.quantity),
+        "status": item.status,
         "checked_out": bool(item.checked_out),
         "due_date": item.due_date,
         "inspection_date": item.inspection_date,
@@ -286,6 +290,18 @@ def _validate_location_doc(
     return lid
 
 
+def _validate_item_status_doc(base: str, doc: dict[str, Any], errors: list[dict[str, str]]) -> None:
+    """Reject a present-but-unknown item status.
+
+    A status that is PRESENT must be a known value (an explicit null or unknown
+    string is rejected); an omitted field is allowed and reads as the default on
+    load — that is what a pre-status export carries.
+    """
+
+    if "status" in doc and doc.get("status") not in ITEM_STATUSES:
+        errors.append(_err(f"{base}.status", f"status must be one of: {', '.join(ITEM_STATUSES)}"))
+
+
 def _validate_item_doc(idx: int, doc: dict[str, Any], errors: list[dict[str, str]]) -> str | None:
     base = f"items[{idx}]"
     iid = _validate_uuid4(doc.get("id"), f"{base}.id", errors)
@@ -303,6 +319,7 @@ def _validate_item_doc(idx: int, doc: dict[str, Any], errors: list[dict[str, str
                 "low_stock_threshold must be an integer >= 0 or null",
             )
         )
+    _validate_item_status_doc(base, doc, errors)
     loc_id = doc.get("location_id")
     if loc_id is not None:
         _validate_uuid4(loc_id, f"{base}.location_id", errors)
@@ -347,6 +364,10 @@ def _canonical_item(doc: dict[str, Any]) -> dict[str, Any]:
             out[f] = normalize_tags(doc.get("tags") or [])
         elif f == "custom_fields":
             out[f] = dict(doc.get("custom_fields") or {})
+        elif f == "status":
+            # An absent status reads as the default on load, so a pre-status
+            # export compares as unchanged against a stored "ok" item.
+            out[f] = doc.get("status", DEFAULT_ITEM_STATUS)
         else:
             out[f] = doc.get(f)
     return out
