@@ -17,7 +17,8 @@ non-blocking).
   pass** against `main` @ `08218f0` (post-#159), refreshed against `d65ff64` once the
   sidebar panel's PR-2 (#160) landed, re-checked against `main` @ `9180d8f` in the
   **#162 collection pass** (2026-08-02), and re-checked again against `main` @ `04ff0b3` in
-  the **close-out pass** of the same day (after #163–#165).
+  the **close-out pass** of the same day (after #163–#165). Reconciled against
+  `main` @ `0583c29` after the **v0.2.0 payload batch** (#167–#172) landed.
 - **Item numbers are stable and append-only** — new items get the next free number
   rather than renumbering the list, so references from PRs and docs keep resolving.
   Read each table's own ordering, not the numbering, for priority. (The one exception —
@@ -249,6 +250,7 @@ non-blocking).
 > the location it holds. A sweep test walks every chip and row in both branches and fails on
 > any that paints itself "on" without saying so, so a chip cannot be added without a state.
 > Its row is removed below.
+
 > Item **23** (a location rename bumped every subtree item's `version`) is resolved, as
 > designed in [`item23_rename_version_plan.md`](item23_rename_version_plan.md).
 > `location_path` is derived data — the backend computes it from the tree and no client can
@@ -263,6 +265,7 @@ non-blocking).
 > `test-haventory` harness's RACE 1 and release-test F5 now assert the new rule instead of
 > the old hazard. Its row is removed below and its prompt out of
 > [`v1_prompts.md`](v1_prompts.md).
+
 > **Item 57** (a HACS upgrade never deletes files inside the integration directory) is
 > resolved. Half of it was a measurement, and it came back clean: the `haventory.zip` assets
 > published for `v0.1.0` and `v0.1.1` carry the same eighteen members, and every one of them
@@ -279,6 +282,7 @@ non-blocking).
 > no-op. The rule that fills the list lives in `CONTRIBUTING.md` — a PR deleting or renaming
 > a file inside `custom_components/haventory/` appends its old path in the same PR. Its rows
 > are removed from both tables below.
+
 > Item **69** (the screenshot harness could not reach the sidebar panel) is delivered.
 > `screenshot.mjs` takes `--element`, which names the root it waits for and scopes
 > `--search`/`--swipe` to; it defaults to `haventory-card`, so every existing invocation is
@@ -292,6 +296,7 @@ non-blocking).
 > 10/10 panel surfaces and 14/14 desktop card surfaces captured. Its row is removed below
 > and its prompt out of [`v1_prompts.md`](v1_prompts.md). This is what item 82's README
 > imagery was waiting on, and the precondition item 70 sequences behind.
+
 > **Item 46 resolved (2026-08-02).** The location editor now states the area select's
 > whole-tree consequence under the select, before Save, and its row is removed above.
 > Building it corrected the item's own premise: picking the default option on a *nested*
@@ -310,6 +315,32 @@ non-blocking).
 > hidden outright when Home Assistant defines no areas, and the name field takes the row.
 > Verified live against the dev container on `R1_Kitchen` (7 locations, area on the root)
 > and `R1_Garage` (8, no area).
+
+> Item **43** (the WS API kept answering — and writing the kept store — after config-entry
+> removal) is resolved by **#171**, which took the row's decision: handlers refuse once the
+> entry is gone. `async_remove_entry` now flushes anything unsaved, cancels a pending
+> debounced write (`storage.cancel_pending_persist`, shared with the two persist paths) and
+> empties the domain bucket; `ws_guard` requires the loaded runtime first, so every command
+> — `ping`/`version`/`config` included — lands as the contract's `storage_error` envelope,
+> never `unknown_error`, and live subscriptions go with the bucket. The static route's flag
+> is deliberately kept (an aiohttp route cannot be unregistered; dropping the flag would
+> double-serve on re-add), the `Store` file stays on disk, and a re-add restores service —
+> all pinned offline (15 cases) and against real HA. The same PR closed the
+> `async_remove_entry` third of item **51**, whose row is updated. #171 was also the one
+> batch PR that followed the parallel-batch convention and left this file alone.
+
+> **Batch reconcile (2026-08-02, after #167–#172).** All six v0.2.0 payload items — 69, 34,
+> 43, 57, 23, 46 — are delivered and their rows are gone from both tables, along with their
+> prompts in [`v1_prompts.md`](v1_prompts.md). Five of the six PRs edited this file in
+> parallel against the batch convention, and the conflict resolutions that merged them
+> resurrected all six rows while keeping every close-out note — the #164/#165 failure mode,
+> five-fold; this sweep removed them again. The six PRs' follow-ups (the dev instance's
+> stale dashboard paths that block the card passes, unload leaving the runtime serving, the
+> refused-command log volume, the desktop-only panel visual pass, `aria-expanded` without
+> `aria-controls`, and the phone "Show only" rows drawing checkboxes while announcing as
+> toggles) were triaged by the owner as **fix-before-`v0.2.0`** and are being executed
+> directly from session prompts rather than ledger rows — deliberately unnumbered to keep
+> this file lean; the PR bodies of #167–#172 carry their full text.
 
 ---
 
@@ -366,12 +397,6 @@ have a companion plan doc:
 
 | # | Task | Ships in / when | Definition |
 |---|---|---|---|
-| 69 | screenshot harness reaches the panel | `v0.2.0` | prompt |
-| 34 | filter-chip pressed state (a11y) | `v0.2.0` | prompt |
-| 43 | WS refuses after entry removal | `v0.2.0` | prompt |
-| 57 | stale-file sweep for HACS upgrades | `v0.2.0` | prompt |
-| 46 | effective-area preview in the editor | `v0.2.0` | [`item46_area_preview_plan.md`](item46_area_preview_plan.md) |
-| 23 | rename must not bump subtree versions | `v0.2.0` | [`item23_rename_version_plan.md`](item23_rename_version_plan.md) |
 | 79 | execute the validation run (groups A–J, ENV-A/B/C/D) | against `v0.2.0`; fixes → `0.2.x` | prompt (program: [`release_testing_plan.md`](release_testing_plan.md)) |
 | 60 | publish the measured scale ceiling | after 79's F3 | prompt |
 | 82 | README promotion: screenshots + consistency pass | after the `v0.2.0` payload; before 83 | prompt |
@@ -413,18 +438,13 @@ retired when v0.1.0/v0.1.1 cut cleanly):
 
 ## Pre-v1.0
 
-These ship in **`v0.2.0`** (item 70 alone follows item 79's run — see its sequencing).
-Ordered by impact. Item 4 moved to the release-stage table below, where its remaining
-(post-1.0 submission) half belongs.
+The `v0.2.0` payload is **delivered** — items 69, 34, 43, 57, 23 and 46 all landed
+2026-08-02 as #167–#172 (see the close-out notes above). One row remains, sequenced after
+item 79's run; everything else before 1.0 is the release-stage table below.
 
 | # | Item | Source PR(s) | Impact | Effort |
 |---|------|--------------|--------|--------|
 | 70 | **Strip the scoping-only toolchain before 1.0.** A new contributor currently has to work out for themselves which half of `docs/` and `scripts/` is still live: the repo carries planning and one-off exploration artifacts that were load-bearing while the work was in flight and are dead weight once it ships. **Delivered plan docs** — `docs/sidebar-panel.md` (25 KB, its own status line reads *delivered*; nothing outside this ledger links it) and `docs/card_shipping_plan.md` (20 KB, status *PR-1 and PR-2 implemented*; linked from `CLAUDE.md:57`, from the card-shipping note above and from item 56's row). **Exception:** `docs/release_testing_plan.md` is the validation run itself — executed against `v0.2.0` per the staging above: item 4 is gated on its A1, item 60 on its F3, and closed item 29's last part was deferred into it as D6 — so it goes *after* that run, not before. **Exploration scripts** to triage the same way: `stress_test.py`, `create_test_items.py`, `ws_probe.py`, `ws_subscribe.py`, `ws_init_haventory.py`, and the agent harnesses under `.claude/skills/` (`run-haventory`'s `screenshot.mjs` / `visual_pass.mjs` / `log_sweep.py` / `driver.py` and `test-haventory`'s `stress.py`). Nothing here is a free delete: every script except `common.sh` (sourced by the others) has at least one inbound reference from CI, `CONTRIBUTING.md`, `README.md` or `CLAUDE.md`, and `tests/test_ws_logging_offline.py:12` cites the release plan in a docstring — so each removal takes its references with it, and whatever survives earns one line in `CONTRIBUTING.md` saying what it is for. **Sequence this after item 69**, not before: it repairs the screenshot harness that produces the README and announcement-post imagery, so this removal is what closes the door behind it. Retiring the harness first would only mean rebuilding it the next time a screenshot is needed. | owner 2026-08-01 (contributor onboarding) | Medium (contributor onboarding) | M |
-| 46 | **Area propagation is surprising at the point of use — the effective-area preview from item 37.** Choosing the relabeled default option (#126) on a nested location does more than "stop inheriting": `Repository.update_location` runs `_propagate_area_to_root(key, None)`, clearing the area from the whole tree, and picking an explicit area moves the assignment to the tree root — nothing in the dialog warns about either. Item 37's live-preview idea lands here, with its recorded caution: an honest preview of the non-default options is a whole-tree effect and worth designing deliberately. The mechanics are no longer in the way — item 38's `effectiveAreaIdForLocation` (`ui/area.ts`) is the walk-up-to-root the dialog lacked, over the flat location cache it already holds, so neither a `location/tree` contract change nor new plumbing is needed; what is left is deciding what the dialog should say. Cosmetic while there: with no HA areas the dropdown renders a one-entry select. | item 37 + PR #126 follow-ups | Low–Med | M |
-| 34 | **The desktop filter panel's chips expose no pressed state to assistive tech.** Seven chips in `hv-filter-panel.ts` carry their selected state in an `on` CSS class and nothing else — no `aria-pressed`, no `role` (re-verified 2026-08-01: the file contains zero `aria-pressed`). The *same four* "Show only" facets in that component's mobile branch use `role="checkbox"` + `aria-checked`, and both app bars' stat pills plus the sidebar facet rows use `aria-pressed`, so the desktop panel is the sole surface where a screen reader cannot tell an active filter from an inactive one. Add `aria-pressed` to all seven (or `role="checkbox"`/`aria-checked` to match the mobile branch — pick one and use it for both branches). Promoted to pre-v1.0 (2026-08-02): it is the only surface with this gap, and S. | card UI consistency review 2026-07-26 | Low–Med (accessibility) | S |
-| 43 | **The WS API keeps answering — and writing the kept store — after config-entry removal, until restart.** `async_remove_entry` (#121) removes the Lovelace resource but leaves `hass.data[DOMAIN]["store"]`/`["repository"]` in place, and HA has no way to unregister WS commands, so an open dashboard can keep mutating the inventory after the integration is removed; a restart finishes the teardown. Decide whether handlers should refuse once the entry is gone. Promoted to pre-v1.0 (2026-08-02): removing an integration and finding it still writing is a first-impression bug once strangers are installing it. | PR #121 follow-up | Low–Med | S–M |
-| 57 | **A HACS upgrade never deletes files inside the integration directory.** With `zip_release`, HACS backs up the previous install and then runs `zipfile.extractall` straight over `<config>/custom_components/haventory/` without clearing it first (HACS `repositories/base.py`), so any file a newer release deletes or renames survives every user's upgrade; the dev container shows the same leftover class because `docker cp` also merges rather than replaces. Inert until a release actually removes a module or renames the card bundle — from that release on, either sweep the known stale paths at setup or call the leftover out in the release notes. `scripts/check_release_zip.py` cannot catch this: it validates the asset's layout, not the install directory's history. | PR #148 review | Low (upgrade hygiene) | S |
-| 23 | **Location rename bumps every subtree item's `version`** (denormalized `location_path` rewrite), so a client holding a stale `expected_version` for an unrelated field gets a spurious `conflict`. Indexes stay consistent — it's a UX surprise, not corruption. A path-only rewrite need not bump the optimistic-concurrency version. | WP4 stress test | Low | M |
 
 ### Release-stage tasks (executed in staging order, not by impact)
 
@@ -471,7 +491,7 @@ Ordered by impact.
 | 48 | **Card rate-limit polish left over from #128:** `Store.run()`'s command retries use a fixed exponential backoff (`retryBaseMs * 2 ** attempt`) and ignore the retry-after hint (`subscribeRetryDelayMs` is exported and reusable); the shell's banner chain is exclusive, so the queued-command "Busy — retrying" state is hidden while live updates are paused; and nothing calls `Store.dispose()` — its only caller is still its own test — so a shell torn down mid-backoff relies on GC rather than on the cancellation `dispose()` performs. | PR #128 follow-ups | Low | S–M |
 | 42 | **Storage crashes generically on a corrupt (non-integer) `schema_version`.** `int(raw.get("schema_version", 0))` in `storage.py` raises `ValueError`/`TypeError` on a hand-edited `"schema_version": null` or non-numeric string (a numeric string like `"4"` is silently coerced instead), surfacing as the catch-all `ConfigEntryNotReady("storage load failed")` rather than a specific corruption message — and `_validate_storage_payload` in `__init__.py` repeats the pattern with `int(payload.get("schema_version", -1))`. `import_export.py` already type-checks its version fields; storage could match. Related trap: `migrations.migrate`'s downgrade pass-through is unreachable from production now that storage refuses first (#120) — a second caller would reintroduce the silent relabel. | PR #120 follow-ups | Low | S |
 | 50 | **Two severity calls the #124 logging audit deliberately left open:** the frontend-resource registration failure logs WARNING + traceback although the card never loading is arguably operator-actionable (ERROR — but it is outside the error taxonomy's codes and the integration still functions); and `ws_items_bulk`'s "completed with no successful operations" WARNING summary is redundant with the per-op WARNING lines it follows. | PR #124 follow-ups | Low | S |
-| 51 | **Real-HA integration coverage for the batch's stub-tested paths.** Three changes are asserted against stubs/mocks only, since no batch session could provision `.venv-integration`: `async_remove_entry` against a real `ResourceStorageCollection.async_delete_item` (#121), the tracked-task debounced persist (#123), and the `ConfigEntryError` downgrade refusal (#120). Add cases under `tests/integration/`; until then a local `scripts/test_integration.sh` run covers the gap. #136 sharpened the stakes: the offline `HomeAssistant` stub has no service registry, so `services.setup()` early-returns offline and no offline test can observe real registration semantics — exactly how the never-awaited executor-dispatched service handlers stayed invisible until the item-6 integration test ran (and HA's `_execute_service` executor fallback fails silently, so the same mistake in a future registration would be invisible again outside an integration test). Worth a wider sweep of what else the stubs let through. Still absent as of the 2026-08-01 check: `tests/integration/` has grown to eight modules (config entry, frontend serving, persistence, services, WS items, import/export, areas) and covers none of the three cases. | PR #120/#121/#123 follow-ups, #136 | Low | S–M |
+| 51 | **Real-HA integration coverage for the batch's stub-tested paths.** Three changes are asserted against stubs/mocks only, since no batch session could provision `.venv-integration`: `async_remove_entry` against a real `ResourceStorageCollection.async_delete_item` (#121), the tracked-task debounced persist (#123), and the `ConfigEntryError` downgrade refusal (#120). Add cases under `tests/integration/`; until then a local `scripts/test_integration.sh` run covers the gap. **#171 closed the `async_remove_entry` third**: `test_removal_deletes_the_card_resource_and_module_url` drives the real `ResourceStorageCollection.async_delete_item` and `test_removal_leaves_the_static_route_serving` covers the remove/re-add route case — the debounced-persist and downgrade-refusal thirds remain. #136 sharpened the stakes: the offline `HomeAssistant` stub has no service registry, so `services.setup()` early-returns offline and no offline test can observe real registration semantics — exactly how the never-awaited executor-dispatched service handlers stayed invisible until the item-6 integration test ran (and HA's `_execute_service` executor fallback fails silently, so the same mistake in a future registration would be invisible again outside an integration test). Worth a wider sweep of what else the stubs let through. Still absent as of the 2026-08-01 check: `tests/integration/` has grown to eight modules (config entry, frontend serving, persistence, services, WS items, import/export, areas) and covers none of the three cases. | PR #120/#121/#123 follow-ups, #136 | Low | S–M |
 | 53 | **Type-loose WS frames bypass `ws_guard` and land in HA core's log at ERROR.** A frame that fails the voluptuous schema in `ws.py` is rejected by HA core *before* `ws_guard` runs, and `homeassistant.components.websocket_api.http.connection` logs it at ERROR with the client payload (e.g. `expected int for dictionary value @ data['quantity']. Got 1.5`) — exactly the client mistakes item 32 downgraded to WARNING re-enter the log as ERROR through the front door (4 such lines in the 2026-07-28 session, all from deliberate fuzz). `ws.py` already widens some fields to `object` (`description`, `location_id`, `low_stock_threshold`) and validates them in the model layer; doing the same for `quantity` / `delta` / `operations` / required `name` would route them through `ws_guard` as typed `validation_error` WARNINGs. Deliberate trade-off, flagged rather than decided: schema-level typing is free documentation, so this is a judgment call, not an obvious win. | local verification run 2026-07-28 (F1) | Low–Med (support burden) | S–M |
 | 56 | **The manual `resources.async_load()` in `_async_lovelace_resources` is redundant** at the declared 2026.6.0 floor: `ResourceStorageCollection`'s `async_items` / `async_create_item` / `async_update_item` / `async_delete_item` each ensure the collection is loaded before touching it, so the explicit load-and-flag dance only duplicates that — and writing `resources.loaded = True` reaches into another component's object to do it. A pure cleanup, deliberately left out of the card-shipping PR-1 scope; needs its own test pass because `tests/test_entry_removal_offline.py` asserts the current load-before-delete behaviour. | `docs/card_shipping_plan.md` (PR-1 non-goal) | Low | S |
 | 61 | **Dependabot opens no update PRs for `requirements-integration.txt`.** `.github/dependabot.yml` declares `github-actions`, `npm` and `uv` ecosystems but no `pip` entry. The dependency graph does scan the file (`homeassistant` and `pytest-homeassistant-custom-component` are in the SBOM), so a vulnerability there would alert — what's missing is the automated fix PR. Add a `pip` ecosystem block for `/`; item 29 has since pinned the file to the `2026.6.0` floor, so configure the block to leave the pinned `homeassistant` line alone (an ignore rule, or security-only updates) rather than fight the pin. | PR #135 follow-up | Low | S |

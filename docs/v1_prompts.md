@@ -3,7 +3,9 @@
 The definitive task set for the road to 1.0, one paste-ready prompt per item. The
 staging (which release each item ships in, and in what order) is the **Release staging**
 section of [`open-items.md`](open-items.md) — that section is authoritative; this file
-carries the execution prompts. Complex items have a companion plan doc; their prompts
+carries the execution prompts. The `v0.2.0` payload items (69, 34, 43, 57, 23, 46)
+are delivered (#167–#172) and their prompts are gone from this file — what remains is the
+release-stage tail and the post-1.0 submission. Complex items have a companion plan doc; their prompts
 here point at it. This file supersedes the roadmap artifact's WP8/WP9 prompts, which
 predate the 2026-08-02 staging revision.
 
@@ -18,114 +20,6 @@ Conventions every prompt below assumes (stated once here, per `CLAUDE.md`):
   ever run as a parallel batch instead, do *not* touch the ledger — report follow-ups
   in the PR body and reconcile in one sweep afterwards (the fix-batch pattern).
 - Out-of-scope findings go under a "Follow-ups" note, not into the diff.
-
----
-
-## v0.2.0 payload
-
-### Item 34
-
-**Desktop filter chips: expose pressed state to assistive tech.**
-
-```text
-You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-docs/open-items.md item 34 is the spec. Seven chips in
-cards/haventory-card/src/components/hv-filter-panel.ts carry their selected state in an
-"on" CSS class and nothing else — no aria-pressed, no role. The same component's mobile
-branch uses role="checkbox" + aria-checked for the same four "Show only" facets, and
-both app bars' stat pills and the sidebar facet rows use aria-pressed — the desktop
-panel is the only surface where a screen reader cannot tell an active filter from an
-inactive one.
-
-Pick ONE idiom and use it for both branches of the component (aria-pressed on button
-chips is the natural fit for toggles; if you keep the mobile branch's role="checkbox",
-convert the desktop chips to match — do not leave the two branches on different
-vocabularies). TDD: component specs assert the attribute flips with the filter state on
-every one of the seven chips, and that the mobile branch agrees.
-```
-
-### Item 43
-
-**Refuse WS commands after config-entry removal.**
-
-```text
-You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-docs/open-items.md item 43 is the spec. async_remove_entry (__init__.py:282) removes
-the frontend module but leaves hass.data[DOMAIN]["store"]/["repository"] in place, and
-HA cannot unregister WS commands — so an open dashboard keeps mutating (and persisting)
-the kept store after the integration is removed, until restart.
-
-Decision (made): handlers must refuse once the entry is gone. ws.py's _repo(hass)
-already raises StorageError("repository not initialized...") when the bucket is empty —
-so the fix is to make removal empty it: pop the domain bucket (store, repository, rate
-limiter, any persist debounce — flush/cancel it first, mirroring unload's teardown) in
-async_remove_entry. Every subsequent command then lands as a storage_error envelope
-through the existing ws_guard path; subscriptions: verify what broadcasts do with an
-empty bucket and make teardown drop live subscriptions cleanly. First read
-async_unload_entry and reuse/extract its teardown rather than duplicating it. The HA
-Store *file* stays on disk (deliberate, documented in the removal docstring).
-
-TDD offline: after async_remove_entry, a WS command gets storage_error (not
-unknown_error, no traceback); persistence is not invoked again; re-adding the entry
-restores service. Add the real-HA integration case (tests/integration/) — this is one
-of item 51's stub-only paths, so note in the PR body that it closes the
-async_remove_entry third of item 51.
-```
-
-### Item 57
-
-**Sweep stale files left behind by HACS upgrades.**
-
-```text
-You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-docs/open-items.md item 57 is the spec. HACS zip_release upgrades extract over
-<config>/custom_components/haventory/ without clearing it, so any file a release
-deletes or renames survives every user's upgrade forever.
-
-1. Determine whether any file shipped in v0.1.0/v0.1.1's haventory.zip no longer exists
-   on current main (compare the release assets' file lists against the tree — the
-   release workflow builds the zip, scripts/check_release_zip.py knows the layout).
-2. Implement the sweep: at setup, remove known-stale paths inside the integration
-   directory from an explicit allowlist of retired relative paths (never a wildcard —
-   an operator's own files must survive). Executor-offloaded file I/O, tolerant of
-   absence, logged at DEBUG.
-3. Seed the allowlist with whatever (1) found; leave a clearly-marked list to append to
-   in future releases that delete files.
-
-TDD offline: stale path present → removed on setup; absent → no-op; a path NOT on the
-list survives. Note in the PR body: from now on, any PR deleting a shipped integration
-file must add it to the sweep list (one CONTRIBUTING sentence).
-```
-
-### Item 46
-### Item 23
-
-**Location rename must not bump subtree item versions.** Plan:
-[`item23_rename_version_plan.md`](item23_rename_version_plan.md).
-
-```text
-You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-Read docs/item23_rename_version_plan.md — it is the design; implement it as written
-(path-only rewrites update location_path + search tokens, version and updated_at stay
-untouched; contract docs updated in the three places it names; the test list is the
-TDD spec, including the integration-suite case). Verify the card-correctness assumption
-it flags (what ws.py broadcasts on location/update) before relying on it.
-```
-
-### Item 46 — delivered
-
-**Effective-area preview in the location editor.** Plan:
-[`item46_area_preview_plan.md`](item46_area_preview_plan.md); the outcome is in
-`open-items.md`'s item 46 resolution note. Kept for the record — nothing left to paste.
-
-```text
-You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-Read docs/item46_area_preview_plan.md — it is the design; implement both stages as
-written (areaChangePreview pure function TDD-first, then the dialog render + the
-empty-registry cosmetic fix). Frontend-only; no contract change. Verify the preview
-copy against the live dev container (run-haventory skill) on a nested tree with and
-without areas before committing stage 2.
-```
 
 ---
 

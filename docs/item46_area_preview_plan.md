@@ -1,8 +1,7 @@
 # Item 46 — effective-area preview in the location editor
 
 Status: **delivered**, in `v0.2.0`. Tracker row: `open-items.md` item 46 (removed; the
-resolution note carries the outcome). Paste-ready prompt:
-[`v1_prompts.md`](v1_prompts.md#item-46).
+resolution note carries the outcome; the prompt is retired from `v1_prompts.md`).
 
 ## The gap
 
