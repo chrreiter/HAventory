@@ -132,6 +132,44 @@ async def test_unload_hands_back_the_module_url(hass: HomeAssistant) -> None:
 
 
 @needs_bundle
+async def test_removal_deletes_the_card_resource_and_module_url(hass: HomeAssistant) -> None:
+    """Removal takes both loaders back through the real resource collection.
+
+    The offline suite asserts this against a mock collection; only the real
+    `ResourceStorageCollection.async_delete_item` proves the id we hand it is
+    the one it stores.
+    """
+    entry = await _setup(hass)
+    resources = hass.data["lovelace"].resources
+    assert [r for r in resources.async_items() if r["url"].startswith(CARD_PATH)]
+
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert [r for r in resources.async_items() if r["url"].startswith(CARD_PATH)] == []
+    assert set(hass.data[frontend.DATA_EXTRA_MODULE_URL].urls) == set()
+
+
+@needs_bundle
+async def test_removal_leaves_the_static_route_serving(
+    hass: HomeAssistant, hass_client_no_auth: ClientSessionGenerator
+) -> None:
+    """aiohttp cannot drop a route, so a re-add must not register a second one.
+
+    The flag recording the route is the one piece of domain state removal keeps;
+    losing it turns the next setup into the duplicate registration that leaves
+    the entry in a retry loop.
+    """
+    entry = await _setup(hass)
+
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    await _setup(hass)
+
+    assert (await (await hass_client_no_auth()).get(CARD_PATH)).status == HTTP_OK
+
+
+@needs_bundle
 async def test_the_sidebar_panel_lands_in_the_real_panel_registry(hass: HomeAssistant) -> None:
     """`panel_custom` puts a real `Panel` in `hass.data`, built the way HA builds them.
 
