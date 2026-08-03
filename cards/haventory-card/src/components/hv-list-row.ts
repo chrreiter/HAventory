@@ -4,6 +4,7 @@ import { tokens, base } from '../ui/tokens';
 import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue } from '../ui/relative-time';
+import { itemStatus, statusLabel } from '../ui/status';
 import type { AreaRef, Item } from '../store/types';
 import './hv-overflow-menu';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
@@ -159,7 +160,8 @@ export class HVListRow extends LitElement {
       /* Amber, not the out-chip's red: red on this card is reserved for an item
          that is out and late back, while an inspection that has come due is a
          chore on something still on the shelf. */
-      .inspect-chip {
+      .inspect-chip,
+      .status-chip {
         flex: none;
         font: 500 11px var(--hv-font);
         color: var(--hv-warn-deep);
@@ -413,9 +415,12 @@ export class HVListRow extends LitElement {
     const secondaryFull = [pathTitle(parts), item.category].filter(Boolean).join(' · ');
     // A phone row has one line for all of this and no room for the chips the
     // wide row hangs on the right, so the line says the most interrupting
-    // thing it has: who has the item, then what the item is waiting for, then
-    // where it lives. The path is a tap away in the detail sheet either way.
-    const mobileState = item.checked_out ? 'out' : inspectionDue ? 'inspect' : '';
+    // thing it has: who has the item, then what state it is flagged with, then
+    // what it is waiting for, then where it lives. The path is a tap away in
+    // the detail sheet either way.
+    const status = itemStatus(item);
+    const flagged = status !== 'ok';
+    const mobileState = item.checked_out ? 'out' : flagged || inspectionDue ? 'inspect' : '';
 
     return html`
       <div
@@ -462,16 +467,23 @@ export class HVListRow extends LitElement {
               ? html`${overdue ? 'Overdue' : 'Checked out'}${item.due_date
                   ? ` · due ${formatDate(item.due_date)}`
                   : ''}`
-              : this.mobile && inspectionDue
-                ? html`<span data-testid="row-inspection-due">Inspection due</span> · ${formatDate(item.inspection_date)}`
-                : this.mobile
-                  ? mobileSecondary || 'No location'
-                  : html`${renderAreaChip(parts.areaName)}${secondary || 'No location'}`}
+              : this.mobile && flagged
+                ? html`<span data-testid="row-status">${statusLabel(status)}</span>${mobileSecondary
+                    ? ` · ${mobileSecondary}`
+                    : ''}`
+                : this.mobile && inspectionDue
+                  ? html`<span data-testid="row-inspection-due">Inspection due</span> · ${formatDate(item.inspection_date)}`
+                  : this.mobile
+                    ? mobileSecondary || 'No location'
+                    : html`${renderAreaChip(parts.areaName)}${secondary || 'No location'}`}
           </span>
         </span>
         ${this.pending ? html`<span class="pending" data-testid="row-pending">pending</span>` : null}
         ${!this.mobile && low
           ? html`<span class="low-badge" data-testid="row-low" aria-label="Low stock">LOW</span>`
+          : null}
+        ${!this.mobile && flagged
+          ? html`<span class="status-chip" data-testid="row-status">${statusLabel(status)}</span>`
           : null}
         ${!this.mobile && item.checked_out
           ? html`<span class="out-chip ${overdue ? 'overdue' : ''}" data-testid="row-checked-out">

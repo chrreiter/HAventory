@@ -21,6 +21,7 @@ describe('formFromItem', () => {
       name: '',
       description: '',
       quantity: 1,
+      status: 'ok',
       lowStock: null,
       category: '',
       tags: [],
@@ -149,6 +150,25 @@ describe('customFieldsFrom', () => {
   });
 });
 
+describe('status in the form model', () => {
+  it('reads the item status, treating an absent one as ok', () => {
+    expect(formFromItem(makeItem({ status: 'needs_repair' })).status).toBe('needs_repair');
+    expect(formFromItem(makeItem()).status).toBe('ok');
+  });
+
+  it('rides along on both save payloads', () => {
+    const item = makeItem({ status: 'missing' });
+    expect(toUpdatePayload(formFromItem(item), item).status).toBe('missing');
+    expect(toCreatePayload({ ...base(), name: 'A', status: 'missing' }).status).toBe('missing');
+  });
+
+  it('dirties the form when it changes', () => {
+    const item = makeItem({ status: 'missing' });
+    expect(isDirty(formFromItem(item), item)).toBe(false);
+    expect(isDirty({ ...formFromItem(item), status: 'ok' }, item)).toBe(true);
+  });
+});
+
 describe('normalizeTags', () => {
   it('matches how the backend stores tags', () => {
     expect(normalizeTags([' Metric ', 'METRIC', 'M4', '', '  '])).toEqual(['metric', 'm4']);
@@ -172,6 +192,7 @@ describe('toCreatePayload', () => {
       name: 'M4 Screws',
       description: 'box of 500',
       quantity: 340,
+      status: 'ok',
       low_stock_threshold: 50,
       category: 'Hardware',
       tags: ['metric', 'm4'],

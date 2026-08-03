@@ -4,6 +4,7 @@ import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import { inferType } from '../ui/item-form';
+import { itemStatus, statusLabel } from '../ui/status';
 import { isLowStock } from './hv-list-row';
 import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import type { AreaRef, Item, Location, LocationTreeNode, ScalarValue } from '../store/types';
@@ -364,6 +365,11 @@ export class HVDetailSheet extends LitElement {
         <h2 data-testid="sheet-name">${item.name}</h2>
         <div class="chips">
           ${low ? html`<span class="chip low" data-testid="sheet-low">LOW</span>` : null}
+          ${itemStatus(item) !== 'ok'
+            ? html`<span class="chip inspect" data-testid="sheet-status"
+                >${statusLabel(itemStatus(item))}</span
+              >`
+            : null}
           ${item.checked_out
             ? html`<span class="chip state ${overdue ? 'overdue' : ''}" data-testid="sheet-out">
                 ${overdue ? 'Overdue' : 'Checked out'}${item.due_date

@@ -90,10 +90,11 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - Read at card init and on refresh, not pushed: changing the option emits no event, so an open dashboard shows the new heading after a refresh or reload.
 
 - `haventory/stats`
-  - Result: `{items_total: number, low_stock_count: number, checked_out_count: number, overdue_count: number, inspection_overdue_count: number, locations_total: number, no_location_count: number}`
+  - Result: `{items_total: number, low_stock_count: number, checked_out_count: number, overdue_count: number, inspection_overdue_count: number, missing_count: number, needs_repair_count: number, locations_total: number, no_location_count: number}`
   - `no_location_count` is the number of items without a location (`location_id == null`, i.e. the `orphaned_only` filter's population).
   - `overdue_count` is the number of items whose `due_date` is strictly before today in UTC (the `overdue_only` filter's population). It is derived from the calendar, not from stored state, so it can change without any mutation — no event is emitted when the date rolls over.
   - `inspection_overdue_count` is the number of items whose `inspection_date` — the date the item is next due for inspection — is strictly before today in UTC (the `inspection_overdue_only` filter's population). It counts the whole inventory, not just checked-out items, because an inspection is independent of any check-out. Calendar-derived in the same way as `overdue_count`, with the same no-event caveat.
+  - `missing_count` / `needs_repair_count` count items whose stored `status` is `missing` / `needs_repair` (the populations of the `status` filter's two non-default values). Stored state, not calendar-derived: they only change on a mutation, and every mutation emits `stats/counts`.
 
 - `haventory/distinct_values`
   - Request: `{id, type: "haventory/distinct_values"}` (no payload; extra fields → `validation_error`)

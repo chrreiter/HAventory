@@ -24,7 +24,8 @@ import {
   validateForm,
 } from '../ui/item-form';
 import type { CustomFieldRow, CustomFieldType, FieldError, ItemFormModel } from '../ui/item-form';
-import type { AreaRef, Item, Location, LocationTreeNode } from '../store/types';
+import { ITEM_STATUSES, statusLabel } from '../ui/status';
+import type { AreaRef, Item, ItemStatus, Location, LocationTreeNode } from '../store/types';
 import './hv-chip-input';
 import './hv-location-tree';
 import './hv-checkout-popover';
@@ -1025,6 +1026,30 @@ export class HVItemEditor extends LitElement {
   }
 
   /**
+   * The stored condition, as a plain select.
+   *
+   * A three-value enum with a required answer is exactly what a native select
+   * is for; the flagged states surface as chips on the row and sheet, so the
+   * editor only needs the value to be settable, not loud.
+   */
+  private _renderStatusField() {
+    return html`<div class="cell">
+      <label class="hv-label" for="editor-status">Status</label>
+      <select
+        id="editor-status"
+        class="hv-input"
+        data-testid="editor-status"
+        @change=${(e: Event) =>
+          this._patch({ status: (e.target as HTMLSelectElement).value as ItemStatus })}
+      >
+        ${ITEM_STATUSES.map(
+          (s) => html`<option value=${s} ?selected=${this._model.status === s}>${statusLabel(s)}</option>`,
+        )}
+      </select>
+    </div>`;
+  }
+
+  /**
    * The checkout, and the one date that is not part of it.
    *
    * A due date is half of the checkout — it only means anything while an item
@@ -1386,17 +1411,19 @@ export class HVItemEditor extends LitElement {
           ${this._text('lowStock', 'Low-stock at', { type: 'number', testid: 'editor-low-stock' })}
           ${this.mobile
             ? null
-            : html`<div class="cell span3">
-                <label class="hv-label" for="editor-description-desktop">Description</label>
-                <textarea
-                  id="editor-description-desktop"
-                  class="hv-input"
-                  data-testid="editor-description"
-                  .value=${model.description}
-                  @input=${(e: Event) => this._patch({ description: (e.target as HTMLTextAreaElement).value })}
-                ></textarea>
-              </div>`}
+            : html`<div class="cell span2">
+                  <label class="hv-label" for="editor-description-desktop">Description</label>
+                  <textarea
+                    id="editor-description-desktop"
+                    class="hv-input"
+                    data-testid="editor-description"
+                    .value=${model.description}
+                    @input=${(e: Event) => this._patch({ description: (e.target as HTMLTextAreaElement).value })}
+                  ></textarea>
+                </div>
+                ${this._renderStatusField()}`}
           ${this._renderLocationField()} ${this._renderCategoryField()}
+          ${this.mobile ? this._renderStatusField() : null}
           <div class="cell span3">
             <span class="hv-label">Tags <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--hv-text-tertiary)">· stored lowercase</span></span>
             <hv-chip-input

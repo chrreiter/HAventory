@@ -4,6 +4,7 @@ import { tokens, base } from '../ui/tokens';
 import { locationPathParts, pathTitle } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate } from '../ui/relative-time';
+import { statusLabel } from '../ui/status';
 import type { Location, StoreFilters } from '../store/types';
 
 /** Which filter a chip clears. Matches the keys of `StoreFilters`. */
@@ -17,6 +18,7 @@ export type FilterChipKey =
   | 'lowStockFirst'
   | 'overdueOnly'
   | 'inspectionDueOnly'
+  | 'status'
   | 'category'
   | 'tags'
   | 'updatedAfter'
@@ -74,6 +76,13 @@ export function chipsFor(
   if (filters.overdueOnly) chips.push({ key: 'overdueOnly', label: 'Overdue', tone: 'warning' });
   if (filters.inspectionDueOnly)
     chips.push({ key: 'inspectionDueOnly', label: 'Inspection due', tone: 'warning' });
+  if (filters.status)
+    chips.push({
+      key: 'status',
+      label: `Status: ${statusLabel(filters.status)}`,
+      // OK is the unremarkable state; the two flagged values carry the warning tone.
+      tone: filters.status === 'ok' ? 'primary' : 'warning',
+    });
   if (filters.orphansOnly) chips.push({ key: 'orphansOnly', label: 'No location', tone: 'primary' });
   // One chip per bound rather than one per field: each is separately clearable,
   // so a range narrowed too far can be half-undone.
@@ -98,6 +107,7 @@ export function clearedValueFor(key: FilterChipKey): Partial<StoreFilters> {
       return { tags: [] };
     case 'areaId':
     case 'locationId':
+    case 'status':
     case 'category':
     case 'updatedAfter':
     case 'createdAfter':

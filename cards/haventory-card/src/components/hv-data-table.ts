@@ -9,6 +9,7 @@ import { getDefaultOrderFor } from '../store/sort';
 import type { AreaRef } from '../store/types';
 import type { ColumnKey } from '../store/columns';
 import { isLowStock } from './hv-list-row';
+import { itemStatus, statusLabel } from '../ui/status';
 import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import type { Item, Sort, SortField } from '../store/types';
 
@@ -149,6 +150,18 @@ export class HVDataTable extends LitElement {
         border: 1px solid var(--hv-primary-tint-border);
         border-radius: var(--hv-radius-chip);
         padding: 2px 8px;
+      }
+      /* Same amber as the list row's status chip: a flagged state is a chore,
+         not the out-and-late red. */
+      .status-chip {
+        flex: none;
+        font: 500 11px var(--hv-font);
+        color: var(--hv-warn-deep);
+        background: var(--hv-warn-bg);
+        border: 1px solid var(--hv-warn-border);
+        border-radius: var(--hv-radius-chip);
+        padding: 2px 8px;
+        white-space: nowrap;
       }
       .cell {
         min-width: 0;
@@ -409,6 +422,11 @@ export class HVDataTable extends LitElement {
                   <span class="name-cell">
                     <span class="name" data-testid="table-name" title=${item.name}>${item.name}</span>
                     ${isLowStock(item) ? html`<span class="low-badge">LOW</span>` : null}
+                    ${itemStatus(item) !== 'ok'
+                      ? html`<span class="status-chip" data-testid="table-status"
+                          >${statusLabel(itemStatus(item))}</span
+                        >`
+                      : null}
                     ${item.checked_out ? html`<span class="out-chip">Checked out</span>` : null}
                   </span>
                   ${columns.map((key) => this._cell(item, key))}

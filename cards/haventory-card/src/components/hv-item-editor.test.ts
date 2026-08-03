@@ -88,6 +88,7 @@ describe('hv-item-editor: field parity', () => {
       'editor-low-stock',
       'editor-description',
       'editor-category',
+      'editor-status',
       'editor-tags',
       'editor-location',
       'editor-checked-out',
@@ -351,6 +352,38 @@ describe('hv-item-editor: saving', () => {
     expect(saves).toHaveLength(1);
     expect(saves[0].itemId).toBe(null);
     expect(saves[0].create).toMatchObject({ name: 'M4 Screws', quantity: 340 });
+  });
+
+  it('offers the three statuses and carries the chosen one into the save', async () => {
+    const el = await mount(makeItem({ id: 'item-1', name: 'A', status: 'ok' }));
+    const saves = onSave(el);
+
+    const select = q(el, '[data-testid="editor-status"]') as HTMLSelectElement;
+    expect([...select.options].map((o) => o.value)).toEqual(['ok', 'missing', 'needs_repair']);
+    expect([...select.options].map((o) => o.text)).toEqual(['OK', 'Missing', 'Needs repair']);
+    expect(select.value).toBe('ok');
+
+    select.value = 'needs_repair';
+    select.dispatchEvent(new Event('change'));
+    await el.updateComplete;
+    (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
+
+    expect(saves[0].changes?.status).toBe('needs_repair');
+  });
+
+  it('defaults a new item to ok and saves the picked status on create', async () => {
+    const el = await mount(null);
+    const saves = onSave(el);
+
+    await type(el, 'editor-name', 'Ladder');
+    const select = q(el, '[data-testid="editor-status"]') as HTMLSelectElement;
+    expect(select.value).toBe('ok');
+    select.value = 'missing';
+    select.dispatchEvent(new Event('change'));
+    await el.updateComplete;
+    (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
+
+    expect(saves[0].create?.status).toBe('missing');
   });
 
   it('sends the expected version so a conflict surfaces as a conflict', async () => {

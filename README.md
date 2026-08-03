@@ -399,6 +399,14 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
   `inspection_overdue_only` for a passed `inspection_date` — the date the item is next due
   for inspection, over the whole inventory, since an inspection is independent of any
   check-out. Both move with the calendar and emit no event when the date rolls over.
+- A stored per-item **status** — `ok` / `missing` / `needs_repair`, always exactly one,
+  `ok` being the default and the way a flagged state clears. Filterable via the
+  `item/list` `status` filter, counted on `haventory/stats` as `missing_count` /
+  `needs_repair_count` (stored state, so unlike the calendar counts every change emits
+  an event), and settable everywhere an item is written — WS create/update, the
+  `haventory.item_create` / `haventory.item_update` services, and import. A store written
+  before the field existed is migrated on load (schema v5 backfills `ok`); an export
+  without it reads as `ok` too.
 - **WebSocket rate limiting (opt-in, off by default)**: per-connection **and** global
   token buckets for commands (excess requests get a `rate_limited` error) and for
   subscription broadcasts (excess events are dropped, never breaking the command).
@@ -453,17 +461,19 @@ throughout.
   Diagnostics, Export backup / Export current view, Import); Columns is offered in the full
   view, which is the only surface it changes. Live stat badges — items, low stock, overdue,
   due for inspection, checked out — are click-to-filter. Rows carry a quantity stepper, a
-  LOW badge, an overdue check-out chip, an "Inspection due" chip, and hover actions.
+  LOW badge, an overdue check-out chip, an "Inspection due" chip, an amber status chip
+  when an item is flagged Missing / Needs repair, and hover actions.
 - **Filters** — a collapsible panel exposing the whole backend filter object: location
   (from a real tree), area, include-subtree, category chips with counts, tag chips with an
   any/all toggle, low-stock-only, checked-out, overdue, inspection-due and no-location —
-  each with the count of what it would keep — plus updated / created windows (each row's ≥ flips to ≤ for
-  "before") and sort across all six sortable fields.
+  each with the count of what it would keep — a single-select status row (OK / Missing /
+  Needs repair, the flagged two priced from the stats counts), plus updated / created
+  windows (each row's ≥ flips to ≤ for "before") and sort across all six sortable fields.
   "Low stock" (a filter) and "Low stock first" (an ordering) are separate, independently
   clearable controls. Active filters appear as removable chips.
 - **Editing** — the row expands in place; there is no dialog chain. Full field parity:
-  name, description, quantity, low-stock threshold, category, tags, location (picked from
-  a tree inside the form), checked-out with due date, next inspection (with the same
+  name, description, quantity, low-stock threshold, category, status, tags, location
+  (picked from a tree inside the form), checked-out with due date, next inspection (with the same
   +7 / +31 / +90 / +X quick offsets the check-out popover offers), and typed
   custom fields (text / number / yes-no / date). Saves send the item's expected version so
   a concurrent edit surfaces as a conflict.
