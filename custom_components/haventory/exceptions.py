@@ -115,3 +115,12 @@ class SchemaDowngradeError(StorageError):
     forward-only, so retrying or rewriting can only lose data. Callers are
     expected to stop and leave the stored payload untouched.
     """
+
+
+class CorruptSchemaVersionError(StorageError):
+    """Raised when persisted data carries a ``schema_version`` that is not an integer.
+
+    Separate from its parent for the same reason as its sibling above: nothing
+    about a retry turns a ``null`` or a string into a version, so callers stop
+    rather than back off, and the stored payload is left for a human to repair.
+    """

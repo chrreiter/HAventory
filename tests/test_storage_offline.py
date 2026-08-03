@@ -7,15 +7,21 @@ Scenarios:
 - Migration failure raises StorageError and does not persist changes
 - Corrupted payload (non-dict) raises StorageError
 - A payload written by a newer schema is refused without rewriting the store
+- A payload whose schema_version is not an integer is refused, never coerced
 """
 
 from __future__ import annotations
 
 from copy import deepcopy
+from typing import Any
 
 import pytest
 from custom_components.haventory import migrations
-from custom_components.haventory.exceptions import SchemaDowngradeError, StorageError
+from custom_components.haventory.exceptions import (
+    CorruptSchemaVersionError,
+    SchemaDowngradeError,
+    StorageError,
+)
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
 from homeassistant.core import HomeAssistant
@@ -285,6 +291,110 @@ async def test_newer_schema_version_never_reaches_migrations(monkeypatch) -> Non
 
     with pytest.raises(SchemaDowngradeError):
         await store.async_load()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("label", "stored"),
+    [
+        ("null", None),
+        ("numeric_string", "4"),
+        ("word", "abc"),
+        ("float", 4.0),
+        ("bool", True),
+        ("list", [4]),
+        ("dict", {"v": 4}),
+    ],
+)
+async def test_corrupt_schema_version_is_refused_and_store_untouched(
+    label: str, stored: Any
+) -> None:
+    """A non-integer schema_version is named as corruption, not coerced or crashed on."""
+
+    hass = HomeAssistant()
+    key = f"test_store_corrupt_version_{label}"
+    store = DomainStore(hass, key=key)
+
+    pre_payload = {
+        "schema_version": stored,
+        "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 5}},
+        "locations": {"l1": {"id": "l1", "name": "Garage"}},
+    }
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save(deepcopy(pre_payload))
+
+    with pytest.raises(CorruptSchemaVersionError) as excinfo:
+        await store.async_load()
+
+    # The message quotes the offending value back, so `"4"` is distinguishable
+    # from `4` in the log — that pair is exactly what coercion used to hide.
+    message = str(excinfo.value)
+    assert "schema_version" in message
+    assert repr(stored) in message
+
+    # Still a storage failure, so every existing handler keeps mapping it.
+    assert isinstance(excinfo.value, StorageError)
+
+    # Refusing means refusing to write, too.
+    assert await raw_store.async_load() == pre_payload
+
+
+@pytest.mark.asyncio
+async def test_corrupt_schema_version_message_is_bounded() -> None:
+    """A huge value under the key is truncated, not pasted into the error state."""
+
+    hass = HomeAssistant()
+    key = "test_store_corrupt_version_huge"
+    store = DomainStore(hass, key=key)
+
+    huge = "x" * 5000
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save({"schema_version": huge, "items": {}, "locations": {}})
+
+    with pytest.raises(CorruptSchemaVersionError) as excinfo:
+        await store.async_load()
+
+    message = str(excinfo.value)
+    assert huge not in message
+    assert "…" in message
+    assert len(message) < len(huge)
+
+
+@pytest.mark.asyncio
+async def test_corrupt_schema_version_never_reaches_migrations(monkeypatch) -> None:
+    """The refusal happens before ``migrations.migrate`` is consulted."""
+
+    hass = HomeAssistant()
+    key = "test_store_corrupt_version_skips_migrate"
+    store = DomainStore(hass, key=key)
+
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save({"schema_version": None, "items": {}, "locations": {}})
+
+    def _fail(_payload, *, from_version, to_version):  # type: ignore[no-untyped-def]
+        raise AssertionError("migrations.migrate must not run for a corrupt version")
+
+    monkeypatch.setattr(migrations, "migrate", _fail)
+
+    with pytest.raises(CorruptSchemaVersionError):
+        await store.async_load()
+
+
+@pytest.mark.asyncio
+async def test_absent_schema_version_still_loads_as_version_zero() -> None:
+    """A missing key is not corruption: it means v0 and migrates forward."""
+
+    hass = HomeAssistant()
+    key = "test_store_missing_version"
+    store = DomainStore(hass, key=key)
+
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save({"items": {"i1": {"id": "i1", "name": "Screws"}}, "locations": {}})
+
+    loaded = await store.async_load()
+
+    assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert loaded["items"]["i1"]["name"] == "Screws"
 
 
 @pytest.mark.asyncio

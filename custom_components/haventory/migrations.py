@@ -10,16 +10,28 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Final
 
+from .exceptions import SchemaDowngradeError
+
 
 def migrate(payload: dict[str, Any], *, from_version: int, to_version: int) -> dict[str, Any]:
     """Migrate ``payload`` from ``from_version`` to ``to_version``.
 
     Steps are applied sequentially: vN -> vN+1 -> ... -> vM.
+
+    Raises ``SchemaDowngradeError`` when asked to go backwards.
     """
 
     if from_version > to_version:
-        # We do not support downgrades; return the original as-is
-        return payload
+        # Steps are forward-only, so a downgrade would run none of them and still
+        # leave the loop stamping ``to_version`` on data written by a schema this
+        # build cannot read — relabelling it for whoever saves the result. The
+        # storage layer refuses newer payloads before it ever calls this, and the
+        # refusal it raises is the one users see; this guard is what stops a
+        # second caller from reintroducing the silent relabel.
+        raise SchemaDowngradeError(
+            f"refusing to migrate schema version {from_version} down to {to_version}: "
+            "migrations are forward-only"
+        )
 
     data: dict[str, Any] = deepcopy(payload)
     version = int(from_version)
