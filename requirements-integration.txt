@@ -29,7 +29,7 @@
 # 2026.6.0 rather than 2026.3.x, which the API touch points would also allow:
 # every release below 2026.6.0 is affected by GHSA-x84v-g949-293w (high, fixed in
 # 2026.6.0), and the dependency-review check fails the pin outright.
-homeassistant==2026.6.0
+homeassistant==2026.7.4
 pytest-homeassistant-custom-component
 
 # The wheel HA's `frontend` component declares in its own manifest `requirements`.
