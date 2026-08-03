@@ -572,6 +572,33 @@ describe('hv-full-view: sidebar facets', () => {
     ).toBe('true');
   });
 
+  // aria-expanded on its own says only that something opened; which element it
+  // opened was left to whatever happened to follow the heading in reading order.
+  it('names the panel each heading discloses, open or shut', async () => {
+    const { el, sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
+    const toggle = (section: string) =>
+      q(sr, `[data-testid="sidebar-toggle-${section}"]`) as HTMLButtonElement;
+
+    for (const section of ['locations', 'categories', 'tags']) {
+      const id = `sidebar-section-${section}`;
+      expect(toggle(section).getAttribute('aria-controls'), section).toBe(id);
+      expect(toggle(section).getAttribute('aria-expanded'), `${section} open`).toBe('true');
+      // The id has to resolve in both states — a control pointing at nothing
+      // announces as controlling nothing.
+      expect(sr.getElementById(id), `${section} open`).toBeTruthy();
+
+      toggle(section).click();
+      await settle(el);
+
+      expect(toggle(section).getAttribute('aria-expanded'), `${section} shut`).toBe('false');
+      expect(toggle(section).getAttribute('aria-controls'), `${section} shut`).toBe(id);
+      expect(sr.getElementById(id), `${section} shut`).toBeTruthy();
+
+      toggle(section).click();
+      await settle(el);
+    }
+  });
+
   it('collapses a section from its heading, keeping the heading reachable', async () => {
     const { el, sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
     const toggle = q(sr, '[data-testid="sidebar-toggle-tags"]') as HTMLButtonElement;

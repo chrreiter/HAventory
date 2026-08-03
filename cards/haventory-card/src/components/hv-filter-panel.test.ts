@@ -316,6 +316,30 @@ describe('hv-filter-panel: dates and location', () => {
     expect(el.shadowRoot?.querySelector('hv-location-tree')).toBe(null);
   });
 
+  // aria-expanded on its own says only that something opened; which element it
+  // opened was left to whatever happened to follow the chip in reading order.
+  it('names the holder the location chip discloses, open or shut', async () => {
+    const el = await mount();
+    const chip = () => q(el, '[data-testid="filter-location"]') as HTMLButtonElement;
+    const id = 'filter-location-tree-holder';
+
+    expect(chip().getAttribute('aria-controls')).toBe(id);
+    expect(chip().getAttribute('aria-expanded')).toBe('false');
+    // The id has to resolve in both states — a control pointing at nothing
+    // announces as controlling nothing — so the holder outlives the tree in it.
+    const shut = el.shadowRoot?.getElementById(id);
+    expect(shut, 'holder shut').toBeTruthy();
+    expect(shut?.querySelector('hv-location-tree'), 'no tree while shut').toBe(null);
+
+    chip().click();
+    await el.updateComplete;
+
+    expect(chip().getAttribute('aria-expanded')).toBe('true');
+    expect(chip().getAttribute('aria-controls')).toBe(id);
+    const open = el.shadowRoot?.getElementById(id);
+    expect(open?.querySelector('hv-location-tree'), 'tree open inside the holder').toBeTruthy();
+  });
+
   it('names the picked location on the chip', async () => {
     const el = await mount(
       { locationId: 'shelf-a' },
@@ -493,9 +517,9 @@ describe('hv-filter-panel: native control affordances', () => {
   });
 
   // On a phone the fields took --hv-input-font (16px on this surface) while the
-  // chips beside them are 13.5px and the checkbox rows 14px, so the area select
-  // — the one full-width control in the panel — was the largest text on the
-  // page. Desktop has always matched its chips at 12.5px.
+  // chips beside them are 13.5px, so the area select — the one full-width
+  // control in the panel — was the largest text on the page. Desktop has always
+  // matched its chips at 12.5px.
   it('sizes its fields like the chips beside them, in both layouts', () => {
     const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
     const css = (Array.isArray(sheet) ? sheet : [sheet])
@@ -703,23 +727,84 @@ describe('hv-filter-panel: pressed state', () => {
   });
 
   it('keeps the announced state in step with the paint, chip for chip', async () => {
-    const el = await mount({ category: 'Tools', tags: ['m4'], overdueOnly: true });
-    // A chip paints itself; a checkbox row paints the box inside it.
-    const painted = (b: HTMLElement) => b.classList.contains('on') || !!b.querySelector('.box.on');
-    const toggles = all(el, 'button.chip, button.check').filter(
-      (b) => b.dataset.testid !== 'filter-location' && b.dataset.testid !== 'filter-category-more',
-    );
-
-    expect(toggles.length).toBeGreaterThanOrEqual(STATEFUL_CHIPS.length);
-    for (const toggle of toggles) {
-      expect(toggle.getAttribute('aria-pressed'), toggle.dataset.testid).toBe(
-        String(painted(toggle)),
+    for (const mobile of [false, true]) {
+      const el = await mount(
+        { category: 'Tools', tags: ['m4'], overdueOnly: true, includeSubtree: true },
+        { mobile },
       );
+      // Every toggle in the panel paints itself, rows included: a row is a chip
+      // in another shape, not a checkbox that paints a box inside it.
+      const painted = (b: HTMLElement) => b.classList.contains('on');
+      const toggles = all(el, 'button.chip, button.check').filter(
+        (b) => b.dataset.testid !== 'filter-location' && b.dataset.testid !== 'filter-category-more',
+      );
+
+      expect(toggles.length, `mobile=${mobile}`).toBeGreaterThanOrEqual(STATEFUL_CHIPS.length);
+      for (const toggle of toggles) {
+        expect(toggle.getAttribute('aria-pressed'), `${toggle.dataset.testid}, mobile=${mobile}`).toBe(
+          String(painted(toggle)),
+        );
+      }
+      // Not vacuous: this mount has some on and some off.
+      const states = toggles.map((t) => t.getAttribute('aria-pressed'));
+      expect(states, `mobile=${mobile}`).toContain('true');
+      expect(states, `mobile=${mobile}`).toContain('false');
+      el.remove();
     }
-    // Not vacuous: this mount has some on and some off.
-    const states = toggles.map((t) => t.getAttribute('aria-pressed'));
-    expect(states).toContain('true');
-    expect(states).toContain('false');
+  });
+
+  // The rows announce as toggle buttons but drew a checkbox's box, which left
+  // the sheet as the one surface where the paint and the announcement disagreed.
+  it('paints every row as a chip rather than a checkbox, at both widths', async () => {
+    const ROWS = ['filter-include-subtree', 'filter-low-stock-first', 'filter-low-stock-only'];
+    for (const mobile of [false, true]) {
+      const el = await mount({ lowStockOnly: true, includeSubtree: true, lowStockFirst: true }, { mobile });
+      for (const testid of ROWS) {
+        const row = q(el, `[data-testid="${testid}"]`);
+        // "Low stock" is a chip on a desktop and a row in the sheet; the other
+        // two are rows at both widths.
+        if (!mobile && testid === 'filter-low-stock-only') continue;
+        const where = `${testid}, mobile=${mobile}`;
+        expect(row.classList.contains('chip'), where).toBe(true);
+        expect(row.querySelector('.box'), where).toBe(null);
+        expect(row.querySelector('.mark'), where).toBeTruthy();
+      }
+      el.remove();
+    }
+  });
+
+  // The row's on state has to be the chip's on state, not a second set of
+  // colours that happens to look similar.
+  it('takes its on state from the chip rule, warning variant included', () => {
+    const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
+    const css = (Array.isArray(sheet) ? sheet : [sheet])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+
+    expect(css).toMatch(/\.chip\.on \{[^}]*background: var\(--hv-primary-tint\)/);
+    expect(css).toMatch(/\.chip\.on\.warning \{[^}]*background: var\(--hv-warn-bg\)/);
+    // No rule of its own to drift from those, and no checkbox box left to draw.
+    expect(css).not.toMatch(/\.check\.on \{/);
+    expect(css).not.toMatch(/\.box[ .{]/);
+  });
+
+  it('reserves the mark so a row keeps its label in place as it is pressed', async () => {
+    const el = await mount({}, { mobile: true });
+    const row = q(el, '[data-testid="filter-low-stock-only"]');
+    expect(row.getAttribute('aria-pressed')).toBe('false');
+    expect(row.querySelector('.mark'), 'off rows still hold the slot open').toBeTruthy();
+
+    const el2 = await mount({ lowStockOnly: true }, { mobile: true });
+    expect(q(el2, '[data-testid="filter-low-stock-only"]').querySelector('.mark svg')).toBeTruthy();
+
+    const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
+    const css = (Array.isArray(sheet) ? sheet : [sheet])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+    expect(css).toMatch(/\.check \.mark \{[^}]*width: 12px/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.check \.mark \{[^}]*width: 15px/);
   });
 
   it('flips as the filter is applied, not only on mount', async () => {

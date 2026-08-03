@@ -28,6 +28,15 @@ const SORT_FIELDS: { field: SortField; label: string }[] = [
 /** How many category chips to show before collapsing the rest behind "More…". */
 const CATEGORY_CHIP_LIMIT = 4;
 
+/**
+ * The element the location chip discloses, named so `aria-controls` can point at
+ * it. The holder stays in the tree whether or not it is open — an `aria-controls`
+ * that resolves to nothing announces the chip as controlling nothing — and only
+ * its contents come and go. Shadow scoping keeps the id unique even with the
+ * desktop panel and the phone sheet both mounted.
+ */
+const LOCATION_TREE_ID = 'filter-location-tree-holder';
+
 /** The two timestamps a "Changed" row can compare, and the filter keys behind them. */
 type DateField = 'updated' | 'created';
 
@@ -257,48 +266,38 @@ export class HVFilterPanel extends LitElement {
         color: var(--hv-text-on-primary);
         font-weight: 500;
       }
-      .check {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 12.5px;
-        color: var(--hv-chip-text);
-        border: none;
-        background: none;
-        padding: 4px 0;
-      }
+      /*
+       * A "Show only" row is a chip in another shape, and carries the chip class
+       * to say so: it holds the same filter the wider panel draws as a chip and
+       * announces the same way, so it takes the chip's outline and on-state
+       * rather than restating those tokens — a row that paints a checkbox while
+       * announcing a toggle describes two widgets. Only what a full-width row
+       * needs on top of a chip lives here.
+       *
+       * Five of these stack under "Show only" in the sheet, and pills each sized
+       * to their own label leave that column with a ragged right edge.
+       */
       :host([mobile]) .check {
-        min-height: var(--hv-tap-min, 44px);
+        box-sizing: border-box;
         width: 100%;
-        font-size: 14px;
+        min-height: var(--hv-tap-min, 44px);
       }
-      .box {
+      /* The mark holds its width while the row is off, so a stacked column keeps
+         one left edge for its labels instead of shifting each row as it is
+         pressed. The two widths are the glyph sizes the row renderer asks for. */
+      .check .mark {
         display: inline-grid;
         place-items: center;
-        width: 15px;
-        height: 15px;
-        border-radius: 4px;
-        border: 1.5px solid var(--hv-text-tertiary);
-        color: #fff;
+        width: 12px;
         flex: none;
       }
-      :host([mobile]) .box {
-        width: 20px;
-        height: 20px;
-        border-radius: 5px;
-      }
-      .box.on {
-        background: var(--hv-primary);
-        border-color: var(--hv-primary);
-      }
-      .box.on.warning {
-        background: var(--hv-amber);
-        border-color: var(--hv-amber);
+      :host([mobile]) .check .mark {
+        width: 15px;
       }
       .tally-right {
         margin-left: auto;
         font-size: 12.5px;
-        color: var(--hv-text-tertiary);
+        opacity: 0.65;
       }
       select {
         font: inherit;
@@ -453,7 +452,9 @@ export class HVFilterPanel extends LitElement {
    * card announces as a pressed toggle button — the app bars' stat pills, the
    * sidebar's facet rows, this panel's chips — and the "Show only" facets render
    * as rows here and as chips on a wider screen, so a single facet would
-   * otherwise change vocabulary with the viewport it is read on.
+   * otherwise change vocabulary with the viewport it is read on. The row is
+   * painted to match: it takes the chip's on state, so what the row draws and
+   * what it announces describe the same widget.
    */
   private _renderCheckbox(
     label: string,
@@ -462,14 +463,12 @@ export class HVFilterPanel extends LitElement {
     opts: { warning?: boolean; tally?: number | null; testid?: string } = {},
   ) {
     return html`<button
-      class="check"
+      class="chip check ${on ? 'on' : ''} ${opts.warning ? 'warning' : ''}"
       aria-pressed=${String(on)}
       data-testid=${opts.testid ?? 'filter-check'}
       @click=${onToggle}
     >
-      <span class="box ${on ? 'on' : ''} ${opts.warning ? 'warning' : ''}">
-        ${on ? icon('check', this.mobile ? 15 : 12) : null}
-      </span>
+      <span class="mark">${on ? icon('check', this.mobile ? 15 : 12) : null}</span>
       <span>${label}</span>
       ${opts.tally !== undefined && opts.tally !== null
         ? html`<span class="tally-right">${opts.tally}</span>`
@@ -492,6 +491,7 @@ export class HVFilterPanel extends LitElement {
             class="chip ${f.locationId ? 'on' : ''}"
             data-testid="filter-location"
             aria-expanded=${String(this._locationOpen)}
+            aria-controls=${LOCATION_TREE_ID}
             @click=${() => {
               this._locationOpen = !this._locationOpen;
             }}
@@ -518,9 +518,9 @@ export class HVFilterPanel extends LitElement {
             { testid: 'filter-include-subtree' },
           )}
         </div>
-        ${this._locationOpen
-          ? html`<div class="tree-holder">
-              <hv-location-tree
+        <div class="tree-holder" id=${LOCATION_TREE_ID} ?hidden=${!this._locationOpen}>
+          ${this._locationOpen
+            ? html`<hv-location-tree
                 data-testid="filter-location-tree"
                 .nodes=${this.locationTree}
                 .areas=${this.areas}
@@ -532,9 +532,9 @@ export class HVFilterPanel extends LitElement {
                   this._patch({ locationId: (e.detail as { locationId: string | null }).locationId });
                   this._locationOpen = false;
                 }}
-              ></hv-location-tree>
-            </div>`
-          : null}
+              ></hv-location-tree>`
+            : null}
+        </div>
       </div>
     `;
   }
