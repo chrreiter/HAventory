@@ -6,6 +6,12 @@
 
 export type ScalarValue = string | number | boolean;
 
+/**
+ * Stored per-item condition. Non-nullable on the backend: every item has
+ * exactly one, `ok` being the default and the way a flagged state clears.
+ */
+export type ItemStatus = 'ok' | 'missing' | 'needs_repair';
+
 export interface LocationPath {
   id_path: string[];
   name_path: string[];
@@ -26,6 +32,8 @@ export interface Item {
   name: string;
   description: string | null;
   quantity: number;
+  /** Optional because older backends do not send it; absent reads as `ok`. */
+  status?: ItemStatus;
   checked_out: boolean;
   due_date: string | null;
   inspection_date: string | null;
@@ -45,6 +53,7 @@ export interface ItemCreate {
   name: string;
   description?: string | null;
   quantity?: number;
+  status?: ItemStatus;
   checked_out?: boolean;
   due_date?: string | null;
   inspection_date?: string | null;
@@ -59,6 +68,8 @@ export interface ItemUpdate {
   name?: string;
   description?: string | null;
   quantity?: number;
+  /** Non-nullable: `ok` is how a flagged state clears, never `null`. */
+  status?: ItemStatus;
   checked_out?: boolean;
   due_date?: string | null;
   inspection_date?: string | null;
@@ -75,6 +86,8 @@ export interface ItemFilter {
   tags_any?: string[];
   tags_all?: string[];
   category?: string;
+  /** Exact match against one status; unknown values are `validation_error`. */
+  status?: ItemStatus;
   checked_out?: boolean;
   low_stock_only?: boolean;
   low_stock_first?: boolean;
@@ -126,6 +139,13 @@ export interface StatsCounts {
    * same reason: an older backend does not send it.
    */
   inspection_overdue_count?: number;
+  /**
+   * Items whose stored `status` is `missing` / `needs_repair`. Stored state,
+   * not calendar-derived — every mutation that moves them emits fresh counts.
+   * Optional because an older backend does not send them.
+   */
+  missing_count?: number;
+  needs_repair_count?: number;
   locations_total: number;
   /** Items without a location (location_id == null). */
   no_location_count: number;
@@ -409,6 +429,8 @@ export interface StoreFilters {
   overdueOnly: boolean;
   /** Only items past the date they were next due for inspection. */
   inspectionDueOnly: boolean;
+  /** Only items with this stored status; null means any. */
+  status: ItemStatus | null;
   category: string | null;
   tags: string[];
   tagsMode: TagMatchMode;

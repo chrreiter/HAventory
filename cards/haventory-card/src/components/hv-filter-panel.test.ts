@@ -124,6 +124,59 @@ describe('hv-filter-panel: category', () => {
   });
 });
 
+describe('hv-filter-panel: status', () => {
+  it('offers every status as a single-select chip that toggles off when re-picked', async () => {
+    const el = await mount();
+    expect(all(el, '[data-testid="filter-status"]').map((c) => c.dataset.value)).toEqual([
+      'ok',
+      'missing',
+      'needs_repair',
+    ]);
+
+    const seen = changes(el);
+    (q(el, '[data-testid="filter-status"][data-value="missing"]') as HTMLButtonElement).click();
+    expect(seen).toEqual([{ status: 'missing' }]);
+
+    el.filters = { ...el.filters, status: 'missing' };
+    await el.updateComplete;
+    (q(el, '[data-testid="filter-status"][data-value="missing"]') as HTMLButtonElement).click();
+    expect(seen[1]).toEqual({ status: null });
+  });
+
+  it('prices the two flagged statuses from the stats counts', async () => {
+    const el = await mount(
+      {},
+      {
+        counts: {
+          items_total: 10,
+          low_stock_count: 0,
+          checked_out_count: 0,
+          missing_count: 2,
+          needs_repair_count: 1,
+          locations_total: 0,
+          no_location_count: 0,
+        },
+      },
+    );
+    const chips = all(el, '[data-testid="filter-status"]');
+    expect(chips.map((c) => (c.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual([
+      'OK',
+      'Missing 2',
+      'Needs repair 1',
+    ]);
+  });
+
+  it('carries the warning tone only while a flagged status is selected', async () => {
+    const el = await mount({ status: 'needs_repair' });
+    const chip = q(el, '[data-testid="filter-status"][data-value="needs_repair"]');
+    expect(chip.classList.contains('on')).toBe(true);
+    expect(chip.classList.contains('warning')).toBe(true);
+    expect(
+      q(el, '[data-testid="filter-status"][data-value="ok"]').classList.contains('warning'),
+    ).toBe(false);
+  });
+});
+
 describe('hv-filter-panel: tags', () => {
   it('multi-selects tags and switches between any and all', async () => {
     const el = await mount();

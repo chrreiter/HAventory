@@ -175,6 +175,17 @@ describe('hv-detail-sheet: read view', () => {
     expect(q(el, '[data-testid="sheet-updated"]')?.textContent).toContain('v14');
   });
 
+  it('chips a flagged status and stays quiet for ok', async () => {
+    const flagged = await mount({ status: 'missing' });
+    expect(q(flagged, '[data-testid="sheet-status"]')?.textContent?.trim()).toBe('Missing');
+
+    // ok explicitly, and absent (an older backend's payload) — quiet both ways.
+    const ok = await mount({ status: 'ok' });
+    expect(q(ok, '[data-testid="sheet-status"]')).toBe(null);
+    const absent = await mount({});
+    expect(q(absent, '[data-testid="sheet-status"]')).toBe(null);
+  });
+
   it('offers check out or check in depending on the state', async () => {
     const inStock = await mount({ checked_out: false });
     expect(q(inStock, '[data-testid="sheet-check-out"]')).toBeTruthy();

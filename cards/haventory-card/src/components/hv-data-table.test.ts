@@ -269,6 +269,19 @@ describe('hv-data-table: rows', () => {
     const el = await mount([]);
     expect(q(el, '[data-testid="table-empty"]')).toBeTruthy();
   });
+
+  it('chips a flagged status in the name cell and leaves ok rows quiet', async () => {
+    const el = await mount([
+      { id: '1', status: 'missing' },
+      { id: '2', status: 'needs_repair' },
+      { id: '3', status: 'ok' },
+      { id: '4' },
+    ]);
+    const rows = all(el, '[data-testid="table-row"]');
+    const chip = (row: HTMLElement) =>
+      row.querySelector('[data-testid="table-status"]')?.textContent?.trim() ?? null;
+    expect(rows.map(chip)).toEqual(['Missing', 'Needs repair', null, null]);
+  });
 });
 
 describe('hv-data-table: selection mode', () => {

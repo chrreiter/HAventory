@@ -109,6 +109,8 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             checked_out_count: items.filter((i) => i.checked_out).length,
             overdue_count: items.filter((i) => isMockOverdue(i)).length,
             inspection_overdue_count: items.filter((i) => isMockInspectionDue(i)).length,
+            missing_count: items.filter((i) => (i.status ?? 'ok') === 'missing').length,
+            needs_repair_count: items.filter((i) => (i.status ?? 'ok') === 'needs_repair').length,
             locations_total: locations.length,
             no_location_count: items.filter((i) => i.location_id == null).length,
           };
@@ -605,6 +607,7 @@ function isMockInspectionDue(item: Item): boolean {
 function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
   const filter = (rawFilter ?? null) as {
     q?: string;
+    status?: string;
     checked_out?: boolean;
     orphaned_only?: boolean;
     overdue_only?: boolean;
@@ -638,6 +641,7 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
       ].join(' ').toLowerCase();
       if (!blob.includes(q)) return false;
     }
+    if (filter.status && (it.status ?? 'ok') !== filter.status) return false;
     if (typeof filter.checked_out === 'boolean' && it.checked_out !== filter.checked_out) return false;
     if (filter.orphaned_only && it.location_id !== null) return false;
     if (filter.overdue_only && !isMockOverdue(it)) return false;
@@ -724,5 +728,6 @@ export function makeItem(partial?: Partial<Item>): Item {
     ...(partial?.effective_area_id === undefined
       ? {}
       : { effective_area_id: partial.effective_area_id }),
+    ...(partial?.status === undefined ? {} : { status: partial.status }),
   };
 }
