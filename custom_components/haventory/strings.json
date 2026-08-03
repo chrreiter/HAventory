@@ -3,17 +3,19 @@
     "step": {
       "user": {
         "title": "HAventory",
-        "description": "Set up HAventory integration for inventory management in Home Assistant.",
+        "description": "Set up HAventory for inventory management in Home Assistant. Both answers below, and everything else, can be changed later under Configure.",
         "data": {
-          "card_title": "Card title"
+          "card_title": "Card title",
+          "sidebar_panel_enabled": "Show HAventory in the sidebar"
         },
         "data_description": {
-          "card_title": "Heading shown on the HAventory card. Changeable later under Configure."
+          "card_title": "Heading shown on the HAventory card.",
+          "sidebar_panel_enabled": "Gives HAventory a page of its own, named after the card title above. Each user can still hide the entry through the sidebar's own Edit sidebar mode."
         }
       }
     },
     "create_entry": {
-      "default": "Successfully configured HAventory"
+      "default": "Successfully configured HAventory. Reload this browser page once: the card and its sidebar icon are loaded when a page opens, so a page that was already open has neither yet."
     }
   },
   "options": {

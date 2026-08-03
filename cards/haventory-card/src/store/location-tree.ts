@@ -81,9 +81,16 @@ export interface GroupedRoots {
 export function groupRootsByArea(
   nodes: readonly LocationTreeNode[],
   areas: readonly AreaRef[],
+  opts: { includeEmptyAreas?: boolean } = {},
 ): GroupedRoots {
   const byArea = new Map<string, LocationTreeNode[]>();
   const ungrouped: LocationTreeNode[] = [];
+
+  // A picker that files locations under areas has to offer every area Home
+  // Assistant knows, including the ones holding nothing yet — otherwise an area
+  // can only be reached once something is already in it. Browsing bands only
+  // the areas in use.
+  if (opts.includeEmptyAreas) for (const area of areas) byArea.set(area.id, []);
 
   for (const node of nodes) {
     const areaId = node.area_id ?? null;

@@ -37,10 +37,17 @@ Checklist below and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Finding HAventory after install
 
-HAventory adds itself to the **sidebar** during setup, so there is somewhere to click
-before you have built a dashboard. The entry opens the full view as a page of its own —
-the same workspace the card's ⋮ → full view opens, with the same menu, dialogs and
-editors — and carries the HAventory mark and whatever name you gave the card.
+Setup asks two things — what the card is called, and whether HAventory gets a **sidebar**
+entry (yes by default, so there is somewhere to click before you have built a dashboard).
+Both are editable afterwards under **Configure**. The entry opens the full view as a page
+of its own — the same workspace the card's ⋮ → full view opens, with the same menu,
+dialogs and editors — and carries the HAventory mark and whatever name you gave the card.
+
+- **Reload the browser page once after installing.** Home Assistant hands an integration's
+  JavaScript to a page when that page loads, so a tab that was already open when HAventory
+  was installed or updated has neither the card nor the artwork behind its sidebar icon
+  yet — the entry shows up without its mark until the next load. One ordinary reload is
+  all it takes; no cache clearing, and nothing to repeat later.
 
 - **Turning it off:** Settings → Devices & services → HAventory → **Configure** →
   *Show HAventory in the sidebar*. The entry appears and disappears as you save the form;
@@ -457,7 +464,10 @@ throughout.
   custom fields (text / number / yes-no / date). Saves send the item's expected version so
   a concurrent edit surfaces as a conflict.
 - **Full view** — a fullscreen workspace with a coloured app bar, a **browse sidebar**, and
-  a sortable table. Only columns the backend can sort by get a clickable header. The
+  a sortable table. Only columns the backend can sort by get a clickable header. A browser
+  that has made no choice yet shows every optional column — quantity, category, location,
+  tags, due, next inspection, updated — and the ⋮ → **Columns** picker is where you thin
+  that down; the table scrolls sideways rather than dropping a column you kept. The
   sidebar leads with the location tree carrying the backend's own per-location counts and
   an orphans row, then **Categories** and **Tags** as sections of their own; each heading
   collapses from a chevron and states how many there are — locations counted at every
@@ -492,7 +502,12 @@ throughout.
   you save it: an area belongs to a whole tree, so the line under the select names the tree
   root it will be stored on and how many locations that reaches — and on a location that
   merely inherits, it names the area it inherits. With no Home Assistant areas defined the
-  field is not shown at all.
+  field is not shown at all. The **Parent location** picker offers the areas alongside the
+  locations, including areas nothing is filed under yet: picking one moves the whole
+  subtree out to the top level *and* into that area, which is how a tree changes rooms.
+  The merge target picker offers locations only — an area heads the tree without being part
+  of it and holds no items itself, so a merge, which has to hand this location's items to
+  something, always names a location.
 - **Check-out** invites an optional due date (+7 / +31 / +90 / +X day suggestions) rather
   than silently checking out with none — the date is what makes overdue highlighting mean
   anything. "No due date" stays a first-class choice.

@@ -132,3 +132,32 @@ async def test_location_item_counts_and_no_location_count() -> None:
     # Unknown location id raises NotFoundError
     with pytest.raises(NotFoundError):
         repo.get_location_item_counts("00000000-0000-4000-8000-000000000000")
+
+
+@pytest.mark.asyncio
+async def test_moving_a_subtree_to_the_top_level_files_it_under_a_new_area() -> None:
+    """One update does both halves of "move this subtree into an area".
+
+    The parent change commits before the area propagates, so the area lands on
+    the moved location — a root of its own by then — instead of rewriting the
+    tree it is leaving. The area the old tree carries is untouched, and the
+    items under the moved subtree follow by inheritance.
+    """
+
+    repo = Repository()
+    garage = repo.create_location(name="Garage", area_id="area-garage")
+    shelf = repo.create_location(name="Shelf", parent_id=garage.id)
+    bin_1 = repo.create_location(name="Bin 1", parent_id=shelf.id)
+    repo.create_item(ItemCreate(name="Car", location_id=str(garage.id)))
+    drill = repo.create_item(ItemCreate(name="Drill", location_id=str(bin_1.id)))
+
+    moved = repo.update_location(shelf.id, new_parent_id=None, area_id="area-cellar")
+
+    assert moved.parent_id is None
+    assert moved.area_id == "area-cellar"
+    assert repo.get_location(garage.id).area_id == "area-garage"
+    # Descendants inherit from the root rather than storing an area of their own.
+    assert repo.get_location(bin_1.id).area_id is None
+
+    in_cellar = repo.list_items(flt={"area_id": "area-cellar"})
+    assert [i.id for i in in_cellar["items"]] == [drill.id]
