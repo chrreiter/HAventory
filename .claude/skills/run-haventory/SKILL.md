@@ -128,16 +128,43 @@ Subscriptions (watch events while mutating): `uv run python scripts/ws_subscribe
 From the skill dir (`cd .claude/skills/run-haventory`):
 
 ```bash
-node screenshot.mjs                                          # default dashboard view
+node screenshot.mjs                                          # the card in a dashboard column
 node screenshot.mjs --search sponges --out screenshot-search.png   # type into the card's search box first
 ```
 
 Screenshots land in `.claude/skills/run-haventory/*.png` (gitignored). The script
 prints browser console errors — check them when the card renders blank.
-`--path /lovelace/default_view` is the default view; that dashboard already contains
-`custom:haventory-card`. `--search` exercises the real pipeline
+`--path /dashboard-dev/0` is the default — see "Where the card lives" below.
+`--search` exercises the real pipeline
 (card → WS → repository index → filtered render), so it doubles as a UI smoke:
 searching `sponges` must reduce the list to the one matching item.
+
+#### Where the card lives
+
+Home Assistant's **default** dashboard on the dev instance is the generated one, which
+holds no HAventory card and redirects `/lovelace/<anything>` to `/home/overview`. Every
+card-driving harness therefore defaults to the separate **`dev`** dashboard
+(`url_path: dashboard-dev`, storage mode), which carries two views:
+
+| view | URL | shape | who uses it |
+|---|---|---|---|
+| 0 (no `path`) | `/dashboard-dev/0` | `sections` grid, card in a normal column | `screenshot.mjs`, `visual_pass.mjs` mobile, `import_policies.mjs`, `rl_banner.mjs` |
+| `wide` | `/dashboard-dev/wide` | `type: panel`, card gets the full window width | `visual_pass.mjs` desktop, `drive_import.mjs` |
+
+Both views hold a bare `{type: custom:haventory-card}`. A view without a `path` is
+addressed by **index**, which is why the first one is `/0`.
+
+The two shapes are not interchangeable: the card picks its layout from **its own**
+rendered width, so in a sections column even a 1440px window gets the narrow branch.
+Check what the instance actually has before assuming a path is wrong:
+
+```bash
+uv run python .claude/skills/run-haventory/driver.py send '{"type":"lovelace/dashboards/list"}'
+uv run python .claude/skills/run-haventory/driver.py send '{"type":"lovelace/config","url_path":"dashboard-dev"}'
+```
+
+The sidebar panel at `/haventory` needs none of this — HA routes it from the integration's
+own registration, so it is the one surface that survives any dashboard edit.
 
 #### The sidebar panel
 
@@ -222,7 +249,7 @@ node drive_import.mjs ~/backup.json --policy replace       # preview with replac
 node drive_import.mjs ~/backup.json --apply --out restore  # WRITES; screenshots the result
 ```
 
-Defaults: `--policy merge`, `--out import`, `--path /lovelace/wide`. The document is pasted
+Defaults: `--policy merge`, `--out import`, `--path /dashboard-dev/wide`. The document is pasted
 verbatim and deliberately **not** validated first, so malformed input can be used to drive the
 card's parse-error and server-rejection paths. `--apply` mutates the instance and import is
 all-or-nothing with no undo — export first.
@@ -277,19 +304,28 @@ cd .claude/skills/run-haventory
 node visual_pass.mjs --out before     # then make the change, redeploy
 node visual_pass.mjs --out after      # and compare the two folders
 node visual_pass.mjs --only mobile --surfaces detail-sheet,filter-sheet
-node visual_pass.mjs --only panel     # just the sidebar panel on /haventory
-node visual_pass.mjs --list           # surface names
+node visual_pass.mjs --only panel         # sidebar panel, desktop width
+node visual_pass.mjs --only panel-mobile  # sidebar panel, 375x812
+node visual_pass.mjs --list               # surface names
 ```
 
-Fourteen desktop surfaces, eight mobile ones and ten on the sidebar panel, each a recipe of
-clicks against the card's own `data-testid`s. It is a DOM check as much as a screenshot
-run: a surface counts as captured only if its root element exists afterwards, so a renamed
-testid fails loudly instead of silently photographing the wrong screen. Exit is non-zero if
-any surface failed to open or the browser logged a console error. The narrow layout is a
-different component tree (sheets, not panels), which is why the two card lists differ rather
-than sharing one; the panel pass runs against `haventory-panel` on `/haventory` and needs no
-`wide` dashboard, since HA gives a panel the whole content area. Files are prefixed `d-`,
-`m-` and `p-`.
+Four passes — 14 card surfaces at desktop width, 8 at phone width, and the sidebar panel
+at both (10 wide, 8 narrow) — each a recipe of clicks against the card's own
+`data-testid`s. It is a DOM check as much as a screenshot run: a surface counts as
+captured only if its root element exists afterwards, so a renamed testid fails loudly
+instead of silently photographing the wrong screen. Exit is non-zero if any surface failed
+to open or the browser logged a console error. Files are prefixed `d-`, `m-`, `p-` and
+`pm-`.
+
+The card's narrow layout is a **different component tree** (sheets, not panels), which is
+why the two card lists differ rather than sharing one. The panel's is not: `hv-full-view`
+keeps one tree and switches on its own `(max-width: 700px)` query, so `panel-mobile` re-runs
+the panel recipes at 375px and adds the three assertions that only hold there — the sidebar
+is gone, the filter panel grows a staged apply/cancel footer instead of applying live, and
+the app bar shows the button that reopens HA's drawer. That last one is driven by HA's
+`narrow` property rather than the media query, so the width has to satisfy both switches.
+
+The panel passes need no `wide` dashboard — HA gives a panel the whole content area.
 
 ### Import policy cross-check
 
@@ -380,8 +416,8 @@ clean-start mode), then `Online smoke test completed successfully.`
 
 - **Git Bash rewrites any argument that looks like an absolute POSIX path** (MSYS path
   conversion), so a leading-slash flag value never reaches the script intact:
-  `node screenshot.mjs --path /lovelace/wide` navigates to
-  `http://localhost:8123C:/Program Files/Git/lovelace/wide`, and a `/c/Users/...`
+  `node screenshot.mjs --path /dashboard-dev/wide` navigates to
+  `http://localhost:8123C:/Program Files/Git/dashboard-dev/wide`, and a `/c/Users/...`
   document path arrives as `C:\c\Users\...`. Prefix the command with
   `MSYS_NO_PATHCONV=1`, or pass file paths natively with forward slashes
   (`"C:/Users/you/backup.json"`). Only values starting with `/` are affected, and the

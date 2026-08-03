@@ -12,7 +12,7 @@
 //                       [--search <text>] [--tap <selector>]
 //                       [--swipe <dir>[@<selector>]] [--wait <ms>]
 //
-// Defaults: --out screenshot.png, --path /lovelace/default_view, desktop 1280x900.
+// Defaults: --out screenshot.png, --path /dashboard-dev/0, desktop 1280x900.
 //
 // --element names the root the run waits for and scopes --search/--swipe to. The
 // dashboard card is the default; the sidebar panel at /haventory renders
@@ -78,7 +78,11 @@ const flag = (name, dflt) => {
 const has = (name) => args.includes(name);
 
 const outFile = path.resolve(skillDir, flag("--out", "screenshot.png"));
-const urlPath = flag("--path", "/lovelace/default_view");
+// The default dashboard is HA's generated one and carries no HAventory card, so
+// the card lives on a `dev` dashboard: view 0 is a sections grid, which is the
+// narrow column a card normally sits in. Views without a `path` are addressed by
+// index. See SKILL.md for the dashboard the dev instance is expected to have.
+const urlPath = flag("--path", "/dashboard-dev/0");
 const rootElement = flag("--element", "haventory-card");
 const fullPage = has("--full");
 const haDark = has("--dark");

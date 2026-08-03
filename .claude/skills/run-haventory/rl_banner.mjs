@@ -14,7 +14,7 @@
 //   node rl_banner.mjs --scenario retrying   # refuse the first round, let a retry win
 //   node rl_banner.mjs --scenario exhausted  # refuse every retry, then Refresh
 //   node rl_banner.mjs --observe 30          # watch only; never touches the options flow
-//   node rl_banner.mjs --path /lovelace/wide --out rl
+//   node rl_banner.mjs --path /dashboard-dev/wide --out rl
 //
 // Scenarios (both drive the options flow over REST, exactly as the integration's
 // own config flow does, and always reset rate limiting to OFF on the way out):
@@ -63,7 +63,7 @@ const flag = (name, dflt) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : dflt;
 };
 
-const urlPath = flag("--path", "/lovelace/default_view");
+const urlPath = flag("--path", "/dashboard-dev/0");
 const outPrefix = flag("--out", "rl");
 const observeSecs = args.includes("--observe") ? Number(flag("--observe", "30")) : null;
 const scenarioArg = flag("--scenario", null);
