@@ -387,7 +387,7 @@ export class HVLocationTree extends LitElement {
             : ''}"
           role="treeitem"
           aria-selected=${String(selected)}
-          aria-expanded=${hasChildren ? String(open) : 'undefined'}
+          aria-expanded=${ifDefined(hasChildren ? String(open) : undefined)}
           aria-controls=${ifDefined(hasChildren ? nodeChildrenId(node.id) : undefined)}
           aria-level=${depth + 1}
           data-testid="tree-row"
