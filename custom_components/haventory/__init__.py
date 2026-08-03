@@ -48,6 +48,7 @@ except ImportError:  # pragma: no cover - minimal harness without panel_custom
     async_register_panel = None  # type: ignore[assignment]
 
 from . import services as services_mod
+from . import stale_files
 from . import ws as ws_mod
 from .const import (
     CONF_CARD_TITLE,
@@ -118,6 +119,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up HAventory from a config entry."""
     if DOMAIN not in hass.data:
         hass.data[DOMAIN] = {}
+
+    # An upgrade extracts over the install directory without clearing it, so
+    # anything an earlier version shipped and this one dropped is still on disk.
+    # First, so a retired bundle is gone before the card directory is served.
+    await stale_files.async_sweep_retired_files(hass)
 
     # Expose storage manager via hass.data[DOMAIN]["store"]. Keep name compatible
     # with tests while upgrading to a schema-aware wrapper.

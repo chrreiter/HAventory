@@ -67,6 +67,11 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
   `docs/backend_api_contract.md`, and `docs/data_shapes.md` together.
 - **Preserve load-bearing invariants**: case-insensitive search, denormalized
   `location_path` on items, and optimistic concurrency via the item `version`.
+- **Deleting or renaming a file inside `custom_components/haventory/`?** Add its
+  old path to `RETIRED_PATHS` in `custom_components/haventory/stale_files.py` in
+  the same PR — an upgrade extracts the release asset over the install directory
+  without clearing it, so the file survives on every existing install until the
+  setup-time sweep removes it.
 - Update `README.md` when behavior changes. Report out-of-scope findings under a
   "Follow-ups" note rather than fixing them in the same PR.
 
