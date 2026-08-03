@@ -9,7 +9,7 @@
 //   node drive_import.mjs <document.json> [--policy merge|replace|skip]
 //                         [--apply] [--out <prefix>] [--path <ha-url-path>]
 //
-// Defaults: --policy merge, --out import, --path /lovelace/wide.
+// Defaults: --policy merge, --out import, --path /dashboard-dev/wide.
 //
 // The document is pasted verbatim and is NOT validated here — driving the
 // card's own parse-error and server-rejection paths is a supported use, so
@@ -76,7 +76,7 @@ if (!["merge", "replace", "skip"].includes(policy)) {
 }
 
 const outPrefix = flag("--out", "import");
-const urlPath = flag("--path", "/lovelace/wide");
+const urlPath = flag("--path", "/dashboard-dev/wide");
 const apply = args.includes("--apply");
 const shot = (suffix) => path.resolve(skillDir, `${outPrefix}-${suffix}.png`);
 

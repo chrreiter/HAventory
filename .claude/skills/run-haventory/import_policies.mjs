@@ -58,7 +58,7 @@ if (!token) {
   process.exit(2);
 }
 
-const urlPath = flag("--path", "/lovelace/default_view");
+const urlPath = flag("--path", "/dashboard-dev/0");
 const outPrefix = flag("--out", "policies");
 const sampleSize = Number(flag("--items", "6"));
 const docPath = flag("--doc", null);

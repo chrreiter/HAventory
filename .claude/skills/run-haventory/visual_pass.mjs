@@ -1,5 +1,5 @@
-// Walk HAventory's surfaces — the card at desktop and mobile widths, and the
-// sidebar panel — screenshotting each and reporting whether it actually opened.
+// Walk HAventory's surfaces — the card and the sidebar panel, each at a desktop
+// and a phone width — screenshotting each and reporting whether it actually opened.
 //
 // A single screenshot proves one view renders; this proves the set of them do,
 // which is what a UI change needs before and after. Each surface is a named
@@ -11,9 +11,9 @@
 // exits non-zero if any surface, at any width, failed to open.
 //
 // Usage (from the skill dir, .claude/skills/run-haventory/):
-//   node visual_pass.mjs                       # desktop + mobile + panel into ./visual/
+//   node visual_pass.mjs                       # every pass into ./visual/
 //   node visual_pass.mjs --out before          # ./before/  (then --out after to compare)
-//   node visual_pass.mjs --only desktop        # or --only mobile, --only panel
+//   node visual_pass.mjs --only desktop        # or mobile, panel, panel-mobile
 //   node visual_pass.mjs --surfaces list,search,full-view
 //   node visual_pass.mjs --dark                # HA dark theme + dark OS scheme
 //   node visual_pass.mjs --list                # print the surface names and exit
@@ -41,8 +41,10 @@ const flag = (name, dflt) => {
 // --- surface recipes ------------------------------------------------------
 // `open` is a list of steps run in order against the pass's root element:
 //   ["click", <sel>]  ["hover", <sel>]  ["fill", <sel>, <text>]  ["key", <key>]  ["wait", <ms>]
-// `expect` is the selector that must be visible once the recipe has run.
-// Selectors pierce shadow DOM, so nested components address directly.
+// `expect` is the selector — or list of selectors — that must be visible once the
+// recipe has run; `hidden` is the optional counterpart, for a layout whose point
+// is that something is gone. Selectors pierce shadow DOM, so nested components
+// address directly.
 //
 // Every recipe starts from a freshly loaded page. Chaining them instead would be
 // faster, but a modal left standing puts a scrim over everything that follows
@@ -51,8 +53,8 @@ const flag = (name, dflt) => {
 // the full view rather than assuming the previous surface left it up.
 //
 // Surfaces are named after what a reader would call the screen, and prefixed
-// d-/m-/p- in the file name so the desktop, mobile and panel captures of the
-// same surface sort next to each other.
+// d-/m-/p-/pm- in the file name so the desktop, mobile and the two panel
+// captures of the same surface sort next to each other.
 //
 // The card chooses its layout from ITS OWN width, not the viewport's, so the
 // desktop pass runs on the `wide` dashboard view: in a normal dashboard column
@@ -313,10 +315,75 @@ const PANEL_SURFACES = [
   },
 ];
 
+// The panel on a phone. Unlike the card, whose narrow layout is a different
+// component tree, `hv-full-view` keeps one tree and switches on a media query at
+// 700px — so these are the panel recipes again, at a width where that branch is
+// live, plus the three assertions that only hold there: the sidebar is gone, the
+// filter panel grows a staged apply/cancel footer, and the app bar trades the
+// close button for the button that reopens Home Assistant's own drawer (which a
+// panel must offer itself once HA has collapsed it).
+const PANEL_MOBILE_SURFACES = [
+  {
+    id: "01-page",
+    open: [],
+    expect: [`${PANEL} [data-testid="full-table"]`, `${PANEL} [data-testid="panel-menu"]`],
+    hidden: `${PANEL} [data-testid="full-sidebar"]`,
+  },
+  {
+    id: "02-filters",
+    open: [["click", `${PANEL} [data-testid="full-filters-toggle"]`], ["wait", 500]],
+    // The footer is the narrow branch's own: the wide panel applies each change
+    // as it is made, this one stages them behind Apply.
+    expect: [`${PANEL} [data-testid="full-filter-panel"]`, `${PANEL} [data-testid="full-panel-foot"]`],
+  },
+  {
+    id: "03-search",
+    open: [
+      ["fill", `${PANEL} [data-testid="full-search"]`, "box"],
+      ["wait", 1500],
+    ],
+    expect: `${PANEL} [data-testid="full-table"]`,
+  },
+  {
+    id: "04-add-editor",
+    open: [["click", `${PANEL} [data-testid="full-add-item"]`], ["wait", 600]],
+    expect: `${PANEL} [data-testid="item-editor"]`,
+  },
+  {
+    id: "05-row-editor",
+    open: [
+      ["hover", `${PANEL} [data-testid="table-row"]`],
+      ["click", `${PANEL} [data-testid="table-edit"]`],
+      ["wait", 600],
+    ],
+    expect: `${PANEL} [data-testid="item-editor"]`,
+  },
+  {
+    id: "06-overflow",
+    open: [["click", PANEL_OVERFLOW]],
+    expect: `${PANEL} [data-testid="overflow-menu"]`,
+  },
+  {
+    id: "07-organize",
+    open: [
+      ["click", PANEL_OVERFLOW],
+      ["click", panelMenu("organize")],
+      ["wait", 800],
+    ],
+    expect: `${PANEL} [data-testid="organize-dialog"]`,
+  },
+  {
+    id: "08-columns",
+    open: [["click", `${PANEL} [data-testid="columns-expanded"]`], ["wait", 600]],
+    expect: `${PANEL} [data-testid="column-options"]`,
+  },
+];
+
 if (args.includes("--list")) {
-  console.log("desktop:", DESKTOP_SURFACES.map((s) => s.id).join(", "));
-  console.log("mobile: ", MOBILE_SURFACES.map((s) => s.id).join(", "));
-  console.log("panel:  ", PANEL_SURFACES.map((s) => s.id).join(", "));
+  console.log("desktop:     ", DESKTOP_SURFACES.map((s) => s.id).join(", "));
+  console.log("mobile:      ", MOBILE_SURFACES.map((s) => s.id).join(", "));
+  console.log("panel:       ", PANEL_SURFACES.map((s) => s.id).join(", "));
+  console.log("panel-mobile:", PANEL_MOBILE_SURFACES.map((s) => s.id).join(", "));
   process.exit(0);
 }
 
@@ -345,13 +412,21 @@ const only = flag("--only", null);
 const wanted = flag("--surfaces", null)?.split(",").map((s) => s.trim());
 mkdirSync(outDir, { recursive: true });
 
+// Home Assistant's default dashboard is the generated one and holds no HAventory
+// card, so both card passes run on the `dev` dashboard: its `wide` view is
+// panel-mode (the card gets the window's full width), and view 0 is a sections
+// grid (the narrow column a card normally sits in). Views without a `path` are
+// addressed by index. SKILL.md documents the dashboard the dev instance needs.
+const WIDE_VIEW = "/dashboard-dev/wide";
+const COLUMN_VIEW = "/dashboard-dev/0";
+
 const PASSES = [
   {
     key: "desktop",
     prefix: "d",
     root: CARD,
     surfaces: DESKTOP_SURFACES,
-    urlPath: "/lovelace/wide",
+    urlPath: WIDE_VIEW,
     contextOptions: { viewport: { width: 1440, height: 900 } },
   },
   {
@@ -359,7 +434,7 @@ const PASSES = [
     prefix: "m",
     root: CARD,
     surfaces: MOBILE_SURFACES,
-    urlPath: "/lovelace/default_view",
+    urlPath: COLUMN_VIEW,
     contextOptions: { ...devices["iPhone 15"], deviceScaleFactor: 2 },
   },
   {
@@ -371,6 +446,22 @@ const PASSES = [
     surfaces: PANEL_SURFACES,
     urlPath: "/haventory",
     contextOptions: { viewport: { width: 1440, height: 900 } },
+  },
+  {
+    // 375px is below `hv-full-view`'s own 700px breakpoint AND narrow enough for
+    // Home Assistant to collapse its sidebar, which is what sets the panel's
+    // `narrow` property — the two independent switches this pass exists to cover.
+    key: "panel-mobile",
+    prefix: "pm",
+    root: PANEL,
+    surfaces: PANEL_MOBILE_SURFACES,
+    urlPath: "/haventory",
+    contextOptions: {
+      viewport: { width: 375, height: 812 },
+      hasTouch: true,
+      isMobile: true,
+      deviceScaleFactor: 2,
+    },
   },
 ].filter((p) => !only || p.key === only);
 
@@ -454,7 +545,12 @@ for (const pass of PASSES) {
     try {
       await loadRoot();
       for (const s of surface.open) await step(s);
-      await page.waitForSelector(surface.expect, { timeout: 10000 });
+      for (const sel of [surface.expect].flat()) {
+        await page.waitForSelector(sel, { timeout: 10000 });
+      }
+      // A layout defined by what it drops needs the absence asserted too, or the
+      // recipe passes on the branch it was written to rule out.
+      if (surface.hidden) await page.waitForSelector(surface.hidden, { state: "hidden", timeout: 10000 });
       await page.waitForTimeout(500); // let transitions settle before the capture
       await page.screenshot({ path: file });
       console.log(`  PASS  ${name}`);
