@@ -34,8 +34,9 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
+import { cardPath, haConfig } from "./card_views.mjs";
+
 const skillDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(skillDir, "..", "..", "..");
 
 const args = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -43,22 +44,13 @@ const flag = (name, dflt) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : dflt;
 };
 
-try {
-  for (const line of readFileSync(path.join(repoRoot, ".env"), "utf8").split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
-  }
-} catch {
-  /* no .env — rely on real env vars */
-}
-const base = (process.env.HA_BASE_URL ?? "http://localhost:8123").replace(/\/$/, "");
-const token = process.env.HA_TOKEN;
+const { base, token } = haConfig();
 if (!token) {
   console.error("Missing HA_TOKEN (env or repo-root .env)");
   process.exit(2);
 }
 
-const urlPath = flag("--path", "/dashboard-dev/0");
+const urlPath = flag("--path", null) ?? (await cardPath("column"));
 const outPrefix = flag("--out", "policies");
 const sampleSize = Number(flag("--items", "6"));
 const docPath = flag("--doc", null);

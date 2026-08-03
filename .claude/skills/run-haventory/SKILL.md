@@ -134,37 +134,66 @@ node screenshot.mjs --search sponges --out screenshot-search.png   # type into t
 
 Screenshots land in `.claude/skills/run-haventory/*.png` (gitignored). The script
 prints browser console errors — check them when the card renders blank.
-`--path /dashboard-dev/0` is the default — see "Where the card lives" below.
+With no `--path` it opens the discovered `column` view — see "Where the card lives" below.
 `--search` exercises the real pipeline
 (card → WS → repository index → filtered render), so it doubles as a UI smoke:
 searching `sponges` must reduce the list to the one matching item.
 
 #### Where the card lives
 
-Home Assistant's **default** dashboard on the dev instance is the generated one, which
-holds no HAventory card and redirects `/lovelace/<anything>` to `/home/overview`. Every
-card-driving harness therefore defaults to the separate **`dev`** dashboard
-(`url_path: dashboard-dev`, storage mode), which carries two views:
-
-| view | URL | shape | who uses it |
-|---|---|---|---|
-| 0 (no `path`) | `/dashboard-dev/0` | `sections` grid, card in a normal column | `screenshot.mjs`, `visual_pass.mjs` mobile, `import_policies.mjs`, `rl_banner.mjs` |
-| `wide` | `/dashboard-dev/wide` | `type: panel`, card gets the full window width | `visual_pass.mjs` desktop, `drive_import.mjs` |
-
-Each view holds one `{type: custom:haventory-card}` and nothing else that matters. A view
-without a `path` is addressed by **index**, which is why the first one is `/0`.
-
-The two shapes are not interchangeable: the card picks its layout from **its own**
-rendered width, so in a sections column even a 1440px window gets the narrow branch.
-Check what the instance actually has before assuming a path is wrong:
+**Nothing hard-codes a dashboard.** Every card-driving harness asks the instance where the
+card is, through the shared `card_views.mjs`: it walks `lovelace/dashboards/list`, reads
+each dashboard's `lovelace/config`, and keeps the views that really hold a
+`custom:haventory-card` — at any depth, so a card in a sections grid, a stack or behind a
+conditional all count. Ask it yourself:
 
 ```bash
-uv run python .claude/skills/run-haventory/driver.py send '{"type":"lovelace/dashboards/list"}'
-uv run python .claude/skills/run-haventory/driver.py send '{"type":"lovelace/config","url_path":"dashboard-dev"}'
+cd .claude/skills/run-haventory && node card_views.mjs
 ```
 
+```
+2 view(s) hold custom:haventory-card:
+  column  /dashboard-dev/0         sections  dev › view 0
+  wide    /dashboard-dev/wide      panel     dev › wide
+wide    -> /dashboard-dev/wide
+column  -> /dashboard-dev/0
+```
+
+Two view **shapes** matter, because the card picks its layout from **its own** rendered
+width — 600px, `MOBILE_BREAKPOINT` in `src/ui/responsive.ts` — and not the window's. A
+sections column measures ~500px even in a 1440px window, so it gets the narrow branch:
+
+| shape | what qualifies | who asks for it |
+|---|---|---|
+| `wide` | a `type: panel` view — the card gets the whole content area (~1184px here) | `visual_pass.mjs` desktop, `drive_import.mjs` |
+| `column` | any other view — sections, masonry — the column a card normally sits in | `screenshot.mjs`, `visual_pass.mjs` mobile, `import_policies.mjs`, `rl_banner.mjs` |
+
+A view without a `path` is addressed by **index**, which is why the dev instance's sections
+view is `/dashboard-dev/0`. Each harness prints the view it resolved and why, so a run says
+where it went:
+
+```
+view (desktop): /dashboard-dev/wide  ← dev › wide (panel)
+view (mobile): /dashboard-dev/0  ← dev › view 0 (sections)
+```
+
+Three things discovery does when it cannot give a clean answer, all of them out loud:
+
+- **Nothing found** — no card on any dashboard, HA down, or a non-admin token that cannot
+  list dashboards: falls back to `/dashboard-dev/wide` and `/dashboard-dev/0`, the dev
+  instance's own views, so the harness still fails with its own message about the root it
+  waited for.
+- **Only the wrong shape exists** — say, a card that lives solely in a sections column:
+  that view is used and the line carries a `WARNING`, because a recipe failing on the
+  layout it did not ask for says more than a 404 on a path nothing has.
+- **The shape was wrong anyway** — `visual_pass.mjs`'s two card passes assert the branch
+  the card actually took (`d-layout`, `m-layout`) before running a single recipe. Enough
+  testids are shared between the branches that a wrong-shape run would otherwise pass while
+  photographing the other layout.
+
 The sidebar panel at `/haventory` needs none of this — HA routes it from the integration's
-own registration, so it is the one surface that survives any dashboard edit.
+own registration, so it is the one surface that survives any dashboard edit, and both
+`panel` passes go straight there.
 
 #### The sidebar panel
 
@@ -249,7 +278,8 @@ node drive_import.mjs ~/backup.json --policy replace       # preview with replac
 node drive_import.mjs ~/backup.json --apply --out restore  # WRITES; screenshots the result
 ```
 
-Defaults: `--policy merge`, `--out import`, `--path /dashboard-dev/wide`. The document is pasted
+Defaults: `--policy merge`, `--out import`, and — with no `--path` — the discovered `wide`
+view, so the preview table gets its room. The document is pasted
 verbatim and deliberately **not** validated first, so malformed input can be used to drive the
 card's parse-error and server-rejection paths. `--apply` mutates the instance and import is
 all-or-nothing with no undo — export first.
@@ -307,15 +337,26 @@ node visual_pass.mjs --only mobile --surfaces detail-sheet,filter-sheet
 node visual_pass.mjs --only panel         # sidebar panel, desktop width
 node visual_pass.mjs --only panel-mobile  # sidebar panel, 375x812
 node visual_pass.mjs --list               # surface names
+node visual_pass.mjs --path desktop=/other/wide --path mobile=/other/0
 ```
 
 Four passes — 14 card surfaces at desktop width, 8 at phone width, and the sidebar panel
 at both (10 wide, 8 narrow) — each a recipe of clicks against the card's own
 `data-testid`s. It is a DOM check as much as a screenshot run: a surface counts as
 captured only if its root element exists afterwards, so a renamed testid fails loudly
-instead of silently photographing the wrong screen. Exit is non-zero if any surface failed
-to open or the browser logged a console error. Files are prefixed `d-`, `m-`, `p-` and
-`pm-`.
+instead of silently photographing the wrong screen. The two card passes additionally
+assert the layout branch the card took (`d-layout`, `m-layout`), which is what makes 42
+rows out of 40 surfaces. Exit is non-zero if any of them failed, or the browser logged a
+console error. Files are prefixed `d-`, `m-`, `p-` and `pm-`.
+
+The four passes open **three** URLs — two discovered dashboard views and `/haventory` — so
+`--path` names the pass it applies to (`--path <pass>=<url>`) and may be repeated. A bare
+`--path <url>` is ambiguous across a whole run and is rejected; it is accepted only next to
+`--only`, where there is exactly one pass for it to mean:
+
+```bash
+node visual_pass.mjs --only desktop --path /dashboard-dev/wide
+```
 
 The card's narrow layout is a **different component tree** (sheets, not panels), which is
 why the two card lists differ rather than sharing one. The panel's is not: `hv-full-view`
@@ -394,6 +435,14 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
 Expected at feature freeze: backend 350 passed / 22 skipped in ~11 s; frontend 812 passed
 across 42 files in ~30 s.
 
+The harness has its own unit cover for the parts of `card_views.mjs` that decide where a
+run looks — which views hold the card, which URL addresses them, what `--path` asked for.
+No HA and no dependency beyond Node:
+
+```bash
+cd .claude/skills/run-haventory && node --test
+```
+
 The in-process HA integration suite (`scripts/test_integration.sh`, real HA core via
 phacc) does **not** run on this Windows host: the script builds a POSIX venv path and HA
 core imports `fcntl`. A throwaway `python:3.14-slim` container is the proven way to run it
@@ -418,11 +467,18 @@ clean-start mode), then `Online smoke test completed successfully.`
   conversion), so a leading-slash flag value never reaches the script intact:
   `node screenshot.mjs --path /dashboard-dev/wide` navigates to
   `http://localhost:8123C:/Program Files/Git/dashboard-dev/wide`, and a `/c/Users/...`
-  document path arrives as `C:\c\Users\...`. Prefix the command with
-  `MSYS_NO_PATHCONV=1`, or pass file paths natively with forward slashes
-  (`"C:/Users/you/backup.json"`). Only values starting with `/` are affected, and the
-  defaults never cross the command line — which is why `--path` looks fine right up
-  until the first time you set it.
+  document path arrives as `C:\c\Users\...`. The per-pass form is rewritten too —
+  `--path desktop=/dashboard-dev/wide` arrives as
+  `desktop=C:/Program Files/Git/dashboard-dev/wide`, since conversion looks at the value
+  after the `=`. Prefix the command with `MSYS_NO_PATHCONV=1`, or pass file paths natively
+  with forward slashes (`"C:/Users/you/backup.json"`). Discovery leaves `--path` rarely
+  needed, which is exactly why it bites the first time you do set one.
+- **An unknown view path is not a 404** — Home Assistant keeps the URL and renders view 0.
+  A harness pointed at a renamed or deleted view therefore finds a perfectly healthy card
+  in the *other* layout, and every recipe whose testids exist in both branches passes on
+  the wrong screen. That silent wrong-shape run is what discovery avoids by asking rather
+  than assuming, and what `visual_pass.mjs`'s `d-layout` / `m-layout` checks catch when a
+  `--path` override points a pass somewhere stale.
 - **A card change you can't see in the browser**: the bundle is served without
   `Cache-Control`, so the browser revalidates and a plain reload is normally enough.
   Check the deployed bytes with the `sha256sum` pair under Deploy before concluding the
