@@ -574,10 +574,26 @@ async def set_rate_limit(
     flow_id = flow.get("flow_id")
     if not flow_id:
         raise RuntimeError(f"could not start options flow: {flow}")
-    user_input: dict[str, Any] = {"rate_limit_enabled": enabled, **RL_DEFAULTS, **overrides}
+
+    # The form groups the rate-limit knobs into a section, so they must be submitted nested
+    # under that section's name rather than flat, and every top-level key is required — a
+    # partial submit is rejected with "required key not provided". HA seeds each field's
+    # `default` from the entry's current options, so echoing the returned schema back
+    # preserves the settings this layer is not trying to change.
+    user_input: dict[str, Any] = {}
+    for field in flow.get("data_schema", []):
+        if field.get("type") == "expandable":
+            section = {f["name"]: f.get("default") for f in field.get("schema", [])}
+            section.update({"rate_limit_enabled": enabled, **RL_DEFAULTS, **overrides})
+            user_input[field["name"]] = section
+        else:
+            user_input[field["name"]] = field.get("default")
+
     res = await _http(
         session, "POST", f"/api/config/config_entries/options/flow/{flow_id}", user_input
     )
+    if res.get("errors"):
+        raise RuntimeError(f"options flow rejected the submit: {res['errors']}")
     return res
 
 
@@ -620,6 +636,9 @@ async def cmd_ratelimit() -> None:
         print(f"  options-flow result type={res.get('type')}")
         ok = await wait_rl_state(True, 30)
         print(f"  rate_limit enabled now: {ok} {'PASS' if ok else '**FAIL**'}")
+        # Everything below asserts on enforcement, which is vacuously satisfied when the
+        # limiter never came up — so stop here rather than report a green run.
+        assert ok, "rate limiting did not turn on; enforcement checks below would be vacuous"
 
         h_pre = await health(control)
         dropped_pre = h_pre["rate_limit"]["dropped_commands"]
