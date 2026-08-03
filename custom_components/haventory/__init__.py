@@ -244,37 +244,15 @@ async def _async_flush_pending_writes(hass: HomeAssistant, *, op: str) -> None:
         )
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry.
+def _cleanup_ws_test_stub_registry(hass: HomeAssistant) -> None:
+    """Take our handlers back out of the offline stub's command registry.
 
-    Clears idempotent registration flags and ephemeral data such as WS
-    subscriptions. If the test websocket stub is present, remove our
-    registered handlers from its registry.
+    Real Home Assistant has no API for this, which is why teardown drops the
+    runtime instead; the stub does, and leaving handlers in its list would carry
+    them into the next test.
     """
 
     bucket = hass.data.get(DOMAIN) or {}
-
-    await _async_flush_pending_writes(hass, op="unload")
-
-    # Hand back the frontend module URL; setup re-adds it on the next load. The
-    # static route stays, along with the flag that records it: aiohttp cannot
-    # unregister a route, and a reload must not try to add it twice.
-    _remove_extra_js_url(hass)
-
-    # A sidebar entry outliving the backend it opens is a link to a page that
-    # cannot load; setup registers it again.
-    _remove_sidebar_panel(hass)
-
-    # Clear registration flags
-    bucket.pop("services_registered", None)
-    bucket.pop("ws_registered", None)
-
-    # Drop ephemeral data
-    bucket.pop("subscriptions", None)
-    bucket.pop("rate_limiter", None)
-    bucket.pop("card_title", None)
-
-    # Test stub cleanup: remove our handlers from __ws_commands__
     try:  # pragma: no cover - exercised in offline tests only
         registry = hass.data.get("__ws_commands__")
         handlers = bucket.get("ws_handlers") or []
@@ -296,7 +274,46 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             exc_info=True,
         )
 
-    bucket.pop("ws_handlers", None)
+
+async def _async_teardown_entry(hass: HomeAssistant, *, op: str) -> None:
+    """Give up everything the config entry owns, in the order that keeps it safe.
+
+    Flush first, while the repository is still reachable; then tell open
+    subscribers, while the subscription registry still lists them; then hand back
+    the frontend registrations, which read the URL the bucket recorded; and only
+    then empty the bucket.
+    """
+
+    await _async_flush_pending_writes(hass, op=op)
+
+    ws_mod.notify_backend_unavailable(hass)
+
+    # Hand back the frontend module URL; setup re-adds it on the next load. The
+    # static route stays, along with the flag that records it: aiohttp cannot
+    # unregister a route, and a reload must not try to add it twice.
+    _remove_extra_js_url(hass)
+
+    # A sidebar entry outliving the backend it opens is a link to a page that
+    # cannot load; setup registers it again.
+    _remove_sidebar_panel(hass)
+
+    _drop_entry_runtime(hass)
+
+
+async def async_unload_entry(hass: HomeAssistant, _entry: ConfigEntry) -> bool:
+    """Unload a config entry.
+
+    An unloaded entry owns nothing, so it serves nothing: the runtime goes the
+    way it does on removal, and the WebSocket commands — which Home Assistant
+    cannot unregister — refuse from here until setup runs again. That covers a
+    disabled entry, which stays in this state, and a reload, which passes through
+    it for as long as setup takes.
+    """
+
+    # Ahead of the teardown, which empties the bucket the handler list lives in.
+    _cleanup_ws_test_stub_registry(hass)
+
+    await _async_teardown_entry(hass, op="unload")
 
     return True
 
@@ -305,15 +322,15 @@ def _drop_entry_runtime(hass: HomeAssistant) -> None:
     """Leave the domain bucket holding only what outlives the config entry.
 
     Home Assistant has no API for unregistering a WebSocket command, so ours go
-    on listening after the integration is removed. Emptying the bucket is what
-    makes them refuse: `ws._repo` raises `StorageError` without a repository, so
-    every command answers a `storage_error` envelope instead of letting a
-    dashboard left open read — and write — an inventory nothing owns any more.
-    The same lookup backs the `haventory.*` service handlers.
+    on listening whether the entry is unloaded, disabled or removed. Emptying the
+    bucket is what makes them refuse: `ws._repo` raises `NotLoadedError` without a
+    repository, so every command answers the contract's `storage_error` envelope
+    instead of letting a dashboard left open read — and write — state the entry
+    no longer owns. The same lookup backs the `haventory.*` service handlers.
 
     `_STATIC_PATH_KEY` is kept: it records an aiohttp route, which cannot be
-    unregistered and so outlives every entry. Dropping the flag would make a
-    re-add in the same run serve `/haventory_static` a second time.
+    unregistered and so outlives every entry. Dropping the flag would make the
+    next setup in the same run serve `/haventory_static` a second time.
     """
 
     bucket = hass.data.get(DOMAIN)
@@ -333,9 +350,10 @@ async def async_remove_entry(hass: HomeAssistant, _entry: ConfigEntry) -> None:
     behind, either points at an asset that disappears with the integration, and
     a dead `module` URL fails to load on every dashboard render.
 
-    It then flushes whatever was still unsaved and drops the loaded runtime, so
-    the API stops answering for an integration that is gone rather than serving
-    on until the next restart.
+    It then runs the same teardown an unload does, so the API stops answering for
+    an integration that is gone rather than serving on until the next restart.
+    Home Assistant unloads before it removes, so that teardown has usually
+    already run and finds nothing left to give up.
 
     The HA `Store` file is deliberately kept, so re-adding the integration
     restores the inventory. Purging it is a manual step (README → Installation
@@ -343,8 +361,7 @@ async def async_remove_entry(hass: HomeAssistant, _entry: ConfigEntry) -> None:
     """
 
     await _unregister_frontend_module(hass)
-    await _async_flush_pending_writes(hass, op="remove")
-    _drop_entry_runtime(hass)
+    await _async_teardown_entry(hass, op="remove")
 
 
 def _read_manifest_version() -> str:

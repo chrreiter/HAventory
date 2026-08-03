@@ -26,11 +26,9 @@ Notes:
 - `validation_error`: Invalid input or invariant violation
 - `not_found`: Referenced entity does not exist
 - `conflict`: Version mismatch on optimistic concurrency
-- `storage_error`: Persistence or setup issue, including a command that arrives after the config entry was removed — see "After removal"
+- `storage_error`: Persistence or setup issue, including a command that arrives while no config entry owns the data — see "While no entry is loaded"
 - `rate_limited`: Command rejected by the (opt-in) WebSocket rate limiter — see "Rate limiting"
 - `unknown_error`: Fallback for unexpected exceptions
-
-Handlers map domain exceptions to these codes and log with context; `conflict` and `storage_error` log at error level; others at warning.
 
 Guarantees (every `haventory/*` command is wrapped by the same guard):
 
@@ -40,16 +38,31 @@ Guarantees (every `haventory/*` command is wrapped by the same guard):
 
 Transport-level errors produced by Home Assistant itself (before a handler runs) are outside this taxonomy and can also be observed by clients: `invalid_format` (request failed the command's voluptuous schema) and `unknown_command` (integration not loaded or unknown `type`).
 
-### After removal
+### Logging
 
-Home Assistant has no API for unregistering a WebSocket command, so every `haventory/*` command stays dispatchable until the next restart — including after the config entry has been removed. Removal drops the loaded runtime (repository, store, limiter, subscriptions), and the guard turns that into a refusal:
+Every rejection the API boundary answers is also logged once, with the same structured context the envelope carries. The level says who is expected to act on it, not how unusual it is:
 
-- **Every command** answers `storage_error`, `ping`, `version` and `config` included: they read no inventory, but a half-answering API for a removed integration is worse than none.
-- **Nothing is written.** A mutation is refused before it reaches the repository, so the kept store file stops changing at the moment of removal.
-- **Live subscriptions stop delivering** and are not torn down message-by-message; a client sees its next command refused.
-- **Re-adding the integration restores everything** — the API and the inventory, which removal deliberately leaves on disk (README → "Removing HAventory").
+| Level | `exc_info` | Codes |
+|---|---|---|
+| WARNING | no traceback | `validation_error`, `not_found`, `conflict`, `rate_limited`, and the `storage_error` raised because no config entry is loaded |
+| ERROR | traceback | every other `storage_error`, and `unknown_error` |
 
-Clients cannot tell this apart from any other `storage_error` by code alone; treating it as "HAventory is unavailable, stop retrying and tell the user" is the intended handling either way.
+A traceback earns its place only where it says something the message does not: a genuine `storage_error` wraps a lower-level failure whose cause chain is the only record of what broke, and an `unknown_error` has no vetted message at all.
+
+The one `storage_error` that logs at WARNING is the refusal described under "While no entry is loaded". It answers `storage_error` on the wire, because that is what the contract has always said, but it reports a state somebody chose rather than a fault: nothing broke, there is no cause chain to print, and the fix is either the client stopping or the operator loading the entry again. A dashboard left open retries for as long as its tab does, so logging that at ERROR with a traceback would bury the Home Assistant log in stack traces for a working system. It is graded on the exception raised (`NotLoadedError`) rather than on the code it maps to, so a real storage failure keeps its ERROR and its traceback.
+
+The service handlers (`haventory.*`) follow the identical policy; `voluptuous` schema rejections there are graded as `validation_error`.
+
+### While no entry is loaded
+
+Home Assistant has no API for unregistering a WebSocket command, so every `haventory/*` command stays dispatchable until the next restart — whether the config entry is unloaded, disabled, removed, or halfway through a reload. Each of those drops the loaded runtime (repository, store, limiter, subscriptions), and the guard turns that into a refusal:
+
+- **Every command** answers `storage_error`, `ping`, `version` and `config` included: they read no inventory, but a half-answering API for a backend that owns nothing is worse than none.
+- **Nothing is written.** A mutation is refused before it reaches the repository, so the store file stops changing the moment the entry goes.
+- **Live subscriptions end**, and each is told so — see the `unavailable` action under "Subscriptions and events". A client that is not listening for it simply stops receiving events.
+- **The next setup restores everything** — the API and the inventory, which teardown flushes on the way out and setup reads back. Removal keeps the store file too, so re-adding the integration brings the inventory with it (README → "Removing HAventory").
+
+Clients cannot tell a reload apart from a removal by code alone. Re-opening the subscriptions on a bounded backoff covers both: a reload is answering again within seconds, and a removal runs the budget out and leaves the client to tell the user.
 
 ### Rate limiting
 
@@ -114,6 +127,7 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - Items topic payloads include `{item: <Item>}` and actions: `created`, `updated`, `moved`, `deleted`, `checked_out`, `checked_in`, `quantity_changed`. The `reloaded` action (emitted after `import/execute`) carries **no** `item` and signals a wholesale dataset replacement.
   - Locations topic payloads include `{location: <Location>}` and actions: `created`, `renamed`, `moved`, `deleted`. The `reloaded` action (emitted after `import/execute`) carries **no** `location`.
   - Stats topic payload `action: "counts"` with `{counts: <stats shape>}`.
+  - The `unavailable` action is sent on **every** topic, once per open subscription, when the config entry serving it tears down — an unload, a disable, a removal, or the first half of a reload. It carries no payload beyond the common fields: it says this subscription has stopped, not that anything in the inventory changed. It is the only event delivered regardless of the rate limiter's event budget, because its loss cannot be recovered by re-listing — a client that never receives it has no reason to re-list at all. Every command is refused with `storage_error` from this point (see "While no entry is loaded"), so a client that re-subscribes should expect to be refused for as long as setup takes and back off rather than give up on the first attempt.
   - When `location_id` filter is provided on subscription:
     - Items: if `include_subtree` (default true) match any item whose `location_path.id_path` contains the filter id; otherwise only direct `location_id` matches.
     - Locations: if `include_subtree` match the location itself or descendants; otherwise only the exact location.

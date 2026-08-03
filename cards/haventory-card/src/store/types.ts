@@ -335,6 +335,14 @@ export interface BaseEventPayload {
   ts: string;
 }
 
+/**
+ * Sent on every open subscription, whatever its topic, when the config entry
+ * serving it tears down — an unload, a disable, a removal, or the first half of
+ * a reload. Carries no payload: it says the subscription has stopped, not that
+ * anything in the inventory changed.
+ */
+export type TeardownAction = 'unavailable';
+
 export interface ItemsEventPayload extends BaseEventPayload {
   topic: 'items';
   // `item` is present for per-item actions; absent for the wholesale `reloaded`
@@ -348,18 +356,19 @@ export interface ItemsEventPayload extends BaseEventPayload {
   | 'checked_out'
   | 'checked_in'
   | 'quantity_changed'
-  | 'reloaded';
+  | 'reloaded'
+  | TeardownAction;
 }
 
 export interface LocationsEventPayload extends BaseEventPayload {
   topic: 'locations';
   location?: Location;
-  action: 'created' | 'renamed' | 'moved' | 'deleted' | 'reloaded';
+  action: 'created' | 'renamed' | 'moved' | 'deleted' | 'reloaded' | TeardownAction;
 }
 
 export interface StatsEventPayload extends BaseEventPayload {
   topic: 'stats';
-  action: 'counts';
+  action: 'counts' | TeardownAction;
   counts: StatsCounts;
 }
 
@@ -433,6 +442,8 @@ export interface DegradedState {
   reloading: boolean;
   /** Whether the topic subscriptions are up, being re-opened, or given up on. */
   liveUpdates: LiveUpdateState;
+  /** Why live updates are not `live`; null while they are. */
+  liveUpdatesReason: LiveUpdatePause | null;
   /** Epoch ms of the next automatic re-subscribe, when one is scheduled. */
   nextLiveRetryAt: number | null;
 }
@@ -445,6 +456,17 @@ export interface DegradedState {
  * brings live updates back.
  */
 export type LiveUpdateState = 'live' | 'retrying' | 'paused';
+
+/**
+ * What stopped live updates — the two cases read the same to the subscription
+ * machinery and completely differently to the person reading the banner.
+ *
+ * `rate_limited`: the limiter refused the subscribe; the backend is there and
+ * the data on screen is current as of the last event.
+ * `unavailable`: no config entry owns the data — HAventory is reloading, or has
+ * been disabled or removed — so every command is being refused too.
+ */
+export type LiveUpdatePause = 'rate_limited' | 'unavailable';
 
 export interface StoreState {
   items: Item[];

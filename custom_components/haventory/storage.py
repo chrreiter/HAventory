@@ -26,7 +26,7 @@ from homeassistant.helpers.storage import Store
 
 from . import migrations
 from .const import DOMAIN
-from .exceptions import SchemaDowngradeError, StorageError
+from .exceptions import NotLoadedError, SchemaDowngradeError, StorageError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -251,9 +251,9 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
         store = bucket.get("store")
         repo = bucket.get("repository")
         if store is None:
-            raise StorageError("storage manager not initialized; run integration setup")
+            raise NotLoadedError("storage manager not initialized; run integration setup")
         if repo is None:
-            raise StorageError("repository not initialized; run integration setup")
+            raise NotLoadedError("repository not initialized; run integration setup")
 
         start_time = time.monotonic()
         generation = getattr(repo, "generation", None)

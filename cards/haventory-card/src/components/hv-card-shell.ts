@@ -767,13 +767,17 @@ export class HVCardShell extends LitElement {
       // Ranked above the generic rate-limit warning below: that one says events
       // *may* have been dropped, this one says there are no events at all.
       const retrying = degraded.liveUpdates === 'retrying';
+      const cause =
+        degraded.liveUpdatesReason === 'unavailable'
+          ? 'HAventory is not available'
+          : 'rate limited';
       banners.push(html`<hv-banner
         kind="warning"
         glyph="clock"
         heading="Live updates paused"
         message=${retrying
-          ? ' · rate limited. Retrying automatically; this list may be out of date until then.'
-          : ' · rate limited. This list may be out of date until you refresh.'}
+          ? ` · ${cause}. Retrying automatically; this list may be out of date until then.`
+          : ` · ${cause}. This list may be out of date until you refresh.`}
         data-testid="degraded-live-updates"
       >
         ${retrying

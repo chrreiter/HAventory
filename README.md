@@ -107,6 +107,12 @@ until it restarts, so a dashboard still open in another tab can go on talking to
 after you remove it. It is refused rather than served: every command comes back as an
 error, and nothing more is written to your inventory. Reload that tab and the card is gone.
 
+The same holds while the integration is **disabled**, and briefly while it **reloads** — an
+entry that owns nothing serves nothing. A card left open is told its live updates stopped
+and re-opens them by itself once setup finishes, so a reload costs it a few seconds of a
+"Live updates paused" banner and no refresh. Disable it for longer and the card stops
+waiting and offers Refresh instead.
+
 **Your inventory is deliberately kept.** Items and locations live in the Home Assistant
 store file `<config>/.storage/haventory_store`, which removal does not touch: adding the
 integration again restores everything, which is what you want when you remove it to
