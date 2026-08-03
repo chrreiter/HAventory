@@ -163,6 +163,13 @@ export class HVLocationTree extends LitElement {
         color: inherit;
         text-align: left;
       }
+      /* Everywhere else the chip annotates a path it sits beside, so it is set
+         smaller than the text it qualifies. Here it *is* the row's label, one
+         level of the tree above the locations under it, and reading smaller than
+         them inverted the hierarchy it heads. */
+      .area-name .hv-area-chip {
+        font-size: inherit;
+      }
       .area-none {
         flex: 1;
         min-width: 0;
