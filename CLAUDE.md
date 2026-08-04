@@ -108,16 +108,21 @@ sidebar entry only draws its mark once the bundle has loaded;
 identifier to the same string, across the language boundary neither side can check alone.
 
 ### Docs — `docs/` (link here, don't duplicate)
+`docs/` carries what a user or a contributor of the shipped integration needs, and nothing
+else:
 - `backend_api_contract.md` — WebSocket envelope, error taxonomy, command catalog, events.
 - `data_shapes.md` — canonical Item/Location/filter/sort/event shapes.
 - `frontend_architecture.md` — card component architecture.
 - `rate_limiting.md` — what the rate-limit options mean and when enabling them is worth it.
-- `release_testing_plan.md` — the manual pre-1.0 validation program (environments,
-  scenarios, exit criteria).
-- `open-items.md` — the pre-v1.0 tracker (see "Where work is tracked" below).
+- `assets/` — the rendered social preview and the HTML it comes from.
 
-The remaining `docs/*_plan.md` files are per-task design documents, live only until the task
-they describe ships; they are retired as a batch before 1.0.
+### Development-only docs — `dev/`
+`dev/` carries the process, not the product: `release_testing_plan.md` (the manual
+validation program — environments, scenarios, exit criteria), `release_review.md`, the
+per-task design documents (`*_plan.md`, `sidebar-panel.md`), the retired `open-items.md`
+ledger, and `ha_config_for_dev.yaml`. Design documents live only until the task they
+describe ships. Nothing in `dev/` decides what to build — the issue tracker does (see
+"Where work is tracked"), and a `dev/` document that disagrees with an issue is stale.
 
 ## Running tests / lint / build (Linux)
 
@@ -216,9 +221,7 @@ Offline tests stub HA via `tests/conftest.py`.
   - A comment that is wrong is worse than none. When a comment names a symbol, a type, a
     caller or a stored shape, that name must still be correct.
   - `TODO`/`FIXME` markers do not belong in committed code — the repo has zero and keeps it
-    that way. Record follow-ups as GitHub issues (🔧 Task template). Pre-v1.0 release work
-    is the one exception: it stays in `docs/open-items.md` until 1.0, and no new features
-    land before then.
+    that way. Record follow-ups as GitHub issues (🔧 Task template).
   - Component-level JSDoc says what the component is responsible for and what it talks to.
     Non-obvious CSS gets a why-comment; obvious CSS gets none.
   - Applies to TypeScript and Python alike. Enforced by review, not by a lint rule — the
@@ -226,8 +229,9 @@ Offline tests stub HA via `tests/conftest.py`.
     ignored.
 - Naming: domain/package `haventory`, services `haventory.*`, built assets
   `custom_components/haventory/www/` served at `/haventory_static/`, calendar entity
-  `calendar.haventory` — a name reserved for the post-1.0 calendar work, not an entity that
-  exists today.
+  `calendar.haventory` — a name reserved for the calendar work
+  ([#187](https://github.com/chrreiter/HAventory/issues/187)), staged after the first public
+  release, not an entity that exists today.
 - Report out-of-scope findings under a "Follow-ups" note rather than fixing them.
 
 See the README "Developer Checklist" for the full backend/frontend/CI checklist.
@@ -243,15 +247,23 @@ See the README "Developer Checklist" for the full backend/frontend/CI checklist.
   areas. An item's area is inherited from its location tree's root, exposed as
   `effective_area_id`, and shown with one chip vocabulary wherever the card marks an area.
 - **Reminders/calendar, when built, ride HA-native primitives** — a `CalendarEntity` plus
-  automations, not a bespoke scheduler. Post-1.0, tracked as an issue; do not start it.
+  automations, not a bespoke scheduler. Staged after the first public release
+  ([#187](https://github.com/chrreiter/HAventory/issues/187)); do not start it.
 
 ## Where work is tracked
 
-**GitHub issues** are the tracker: bugs, feature requests, and every deferred follow-up,
-filed with the templates in `.github/ISSUE_TEMPLATE/`. `docs/open-items.md` is the one
-exception — the pre-v1.0 release tracker, carrying the remaining release stages and the
-staging table that says which release each lands in. It is authoritative for staging, and it
-is deleted when 1.0 is cut.
+**GitHub issues** are the tracker — bugs, feature requests, and every deferred follow-up,
+filed with the templates in `.github/ISSUE_TEMPLATE/`. Milestones say which release an
+issue is staged for, and there is no second tracker: a finding is an issue or it is not
+tracked.
 
-**Feature-frozen until 1.0**: a new finding either blocks the release — and goes to
-`docs/open-items.md` — or it is an issue. Nothing else lands in between.
+The release that matters is the **first public one** — repository public, installable as a
+HACS custom repository, submitted to the HACS default store. `1.0.0` is deferred
+indefinitely and gates nothing; do not treat a version number as a boundary.
+[#236](https://github.com/chrreiter/HAventory/issues/236) is that release's tracker and is
+authoritative for what is mandatory before it, what is merely recommended, and what is
+explicitly staged after it.
+
+There is **no feature freeze**: features land in `0.x` releases as they are accepted.
+`dev/open-items.md` is the ledger this tracker replaced — retired 2026-08-04, kept for the
+history its item numbers are cited by, authoritative for nothing.

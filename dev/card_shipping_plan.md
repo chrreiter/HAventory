@@ -154,7 +154,7 @@ PR-1: `custom_components/haventory/__init__.py`, `custom_components/haventory/ma
 `.claude/skills/run-haventory/pin_resource.py`, `.claude/skills/test-haventory/SKILL.md`,
 `tests/test_frontend_registration.py`, `tests/test_entry_removal_offline.py`,
 `tests/conftest.py` (stubs for `homeassistant.components.http` / `frontend`),
-`README.md`, `CLAUDE.md`, `docs/frontend_architecture.md`, `docs/release_testing_plan.md` (E5).
+`README.md`, `CLAUDE.md`, `docs/frontend_architecture.md`, `dev/release_testing_plan.md` (E5).
 
 PR-2: `hacs.json`, `release-please-config.json`, `.github/workflows/release-please.yml`,
 `scripts/check_release_zip.py`, `tests/test_release_zip.py`, `.gitignore`,
@@ -164,7 +164,7 @@ PR-2: `hacs.json`, `release-please-config.json`, `.github/workflows/release-plea
 
 ## Appendix A — implementation prompt for PR-1
 
-> Read `docs/card_shipping_plan.md` first; it is the contract for this change. Implement
+> Read `dev/card_shipping_plan.md` first; it is the contract for this change. Implement
 > **PR-1 only** ("the card lives in the integration") on a fresh branch off `main`.
 >
 > Scope:
@@ -201,7 +201,7 @@ PR-2: `hacs.json`, `release-please-config.json`, `.github/workflows/release-plea
 >    duplicate resources — no longer exist under `cache_headers=False` + in-place
 >    rewrite; prefer retiring it and simplifying SKILL.md accordingly). Update the stale
 >    path references in `.claude/skills/test-haventory/SKILL.md`, `README.md`,
->    `CLAUDE.md`, `docs/frontend_architecture.md`, and `docs/release_testing_plan.md` E5.
+>    `CLAUDE.md`, `docs/frontend_architecture.md`, and `dev/release_testing_plan.md` E5.
 > 5. Tests (TDD; happy path + edge cases per repo convention):
 >    - Rewrite `tests/test_frontend_registration.py` for the new URL/serving model, and
 >      add: static path registered once across setup→unload→setup; both loaders receive
@@ -224,12 +224,12 @@ PR-2: `hacs.json`, `release-please-config.json`, `.github/workflows/release-plea
 >    exactly one haventory entry pointing at the new URL. Screenshot the card.
 >
 > Non-goals: no `hacs.json` changes, no release workflow changes (PR-2), no cleanup of
-> the redundant `resources.async_load()` (record it in `docs/open-items.md`).
+> the redundant `resources.async_load()` (record it in `dev/open-items.md`).
 > Conventional Commits; keep `docs/backend_api_contract.md` untouched (no WS change).
 
 ## Appendix B — implementation prompt for PR-2
 
-> Read `docs/card_shipping_plan.md` first. PR-1 (card served from the integration
+> Read `dev/card_shipping_plan.md` first. PR-1 (card served from the integration
 > directory) must already be merged; verify `custom_components/haventory/www/` is the
 > build target before starting. Implement **PR-2 only** (release packaging) on a fresh
 > branch off `main`.

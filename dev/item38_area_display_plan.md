@@ -184,7 +184,7 @@ label surfaces + docs.
 | 1 | Shared helpers + shared chip style | `ui/area.ts` (new), `ui/location-path.ts`, `ui/tokens.ts`, `store/location-tree.ts` (`groupRootsByArea`) | pure-function vitest: resolution walk (direct, inherited, orphan, cycle guard, unknown-id), grouping (order, no-area tail, empty-areas no-op), title/parts composition |
 | 2 | Grouped tree + all six call sites | `hv-location-tree.ts`, `hv-full-view.ts`, `hv-filter-panel.ts`, `hv-item-editor.ts`, `hv-bulk-bar.ts`, `hv-organize-dialog.ts` | component vitest: header render/order, collapse, inert vs. selectable headers, `select-area` → `filters.areaId`, filter-text visibility, `revealPathTo` through a group, counts on headers, chip retirement in organize |
 | 3 | Item surfaces (closes item 38) | `hv-list-row.ts`, `hv-data-table.ts`, `hv-detail-sheet.ts`, `hv-list.ts`, `hv-card-shell.ts`, `hv-full-view.ts` | row chip + mobile elision with area segment, table cell + title, sheet crumb, null-area fallback on all three |
-| 4 | Location labels, docs, ledger | `hv-filter-chips.ts`, `hv-filter-panel.ts`, `hv-item-editor.ts`, `hv-full-view.ts` (breadcrumb), `docs/frontend_architecture.md`, `docs/open-items.md` | chip/label with inherited area, breadcrumb chip; live verification pass (see 5) |
+| 4 | Location labels, docs, ledger | `hv-filter-chips.ts`, `hv-filter-panel.ts`, `hv-item-editor.ts`, `hv-full-view.ts` (breadcrumb), `docs/frontend_architecture.md`, `dev/open-items.md` | chip/label with inherited area, breadcrumb chip; live verification pass (see 5) |
 
 ## 5. Verification
 
@@ -227,7 +227,7 @@ item (types.ts:40, unused so far); Repository._propagate_area_to_root keeps a lo
 tree's area on its ROOT node and resolves it downward by walking ancestors to the first
 non-null area_id; the card caches areasCache ({id,name}[]), locationsFlatCache
 (flat Location[] with parent_id/area_id), and locationTreeCache. Read
-docs/item38_area_display_plan.md (sections 2–3) for the full design; you are building
+dev/item38_area_display_plan.md (sections 2–3) for the full design; you are building
 its stage 1.
 
 Deliverables, all in cards/haventory-card/src, all pure and DOM-free except the one lit
@@ -274,7 +274,7 @@ Commit as: feat(card): shared area resolution and path helpers (item 38, stage 1
 
 ```text
 You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly
-(comments policy, TDD, gates). Frontend-only. Read docs/item38_area_display_plan.md —
+(comments policy, TDD, gates). Frontend-only. Read dev/item38_area_display_plan.md —
 you are building stage 2 (section 3.3); stage 1's helpers (ui/area.ts,
 groupRootsByArea in store/location-tree.ts, shared .area-chip style in ui/tokens.ts)
 are already merged — use them, do not reimplement.
@@ -334,7 +334,7 @@ than fixing it.
 
 ```text
 You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly
-(comments policy, TDD, gates). Frontend-only. Read docs/item38_area_display_plan.md —
+(comments policy, TDD, gates). Frontend-only. Read dev/item38_area_display_plan.md —
 you are building stage 3 (section 3.4), the part that closes open-items item 38:
 the three item-facing surfaces never show an item's area even though
 Item.effective_area_id is on every item. Stages 1–2 are merged: use
@@ -373,7 +373,7 @@ feat(card): show item area on list, table and detail surfaces (item 38, stage 3)
 
 ```text
 You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly
-(comments policy, TDD, gates). Read docs/item38_area_display_plan.md — you are building
+(comments policy, TDD, gates). Read dev/item38_area_display_plan.md — you are building
 stage 4 (sections 3.5, 5, 6). Stages 1–3 are merged.
 
 Changes:
@@ -391,7 +391,7 @@ Changes:
 2. Docs: update docs/frontend_architecture.md — the area display/threading pattern
    (which components receive areas, where resolution happens) and the grouped tree.
    Do NOT touch backend_api_contract.md / data_shapes.md (no contract change).
-3. Ledger: in docs/open-items.md, move item 38 to the closed section per the file's
+3. Ledger: in dev/open-items.md, move item 38 to the closed section per the file's
    existing conventions, noting the surfaces now reading effective_area_id and that
    R1–R3 (grouped trees, area-in-path, distinct area rendering) landed with it. Add a
    Follow-ups note for anything you surfaced but did not fix — two known candidates

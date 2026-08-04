@@ -1,7 +1,9 @@
 # Schema collapse to v1 — the one deliberately breaking step (item 81)
 
-Status: **planned**. Sequenced per the staging table in `open-items.md`: another 0.x
-minor, **after** the schema exercise (item 80) and its watch window. Tracker row: item
+Status: **planned**, tracked as
+[#229](https://github.com/chrreiter/HAventory/issues/229) and staged per
+[#236](https://github.com/chrreiter/HAventory/issues/236): another 0.x minor, **after** the
+schema exercise (#226) and its watch window, and before any public install. Ledger row: item
 81. Paste-ready prompt: [`v1_prompts.md`](v1_prompts.md#item-81).
 
 > **This is the only intentionally breaking release in the staging.** It is safe solely

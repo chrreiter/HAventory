@@ -1,8 +1,9 @@
 # Schema exercise — the first real migration, proven on the live store (item 80)
 
-Status: **planned**. Sequenced per the staging table in `open-items.md`: this ships as
-the **next 0.x minor after the last feature release** — after v0.2.0 (and any further
-feature minors) is validated and the dogfood plan runs clean. Tracker row: item 80.
+Status: **planned**, tracked as
+[#226](https://github.com/chrreiter/HAventory/issues/226) and staged per
+[#236](https://github.com/chrreiter/HAventory/issues/236): a 0.x minor that ships after the
+feature work it has to migrate, once the validation run is clean. Ledger row: item 80.
 Paste-ready prompt: [`v1_prompts.md`](v1_prompts.md#item-80).
 
 ## Purpose

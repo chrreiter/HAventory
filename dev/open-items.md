@@ -1,4 +1,12 @@
-# Open Items — pre-v1.0 tracker
+# Open Items — retired ledger
+
+> **Retired 2026-08-04. Authoritative for nothing.** Work is tracked in GitHub issues, and
+> [#236](https://github.com/chrreiter/HAventory/issues/236) carries the release staging this
+> file's "Release staging" section used to hold — including the correction that the boundary
+> is the first public (HACS) release, not `1.0.0`, and that there is no feature freeze. The
+> file is kept because open issues cite its item numbers; read it as history. Its last state
+> under `docs/` is the
+> [345532a permalink](https://github.com/chrreiter/HAventory/blob/345532a73be397dc8a4ceb8be551a32bd3f2846a/docs/open-items.md).
 
 **Post-v1.0 tracking moved to GitHub issues on 2026-08-03.** Every unresolved post-v1.0
 row of this ledger became an issue — filed with the 🔧 *Task / tracked work item*
@@ -16,12 +24,12 @@ the v0.2.0 follow-up batch was — or it is post-v1.0 and goes to the issue trac
 - **Effort** — S (≲ half a day) · M (~1–3 days) · L (multi-day).
 - **Item numbers are stable and append-only** — retired numbers are never reused. The
   history of everything closed before the migration lives in git
-  (`git log -- docs/open-items.md`), not in this file.
+  (`git log --follow -- dev/open-items.md`), not in this file.
 
 ## Release staging
 
-This section is authoritative for staging (it superseded the roadmap artifact on
-2026-08-02; when they disagree, this section wins). Every remaining task has a
+Superseded by [#236](https://github.com/chrreiter/HAventory/issues/236) on 2026-08-03; that
+issue wins on every point this section makes. Every remaining task has a
 paste-ready prompt in [`v1_prompts.md`](v1_prompts.md); the complex ones have a
 companion plan doc, linked from their rows below.
 
@@ -85,7 +93,7 @@ release-stage table below.
 
 | # | Item | Source PR(s) | Impact | Effort |
 |---|------|--------------|--------|--------|
-| 70 | **Strip the scoping-only toolchain before 1.0.** A new contributor currently has to work out for themselves which half of `docs/` and `scripts/` is still live: the repo carries planning and one-off exploration artifacts that were load-bearing while the work was in flight and are dead weight once it ships. **Delivered plan docs** — `docs/sidebar-panel.md` (its own status line reads *delivered*) and `docs/card_shipping_plan.md` (status *PR-1 and PR-2 implemented*; linked from `CLAUDE.md` and cited by [issue #207](https://github.com/chrreiter/HAventory/issues/207)). **Exception:** `docs/release_testing_plan.md` is the validation run itself — item 79 executes it, item 60 (F3) and the HACS listing's verification half (release-test A1, [issue #196](https://github.com/chrreiter/HAventory/issues/196)) are gated on it, and closed item 29's last part was deferred into it as D6 — so it goes *after* that run, not before. **Exploration scripts** to triage the same way: `stress_test.py`, `create_test_items.py`, `ws_probe.py`, `ws_subscribe.py`, `ws_init_haventory.py`, and the agent harnesses under `.claude/skills/` (`run-haventory`'s `screenshot.mjs` / `visual_pass.mjs` / `log_sweep.py` / `driver.py` and `test-haventory`'s `stress.py`). Nothing here is a free delete: every script except `common.sh` (sourced by the others) has at least one inbound reference from CI, `CONTRIBUTING.md`, `README.md` or `CLAUDE.md`, and `tests/test_ws_logging_offline.py:12` cites the release plan in a docstring — so each removal takes its references with it, and whatever survives earns one line in `CONTRIBUTING.md` saying what it is for. Item 69 (the screenshot-harness repair this was sequenced behind) is delivered, so this waits only on item 79's run. Design: [`item70_toolchain_retirement_plan.md`](item70_toolchain_retirement_plan.md). | owner 2026-08-01 (contributor onboarding) | Medium (contributor onboarding) | M |
+| 70 | **Strip the scoping-only toolchain before 1.0.** A new contributor currently has to work out for themselves which half of `docs/` and `scripts/` is still live: the repo carries planning and one-off exploration artifacts that were load-bearing while the work was in flight and are dead weight once it ships. **Delivered plan docs** — `dev/sidebar-panel.md` (its own status line reads *delivered*) and `dev/card_shipping_plan.md` (status *PR-1 and PR-2 implemented*; linked from `CLAUDE.md` and cited by [issue #207](https://github.com/chrreiter/HAventory/issues/207)). **Exception:** `dev/release_testing_plan.md` is the validation run itself — item 79 executes it, item 60 (F3) and the HACS listing's verification half (release-test A1, [issue #196](https://github.com/chrreiter/HAventory/issues/196)) are gated on it, and closed item 29's last part was deferred into it as D6 — so it goes *after* that run, not before. **Exploration scripts** to triage the same way: `stress_test.py`, `create_test_items.py`, `ws_probe.py`, `ws_subscribe.py`, `ws_init_haventory.py`, and the agent harnesses under `.claude/skills/` (`run-haventory`'s `screenshot.mjs` / `visual_pass.mjs` / `log_sweep.py` / `driver.py` and `test-haventory`'s `stress.py`). Nothing here is a free delete: every script except `common.sh` (sourced by the others) has at least one inbound reference from CI, `CONTRIBUTING.md`, `README.md` or `CLAUDE.md`, and `tests/test_ws_logging_offline.py:12` cites the release plan in a docstring — so each removal takes its references with it, and whatever survives earns one line in `CONTRIBUTING.md` saying what it is for. Item 69 (the screenshot-harness repair this was sequenced behind) is delivered, so this waits only on item 79's run. Design: [`item70_toolchain_retirement_plan.md`](item70_toolchain_retirement_plan.md). | owner 2026-08-01 (contributor onboarding) | Medium (contributor onboarding) | M |
 
 ### Release-stage tasks (executed in staging order, not by impact)
 

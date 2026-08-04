@@ -1,7 +1,9 @@
 # Item 70 — retire the scoping-only toolchain before 1.0
 
-Status: **planned** (pre-v1.0; sequenced **after** item 69 and after the v0.2.0
-validation run — see the staging table in `open-items.md`). Tracker row: item 70.
+Status: **planned**, tracked as
+[#216](https://github.com/chrreiter/HAventory/issues/216) and staged per
+[#236](https://github.com/chrreiter/HAventory/issues/236) as mandatory before the first
+public release. Ledger row: item 70.
 Paste-ready prompt: [`v1_prompts.md`](v1_prompts.md#item-70).
 
 ## Why, and why last
@@ -21,14 +23,14 @@ whatever survives earns one line in `CONTRIBUTING.md` saying what it is for.
 
 **Delivered plan docs (delete; references updated):**
 
-- `docs/sidebar-panel.md` — delivered; linked only from the ledger.
-- `docs/card_shipping_plan.md` — delivered; linked from `CLAUDE.md:57` and ledger rows.
-- `docs/item38_area_display_plan.md` — delivered with #162.
+- `dev/sidebar-panel.md` — delivered; linked only from the ledger.
+- `dev/card_shipping_plan.md` — delivered; linked from `CLAUDE.md:57` and ledger rows.
+- `dev/item38_area_display_plan.md` — delivered with #162.
 - The v0.2.0-cycle plan docs once their items close: `item23_rename_version_plan.md`,
   `item46_area_preview_plan.md`, `v1_prompts.md`, `schema_exercise_plan.md`,
   `schema_collapse_plan.md` — and this file itself. Each retires when the work it
   stages is merged, not before.
-- **Exception:** `docs/release_testing_plan.md` retires only after the v0.2.0 run is
+- **Exception:** `dev/release_testing_plan.md` retires only after the v0.2.0 run is
   complete and its evidence (results log) is archived in the run's PR/issue — items 4
   (A1) and 60 (F3) are gated on it.
 
