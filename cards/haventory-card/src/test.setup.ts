@@ -1,7 +1,8 @@
 import { afterAll } from 'vitest';
 
-// Minimal polyfills for jsdom environment used in Vitest
-// Virtualizer depends on ResizeObserver
+// Minimal polyfills for jsdom environment used in Vitest.
+// `ui/responsive.ts` observes the card element's own width, so jsdom needs a
+// ResizeObserver it does not ship.
 class RO {
   observe() {}
   unobserve() {}
