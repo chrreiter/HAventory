@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { counted, plural } from '../ui/plural';
 import { ResponsiveController } from '../ui/responsive';
@@ -59,6 +60,7 @@ export class HVCardShell extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -149,49 +151,13 @@ export class HVCardShell extends LitElement {
         flex-wrap: wrap;
         row-gap: 6px;
       }
-      .badge {
-        border: 1px solid var(--hv-divider);
-        background: none;
-        border-radius: var(--hv-radius-chip);
-        padding: 3px 9px;
-        font: 500 11px var(--hv-font);
-        color: var(--hv-text-secondary);
-        white-space: nowrap;
-      }
       /* These are filter toggles, not decoration, and on their own row there is
-         height to spare — so they take a full tap-height target. */
+         height to spare — so they take a full tap-height target, which is also
+         the one thing that makes them bigger than a chip anywhere else. */
       :host([mobile]) .badge {
-        display: inline-flex;
-        align-items: center;
         min-height: var(--hv-tap-min, auto);
         padding: 0 14px;
         font-size: 12.5px;
-      }
-      .badge.low {
-        color: var(--hv-warn);
-        background: var(--hv-warn-bg);
-        border-color: transparent;
-      }
-      .badge.out {
-        color: var(--hv-primary-darker);
-        background: var(--hv-primary-tint);
-        border-color: transparent;
-      }
-      .badge.overdue {
-        color: var(--hv-error-deep);
-        background: var(--hv-error-bg);
-        border-color: transparent;
-      }
-      /* Amber like low stock rather than red like overdue: red says an item is
-         out and late back, amber says something on the shelf wants doing. */
-      .badge.inspect {
-        color: var(--hv-warn-deep);
-        background: var(--hv-warn-bg);
-        border-color: transparent;
-      }
-      .badge.on {
-        outline: 2px solid var(--hv-primary);
-        outline-offset: 1px;
       }
       .add {
         display: inline-flex;
@@ -701,10 +667,10 @@ export class HVCardShell extends LitElement {
       <div class="badges">
         ${this.mobile
           ? null
-          : html`<span class="badge" data-testid="badge-total">${counted(counts.items_total, 'item')}</span>`}
+          : html`<span class="hv-chip badge quiet" data-testid="badge-total">${counted(counts.items_total, 'item')}</span>`}
         ${counts.low_stock_count > 0
           ? html`<button
-              class="badge low ${f?.lowStockOnly ? 'on' : ''}"
+              class="hv-chip badge toggle warning ${f?.lowStockOnly ? 'on' : ''}"
               data-testid="badge-low"
               aria-pressed=${String(!!f?.lowStockOnly)}
               title="Show only low-stock items"
@@ -715,7 +681,7 @@ export class HVCardShell extends LitElement {
           : null}
         ${(counts.overdue_count ?? 0) > 0
           ? html`<button
-              class="badge overdue ${f?.overdueOnly ? 'on' : ''}"
+              class="hv-chip badge toggle error ${f?.overdueOnly ? 'on' : ''}"
               data-testid="badge-overdue"
               aria-pressed=${String(!!f?.overdueOnly)}
               title="Show only overdue items"
@@ -726,7 +692,7 @@ export class HVCardShell extends LitElement {
           : null}
         ${(counts.inspection_overdue_count ?? 0) > 0
           ? html`<button
-              class="badge inspect ${f?.inspectionDueOnly ? 'on' : ''}"
+              class="hv-chip badge toggle warning ${f?.inspectionDueOnly ? 'on' : ''}"
               data-testid="badge-inspection"
               aria-pressed=${String(!!f?.inspectionDueOnly)}
               title="Show only items due for inspection"
@@ -737,7 +703,7 @@ export class HVCardShell extends LitElement {
           : null}
         ${counts.checked_out_count > 0
           ? html`<button
-              class="badge out ${f?.checkedOutOnly ? 'on' : ''}"
+              class="hv-chip badge toggle state ${f?.checkedOutOnly ? 'on' : ''}"
               data-testid="badge-out"
               aria-pressed=${String(!!f?.checkedOutOnly)}
               title="Show only checked-out items"

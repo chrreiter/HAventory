@@ -826,18 +826,19 @@ describe('hv-filter-panel: pressed state', () => {
     }
   });
 
-  // The row's on state has to be the chip's on state, not a second set of
-  // colours that happens to look similar.
-  it('takes its on state from the chip rule, warning variant included', () => {
+  // The row's on state has to be the shared chip's on state, not a second set
+  // of colours that happens to look similar.
+  it('takes its on state from the shared chip rule, warning variant included', () => {
     const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
     const css = (Array.isArray(sheet) ? sheet : [sheet])
       .map((s) => String(s.cssText))
       .join('\n')
       .replace(/\s+/g, ' ');
 
-    expect(css).toMatch(/\.chip\.on \{[^}]*background: var\(--hv-primary-tint\)/);
-    expect(css).toMatch(/\.chip\.on\.warning \{[^}]*background: var\(--hv-warn-bg\)/);
+    expect(css).toMatch(/\.hv-chip\.toggle\.on \{[^}]*background: var\(--hv-primary-tint\)/);
+    expect(css).toMatch(/\.hv-chip\.toggle\.warning\.on \{[^}]*background: var\(--hv-warn-bg\)/);
     // No rule of its own to drift from those, and no checkbox box left to draw.
+    expect(css).not.toMatch(/[^-]\.chip\.on \{/);
     expect(css).not.toMatch(/\.check\.on \{/);
     expect(css).not.toMatch(/\.box[ .{]/);
   });

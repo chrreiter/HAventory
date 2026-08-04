@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import { inferType } from '../ui/item-form';
@@ -25,6 +26,7 @@ export class HVDetailSheet extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -99,38 +101,6 @@ export class HVDetailSheet extends LitElement {
         flex-wrap: wrap;
         gap: 6px;
         margin-top: 8px;
-      }
-      .chip {
-        border: none;
-        border-radius: var(--hv-radius-chip);
-        background: var(--hv-chip-bg);
-        color: var(--hv-chip-text);
-        padding: 3px 9px;
-        font: 400 11.5px var(--hv-font);
-      }
-      .chip.state {
-        background: var(--hv-primary-tint);
-        color: var(--hv-primary-darker);
-      }
-      .chip.overdue {
-        background: var(--hv-error);
-        color: #fff;
-      }
-      .chip.low {
-        background: var(--hv-warn-bg);
-        color: var(--hv-warn);
-        font-weight: 700;
-        letter-spacing: 0.4px;
-      }
-      /* Amber, not the red the overdue chip takes: red on this card means an
-         item is out and late back, while an inspection that has come due is a
-         chore on something still on the shelf — the same kind of signal as low
-         stock. Keeping the two hues apart is what lets both chips sit in this
-         row without reading as one alarm. */
-      .chip.inspect {
-        background: var(--hv-warn-bg);
-        color: var(--hv-warn-deep);
-        font-weight: 500;
       }
       .hero {
         margin: 0 14px 14px;
@@ -364,26 +334,33 @@ export class HVDetailSheet extends LitElement {
       <div class="title">
         <h2 data-testid="sheet-name">${item.name}</h2>
         <div class="chips">
-          ${low ? html`<span class="chip low" data-testid="sheet-low">LOW</span>` : null}
+          ${low
+            ? html`<span class="hv-chip warning" data-testid="sheet-low" aria-label="Low stock"
+                >Low</span
+              >`
+            : null}
           ${itemStatus(item) !== 'ok'
-            ? html`<span class="chip inspect" data-testid="sheet-status"
+            ? html`<span class="hv-chip warning" data-testid="sheet-status"
                 >${statusLabel(itemStatus(item))}</span
               >`
             : null}
           ${item.checked_out
-            ? html`<span class="chip state ${overdue ? 'overdue' : ''}" data-testid="sheet-out">
+            ? html`<span
+                class="hv-chip ${overdue ? 'error' : 'state'}"
+                data-testid="sheet-out"
+              >
                 ${overdue ? 'Overdue' : 'Checked out'}${item.due_date
                   ? ` · due ${formatDate(item.due_date)}`
                   : ''}
               </span>`
             : null}
           ${inspectionDue
-            ? html`<span class="chip inspect" data-testid="sheet-inspection-due">
+            ? html`<span class="hv-chip warning" data-testid="sheet-inspection-due">
                 Inspection due · ${formatDate(item.inspection_date)}
               </span>`
             : null}
-          ${item.category ? html`<span class="chip" data-testid="sheet-category">${item.category}</span>` : null}
-          ${item.tags.map((t) => html`<span class="chip" data-testid="sheet-tag">${t}</span>`)}
+          ${item.category ? html`<span class="hv-chip" data-testid="sheet-category">${item.category}</span>` : null}
+          ${item.tags.map((t) => html`<span class="hv-chip" data-testid="sheet-tag">${t}</span>`)}
         </div>
       </div>
 

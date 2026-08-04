@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { locationPathParts, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import {
@@ -71,6 +72,7 @@ export class HVItemEditor extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -100,20 +102,6 @@ export class HVItemEditor extends LitElement {
         font-size: 11.5px;
         color: var(--hv-text-tertiary);
         white-space: nowrap;
-      }
-      .out-chip {
-        flex: none;
-        font: 500 11px var(--hv-font);
-        color: var(--hv-primary-darker);
-        background: var(--hv-surface);
-        border: 1px solid var(--hv-primary-tint-border);
-        border-radius: var(--hv-radius-chip);
-        padding: 2px 8px;
-      }
-      .out-chip.overdue {
-        color: #fff;
-        background: var(--hv-error);
-        border-color: var(--hv-error);
       }
       .grid {
         display: grid;
@@ -580,6 +568,9 @@ export class HVItemEditor extends LitElement {
         font: 400 12px var(--hv-font);
         color: var(--hv-text-secondary);
       }
+      /* Delete is hv-text-button danger from the shared sheet — the same
+         borderless red every other destructive action in the card uses (the
+         detail sheet's own Delete item, the organize dialog's Delete). */
       .actions {
         display: flex;
         align-items: center;
@@ -640,11 +631,6 @@ export class HVItemEditor extends LitElement {
       .save[disabled] {
         opacity: 0.5;
       }
-      /* Delete is hv-text-button danger from the shared sheet — the same
-         borderless red every other destructive action in the card uses (the
-         detail sheet's own Delete item, the organize dialog's Delete). It used
-         to be an outlined 12.5px pill, which made it the one button in the row
-         with a border, its own radius and its own font size. */
       .banner {
         margin: 0 18px;
         padding: 9px 12px;
@@ -1381,7 +1367,7 @@ export class HVItemEditor extends LitElement {
                 ${creating ? 'New item' : `${this.item?.name} — editing`}
               </span>
               ${this.item?.checked_out
-                ? html`<span class="out-chip ${overdue ? 'overdue' : ''}" data-testid="editor-out-chip">
+                ? html`<span class="hv-chip ${overdue ? 'error' : 'state'}" data-testid="editor-out-chip">
                     ${overdue ? 'Overdue' : 'Checked out'}${this.item?.due_date
                       ? ` · due ${formatDate(this.item.due_date)}`
                       : ''}

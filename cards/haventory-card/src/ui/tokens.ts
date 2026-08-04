@@ -52,6 +52,10 @@ export const tokens = css`
     --hv-warn-deep: light-dark(#7a4d00, #ffb74d);
     --hv-warn-border: light-dark(#e0c98f, rgba(255, 167, 38, 0.4));
     --hv-amber: #ffa726;
+    /* Ink for text laid directly on --hv-amber. That fill is one fixed hue in
+       both themes, so what reads on it is fixed too — a light-dark() pair here
+       would put white on amber in dark mode, at 1.9:1. */
+    --hv-on-amber: #3b2600;
 
     /* Error */
     --hv-error: var(--error-color, light-dark(#c62828, #ef5350));
@@ -78,6 +82,11 @@ export const tokens = css`
     --hv-radius-dialog: 14px;
     --hv-radius-input: 8px;
     --hv-radius-chip: 999px;
+    /* One size for every chip that reports a fact, so a row carrying several of
+       them reads as a set. A surface whose chips must match something beside
+       them — a field row, an app bar — overrides these on its own rule. */
+    --hv-chip-font-size: 11.5px;
+    --hv-chip-padding: 2px 8px;
     --hv-radius-sheet: 20px;
     /* How wide a bottom sheet is allowed to get before it stops growing with
        the viewport. Roughly HA's own more-info dialog. */
@@ -110,8 +119,9 @@ export const tokens = css`
 
 /**
  * Shared primitives every `hv-*` surface reuses: pill buttons, icon buttons,
- * chips, inputs, section labels and the focus ring. Kept separate from `tokens`
- * so a component can take the variables without the opinionated element styles.
+ * inputs, section labels and the focus ring. Kept separate from `tokens` so a
+ * component can take the variables without the opinionated element styles. The
+ * chip vocabulary lives in `ui/chip.ts`, which not every surface needs.
  *
  * Controls here size themselves from `--hv-tap-min` and `--hv-input-font`, both
  * of which are deliberately *not* declared in `tokens` above: `tokens`
@@ -235,25 +245,6 @@ export const base = css`
   .hv-input:focus {
     border-color: var(--hv-primary);
     outline: none;
-  }
-
-  /* The HA area beside a location path. An area is not a path segment and must
-     never read as one, so every surface that prints a path marks it the same
-     way — hence the shared rule rather than a per-component chip. */
-  .hv-area-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    flex: none;
-    padding: 2px 8px;
-    border-radius: var(--hv-radius-chip);
-    background: var(--hv-chip-bg);
-    color: var(--hv-chip-text);
-    font-size: 11px;
-    /* Sits inside single-line rows that clip with an ellipsis; a wrap would
-       grow the line box those rows size themselves from. */
-    white-space: nowrap;
-    vertical-align: middle;
   }
 
   .hv-sr-only {

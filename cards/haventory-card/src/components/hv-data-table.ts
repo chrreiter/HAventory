@@ -2,6 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import { COLUMN_DEFS, normalizeColumns, tableTemplateFor } from '../store/columns';
@@ -25,6 +26,7 @@ export class HVDataTable extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: flex;
@@ -134,35 +136,6 @@ export class HVDataTable extends LitElement {
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .low-badge {
-        flex: none;
-        font: 700 10.5px var(--hv-font);
-        letter-spacing: 0.4px;
-        color: var(--hv-warn);
-        background: var(--hv-warn-bg);
-        border-radius: 4px;
-        padding: 2px 6px;
-      }
-      .out-chip {
-        flex: none;
-        font: 500 11px var(--hv-font);
-        color: var(--hv-primary-darker);
-        border: 1px solid var(--hv-primary-tint-border);
-        border-radius: var(--hv-radius-chip);
-        padding: 2px 8px;
-      }
-      /* Same amber as the list row's status chip: a flagged state is a chore,
-         not the out-and-late red. */
-      .status-chip {
-        flex: none;
-        font: 500 11px var(--hv-font);
-        color: var(--hv-warn-deep);
-        background: var(--hv-warn-bg);
-        border: 1px solid var(--hv-warn-border);
-        border-radius: var(--hv-radius-chip);
-        padding: 2px 8px;
-        white-space: nowrap;
-      }
       .cell {
         min-width: 0;
         overflow: hidden;
@@ -170,6 +143,7 @@ export class HVDataTable extends LitElement {
         white-space: nowrap;
         color: var(--hv-text-secondary);
       }
+      .cell .hv-chip,
       .cell .hv-area-chip {
         margin-right: 6px;
       }
@@ -198,14 +172,6 @@ export class HVDataTable extends LitElement {
         display: flex;
         gap: 5px;
         overflow: hidden;
-      }
-      .tag {
-        flex: none;
-        font-size: 11px;
-        color: var(--hv-chip-text);
-        background: var(--hv-chip-bg);
-        border-radius: var(--hv-radius-chip);
-        padding: 2px 8px;
       }
       .actions {
         display: flex;
@@ -378,11 +344,14 @@ export class HVDataTable extends LitElement {
       case 'status': {
         // The column names every row's status, "OK" included — that is what
         // makes it a column rather than a second copy of the exception chip.
+        // "OK" is a chip too, quiet rather than amber: a column that draws half
+        // its values as chips and prints the rest as bare text reads as two
+        // columns interleaved.
         const status = itemStatus(item);
         return html`<span class="cell" role="cell" data-testid="cell-status"
-          >${status === 'ok'
-            ? statusLabel(status)
-            : html`<span class="status-chip">${statusLabel(status)}</span>`}</span
+          ><span class="hv-chip ${status === 'ok' ? 'quiet' : 'warning'}"
+            >${statusLabel(status)}</span
+          ></span
         >`;
       }
       case 'category':
@@ -395,7 +364,7 @@ export class HVDataTable extends LitElement {
       }
       case 'tags':
         return html`<span class="tags" role="cell" data-testid="cell-tags">
-          ${item.tags.length ? item.tags.map((t) => html`<span class="tag">${t}</span>`) : html`<span class="cell">—</span>`}
+          ${item.tags.length ? item.tags.map((t) => html`<span class="hv-chip">${t}</span>`) : html`<span class="cell">—</span>`}
         </span>`;
       case 'due_date':
         return html`<span
@@ -496,13 +465,15 @@ export class HVDataTable extends LitElement {
                     : null}
                   <span class="name-cell" role="cell">
                     <span class="name" data-testid="table-name" title=${item.name}>${item.name}</span>
-                    ${isLowStock(item) ? html`<span class="low-badge">LOW</span>` : null}
+                    ${isLowStock(item)
+                      ? html`<span class="hv-chip warning" aria-label="Low stock">Low</span>`
+                      : null}
                     ${!statusColumn && itemStatus(item) !== 'ok'
-                      ? html`<span class="status-chip" data-testid="table-status"
+                      ? html`<span class="hv-chip warning" data-testid="table-status"
                           >${statusLabel(itemStatus(item))}</span
                         >`
                       : null}
-                    ${item.checked_out ? html`<span class="out-chip">Checked out</span>` : null}
+                    ${item.checked_out ? html`<span class="hv-chip state">Checked out</span>` : null}
                   </span>
                   ${columns.map((key) => this._cell(item, key))}
                   <span class="actions" role="cell">

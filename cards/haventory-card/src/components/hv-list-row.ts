@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue } from '../ui/relative-time';
@@ -48,6 +49,7 @@ export class HVListRow extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -134,43 +136,6 @@ export class HVListRow extends LitElement {
         border-radius: 50%;
         background: var(--hv-amber);
       }
-      .low-badge {
-        flex: none;
-        font: 700 10.5px var(--hv-font);
-        letter-spacing: 0.4px;
-        text-transform: uppercase;
-        color: var(--hv-warn);
-        background: var(--hv-warn-bg);
-        border-radius: 4px;
-        padding: 2px 6px;
-      }
-      .out-chip {
-        flex: none;
-        font: 500 11px var(--hv-font);
-        color: var(--hv-primary-darker);
-        border: 1px solid var(--hv-primary-tint-border);
-        border-radius: var(--hv-radius-chip);
-        padding: 2px 8px;
-      }
-      .out-chip.overdue {
-        color: #fff;
-        background: var(--hv-error);
-        border-color: var(--hv-error);
-      }
-      /* Amber, not the out-chip's red: red on this card is reserved for an item
-         that is out and late back, while an inspection that has come due is a
-         chore on something still on the shelf. */
-      .inspect-chip,
-      .status-chip {
-        flex: none;
-        font: 500 11px var(--hv-font);
-        color: var(--hv-warn-deep);
-        background: var(--hv-warn-bg);
-        border: 1px solid var(--hv-warn-border);
-        border-radius: var(--hv-radius-chip);
-        padding: 2px 8px;
-        white-space: nowrap;
-      }
       .hover-actions {
         flex: none;
         display: flex;
@@ -247,14 +212,6 @@ export class HVListRow extends LitElement {
         min-height: var(--hv-tap-min, 40px);
         padding: 0 18px;
         font: 500 13.5px var(--hv-font);
-      }
-      .pending {
-        flex: none;
-        font: 500 11px var(--hv-font);
-        color: var(--hv-warn);
-        background: var(--hv-warn-bg);
-        border-radius: var(--hv-radius-chip);
-        padding: 3px 8px;
       }
       .box {
         flex: none;
@@ -478,20 +435,25 @@ export class HVListRow extends LitElement {
                     : html`${renderAreaChip(parts.areaName)}${secondary || 'No location'}`}
           </span>
         </span>
-        ${this.pending ? html`<span class="pending" data-testid="row-pending">pending</span>` : null}
+        ${this.pending
+          ? html`<span class="hv-chip warning" data-testid="row-pending">Pending</span>`
+          : null}
         ${!this.mobile && low
-          ? html`<span class="low-badge" data-testid="row-low" aria-label="Low stock">LOW</span>`
+          ? html`<span class="hv-chip warning" data-testid="row-low" aria-label="Low stock">Low</span>`
           : null}
         ${!this.mobile && flagged
-          ? html`<span class="status-chip" data-testid="row-status">${statusLabel(status)}</span>`
+          ? html`<span class="hv-chip warning" data-testid="row-status">${statusLabel(status)}</span>`
           : null}
         ${!this.mobile && item.checked_out
-          ? html`<span class="out-chip ${overdue ? 'overdue' : ''}" data-testid="row-checked-out">
+          ? html`<span
+              class="hv-chip ${overdue ? 'error' : 'state'}"
+              data-testid="row-checked-out"
+            >
               ${overdue ? `Overdue · ${formatDate(item.due_date)}` : 'Checked out'}
             </span>`
           : null}
         ${!this.mobile && inspectionDue
-          ? html`<span class="inspect-chip" data-testid="row-inspection-due">
+          ? html`<span class="hv-chip warning" data-testid="row-inspection-due">
               Inspection due
             </span>`
           : null}

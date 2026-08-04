@@ -136,7 +136,7 @@ describe('hv-data-table: columns', () => {
     ]);
     expect(q(el, '[data-testid="cell-quantity"]')?.classList.contains('low')).toBe(true);
     expect(q(el, '[data-testid="cell-due_date"]')?.classList.contains('overdue')).toBe(true);
-    expect(el.shadowRoot?.textContent).toContain('LOW');
+    expect(el.shadowRoot?.textContent).toContain('Low');
     expect(el.shadowRoot?.textContent).toContain('Checked out');
   });
 });
@@ -416,10 +416,24 @@ describe('hv-data-table: status column', () => {
     ]);
   });
 
-  it('chips the flagged values and leaves ok as plain text', async () => {
+  // Every value in the column is a chip, or half of it would read as a second
+  // column interleaved with the first. Only the flagged ones are amber.
+  it('chips every value and reserves the warning fill for the flagged ones', async () => {
     const el = await mount(mixed, { columns: ['status'] });
     const cells = all(el, '[data-testid="cell-status"]');
-    expect(cells.map((c) => !!c.querySelector('.status-chip'))).toEqual([true, true, false, false]);
+    expect(cells.map((c) => !!c.querySelector('.hv-chip'))).toEqual([true, true, true, true]);
+    expect(cells.map((c) => !!c.querySelector('.hv-chip.warning'))).toEqual([
+      true,
+      true,
+      false,
+      false,
+    ]);
+    expect(cells.map((c) => !!c.querySelector('.hv-chip.quiet'))).toEqual([
+      false,
+      false,
+      true,
+      true,
+    ]);
   });
 
   it('stands the name-cell chip down, so no row says it twice', async () => {
