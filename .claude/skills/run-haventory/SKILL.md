@@ -99,6 +99,11 @@ locations=0`. (`grep -il haventory /config/.storage/*` still matches
 `core.entity_registry` if the HA instance itself is named "HAventory Dev" — that is the
 weather entity's `original_name`, not a leftover.)
 
+This purge leaves the dashboard alone, but a wipe that goes further — `docker volume rm
+ha-config`, a rebuilt container — takes it, and the card does not come back with the
+integration: the sidebar panel is registered in code, a dashboard is user data. See
+"Putting the card back on a dashboard" below for the WS recipe that restores it.
+
 ## Run (agent path)
 
 ### WebSocket driver — status / arbitrary commands / smoke
@@ -194,6 +199,52 @@ Three things discovery does when it cannot give a clean answer, all of them out 
 The sidebar panel at `/haventory` needs none of this — HA routes it from the integration's
 own registration, so it is the one surface that survives any dashboard edit, and both
 `panel` passes go straight there.
+
+#### Putting the card back on a dashboard
+
+`node card_views.mjs` printing **`0 view(s) hold custom:haventory-card`** means every
+card-driving harness is about to run against the fallback paths and fail on a root that
+was never there. Nothing puts the card back on its own: the panel is registered by the
+integration, but a dashboard is user data, so a `docker volume rm ha-config` — or any
+other wipe — takes it and only a human clicking through the sidebar restores it. This
+recipe is that human, over WS:
+
+```bash
+set -a; . ./.env; set +a
+uv run python .claude/skills/run-haventory/driver.py send \
+ '{"type":"lovelace/dashboards/create","url_path":"dashboard-dev","title":"Dev","mode":"storage","show_in_sidebar":true,"require_admin":false,"icon":"mdi:flask"}' \
+ '{"type":"lovelace/config/save","url_path":"dashboard-dev","config":{"views":[
+    {"title":"view 0","type":"sections","sections":[{"type":"grid","cards":[{"type":"custom:haventory-card"}]}]},
+    {"title":"wide","path":"wide","type":"panel","cards":[{"type":"custom:haventory-card"}]}]}}'
+```
+
+Both views, because the two shapes above are what the harnesses ask for by name — and the
+sections one first, since it carries no `path` and is therefore addressed by its index.
+Put the panel view first and the sections view becomes `/dashboard-dev/1`, which is a
+working dashboard that every remembered `/dashboard-dev/0` now misses.
+
+The `url_path` **must contain a hyphen**; HA answers a single-segment one with
+`invalid_format`. `dashboard-dev` is the value `card_views.mjs` falls back to when it finds
+nothing, so using that name keeps a half-restored instance pointing somewhere real. Confirm
+with `node card_views.mjs`, which should print both views again.
+
+Two answers worth recognising:
+
+- **`The URL "dashboard-dev" is already in use`** — the dashboard survived and only its
+  config is gone or wrong. Skip the create and send the `config/save` alone; it overwrites
+  whatever is there.
+- **`config_not_found` from `lovelace/config`** — a dashboard created but never saved into.
+  It exists, the sidebar shows it, and it renders HA's auto-generated strategy view with no
+  HAventory card anywhere. `card_views.mjs` counts nothing, correctly. Send the
+  `config/save`.
+
+To start over, delete by **`dashboard_id`** — the `id` field `create` and
+`lovelace/dashboards/list` return, which is the `url_path` with underscores:
+
+```bash
+uv run python .claude/skills/run-haventory/driver.py send \
+ '{"type":"lovelace/dashboards/delete","dashboard_id":"dashboard_dev"}'
+```
 
 #### The sidebar panel
 
@@ -543,3 +594,6 @@ clean-start mode), then `Online smoke test completed successfully.`
   `docker logs home-assistant --since 2m` for startup errors.
 - **Smoke step `[FAIL] item/list case-insensitive search` returning many items**: the
   filter key regression above (`q` silently ignored → match-all).
+- **Every card harness times out waiting for `haventory-card`, and the panel is fine**:
+  the dashboard is gone, not the card. `node card_views.mjs` says `0 view(s)`; put it back
+  with the recipe in "Putting the card back on a dashboard".
