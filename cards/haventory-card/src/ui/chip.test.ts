@@ -90,6 +90,31 @@ describe('ui/chip: the shared fragment', () => {
     }
   });
 
+  // `vertical-align` centres an inline box on the parent's x-height, which is
+  // the middle of lowercase text and not the middle of the line — so a chip
+  // beside a path sat ~1.4px low. Only a flex row centres the two exactly.
+  it('centres a chip against the text it shares a line with', () => {
+    const css = String(chip.cssText).replace(/\s+/g, ' ');
+    expect(css).toMatch(/\.hv-chip-line \{[^}]*display: flex/);
+    expect(css).toMatch(/\.hv-chip-line \{[^}]*align-items: center/);
+  });
+
+  it('puts every chip that heads a line of text on that row', () => {
+    for (const tag of ['hv-data-table', 'hv-detail-sheet', 'hv-full-view', 'hv-list-row']) {
+      expect(ownCss(tag), tag).toMatch(/\.hv-chip-line-text/);
+    }
+  });
+
+  // text-overflow does nothing on a flex container, so a path left on the row
+  // itself would hard-cut mid-character with no ellipsis to say so.
+  it('moves the elision onto the text when the row becomes a flex box', () => {
+    for (const tag of ['hv-data-table', 'hv-detail-sheet', 'hv-list-row']) {
+      expect(ownCss(tag), tag).toMatch(
+        /\.hv-chip-line-text \{[^}]*text-overflow: ellipsis[^}]*\}/,
+      );
+    }
+  });
+
   // An area is marked one way wherever the card marks one, and that mark is not
   // one of the generic fills — it keeps its own glyph and its own class.
   it('shares the metrics with the area chip without folding it in', () => {

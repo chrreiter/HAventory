@@ -554,8 +554,10 @@ export class HVFullView extends LitElement {
         font-weight: 500;
         color: var(--hv-text);
       }
-      .crumb .hv-area-chip {
-        margin-right: 6px;
+      /* The segments and the count wrap as one run of text; only the chip is
+         held out of it, so the row can centre the two against each other. */
+      .crumb > .hv-chip-line-text {
+        flex: 1;
       }
       .filters-button {
         display: inline-flex;
@@ -1440,17 +1442,22 @@ export class HVFullView extends LitElement {
 
     return html`
       <div class="context">
-        <span class="crumb" data-testid="full-breadcrumb">
-          ${filters.orphansOnly
-            ? html`<span class="current">No location</span>`
-            : segments.length
-              ? html`${renderAreaChip(areaName)}${segments.map((seg, i) =>
-                  i === segments.length - 1
-                    ? html`<span class="current">${seg}</span>`
-                    : html`<span>${seg} › </span>`,
-                )}`
-              : html`<span class="current">All items</span>`}
-          ${st?.total !== null && st?.total !== undefined ? html` · ${counted(st.total, 'item')}` : null}
+        <span class="crumb hv-chip-line" data-testid="full-breadcrumb">
+          ${filters.orphansOnly || !segments.length ? null : renderAreaChip(areaName)}
+          <span class="hv-chip-line-text">
+            ${filters.orphansOnly
+              ? html`<span class="current">No location</span>`
+              : segments.length
+                ? segments.map((seg, i) =>
+                    i === segments.length - 1
+                      ? html`<span class="current">${seg}</span>`
+                      : html`<span>${seg} › </span>`,
+                  )
+                : html`<span class="current">All items</span>`}${st?.total !== null &&
+            st?.total !== undefined
+              ? html` · ${counted(st.total, 'item')}`
+              : null}
+          </span>
         </span>
         <span class="spacer"></span>
         ${filterCount > 0

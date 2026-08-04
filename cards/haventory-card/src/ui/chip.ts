@@ -129,4 +129,29 @@ export const chip = css`
     opacity: 0.5;
     cursor: default;
   }
+
+  /*
+   * A line a chip shares with the text it qualifies — an area beside its path,
+   * a breadcrumb.
+   *
+   * The row centres the two against each other, which no inline alignment can:
+   * vertical-align: middle puts an inline box on the parent's baseline plus
+   * half its x-height, which is the middle of lowercase text and not the middle
+   * of the line. Beside a path with capitals and digits in it that leaves the
+   * chip sitting low — measured at 1.4px against 13.5px text, and it does not
+   * shrink as the chip does, because the offset is a property of the text.
+   *
+   * The elision has to move onto the text with it: text-overflow has no
+   * effect on a flex container, so a path left on the row itself would hard-cut
+   * mid-character with no ellipsis to say anything had been dropped.
+   */
+  .hv-chip-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .hv-chip-line > .hv-chip-line-text {
+    min-width: 0;
+  }
 `;

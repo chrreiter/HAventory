@@ -51,6 +51,10 @@ export class HVDetailSheet extends LitElement {
         font-size: 13.5px;
         color: var(--hv-text-secondary);
         overflow: hidden;
+      }
+      /* The path elides; the chip ahead of it does not. */
+      .bar .crumb > .hv-chip-line-text {
+        overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
@@ -317,8 +321,10 @@ export class HVDetailSheet extends LitElement {
         <button class="tap" data-testid="sheet-close" aria-label="Close" @click=${this._close}>
           ${icon('close', 22)}
         </button>
-        <span class="crumb" data-testid="sheet-path" title=${pathTitle(parts)}
-          >${renderAreaChip(parts.areaName)}${parts.path || 'No location'}</span
+        <span class="crumb hv-chip-line" data-testid="sheet-path" title=${pathTitle(parts)}
+          >${renderAreaChip(parts.areaName)}<span class="hv-chip-line-text"
+            >${parts.path || 'No location'}</span
+          ></span
         >
         <button
           class="text-action"

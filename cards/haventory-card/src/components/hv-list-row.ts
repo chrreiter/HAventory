@@ -109,8 +109,16 @@ export class HVListRow extends LitElement {
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .secondary .hv-area-chip {
-        margin-right: 6px;
+      /* Beats .secondary's own display:block, which is declared later than the
+         shared fragment and would otherwise keep the row inline. */
+      .secondary.hv-chip-line {
+        display: flex;
+      }
+      /* The path elides; the chip ahead of it does not. */
+      .secondary.hv-chip-line > .hv-chip-line-text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .secondary.out {
         color: var(--hv-primary-dark);
@@ -411,7 +419,8 @@ export class HVListRow extends LitElement {
         <span class="names">
           <span class="name" data-testid="row-name" title=${item.name}>${item.name}</span>
           <span
-            class="secondary ${this.mobile ? mobileState : ''} ${overdue && this.mobile
+            class="secondary ${this.mobile ? mobileState : 'hv-chip-line'} ${overdue &&
+            this.mobile
               ? 'overdue'
               : ''}"
             data-testid="row-secondary"
@@ -432,7 +441,9 @@ export class HVListRow extends LitElement {
                   ? html`<span data-testid="row-inspection-due">Inspection due</span> · ${formatDate(item.inspection_date)}`
                   : this.mobile
                     ? mobileSecondary || 'No location'
-                    : html`${renderAreaChip(parts.areaName)}${secondary || 'No location'}`}
+                    : html`${renderAreaChip(parts.areaName)}<span class="hv-chip-line-text"
+                        >${secondary || 'No location'}</span
+                      >`}
           </span>
         </span>
         ${this.pending

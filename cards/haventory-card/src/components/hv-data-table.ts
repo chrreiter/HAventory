@@ -143,9 +143,11 @@ export class HVDataTable extends LitElement {
         white-space: nowrap;
         color: var(--hv-text-secondary);
       }
-      .cell .hv-chip,
-      .cell .hv-area-chip {
-        margin-right: 6px;
+      /* The path elides; the chip ahead of it does not. */
+      .cell.path > .hv-chip-line-text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .cell.qty {
         color: var(--hv-text);
@@ -358,8 +360,14 @@ export class HVDataTable extends LitElement {
         return html`<span class="cell" role="cell" data-testid="cell-category" title=${item.category ?? ''}>${item.category || '—'}</span>`;
       case 'location': {
         const parts = itemPathParts(item, this.areas);
-        return html`<span class="cell" role="cell" data-testid="cell-location" title=${pathTitle(parts)}
-          >${renderAreaChip(parts.areaName)}${parts.path || '—'}</span
+        return html`<span
+          class="cell path hv-chip-line"
+          role="cell"
+          data-testid="cell-location"
+          title=${pathTitle(parts)}
+          >${renderAreaChip(parts.areaName)}<span class="hv-chip-line-text"
+            >${parts.path || '—'}</span
+          ></span
         >`;
       }
       case 'tags':
