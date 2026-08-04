@@ -133,6 +133,11 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
     - Items: if `include_subtree` (default true) match any item whose `location_path.id_path` contains the filter id; otherwise only direct `location_id` matches.
     - Locations: if `include_subtree` match the location itself or descendants; otherwise only the exact location.
 
+- **An event implies a durable write.** Every mutation command persists the change *before* it broadcasts and before it replies, so any event on any topic says the write behind it reached storage. When the write fails the caller receives `storage_error` and **no event is emitted at all** — subscribers are told nothing rather than told about a change that is not on disk. A client may therefore treat a received event as committed and never has to reconcile it against a `storage_error` another client saw for the same change.
+  - The guarantee is about the wire, not about the running repository: a failed write leaves the mutation applied in memory (`import/execute` is the exception — it rolls the dataset back, because a wholesale swap has more to undo than one entity does). Nothing announces that divergence, and it ends at the next restart, which reads back whatever last reached disk.
+  - `items/bulk` shares one write across the whole batch, so a failed write costs the batch its `results` map: the command answers `storage_error` and none of its operations broadcast.
+  - The rate limiter can still drop an event that was persisted — see "Rate limiting". The implication runs one way only: an event means a durable write, but a durable write does not guarantee an event.
+
 ### Items
 
 - `haventory/item/create`
@@ -194,6 +199,7 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - Payload: `{operations: Array<{op_id: string|number, kind: string, payload: object}>}`
   - Supported `kind` values: `item_update`, `item_delete`, `item_move`, `item_adjust_quantity`, `item_set_quantity`, `item_check_out`, `item_check_in`, `item_add_tags`, `item_remove_tags`, `item_update_custom_fields`, `item_set_low_stock_threshold`.
   - Result: `{results: { [op_id: string]: {success: true, result: <Item>} | {success: false, error: {code, message, context}} }}`; if any success, a single `stats/counts` event is emitted.
+  - A failed op fails only itself; the batch continues and reports it under its `op_id`. A failed *write*, by contrast, fails the whole command with `storage_error` and returns no `results` map at all — the batch is one write.
 
 - `haventory/item/list`
   - Payload: `{filter?: <ItemFilter>, sort?: <Sort>, limit?: number, cursor?: string}`
