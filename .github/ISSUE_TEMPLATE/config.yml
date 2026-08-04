@@ -2,7 +2,7 @@ blank_issues_enabled: false
 contact_links:
   - name: 💬 Questions & discussions
     url: https://github.com/chrreiter/HAventory/discussions
-    about: Ask questions, share setups, or float ideas here (enable Discussions in repo settings).
+    about: Ask questions, share setups, or float ideas here.
   - name: 📖 Documentation
     url: https://github.com/chrreiter/HAventory#readme
     about: Installation, developer, and WebSocket API docs.

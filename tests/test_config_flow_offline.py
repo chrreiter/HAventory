@@ -226,20 +226,18 @@ def test_translation_strings_carry_no_urls() -> None:
 
 
 def test_translation_flow_sections_match_strings() -> None:
-    """`translations/en.json` must repeat the flow text `strings.json` declares.
+    """`translations/en.json` must repeat every section `strings.json` declares.
 
-    Home Assistant renders the config and options flows from the translation
-    file; `strings.json` is only the source hassfest validates. An edit that
-    lands in one file but not the other ships a screen with the stale text and
-    nothing fails. `en.json` legitimately carries more than `strings.json`
-    (the `services` section), so only the sections both must share are compared.
+    Home Assistant renders the config flow, the options flow and the service
+    catalog from the translation file; `strings.json` is only the source
+    hassfest validates. An edit that lands in one file but not the other ships a
+    screen with the stale text and nothing fails.
     """
 
     root = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
     strings = json.loads((root / "strings.json").read_text(encoding="utf-8"))
     en = json.loads((root / "translations" / "en.json").read_text(encoding="utf-8"))
-    for section in ("config", "options"):
-        assert en.get(section) == strings.get(section), f"{section!r} sections differ"
+    assert en == strings
 
 
 @pytest.mark.asyncio

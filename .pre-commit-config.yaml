@@ -16,8 +16,10 @@ repos:
         args:
           # "batery" is deliberate: it is the typo'd tag the organize dialog's
           # merge suggestion is tested against. "afterall" is vitest's teardown
-          # hook `afterAll`, which the tracker names.
-          - --ignore-words-list=hass,batery,afterall
+          # hook `afterAll`, which the tracker names. "socio-economic" is the
+          # Contributor Covenant's spelling, and CODE_OF_CONDUCT.md quotes that
+          # document verbatim so it stays checkable against the original.
+          - --ignore-words-list=hass,batery,afterall,socio-economic
         exclude: |
           (?x)^(
             custom_components/haventory/www/|
