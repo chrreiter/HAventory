@@ -160,10 +160,10 @@ Slop scores (1 = hand-crafted minimalism, 10 = incoherent generated bloat):
 ### The charges that stick (and their fixes)
 
 1. **Docs residue (the actual slop, severity: release-blocking).**
-   `docs/v1_prompts.md` is paste-ready AI prompts; `docs/open-items.md` is a 75 KB
+   `dev/v1_prompts.md` is paste-ready AI prompts; `dev/open-items.md` is a 75 KB
    session ledger the README links twice; `item38_area_display_plan.md` has model
    names in a section title; README carries "WP4.1"/"Phase 2.5 superseded" residue and
-   an "Implementation Status" tracker. `docs/item70_toolchain_retirement_plan.md` is
+   an "Implementation Status" tracker. `dev/item70_toolchain_retirement_plan.md` is
    the purge plan — currently sequenced *after* going public. Resequence: purge first.
 2. **Comment archaeology in the frontend (severity: high, cheap to fix).** Hundreds of
    lines of past-tense pixel forensics ("The host measured scrollWidth 874…",
@@ -287,7 +287,7 @@ analytics, IoT scales — the 2026 pantry wave owns those.
 
 ### Wave 1 — before any public link (days)
 
-1. Execute the `docs/item70` purge now, not post-validation: delete `v1_prompts.md`,
+1. Execute the `dev/item70` purge now, not post-validation: delete `v1_prompts.md`,
    the delivered `item*_plan.md` docs, distill `card_shipping_plan.md` +
    `sidebar-panel.md` into `frontend_architecture.md`; move `open-items.md`,
    `schema_*_plan.md`, `release_testing_plan.md` to GitHub issues/private notes.

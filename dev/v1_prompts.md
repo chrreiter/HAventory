@@ -1,9 +1,10 @@
 # Prompts — every task from here to v1.0.0
 
 The definitive task set for the road to 1.0, one paste-ready prompt per item. The
-staging (which release each item ships in, and in what order) is the **Release staging**
-section of [`open-items.md`](open-items.md) — that section is authoritative; this file
-carries the execution prompts. The `v0.2.0` payload items (69, 34, 43, 57, 23, 46)
+staging (which release each item ships in, and in what order) is
+[#236](https://github.com/chrreiter/HAventory/issues/236) — that issue is authoritative;
+this file carries the execution prompts, and a prompt that disagrees with an issue is
+stale. The `v0.2.0` payload items (69, 34, 43, 57, 23, 46)
 are delivered (#167–#172) and their prompts are gone from this file — what remains is the
 release-stage tail and the post-1.0 submission. Complex items have a companion plan doc; their prompts
 here point at it. This file supersedes the roadmap artifact's WP8/WP9 prompts, which
@@ -16,7 +17,7 @@ Conventions every prompt below assumes (stated once here, per `CLAUDE.md`):
   `uv run mypy`; frontend (in `cards/haventory-card`) `npx eslint .` +
   `npm run typecheck` + `npx vitest run` + `npm run build`.
 - Fresh branch from latest `origin/main`, one PR per item, Conventional Commits.
-- Run **serially**: update the item's row in `docs/open-items.md` in the same PR. If
+- Run **serially**: update the item's row in `dev/open-items.md` in the same PR. If
   ever run as a parallel batch instead, do *not* touch the ledger — report follow-ups
   in the PR body and reconcile in one sweep afterwards (the fix-batch pattern).
 - Out-of-scope findings go under a "Follow-ups" note, not into the diff.
@@ -38,7 +39,7 @@ PROJECT CONTEXT — run this in LOCAL Claude Code next to the Docker host / real
 The last feature release (every pending fix + the pre-v1.0 features) is out and
 installed on my real production HA via HACS custom repository — that install step is
 release-test A1 and closes the verification half of the HACS listing (GitHub issue
-#196). docs/release_testing_plan.md is the
+#196). dev/release_testing_plan.md is the
 validation program: environments ENV-A (real instance) / ENV-B (throwaway Docker) /
 ENV-C (floor-pinned 2026.6.0, scenario D6) / ENV-D (backup restore), scenario groups
 A–J, six exit criteria. The run-haventory and test-haventory skills carry the
@@ -48,7 +49,7 @@ RULES
 - The plan document is authoritative — follow its instrumentation section exactly.
 - I am part of the test environment: pause for my on-device checks (companion-app
   groups) and my sign-offs wherever the plan says so.
-- Every failure is triaged with an impact rating — a docs/open-items.md row if it must
+- Every failure is triaged with an impact rating — a dev/open-items.md row if it must
   land before 1.0, a GitHub issue otherwise; do not fix
   mid-run except Blockers. Fixes: one PR per fix from latest main, both gates green,
   released as the next 0.2.x patch via release-please, then re-run the affected
@@ -75,7 +76,7 @@ TASK
 
 ```text
 You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-docs/open-items.md item 60 is the spec. Release-test F3 has run (item 79) and produced
+dev/open-items.md item 60 is the spec. Release-test F3 has run (item 79) and produced
 the measured degradation point on real hardware. Replace the README Known-limitations
 extrapolation ("on that curve a single create trends toward ~1 s at a few thousand
 items") with the measured numbers from the F3 results log — state what was measured, on
@@ -91,7 +92,7 @@ after item 69 and after the v0.2.0 run is complete.
 
 ```text
 You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-Read docs/item70_toolchain_retirement_plan.md and execute its triage list: delivered
+Read dev/item70_toolchain_retirement_plan.md and execute its triage list: delivered
 plan docs deleted with their references, exploration scripts kept or deleted per the
 list's reasoning, every survivor documented in one CONTRIBUTING.md line, grep-verified
 zero dangling references after each removal. Respect its exception (the release plan
@@ -107,7 +108,7 @@ feature release; live verification is owner-in-the-loop.
 
 ```text
 You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-Read docs/schema_exercise_plan.md — it is the design. First ask me whether a pending
+Read dev/schema_exercise_plan.md — it is the design. First ask me whether a pending
 feature needs a real shape change; if none does, implement its default (the top-level
 `meta` block) as migrate_4_to_5. Deliver per its list: offline migration tests
 (idempotency, the 0→5 chain, downgrade refusal), the integration-suite boot-and-migrate
@@ -125,7 +126,7 @@ before merge.**
 
 ```text
 You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-Read docs/schema_collapse_plan.md — it is the design and the safety protocol. Implement
+Read dev/schema_collapse_plan.md — it is the design and the safety protocol. Implement
 the collapse (CURRENT_SCHEMA_VERSION → 1 at the post-exercise shape, migrations.py
 emptied to the driver, higher-versioned stores refused per #120), REHEARSE the
 export→import crossing on a copy of my real export in a throwaway Docker HA and show me
@@ -142,7 +143,7 @@ payload lands; required before item 83.
 
 ```text
 You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-docs/open-items.md item 82 is the spec. The README should lead with what HAventory
+dev/open-items.md item 82 is the spec. The README should lead with what HAventory
 looks like. Using the run-haventory skill against the dev container (seeded inventory,
 areas on some trees), produce 2–3 real captures — the sidebar panel full view, the
 card's list with the item editor open, and the phone layout are the strongest
@@ -159,7 +160,7 @@ sweep is item 65 (post-v1.0) — leave it unless a claim is outright wrong.
 
 ```text
 You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-docs/open-items.md item 83 is the spec. The collapse (item 81) is live on the
+dev/open-items.md item 83 is the spec. The collapse (item 81) is live on the
 production store and the watch window has closed; v1.0.0 ships NOTHING new — it is the
 version bump that declares the proven 0.x stable. Mechanics: release-please with
 bump-minor-pre-major needs an explicit instruction to cross 1.0 — verify the current

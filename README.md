@@ -711,9 +711,9 @@ through [private reporting](SECURITY.md), never a public issue.
 
 - Domain/package: `haventory` under `custom_components/haventory`; services `haventory.*`;
   built assets `custom_components/haventory/www/`, served at `/haventory_static/`;
-  calendar entity `calendar.haventory` — a reserved name for
-  the post-1.0 calendar work ([#187](https://github.com/chrreiter/HAventory/issues/187)),
-  not an entity that exists today.
+  calendar entity `calendar.haventory` — a reserved name for the calendar work
+  ([#187](https://github.com/chrreiter/HAventory/issues/187)), staged after the first
+  public release, not an entity that exists today.
 - Logging: avoid reserved `LogRecord` keys in logger extras — use `item_name` /
   `location_name`, not `name`.
 
@@ -723,9 +723,14 @@ through [private reporting](SECURITY.md), never a public issue.
 - WebSocket rate limiting (what the options mean, when to enable): `docs/rate_limiting.md`
 - Data shapes (Item/Location/filter/sort/events): `docs/data_shapes.md`
 - Frontend architecture: `docs/frontend_architecture.md`
-- Release testing plan (manual v1.0 readiness run): `docs/release_testing_plan.md`
-- Pre-v1.0 release tracker: `docs/open-items.md` (future work lives in the
-  [issue tracker](https://github.com/chrreiter/HAventory/issues))
+- Release testing plan (the manual pre-release validation run): `dev/release_testing_plan.md`
+
+`docs/` holds what a user or contributor of the shipped integration needs; `dev/` holds the
+development process — the testing plan, the release review, and the per-task design
+documents. Work is tracked in the
+[issue tracker](https://github.com/chrreiter/HAventory/issues);
+[#236](https://github.com/chrreiter/HAventory/issues/236) carries what is mandatory before
+the first public release.
 
 ## Troubleshooting
 

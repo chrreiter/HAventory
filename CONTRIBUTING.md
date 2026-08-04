@@ -69,6 +69,10 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
   `fix: preserve location_path on move`, `docs: …`, `chore: …`.
 - **Keep the API docs in sync**: WebSocket/API changes must update `ws.py`,
   `docs/backend_api_contract.md`, and `docs/data_shapes.md` together.
+- **Two documentation trees**: `docs/` is for what a user or a contributor of the
+  shipped integration needs; `dev/` is for the development process — the release
+  testing plan, the release review, and per-task design documents. A new document
+  goes in one of the two, and neither is a tracker: work lives in GitHub issues.
 - **Preserve load-bearing invariants**: case-insensitive search, denormalized
   `location_path` on items, and optimistic concurrency via the item `version`.
 - **Deleting or renaming a file inside `custom_components/haventory/`?** Add its

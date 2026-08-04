@@ -255,7 +255,7 @@ the feature on. Includes the live verification pass.
 
 ## Appendix A — implementation prompt for PR-1 (Opus 5)
 
-> Read `docs/sidebar-panel.md` first; it is the contract for this change. Implement
+> Read `dev/sidebar-panel.md` first; it is the contract for this change. Implement
 > **PR-1 only** (frontend: embedded full view + `haventory-panel` element) on a fresh
 > branch off `main`.
 >
@@ -318,7 +318,7 @@ the feature on. Includes the live verification pass.
 
 ## Appendix B — implementation prompt for PR-2 (Opus 5)
 
-> Read `docs/sidebar-panel.md` first; it is the contract. PR-1 (embedded full view +
+> Read `dev/sidebar-panel.md` first; it is the contract. PR-1 (embedded full view +
 > `haventory-panel` in the bundle) must already be on `main` — verify before starting.
 > Implement **PR-2 only** (backend registration + options toggle) on a fresh branch
 > off `main`.
