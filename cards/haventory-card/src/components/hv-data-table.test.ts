@@ -284,6 +284,118 @@ describe('hv-data-table: rows', () => {
   });
 });
 
+describe('hv-data-table: keyboard', () => {
+  const captured = (el: HVDataTable, names: string[]) => {
+    const seen: string[] = [];
+    for (const name of names) {
+      el.addEventListener(name, (e) => seen.push(`${name}:${(e as CustomEvent).detail.itemId}`));
+    }
+    return seen;
+  };
+  const press = (el: HTMLElement, key: string) =>
+    el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+
+  // The rows were tabbable and had a click handler and nothing else, so on the
+  // one surface that lists every item, no item could be reached without a mouse.
+  it('keeps the same shortcuts the card list row has', async () => {
+    const el = await mount([{ id: 'item-1' }]);
+    const seen = captured(el, ['open-item', 'request-delete', 'increment', 'decrement']);
+    const row = q(el, '[data-testid="table-row"]') as HTMLElement;
+
+    for (const key of ['Enter', 'Delete', '+', '-']) press(row, key);
+
+    expect(seen).toEqual([
+      'open-item:item-1',
+      'request-delete:item-1',
+      'increment:item-1',
+      'decrement:item-1',
+    ]);
+  });
+
+  it('takes the numpad and shifted spellings of the same two keys', async () => {
+    const el = await mount([{ id: 'item-1' }]);
+    const seen = captured(el, ['increment', 'decrement']);
+    const row = q(el, '[data-testid="table-row"]') as HTMLElement;
+
+    // `=` is what an unshifted `+` reports on a US layout; `Add`/`Subtract` are
+    // the numpad's.
+    for (const key of ['=', 'Add', 'Subtract']) press(row, key);
+
+    expect(seen).toEqual(['increment:item-1', 'increment:item-1', 'decrement:item-1']);
+  });
+
+  it('claims the keys it acts on, so the surface below does not answer too', async () => {
+    const el = await mount([{ id: 'item-1' }]);
+    const row = q(el, '[data-testid="table-row"]') as HTMLElement;
+    expect(press(row, 'Enter')).toBe(false);
+    // Anything else is still the browser's — Tab has to keep leaving the row.
+    expect(press(row, 'Tab')).toBe(true);
+  });
+
+  it('follows the row click into selection mode rather than opening the item', async () => {
+    const el = await mount([{ id: 'item-1' }], { selectable: true });
+    const seen = captured(el, ['open-item', 'toggle-select']);
+    press(q(el, '[data-testid="table-row"]') as HTMLElement, 'Enter');
+    expect(seen).toEqual(['toggle-select:item-1']);
+  });
+
+  it('leaves a key pressed on a control inside the row to that control', async () => {
+    // Enter on Edit already opens the editor; the row acting on the same press
+    // would open it a second time, and Delete on any of the three buttons would
+    // ask to delete the item.
+    const el = await mount([{ id: 'item-1' }]);
+    const seen = captured(el, ['open-item', 'request-delete', 'increment', 'decrement']);
+    const edit = q(el, '[data-testid="table-edit"]') as HTMLElement;
+
+    for (const key of ['Enter', 'Delete', '+', '-']) press(edit, key);
+
+    expect(seen).toEqual([]);
+  });
+});
+
+describe('hv-data-table: table semantics', () => {
+  // `row`, `columnheader` and `cell` are only meaningful under a table role.
+  // Without one the structure is dropped and the rows read as a run of text.
+  it('carries the table role the rows and cells hang off', async () => {
+    const el = await mount([{ id: '1' }]);
+    expect(el.getAttribute('role')).toBe('table');
+  });
+
+  it('marks every value in a row as a cell', async () => {
+    const el = await mount([{ id: '1', tags: ['m4'] }]);
+    const row = q(el, '[data-testid="table-row"]') as HTMLElement;
+    const cells = [...row.querySelectorAll('[role="cell"]')];
+    // Name, the five mounted columns, and the action group.
+    expect(cells).toHaveLength(7);
+    expect(cells[0].querySelector('[data-testid="table-name"]')).toBeTruthy();
+    expect(cells.map((c) => c.getAttribute('data-testid'))).toContain('cell-quantity');
+  });
+
+  it('gives each row a cell for every column header', async () => {
+    const el = await mount([{ id: '1' }], { columns: ['quantity', 'location', 'status'] });
+    const headers = all(el, '[role="columnheader"]').length;
+    const cells = (q(el, '[data-testid="table-row"]') as HTMLElement).querySelectorAll('[role="cell"]');
+    expect(cells).toHaveLength(headers);
+  });
+
+  it('spans the empty message across a row, the way a table has to', async () => {
+    // A row group whose only child is a loose message owns something a table
+    // cannot contain, and the whole structure is dropped rather than repaired.
+    const el = await mount([]);
+    const empty = q(el, '[data-testid="table-empty"]') as HTMLElement;
+    expect(empty.getAttribute('role')).toBe('cell');
+    expect(empty.parentElement?.getAttribute('role')).toBe('row');
+    expect(empty.closest('[role="rowgroup"]')).toBeTruthy();
+  });
+
+  it('leaves the announcing to whatever fills the slot', async () => {
+    // The shared empty state is a live region already; a second one wrapped
+    // around it says everything twice.
+    const el = await mount([]);
+    expect(q(el, '[data-testid="table-empty"]')?.getAttribute('role')).not.toBe('status');
+  });
+});
+
 describe('hv-data-table: status column', () => {
   const mixed = [
     { id: '1', status: 'missing' as const },

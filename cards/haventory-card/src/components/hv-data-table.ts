@@ -277,6 +277,21 @@ export class HVDataTable extends LitElement {
   @property({ attribute: false }) areas: AreaRef[] = [];
   @property({ attribute: false }) selection: Set<string> = new Set();
 
+  /**
+   * `row`, `columnheader` and `cell` are only meaningful under a table, grid or
+   * treegrid; with no such ancestor the whole structure is thrown away and a
+   * screen reader reads the rows as a run of text. The host is the only element
+   * that can carry it — the header and the row group are siblings at the top of
+   * this shadow root, with nothing above them.
+   *
+   * `table` rather than `grid`: a grid promises cell-by-cell arrow-key
+   * navigation, and this surface moves a row at a time.
+   */
+  connectedCallback(): void {
+    super.connectedCallback();
+    if (!this.hasAttribute('role')) this.setAttribute('role', 'table');
+  }
+
   private get _columns(): ColumnKey[] {
     return normalizeColumns(this.columns);
   }
@@ -311,48 +326,93 @@ export class HVDataTable extends LitElement {
     </button>`;
   }
 
+  /**
+   * The rows carry `tabindex="0"`, so the keyboard can reach them; without this
+   * there is nothing to do once they are reached, and every item on this
+   * surface is behind a mouse.
+   *
+   * Same keys and same meanings as the card's list row, so the two surfaces do
+   * not teach two vocabularies for the same four actions. Enter follows this
+   * table's own row click: in selection mode a click selects rather than opens,
+   * and the keyboard has to land on whatever the pointer lands on.
+   *
+   * A key pressed on a control inside the row belongs to that control. Without
+   * the guard Enter on Edit would open the editor and then fire the row's own
+   * open on top of it, and Delete anywhere in the action group would ask to
+   * delete the item.
+   */
+  private _onRowKeydown(e: KeyboardEvent, item: Item) {
+    if (e.target !== e.currentTarget) return;
+    switch (e.key) {
+      case 'Enter':
+        e.preventDefault();
+        this._emit(this.selectable ? 'toggle-select' : 'open-item', { itemId: item.id });
+        break;
+      case 'Delete':
+        e.preventDefault();
+        this._emit('request-delete', { itemId: item.id });
+        break;
+      case '+':
+      case '=':
+      case 'Add':
+        e.preventDefault();
+        this._emit('increment', { itemId: item.id });
+        break;
+      case '-':
+      case 'Subtract':
+        e.preventDefault();
+        this._emit('decrement', { itemId: item.id });
+        break;
+    }
+  }
+
   private _cell(item: Item, key: ColumnKey) {
     switch (key) {
       case 'quantity':
-        return html`<span class="cell qty ${isLowStock(item) ? 'low' : ''}" data-testid="cell-quantity"
+        return html`<span
+          class="cell qty ${isLowStock(item) ? 'low' : ''}"
+          role="cell"
+          data-testid="cell-quantity"
           >${item.quantity}</span
         >`;
       case 'status': {
         // The column names every row's status, "OK" included — that is what
         // makes it a column rather than a second copy of the exception chip.
         const status = itemStatus(item);
-        return html`<span class="cell" data-testid="cell-status"
+        return html`<span class="cell" role="cell" data-testid="cell-status"
           >${status === 'ok'
             ? statusLabel(status)
             : html`<span class="status-chip">${statusLabel(status)}</span>`}</span
         >`;
       }
       case 'category':
-        return html`<span class="cell" data-testid="cell-category" title=${item.category ?? ''}>${item.category || '—'}</span>`;
+        return html`<span class="cell" role="cell" data-testid="cell-category" title=${item.category ?? ''}>${item.category || '—'}</span>`;
       case 'location': {
         const parts = itemPathParts(item, this.areas);
-        return html`<span class="cell" data-testid="cell-location" title=${pathTitle(parts)}
+        return html`<span class="cell" role="cell" data-testid="cell-location" title=${pathTitle(parts)}
           >${renderAreaChip(parts.areaName)}${parts.path || '—'}</span
         >`;
       }
       case 'tags':
-        return html`<span class="tags" data-testid="cell-tags">
+        return html`<span class="tags" role="cell" data-testid="cell-tags">
           ${item.tags.length ? item.tags.map((t) => html`<span class="tag">${t}</span>`) : html`<span class="cell">—</span>`}
         </span>`;
       case 'due_date':
         return html`<span
           class="cell due ${isOverdue(item.due_date) ? 'overdue' : ''}"
+          role="cell"
           data-testid="cell-due_date"
           >${formatDate(item.due_date)}</span
         >`;
       case 'inspection_date':
         return html`<span
           class="cell inspection ${isOverdue(item.inspection_date) ? 'due' : ''}"
+          role="cell"
           data-testid="cell-inspection_date"
           >${formatDate(item.inspection_date)}</span
         >`;
       case 'updated_at':
-        return html`<span class="cell updated" data-testid="cell-updated_at">${relativeTime(item.updated_at)}</span>`;
+        return html`<span class="cell updated" role="cell" data-testid="cell-updated_at">${relativeTime(item.updated_at)}</span>`;
     }
   }
 
@@ -415,6 +475,7 @@ export class HVDataTable extends LitElement {
                   data-testid="table-row"
                   data-item-id=${item.id}
                   style="grid-template-columns: ${template}"
+                  @keydown=${(e: KeyboardEvent) => this._onRowKeydown(e, item)}
                   @click=${() =>
                     this._emit(this.selectable ? 'toggle-select' : 'open-item', { itemId: item.id })}
                 >
@@ -433,7 +494,7 @@ export class HVDataTable extends LitElement {
                         ${this.selection.has(item.id) ? icon('check', 13) : null}
                       </button>`
                     : null}
-                  <span class="name-cell">
+                  <span class="name-cell" role="cell">
                     <span class="name" data-testid="table-name" title=${item.name}>${item.name}</span>
                     ${isLowStock(item) ? html`<span class="low-badge">LOW</span>` : null}
                     ${!statusColumn && itemStatus(item) !== 'ok'
@@ -444,7 +505,7 @@ export class HVDataTable extends LitElement {
                     ${item.checked_out ? html`<span class="out-chip">Checked out</span>` : null}
                   </span>
                   ${columns.map((key) => this._cell(item, key))}
-                  <span class="actions">
+                  <span class="actions" role="cell">
                     <button
                       data-testid="table-decrement"
                       aria-label="Decrease quantity"
@@ -481,8 +542,17 @@ export class HVDataTable extends LitElement {
                 </div>
               `,
             )
-          : html`<div class="empty" role="status" data-testid="table-empty">
-              <slot name="empty">No items yet</slot>
+          : html`<div role="row">
+              <!-- The message is a cell in a row, the way an empty HTML table
+                   spans one across its width: a row group whose only child is a
+                   loose message owns something a table cannot contain, and the
+                   structure is dropped rather than repaired. The announcement
+                   belongs to whatever fills the slot — the shared empty state
+                   is a live region already, and a second one wrapped around it
+                   says everything twice. -->
+              <div class="empty" role="cell" data-testid="table-empty">
+                <slot name="empty">No items yet</slot>
+              </div>
             </div>`}
       </div>
     `;
