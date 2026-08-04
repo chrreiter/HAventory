@@ -247,6 +247,20 @@ def hav_init(monkeypatch, tmp_path):
 # --------------------------------------------------------------------------- #
 
 
+def test_the_card_build_emits_a_single_file() -> None:
+    """The card build keeps code splitting off, so the bundle has no siblings.
+
+    Everything the loaders name is one file. A split chunk would land in the
+    served directory beside it, and both the directory's ``.gitignore`` entry and
+    the release-zip check — which asserts the bundle is present, not that it is
+    alone — would pass it through into the HACS asset. ``emptyOutDir: false``
+    then keeps every such chunk across later builds.
+    """
+    config = (REPO_ROOT / "cards" / "haventory-card" / "vite.config.ts").read_text(encoding="utf-8")
+
+    assert re.search(r"^\s*codeSplitting: false$", config, re.MULTILINE) is not None
+
+
 @pytest.mark.asyncio
 async def test_serves_the_bundle_directory_without_cache_headers(hav_init, tmp_path):
     """The card directory is served at a fixed path, with revalidation left on.

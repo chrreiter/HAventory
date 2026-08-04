@@ -25,7 +25,10 @@ export default defineConfig({
     rollupOptions: {
       external: [],  // Bundle everything since HA doesn't provide dependencies
       output: {
-        inlineDynamicImports: true  // Single file output for HACS
+        // The integration serves exactly one bundle at
+        // /haventory_static/haventory-card.js, so the build must emit a single
+        // file — no chunk may be split out.
+        codeSplitting: false
       }
     },
     minify: true,
