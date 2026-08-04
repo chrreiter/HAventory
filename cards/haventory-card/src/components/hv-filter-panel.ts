@@ -5,8 +5,10 @@ import { locationPathParts, pathTitle } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { activeFilterCount, defaultFilters } from '../store/store';
+import { ITEM_STATUSES, statusLabel } from '../ui/status';
 import type {
   DistinctValues,
+  ItemStatus,
   Location,
   LocationTreeNode,
   SortField,
@@ -723,6 +725,43 @@ export class HVFilterPanel extends LitElement {
   }
 
   /**
+   * The stored item status, as one single-select chip row.
+   *
+   * Single-select because the backend filter takes exactly one status, and the
+   * two flagged values carry the same warning tone their row badges use. OK
+   * gets no tally: the counts payload prices the two exception states, and
+   * "everything else" is not a number worth a chip.
+   */
+  private _renderStatusGroup() {
+    const f = this.working;
+    const c = this.counts;
+    const tallyFor = (s: ItemStatus) =>
+      s === 'missing' ? c?.missing_count : s === 'needs_repair' ? c?.needs_repair_count : undefined;
+    return html`
+      <div class="group">
+        <span class="hv-label">Status</span>
+        <div class="chips">
+          ${ITEM_STATUSES.map((s) => {
+            const on = f.status === s;
+            const warning = on && s !== 'ok';
+            const tally = tallyFor(s);
+            return html`<button
+              class="chip ${on ? 'on' : ''} ${warning ? 'warning' : ''}"
+              data-testid="filter-status"
+              data-value=${s}
+              aria-pressed=${String(on)}
+              @click=${() => this._patch({ status: on ? null : s })}
+            >
+              ${on ? icon('check', 12) : null}${statusLabel(s)}
+              ${tally === undefined || tally === null ? null : html`<span class="tally">${tally}</span>`}
+            </button>`;
+          })}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
    * Which way a date row compares. An applied bound decides it; an empty row
    * remembers the last flip, so pressing ≥ before picking a date does something.
    */
@@ -838,7 +877,8 @@ export class HVFilterPanel extends LitElement {
     return html`
       <div class="panel" data-testid="filter-panel">
         ${this._renderLocationGroup()} ${this._renderCategoryGroup()} ${this._renderTagGroup()}
-        ${this._renderShowOnlyGroup()} ${this._renderDateGroup()} ${this._renderSortGroup()}
+        ${this._renderShowOnlyGroup()} ${this._renderStatusGroup()} ${this._renderDateGroup()}
+        ${this._renderSortGroup()}
         ${this.mobile
           ? null
           : html`<div class="footer">

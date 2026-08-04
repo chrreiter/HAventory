@@ -269,6 +269,62 @@ describe('hv-data-table: rows', () => {
     const el = await mount([]);
     expect(q(el, '[data-testid="table-empty"]')).toBeTruthy();
   });
+
+  it('chips a flagged status in the name cell and leaves ok rows quiet', async () => {
+    const el = await mount([
+      { id: '1', status: 'missing' },
+      { id: '2', status: 'needs_repair' },
+      { id: '3', status: 'ok' },
+      { id: '4' },
+    ]);
+    const rows = all(el, '[data-testid="table-row"]');
+    const chip = (row: HTMLElement) =>
+      row.querySelector('[data-testid="table-status"]')?.textContent?.trim() ?? null;
+    expect(rows.map(chip)).toEqual(['Missing', 'Needs repair', null, null]);
+  });
+});
+
+describe('hv-data-table: status column', () => {
+  const mixed = [
+    { id: '1', status: 'missing' as const },
+    { id: '2', status: 'needs_repair' as const },
+    { id: '3', status: 'ok' as const },
+    { id: '4' },
+  ];
+
+  // The name-cell chip only ever marks the exceptions. A column that did the
+  // same would leave most rows blank under a header promising a value.
+  it('names every row, ok included, and reads an absent status as ok', async () => {
+    const el = await mount(mixed, { columns: ['status'] });
+    expect(all(el, '[data-testid="cell-status"]').map((c) => c.textContent?.trim())).toEqual([
+      'Missing',
+      'Needs repair',
+      'OK',
+      'OK',
+    ]);
+  });
+
+  it('chips the flagged values and leaves ok as plain text', async () => {
+    const el = await mount(mixed, { columns: ['status'] });
+    const cells = all(el, '[data-testid="cell-status"]');
+    expect(cells.map((c) => !!c.querySelector('.status-chip'))).toEqual([true, true, false, false]);
+  });
+
+  it('stands the name-cell chip down, so no row says it twice', async () => {
+    const el = await mount([{ id: '1', status: 'missing' }], { columns: ['status'] });
+    expect(q(el, '[data-testid="table-status"]')).toBe(null);
+    expect(q(el, '[data-testid="cell-status"]')?.textContent?.trim()).toBe('Missing');
+  });
+
+  it('keeps the name-cell chip when the column is turned off', async () => {
+    const el = await mount([{ id: '1', status: 'missing' }], { columns: ['quantity'] });
+    expect(q(el, '[data-testid="table-status"]')?.textContent?.trim()).toBe('Missing');
+  });
+
+  it('gives the header no sort button — the API cannot order by status', async () => {
+    const el = await mount([{ id: '1' }], { columns: ['status'] });
+    expect(all(el, '[data-testid="table-sort"]').map((b) => b.dataset.field)).not.toContain('status');
+  });
 });
 
 describe('hv-data-table: selection mode', () => {

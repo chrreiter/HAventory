@@ -31,7 +31,14 @@ from .exceptions import (
     log_severity,
 )
 from .import_export import POLICIES, Policy
-from .models import Item, ItemUpdate, Location, normalize_tags, today_utc_date
+from .models import (
+    DEFAULT_ITEM_STATUS,
+    Item,
+    ItemUpdate,
+    Location,
+    normalize_tags,
+    today_utc_date,
+)
 from .rate_limit import RateLimiter
 from .repository import UNSET, InternalIndexes, Repository
 from .storage import CURRENT_SCHEMA_VERSION
@@ -826,12 +833,32 @@ async def ws_distinct_values(
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
 
+def _collect_item_status_issues(
+    item_id: str, item: Item, status_to_item_ids: dict[str, set[str]]
+) -> list[str]:
+    """Check the item's membership in the status index against its status.
+
+    Only non-default statuses are bucketed, so a default-status item found in
+    any bucket is drift just as much as a flagged item missing from its own.
+    """
+
+    issues: list[str] = []
+    status = str(getattr(item, "status", DEFAULT_ITEM_STATUS))
+    if status != DEFAULT_ITEM_STATUS:
+        if item_id not in status_to_item_ids.get(status, set()):
+            issues.append("status_item_missing_from_index")
+    elif any(item_id in ids for ids in status_to_item_ids.values()):
+        issues.append("default_status_item_present_in_index")
+    return issues
+
+
 def _collect_item_issues(item_id: str, item: Item, idx: InternalIndexes) -> list[str]:
     issues: list[str] = []
     items_by_location_id = idx["items_by_location_id"]
     locations_by_id = idx["locations_by_id"]
     checked_out_item_ids = idx["checked_out_item_ids"]
     low_stock_item_ids = idx["low_stock_item_ids"]
+    status_to_item_ids = idx["status_to_item_ids"]
 
     # Normalize types for comparison (UUID vs string)
     if str(getattr(item, "id", "")) != item_id:
@@ -852,6 +879,8 @@ def _collect_item_issues(item_id: str, item: Item, idx: InternalIndexes) -> list
             issues.append("checked_out_item_missing_from_index")
     elif item_id in checked_out_item_ids:
         issues.append("non_checked_out_item_present_in_index")
+
+    issues.extend(_collect_item_status_issues(item_id, item, status_to_item_ids))
 
     thr = getattr(item, "low_stock_threshold", None)
     is_low = False
@@ -894,6 +923,8 @@ def _check_index_references(idx: InternalIndexes) -> list[str]:
         _assert_known_ids("tags_index", set(ids))
     for _cat, ids in list(category_to_item_ids.items()):
         _assert_known_ids("category_index", set(ids))
+    for _status, ids in list(idx["status_to_item_ids"].items()):
+        _assert_known_ids("status_index", set(ids))
 
     _assert_known_ids("checked_out_index", set(checked_out_item_ids))
     _assert_known_ids("low_stock_index", set(low_stock_item_ids))
@@ -1073,6 +1104,9 @@ async def ws_unsubscribe(
         vol.Required("name"): str,
         vol.Optional("description"): object,
         vol.Optional("quantity"): int,
+        # Widened to object so the model layer rejects bad values as a typed
+        # validation_error instead of HA core logging a schema ERROR.
+        vol.Optional("status"): object,
         vol.Optional("checked_out"): bool,
         vol.Optional("due_date"): vol.Any(str, None),
         vol.Optional("inspection_date"): vol.Any(str, None),
@@ -1118,6 +1152,7 @@ async def ws_item_get(
         vol.Optional("name"): object,
         vol.Optional("description"): object,
         vol.Optional("quantity"): int,
+        vol.Optional("status"): object,
         vol.Optional("checked_out"): bool,
         vol.Optional("due_date"): vol.Any(str, None),
         vol.Optional("inspection_date"): vol.Any(str, None),
@@ -1782,6 +1817,7 @@ def _serialize_item(hass: HomeAssistant, item: Item) -> dict[str, Any]:
         "name": item.name,
         "description": item.description,
         "quantity": item.quantity,
+        "status": item.status,
         "checked_out": item.checked_out,
         "due_date": item.due_date,
         "inspection_date": item.inspection_date,

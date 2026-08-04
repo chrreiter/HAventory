@@ -4,17 +4,19 @@ Scenarios:
 - Older version N → current version: transformed shape and version update
 - No-op when already current; idempotency on repeated runs
 - Empty file / missing keys → safe defaults
+- Backwards migration → refused rather than passed through and relabelled
 - Corrupt payload / loader exception → logged with context and safe fallback
 """
 
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from typing import Any
 
 import pytest
 from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.exceptions import StorageError
+from custom_components.haventory.exceptions import SchemaDowngradeError, StorageError
 from custom_components.haventory.migrations import migrate
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
 from homeassistant.core import HomeAssistant
@@ -87,20 +89,28 @@ async def test_missing_keys_and_empty_payload_safe_defaults() -> None:
 
 
 @pytest.mark.asyncio
-async def test_downgrade_returns_original(caplog: pytest.LogCaptureFixture) -> None:
-    """Downgrade returns original payload; migrate stays quiet."""
+async def test_downgrade_is_refused_rather_than_relabelled() -> None:
+    """A backwards migration raises instead of passing the payload through.
 
-    caplog.set_level(logging.DEBUG)
+    Passing it through is the dangerous half: the caller stamps ``to_version``
+    onto whatever comes back, so data written by a schema this build cannot read
+    would be relabelled as one it can.
+    """
+
     payload = {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+    before = deepcopy(payload)
 
-    # Act: request a downgrade path (from_version > to_version)
-    result = migrate(
-        payload, from_version=CURRENT_SCHEMA_VERSION, to_version=CURRENT_SCHEMA_VERSION - 1
-    )
+    with pytest.raises(SchemaDowngradeError) as excinfo:
+        migrate(payload, from_version=CURRENT_SCHEMA_VERSION, to_version=CURRENT_SCHEMA_VERSION - 1)
 
-    # Assert: original returned unchanged; we don't enforce specific log content
-    assert result is payload or result == payload
-    # No strict log assertion since migrate() intentionally stays quiet for downgrades
+    # Both versions named, so a caller's log says which direction was asked for.
+    message = str(excinfo.value)
+    assert str(CURRENT_SCHEMA_VERSION) in message
+    assert str(CURRENT_SCHEMA_VERSION - 1) in message
+
+    # A refusal touches nothing.
+    assert payload == before
+    assert isinstance(excinfo.value, StorageError)
 
 
 @pytest.mark.asyncio

@@ -136,6 +136,18 @@ describe('chipsFor', () => {
     expect(chips).toEqual([{ key: 'inspectionDueOnly', label: 'Inspection due', tone: 'warning' }]);
   });
 
+  it('names the status filter, with the warning tone on the flagged values only', () => {
+    expect(chipsFor({ ...defaultFilters(), status: 'missing' })).toEqual([
+      { key: 'status', label: 'Status: Missing', tone: 'warning' },
+    ]);
+    expect(chipsFor({ ...defaultFilters(), status: 'needs_repair' })).toEqual([
+      { key: 'status', label: 'Status: Needs repair', tone: 'warning' },
+    ]);
+    expect(chipsFor({ ...defaultFilters(), status: 'ok' })).toEqual([
+      { key: 'status', label: 'Status: OK', tone: 'primary' },
+    ]);
+  });
+
   it('emits one chip per date bound so a range can be half-undone', () => {
     const filters = {
       ...defaultFilters(),
@@ -163,7 +175,7 @@ describe('clearedValueFor', () => {
   });
 
   it('clears the nullable filters to null', () => {
-    for (const key of ['areaId', 'locationId', 'category', 'updatedAfter', 'createdAfter', 'updatedBefore', 'createdBefore'] as const) {
+    for (const key of ['areaId', 'locationId', 'status', 'category', 'updatedAfter', 'createdAfter', 'updatedBefore', 'createdBefore'] as const) {
       expect(clearedValueFor(key)).toEqual({ [key]: null });
     }
   });

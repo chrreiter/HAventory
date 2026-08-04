@@ -24,7 +24,9 @@ from typing import Any, NamedTuple, TypedDict
 
 from .exceptions import ConflictError, NotFoundError, ValidationError
 from .models import (
+    DEFAULT_ITEM_STATUS,
     EMPTY_LOCATION_PATH,
+    ITEM_STATUSES,
     LOCATION_GUARD_MAX_STEPS,
     Item,
     ItemCreate,
@@ -35,6 +37,7 @@ from .models import (
     Sort,
     apply_item_update,
     build_location_path,
+    coerce_item_status,
     create_item_from_create,
     date_sort_key,
     filter_items,
@@ -84,6 +87,7 @@ class InternalIndexes(TypedDict):
     locations_by_id: dict[str, Location]
     tags_to_item_ids: dict[str, set[str]]
     category_to_item_ids: dict[str, set[str]]
+    status_to_item_ids: dict[str, set[str]]
     checked_out_item_ids: set[str]
     low_stock_item_ids: set[str]
     items_by_location_id: dict[str, set[str]]
@@ -134,6 +138,9 @@ class Repository:
         # Item indexes
         self._tags_to_item_ids: dict[str, set[str]] = {}
         self._category_to_item_ids: dict[str, set[str]] = {}
+        # Only non-default statuses are bucketed: "ok" is the overwhelming
+        # majority, so a bucket for it would mirror the whole item map.
+        self._status_to_item_ids: dict[str, set[str]] = {}
         self._checked_out_item_ids: set[str] = set()
         self._low_stock_item_ids: set[str] = set()
         self._items_by_location_id: dict[str, set[str]] = {}
@@ -197,6 +204,10 @@ class Repository:
         if cat:
             self._add_to_bucket(self._category_to_item_ids, cat, item_key)
 
+        # status (non-default statuses only)
+        if item.status != DEFAULT_ITEM_STATUS:
+            self._add_to_bucket(self._status_to_item_ids, item.status, item_key)
+
         # checked_out
         if item.checked_out:
             self._checked_out_item_ids.add(item_key)
@@ -235,6 +246,9 @@ class Repository:
         cat = (item.category or "").strip().casefold()
         if cat:
             self._remove_from_bucket(self._category_to_item_ids, cat, item_key)
+
+        if item.status != DEFAULT_ITEM_STATUS:
+            self._remove_from_bucket(self._status_to_item_ids, item.status, item_key)
 
         self._checked_out_item_ids.discard(item_key)
         self._low_stock_item_ids.discard(item_key)
@@ -1039,6 +1053,21 @@ class Repository:
                 return []
             candidate_sets.append(s)
 
+        # 3b. Status Index (only non-default known statuses are bucketed; "ok"
+        # and unrecognized values fall through to the scan path, where
+        # filter_items validates and rejects the latter)
+        status_filter = flt.get("status")
+        if (
+            isinstance(status_filter, str)
+            and status_filter != DEFAULT_ITEM_STATUS
+            and status_filter in ITEM_STATUSES
+        ):
+            has_indexed_filter = True
+            s = self._status_to_item_ids.get(status_filter, set())
+            if not s:
+                return []
+            candidate_sets.append(s)
+
         # 4. Tags Index (Any)
         # Note: tags_all is harder to optimize purely with single-tag indexes without
         # loading item data or doing complex N-way intersection. For now, we only
@@ -1143,6 +1172,8 @@ class Repository:
             "checked_out_count": len(self._checked_out_item_ids),
             "overdue_count": self._count_overdue(),
             "inspection_overdue_count": self._count_inspection_overdue(),
+            "missing_count": len(self._status_to_item_ids.get("missing", set())),
+            "needs_repair_count": len(self._status_to_item_ids.get("needs_repair", set())),
             "locations_total": len(self._locations_by_id),
             "no_location_count": len(self._items_by_id) - items_with_location,
         }
@@ -1596,6 +1627,7 @@ class Repository:
             "locations_by_id": self._locations_by_id,
             "tags_to_item_ids": self._tags_to_item_ids,
             "category_to_item_ids": self._category_to_item_ids,
+            "status_to_item_ids": self._status_to_item_ids,
             "checked_out_item_ids": self._checked_out_item_ids,
             "low_stock_item_ids": self._low_stock_item_ids,
             "items_by_location_id": self._items_by_location_id,
@@ -1620,6 +1652,7 @@ class Repository:
                 "name": item.name,
                 "description": item.description,
                 "quantity": int(item.quantity),
+                "status": item.status,
                 "checked_out": bool(item.checked_out),
                 "due_date": item.due_date,
                 "inspection_date": item.inspection_date,
@@ -1678,6 +1711,7 @@ class Repository:
         self._locations_by_id = {}
         self._tags_to_item_ids = {}
         self._category_to_item_ids = {}
+        self._status_to_item_ids = {}
         self._word_to_item_ids = {}
         self._name_prefix_to_item_ids = {}
         self._trigram_to_item_ids = {}
@@ -1773,6 +1807,9 @@ class Repository:
                         name=str(item_data.get("name", "")),
                         description=item_data.get("description"),
                         quantity=int(item_data.get("quantity", 0)),
+                        # Stores written before the field existed carry no
+                        # status; they read as the default rather than failing.
+                        status=coerce_item_status(item_data.get("status")),
                         checked_out=bool(item_data.get("checked_out", False)),
                         due_date=item_data.get("due_date"),
                         inspection_date=item_data.get("inspection_date"),

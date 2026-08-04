@@ -1,4 +1,5 @@
-import type { Item, ItemCreate, ItemUpdate, ScalarValue } from '../store/types';
+import type { Item, ItemCreate, ItemStatus, ItemUpdate, ScalarValue } from '../store/types';
+import { itemStatus } from './status';
 
 /**
  * Form model and payload building for the item edit surfaces.
@@ -23,6 +24,7 @@ export interface ItemFormModel {
   name: string;
   description: string;
   quantity: number;
+  status: ItemStatus;
   lowStock: number | null;
   category: string;
   tags: string[];
@@ -67,6 +69,7 @@ export function formFromItem(item: Item | null): ItemFormModel {
     name: item?.name ?? '',
     description: item?.description ?? '',
     quantity: item?.quantity ?? 1,
+    status: item ? itemStatus(item) : 'ok',
     lowStock: item?.low_stock_threshold ?? null,
     category: item?.category ?? '',
     tags: [...(item?.tags ?? [])],
@@ -152,6 +155,7 @@ function commonFields(model: ItemFormModel) {
     name: model.name.trim(),
     description: model.description.trim() || null,
     quantity: model.quantity,
+    status: model.status,
     low_stock_threshold: model.lowStock,
     category: model.category.trim() || null,
     tags: normalizeTags(model.tags),
@@ -187,6 +191,7 @@ export function isDirty(model: ItemFormModel, original: Item | null): boolean {
     model.name !== baseline.name ||
     model.description !== baseline.description ||
     model.quantity !== baseline.quantity ||
+    model.status !== baseline.status ||
     model.lowStock !== baseline.lowStock ||
     model.category !== baseline.category ||
     model.locationId !== baseline.locationId ||

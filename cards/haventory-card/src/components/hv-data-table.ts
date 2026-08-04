@@ -9,6 +9,7 @@ import { getDefaultOrderFor } from '../store/sort';
 import type { AreaRef } from '../store/types';
 import type { ColumnKey } from '../store/columns';
 import { isLowStock } from './hv-list-row';
+import { itemStatus, statusLabel } from '../ui/status';
 import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import type { Item, Sort, SortField } from '../store/types';
 
@@ -149,6 +150,18 @@ export class HVDataTable extends LitElement {
         border: 1px solid var(--hv-primary-tint-border);
         border-radius: var(--hv-radius-chip);
         padding: 2px 8px;
+      }
+      /* Same amber as the list row's status chip: a flagged state is a chore,
+         not the out-and-late red. */
+      .status-chip {
+        flex: none;
+        font: 500 11px var(--hv-font);
+        color: var(--hv-warn-deep);
+        background: var(--hv-warn-bg);
+        border: 1px solid var(--hv-warn-border);
+        border-radius: var(--hv-radius-chip);
+        padding: 2px 8px;
+        white-space: nowrap;
       }
       .cell {
         min-width: 0;
@@ -304,6 +317,16 @@ export class HVDataTable extends LitElement {
         return html`<span class="cell qty ${isLowStock(item) ? 'low' : ''}" data-testid="cell-quantity"
           >${item.quantity}</span
         >`;
+      case 'status': {
+        // The column names every row's status, "OK" included — that is what
+        // makes it a column rather than a second copy of the exception chip.
+        const status = itemStatus(item);
+        return html`<span class="cell" data-testid="cell-status"
+          >${status === 'ok'
+            ? statusLabel(status)
+            : html`<span class="status-chip">${statusLabel(status)}</span>`}</span
+        >`;
+      }
       case 'category':
         return html`<span class="cell" data-testid="cell-category" title=${item.category ?? ''}>${item.category || '—'}</span>`;
       case 'location': {
@@ -335,6 +358,10 @@ export class HVDataTable extends LitElement {
 
   render() {
     const columns = this._columns;
+    // The name cell's chip is the flagged-status signal for a table that has no
+    // Status column. With the column shown it would put the same word twice on
+    // one row, so the column takes over and the chip stands down.
+    const statusColumn = columns.includes('status');
     const template = tableTemplateFor(columns, { selectable: this.selectable });
     const loadedIds = this.items.map((i) => i.id);
     const selectedCount = loadedIds.filter((id) => this.selection.has(id)).length;
@@ -409,6 +436,11 @@ export class HVDataTable extends LitElement {
                   <span class="name-cell">
                     <span class="name" data-testid="table-name" title=${item.name}>${item.name}</span>
                     ${isLowStock(item) ? html`<span class="low-badge">LOW</span>` : null}
+                    ${!statusColumn && itemStatus(item) !== 'ok'
+                      ? html`<span class="status-chip" data-testid="table-status"
+                          >${statusLabel(itemStatus(item))}</span
+                        >`
+                      : null}
                     ${item.checked_out ? html`<span class="out-chip">Checked out</span>` : null}
                   </span>
                   ${columns.map((key) => this._cell(item, key))}
