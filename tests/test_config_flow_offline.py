@@ -1,7 +1,7 @@
 """Offline tests for HAventory config flow.
 
 Scenarios:
-- Single-instance guard aborts with reason
+- Single-instance guard aborts with reason, and the manifest declares the same rule
 - async_step_user happy path creates entry
 - The card title is asked for at setup, normalized, and seeded into the options
 - Import path: create entry if no existing (if supported)
@@ -56,6 +56,21 @@ async def test_single_instance_guard_aborts(monkeypatch) -> None:
     result = await flow.async_step_user(user_input=None)
     assert result["type"] == "abort"
     assert result["reason"] == "single_instance_allowed"
+
+
+def test_manifest_declares_single_config_entry() -> None:
+    """The manifest must declare the same single-instance rule the flow enforces.
+
+    `single_config_entry` is what removes HAventory from the "Add integration"
+    picker once an entry exists, so the second attempt never starts. The in-flow
+    guard above still covers the paths that bypass the picker, and the two must
+    agree: dropping the manifest key would silently put the entry back in the
+    picker only to abort on its first step.
+    """
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest.get("single_config_entry") is True
 
 
 @pytest.mark.asyncio
