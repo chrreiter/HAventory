@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.1](https://github.com/chrreiter/HAventory/compare/v0.3.0...v0.3.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* **card:** bring the full view's table up to the card's accessibility bar ([#253](https://github.com/chrreiter/HAventory/issues/253)) ([c553470](https://github.com/chrreiter/HAventory/commit/c55347020dab6e9cc3ac2d04afdc2b173e1a15d6))
+* **card:** give every informational chip one shared style ([#262](https://github.com/chrreiter/HAventory/issues/262)) ([796baed](https://github.com/chrreiter/HAventory/commit/796baed62b9cd39a56fb8178f8aee3ed4a1f3f12))
+* **config:** declare single_config_entry in the manifest ([#257](https://github.com/chrreiter/HAventory/issues/257)) ([c60868c](https://github.com/chrreiter/HAventory/commit/c60868ca76b10c9e7c47c8cf66bb255e9bdfbdb4)), closes [#233](https://github.com/chrreiter/HAventory/issues/233)
+* **search:** let short query fragments match mid-word ([#251](https://github.com/chrreiter/HAventory/issues/251)) ([7d3aece](https://github.com/chrreiter/HAventory/commit/7d3aece19ece0e7025a642f004eba40f9658a18e)), closes [#220](https://github.com/chrreiter/HAventory/issues/220)
+* **ws:** persist before broadcasting so an event implies a durable write ([#250](https://github.com/chrreiter/HAventory/issues/250)) ([0841a37](https://github.com/chrreiter/HAventory/commit/0841a37a31d47ecb3081175edc88084df9ca7855)), closes [#221](https://github.com/chrreiter/HAventory/issues/221) [#247](https://github.com/chrreiter/HAventory/issues/247)
+
 ## [0.3.0](https://github.com/chrreiter/HAventory/compare/v0.2.0...v0.3.0) (2026-08-03)
 
 
