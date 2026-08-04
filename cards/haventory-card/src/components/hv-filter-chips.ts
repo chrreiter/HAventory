@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { locationPathParts, pathTitle } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate } from '../ui/relative-time';
@@ -125,6 +126,7 @@ export class HVFilterChips extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -135,20 +137,10 @@ export class HVFilterChips extends LitElement {
         gap: 6px;
         align-items: center;
       }
+      /* Each of these removes the filter it names, so the trailing × is part of
+         the target and the chip carries a little more room on that side. */
       .chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        border: none;
-        border-radius: var(--hv-radius-chip);
-        padding: 4px 9px 4px 11px;
-        font: 500 12px var(--hv-font);
-        color: var(--hv-primary-darker);
-        background: var(--hv-primary-tint);
-      }
-      .chip.warning {
-        color: var(--hv-warn);
-        background: var(--hv-warn-bg);
+        padding-right: 6px;
       }
       .chip:hover {
         opacity: 0.85;
@@ -180,21 +172,21 @@ export class HVFilterChips extends LitElement {
     return html`
       <div class="row" data-testid="filter-chips">
         ${chips.map(
-          (chip) => html`<button
-            class="chip ${chip.tone === 'warning' ? 'warning' : ''}"
+          (entry) => html`<button
+            class="hv-chip chip ${entry.tone === 'warning' ? 'warning' : 'state'}"
             data-testid="filter-chip"
-            data-key=${chip.key}
-            aria-label=${`Clear filter ${chip.label}`}
+            data-key=${entry.key}
+            aria-label=${`Clear filter ${entry.label}`}
             @click=${() =>
               this.dispatchEvent(
                 new CustomEvent('remove-filter', {
-                  detail: { key: chip.key, patch: clearedValueFor(chip.key) },
+                  detail: { key: entry.key, patch: clearedValueFor(entry.key) },
                   bubbles: true,
                   composed: true,
                 }),
               )}
           >
-            ${chip.label}${icon('close', 15)}
+            ${entry.label}${icon('close', 15)}
           </button>`,
         )}
         <button

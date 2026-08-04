@@ -1354,13 +1354,13 @@ describe('hv-full-view: app bar filters', () => {
     expect(q(sr, '[data-testid="full-badge-out"]')?.textContent?.trim()).toBe('2 checked out');
   });
 
-  // Three identically washed pills said nothing apart. The card's hues carry the
-  // meaning; the fills are solid rather than the card's pale tints, because a
-  // tint over this already-coloured bar is unreadable in dark mode.
+  // The card's hues carry the meaning on this bar too, but the fills are solid
+  // rather than the card's pale tints, because a tint over an already-coloured
+  // bar is unreadable in dark mode.
   it('colours low and overdue the way the card does', () => {
     const css = fullCss();
-    expect(css).toMatch(/\.appbar \.pill\.low \{[^}]*background: var\(--hv-amber\)/);
-    expect(css).toMatch(/\.appbar \.pill\.overdue \{[^}]*background: var\(--hv-error\)/);
+    expect(css).toMatch(/\.appbar \.hv-chip\.warning \{[^}]*background: var\(--hv-amber\)/);
+    expect(css).toMatch(/\.appbar \.hv-chip\.error \{[^}]*background: var\(--hv-error\)/);
   });
 
   it('debounces the app bar search', async () => {

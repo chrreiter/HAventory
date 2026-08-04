@@ -92,13 +92,15 @@ describe('hv-list-row: content', () => {
   it('calls out an overdue check-out in error colour', async () => {
     const el = await mount({ checked_out: true, due_date: '2020-01-01' });
     const chip = q(el, '[data-testid="row-checked-out"]');
-    expect(chip?.classList.contains('overdue')).toBe(true);
+    expect(chip?.classList.contains('error')).toBe(true);
     expect(chip?.textContent).toContain('Overdue');
   });
 
   it('does not call a future due date overdue', async () => {
     const el = await mount({ checked_out: true, due_date: '2099-01-01' });
-    expect(q(el, '[data-testid="row-checked-out"]')?.classList.contains('overdue')).toBe(false);
+    const chip = q(el, '[data-testid="row-checked-out"]');
+    expect(chip?.classList.contains('error')).toBe(false);
+    expect(chip?.classList.contains('state')).toBe(true);
   });
 
   // `inspection_date` says when the item is next due for inspection, so a date

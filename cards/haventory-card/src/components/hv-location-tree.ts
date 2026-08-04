@@ -3,6 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import type { TemplateResult } from 'lit';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import type { IconName } from '../ui/icons';
 import { groupRootsByArea, locationMatches } from '../store/location-tree';
@@ -54,6 +55,7 @@ export class HVLocationTree extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -166,17 +168,13 @@ export class HVLocationTree extends LitElement {
       /* Everywhere else the chip annotates a path it sits beside, so it is set
          smaller than the text it qualifies. Here it *is* the row's label, one
          level of the tree above the locations under it, and reading smaller than
-         them inverted the hierarchy it heads. */
-      .area-name .hv-area-chip {
-        font-size: inherit;
-      }
+         them inverts the hierarchy it heads.
+         The no-area band is that same heading for the locations no area claims,
+         so it takes the same size and shape and says the difference with its
+         fill: an outline where the others carry one. */
+      .area-name .hv-area-chip,
       .area-none {
-        flex: 1;
-        min-width: 0;
-        font-size: 11.5px;
-        letter-spacing: 0.3px;
-        text-transform: uppercase;
-        color: var(--hv-text-tertiary);
+        font-size: inherit;
       }
       .actions {
         flex: none;
@@ -550,7 +548,7 @@ export class HVLocationTree extends LitElement {
       pickable && this.selectedAreaId === group.id && this.selectedId === null && !this.orphansSelected;
     const label = group
       ? renderAreaChip(group.name)
-      : html`<span class="area-none">No area</span>`;
+      : html`<span class="hv-area-chip quiet area-none">No area</span>`;
 
     return html`<div
       class="row area-head ${selected ? 'selected' : ''} ${pickable ? 'selectable' : ''}"

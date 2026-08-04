@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { locationPathParts, pathTitle } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
@@ -65,6 +66,7 @@ export class HVFilterPanel extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -99,35 +101,23 @@ export class HVFilterPanel extends LitElement {
         gap: 7px;
         align-items: center;
       }
+      /* These are values in a form, sat beside the panel's own selects and date
+         fields, so they read at the size of those rather than at the size of a
+         chip that annotates a row elsewhere in the card. */
       .chip {
-        display: inline-flex;
-        align-items: center;
         gap: 5px;
-        border: 1px solid var(--hv-divider);
-        background: transparent;
-        color: var(--hv-chip-text);
-        border-radius: var(--hv-radius-chip);
         padding: 5px 12px;
-        font: 400 12.5px var(--hv-font);
+        font-size: 12.5px;
       }
       :host([mobile]) .chip {
         min-height: var(--hv-tap-min, 36px);
         padding: 0 14px;
         font-size: 13.5px;
       }
-      .chip.on {
-        color: var(--hv-primary-darker);
-        background: var(--hv-primary-tint);
-        border-color: var(--hv-primary);
-      }
-      .chip.on.warning {
-        color: var(--hv-warn);
-        background: var(--hv-warn-bg);
-        border-color: var(--hv-amber);
-      }
+      /* Nothing is picked here yet — an outline that has not been drawn in
+         rather than a value that has. */
       .chip.more {
         border-style: dashed;
-        color: var(--hv-text-secondary);
       }
       .chip .tally {
         opacity: 0.65;
@@ -465,7 +455,7 @@ export class HVFilterPanel extends LitElement {
     opts: { warning?: boolean; tally?: number | null; testid?: string } = {},
   ) {
     return html`<button
-      class="chip check ${on ? 'on' : ''} ${opts.warning ? 'warning' : ''}"
+      class="hv-chip toggle chip check ${on ? 'on' : ''} ${opts.warning ? 'warning' : ''}"
       aria-pressed=${String(on)}
       data-testid=${opts.testid ?? 'filter-check'}
       @click=${onToggle}
@@ -490,7 +480,7 @@ export class HVFilterPanel extends LitElement {
         <span class="hv-label">Where</span>
         <div class="chips">
           <button
-            class="chip ${f.locationId ? 'on' : ''}"
+            class="hv-chip toggle chip ${f.locationId ? 'on' : ''}"
             data-testid="filter-location"
             aria-expanded=${String(this._locationOpen)}
             aria-controls=${LOCATION_TREE_ID}
@@ -553,7 +543,7 @@ export class HVFilterPanel extends LitElement {
         <div class="chips">
           ${shown.map(
             (c) => html`<button
-              class="chip ${f.category === c.value ? 'on' : ''}"
+              class="hv-chip toggle chip ${f.category === c.value ? 'on' : ''}"
               data-testid="filter-category"
               data-value=${c.value}
               aria-pressed=${String(f.category === c.value)}
@@ -565,7 +555,7 @@ export class HVFilterPanel extends LitElement {
           )}
           ${hidden > 0
             ? html`<button
-                class="chip more"
+                class="hv-chip toggle chip more"
                 data-testid="filter-category-more"
                 @click=${() => {
                   this._showAllCategories = true;
@@ -614,7 +604,7 @@ export class HVFilterPanel extends LitElement {
         <div class="chips">
           ${all.map(
             (t) => html`<button
-              class="chip ${selected.has(t.value) ? 'on' : ''}"
+              class="hv-chip toggle chip ${selected.has(t.value) ? 'on' : ''}"
               data-testid="filter-tag"
               data-value=${t.value}
               aria-pressed=${String(selected.has(t.value))}
@@ -626,7 +616,7 @@ export class HVFilterPanel extends LitElement {
           )}
           ${extras.map(
             (t) => html`<button
-              class="chip on"
+              class="hv-chip toggle chip on"
               data-testid="filter-tag"
               data-value=${t}
               aria-pressed="true"
@@ -679,7 +669,7 @@ export class HVFilterPanel extends LitElement {
               `
             : html`
                 <button
-                  class="chip ${f.lowStockOnly ? 'on warning' : ''}"
+                  class="hv-chip toggle chip ${f.lowStockOnly ? 'on warning' : ''}"
                   data-testid="filter-low-stock-only"
                   aria-pressed=${String(f.lowStockOnly)}
                   @click=${() => this._patch({ lowStockOnly: !f.lowStockOnly })}
@@ -687,7 +677,7 @@ export class HVFilterPanel extends LitElement {
                   ${f.lowStockOnly ? icon('check', 12) : null}Low stock${tally(c?.low_stock_count)}
                 </button>
                 <button
-                  class="chip ${f.checkedOutOnly ? 'on' : ''}"
+                  class="hv-chip toggle chip ${f.checkedOutOnly ? 'on' : ''}"
                   data-testid="filter-checked-out"
                   aria-pressed=${String(f.checkedOutOnly)}
                   @click=${() => this._patch({ checkedOutOnly: !f.checkedOutOnly })}
@@ -695,7 +685,7 @@ export class HVFilterPanel extends LitElement {
                   ${f.checkedOutOnly ? icon('check', 12) : null}Checked out${tally(c?.checked_out_count)}
                 </button>
                 <button
-                  class="chip ${f.overdueOnly ? 'on warning' : ''}"
+                  class="hv-chip toggle chip ${f.overdueOnly ? 'on error' : ''}"
                   data-testid="filter-overdue"
                   aria-pressed=${String(f.overdueOnly)}
                   @click=${() => this._patch({ overdueOnly: !f.overdueOnly })}
@@ -703,7 +693,7 @@ export class HVFilterPanel extends LitElement {
                   ${f.overdueOnly ? icon('check', 12) : null}Overdue${tally(c?.overdue_count)}
                 </button>
                 <button
-                  class="chip ${f.inspectionDueOnly ? 'on warning' : ''}"
+                  class="hv-chip toggle chip ${f.inspectionDueOnly ? 'on warning' : ''}"
                   data-testid="filter-inspection-due"
                   aria-pressed=${String(f.inspectionDueOnly)}
                   @click=${() => this._patch({ inspectionDueOnly: !f.inspectionDueOnly })}
@@ -711,7 +701,7 @@ export class HVFilterPanel extends LitElement {
                   ${f.inspectionDueOnly ? icon('check', 12) : null}Inspection due${tally(c?.inspection_overdue_count)}
                 </button>
                 <button
-                  class="chip ${f.orphansOnly ? 'on' : ''}"
+                  class="hv-chip toggle chip ${f.orphansOnly ? 'on' : ''}"
                   data-testid="filter-orphans"
                   aria-pressed=${String(f.orphansOnly)}
                   @click=${() => this._patch({ orphansOnly: !f.orphansOnly })}
@@ -746,7 +736,7 @@ export class HVFilterPanel extends LitElement {
             const warning = on && s !== 'ok';
             const tally = tallyFor(s);
             return html`<button
-              class="chip ${on ? 'on' : ''} ${warning ? 'warning' : ''}"
+              class="hv-chip toggle chip ${on ? 'on' : ''} ${warning ? 'warning' : ''}"
               data-testid="filter-status"
               data-value=${s}
               aria-pressed=${String(on)}

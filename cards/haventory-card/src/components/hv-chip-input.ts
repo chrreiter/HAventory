@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { normalizeTags } from '../ui/item-form';
 
@@ -16,6 +17,7 @@ export class HVChipInput extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -36,17 +38,14 @@ export class HVChipInput extends LitElement {
       .field:focus-within {
         border-color: var(--hv-primary);
       }
+      /* A value already entered, not a fact about something else: it takes the
+         chip's shape and the state fill so it reads as one of the card's chips,
+         and owns the rest — a remove affordance, and enough height to be a
+         touch target, which no informational chip needs. */
       .chip {
-        display: inline-flex;
-        align-items: center;
         gap: 3px;
         min-height: var(--hv-tap-min, auto);
-        border: none;
-        border-radius: var(--hv-radius-chip);
-        background: var(--hv-primary-tint);
-        color: var(--hv-primary-darker);
         padding: 3px 9px;
-        font: 400 12px var(--hv-font);
       }
       .chip svg {
         opacity: 0.75;
@@ -136,7 +135,7 @@ export class HVChipInput extends LitElement {
     return html`
       <div class="field" data-testid="chip-field">
         ${this.values.map(
-          (tag) => html`<span class="chip" data-testid="chip" data-value=${tag}>
+          (tag) => html`<span class="hv-chip state chip" data-testid="chip" data-value=${tag}>
             ${tag}
             <button
               class="hv-icon-button chip-remove"

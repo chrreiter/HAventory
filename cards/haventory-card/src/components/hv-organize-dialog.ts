@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
@@ -72,6 +73,7 @@ export class HVOrganizeDialog extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -220,13 +222,6 @@ export class HVOrganizeDialog extends LitElement {
       }
       .value-row:hover {
         background: var(--hv-hover-overlay);
-      }
-      .value-chip {
-        border: 1px solid var(--hv-divider);
-        border-radius: var(--hv-radius-chip);
-        padding: 4px 11px;
-        font-size: 12.5px;
-        color: var(--hv-chip-text);
       }
       .count-link {
         border: none;
@@ -995,7 +990,7 @@ export class HVOrganizeDialog extends LitElement {
 
     return html`<div class="expander" data-testid="location-merge">
       <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
-        <span class="value-chip" style="text-decoration: line-through">${source.name}</span>
+        <span class="hv-chip" style="text-decoration: line-through">${source.name}</span>
         ${icon('arrowRight', 18)}
         <button
           class="control"
@@ -1213,7 +1208,7 @@ export class HVOrganizeDialog extends LitElement {
 
     return html`<div class="expander" data-testid="value-editor" data-mode=${editing.mode}>
       <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
-        <span class="value-chip" style=${merging ? 'text-decoration: line-through' : ''}>${value}</span>
+        <span class="hv-chip" style=${merging ? 'text-decoration: line-through' : ''}>${value}</span>
         <span style="font-size:12.5px;color:var(--hv-text-secondary)">${counted(count, 'item')}</span>
         ${merging ? icon('arrowRight', 18) : null}
         <label style="display:flex;align-items:center;gap:8px;flex:1;min-width:180px">
@@ -1346,7 +1341,7 @@ export class HVOrganizeDialog extends LitElement {
           ? values.map(
               (v) => html`
                 <div class="value-row" data-testid="value-row" data-value=${v.value}>
-                  <span class="value-chip">${v.value}</span>
+                  <span class="hv-chip">${v.value}</span>
                   ${this._isDraft(v.value)
                     ? html`<span class="draft-note" data-testid="value-draft">
                         new · not saved until an item uses it
@@ -1441,7 +1436,7 @@ export class HVOrganizeDialog extends LitElement {
         <button data-testid="sheet-merge" @click=${() => this._startValueEdit(value, 'merge')}>
           ${icon('callMerge', 20)}Merge into…
           ${suggestion
-            ? html`<span class="value-chip" style="margin-left:auto" data-testid="sheet-merge-suggestion"
+            ? html`<span class="hv-chip" style="margin-left:auto" data-testid="sheet-merge-suggestion"
                 >${suggestion}</span
               >`
             : null}

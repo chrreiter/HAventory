@@ -2,6 +2,7 @@ import { LitElement, css, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted, plural } from '../ui/plural';
@@ -82,6 +83,7 @@ export class HVFullView extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: contents;
@@ -216,53 +218,35 @@ export class HVFullView extends LitElement {
       .appbar .search input::placeholder {
         color: rgba(255, 255, 255, 0.8);
       }
-      .appbar .pill {
-        flex: none;
-        border: none;
-        border-radius: var(--hv-radius-chip);
+      /*
+       * The bar's filter toggles are the card's chips with the fills
+       * substituted, and they take none of the pressable variant: it reads as an empty
+       * outline until it is applied, and nothing on a primary-coloured bar can.
+       *
+       * The card's tints are pale washes of their hue chosen to sit on a plain
+       * card surface, and in dark mode they are translucent — laid over this
+       * already-blue bar, "low" comes out as faintly warm blue with amber text
+       * on it. Same hues and same meanings, solid fills that do not depend on
+       * what is behind them, and a white ring rather than a primary one,
+       * because primary is what the bar itself is painted.
+       */
+      .appbar .hv-chip {
         background: rgba(255, 255, 255, 0.22);
         color: #fff;
-        padding: 4px 11px;
-        font: 500 11.5px var(--hv-font);
       }
-      .appbar .pill.on {
-        outline: 2px solid #fff;
+      .appbar .hv-chip:hover {
+        background: rgba(255, 255, 255, 0.32);
       }
-      /*
-       * Low and overdue carry the card's meanings here too: amber for a stock
-       * warning, red for a passed due date. Two identical translucent pills
-       * reading "102 low" and "82 out" told you nothing apart.
-       *
-       * They cannot reuse the card's exact fills, though. Those are pale tints
-       * of their hue chosen to sit on a plain card surface, and in dark mode
-       * they are translucent — laid over this already-blue bar, "low" would come
-       * out as faintly warm blue with amber text on it. Same hues, same
-       * meanings, solid fills that do not depend on what is behind them.
-       * Checked out keeps the neutral wash, which is what the card's
-       * primary-tint amounts to on a primary-coloured bar.
-       */
-      .appbar .pill.low {
+      .appbar .hv-chip.on {
+        outline-color: #fff;
+      }
+      .appbar .hv-chip.warning {
         background: var(--hv-amber);
-        color: #3b2600;
+        color: var(--hv-on-amber);
       }
-      .appbar .pill.overdue {
+      .appbar .hv-chip.error {
         background: var(--hv-error);
         color: #fff;
-      }
-      /* Amber like low stock, not red like overdue: red is reserved here for an
-         item that is out and late back, while an inspection that has come due
-         is a chore on something still on the shelf. */
-      .appbar .pill.inspect {
-        background: var(--hv-amber);
-        color: #3b2600;
-      }
-      /* The same amber the status chip carries on rows, in the table and in the
-         detail sheet — one tone for "flagged, but still a chore" wherever a
-         status is marked. The two pills say which flag in words; giving them a
-         hue of their own would be a second status vocabulary on one screen. */
-      .appbar .pill.status {
-        background: var(--hv-amber);
-        color: #3b2600;
       }
       /*
        * Above the phone breakpoint — the complement of NARROW_QUERY, whose own
@@ -570,8 +554,10 @@ export class HVFullView extends LitElement {
         font-weight: 500;
         color: var(--hv-text);
       }
-      .crumb .hv-area-chip {
-        margin-right: 6px;
+      /* The segments and the count wrap as one run of text; only the chip is
+         held out of it, so the row can centre the two against each other. */
+      .crumb > .hv-chip-line-text {
+        flex: 1;
       }
       .filters-button {
         display: inline-flex;
@@ -1456,17 +1442,22 @@ export class HVFullView extends LitElement {
 
     return html`
       <div class="context">
-        <span class="crumb" data-testid="full-breadcrumb">
-          ${filters.orphansOnly
-            ? html`<span class="current">No location</span>`
-            : segments.length
-              ? html`${renderAreaChip(areaName)}${segments.map((seg, i) =>
-                  i === segments.length - 1
-                    ? html`<span class="current">${seg}</span>`
-                    : html`<span>${seg} › </span>`,
-                )}`
-              : html`<span class="current">All items</span>`}
-          ${st?.total !== null && st?.total !== undefined ? html` · ${counted(st.total, 'item')}` : null}
+        <span class="crumb hv-chip-line" data-testid="full-breadcrumb">
+          ${filters.orphansOnly || !segments.length ? null : renderAreaChip(areaName)}
+          <span class="hv-chip-line-text">
+            ${filters.orphansOnly
+              ? html`<span class="current">No location</span>`
+              : segments.length
+                ? segments.map((seg, i) =>
+                    i === segments.length - 1
+                      ? html`<span class="current">${seg}</span>`
+                      : html`<span>${seg} › </span>`,
+                  )
+                : html`<span class="current">All items</span>`}${st?.total !== null &&
+            st?.total !== undefined
+              ? html` · ${counted(st.total, 'item')}`
+              : null}
+          </span>
         </span>
         <span class="spacer"></span>
         ${filterCount > 0
@@ -1616,7 +1607,7 @@ export class HVFullView extends LitElement {
     const on = (this.st?.filters ?? defaultFilters()).status === status;
     const noun = statusLabel(status).toLowerCase();
     return html`<button
-      class="pill status ${on ? 'on' : ''}"
+      class="hv-chip pill warning ${on ? 'on' : ''}"
       data-testid="full-badge-status"
       data-value=${status}
       aria-pressed=${String(on)}
@@ -1656,7 +1647,7 @@ export class HVFullView extends LitElement {
           <span class="spacer"></span>
           ${counts && counts.low_stock_count > 0
             ? html`<button
-                class="pill low ${filters.lowStockOnly ? 'on' : ''}"
+                class="hv-chip pill warning ${filters.lowStockOnly ? 'on' : ''}"
                 data-testid="full-badge-low"
                 aria-pressed=${String(filters.lowStockOnly)}
                 title="Show only low-stock items"
@@ -1667,7 +1658,7 @@ export class HVFullView extends LitElement {
             : null}
           ${counts && (counts.overdue_count ?? 0) > 0
             ? html`<button
-                class="pill overdue ${filters.overdueOnly ? 'on' : ''}"
+                class="hv-chip pill error ${filters.overdueOnly ? 'on' : ''}"
                 data-testid="full-badge-overdue"
                 aria-pressed=${String(filters.overdueOnly)}
                 title="Show only overdue items"
@@ -1678,7 +1669,7 @@ export class HVFullView extends LitElement {
             : null}
           ${counts && (counts.inspection_overdue_count ?? 0) > 0
             ? html`<button
-                class="pill inspect ${filters.inspectionDueOnly ? 'on' : ''}"
+                class="hv-chip pill warning ${filters.inspectionDueOnly ? 'on' : ''}"
                 data-testid="full-badge-inspection"
                 aria-pressed=${String(filters.inspectionDueOnly)}
                 title="Show only items due for inspection"
@@ -1689,7 +1680,7 @@ export class HVFullView extends LitElement {
             : null}
           ${counts && counts.checked_out_count > 0
             ? html`<button
-                class="pill out ${filters.checkedOutOnly ? 'on' : ''}"
+                class="hv-chip pill ${filters.checkedOutOnly ? 'on' : ''}"
                 data-testid="full-badge-out"
                 aria-pressed=${String(filters.checkedOutOnly)}
                 title="Show only checked-out items"
