@@ -10,6 +10,7 @@ import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { countLocations } from '../store/location-tree';
 import { emptyKindFor, renderEmptyState } from '../ui/empty-state';
+import { deepFocusables } from '../ui/dialog-focus';
 import { areaNameById, effectiveAreaIdForLocation } from '../ui/area';
 import { renderAreaChip } from '../ui/location-path';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
@@ -898,12 +899,18 @@ export class HVFullView extends LitElement {
   };
 
   // ---------- Focus trap ----------
+  /**
+   * The trap's two sentinels bounce focus to the first and last of these, so the
+   * walk has to reach every control the shell renders — including the ones the
+   * sidebar tree, the filter panel, the editor and the table draw inside their
+   * own shadow roots, which a query rooted here cannot see.
+   *
+   * The sentinels themselves are focusable and would otherwise be their own
+   * first and last, which is a trap that only ever bounces between them.
+   */
   private _focusables(): HTMLElement[] {
-    const root = this.shadowRoot?.querySelector('.shell');
-    if (!root) return [];
-    const sel = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-    return [...root.querySelectorAll<HTMLElement>(sel)].filter(
-      (el) => !el.hasAttribute('disabled') && !el.classList.contains('sentinel'),
+    return deepFocusables(this.shadowRoot?.querySelector('.shell')).filter(
+      (el) => !el.classList.contains('sentinel'),
     );
   }
 

@@ -1,6 +1,7 @@
 import './hv-full-view';
 import { NARROW_QUERY } from './hv-full-view';
 import { makeMockHass, makeItem } from '../test.utils';
+import { deepActiveElement } from '../ui/dialog-focus';
 import { Store } from '../store/store';
 import type { HVFullView } from './hv-full-view';
 import type { Item, Location } from '../store/types';
@@ -371,6 +372,29 @@ describe('hv-full-view: embedded', () => {
     expect(q(sr, '.backdrop')).toBeTruthy();
     expect(sr.querySelectorAll('.sentinel')).toHaveLength(2);
     expect(q(sr, '[data-testid="expand-toggle"]')).toBeTruthy();
+  });
+
+  // The trap's two ends came from a query rooted in this shadow root, which
+  // stops at every `hv-*` boundary below it. The rows, the sidebar tree and the
+  // editor were all past one, so "last focusable" landed in the middle of the
+  // surface and Tab walked out through everything behind it.
+  it('bounces off the end of the trap into a child component, not out of it', async () => {
+    const { el, sr } = await mount({ items: [makeItem({ id: '1' }), makeItem({ id: '2' })] });
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    const rows = [...(table.shadowRoot?.querySelectorAll('[data-testid="table-row"]') ?? [])];
+    const lastEdit = rows[rows.length - 1].querySelector('[data-testid="table-edit"]');
+
+    // Shift+Tab off the front lands on the leading sentinel, which sends focus
+    // to the last thing inside the trap.
+    (sr.querySelector('.sentinel') as HTMLElement).focus();
+    await el.updateComplete;
+
+    expect(deepActiveElement()).toBe(lastEdit);
+  });
+
+  it('opens on the first control of the surface, not on something nested in it', async () => {
+    const { sr } = await mount({ items: [makeItem({ id: '1' })] });
+    expect(deepActiveElement()).toBe(q(sr, '[data-testid="expand-toggle"]'));
   });
 });
 
@@ -924,6 +948,26 @@ describe('hv-full-view: empty table', () => {
     const empty = q(sr, '[data-testid="empty-state"]') as HTMLElement;
     expect(empty.dataset.kind).toBe('no-items');
     expect(empty.textContent).toContain('No items yet');
+  });
+
+  it('waits for the fetch instead of blaming the filters for the gap', async () => {
+    // Changing a filter clears the rows and asks for the next page, so between
+    // the two the table has nothing to show and no answer yet. It used to fill
+    // that gap with "No items match these filters" and a Clear all button,
+    // against a filter nothing had been counted for.
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
+    store.setFilters({ q: 'wood' });
+    await el.updateComplete;
+
+    const empty = q(sr, '[data-testid="empty-state"]') as HTMLElement;
+    expect(empty.dataset.kind).toBe('loading');
+    expect(empty.textContent).toContain('Loading items');
+    expect(q(sr, '[data-testid="empty-action"]')).toBe(null);
+
+    await settle(el);
+    await settle(el);
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    expect(table.shadowRoot?.querySelector('[data-testid="table-row"]')).toBeTruthy();
   });
 });
 

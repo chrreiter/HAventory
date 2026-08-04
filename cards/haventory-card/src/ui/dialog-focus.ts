@@ -21,6 +21,73 @@ export function deepActiveElement(): HTMLElement | null {
   return el;
 }
 
+const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Whether the browser is drawing this element, and would therefore let it take
+ * focus.
+ *
+ * `visibility: hidden` is how this card holds a control in the layout without
+ * offering it — the table's row actions are hidden until their row is hovered
+ * or focused. `.focus()` on one of those is a silent no-op, so a trap that
+ * ended on it would leave focus on its sentinel and never wrap.
+ *
+ * `checkVisibility` is the browser's own answer and needs a layout to give it.
+ * jsdom performs none and does not implement the method; treating everything
+ * as drawn there is exactly what a plain `querySelectorAll` would have said.
+ */
+function isRendered(el: HTMLElement): boolean {
+  if (typeof el.checkVisibility !== 'function') return true;
+  return el.checkVisibility({ checkVisibilityCSS: true, visibilityProperty: true } as CheckVisibilityOptions);
+}
+
+/**
+ * Every focusable control under `root`, in tab order, descending into the shadow
+ * root of any custom element on the way.
+ *
+ * `querySelectorAll` stops at the first shadow boundary, so on a surface
+ * assembled from `hv-*` components it finds only the controls that surface
+ * renders itself. A focus trap built on that list picks a first and a last that
+ * sit somewhere in the middle of what can actually be reached, and Tab walks
+ * straight out of the trap through everything the query could not see.
+ *
+ * The walk follows the flattened tree, which is the one the tab order is taken
+ * from: a host element renders its shadow root in its place, and its light
+ * children appear only where a `<slot>` pulls them in. Walking the light
+ * children directly instead would collect content that is written but not
+ * rendered — the card passes the expanded view's whole empty state to the table
+ * as light DOM, and its buttons exist next to every row it is not showing.
+ */
+export function deepFocusables(root: ParentNode | null | undefined): HTMLElement[] {
+  const found: HTMLElement[] = [];
+
+  function take(el: HTMLElement) {
+    // A hidden subtree is not in the tab order, and `hidden` is how this card
+    // keeps a collapsed panel's controls out of it.
+    if (el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') return;
+    if (!isRendered(el)) return;
+    if (el.matches(FOCUSABLE) && !el.hasAttribute('disabled') && el.getAttribute('tabindex') !== '-1') {
+      found.push(el);
+    }
+    visit(el.shadowRoot ?? el);
+  }
+
+  function visit(node: ParentNode) {
+    for (const el of Array.from(node.children) as HTMLElement[]) {
+      if (el.localName === 'slot') {
+        for (const assigned of (el as HTMLSlotElement).assignedElements({ flatten: true })) {
+          take(assigned as HTMLElement);
+        }
+      } else {
+        take(el);
+      }
+    }
+  }
+
+  if (root) visit(root);
+  return found;
+}
+
 export class DialogFocus {
   /** Where focus came from; also marks "we are currently open". */
   private _returnTo: HTMLElement | null = null;
