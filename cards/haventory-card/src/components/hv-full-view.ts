@@ -2,6 +2,7 @@ import { LitElement, css, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted, plural } from '../ui/plural';
@@ -10,9 +11,12 @@ import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { countLocations } from '../store/location-tree';
 import { emptyKindFor, renderEmptyState } from '../ui/empty-state';
+import { deepFocusables } from '../ui/dialog-focus';
 import { areaNameById, effectiveAreaIdForLocation } from '../ui/area';
 import { renderAreaChip } from '../ui/location-path';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
+import { ITEM_STATUSES, statusLabel } from '../ui/status';
+import type { ItemStatus } from '../store/types';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
@@ -51,7 +55,7 @@ const SEARCH_DEBOUNCE_MS = 200;
 export const NARROW_QUERY = '(max-width: 700px)';
 
 /** The sidebar's collapsible sections, in the order they appear. */
-type SidebarSection = 'locations' | 'categories' | 'tags';
+type SidebarSection = 'locations' | 'status' | 'categories' | 'tags';
 
 /**
  * The element a section heading discloses, named so `aria-controls` can point at
@@ -79,6 +83,7 @@ export class HVFullView extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: contents;
@@ -213,45 +218,65 @@ export class HVFullView extends LitElement {
       .appbar .search input::placeholder {
         color: rgba(255, 255, 255, 0.8);
       }
-      .appbar .pill {
-        flex: none;
-        border: none;
-        border-radius: var(--hv-radius-chip);
+      /*
+       * The bar's filter toggles are the card's chips with the fills
+       * substituted, and they take none of the pressable variant: it reads as an empty
+       * outline until it is applied, and nothing on a primary-coloured bar can.
+       *
+       * The card's tints are pale washes of their hue chosen to sit on a plain
+       * card surface, and in dark mode they are translucent — laid over this
+       * already-blue bar, "low" comes out as faintly warm blue with amber text
+       * on it. Same hues and same meanings, solid fills that do not depend on
+       * what is behind them, and a white ring rather than a primary one,
+       * because primary is what the bar itself is painted.
+       */
+      .appbar .hv-chip {
         background: rgba(255, 255, 255, 0.22);
         color: #fff;
-        padding: 4px 11px;
-        font: 500 11.5px var(--hv-font);
       }
-      .appbar .pill.on {
-        outline: 2px solid #fff;
+      .appbar .hv-chip:hover {
+        background: rgba(255, 255, 255, 0.32);
       }
-      /*
-       * Low and overdue carry the card's meanings here too: amber for a stock
-       * warning, red for a passed due date. Two identical translucent pills
-       * reading "102 low" and "82 out" told you nothing apart.
-       *
-       * They cannot reuse the card's exact fills, though. Those are pale tints
-       * of their hue chosen to sit on a plain card surface, and in dark mode
-       * they are translucent — laid over this already-blue bar, "low" would come
-       * out as faintly warm blue with amber text on it. Same hues, same
-       * meanings, solid fills that do not depend on what is behind them.
-       * Checked out keeps the neutral wash, which is what the card's
-       * primary-tint amounts to on a primary-coloured bar.
-       */
-      .appbar .pill.low {
+      .appbar .hv-chip.on {
+        outline-color: #fff;
+      }
+      .appbar .hv-chip.warning {
         background: var(--hv-amber);
-        color: #3b2600;
+        color: var(--hv-on-amber);
       }
-      .appbar .pill.overdue {
+      .appbar .hv-chip.error {
         background: var(--hv-error);
         color: #fff;
       }
-      /* Amber like low stock, not red like overdue: red is reserved here for an
-         item that is out and late back, while an inspection that has come due
-         is a chore on something still on the shelf. */
-      .appbar .pill.inspect {
-        background: var(--hv-amber);
-        color: #3b2600;
+      /*
+       * Above the phone breakpoint — the complement of NARROW_QUERY, whose own
+       * block below owns everything at or under it.
+       *
+       * The search is the only item on this bar that can shrink: every pill,
+       * the title and both trailing buttons are flex:none. So each pill added
+       * comes out of the search box, and with all six showing it collapsed to
+       * "Search all 1(" in a 1024px content area. A floor stops that, and the
+       * bar takes a second line instead — which is what the phone layout
+       * already does with these same pills.
+       */
+      @media (min-width: 701px) {
+        .appbar {
+          flex-wrap: wrap;
+        }
+        .appbar .search {
+          min-width: 260px;
+        }
+        /* The spacer can only push on the line it sits on, so once the bar
+           wraps it holds the first line open while the actions it was meant to
+           push land left-aligned under the title. Carrying the margin on the
+           actions themselves keeps them at the right edge of whichever line
+           they end up on, and reads the same as today when nothing wraps. */
+        .appbar .spacer {
+          display: none;
+        }
+        .appbar .add {
+          margin-left: auto;
+        }
       }
       .appbar .add {
         flex: none;
@@ -529,8 +554,10 @@ export class HVFullView extends LitElement {
         font-weight: 500;
         color: var(--hv-text);
       }
-      .crumb .hv-area-chip {
-        margin-right: 6px;
+      /* The segments and the count wrap as one run of text; only the chip is
+         held out of it, so the row can centre the two against each other. */
+      .crumb > .hv-chip-line-text {
+        flex: 1;
       }
       .filters-button {
         display: inline-flex;
@@ -736,6 +763,7 @@ export class HVFullView extends LitElement {
    */
   @state() private _sections: Record<SidebarSection, boolean> = {
     locations: true,
+    status: true,
     categories: true,
     tags: true,
   };
@@ -857,12 +885,18 @@ export class HVFullView extends LitElement {
   };
 
   // ---------- Focus trap ----------
+  /**
+   * The trap's two sentinels bounce focus to the first and last of these, so the
+   * walk has to reach every control the shell renders — including the ones the
+   * sidebar tree, the filter panel, the editor and the table draw inside their
+   * own shadow roots, which a query rooted here cannot see.
+   *
+   * The sentinels themselves are focusable and would otherwise be their own
+   * first and last, which is a trap that only ever bounces between them.
+   */
   private _focusables(): HTMLElement[] {
-    const root = this.shadowRoot?.querySelector('.shell');
-    if (!root) return [];
-    const sel = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-    return [...root.querySelectorAll<HTMLElement>(sel)].filter(
-      (el) => !el.hasAttribute('disabled') && !el.classList.contains('sentinel'),
+    return deepFocusables(this.shadowRoot?.querySelector('.shell')).filter(
+      (el) => !el.classList.contains('sentinel'),
     );
   }
 
@@ -1095,6 +1129,58 @@ export class HVFullView extends LitElement {
   }
 
   /**
+   * The stored item status as a sidebar facet.
+   *
+   * Single-select, because the backend filter takes exactly one status, and
+   * pressing the active row clears it — the same contract category has. Unlike
+   * the other two facets the rows are a closed set the backend defines rather
+   * than values discovered from the inventory, so there is nothing to create
+   * and no empty state to fall back to.
+   */
+  private _renderStatusSection() {
+    const st = this.st;
+    const filters = st?.filters ?? defaultFilters();
+    const counts = st?.statsCounts;
+    // Only the two flagged states are priced by the counts payload; OK is
+    // whatever is left of the inventory. An older backend sends neither, and
+    // then no row claims a number rather than every row claiming a wrong one.
+    const missing = counts?.missing_count;
+    const needsRepair = counts?.needs_repair_count;
+    const tallyFor = (s: ItemStatus): number | null => {
+      if (missing === undefined || needsRepair === undefined) return null;
+      if (s === 'missing') return missing;
+      if (s === 'needs_repair') return needsRepair;
+      return Math.max(0, counts!.items_total - missing - needsRepair);
+    };
+    return html`
+      <div class="sidebar-head">
+        ${this._renderSectionToggle('status', 'Status')}
+        <!-- The other sections tally how many rows they hold; this one always
+             holds three, so the number would say the same thing forever. -->
+      </div>
+      <div id=${sectionPanelId('status')} ?hidden=${!this._sections.status}>
+        ${this._sections.status
+          ? ITEM_STATUSES.map((s) => {
+              const on = filters.status === s;
+              const tally = tallyFor(s);
+              return html`<button
+                class="value-row ${on ? 'on' : ''}"
+                data-testid="sidebar-status-row"
+                data-value=${s}
+                aria-pressed=${String(on)}
+                @click=${() => this._setFilters({ status: on ? null : s })}
+              >
+                ${on ? icon('check', 15) : null}
+                <span class="label">${statusLabel(s)}</span>
+                ${tally === null ? null : html`<span class="tally">${tally}</span>`}
+              </button>`;
+            })
+          : null}
+      </div>
+    `;
+  }
+
+  /**
    * Categories and tags as sidebar rows.
    *
    * Category is single-select and tags are multi-select, because that is what
@@ -1203,6 +1289,7 @@ export class HVFullView extends LitElement {
         <div id=${sectionPanelId('locations')} ?hidden=${!this._sections.locations}>
           ${this._sections.locations ? this._renderLocationSection() : null}
         </div>
+        ${this._renderStatusSection()}
         ${this._renderFacetSection(
           'categories',
           'Categories',
@@ -1355,17 +1442,22 @@ export class HVFullView extends LitElement {
 
     return html`
       <div class="context">
-        <span class="crumb" data-testid="full-breadcrumb">
-          ${filters.orphansOnly
-            ? html`<span class="current">No location</span>`
-            : segments.length
-              ? html`${renderAreaChip(areaName)}${segments.map((seg, i) =>
-                  i === segments.length - 1
-                    ? html`<span class="current">${seg}</span>`
-                    : html`<span>${seg} › </span>`,
-                )}`
-              : html`<span class="current">All items</span>`}
-          ${st?.total !== null && st?.total !== undefined ? html` · ${counted(st.total, 'item')}` : null}
+        <span class="crumb hv-chip-line" data-testid="full-breadcrumb">
+          ${filters.orphansOnly || !segments.length ? null : renderAreaChip(areaName)}
+          <span class="hv-chip-line-text">
+            ${filters.orphansOnly
+              ? html`<span class="current">No location</span>`
+              : segments.length
+                ? segments.map((seg, i) =>
+                    i === segments.length - 1
+                      ? html`<span class="current">${seg}</span>`
+                      : html`<span>${seg} › </span>`,
+                  )
+                : html`<span class="current">All items</span>`}${st?.total !== null &&
+            st?.total !== undefined
+              ? html` · ${counted(st.total, 'item')}`
+              : null}
+          </span>
         </span>
         <span class="spacer"></span>
         ${filterCount > 0
@@ -1499,6 +1591,33 @@ export class HVFullView extends LitElement {
     </button>`;
   }
 
+  /**
+   * One flagged status as an app-bar toggle, beside the derived counts.
+   *
+   * Only `missing` and `needs_repair` get one: they are the exceptions worth
+   * interrupting for, and an "OK" pill would price the other 99% of a healthy
+   * inventory. Single-select like every other status surface, so pressing one
+   * while the other is on replaces it rather than asking for items that are
+   * somehow both.
+   */
+  private _renderStatusPill(status: 'missing' | 'needs_repair', count: number | undefined) {
+    // Absent rather than zero: the same rule the overdue and inspection pills
+    // follow, so the bar only ever carries counts worth acting on.
+    if (!count) return null;
+    const on = (this.st?.filters ?? defaultFilters()).status === status;
+    const noun = statusLabel(status).toLowerCase();
+    return html`<button
+      class="hv-chip pill warning ${on ? 'on' : ''}"
+      data-testid="full-badge-status"
+      data-value=${status}
+      aria-pressed=${String(on)}
+      title=${`Show only items marked ${noun}`}
+      @click=${() => this._setFilters({ status: on ? null : status })}
+    >
+      ${count} ${noun}
+    </button>`;
+  }
+
   private _renderAppBar() {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
@@ -1528,7 +1647,7 @@ export class HVFullView extends LitElement {
           <span class="spacer"></span>
           ${counts && counts.low_stock_count > 0
             ? html`<button
-                class="pill low ${filters.lowStockOnly ? 'on' : ''}"
+                class="hv-chip pill warning ${filters.lowStockOnly ? 'on' : ''}"
                 data-testid="full-badge-low"
                 aria-pressed=${String(filters.lowStockOnly)}
                 title="Show only low-stock items"
@@ -1539,7 +1658,7 @@ export class HVFullView extends LitElement {
             : null}
           ${counts && (counts.overdue_count ?? 0) > 0
             ? html`<button
-                class="pill overdue ${filters.overdueOnly ? 'on' : ''}"
+                class="hv-chip pill error ${filters.overdueOnly ? 'on' : ''}"
                 data-testid="full-badge-overdue"
                 aria-pressed=${String(filters.overdueOnly)}
                 title="Show only overdue items"
@@ -1550,7 +1669,7 @@ export class HVFullView extends LitElement {
             : null}
           ${counts && (counts.inspection_overdue_count ?? 0) > 0
             ? html`<button
-                class="pill inspect ${filters.inspectionDueOnly ? 'on' : ''}"
+                class="hv-chip pill warning ${filters.inspectionDueOnly ? 'on' : ''}"
                 data-testid="full-badge-inspection"
                 aria-pressed=${String(filters.inspectionDueOnly)}
                 title="Show only items due for inspection"
@@ -1561,7 +1680,7 @@ export class HVFullView extends LitElement {
             : null}
           ${counts && counts.checked_out_count > 0
             ? html`<button
-                class="pill out ${filters.checkedOutOnly ? 'on' : ''}"
+                class="hv-chip pill ${filters.checkedOutOnly ? 'on' : ''}"
                 data-testid="full-badge-out"
                 aria-pressed=${String(filters.checkedOutOnly)}
                 title="Show only checked-out items"
@@ -1570,6 +1689,8 @@ export class HVFullView extends LitElement {
                 ${counts.checked_out_count} checked out
               </button>`
             : null}
+          ${this._renderStatusPill('missing', counts?.missing_count)}
+          ${this._renderStatusPill('needs_repair', counts?.needs_repair_count)}
           <button
             class="add"
             data-testid="full-add-item"

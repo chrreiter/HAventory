@@ -60,7 +60,7 @@ from .const import (
     PANEL_ICON,
     PANEL_URL_PATH,
 )
-from .exceptions import SchemaDowngradeError, StorageError
+from .exceptions import CorruptSchemaVersionError, SchemaDowngradeError, StorageError
 from .rate_limit import RateLimitConfig, RateLimiter
 from .repository import Repository
 from .storage import (
@@ -69,6 +69,7 @@ from .storage import (
     DomainStore,
     async_persist_immediate,
     cancel_pending_persist,
+    read_schema_version,
     schema_downgrade_message,
 )
 
@@ -143,6 +144,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         # ConfigEntryError, not ConfigEntryNotReady: retrying cannot teach this build
         # a newer schema, and the message reaches the user in the entry's error state.
+        raise ConfigEntryError(str(exc)) from exc
+    except CorruptSchemaVersionError as exc:
+        LOGGER.error(
+            "Refusing to set up against storage whose schema_version is unreadable",
+            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
+            exc_info=True,
+        )
+        # Same reasoning as the downgrade above: no number of retries turns a
+        # corrupt version into a readable one, so the entry stops with the
+        # specific message instead of backing off behind a generic one.
         raise ConfigEntryError(str(exc)) from exc
     except StorageError as exc:
         LOGGER.error(
@@ -460,7 +471,14 @@ async def _async_lovelace_resources(hass: HomeAssistant, *, op: str) -> Any:
         )
         return None
 
-    if hasattr(resources, "loaded") and not resources.loaded:
+    # The collection's create/update/delete each load storage on demand, but
+    # `async_items` cannot — it is a sync callback over an in-memory dict, so an
+    # unloaded collection reports no resources at all. Both callers read it
+    # first: register would add a second entry for a card already registered,
+    # unregister would leave ours behind. Setting the flag is part of the
+    # contract rather than bookkeeping — `async_load` leaves it False, and the
+    # collection's next write would then load and re-add every item again.
+    if not getattr(resources, "loaded", True):
         await resources.async_load()
         resources.loaded = True
 
@@ -853,7 +871,7 @@ def _validate_storage_payload(payload: dict[str, Any], *, schema_version: int) -
     if not isinstance(payload, dict):
         raise StorageError("storage payload is not a dict")
 
-    stored_version = int(payload.get("schema_version", -1))
+    stored_version = read_schema_version(payload, missing=-1)
     if stored_version > int(schema_version):
         raise SchemaDowngradeError(
             schema_downgrade_message(

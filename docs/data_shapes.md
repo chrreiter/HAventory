@@ -15,6 +15,7 @@ Object shape for persisted items and API results:
   "name": "string",
   "description": "string|null",
   "quantity": 0,
+  "status": "ok|missing|needs_repair",
   "checked_out": false,
   "due_date": "YYYY-MM-DD|null",
   "inspection_date": "YYYY-MM-DD|null",
@@ -47,11 +48,20 @@ A value strictly before today (UTC) means that inspection is overdue — the pop
 the `inspection_overdue_only` filter and the `inspection_overdue_count` stat. It is
 independent of `checked_out` and of `due_date`; any item can carry one.
 
+`status` is a stored per-item condition, always exactly one of `ok`, `missing`,
+`needs_repair`. It is **non-nullable** — setting `ok` is how a flagged state clears — and
+independent of `checked_out`/`quantity` (a checked-out item is not "missing"; missing means
+its whereabouts are unknown). Stores written before the field existed are migrated on load
+(schema v5's `migrate_4_to_5` backfills `ok`), and loading additionally tolerates a missing
+or unknown value as `ok`; an explicit unknown or null value in a write is rejected as
+`validation_error`.
+
 Input shapes:
 - ItemCreate (request payload subset; only `name` required):
   - `name: string`
   - `description?: string|null`
   - `quantity?: number>=0`
+  - `status?: "ok"|"missing"|"needs_repair"` (defaults to `ok`)
   - `checked_out?: boolean`
   - `due_date?: YYYY-MM-DD|null` (only valid when `checked_out` is true)
   - `inspection_date?: YYYY-MM-DD|null` (independent of check-out state)
@@ -65,6 +75,7 @@ Input shapes:
   - `name?: string`
   - `description?: string|null`
   - `quantity?: number>=0`
+  - `status?: "ok"|"missing"|"needs_repair"` (non-nullable; `ok` clears a flagged state)
   - `checked_out?: boolean`
   - `due_date?: YYYY-MM-DD|null` (only valid when `checked_out` is true)
   - `inspection_date?: YYYY-MM-DD|null` (null clears)
@@ -122,6 +133,7 @@ counts items at the node or any descendant (so it is always >= the direct count)
   - `tags_any?: string[]`
   - `tags_all?: string[]`
   - `category?: string`
+  - `status?: "ok"|"missing"|"needs_repair"` (exact match; unknown values are `validation_error`)
   - `checked_out?: boolean`
   - `low_stock_only?: boolean`
   - `orphaned_only?: boolean` (only items without a location, i.e. `location_id == null`)
@@ -156,6 +168,8 @@ Counts object used in `stats` results and events:
   "checked_out_count": 0,
   "overdue_count": 0,
   "inspection_overdue_count": 0,
+  "missing_count": 0,
+  "needs_repair_count": 0,
   "locations_total": 0,
   "no_location_count": 0
 }
@@ -166,6 +180,8 @@ Counts object used in `stats` results and events:
 it moves with the calendar, so the same data can report a different count tomorrow.
 `inspection_overdue_count` is the same question asked of `inspection_date`, over the whole
 inventory rather than only the checked-out items, and moves with the calendar the same way.
+`missing_count` / `needs_repair_count` count items by their stored `status`; unlike the two
+calendar counts they only change on a mutation, so events keep them current.
 
 ### Distinct values
 

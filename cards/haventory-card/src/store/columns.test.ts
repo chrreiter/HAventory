@@ -61,6 +61,21 @@ describe('columns model', () => {
     expect(loadColumnPrefs()).toEqual(DEFAULT_COLUMNS);
   });
 
+  // The API cannot order by status, so the header must stay inert rather than
+  // look clickable — the same reason category, location and tags have none.
+  it('offers the status column without a sort field', () => {
+    const col = COLUMN_DEFS.find((c) => c.key === 'status');
+    expect(col?.label).toBe('Status');
+    expect(col?.sortField).toBeUndefined();
+    expect(normalizeColumns(['status'])).toEqual(['status']);
+  });
+
+  // Status sits beside Qty: both describe the item itself, ahead of where it is
+  // filed and when it is due.
+  it('orders status second, right after quantity', () => {
+    expect(COLUMN_DEFS.map((c) => c.key).slice(0, 3)).toEqual(['quantity', 'status', 'category']);
+  });
+
   // "Inspected" read as the date of the last inspection; the field holds the
   // next one due, which is what every other surface now says.
   it('labels the inspection column for the date it holds', () => {
@@ -87,8 +102,8 @@ describe('table column widths', () => {
   // Pinned as a number so that adding a column, or widening one, shows up here
   // as a deliberate change rather than as another phone-width overflow.
   it('cannot lay the default table out narrower than a phone', () => {
-    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }))).toBe(1020);
-    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: true }))).toBe(1060);
+    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }))).toBe(1132);
+    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: true }))).toBe(1172);
   });
 
   it('only fits a phone when almost every column is turned off', () => {

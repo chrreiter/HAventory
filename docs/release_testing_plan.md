@@ -8,12 +8,14 @@ adversarial stress regimen) are assumed green before this plan starts — see th
 "Developer Checklist". This document covers only what those suites structurally cannot:
 real hardware, real phones, real networks, real upgrades, real backups.
 
-Out of scope: feature work, and anything tracked as **post-v1.0** in
-[`open-items.md`](open-items.md). Pre-v1.0 *tasks* (fixes/docs/release chores identified
-alongside this plan) also live in `open-items.md` — this file is tests only.
+Out of scope: feature work, and anything tracked as **post-v1.0** — that backlog lives
+in the GitHub issue tracker (migrated 2026-08-03). Pre-v1.0 *tasks* (fixes/docs/release
+chores identified alongside this plan) live in [`open-items.md`](open-items.md) — this
+file is tests only.
 
-**Which release this runs against.** `v0.2.0` — the release carrying every pending fix and
-the pre-v1.0 feature additions. That is the owner's 2026-08-02 staging revision: the two
+**Which release this runs against.** The last feature release — `v0.3.0` once #186 cuts
+(defined against `v0.2.0` before two post-cut features landed) — the release carrying
+every pending fix and the pre-v1.0 feature additions. That is the owner's 2026-08-02 staging revision: the two
 schema releases (the `v4 → v5` exercise, then the collapse to a clean v1) follow it as
 further 0.x minors and get a migration-integrity pass and a watch window rather than a rerun
 of this plan, and `1.0.0` is then a bump carrying no change — so this plan is executed once,
@@ -34,7 +36,8 @@ that claim; the in-process suite already runs the integration at the floor in CI
 A release is "ready" when **all** of the following hold:
 
 1. Every scenario marked **Blocker** below passes on at least the environments listed for it.
-2. Every non-blocker failure is triaged into `open-items.md` with an impact rating, and
+2. Every non-blocker failure is triaged with an impact rating — a row in
+   `open-items.md` if it must land before 1.0, a GitHub issue otherwise — and
    **no failure rated High remains open**.
 3. `haventory/health` returns `healthy: true` (empty `issues`) after **every** lifecycle
    scenario in groups D and E — checked after the restart, not before.
@@ -120,7 +123,7 @@ client + OS version, date. Put it in the results log.
 | A1 | Fresh install on a clean HA (ENV-B): HACS/manual copy → restart → add integration via config flow → add card via the UI card picker | Integration sets up without error; card appears in the picker; empty state renders with no locations and no console error | ✅ |
 | A2 | Card resource auto-registration (storage-mode Lovelace) | `/haventory_static/haventory-card.js?v=<version>` present exactly once in `.storage/lovelace_resources`; `curl -I` on it returns 200 with **no** `Cache-Control` header; card loads without a manual step | ✅ |
 | A3 | YAML-mode Lovelace (ENV-B, `lovelace: mode: yaml`) | Resource registration is skipped with a clear log line, and the card still loads — the frontend extra-module URL covers YAML mode, so there is no manual step here either | ✅ |
-| A4 | Attempt a second config entry | Rejected as single-instance; no duplicate storage or resource | |
+| A4 | Attempt a second config entry | HAventory is absent from the "Add integration" picker while an entry exists, so the attempt cannot start; a flow initiated outside the picker aborts with "Already configured. Only a single configuration is possible." No duplicate storage or resource | |
 | A5 | First-run with a pre-existing store (upgrade-in-place from a dev instance) | Existing items/locations load; `health` healthy | ✅ |
 
 ### B — Mobile / touch (companion app)
@@ -236,7 +239,8 @@ Copy a row per attempt. `Result` = pass / fail / n-a.
 
 ## Handling failures
 
-Every failure gets an entry in [`open-items.md`](open-items.md) with impact and effort.
+Every failure gets an impact-and-effort-rated entry — a row in
+[`open-items.md`](open-items.md) if it must land before 1.0, a GitHub issue otherwise.
 High-impact failures are release blockers. A scenario that fails, gets fixed, and passes on
 retest is recorded twice (fail → fix PR → pass), so the log shows what actually changed
 before the release rather than only the final green state.

@@ -92,13 +92,15 @@ describe('hv-list-row: content', () => {
   it('calls out an overdue check-out in error colour', async () => {
     const el = await mount({ checked_out: true, due_date: '2020-01-01' });
     const chip = q(el, '[data-testid="row-checked-out"]');
-    expect(chip?.classList.contains('overdue')).toBe(true);
+    expect(chip?.classList.contains('error')).toBe(true);
     expect(chip?.textContent).toContain('Overdue');
   });
 
   it('does not call a future due date overdue', async () => {
     const el = await mount({ checked_out: true, due_date: '2099-01-01' });
-    expect(q(el, '[data-testid="row-checked-out"]')?.classList.contains('overdue')).toBe(false);
+    const chip = q(el, '[data-testid="row-checked-out"]');
+    expect(chip?.classList.contains('error')).toBe(false);
+    expect(chip?.classList.contains('state')).toBe(true);
   });
 
   // `inspection_date` says when the item is next due for inspection, so a date
@@ -149,6 +151,41 @@ describe('hv-list-row: content', () => {
       const el = await mount({ inspection_date: toIsoDate() }, { mobile });
       expect(q(el, '[data-testid="row-inspection-due"]'), `mobile=${mobile}`).toBe(null);
     }
+  });
+
+  it('chips a flagged status on the wide row and leaves ok rows quiet', async () => {
+    const missing = await mount({ status: 'missing' });
+    expect(q(missing, '[data-testid="row-status"]')?.textContent?.trim()).toBe('Missing');
+
+    const repair = await mount({ status: 'needs_repair' });
+    expect(q(repair, '[data-testid="row-status"]')?.textContent?.trim()).toBe('Needs repair');
+
+    // ok explicitly, and absent (an older backend's payload) — quiet both ways.
+    for (const partial of [{ status: 'ok' as const }, {}]) {
+      const quiet = await mount(partial);
+      expect(q(quiet, '[data-testid="row-status"]')).toBe(null);
+    }
+  });
+
+  it('says the flagged status on the phone line, keeping the amber tone', async () => {
+    const el = await mount({ status: 'needs_repair' }, { mobile: true });
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(q(el, '[data-testid="row-status"]')?.textContent?.trim()).toBe('Needs repair');
+    expect(secondary?.classList.contains('inspect')).toBe(true);
+  });
+
+  it('lets the flagged status outrank the inspection chore, but not the checkout', async () => {
+    const flaggedAndDue = await mount(
+      { status: 'missing', inspection_date: '2020-05-06' },
+      { mobile: true },
+    );
+    const secondary = q(flaggedAndDue, '[data-testid="row-secondary"]');
+    expect(secondary?.textContent).toContain('Missing');
+    expect(secondary?.textContent).not.toContain('Inspection due');
+
+    const out = await mount({ status: 'missing', checked_out: true }, { mobile: true });
+    expect(q(out, '[data-testid="row-secondary"]')?.textContent).toContain('Checked out');
+    expect(q(out, '[data-testid="row-status"]')).toBe(null);
   });
 });
 

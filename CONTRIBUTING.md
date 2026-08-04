@@ -3,6 +3,7 @@
 Thanks for your interest in HAventory! This project is a Home Assistant custom
 integration (domain `haventory`) plus a Lit + TypeScript Lovelace card.
 Contributions of all kinds are welcome — bug reports, features, docs, and code.
+Taking part means following the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Ways to contribute
 
@@ -13,6 +14,9 @@ Contributions of all kinds are welcome — bug reports, features, docs, and code
   [Discussions](https://github.com/chrreiter/HAventory/discussions) or the
   [Home Assistant community](https://community.home-assistant.io/).
 - **Send a pull request** (see below).
+
+Found a security problem? Do not open an issue — [SECURITY.md](SECURITY.md) has the
+private reporting route and says what to expect from a one-maintainer project.
 
 ## Development setup
 

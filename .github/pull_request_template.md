@@ -25,7 +25,7 @@ Closes #
 - [ ] Tests added/updated (happy path + at least one edge/error case).
 - [ ] Docs updated where behavior changed (`README.md`, `docs/backend_api_contract.md`, `docs/data_shapes.md`).
 - [ ] WebSocket API changes keep `ws.py`, `docs/backend_api_contract.md`, and `docs/data_shapes.md` in sync.
-- [ ] Load-bearing invariants preserved (case-insensitive search, denormalized `location_path`, optimistic `version`).
+- [ ] Essential invariants preserved (case-insensitive search, denormalized `location_path`, optimistic `version`).
 
 ## Screenshots (card / UI changes)
 

@@ -1,5 +1,7 @@
 import './hv-full-view';
+import { NARROW_QUERY } from './hv-full-view';
 import { makeMockHass, makeItem } from '../test.utils';
+import { deepActiveElement } from '../ui/dialog-focus';
 import { Store } from '../store/store';
 import type { HVFullView } from './hv-full-view';
 import type { Item, Location } from '../store/types';
@@ -81,9 +83,10 @@ describe('hv-full-view: phone-width app bar', () => {
     expect(narrow()).toMatch(/\.appbar \{[^}]*flex-wrap: wrap/);
   });
 
-  it('lets the search field shrink at any width', () => {
+  it('lets the search field shrink to nothing at phone widths', () => {
     // `flex: 1` alone leaves min-width at auto, so the field refuses to
-    // compress below its content and shoves its siblings off the bar.
+    // compress below its content and shoves its siblings off the bar. The
+    // desktop block puts a floor back under it — see the wide-bar describe.
     expect(fullCss()).toMatch(/\.appbar \.search \{[^}]*min-width: 0/);
   });
 
@@ -206,6 +209,43 @@ describe('hv-full-view: phone-width app bar', () => {
 
     const loadAll = q(sr, '[data-testid="selection-load-all"]');
     expect(loadAll?.classList.contains('load-all')).toBe(true);
+  });
+});
+
+// The search is the only item on the bar that can shrink — every pill, the
+// title and both trailing buttons are flex:none — so each pill added comes out
+// of it. With all six showing it collapsed to "Search all 1(" in a 1024px
+// content area, which is what this block exists to stop.
+describe('hv-full-view: wide app bar', () => {
+  const wide = () => {
+    const css = fullCss();
+    const start = css.indexOf('@media (min-width: 701px)');
+    expect(start, 'no wide-viewport block').toBeGreaterThan(-1);
+    // Stop at the phone block so a rule from it can never satisfy these.
+    const end = css.indexOf('@media (max-width: 700px)', start);
+    return end > start ? css.slice(start, end) : css.slice(start);
+  };
+
+  // The complement of NARROW_QUERY: the two blocks must not both apply, and
+  // must not leave a width where neither does.
+  it('picks up exactly where the phone block leaves off', () => {
+    expect(NARROW_QUERY).toBe('(max-width: 700px)');
+    expect(fullCss()).toContain('@media (min-width: 701px)');
+  });
+
+  it('puts a floor under the search rather than letting the pills eat it', () => {
+    expect(wide()).toMatch(/\.appbar \.search \{[^}]*min-width: 260px/);
+  });
+
+  it('lets the bar take a second line once the pills stop fitting', () => {
+    expect(wide()).toMatch(/\.appbar \{[^}]*flex-wrap: wrap/);
+  });
+
+  // A spacer can only push on the line it is on, so once the bar wraps it holds
+  // the first line open while the actions land left-aligned under the title.
+  it('carries the right-alignment on the actions, not on a spacer', () => {
+    expect(wide()).toMatch(/\.appbar \.spacer \{[^}]*display: none/);
+    expect(wide()).toMatch(/\.appbar \.add \{[^}]*margin-left: auto/);
   });
 });
 
@@ -332,6 +372,29 @@ describe('hv-full-view: embedded', () => {
     expect(q(sr, '.backdrop')).toBeTruthy();
     expect(sr.querySelectorAll('.sentinel')).toHaveLength(2);
     expect(q(sr, '[data-testid="expand-toggle"]')).toBeTruthy();
+  });
+
+  // The trap's two ends came from a query rooted in this shadow root, which
+  // stops at every `hv-*` boundary below it. The rows, the sidebar tree and the
+  // editor were all past one, so "last focusable" landed in the middle of the
+  // surface and Tab walked out through everything behind it.
+  it('bounces off the end of the trap into a child component, not out of it', async () => {
+    const { el, sr } = await mount({ items: [makeItem({ id: '1' }), makeItem({ id: '2' })] });
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    const rows = [...(table.shadowRoot?.querySelectorAll('[data-testid="table-row"]') ?? [])];
+    const lastEdit = rows[rows.length - 1].querySelector('[data-testid="table-edit"]');
+
+    // Shift+Tab off the front lands on the leading sentinel, which sends focus
+    // to the last thing inside the trap.
+    (sr.querySelector('.sentinel') as HTMLElement).focus();
+    await el.updateComplete;
+
+    expect(deepActiveElement()).toBe(lastEdit);
+  });
+
+  it('opens on the first control of the surface, not on something nested in it', async () => {
+    const { sr } = await mount({ items: [makeItem({ id: '1' })] });
+    expect(deepActiveElement()).toBe(q(sr, '[data-testid="expand-toggle"]'));
   });
 });
 
@@ -506,6 +569,7 @@ describe('hv-full-view: sidebar facets', () => {
     const heads = [...sr.querySelectorAll('.sidebar-head .section-toggle')] as HTMLElement[];
     expect(heads.map((h) => h.dataset.testid)).toEqual([
       'sidebar-toggle-locations',
+      'sidebar-toggle-status',
       'sidebar-toggle-categories',
       'sidebar-toggle-tags',
     ]);
@@ -579,7 +643,7 @@ describe('hv-full-view: sidebar facets', () => {
     const toggle = (section: string) =>
       q(sr, `[data-testid="sidebar-toggle-${section}"]`) as HTMLButtonElement;
 
-    for (const section of ['locations', 'categories', 'tags']) {
+    for (const section of ['locations', 'status', 'categories', 'tags']) {
       const id = `sidebar-section-${section}`;
       expect(toggle(section).getAttribute('aria-controls'), section).toBe(id);
       expect(toggle(section).getAttribute('aria-expanded'), `${section} open`).toBe('true');
@@ -676,6 +740,78 @@ describe('hv-full-view: sidebar facets', () => {
     );
     // Captions take no full stop; prose notes do.
     expect(q(sr, '[data-testid="sidebar-tags-empty"]')?.textContent?.trim()).toBe('No tags in use yet');
+  });
+});
+
+describe('hv-full-view: sidebar status', () => {
+  const flagged = [
+    makeItem({ id: '1', status: 'missing' }),
+    makeItem({ id: '2', status: 'needs_repair' }),
+    makeItem({ id: '3', status: 'needs_repair' }),
+    makeItem({ id: '4' }),
+  ];
+  const rows = (sr: ShadowRoot) =>
+    [...sr.querySelectorAll('[data-testid="sidebar-status-row"]')] as HTMLElement[];
+  const tallies = (sr: ShadowRoot) =>
+    rows(sr).map((r) => r.querySelector('.tally')?.textContent?.trim() ?? null);
+
+  // The counts payload prices only the two flagged states; OK is the rest of
+  // the inventory, which is the one number here that has to be derived.
+  it('lists the three statuses with their counts', async () => {
+    const { sr } = await mount({ items: flagged });
+    expect(rows(sr).map((r) => r.dataset.value)).toEqual(['ok', 'missing', 'needs_repair']);
+    expect(tallies(sr)).toEqual(['1', '1', '2']);
+  });
+
+  it('filters to one status and clears it on a second press', async () => {
+    const { el, store, sr } = await mount({ items: flagged });
+    const missing = () => rows(sr).find((r) => r.dataset.value === 'missing');
+
+    missing()?.click();
+    await settle(el);
+    expect(store.state.value.filters.status).toBe('missing');
+    expect(missing()?.classList).toContain('on');
+
+    missing()?.click();
+    await settle(el);
+    expect(store.state.value.filters.status).toBe(null);
+  });
+
+  // Single-select, because the backend filter takes exactly one status — so a
+  // second pick replaces the first rather than adding to it, as category does.
+  it('replaces the selection rather than accumulating it', async () => {
+    const { el, store, sr } = await mount({ items: flagged });
+
+    rows(sr).find((r) => r.dataset.value === 'missing')?.click();
+    await settle(el);
+    rows(sr).find((r) => r.dataset.value === 'needs_repair')?.click();
+    await settle(el);
+
+    expect(store.state.value.filters.status).toBe('needs_repair');
+    expect(rows(sr).filter((r) => r.classList.contains('on')).map((r) => r.dataset.value)).toEqual([
+      'needs_repair',
+    ]);
+  });
+
+  // An older backend sends neither count. Then no row claims a number, rather
+  // than every row claiming one derived from the halves that did arrive.
+  it('drops every tally when the backend prices no statuses', async () => {
+    const { el, store, sr } = await mount({ items: flagged });
+    const counts = store.state.value.statsCounts as unknown as Record<string, unknown>;
+    delete counts.missing_count;
+    delete counts.needs_repair_count;
+    el.requestUpdate();
+    await settle(el);
+
+    expect(tallies(sr)).toEqual([null, null, null]);
+  });
+
+  // Categories and tags tally how many rows they hold; this section always
+  // holds three, so the same number in that slot would be noise.
+  it('heads the section without a tally', async () => {
+    const { sr } = await mount({ items: flagged });
+    expect(q(sr, '[data-testid="sidebar-status-tally"]')).toBe(null);
+    expect(q(sr, '[data-testid="sidebar-toggle-status"]')?.textContent).toContain('Status');
   });
 });
 
@@ -812,6 +948,26 @@ describe('hv-full-view: empty table', () => {
     const empty = q(sr, '[data-testid="empty-state"]') as HTMLElement;
     expect(empty.dataset.kind).toBe('no-items');
     expect(empty.textContent).toContain('No items yet');
+  });
+
+  it('waits for the fetch instead of blaming the filters for the gap', async () => {
+    // Changing a filter clears the rows and asks for the next page, so between
+    // the two the table has nothing to show and no answer yet. It used to fill
+    // that gap with "No items match these filters" and a Clear all button,
+    // against a filter nothing had been counted for.
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
+    store.setFilters({ q: 'wood' });
+    await el.updateComplete;
+
+    const empty = q(sr, '[data-testid="empty-state"]') as HTMLElement;
+    expect(empty.dataset.kind).toBe('loading');
+    expect(empty.textContent).toContain('Loading items');
+    expect(q(sr, '[data-testid="empty-action"]')).toBe(null);
+
+    await settle(el);
+    await settle(el);
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    expect(table.shadowRoot?.querySelector('[data-testid="table-row"]')).toBeTruthy();
   });
 });
 
@@ -1108,6 +1264,60 @@ describe('hv-full-view: app bar filters', () => {
     expect(q(sr, '[data-testid="full-badge-overdue"]')?.getAttribute('aria-pressed')).toBe('true');
   });
 
+  // The bar priced every derived exception — low, overdue, due for inspection,
+  // checked out — and none of the stored one, so the two flags a person sets by
+  // hand were the only ones with no way back to them from here.
+  it('carries the two flagged statuses, and filters on them', async () => {
+    const statuses = [
+      makeItem({ id: '1', status: 'missing' }),
+      makeItem({ id: '2', status: 'needs_repair' }),
+      makeItem({ id: '3', status: 'needs_repair' }),
+      makeItem({ id: '4' }),
+    ];
+    const pill = (sr: ShadowRoot, value: string) =>
+      sr.querySelector(`[data-testid="full-badge-status"][data-value="${value}"]`) as HTMLButtonElement;
+    const { el, store, sr } = await mount({ items: statuses });
+
+    expect(pill(sr, 'missing').textContent?.replace(/\s+/g, ' ').trim()).toBe('1 missing');
+    expect(pill(sr, 'needs_repair').textContent?.replace(/\s+/g, ' ').trim()).toBe('2 needs repair');
+
+    pill(sr, 'missing').click();
+    await settle(el);
+    expect(store.state.value.filters.status).toBe('missing');
+    expect(pill(sr, 'missing').getAttribute('aria-pressed')).toBe('true');
+
+    pill(sr, 'missing').click();
+    await settle(el);
+    expect(store.state.value.filters.status).toBe(null);
+  });
+
+  // Single-select, so the two pills are mutually exclusive — pressing one while
+  // the other is on replaces it rather than asking for items that are both.
+  it('replaces the active status pill rather than adding to it', async () => {
+    const statuses = [makeItem({ id: '1', status: 'missing' }), makeItem({ id: '2', status: 'needs_repair' })];
+    const pill = (sr: ShadowRoot, value: string) =>
+      sr.querySelector(`[data-testid="full-badge-status"][data-value="${value}"]`) as HTMLButtonElement;
+    const { el, store, sr } = await mount({ items: statuses });
+
+    pill(sr, 'missing').click();
+    await settle(el);
+    pill(sr, 'needs_repair').click();
+    await settle(el);
+
+    expect(store.state.value.filters.status).toBe('needs_repair');
+    expect(pill(sr, 'missing').getAttribute('aria-pressed')).toBe('false');
+    expect(pill(sr, 'needs_repair').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  // "OK" is not an exception, and on a healthy inventory a status pill at all
+  // would be the loudest thing on a bar with nothing to report.
+  it('drops each status pill when nothing carries that flag', async () => {
+    const { sr } = await mount({ items: [makeItem({ id: '1', status: 'missing' })] });
+    expect(q(sr, '[data-testid="full-badge-status"][data-value="missing"]')).toBeTruthy();
+    expect(q(sr, '[data-testid="full-badge-status"][data-value="needs_repair"]')).toBe(null);
+    expect(q(sr, '[data-testid="full-badge-status"][data-value="ok"]')).toBe(null);
+  });
+
   it('drops the overdue pill when nothing is overdue', async () => {
     const { sr } = await mount({ items: [makeItem({ id: '1', checked_out: true })] });
     expect(q(sr, '[data-testid="full-badge-overdue"]')).toBe(null);
@@ -1144,13 +1354,13 @@ describe('hv-full-view: app bar filters', () => {
     expect(q(sr, '[data-testid="full-badge-out"]')?.textContent?.trim()).toBe('2 checked out');
   });
 
-  // Three identically washed pills said nothing apart. The card's hues carry the
-  // meaning; the fills are solid rather than the card's pale tints, because a
-  // tint over this already-coloured bar is unreadable in dark mode.
+  // The card's hues carry the meaning on this bar too, but the fills are solid
+  // rather than the card's pale tints, because a tint over an already-coloured
+  // bar is unreadable in dark mode.
   it('colours low and overdue the way the card does', () => {
     const css = fullCss();
-    expect(css).toMatch(/\.appbar \.pill\.low \{[^}]*background: var\(--hv-amber\)/);
-    expect(css).toMatch(/\.appbar \.pill\.overdue \{[^}]*background: var\(--hv-error\)/);
+    expect(css).toMatch(/\.appbar \.hv-chip\.warning \{[^}]*background: var\(--hv-amber\)/);
+    expect(css).toMatch(/\.appbar \.hv-chip\.error \{[^}]*background: var\(--hv-error\)/);
   });
 
   it('debounces the app bar search', async () => {

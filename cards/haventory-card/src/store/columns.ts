@@ -9,6 +9,7 @@
 
 export type ColumnKey =
   | 'quantity'
+  | 'status'
   | 'category'
   | 'location'
   | 'tags'
@@ -22,9 +23,10 @@ export interface ColumnDef {
   /** grid-template-columns sizing for the full-view table. */
   tableSize: string;
   /**
-   * The backend sort field this column maps to, when it has one. Category,
-   * location and tags are deliberately absent: the API cannot sort by them, and
-   * a header that looks clickable but does nothing is worse than a plain one.
+   * The backend sort field this column maps to, when it has one. Status,
+   * category, location and tags are deliberately absent: the API cannot sort by
+   * them, and a header that looks clickable but does nothing is worse than a
+   * plain one.
    */
   sortField?: 'quantity' | 'due_date' | 'inspection_date' | 'updated_at';
 }
@@ -32,6 +34,9 @@ export interface ColumnDef {
 /** Canonical column order. Selections are normalized to this order. */
 export const COLUMN_DEFS: readonly ColumnDef[] = [
   { key: 'quantity', label: 'Qty', tableSize: '70px', sortField: 'quantity' },
+  // Wide enough for the "Needs repair" chip on one line: a status that wrapped
+  // or clipped would be unreadable in exactly the rows that matter most.
+  { key: 'status', label: 'Status', tableSize: '112px' },
   { key: 'category', label: 'Category', tableSize: 'minmax(110px, 1fr)' },
   { key: 'location', label: 'Location', tableSize: 'minmax(110px, 1fr)' },
   { key: 'tags', label: 'Tags', tableSize: 'minmax(120px, 1.4fr)' },

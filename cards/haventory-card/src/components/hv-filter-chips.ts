@@ -1,9 +1,11 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { locationPathParts, pathTitle } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate } from '../ui/relative-time';
+import { statusLabel } from '../ui/status';
 import type { Location, StoreFilters } from '../store/types';
 
 /** Which filter a chip clears. Matches the keys of `StoreFilters`. */
@@ -17,6 +19,7 @@ export type FilterChipKey =
   | 'lowStockFirst'
   | 'overdueOnly'
   | 'inspectionDueOnly'
+  | 'status'
   | 'category'
   | 'tags'
   | 'updatedAfter'
@@ -74,6 +77,13 @@ export function chipsFor(
   if (filters.overdueOnly) chips.push({ key: 'overdueOnly', label: 'Overdue', tone: 'warning' });
   if (filters.inspectionDueOnly)
     chips.push({ key: 'inspectionDueOnly', label: 'Inspection due', tone: 'warning' });
+  if (filters.status)
+    chips.push({
+      key: 'status',
+      label: `Status: ${statusLabel(filters.status)}`,
+      // OK is the unremarkable state; the two flagged values carry the warning tone.
+      tone: filters.status === 'ok' ? 'primary' : 'warning',
+    });
   if (filters.orphansOnly) chips.push({ key: 'orphansOnly', label: 'No location', tone: 'primary' });
   // One chip per bound rather than one per field: each is separately clearable,
   // so a range narrowed too far can be half-undone.
@@ -98,6 +108,7 @@ export function clearedValueFor(key: FilterChipKey): Partial<StoreFilters> {
       return { tags: [] };
     case 'areaId':
     case 'locationId':
+    case 'status':
     case 'category':
     case 'updatedAfter':
     case 'createdAfter':
@@ -115,6 +126,7 @@ export class HVFilterChips extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -125,20 +137,10 @@ export class HVFilterChips extends LitElement {
         gap: 6px;
         align-items: center;
       }
+      /* Each of these removes the filter it names, so the trailing × is part of
+         the target and the chip carries a little more room on that side. */
       .chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        border: none;
-        border-radius: var(--hv-radius-chip);
-        padding: 4px 9px 4px 11px;
-        font: 500 12px var(--hv-font);
-        color: var(--hv-primary-darker);
-        background: var(--hv-primary-tint);
-      }
-      .chip.warning {
-        color: var(--hv-warn);
-        background: var(--hv-warn-bg);
+        padding-right: 6px;
       }
       .chip:hover {
         opacity: 0.85;
@@ -170,21 +172,21 @@ export class HVFilterChips extends LitElement {
     return html`
       <div class="row" data-testid="filter-chips">
         ${chips.map(
-          (chip) => html`<button
-            class="chip ${chip.tone === 'warning' ? 'warning' : ''}"
+          (entry) => html`<button
+            class="hv-chip chip ${entry.tone === 'warning' ? 'warning' : 'state'}"
             data-testid="filter-chip"
-            data-key=${chip.key}
-            aria-label=${`Clear filter ${chip.label}`}
+            data-key=${entry.key}
+            aria-label=${`Clear filter ${entry.label}`}
             @click=${() =>
               this.dispatchEvent(
                 new CustomEvent('remove-filter', {
-                  detail: { key: chip.key, patch: clearedValueFor(chip.key) },
+                  detail: { key: entry.key, patch: clearedValueFor(entry.key) },
                   bubbles: true,
                   composed: true,
                 }),
               )}
           >
-            ${chip.label}${icon('close', 15)}
+            ${entry.label}${icon('close', 15)}
           </button>`,
         )}
         <button

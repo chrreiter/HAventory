@@ -47,7 +47,11 @@ dialogs and editors — and carries the HAventory mark and whatever name you gav
   JavaScript to a page when that page loads, so a tab that was already open when HAventory
   was installed or updated has neither the card nor the artwork behind its sidebar icon
   yet — the entry shows up without its mark until the next load. One ordinary reload is
-  all it takes; no cache clearing, and nothing to repeat later.
+  all it takes; no cache clearing, and nothing to repeat later. Clicking the bare sidebar
+  entry works too: panel and card ship in one bundle, and a dashboard replaces its "custom
+  element doesn't exist" tile with the real card the moment that bundle loads. Either way,
+  a page that has shown the card once keeps it for as long as it stays open — the backend
+  restarting or updating underneath changes nothing until the page next loads.
 
 - **Turning it off:** Settings → Devices & services → HAventory → **Configure** →
   *Show HAventory in the sidebar*. The entry appears and disappears as you save the form;
@@ -173,8 +177,8 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   merging, and the backup's items follow their stored `location_id` onto the duplicate.
   Restore into an empty inventory, or onto one whose ids are still intact.
 
-These are tracked, with their measurements and proposed fixes, in
-[`docs/open-items.md`](docs/open-items.md).
+These are tracked, with their measurements and proposed fixes, in the
+[issue tracker](https://github.com/chrreiter/HAventory/issues).
 
 ---
 
@@ -395,6 +399,14 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
   `inspection_overdue_only` for a passed `inspection_date` — the date the item is next due
   for inspection, over the whole inventory, since an inspection is independent of any
   check-out. Both move with the calendar and emit no event when the date rolls over.
+- A stored per-item **status** — `ok` / `missing` / `needs_repair`, always exactly one,
+  `ok` being the default and the way a flagged state clears. Filterable via the
+  `item/list` `status` filter, counted on `haventory/stats` as `missing_count` /
+  `needs_repair_count` (stored state, so unlike the calendar counts every change emits
+  an event), and settable everywhere an item is written — WS create/update, the
+  `haventory.item_create` / `haventory.item_update` services, and import. A store written
+  before the field existed is migrated on load (schema v5 backfills `ok`); an export
+  without it reads as `ok` too.
 - **WebSocket rate limiting (opt-in, off by default)**: per-connection **and** global
   token buckets for commands (excess requests get a `rate_limited` error) and for
   subscription broadcasts (excess events are dropped, never breaking the command).
@@ -449,29 +461,35 @@ throughout.
   Diagnostics, Export backup / Export current view, Import); Columns is offered in the full
   view, which is the only surface it changes. Live stat badges — items, low stock, overdue,
   due for inspection, checked out — are click-to-filter. Rows carry a quantity stepper, a
-  LOW badge, an overdue check-out chip, an "Inspection due" chip, and hover actions.
+  LOW badge, an overdue check-out chip, an "Inspection due" chip, an amber status chip
+  when an item is flagged Missing / Needs repair, and hover actions.
 - **Filters** — a collapsible panel exposing the whole backend filter object: location
   (from a real tree), area, include-subtree, category chips with counts, tag chips with an
   any/all toggle, low-stock-only, checked-out, overdue, inspection-due and no-location —
-  each with the count of what it would keep — plus updated / created windows (each row's ≥ flips to ≤ for
-  "before") and sort across all six sortable fields.
+  each with the count of what it would keep — a single-select status row (OK / Missing /
+  Needs repair, the flagged two priced from the stats counts), plus updated / created
+  windows (each row's ≥ flips to ≤ for "before") and sort across all six sortable fields.
   "Low stock" (a filter) and "Low stock first" (an ordering) are separate, independently
   clearable controls. Active filters appear as removable chips.
 - **Editing** — the row expands in place; there is no dialog chain. Full field parity:
-  name, description, quantity, low-stock threshold, category, tags, location (picked from
-  a tree inside the form), checked-out with due date, next inspection (with the same
+  name, description, quantity, low-stock threshold, category, status, tags, location
+  (picked from a tree inside the form), checked-out with due date, next inspection (with the same
   +7 / +31 / +90 / +X quick offsets the check-out popover offers), and typed
   custom fields (text / number / yes-no / date). Saves send the item's expected version so
   a concurrent edit surfaces as a conflict.
 - **Full view** — a fullscreen workspace with a coloured app bar, a **browse sidebar**, and
   a sortable table. Only columns the backend can sort by get a clickable header. A browser
-  that has made no choice yet shows every optional column — quantity, category, location,
-  tags, due, next inspection, updated — and the ⋮ → **Columns** picker is where you thin
-  that down; the table scrolls sideways rather than dropping a column you kept. The
+  that has made no choice yet shows every optional column — quantity, status, category,
+  location, tags, due, next inspection, updated — and the ⋮ → **Columns** picker is where
+  you thin that down; the table scrolls sideways rather than dropping a column you kept.
+  The Status column names every row, OK included, and the name's amber status chip stands
+  down while it is shown so no row says the same word twice. The
   sidebar leads with the location tree carrying the backend's own per-location counts and
-  an orphans row, then **Categories** and **Tags** as sections of their own; each heading
-  collapses from a chevron and states how many there are — locations counted at every
-  depth — and Locations stays at the top. Category picks one value and
+  an orphans row, then **Status**, **Categories** and **Tags** as sections of their own;
+  each heading collapses from a chevron and states how many there are — locations counted
+  at every depth, Status excepted since it always holds the same three rows — and
+  Locations stays at the top. Status prices OK as whatever the two flagged counts leave
+  over. Category and status each pick one value and
   tags accumulate, matching how the backend treats them. With a filter on, each location
   row reads "4 / 37" — matches over total — so you can see where the matches are rather
   than a total that never moves. The counts ignore the *location* filter, since the sidebar
@@ -481,7 +499,10 @@ throughout.
   From the second selected tag on, the Tags heading carries the same any/all control the
   filter panel has, since that is the mode governing what the sidebar just selected. The
   app bar's stat pills are the card's: low in amber, overdue in red, to-inspect in amber,
-  checked out, each click-to-filter. An empty table names the reason and offers a way out — the same
+  checked out, each click-to-filter. Beside them, **Missing** and **Needs repair** price the
+  two flagged statuses in the status chip's own amber; each appears only while something
+  carries that flag, and the two are mutually exclusive because the filter takes one status.
+  An empty table names the reason and offers a way out — the same
   wording and the same offers as the card's list.
 
   At phone width the sidebar folds away and the surface hands its own breakpoint down to
@@ -683,14 +704,16 @@ persistence-across-restart. Exit codes: `0` pass, `1` failures, `2` setup error.
 Contributions are welcome! See **[CONTRIBUTING.md](CONTRIBUTING.md)**. File bugs and feature
 requests through the [issue tracker](https://github.com/chrreiter/HAventory/issues/new/choose),
 and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discussions).
+Taking part means following the [Code of Conduct](CODE_OF_CONDUCT.md). Security problems go
+through [private reporting](SECURITY.md), never a public issue.
 
 ## Conventions
 
 - Domain/package: `haventory` under `custom_components/haventory`; services `haventory.*`;
   built assets `custom_components/haventory/www/`, served at `/haventory_static/`;
   calendar entity `calendar.haventory` — a reserved name for
-  the post-1.0 calendar work ([open item 9](docs/open-items.md)), not an entity that exists
-  today.
+  the post-1.0 calendar work ([#187](https://github.com/chrreiter/HAventory/issues/187)),
+  not an entity that exists today.
 - Logging: avoid reserved `LogRecord` keys in logger extras — use `item_name` /
   `location_name`, not `name`.
 
@@ -701,7 +724,8 @@ and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discus
 - Data shapes (Item/Location/filter/sort/events): `docs/data_shapes.md`
 - Frontend architecture: `docs/frontend_architecture.md`
 - Release testing plan (manual v1.0 readiness run): `docs/release_testing_plan.md`
-- Open items / future work: `docs/open-items.md`
+- Pre-v1.0 release tracker: `docs/open-items.md` (future work lives in the
+  [issue tracker](https://github.com/chrreiter/HAventory/issues))
 
 ## Troubleshooting
 
@@ -713,3 +737,8 @@ and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discus
   after restoring a backup taken on a newer version. The entry stops with that error and the
   store is left untouched; re-install the newer version to read it, or replace
   `haventory_store` with a backup taken on the running version.
+- **"stored data has a corrupt schema_version (…); expected an integer"**: `haventory_store`
+  holds something other than a whole number under `schema_version` — a hand edit, a truncated
+  write, or a quoted number such as `"5"`, which is not the same as `5` and is not assumed to
+  mean it. The entry stops with that error and the store is left untouched; fix the value in
+  the file, or replace `haventory_store` with a backup.

@@ -2,7 +2,6 @@
   "name": "HAventory",
   "render_readme": true,
   "content_in_root": false,
-  "country": ["all"],
   "homeassistant": "2026.6.0",
   "zip_release": true,
   "filename": "haventory.zip",

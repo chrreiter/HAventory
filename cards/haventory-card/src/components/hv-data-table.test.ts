@@ -136,7 +136,7 @@ describe('hv-data-table: columns', () => {
     ]);
     expect(q(el, '[data-testid="cell-quantity"]')?.classList.contains('low')).toBe(true);
     expect(q(el, '[data-testid="cell-due_date"]')?.classList.contains('overdue')).toBe(true);
-    expect(el.shadowRoot?.textContent).toContain('LOW');
+    expect(el.shadowRoot?.textContent).toContain('Low');
     expect(el.shadowRoot?.textContent).toContain('Checked out');
   });
 });
@@ -268,6 +268,188 @@ describe('hv-data-table: rows', () => {
   it('shows the host-supplied empty message', async () => {
     const el = await mount([]);
     expect(q(el, '[data-testid="table-empty"]')).toBeTruthy();
+  });
+
+  it('chips a flagged status in the name cell and leaves ok rows quiet', async () => {
+    const el = await mount([
+      { id: '1', status: 'missing' },
+      { id: '2', status: 'needs_repair' },
+      { id: '3', status: 'ok' },
+      { id: '4' },
+    ]);
+    const rows = all(el, '[data-testid="table-row"]');
+    const chip = (row: HTMLElement) =>
+      row.querySelector('[data-testid="table-status"]')?.textContent?.trim() ?? null;
+    expect(rows.map(chip)).toEqual(['Missing', 'Needs repair', null, null]);
+  });
+});
+
+describe('hv-data-table: keyboard', () => {
+  const captured = (el: HVDataTable, names: string[]) => {
+    const seen: string[] = [];
+    for (const name of names) {
+      el.addEventListener(name, (e) => seen.push(`${name}:${(e as CustomEvent).detail.itemId}`));
+    }
+    return seen;
+  };
+  const press = (el: HTMLElement, key: string) =>
+    el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+
+  // The rows were tabbable and had a click handler and nothing else, so on the
+  // one surface that lists every item, no item could be reached without a mouse.
+  it('keeps the same shortcuts the card list row has', async () => {
+    const el = await mount([{ id: 'item-1' }]);
+    const seen = captured(el, ['open-item', 'request-delete', 'increment', 'decrement']);
+    const row = q(el, '[data-testid="table-row"]') as HTMLElement;
+
+    for (const key of ['Enter', 'Delete', '+', '-']) press(row, key);
+
+    expect(seen).toEqual([
+      'open-item:item-1',
+      'request-delete:item-1',
+      'increment:item-1',
+      'decrement:item-1',
+    ]);
+  });
+
+  it('takes the numpad and shifted spellings of the same two keys', async () => {
+    const el = await mount([{ id: 'item-1' }]);
+    const seen = captured(el, ['increment', 'decrement']);
+    const row = q(el, '[data-testid="table-row"]') as HTMLElement;
+
+    // `=` is what an unshifted `+` reports on a US layout; `Add`/`Subtract` are
+    // the numpad's.
+    for (const key of ['=', 'Add', 'Subtract']) press(row, key);
+
+    expect(seen).toEqual(['increment:item-1', 'increment:item-1', 'decrement:item-1']);
+  });
+
+  it('claims the keys it acts on, so the surface below does not answer too', async () => {
+    const el = await mount([{ id: 'item-1' }]);
+    const row = q(el, '[data-testid="table-row"]') as HTMLElement;
+    expect(press(row, 'Enter')).toBe(false);
+    // Anything else is still the browser's — Tab has to keep leaving the row.
+    expect(press(row, 'Tab')).toBe(true);
+  });
+
+  it('follows the row click into selection mode rather than opening the item', async () => {
+    const el = await mount([{ id: 'item-1' }], { selectable: true });
+    const seen = captured(el, ['open-item', 'toggle-select']);
+    press(q(el, '[data-testid="table-row"]') as HTMLElement, 'Enter');
+    expect(seen).toEqual(['toggle-select:item-1']);
+  });
+
+  it('leaves a key pressed on a control inside the row to that control', async () => {
+    // Enter on Edit already opens the editor; the row acting on the same press
+    // would open it a second time, and Delete on any of the three buttons would
+    // ask to delete the item.
+    const el = await mount([{ id: 'item-1' }]);
+    const seen = captured(el, ['open-item', 'request-delete', 'increment', 'decrement']);
+    const edit = q(el, '[data-testid="table-edit"]') as HTMLElement;
+
+    for (const key of ['Enter', 'Delete', '+', '-']) press(edit, key);
+
+    expect(seen).toEqual([]);
+  });
+});
+
+describe('hv-data-table: table semantics', () => {
+  // `row`, `columnheader` and `cell` are only meaningful under a table role.
+  // Without one the structure is dropped and the rows read as a run of text.
+  it('carries the table role the rows and cells hang off', async () => {
+    const el = await mount([{ id: '1' }]);
+    expect(el.getAttribute('role')).toBe('table');
+  });
+
+  it('marks every value in a row as a cell', async () => {
+    const el = await mount([{ id: '1', tags: ['m4'] }]);
+    const row = q(el, '[data-testid="table-row"]') as HTMLElement;
+    const cells = [...row.querySelectorAll('[role="cell"]')];
+    // Name, the five mounted columns, and the action group.
+    expect(cells).toHaveLength(7);
+    expect(cells[0].querySelector('[data-testid="table-name"]')).toBeTruthy();
+    expect(cells.map((c) => c.getAttribute('data-testid'))).toContain('cell-quantity');
+  });
+
+  it('gives each row a cell for every column header', async () => {
+    const el = await mount([{ id: '1' }], { columns: ['quantity', 'location', 'status'] });
+    const headers = all(el, '[role="columnheader"]').length;
+    const cells = (q(el, '[data-testid="table-row"]') as HTMLElement).querySelectorAll('[role="cell"]');
+    expect(cells).toHaveLength(headers);
+  });
+
+  it('spans the empty message across a row, the way a table has to', async () => {
+    // A row group whose only child is a loose message owns something a table
+    // cannot contain, and the whole structure is dropped rather than repaired.
+    const el = await mount([]);
+    const empty = q(el, '[data-testid="table-empty"]') as HTMLElement;
+    expect(empty.getAttribute('role')).toBe('cell');
+    expect(empty.parentElement?.getAttribute('role')).toBe('row');
+    expect(empty.closest('[role="rowgroup"]')).toBeTruthy();
+  });
+
+  it('leaves the announcing to whatever fills the slot', async () => {
+    // The shared empty state is a live region already; a second one wrapped
+    // around it says everything twice.
+    const el = await mount([]);
+    expect(q(el, '[data-testid="table-empty"]')?.getAttribute('role')).not.toBe('status');
+  });
+});
+
+describe('hv-data-table: status column', () => {
+  const mixed = [
+    { id: '1', status: 'missing' as const },
+    { id: '2', status: 'needs_repair' as const },
+    { id: '3', status: 'ok' as const },
+    { id: '4' },
+  ];
+
+  // The name-cell chip only ever marks the exceptions. A column that did the
+  // same would leave most rows blank under a header promising a value.
+  it('names every row, ok included, and reads an absent status as ok', async () => {
+    const el = await mount(mixed, { columns: ['status'] });
+    expect(all(el, '[data-testid="cell-status"]').map((c) => c.textContent?.trim())).toEqual([
+      'Missing',
+      'Needs repair',
+      'OK',
+      'OK',
+    ]);
+  });
+
+  // Every value in the column is a chip, or half of it would read as a second
+  // column interleaved with the first. Only the flagged ones are amber.
+  it('chips every value and reserves the warning fill for the flagged ones', async () => {
+    const el = await mount(mixed, { columns: ['status'] });
+    const cells = all(el, '[data-testid="cell-status"]');
+    expect(cells.map((c) => !!c.querySelector('.hv-chip'))).toEqual([true, true, true, true]);
+    expect(cells.map((c) => !!c.querySelector('.hv-chip.warning'))).toEqual([
+      true,
+      true,
+      false,
+      false,
+    ]);
+    expect(cells.map((c) => !!c.querySelector('.hv-chip.quiet'))).toEqual([
+      false,
+      false,
+      true,
+      true,
+    ]);
+  });
+
+  it('stands the name-cell chip down, so no row says it twice', async () => {
+    const el = await mount([{ id: '1', status: 'missing' }], { columns: ['status'] });
+    expect(q(el, '[data-testid="table-status"]')).toBe(null);
+    expect(q(el, '[data-testid="cell-status"]')?.textContent?.trim()).toBe('Missing');
+  });
+
+  it('keeps the name-cell chip when the column is turned off', async () => {
+    const el = await mount([{ id: '1', status: 'missing' }], { columns: ['quantity'] });
+    expect(q(el, '[data-testid="table-status"]')?.textContent?.trim()).toBe('Missing');
+  });
+
+  it('gives the header no sort button — the API cannot order by status', async () => {
+    const el = await mount([{ id: '1' }], { columns: ['status'] });
+    expect(all(el, '[data-testid="table-sort"]').map((b) => b.dataset.field)).not.toContain('status');
   });
 });
 

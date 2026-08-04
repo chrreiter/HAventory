@@ -124,6 +124,59 @@ describe('hv-filter-panel: category', () => {
   });
 });
 
+describe('hv-filter-panel: status', () => {
+  it('offers every status as a single-select chip that toggles off when re-picked', async () => {
+    const el = await mount();
+    expect(all(el, '[data-testid="filter-status"]').map((c) => c.dataset.value)).toEqual([
+      'ok',
+      'missing',
+      'needs_repair',
+    ]);
+
+    const seen = changes(el);
+    (q(el, '[data-testid="filter-status"][data-value="missing"]') as HTMLButtonElement).click();
+    expect(seen).toEqual([{ status: 'missing' }]);
+
+    el.filters = { ...el.filters, status: 'missing' };
+    await el.updateComplete;
+    (q(el, '[data-testid="filter-status"][data-value="missing"]') as HTMLButtonElement).click();
+    expect(seen[1]).toEqual({ status: null });
+  });
+
+  it('prices the two flagged statuses from the stats counts', async () => {
+    const el = await mount(
+      {},
+      {
+        counts: {
+          items_total: 10,
+          low_stock_count: 0,
+          checked_out_count: 0,
+          missing_count: 2,
+          needs_repair_count: 1,
+          locations_total: 0,
+          no_location_count: 0,
+        },
+      },
+    );
+    const chips = all(el, '[data-testid="filter-status"]');
+    expect(chips.map((c) => (c.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual([
+      'OK',
+      'Missing 2',
+      'Needs repair 1',
+    ]);
+  });
+
+  it('carries the warning tone only while a flagged status is selected', async () => {
+    const el = await mount({ status: 'needs_repair' });
+    const chip = q(el, '[data-testid="filter-status"][data-value="needs_repair"]');
+    expect(chip.classList.contains('on')).toBe(true);
+    expect(chip.classList.contains('warning')).toBe(true);
+    expect(
+      q(el, '[data-testid="filter-status"][data-value="ok"]').classList.contains('warning'),
+    ).toBe(false);
+  });
+});
+
 describe('hv-filter-panel: tags', () => {
   it('multi-selects tags and switches between any and all', async () => {
     const el = await mount();
@@ -773,18 +826,19 @@ describe('hv-filter-panel: pressed state', () => {
     }
   });
 
-  // The row's on state has to be the chip's on state, not a second set of
-  // colours that happens to look similar.
-  it('takes its on state from the chip rule, warning variant included', () => {
+  // The row's on state has to be the shared chip's on state, not a second set
+  // of colours that happens to look similar.
+  it('takes its on state from the shared chip rule, warning variant included', () => {
     const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
     const css = (Array.isArray(sheet) ? sheet : [sheet])
       .map((s) => String(s.cssText))
       .join('\n')
       .replace(/\s+/g, ' ');
 
-    expect(css).toMatch(/\.chip\.on \{[^}]*background: var\(--hv-primary-tint\)/);
-    expect(css).toMatch(/\.chip\.on\.warning \{[^}]*background: var\(--hv-warn-bg\)/);
+    expect(css).toMatch(/\.hv-chip\.toggle\.on \{[^}]*background: var\(--hv-primary-tint\)/);
+    expect(css).toMatch(/\.hv-chip\.toggle\.warning\.on \{[^}]*background: var\(--hv-warn-bg\)/);
     // No rule of its own to drift from those, and no checkbox box left to draw.
+    expect(css).not.toMatch(/[^-]\.chip\.on \{/);
     expect(css).not.toMatch(/\.check\.on \{/);
     expect(css).not.toMatch(/\.box[ .{]/);
   });

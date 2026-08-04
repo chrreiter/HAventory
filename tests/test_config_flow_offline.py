@@ -1,7 +1,7 @@
 """Offline tests for HAventory config flow.
 
 Scenarios:
-- Single-instance guard aborts with reason
+- Single-instance guard aborts with reason, and the manifest declares the same rule
 - async_step_user happy path creates entry
 - The card title is asked for at setup, normalized, and seeded into the options
 - Import path: create entry if no existing (if supported)
@@ -10,6 +10,7 @@ Scenarios:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -55,6 +56,21 @@ async def test_single_instance_guard_aborts(monkeypatch) -> None:
     result = await flow.async_step_user(user_input=None)
     assert result["type"] == "abort"
     assert result["reason"] == "single_instance_allowed"
+
+
+def test_manifest_declares_single_config_entry() -> None:
+    """The manifest must declare the same single-instance rule the flow enforces.
+
+    `single_config_entry` is what removes HAventory from the "Add integration"
+    picker once an entry exists, so the second attempt never starts. The in-flow
+    guard above still covers the paths that bypass the picker, and the two must
+    agree: dropping the manifest key would silently put the entry back in the
+    picker only to abort on its first step.
+    """
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest.get("single_config_entry") is True
 
 
 @pytest.mark.asyncio
@@ -222,6 +238,21 @@ def test_translation_strings_carry_no_urls() -> None:
     for path in (root / "strings.json", root / "translations" / "en.json"):
         text = path.read_text(encoding="utf-8")
         assert "http://" not in text and "https://" not in text, f"{path.name} contains a URL"
+
+
+def test_translation_flow_sections_match_strings() -> None:
+    """`translations/en.json` must repeat every section `strings.json` declares.
+
+    Home Assistant renders the config flow, the options flow and the service
+    catalog from the translation file; `strings.json` is only the source
+    hassfest validates. An edit that lands in one file but not the other ships a
+    screen with the stale text and nothing fails.
+    """
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
+    strings = json.loads((root / "strings.json").read_text(encoding="utf-8"))
+    en = json.loads((root / "translations" / "en.json").read_text(encoding="utf-8"))
+    assert en == strings
 
 
 @pytest.mark.asyncio

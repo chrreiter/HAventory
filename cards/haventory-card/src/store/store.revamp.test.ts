@@ -66,6 +66,7 @@ describe('toWireFilter', () => {
       orphansOnly: true,
       overdueOnly: true,
       inspectionDueOnly: true,
+      status: 'missing',
       category: 'Hardware',
       updatedAfter: '2026-07-01T00:00:00Z',
       createdAfter: '2026-01-01T00:00:00Z',
@@ -82,6 +83,7 @@ describe('toWireFilter', () => {
       orphaned_only: true,
       overdue_only: true,
       inspection_overdue_only: true,
+      status: 'missing',
       category: 'Hardware',
       updated_after: '2026-07-01T00:00:00Z',
       created_after: '2026-01-01T00:00:00Z',
@@ -96,6 +98,7 @@ describe('toWireFilter', () => {
     expect(wire.created_before).toBeUndefined();
     expect(wire.overdue_only).toBeUndefined();
     expect(wire.inspection_overdue_only).toBeUndefined();
+    expect(wire.status).toBeUndefined();
   });
 
   it('keeps low-stock-only and low-stock-first independent', () => {
@@ -131,6 +134,12 @@ describe('activeFilterCount', () => {
 
   it('ignores sort, which is not a filter', () => {
     expect(activeFilterCount({ ...defaultFilters(), sort: { field: 'name', order: 'asc' } })).toBe(0);
+  });
+
+  it('counts a status selection as one filter', () => {
+    expect(activeFilterCount({ ...defaultFilters(), status: 'needs_repair' })).toBe(1);
+    // OK narrows too — most of the inventory is ok, but not all of it need be.
+    expect(activeFilterCount({ ...defaultFilters(), status: 'ok' })).toBe(1);
   });
 
   it('counts each date bound and the overdue toggle', () => {

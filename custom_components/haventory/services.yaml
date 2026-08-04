@@ -17,6 +17,15 @@ item_create:
       example: 1
       selector:
         number:
+    status:
+      required: false
+      example: "ok"
+      selector:
+        select:
+          options:
+            - "ok"
+            - "missing"
+            - "needs_repair"
     checked_out:
       required: false
       example: false
@@ -83,6 +92,14 @@ item_update:
       required: false
       selector:
         number:
+    status:
+      required: false
+      selector:
+        select:
+          options:
+            - "ok"
+            - "missing"
+            - "needs_repair"
     checked_out:
       required: false
       selector:

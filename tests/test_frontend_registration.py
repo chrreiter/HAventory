@@ -68,28 +68,35 @@ def import_haventory(monkeypatch, lovelace_key: str):
 
 
 class MockResourceCollection:
-    """Mock Lovelace resource collection in storage mode (create/update/delete)."""
+    """Mock Lovelace resource collection in storage mode (create/update/delete).
 
-    def __init__(self, items: list[dict[str, Any]] | None = None):
-        self.loaded = True
+    Mirrors where the real collection loads storage and where it does not:
+    `async_items` reports nothing until something loads it, while each mutation
+    method loads first — so a caller that reads before writing has to say so.
+    """
+
+    def __init__(self, items: list[dict[str, Any]] | None = None, *, loaded: bool = True):
+        self.loaded = loaded
         self._items: list[dict[str, Any]] = list(items or [])
         self.created: list[dict[str, Any]] = []
         self.updated: list[tuple[str, dict[str, Any]]] = []
         self.deleted: list[str] = []
 
     def async_items(self) -> list[dict[str, Any]]:
-        return self._items
+        return self._items if self.loaded else []
 
     async def async_load(self):
         self.loaded = True
 
     async def async_create_item(self, data: dict[str, Any]) -> dict[str, Any]:
+        self.loaded = True
         self.created.append(data)
         item = {"id": f"created_{len(self.created)}", **data}
         self._items.append(item)
         return item
 
     async def async_update_item(self, item_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+        self.loaded = True
         for item in self._items:
             if item.get("id") == item_id:
                 item.update(updates)
@@ -98,6 +105,7 @@ class MockResourceCollection:
         raise KeyError(item_id)
 
     async def async_delete_item(self, item_id: str) -> None:
+        self.loaded = True
         self.deleted.append(item_id)
         self._items = [item for item in self._items if item.get("id") != item_id]
 
@@ -553,6 +561,28 @@ async def test_collapses_duplicate_card_resources(monkeypatch, tmp_path):
     assert resources.created == []
     assert resources.deleted == ["legacy"]
     assert [i["url"] for i in resources.async_items()] == [expected]
+
+
+@pytest.mark.asyncio
+async def test_finds_the_existing_entry_in_an_unloaded_collection(hav_init):
+    """Registering against a collection nobody has read yet must not add a second entry.
+
+    Nothing loads the resource collection at Lovelace setup, so this is the state
+    setup meets on a Home Assistant that has served no dashboard. An unloaded
+    collection reports no items, and creating on the strength of that would leave
+    two resources for one module — the second `customElements.define` throws.
+    """
+    hass = make_hass()
+    current_url = f"{CARD_PATH}?v={manifest_version()}"
+    resources = MockResourceCollection(
+        [{"id": "existing", "url": current_url, "type": "module"}], loaded=False
+    )
+    hass.data["lovelace_data_key"] = MockLovelaceData(resources)
+
+    await hav_init._register_frontend_module(hass)
+
+    assert resources.created == []
+    assert [i["url"] for i in resources.async_items()] == [current_url]
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { locationPathParts, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import {
@@ -24,7 +25,8 @@ import {
   validateForm,
 } from '../ui/item-form';
 import type { CustomFieldRow, CustomFieldType, FieldError, ItemFormModel } from '../ui/item-form';
-import type { AreaRef, Item, Location, LocationTreeNode } from '../store/types';
+import { ITEM_STATUSES, statusLabel } from '../ui/status';
+import type { AreaRef, Item, ItemStatus, Location, LocationTreeNode } from '../store/types';
 import './hv-chip-input';
 import './hv-location-tree';
 import './hv-checkout-popover';
@@ -70,6 +72,7 @@ export class HVItemEditor extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -99,20 +102,6 @@ export class HVItemEditor extends LitElement {
         font-size: 11.5px;
         color: var(--hv-text-tertiary);
         white-space: nowrap;
-      }
-      .out-chip {
-        flex: none;
-        font: 500 11px var(--hv-font);
-        color: var(--hv-primary-darker);
-        background: var(--hv-surface);
-        border: 1px solid var(--hv-primary-tint-border);
-        border-radius: var(--hv-radius-chip);
-        padding: 2px 8px;
-      }
-      .out-chip.overdue {
-        color: #fff;
-        background: var(--hv-error);
-        border-color: var(--hv-error);
       }
       .grid {
         display: grid;
@@ -579,6 +568,9 @@ export class HVItemEditor extends LitElement {
         font: 400 12px var(--hv-font);
         color: var(--hv-text-secondary);
       }
+      /* Delete is hv-text-button danger from the shared sheet — the same
+         borderless red every other destructive action in the card uses (the
+         detail sheet's own Delete item, the organize dialog's Delete). */
       .actions {
         display: flex;
         align-items: center;
@@ -639,11 +631,6 @@ export class HVItemEditor extends LitElement {
       .save[disabled] {
         opacity: 0.5;
       }
-      /* Delete is hv-text-button danger from the shared sheet — the same
-         borderless red every other destructive action in the card uses (the
-         detail sheet's own Delete item, the organize dialog's Delete). It used
-         to be an outlined 12.5px pill, which made it the one button in the row
-         with a border, its own radius and its own font size. */
       .banner {
         margin: 0 18px;
         padding: 9px 12px;
@@ -1025,6 +1012,30 @@ export class HVItemEditor extends LitElement {
   }
 
   /**
+   * The stored condition, as a plain select.
+   *
+   * A three-value enum with a required answer is exactly what a native select
+   * is for; the flagged states surface as chips on the row and sheet, so the
+   * editor only needs the value to be settable, not loud.
+   */
+  private _renderStatusField() {
+    return html`<div class="cell">
+      <label class="hv-label" for="editor-status">Status</label>
+      <select
+        id="editor-status"
+        class="hv-input"
+        data-testid="editor-status"
+        @change=${(e: Event) =>
+          this._patch({ status: (e.target as HTMLSelectElement).value as ItemStatus })}
+      >
+        ${ITEM_STATUSES.map(
+          (s) => html`<option value=${s} ?selected=${this._model.status === s}>${statusLabel(s)}</option>`,
+        )}
+      </select>
+    </div>`;
+  }
+
+  /**
    * The checkout, and the one date that is not part of it.
    *
    * A due date is half of the checkout — it only means anything while an item
@@ -1356,7 +1367,7 @@ export class HVItemEditor extends LitElement {
                 ${creating ? 'New item' : `${this.item?.name} — editing`}
               </span>
               ${this.item?.checked_out
-                ? html`<span class="out-chip ${overdue ? 'overdue' : ''}" data-testid="editor-out-chip">
+                ? html`<span class="hv-chip ${overdue ? 'error' : 'state'}" data-testid="editor-out-chip">
                     ${overdue ? 'Overdue' : 'Checked out'}${this.item?.due_date
                       ? ` · due ${formatDate(this.item.due_date)}`
                       : ''}
@@ -1386,17 +1397,19 @@ export class HVItemEditor extends LitElement {
           ${this._text('lowStock', 'Low-stock at', { type: 'number', testid: 'editor-low-stock' })}
           ${this.mobile
             ? null
-            : html`<div class="cell span3">
-                <label class="hv-label" for="editor-description-desktop">Description</label>
-                <textarea
-                  id="editor-description-desktop"
-                  class="hv-input"
-                  data-testid="editor-description"
-                  .value=${model.description}
-                  @input=${(e: Event) => this._patch({ description: (e.target as HTMLTextAreaElement).value })}
-                ></textarea>
-              </div>`}
+            : html`<div class="cell span2">
+                  <label class="hv-label" for="editor-description-desktop">Description</label>
+                  <textarea
+                    id="editor-description-desktop"
+                    class="hv-input"
+                    data-testid="editor-description"
+                    .value=${model.description}
+                    @input=${(e: Event) => this._patch({ description: (e.target as HTMLTextAreaElement).value })}
+                  ></textarea>
+                </div>
+                ${this._renderStatusField()}`}
           ${this._renderLocationField()} ${this._renderCategoryField()}
+          ${this.mobile ? this._renderStatusField() : null}
           <div class="cell span3">
             <span class="hv-label">Tags <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--hv-text-tertiary)">· stored lowercase</span></span>
             <hv-chip-input

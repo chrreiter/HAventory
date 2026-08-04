@@ -476,6 +476,6 @@ track `prefers-color-scheme`.
 ## Known gaps
 
 - Drag-and-drop of items onto sidebar tree nodes (optional in the handoff) is not built.
-- `@lit-labs/virtualizer` is still a dependency but unused; large lists rely on paging.
+- Large lists rely on paging; no row virtualization.
 - The backend cannot sort by category, location or tags, filter by due date, or bulk-create
   items — the UI is shaped around those limits rather than hiding them.

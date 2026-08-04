@@ -387,6 +387,67 @@ async def test_bulk_unexpected_error_logs_error_with_traceback(caplog, monkeypat
     assert failures[0].exc_info is not None
 
 
+@pytest.mark.asyncio
+async def test_all_failed_bulk_logs_only_its_per_op_lines(caplog) -> None:
+    """A batch where nothing succeeded adds no summary of its own.
+
+    The per-op lines already carry the ``op_id`` and reason an operator acts on;
+    a batch-level "none of them worked" repeats that on the one path where the
+    log is already at its longest.
+    """
+
+    hass = _make_hass()
+    caplog.clear()
+    caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
+
+    res = await _send(
+        hass,
+        1,
+        "haventory/items/bulk",
+        operations=[
+            {"op_id": "a", "kind": "item_update", "payload": {"item_id": "missing-1"}},
+            {"op_id": "b", "kind": "item_delete", "payload": {"item_id": "missing-2"}},
+        ],
+    )
+    results = res["result"]["results"]
+    assert {k: v["success"] for k, v in results.items()} == {"a": False, "b": False}
+
+    records = _records(caplog)
+    assert [r.op for r in records] == ["items_bulk_op_failed"] * 2
+    assert {r.op_id for r in records} == {"a", "b"}
+
+
+@pytest.mark.asyncio
+async def test_partly_successful_bulk_still_logs_its_summary(caplog) -> None:
+    """The summary survives where it still says something: a batch that changed state."""
+
+    hass = _make_hass()
+    created = await _send(hass, 1, "haventory/item/create", name="Widget")
+    item_id = created["result"]["id"]
+
+    caplog.clear()
+    caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
+
+    await _send(
+        hass,
+        2,
+        "haventory/items/bulk",
+        operations=[
+            {
+                "op_id": "a",
+                "kind": "item_adjust_quantity",
+                "payload": {"item_id": item_id, "delta": 1},
+            },
+            {"op_id": "b", "kind": "item_delete", "payload": {"item_id": "missing"}},
+        ],
+    )
+
+    summaries = [r for r in _records(caplog) if r.op == "items_bulk"]
+    assert len(summaries) == 1
+    assert summaries[0].levelno == logging.INFO
+    assert (summaries[0].successful, summaries[0].failed) == (1, 1)
+
+
 # -----------------------------
 # The service boundary follows the same policy
 # -----------------------------
