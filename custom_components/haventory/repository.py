@@ -451,6 +451,24 @@ class Repository:
 
         return matches
 
+    def _text_index_covers_query(self, query: str) -> bool:
+        """Return True when the text index can answer ``query`` without false negatives.
+
+        ``_item_matches_q`` matches a query word anywhere inside an item's text,
+        mid-word included. The index only reaches that far through trigrams, so a
+        word shorter than ``TRIGRAM_MIN_LEN`` is reachable only where it happens to
+        start a name word — "wi" finds "Wine" and never "Kiwi". A query with no
+        indexable word at all (punctuation only) is outside the index entirely.
+
+        For those queries the index is a lossy filter rather than a pre-filter, and
+        callers must let the ``filter_items`` scan answer instead. Tokenizes exactly
+        as ``_search_by_text`` does, so the two always agree on the word boundaries
+        the judgement is made over.
+        """
+
+        words = self._tokenize(query)
+        return bool(words) and all(len(w) >= TRIGRAM_MIN_LEN for w in words)
+
     def _search_by_text(self, query: str) -> set[str]:
         """Return item IDs matching the query using indexes.
 
@@ -1019,9 +1037,12 @@ class Repository:
                 candidate_sets.append(s)
 
         # 0. Text Search Index (q)
+        # A pre-filter, authoritative only over the queries the index covers
+        # (``_text_index_covers_query``). Where it does not, ``q`` contributes no
+        # candidate set and the ``filter_items`` post-filter decides on its own —
+        # an index miss there means "cannot tell", not "no match".
         q = (flt.get("q") or "").strip()
-        if q:
-            # We treat text index as authoritative for text matches
+        if q and self._text_index_covers_query(q):
             has_indexed_filter = True
             text_matches = self._search_by_text(q)
             if not text_matches:
