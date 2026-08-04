@@ -75,6 +75,26 @@
       "name": "Delete item",
       "description": "Delete an inventory item."
     },
+    "item_move": {
+      "name": "Move item",
+      "description": "Move an item to a new location (or root)."
+    },
+    "item_adjust_quantity": {
+      "name": "Adjust quantity",
+      "description": "Add or subtract from item quantity."
+    },
+    "item_set_quantity": {
+      "name": "Set quantity",
+      "description": "Set item quantity exactly."
+    },
+    "item_check_out": {
+      "name": "Check out item",
+      "description": "Mark an item as checked out with due date."
+    },
+    "item_check_in": {
+      "name": "Check in item",
+      "description": "Mark an item as not checked out."
+    },
     "location_create": {
       "name": "Create location",
       "description": "Create a new storage location."
