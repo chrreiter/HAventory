@@ -704,6 +704,8 @@ persistence-across-restart. Exit codes: `0` pass, `1` failures, `2` setup error.
 Contributions are welcome! See **[CONTRIBUTING.md](CONTRIBUTING.md)**. File bugs and feature
 requests through the [issue tracker](https://github.com/chrreiter/HAventory/issues/new/choose),
 and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discussions).
+Taking part means following the [Code of Conduct](CODE_OF_CONDUCT.md). Security problems go
+through [private reporting](SECURITY.md), never a public issue.
 
 ## Conventions
 
