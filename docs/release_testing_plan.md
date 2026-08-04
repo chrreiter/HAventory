@@ -123,7 +123,7 @@ client + OS version, date. Put it in the results log.
 | A1 | Fresh install on a clean HA (ENV-B): HACS/manual copy → restart → add integration via config flow → add card via the UI card picker | Integration sets up without error; card appears in the picker; empty state renders with no locations and no console error | ✅ |
 | A2 | Card resource auto-registration (storage-mode Lovelace) | `/haventory_static/haventory-card.js?v=<version>` present exactly once in `.storage/lovelace_resources`; `curl -I` on it returns 200 with **no** `Cache-Control` header; card loads without a manual step | ✅ |
 | A3 | YAML-mode Lovelace (ENV-B, `lovelace: mode: yaml`) | Resource registration is skipped with a clear log line, and the card still loads — the frontend extra-module URL covers YAML mode, so there is no manual step here either | ✅ |
-| A4 | Attempt a second config entry | Rejected as single-instance; no duplicate storage or resource | |
+| A4 | Attempt a second config entry | HAventory is absent from the "Add integration" picker while an entry exists, so the attempt cannot start; a flow initiated outside the picker aborts with "Already configured. Only a single configuration is possible." No duplicate storage or resource | |
 | A5 | First-run with a pre-existing store (upgrade-in-place from a dev instance) | Existing items/locations load; `health` healthy | ✅ |
 
 ### B — Mobile / touch (companion app)
