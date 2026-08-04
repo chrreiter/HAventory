@@ -36,24 +36,26 @@ def current_card_url() -> str:
 class MockResourceCollection:
     """Storage-mode Lovelace resource collection.
 
-    Mirrors the real collection in the one respect the caller has to get right:
-    an unloaded collection reports no items at all.
+    Mirrors the real collection where the caller has to get it right: `stored` is
+    the backing store, `async_items` sees only what a load has pulled into
+    memory, and `async_delete_item` pulls it in itself.
     """
 
     def __init__(self, items: list[dict[str, Any]] | None = None, *, loaded: bool = True) -> None:
         self.loaded = loaded
-        self._stored: list[dict[str, Any]] = list(items or [])
+        self.stored: list[dict[str, Any]] = list(items or [])
         self.deleted: list[str] = []
 
     def async_items(self) -> list[dict[str, Any]]:
-        return self._stored if self.loaded else []
+        return self.stored if self.loaded else []
 
     async def async_load(self) -> None:
         self.loaded = True
 
     async def async_delete_item(self, item_id: str) -> None:
+        self.loaded = True
         self.deleted.append(item_id)
-        self._stored = [item for item in self._stored if item.get("id") != item_id]
+        self.stored = [item for item in self.stored if item.get("id") != item_id]
 
 
 class MockYamlResourceCollection:
@@ -61,10 +63,10 @@ class MockYamlResourceCollection:
 
     def __init__(self, items: list[dict[str, Any]] | None = None) -> None:
         self.loaded = True
-        self._stored: list[dict[str, Any]] = list(items or [])
+        self.stored: list[dict[str, Any]] = list(items or [])
 
     def async_items(self) -> list[dict[str, Any]]:
-        return self._stored
+        return self.stored
 
     async def async_load(self) -> None:
         pass
@@ -192,8 +194,13 @@ async def test_remove_entry_in_yaml_mode_does_not_raise(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_remove_entry_loads_resources_before_deleting(monkeypatch) -> None:
-    """An unloaded collection reports no items until it is loaded."""
+async def test_remove_entry_deletes_from_an_unloaded_collection(monkeypatch) -> None:
+    """Our resource goes even when nothing has read the collection yet.
+
+    Nothing loads it at Lovelace setup, so this is the state a removal meets on a
+    Home Assistant that has served no dashboard — and an unloaded collection
+    reports no items, which would silently leave the entry behind.
+    """
 
     hav_init = _import_with_lovelace(monkeypatch)
     resources = MockResourceCollection([{"id": "haventory", "url": CARD_URL}], loaded=False)
@@ -201,8 +208,7 @@ async def test_remove_entry_loads_resources_before_deleting(monkeypatch) -> None
 
     await hav_init.async_remove_entry(hass, ConfigEntry())
 
-    assert resources.loaded is True
-    assert resources.deleted == ["haventory"]
+    assert resources.stored == []
 
 
 @pytest.mark.asyncio

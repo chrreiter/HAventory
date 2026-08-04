@@ -471,7 +471,14 @@ async def _async_lovelace_resources(hass: HomeAssistant, *, op: str) -> Any:
         )
         return None
 
-    if hasattr(resources, "loaded") and not resources.loaded:
+    # The collection's create/update/delete each load storage on demand, but
+    # `async_items` cannot — it is a sync callback over an in-memory dict, so an
+    # unloaded collection reports no resources at all. Both callers read it
+    # first: register would add a second entry for a card already registered,
+    # unregister would leave ours behind. Setting the flag is part of the
+    # contract rather than bookkeeping — `async_load` leaves it False, and the
+    # collection's next write would then load and re-add every item again.
+    if not getattr(resources, "loaded", True):
         await resources.async_load()
         resources.loaded = True
 

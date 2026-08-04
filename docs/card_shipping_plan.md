@@ -136,9 +136,14 @@ option, and nothing in the dogfood plan installs via HACS-from-branch (the dev l
 | R15 | Stray release asset named `haventory-card.js` would bind HACS's download counter | `filename` names the zip, which `zip_release` makes the installed asset | hacs.json diff |
 | R16 | HA's frontend installs its own `CustomElementRegistry` during boot; a definition made before the swap stays in the registry HA replaced, where the dashboard never looks — the card renders as "custom element doesn't exist" | `defineCardElement()` re-asserts the definition on the first observed registry change, within a 15 s window | 5 cold loads per engine, before/after, on a real HACS install of the release asset |
 
-Out-of-scope follow-up (record in `docs/open-items.md` when implementing): the manual
-`resources.async_load()` in `_async_lovelace_resources` is redundant at the 2026.6.0
-floor (collection methods self-ensure-loaded) and can be dropped in a later cleanup.
+Out-of-scope follow-up, since resolved and **rejected**: the manual `resources.async_load()`
+in `_async_lovelace_resources` looked redundant at the 2026.6.0 floor, on the reading that
+the collection methods all self-ensure-loaded. They do not. `ResourceStorageCollection`
+overrides `async_create_item` / `async_update_item` / `async_delete_item` with an
+ensure-loaded, but not `async_items` — that one is `ObservableCollection.async_items`, a
+*sync* callback over an in-memory dict, so it cannot await a load and reports nothing until
+something else has loaded the collection. Lovelace's `async_setup` never does, and both of
+our callers read `async_items` before writing. The load stays; see the comment on it.
 
 ## Touchpoint inventory
 
