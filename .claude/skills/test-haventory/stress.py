@@ -133,13 +133,21 @@ async def connect() -> WSConn:
     base = os.environ["HA_BASE_URL"]
     token = os.environ["HA_TOKEN"]
     session = aiohttp.ClientSession()
-    ws = await session.ws_connect(ws_url(base), timeout=aiohttp.ClientWSTimeout(ws_receive=20))
-    await asyncio.wait_for(ws.receive_json(), timeout=20)  # hello
-    await ws.send_json({"type": "auth", "access_token": token})
-    auth = await asyncio.wait_for(ws.receive_json(), timeout=20)
-    if auth.get("type") != "auth_ok":
+    # The session is this function's to own until a WSConn takes it: every failure
+    # path has to close it. Callers legitimately retry connect() against an HA that
+    # is down (the restart layer's ready-poll) and swallow the failure, so an
+    # abandoned session there surfaces as an "Unclosed client session" warning — and
+    # the log sweep is an oracle whose value is that a clean run is silent.
+    try:
+        ws = await session.ws_connect(ws_url(base), timeout=aiohttp.ClientWSTimeout(ws_receive=20))
+        await asyncio.wait_for(ws.receive_json(), timeout=20)  # hello
+        await ws.send_json({"type": "auth", "access_token": token})
+        auth = await asyncio.wait_for(ws.receive_json(), timeout=20)
+        if auth.get("type") != "auth_ok":
+            raise RuntimeError(f"auth failed: {auth}")
+    except BaseException:
         await session.close()
-        raise RuntimeError(f"auth failed: {auth}")
+        raise
     return WSConn(session, ws)
 
 
@@ -1306,18 +1314,24 @@ async def cmd_restart() -> None:
         print("\n  waiting for HA to come back ...")
         control = None
         ready = False
-        for i in range(30):
+        for _ in range(30):
             await asyncio.sleep(3)
             try:
                 c = await connect()
-                h = await health(c)
-                if h.get("healthy") is not None:
-                    control = c
-                    ready = True
-                    break
-                await c.close()
             except Exception:  # noqa: BLE001
-                pass
+                continue
+            # Past this point the connection is ours: it is either adopted as the new
+            # control connection or closed here, including when health() fails on a
+            # half-booted HA.
+            try:
+                ready = (await health(c)).get("healthy") is not None
+            except Exception:  # noqa: BLE001
+                ready = False
+            if ready:
+                control = c
+                break
+            with contextlib.suppress(Exception):
+                await c.close()
         if not ready:
             print("  **FAIL: HA did not become ready within timeout**")
             return
