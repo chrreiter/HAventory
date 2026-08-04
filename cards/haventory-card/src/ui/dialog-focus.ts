@@ -24,6 +24,24 @@ export function deepActiveElement(): HTMLElement | null {
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 /**
+ * Whether the browser is drawing this element, and would therefore let it take
+ * focus.
+ *
+ * `visibility: hidden` is how this card holds a control in the layout without
+ * offering it — the table's row actions are hidden until their row is hovered
+ * or focused. `.focus()` on one of those is a silent no-op, so a trap that
+ * ended on it would leave focus on its sentinel and never wrap.
+ *
+ * `checkVisibility` is the browser's own answer and needs a layout to give it.
+ * jsdom performs none and does not implement the method; treating everything
+ * as drawn there is exactly what a plain `querySelectorAll` would have said.
+ */
+function isRendered(el: HTMLElement): boolean {
+  if (typeof el.checkVisibility !== 'function') return true;
+  return el.checkVisibility({ checkVisibilityCSS: true, visibilityProperty: true } as CheckVisibilityOptions);
+}
+
+/**
  * Every focusable control under `root`, in tab order, descending into the shadow
  * root of any custom element on the way.
  *
@@ -47,6 +65,7 @@ export function deepFocusables(root: ParentNode | null | undefined): HTMLElement
     // A hidden subtree is not in the tab order, and `hidden` is how this card
     // keeps a collapsed panel's controls out of it.
     if (el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') return;
+    if (!isRendered(el)) return;
     if (el.matches(FOCUSABLE) && !el.hasAttribute('disabled') && el.getAttribute('tabindex') !== '-1') {
       found.push(el);
     }

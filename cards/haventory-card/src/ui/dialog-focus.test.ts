@@ -178,6 +178,26 @@ describe('deepFocusables', () => {
     expect(ids(root)).toEqual(['a', 'tabbable']);
   });
 
+  it('leaves out what the browser is not drawing', () => {
+    // The table's row actions sit in the layout at `visibility: hidden` until
+    // their row is hovered or focused, and `.focus()` on one is a silent no-op
+    // — a trap ending there leaves focus on its sentinel and never wraps.
+    // jsdom lays nothing out and implements no `checkVisibility`, so the two
+    // states have to be stood in for.
+    const root = build(`<button id="drawn"></button><button id="painted-over"></button>`);
+    const hidden = root.querySelector('#painted-over') as HTMLElement & { checkVisibility: () => boolean };
+    hidden.checkVisibility = () => false;
+    expect(ids(root)).toEqual(['drawn']);
+  });
+
+  it('takes everything when the browser cannot be asked', () => {
+    // Without a layout there is no answer to give, and treating every control
+    // as drawn is what a plain `querySelectorAll` would have said anyway.
+    const root = build(`<button id="a"></button>`);
+    expect('checkVisibility' in (root.querySelector('#a') as HTMLElement)).toBe(false);
+    expect(ids(root)).toEqual(['a']);
+  });
+
   it('survives a surface that has not rendered yet', () => {
     expect(deepFocusables(null)).toEqual([]);
     expect(deepFocusables(undefined)).toEqual([]);
