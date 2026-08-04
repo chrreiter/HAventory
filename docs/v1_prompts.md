@@ -27,16 +27,18 @@ Conventions every prompt below assumes (stated once here, per `CLAUDE.md`):
 
 ### Item 79
 
-**Execute the validation run against v0.2.0.** Program:
+**Execute the validation run against the last feature release** (`v0.3.0` once #186
+cuts). Program:
 [`release_testing_plan.md`](release_testing_plan.md) (authoritative for
 instrumentation, environments, scenarios, exit criteria). **Local Claude Code** next to
 the Docker host / real HA — not a web session.
 
 ```text
 PROJECT CONTEXT — run this in LOCAL Claude Code next to the Docker host / real HA.
-v0.2.0 is released (every pending fix + the pre-v1.0 features) and installed on my real
-production HA via HACS custom repository — that install step is release-test A1 and
-closes the verification half of open-items item 4. docs/release_testing_plan.md is the
+The last feature release (every pending fix + the pre-v1.0 features) is out and
+installed on my real production HA via HACS custom repository — that install step is
+release-test A1 and closes the verification half of the HACS listing (GitHub issue
+#196). docs/release_testing_plan.md is the
 validation program: environments ENV-A (real instance) / ENV-B (throwaway Docker) /
 ENV-C (floor-pinned 2026.6.0, scenario D6) / ENV-D (backup restore), scenario groups
 A–J, six exit criteria. The run-haventory and test-haventory skills carry the
@@ -46,7 +48,8 @@ RULES
 - The plan document is authoritative — follow its instrumentation section exactly.
 - I am part of the test environment: pause for my on-device checks (companion-app
   groups) and my sign-offs wherever the plan says so.
-- Every failure is triaged with an impact rating into docs/open-items.md; do not fix
+- Every failure is triaged with an impact rating — a docs/open-items.md row if it must
+  land before 1.0, a GitHub issue otherwise; do not fix
   mid-run except Blockers. Fixes: one PR per fix from latest main, both gates green,
   released as the next 0.2.x patch via release-please, then re-run the affected
   scenarios on the updated install.
@@ -171,7 +174,7 @@ for anyone still on 0.x. I merge the release PR myself.
 
 ## After 1.0
 
-### Item 4
+### HACS listing ([issue #196](https://github.com/chrreiter/HAventory/issues/196), formerly item 4)
 
 **HACS default-store listing.** The custom-repo install half was verified as A1 during
 item 79; this is the submission half. External reviews run on their own timelines —
@@ -179,7 +182,7 @@ file early.
 
 ```text
 You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-docs/open-items.md item 4 is the spec; v1.0.0 is live. Verify current requirements from
+GitHub issue #196 is the spec; v1.0.0 is live. Verify current requirements from
 the official HACS publisher docs before each step — do not work from memory. Then, with
 my explicit go per submission:
 a. Repo prep: description, topics, README requirements per the HACS docs.

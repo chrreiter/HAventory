@@ -177,8 +177,8 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   merging, and the backup's items follow their stored `location_id` onto the duplicate.
   Restore into an empty inventory, or onto one whose ids are still intact.
 
-These are tracked, with their measurements and proposed fixes, in
-[`docs/open-items.md`](docs/open-items.md).
+These are tracked, with their measurements and proposed fixes, in the
+[issue tracker](https://github.com/chrreiter/HAventory/issues).
 
 ---
 
@@ -710,8 +710,8 @@ and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discus
 - Domain/package: `haventory` under `custom_components/haventory`; services `haventory.*`;
   built assets `custom_components/haventory/www/`, served at `/haventory_static/`;
   calendar entity `calendar.haventory` — a reserved name for
-  the post-1.0 calendar work ([open item 9](docs/open-items.md)), not an entity that exists
-  today.
+  the post-1.0 calendar work ([#187](https://github.com/chrreiter/HAventory/issues/187)),
+  not an entity that exists today.
 - Logging: avoid reserved `LogRecord` keys in logger extras — use `item_name` /
   `location_name`, not `name`.
 
@@ -722,7 +722,8 @@ and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discus
 - Data shapes (Item/Location/filter/sort/events): `docs/data_shapes.md`
 - Frontend architecture: `docs/frontend_architecture.md`
 - Release testing plan (manual v1.0 readiness run): `docs/release_testing_plan.md`
-- Open items / future work: `docs/open-items.md`
+- Pre-v1.0 release tracker: `docs/open-items.md` (future work lives in the
+  [issue tracker](https://github.com/chrreiter/HAventory/issues))
 
 ## Troubleshooting
 

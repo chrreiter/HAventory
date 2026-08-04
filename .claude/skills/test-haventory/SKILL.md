@@ -178,9 +178,9 @@ not re-verified here.
   docker path) **and `HA_CONTAINER`**. It leaves the container restarted (disposable).
 - **`ratelimit` rebuilds the limiter on save** (buckets refill, counters zero) — it samples
   `dropped_commands` before disabling and always resets rate limiting OFF, even on failure.
-- **Expected non-bugs the layers surface — do NOT file as regressions** (tracked in
-  `docs/open-items.md`): duplicate bulk `op_id` → silent last-wins loss (#22); bulk-create
-  p50 grows superlinearly (O(N²) persist, #19) — a **WARN**, not a failure.
+- **Expected non-bugs the layers surface — do NOT file as regressions** (tracked as
+  GitHub issues): duplicate bulk `op_id` → silent last-wins loss (issue #197); bulk-create
+  p50 grows superlinearly (O(N²) persist, issue #200) — a **WARN**, not a failure.
 - **E2E: assert on the item NAME, not the quantity cell** — the card renders quantity only
   when that column is active, but the name always renders.
 - **Log scan is part of the pass gate** — subscription/connection bugs can pass offline unit
