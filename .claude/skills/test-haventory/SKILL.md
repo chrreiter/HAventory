@@ -33,13 +33,13 @@ Both halves must be green. Backend, from the repo root:
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --no-project --python 3.14 \
   --with pytest --with pytest-asyncio --with voluptuous --with aiohttp \
   python -m pytest -q
-# → 350 passed, 22 skipped
+# → 540 passed, 22 skipped
 
 uv run --no-project --python 3.14 --with ruff==0.15.22 ruff check custom_components tests
 # → All checks passed!
 
 uv run --no-project --python 3.14 --with mypy --with voluptuous mypy
-# → Success: no issues found in 13 source files
+# → Success: no issues found in 14 source files
 ```
 
 Frontend, from `cards/haventory-card`:
@@ -48,9 +48,16 @@ Frontend, from `cards/haventory-card`:
 npm ci            # first run, or if node_modules is partial (missing rolldown binding)
 npm run lint      # eslint  → clean
 npm run typecheck # tsc --noEmit → clean
-npm test          # vitest  → 812 passed across 42 files
+npm test          # vitest  → 1094 passed across 51 files
 npm run build     # vite → ../../custom_components/haventory/www/ (git-ignored)
 ```
+
+Those counts are **as of v0.3.1** and are a collection oracle, not a target: TDD means every
+release adds tests, so a number *larger* than the one printed here is the normal result. A
+number **smaller** than the last release's — fewer tests, fewer vitest files, fewer mypy
+source files — means collection broke and half the suite silently did not run. Re-pin them
+whenever a release moves them; a stale figure read as an exact expectation misdiagnoses a
+healthy run.
 
 Warm the hooks before committing (never `--no-verify`):
 
@@ -157,7 +164,7 @@ set -a; source .env; set +a
 RUN_ONLINE=1 uv run --no-project --python 3.14 \
   --with pytest --with pytest-asyncio --with aiohttp --with voluptuous \
   python -m pytest -q -m online -k "ws_smoke or ws_smoke_advanced"
-# → 8 passed, 13 skipped
+# → 8 passed, 13 skipped (as of v0.3.1; the skips need the destructive/area gates)
 ```
 
 The full online gate (adds destructive + area-registry tests, double-gated by

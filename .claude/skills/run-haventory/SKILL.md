@@ -19,7 +19,7 @@ All paths below are relative to the repo root. This is a **Windows host**: run t
   (`ghcr.io/home-assistant/home-assistant:stable`, port 8123). Check: `docker ps`.
   It was provisioned once by hand (image run + HA onboarding in the browser); if it's
   ever gone, that one-time onboarding has to be redone in a browser — not scripted.
-- `uv` (Python 3.14 env) and Node ≥ 22 on PATH.
+- `uv` (Python 3.14 env) and Node 22.13+ (or ≥ 24, per the card's `engines`) on PATH.
 - Repo-root **`.env`** (gitignored) with the credentials both drivers auto-read:
 
   ```
@@ -483,8 +483,10 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
 (cd cards/haventory-card && npx vitest run)
 ```
 
-Expected at feature freeze: backend 350 passed / 22 skipped in ~11 s; frontend 812 passed
-across 42 files in ~30 s.
+As of v0.3.1: backend 540 passed / 22 skipped; frontend 1094 passed across 51 files. Both
+counts only grow — a *smaller* one than the last release's means collection broke, not that
+tests were removed — so treat them as a floor, and re-pin them when a release moves them.
+The full gate, with the numbers kept next to it, is the sibling `/test-haventory` skill.
 
 The harness has its own unit cover for the parts of `card_views.mjs` that decide where a
 run looks — which views hold the card, which URL addresses them, what `--path` asked for.
@@ -509,8 +511,8 @@ set -a; . ./.env; set +a
 RUN_ONLINE=1 bash scripts/smoke_online.sh
 ```
 
-Expected: `8 passed, 13 skipped` (the skips need `HA_CONTAINER`, i.e. the destructive
-clean-start mode), then `Online smoke test completed successfully.`
+Expected as of v0.3.1: `8 passed, 13 skipped` (the skips need `HA_CONTAINER`, i.e. the
+destructive clean-start mode), then `Online smoke test completed successfully.`
 
 ## Gotchas
 
