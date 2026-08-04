@@ -664,9 +664,9 @@ def _broadcast_event(
     action: str,
     payload: dict[str, Any] | None = None,
 ) -> None:
-    # Broadcasts are best-effort: they run after a mutation has already been
-    # applied (and usually persisted), so a broadcast failure must never turn
-    # the originating command into an error.
+    # Broadcasts are best-effort: they run after a mutation has been applied and
+    # persisted, so a broadcast failure must never turn the originating command
+    # into an error.
     try:
         event: dict[str, Any] = {
             "domain": DOMAIN,
@@ -752,9 +752,21 @@ def _broadcast_counts(hass: HomeAssistant) -> None:
 
 
 async def _persist_repo(hass: HomeAssistant) -> None:
-    # Use immediate persistence to ensure storage errors propagate to clients.
-    # Debounced persistence (async_request_persist) swallows errors in background
-    # tasks, breaking the @ws_guard error mapping contract.
+    """Write the repository to disk, propagating failure to the caller.
+
+    Uses immediate persistence so storage errors reach clients: debounced
+    persistence (``async_request_persist``) swallows errors in background tasks,
+    breaking the ``@ws_guard`` error mapping contract.
+
+    **Every mutation handler awaits this before it broadcasts or replies.** That
+    ordering is the whole guarantee an event carries: a subscriber that receives
+    ``items/created`` knows the write behind it succeeded. Broadcasting first
+    would tell subscribers about a change the originating client is about to be
+    told failed, and which a restart then erases. Bulk import
+    (``ws_import_execute``) additionally rolls the dataset back, because a
+    wholesale swap has more to undo than one entity does.
+    """
+
     await storage_mod.async_persist_repo(hass)
 
 
@@ -1125,8 +1137,8 @@ async def ws_item_create(
     payload = {k: v for k, v in msg.items() if k not in {"id", "type"}}
     item = _repo(hass).create_item(payload)  # type: ignore[arg-type]
     serialized = _serialize_item(hass, item)
-    _broadcast_event(hass, topic="items", action="created", payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="created", payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1178,8 +1190,8 @@ async def ws_item_update(
     updated = _repo(hass).update_item(item_id, update, expected_version=expected)
     serialized = _serialize_item(hass, updated)
     action = "moved" if "location_id" in update else "updated"
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1201,13 +1213,13 @@ async def ws_item_delete(
     before = repo.get_item(item_id)
     serialized_before = _serialize_item(hass, before)
     repo.delete_item(item_id, expected_version=msg.get("expected_version"))
+    await _persist_repo(hass)
     _broadcast_event(
         hass,
         topic="items",
         action="deleted",
         payload={"item": serialized_before},
     )
-    await _persist_repo(hass)
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
 
@@ -1229,8 +1241,8 @@ async def ws_item_adjust_quantity(
         msg["item_id"], msg["delta"], expected_version=msg.get("expected_version")
     )
     serialized = _serialize_item(hass, item)
-    _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1256,8 +1268,8 @@ async def ws_item_set_quantity(
         msg["item_id"], qty, expected_version=msg.get("expected_version")
     )
     serialized = _serialize_item(hass, item)
-    _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1281,8 +1293,8 @@ async def ws_item_check_out(
         expected_version=msg.get("expected_version"),
     )
     serialized = _serialize_item(hass, item)
-    _broadcast_event(hass, topic="items", action="checked_out", payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="checked_out", payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1301,8 +1313,8 @@ async def ws_item_check_in(
 ) -> None:
     item = _repo(hass).check_in(msg["item_id"], expected_version=msg.get("expected_version"))
     serialized = _serialize_item(hass, item)
-    _broadcast_event(hass, topic="items", action="checked_in", payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="checked_in", payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1329,8 +1341,8 @@ async def ws_item_add_tags(
             "tags": msg.get("tags"),
         },
     )
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1357,8 +1369,8 @@ async def ws_item_remove_tags(
             "tags": msg.get("tags"),
         },
     )
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1387,8 +1399,8 @@ async def ws_item_update_custom_fields(
             "unset": msg.get("unset"),
         },
     )
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1415,8 +1427,8 @@ async def ws_item_set_low_stock_threshold(
             "low_stock_threshold": msg.get("low_stock_threshold"),
         },
     )
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1443,8 +1455,8 @@ async def ws_item_move(
             "location_id": msg.get("location_id"),
         },
     )
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1535,8 +1547,16 @@ async def ws_items_bulk(
                 },
             }
 
+    # Only a batch that changed something writes or announces anything. An
+    # all-failed batch deliberately logs no summary of its own: each op already
+    # logged its op_id and reason above, which is what an operator acts on, and a
+    # line repeating "none of them worked" only doubles the log on the worst path.
     if successful_ops:
-        # Log summary of bulk operation
+        # Persist immediately so storage errors surface through @ws_guard, and
+        # before anything else so neither the summary nor an event describes a
+        # batch that never reached disk. The whole batch shares this one write.
+        await _persist_repo(hass)
+
         LOGGER.info(
             "Bulk operation completed",
             extra={
@@ -1550,22 +1570,10 @@ async def ws_items_bulk(
             },
         )
 
-        # Broadcast all successful operations
         for _op_id, serialized, action in successful_ops:
             _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
 
-        # Persist immediately so storage errors surface through @ws_guard.
-        await _persist_repo(hass)
         _broadcast_counts(hass)
-    else:
-        LOGGER.warning(
-            "Bulk operation completed with no successful operations",
-            extra={
-                "domain": DOMAIN,
-                "op": "items_bulk",
-                "total_ops": len(operations),
-            },
-        )
 
     conn.send_message(websocket_api.result_message(msg.get("id", 0), {"results": results}))
 
@@ -1626,8 +1634,8 @@ async def ws_location_create(
         name=msg["name"], parent_id=msg.get("parent_id"), area_id=area_id
     )
     serialized = _serialize_location(loc)
-    _broadcast_event(hass, topic="locations", action="created", payload={"location": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="locations", action="created", payload={"location": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1668,6 +1676,7 @@ async def ws_location_update(
         msg["location_id"], name=msg.get("name"), new_parent_id=new_parent, area_id=area_id
     )
     serialized = _serialize_location(loc)
+    await _persist_repo(hass)
     # If parent changed emit moved; if name changed emit renamed
     # (move takes precedence when both)
     if "new_parent_id" in msg:
@@ -1676,7 +1685,6 @@ async def ws_location_update(
         _broadcast_event(
             hass, topic="locations", action="renamed", payload={"location": serialized}
         )
-    await _persist_repo(hass)
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1694,13 +1702,13 @@ async def ws_location_delete(
     before = repo.get_location(loc_id)
     serialized_before = _serialize_location(before)
     repo.delete_location(loc_id)
+    await _persist_repo(hass)
     _broadcast_event(
         hass,
         topic="locations",
         action="deleted",
         payload={"location": serialized_before},
     )
-    await _persist_repo(hass)
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
 
@@ -1789,8 +1797,8 @@ async def ws_location_move_subtree(
     new_parent = msg.get("new_parent_id") if "new_parent_id" in msg else UNSET
     loc = _repo(hass).update_location(msg["location_id"], new_parent_id=new_parent)
     serialized = _serialize_location(loc)
-    _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
