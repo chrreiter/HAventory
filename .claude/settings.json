@@ -1,4 +1,7 @@
 {
+  "env": {
+    "UV_LINK_MODE": "copy"
+  },
   "attribution": {
     "sessionUrl": false
   },
@@ -70,5 +73,9 @@
         ]
       }
     ]
+  },
+  "worktree": {
+    "bgIsolation": "worktree",
+    "baseRef": "fresh"
   }
 }
