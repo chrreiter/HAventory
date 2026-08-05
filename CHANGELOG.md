@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.2](https://github.com/chrreiter/HAventory/compare/v0.3.1...v0.3.2) (2026-08-05)
+
+
+### Bug Fixes
+
+* **test-harness:** close the WS session on every connect() failure path ([#270](https://github.com/chrreiter/HAventory/issues/270)) ([1f2bcca](https://github.com/chrreiter/HAventory/commit/1f2bccaa33e88767b931fd05af303802ac91b0bb)), closes [#266](https://github.com/chrreiter/HAventory/issues/266)
+
+
+### Documentation
+
+* add public-release review (competitive position, code audit, roadmap) ([#267](https://github.com/chrreiter/HAventory/issues/267)) ([345532a](https://github.com/chrreiter/HAventory/commit/345532a73be397dc8a4ceb8be551a32bd3f2846a))
+* correct CLAUDE.md staging claims, retire the ledger, split docs/ and dev/ ([#271](https://github.com/chrreiter/HAventory/issues/271)) ([0bcb6e7](https://github.com/chrreiter/HAventory/commit/0bcb6e7929e933c79f0326c7bfc6d8981eb05b20)), closes [#269](https://github.com/chrreiter/HAventory/issues/269)
+* **skills:** refresh stale test counts and frame them as a growth oracle ([#272](https://github.com/chrreiter/HAventory/issues/272)) ([a7081ee](https://github.com/chrreiter/HAventory/commit/a7081eea9a4e387e639d07fe4df822f4c799b13e)), closes [#265](https://github.com/chrreiter/HAventory/issues/265)
+* **skills:** scope the Windows/Git Bash notes to the host they apply to ([#275](https://github.com/chrreiter/HAventory/issues/275)) ([a026a64](https://github.com/chrreiter/HAventory/commit/a026a643918c35fef6475a4885ecb753ef85eb46))
+
 ## [0.3.1](https://github.com/chrreiter/HAventory/compare/v0.3.0...v0.3.1) (2026-08-04)
 
 
