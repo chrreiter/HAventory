@@ -31,10 +31,7 @@ SEEDED_LOCATIONS = 2
 async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
     handlers = hass.data.get("__ws_commands__", [])
     for h in handlers:
-        schema = getattr(h, "_ws_schema", None)
-        if not callable(h) or not isinstance(schema, dict):
-            continue
-        if schema.get("type") != type_:
+        if not callable(h) or getattr(h, "_ws_command", None) != type_:
             continue
         req = {"id": _id, "type": type_}
         req.update(payload)
@@ -123,12 +120,17 @@ async def test_ws_export_returns_document() -> None:
 
 @pytest.mark.asyncio
 async def test_ws_export_invalid_filter_field() -> None:
-    """Invalid-field case: a non-object filter is rejected as validation_error."""
+    """Invalid-field case: a non-object filter never reaches the handler.
+
+    ``haventory/export`` declares ``filter`` as a dict, so Home Assistant
+    refuses the frame with the transport-level ``invalid_format`` before
+    dispatch — not with the handler's own ``validation_error``.
+    """
 
     hass = _new_hass()
     res = await _send(hass, 1, "haventory/export", filter="not-an-object")
     assert res["success"] is False, res
-    assert res["error"]["code"] == "validation_error"
+    assert res["error"]["code"] == "invalid_format"
 
 
 # -----------------------------

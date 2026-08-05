@@ -112,10 +112,7 @@ def _get_handler(
 ) -> Callable[[HomeAssistant, object, dict], Coroutine[Any, Any, dict]]:
     handlers = hass.data.get("__ws_commands__", [])
     for h in handlers:
-        schema = getattr(h, "_ws_schema", None)
-        if not callable(h) or not isinstance(schema, dict):
-            continue
-        if schema.get("type") == type_:
+        if callable(h) and getattr(h, "_ws_command", None) == type_:
             return h
     raise AssertionError("No handler found for type " + type_)
 

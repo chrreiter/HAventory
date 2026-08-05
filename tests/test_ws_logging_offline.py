@@ -39,10 +39,7 @@ RATE_LIMIT_LOGGER = "custom_components.haventory.rate_limit"
 async def _send(hass: HomeAssistant, _id: int, type_: str, conn: object = None, **payload):
     handlers = hass.data.get("__ws_commands__", [])
     for h in handlers:
-        schema = getattr(h, "_ws_schema", None)
-        if not callable(h) or not isinstance(schema, dict):
-            continue
-        if schema.get("type") != type_:
+        if not callable(h) or getattr(h, "_ws_command", None) != type_:
             continue
         req = {"id": _id, "type": type_}
         req.update(payload)
@@ -279,7 +276,9 @@ async def test_a_retrying_client_leaves_no_tracebacks(caplog) -> None:
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
     retries = 12
-    for i in range(retries):
+    # Frame ids start at 1: Home Assistant refuses a non-positive id outright,
+    # so a 0 would never reach the handler whose logging is under test.
+    for i in range(1, retries + 1):
         assert (await _send(hass, i, "haventory/stats"))["error"]["code"] == "storage_error"
 
     records = _records(caplog)

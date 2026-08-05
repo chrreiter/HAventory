@@ -28,10 +28,7 @@ class _StubConn:
 async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
     handlers = hass.data.get("__ws_commands__", [])
     for h in handlers:
-        schema = getattr(h, "_ws_schema", None)
-        if not callable(h) or not isinstance(schema, dict):
-            continue
-        if schema.get("type") != type_:
+        if not callable(h) or getattr(h, "_ws_command", None) != type_:
             continue
         req = {"id": _id, "type": type_}
         req.update(payload)
@@ -59,7 +56,7 @@ async def test_add_remove_tags_success_and_normalization() -> None:
         2,
         "haventory/item/add_tags",
         item_id=item_id,
-        tags=["  Alpha ", "beta", "ALPHA", "Beta", None],
+        tags=["  Alpha ", "beta", "ALPHA", "Beta"],
     )
     assert res["success"] is True
     # normalized unique order: ["alpha", "beta"]
@@ -74,6 +71,13 @@ async def test_add_remove_tags_success_and_normalization() -> None:
         tags=["  BETA ", "gamma"],
     )
     assert res["success"] is True
+    assert res["result"]["tags"] == ["alpha"]
+
+    # A non-string tag is refused by the command's `[str]` schema, so the
+    # handler never runs and the item keeps the tags it had.
+    res = await _send(hass, 4, "haventory/item/add_tags", item_id=item_id, tags=["gamma", None])
+    assert res["success"] is False and res["error"]["code"] == "invalid_format"
+    res = await _send(hass, 5, "haventory/item/get", item_id=item_id)
     assert res["result"]["tags"] == ["alpha"]
 
 

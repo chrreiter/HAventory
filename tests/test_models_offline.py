@@ -69,7 +69,7 @@ async def test_invalid_due_date_requires_checked_out() -> None:
 
 @pytest.mark.asyncio
 async def test_tag_normalization_and_update_clears_fields() -> None:
-    # Normalize tags on create and allow clearing via update
+    # Normalize tags on create and allow clearing via update.
     item = create_item_from_create({"name": "Battery", "tags": ["Li-Ion", " li-ion ", "Spare"]})
     assert item.tags == ["li-ion", "spare"]
 
