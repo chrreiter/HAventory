@@ -644,8 +644,12 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
   components and the `ui: legacy` option that reached them were removed — there is one
   card now, not two.
 
-### 🚧 Phase 3: Polish & HACS (Planned)
-- HACS publication; release automation (release-please); additional optimizations.
+### 🚧 Phase 3: Polish & HACS (In progress)
+- Release automation is in place: release-please cuts the version and the release workflow
+  publishes the HACS zip asset.
+- Remaining: HACS publication (public repository, custom-repository install, default-store
+  submission) and the polish staged alongside it, tracked under
+  [#236](https://github.com/chrreiter/HAventory/issues/236).
 
 ---
 
