@@ -15,6 +15,7 @@ from __future__ import annotations
 from http import HTTPStatus
 from pathlib import Path
 
+from aiohttp import FormData
 from custom_components.haventory import media
 from custom_components.haventory.const import DOMAIN, MEDIA_SUBDIR
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
@@ -40,9 +41,20 @@ async def _setup(hass: HomeAssistant) -> MockConfigEntry:
 
 
 async def _upload(client, content: bytes = PNG_BYTES, filename: str = "drill.png") -> str:
-    """POST bytes to core's file_upload and return the handle it hands back."""
+    """POST bytes to core's file_upload and return the handle it hands back.
 
-    response = await client.post("/api/file_upload", data={"file": (content, filename)})
+    A real `FormData`, not a plain dict: `file_upload` reads the request with
+    `request.multipart()`, which needs a `multipart/form-data` body and a part
+    that carries both the field name `file` and a filename.
+
+    The part declares `application/octet-stream` on purpose. Every accepted type
+    the backend records is one it sniffed out of the bytes, so a test that
+    declared `image/png` here could not tell the two apart.
+    """
+
+    form = FormData()
+    form.add_field("file", content, filename=filename, content_type="application/octet-stream")
+    response = await client.post("/api/file_upload", data=form)
     assert response.status == HTTPStatus.OK, await response.text()
     return (await response.json())["file_id"]
 
