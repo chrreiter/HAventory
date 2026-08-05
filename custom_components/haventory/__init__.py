@@ -512,9 +512,13 @@ async def _async_register_static_path(hass: HomeAssistant) -> bool:
         # rebuild during development. The `?v=` on the URL covers the other
         # direction (see _async_card_url).
         await register([StaticPathConfig(_STATIC_URL_PATH, str(_WWW_DIR), cache_headers=False)])
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.warning(
-            "Failed to serve the HAventory card directory",
+    except Exception:
+        # ERROR, not WARNING: this return short-circuits both card loaders below,
+        # so the bundle is served by nothing and the card cannot load at all. The
+        # integration keeps working headlessly, which is what keeps it out of the
+        # error taxonomy, but an operator has to act.
+        LOGGER.error(
+            "Failed to serve the HAventory card directory; the card cannot load",
             extra={"domain": DOMAIN, "op": "frontend_register", "path": str(_WWW_DIR)},
             exc_info=True,
         )

@@ -356,6 +356,33 @@ async def test_skips_everything_when_http_is_unavailable(hav_init):
     assert extra_js_urls(hass) == set()
 
 
+@pytest.mark.asyncio
+async def test_a_failed_static_route_logs_at_error(hav_init, caplog):
+    """A route that fails to register leaves the card served by nothing.
+
+    This is the one frontend-registration failure worth an operator's attention:
+    it short-circuits both loaders below it. The Lovelace-resource sites stay at
+    WARNING because ``add_extra_js_url`` has already run on the identical URL, so
+    the card still loads.
+    """
+    hass = make_hass()
+    lovelace_data = MockLovelaceData()
+    hass.data["lovelace_data_key"] = lovelace_data
+
+    async def refuse(configs):
+        raise RuntimeError("aiohttp refused the route")
+
+    hass.http.async_register_static_paths = refuse
+
+    with caplog.at_level(logging.DEBUG):
+        await hav_init._register_frontend_module(hass)
+
+    failures = [r for r in caplog.records if "cannot load" in r.getMessage()]
+    assert [r.levelno for r in failures] == [logging.ERROR]
+    assert lovelace_data.resources.created == []
+    assert extra_js_urls(hass) == set()
+
+
 # --------------------------------------------------------------------------- #
 # The versioned URL
 # --------------------------------------------------------------------------- #
