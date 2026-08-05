@@ -292,6 +292,8 @@ export class Store {
   private areaRegistryRetryHandle: ReturnType<typeof setTimeout> | null = null;
   /** Identifies the newest area-registry watch, so a superseded one stops reporting. */
   private areaRegistryGeneration = 0;
+  /** Detaches the connection-lifecycle listener; null while none is attached. */
+  private connectionReadyUnsub: Unsubscribe | null = null;
   /** Last untouched `distinct_values` result, so drafts can be re-merged. */
   private serverDistinct: DistinctValues | null = null;
   /** Values named in the organize dialog that no item carries yet. */
@@ -344,6 +346,22 @@ export class Store {
     await this.listItems(true);
     this.subscribeTopics();
     this.watchAreaRegistry();
+    this.watchConnectionGaps();
+  }
+
+  /**
+   * Re-read the areas whenever the connection comes back from a drop.
+   *
+   * A dropped socket is the gap the registry watch cannot see: Home Assistant
+   * re-issues the subscriptions it held before it reports `ready`, so the
+   * subscribe neither fails nor re-opens and `watchAreaRegistry`'s catch-up
+   * never runs — yet an area renamed while the socket was down fired its event
+   * into a closed connection. Only a refetch closes that, so it is driven off
+   * the connection's own lifecycle rather than off the watch.
+   */
+  private watchConnectionGaps() {
+    this.connectionReadyUnsub?.();
+    this.connectionReadyUnsub = this.ws.onConnectionReady(() => this.scheduleAreasRefresh());
   }
 
   /**
@@ -572,8 +590,13 @@ export class Store {
     this.statsUnsub?.();
     this.locationsUnsub?.();
     this.areaRegistryUnsub?.();
+    // Held by Home Assistant's connection, which outlives every card on the
+    // dashboard — a listener left behind would refetch for a disposed store on
+    // every reconnect, for as long as the page is open.
+    this.connectionReadyUnsub?.();
     this.itemsUnsub = this.statsUnsub = this.locationsUnsub = null;
     this.areaRegistryUnsub = null;
+    this.connectionReadyUnsub = null;
     // Nothing is listening after this, so a queued re-subscribe must not fire.
     this.subscribeRound += 1;
     this.areaRegistryGeneration += 1;

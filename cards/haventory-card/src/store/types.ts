@@ -408,6 +408,12 @@ export interface HassLike {
       cb: (event: AnyEventPayload) => void,
       msg: Record<string, unknown>,
     ): Unsubscribe | Promise<Unsubscribe>;
+    // Connection lifecycle. `ready` fires once the socket is back and Home
+    // Assistant has re-issued the subscriptions it was holding, so a listener
+    // runs with the watches already live again. Optional because the interface
+    // is structural: a caller may pass a connection that only sends messages.
+    addEventListener?(event: 'ready' | 'disconnected', cb: () => void): void;
+    removeEventListener?(event: 'ready' | 'disconnected', cb: () => void): void;
   };
 }
 

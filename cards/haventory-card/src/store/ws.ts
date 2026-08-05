@@ -322,6 +322,29 @@ export class WSClient {
   }
 
   /**
+   * Call back each time the connection comes back after a drop.
+   *
+   * Home Assistant re-issues the subscriptions it was holding before it fires
+   * `ready`, so a dropped socket produces neither a refusal nor a fresh
+   * `subscribeAreaRegistry` call — the watch simply resumes, and anything the
+   * registry did meanwhile went to nobody. This event is the only notice the
+   * card gets that such a gap happened at all.
+   *
+   * Returns a no-op unsubscribe when the connection does not expose the
+   * lifecycle, so a caller never has to branch on it.
+   */
+  onConnectionReady(cb: () => void): Unsubscribe {
+    const connection = this.hass.connection;
+    const { addEventListener, removeEventListener } = connection;
+    if (typeof addEventListener !== 'function' || typeof removeEventListener !== 'function') {
+      return () => undefined;
+    }
+    const handler = () => cb();
+    addEventListener.call(connection, 'ready', handler);
+    return () => removeEventListener.call(connection, 'ready', handler);
+  }
+
+  /**
    * Watch Home Assistant's area registry.
    *
    * Areas belong to HA, not to HAventory: renaming or deleting one moves no

@@ -969,6 +969,87 @@ describe('Store: HA area registry watch', () => {
     }
   });
 
+  // A dropped socket is the gap the watch itself cannot report: Home Assistant
+  // re-issues the subscriptions it held before it says `ready`, so nothing is
+  // refused and nothing re-opens, while the events fired meanwhile are gone.
+  it('re-reads the areas after a reconnect the watch never noticed', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const store = new Store(hass, backoff);
+      await store.init();
+
+      // The registry moves while the socket is down: no event is delivered.
+      hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+
+      hass.__reconnect();
+      await vi.advanceTimersByTimeAsync(300);
+
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Scullery');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the watch it already holds across a reconnect', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const store = new Store(hass, backoff);
+      await store.init();
+
+      hass.__reconnect();
+      await vi.advanceTimersByTimeAsync(300);
+
+      // Home Assistant restored the subscription itself. Opening a second one
+      // would leave two watches refetching for every registry edit, and the
+      // first one unreferenced and unstoppable.
+      expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops re-reading the areas once the store is disposed', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const store = new Store(hass, backoff);
+      await store.init();
+
+      store.dispose();
+      const before = hass.__calls.filter((c) => c === 'haventory/areas/list').length;
+      hass.__reconnect();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      // The connection outlives the card, so a listener left attached would
+      // refetch for a dead store on every reconnect for as long as the page is
+      // open.
+      expect(hass.__calls.filter((c) => c === 'haventory/areas/list').length).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('works against a connection that exposes no lifecycle events', async () => {
+    const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+    // `HassLike.connection` is structural, so `addEventListener` may be absent.
+    const bare = {
+      ...hass,
+      connection: {
+        subscribeMessage: (cb: (event: never) => void, msg: Record<string, unknown>) =>
+          hass.connection.subscribeMessage(cb as never, msg),
+      },
+    };
+    const store = new Store(bare, backoff);
+
+    await store.init();
+    expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+    expect(() => store.dispose()).not.toThrow();
+  });
+
   it('gives up on the registry watch quietly once the budget is spent', async () => {
     vi.useFakeTimers();
     try {
