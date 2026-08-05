@@ -86,6 +86,19 @@ const SUBSCRIBE_RETRY_MAX_MS = 30_000;
 /** Topics `subscribeTopics` opens as one round: items, stats, locations. */
 const SUBSCRIBE_TOPIC_COUNT = 3;
 
+/**
+ * Re-opens allowed after Home Assistant refuses the area-registry watch.
+ *
+ * Smaller than the topic budgets and spent quietly, because the two failures are
+ * not the same size: a refused topic subscription stops live updates and raises a
+ * banner, while this one costs freshness only — the card falls back to the areas
+ * it fetched at boot. Without any retry, though, a single refusal freezes area
+ * names for the life of the element, so the transient cases (a limiter, a
+ * connection reopening mid-subscribe) get a few backoffs before the card settles
+ * for the snapshot it has.
+ */
+const AREA_REGISTRY_RETRY_ATTEMPTS = 3;
+
 /** Event action the backend sends every open subscription as its entry tears down. */
 const BACKEND_UNAVAILABLE_ACTION = 'unavailable';
 
@@ -274,6 +287,11 @@ export class Store {
   /** Automatic re-subscribes already spent on the current outage. */
   private subscribeAttempt = 0;
   private subscribeRetryHandle: ReturnType<typeof setTimeout> | null = null;
+  /** Re-opens of the area-registry watch already spent on the current refusal. */
+  private areaRegistryAttempt = 0;
+  private areaRegistryRetryHandle: ReturnType<typeof setTimeout> | null = null;
+  /** Identifies the newest area-registry watch, so a superseded one stops reporting. */
+  private areaRegistryGeneration = 0;
   /** Last untouched `distinct_values` result, so drafts can be re-merged. */
   private serverDistinct: DistinctValues | null = null;
   /** Values named in the organize dialog that no item carries yet. */
@@ -337,9 +355,51 @@ export class Store {
    * everywhere at once, and a deletion would show a raw id. Areas move rarely
    * and the list is small, so the event only triggers a refetch.
    */
-  private watchAreaRegistry() {
+  private watchAreaRegistry(resetRetryBudget = true) {
+    this.cancelAreaRegistryRetry();
+    if (resetRetryBudget) this.areaRegistryAttempt = 0;
+    // A re-open spans a window in which the registry could have moved with
+    // nothing listening to say so, so the cache is re-read on the way back. The
+    // first open needs no catch-up: `init` fetched the areas moments ago.
+    const catchUp = this.areaRegistryAttempt > 0;
+    // A refusal can arrive after this watch has been replaced or the store
+    // disposed, and HA's own subscribe carries no cancellation of its own.
+    const generation = ++this.areaRegistryGeneration;
     if (this.areaRegistryUnsub) this.areaRegistryUnsub();
-    this.areaRegistryUnsub = this.ws.subscribeAreaRegistry(() => this.scheduleAreasRefresh());
+    this.areaRegistryUnsub = this.ws.subscribeAreaRegistry(() => this.scheduleAreasRefresh(), {
+      onOpen: () => {
+        if (catchUp && generation === this.areaRegistryGeneration) this.scheduleAreasRefresh();
+      },
+      onError: (err) => {
+        if (generation === this.areaRegistryGeneration) this.onAreaRegistryRefused(err);
+      },
+    });
+  }
+
+  /**
+   * Home Assistant refused the registry watch — back off and try again, quietly.
+   *
+   * Nothing is reported to the user: the fallback is the area list the card
+   * already holds, so a banner would name a degradation nobody can act on, and
+   * the topic subscriptions' `degraded` state means live *inventory* updates are
+   * gone, which is not what happened here. Once the budget is spent the card
+   * keeps its boot-time snapshot, which is what it did before it listened.
+   */
+  private onAreaRegistryRefused(err: unknown) {
+    if (this.areaRegistryAttempt >= AREA_REGISTRY_RETRY_ATTEMPTS) return;
+    const delay = subscribeRetryDelayMs(err, this.areaRegistryAttempt, this.retryBaseMs);
+    this.areaRegistryAttempt += 1;
+    this.cancelAreaRegistryRetry();
+    this.areaRegistryRetryHandle = setTimeout(() => {
+      this.areaRegistryRetryHandle = null;
+      this.watchAreaRegistry(false);
+    }, delay);
+  }
+
+  private cancelAreaRegistryRetry() {
+    if (this.areaRegistryRetryHandle === null) return;
+    clearTimeout(this.areaRegistryRetryHandle);
+    this.areaRegistryRetryHandle = null;
   }
 
   /** Coalesce area refetches: editing a handful of areas fires one event each. */
@@ -516,7 +576,9 @@ export class Store {
     this.areaRegistryUnsub = null;
     // Nothing is listening after this, so a queued re-subscribe must not fire.
     this.subscribeRound += 1;
+    this.areaRegistryGeneration += 1;
     this.cancelSubscribeRetry();
+    this.cancelAreaRegistryRetry();
     if (this.treeRefreshHandle !== null) {
       clearTimeout(this.treeRefreshHandle);
       this.treeRefreshHandle = null;

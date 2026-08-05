@@ -899,6 +899,120 @@ describe('Store: HA area registry watch', () => {
     expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
     expect(store.state.value.connected).toEqual({ items: true, stats: true });
   });
+
+  /**
+   * A hass that refuses the first `refusals` `subscribe_events` calls and then
+   * delegates to the mock, counting every attempt — the point of the retry is
+   * that a second attempt happens at all.
+   */
+  function refusingRegistry(hass: ReturnType<typeof makeMockHass>, refusals: number) {
+    let attempts = 0;
+    const wrapped = {
+      ...hass,
+      connection: {
+        subscribeMessage(cb: (event: never) => void, msg: Record<string, unknown>) {
+          if (msg.type !== 'subscribe_events') {
+            return hass.connection.subscribeMessage(cb as never, msg);
+          }
+          attempts += 1;
+          if (attempts <= refusals) return Promise.reject({ code: 'rate_limited' });
+          return hass.connection.subscribeMessage(cb as never, msg);
+        },
+      },
+    };
+    return { hass: wrapped, attempts: () => attempts };
+  }
+
+  // Backoff off a base the card can actually wait on, so "it retried" is
+  // distinguishable from "it never stopped trying".
+  const backoff = { retryBaseMs: 100 };
+
+  it('retries a refused registry subscribe and watches once it is accepted', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const refusing = refusingRegistry(hass, 1);
+      const store = new Store(refusing.hass, backoff);
+      await store.init();
+      expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(200);
+      expect(refusing.attempts()).toBe(2);
+      expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(1);
+
+      // The watch is live, not merely open: a later rename still lands.
+      hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
+      hass.__emitHaEvent(AREA_EVENT, { action: 'update', area_id: 'kitchen' });
+      await vi.advanceTimersByTimeAsync(300);
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Scullery');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('re-reads the areas after a gap nothing was listening through', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const refusing = refusingRegistry(hass, 1);
+      const store = new Store(refusing.hass, backoff);
+      await store.init();
+
+      // The rename lands while the watch is refused, so no event reports it.
+      // Re-opening the watch alone would leave the card naming a stale area.
+      hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Scullery');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives up on the registry watch quietly once the budget is spent', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const refusing = refusingRegistry(hass, Number.POSITIVE_INFINITY);
+      const store = new Store(refusing.hass, backoff);
+      await store.init();
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      const spent = refusing.attempts();
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      // Bounded — and it stays bounded, rather than knocking forever.
+      expect(spent).toBeGreaterThan(1);
+      expect(refusing.attempts()).toBe(spent);
+      // Silent: a refused area watch costs freshness, not function, so it
+      // raises no banner and queues no error for the user to dismiss.
+      expect(store.state.value.errorQueue).toEqual([]);
+      expect(store.state.value.degraded.rateLimited).toBe(false);
+      expect(store.state.value.degraded.liveUpdates).toBe('live');
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not re-open the registry watch after dispose', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const refusing = refusingRegistry(hass, 1);
+      const store = new Store(refusing.hass, backoff);
+      await store.init();
+      expect(refusing.attempts()).toBe(1);
+
+      store.dispose();
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(refusing.attempts()).toBe(1);
+      expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('Store: location tree and diagnostics data', () => {

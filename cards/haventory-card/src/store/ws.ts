@@ -330,25 +330,37 @@ export class WSClient {
    * The callback takes no payload — the event says only that the registry
    * moved, and the caller refetches.
    *
-   * A refused subscribe is swallowed: the card keeps the areas it already
-   * holds, which is the whole of what it had before it listened at all.
+   * A refusal is reported rather than thrown: the card keeps the areas it
+   * already holds, which is the whole of what it had before it listened at all,
+   * so the caller decides whether to retry. `onOpen` fires once the watch is
+   * actually established, which is the caller's cue that a gap has closed.
    */
-  subscribeAreaRegistry(cb: () => void): Unsubscribe {
+  subscribeAreaRegistry(
+    cb: () => void,
+    opts?: { onOpen?: () => void; onError?: (err: unknown) => void },
+  ): Unsubscribe {
     const unsubOrPromise = this.hass.connection.subscribeMessage(() => cb(), {
       type: 'subscribe_events',
       event_type: 'area_registry_updated',
     });
 
-    if (typeof unsubOrPromise === 'function') return unsubOrPromise as unknown as Unsubscribe;
+    if (typeof unsubOrPromise === 'function') {
+      opts?.onOpen?.();
+      return unsubOrPromise as unknown as Unsubscribe;
+    }
 
     let resolvedUnsub: Unsubscribe | null = null;
     let cancelRequested = false;
     Promise.resolve(unsubOrPromise).then(
       (fn) => {
         resolvedUnsub = fn as Unsubscribe;
-        if (cancelRequested) resolvedUnsub();
+        if (cancelRequested) {
+          resolvedUnsub();
+          return;
+        }
+        opts?.onOpen?.();
       },
-      () => undefined,
+      (err: unknown) => opts?.onError?.(err),
     );
 
     return () => {
