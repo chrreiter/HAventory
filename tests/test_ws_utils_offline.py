@@ -29,10 +29,7 @@ class _StubConn:
 async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
     handlers = hass.data.get("__ws_commands__", [])
     for h in handlers:
-        schema = getattr(h, "_ws_schema", None)
-        if not callable(h) or not isinstance(schema, dict):
-            continue
-        if schema.get("type") != type_:
+        if not callable(h) or getattr(h, "_ws_command", None) != type_:
             continue
         req = {"id": _id, "type": type_}
         req.update(payload)

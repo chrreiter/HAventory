@@ -49,10 +49,7 @@ async def _send(hass: HomeAssistant, _id: int, type_: str, conn=None, **payload)
     """Dispatch one WS command through the stub registry, as a client would."""
 
     for handler in hass.data.get("__ws_commands__", []):
-        schema = getattr(handler, "_ws_schema", None)
-        if not callable(handler) or not isinstance(schema, dict):
-            continue
-        if schema.get("type") != type_:
+        if not callable(handler) or getattr(handler, "_ws_command", None) != type_:
             continue
         req = {"id": _id, "type": type_}
         req.update(payload)

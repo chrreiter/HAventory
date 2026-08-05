@@ -80,10 +80,7 @@ async def test_async_setup_entry_loads_repository_from_store_and_ws_reads() -> N
 
     async def _send(_id: int, type_: str, **payload):
         for h in handlers:
-            schema = getattr(h, "_ws_schema", None)
-            if not callable(h) or not isinstance(schema, dict):
-                continue
-            if schema.get("type") != type_:
+            if not callable(h) or getattr(h, "_ws_command", None) != type_:
                 continue
             req = {"id": _id, "type": type_}
             req.update(payload)

@@ -27,6 +27,11 @@ the offline suite and gets the stubs. As a result:
 * the phacc suite never sees the stubs (real HA is present and autoload is on),
   and is never collected by the offline run (``collect_ignore`` below).
 
+The WebSocket stub validates: it applies each command's schema to a frame
+before dispatch, as an ``ActiveConnection`` does, so an offline test cannot hand
+a handler a payload no client could send. Write offline WS tests against frames
+a real client would produce, and expect ``invalid_format`` for the rest.
+
 It also re-enables sockets when pytest-socket is auto-loaded by an IDE, which
 otherwise blocks the loopback the event loop sets itself up on.
 """
@@ -38,6 +43,9 @@ import os
 import sys
 import types
 from pathlib import Path
+
+import voluptuous as vol
+from voluptuous.humanize import humanize_error
 
 # Ensure project root is on sys.path for module imports (both modes).
 ROOT = Path(__file__).resolve().parents[1]
@@ -240,6 +248,9 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     ha_helpers_cv.empty_config_schema = empty_config_schema
     ha_helpers_cv.platform_only_config_schema = platform_only_config_schema
     ha_helpers_cv.config_entry_only_config_schema = config_entry_only_config_schema
+    # Verbatim from HA's config_validation; the WebSocket base command schema
+    # below validates every frame's `id` with it.
+    ha_helpers_cv.positive_int = vol.All(vol.Coerce(int), vol.Range(min=0))
     sys.modules["homeassistant.helpers.config_validation"] = ha_helpers_cv
 
     ha_helpers_storage = types.ModuleType("homeassistant.helpers.storage")
@@ -267,10 +278,42 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
 
     ha_ws = types.ModuleType("homeassistant.components.websocket_api")
 
-    def websocket_command(schema=None):  # type: ignore[override]
+    # What real HA extends every dict command schema with before validating. Its
+    # default PREVENT_EXTRA is what refuses a field the command never declared.
+    BASE_COMMAND_MESSAGE_SCHEMA = vol.Schema({vol.Required("id"): ha_helpers_cv.positive_int})
+
+    # The code HA answers with for a frame that never reaches a handler.
+    ERR_INVALID_FORMAT = "invalid_format"
+
+    # How many keys a frame for a type-only command may carry: `id` and `type`.
+    TYPE_ONLY_FRAME_KEYS = 2
+
+    def websocket_command(schema):  # type: ignore[override]
+        """Tag a handler with its command name and compiled schema, as HA does.
+
+        ``_ws_command`` carries the command string — the key real HA registers
+        the handler under, and so the one a test looks a handler up by.
+        ``_ws_schema`` carries what the connection applies to a frame before
+        dispatch, with ``False`` standing for a schema that declares nothing but
+        its ``type``: such a frame may carry no key beyond ``id`` and ``type``.
+        """
+        is_dict = isinstance(schema, dict)
+        command = schema["type"] if is_dict else schema.validators[0].schema["type"]
+
         def decorator(func):
-            func._ws_command = True
-            func._ws_schema = schema
+            if is_dict and len(schema) == 1:
+                func._ws_schema = False
+            elif is_dict:
+                func._ws_schema = BASE_COMMAND_MESSAGE_SCHEMA.extend(schema)
+            else:
+                # vol.All: extend the leading mapping, keep the trailing
+                # cross-field validators, which is where a cap or a
+                # mutually-exclusive-fields refusal lives.
+                func._ws_schema = vol.All(
+                    schema.validators[0].extend(BASE_COMMAND_MESSAGE_SCHEMA.schema),
+                    *schema.validators[1:],
+                )
+            func._ws_command = command
             return func
 
         return decorator
@@ -288,8 +331,42 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             error["data"] = data
         return {"id": _id, "type": "result", "success": False, "error": error}
 
+    def _validate_frame(handler, msg):
+        """Apply what an ``ActiveConnection`` applies to a frame before dispatch.
+
+        Returns ``(validated_msg, None)`` for a frame that would have reached the
+        handler on a real connection, and ``(None, error_envelope)`` for one it
+        would have refused — the handler body never runs for the latter. Without
+        this the offline suite would let handlers see payloads no client can
+        send, and any refusal expressed as a schema constraint would be invisible
+        to it.
+        """
+        # HA checks id and type before it even looks the command up: an id that
+        # is a positive int of exactly that type (so ``True`` is not an id), and
+        # a non-empty string type.
+        iden = msg.get("id") if isinstance(msg, dict) else None
+        type_ = msg.get("type") if isinstance(msg, dict) else None
+        if type(iden) is not int or iden <= 0 or type(type_) is not str or not type_:
+            return None, error_message(iden, ERR_INVALID_FORMAT, "Message incorrectly formatted.")
+
+        schema = handler._ws_schema
+        try:
+            if schema is False:
+                if len(msg) > TYPE_ONLY_FRAME_KEYS:
+                    raise vol.Invalid("extra keys not allowed")
+                return msg, None
+            return schema(msg), None
+        except vol.Invalid as err:
+            return None, error_message(iden, ERR_INVALID_FORMAT, humanize_error(msg, err))
+
     def async_register_command(hass: HomeAssistant, handler):  # type: ignore[override]
         registry = hass.data.setdefault("__ws_commands__", [])
+
+        if not hasattr(handler, "_ws_schema"):
+            # Real HA reads the same attributes off the handler and fails here
+            # too. Refusing loudly keeps an undecorated handler from becoming the
+            # one command in the suite that skips validation.
+            raise ValueError("handler is not decorated with @websocket_command")
 
         async def _wrapped(hass: HomeAssistant, conn, msg):  # type: ignore[override]
             local_conn = conn
@@ -305,7 +382,14 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
 
                 stub = _StubConn()
                 local_conn = stub
-            res = await handler(hass, local_conn, msg)
+            validated, refusal = _validate_frame(handler, msg)
+            if refusal is not None:
+                # HA answers a refused frame on the connection and stops there.
+                send = getattr(local_conn, "send_message", None)
+                if callable(send):
+                    send(refusal)
+                return refusal
+            res = await handler(hass, local_conn, validated)
             if res is not None:
                 return res
             # Prefer captured message from our stub, then from provided conn if it collects messages
@@ -319,7 +403,7 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
                 pass
             return None
 
-        # Preserve HA websocket metadata so tests can discover handlers by schema
+        # Preserve HA websocket metadata so tests can discover handlers by command
         for attr in ("_ws_schema", "_ws_command", "_ws_async_response"):
             try:
                 setattr(_wrapped, attr, getattr(handler, attr, None))
@@ -328,6 +412,8 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
 
         registry.append(_wrapped)
 
+    ha_ws.BASE_COMMAND_MESSAGE_SCHEMA = BASE_COMMAND_MESSAGE_SCHEMA
+    ha_ws.ERR_INVALID_FORMAT = ERR_INVALID_FORMAT
     ha_ws.websocket_command = websocket_command
     ha_ws.async_response = async_response
     ha_ws.result_message = result_message

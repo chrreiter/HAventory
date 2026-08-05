@@ -63,7 +63,9 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
 
 - **Test-driven**: every feature/fix ships with tests — happy path plus at least
   one edge/error case. Default to offline tests (HA is stubbed in
-  `tests/conftest.py`); async tests use `@pytest.mark.asyncio`.
+  `tests/conftest.py`); async tests use `@pytest.mark.asyncio`. The WebSocket
+  stub applies each command's schema before dispatch, so an offline test sends
+  frames a real client could send and gets `invalid_format` for the rest.
 - **Conventional Commits** for commit messages *and PR titles* (a CI check
   enforces the PR title). Examples: `feat: add low-stock filter`,
   `fix: preserve location_path on move`, `docs: …`, `chore: …`.
