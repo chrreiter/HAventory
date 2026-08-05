@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Assert every version string in the repository agrees — and matches the tag.
 
-Six files carry the release version, and release-please rewrites each of them
+Seven files carry the release version, and release-please rewrites each of them
 through a different mechanism: the `python` release type handles
-``pyproject.toml``, two ``extra-files`` JSON entries handle the integration
-manifest and the card's ``package.json``, a generic annotation handles
-``const.py``, a TOML jsonpath handles ``uv.lock``, and the manifest file is
-release-please's own bookkeeping. Any one of them can silently stop being
-rewritten — a moved line drops a generic annotation, a renamed key orphans a
-jsonpath — and the failure mode is a release that ships mismatched versions
-rather than an error.
+``pyproject.toml``, ``extra-files`` JSON entries handle the integration
+manifest, the card's ``package.json`` and its ``package-lock.json``, a generic
+annotation handles ``const.py``, a TOML jsonpath handles ``uv.lock``, and the
+manifest file is release-please's own bookkeeping. Any one of them can silently
+stop being rewritten — a moved line drops a generic annotation, a renamed key
+orphans a jsonpath, and a jsonpath that matches nothing is a no-op rather than
+an error — and the failure mode is a release that ships mismatched versions
+rather than a failure.
 
 Run with no arguments to check the files against each other. Pass ``--tag`` (or
 set ``GITHUB_REF_NAME`` on a tag build) to also require the git tag to name the
@@ -54,6 +55,27 @@ def _uv_lock_version() -> str:
     raise AssertionError("uv.lock: no [[package]] entry named 'haventory'")
 
 
+def _package_lock_version() -> str:
+    """The version the card's lockfile records — in both of the places it does.
+
+    npm writes the root package's version twice: once at the top level and again
+    under the ``""`` key in ``packages``. It takes one ``extra-files`` entry per
+    copy, so rewriting only one is a live failure mode, and the copy left behind
+    does not merely disagree — the next ``npm install`` rewrites it to match
+    ``package.json`` and dirties the working tree, exactly like a stale
+    ``uv.lock``.
+    """
+    path = "cards/haventory-card/package-lock.json"
+    data = json.loads((REPO_ROOT / path).read_text(encoding="utf-8"))
+    root = str(data["version"])
+    nested = str(data["packages"][""]["version"])
+    if root != nested:
+        raise AssertionError(
+            f"{path}: root version {root!r} disagrees with packages[''] version {nested!r}"
+        )
+    return root
+
+
 def _const_version() -> str:
     text = (REPO_ROOT / "custom_components/haventory/const.py").read_text(encoding="utf-8")
     match = re.search(r'^INTEGRATION_VERSION:\s*str\s*=\s*"([^"]+)"', text, flags=re.MULTILINE)
@@ -71,6 +93,7 @@ def collect_versions() -> dict[str, str]:
         ".release-please-manifest.json": _json_version(".release-please-manifest.json", key="."),
         "pyproject.toml": _pyproject_version(),
         "cards/haventory-card/package.json": _json_version("cards/haventory-card/package.json"),
+        "cards/haventory-card/package-lock.json": _package_lock_version(),
         "custom_components/haventory/const.py": _const_version(),
         "uv.lock": _uv_lock_version(),
     }

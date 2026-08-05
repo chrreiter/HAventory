@@ -21,6 +21,16 @@
           "jsonpath": "$.version"
         },
         {
+          "type": "json",
+          "path": "cards/haventory-card/package-lock.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "cards/haventory-card/package-lock.json",
+          "jsonpath": "$.packages[\"\"].version"
+        },
+        {
           "type": "generic",
           "path": "custom_components/haventory/const.py"
         },
