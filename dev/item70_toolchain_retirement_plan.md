@@ -21,18 +21,21 @@ Nothing here is a free delete — every entry has inbound references (CI,
 `CONTRIBUTING.md`, `README.md`, `CLAUDE.md`, docstrings) that must go with it, and
 whatever survives earns one line in `CONTRIBUTING.md` saying what it is for.
 
-**Delivered plan docs (delete; references updated):**
+**Delivered plan docs — already deleted, nothing left to do here.**
 
-- `dev/sidebar-panel.md` — delivered; linked only from the ledger.
-- `dev/card_shipping_plan.md` — delivered; linked from `CLAUDE.md:57` and ledger rows.
-- `dev/item38_area_display_plan.md` — delivered with #162.
-- The v0.2.0-cycle plan docs once their items close: `item23_rename_version_plan.md`,
-  `item46_area_preview_plan.md`, `v1_prompts.md`, `schema_exercise_plan.md`,
-  `schema_collapse_plan.md` — and this file itself. Each retires when the work it
-  stages is merged, not before.
-- **Exception:** `dev/release_testing_plan.md` retires only after the v0.2.0 run is
-  complete and its evidence (results log) is archived in the run's PR/issue — items 4
-  (A1) and 60 (F3) are gated on it.
+`sidebar-panel.md`, `card_shipping_plan.md`, `item38_area_display_plan.md`,
+`item23_rename_version_plan.md` and `item46_area_preview_plan.md` went with
+[#286](https://github.com/chrreiter/HAventory/issues/286) item 4; their durable content
+is in `docs/frontend_architecture.md` and `docs/data_shapes.md`, and git history holds
+the rest. The remaining plan docs stage work that has not shipped — `v1_prompts.md`,
+`schema_exercise_plan.md`, `schema_collapse_plan.md`, and this file itself — and each
+retires in the PR that merges the work it stages, not before.
+
+- **Exception:** `dev/release_testing_plan.md` retires only after the validation run is
+  complete and its evidence (results log) is archived in the run's PR/issue —
+  [#196](https://github.com/chrreiter/HAventory/issues/196) (A1) and
+  [#277](https://github.com/chrreiter/HAventory/issues/277) (F3) are gated on it, and
+  [#276](https://github.com/chrreiter/HAventory/issues/276) is the run itself.
 
 **Exploration scripts (triage keep/delete individually):**
 
