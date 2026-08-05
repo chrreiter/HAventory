@@ -1,5 +1,6 @@
 import type {
   AreasListResult,
+  AttachmentKind,
   BulkOperation,
   BulkResults,
   DistinctValues,
@@ -168,6 +169,82 @@ export class WSClient {
    */
   bulk(operations: BulkOperation[]) {
     return this.hass.callWS<BulkResults>({ type: 'haventory/items/bulk', operations });
+  }
+
+  // ---------- Attachments ----------
+
+  /**
+   * Upload a file and attach it to an item, in the two steps the backend expects.
+   *
+   * The bytes go to Home Assistant core's `/api/file_upload` over HTTP — the
+   * WebSocket carries JSON frames, and an 8 MB photo base64'd into one would be
+   * both slower and larger. That POST hands back a `file_id`, which the
+   * `attachment/add` command consumes.
+   *
+   * Resolves to the item as the backend now holds it, one version on: the
+   * caller must take that item back into its form model, or its next save
+   * fails with `conflict` against a version the upload already moved past.
+   */
+  async uploadAttachment(
+    itemId: string,
+    file: File,
+    kind: AttachmentKind = 'picture',
+    expectedVersion?: number,
+  ): Promise<Item> {
+    const fetchWithAuth = this.hass.fetchWithAuth;
+    if (typeof fetchWithAuth !== 'function') {
+      throw new Error('This Home Assistant connection cannot upload files.');
+    }
+    const body = new FormData();
+    body.append('file', file);
+    const response = await fetchWithAuth.call(this.hass, '/api/file_upload', {
+      method: 'POST',
+      body,
+    });
+    if (!response.ok) {
+      throw new Error(`Upload failed (${response.status})`);
+    }
+    const { file_id: fileId } = (await response.json()) as { file_id: string };
+
+    const payload: Record<string, unknown> = {
+      type: 'haventory/item/attachment/add',
+      item_id: itemId,
+      file_id: fileId,
+      kind,
+      filename: file.name,
+    };
+    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
+    return this.hass.callWS<Item>(payload);
+  }
+
+  /** Detach one file from an item; the backend deletes the bytes with it. */
+  removeAttachment(itemId: string, attachmentId: string, expectedVersion?: number) {
+    const payload: Record<string, unknown> = {
+      type: 'haventory/item/attachment/remove',
+      item_id: itemId,
+      attachment_id: attachmentId,
+    };
+    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
+    return this.hass.callWS<Item>(payload);
+  }
+
+  /**
+   * Sign a path so an `<img>` can fetch it.
+   *
+   * An `<img src>` carries no Authorization header, and the media view requires
+   * one. Core's `auth/sign_path` hands back the same path with a short-lived
+   * signature on it, which is what makes the tag work at all. The alternative —
+   * `fetchWithAuth` plus `URL.createObjectURL` — pins every decoded image in JS
+   * memory for the life of the view and needs manual revocation; a signed URL
+   * lets the browser cache and evict it normally.
+   */
+  async signPath(path: string, expires: number): Promise<string> {
+    const signed = await this.hass.callWS<{ path: string }>({
+      type: 'auth/sign_path',
+      path,
+      expires,
+    });
+    return signed.path;
   }
 
   // ---------- Locations / Areas ----------

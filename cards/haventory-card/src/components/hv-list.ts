@@ -6,6 +6,7 @@ import { tokens, base } from '../ui/tokens';
 import { renderEmptyState } from '../ui/empty-state';
 import type { EmptyKind, EmptyOffer } from '../ui/empty-state';
 import type { AreaRef, Item } from '../store/types';
+import type { MediaBindings } from '../ui/media';
 import './hv-list-row';
 
 
@@ -112,6 +113,8 @@ export class HVList extends LitElement {
   @property({ type: Boolean }) mobile = false;
   /** HA areas, forwarded to each row so it can name the item's area. */
   @property({ attribute: false }) areas: AreaRef[] = [];
+  /** Picture access, forwarded to each row's thumbnail. */
+  @property({ attribute: false }) media: MediaBindings | null = null;
   @property({ type: Boolean }) loading = false;
   @property({ type: Boolean }) selectable = false;
   @property({ attribute: false }) selection: Set<string> = new Set();
@@ -189,6 +192,7 @@ export class HVList extends LitElement {
               : html`<hv-list-row
                   .item=${it}
                   .areas=${this.areas}
+                  .media=${this.media}
                   ?mobile=${this.mobile}
                   ?selectable=${this.selectable}
                   ?selected=${this.selection.has(it.id)}

@@ -47,6 +47,44 @@ PANEL_ELEMENT_NAME: str = "haventory-panel"
 PANEL_ICON: str = "haventory:logo"
 
 # -----------------------------
+# Item attachments
+# -----------------------------
+# Files attached to an item live under the config directory, outside the
+# integration package (HACS replaces that on upgrade) and outside `<config>/www`
+# (which is `/local`, served without authentication). Inside the config dir, HA
+# backups carry them with no extra work.
+
+MEDIA_SUBDIR: str = "haventory/attachments"
+
+# Where the authenticated view serves them. `{item_id}` and `{attachment_id}`
+# are matched against stored metadata before any path is built, so neither
+# segment ever reaches the filesystem as written.
+MEDIA_URL_TEMPLATE: str = "/api/haventory/media/{item_id}/{attachment_id}"
+
+# Accepted picture types. An allow-list, checked against the file's *sniffed*
+# leading bytes rather than the content type the browser declared.
+# `image/svg+xml` is deliberately absent: SVG carries script and the view serves
+# it from the Home Assistant origin.
+ATTACHMENT_PICTURE_MIME_TYPES: tuple[str, ...] = (
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+)
+# The manual kind exists on the backend so the shape does not have to be
+# migrated when its card surface lands.
+ATTACHMENT_MANUAL_MIME_TYPES: tuple[str, ...] = ("application/pdf",)
+
+# Per-item caps, reported through `haventory/config` so the card can refuse
+# before an upload starts, and enforced server-side regardless.
+MAX_PICTURES_PER_ITEM: int = 10
+MAX_MANUALS_PER_ITEM: int = 10
+# 8 MB. Nothing is thumbnailed server-side — Pillow is not a dependency and a
+# local-push integration should not grow one for a list-row thumbnail — so this
+# is the only bound on what a browser has to decode.
+MAX_ATTACHMENT_BYTES: int = 8 * 1024 * 1024
+
+# -----------------------------
 # WebSocket rate limiting (config-entry options)
 # -----------------------------
 # Off by default so no development or test workflow is disturbed; enable via

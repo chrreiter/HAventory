@@ -12,6 +12,35 @@ export type ScalarValue = string | number | boolean;
  */
 export type ItemStatus = 'ok' | 'missing' | 'needs_repair';
 
+/**
+ * One entry of the backend's status vocabulary: an immutable `slug` (what items
+ * store) and an editable `label` (what a surface shows). Renaming a status
+ * touches only the label, so no item is ever rewritten.
+ */
+export interface StatusDefinition {
+  slug: string;
+  label: string;
+  order: number;
+}
+
+/** What an item can carry. Only `picture` has a card surface today. */
+export type AttachmentKind = 'picture' | 'manual';
+
+/**
+ * Metadata for one file attached to an item. The bytes live on the server and
+ * are fetched from the authenticated media view, never embedded here — and a
+ * JSON export carries this metadata without them, so a reference can outlive
+ * the file it names.
+ */
+export interface Attachment {
+  id: string;
+  kind: AttachmentKind;
+  filename: string;
+  mime: string;
+  size: number;
+  uploaded_at: string;
+}
+
 export interface LocationPath {
   id_path: string[];
   name_path: string[];
@@ -47,6 +76,12 @@ export interface Item {
   version: number;
   effective_area_id?: string | null;
   location_path: LocationPath;
+  /**
+   * Optional because older backends do not send it; absent reads as none.
+   * Written only by the two attachment commands — an ordinary item save never
+   * carries it.
+   */
+  attachments?: Attachment[];
 }
 
 export interface ItemCreate {
@@ -146,6 +181,12 @@ export interface StatsCounts {
    */
   missing_count?: number;
   needs_repair_count?: number;
+  /**
+   * Every defined status slug to its item count, including `ok` — which the
+   * backend's index deliberately does not bucket but still counts. Additive to
+   * the two keys above rather than a replacement for them.
+   */
+  status_counts?: Record<string, number>;
   locations_total: number;
   /** Items without a location (location_id == null). */
   no_location_count: number;
@@ -198,10 +239,27 @@ export interface VersionInfo {
   schema_version: number;
 }
 
+/**
+ * Attachment limits and routes, as `haventory/config` reports them.
+ *
+ * Reported so the picker can refuse an oversized or wrong-typed file before it
+ * is sent — never so the backend can trust that it did. Every one of these is
+ * re-checked server-side, against the file's own bytes.
+ */
+export interface MediaConfig {
+  picture_mime_types: string[];
+  max_pictures_per_item: number;
+  max_attachment_bytes: number;
+}
+
 /** Result of haventory/config: the config-entry settings the card renders. */
 export interface IntegrationConfig {
   /** Heading set in the integration's options flow. */
   card_title: string;
+  /** The status vocabulary. Optional: an older backend does not send it. */
+  statuses?: StatusDefinition[];
+  /** Attachment caps and the media route. Optional for the same reason. */
+  media?: MediaConfig;
 }
 
 /**
@@ -400,6 +458,13 @@ export type Unsubscribe = () => void;
 export interface HassLike {
   // Home Assistant's callWS returns the `result` part of the message.
   callWS<T>(msg: Record<string, unknown>): Promise<T>;
+  /**
+   * `fetch` with the user's auth header attached — the only way to POST to
+   * core's `/api/file_upload`, which is how attachment bytes reach the server
+   * without crossing the WebSocket. Optional because this interface is
+   * structural: a caller that never uploads need not provide it.
+   */
+  fetchWithAuth?(path: string, init?: RequestInit): Promise<Response>;
   // WebSocket connection with subscribeMessage to receive event messages; returns unsubscribe.
   // Home Assistant delivers the *inner* event payload to the callback (the `event`
   // field of the `{id, type:'event', event}` wire frame), not the whole envelope.
@@ -521,6 +586,11 @@ export interface StoreState {
   versionInfo: VersionInfo | null;
   /** Heading configured in the integration, or null until it has been read. */
   cardTitle: string | null;
+  /**
+   * Attachment caps and the media route, or null until `haventory/config` has
+   * answered — or permanently, against a backend too old to report them.
+   */
+  mediaConfig: MediaConfig | null;
   // Distinct categories/tags with counts, sourcing category/tag autocomplete.
   distinctValuesCache: DistinctValues | null;
   connected: { items: boolean; stats: boolean };

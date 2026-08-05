@@ -4,14 +4,22 @@ Scenarios:
 - ping returns echo and timestamp
 - version reports integration_version and schema_version
 - config reports the configured card title, and the default when unset
-- stats returns repository counts
+- config carries the status vocabulary and the attachment caps
+- stats returns repository counts, including the per-slug map
 - health returns healthy True for fresh repo and details with counts
 """
 
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.const import DEFAULT_CARD_TITLE, DOMAIN, INTEGRATION_VERSION
+from custom_components.haventory.const import (
+    ATTACHMENT_PICTURE_MIME_TYPES,
+    DEFAULT_CARD_TITLE,
+    DOMAIN,
+    INTEGRATION_VERSION,
+    MAX_ATTACHMENT_BYTES,
+    MAX_PICTURES_PER_ITEM,
+)
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 from custom_components.haventory.ws import setup as ws_setup
@@ -80,7 +88,7 @@ async def test_config_reports_configured_card_title() -> None:
 
     res = await _send(hass, 5, "haventory/config")
     assert res["success"] is True
-    assert res["result"] == {"card_title": "Pantry"}
+    assert res["result"]["card_title"] == "Pantry"
 
 
 @pytest.mark.asyncio
@@ -93,7 +101,43 @@ async def test_config_falls_back_to_default_card_title() -> None:
 
     res = await _send(hass, 6, "haventory/config")
     assert res["success"] is True
-    assert res["result"] == {"card_title": DEFAULT_CARD_TITLE}
+    assert res["result"]["card_title"] == DEFAULT_CARD_TITLE
+
+
+@pytest.mark.asyncio
+async def test_config_reports_the_status_vocabulary() -> None:
+    """The card labels a stored slug from here, not from a constant of its own."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    ws_setup(hass)
+
+    res = await _send(hass, 7, "haventory/config")
+
+    assert res["result"]["statuses"] == [
+        {"slug": "ok", "label": "OK", "order": 0},
+        {"slug": "missing", "label": "Missing", "order": 1},
+        {"slug": "needs_repair", "label": "Needs repair", "order": 2},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_config_reports_the_attachment_caps_and_accepted_types() -> None:
+    """Reported so the picker can refuse early — never so the backend can trust it."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    ws_setup(hass)
+
+    res = await _send(hass, 8, "haventory/config")
+
+    media = res["result"]["media"]
+    assert media["picture_mime_types"] == list(ATTACHMENT_PICTURE_MIME_TYPES)
+    assert media["max_pictures_per_item"] == MAX_PICTURES_PER_ITEM
+    assert media["max_attachment_bytes"] == MAX_ATTACHMENT_BYTES
+    # SVG carries script and the view serves from the HA origin, so it is not
+    # merely unlisted here — it must never appear.
+    assert "image/svg+xml" not in media["picture_mime_types"]
 
 
 @pytest.mark.asyncio
@@ -115,9 +159,30 @@ async def test_stats_returns_counts() -> None:
         "inspection_overdue_count",
         "missing_count",
         "needs_repair_count",
+        "status_counts",
         "locations_total",
         "no_location_count",
     }
+
+
+@pytest.mark.asyncio
+async def test_stats_carries_status_counts_beside_the_legacy_keys() -> None:
+    """Per-slug counts are additive: the two legacy keys keep their meaning."""
+
+    repo = Repository()
+    repo.create_item({"name": "Hammer", "status": "missing"})
+    repo.create_item({"name": "Saw"})
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    ws_setup(hass)
+
+    res = await _send(hass, 31, "haventory/stats")
+
+    counts = res["result"]
+    # "ok" is counted even though the index deliberately does not bucket it.
+    assert counts["status_counts"] == {"ok": 1, "missing": 1, "needs_repair": 0}
+    assert counts["missing_count"] == 1
+    assert counts["needs_repair_count"] == 0
 
 
 @pytest.mark.asyncio

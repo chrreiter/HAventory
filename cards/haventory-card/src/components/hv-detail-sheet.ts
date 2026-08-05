@@ -8,7 +8,17 @@ import { inferType } from '../ui/item-form';
 import { itemStatus, statusLabel } from '../ui/status';
 import { isLowStock } from './hv-list-row';
 import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
-import type { AreaRef, Item, Location, LocationTreeNode, ScalarValue } from '../store/types';
+import { MediaUrls, pictureAlt, pictures } from '../ui/media';
+import type { MediaBindings } from '../ui/media';
+import { DialogFocus } from '../ui/dialog-focus';
+import type {
+  AreaRef,
+  Item,
+  Location,
+  LocationTreeNode,
+  MediaConfig,
+  ScalarValue,
+} from '../store/types';
 import './hv-bottom-sheet';
 import './hv-checkout-popover';
 import './hv-item-editor';
@@ -238,6 +248,65 @@ export class HVDetailSheet extends LitElement {
         color: var(--hv-error-soft);
         font: 400 14px var(--hv-font);
       }
+      /* One row that scrolls sideways rather than a grid that grows the sheet:
+         the sheet's own vertical scroll is how you reach the facts below, and a
+         wrapping gallery would push them off a phone screen entirely. */
+      .gallery {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding: 0 14px 14px;
+        margin: 0;
+        scroll-snap-type: x mandatory;
+      }
+      .gallery figure {
+        margin: 0;
+        flex: none;
+        scroll-snap-align: start;
+      }
+      .gallery button {
+        display: block;
+        padding: 0;
+        border: none;
+        background: none;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .gallery img {
+        display: block;
+        width: 116px;
+        height: 116px;
+        object-fit: cover;
+        background: var(--hv-surface-raised);
+      }
+      .lightbox {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        /* Opaque rather than a scrim: a photo is what the surface is for, and
+           the sheet behind it competes at any transparency. */
+        background: #000;
+        z-index: 10;
+      }
+      .lightbox img {
+        max-width: 100vw;
+        max-height: 100vh;
+        object-fit: contain;
+      }
+      .lightbox .close {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        min-width: 44px;
+        min-height: 44px;
+        display: inline-grid;
+        place-items: center;
+        border: none;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.5);
+        color: #fff;
+      }
     `,
   ];
 
@@ -253,16 +322,35 @@ export class HVDetailSheet extends LitElement {
   @property({ type: Boolean }) busy = false;
   @property({ type: String }) errorMessage: string | null = null;
 
+  /** Picture access for the gallery, the lightbox and the editor it hosts. */
+  @property({ attribute: false }) media: MediaBindings | null = null;
+  /** Attachment caps and accepted types, forwarded to the editor's picker. */
+  @property({ attribute: false }) mediaConfig: MediaConfig | null = null;
+
   @state() private _mode: 'read' | 'edit' = 'read';
   /** The check-out date step, shown inline in the sheet rather than as a popup. */
   @state() private _checkoutOpen = false;
+  /** Index of the picture shown full-size, or null when the lightbox is closed. */
+  @state() private _lightbox: number | null = null;
+
+  private readonly _urls = new MediaUrls(this);
+  /** Returns focus to the thumbnail the lightbox was opened from. */
+  private readonly _lightboxFocus = new DialogFocus();
 
   protected willUpdate(changed: Map<string, unknown>) {
+    this._urls.configure(this.media?.sign ?? null);
     // A fresh item, or a re-open, always lands on the read view.
     if (changed.has('item') || (changed.has('open') && this.open)) {
       this._mode = 'read';
       this._checkoutOpen = false;
+      this._lightbox = null;
     }
+  }
+
+  protected updated() {
+    this._lightboxFocus.sync(this._lightbox !== null, () =>
+      this.shadowRoot?.querySelector<HTMLElement>('[data-testid="sheet-lightbox"]'),
+    );
   }
 
   /** True when the edit form is open with unsaved changes. */
@@ -304,6 +392,72 @@ export class HVDetailSheet extends LitElement {
     return html`<div class="fact" data-testid="sheet-fact" data-key=${key}>
       <span>${key}</span>
       <span class="value">${type === 'date' ? formatDate(String(value)) : String(value)}</span>
+    </div>`;
+  }
+
+  /**
+   * The picture strip, or nothing at all when the item has none.
+   *
+   * Each figure is a button: tapping one opens the lightbox, which is the only
+   * way to see a photo at a useful size on a phone.
+   */
+  private _renderGallery(item: Item) {
+    const shots = pictures(item.attachments);
+    if (!shots.length) return null;
+    return html`<div class="gallery" data-testid="sheet-gallery">
+      ${shots.map((picture, index) => {
+        const src = this._urls.get(item.id, picture.id);
+        if (!src) return null;
+        return html`<figure data-testid="sheet-photo">
+          <button
+            data-testid="sheet-photo-open"
+            aria-label=${`Open ${pictureAlt(item.name, index, shots.length)}`}
+            @click=${() => {
+              this._lightbox = index;
+            }}
+          >
+            <img
+              src=${src}
+              alt=${pictureAlt(item.name, index, shots.length)}
+              loading="lazy"
+              decoding="async"
+            />
+          </button>
+        </figure>`;
+      })}
+    </div>`;
+  }
+
+  private _renderLightbox(item: Item) {
+    const shots = pictures(item.attachments);
+    const index = this._lightbox;
+    if (index === null || !shots[index]) return null;
+    const src = this._urls.get(item.id, shots[index].id);
+    if (!src) return null;
+    const close = () => {
+      this._lightbox = null;
+    };
+    return html`<div
+      class="lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label=${pictureAlt(item.name, index, shots.length)}
+      data-testid="sheet-lightbox"
+      tabindex="-1"
+      @keydown=${(e: KeyboardEvent) => {
+        if (e.key !== 'Escape') return;
+        // Stopped here, or the bottom sheet under it takes the same Escape and
+        // closes the whole item rather than the photo on top of it.
+        e.preventDefault();
+        e.stopPropagation();
+        close();
+      }}
+      @click=${close}
+    >
+      <img src=${src} alt=${pictureAlt(item.name, index, shots.length)} />
+      <button class="close" data-testid="sheet-lightbox-close" aria-label="Close photo" @click=${close}>
+        ${icon('close', 22)}
+      </button>
     </div>`;
   }
 
@@ -398,6 +552,8 @@ export class HVDetailSheet extends LitElement {
           ${icon('plus', 22)}
         </button>
       </div>
+
+      ${this._renderGallery(item)}
 
       ${item.description
         ? html`<div class="description" data-testid="sheet-description">${item.description}</div>`
@@ -505,6 +661,8 @@ export class HVDetailSheet extends LitElement {
       </div>
       <hv-item-editor
         .areas=${this.areas}
+        .media=${this.media}
+        .mediaConfig=${this.mediaConfig}
         data-testid="sheet-editor"
         mobile
         noHeader
@@ -541,6 +699,7 @@ export class HVDetailSheet extends LitElement {
       @cancel=${this._close}
     >
       ${item ? (this._mode === 'edit' ? this._renderEdit(item) : this._renderRead(item)) : null}
+      ${item ? this._renderLightbox(item) : null}
     </hv-bottom-sheet>`;
   }
 }

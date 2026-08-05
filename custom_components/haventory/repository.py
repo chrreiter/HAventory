@@ -26,8 +26,8 @@ from .exceptions import ConflictError, NotFoundError, ValidationError
 from .models import (
     DEFAULT_ITEM_STATUS,
     EMPTY_LOCATION_PATH,
-    ITEM_STATUSES,
     LOCATION_GUARD_MAX_STEPS,
+    AttachmentMeta,
     Item,
     ItemCreate,
     ItemFilter,
@@ -35,6 +35,7 @@ from .models import (
     Location,
     LocationPath,
     Sort,
+    StatusDefinition,
     apply_item_update,
     build_location_path,
     coerce_item_status,
@@ -46,14 +47,20 @@ from .models import (
     item_inspection_is_overdue,
     item_is_low_stock,
     item_is_overdue,
+    load_attachments,
+    monotonic_timestamp_after,
     new_uuid4,
     normalize_search_text,
     normalize_tags,
     normalize_text_for_sort,
     parse_uuid4,
+    seed_status_definitions,
+    serialize_attachment_meta,
+    serialize_status_definition,
     sort_items,
     today_utc_date,
     validate_location_name,
+    validate_status_definition,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -193,6 +200,9 @@ class Repository:
         # Primary stores
         self._items_by_id: dict[str, Item] = {}
         self._locations_by_id: dict[str, Location] = {}
+        # Status definitions, keyed by their immutable slug. Seeded with the
+        # built-ins, which is also what a store carrying no section means.
+        self._statuses_by_slug: dict[str, StatusDefinition] = seed_status_definitions()
 
         # Item indexes
         self._tags_to_item_ids: dict[str, set[str]] = {}
@@ -235,6 +245,20 @@ class Repository:
         """What the most recent ``load_state`` dropped or found cyclic."""
 
         return self._last_load_report
+
+    # -----------------------------
+    # Public API — Status definitions
+    # -----------------------------
+
+    def status_slugs(self) -> frozenset[str]:
+        """The live status slugs, for every caller that validates one."""
+
+        return frozenset(self._statuses_by_slug)
+
+    def list_statuses(self) -> list[StatusDefinition]:
+        """Status definitions in display order, ties broken by slug."""
+
+        return sorted(self._statuses_by_slug.values(), key=lambda d: (d.order, d.slug))
 
     # -----------------------------
     # Internal helpers — indexing
@@ -1065,7 +1089,11 @@ class Repository:
         # Delegate all validation and normalization to models; always provide
         # the current locations map so location_id can be validated and
         # location_path can be denormalized when present.
-        item = create_item_from_create(payload, locations_by_id=self._locations_by_id)
+        item = create_item_from_create(
+            payload,
+            locations_by_id=self._locations_by_id,
+            known_statuses=self.status_slugs(),
+        )
         self._index_item(item)
         return item
 
@@ -1087,7 +1115,12 @@ class Repository:
                 f"version conflict: expected {expected_version}, actual {current.version}"
             )
 
-        updated = apply_item_update(current, update, locations_by_id=self._locations_by_id)
+        updated = apply_item_update(
+            current,
+            update,
+            locations_by_id=self._locations_by_id,
+            known_statuses=self.status_slugs(),
+        )
         self._reindex_item_replacement(current, updated)
         LOGGER.debug(
             "Item updated",
@@ -1156,6 +1189,112 @@ class Repository:
             ItemUpdate(checked_out=False, due_date=None),
             expected_version=expected_version,
         )
+
+    # -----------------------------
+    # Public API — Attachments
+    # -----------------------------
+
+    def _replace_attachments(
+        self,
+        item_id: str | uuid.UUID,
+        attachments: list[AttachmentMeta],
+        expected_version: int | None,
+    ) -> Item:
+        """Swap an item's attachment list, as an ordinary versioned item edit.
+
+        Attaching or detaching a file *is* an edit of the item, unlike the
+        derived ``location_path``: it bumps ``version`` and ``updated_at`` and
+        goes through the same optimistic-concurrency check as every other
+        mutation. Not routed through ``apply_item_update``, because
+        ``ItemUpdate`` deliberately has no ``attachments`` key — the two
+        attachment commands are the only writers.
+        """
+
+        key = str(item_id)
+        current = self._items_by_id.get(key)
+        if current is None:
+            raise NotFoundError("item not found")
+        if expected_version is not None and current.version != expected_version:
+            raise ConflictError(
+                f"version conflict: expected {expected_version}, actual {current.version}"
+            )
+
+        updated = replace(
+            current,
+            attachments=attachments,
+            updated_at=monotonic_timestamp_after(current.updated_at),
+            version=current.version + 1,
+        )
+        self._reindex_item_replacement(current, updated)
+        return updated
+
+    def add_attachment(
+        self,
+        item_id: str | uuid.UUID,
+        meta: AttachmentMeta,
+        *,
+        max_per_kind: int | None = None,
+        expected_version: int | None = None,
+    ) -> Item:
+        """Append attachment metadata to an item and return the updated item.
+
+        ``max_per_kind`` caps how many of *this* attachment's kind an item may
+        carry — enforced here regardless of what the client checked first.
+        """
+
+        current = self.get_item(item_id)
+        if max_per_kind is not None:
+            same_kind = sum(1 for a in current.attachments if a.kind == meta.kind)
+            if same_kind >= max_per_kind:
+                raise ValidationError(
+                    f"item already has {max_per_kind} attachment(s) of kind '{meta.kind}'"
+                )
+        if any(a.id == meta.id for a in current.attachments):
+            raise ValidationError("attachment id is already present on this item")
+        return self._replace_attachments(
+            item_id, [*current.attachments, meta], expected_version=expected_version
+        )
+
+    def remove_attachment(
+        self,
+        item_id: str | uuid.UUID,
+        attachment_id: str | uuid.UUID,
+        *,
+        expected_version: int | None = None,
+    ) -> tuple[Item, AttachmentMeta]:
+        """Drop one attachment entry, returning the updated item and what went.
+
+        The removed metadata comes back because the caller still has to delete
+        the file it names, and nothing else records where that file is.
+        """
+
+        current = self.get_item(item_id)
+        wanted = str(attachment_id)
+        removed = next((a for a in current.attachments if str(a.id) == wanted), None)
+        if removed is None:
+            raise NotFoundError("attachment not found")
+        remaining = [a for a in current.attachments if str(a.id) != wanted]
+        updated = self._replace_attachments(item_id, remaining, expected_version=expected_version)
+        return updated, removed
+
+    def iter_attachments(self) -> Iterable[tuple[str, AttachmentMeta]]:
+        """Every (item id, attachment) pair currently referenced by metadata."""
+
+        for item_key, item in self._items_by_id.items():
+            for attachment in item.attachments:
+                yield item_key, attachment
+
+    def find_attachment(self, item_id: str, attachment_id: str) -> AttachmentMeta | None:
+        """Look one attachment up by both ids, or ``None`` when nothing owns it.
+
+        The media view resolves files through here rather than from the request
+        path, so an id no metadata claims never reaches the filesystem.
+        """
+
+        item = self._items_by_id.get(item_id)
+        if item is None:
+            return None
+        return next((a for a in item.attachments if str(a.id) == attachment_id), None)
 
     # -----------------------------
     # Public API — Item querying
@@ -1234,7 +1373,7 @@ class Repository:
         if (
             isinstance(status_filter, str)
             and status_filter != DEFAULT_ITEM_STATUS
-            and status_filter in ITEM_STATUSES
+            and status_filter in self._statuses_by_slug
         ):
             has_indexed_filter = True
             s = self._status_to_item_ids.get(status_filter, set())
@@ -1312,7 +1451,7 @@ class Repository:
         else:
             source = self._items_by_id.values()
 
-        filtered = filter_items(source, flt)
+        filtered = filter_items(source, flt, known_statuses=self.status_slugs())
         sorted_items = sort_items(filtered, sort)
         # Optional preference: group low-stock items first without filtering, while
         # preserving the selected primary ordering within groups (stable sort).
@@ -1338,8 +1477,26 @@ class Repository:
     # Public API — Counts
     # -----------------------------
 
-    def get_counts(self) -> dict[str, int]:
+    def get_counts(self) -> dict[str, Any]:
+        """Aggregate counts for ``haventory/stats``, ``haventory/health`` and events.
+
+        ``status_counts`` covers every defined slug, including the default one
+        the index deliberately does not bucket. The two legacy
+        ``missing_count`` / ``needs_repair_count`` keys stay beside it: one
+        shape serves all three surfaces, and dropping them would move the card
+        in the same release that widens the vocabulary.
+        """
+
         items_with_location = sum(len(ids) for ids in self._items_by_location_id.values())
+        flagged_total = sum(len(ids) for ids in self._status_to_item_ids.values())
+        status_counts = {
+            slug: (
+                len(self._items_by_id) - flagged_total
+                if slug == DEFAULT_ITEM_STATUS
+                else len(self._status_to_item_ids.get(slug, set()))
+            )
+            for slug in self._statuses_by_slug
+        }
         return {
             "items_total": len(self._items_by_id),
             "low_stock_count": len(self._low_stock_item_ids),
@@ -1348,6 +1505,7 @@ class Repository:
             "inspection_overdue_count": self._count_inspection_overdue(),
             "missing_count": len(self._status_to_item_ids.get("missing", set())),
             "needs_repair_count": len(self._status_to_item_ids.get("needs_repair", set())),
+            "status_counts": status_counts,
             "locations_total": len(self._locations_by_id),
             "no_location_count": len(self._items_by_id) - items_with_location,
         }
@@ -1396,7 +1554,7 @@ class Repository:
             candidates if candidates is not None else self._items_by_id.values()
         )
         counts: dict[str | None, int] = {}
-        for item in filter_items(source, flt):
+        for item in filter_items(source, flt, known_statuses=self.status_slugs()):
             key = str(item.location_id) if item.location_id is not None else None
             counts[key] = counts.get(key, 0) + 1
         return counts
@@ -1817,7 +1975,13 @@ class Repository:
         """Serialize the repository to a plain dict for storage.
 
         Shape:
-            {"items": {id -> ItemDict}, "locations": {id -> LocationDict}}
+            {"items": {id -> ItemDict}, "locations": {id -> LocationDict},
+             "statuses": {slug -> StatusDict}}
+
+        Every top-level collection the store carries has to appear here:
+        ``async_persist_repo`` saves exactly this dict, so a collection this
+        method omits is read correctly at boot and erased by the first save
+        afterwards. ``tests/test_storage_offline.py`` pins that.
         """
 
         def _serialize_item(item: Item) -> dict[str, Any]:
@@ -1844,6 +2008,7 @@ class Repository:
                     "display_path": item.location_path.display_path,
                     "sort_key": item.location_path.sort_key,
                 },
+                "attachments": [serialize_attachment_meta(a) for a in item.attachments],
             }
 
         def _serialize_location(loc: Location) -> dict[str, Any]:
@@ -1868,9 +2033,15 @@ class Repository:
         for loc_id in sorted(self._locations_by_id.keys()):
             locations_dict[loc_id] = _serialize_location(self._locations_by_id[loc_id])
 
+        statuses_dict: dict[str, Any] = {
+            slug: serialize_status_definition(self._statuses_by_slug[slug])
+            for slug in sorted(self._statuses_by_slug)
+        }
+
         return {
             "items": items_dict,
             "locations": locations_dict,
+            "statuses": statuses_dict,
             "_generation": self._generation,
         }
 
@@ -1887,31 +2058,20 @@ class Repository:
         dropped_item_ids: list[str] = []
         dropped_location_ids: list[str] = []
 
-        # Reset all in-memory structures
-        self._items_by_id = {}
-        self._locations_by_id = {}
-        self._tags_to_item_ids = {}
-        self._category_to_item_ids = {}
-        self._status_to_item_ids = {}
-        self._word_to_item_ids = {}
-        self._name_prefix_to_item_ids = {}
-        self._trigram_to_item_ids = {}
-        self._checked_out_item_ids = set()
-        self._low_stock_item_ids = set()
-        self._items_by_location_id = {}
-        self._locations_by_area_id = {}
-        self._items_by_area_id = {}
-        self._name_sort_key_by_item_id = {}
-        self._item_text_tokens = {}
-        self._children_ids_by_parent_id = {}
-        self._location_descendants = {}
-        self._items_in_subtree = {}
+        self._reset_state()
 
         if not isinstance(data, dict):
             return
 
         # Restore generation counter from persisted state
         self._generation = int(data.get("_generation", 0))
+
+        # Statuses BEFORE the item loop, or ``coerce_item_status`` would see
+        # only the built-ins and rewrite every item on a custom status to "ok"
+        # — silently, on the first restart after the upgrade that added it. An
+        # absent or unreadable section means the built-ins, which is what a
+        # pre-v6 store carries.
+        self._load_statuses(data.get("statuses"))
 
         # Load locations first so items can reference them
         locations = data.get("locations") or {}
@@ -1971,6 +2131,7 @@ class Repository:
                     continue
 
         # Load items
+        known_statuses = self.status_slugs()
         items = data.get("items") or {}
         if isinstance(items, dict):
             for item_id, item_data in items.items():
@@ -1995,7 +2156,9 @@ class Repository:
                         quantity=int(item_data.get("quantity", 0)),
                         # Stores written before the field existed carry no
                         # status; they read as the default rather than failing.
-                        status=coerce_item_status(item_data.get("status")),
+                        status=coerce_item_status(
+                            item_data.get("status"), known_statuses=known_statuses
+                        ),
                         checked_out=bool(item_data.get("checked_out", False)),
                         due_date=item_data.get("due_date"),
                         inspection_date=item_data.get("inspection_date"),
@@ -2020,6 +2183,11 @@ class Repository:
                         ),
                         version=int(item_data.get("version", 1)),
                         location_path=location_path,
+                        # Tolerant of absence and of a non-list value (both read
+                        # as none), but not of a malformed *entry*: dropping one
+                        # would lose the only reference to a file on disk, which
+                        # the orphan sweep would then delete.
+                        attachments=load_attachments(item_data.get("attachments")),
                     )
                     self._index_item(item)
                 except (
@@ -2048,6 +2216,66 @@ class Repository:
 
         # Rebuild location hierarchy indexes ensuring consistency
         self._rebuild_location_hierarchy_indexes()
+
+    def _reset_state(self) -> None:
+        """Drop every primary store and index, back to a fresh repository."""
+
+        self._items_by_id = {}
+        self._locations_by_id = {}
+        self._statuses_by_slug = seed_status_definitions()
+        self._tags_to_item_ids = {}
+        self._category_to_item_ids = {}
+        self._status_to_item_ids = {}
+        self._word_to_item_ids = {}
+        self._name_prefix_to_item_ids = {}
+        self._trigram_to_item_ids = {}
+        self._checked_out_item_ids = set()
+        self._low_stock_item_ids = set()
+        self._items_by_location_id = {}
+        self._locations_by_area_id = {}
+        self._items_by_area_id = {}
+        self._name_sort_key_by_item_id = {}
+        self._item_text_tokens = {}
+        self._children_ids_by_parent_id = {}
+        self._location_descendants = {}
+        self._items_in_subtree = {}
+
+    def _load_statuses(self, raw: object) -> None:
+        """Read the ``statuses`` collection out of a persisted payload.
+
+        Accepts the stored slug-keyed map and the list form an export document
+        carries. Definitions that do not parse are skipped rather than failing
+        the load: an unreadable label costs a display string, while refusing the
+        whole store over one would take the inventory with it. ``ok`` is
+        re-seeded whichever way, because it is the default every item falls back
+        to and the value "flagged" is defined against.
+        """
+
+        entries: list[object]
+        if isinstance(raw, dict):
+            entries = list(raw.values())
+        elif isinstance(raw, list):
+            entries = list(raw)
+        else:
+            return
+
+        loaded: dict[str, StatusDefinition] = {}
+        for entry in entries:
+            try:
+                definition = validate_status_definition(entry)
+            except ValidationError:
+                LOGGER.warning(
+                    "Skipping an unreadable status definition",
+                    extra={"domain": "haventory", "op": "load_state_statuses"},
+                )
+                continue
+            loaded[definition.slug] = definition
+
+        if loaded:
+            self._statuses_by_slug = loaded
+        self._statuses_by_slug.setdefault(
+            DEFAULT_ITEM_STATUS, seed_status_definitions()[DEFAULT_ITEM_STATUS]
+        )
 
     @staticmethod
     def from_state(data: dict[str, Any]) -> Repository:

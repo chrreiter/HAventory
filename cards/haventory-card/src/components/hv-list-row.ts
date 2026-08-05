@@ -6,6 +6,8 @@ import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue } from '../ui/relative-time';
 import { itemStatus, statusLabel } from '../ui/status';
+import { MediaUrls, pictureAlt, pictures } from '../ui/media';
+import type { MediaBindings } from '../ui/media';
 import type { AreaRef, Item } from '../store/types';
 import './hv-overflow-menu';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
@@ -83,6 +85,22 @@ export class HVListRow extends LitElement {
       .names {
         flex: 1;
         min-width: 0;
+      }
+      /* A fixed box, so a portrait photo and a landscape one leave the row the
+         same height and the list keeps a single rhythm. Rows without a picture
+         render nothing here rather than a placeholder: a mostly photo-less
+         inventory would otherwise grow a column of empty squares. */
+      .thumb {
+        flex: none;
+        width: 34px;
+        height: 34px;
+        border-radius: 6px;
+        object-fit: cover;
+        background: var(--hv-surface-raised);
+      }
+      :host([mobile]) .thumb {
+        width: 40px;
+        height: 40px;
       }
       /* Both lines must be block containers with inline content, or the
          ellipsis is silently ignored: overflow does not apply to an inline box,
@@ -260,6 +278,36 @@ export class HVListRow extends LitElement {
   @property({ type: Boolean }) selected = false;
   /** Show the optimistic-write "pending" chip. */
   @property({ type: Boolean }) pending = false;
+  /** Picture access; null means the row shows no thumbnail. */
+  @property({ attribute: false }) media: MediaBindings | null = null;
+
+  private readonly _urls = new MediaUrls(this);
+
+  protected willUpdate() {
+    this._urls.configure(this.media?.sign ?? null);
+  }
+
+  /**
+   * The row's leading thumbnail: the item's first picture, or nothing.
+   *
+   * The full-size file is what loads — nothing is thumbnailed server-side, so
+   * `loading="lazy"` and `decoding="async"` are what keep a long list from
+   * fetching and decoding everything at once.
+   */
+  private _renderThumb() {
+    const first = pictures(this.item.attachments)[0];
+    if (!first) return null;
+    const src = this._urls.get(this.item.id, first.id);
+    if (!src) return null;
+    return html`<img
+      class="thumb"
+      data-testid="row-thumb"
+      src=${src}
+      alt=${pictureAlt(this.item.name, 0, 1)}
+      loading="lazy"
+      decoding="async"
+    />`;
+  }
 
   private _emit(name: string, detail: Record<string, unknown> = {}) {
     this.dispatchEvent(
@@ -416,6 +464,7 @@ export class HVListRow extends LitElement {
               ${this.selected ? icon('check', 13) : null}
             </button>`
           : null}
+        ${this._renderThumb()}
         <span class="names">
           <span class="name" data-testid="row-name" title=${item.name}>${item.name}</span>
           <span

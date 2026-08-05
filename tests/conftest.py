@@ -41,6 +41,7 @@ import dataclasses
 import json
 import os
 import sys
+import tempfile
 import types
 from pathlib import Path
 
@@ -89,9 +90,30 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     # homeassistant.core
     ha_core = types.ModuleType("homeassistant.core")
 
+    class _Config:  # type: ignore[override]
+        """Stand in for HA's ``hass.config``, for the paths under the config dir.
+
+        The directory is created on first use rather than per instance: nearly
+        every offline test constructs a ``HomeAssistant`` and only the ones
+        touching attachment media ever ask for a path.
+        """
+
+        def __init__(self) -> None:
+            self._config_dir: str | None = None
+
+        @property
+        def config_dir(self) -> str:
+            if self._config_dir is None:
+                self._config_dir = tempfile.mkdtemp(prefix="haventory-offline-")
+            return self._config_dir
+
+        def path(self, *parts: str) -> str:
+            return os.path.join(self.config_dir, *parts)
+
     class HomeAssistant:  # type: ignore[override]
         def __init__(self) -> None:
             self.data = {}
+            self.config = _Config()
 
         def async_create_background_task(self, target, name, eager_start=True):
             """Stand in for HA's tracked-task helper; the real one also cancels on shutdown."""

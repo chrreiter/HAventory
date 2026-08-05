@@ -244,6 +244,9 @@ async def test_remove_entry_keeps_stored_inventory(monkeypatch) -> None:
         "schema_version": CURRENT_SCHEMA_VERSION,
         "items": {"item-1": {"id": "item-1", "name": "Screwdriver", "version": 1}},
         "locations": {"loc-1": {"id": "loc-1", "name": "Garage"}},
+        # Save backfills any omitted collection, so the comparison below is an
+        # equality one only when every collection is named here.
+        "statuses": {},
     }
     store = DomainStore(hass, key=key)
     await store.async_save(payload)

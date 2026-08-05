@@ -9,6 +9,7 @@ from __future__ import annotations
 import functools
 import logging
 from collections.abc import Awaitable, Callable
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 
@@ -16,10 +17,23 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
+try:
+    from homeassistant.components.file_upload import process_uploaded_file
+except ImportError:  # pragma: no cover - offline harness without the component
+    process_uploaded_file = None
+
 from . import import_export
+from . import media as media_mod
 from . import storage as storage_mod
 from .areas import async_get_area_registry
-from .const import DEFAULT_CARD_TITLE, DOMAIN, INTEGRATION_VERSION
+from .const import (
+    ATTACHMENT_PICTURE_MIME_TYPES,
+    DEFAULT_CARD_TITLE,
+    DOMAIN,
+    INTEGRATION_VERSION,
+    MAX_ATTACHMENT_BYTES,
+    MAX_PICTURES_PER_ITEM,
+)
 from .exceptions import (
     ConflictError,
     NotFoundError,
@@ -32,12 +46,19 @@ from .exceptions import (
 )
 from .import_export import POLICIES, Policy
 from .models import (
+    ATTACHMENT_KINDS,
     DEFAULT_ITEM_STATUS,
+    AttachmentMeta,
     Item,
     ItemUpdate,
     Location,
+    iso_utc_now,
+    new_uuid4,
     normalize_tags,
+    serialize_attachment_meta,
+    serialize_status_definition,
     today_utc_date,
+    validate_attachment_meta,
 )
 from .rate_limit import RateLimiter
 from .repository import UNSET, InternalIndexes, Repository
@@ -812,15 +833,27 @@ async def ws_version(
 async def ws_config(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Return the config-entry settings the frontend renders, not the whole options set.
+    """Return the settings the frontend renders, not the whole options set.
 
-    Rate-limit tunables stay server-side; only the card title is a display
-    concern the card cannot know on its own.
+    Rate-limit tunables stay server-side. What is here is what the card cannot
+    know on its own: the configured heading, the status vocabulary items are
+    labelled with, and the attachment caps — reported so the picker can refuse
+    an oversized file before it is sent, never so the backend can trust that it
+    did.
     """
     bucket = hass.data.get(DOMAIN) or {}
     title = bucket.get("card_title")
     result = {
         "card_title": title if isinstance(title, str) and title else DEFAULT_CARD_TITLE,
+        "statuses": [serialize_status_definition(d) for d in _repo(hass).list_statuses()],
+        # The route itself is not here: it is a constant on both sides, pinned
+        # across the language boundary by tests/test_frontend_registration.py.
+        # What the card cannot derive is the caps and the accepted types.
+        "media": {
+            "picture_mime_types": list(ATTACHMENT_PICTURE_MIME_TYPES),
+            "max_pictures_per_item": MAX_PICTURES_PER_ITEM,
+            "max_attachment_bytes": MAX_ATTACHMENT_BYTES,
+        },
     }
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
@@ -1214,6 +1247,12 @@ async def ws_item_delete(
     serialized_before = _serialize_item(hass, before)
     repo.delete_item(item_id, expected_version=msg.get("expected_version"))
     await _persist_repo(hass)
+    # After the save, for the same reason attachment/remove deletes last: an
+    # orphaned file is swept at setup, while a file deleted ahead of a failed
+    # save would leave stored metadata pointing at nothing.
+    await media_mod.async_delete_attachments(
+        hass, [(str(before.id), a) for a in before.attachments]
+    )
     _broadcast_event(
         hass,
         topic="items",
@@ -1429,6 +1468,126 @@ async def ws_item_set_low_stock_threshold(
     )
     await _persist_repo(hass)
     _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
+    _broadcast_counts(hass)
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/attachment/add",
+        vol.Required("item_id"): object,
+        # The handle core's `/api/file_upload` hands back after the POST.
+        vol.Required("file_id"): str,
+        vol.Optional("kind"): str,
+        # What the user's file was called. Display only — the stored name is
+        # derived from the attachment id and the sniffed type.
+        vol.Optional("filename"): str,
+        vol.Optional("expected_version"): int,
+    }
+)
+@websocket_api.async_response
+@ws_guard("item_attachment_add", ("item_id", "kind", "expected_version"))
+async def ws_item_attachment_add(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Consume an uploaded file and attach it to an item.
+
+    The upload rides core's ``file_upload``, so the bytes never cross the
+    WebSocket. Everything the client claimed about the file — its content type,
+    its size — is re-derived here: the accepted type comes from sniffing the
+    file's own leading bytes, and both caps are enforced regardless of whether
+    the card checked them first.
+    """
+
+    if process_uploaded_file is None:  # pragma: no cover - real HA always has it
+        raise StorageError("Home Assistant's file_upload component is unavailable")
+
+    kind = msg.get("kind", "picture")
+    if kind not in ATTACHMENT_KINDS:
+        raise ValidationError(f"kind must be one of: {', '.join(ATTACHMENT_KINDS)}")
+
+    repo = _repo(hass)
+    item_id = msg["item_id"]
+    expected = msg.get("expected_version")
+    # Read the item — and its version — before the upload is consumed: the temp
+    # file is destroyed either way, so failing after eating it would cost the
+    # user the upload as well as the round trip.
+    current = repo.get_item(item_id)
+    if expected is not None and current.version != expected:
+        raise ConflictError(f"version conflict: expected {expected}, actual {current.version}")
+
+    attachment_id = new_uuid4()
+    with ExitStack() as stack:
+        try:
+            # Entered through the stack so only *this* call is guarded: a
+            # `ValueError` from anywhere else must not be relabelled as a
+            # missing upload. `file_upload` raises it for an id it does not
+            # know — an expired handle, or one an earlier call consumed.
+            source = stack.enter_context(process_uploaded_file(hass, msg["file_id"]))
+        except ValueError as exc:
+            raise NotFoundError("uploaded file not found; upload it again") from exc
+
+        mime, size = await media_mod.async_consume_upload(
+            hass,
+            source=source,
+            kind=kind,
+            item_id=str(current.id),
+            attachment_id=str(attachment_id),
+        )
+
+    meta = AttachmentMeta(
+        id=attachment_id,
+        kind=kind,
+        filename=str(msg.get("filename") or f"{attachment_id}"),
+        mime=mime,
+        size=size,
+        uploaded_at=iso_utc_now(),
+    )
+    updated = repo.add_attachment(
+        item_id,
+        meta,
+        max_per_kind=media_mod.max_per_item(kind),
+        expected_version=expected,
+    )
+    serialized = _serialize_item(hass, updated)
+    # A failed persist leaves the file on disk with no saved metadata; setup's
+    # orphan sweep is what collects it, so there is nothing to undo here beyond
+    # letting the error through the way every other mutation does.
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
+    _broadcast_counts(hass)
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/attachment/remove",
+        vol.Required("item_id"): object,
+        vol.Required("attachment_id"): object,
+        vol.Optional("expected_version"): int,
+    }
+)
+@websocket_api.async_response
+@ws_guard("item_attachment_remove", ("item_id", "attachment_id", "expected_version"))
+async def ws_item_attachment_remove(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Detach one file from an item and delete its bytes."""
+
+    repo = _repo(hass)
+    item_id = msg["item_id"]
+    updated, removed = repo.remove_attachment(
+        item_id,
+        str(msg["attachment_id"]),
+        expected_version=msg.get("expected_version"),
+    )
+    serialized = _serialize_item(hass, updated)
+    # Persist before unlinking: a failed save with the file still there leaves
+    # an orphan the sweep collects, while the reverse order would leave stored
+    # metadata pointing at bytes that are already gone.
+    await _persist_repo(hass)
+    await media_mod.async_delete_attachments(hass, [(str(updated.id), removed)])
+    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1844,6 +2003,7 @@ def _serialize_item(hass: HomeAssistant, item: Item) -> dict[str, Any]:
             "display_path": item.location_path.display_path,
             "sort_key": item.location_path.sort_key,
         },
+        "attachments": [serialize_attachment_meta(a) for a in item.attachments],
     }
 
 
@@ -1898,6 +2058,37 @@ async def ws_export(
     conn.send_message(websocket_api.result_message(msg.get("id", 0), document))
 
 
+async def _count_missing_attachments(hass: HomeAssistant, target: dict[str, Any]) -> dict[str, int]:
+    """How many attachment references the planned dataset has no file for.
+
+    A JSON export carries metadata and not bytes, so importing one onto a fresh
+    install leaves references pointing at nothing. That is a caveat rather than
+    an error — the card renders a "file missing" state — so preview reports the
+    number instead of refusing the document.
+    """
+
+    pairs = import_export.referenced_attachments(target)
+    if not pairs:
+        return {"referenced": 0, "missing": 0}
+
+    root = media_mod.media_root(hass)
+
+    def _count() -> int:
+        missing = 0
+        for item_id, entry in pairs:
+            try:
+                meta = validate_attachment_meta(entry)
+                path = media_mod.attachment_path(root, item_id, str(meta.id), meta.mime)
+            except ValidationError:  # pragma: no cover - planning validated these
+                missing += 1
+                continue
+            if not path.is_file():
+                missing += 1
+        return missing
+
+    return {"referenced": len(pairs), "missing": await hass.async_add_executor_job(_count)}
+
+
 def _import_policy(msg: dict[str, Any]) -> Policy:
     policy = msg.get("policy", "merge")
     if policy not in POLICIES:
@@ -1918,12 +2109,14 @@ async def ws_import_preview(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     policy = _import_policy(msg)
-    report, _target = import_export.plan_import(
+    report, target = import_export.plan_import(
         _repo(hass),
         msg.get("document"),
         policy=policy,
         current_schema_version=_schema_version_from_hass(hass),
     )
+    if target is not None:
+        report["attachments"] = await _count_missing_attachments(hass, target)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), report))
 
 
@@ -1980,6 +2173,13 @@ async def ws_import_execute(
             exc_info=True,
         )
         raise
+
+    # `replace` overwrites an item's attachment list wholesale, so an entry the
+    # incoming document does not carry has just lost its only reference — and
+    # that metadata was the only record of where the file is. Sweeping against
+    # the new metadata deletes exactly those, and costs a directory walk that
+    # finds nothing at all on an install with no attachments.
+    await media_mod.async_sweep_orphans(hass, repo.iter_attachments())
 
     # Tell every subscriber the dataset was replaced wholesale.
     _broadcast_event(hass, topic="items", action="reloaded", payload=None)
@@ -2038,6 +2238,8 @@ def setup(hass: HomeAssistant) -> None:
         ws_item_remove_tags,
         ws_item_update_custom_fields,
         ws_item_set_low_stock_threshold,
+        ws_item_attachment_add,
+        ws_item_attachment_remove,
         ws_item_move,
         ws_items_bulk,
         ws_item_list,

@@ -13,13 +13,27 @@ Document shape (``haventory_export_version = 1``)::
         "exported_at": "YYYY-MM-DDTHH:MM:SSZ",
         "integration_version": "0.0.1",
         "items": [ <ItemDoc>, ... ],
-        "locations": [ <LocationDoc>, ... ]
+        "locations": [ <LocationDoc>, ... ],
+        "statuses": [ <StatusDefinitionDoc>, ... ]
     }
 
 ``ItemDoc`` / ``LocationDoc`` carry every source-of-truth field plus the
 denormalized paths, so a round-trip (export → import into an empty instance)
 reproduces the data exactly. The document is machine-generated and best treated
 as opaque; hand-editing is supported but paths are recomputed on import.
+
+Two sections need their absence to keep meaning something, permanently, because
+every export written before they existed relies on it:
+
+* ``statuses`` — items store only a slug, so the slug-to-label mapping travels
+  here or a restore onto a fresh install loses every custom label. An absent
+  section reads as the built-in three.
+* ``attachments`` on an item — **metadata only**. The result is one WebSocket
+  frame the card writes to a file, so it cannot carry binaries; a document
+  imported where the referenced files are absent keeps the references, and
+  ``import/preview`` reports how many have no file on this install. Home
+  Assistant's own backups are the full-fidelity path, because the media
+  directory lives inside the config directory.
 
 Import is a three-step contract:
 
@@ -38,6 +52,7 @@ Conflict policies (for ids already present in the repository):
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import Any, Literal
 
 from .const import INTEGRATION_VERSION
@@ -53,6 +68,11 @@ from .models import (
     iso_utc_now,
     normalize_tags,
     parse_uuid4,
+    seed_status_definitions,
+    serialize_attachment_meta,
+    serialize_status_definition,
+    validate_attachment_meta,
+    validate_status_definition,
 )
 from .repository import Repository
 
@@ -81,6 +101,10 @@ _ITEM_SOURCE_FIELDS: tuple[str, ...] = (
     "created_at",
     "updated_at",
     "version",
+    # Metadata only — the export cannot carry the bytes (see the module
+    # docstring's "attachments" note), so a reference may land on an install
+    # that has no file for it.
+    "attachments",
 )
 _LOCATION_SOURCE_FIELDS: tuple[str, ...] = ("name", "parent_id", "area_id")
 
@@ -116,6 +140,7 @@ def _serialize_item_doc(item: Item) -> dict[str, Any]:
             "display_path": item.location_path.display_path,
             "sort_key": item.location_path.sort_key,
         },
+        "attachments": [serialize_attachment_meta(a) for a in item.attachments],
     }
 
 
@@ -179,6 +204,11 @@ def build_export_document(
         "integration_version": INTEGRATION_VERSION,
         "items": items_docs,
         "locations": locations_docs,
+        # Items store only a slug, so the slug-to-label mapping has to travel in
+        # the same document or a restore onto a fresh install would lose every
+        # custom label. An absent section reads as the built-ins, permanently,
+        # which is what keeps every pre-v6 export importable.
+        "statuses": [serialize_status_definition(d) for d in repo.list_statuses()],
     }
 
 
@@ -208,6 +238,38 @@ def _coerce_entity_list(value: Any) -> list[dict[str, Any]] | None:
         # Tolerate {id: entity} maps produced by repository.export_state.
         return [v for v in value.values() if isinstance(v, dict)]
     return None
+
+
+def _parse_status_section(
+    doc: dict[str, Any], errors: list[dict[str, str]]
+) -> dict[str, dict[str, Any]]:
+    """Read the document's ``statuses`` section, or the built-ins when absent.
+
+    Absence is not an error and never will be: every export written before the
+    section existed relies on it meaning exactly the built-in three.
+    """
+
+    raw = doc.get("statuses")
+    if raw is None:
+        return {
+            slug: serialize_status_definition(definition)
+            for slug, definition in seed_status_definitions().items()
+        }
+
+    entries = _coerce_entity_list(raw)
+    if entries is None:
+        errors.append(_err("statuses", "statuses must be an array of objects"))
+        return {}
+
+    parsed: dict[str, dict[str, Any]] = {}
+    for idx, entry in enumerate(entries):
+        try:
+            definition = validate_status_definition(entry)
+        except ValidationError as exc:
+            errors.append(_err(f"statuses[{idx}]", str(exc)))
+            continue
+        parsed[definition.slug] = serialize_status_definition(definition)
+    return parsed
 
 
 def _parse_envelope(
@@ -290,19 +352,42 @@ def _validate_location_doc(
     return lid
 
 
-def _validate_item_status_doc(base: str, doc: dict[str, Any], errors: list[dict[str, str]]) -> None:
+def _validate_item_status_doc(
+    base: str, doc: dict[str, Any], errors: list[dict[str, str]], known: Collection[str]
+) -> None:
     """Reject a present-but-unknown item status.
 
-    A status that is PRESENT must be a known value (an explicit null or unknown
-    string is rejected); an omitted field is allowed and reads as the default on
-    load — that is what a pre-status export carries.
+    A status that is PRESENT must be one the document itself defines or a
+    built-in (an explicit null or unknown string is rejected); an omitted field
+    is allowed and reads as the default on load — that is what a pre-status
+    export carries.
     """
 
-    if "status" in doc and doc.get("status") not in ITEM_STATUSES:
-        errors.append(_err(f"{base}.status", f"status must be one of: {', '.join(ITEM_STATUSES)}"))
+    if "status" in doc and doc.get("status") not in known:
+        errors.append(_err(f"{base}.status", f"status must be one of: {', '.join(sorted(known))}"))
 
 
-def _validate_item_doc(idx: int, doc: dict[str, Any], errors: list[dict[str, str]]) -> str | None:
+def _validate_attachments_doc(base: str, doc: dict[str, Any], errors: list[dict[str, str]]) -> None:
+    """Validate every attachment entry, naming the one that fails.
+
+    Entries are metadata only; the file they name may be absent on this install
+    (``import/preview`` counts those), which is a caveat rather than an error.
+    """
+
+    raw = doc.get("attachments", [])
+    if not isinstance(raw, list):
+        errors.append(_err(f"{base}.attachments", "attachments must be an array of objects"))
+        return
+    for idx, entry in enumerate(raw):
+        try:
+            validate_attachment_meta(entry)
+        except ValidationError as exc:
+            errors.append(_err(f"{base}.attachments[{idx}]", str(exc)))
+
+
+def _validate_item_doc(
+    idx: int, doc: dict[str, Any], errors: list[dict[str, str]], known_statuses: Collection[str]
+) -> str | None:
     base = f"items[{idx}]"
     iid = _validate_uuid4(doc.get("id"), f"{base}.id", errors)
     name = doc.get("name")
@@ -319,7 +404,8 @@ def _validate_item_doc(idx: int, doc: dict[str, Any], errors: list[dict[str, str
                 "low_stock_threshold must be an integer >= 0 or null",
             )
         )
-    _validate_item_status_doc(base, doc, errors)
+    _validate_item_status_doc(base, doc, errors, known_statuses)
+    _validate_attachments_doc(base, doc, errors)
     loc_id = doc.get("location_id")
     if loc_id is not None:
         _validate_uuid4(loc_id, f"{base}.location_id", errors)
@@ -368,6 +454,10 @@ def _canonical_item(doc: dict[str, Any]) -> dict[str, Any]:
             # An absent status reads as the default on load, so a pre-status
             # export compares as unchanged against a stored "ok" item.
             out[f] = doc.get("status", DEFAULT_ITEM_STATUS)
+        elif f == "attachments":
+            # Same reasoning: absent reads as none, so a pre-v6 export compares
+            # as unchanged against a stored item that has no attachments.
+            out[f] = [dict(a) for a in (doc.get("attachments") or []) if isinstance(a, dict)]
         else:
             out[f] = doc.get(f)
     return out
@@ -393,6 +483,19 @@ def _merge_item(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str,
                 **(existing.get("custom_fields") or {}),
                 **(incoming.get("custom_fields") or {}),
             }
+        elif f == "attachments":
+            # Unioned by id, the way tags are unioned: an attachment the other
+            # side does not mention is a file that still exists, and a merge
+            # that dropped it would orphan the bytes on the next sweep.
+            attachments: list[dict[str, Any]] = [
+                dict(a) for a in (existing.get("attachments") or []) if isinstance(a, dict)
+            ]
+            seen = {str(a.get("id")) for a in attachments}
+            for entry in incoming.get("attachments") or []:
+                if isinstance(entry, dict) and str(entry.get("id")) not in seen:
+                    attachments.append(dict(entry))
+                    seen.add(str(entry.get("id")))
+            merged["attachments"] = attachments
         elif f in incoming:
             merged[f] = incoming[f]
     merged["id"] = existing["id"]
@@ -519,6 +622,7 @@ def plan_import(
     items_in, locations_in, errors = _parse_envelope(
         doc, current_schema_version=current_schema_version
     )
+    statuses_in = _parse_status_section(doc if isinstance(doc, dict) else {}, errors)
     report: dict[str, Any] = {
         "valid": False,
         "errors": errors,
@@ -535,9 +639,13 @@ def plan_import(
     loc_ids: list[str] = []
     for i, d in enumerate(locations_in):
         loc_ids.append(_validate_location_doc(i, d, errors) or "")
+    # A slug is known when the document defines it or it is a built-in. Anything
+    # else has no label anywhere and would import as an item flagged with a
+    # state nothing can name.
+    known_statuses = set(statuses_in) | set(ITEM_STATUSES)
     item_ids: list[str] = []
     for i, d in enumerate(items_in):
-        item_ids.append(_validate_item_doc(i, d, errors) or "")
+        item_ids.append(_validate_item_doc(i, d, errors, known_statuses) or "")
 
     # Duplicate ids within the document are ambiguous — reject.
     _check_duplicate_ids(item_ids, "items", errors)
@@ -578,12 +686,69 @@ def plan_import(
     if payload is None or errors:
         return report, None
 
+    payload["statuses"] = _resolve_target_statuses(
+        existing=existing.get("statuses", {}),
+        incoming=statuses_in,
+        items=target_items,
+    )
+
     report["valid"] = True
     report["counts"] = {
         "items": _bucket_counts(report["items"]),
         "locations": _bucket_counts(report["locations"]),
     }
     return report, payload
+
+
+def _resolve_target_statuses(
+    *,
+    existing: dict[str, Any],
+    incoming: dict[str, dict[str, Any]],
+    items: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """The status definitions the imported dataset ends up with.
+
+    A definition is a vocabulary entry, not an entity the conflict policies act
+    on: no policy deletes one, because an item on this install may still carry
+    the slug. So the document's definitions overlay whatever is stored, and any
+    slug the resulting items reference without a definition gets one — an item
+    flagged with a state nothing can name is the one outcome to rule out.
+    """
+
+    resolved: dict[str, dict[str, Any]] = {
+        slug: dict(definition)
+        for slug, definition in existing.items()
+        if isinstance(definition, dict)
+    }
+    resolved.update({slug: dict(definition) for slug, definition in incoming.items()})
+
+    next_order = max((int(d.get("order", 0)) for d in resolved.values()), default=-1) + 1
+    for item in items.values():
+        slug = item.get("status", DEFAULT_ITEM_STATUS)
+        if not isinstance(slug, str) or slug in resolved:
+            continue
+        resolved[slug] = {
+            "slug": slug,
+            "label": slug.replace("_", " ").capitalize(),
+            "order": next_order,
+        }
+        next_order += 1
+    return resolved
+
+
+def referenced_attachments(payload: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """Every (item id, attachment metadata) pair a planned payload references.
+
+    Kept here rather than counting missing files inline: this module does no
+    I/O, so whether a referenced file exists is the caller's question to ask.
+    """
+
+    pairs: list[tuple[str, dict[str, Any]]] = []
+    for item_id, item in (payload.get("items") or {}).items():
+        for entry in item.get("attachments") or []:
+            if isinstance(entry, dict):
+                pairs.append((str(item_id), entry))
+    return pairs
 
 
 def _plan_entities(  # noqa: PLR0913 - cohesive planning parameters

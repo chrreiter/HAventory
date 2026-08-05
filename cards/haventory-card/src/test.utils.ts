@@ -1,6 +1,7 @@
 import type {
   AnyEventPayload,
   AreaRef,
+  Attachment,
   ExportDocument,
   HassLike,
   ImportPreview,
@@ -750,5 +751,60 @@ export function makeItem(partial?: Partial<Item>): Item {
       ? {}
       : { effective_area_id: partial.effective_area_id }),
     ...(partial?.status === undefined ? {} : { status: partial.status }),
+    ...(partial?.attachments === undefined ? {} : { attachments: partial.attachments }),
+  };
+}
+
+let anonymousAttachments = 0;
+
+/** One picture's metadata, as the backend reports it on an item. */
+export function makeAttachment(partial?: Partial<Attachment>): Attachment {
+  return {
+    id: partial?.id ?? `fixture-att-${String((anonymousAttachments += 1)).padStart(4, '0')}`,
+    kind: partial?.kind ?? 'picture',
+    filename: partial?.filename ?? 'photo.png',
+    mime: partial?.mime ?? 'image/png',
+    size: partial?.size ?? 2048,
+    uploaded_at: partial?.uploaded_at ?? FIXTURE_TS,
+  };
+}
+
+/**
+ * A `MediaBindings` whose calls are recorded and whose answers are scripted.
+ *
+ * Signing resolves immediately, so a mounted component has its URLs after one
+ * more `updateComplete`. `uploads` and `removals` record what was asked for;
+ * either can be made to reject, which is how the per-file error paths are
+ * exercised.
+ */
+export function makeMediaBindings(
+  options: {
+    upload?: (itemId: string, file: File) => Promise<Item>;
+    remove?: (itemId: string, attachmentId: string) => Promise<Item>;
+    signFails?: boolean;
+  } = {},
+) {
+  const signed: string[] = [];
+  const uploads: { itemId: string; file: File }[] = [];
+  const removals: { itemId: string; attachmentId: string }[] = [];
+  return {
+    signed,
+    uploads,
+    removals,
+    sign: async (path: string) => {
+      signed.push(path);
+      if (options.signFails) throw new Error('signing refused');
+      return `${path}?authSig=test`;
+    },
+    upload: async (itemId: string, file: File) => {
+      uploads.push({ itemId, file });
+      if (options.upload) return options.upload(itemId, file);
+      return makeItem({ id: itemId });
+    },
+    remove: async (itemId: string, attachmentId: string) => {
+      removals.push({ itemId, attachmentId });
+      if (options.remove) return options.remove(itemId, attachmentId);
+      return makeItem({ id: itemId });
+    },
   };
 }

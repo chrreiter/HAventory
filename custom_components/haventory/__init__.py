@@ -47,6 +47,7 @@ try:
 except ImportError:  # pragma: no cover - minimal harness without panel_custom
     async_register_panel = None  # type: ignore[assignment]
 
+from . import media as media_mod
 from . import services as services_mod
 from . import stale_files
 from . import ws as ws_mod
@@ -96,6 +97,11 @@ _CARD_URL_PATHS = frozenset({_CARD_URL_PATH, _LEGACY_CARD_URL_PATH})
 # registered under.
 _STATIC_PATH_KEY = "static_path_registered"
 _EXTRA_JS_URL_KEY = "extra_js_url"
+
+# Whether the authenticated media view has been registered in this Home
+# Assistant run. Outlives the config entry for the same reason as the static
+# route: aiohttp cannot unregister a route, so a reload must not add a second.
+_MEDIA_VIEW_KEY = "media_view_registered"
 
 # Whether the sidebar panel is currently registered. Entry-scoped: unload takes
 # the panel back, so a reload starts from nothing registered.
@@ -196,6 +202,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryError(_corrupt_store_message(load_report, store_key=store.key))
     hass.data[DOMAIN]["repository"] = repository
 
+    # Serve attachment files, and collect the ones nothing references any more.
+    # Both need the repository, so both come after it is in the bucket.
+    _register_media_view(hass)
+    await _async_sweep_orphaned_media(hass, repository)
+
     # Heading served to the card by `haventory/config`.
     hass.data[DOMAIN]["card_title"] = _resolve_card_title(entry)
 
@@ -224,6 +235,61 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _async_apply_sidebar_panel(hass, entry)
 
     return True
+
+
+def _register_media_view(hass: HomeAssistant) -> None:
+    """Serve `/api/haventory/media/...`, at most once per Home Assistant run.
+
+    Same shape as `_async_register_static_path`, and for the same reason:
+    aiohttp cannot unregister a route, so the guard flag has to outlive the
+    config entry or a reload would register a second view for one URL.
+    """
+    bucket = hass.data.setdefault(DOMAIN, {})
+    if bucket.get(_MEDIA_VIEW_KEY):
+        return
+
+    register = getattr(getattr(hass, "http", None), "register_view", None)
+    if register is None:
+        LOGGER.debug(
+            "HTTP component unavailable; item attachments cannot be served",
+            extra={"domain": DOMAIN, "op": "media_register"},
+        )
+        return
+
+    try:
+        register(media_mod.HaventoryMediaView())
+    except Exception:
+        # WARNING, not ERROR: the inventory works without it, but every
+        # attachment on every card is a broken image until it is fixed.
+        LOGGER.warning(
+            "Failed to register the HAventory media view; attachments will not load",
+            extra={"domain": DOMAIN, "op": "media_register"},
+            exc_info=True,
+        )
+        return
+
+    bucket[_MEDIA_VIEW_KEY] = True
+    LOGGER.debug(
+        "Serving HAventory item attachments",
+        extra={"domain": DOMAIN, "op": "media_register"},
+    )
+
+
+async def _async_sweep_orphaned_media(hass: HomeAssistant, repository: Repository) -> None:
+    """Delete attachment files no stored metadata references.
+
+    Runs at setup because that is the one moment the metadata is known to be
+    complete and nothing is mid-write. A failure here costs disk, not data, so
+    it never stops the entry from loading.
+    """
+    try:
+        await media_mod.async_sweep_orphans(hass, repository.iter_attachments())
+    except Exception:
+        LOGGER.warning(
+            "Could not sweep orphaned attachment files",
+            extra={"domain": DOMAIN, "op": "media_sweep"},
+            exc_info=True,
+        )
 
 
 def _resolve_card_title(entry: ConfigEntry) -> str:
@@ -364,16 +430,17 @@ def _drop_entry_runtime(hass: HomeAssistant) -> None:
     instead of letting a dashboard left open read — and write — state the entry
     no longer owns. The same lookup backs the `haventory.*` service handlers.
 
-    `_STATIC_PATH_KEY` is kept: it records an aiohttp route, which cannot be
-    unregistered and so outlives every entry. Dropping the flag would make the
-    next setup in the same run serve `/haventory_static` a second time.
+    `_STATIC_PATH_KEY` and `_MEDIA_VIEW_KEY` are kept: each records an aiohttp
+    route, which cannot be unregistered and so outlives every entry. Dropping
+    either flag would make the next setup in the same run register the same
+    route a second time.
     """
 
     bucket = hass.data.get(DOMAIN)
     if not isinstance(bucket, dict):
         return
 
-    kept = {key: bucket[key] for key in (_STATIC_PATH_KEY,) if key in bucket}
+    kept = {key: bucket[key] for key in (_STATIC_PATH_KEY, _MEDIA_VIEW_KEY) if key in bucket}
     bucket.clear()
     bucket.update(kept)
 

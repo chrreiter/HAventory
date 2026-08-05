@@ -1,7 +1,8 @@
 """Offline tests for HAventory models and helpers.
 
 Scenarios cover creation defaults, invalid payloads, tag normalization, field
-clearing via updates, and denormalized location path generation.
+clearing via updates, denormalized location path generation, attachment
+metadata, and status definitions.
 """
 
 from __future__ import annotations
@@ -23,8 +24,14 @@ from custom_components.haventory.models import (
     build_location_path_from_map,
     create_item_from_create,
     iso_utc_now,
+    load_attachments,
     monotonic_timestamp_after,
     new_uuid4_str,
+    seed_status_definitions,
+    serialize_attachment_meta,
+    serialize_status_definition,
+    validate_attachment_meta,
+    validate_status_definition,
 )
 
 UUID4_RE = re.compile(
@@ -191,3 +198,117 @@ async def test_invalid_inspection_date_format_raises_validation_error() -> None:
     item = create_item_from_create({"name": "Equipment"})
     with pytest.raises(ValidationError):
         apply_item_update(item, ItemUpdate(inspection_date="invalid-date"))
+
+
+# -----------------------------
+# Attachment metadata
+# -----------------------------
+
+
+def _attachment_doc(**overrides) -> dict:
+    doc = {
+        "id": new_uuid4_str(),
+        "kind": "picture",
+        "filename": "photo.png",
+        "mime": "image/png",
+        "size": 1234,
+        "uploaded_at": iso_utc_now(),
+    }
+    doc.update(overrides)
+    return doc
+
+
+def test_a_fresh_item_carries_no_attachments() -> None:
+    item = create_item_from_create(ItemCreate(name="Drill"))
+
+    assert item.attachments == []
+
+
+def test_attachments_are_not_settable_through_create_or_update() -> None:
+    """The two attachment commands are the only writers of the field."""
+
+    item = create_item_from_create({"name": "Drill", "attachments": [_attachment_doc()]})
+    assert item.attachments == []
+
+    updated = apply_item_update(item, {"attachments": [_attachment_doc()]})
+    assert updated.attachments == []
+
+
+def test_valid_attachment_metadata_round_trips() -> None:
+    doc = _attachment_doc()
+
+    meta = validate_attachment_meta(doc)
+
+    assert serialize_attachment_meta(meta) == doc
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        ({"id": "not-a-uuid"}, "attachment.id"),
+        ({"id": "00000000-0000-0000-0000-000000000000"}, "attachment.id"),
+        ({"kind": "video"}, "kind must be one of"),
+        ({"filename": ""}, "filename"),
+        ({"mime": None}, "mime"),
+        ({"size": -1}, "size"),
+        ({"size": True}, "size"),
+        ({"uploaded_at": "2026-08-05"}, "uploaded_at"),
+    ],
+)
+def test_malformed_attachment_metadata_is_rejected(overrides: dict, match: str) -> None:
+    with pytest.raises(ValidationError, match=re.escape(match)):
+        validate_attachment_meta(_attachment_doc(**overrides))
+
+
+def test_attachments_absent_or_non_list_read_as_none() -> None:
+    """A store written before the field existed must not fail the whole item."""
+
+    assert load_attachments(None) == []
+    assert load_attachments("garbage") == []
+
+
+def test_a_malformed_entry_is_not_silently_dropped() -> None:
+    """Dropping one would lose the only reference to a file the sweep then deletes."""
+
+    with pytest.raises(ValidationError):
+        load_attachments([_attachment_doc(), {"id": "nope"}])
+
+
+# -----------------------------
+# Status definitions
+# -----------------------------
+
+
+def test_the_seed_is_the_three_built_ins_in_display_order() -> None:
+    seeded = seed_status_definitions()
+
+    assert [d.slug for d in sorted(seeded.values(), key=lambda d: d.order)] == [
+        "ok",
+        "missing",
+        "needs_repair",
+    ]
+
+
+def test_a_status_definition_round_trips() -> None:
+    doc = {"slug": "lent_out", "label": "Lent out", "order": 7}
+
+    assert serialize_status_definition(validate_status_definition(doc)) == doc
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"slug": "Lent Out"},
+        {"slug": "lent-out"},
+        {"slug": ""},
+        {"slug": None},
+        {"label": "  "},
+        {"label": 3},
+        {"order": "first"},
+    ],
+)
+def test_a_malformed_status_definition_is_rejected(overrides: dict) -> None:
+    doc = {"slug": "lent_out", "label": "Lent out", "order": 0, **overrides}
+
+    with pytest.raises(ValidationError):
+        validate_status_definition(doc)

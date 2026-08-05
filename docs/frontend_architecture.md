@@ -65,11 +65,12 @@ haventory-card                     Lovelace element; store owner
     ├── hv-filter-panel            the complete filter set; desktop panel / mobile sheet
     │   └── hv-location-tree       recursive tree with backend counts
     ├── hv-list                    rows, skeletons, empty states, near-end scroll
-    │   ├── hv-list-row            stepper, badges, hover actions, row ⋮
-    │   └── hv-item-editor         inline expander (the one edit form)
+    │   ├── hv-list-row            stepper, badges, hover actions, row ⋮, photo thumbnail
+    │   └── hv-item-editor         inline expander (the one edit form); photo picker
     │       ├── hv-chip-input      tag chips with suggestions
     │       └── hv-location-tree
-    ├── hv-detail-sheet            mobile: read view + edit view in one sheet
+    ├── hv-detail-sheet            mobile: read view + edit view in one sheet;
+    │   │                          photo gallery strip and full-size lightbox
     │   ├── hv-item-editor
     │   └── hv-checkout-popover    inline due-date step
     ├── hv-checkout-popover        desktop: anchored due-date step
@@ -282,6 +283,7 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 | `area.ts` | Resolving the HA area behind a location: id → name, and the ancestor walk that mirrors the backend's own resolver. |
 | `location-path.ts` | The `/` → `›` convention for a location path, a location's label with a caller-supplied fallback, and the area-beside-the-path composition (`itemPathParts` / `locationPathParts` / `pathTitle` / `renderAreaChip`). |
 | `dialog-focus.ts` | Initial focus and focus return for modal surfaces. Opening must move focus into the panel or its Escape handler never fires. |
+| `media.ts` | Item pictures: the media path builder, the `MediaUrls` signed-URL cache (request, reuse, refresh before expiry, and a distinguishable failed state), and the `MediaBindings` shape a host hands its components. |
 | `keyboard.ts` | `onEscape()` for the surfaces where Escape means exactly "close", and the platform-correct save-shortcut label. |
 | `plural.ts` | Count agreement for every count string in the card. |
 | `theme.ts` | Whether the card is painted on a light or dark surface, read from HA's own theme variables rather than `prefers-color-scheme`. |
@@ -357,10 +359,17 @@ A typed wrapper over `hass.callWS` for each `haventory/*` command, plus `subscri
 takes `onError` and `onOpen` callbacks so both a refused and an accepted subscribe are
 observable.
 
-It is a deliberate 1:1 mirror of the command catalogue in `backend_api_contract.md`: it
-wraps 32 of the backend's 34 commands, omitting only `haventory/cleanup` and
-`haventory/unsubscribe` (the latter handled by HA's own `subscribeMessage`). A few wrappers
-have no caller in the card today; they complete the mirror and are kept on purpose.
+It is a deliberate 1:1 mirror of the command catalogue in `backend_api_contract.md`,
+omitting only `haventory/cleanup` and `haventory/unsubscribe` (the latter handled by HA's
+own `subscribeMessage`). A few wrappers have no caller in the card today; they complete the
+mirror and are kept on purpose.
+
+Two members are not plain `callWS` wrappers. `uploadAttachment` POSTs the bytes to Home
+Assistant core's `/api/file_upload` through `hass.fetchWithAuth` and only then names the
+resulting handle over the socket — a WebSocket frame carries JSON, and an 8 MB photo
+base64'd into one would be both slower and larger. `signPath` calls core's
+`auth/sign_path`, because an `<img src>` carries no `Authorization` header and the media
+view requires one.
 
 ### Column preferences (`src/store/columns.ts`)
 
