@@ -55,6 +55,15 @@ export interface MockHass extends HassLike {
   __haEventSubscriberCount(eventType: string): number;
   /** Replace what `haventory/areas/list` reports, as an HA area edit would. */
   __setAreas(areas: AreaRef[]): void;
+  /**
+   * Drop the socket and bring it back, the way Home Assistant does.
+   *
+   * The order is the point: HA re-issues the subscriptions it was holding and
+   * only then fires `ready`, so a live watch survives a reconnect without ever
+   * reporting a refusal — and any event fired while the socket was down is
+   * simply gone. Subscribers stay registered; nothing is replayed.
+   */
+  __reconnect(): void;
 }
 
 export function makeMockHass(initial?: MockConfig): MockHass {
@@ -70,6 +79,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
   let subscribeError: unknown | null = null;
   let subscribeFailRemaining = 0;
   const subs: Record<string, SubCb[]> = {};
+  const lifecycleListeners: Record<string, (() => void)[]> = {};
   const haEventSubs: Record<string, SubCb[]> = {};
   const calls: string[] = [];
   const subscribeCalls: string[] = [];
@@ -554,6 +564,13 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           subs[topic] = (subs[topic] || []).filter((x) => x !== cb);
         };
       },
+      addEventListener(event: string, cb: () => void) {
+        lifecycleListeners[event] ||= [];
+        lifecycleListeners[event].push(cb);
+      },
+      removeEventListener(event: string, cb: () => void) {
+        lifecycleListeners[event] = (lifecycleListeners[event] || []).filter((x) => x !== cb);
+      },
     },
     __emit(topic: AnyEventPayload['topic'], action: string, payload: Record<string, unknown>) {
       const callbacks = subs[topic] || [];
@@ -569,6 +586,10 @@ export function makeMockHass(initial?: MockConfig): MockHass {
       return (haEventSubs[eventType] || []).length;
     },
     __setAreas(next: AreaRef[]) { areas = [...next]; },
+    __reconnect() {
+      (lifecycleListeners.disconnected || []).forEach((cb) => cb());
+      (lifecycleListeners.ready || []).forEach((cb) => cb());
+    },
     __setConflict(on: boolean) { conflictOnUpdate = on; },
     __setItems(it: Item[]) { items = [...it]; },
     __setLocations(locs: Location[]) { locations = [...locs]; },

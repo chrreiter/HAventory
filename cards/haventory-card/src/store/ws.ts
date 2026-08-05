@@ -322,6 +322,29 @@ export class WSClient {
   }
 
   /**
+   * Call back each time the connection comes back after a drop.
+   *
+   * Home Assistant re-issues the subscriptions it was holding before it fires
+   * `ready`, so a dropped socket produces neither a refusal nor a fresh
+   * `subscribeAreaRegistry` call — the watch simply resumes, and anything the
+   * registry did meanwhile went to nobody. This event is the only notice the
+   * card gets that such a gap happened at all.
+   *
+   * Returns a no-op unsubscribe when the connection does not expose the
+   * lifecycle, so a caller never has to branch on it.
+   */
+  onConnectionReady(cb: () => void): Unsubscribe {
+    const connection = this.hass.connection;
+    const { addEventListener, removeEventListener } = connection;
+    if (typeof addEventListener !== 'function' || typeof removeEventListener !== 'function') {
+      return () => undefined;
+    }
+    const handler = () => cb();
+    addEventListener.call(connection, 'ready', handler);
+    return () => removeEventListener.call(connection, 'ready', handler);
+  }
+
+  /**
    * Watch Home Assistant's area registry.
    *
    * Areas belong to HA, not to HAventory: renaming or deleting one moves no
@@ -330,25 +353,37 @@ export class WSClient {
    * The callback takes no payload — the event says only that the registry
    * moved, and the caller refetches.
    *
-   * A refused subscribe is swallowed: the card keeps the areas it already
-   * holds, which is the whole of what it had before it listened at all.
+   * A refusal is reported rather than thrown: the card keeps the areas it
+   * already holds, which is the whole of what it had before it listened at all,
+   * so the caller decides whether to retry. `onOpen` fires once the watch is
+   * actually established, which is the caller's cue that a gap has closed.
    */
-  subscribeAreaRegistry(cb: () => void): Unsubscribe {
+  subscribeAreaRegistry(
+    cb: () => void,
+    opts?: { onOpen?: () => void; onError?: (err: unknown) => void },
+  ): Unsubscribe {
     const unsubOrPromise = this.hass.connection.subscribeMessage(() => cb(), {
       type: 'subscribe_events',
       event_type: 'area_registry_updated',
     });
 
-    if (typeof unsubOrPromise === 'function') return unsubOrPromise as unknown as Unsubscribe;
+    if (typeof unsubOrPromise === 'function') {
+      opts?.onOpen?.();
+      return unsubOrPromise as unknown as Unsubscribe;
+    }
 
     let resolvedUnsub: Unsubscribe | null = null;
     let cancelRequested = false;
     Promise.resolve(unsubOrPromise).then(
       (fn) => {
         resolvedUnsub = fn as Unsubscribe;
-        if (cancelRequested) resolvedUnsub();
+        if (cancelRequested) {
+          resolvedUnsub();
+          return;
+        }
+        opts?.onOpen?.();
       },
-      () => undefined,
+      (err: unknown) => opts?.onError?.(err),
     );
 
     return () => {

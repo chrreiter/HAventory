@@ -39,6 +39,7 @@ DECLARATION_SITES: tuple[tuple[str, str, int], ...] = (
     ),
     ("pyproject.toml", rf"HA ({VERSION}) =>", 2),
     (".github/workflows/ci.yml", rf"declared HA ({VERSION}) runtime", 1),
+    ("docs/backend_api_contract.md", rf"Target HA: ≥ ({VERSION});", 1),
 )
 
 

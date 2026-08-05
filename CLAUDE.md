@@ -118,11 +118,13 @@ else:
 
 ### Development-only docs — `dev/`
 `dev/` carries the process, not the product: `release_testing_plan.md` (the manual
-validation program — environments, scenarios, exit criteria), `release_review.md`, the
-per-task design documents (`*_plan.md`, `sidebar-panel.md`), the retired `open-items.md`
-ledger, and `ha_config_for_dev.yaml`. Design documents live only until the task they
-describe ships. Nothing in `dev/` decides what to build — the issue tracker does (see
-"Where work is tracked"), and a `dev/` document that disagrees with an issue is stale.
+validation program — environments, scenarios, exit criteria), `release_review.md`,
+`v1_prompts.md`, the per-task design documents (`*_plan.md`) for work that has **not**
+shipped yet, the retired `open-items.md` ledger, and `ha_config_for_dev.yaml`. A design
+document is deleted in the PR that ships the task it describes — git history is where it
+keeps living, and a plan left behind reads as pending work. Nothing in `dev/` decides
+what to build — the issue tracker does (see "Where work is tracked"), and a `dev/`
+document that disagrees with an issue is stale.
 
 ## Running tests / lint / build (Linux)
 

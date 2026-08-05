@@ -1,7 +1,7 @@
-# Release Testing Plan — v1.0 readiness
+# Release Testing Plan — first public release readiness
 
 Manual validation of HAventory on **real** Home Assistant instances, executed against the
-`v0.2.0` release on the way to a 1.0.
+release candidate proposed for the HACS listing.
 
 The automated suites (offline gate, in-process integration tests, online WS smokes, the
 adversarial stress regimen) are assumed green before this plan starts — see the README
@@ -13,21 +13,21 @@ Fixes, docs and release chores identified alongside this plan are issues too, st
 [#236](https://github.com/chrreiter/HAventory/issues/236) when they block the first public
 release. This file is tests only.
 
-**Which release this runs against.** The last feature release — `v0.3.0` once #186 cuts
-(defined against `v0.2.0` before two post-cut features landed) — the release carrying
-every pending fix and the pre-v1.0 feature additions. That is the owner's 2026-08-02 staging revision: the two
-schema releases (the `v4 → v5` exercise, then the collapse to a clean v1) follow it as
-further 0.x minors and get a migration-integrity pass and a watch window rather than a rerun
-of this plan, and `1.0.0` is then a bump carrying no change — so this plan is executed once,
-here, and later releases inherit its evidence.
-[#236](https://github.com/chrreiter/HAventory/issues/236) is authoritative if this paragraph
-ever falls behind it.
+**Which release this runs against.** The release candidate proposed for the HACS listing —
+whatever `0.x` carries every pending fix when the listing is cut. There is no feature freeze:
+features land in `0.x` releases as they are accepted, so the candidate is identified when the
+run starts rather than fixed in advance. `1.0.0` is deferred indefinitely and gates nothing
+([#278](https://github.com/chrreiter/HAventory/issues/278)) — it is not what this plan
+validates. [#236](https://github.com/chrreiter/HAventory/issues/236) is authoritative if this
+paragraph ever falls behind it, and
+[#276](https://github.com/chrreiter/HAventory/issues/276) is the issue that executes the run.
 
-**Sequencing.** The run belongs after feature freeze. D6's prerequisite is met: the minimum
-supported HA version is **2026.6.0** — set at feature freeze from the HA APIs the
-integration actually touches and the security floor below which every release carries a
-known advisory (see CLAUDE.md) — so D6 runs against that number. D6 is the live half of
-that claim; the in-process suite already runs the integration at the floor in CI.
+**Sequencing.** The run belongs after the candidate is cut and before the listing is
+submitted. D6's prerequisite is met: the minimum supported HA version is the floor declared
+in `hacs.json` — derived from the HA APIs the integration actually touches and the security
+floor below which every release carries a known advisory (see CLAUDE.md) — so D6 runs
+against whatever that file declares at the time. D6 is the live half of that claim; the
+in-process suite already runs the integration at the floor in CI.
 
 ---
 
@@ -55,7 +55,7 @@ A release is "ready" when **all** of the following hold:
 |-----|------|----------|
 | **ENV-A** | Personal production HA instance, real data, real hardware | Everything except destructive scenarios (D8, E2–E4) |
 | **ENV-B** | Throwaway HA in Docker (`scripts/reload_addon.sh`, `run-haventory` skill) | Destructive + adversarial scenarios; YAML-mode Lovelace |
-| **ENV-C** | Docker HA pinned to the **declared minimum supported version**, `2026.6.0` (`hacs.json` `homeassistant`) | D6 — validates the floor |
+| **ENV-C** | Docker HA pinned to the **declared minimum supported version** (`hacs.json` `homeassistant`) | D6 — validates the floor |
 | **ENV-D** | Docker HA restored from an **ENV-A production backup** | E2–E4 restore scenarios, without risking ENV-A |
 
 Clients to cover: desktop Chrome, one of Firefox/Safari desktop, **iOS companion app**,
@@ -165,7 +165,7 @@ Run `haventory/health` after **each** of these, and snapshot the store around D7
 | D3 | Config-entry reload (no HA restart) | Reload succeeds; subscriptions re-established; no duplicate WS handler registration | ✅ |
 | D4 | HA minor update (current stable → next stable) with HAventory installed | Setup succeeds; no deprecation warnings from `custom_components.haventory` | ✅ |
 | D5 | HA **next beta** | Same; any breakage is filed before it reaches stable | |
-| D6 | Minimum supported HA `2026.6.0` (ENV-C). The phacc suite already runs the integration in-process at this version in CI; D6 is the live counterpart — a real container, the card, and the browser | Integration sets up and the full CRUD path works on the declared floor; if it does not, the floor is wrong and must be raised before release | ✅ |
+| D6 | Minimum supported HA, the `hacs.json` floor (ENV-C). The phacc suite already runs the integration in-process at that version in CI; D6 is the live counterpart — a real container, the card, and the browser | Integration sets up and the full CRUD path works on the declared floor; if it does not, the floor is wrong and must be raised before release | ✅ |
 | D7 | Integration update N → N+1 **with real data**, including a schema migration | Migration runs once, is idempotent on a second restart, data intact, `health` healthy | ✅ |
 | D8 | Integration **rollback** N+1 → N (ENV-B only) | Newer-schema data is **refused loudly**: setup fails with `ConfigEntryError` naming both versions and the store file is left byte-identical — never migrated down, never silently relabeled (decided; item 25 fixed by #120) | ✅ |
 | D9 | Card update with a warm browser cache: update the integration, then reload normally (no hard refresh), on desktop **and** in the companion app | New card version actually loads; check `haventory/version` vs. the card build. The resource is now registered as `…haventory-card.js?v=<manifest version>` and a stale entry is rewritten in place (item 26, fixed by #122) | ✅ |

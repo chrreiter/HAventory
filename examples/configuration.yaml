@@ -1,0 +1,21 @@
+# Example Home Assistant configuration for HAventory.
+#
+# HAventory is set up from the UI (Settings -> Devices & Services -> Add
+# integration -> HAventory), not from YAML — there is no `haventory:` section to
+# add. Everything below is optional, and a stock Home Assistant install already
+# satisfies the only hard requirement, `default_config`.
+#
+# Deploy this file into a dev container with:
+#   scripts/reload_addon.sh --container <your_container> --examples-config
+
+# Required: pulls in the HTTP server, the WebSocket API and the frontend, which
+# is what serves the HAventory card and its sidebar panel.
+default_config:
+
+# Optional: raise HAventory's log level while you are trying something out. The
+# integration logs at DEBUG on its own namespace, so this does not make the rest
+# of Home Assistant noisy.
+logger:
+  default: warning
+  logs:
+    custom_components.haventory: debug

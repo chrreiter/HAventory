@@ -644,8 +644,12 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
   components and the `ui: legacy` option that reached them were removed — there is one
   card now, not two.
 
-### 🚧 Phase 3: Polish & HACS (Planned)
-- HACS publication; release automation (release-please); additional optimizations.
+### 🚧 Phase 3: Polish & HACS (In progress)
+- Release automation is in place: release-please cuts the version and the release workflow
+  publishes the HACS zip asset.
+- Remaining: HACS publication (public repository, custom-repository install, default-store
+  submission) and the polish staged alongside it, tracked under
+  [#236](https://github.com/chrreiter/HAventory/issues/236).
 
 ---
 
@@ -747,3 +751,10 @@ the first public release.
   write, or a quoted number such as `"5"`, which is not the same as `5` and is not assumed to
   mean it. The entry stops with that error and the store is left untouched; fix the value in
   the file, or replace `haventory_store` with a backup.
+- **"HAventory could not read N item(s) / location(s) from .storage/haventory_store"**: some
+  entries in the store are structurally broken — a hand edit, a truncated write, or a
+  location whose parent chain loops back on itself. The entry stops rather than loading the
+  readable remainder, because HAventory saves on every change: a partial load would rewrite
+  the file without those entries on the first edit and make the loss permanent. The store is
+  left untouched, and the message names the first few affected ids. Fix those entries, or
+  restore `haventory_store` from a backup, then reload the integration.

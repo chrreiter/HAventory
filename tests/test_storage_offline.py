@@ -22,8 +22,13 @@ from custom_components.haventory.exceptions import (
     SchemaDowngradeError,
     StorageError,
 )
+from custom_components.haventory.models import ItemCreate
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
+from custom_components.haventory.storage import (
+    CURRENT_SCHEMA_VERSION,
+    STORE_COLLECTIONS,
+    DomainStore,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
 
@@ -412,3 +417,55 @@ async def test_corrupted_payload_non_dict_raises_storage_error() -> None:
     # Act + Assert
     with pytest.raises(StorageError):
         await store.async_load()
+
+
+@pytest.mark.asyncio
+async def test_export_state_emits_every_stored_collection() -> None:
+    """The repository must emit every collection the store persists.
+
+    A save writes exactly ``Repository.export_state()``. The load path is wider —
+    it keeps whatever the file holds — so a collection the store knows about but
+    the repository does not emit survives a restart and is erased by the first
+    save afterwards, with nothing logged. Adding a name to ``STORE_COLLECTIONS``
+    without teaching the repository to emit it fails here instead.
+    """
+
+    repo = Repository()
+
+    exported = repo.export_state()
+
+    missing = [name for name in STORE_COLLECTIONS if name not in exported]
+    assert not missing, (
+        f"Repository.export_state() omits {missing}; the first save after boot "
+        f"would erase them from the store"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_stored_collection_survives_a_repository_roundtrip() -> None:
+    """Every stored collection survives export -> save -> load -> export.
+
+    The guard above pins the key set; this pins the contents, which is what a user
+    actually loses. Entities are built through the repository API rather than
+    hand-written dicts, so a drop here means the persistence path lost them and
+    not that validation rejected a malformed fixture.
+    """
+
+    hass = HomeAssistant()
+    key = "test_store_collection_roundtrip"
+    store = DomainStore(hass, key=key)
+
+    source = Repository()
+    garage = source.create_location(name="Garage")
+    source.create_item(ItemCreate(name="Drill", location_id=str(garage.id)))
+    await store.async_save(source.export_state())
+
+    restored = Repository()
+    restored.load_state(await store.async_load())
+    await store.async_save(restored.export_state())
+
+    reloaded = await store.async_load()
+    for name in STORE_COLLECTIONS:
+        assert reloaded[name], f"{name} was emptied by the roundtrip"
+    assert [i["name"] for i in reloaded["items"].values()] == ["Drill"]
+    assert [loc["name"] for loc in reloaded["locations"].values()] == ["Garage"]

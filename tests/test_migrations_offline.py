@@ -18,7 +18,11 @@ import pytest
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import SchemaDowngradeError, StorageError
 from custom_components.haventory.migrations import migrate
-from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
+from custom_components.haventory.storage import (
+    CURRENT_SCHEMA_VERSION,
+    STORE_COLLECTIONS,
+    DomainStore,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
 
@@ -146,3 +150,27 @@ async def test_log_context_on_corrupted_payload_via_storage(
             assert getattr(rec, "to_version", None) == store.schema_version
             break
     assert found, "expected migration error log with context"
+
+
+def test_the_migration_chain_produces_every_stored_collection() -> None:
+    """A store crossing a version boundary arrives holding every collection.
+
+    ``async_load`` backfills ``STORE_COLLECTIONS`` only on the branch where the
+    stored version already matches; a payload that goes through ``migrate`` comes
+    back as whatever the chain produced. So the chain, not the backfill, is what
+    an *upgrading* store depends on — and the backfill deliberately does not cover
+    it, because a new collection generally needs deriving rather than defaulting
+    to empty, and a silent ``{}`` would hide the missing step exactly the way the
+    erased-collection bug it guards against was hidden.
+
+    Adding a name to ``STORE_COLLECTIONS`` without a migration step that produces
+    it fails here.
+    """
+
+    migrated = migrate({}, from_version=0, to_version=CURRENT_SCHEMA_VERSION)
+
+    missing = [name for name in STORE_COLLECTIONS if name not in migrated]
+    assert not missing, (
+        f"the 0 -> {CURRENT_SCHEMA_VERSION} chain produces no {missing}; an existing "
+        f"store would finish migrating without them"
+    )

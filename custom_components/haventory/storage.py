@@ -52,13 +52,28 @@ PERSIST_DEBOUNCE_DELAY: Final[float] = 1.0
 _MAX_REPORTED_VERSION_CHARS: Final[int] = 60
 
 
+# Every top-level collection the stored payload carries, in one place because
+# three call sites have to agree about the set: `_empty_payload`, `async_load`'s
+# backfill, and `async_save`'s.
+#
+# The load path is wider than the save path by construction — `async_load` keeps
+# whatever the file holds, while a save writes exactly what
+# `Repository.export_state()` produced. A collection listed here that the
+# repository does not emit is therefore read back correctly at boot and erased by
+# the first save afterwards, with nothing logged. `tests/test_storage_offline.py`
+# pins `export_state()` to this tuple so that mistake fails a test instead.
+STORE_COLLECTIONS: Final[tuple[str, ...]] = ("items", "locations")
+
+
 def _empty_payload() -> dict[str, Any]:
     """Create a new empty payload matching the current schema.
 
     Returns a fresh dict each time to avoid shared mutation across callers.
     """
 
-    return {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+    payload: dict[str, Any] = {"schema_version": CURRENT_SCHEMA_VERSION}
+    payload.update({name: {} for name in STORE_COLLECTIONS})
+    return payload
 
 
 def schema_downgrade_message(*, stored_version: int, supported_version: int) -> str:
@@ -169,11 +184,8 @@ class DomainStore:
             return deepcopy(migrated)
 
         # Ensure required keys exist (older stubs or external mutations)
-        data: dict[str, Any] = {
-            "schema_version": self._schema_version,
-            "items": {},
-            "locations": {},
-        }
+        data: dict[str, Any] = {"schema_version": self._schema_version}
+        data.update({name: {} for name in STORE_COLLECTIONS})
         if isinstance(raw, dict):
             data.update(raw)
         return deepcopy(data)
@@ -183,8 +195,8 @@ class DomainStore:
 
         payload = deepcopy(data) if isinstance(data, dict) else {}
         payload.setdefault("schema_version", self._schema_version)
-        payload.setdefault("items", {})
-        payload.setdefault("locations", {})
+        for name in STORE_COLLECTIONS:
+            payload.setdefault(name, {})
         await self._store.async_save(payload)
 
     async def async_migrate_if_needed(self, raw: dict[str, Any]) -> dict[str, Any]:
