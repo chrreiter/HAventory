@@ -7,16 +7,32 @@ Scenarios:
 - error mapping for validation/not_found/conflict with contextual data
 - optimistic concurrency: with and without expected_version
 - tag normalization on the one command whose schema admits a null tag
+- attachment add/remove: version bumps, refusals, and the file-deletion cascade
+
+The attachment tests stand in for core's `file_upload` component, which the
+offline harness does not carry. Everything past the upload handle is the real
+code path: sniffing, the caps, the move onto disk, and the deletes.
 """
 
 from __future__ import annotations
 
+import shutil
+import tempfile
+from contextlib import contextmanager
+from pathlib import Path
+
 import pytest
+from custom_components.haventory import media as media_mod
+from custom_components.haventory import ws as ws_mod
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
+
+
+def _repo_of(hass: HomeAssistant) -> Repository:
+    return hass.data[DOMAIN]["repository"]
 
 
 async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
@@ -328,3 +344,277 @@ async def test_item_list_reports_filtered_total() -> None:
     empty = await _send(hass, 7, "haventory/item/list", filter={"q": "zzz-not-there"})
     assert empty["result"]["total"] == 0
     assert empty["result"]["items"] == []
+
+
+# -----------------------------
+# Attachments
+# -----------------------------
+
+
+@contextmanager
+def _fake_upload(_hass, file_id: str):
+    """Stand in for core's `process_uploaded_file`.
+
+    The real one yields the temp file the browser POSTed to `/api/file_upload`
+    and destroys the directory afterwards. `_UPLOADS` is what the tests POST
+    into; an id that is not in it raises `ValueError`, which is exactly how the
+    real component reports an expired or already-consumed upload.
+    """
+
+    if file_id not in _UPLOADS:
+        raise ValueError("File does not exist")
+    source = _UPLOADS.pop(file_id)
+    try:
+        yield source
+    finally:
+        shutil.rmtree(source.parent, ignore_errors=True)
+
+
+_UPLOADS: dict[str, Path] = {}
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+
+
+def _stage_upload(file_id: str, content: bytes = PNG_BYTES) -> None:
+    """Put a file where the fake `process_uploaded_file` will find it."""
+
+    directory = Path(tempfile.mkdtemp(prefix="haventory-upload-"))
+    source = directory / "photo.png"
+    source.write_bytes(content)
+    _UPLOADS[file_id] = source
+
+
+@pytest.fixture
+def upload(monkeypatch):
+    """Route the attachment command through the fake upload component."""
+
+    _UPLOADS.clear()
+    monkeypatch.setattr(ws_mod, "process_uploaded_file", _fake_upload)
+    return _stage_upload
+
+
+@pytest.mark.asyncio
+async def test_attachment_add_and_remove_bump_the_version(upload) -> None:
+    """Attaching a file is an item edit, unlike the derived location path."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    item_id = created["result"]["id"]
+    assert created["result"]["attachments"] == []
+
+    upload("upload-1")
+    added = await _send(
+        hass,
+        2,
+        "haventory/item/attachment/add",
+        item_id=item_id,
+        file_id="upload-1",
+        filename="drill.png",
+    )
+
+    assert added["success"] is True
+    attachments = added["result"]["attachments"]
+    assert len(attachments) == 1
+    assert attachments[0]["kind"] == "picture"
+    # The stored type is the sniffed one, never what the client declared.
+    assert attachments[0]["mime"] == "image/png"
+    assert attachments[0]["filename"] == "drill.png"
+    assert added["result"]["version"] == created["result"]["version"] + 1
+
+    removed = await _send(
+        hass,
+        3,
+        "haventory/item/attachment/remove",
+        item_id=item_id,
+        attachment_id=attachments[0]["id"],
+    )
+
+    assert removed["success"] is True
+    assert removed["result"]["attachments"] == []
+    assert removed["result"]["version"] == added["result"]["version"] + 1
+
+
+@pytest.mark.asyncio
+async def test_attachment_add_announces_the_item_as_updated(upload, monkeypatch) -> None:
+    """An open card learns about a new photo the same way it learns about an edit."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    broadcasts: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        ws_mod,
+        "_broadcast_event",
+        lambda _hass, *, topic, action, payload=None: broadcasts.append((topic, action)),
+    )
+
+    upload("upload-1")
+    await _send(
+        hass,
+        2,
+        "haventory/item/attachment/add",
+        item_id=created["result"]["id"],
+        file_id="upload-1",
+    )
+
+    assert ("items", "updated") in broadcasts
+
+
+@pytest.mark.asyncio
+async def test_attachment_add_refuses_a_stale_expected_version(upload) -> None:
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    item_id = created["result"]["id"]
+
+    upload("upload-1")
+    res = await _send(
+        hass,
+        2,
+        "haventory/item/attachment/add",
+        item_id=item_id,
+        file_id="upload-1",
+        expected_version=99,
+    )
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "conflict"
+    # The upload was not consumed: the version is checked before the temp file
+    # is touched, so the user does not lose the bytes to a lost race.
+    assert "upload-1" in _UPLOADS
+
+
+@pytest.mark.asyncio
+async def test_attachment_add_on_an_unknown_item_is_not_found(upload) -> None:
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    upload("upload-1")
+    res = await _send(
+        hass,
+        1,
+        "haventory/item/attachment/add",
+        item_id="11111111-1111-4111-8111-111111111111",
+        file_id="upload-1",
+    )
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_attachment_add_reports_an_unknown_file_id_as_not_found(upload) -> None:
+    """`file_upload` raises for an expired upload, or one already consumed."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+
+    res = await _send(
+        hass,
+        2,
+        "haventory/item/attachment/add",
+        item_id=created["result"]["id"],
+        file_id="never-uploaded",
+    )
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_attachment_add_refuses_a_file_whose_bytes_are_not_an_image(upload) -> None:
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    upload("upload-1", b'<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>')
+
+    res = await _send(
+        hass,
+        2,
+        "haventory/item/attachment/add",
+        item_id=created["result"]["id"],
+        file_id="upload-1",
+    )
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+    assert _repo_of(hass).get_item(created["result"]["id"]).attachments == []
+
+
+@pytest.mark.asyncio
+async def test_attachment_remove_deletes_the_file_and_the_item_delete_cascades(upload) -> None:
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    item_id = created["result"]["id"]
+    upload("upload-1")
+    added = await _send(
+        hass, 2, "haventory/item/attachment/add", item_id=item_id, file_id="upload-1"
+    )
+    meta = _repo_of(hass).get_item(item_id).attachments[0]
+    path = media_mod.attachment_path(media_mod.media_root(hass), item_id, str(meta.id), meta.mime)
+    assert path.is_file()
+
+    await _send(
+        hass,
+        3,
+        "haventory/item/attachment/remove",
+        item_id=item_id,
+        attachment_id=added["result"]["attachments"][0]["id"],
+    )
+    assert not path.exists()
+
+    # And deleting the item takes its remaining files with it.
+    upload("upload-2")
+    await _send(hass, 4, "haventory/item/attachment/add", item_id=item_id, file_id="upload-2")
+    second = _repo_of(hass).get_item(item_id).attachments[0]
+    second_path = media_mod.attachment_path(
+        media_mod.media_root(hass), item_id, str(second.id), second.mime
+    )
+    assert second_path.is_file()
+
+    await _send(hass, 5, "haventory/item/delete", item_id=item_id)
+    assert not second_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_attachment_remove_of_an_unknown_id_is_not_found() -> None:
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+
+    res = await _send(
+        hass,
+        2,
+        "haventory/item/attachment/remove",
+        item_id=created["result"]["id"],
+        attachment_id="11111111-1111-4111-8111-111111111111",
+    )
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "not_found"

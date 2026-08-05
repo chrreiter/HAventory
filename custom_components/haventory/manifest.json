@@ -9,7 +9,8 @@
     "http",
     "frontend",
     "lovelace",
-    "panel_custom"
+    "panel_custom",
+    "file_upload"
   ],
   "documentation": "https://github.com/chrreiter/HAventory#readme",
   "integration_type": "service",

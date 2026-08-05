@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import SchemaDowngradeError, StorageError
-from custom_components.haventory.migrations import migrate
+from custom_components.haventory.migrations import migrate, migrate_5_to_6
 from custom_components.haventory.storage import (
     CURRENT_SCHEMA_VERSION,
     STORE_COLLECTIONS,
@@ -174,3 +174,79 @@ def test_the_migration_chain_produces_every_stored_collection() -> None:
         f"the 0 -> {CURRENT_SCHEMA_VERSION} chain produces no {missing}; an existing "
         f"store would finish migrating without them"
     )
+
+
+# -----------------------------
+# v5 -> v6: statuses + attachments (one step for the whole milestone)
+# -----------------------------
+
+
+def _v5_payload(**items: Any) -> dict[str, Any]:
+    return {
+        "schema_version": 5,
+        "items": dict(items),
+        "locations": {},
+    }
+
+
+def test_v5_to_v6_seeds_exactly_the_three_built_ins() -> None:
+    out = migrate(_v5_payload(), from_version=5, to_version=6)
+
+    assert out["statuses"] == {
+        "ok": {"slug": "ok", "label": "OK", "order": 0},
+        "missing": {"slug": "missing", "label": "Missing", "order": 1},
+        "needs_repair": {"slug": "needs_repair", "label": "Needs repair", "order": 2},
+    }
+
+
+def test_v5_to_v6_backfills_attachments_on_every_item() -> None:
+    payload = _v5_payload(
+        i1={"id": "i1", "name": "Drill", "status": "ok"},
+        i2={"id": "i2", "name": "Saw", "status": "missing"},
+    )
+
+    out = migrate(payload, from_version=5, to_version=6)
+
+    assert out["items"]["i1"]["attachments"] == []
+    assert out["items"]["i2"]["attachments"] == []
+
+
+def test_v5_to_v6_leaves_an_item_that_already_carries_one_untouched() -> None:
+    existing = [
+        {
+            "id": "3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f",
+            "kind": "picture",
+            "filename": "photo.png",
+            "mime": "image/png",
+            "size": 12,
+            "uploaded_at": "2026-08-05T10:00:00Z",
+        }
+    ]
+    payload = _v5_payload(i1={"id": "i1", "name": "Drill", "attachments": existing})
+
+    out = migrate(payload, from_version=5, to_version=6)
+
+    assert out["items"]["i1"]["attachments"] == existing
+
+
+def test_v5_to_v6_keeps_a_status_definition_it_did_not_seed() -> None:
+    """A hand-added or later-release definition survives the seeding step."""
+
+    payload = _v5_payload()
+    payload["statuses"] = {"lent_out": {"slug": "lent_out", "label": "Lent out", "order": 9}}
+
+    out = migrate(payload, from_version=5, to_version=6)
+
+    assert out["statuses"]["lent_out"] == {"slug": "lent_out", "label": "Lent out", "order": 9}
+    assert set(out["statuses"]) == {"lent_out", "ok", "missing", "needs_repair"}
+
+
+def test_v5_to_v6_is_idempotent() -> None:
+    """The step itself, re-applied — not the driver, which would skip it."""
+
+    payload = _v5_payload(i1={"id": "i1", "name": "Drill"})
+
+    once = migrate_5_to_6(deepcopy(payload))
+    twice = migrate_5_to_6(deepcopy(once))
+
+    assert twice == once

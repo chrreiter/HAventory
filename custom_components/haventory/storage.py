@@ -33,11 +33,12 @@ from .exceptions import (
     SchemaDowngradeError,
     StorageError,
 )
+from .models import seed_status_definitions, serialize_status_definition
 
 _LOGGER = logging.getLogger(__name__)
 
 # Current schema version for persisted payloads
-CURRENT_SCHEMA_VERSION: Final[int] = 5
+CURRENT_SCHEMA_VERSION: Final[int] = 6
 
 # Storage key under which the persisted dataset is saved
 STORAGE_KEY: Final[str] = "haventory_store"
@@ -62,17 +63,23 @@ _MAX_REPORTED_VERSION_CHARS: Final[int] = 60
 # repository does not emit is therefore read back correctly at boot and erased by
 # the first save afterwards, with nothing logged. `tests/test_storage_offline.py`
 # pins `export_state()` to this tuple so that mistake fails a test instead.
-STORE_COLLECTIONS: Final[tuple[str, ...]] = ("items", "locations")
+STORE_COLLECTIONS: Final[tuple[str, ...]] = ("items", "locations", "statuses")
 
 
 def _empty_payload() -> dict[str, Any]:
     """Create a new empty payload matching the current schema.
 
     Returns a fresh dict each time to avoid shared mutation across callers.
+    A fresh install starts with the built-in statuses seeded, which is also what
+    an absent ``statuses`` section means everywhere else.
     """
 
     payload: dict[str, Any] = {"schema_version": CURRENT_SCHEMA_VERSION}
     payload.update({name: {} for name in STORE_COLLECTIONS})
+    payload["statuses"] = {
+        slug: serialize_status_definition(definition)
+        for slug, definition in seed_status_definitions().items()
+    }
     return payload
 
 
@@ -229,11 +236,8 @@ class DomainStore:
         to_version = self._schema_version
         if from_version == to_version:
             # Normalize missing keys even when versions match
-            normalized = {
-                "schema_version": to_version,
-                "items": {},
-                "locations": {},
-            }
+            normalized: dict[str, Any] = {"schema_version": to_version}
+            normalized.update({name: {} for name in STORE_COLLECTIONS})
             normalized.update(raw)
             return normalized
 
@@ -284,8 +288,8 @@ class DomainStore:
             )
             raise StorageError("storage migration returned non-dict payload")
         # Guarantee required fields and version
-        migrated.setdefault("items", {})
-        migrated.setdefault("locations", {})
+        for name in STORE_COLLECTIONS:
+            migrated.setdefault(name, {})
         migrated["schema_version"] = to_version
 
         await self._store.async_save(migrated)

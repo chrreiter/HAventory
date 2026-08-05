@@ -450,3 +450,61 @@ def test_service_schemas_accept_status_passthrough() -> None:
     assert created["status"] == "missing"
     updated = SCHEMA_ITEM_UPDATE({"item_id": "x", "status": "ok"})
     assert updated["status"] == "ok"
+
+
+# -----------------------------
+# The live status set (schema v6)
+# -----------------------------
+
+
+def test_validate_accepts_a_slug_in_the_live_set_and_rejects_one_outside_it() -> None:
+    live = {"ok", "lent_out"}
+
+    assert validate_item_status("lent_out", known_statuses=live) == "lent_out"
+    with pytest.raises(ValidationError, match="status must be one of"):
+        validate_item_status("missing", known_statuses=live)
+
+
+def test_coerce_keeps_a_custom_slug_and_still_maps_garbage_to_ok() -> None:
+    live = {"ok", "lent_out"}
+
+    assert coerce_item_status("lent_out", known_statuses=live) == "lent_out"
+    assert coerce_item_status("who_knows", known_statuses=live) == DEFAULT_ITEM_STATUS
+    assert coerce_item_status(None, known_statuses=live) == DEFAULT_ITEM_STATUS
+
+
+def test_the_default_set_is_still_the_built_ins() -> None:
+    """Every caller with no repository to ask keeps meaning what it meant."""
+
+    assert validate_item_status("needs_repair") == "needs_repair"
+
+
+def test_filtering_by_a_custom_slug_takes_the_index_path() -> None:
+    """The fast path guards on the live set, not on the module constant."""
+
+    repo = Repository.from_state(
+        {
+            "items": {},
+            "locations": {},
+            "statuses": {
+                "ok": {"slug": "ok", "label": "OK", "order": 0},
+                "lent_out": {"slug": "lent_out", "label": "Lent out", "order": 1},
+            },
+        }
+    )
+    lent = repo.create_item({"name": "Ladder", "status": "lent_out"})
+    repo.create_item({"name": "Hammer"})
+
+    # A non-default slug is bucketed, so the index answers before any scan.
+    assert repo._status_to_item_ids["lent_out"] == {str(lent.id)}
+    page = repo.list_items(flt={"status": "lent_out"})
+
+    assert [i.name for i in page["items"]] == ["Ladder"]
+
+
+def test_filtering_by_an_undefined_slug_is_a_validation_error() -> None:
+    repo = Repository()
+    repo.create_item({"name": "Hammer"})
+
+    with pytest.raises(ValidationError, match="status must be one of"):
+        repo.list_items(flt={"status": "lent_out"})

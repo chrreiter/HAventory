@@ -32,6 +32,11 @@ from custom_components.haventory.storage import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
 
+#: Schema versions that introduced each backfill, so a payload stored below one
+#: is the payload that step rewrites.
+_STATUS_BACKFILL_VERSION = 5
+_ATTACHMENTS_BACKFILL_VERSION = 6
+
 
 @pytest.mark.asyncio
 async def test_initial_load_returns_empty_dataset() -> None:
@@ -62,6 +67,9 @@ async def test_save_then_load_roundtrip() -> None:
         "schema_version": CURRENT_SCHEMA_VERSION,
         "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 50}},
         "locations": {"l1": {"id": "l1", "name": "Garage"}},
+        # Save backfills any collection the caller omits, so naming every one
+        # of them is what keeps this an equality test rather than a subset one.
+        "statuses": {},
     }
 
     # Act
@@ -206,10 +214,13 @@ async def test_migration_from_v1_to_current_preserves_payload() -> None:
     migrated = await store.async_load()
 
     assert migrated["schema_version"] == CURRENT_SCHEMA_VERSION
-    # v4 -> v5 backfills the per-item status; everything else passes through.
-    expected_items = {"i1": {**pre_payload["items"]["i1"], "status": "ok"}}
+    # v4 -> v5 backfills the per-item status and v5 -> v6 the attachment list;
+    # everything else passes through.
+    expected_items = {"i1": {**pre_payload["items"]["i1"], "status": "ok", "attachments": []}}
     assert migrated["items"] == expected_items
     assert migrated["locations"] == pre_payload["locations"]
+    # v6 seeds the status definitions the items' slugs resolve against.
+    assert sorted(migrated["statuses"]) == ["missing", "needs_repair", "ok"]
     # on-disk should be updated to current schema_version
     persisted = await raw_store.async_load()
     assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION
@@ -235,11 +246,14 @@ async def test_equal_and_older_versions_still_load(stored_version: int) -> None:
     loaded = await store.async_load()
 
     assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
-    # Anything below v5 runs migrate_4_to_5's status backfill on the way up; a
-    # payload already at the current version is normalized, never migrated.
+    # Each step only runs for a payload below it: migrate_4_to_5 backfills the
+    # status, migrate_5_to_6 the attachment list. A payload already at the
+    # current version is normalized, never migrated.
     expected_items = deepcopy(pre_payload["items"])
-    if stored_version < CURRENT_SCHEMA_VERSION:
+    if stored_version < _STATUS_BACKFILL_VERSION:
         expected_items["i1"]["status"] = "ok"
+    if stored_version < _ATTACHMENTS_BACKFILL_VERSION:
+        expected_items["i1"]["attachments"] = []
     assert loaded["items"] == expected_items
     assert loaded["locations"] == pre_payload["locations"]
 

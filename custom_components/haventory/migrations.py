@@ -96,3 +96,43 @@ def migrate_4_to_5(payload: dict[str, Any]) -> dict[str, Any]:
             if isinstance(item, dict) and item.get("status") not in _V5_ITEM_STATUSES:
                 item["status"] = "ok"
     return data
+
+
+# The status definitions v6 seeds. Frozen literals rather than a read from
+# models, for the same reason as ``_V5_ITEM_STATUSES``: this step must keep
+# seeding exactly these three once the live set can grow.
+_V6_SEED_STATUSES: Final[tuple[tuple[str, str], ...]] = (
+    ("ok", "OK"),
+    ("missing", "Missing"),
+    ("needs_repair", "Needs repair"),
+)
+
+
+def migrate_5_to_6(payload: dict[str, Any]) -> dict[str, Any]:
+    """Seed the ``statuses`` collection and backfill per-item ``attachments``.
+
+    One step for both, so a v0.4.0 install crosses exactly one version.
+
+    * ``statuses`` becomes a slug-keyed map of definitions, seeded with the
+      three built-ins. A definition already present — including one a later
+      release or a hand edit added — is left exactly as it stands.
+    * every item gains ``attachments: []`` unless it already carries the field.
+
+    Idempotent on both counts: re-applying only ever fills in what is absent.
+    """
+
+    data = deepcopy(payload) if isinstance(payload, dict) else {}
+
+    statuses = data.get("statuses")
+    if not isinstance(statuses, dict):
+        statuses = {}
+    for order, (slug, label) in enumerate(_V6_SEED_STATUSES):
+        statuses.setdefault(slug, {"slug": slug, "label": label, "order": order})
+    data["statuses"] = statuses
+
+    items = data.get("items")
+    if isinstance(items, dict):
+        for item in items.values():
+            if isinstance(item, dict):
+                item.setdefault("attachments", [])
+    return data
