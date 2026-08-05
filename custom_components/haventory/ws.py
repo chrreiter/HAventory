@@ -9,6 +9,7 @@ from __future__ import annotations
 import functools
 import logging
 from collections.abc import Awaitable, Callable
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 
@@ -57,6 +58,7 @@ from .models import (
     serialize_attachment_meta,
     serialize_status_definition,
     today_utc_date,
+    validate_attachment_meta,
 )
 from .rate_limit import RateLimiter
 from .repository import UNSET, InternalIndexes, Repository
@@ -1515,19 +1517,23 @@ async def ws_item_attachment_add(
         raise ConflictError(f"version conflict: expected {expected}, actual {current.version}")
 
     attachment_id = new_uuid4()
-    try:
-        with process_uploaded_file(hass, msg["file_id"]) as source:
-            mime, size = await media_mod.async_consume_upload(
-                hass,
-                source=source,
-                kind=kind,
-                item_id=str(current.id),
-                attachment_id=str(attachment_id),
-            )
-    except ValueError as exc:
-        # `file_upload` raises this for an id it does not know — an expired
-        # upload, or one already consumed by an earlier call.
-        raise NotFoundError("uploaded file not found; upload it again") from exc
+    with ExitStack() as stack:
+        try:
+            # Entered through the stack so only *this* call is guarded: a
+            # `ValueError` from anywhere else must not be relabelled as a
+            # missing upload. `file_upload` raises it for an id it does not
+            # know — an expired handle, or one an earlier call consumed.
+            source = stack.enter_context(process_uploaded_file(hass, msg["file_id"]))
+        except ValueError as exc:
+            raise NotFoundError("uploaded file not found; upload it again") from exc
+
+        mime, size = await media_mod.async_consume_upload(
+            hass,
+            source=source,
+            kind=kind,
+            item_id=str(current.id),
+            attachment_id=str(attachment_id),
+        )
 
     meta = AttachmentMeta(
         id=attachment_id,
@@ -2071,16 +2077,9 @@ async def _count_missing_attachments(hass: HomeAssistant, target: dict[str, Any]
         missing = 0
         for item_id, entry in pairs:
             try:
-                meta = AttachmentMeta(
-                    id=entry["id"],
-                    kind=entry["kind"],
-                    filename=entry["filename"],
-                    mime=entry["mime"],
-                    size=entry["size"],
-                    uploaded_at=entry["uploaded_at"],
-                )
+                meta = validate_attachment_meta(entry)
                 path = media_mod.attachment_path(root, item_id, str(meta.id), meta.mime)
-            except KeyError, ValidationError:  # pragma: no cover - entries are validated
+            except ValidationError:  # pragma: no cover - planning validated these
                 missing += 1
                 continue
             if not path.is_file():
