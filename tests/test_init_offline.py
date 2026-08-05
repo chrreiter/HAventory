@@ -12,6 +12,7 @@ from custom_components.haventory.exceptions import (
     CorruptSchemaVersionError,
     SchemaDowngradeError,
 )
+from custom_components.haventory.models import ItemCreate
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
 from homeassistant.config_entries import ConfigEntry
@@ -208,3 +209,58 @@ async def test_setup_entry_defaults_card_title_for_older_entries(monkeypatch) ->
 
     assert await haven_init.async_setup_entry(hass, entry) is True
     assert hass.data[haven_init.DOMAIN]["card_title"] == DEFAULT_CARD_TITLE
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_refuses_a_store_it_cannot_fully_read(monkeypatch) -> None:
+    """A corrupt row stops setup instead of loading the rest over it.
+
+    Every WS and service handler persists immediately, so a loaded entry rewrites
+    the store without the unreadable rows on the first mutation. Refusing is what
+    keeps the file repairable; the message has to say which file and how much.
+    """
+
+    hass = HomeAssistant()
+    entry = ConfigEntry()
+    payload = {
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "locations": {},
+        "items": {"not-a-uuid": {"id": "not-a-uuid", "name": "Broken"}},
+    }
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return deepcopy(payload)
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    with pytest.raises(ConfigEntryError) as excinfo:
+        await haven_init.async_setup_entry(hass, entry)
+
+    message = str(excinfo.value)
+    assert "1 item(s)" in message
+    assert "haventory_store" in message
+    assert "not-a-uuid" in message
+    # The entry never got a repository, so nothing downstream can persist over
+    # the file we just refused to read.
+    assert "repository" not in hass.data[haven_init.DOMAIN]
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_accepts_a_readable_store(monkeypatch) -> None:
+    """The refusal above must not fire for a store this build reads end to end."""
+
+    hass = HomeAssistant()
+    entry = ConfigEntry()
+
+    source = Repository()
+    where = source.create_location(name="Garage")
+    source.create_item(ItemCreate(name="Drill", location_id=str(where.id)))
+    payload = {"schema_version": CURRENT_SCHEMA_VERSION, **source.export_state()}
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return deepcopy(payload)
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    assert await haven_init.async_setup_entry(hass, entry) is True
+    assert isinstance(hass.data[haven_init.DOMAIN]["repository"], Repository)

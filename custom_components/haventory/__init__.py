@@ -62,7 +62,7 @@ from .const import (
 )
 from .exceptions import CorruptSchemaVersionError, SchemaDowngradeError, StorageError
 from .rate_limit import RateLimitConfig, RateLimiter
-from .repository import Repository
+from .repository import LoadReport, Repository
 from .storage import (
     CURRENT_SCHEMA_VERSION,
     STORAGE_KEY,
@@ -100,6 +100,11 @@ _EXTRA_JS_URL_KEY = "extra_js_url"
 # Whether the sidebar panel is currently registered. Entry-scoped: unload takes
 # the panel back, so a reload starts from nothing registered.
 _PANEL_REGISTERED_KEY = "panel_registered"
+
+# How many ids of each kind the corrupt-store refusal quotes. Enough to grep the
+# file with, few enough that a wholesale corruption does not paste thousands of
+# uuids into the config entry's error state.
+_CORRUPT_SAMPLE_IDS = 3
 
 
 # This integration is config-entry only; no YAML configuration is accepted.
@@ -169,7 +174,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             exc_info=True,
         )
         raise ConfigEntryNotReady("storage load failed") from exc
-    hass.data[DOMAIN]["repository"] = Repository.from_state(payload)
+    repository = Repository.from_state(payload)
+    load_report = repository.last_load_report
+    if load_report.has_corruption:
+        LOGGER.error(
+            "Refusing to set up against a store this build cannot fully read",
+            extra={
+                "domain": DOMAIN,
+                "op": "setup_storage",
+                "dropped_items": len(load_report.dropped_item_ids),
+                "dropped_locations": len(load_report.dropped_location_ids),
+                "cyclic_locations": len(load_report.cyclic_location_ids),
+            },
+        )
+        # Refuse rather than load what could be read. Every WS and service handler
+        # persists immediately, so a loaded entry rewrites the store without the
+        # unreadable rows on the very first mutation — a notification would narrate
+        # the loss, not prevent it. Refusing leaves the file intact for repair, and
+        # matches the two schema refusals above: retrying cannot fix any of them.
+        raise ConfigEntryError(_corrupt_store_message(load_report, store_key=store.key))
+    hass.data[DOMAIN]["repository"] = repository
 
     # Heading served to the card by `haventory/config`.
     hass.data[DOMAIN]["card_title"] = _resolve_card_title(entry)
@@ -867,6 +891,36 @@ async def _unregister_frontend_module(hass: HomeAssistant) -> None:
     for item in list(resources.async_items() or []):
         if _points_at_card(item.get("url")):
             await _delete_card_resource(resources, item, op="frontend_unregister")
+
+
+def _corrupt_store_message(report: LoadReport, *, store_key: str) -> str:
+    """Explain a refused load in terms of the file the user has to fix.
+
+    The message reaches the config entry's error state, so it names counts, a few
+    ids to grep for, and the file itself — a bare "corrupt storage" would leave
+    the user with nowhere to look.
+    """
+
+    parts: list[str] = []
+    if report.dropped_item_ids:
+        parts.append(f"{len(report.dropped_item_ids)} item(s)")
+    if report.dropped_location_ids:
+        parts.append(f"{len(report.dropped_location_ids)} location(s)")
+    if report.cyclic_location_ids:
+        parts.append(f"{len(report.cyclic_location_ids)} location(s) in a parent cycle")
+
+    sample = [
+        *report.dropped_item_ids[:_CORRUPT_SAMPLE_IDS],
+        *report.dropped_location_ids[:_CORRUPT_SAMPLE_IDS],
+        *report.cyclic_location_ids[:_CORRUPT_SAMPLE_IDS],
+    ]
+    detail = f" First affected ids: {', '.join(sample)}." if sample else ""
+    return (
+        f"HAventory could not read {' and '.join(parts)} from .storage/{store_key}, "
+        f"so setup stopped instead of loading a partial inventory and overwriting the "
+        f"file on the next change.{detail} The store has been left untouched — restore "
+        f"it from a backup, or repair those entries, then reload the integration."
+    )
 
 
 def _validate_storage_payload(payload: dict[str, Any], *, schema_version: int) -> None:

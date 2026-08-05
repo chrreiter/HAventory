@@ -19,7 +19,7 @@ import re
 import uuid
 from collections import deque
 from collections.abc import Iterable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any, NamedTuple, TypedDict
 
 from .exceptions import ConflictError, NotFoundError, ValidationError
@@ -116,6 +116,33 @@ def _coerce_canonical_ts(value: object, *, fallback: str | None = None) -> str:
     return iso_utc_now()
 
 
+@dataclass(frozen=True)
+class LoadReport:
+    """What ``load_state`` had to refuse or could not make sense of.
+
+    ``load_state`` coerces where it can — an unknown status, a non-canonical
+    timestamp, a missing ``sort_key`` — so an entry reaching one of these tuples
+    is structurally broken rather than merely odd. The distinction matters because
+    setup refuses on a non-empty report: with the entry loaded, the repo's
+    persist-immediately convention means the first mutation rewrites the store
+    without the dropped rows, turning a readable corrupt file into a permanent
+    loss.
+
+    #225 replaces the refusal with a repairs issue offering "load anyway"; this is
+    the payload that flow needs, which is why it carries ids and not just counts.
+    """
+
+    dropped_item_ids: tuple[str, ...] = ()
+    dropped_location_ids: tuple[str, ...] = ()
+    cyclic_location_ids: tuple[str, ...] = ()
+
+    @property
+    def has_corruption(self) -> bool:
+        """True when the payload held anything this build could not load."""
+
+        return bool(self.dropped_item_ids or self.dropped_location_ids or self.cyclic_location_ids)
+
+
 class Repository:
     """In-memory repository maintaining indexes and providing operations.
 
@@ -167,6 +194,15 @@ class Repository:
         # Location Hierarchy Indexes (O(1) subtree lookup)
         self._location_descendants: dict[str, set[str]] = {}  # loc_id -> all descendant ids
         self._items_in_subtree: dict[str, set[str]] = {}  # loc_id -> all item ids in subtree
+
+        # What the last load_state could not make sense of; empty on a fresh repo.
+        self._last_load_report = LoadReport()
+
+    @property
+    def last_load_report(self) -> LoadReport:
+        """What the most recent ``load_state`` dropped or found cyclic."""
+
+        return self._last_load_report
 
     # -----------------------------
     # Internal helpers — indexing
@@ -708,17 +744,68 @@ class Repository:
         return result
 
     def _get_ancestors(self, location_id: str) -> list[str]:
-        """Return list of ancestor location IDs from parent up to root."""
+        """Return list of ancestor location IDs from parent up to root.
+
+        A hand-edited or corrupt store can carry a cyclic ``parent_id`` chain,
+        which this walk would otherwise follow forever — during setup, since
+        ``load_state`` reaches it once per item. The visited set is what bounds the
+        walk to the size of the cycle; the step ceiling its four siblings cite is
+        the backstop for a chain that is merely absurdly deep. Breaking rather than
+        raising matches ``_find_location_root``, because
+        ``_remove_item_from_subtree_index`` walks the same chain on the mutation
+        path and must not learn to throw.
+        """
         ancestors: list[str] = []
+        visited: set[str] = {location_id}
         cursor: str | None = location_id
+        guard = 0
         while cursor:
+            guard += 1
+            if guard > LOCATION_GUARD_MAX_STEPS:  # pragma: no cover - degenerate
+                break
             loc = self._locations_by_id.get(cursor)
             if not loc or not loc.parent_id:
                 break
             parent_key = str(loc.parent_id)
+            if parent_key in visited:
+                break
+            visited.add(parent_key)
             ancestors.append(parent_key)
             cursor = parent_key
         return ancestors
+
+    def _cyclic_location_ids(self) -> tuple[str, ...]:
+        """Location ids whose parent chain never reaches a root.
+
+        Reported rather than dropped: removing a cyclic location cascades into its
+        children and their items, and setup refuses on a corrupt store anyway, so
+        nothing is rewritten. One pass with a shared acyclic memo keeps a deep tree
+        at O(N) instead of O(N * depth).
+        """
+
+        acyclic: set[str] = set()
+        cyclic: set[str] = set()
+        for start in self._locations_by_id:
+            if start in acyclic or start in cyclic:
+                continue
+            chain: list[str] = []
+            seen: set[str] = set()
+            cursor: str | None = start
+            hit_cycle = False
+            while cursor is not None:
+                if cursor in acyclic:
+                    break
+                if cursor in seen or cursor in cyclic:
+                    hit_cycle = True
+                    break
+                seen.add(cursor)
+                chain.append(cursor)
+                loc = self._locations_by_id.get(cursor)
+                if loc is None:
+                    break
+                cursor = str(loc.parent_id) if loc.parent_id is not None else None
+            (cyclic if hit_cycle else acyclic).update(chain)
+        return tuple(sorted(cyclic))
 
     def _rebuild_location_hierarchy_indexes(self) -> None:
         """Rebuild location-based hierarchy indexes from scratch."""
@@ -1725,7 +1812,14 @@ class Repository:
         """Load repository content from a persisted payload.
 
         Replaces current maps and rebuilds all indexes deterministically.
+
+        Entries this build cannot make sense of are recorded in
+        ``last_load_report`` rather than passed over in silence; setup consults it
+        and refuses instead of loading a partial dataset over a repairable file.
         """
+
+        dropped_item_ids: list[str] = []
+        dropped_location_ids: list[str] = []
 
         # Reset all in-memory structures
         self._items_by_id = {}
@@ -1794,8 +1888,11 @@ class Repository:
                     TypeError,
                     ValueError,
                     ValidationError,
-                ):  # pragma: no cover - defensive
-                    LOGGER.debug(
+                ):
+                    # ERROR: the row is gone from memory, and the next save would
+                    # write the store without it. Setup refuses on this, so the
+                    # file still holds it when the user goes looking.
+                    LOGGER.error(
                         "Failed to load location from persisted state",
                         extra={
                             "domain": "haventory",
@@ -1803,6 +1900,7 @@ class Repository:
                             "location_id": str(loc_id),
                         },
                     )
+                    dropped_location_ids.append(str(loc_id))
                     continue
 
         # Load items
@@ -1862,8 +1960,9 @@ class Repository:
                     TypeError,
                     ValueError,
                     ValidationError,
-                ):  # pragma: no cover - defensive
-                    LOGGER.debug(
+                ):
+                    # ERROR for the same reason as the location path above.
+                    LOGGER.error(
                         "Failed to load item from persisted state",
                         extra={
                             "domain": "haventory",
@@ -1871,7 +1970,14 @@ class Repository:
                             "item_id": str(item_id),
                         },
                     )
+                    dropped_item_ids.append(str(item_id))
                     continue
+
+        self._last_load_report = LoadReport(
+            dropped_item_ids=tuple(dropped_item_ids),
+            dropped_location_ids=tuple(dropped_location_ids),
+            cyclic_location_ids=self._cyclic_location_ids(),
+        )
 
         # Increment generation after load to mark as modified since load
         self._increment_generation()
