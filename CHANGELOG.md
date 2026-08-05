@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.3](https://github.com/chrreiter/HAventory/compare/v0.3.2...v0.3.3) (2026-08-05)
+
+
+### Bug Fixes
+
+* **hooks:** stop the session hook destroying the integration env ([#290](https://github.com/chrreiter/HAventory/issues/290)) ([f675ec3](https://github.com/chrreiter/HAventory/commit/f675ec3284ce0c488268e912ea1390650ed2037e))
+* V0.3.3 — clean-slate fixes ahead of V0.4.0 ([#287](https://github.com/chrreiter/HAventory/issues/287)) ([1cce96e](https://github.com/chrreiter/HAventory/commit/1cce96e1b337fcd2bcae7ed2bf33180e6a559a77))
+
 ## [0.3.2](https://github.com/chrreiter/HAventory/compare/v0.3.1...v0.3.2) (2026-08-05)
 
 
