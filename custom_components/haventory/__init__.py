@@ -185,6 +185,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "dropped_items": len(load_report.dropped_item_ids),
                 "dropped_locations": len(load_report.dropped_location_ids),
                 "cyclic_locations": len(load_report.cyclic_location_ids),
+                "unrooted_locations": len(load_report.unrooted_location_ids),
             },
         )
         # Refuse rather than load what could be read. Every WS and service handler
@@ -898,7 +899,9 @@ def _corrupt_store_message(report: LoadReport, *, store_key: str) -> str:
 
     The message reaches the config entry's error state, so it names counts, a few
     ids to grep for, and the file itself — a bare "corrupt storage" would leave
-    the user with nowhere to look.
+    the user with nowhere to look. Ids are labelled by kind, because they are the
+    key to search under and an unlabelled mixed list says which to try only by
+    luck.
     """
 
     parts: list[str] = []
@@ -907,19 +910,26 @@ def _corrupt_store_message(report: LoadReport, *, store_key: str) -> str:
     if report.dropped_location_ids:
         parts.append(f"{len(report.dropped_location_ids)} location(s)")
     if report.cyclic_location_ids:
-        parts.append(f"{len(report.cyclic_location_ids)} location(s) in a parent cycle")
+        cycle = f"{len(report.cyclic_location_ids)} location(s) in a parent cycle"
+        if report.unrooted_location_ids:
+            cycle += f" (blocking {len(report.unrooted_location_ids)} below them)"
+        parts.append(cycle)
 
+    # Cycle members only. A location merely sitting below a cycle needs no edit,
+    # so naming it sends the user to a row where there is nothing to change.
     sample = [
-        *report.dropped_item_ids[:_CORRUPT_SAMPLE_IDS],
-        *report.dropped_location_ids[:_CORRUPT_SAMPLE_IDS],
-        *report.cyclic_location_ids[:_CORRUPT_SAMPLE_IDS],
+        *(f"item {i}" for i in report.dropped_item_ids[:_CORRUPT_SAMPLE_IDS]),
+        *(f"location {i}" for i in report.dropped_location_ids[:_CORRUPT_SAMPLE_IDS]),
+        *(f"location {i} (parent_id)" for i in report.cyclic_location_ids[:_CORRUPT_SAMPLE_IDS]),
     ]
-    detail = f" First affected ids: {', '.join(sample)}." if sample else ""
+    detail = f" First affected ids: {'; '.join(sample)}." if sample else ""
     return (
         f"HAventory could not read {' and '.join(parts)} from .storage/{store_key}, "
         f"so setup stopped instead of loading a partial inventory and overwriting the "
         f"file on the next change.{detail} The store has been left untouched — restore "
-        f"it from a backup, or repair those entries, then reload the integration."
+        f"it from a backup, or repair those entries, then reload the integration. "
+        f"Removing and re-adding the integration will not help: it leaves the file "
+        f"exactly as it is, so setup stops here again."
     )
 
 

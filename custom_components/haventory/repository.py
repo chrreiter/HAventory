@@ -101,6 +101,30 @@ UNSET: object = object()
 TRIGRAM_MIN_LEN = 3
 PREFIX_MIN_LEN = 2
 
+#: Rows of one kind logged individually before ``load_state`` switches to a total.
+#:
+#: A drop is per-row, so a wholesale corruption would otherwise emit one ERROR
+#: record per row — a store with a thousand broken items buries every other line
+#: in the log the user was told to go and read. Enough ids to grep for, then the
+#: count, which is the part that says how bad it is.
+LOAD_DROP_LOG_LIMIT = 10
+
+
+def _log_dropped_overflow(op: str, dropped: int) -> None:
+    """Report the drops that were counted but not logged individually."""
+
+    if dropped <= LOAD_DROP_LOG_LIMIT:
+        return
+    LOGGER.error(
+        "Further rows failed to load from persisted state; ids omitted",
+        extra={
+            "domain": "haventory",
+            "op": op,
+            "dropped_total": dropped,
+            "dropped_logged": LOAD_DROP_LOG_LIMIT,
+        },
+    )
+
 
 def _coerce_canonical_ts(value: object, *, fallback: str | None = None) -> str:
     """Return a canonical UTC timestamp, backfilling non-canonical input.
@@ -134,13 +158,21 @@ class LoadReport:
 
     dropped_item_ids: tuple[str, ...] = ()
     dropped_location_ids: tuple[str, ...] = ()
+    #: Locations whose own ``parent_id`` closes a loop — the entries a repair edits.
     cyclic_location_ids: tuple[str, ...] = ()
+    #: Locations left unreachable *because* of those, needing no edit of their own.
+    unrooted_location_ids: tuple[str, ...] = ()
 
     @property
     def has_corruption(self) -> bool:
         """True when the payload held anything this build could not load."""
 
-        return bool(self.dropped_item_ids or self.dropped_location_ids or self.cyclic_location_ids)
+        return bool(
+            self.dropped_item_ids
+            or self.dropped_location_ids
+            or self.cyclic_location_ids
+            or self.unrooted_location_ids
+        )
 
 
 class Repository:
@@ -774,8 +806,15 @@ class Repository:
             cursor = parent_key
         return ancestors
 
-    def _cyclic_location_ids(self) -> tuple[str, ...]:
-        """Location ids whose parent chain never reaches a root.
+    def _unrooted_location_ids(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Split the locations that never reach a root into members and descendants.
+
+        Returns ``(cycle_members, blocked_below)``. Only a member's own
+        ``parent_id`` closes the loop, so it is the only entry editing can fix;
+        everything below it is unreachable purely as a consequence and needs no
+        edit of its own. Reporting the two together would name ids whose repair
+        changes nothing — and since ids sort arbitrarily, the members can fall
+        outside any truncated sample.
 
         Reported rather than dropped: removing a cyclic location cascades into its
         children and their items, and setup refuses on a corrupt store anyway, so
@@ -784,28 +823,55 @@ class Repository:
         """
 
         acyclic: set[str] = set()
-        cyclic: set[str] = set()
+        members: set[str] = set()
+        unrooted: set[str] = set()
         for start in self._locations_by_id:
-            if start in acyclic or start in cyclic:
+            if start in acyclic or start in unrooted:
                 continue
             chain: list[str] = []
-            seen: set[str] = set()
+            depth_of: dict[str, int] = {}
             cursor: str | None = start
-            hit_cycle = False
+            # Where in `chain` the loop closes; None means the walk ended at a
+            # root or a dangling parent, neither of which is a cycle.
+            closes_at: int | None = None
             while cursor is not None:
                 if cursor in acyclic:
                     break
-                if cursor in seen or cursor in cyclic:
-                    hit_cycle = True
+                if cursor in depth_of:
+                    closes_at = depth_of[cursor]
                     break
-                seen.add(cursor)
+                if cursor in unrooted:
+                    # Runs into a loop already charted: this whole chain is
+                    # blocked, and the members were recorded when it was found.
+                    closes_at = len(chain)
+                    break
+                depth_of[cursor] = len(chain)
                 chain.append(cursor)
                 loc = self._locations_by_id.get(cursor)
                 if loc is None:
                     break
                 cursor = str(loc.parent_id) if loc.parent_id is not None else None
-            (cyclic if hit_cycle else acyclic).update(chain)
-        return tuple(sorted(cyclic))
+            if closes_at is None:
+                acyclic.update(chain)
+                continue
+            unrooted.update(chain)
+            members.update(chain[closes_at:])
+        return tuple(sorted(members)), tuple(sorted(unrooted - members))
+
+    def _build_load_report(
+        self, dropped_item_ids: list[str], dropped_location_ids: list[str]
+    ) -> LoadReport:
+        """Summarize what the load could not read, closing off the capped logging."""
+
+        _log_dropped_overflow("load_state_items", len(dropped_item_ids))
+        _log_dropped_overflow("load_state_locations", len(dropped_location_ids))
+        cycle_members, blocked_below = self._unrooted_location_ids()
+        return LoadReport(
+            dropped_item_ids=tuple(dropped_item_ids),
+            dropped_location_ids=tuple(dropped_location_ids),
+            cyclic_location_ids=cycle_members,
+            unrooted_location_ids=blocked_below,
+        )
 
     def _rebuild_location_hierarchy_indexes(self) -> None:
         """Rebuild location-based hierarchy indexes from scratch."""
@@ -1892,14 +1958,15 @@ class Repository:
                     # ERROR: the row is gone from memory, and the next save would
                     # write the store without it. Setup refuses on this, so the
                     # file still holds it when the user goes looking.
-                    LOGGER.error(
-                        "Failed to load location from persisted state",
-                        extra={
-                            "domain": "haventory",
-                            "op": "load_state_locations",
-                            "location_id": str(loc_id),
-                        },
-                    )
+                    if len(dropped_location_ids) < LOAD_DROP_LOG_LIMIT:
+                        LOGGER.error(
+                            "Failed to load location from persisted state",
+                            extra={
+                                "domain": "haventory",
+                                "op": "load_state_locations",
+                                "location_id": str(loc_id),
+                            },
+                        )
                     dropped_location_ids.append(str(loc_id))
                     continue
 
@@ -1962,22 +2029,19 @@ class Repository:
                     ValidationError,
                 ):
                     # ERROR for the same reason as the location path above.
-                    LOGGER.error(
-                        "Failed to load item from persisted state",
-                        extra={
-                            "domain": "haventory",
-                            "op": "load_state_items",
-                            "item_id": str(item_id),
-                        },
-                    )
+                    if len(dropped_item_ids) < LOAD_DROP_LOG_LIMIT:
+                        LOGGER.error(
+                            "Failed to load item from persisted state",
+                            extra={
+                                "domain": "haventory",
+                                "op": "load_state_items",
+                                "item_id": str(item_id),
+                            },
+                        )
                     dropped_item_ids.append(str(item_id))
                     continue
 
-        self._last_load_report = LoadReport(
-            dropped_item_ids=tuple(dropped_item_ids),
-            dropped_location_ids=tuple(dropped_location_ids),
-            cyclic_location_ids=self._cyclic_location_ids(),
-        )
+        self._last_load_report = self._build_load_report(dropped_item_ids, dropped_location_ids)
 
         # Increment generation after load to mark as modified since load
         self._increment_generation()

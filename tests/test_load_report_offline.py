@@ -21,7 +21,7 @@ import uuid
 
 import pytest
 from custom_components.haventory.models import ItemCreate
-from custom_components.haventory.repository import LoadReport, Repository
+from custom_components.haventory.repository import LOAD_DROP_LOG_LIMIT, LoadReport, Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 
 
@@ -176,6 +176,71 @@ def test_a_cycle_is_reported_without_dropping_anything() -> None:
     assert report.has_corruption is True
 
 
+def test_only_the_cycle_members_are_named_as_cyclic() -> None:
+    """A branch hanging off a cycle is reported apart from the cycle itself.
+
+    Only a member's own ``parent_id`` closes the loop, so it is the only row an
+    edit can fix; the descendants are unreachable purely as a consequence. Naming
+    them together sends the user to rows where there is nothing to change — and
+    because ids sort arbitrarily, the members can fall outside a truncated sample
+    entirely, which is what a real two-location cycle with three descendants did.
+    """
+
+    payload = _cyclic_payload()
+    a, b = sorted(payload["locations"])  # type: ignore[arg-type]
+    below = [str(uuid.uuid4()) for _ in range(3)]
+    parent = a
+    for index, child in enumerate(below):
+        payload["locations"][child] = _loc(child, f"Below {index}", parent)  # type: ignore[index]
+        parent = child
+
+    report = Repository.from_state(payload).last_load_report
+
+    assert set(report.cyclic_location_ids) == {a, b}
+    assert set(report.unrooted_location_ids) == set(below)
+    assert not set(report.cyclic_location_ids) & set(report.unrooted_location_ids)
+
+
+def test_a_wholesale_item_corruption_does_not_flood_the_log(caplog) -> None:
+    """Every broken row is counted; only the first few are named.
+
+    The log is where the refusal message sends the user, so a store with a
+    thousand unreadable rows must not bury every other line under a thousand
+    ERROR records.
+    """
+
+    broken = {f"not-a-uuid-{n}": {"id": f"not-a-uuid-{n}", "name": "Broken"} for n in range(200)}
+    payload = {
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "locations": {},
+        "items": broken,
+    }
+
+    with caplog.at_level(logging.DEBUG):
+        repo = Repository.from_state(payload)
+
+    assert len(repo.last_load_report.dropped_item_ids) == len(broken)
+    named = [r for r in caplog.records if "Failed to load item" in r.getMessage()]
+    assert len(named) == LOAD_DROP_LOG_LIMIT
+    # The count still reaches the log — it is the part that says how bad it is.
+    overflow = [r for r in caplog.records if "Further rows failed to load" in r.getMessage()]
+    assert [getattr(r, "dropped_total", None) for r in overflow] == [len(broken)]
+
+
+def test_a_bounded_corruption_logs_every_row_and_no_summary(caplog) -> None:
+    """Under the cap nothing is withheld, and no summary claims otherwise."""
+
+    broken = {f"not-a-uuid-{n}": {"id": f"not-a-uuid-{n}", "name": "Broken"} for n in range(3)}
+    payload = {"schema_version": CURRENT_SCHEMA_VERSION, "locations": {}, "items": broken}
+
+    with caplog.at_level(logging.DEBUG):
+        Repository.from_state(payload)
+
+    named = [r for r in caplog.records if "Failed to load item" in r.getMessage()]
+    assert len(named) == len(broken)
+    assert not [r for r in caplog.records if "Further rows failed to load" in r.getMessage()]
+
+
 @pytest.mark.parametrize(
     ("report", "expected"),
     [
@@ -183,6 +248,7 @@ def test_a_cycle_is_reported_without_dropping_anything() -> None:
         (LoadReport(dropped_item_ids=("i",)), True),
         (LoadReport(dropped_location_ids=("l",)), True),
         (LoadReport(cyclic_location_ids=("c",)), True),
+        (LoadReport(unrooted_location_ids=("u",)), True),
     ],
 )
 def test_has_corruption_covers_every_kind(report: LoadReport, expected: bool) -> None:
