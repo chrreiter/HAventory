@@ -10,12 +10,14 @@ WebSocket API via `.claude/skills/run-haventory/driver.py`; drive/screenshot the
 or the sidebar panel in the real HA frontend via
 `.claude/skills/run-haventory/screenshot.mjs` (Playwright).
 
-All paths below are relative to the repo root. This is a **Windows host**: run the
-`.sh` scripts through Git Bash (they work there), everything else is shell-agnostic.
+All paths below are relative to the repo root and every command is **Linux/bash**, which is
+the only development host the repo supports — on Windows the supported path is WSL2
+(`CONTRIBUTING.md`). Notes tagged **[Windows/Git Bash]** cover driving a Windows host's
+Docker and filesystem through Git Bash instead; nothing else here depends on them.
 
 ## Prerequisites
 
-- Docker Desktop with the dev container **`home-assistant`** running
+- Docker (Docker Desktop on a Windows host) with the dev container **`home-assistant`** running
   (`ghcr.io/home-assistant/home-assistant:stable`, port 8123). Check: `docker ps`.
   It was provisioned once by hand (image run + HA onboarding in the browser); if it's
   ever gone, that one-time onboarding has to be redone in a browser — not scripted.
@@ -53,7 +55,7 @@ cd .claude/skills/run-haventory && npm install --no-audit --no-fund && npx playw
 
 Builds the card **into** `custom_components/haventory/www/` so it rides along with the
 component copy, then copies the integration into the container, restarts HA (~30 s), and
-initialises the config entry via WS. Run from Git Bash:
+initialises the config entry via WS. Run from the repo root:
 
 ```bash
 set -a; . ./.env; set +a
@@ -256,7 +258,7 @@ node screenshot.mjs --path /haventory --element haventory-panel --out panel.png
 defaults to `haventory-card`. The sidebar panel is a **different custom element** —
 `/haventory` renders `<haventory-panel>` and no card at all — so shooting it without
 `--element` only ever times out. Both flags are needed together; the script says which
-roots exist when the wait times out. From Git Bash, prefix the command with
+roots exist when the wait times out. [Windows/Git Bash] prefix the command with
 `MSYS_NO_PATHCONV=1` — `--path /haventory` is exactly the leading-slash value the
 path-conversion gotcha below mangles.
 
@@ -312,9 +314,11 @@ momentum-scroll quirks) still need a real device — see "Real phone on the LAN"
 #### Real phone on the LAN (ground truth)
 
 The container publishes 8123 on the host, so a phone on the same network can hit
-`http://<host-LAN-IP>:8123` directly (`ipconfig` for the IP; Windows Firewall must allow
-inbound 8123 on the private profile). This is the only way to test real fingers, momentum
-scrolling, iOS Safari, and the HA Companion app's webview.
+`http://<host-LAN-IP>:8123` directly — `ip addr` for the IP ([Windows/Git Bash] `ipconfig`),
+and the host firewall has to allow inbound 8123 (on Windows, on the private profile). Docker
+running *inside* WSL2 publishes onto the VM rather than the LAN, so that case additionally
+needs mirrored networking mode or a `netsh interface portproxy` forward. This is the only way
+to test real fingers, momentum scrolling, iOS Safari, and the HA Companion app's webview.
 
 ### Drive the import sheet
 
@@ -339,7 +343,7 @@ This is what the WS-level scripts cannot check: whether the sheet *describes* th
 backend actually applies. `replace` overwrites the ids the document carries and deletes
 nothing, which is only visible by reading the sheet next to the counts it produces.
 
-From Git Bash, pass the document as a native path with forward slashes
+[Windows/Git Bash] pass the document as a native path with forward slashes
 (`"C:/Users/you/backup.json"`) and prefix the command with `MSYS_NO_PATHCONV=1` if you
 override `--path` — see the path-conversion gotcha below.
 
@@ -496,12 +500,12 @@ No HA and no dependency beyond Node:
 cd .claude/skills/run-haventory && node --test
 ```
 
-The in-process HA integration suite (`scripts/test_integration.sh`, real HA core via
-phacc) does **not** run on this Windows host: the script builds a POSIX venv path and HA
-core imports `fcntl`. A throwaway `python:3.14-slim` container is the proven way to run it
-here — one `docker run` with the repo bind-mounted, `pip install -r
+The in-process HA integration suite (`scripts/test_integration.sh`, real HA core via phacc)
+runs directly on Linux/WSL2. It cannot run on a Windows host at all — the script builds a
+POSIX venv path and HA core imports `fcntl` — and a throwaway `python:3.14-slim` container is
+the proven way to get it there: one `docker run` with the repo bind-mounted, `pip install -r
 requirements-integration.txt`, then `pytest -o asyncio_mode=auto tests/integration`. That
-path also covers hosts whose WSL has no DNS.
+container path also covers a WSL install whose DNS is broken.
 
 Online smoke against the running container (non-destructive as long as
 `HA_CONTAINER` is unset — verify with `echo $HA_CONTAINER` first):
@@ -516,8 +520,8 @@ destructive clean-start mode), then `Online smoke test completed successfully.`
 
 ## Gotchas
 
-- **Git Bash rewrites any argument that looks like an absolute POSIX path** (MSYS path
-  conversion), so a leading-slash flag value never reaches the script intact:
+- [Windows/Git Bash] **Git Bash rewrites any argument that looks like an absolute POSIX
+  path** (MSYS path conversion), so a leading-slash flag value never reaches the script intact:
   `node screenshot.mjs --path /dashboard-dev/wide` navigates to
   `http://localhost:8123C:/Program Files/Git/dashboard-dev/wide`, and a `/c/Users/...`
   document path arrives as `C:\c\Users\...`. The per-pass form is rewritten too —
