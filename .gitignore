@@ -248,3 +248,8 @@ haventory.zip
 # Node — the card has its own .gitignore, but tooling run from the repo root
 # (npx, vitest) can drop a node_modules/ here too.
 node_modules/
+
+# Claude Code scratch checkouts. The rest of .claude/ is tracked on purpose —
+# settings, hooks and skills are part of the repo — but worktrees are per-session
+# working copies that would otherwise show as untracked in every session.
+.claude/worktrees/
