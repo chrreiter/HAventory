@@ -4,14 +4,13 @@ Scenarios:
 - distinct_values returns distinct categories and tags with usage counts
 - categories are grouped case-insensitively with a representative display label
 - an empty repository yields empty lists
-- unknown/extra request fields are rejected by the voluptuous schema
-  (vol.PREVENT_EXTRA, matching real Home Assistant command validation)
+- unknown/extra request fields are refused before the handler runs, as real
+  Home Assistant refuses them
 """
 
 from __future__ import annotations
 
 import pytest
-import voluptuous as vol
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
@@ -23,10 +22,7 @@ from homeassistant.core import HomeAssistant
 async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
     handlers = hass.data.get("__ws_commands__", [])
     for h in handlers:
-        schema = getattr(h, "_ws_schema", None)
-        if not callable(h) or not isinstance(schema, dict):
-            continue
-        if schema.get("type") != type_:
+        if not callable(h) or getattr(h, "_ws_command", None) != type_:
             continue
         req = {"id": _id, "type": type_}
         req.update(payload)
@@ -129,21 +125,20 @@ async def test_distinct_values_returns_custom_field_keys() -> None:
     assert res["result"]["custom_field_keys"] == ["serial", "Voltage", "warranty_until"]
 
 
-def test_distinct_values_schema_rejects_unknown_field() -> None:
-    """Unknown request fields are rejected (vol.PREVENT_EXTRA, as in real HA).
+@pytest.mark.asyncio
+async def test_distinct_values_rejects_unknown_field() -> None:
+    """Unknown request fields are refused before the handler runs.
 
-    The offline stub does not apply the command schema, so we reconstruct the
-    schema exactly as Home Assistant does (extending a base that requires `id`
-    and defaults to PREVENT_EXTRA) and assert an extra field is rejected.
+    ``haventory/distinct_values`` declares nothing but its type, which Home
+    Assistant compiles to the ``False`` schema: `id` and `type` are the only
+    keys such a frame may carry.
     """
 
-    schema_dict = ws_distinct_values._ws_schema
-    assert isinstance(schema_dict, dict)
-    full = vol.Schema({vol.Required("id"): int, **schema_dict})
+    hass = _fresh_hass()
+    assert ws_distinct_values._ws_schema is False
 
-    # Valid request passes.
-    full({"id": 1, "type": "haventory/distinct_values"})
+    assert (await _send(hass, 1, "haventory/distinct_values"))["success"] is True
 
-    # Unknown field is rejected.
-    with pytest.raises(vol.Invalid):
-        full({"id": 1, "type": "haventory/distinct_values", "bogus": 1})
+    res = await _send(hass, 2, "haventory/distinct_values", bogus=1)
+    assert res["success"] is False
+    assert res["error"]["code"] == "invalid_format"

@@ -51,8 +51,7 @@ def _handler(hass: HomeAssistant, type_: str):
     """The registered handler for one command type, as HA would dispatch to it."""
 
     for handler in hass.data.get("__ws_commands__", []):
-        schema = getattr(handler, "_ws_schema", None)
-        if callable(handler) and isinstance(schema, dict) and schema.get("type") == type_:
+        if callable(handler) and getattr(handler, "_ws_command", None) == type_:
             return handler
     raise AssertionError(f"No handler registered for type {type_}")
 
