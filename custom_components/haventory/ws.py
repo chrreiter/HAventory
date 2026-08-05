@@ -32,7 +32,6 @@ from .const import (
     INTEGRATION_VERSION,
     MAX_ATTACHMENT_BYTES,
     MAX_PICTURES_PER_ITEM,
-    MEDIA_URL_TEMPLATE,
 )
 from .exceptions import (
     ConflictError,
@@ -845,8 +844,10 @@ async def ws_config(
     result = {
         "card_title": title if isinstance(title, str) and title else DEFAULT_CARD_TITLE,
         "statuses": [serialize_status_definition(d) for d in _repo(hass).list_statuses()],
+        # The route itself is not here: it is a constant on both sides, pinned
+        # across the language boundary by tests/test_frontend_registration.py.
+        # What the card cannot derive is the caps and the accepted types.
         "media": {
-            "url_template": MEDIA_URL_TEMPLATE,
             "picture_mime_types": list(ATTACHMENT_PICTURE_MIME_TYPES),
             "max_pictures_per_item": MAX_PICTURES_PER_ITEM,
             "max_attachment_bytes": MAX_ATTACHMENT_BYTES,

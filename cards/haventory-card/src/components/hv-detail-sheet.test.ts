@@ -1,5 +1,5 @@
 import './hv-detail-sheet';
-import { makeItem } from '../test.utils';
+import { makeAttachment, makeItem, makeMediaBindings } from '../test.utils';
 import type { HVDetailSheet } from './hv-detail-sheet';
 import type { Item } from '../store/types';
 
@@ -320,5 +320,128 @@ describe('hv-detail-sheet: edit view', () => {
     el.item = makeItem({ id: '2', name: 'B' });
     await el.updateComplete;
     expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
+  });
+});
+
+describe('hv-detail-sheet: pictures', () => {
+  const shots = () => [makeAttachment({ id: 'att-1' }), makeAttachment({ id: 'att-2' })];
+
+  it('renders one figure per picture', async () => {
+    const el = await mount(
+      { id: 'i-1', name: 'Drill', attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    const figures = all(el, '[data-testid="sheet-photo"]');
+    expect(figures).toHaveLength(2);
+    const images = all(el, '[data-testid="sheet-gallery"] img') as HTMLImageElement[];
+    expect(images.map((i) => i.getAttribute('alt'))).toEqual([
+      'Drill — photo 1 of 2',
+      'Drill — photo 2 of 2',
+    ]);
+  });
+
+  it('renders no gallery at all for an item with no pictures', async () => {
+    const el = await mount({ name: 'Screws' }, { media: makeMediaBindings() });
+
+    expect(q(el, '[data-testid="sheet-gallery"]')).toBeNull();
+  });
+
+  it('leaves a manual out of the picture strip', async () => {
+    const el = await mount(
+      { attachments: [makeAttachment({ kind: 'manual', mime: 'application/pdf' })] },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-gallery"]')).toBeNull();
+  });
+
+  it('opens the lightbox on the picture that was tapped', async () => {
+    const el = await mount(
+      { id: 'i-1', name: 'Drill', attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    all(el, '[data-testid="sheet-photo-open"]')[1].click();
+    await el.updateComplete;
+
+    const lightbox = q(el, '[data-testid="sheet-lightbox"]');
+    expect(lightbox).toBeTruthy();
+    expect(lightbox?.getAttribute('aria-label')).toBe('Drill — photo 2 of 2');
+  });
+
+  it('closes the lightbox on Escape and returns focus to the opener', async () => {
+    const el = await mount(
+      { id: 'i-1', name: 'Drill', attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    const opener = all(el, '[data-testid="sheet-photo-open"]')[0];
+    opener.focus();
+    opener.click();
+    await el.updateComplete;
+    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeTruthy();
+
+    q(el, '[data-testid="sheet-lightbox"]')?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
+    expect(el.shadowRoot?.activeElement).toBe(opener);
+  });
+
+  // The bottom sheet under it closes on Escape too; without stopping the event
+  // the photo and the whole item would go at once.
+  it('does not let the sheet close on the Escape that closes the lightbox', async () => {
+    const el = await mount(
+      { id: 'i-1', attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    const seen = captured(el, ['cancel']);
+
+    all(el, '[data-testid="sheet-photo-open"]')[0].click();
+    await el.updateComplete;
+    q(el, '[data-testid="sheet-lightbox"]')?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    await el.updateComplete;
+
+    expect(seen).toEqual([]);
+  });
+
+  it('closes the lightbox from its own close button', async () => {
+    const el = await mount(
+      { id: 'i-1', attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    all(el, '[data-testid="sheet-photo-open"]')[0].click();
+    await el.updateComplete;
+    q(el, '[data-testid="sheet-lightbox-close"]')?.click();
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
+  });
+
+  it('drops the lightbox when the sheet moves to another item', async () => {
+    const el = await mount(
+      { id: 'i-1', attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    all(el, '[data-testid="sheet-photo-open"]')[0].click();
+    await el.updateComplete;
+
+    el.item = makeItem({ id: 'i-2' });
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
   });
 });

@@ -26,6 +26,7 @@ import './hv-checkout-popover';
 import './hv-overflow-menu';
 import type { HVFilterPanel } from './hv-filter-panel';
 import type { HVItemEditor } from './hv-item-editor';
+import type { MediaBindings } from '../ui/media';
 import type { ItemCreate, ItemUpdate } from '../store/types';
 
 const SEARCH_DEBOUNCE_MS = 200;
@@ -381,6 +382,24 @@ export class HVCardShell extends LitElement {
 
   private readonly responsive = new ResponsiveController(this);
   private _storeUnsub?: () => void;
+  private _media: MediaBindings | null = null;
+
+  /**
+   * Picture access for every surface below, built once per store.
+   *
+   * Rebuilt only when the store is swapped: a fresh object each render would
+   * read as a changed property on every row and re-render the whole list.
+   */
+  private get media(): MediaBindings | null {
+    const store = this.store;
+    if (!store) return null;
+    this._media ??= {
+      sign: (path, expires) => store.signMediaPath(path, expires),
+      upload: (itemId, file) => store.uploadAttachment(itemId, file),
+      remove: (itemId, attachmentId) => store.removeAttachment(itemId, attachmentId),
+    };
+    return this._media;
+  }
 
   get mobile(): boolean {
     return this.responsive.mobile;
@@ -408,6 +427,7 @@ export class HVCardShell extends LitElement {
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('store') && this.store) {
+      this._media = null;
       this._storeUnsub?.();
       this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
       this._searchDraft = this.store.state.value.filters.q;
@@ -560,6 +580,8 @@ export class HVCardShell extends LitElement {
     return html`<hv-item-editor
       data-testid="inline-editor"
       .areas=${st?.areasCache?.areas ?? []}
+      .media=${this.media}
+      .mediaConfig=${st?.mediaConfig ?? null}
       ?noHeader=${opts.noHeader ?? false}
       .item=${itemId ? (this._itemById(itemId) ?? null) : null}
       .locations=${st?.locationsFlatCache ?? null}
@@ -1003,6 +1025,7 @@ export class HVCardShell extends LitElement {
 
       <hv-list
         .areas=${st?.areasCache?.areas ?? []}
+        .media=${this.media}
         data-testid="card-list"
         .items=${st?.items ?? []}
         .loading=${st?.loading ?? true}
@@ -1144,6 +1167,8 @@ export class HVCardShell extends LitElement {
       ${mobile
         ? html`<hv-detail-sheet
             .areas=${st?.areasCache?.areas ?? []}
+            .media=${this.media}
+            .mediaConfig=${st?.mediaConfig ?? null}
             data-testid="card-detail-sheet"
             ?open=${this._detailItemId !== null}
             .item=${this._detailItemId ? (this._itemById(this._detailItemId) ?? null) : null}

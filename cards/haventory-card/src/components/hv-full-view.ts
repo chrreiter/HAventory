@@ -28,6 +28,7 @@ import type { BulkProgress, BulkResultView, BulkRunDetail } from './hv-bulk-bar'
 import './hv-bulk-bar';
 import './hv-confirm';
 import './hv-data-table';
+import type { MediaBindings } from '../ui/media';
 import './hv-filter-chips';
 import './hv-filter-panel';
 import './hv-item-editor';
@@ -723,6 +724,20 @@ export class HVFullView extends LitElement {
   ];
 
   @property({ attribute: false }) store!: Store;
+
+  private _media: MediaBindings | null = null;
+
+  /** Picture access for the editor this view hosts; built once per store. */
+  private get media(): MediaBindings | null {
+    const store = this.store;
+    if (!store) return null;
+    this._media ??= {
+      sign: (path, expires) => store.signMediaPath(path, expires),
+      upload: (itemId, file) => store.uploadAttachment(itemId, file),
+      remove: (itemId, attachmentId) => store.removeAttachment(itemId, attachmentId),
+    };
+    return this._media;
+  }
   @property({ type: Boolean, reflect: true }) open = false;
   @property({ type: String }) heading = DEFAULT_CARD_TITLE;
   @property({ attribute: false }) columns: ColumnKey[] = [];
@@ -1764,6 +1779,8 @@ export class HVFullView extends LitElement {
                   <hv-item-editor
                     data-testid="full-editor"
                     .areas=${st?.areasCache?.areas ?? []}
+                    .media=${this.media}
+                    .mediaConfig=${st?.mediaConfig ?? null}
                     .item=${this._editing === 'new'
                       ? null
                       : (st?.items.find((i) => i.id === this._editing) ?? null)}

@@ -31,6 +31,7 @@ from custom_components.haventory.const import (
     CONF_CARD_TITLE,
     CONF_SIDEBAR_PANEL_ENABLED,
     DEFAULT_CARD_TITLE,
+    MEDIA_URL_TEMPLATE,
     PANEL_ELEMENT_NAME,
     PANEL_ICON,
     PANEL_URL_PATH,
@@ -762,6 +763,22 @@ def test_the_sidebar_icon_is_the_one_the_card_bundle_publishes() -> None:
         return match.group(1)
 
     assert PANEL_ICON == f"{declared('HAVENTORY_ICONSET')}:{declared('HAVENTORY_ICON_NAME')}"
+
+
+def test_the_card_builds_media_urls_on_the_route_the_backend_serves() -> None:
+    """The attachment route is a constant on both sides and checked by neither.
+
+    The card builds a media path itself, signs it, and puts the result straight
+    into an ``<img src>``; a disagreement here is a 404 per photo, with nothing
+    in any log to say the two spellings drifted apart.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "media.ts").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r"^export const MEDIA_URL_TEMPLATE = '([^']+)';$", source, re.MULTILINE)
+    assert match is not None, "MEDIA_URL_TEMPLATE is no longer declared in media.ts"
+
+    assert match.group(1) == MEDIA_URL_TEMPLATE
 
 
 @pytest.mark.asyncio

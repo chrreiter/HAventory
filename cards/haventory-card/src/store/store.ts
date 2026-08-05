@@ -320,6 +320,7 @@ export class Store {
       healthCache: null,
       versionInfo: null,
       cardTitle: null,
+      mediaConfig: null,
       distinctValuesCache: null,
       connected: { items: false, stats: false },
       degraded: { ...NO_DEGRADATION },
@@ -794,6 +795,39 @@ export class Store {
     const config = await this.run(() => this.ws.config()).catch(() => null);
     const title = config?.card_title;
     if (typeof title === 'string' && title) this.stateObs.set({ cardTitle: title });
+    if (config?.media) this.stateObs.set({ mediaConfig: config.media });
+  }
+
+  // ---------- Attachments ----------
+
+  /**
+   * Upload one file and attach it to an item.
+   *
+   * Its own action rather than part of the item save: an 8 MB POST inside a
+   * form submit makes the save look hung. Errors are thrown rather than pushed
+   * onto the error queue — the picker shows them per file, next to the file
+   * that failed, which a global banner cannot do.
+   */
+  async uploadAttachment(itemId: string, file: File, expectedVersion?: number): Promise<Item> {
+    const updated = await this.ws.uploadAttachment(itemId, file, 'picture', expectedVersion);
+    this.applyOptimistic(updated);
+    return updated;
+  }
+
+  /** Detach one file; the backend deletes the bytes with it. */
+  async removeAttachment(
+    itemId: string,
+    attachmentId: string,
+    expectedVersion?: number,
+  ): Promise<Item> {
+    const updated = await this.ws.removeAttachment(itemId, attachmentId, expectedVersion);
+    this.applyOptimistic(updated);
+    return updated;
+  }
+
+  /** Sign one attachment's media path so an `<img>` can load it. */
+  signMediaPath(path: string, expires: number): Promise<string> {
+    return this.ws.signPath(path, expires);
   }
 
   /**

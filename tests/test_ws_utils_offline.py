@@ -19,7 +19,6 @@ from custom_components.haventory.const import (
     INTEGRATION_VERSION,
     MAX_ATTACHMENT_BYTES,
     MAX_PICTURES_PER_ITEM,
-    MEDIA_URL_TEMPLATE,
 )
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
@@ -133,7 +132,6 @@ async def test_config_reports_the_attachment_caps_and_accepted_types() -> None:
     res = await _send(hass, 8, "haventory/config")
 
     media = res["result"]["media"]
-    assert media["url_template"] == MEDIA_URL_TEMPLATE
     assert media["picture_mime_types"] == list(ATTACHMENT_PICTURE_MIME_TYPES)
     assert media["max_pictures_per_item"] == MAX_PICTURES_PER_ITEM
     assert media["max_attachment_bytes"] == MAX_ATTACHMENT_BYTES

@@ -1,5 +1,5 @@
 import './hv-item-editor';
-import { makeItem } from '../test.utils';
+import { makeAttachment, makeItem, makeMediaBindings } from '../test.utils';
 import { addDays } from '../ui/relative-time';
 import type { HVItemEditor } from './hv-item-editor';
 import type { Item, ItemCreate, ItemUpdate, Location, LocationTreeNode } from '../store/types';
@@ -994,5 +994,169 @@ describe('hv-item-editor: opening', () => {
   it('focuses the name field for a new item too', async () => {
     const el = await mount(null);
     expect(el.shadowRoot?.activeElement).toBe(q(el, '[data-testid="editor-name"]'));
+  });
+});
+
+describe('hv-item-editor: pictures', () => {
+  /** Drive the hidden file input the way a picker does. */
+  function pick(el: HVItemEditor, files: File[]) {
+    const input = q(el, '[data-testid="editor-photo-input"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    input.dispatchEvent(new Event('change'));
+  }
+
+  const png = (name = 'photo.png') => new File(['x'], name, { type: 'image/png' });
+
+  const CONFIG = {
+    picture_mime_types: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+    max_pictures_per_item: 2,
+    max_attachment_bytes: 16,
+  };
+
+  it('shows no pictures section while creating an item', async () => {
+    // An attachment is filed against an item id, and a new item has none.
+    const el = await mount(null, { media: makeMediaBindings() });
+
+    expect(q(el, '[data-testid="editor-photos"]')).toBeNull();
+  });
+
+  it('renders each attached picture with a remove button', async () => {
+    const el = await mount(
+      makeItem({ id: 'i-1', name: 'Drill', attachments: [makeAttachment({ id: 'att-1' })] }),
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    expect(all(el, '[data-testid="editor-photo"]')).toHaveLength(1);
+    expect(q(el, '[data-testid="editor-photo-remove"]')?.getAttribute('aria-label')).toBe(
+      'Remove Photo of Drill',
+    );
+  });
+
+  it('uploads a picked file and adopts the version the backend came back with', async () => {
+    const media = makeMediaBindings({
+      upload: async (itemId) =>
+        makeItem({ id: itemId, version: 7, attachments: [makeAttachment({ id: 'att-new' })] }),
+    });
+    const el = await mount(makeItem({ id: 'i-1', version: 3 }), { media });
+
+    pick(el, [png()]);
+    await el.updateComplete;
+    await el.updateComplete;
+    await el.updateComplete;
+
+    expect(media.uploads).toHaveLength(1);
+    expect(media.uploads[0].itemId).toBe('i-1');
+
+    // The next save must carry the post-upload version, or the backend answers
+    // `conflict` against a version the upload already moved past.
+    const saves: CustomEvent[] = [];
+    el.addEventListener('save', (e) => saves.push(e as CustomEvent));
+    q(el, '[data-testid="editor-save"]')?.click();
+    expect(saves[0].detail.expectedVersion).toBe(7);
+  });
+
+  it('renders per-file error text and leaves the other files alone', async () => {
+    let seen = 0;
+    const media = makeMediaBindings({
+      upload: async (itemId) => {
+        seen += 1;
+        if (seen === 1) throw new Error('That file is not an image.');
+        return makeItem({ id: itemId, version: 5 });
+      },
+    });
+    const el = await mount(makeItem({ id: 'i-1', version: 1 }), { media });
+
+    pick(el, [png('bad.png'), png('good.png')]);
+    // A macrotask, so the whole sequential queue drains before the assertion.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    const entries = all(el, '[data-testid="editor-upload"]');
+    // The failed one stays with its message; the one that succeeded is gone.
+    expect(entries).toHaveLength(1);
+    expect(entries[0].dataset.state).toBe('error');
+    expect(entries[0].textContent).toContain('bad.png');
+    expect(entries[0].textContent).toContain('That file is not an image.');
+    expect(media.uploads.map((u) => u.file.name)).toEqual(['bad.png', 'good.png']);
+  });
+
+  it('refuses an oversized file before it is sent', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media, mediaConfig: CONFIG });
+
+    pick(el, [new File(['x'.repeat(64)], 'huge.png', { type: 'image/png' })]);
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+
+    expect(media.uploads).toHaveLength(0);
+    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain('over the');
+  });
+
+  it('refuses a type the backend does not accept before it is sent', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media, mediaConfig: CONFIG });
+
+    pick(el, [new File(['x'], 'drawing.svg', { type: 'image/svg+xml' })]);
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+
+    expect(media.uploads).toHaveLength(0);
+    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain('not an accepted image');
+  });
+
+  it('refuses a file past the per-item cap before it is sent', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(
+      makeItem({
+        id: 'i-1',
+        attachments: [makeAttachment({ id: 'a' }), makeAttachment({ id: 'b' })],
+      }),
+      { media, mediaConfig: CONFIG },
+    );
+
+    pick(el, [png()]);
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+
+    expect(media.uploads).toHaveLength(0);
+    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain('2 photos is the limit');
+  });
+
+  it('removes a picture and adopts the returned item', async () => {
+    const media = makeMediaBindings({
+      remove: async (itemId) => makeItem({ id: itemId, version: 9, attachments: [] }),
+    });
+    const el = await mount(
+      makeItem({ id: 'i-1', version: 4, attachments: [makeAttachment({ id: 'att-1' })] }),
+      { media },
+    );
+    await el.updateComplete;
+
+    q(el, '[data-testid="editor-photo-remove"]')?.click();
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+
+    expect(media.removals).toEqual([{ itemId: 'i-1', attachmentId: 'att-1' }]);
+    expect(all(el, '[data-testid="editor-photo"]')).toHaveLength(0);
+  });
+
+  it('offers the camera from the same control that picks a file', async () => {
+    const el = await mount(makeItem({ id: 'i-1' }), {
+      media: makeMediaBindings(),
+      mediaConfig: CONFIG,
+    });
+
+    const input = q(el, '[data-testid="editor-photo-input"]') as HTMLInputElement;
+    expect(input.getAttribute('capture')).toBe('environment');
+    expect(input.multiple).toBe(true);
+    expect(input.getAttribute('accept')).toBe(CONFIG.picture_mime_types.join(','));
+  });
+
+  it('shows a placeholder rather than a broken image when signing fails', async () => {
+    const el = await mount(
+      makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'att-1' })] }),
+      { media: makeMediaBindings({ signFails: true }) },
+    );
+    for (let i = 0; i < 3; i += 1) await el.updateComplete;
+
+    expect(q(el, '[data-testid="editor-photo-placeholder"]')).toBeTruthy();
+    expect(el.shadowRoot?.querySelector('[data-testid="editor-photo"] img')).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import './hv-list-row';
-import { makeItem } from '../test.utils';
+import { makeAttachment, makeItem, makeMediaBindings } from '../test.utils';
 import { elidePath, isLowStock } from './hv-list-row';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVListRow } from './hv-list-row';
@@ -437,5 +437,59 @@ describe('hv-list-row: selection mode', () => {
   it('reflects the selected state on the checkbox', async () => {
     const el = await mount({ id: 'item-1' }, { selectable: true, selected: true });
     expect(q(el, '[data-testid="row-select"]')?.getAttribute('aria-checked')).toBe('true');
+  });
+});
+
+describe('hv-list-row thumbnail', () => {
+  it('shows the first picture with alt text naming the item', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(
+      { id: 'i-thumb', name: 'Cordless drill', attachments: [makeAttachment({ id: 'att-1' })] },
+      { media },
+    );
+    // One more frame: the signed URL arrives from a resolved promise.
+    await el.updateComplete;
+    await el.updateComplete;
+
+    const img = q(el, '[data-testid="row-thumb"]') as HTMLImageElement | null;
+    expect(img).toBeTruthy();
+    expect(img?.getAttribute('src')).toBe('/api/haventory/media/i-thumb/att-1?authSig=test');
+    expect(img?.getAttribute('alt')).toBe('Photo of Cordless drill');
+    // Nothing is thumbnailed server-side, so the browser must be told not to
+    // fetch and decode every row's full-size photo at once.
+    expect(img?.getAttribute('loading')).toBe('lazy');
+    expect(img?.getAttribute('decoding')).toBe('async');
+  });
+
+  // A placeholder here would add a column of empty squares to a mostly
+  // photo-less inventory.
+  it('renders no image element at all for a row without a picture', async () => {
+    const el = await mount({ name: 'Screws' }, { media: makeMediaBindings() });
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-thumb"]')).toBeNull();
+    expect(el.shadowRoot?.querySelector('img')).toBeNull();
+  });
+
+  it('shows nothing rather than a broken image when signing fails', async () => {
+    const el = await mount(
+      { attachments: [makeAttachment()] },
+      { media: makeMediaBindings({ signFails: true }) },
+    );
+    await el.updateComplete;
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-thumb"]')).toBeNull();
+  });
+
+  it('ignores a non-picture attachment', async () => {
+    const el = await mount(
+      { attachments: [makeAttachment({ kind: 'manual', mime: 'application/pdf' })] },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-thumb"]')).toBeNull();
   });
 });

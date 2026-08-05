@@ -26,7 +26,16 @@ import {
 } from '../ui/item-form';
 import type { CustomFieldRow, CustomFieldType, FieldError, ItemFormModel } from '../ui/item-form';
 import { ITEM_STATUSES, statusLabel } from '../ui/status';
-import type { AreaRef, Item, ItemStatus, Location, LocationTreeNode } from '../store/types';
+import { MediaUrls, formatBytes, pictureAlt, pictures } from '../ui/media';
+import type { MediaBindings } from '../ui/media';
+import type {
+  AreaRef,
+  Item,
+  ItemStatus,
+  Location,
+  LocationTreeNode,
+  MediaConfig,
+} from '../store/types';
 import './hv-chip-input';
 import './hv-location-tree';
 import './hv-checkout-popover';
@@ -55,6 +64,21 @@ const CUSTOM_FIELD_TYPES: { value: CustomFieldType; label: string }[] = [
 const LOCATION_TREE_ID = 'editor-location-tree-holder';
 const CATEGORY_LIST_ID = 'editor-category-list';
 const MORE_FIELDS_ID = 'editor-more-fields';
+
+/** One file the picker is working through, and how it ended up. */
+interface UploadEntry {
+  id: string;
+  name: string;
+  state: 'queued' | 'uploading' | 'error';
+  message: string | null;
+}
+
+/** The message on a rejected upload, whatever shape the rejection arrived in. */
+function errorText(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  const message = (err as { message?: unknown } | null)?.message;
+  return typeof message === 'string' && message ? message : 'Upload failed.';
+}
 
 /**
  * The one edit surface: the inline expander, the full view and the mobile sheet.
@@ -639,6 +663,93 @@ export class HVItemEditor extends LitElement {
         color: var(--hv-error-deep);
         font-size: 12.5px;
       }
+      .photos {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 4px;
+      }
+      .photos figure {
+        position: relative;
+        margin: 0;
+        width: 72px;
+        height: 72px;
+        border-radius: 8px;
+        overflow: hidden;
+        background: var(--hv-surface-raised);
+      }
+      .photos img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .photos .placeholder {
+        display: grid;
+        place-items: center;
+        width: 100%;
+        height: 100%;
+        color: var(--hv-text-tertiary);
+      }
+      .photos .remove {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        display: inline-grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border: none;
+        border-radius: 50%;
+        /* Fixed dark chip rather than a theme colour: it sits on an arbitrary
+           photo, so it needs its own contrast in light and dark alike. */
+        background: rgba(0, 0, 0, 0.55);
+        color: #fff;
+      }
+      .photos .picker {
+        display: grid;
+        place-items: center;
+        gap: 2px;
+        width: 72px;
+        height: 72px;
+        border: 1px dashed var(--hv-input-border);
+        border-radius: 8px;
+        color: var(--hv-text-secondary);
+        font-size: 11px;
+        text-align: center;
+        cursor: pointer;
+      }
+      /* Visually hidden but still focusable and still clicked by the label;
+         display:none would take it out of the tab order entirely. */
+      .photos .reveal {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+      }
+      .upload-list {
+        list-style: none;
+        margin: 6px 0 0;
+        padding: 0;
+        display: grid;
+        gap: 3px;
+        font-size: 11.5px;
+        color: var(--hv-text-secondary);
+      }
+      .upload-list li {
+        display: flex;
+        gap: 8px;
+      }
+      .upload-list li .file {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 45%;
+      }
+      .upload-list li.failed .state {
+        color: var(--hv-error);
+      }
     `,
   ];
 
@@ -657,6 +768,10 @@ export class HVItemEditor extends LitElement {
   @property({ type: String }) errorMessage: string | null = null;
   /** Hide the header row when the host already provides one (the mobile sheet). */
   @property({ type: Boolean }) noHeader = false;
+  /** Picture access; null hides the pictures section entirely. */
+  @property({ attribute: false }) media: MediaBindings | null = null;
+  /** Caps and accepted types, so a doomed file is refused before it is sent. */
+  @property({ attribute: false }) mediaConfig: MediaConfig | null = null;
 
   @state() private _model: ItemFormModel = formFromItem(null);
   @state() private _errors: FieldError[] = [];
@@ -683,6 +798,22 @@ export class HVItemEditor extends LitElement {
   /** The inspection field's "+X days" row is showing, and owns the date. */
   @state() private _inspectionCustomOpen = false;
   @state() private _inspectionCustomDays = DEFAULT_CUSTOM_DAYS;
+  /** Files the picker is working through; a finished one leaves the list. */
+  @state() private _uploads: UploadEntry[] = [];
+  /**
+   * The item as the backend now holds it, once an upload has moved past the
+   * `item` property. Each upload bumps the version, so a save that still used
+   * the pre-upload one would come back `conflict`.
+   */
+  @state() private _uploaded: Item | null = null;
+
+  private readonly _urls = new MediaUrls(this);
+  private _uploadSeq = 0;
+
+  /** The item to save against: whatever the last upload returned, else the input. */
+  private get _current(): Item | null {
+    return this._uploaded ?? this.item;
+  }
 
   /**
    * The footer promises "Esc discards", but that is a keydown handler on the
@@ -695,6 +826,7 @@ export class HVItemEditor extends LitElement {
   }
 
   protected willUpdate(changed: Map<string, unknown>) {
+    this._urls.configure(this.media?.sign ?? null);
     if (changed.has('item')) {
       this._model = formFromItem(this.item);
       this._errors = [];
@@ -702,6 +834,8 @@ export class HVItemEditor extends LitElement {
       this._locationOpen = false;
       this._moreOpen = false;
       this._checkoutOpen = false;
+      this._uploads = [];
+      this._uploaded = null;
       this._closeCategory();
     }
   }
@@ -726,8 +860,15 @@ export class HVItemEditor extends LitElement {
     this._errors = errors;
     this._showErrors = true;
     if (errors.length) return;
-    const detail = this.item
-      ? { itemId: this.item.id, expectedVersion: this.item.version, changes: toUpdatePayload(this._model, this.item) }
+    // `_current`, not `item`: an upload made during this edit already moved the
+    // version on, and saving against the stale one would fail with `conflict`.
+    const current = this._current;
+    const detail = current
+      ? {
+          itemId: current.id,
+          expectedVersion: current.version,
+          changes: toUpdatePayload(this._model, current),
+        }
       : { itemId: null, expectedVersion: undefined, create: toCreatePayload(this._model) };
     this.dispatchEvent(new CustomEvent('save', { detail, bubbles: true, composed: true }));
   };
@@ -1309,6 +1450,174 @@ export class HVItemEditor extends LitElement {
     </div>`;
   }
 
+  // ---------- Pictures ----------
+
+  /**
+   * Why this file cannot be uploaded, or null when it can.
+   *
+   * A courtesy check against the caps `haventory/config` reports, so an
+   * 80 MB video is refused instantly instead of after a minute of upload. The
+   * backend re-derives all of it from the file's own bytes and is the only
+   * thing that decides.
+   */
+  private _preflight(file: File, alreadyAttached: number): string | null {
+    const config = this.mediaConfig;
+    if (!config) return null;
+    if (alreadyAttached >= config.max_pictures_per_item) {
+      return `${config.max_pictures_per_item} photos is the limit for one item.`;
+    }
+    if (file.size > config.max_attachment_bytes) {
+      return `${formatBytes(file.size)} is over the ${formatBytes(
+        config.max_attachment_bytes,
+      )} limit.`;
+    }
+    if (file.type && !config.picture_mime_types.includes(file.type)) {
+      return `${file.type} is not an accepted image type.`;
+    }
+    return null;
+  }
+
+  private _patchUpload(id: string, patch: Partial<UploadEntry>) {
+    this._uploads = this._uploads.map((u) => (u.id === id ? { ...u, ...patch } : u));
+  }
+
+  /**
+   * Upload the picked files, one at a time.
+   *
+   * Sequential rather than parallel: every upload bumps the item's version and
+   * returns the whole attachment list as of that moment, so two in flight would
+   * race and the loser's picture would vanish from the form's copy of the item.
+   * A file that fails keeps its own error message and leaves the queue behind
+   * it running.
+   */
+  private async _uploadFiles(files: File[]) {
+    const media = this.media;
+    const item = this._current;
+    if (!media || !item) return;
+    const queued: UploadEntry[] = files.map((file) => ({
+      id: `upload-${(this._uploadSeq += 1)}`,
+      name: file.name,
+      state: 'queued',
+      message: null,
+    }));
+    this._uploads = [...this._uploads, ...queued];
+
+    for (const [index, file] of files.entries()) {
+      const entry = queued[index];
+      this._patchUpload(entry.id, { state: 'uploading' });
+      const refused = this._preflight(file, pictures(this._current?.attachments).length);
+      if (refused) {
+        this._patchUpload(entry.id, { state: 'error', message: refused });
+        continue;
+      }
+      try {
+        this._uploaded = await media.upload(item.id, file);
+        this._uploads = this._uploads.filter((u) => u.id !== entry.id);
+      } catch (err) {
+        this._patchUpload(entry.id, { state: 'error', message: errorText(err) });
+      }
+    }
+  }
+
+  private async _removePicture(attachmentId: string) {
+    const media = this.media;
+    const item = this._current;
+    if (!media || !item) return;
+    try {
+      this._uploaded = await media.remove(item.id, attachmentId);
+    } catch (err) {
+      this._uploads = [
+        ...this._uploads,
+        {
+          id: `remove-${(this._uploadSeq += 1)}`,
+          name: 'Remove photo',
+          state: 'error',
+          message: errorText(err),
+        },
+      ];
+    }
+  }
+
+  /**
+   * The picture picker and the photos already attached.
+   *
+   * Only when editing an existing item: an attachment is filed against an item
+   * id, and a new item has none until it is saved.
+   */
+  private _renderPictures() {
+    const item = this._current;
+    if (!item || !this.media) return null;
+    const shots = pictures(item.attachments);
+    const accepted = this.mediaConfig?.picture_mime_types.join(',') ?? 'image/*';
+
+    return html`<div class="cell span3">
+      <span class="hv-label">Photos</span>
+      <div class="photos" data-testid="editor-photos">
+        ${shots.map((picture, index) => {
+          const src = this._urls.get(item.id, picture.id);
+          return html`<figure data-testid="editor-photo">
+            ${src
+              ? html`<img
+                  src=${src}
+                  alt=${pictureAlt(item.name, index, shots.length)}
+                  loading="lazy"
+                  decoding="async"
+                />`
+              : html`<span class="placeholder" data-testid="editor-photo-placeholder"
+                  >${icon('camera', 20)}</span
+                >`}
+            <button
+              class="remove"
+              data-testid="editor-photo-remove"
+              aria-label=${`Remove ${pictureAlt(item.name, index, shots.length)}`}
+              @click=${() => void this._removePicture(picture.id)}
+            >
+              ${icon('close', 15)}
+            </button>
+          </figure>`;
+        })}
+        <label class="picker" data-testid="editor-photo-picker">
+          ${icon('camera', 20)}
+          <span>Add photo</span>
+          <!-- capture="environment" is what opens the companion app's camera
+               straight from this control; a browser without one ignores it and
+               shows the ordinary file picker. -->
+          <input
+            class="reveal"
+            type="file"
+            accept=${accepted}
+            capture="environment"
+            multiple
+            data-testid="editor-photo-input"
+            @change=${(e: Event) => {
+              const input = e.target as HTMLInputElement;
+              const files = Array.from(input.files ?? []);
+              // Cleared so picking the same file twice still fires `change`.
+              input.value = '';
+              void this._uploadFiles(files);
+            }}
+          />
+        </label>
+      </div>
+      ${this._uploads.length
+        ? html`<ul class="upload-list" data-testid="editor-upload-list">
+            ${this._uploads.map(
+              (entry) => html`<li
+                class=${entry.state === 'error' ? 'failed' : ''}
+                data-testid="editor-upload"
+                data-state=${entry.state}
+              >
+                <span class="file">${entry.name}</span>
+                <span class="state"
+                  >${entry.state === 'error' ? entry.message : `${entry.state}…`}</span
+                >
+              </li>`,
+            )}
+          </ul>`
+        : null}
+    </div>`;
+  }
+
   private _renderMoreFields() {
     const model = this._model;
     const summary = [
@@ -1419,6 +1728,7 @@ export class HVItemEditor extends LitElement {
               @change=${(e: CustomEvent) => this._patch({ tags: (e.detail as { values: string[] }).values })}
             ></hv-chip-input>
           </div>
+          ${this._renderPictures()}
           ${this.mobile
             ? html`<div class="cell span3">${this._renderMoreFields()}</div>`
             : html`${this._renderStateFields()} ${this._renderCustomFields()}`}
