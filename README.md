@@ -10,6 +10,11 @@ Home Assistant custom integration (domain `haventory`) for household inventory t
 plus a Lit + TypeScript Lovelace card. Local-push, single-instance, HA `Store`-backed
 persistence — no external services.
 
+Items live in a nested location tree, carry tags, categories and typed custom fields, and
+can be checked out, flagged with a status, and **photographed**: pictures are stored on
+disk inside the config directory and served through an authenticated Home Assistant view,
+never from `/local`. On a phone, the picker opens the companion app's camera directly.
+
 **Targets:** Linux dev (Windows via WSL2) + `ubuntu-latest` CI. Minimum Home Assistant **2026.6.0** ⇒ Python
 **3.14** everywhere (uv provisions the interpreter automatically; the source uses 3.14-only
 PEP 758 syntax). Node **22.13+ / 24 LTS** for the card.
@@ -176,6 +181,18 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   you rebuilt by hand — which carry fresh uuids — therefore duplicates them instead of
   merging, and the backup's items follow their stored `location_id` onto the duplicate.
   Restore into an empty inventory, or onto one whose ids are still intact.
+- **A JSON export carries photo *metadata*, not the photos.** The export is one WebSocket
+  result the card writes to a file, so it cannot carry binaries; item photos live on disk
+  under `<config>/haventory/attachments/`. Importing a document onto an install that does
+  not hold those files keeps the references and shows a "file missing" state — the preview
+  reports how many before you write anything. **Home Assistant's own backups are the
+  full-fidelity path**: the media directory sits inside the config directory, so a backup
+  and restore carries the files and the store together and consistently.
+- **Photos are not resized or thumbnailed.** The full-size file is what a list row and the
+  detail gallery load, bounded only by the 8 MB per-file cap (10 pictures per item).
+  Server-side resizing would mean a Pillow dependency in a local-push integration — install
+  size, wheel availability on every HA architecture, and CPU on a Pi — so the card leans on
+  `loading="lazy"` and `decoding="async"` instead.
 
 These are tracked, with their measurements and proposed fixes, in the
 [issue tracker](https://github.com/chrreiter/HAventory/issues).

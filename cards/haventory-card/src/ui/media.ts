@@ -22,14 +22,17 @@ import type { Attachment, Item } from '../store/types';
 export const MEDIA_URL_TEMPLATE = '/api/haventory/media/{item_id}/{attachment_id}';
 
 /**
- * How long a signature is asked for, and how long before it lapses a URL is
- * replaced. Five minutes is long enough that scrolling a list never re-signs
- * and short enough that a URL copied out of the DOM is not a lasting handle.
+ * How long a signature is asked for.
+ *
+ * A browser caches by full URL, signature included, so a re-signed URL is a
+ * fresh download of bytes it already holds. Half an hour outlasts an ordinary
+ * session with a list open — no photo is fetched twice — while still being far
+ * too short for a URL copied out of the DOM to be a lasting handle.
  */
-export const SIGNED_URL_TTL_SECONDS = 300;
+export const SIGNED_URL_TTL_SECONDS = 1800;
 
 /** Re-sign this long before expiry, so an in-flight request never lands late. */
-const REFRESH_MARGIN_MS = 30_000;
+const REFRESH_MARGIN_MS = 60_000;
 
 /** Signs one path and hands back the signed one. */
 export type SignPath = (path: string, expires: number) => Promise<string>;

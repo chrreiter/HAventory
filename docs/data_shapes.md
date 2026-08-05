@@ -15,7 +15,7 @@ Object shape for persisted items and API results:
   "name": "string",
   "description": "string|null",
   "quantity": 0,
-  "status": "ok|missing|needs_repair",
+  "status": "slug (a status definition's slug; built-ins: ok|missing|needs_repair)",
   "checked_out": false,
   "due_date": "YYYY-MM-DD|null",
   "inspection_date": "YYYY-MM-DD|null",
@@ -33,7 +33,8 @@ Object shape for persisted items and API results:
     "display_path": "Garage / Shelf A",
     "sort_key": "garage / shelf a"
   },
-  "effective_area_id": "string|null"
+  "effective_area_id": "string|null",
+  "attachments": [ <Attachment>, ... ]
 }
 ```
 
@@ -48,20 +49,27 @@ A value strictly before today (UTC) means that inspection is overdue — the pop
 the `inspection_overdue_only` filter and the `inspection_overdue_count` stat. It is
 independent of `checked_out` and of `due_date`; any item can carry one.
 
-`status` is a stored per-item condition, always exactly one of `ok`, `missing`,
-`needs_repair`. It is **non-nullable** — setting `ok` is how a flagged state clears — and
-independent of `checked_out`/`quantity` (a checked-out item is not "missing"; missing means
-its whereabouts are unknown). Stores written before the field existed are migrated on load
-(schema v5's `migrate_4_to_5` backfills `ok`), and loading additionally tolerates a missing
-or unknown value as `ok`; an explicit unknown or null value in a write is rejected as
-`validation_error`.
+`status` is a stored per-item condition: exactly one slug from the store's `statuses`
+collection, seeded with `ok`, `missing` and `needs_repair`. It is **non-nullable** — setting
+`ok` is how a flagged state clears — and independent of `checked_out`/`quantity` (a
+checked-out item is not "missing"; missing means its whereabouts are unknown). Stores
+written before the field existed are migrated on load (schema v5's `migrate_4_to_5`
+backfills `ok`), and loading additionally tolerates a missing or unknown value as `ok`; an
+explicit unknown or null value in a write is rejected as `validation_error`.
+
+`attachments` is **metadata only** — the files live on disk, outside the store (see
+Attachments below). It is written by the two attachment commands and by nothing else:
+`ItemCreate` and `ItemUpdate` carry no such field, so an ordinary item save can never
+rewrite it. Unlike the derived `location_path`, attaching or detaching a file *is* an item
+edit and bumps `version` and `updated_at`. Absent on a payload written before schema v6,
+which reads as none.
 
 Input shapes:
 - ItemCreate (request payload subset; only `name` required):
   - `name: string`
   - `description?: string|null`
   - `quantity?: number>=0`
-  - `status?: "ok"|"missing"|"needs_repair"` (defaults to `ok`)
+  - `status?: <status slug>` (defaults to `ok`; validated against the live set)
   - `checked_out?: boolean`
   - `due_date?: YYYY-MM-DD|null` (only valid when `checked_out` is true)
   - `inspection_date?: YYYY-MM-DD|null` (independent of check-out state)
@@ -75,7 +83,7 @@ Input shapes:
   - `name?: string`
   - `description?: string|null`
   - `quantity?: number>=0`
-  - `status?: "ok"|"missing"|"needs_repair"` (non-nullable; `ok` clears a flagged state)
+  - `status?: <status slug>` (non-nullable; `ok` clears a flagged state)
   - `checked_out?: boolean`
   - `due_date?: YYYY-MM-DD|null` (only valid when `checked_out` is true)
   - `inspection_date?: YYYY-MM-DD|null` (null clears)
@@ -85,6 +93,55 @@ Input shapes:
   - `low_stock_threshold?: number>=0|null`
   - `custom_fields_set?: { [k: string]: scalar }`
   - `custom_fields_unset?: string[]`
+
+Neither input shape carries `attachments`: the two attachment commands are its only
+writers, so an item save can never rewrite the list.
+
+### Status definitions
+
+The store's `statuses` collection, and the `statuses` array in `haventory/config` and in an
+export document:
+```json
+{ "slug": "needs_repair", "label": "Needs repair", "order": 2 }
+```
+
+- `slug` is the immutable identity — the exact string every item stores. It is 1–64
+  characters of lowercase letters, digits and underscores.
+- `label` is the only part a rename touches, so renaming a status rewrites no item and
+  raises no `version` question, exactly as a location rename does not touch `location_path`
+  semantics.
+- `order` is display order alone; ties break by slug.
+- `ok` is the fixed default: it is what an unknown stored value coerces to and what
+  "flagged" (`status !== "ok"`) is defined against, so it is always present.
+- **An absent `statuses` section means the built-in three**, permanently — that is what
+  every store and every export document written before schema v6 carries.
+
+### Attachments
+
+Per-item file metadata. The bytes never enter the HA `Store`: it is one JSON document
+rewritten in full on every mutation, so base64 content would multiply every save and every
+`haventory/export` result.
+```json
+{
+  "id": "uuid-v4",
+  "kind": "picture|manual",
+  "filename": "drill.png",
+  "mime": "image/png",
+  "size": 20480,
+  "uploaded_at": "YYYY-MM-DDTHH:MM:SSZ"
+}
+```
+
+- `mime` is the **sniffed** type, derived from the file's own leading bytes rather than
+  what the browser declared. Pictures accept `image/jpeg`, `image/png`, `image/webp` and
+  `image/gif`; `image/svg+xml` is refused outright, because SVG carries script and the
+  media view serves from the Home Assistant origin. Manuals accept `application/pdf`.
+- `filename` is display metadata. The file on disk is named from `id` and the type.
+- Files live at `<config>/haventory/attachments/<item_id>/<attachment_id><ext>` — inside
+  the config directory so HA backups carry them, and outside both the integration package
+  (which HACS replaces on upgrade) and `<config>/www` (which is `/local`, unauthenticated).
+  They are served only through the authenticated view; see `backend_api_contract.md`.
+- Caps: 10 pictures per item, 8 MB per file. Nothing is thumbnailed server-side.
 
 ### Location
 
@@ -170,6 +227,7 @@ Counts object used in `stats` results and events:
   "inspection_overdue_count": 0,
   "missing_count": 0,
   "needs_repair_count": 0,
+  "status_counts": { "ok": 0, "missing": 0, "needs_repair": 0 },
   "locations_total": 0,
   "no_location_count": 0
 }
@@ -182,6 +240,8 @@ it moves with the calendar, so the same data can report a different count tomorr
 inventory rather than only the checked-out items, and moves with the calendar the same way.
 `missing_count` / `needs_repair_count` count items by their stored `status`; unlike the two
 calendar counts they only change on a mutation, so events keep them current.
+`status_counts` is that same count for every defined slug, `ok` included. It is additive to
+the two named keys, not a replacement for them.
 
 ### Distinct values
 
@@ -210,7 +270,8 @@ Result of `distinct_values`, used by category/tag autocomplete, the browser view
   "exported_at": "YYYY-MM-DDTHH:MM:SSZ",
   "integration_version": "0.0.1",
   "items": [ <Item>, ... ],
-  "locations": [ <Location>, ... ]
+  "locations": [ <Location>, ... ],
+  "statuses": [ <StatusDefinition>, ... ]
 }
 ```
 
@@ -220,6 +281,13 @@ Result of `distinct_values`, used by category/tag autocomplete, the browser view
   including the denormalized `location_path` / `path` (with `sort_key`) so a round-trip
   reproduces the data exactly. The document is machine-generated and best treated as
   opaque; hand-editing works but paths are recomputed on import.
+- `statuses` carries the slug-to-label mapping, because items store only the slug and a
+  restore onto a fresh install would otherwise lose every custom label. An absent section
+  reads as the built-in three, permanently.
+- Each item's `attachments` travels as **metadata only** — one WebSocket frame cannot carry
+  binaries. Importing onto an install that does not hold the files leaves the references in
+  place and `import/preview` reports how many are missing; the full-fidelity backup path is
+  Home Assistant's own, which carries the media directory with the store.
 
 `ImportPreview` — result of `haventory/import/preview` (no mutation):
 ```json

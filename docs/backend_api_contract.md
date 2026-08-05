@@ -85,16 +85,19 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 
 - `haventory/config`
   - Request: `{id, type: "haventory/config"}` (no payload)
-  - Result: `{card_title: string}`
+  - Result: `{card_title: string, statuses: StatusDefinition[], media: MediaConfig}`
   - `card_title` is the heading set in the integration's options flow (Settings → Devices & services → HAventory → **Configure**), defaulting to `"HAventory"`. Only display settings appear here — rate-limit tunables stay server-side.
+  - `statuses` is the status vocabulary in display order (see data shapes). Items store only a slug, so this is where a surface gets the label to render one with.
+  - `media` is `{picture_mime_types: string[], max_pictures_per_item: number, max_attachment_bytes: number}` — the attachment limits, reported so a picker can refuse a doomed file before uploading it. **Advisory only**: every one of them is re-derived server-side from the file's own bytes. The media *route* is deliberately not here; it is a constant on both sides of the language boundary (`/api/haventory/media/{item_id}/{attachment_id}`), pinned by a test.
   - Read at card init and on refresh, not pushed: changing the option emits no event, so an open dashboard shows the new heading after a refresh or reload.
 
 - `haventory/stats`
-  - Result: `{items_total: number, low_stock_count: number, checked_out_count: number, overdue_count: number, inspection_overdue_count: number, missing_count: number, needs_repair_count: number, locations_total: number, no_location_count: number}`
+  - Result: `{items_total: number, low_stock_count: number, checked_out_count: number, overdue_count: number, inspection_overdue_count: number, missing_count: number, needs_repair_count: number, status_counts: {[slug]: number}, locations_total: number, no_location_count: number}`
   - `no_location_count` is the number of items without a location (`location_id == null`, i.e. the `orphaned_only` filter's population).
   - `overdue_count` is the number of items whose `due_date` is strictly before today in UTC (the `overdue_only` filter's population). It is derived from the calendar, not from stored state, so it can change without any mutation — no event is emitted when the date rolls over.
   - `inspection_overdue_count` is the number of items whose `inspection_date` — the date the item is next due for inspection — is strictly before today in UTC (the `inspection_overdue_only` filter's population). It counts the whole inventory, not just checked-out items, because an inspection is independent of any check-out. Calendar-derived in the same way as `overdue_count`, with the same no-event caveat.
   - `missing_count` / `needs_repair_count` count items whose stored `status` is `missing` / `needs_repair` (the populations of the `status` filter's two non-default values). Stored state, not calendar-derived: they only change on a mutation, and every mutation emits `stats/counts`.
+  - `status_counts` is the same figure for **every** defined slug, including `ok`. Additive to the two keys above rather than a replacement for them, so a client written against the earlier shape keeps working.
 
 - `haventory/distinct_values`
   - Request: `{id, type: "haventory/distinct_values"}` (no payload; extra fields → `validation_error`)
@@ -195,6 +198,25 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - Payload: `{item_id: string, location_id: string|null, expected_version?: number}`
   - Result: `<Item>`; emits `items/moved` and `stats/counts`.
 
+- `haventory/item/attachment/add`
+  - Payload: `{item_id: string, file_id: string, kind?: "picture"|"manual", filename?: string, expected_version?: number}`
+  - Result: `<Item>`; emits `items/updated` and `stats/counts`.
+  - The bytes do **not** cross the WebSocket. The client first POSTs the file to Home Assistant core's `/api/file_upload` (with the user's auth header) and gets back a `file_id`; this command consumes that handle. `kind` defaults to `"picture"`; `filename` is display metadata only — the stored name is derived from a fresh attachment id and the sniffed type.
+  - Adding an attachment **is** an item edit: it bumps `version` and `updated_at`, unlike the derived `location_path`. A client holding the pre-upload version must take the returned item back into its model, or its next write comes back `conflict`.
+  - Refusals: `validation_error` when the sniffed content type is outside the kind's allow-list, when the file is empty or over `max_attachment_bytes`, when the kind is unknown, or when the item already holds the per-kind maximum. `not_found` for an unknown `item_id` **or** a `file_id` that has expired or was already consumed. `conflict` for a stale `expected_version`. `storage_error` when the move onto disk or the save fails.
+  - Accepted types are checked against the file's own leading bytes, never the content type the browser declared. `image/svg+xml` is refused outright: SVG carries script and the media view serves from the Home Assistant origin.
+
+- `haventory/item/attachment/remove`
+  - Payload: `{item_id: string, attachment_id: string, expected_version?: number}`
+  - Result: `<Item>`; emits `items/updated` and `stats/counts`. The file is deleted with the metadata, after the save.
+  - Refusals: `not_found` for an unknown item or attachment, `conflict` for a stale `expected_version`.
+
+- Serving an attachment — `GET /api/haventory/media/{item_id}/{attachment_id}`
+  - An authenticated `HomeAssistantView`, not `/local` and not `/haventory_static`: both of those are served without authentication, and an inventory photo is as private as the inventory.
+  - Both ids are matched against stored metadata before any path is built, so no request segment reaches the filesystem. Anything unmatched — and any entry whose file is absent — is `404`. Once no config entry owns the data the view answers `503`, mirroring the WebSocket commands' refusal.
+  - Responses carry the stored content type, `X-Content-Type-Options: nosniff`, and a long immutable `Cache-Control`: an attachment id addresses one fixed set of bytes, and a replacement is a new id.
+  - An `<img src>` carries no `Authorization` header, so a client signs the path with core's `auth/sign_path` first and renders the signed URL.
+
 - `haventory/items/bulk`
   - Payload: `{operations: Array<{op_id: string|number, kind: string, payload: object}>}`
   - Supported `kind` values: `item_update`, `item_delete`, `item_move`, `item_adjust_quantity`, `item_set_quantity`, `item_check_out`, `item_check_in`, `item_add_tags`, `item_remove_tags`, `item_update_custom_fields`, `item_set_low_stock_threshold`.
@@ -264,6 +286,11 @@ data. See `data_shapes.md` for the full document, preview, and summary shapes.
     (id present, identical), `update` (id present, differs, resolved by the policy), or
     `conflict` (id present, differs, left untouched by `skip`). Invalid documents return
     `{valid: false, errors: [{path, message}]}` rather than throwing.
+  - A valid preview additionally carries `attachments: {referenced: number, missing: number}` —
+    how many attachment references the resulting dataset would hold, and how many of them
+    name a file this install does not have. The export carries metadata and not bytes, so
+    importing one onto a fresh machine leaves dangling references; that is a caveat to
+    show, not an error, and a client renders a "file missing" state for those entries.
 
 - `haventory/import/execute`
   - Payload: `{document: <ExportDocument>, policy?: "merge"|"replace"|"skip"}` (default
@@ -287,8 +314,22 @@ data. See `data_shapes.md` for the full document, preview, and summary shapes.
     under `add`.
   - Conflict policies (for ids already present): `skip` keeps the existing entity;
     `replace` overwrites it with the incoming one; `merge` overlays incoming onto
-    existing (scalar fields from incoming; item `tags` unioned; item `custom_fields`
-    merged, incoming wins per key). For locations, `merge` behaves as `replace`.
+    existing (scalar fields from incoming; item `tags` unioned; item `attachments`
+    unioned by attachment id; item `custom_fields` merged, incoming wins per key). For
+    locations, `merge` behaves as `replace`.
+  - **Status definitions are a vocabulary, not an entity the policies act on.** The
+    document's `statuses` section overlays whatever is stored, and any slug the resulting
+    items reference without a definition gets one — no policy ever deletes a definition,
+    because an item on this install may still carry the slug. A document whose items
+    reference a slug that is neither built-in nor defined in the document is rejected in
+    preview with `{path: "items[N].status", ...}`.
+  - **Attachments travel as metadata only.** An import never *drops* an item — a document
+    that omits one leaves it exactly as it stands — but `replace` overwrites an item's
+    attachment list, so an entry the document does not carry loses its only reference.
+    `import/execute` deletes those files after the write, because metadata is the only
+    record of where a file is. Home Assistant's own backups are the full-fidelity path:
+    the media directory lives inside the config directory, so it rides them with no extra
+    work.
 
 Note: a successful import emits `items/reloaded` and `locations/reloaded` (no `item` /
 `location` payload) to tell every subscriber the dataset was replaced wholesale.

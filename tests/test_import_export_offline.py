@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import pytest
 from custom_components.haventory import import_export as ie
+from custom_components.haventory import media
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import StorageError, ValidationError
 from custom_components.haventory.models import validate_attachment_meta
@@ -575,3 +576,56 @@ async def test_import_preview_reports_references_with_no_file_on_this_install() 
 
     assert res["success"] is True
     assert res["result"]["attachments"] == {"referenced": 1, "missing": 1}
+
+
+@pytest.mark.asyncio
+async def test_import_replace_deletes_a_file_whose_metadata_it_overwrote() -> None:
+    """`replace` overwrites an item's attachment list, references and all.
+
+    Metadata is the only record of where a file is, so an entry the incoming
+    document does not carry has to take its bytes with it — otherwise nothing
+    would ever collect them. (An import never *drops* an item: a document that
+    omits one leaves it exactly as it stands.)
+    """
+
+    hass = _new_hass()
+    repo = hass.data[DOMAIN]["repository"]
+    item = repo.create_item({"name": "Drill"})
+    meta = validate_attachment_meta(_attachment_doc())
+    repo.add_attachment(item.id, meta)
+    path = media.attachment_path(media.media_root(hass), str(item.id), str(meta.id), meta.mime)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    # The same item, renamed and carrying no attachments at all.
+    document = _doc_from(repo)
+    document["items"][0]["attachments"] = []
+    document["items"][0]["name"] = "Drill (restored)"
+    res = await _send(hass, 1, "haventory/import/execute", document=document, policy="replace")
+
+    assert res["success"] is True, res
+    assert repo.get_item(item.id).attachments == []
+    assert not path.exists()
+
+
+@pytest.mark.asyncio
+async def test_import_merge_keeps_a_file_the_document_does_not_mention() -> None:
+    """The other side of the same coin: `merge` unions, so nothing is orphaned."""
+
+    hass = _new_hass()
+    repo = hass.data[DOMAIN]["repository"]
+    item = repo.create_item({"name": "Drill"})
+    meta = validate_attachment_meta(_attachment_doc())
+    repo.add_attachment(item.id, meta)
+    path = media.attachment_path(media.media_root(hass), str(item.id), str(meta.id), meta.mime)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    document = _doc_from(repo)
+    document["items"][0]["attachments"] = []
+    document["items"][0]["name"] = "Drill (restored)"
+    res = await _send(hass, 1, "haventory/import/execute", document=document, policy="merge")
+
+    assert res["success"] is True, res
+    assert [str(a.id) for a in repo.get_item(item.id).attachments] == [str(meta.id)]
+    assert path.is_file()

@@ -2162,7 +2162,6 @@ async def ws_import_execute(
 
     # Snapshot for rollback, then swap the whole dataset atomically.
     snapshot = repo.export_state()
-    before_attachments = [(item_id, a) for item_id, a in repo.iter_attachments()]
     repo.load_state(target)
     try:
         await _persist_repo(hass)
@@ -2176,12 +2175,12 @@ async def ws_import_execute(
         )
         raise
 
-    # An import can drop an item wholesale (`replace` on a document that omits
-    # it), which takes its attachment metadata with it. Sweeping against the
-    # new metadata deletes exactly the files nothing references any more, and
-    # is a no-op for a policy that dropped nothing.
-    if before_attachments:
-        await media_mod.async_sweep_orphans(hass, repo.iter_attachments())
+    # `replace` overwrites an item's attachment list wholesale, so an entry the
+    # incoming document does not carry has just lost its only reference — and
+    # that metadata was the only record of where the file is. Sweeping against
+    # the new metadata deletes exactly those, and costs a directory walk that
+    # finds nothing at all on an install with no attachments.
+    await media_mod.async_sweep_orphans(hass, repo.iter_attachments())
 
     # Tell every subscriber the dataset was replaced wholesale.
     _broadcast_event(hass, topic="items", action="reloaded", payload=None)
