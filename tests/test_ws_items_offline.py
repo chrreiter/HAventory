@@ -6,6 +6,7 @@ Scenarios:
 - list items with pagination cursor passthrough
 - error mapping for validation/not_found/conflict with contextual data
 - optimistic concurrency: with and without expected_version
+- tag normalization on the one command whose schema admits a null tag
 """
 
 from __future__ import annotations
@@ -56,6 +57,38 @@ async def test_item_create_get_update_delete_success() -> None:
     # Delete
     res = await _send(hass, 4, "haventory/item/delete", item_id=item_id)
     assert res["success"] is True and res["result"] is None
+
+
+@pytest.mark.asyncio
+async def test_item_update_normalizes_a_tag_list_carrying_a_null() -> None:
+    """`item/update` is the one command that can carry a null tag to the model.
+
+    Every other command taking tags declares `[str]`, which Home Assistant
+    refuses a null against before dispatch. `item/update` types each field as
+    `object` and leaves the shape to `apply_item_update`, so `normalize_tags`
+    has to drop the null rather than store it — a stored `None` would break
+    every tag index and filter that assumes strings.
+    """
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Battery")
+    item_id = created["result"]["id"]
+
+    res = await _send(
+        hass, 2, "haventory/item/update", item_id=item_id, tags=["Li-Ion", None, " spare "]
+    )
+
+    assert res["success"] is True
+    assert res["result"]["tags"] == ["li-ion", "spare"]
+
+    # The narrow schemas hold the line for the commands that declare `[str]`.
+    refused = await _send(hass, 3, "haventory/item/add_tags", item_id=item_id, tags=["x", None])
+    assert refused["success"] is False
+    assert refused["error"]["code"] == "invalid_format"
 
 
 @pytest.mark.asyncio

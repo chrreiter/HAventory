@@ -69,12 +69,8 @@ async def test_invalid_due_date_requires_checked_out() -> None:
 
 @pytest.mark.asyncio
 async def test_tag_normalization_and_update_clears_fields() -> None:
-    # Normalize tags on create and allow clearing via update. The null entry
-    # comes from the import path, whose documents are arbitrary JSON — the WS
-    # commands' `[str]` schema refuses it before any handler sees it.
-    item = create_item_from_create(
-        {"name": "Battery", "tags": ["Li-Ion", " li-ion ", None, "Spare"]}
-    )
+    # Normalize tags on create and allow clearing via update.
+    item = create_item_from_create({"name": "Battery", "tags": ["Li-Ion", " li-ion ", "Spare"]})
     assert item.tags == ["li-ion", "spare"]
 
     updated = apply_item_update(item, ItemUpdate(tags=[]))
