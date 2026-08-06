@@ -119,7 +119,33 @@ describe('ui/chip: the shared fragment', () => {
   // one of the generic fills — it keeps its own glyph and its own class.
   it('shares the metrics with the area chip without folding it in', () => {
     const css = String(chip.cssText).replace(/\s+/g, ' ');
-    expect(css).toMatch(/\.hv-chip, \.hv-area-chip \{/);
+    expect(css).toMatch(/\.hv-chip, \.hv-area-chip, \.hv-status-chip \{/);
     expect(css).not.toMatch(/\.hv-area-chip\.(state|warning|error)/);
+  });
+
+  // A status carries a colour the household picked, so it must not reach for the
+  // fills above — those mean something fixed, and a green "OK" beside an amber
+  // "Low stock" would read as two points on one scale.
+  it('keeps the status chip out of the semantic hue vocabulary', () => {
+    const css = String(chip.cssText).replace(/\s+/g, ' ');
+    expect(css).not.toMatch(/\.hv-status-chip\.(state|warning|error|quiet)/);
+    for (const hue of ['neutral', 'green', 'blue', 'amber', 'red']) {
+      expect(css, hue).toMatch(new RegExp(`\\.hv-status-chip\\.tone-${hue} \\{`));
+      expect(css, hue).toMatch(new RegExp(`\\.hv-status-chip\\.tone-${hue}-strong \\{`));
+    }
+  });
+
+  // A strong fill is one hue in both themes, so the ink that reads on it is
+  // fixed too. A light-dark() pair there flips the ink while the fill stays put
+  // — which is how white ends up on amber at 1.9:1.
+  it('gives every strong tone a fill and an ink that do not follow the theme', () => {
+    const css = String(tokens.cssText).replace(/\s+/g, ' ');
+    for (const hue of ['neutral', 'green', 'blue', 'amber', 'red']) {
+      for (const part of ['bg', 'fg']) {
+        const declared = new RegExp(`--hv-tone-${hue}-strong-${part}: ([^;]+);`).exec(css);
+        expect(declared, `${hue}-strong-${part}`).not.toBeNull();
+        expect(declared?.[1], `${hue}-strong-${part}`).not.toMatch(/light-dark\(/);
+      }
+    }
   });
 });

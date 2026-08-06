@@ -10,7 +10,7 @@ import { css } from 'lit';
  * chips to something beside them overrides `font-size` on its own rule and says
  * why, rather than restating the whole block.
  *
- * Three things are deliberately *not* this chip:
+ * Four things are deliberately *not* this chip:
  *
  * - `.hv-pill` in `tokens` is an action — a button shaped like a pill. A chip
  *   reports; a pill does something.
@@ -19,12 +19,16 @@ import { css } from 'lit';
  * - `.hv-area-chip` marks the HA area beside a location path. It shares the
  *   metrics so it sits level with the chips around it, and keeps its own glyph
  *   and spelled-out label, because an area is not one of the facts above.
+ * - `.hv-status-chip` reports an item's status. It shares the metrics for the
+ *   same reason and opts out of the hue vocabulary below, because a household
+ *   chooses what colour each status is.
  *
  * Usage: `static styles = [tokens, base, chip, css\`...\`]`.
  */
 export const chip = css`
   .hv-chip,
-  .hv-area-chip {
+  .hv-area-chip,
+  .hv-status-chip {
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -72,7 +76,11 @@ export const chip = css`
      amber for a chore on something still on the shelf (low stock, an inspection
      that has come due), red for an item that is out and late back. Keeping
      amber and red apart is what lets both sit in one row without reading as a
-     single alarm. */
+     single alarm.
+
+     .hv-status-chip at the foot of this file is the one exception, taking its
+     colour from the status definition instead. That is why it is a separate
+     class: a user-chosen hue inside this vocabulary would dissolve it. */
   .hv-chip.state {
     background: var(--hv-primary-tint);
     color: var(--hv-primary-darker);
@@ -128,6 +136,64 @@ export const chip = css`
   .hv-chip[disabled] {
     opacity: 0.5;
     cursor: default;
+  }
+
+  /*
+   * The status chip — the one mark on the card whose colour a household picks.
+   *
+   * It shares the metrics above and opts out of the hue vocabulary, the way
+   * .hv-area-chip does. It has to: the hues above mean something fixed, and a
+   * status painted from that palette would claim a meaning its label already
+   * carries — a green "OK" beside an amber "Low stock" would read as two points
+   * on one scale rather than two unrelated facts.
+   *
+   * Each tone comes in a light and a strong form. Strong exists so an urgent
+   * status can carry further than a routine one in a dense row.
+   */
+  .hv-status-chip {
+    gap: 4px;
+    background: var(--hv-tone-neutral-bg);
+    color: var(--hv-tone-neutral-fg);
+  }
+  .hv-status-chip.tone-neutral {
+    background: var(--hv-tone-neutral-bg);
+    color: var(--hv-tone-neutral-fg);
+  }
+  .hv-status-chip.tone-green {
+    background: var(--hv-tone-green-bg);
+    color: var(--hv-tone-green-fg);
+  }
+  .hv-status-chip.tone-blue {
+    background: var(--hv-tone-blue-bg);
+    color: var(--hv-tone-blue-fg);
+  }
+  .hv-status-chip.tone-amber {
+    background: var(--hv-tone-amber-bg);
+    color: var(--hv-tone-amber-fg);
+  }
+  .hv-status-chip.tone-red {
+    background: var(--hv-tone-red-bg);
+    color: var(--hv-tone-red-fg);
+  }
+  .hv-status-chip.tone-neutral-strong {
+    background: var(--hv-tone-neutral-strong-bg);
+    color: var(--hv-tone-neutral-strong-fg);
+  }
+  .hv-status-chip.tone-green-strong {
+    background: var(--hv-tone-green-strong-bg);
+    color: var(--hv-tone-green-strong-fg);
+  }
+  .hv-status-chip.tone-blue-strong {
+    background: var(--hv-tone-blue-strong-bg);
+    color: var(--hv-tone-blue-strong-fg);
+  }
+  .hv-status-chip.tone-amber-strong {
+    background: var(--hv-tone-amber-strong-bg);
+    color: var(--hv-tone-amber-strong-fg);
+  }
+  .hv-status-chip.tone-red-strong {
+    background: var(--hv-tone-red-strong-bg);
+    color: var(--hv-tone-red-strong-fg);
   }
 
   /*

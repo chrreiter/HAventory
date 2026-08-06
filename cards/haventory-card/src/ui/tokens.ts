@@ -67,6 +67,38 @@ export const tokens = css`
     /* Success */
     --hv-success: light-dark(#2e7d32, #81c784);
 
+    /*
+     * Status tones. Five hues, each in a light form (a tint carrying deep ink,
+     * how every chip on the card is drawn) and a strong form (a saturated
+     * fill). Only a status uses these: a household picks them per status, so
+     * unlike the hue vocabulary in chip.ts they carry no fixed meaning.
+     *
+     * A strong fill is one hue in both themes, so the ink that reads on it is
+     * fixed too — the same constraint --hv-on-amber above is written for. All
+     * five clear 4.5:1 against their ink.
+     */
+    --hv-tone-neutral-bg: var(--hv-chip-bg);
+    --hv-tone-neutral-fg: var(--hv-chip-text);
+    --hv-tone-green-bg: light-dark(#e6f4ea, rgba(129, 199, 132, 0.16));
+    --hv-tone-green-fg: light-dark(#1b5e20, #a5d6a7);
+    --hv-tone-blue-bg: var(--hv-primary-tint);
+    --hv-tone-blue-fg: var(--hv-primary-darker);
+    --hv-tone-amber-bg: var(--hv-warn-bg);
+    --hv-tone-amber-fg: var(--hv-warn-deep);
+    --hv-tone-red-bg: var(--hv-error-bg);
+    --hv-tone-red-fg: var(--hv-error-deep);
+
+    --hv-tone-neutral-strong-bg: #5f6b7a;
+    --hv-tone-neutral-strong-fg: #fff;
+    --hv-tone-green-strong-bg: #2e7d32;
+    --hv-tone-green-strong-fg: #fff;
+    --hv-tone-blue-strong-bg: #0277bd;
+    --hv-tone-blue-strong-fg: #fff;
+    --hv-tone-amber-strong-bg: var(--hv-amber);
+    --hv-tone-amber-strong-fg: var(--hv-on-amber);
+    --hv-tone-red-strong-bg: #c62828;
+    --hv-tone-red-strong-fg: #fff;
+
     /* Inputs */
     --hv-input-bg: var(--input-fill-color, light-dark(#f5f5f5, #2b2b2b));
     --hv-input-border: light-dark(#cfd8dc, #4a4a4a);

@@ -17,10 +17,27 @@ export type ItemStatus = 'ok' | 'missing' | 'needs_repair';
  * store) and an editable `label` (what a surface shows). Renaming a status
  * touches only the label, so no item is ever rewritten.
  */
+/** A status tone: five hues, each in a light and a strong form. */
+export type StatusColor =
+  | 'neutral'
+  | 'neutral_strong'
+  | 'green'
+  | 'green_strong'
+  | 'blue'
+  | 'blue_strong'
+  | 'amber'
+  | 'amber_strong'
+  | 'red'
+  | 'red_strong';
+
 export interface StatusDefinition {
   slug: string;
   label: string;
   order: number;
+  /** Optional: a backend older than the appearance fields does not send them. */
+  color?: StatusColor;
+  /** One of the glyph names in `ui/icons.ts`. */
+  icon?: string;
 }
 
 /** What an item can carry. Only `picture` has a card surface today. */
@@ -39,6 +56,10 @@ export interface Attachment {
   mime: string;
   size: number;
   uploaded_at: string;
+  /** What the user called it. Empty means show `filename` instead. */
+  title?: string;
+  /** Position within the item's attachments of this kind; 0 is the cover. */
+  order?: number;
 }
 
 export interface LocationPath {
