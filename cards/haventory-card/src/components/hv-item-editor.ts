@@ -27,6 +27,7 @@ import {
 import type { CustomFieldRow, CustomFieldType, FieldError, ItemFormModel } from '../ui/item-form';
 import { statusLabel, statusList } from '../ui/status';
 import { MediaUrls, attachmentTitle, formatBytes, manuals, pictureAlt, pictures } from '../ui/media';
+import { prepareForUpload } from '../ui/downscale';
 import type { MediaBindings } from '../ui/media';
 import type {
   AreaRef,
@@ -67,12 +68,21 @@ const LOCATION_TREE_ID = 'editor-location-tree-holder';
 const CATEGORY_LIST_ID = 'editor-category-list';
 const MORE_FIELDS_ID = 'editor-more-fields';
 
-/** One file the picker is working through, and how it ended up. */
+/**
+ * One file the picker is working through, and how it ended up.
+ *
+ * A failed entry keeps the `File` itself so Retry can send exactly what was
+ * picked. Without it the user would have to find the file again — and on a
+ * phone that means retaking the photo, because the original came from the
+ * camera and was never on disk.
+ */
 interface UploadEntry {
   id: string;
   name: string;
-  state: 'queued' | 'uploading' | 'error';
+  state: 'queued' | 'preparing' | 'uploading' | 'error';
   message: string | null;
+  file: File | null;
+  kind: AttachmentKind;
 }
 
 /** The message on a rejected upload, whatever shape the rejection arrived in. */
@@ -675,23 +685,50 @@ export class HVItemEditor extends LitElement {
         position: relative;
         margin: 0;
         width: 72px;
-        height: 72px;
         border-radius: 8px;
         overflow: hidden;
         background: var(--hv-surface-raised);
       }
       .photos img {
-        width: 100%;
-        height: 100%;
+        width: 72px;
+        height: 72px;
         object-fit: cover;
         display: block;
       }
       .photos .placeholder {
         display: grid;
         place-items: center;
-        width: 100%;
-        height: 100%;
+        width: 72px;
+        height: 72px;
         color: var(--hv-text-tertiary);
+      }
+      /* Under the thumbnail rather than over it: these sit on whatever photo
+         was uploaded, and no overlay treatment is legible against every one. */
+      .tile-controls {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 24px;
+        background: var(--hv-surface-raised);
+      }
+      .tile-controls button,
+      .tile-controls .is-cover {
+        display: inline-grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        border: none;
+        background: none;
+        color: var(--hv-text-secondary);
+      }
+      .tile-controls button[disabled] {
+        opacity: 0.3;
+      }
+      /* The photo the list row and the detail header show. Filled and inert,
+         so the mark reads the same whether it is a state or an action. */
+      .tile-controls .is-cover {
+        color: var(--hv-amber);
       }
       .photos .remove {
         position: absolute;
@@ -807,6 +844,14 @@ export class HVItemEditor extends LitElement {
       }
       .upload-list li.failed .state {
         color: var(--hv-error);
+      }
+      .upload-list li .retry {
+        margin-left: auto;
+        border: none;
+        background: none;
+        padding: 0 4px;
+        color: var(--hv-primary-dark);
+        font: 500 11.5px var(--hv-font);
       }
     `,
   ];
@@ -1567,35 +1612,91 @@ export class HVItemEditor extends LitElement {
    * it running.
    */
   private async _uploadFiles(files: File[], kind: AttachmentKind) {
-    const media = this.media;
-    const item = this._current;
-    if (!media || !item) return;
     const queued: UploadEntry[] = files.map((file) => ({
       id: `upload-${(this._uploadSeq += 1)}`,
       name: file.name,
       state: 'queued',
       message: null,
+      file,
+      kind,
     }));
     this._uploads = [...this._uploads, ...queued];
+    for (const entry of queued) await this._sendOne(entry);
+  }
 
-    for (const [index, file] of files.entries()) {
-      const entry = queued[index];
-      this._patchUpload(entry.id, { state: 'uploading' });
-      const attached =
-        kind === 'manual'
-          ? manuals(this._current?.attachments)
-          : pictures(this._current?.attachments);
-      const refused = this._preflight(file, kind, attached.length);
-      if (refused) {
-        this._patchUpload(entry.id, { state: 'error', message: refused });
-        continue;
-      }
-      try {
-        this._uploaded = await media.upload(item.id, file, kind);
-        this._uploads = this._uploads.filter((u) => u.id !== entry.id);
-      } catch (err) {
-        this._patchUpload(entry.id, { state: 'error', message: errorText(err) });
-      }
+  /**
+   * One file, from preflight to attached — the unit both the picker and Retry
+   * work in, so a retried file goes through exactly what it did the first time.
+   *
+   * The shrink happens here rather than in the picker's handler because it is
+   * what makes the byte cap pass: a phone photo is checked against the cap
+   * *after* it has been re-encoded, so an 11 MB frame is measured at the size
+   * it will actually be sent at.
+   */
+  private async _sendOne(entry: UploadEntry) {
+    const media = this.media;
+    const item = this._current;
+    const picked = entry.file;
+    if (!media || !item || !picked) return;
+
+    this._patchUpload(entry.id, { state: 'preparing', message: null });
+    const file = await prepareForUpload(picked, entry.kind);
+    this._patchUpload(entry.id, { state: 'uploading', name: file.name });
+
+    const attached =
+      entry.kind === 'manual'
+        ? manuals(this._current?.attachments)
+        : pictures(this._current?.attachments);
+    const refused = this._preflight(file, entry.kind, attached.length);
+    if (refused) {
+      this._patchUpload(entry.id, { state: 'error', message: refused });
+      return;
+    }
+    try {
+      this._uploaded = await media.upload(item.id, file, entry.kind);
+      this._uploads = this._uploads.filter((u) => u.id !== entry.id);
+    } catch (err) {
+      this._patchUpload(entry.id, { state: 'error', message: errorText(err) });
+    }
+  }
+
+  /** Send one failed file again, exactly as it was picked. */
+  private async _retryUpload(id: string) {
+    const entry = this._uploads.find((u) => u.id === id);
+    if (entry?.file) await this._sendOne(entry);
+  }
+
+  /**
+   * Move one attachment within its kind, and adopt the item that comes back.
+   *
+   * `delta` of `-Infinity` is "make this the cover" — the same command, since
+   * position 0 is what makes a picture the cover and there is no flag to set.
+   */
+  private async _moveAttachment(attachmentId: string, kind: AttachmentKind, delta: number) {
+    const media = this.media;
+    const item = this._current;
+    if (!media || !item) return;
+    const ordered = (kind === 'manual' ? manuals : pictures)(item.attachments).map((a) => a.id);
+    const from = ordered.indexOf(attachmentId);
+    if (from < 0) return;
+    const to = Math.min(Math.max(from + delta, 0), ordered.length - 1);
+    if (to === from) return;
+    ordered.splice(from, 1);
+    ordered.splice(to, 0, attachmentId);
+    try {
+      this._uploaded = await media.reorder(item.id, kind, ordered);
+    } catch (err) {
+      this._uploads = [
+        ...this._uploads,
+        {
+          id: `reorder-${(this._uploadSeq += 1)}`,
+          name: 'Reorder photos',
+          state: 'error',
+          message: errorText(err),
+          file: null,
+          kind,
+        },
+      ];
     }
   }
 
@@ -1613,9 +1714,57 @@ export class HVItemEditor extends LitElement {
           name: kind === 'manual' ? 'Remove document' : 'Remove photo',
           state: 'error',
           message: errorText(err),
+          file: null,
+          kind,
         },
       ];
     }
+  }
+
+  /**
+   * Move and cover controls under one thumbnail.
+   *
+   * Buttons rather than a drag handle, matching the organize dialog's status
+   * rows: one reordering idiom across the card, and both work from a keyboard
+   * without a second implementation beside the pointer one.
+   *
+   * The star is the cover in both directions — filled and inert on the photo
+   * that already is one, a button on every other. The list row and the detail
+   * header show position 0, so which photo that is has to be visible here.
+   */
+  private _renderPhotoControls(attachmentId: string, index: number, total: number) {
+    const move = (delta: number) => () =>
+      void this._moveAttachment(attachmentId, 'picture', delta);
+    return html`<div class="tile-controls">
+      <button
+        data-testid="editor-photo-earlier"
+        aria-label=${`Move photo ${index + 1} earlier`}
+        ?disabled=${index === 0}
+        @click=${move(-1)}
+      >
+        ${icon('chevronLeft', 15)}
+      </button>
+      ${index === 0
+        ? html`<span class="is-cover" data-testid="editor-photo-cover" title="Cover photo"
+            >${icon('star', 14)}</span
+          >`
+        : html`<button
+            data-testid="editor-photo-make-cover"
+            aria-label=${`Make photo ${index + 1} the cover`}
+            title="Make cover"
+            @click=${move(-Infinity)}
+          >
+            ${icon('star', 14)}
+          </button>`}
+      <button
+        data-testid="editor-photo-later"
+        aria-label=${`Move photo ${index + 1} later`}
+        ?disabled=${index === total - 1}
+        @click=${move(1)}
+      >
+        ${icon('chevronRight', 15)}
+      </button>
+    </div>`;
   }
 
   /**
@@ -1654,6 +1803,7 @@ export class HVItemEditor extends LitElement {
             >
               ${icon('close', 15)}
             </button>
+            ${shots.length > 1 ? this._renderPhotoControls(picture.id, index, shots.length) : null}
           </figure>`;
         })}
         <label class="picker" data-testid="editor-photo-picker">
@@ -1706,6 +1856,8 @@ export class HVItemEditor extends LitElement {
           name: 'Rename document',
           state: 'error',
           message: errorText(err),
+          file: null,
+          kind: 'manual',
         },
       ];
     }
@@ -1812,6 +1964,16 @@ export class HVItemEditor extends LitElement {
           >
             <span class="file">${entry.name}</span>
             <span class="state">${entry.state === 'error' ? entry.message : `${entry.state}…`}</span>
+            ${entry.state === 'error' && entry.file
+              ? html`<button
+                  class="retry"
+                  data-testid="editor-upload-retry"
+                  aria-label=${`Try ${entry.name} again`}
+                  @click=${() => void this._retryUpload(entry.id)}
+                >
+                  Retry
+                </button>`
+              : null}
           </li>`,
         )}
       </ul>

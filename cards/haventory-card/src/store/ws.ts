@@ -241,6 +241,29 @@ export class WSClient {
     return this.hass.callWS<Item>(payload);
   }
 
+  /**
+   * Renumber one kind's attachments; the first id named takes position 0.
+   *
+   * A picture at position 0 is the item's cover, so "make cover" is this
+   * command rather than a flag of its own. The list must name every attachment
+   * of that kind exactly once — the backend refuses a partial permutation.
+   */
+  reorderAttachments(
+    itemId: string,
+    kind: AttachmentKind,
+    attachmentIds: string[],
+    expectedVersion?: number,
+  ) {
+    const payload: Record<string, unknown> = {
+      type: 'haventory/item/attachment/reorder',
+      item_id: itemId,
+      kind,
+      attachment_ids: attachmentIds,
+    };
+    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
+    return this.hass.callWS<Item>(payload);
+  }
+
   /** Detach one file from an item; the backend deletes the bytes with it. */
   removeAttachment(itemId: string, attachmentId: string, expectedVersion?: number) {
     const payload: Record<string, unknown> = {

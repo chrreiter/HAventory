@@ -853,6 +853,23 @@ export class Store {
     return updated;
   }
 
+  /** Renumber one kind's attachments; the first id named becomes position 0. */
+  async reorderAttachments(
+    itemId: string,
+    kind: AttachmentKind,
+    attachmentIds: string[],
+    expectedVersion?: number,
+  ): Promise<Item> {
+    const updated = await this.ws.reorderAttachments(
+      itemId,
+      kind,
+      attachmentIds,
+      expectedVersion,
+    );
+    this.applyOptimistic(updated);
+    return updated;
+  }
+
   /** Detach one file; the backend deletes the bytes with it. */
   async removeAttachment(
     itemId: string,

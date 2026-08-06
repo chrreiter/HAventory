@@ -737,6 +737,8 @@ export class HVFullView extends LitElement {
       remove: (itemId, attachmentId) => store.removeAttachment(itemId, attachmentId),
       retitle: (itemId, attachmentId, title) =>
         store.updateAttachment(itemId, attachmentId, title),
+      reorder: (itemId, kind, attachmentIds) =>
+        store.reorderAttachments(itemId, kind, attachmentIds),
     };
     return this._media;
   }

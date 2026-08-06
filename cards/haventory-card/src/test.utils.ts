@@ -868,6 +868,7 @@ export function makeMediaBindings(
     upload?: (itemId: string, file: File, kind: AttachmentKind) => Promise<Item>;
     remove?: (itemId: string, attachmentId: string) => Promise<Item>;
     retitle?: (itemId: string, attachmentId: string, title: string) => Promise<Item>;
+    reorder?: (itemId: string, kind: AttachmentKind, attachmentIds: string[]) => Promise<Item>;
     signFails?: boolean;
   } = {},
 ) {
@@ -875,11 +876,13 @@ export function makeMediaBindings(
   const uploads: { itemId: string; file: File; kind: AttachmentKind }[] = [];
   const removals: { itemId: string; attachmentId: string }[] = [];
   const retitles: { itemId: string; attachmentId: string; title: string }[] = [];
+  const reorders: { itemId: string; kind: AttachmentKind; attachmentIds: string[] }[] = [];
   return {
     signed,
     uploads,
     removals,
     retitles,
+    reorders,
     sign: async (path: string) => {
       signed.push(path);
       if (options.signFails) throw new Error('signing refused');
@@ -898,6 +901,11 @@ export function makeMediaBindings(
     retitle: async (itemId: string, attachmentId: string, title: string) => {
       retitles.push({ itemId, attachmentId, title });
       if (options.retitle) return options.retitle(itemId, attachmentId, title);
+      return makeItem({ id: itemId });
+    },
+    reorder: async (itemId: string, kind: AttachmentKind, attachmentIds: string[]) => {
+      reorders.push({ itemId, kind, attachmentIds });
+      if (options.reorder) return options.reorder(itemId, kind, attachmentIds);
       return makeItem({ id: itemId });
     },
   };

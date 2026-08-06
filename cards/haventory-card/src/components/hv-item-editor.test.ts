@@ -1041,8 +1041,8 @@ describe('hv-item-editor: pictures', () => {
     const el = await mount(makeItem({ id: 'i-1', version: 3 }), { media });
 
     pick(el, [png()]);
-    await el.updateComplete;
-    await el.updateComplete;
+    // A macrotask, so the whole prepare-then-send chain drains first.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     await el.updateComplete;
 
     expect(media.uploads).toHaveLength(1);
@@ -1388,5 +1388,234 @@ describe('hv-item-editor: opening a document', () => {
     expect(q(el, '[data-testid="editor-document-open"]')).toBeNull();
     // The title stays editable: the metadata is still the item's to correct.
     expect(q(el, '[data-testid="editor-document-title"]')).toBeTruthy();
+  });
+});
+
+describe('hv-item-editor: photo order and the cover', () => {
+  function pick(el: HVItemEditor, files: File[]) {
+    const input = q(el, '[data-testid="editor-photo-input"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    input.dispatchEvent(new Event('change'));
+  }
+
+  const png = (name = 'photo.png') => new File(['x'], name, { type: 'image/png' });
+
+  const three = () => [
+    makeAttachment({ id: 'a', order: 0 }),
+    makeAttachment({ id: 'b', order: 1 }),
+    makeAttachment({ id: 'c', order: 2 }),
+  ];
+
+  const drain = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('marks the first photo as the cover and offers no control to re-cover it', async () => {
+    const el = await mount(makeItem({ id: 'i-1', attachments: three() }), {
+      media: makeMediaBindings(),
+    });
+    await el.updateComplete;
+
+    // One inert mark, on the photo the list row and detail header already show.
+    expect(all(el, '[data-testid="editor-photo-cover"]')).toHaveLength(1);
+    expect(all(el, '[data-testid="editor-photo-make-cover"]')).toHaveLength(2);
+  });
+
+  it('makes a photo the cover by moving it to position 0', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1', attachments: three() }), { media });
+    await el.updateComplete;
+
+    all(el, '[data-testid="editor-photo-make-cover"]')[1].click();
+    await drain();
+
+    expect(media.reorders).toEqual([
+      { itemId: 'i-1', kind: 'picture', attachmentIds: ['c', 'a', 'b'] },
+    ]);
+  });
+
+  it('moves one photo a single place and names the whole order', async () => {
+    // The backend refuses anything but a full permutation of the kind.
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1', attachments: three() }), { media });
+    await el.updateComplete;
+
+    all(el, '[data-testid="editor-photo-later"]')[0].click();
+    await drain();
+
+    expect(media.reorders[0].attachmentIds).toEqual(['b', 'a', 'c']);
+  });
+
+  it('offers no move past either end', async () => {
+    const el = await mount(makeItem({ id: 'i-1', attachments: three() }), {
+      media: makeMediaBindings(),
+    });
+    await el.updateComplete;
+
+    const earlier = all(el, '[data-testid="editor-photo-earlier"]') as HTMLButtonElement[];
+    const later = all(el, '[data-testid="editor-photo-later"]') as HTMLButtonElement[];
+    expect([earlier[0].disabled, earlier[2].disabled]).toEqual([true, false]);
+    expect([later[0].disabled, later[2].disabled]).toEqual([false, true]);
+  });
+
+  it('shows no ordering controls for a single photo', async () => {
+    // Nothing to order, and a lone photo is the cover by definition.
+    const el = await mount(makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'a' })] }), {
+      media: makeMediaBindings(),
+    });
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="editor-photo-earlier"]')).toBeNull();
+    expect(q(el, '[data-testid="editor-photo-cover"]')).toBeNull();
+  });
+
+  it('reports a refused reorder rather than leaving the strip silently unmoved', async () => {
+    const media = makeMediaBindings({
+      reorder: async () => {
+        throw new Error('version conflict');
+      },
+    });
+    const el = await mount(makeItem({ id: 'i-1', attachments: three() }), { media });
+    await el.updateComplete;
+
+    all(el, '[data-testid="editor-photo-later"]')[0].click();
+    await drain();
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain('version conflict');
+  });
+
+  it('sends the failed file again on retry, without asking for it twice', async () => {
+    // On a phone the original came from the camera and was never on disk, so
+    // "pick it again" means retaking the photo.
+    let attempts = 0;
+    const media = makeMediaBindings({
+      upload: async (itemId) => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('Upload failed (503)');
+        return makeItem({ id: itemId, version: 9 });
+      },
+    });
+    const el = await mount(makeItem({ id: 'i-1', version: 2 }), { media });
+
+    pick(el, [png('shelf.png')]);
+    await drain();
+    await el.updateComplete;
+    expect(q(el, '[data-testid="editor-upload"]')?.dataset.state).toBe('error');
+
+    q(el, '[data-testid="editor-upload-retry"]')?.click();
+    await drain();
+    await el.updateComplete;
+
+    expect(media.uploads).toHaveLength(2);
+    expect(media.uploads[1].file.name).toBe('shelf.png');
+    // The entry clears once it lands, like any other successful upload.
+    expect(q(el, '[data-testid="editor-upload"]')).toBeNull();
+  });
+
+  it('offers no retry for a failure that has no file behind it', async () => {
+    const media = makeMediaBindings({
+      remove: async () => {
+        throw new Error('gone already');
+      },
+    });
+    const el = await mount(makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'a' })] }), {
+      media,
+    });
+    await el.updateComplete;
+
+    q(el, '[data-testid="editor-photo-remove"]')?.click();
+    await drain();
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain('gone already');
+    expect(q(el, '[data-testid="editor-upload-retry"]')).toBeNull();
+  });
+});
+
+describe('hv-item-editor: shrinking a photo before it is sent', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** jsdom has no image decoder and no 2D context; both are the seam. */
+  function stubCanvas(encodedBytes: number) {
+    vi.stubGlobal('createImageBitmap', async () => ({
+      width: 4032,
+      height: 3024,
+      close: () => undefined,
+    }));
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      drawImage: () => undefined,
+    } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (
+      this: HTMLCanvasElement,
+      callback: BlobCallback,
+      type?: string,
+    ) {
+      callback(new Blob([new Uint8Array(encodedBytes)], { type }));
+    });
+  }
+
+  function pick(el: HVItemEditor, files: File[]) {
+    const input = q(el, '[data-testid="editor-photo-input"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    input.dispatchEvent(new Event('change'));
+  }
+
+  function oversized(): File {
+    const f = new File(['x'], 'IMG_0042.jpg', { type: 'image/jpeg' });
+    Object.defineProperty(f, 'size', { value: 4 * 1024 * 1024 });
+    return f;
+  }
+
+  const CONFIG = {
+    picture_mime_types: ['image/jpeg'],
+    max_pictures_per_item: 4,
+    max_attachment_bytes: 1024,
+  };
+
+  // The whole point of the pass: a phone frame is several times the cap, so
+  // without this the most ordinary way to add a photo is the one that fails.
+  it('measures the cap against the shrunk file, so an oversized photo lands', async () => {
+    stubCanvas(512);
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media, mediaConfig: CONFIG });
+
+    pick(el, [oversized()]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    expect(media.uploads).toHaveLength(1);
+    expect(media.uploads[0].file.size).toBe(512);
+    expect(q(el, '[data-testid="editor-upload"]')).toBeNull();
+  });
+
+  it('still refuses a photo the shrink could not bring under the cap', async () => {
+    stubCanvas(4096);
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media, mediaConfig: CONFIG });
+
+    pick(el, [oversized()]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    expect(media.uploads).toHaveLength(0);
+    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain('over the');
+  });
+
+  it('never re-encodes a document', async () => {
+    stubCanvas(512);
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media });
+    const pdf = new File(['x'], 'manual.pdf', { type: 'application/pdf' });
+    Object.defineProperty(pdf, 'size', { value: 4 * 1024 * 1024 });
+
+    const input = q(el, '[data-testid="editor-manual-input"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [pdf], configurable: true });
+    input.dispatchEvent(new Event('change'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    expect(media.uploads[0].file).toBe(pdf);
   });
 });

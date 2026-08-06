@@ -343,6 +343,22 @@ describe('WSClient attachments', () => {
     expect(hass.sent[0]).not.toHaveProperty('expected_version');
   });
 
+  it('reorders one kind by naming its whole order', async () => {
+    // Position 0 is what makes a picture the cover, so "make cover" is this
+    // command rather than a flag of its own.
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.reorderAttachments('i-1', 'picture', ['c', 'a', 'b']);
+
+    expect(hass.sent[0]).toEqual({
+      type: 'haventory/item/attachment/reorder',
+      item_id: 'i-1',
+      kind: 'picture',
+      attachment_ids: ['c', 'a', 'b'],
+    });
+  });
+
   it('removes an attachment by both ids', async () => {
     const hass = makeSpyHass();
     const ws = new WSClient(hass);

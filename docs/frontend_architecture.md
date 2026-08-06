@@ -68,7 +68,8 @@ haventory-card                     Lovelace element; store owner
     │   ├── hv-list-row            stepper, badges, hover actions, row ⋮, photo thumbnail,
     │   │                          document marker
     │   └── hv-item-editor         inline expander (the one edit form); photo and
-    │                              document pickers, per-document title field
+    │                              document pickers, cover/reorder controls,
+    │                              per-document title field, per-file retry
     │       ├── hv-chip-input      tag chips with suggestions
     │       └── hv-location-tree
     ├── hv-detail-sheet            mobile: read view + edit view in one sheet;
@@ -287,6 +288,7 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 | `location-path.ts` | The `/` → `›` convention for a location path, a location's label with a caller-supplied fallback, and the area-beside-the-path composition (`itemPathParts` / `locationPathParts` / `pathTitle` / `renderAreaChip`). |
 | `dialog-focus.ts` | Initial focus and focus return for modal surfaces. Opening must move focus into the panel or its Escape handler never fires. |
 | `media.ts` | Item attachments: the media path builder, the `MediaUrls` signed-URL cache (request, reuse, refresh before expiry, a distinguishable failed state, and the liveness probe that tells a reference whose file is gone from one that opens), the per-kind `pictures()` / `manuals()` selectors and the title-or-filename fallback, and the `MediaBindings` shape a host hands its components. |
+| `downscale.ts` | Re-encoding an oversized photo in the browser before it is uploaded: the size and type rules, the capped-edge arithmetic, and the decode/encode seam. Fails open — anything that does not work hands the original file back. |
 | `status.ts` | The item-status vocabulary: the definitions a surface renders from (backend's, or the built-in three until `haventory/config` answers), the label / tone-class / glyph lookups with their fallbacks, the colour and glyph vocabularies the management picker offers, and `renderStatusChip` — one renderer so the mark cannot drift between a table cell and a detail sheet. |
 | `keyboard.ts` | `onEscape()` for the surfaces where Escape means exactly "close", and the platform-correct save-shortcut label. |
 | `plural.ts` | Count agreement for every count string in the card. |

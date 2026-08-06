@@ -192,11 +192,13 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   **Home Assistant's own backups are the full-fidelity path**: the media directory sits
   inside the config directory, so a backup and restore carries the files and the store
   together and consistently.
-- **Photos are not resized or thumbnailed.** The full-size file is what a list row and the
-  detail gallery load, bounded only by the 8 MB per-file cap (10 pictures per item).
-  Server-side resizing would mean a Pillow dependency in a local-push integration — install
-  size, wheel availability on every HA architecture, and CPU on a Pi — so the card leans on
-  `loading="lazy"` and `decoding="async"` instead.
+- **Nothing is resized or thumbnailed on the server.** Server-side resizing would mean a
+  Pillow dependency in a local-push integration — install size, wheel availability on every
+  HA architecture, and CPU on a Pi. The *card* re-encodes a photo over 2 MB before it
+  uploads, capped at 2048px on the longest edge, which is what keeps a phone frame under
+  the 8 MB per-file cap; the file that arrives is the one that is stored, and a re-encode
+  that fails or comes out larger simply uploads the original. Lists still load the stored
+  file at full size, leaning on `loading="lazy"` and `decoding="async"`.
 
 These are tracked, with their measurements and proposed fixes, in the
 [issue tracker](https://github.com/chrreiter/HAventory/issues).

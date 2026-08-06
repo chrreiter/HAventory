@@ -52,6 +52,8 @@ export interface MediaBindings {
   remove(itemId: string, attachmentId: string): Promise<Item>;
   /** Rename one attachment for display; the stored filename is untouched. */
   retitle(itemId: string, attachmentId: string, title: string): Promise<Item>;
+  /** Renumber one kind; the first id named becomes position 0, the cover. */
+  reorder(itemId: string, kind: AttachmentKind, attachmentIds: string[]): Promise<Item>;
 }
 
 /** All `MediaUrls` needs from the element holding it. */
