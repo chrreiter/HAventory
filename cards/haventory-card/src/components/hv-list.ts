@@ -5,7 +5,7 @@ import { repeat } from 'lit/directives/repeat.js';
 import { tokens, base } from '../ui/tokens';
 import { renderEmptyState } from '../ui/empty-state';
 import type { EmptyKind, EmptyOffer } from '../ui/empty-state';
-import type { AreaRef, Item } from '../store/types';
+import type { AreaRef, Item, StatusDefinition } from '../store/types';
 import type { MediaBindings } from '../ui/media';
 import './hv-list-row';
 
@@ -115,6 +115,8 @@ export class HVList extends LitElement {
   @property({ attribute: false }) areas: AreaRef[] = [];
   /** Picture access, forwarded to each row's thumbnail. */
   @property({ attribute: false }) media: MediaBindings | null = null;
+  /** The status vocabulary from `haventory/config`; passed through to each row. */
+  @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
   @property({ type: Boolean }) loading = false;
   @property({ type: Boolean }) selectable = false;
   @property({ attribute: false }) selection: Set<string> = new Set();
@@ -190,6 +192,7 @@ export class HVList extends LitElement {
                 // showing the collapsed row as well would just be a duplicate.
                 this.editorTemplate(it.id)
               : html`<hv-list-row
+                  .statuses=${this.statuses}
                   .item=${it}
                   .areas=${this.areas}
                   .media=${this.media}

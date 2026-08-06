@@ -25,17 +25,10 @@ import {
   validateForm,
 } from '../ui/item-form';
 import type { CustomFieldRow, CustomFieldType, FieldError, ItemFormModel } from '../ui/item-form';
-import { ITEM_STATUSES, statusLabel } from '../ui/status';
+import { statusLabel, statusList } from '../ui/status';
 import { MediaUrls, formatBytes, pictureAlt, pictures } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
-import type {
-  AreaRef,
-  Item,
-  ItemStatus,
-  Location,
-  LocationTreeNode,
-  MediaConfig,
-} from '../store/types';
+import type { AreaRef, Item, ItemStatus, Location, LocationTreeNode, MediaConfig, StatusDefinition } from '../store/types';
 import './hv-chip-input';
 import './hv-location-tree';
 import './hv-checkout-popover';
@@ -769,6 +762,9 @@ export class HVItemEditor extends LitElement {
   /** Hide the header row when the host already provides one (the mobile sheet). */
   @property({ type: Boolean }) noHeader = false;
   /** Picture access; null hides the pictures section entirely. */
+  /** The status vocabulary from `haventory/config`; the built-ins stand in
+   * until it answers. */
+  @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
   @property({ attribute: false }) media: MediaBindings | null = null;
   /** Caps and accepted types, so a doomed file is refused before it is sent. */
   @property({ attribute: false }) mediaConfig: MediaConfig | null = null;
@@ -1169,8 +1165,13 @@ export class HVItemEditor extends LitElement {
         @change=${(e: Event) =>
           this._patch({ status: (e.target as HTMLSelectElement).value as ItemStatus })}
       >
-        ${ITEM_STATUSES.map(
-          (s) => html`<option value=${s} ?selected=${this._model.status === s}>${statusLabel(s)}</option>`,
+        <!-- An <option> cannot hold an SVG, so the picker carries labels
+             alone; the colour and glyph appear wherever the status is shown. -->
+        ${statusList(this.statuses).map(
+          ({ slug: s }) =>
+            html`<option value=${s} ?selected=${this._model.status === s}>
+              ${statusLabel(s, this.statuses)}
+            </option>`,
         )}
       </select>
     </div>`;

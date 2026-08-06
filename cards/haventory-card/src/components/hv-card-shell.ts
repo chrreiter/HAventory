@@ -578,6 +578,7 @@ export class HVCardShell extends LitElement {
   private _renderEditor = (itemId: string | null, opts: { noHeader?: boolean } = {}) => {
     const st = this.st;
     return html`<hv-item-editor
+      .statuses=${st?.statuses ?? null}
       data-testid="inline-editor"
       .areas=${st?.areasCache?.areas ?? []}
       .media=${this.media}
@@ -903,6 +904,7 @@ export class HVCardShell extends LitElement {
     const st = this.st;
     if (!st) return null;
     return html`<hv-filter-panel
+      .statuses=${st?.statuses ?? null}
       .filters=${st.filters}
       .distinct=${st.distinctValuesCache}
       .areas=${st.areasCache?.areas ?? []}
@@ -1007,6 +1009,7 @@ export class HVCardShell extends LitElement {
       ${filterCount > 0
         ? html`<div class="chips-row">
             <hv-filter-chips
+              .statuses=${st?.statuses ?? null}
               .filters=${filters}
               .locations=${st?.locationsFlatCache ?? null}
               .areas=${st?.areasCache?.areas ?? []}
@@ -1024,6 +1027,7 @@ export class HVCardShell extends LitElement {
       ${this._renderDegradedBanners()} ${this._renderBanners()}
 
       <hv-list
+        .statuses=${st?.statuses ?? null}
         .areas=${st?.areasCache?.areas ?? []}
         .media=${this.media}
         data-testid="card-list"
@@ -1166,6 +1170,7 @@ export class HVCardShell extends LitElement {
 
       ${mobile
         ? html`<hv-detail-sheet
+            .statuses=${st?.statuses ?? null}
             .areas=${st?.areasCache?.areas ?? []}
             .media=${this.media}
             .mediaConfig=${st?.mediaConfig ?? null}

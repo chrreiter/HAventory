@@ -321,6 +321,7 @@ export class Store {
       versionInfo: null,
       cardTitle: null,
       mediaConfig: null,
+      statuses: null,
       distinctValuesCache: null,
       connected: { items: false, stats: false },
       degraded: { ...NO_DEGRADATION },
@@ -796,6 +797,7 @@ export class Store {
     const title = config?.card_title;
     if (typeof title === 'string' && title) this.stateObs.set({ cardTitle: title });
     if (config?.media) this.stateObs.set({ mediaConfig: config.media });
+    if (config?.statuses?.length) this.stateObs.set({ statuses: config.statuses });
   }
 
   // ---------- Attachments ----------

@@ -7,17 +7,22 @@
 export type ScalarValue = string | number | boolean;
 
 /**
- * Stored per-item condition. Non-nullable on the backend: every item has
- * exactly one, `ok` being the default and the way a flagged state clears.
+ * Stored per-item condition: the slug of one status definition. Non-nullable on
+ * the backend — every item has exactly one, `ok` being the default and the way a
+ * flagged state clears.
+ *
+ * Not a union of the built-in three: a household defines its own statuses, so
+ * the set is data the backend reports, not something this file can enumerate.
  */
-export type ItemStatus = 'ok' | 'missing' | 'needs_repair';
+export type ItemStatus = string;
 
 /**
  * One entry of the backend's status vocabulary: an immutable `slug` (what items
  * store) and an editable `label` (what a surface shows). Renaming a status
  * touches only the label, so no item is ever rewritten.
+ *
+ * A tone: five hues, each in a light and a strong form.
  */
-/** A status tone: five hues, each in a light and a strong form. */
 export type StatusColor =
   | 'neutral'
   | 'neutral_strong'
@@ -612,6 +617,12 @@ export interface StoreState {
    * answered — or permanently, against a backend too old to report them.
    */
   mediaConfig: MediaConfig | null;
+  /**
+   * The status vocabulary, or null until `haventory/config` has answered — or
+   * permanently, against a backend too old to report it. `ui/status` falls back
+   * to the built-in three either way.
+   */
+  statuses: StatusDefinition[] | null;
   // Distinct categories/tags with counts, sourcing category/tag autocomplete.
   distinctValuesCache: DistinctValues | null;
   connected: { items: boolean; stats: boolean };

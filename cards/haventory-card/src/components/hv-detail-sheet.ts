@@ -5,20 +5,13 @@ import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import { inferType } from '../ui/item-form';
-import { itemStatus, statusLabel } from '../ui/status';
+import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
 import { isLowStock } from './hv-list-row';
 import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { MediaUrls, pictureAlt, pictures } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
 import { DialogFocus } from '../ui/dialog-focus';
-import type {
-  AreaRef,
-  Item,
-  Location,
-  LocationTreeNode,
-  MediaConfig,
-  ScalarValue,
-} from '../store/types';
+import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, ScalarValue, StatusDefinition } from '../store/types';
 import './hv-bottom-sheet';
 import './hv-checkout-popover';
 import './hv-item-editor';
@@ -323,6 +316,9 @@ export class HVDetailSheet extends LitElement {
   @property({ type: String }) errorMessage: string | null = null;
 
   /** Picture access for the gallery, the lightbox and the editor it hosts. */
+  /** The status vocabulary from `haventory/config`; the built-ins stand in
+   * until it answers. */
+  @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
   @property({ attribute: false }) media: MediaBindings | null = null;
   /** Attachment caps and accepted types, forwarded to the editor's picker. */
   @property({ attribute: false }) mediaConfig: MediaConfig | null = null;
@@ -499,10 +495,8 @@ export class HVDetailSheet extends LitElement {
                 >Low</span
               >`
             : null}
-          ${itemStatus(item) !== 'ok'
-            ? html`<span class="hv-chip warning" data-testid="sheet-status"
-                >${statusLabel(itemStatus(item))}</span
-              >`
+          ${itemStatus(item) !== DEFAULT_STATUS
+            ? renderStatusChip(itemStatus(item), this.statuses, { testid: 'sheet-status' })
             : null}
           ${item.checked_out
             ? html`<span
@@ -660,6 +654,7 @@ export class HVDetailSheet extends LitElement {
         </button>
       </div>
       <hv-item-editor
+        .statuses=${this.statuses}
         .areas=${this.areas}
         .media=${this.media}
         .mediaConfig=${this.mediaConfig}
