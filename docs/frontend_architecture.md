@@ -74,7 +74,7 @@ haventory-card                     Lovelace element; store owner
     │   ├── hv-item-editor
     │   └── hv-checkout-popover    inline due-date step
     ├── hv-checkout-popover        desktop: anchored due-date step
-    ├── hv-organize-dialog         Locations / Categories / Tags
+    ├── hv-organize-dialog         Locations / Categories / Tags / Statuses
     ├── hv-import-sheet            input → preview → summary (+ invalid-document state)
     ├── hv-diagnostics-panel       health, drop counters, subscriptions, copy report
     ├── hv-confirm                 in-app confirmation (replaces window.confirm)
@@ -284,6 +284,7 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 | `location-path.ts` | The `/` → `›` convention for a location path, a location's label with a caller-supplied fallback, and the area-beside-the-path composition (`itemPathParts` / `locationPathParts` / `pathTitle` / `renderAreaChip`). |
 | `dialog-focus.ts` | Initial focus and focus return for modal surfaces. Opening must move focus into the panel or its Escape handler never fires. |
 | `media.ts` | Item pictures: the media path builder, the `MediaUrls` signed-URL cache (request, reuse, refresh before expiry, and a distinguishable failed state), and the `MediaBindings` shape a host hands its components. |
+| `status.ts` | The item-status vocabulary: the definitions a surface renders from (backend's, or the built-in three until `haventory/config` answers), the label / tone-class / glyph lookups with their fallbacks, the colour and glyph vocabularies the management picker offers, and `renderStatusChip` — one renderer so the mark cannot drift between a table cell and a detail sheet. |
 | `keyboard.ts` | `onEscape()` for the surfaces where Escape means exactly "close", and the platform-correct save-shortcut label. |
 | `plural.ts` | Count agreement for every count string in the card. |
 | `theme.ts` | Whether the card is painted on a light or dark surface, read from HA's own theme variables rather than `prefers-color-scheme`. |

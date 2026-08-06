@@ -1,6 +1,6 @@
 import type {
-  AreasListResult,
   AnyEventPayload,
+  AreasListResult,
   BulkFailure,
   BulkOperation,
   BulkOutcome,
@@ -22,6 +22,8 @@ import type {
   Location,
   LocationTreeNode,
   StatsCounts,
+  StatusColor,
+  StatusDefinition,
   StoreFilters,
   StoreState,
   Unsubscribe,
@@ -1291,6 +1293,53 @@ export class Store {
     // Denormalized item location_path values changed for the whole subtree.
     await this.listItems(true);
     return moved;
+  }
+
+  // ---------- Status definitions ----------
+
+  async createStatus(status: {
+    slug: string;
+    label: string;
+    color?: StatusColor;
+    icon?: string;
+  }): Promise<StatusDefinition> {
+    const created = await this.ws.createStatus(status);
+    await this.refreshStatuses();
+    return created;
+  }
+
+  /** Edit presentation. No item moves, so nothing but the vocabulary refreshes. */
+  async updateStatus(
+    slug: string,
+    changes: { label?: string; color?: StatusColor; icon?: string },
+  ): Promise<StatusDefinition> {
+    const updated = await this.ws.updateStatus(slug, changes);
+    await this.refreshStatuses();
+    return updated;
+  }
+
+  async reorderStatuses(slugs: string[]): Promise<StatusDefinition[]> {
+    const ordered = await this.ws.reorderStatuses(slugs);
+    await this.refreshStatuses();
+    return ordered;
+  }
+
+  /**
+   * Delete a status, moving the items that carry it when a target is given.
+   *
+   * Rejects with `validation_error` when items still reference the slug and no
+   * target was chosen — the backend refuses rather than orphaning them.
+   *
+   * A reassignment rewrote items, so the item list and the counts are re-read
+   * too. The `statuses` subscription would deliver that eventually, but every
+   * other mutator here refreshes what it changed rather than waiting on its own
+   * broadcast.
+   */
+  async deleteStatus(slug: string, reassignTo?: string): Promise<number> {
+    const { reassigned } = await this.ws.deleteStatus(slug, reassignTo);
+    await this.refreshStatuses();
+    if (reassigned > 0) await Promise.all([this.listItems(true), this.refreshStats()]);
+    return reassigned;
   }
 
   // ---------- Bulk operations ----------

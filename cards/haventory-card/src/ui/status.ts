@@ -1,7 +1,7 @@
 import { html } from 'lit';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import type { TemplateResult } from 'lit';
-import type { Item, StatusDefinition } from '../store/types';
+import type { Item, StatusColor, StatusDefinition } from '../store/types';
 import { ICONS, icon } from './icons';
 import type { IconName } from './icons';
 
@@ -29,6 +29,40 @@ export const BUILT_IN_STATUSES: readonly StatusDefinition[] = [
   { slug: 'ok', label: 'OK', order: 0, color: 'green', icon: 'check' },
   { slug: 'missing', label: 'Missing', order: 1, color: 'amber', icon: 'alert' },
   { slug: 'needs_repair', label: 'Needs repair', order: 2, color: 'amber', icon: 'wrench' },
+];
+
+/**
+ * Every colour a status may take: five hues, each in a light and a strong form.
+ * Ordered hue-major so a five-by-two picker grid reads as hue across, intensity
+ * down. Pinned to the backend's `STATUS_COLORS` by
+ * `tests/test_frontend_registration.py` — the backend refuses a value outside
+ * its own list, and neither side can see the other.
+ */
+export const STATUS_COLORS: readonly StatusColor[] = [
+  'neutral',
+  'neutral_strong',
+  'green',
+  'green_strong',
+  'blue',
+  'blue_strong',
+  'amber',
+  'amber_strong',
+  'red',
+  'red_strong',
+];
+
+/** Every glyph a status may take, pinned to the backend's `STATUS_ICONS`. */
+export const STATUS_ICONS: readonly IconName[] = [
+  'check',
+  'alert',
+  'wrench',
+  'hand',
+  'box',
+  'truck',
+  'clock',
+  'cancel',
+  'star',
+  'help',
 ];
 
 /** Definitions to render from: the backend's, or the built-ins until it answers. */

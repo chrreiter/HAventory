@@ -70,12 +70,13 @@ describe('hv-organize-dialog: shell', () => {
     expect(q(sr, '[data-testid="organize-dialog"]')).toBe(null);
   });
 
-  it('replaces three separate browsers with one tabbed dialog', async () => {
+  it('replaces four separate browsers with one tabbed dialog', async () => {
     const { sr } = await mount();
     expect(all(sr, '[data-testid="organize-tab"]').map((t) => t.dataset.tab)).toEqual([
       'locations',
       'categories',
       'tags',
+      'statuses',
     ]);
   });
 
@@ -935,5 +936,173 @@ describe('hv-organize-dialog: mobile value actions', () => {
 
     expect((q(sr, '[data-testid="value-editor"]') as HTMLElement).dataset.mode).toBe('merge');
     expect(q(sr, '[data-testid="value-sheet"]')).toBe(null);
+  });
+});
+
+describe('hv-organize-dialog: statuses', () => {
+  const ladder = makeItem({ id: 'i1', name: 'Ladder', status: 'missing' });
+
+  it('lists the vocabulary in display order, with each definition its own chip', async () => {
+    const { sr } = await mount({ tab: 'statuses' });
+
+    expect(all(sr, '[data-testid="status-row"]').map((r) => r.dataset.value)).toEqual([
+      'ok',
+      'missing',
+      'needs_repair',
+    ]);
+    expect(q(sr, '[data-testid="status-chip"]')?.classList.contains('tone-green')).toBe(true);
+  });
+
+  it('shows the slug beside the label, because an automation has to name it', async () => {
+    const { sr } = await mount({ tab: 'statuses' });
+
+    expect(all(sr, '[data-testid="status-slug"]').map((s) => s.textContent?.trim())).toEqual([
+      'ok',
+      'missing',
+      'needs_repair',
+    ]);
+  });
+
+  it('counts the items on each status', async () => {
+    const { sr } = await mount({ tab: 'statuses', items: [ladder] });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    expect(row?.querySelector('[data-testid="status-count"]')?.textContent?.trim()).toBe('1 item');
+  });
+
+  it('creates a status, deriving the slug from the label', async () => {
+    const { el, sr, hass } = await mount({ tab: 'statuses' });
+
+    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
+    await settle(el);
+    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
+    input.value = 'Lent out';
+    input.dispatchEvent(new Event('input'));
+    await settle(el);
+    expect(q(sr, '[data-testid="status-slug-preview"]')?.textContent?.trim()).toBe('lent_out');
+
+    (q(sr, '[data-testid="status-save"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const sent = hass.__messages.find((m) => m.type === 'haventory/status/create');
+    expect(sent).toMatchObject({ slug: 'lent_out', label: 'Lent out' });
+  });
+
+  it('renames without touching any item', async () => {
+    const { el, sr, hass } = await mount({ tab: 'statuses', items: [ladder] });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
+    input.value = 'Gone walkabout';
+    input.dispatchEvent(new Event('input'));
+    (q(sr, '[data-testid="status-save"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(hass.__messages.find((m) => m.type === 'haventory/status/update')).toMatchObject({
+      slug: 'missing',
+      label: 'Gone walkabout',
+    });
+    expect(hass.__messages.some((m) => m.type === 'haventory/item/update')).toBe(false);
+  });
+
+  // The command takes the whole permutation, so a partial list cannot leave two
+  // definitions claiming one position.
+  it('moves a status by sending every slug in the new order', async () => {
+    const { el, sr, hass } = await mount({ tab: 'statuses' });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-down"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(hass.__messages.find((m) => m.type === 'haventory/status/reorder')).toMatchObject({
+      slugs: ['ok', 'needs_repair', 'missing'],
+    });
+  });
+
+  it('cannot move the first row up or the last row down', async () => {
+    const { sr } = await mount({ tab: 'statuses' });
+
+    const rows = all(sr, '[data-testid="status-row"]');
+    expect((rows[0].querySelector('[data-testid="status-up"]') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(
+      (rows[rows.length - 1].querySelector('[data-testid="status-down"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it('offers no delete for the default status', async () => {
+    const { sr } = await mount({ tab: 'statuses' });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'ok');
+    expect(row?.querySelector('[data-testid="status-remove"]')).toBe(null);
+    expect(row?.querySelector('[data-testid="status-default"]')).not.toBe(null);
+  });
+
+  // The backend refuses this regardless; the guard is the explanation, and the
+  // target is what turns the refusal into a completed move.
+  it('guards a delete that would orphan items, then reassigns them', async () => {
+    const { el, sr, hass } = await mount({ tab: 'statuses', items: [ladder] });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-remove"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const guard = q(sr, '[data-testid="status-guard"]');
+    expect(guard?.textContent).toContain('1 item');
+    expect(hass.__messages.some((m) => m.type === 'haventory/status/delete')).toBe(false);
+
+    (q(sr, '[data-testid="status-guard-confirm"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(hass.__messages.find((m) => m.type === 'haventory/status/delete')).toMatchObject({
+      slug: 'missing',
+      reassign_to: 'ok',
+    });
+  });
+
+  it('confirms rather than guards when nothing carries the status', async () => {
+    const { el, sr } = await mount({ tab: 'statuses' });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-remove"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="status-guard"]')).toBe(null);
+    expect(
+      (q(sr, '[data-testid="organize-status-confirm"]') as HTMLElement).hasAttribute('open'),
+    ).toBe(true);
+  });
+
+  it('sends the colour and glyph chosen in the picker', async () => {
+    const { el, sr, hass } = await mount({ tab: 'statuses' });
+
+    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
+    await settle(el);
+    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
+    input.value = 'Lent out';
+    input.dispatchEvent(new Event('input'));
+    await settle(el);
+    (
+      all(sr, '[data-testid="status-color"]').find(
+        (b) => (b as HTMLElement).dataset.value === 'blue_strong',
+      ) as HTMLButtonElement
+    ).click();
+    (
+      all(sr, '[data-testid="status-icon"]').find(
+        (b) => (b as HTMLElement).dataset.value === 'hand',
+      ) as HTMLButtonElement
+    ).click();
+    await settle(el);
+    (q(sr, '[data-testid="status-save"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(hass.__messages.find((m) => m.type === 'haventory/status/create')).toMatchObject({
+      color: 'blue_strong',
+      icon: 'hand',
+    });
   });
 });

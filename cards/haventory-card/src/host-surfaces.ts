@@ -178,7 +178,7 @@ export class HostSurfaces {
     const filtersOn = activeFilterCount(st?.filters ?? defaultFilters()) > 0;
     return [
       { id: 'select-items', label: 'Select items…', glyph: 'select' },
-      { id: 'organize', label: 'Organize…', glyph: 'mapMarker', meta: 'Locations · Tags · Categories' },
+      { id: 'organize', label: 'Organize…', glyph: 'mapMarker', meta: 'Locations · Tags · Categories · Statuses' },
       { id: 'columns', label: 'Columns…', glyph: 'viewColumn' },
       { divider: true },
       { id: 'refresh', label: 'Refresh data', glyph: 'refresh', meta: 'Items · locations · stats' },

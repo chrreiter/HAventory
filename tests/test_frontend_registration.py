@@ -798,6 +798,26 @@ def test_every_status_icon_has_a_glyph_in_the_bundle() -> None:
     assert set(STATUS_ICONS) <= defined, f"no glyph for: {sorted(set(STATUS_ICONS) - defined)}"
 
 
+def test_the_card_offers_exactly_the_vocabularies_the_backend_accepts() -> None:
+    """The management picker enumerates colours and glyphs from its own arrays.
+
+    The backend refuses anything outside `STATUS_COLORS` / `STATUS_ICONS`, so a
+    card offering one more choice hands the user a control that fails on save,
+    and one offering fewer hides a colour the store may already hold.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "status.ts").read_text(
+        encoding="utf-8"
+    )
+
+    def declared(name: str) -> list[str]:
+        match = re.search(rf"export const {name}: readonly \w+\[\] = \[(.*?)\];", source, re.S)
+        assert match is not None, f"{name} is no longer declared in status.ts"
+        return re.findall(r"'([^']+)'", match.group(1))
+
+    assert declared("STATUS_COLORS") == list(STATUS_COLORS)
+    assert declared("STATUS_ICONS") == list(STATUS_ICONS)
+
+
 def test_every_status_colour_has_a_rule_in_the_chip_stylesheet() -> None:
     """``STATUS_COLORS`` names tones only the card can paint.
 
