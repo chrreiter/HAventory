@@ -82,7 +82,10 @@ export const tokens = css`
     --hv-tone-green-bg: light-dark(#e6f4ea, rgba(129, 199, 132, 0.16));
     --hv-tone-green-fg: light-dark(#1b5e20, #a5d6a7);
     --hv-tone-blue-bg: var(--hv-primary-tint);
-    --hv-tone-blue-fg: var(--hv-primary-darker);
+    /* Not --hv-primary-darker: that blue is one step too light to carry 12px
+       text on this tint, at 4.26:1. Every other light tone pairs its tint with
+       the 900 shade of its own hue, and doing the same here clears AA. */
+    --hv-tone-blue-fg: light-dark(#01579b, #4fc3f7);
     --hv-tone-amber-bg: var(--hv-warn-bg);
     --hv-tone-amber-fg: var(--hv-warn-deep);
     --hv-tone-red-bg: var(--hv-error-bg);

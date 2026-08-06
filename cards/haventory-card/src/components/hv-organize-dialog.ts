@@ -258,11 +258,19 @@ export class HVOrganizeDialog extends LitElement {
         cursor: default;
       }
       /* The identity items store. Shown because services.yaml and an export
-         document carry it, muted because a household never needs to type it. */
+         document carry it, muted because a household never needs to type it.
+
+         It is also the only part of the row that may be cut: at phone width a
+         long slug otherwise pushes the delete button past the dialog edge,
+         where it cannot be tapped at all. */
       .status-slug {
         font: 400 12px var(--hv-font);
         color: var(--hv-text-tertiary);
         white-space: nowrap;
+        flex: 0 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       .swatches {
         display: flex;
@@ -305,6 +313,10 @@ export class HVOrganizeDialog extends LitElement {
         color: var(--hv-primary-dark);
         font: 400 12px var(--hv-font);
         padding: 0;
+        /* "12 items" wrapping to two lines makes the row taller without making
+           it narrower — the slug beside it is what gives way instead. */
+        white-space: nowrap;
+        flex: none;
       }
       .draft-note {
         font: 400 12px var(--hv-font);
@@ -315,6 +327,7 @@ export class HVOrganizeDialog extends LitElement {
         margin-left: auto;
         display: flex;
         gap: 2px;
+        flex: none;
       }
       :host(:not([mobile])) .value-row .row-actions {
         visibility: hidden;
