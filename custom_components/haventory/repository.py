@@ -18,7 +18,7 @@ import logging
 import re
 import uuid
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, NamedTuple, TypedDict
 
@@ -61,6 +61,7 @@ from .models import (
     today_utc_date,
     validate_location_name,
     validate_status_definition,
+    validate_status_slug,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -259,6 +260,107 @@ class Repository:
         """Status definitions in display order, ties broken by slug."""
 
         return sorted(self._statuses_by_slug.values(), key=lambda d: (d.order, d.slug))
+
+    def count_items_with_status(self, slug: str) -> int:
+        """How many items carry a slug.
+
+        The index buckets only non-default statuses, so the default's population
+        is everything not in a bucket — the same arithmetic ``get_counts`` does.
+        """
+
+        if slug == DEFAULT_ITEM_STATUS:
+            flagged = sum(len(ids) for ids in self._status_to_item_ids.values())
+            return len(self._items_by_id) - flagged
+        return len(self._status_to_item_ids.get(slug, set()))
+
+    def create_status(self, doc: dict[str, Any]) -> StatusDefinition:
+        """Define a new status. Absent ``order`` places it last."""
+
+        slug = validate_status_slug(doc.get("slug"))
+        if slug in self._statuses_by_slug:
+            raise ValidationError(f"status '{slug}' already exists")
+        if "order" not in doc:
+            doc = {**doc, "order": len(self._statuses_by_slug)}
+        definition = validate_status_definition(doc)
+        self._statuses_by_slug[definition.slug] = definition
+        self._increment_generation()
+        return definition
+
+    def update_status(self, slug: str, changes: dict[str, Any]) -> StatusDefinition:
+        """Edit a definition's presentation. The slug itself is immutable."""
+
+        current = self._statuses_by_slug.get(slug)
+        if current is None:
+            raise NotFoundError(f"status '{slug}' not found")
+        if "slug" in changes and changes["slug"] != slug:
+            raise ValidationError("a status slug cannot be changed; items store it")
+        merged = {**serialize_status_definition(current), **changes, "slug": slug}
+        definition = validate_status_definition(merged)
+        self._statuses_by_slug[slug] = definition
+        self._increment_generation()
+        return definition
+
+    def reorder_statuses(self, slugs: Sequence[str]) -> list[StatusDefinition]:
+        """Rewrite display order from a full permutation of the live slugs."""
+
+        if sorted(slugs) != sorted(self._statuses_by_slug):
+            raise ValidationError("reorder must name every status exactly once")
+        for order, slug in enumerate(slugs):
+            self._statuses_by_slug[slug] = replace(self._statuses_by_slug[slug], order=order)
+        self._increment_generation()
+        return self.list_statuses()
+
+    def delete_status(
+        self, slug: str, *, reassign_to: str | None = None
+    ) -> tuple[StatusDefinition, int]:
+        """Remove a definition, optionally moving the items that carry it.
+
+        Refuses while items still reference the slug unless given somewhere to
+        put them: an item whose status names nothing would be coerced to the
+        default on the next load, silently. Returns what was removed and how
+        many items moved.
+        """
+
+        if slug == DEFAULT_ITEM_STATUS:
+            raise ValidationError(f"'{slug}' is the default status and cannot be deleted")
+        current = self._statuses_by_slug.get(slug)
+        if current is None:
+            raise NotFoundError(f"status '{slug}' not found")
+
+        in_use = self.count_items_with_status(slug)
+        if in_use and reassign_to is None:
+            raise ValidationError(
+                f"status '{slug}' is on {in_use} item(s); "
+                "choose a status to move them to before deleting it"
+            )
+        if reassign_to is not None:
+            if reassign_to == slug:
+                raise ValidationError("cannot reassign a status to itself")
+            if reassign_to not in self._statuses_by_slug:
+                raise ValidationError(f"status '{reassign_to}' not found")
+
+        moved = self._reassign_status(slug, reassign_to) if reassign_to is not None else 0
+        del self._statuses_by_slug[slug]
+        self._status_to_item_ids.pop(slug, None)
+        self._increment_generation()
+        return current, moved
+
+    def _reassign_status(self, slug: str, target: str) -> int:
+        """Move every item on ``slug`` to ``target``, as ordinary item edits."""
+
+        # Materialized first: the loop reindexes, which mutates the bucket the
+        # ids come from.
+        affected = [item_id for item_id, item in self._items_by_id.items() if item.status == slug]
+        for item_id in affected:
+            current = self._items_by_id[item_id]
+            updated = replace(
+                current,
+                status=target,
+                updated_at=monotonic_timestamp_after(current.updated_at),
+                version=current.version + 1,
+            )
+            self._reindex_item_replacement(current, updated)
+        return len(affected)
 
     # -----------------------------
     # Internal helpers — indexing
@@ -1276,6 +1378,53 @@ class Repository:
         remaining = [a for a in current.attachments if str(a.id) != wanted]
         updated = self._replace_attachments(item_id, remaining, expected_version=expected_version)
         return updated, removed
+
+    def update_attachment(
+        self,
+        item_id: str | uuid.UUID,
+        attachment_id: str | uuid.UUID,
+        *,
+        title: str,
+        expected_version: int | None = None,
+    ) -> Item:
+        """Retitle one attachment. The file on disk is untouched."""
+
+        current = self.get_item(item_id)
+        wanted = str(attachment_id)
+        if not any(str(a.id) == wanted for a in current.attachments):
+            raise NotFoundError("attachment not found")
+        rewritten = [
+            replace(a, title=title.strip()) if str(a.id) == wanted else a
+            for a in current.attachments
+        ]
+        return self._replace_attachments(item_id, rewritten, expected_version=expected_version)
+
+    def reorder_attachments(
+        self,
+        item_id: str | uuid.UUID,
+        kind: str,
+        attachment_ids: Sequence[str],
+        *,
+        expected_version: int | None = None,
+    ) -> Item:
+        """Renumber one kind's attachments. Position 0 is the item's cover.
+
+        Order is per kind, so the other kind keeps whatever numbering it had —
+        renumbering pictures must not move a manual.
+        """
+
+        current = self.get_item(item_id)
+        of_kind = {str(a.id) for a in current.attachments if a.kind == kind}
+        if sorted(attachment_ids) != sorted(of_kind):
+            raise ValidationError(
+                f"reorder must name every attachment of kind '{kind}' exactly once"
+            )
+        positions = {att_id: order for order, att_id in enumerate(attachment_ids)}
+        rewritten = [
+            replace(a, order=positions[str(a.id)]) if a.kind == kind else a
+            for a in current.attachments
+        ]
+        return self._replace_attachments(item_id, rewritten, expected_version=expected_version)
 
     def iter_attachments(self) -> Iterable[tuple[str, AttachmentMeta]]:
         """Every (item id, attachment) pair currently referenced by metadata."""
