@@ -22,6 +22,11 @@ item_create:
       example: "ok"
       selector:
         select:
+          # The built-ins are suggestions, not the whole vocabulary: a household
+          # defines its own statuses and Home Assistant cannot make a selector's
+          # options dynamic. The backend validates the slug against the live set
+          # either way.
+          custom_value: true
           options:
             - "ok"
             - "missing"
@@ -96,6 +101,11 @@ item_update:
       required: false
       selector:
         select:
+          # The built-ins are suggestions, not the whole vocabulary: a household
+          # defines its own statuses and Home Assistant cannot make a selector's
+          # options dynamic. The backend validates the slug against the live set
+          # either way.
+          custom_value: true
           options:
             - "ok"
             - "missing"

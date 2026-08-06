@@ -27,11 +27,13 @@ from . import media as media_mod
 from . import storage as storage_mod
 from .areas import async_get_area_registry
 from .const import (
+    ATTACHMENT_MANUAL_MIME_TYPES,
     ATTACHMENT_PICTURE_MIME_TYPES,
     DEFAULT_CARD_TITLE,
     DOMAIN,
     INTEGRATION_VERSION,
     MAX_ATTACHMENT_BYTES,
+    MAX_MANUALS_PER_ITEM,
     MAX_PICTURES_PER_ITEM,
 )
 from .exceptions import (
@@ -852,6 +854,8 @@ async def ws_config(
         "media": {
             "picture_mime_types": list(ATTACHMENT_PICTURE_MIME_TYPES),
             "max_pictures_per_item": MAX_PICTURES_PER_ITEM,
+            "manual_mime_types": list(ATTACHMENT_MANUAL_MIME_TYPES),
+            "max_manuals_per_item": MAX_MANUALS_PER_ITEM,
             "max_attachment_bytes": MAX_ATTACHMENT_BYTES,
         },
     }
@@ -1070,8 +1074,8 @@ async def ws_subscribe(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     topic = msg.get("topic")
-    if topic not in {"items", "locations", "stats"}:
-        raise ValidationError("topic must be one of: items, locations, stats")
+    if topic not in {"items", "locations", "stats", "statuses"}:
+        raise ValidationError("topic must be one of: items, locations, stats, statuses")
     sub: _Subscription = {
         "topic": topic,
     }
@@ -1594,6 +1598,68 @@ async def ws_item_attachment_remove(
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "haventory/item/attachment/update",
+        vol.Required("item_id"): object,
+        vol.Required("attachment_id"): object,
+        vol.Required("title"): str,
+        vol.Optional("expected_version"): int,
+    }
+)
+@websocket_api.async_response
+@ws_guard("item_attachment_update", ("item_id", "attachment_id", "expected_version"))
+async def ws_item_attachment_update(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Retitle one attachment. The file on disk is untouched."""
+
+    repo = _repo(hass)
+    updated = repo.update_attachment(
+        msg["item_id"],
+        str(msg["attachment_id"]),
+        title=msg["title"],
+        expected_version=msg.get("expected_version"),
+    )
+    serialized = _serialize_item(hass, updated)
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/attachment/reorder",
+        vol.Required("item_id"): object,
+        vol.Required("kind"): str,
+        vol.Required("attachment_ids"): [str],
+        vol.Optional("expected_version"): int,
+    }
+)
+@websocket_api.async_response
+@ws_guard("item_attachment_reorder", ("item_id", "kind", "expected_version"))
+async def ws_item_attachment_reorder(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Renumber one kind's attachments; the first named becomes position 0.
+
+    A picture at position 0 is the item's cover, so "make cover" is this command
+    rather than a flag of its own.
+    """
+
+    repo = _repo(hass)
+    updated = repo.reorder_attachments(
+        msg["item_id"],
+        msg["kind"],
+        list(msg["attachment_ids"]),
+        expected_version=msg.get("expected_version"),
+    )
+    serialized = _serialize_item(hass, updated)
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "haventory/item/move",
         vol.Required("item_id"): object,
         vol.Optional("expected_version"): int,
@@ -2022,6 +2088,134 @@ def _serialize_location(loc: Location) -> dict[str, Any]:
     }
 
 
+@websocket_api.websocket_command({"type": "haventory/status/list"})
+@websocket_api.async_response
+@ws_guard("status_list", ())
+async def ws_status_list(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The status vocabulary in display order."""
+
+    data = [serialize_status_definition(d) for d in _repo(hass).list_statuses()]
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), data))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/status/create",
+        vol.Required("slug"): str,
+        vol.Required("label"): str,
+        vol.Optional("color"): str,
+        vol.Optional("icon"): str,
+        vol.Optional("order"): int,
+    }
+)
+@websocket_api.async_response
+@ws_guard("status_create", ("slug",))
+async def ws_status_create(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Define a new status."""
+
+    repo = _repo(hass)
+    doc: dict[str, Any] = {
+        k: msg[k] for k in ("slug", "label", "color", "icon", "order") if k in msg
+    }
+    created = repo.create_status(doc)
+    serialized = serialize_status_definition(created)
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="statuses", action="created", payload={"status": serialized})
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/status/update",
+        vol.Required("slug"): str,
+        vol.Optional("label"): str,
+        vol.Optional("color"): str,
+        vol.Optional("icon"): str,
+        vol.Optional("order"): int,
+    }
+)
+@websocket_api.async_response
+@ws_guard("status_update", ("slug",))
+async def ws_status_update(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Edit a status's presentation.
+
+    No item is touched and no item version moves: the slug is the identity, and
+    a label or colour is presentation — the same reasoning that keeps a location
+    rename out of an item's version.
+    """
+
+    repo = _repo(hass)
+    changes: dict[str, Any] = {k: msg[k] for k in ("label", "color", "icon", "order") if k in msg}
+    updated = repo.update_status(msg["slug"], changes)
+    serialized = serialize_status_definition(updated)
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="statuses", action="updated", payload={"status": serialized})
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/status/reorder",
+        vol.Required("slugs"): [str],
+    }
+)
+@websocket_api.async_response
+@ws_guard("status_reorder", ())
+async def ws_status_reorder(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Rewrite display order from a full permutation of the live slugs."""
+
+    repo = _repo(hass)
+    ordered = repo.reorder_statuses(list(msg["slugs"]))
+    serialized = [serialize_status_definition(d) for d in ordered]
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="statuses", action="reordered", payload={"statuses": serialized})
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/status/delete",
+        vol.Required("slug"): str,
+        vol.Optional("reassign_to"): str,
+    }
+)
+@websocket_api.async_response
+@ws_guard("status_delete", ("slug", "reassign_to"))
+async def ws_status_delete(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Remove a status, optionally moving the items that carry it.
+
+    Refuses while items still reference the slug and no target is given. With a
+    target the items move first, in the same call, so no client can observe a
+    state where an item names a status that no longer exists.
+    """
+
+    repo = _repo(hass)
+    removed, reassigned = repo.delete_status(msg["slug"], reassign_to=msg.get("reassign_to"))
+    serialized = serialize_status_definition(removed)
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="statuses", action="deleted", payload={"status": serialized})
+    if reassigned:
+        # Two topics on purpose: one card is showing the vocabulary, another is
+        # showing the items that just moved underneath it.
+        _broadcast_event(hass, topic="items", action="updated", payload=None)
+        _broadcast_counts(hass)
+    conn.send_message(
+        websocket_api.result_message(
+            msg.get("id", 0), {"status": serialized, "reassigned": reassigned}
+        )
+    )
+
+
 @websocket_api.websocket_command({"type": "haventory/areas/list"})
 @websocket_api.async_response
 @ws_guard("areas_list", ())
@@ -2240,6 +2434,8 @@ def setup(hass: HomeAssistant) -> None:
         ws_item_set_low_stock_threshold,
         ws_item_attachment_add,
         ws_item_attachment_remove,
+        ws_item_attachment_update,
+        ws_item_attachment_reorder,
         ws_item_move,
         ws_items_bulk,
         ws_item_list,
@@ -2250,6 +2446,11 @@ def setup(hass: HomeAssistant) -> None:
         ws_location_list,
         ws_location_tree,
         ws_location_move_subtree,
+        ws_status_list,
+        ws_status_create,
+        ws_status_update,
+        ws_status_reorder,
+        ws_status_delete,
         ws_areas_list,
         ws_export,
         ws_import_preview,

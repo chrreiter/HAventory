@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import pytest
 from custom_components.haventory.const import (
+    ATTACHMENT_MANUAL_MIME_TYPES,
     ATTACHMENT_PICTURE_MIME_TYPES,
     DEFAULT_CARD_TITLE,
     DOMAIN,
     INTEGRATION_VERSION,
     MAX_ATTACHMENT_BYTES,
+    MAX_MANUALS_PER_ITEM,
     MAX_PICTURES_PER_ITEM,
 )
 from custom_components.haventory.repository import Repository
@@ -144,6 +146,10 @@ async def test_config_reports_the_attachment_caps_and_accepted_types() -> None:
     # SVG carries script and the view serves from the HA origin, so it is not
     # merely unlisted here — it must never appear.
     assert "image/svg+xml" not in media["picture_mime_types"]
+    # The manual kind has its own allow-list and its own cap, and the card
+    # cannot derive either.
+    assert media["manual_mime_types"] == list(ATTACHMENT_MANUAL_MIME_TYPES)
+    assert media["max_manuals_per_item"] == MAX_MANUALS_PER_ITEM
 
 
 @pytest.mark.asyncio
