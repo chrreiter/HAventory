@@ -410,7 +410,13 @@ async def test_ws_import_execute_rolls_back_on_persist_failure() -> None:
 def _repo_with_custom_status() -> Repository:
     repo = Repository()
     state = repo.export_state()
-    state["statuses"]["lent_out"] = {"slug": "lent_out", "label": "Lent out", "order": 9}
+    state["statuses"]["lent_out"] = {
+        "slug": "lent_out",
+        "label": "Lent out",
+        "order": 9,
+        "color": "blue",
+        "icon": "hand",
+    }
     repo.load_state(state)
     return repo
 
@@ -422,7 +428,13 @@ def test_export_carries_the_status_definitions() -> None:
         _repo_with_custom_status(), schema_version=CURRENT_SCHEMA_VERSION
     )
 
-    assert {"slug": "lent_out", "label": "Lent out", "order": 9} in doc["statuses"]
+    assert {
+        "slug": "lent_out",
+        "label": "Lent out",
+        "order": 9,
+        "color": "blue",
+        "icon": "hand",
+    } in doc["statuses"]
 
 
 def test_a_document_with_no_statuses_section_reads_as_the_built_ins() -> None:
@@ -559,7 +571,7 @@ def test_referenced_attachments_lists_every_pair_the_payload_carries() -> None:
 
     pairs = ie.referenced_attachments(repo.export_state())
 
-    assert pairs == [(str(item.id), _attachment_doc())]
+    assert pairs == [(str(item.id), _attachment_doc(title="", order=0))]
 
 
 @pytest.mark.asyncio

@@ -15,7 +15,11 @@ from copy import deepcopy
 from typing import Any
 
 import pytest
-from custom_components.haventory.const import DOMAIN
+from custom_components.haventory.const import (
+    DEFAULT_STATUS_COLOR,
+    DEFAULT_STATUS_ICON,
+    DOMAIN,
+)
 from custom_components.haventory.exceptions import SchemaDowngradeError, StorageError
 from custom_components.haventory.migrations import migrate, migrate_5_to_6
 from custom_components.haventory.storage import (
@@ -189,13 +193,40 @@ def _v5_payload(**items: Any) -> dict[str, Any]:
     }
 
 
+def _v5_attachment(att_id: str, **overrides: Any) -> dict[str, Any]:
+    """An attachment as v5 stored it — before `title` and `order` existed."""
+
+    doc = {
+        "id": att_id,
+        "kind": "picture",
+        "filename": "photo.png",
+        "mime": "image/png",
+        "size": 12,
+        "uploaded_at": "2026-08-05T10:00:00Z",
+    }
+    doc.update(overrides)
+    return doc
+
+
 def test_v5_to_v6_seeds_exactly_the_three_built_ins() -> None:
     out = migrate(_v5_payload(), from_version=5, to_version=6)
 
     assert out["statuses"] == {
-        "ok": {"slug": "ok", "label": "OK", "order": 0},
-        "missing": {"slug": "missing", "label": "Missing", "order": 1},
-        "needs_repair": {"slug": "needs_repair", "label": "Needs repair", "order": 2},
+        "ok": {"slug": "ok", "label": "OK", "order": 0, "color": "green", "icon": "check"},
+        "missing": {
+            "slug": "missing",
+            "label": "Missing",
+            "order": 1,
+            "color": "amber",
+            "icon": "alert",
+        },
+        "needs_repair": {
+            "slug": "needs_repair",
+            "label": "Needs repair",
+            "order": 2,
+            "color": "amber",
+            "icon": "wrench",
+        },
     }
 
 
@@ -211,22 +242,17 @@ def test_v5_to_v6_backfills_attachments_on_every_item() -> None:
     assert out["items"]["i2"]["attachments"] == []
 
 
-def test_v5_to_v6_leaves_an_item_that_already_carries_one_untouched() -> None:
-    existing = [
-        {
-            "id": "3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f",
-            "kind": "picture",
-            "filename": "photo.png",
-            "mime": "image/png",
-            "size": 12,
-            "uploaded_at": "2026-08-05T10:00:00Z",
-        }
-    ]
+def test_v5_to_v6_does_not_replace_a_list_that_already_has_entries() -> None:
+    """The backfill fills in what is absent; it never clears what is there."""
+
+    existing = [_v5_attachment("3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f")]
     payload = _v5_payload(i1={"id": "i1", "name": "Drill", "attachments": existing})
 
     out = migrate(payload, from_version=5, to_version=6)
 
-    assert out["items"]["i1"]["attachments"] == existing
+    assert out["items"]["i1"]["attachments"] == [
+        {**existing[0], "title": "", "order": 0},
+    ]
 
 
 def test_v5_to_v6_keeps_a_status_definition_it_did_not_seed() -> None:
@@ -237,8 +263,64 @@ def test_v5_to_v6_keeps_a_status_definition_it_did_not_seed() -> None:
 
     out = migrate(payload, from_version=5, to_version=6)
 
-    assert out["statuses"]["lent_out"] == {"slug": "lent_out", "label": "Lent out", "order": 9}
+    assert out["statuses"]["lent_out"] == {
+        "slug": "lent_out",
+        "label": "Lent out",
+        "order": 9,
+        "color": DEFAULT_STATUS_COLOR,
+        "icon": DEFAULT_STATUS_ICON,
+    }
     assert set(out["statuses"]) == {"lent_out", "ok", "missing", "needs_repair"}
+
+
+def test_v5_to_v6_gives_an_existing_definition_the_default_appearance() -> None:
+    """A store already stamped v6 never re-runs this step, so a definition that
+    predates the appearance fields has to read its defaults at load time — but a
+    v5 store crossing now gets them written, and a partial one is completed."""
+
+    payload = _v5_payload()
+    payload["statuses"] = {
+        "lent_out": {"slug": "lent_out", "label": "Lent out", "order": 9, "color": "blue"}
+    }
+
+    out = migrate(payload, from_version=5, to_version=6)
+
+    assert out["statuses"]["lent_out"]["color"] == "blue"
+    assert out["statuses"]["lent_out"]["icon"] == DEFAULT_STATUS_ICON
+
+
+def test_v5_to_v6_orders_attachments_by_their_stored_position() -> None:
+    """`order` is what the cover convention reads, so an existing list has to
+    acquire one — position 0 is the item's cover from the moment it exists."""
+
+    existing = [
+        _v5_attachment("3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f"),
+        _v5_attachment("4a1d7e3b-2c5f-4b0d-8e4a-3b8c9d2e1f60"),
+    ]
+    payload = _v5_payload(i1={"id": "i1", "name": "Drill", "attachments": existing})
+
+    out = migrate(payload, from_version=5, to_version=6)
+
+    assert [a["order"] for a in out["items"]["i1"]["attachments"]] == [0, 1]
+    assert [a["title"] for a in out["items"]["i1"]["attachments"]] == ["", ""]
+
+
+def test_v5_to_v6_keeps_an_attachment_title_and_order_it_did_not_write() -> None:
+    payload = _v5_payload(
+        i1={
+            "id": "i1",
+            "name": "Drill",
+            "attachments": [
+                _v5_attachment("3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f", title="Cover", order=4)
+            ],
+        }
+    )
+
+    out = migrate(payload, from_version=5, to_version=6)
+
+    assert out["items"]["i1"]["attachments"][0] == _v5_attachment(
+        "3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f", title="Cover", order=4
+    )
 
 
 def test_v5_to_v6_is_idempotent() -> None:

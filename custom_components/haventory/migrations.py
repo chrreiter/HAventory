@@ -101,11 +101,17 @@ def migrate_4_to_5(payload: dict[str, Any]) -> dict[str, Any]:
 # The status definitions v6 seeds. Frozen literals rather than a read from
 # models, for the same reason as ``_V5_ITEM_STATUSES``: this step must keep
 # seeding exactly these three once the live set can grow.
-_V6_SEED_STATUSES: Final[tuple[tuple[str, str], ...]] = (
-    ("ok", "OK"),
-    ("missing", "Missing"),
-    ("needs_repair", "Needs repair"),
+_V6_SEED_STATUSES: Final[tuple[tuple[str, str, str, str], ...]] = (
+    ("ok", "OK", "green", "check"),
+    ("missing", "Missing", "amber", "alert"),
+    ("needs_repair", "Needs repair", "amber", "wrench"),
 )
+
+# Frozen here rather than imported from `const`: a migration step has to keep
+# meaning what it meant when it was written, and the live vocabulary is free to
+# grow past it.
+_V6_DEFAULT_STATUS_COLOR: Final[str] = "neutral"
+_V6_DEFAULT_STATUS_ICON: Final[str] = "check"
 
 
 def migrate_5_to_6(payload: dict[str, Any]) -> dict[str, Any]:
@@ -114,11 +120,14 @@ def migrate_5_to_6(payload: dict[str, Any]) -> dict[str, Any]:
     One step for both, so a v0.4.0 install crosses exactly one version.
 
     * ``statuses`` becomes a slug-keyed map of definitions, seeded with the
-      three built-ins. A definition already present — including one a later
-      release or a hand edit added — is left exactly as it stands.
-    * every item gains ``attachments: []`` unless it already carries the field.
+      three built-ins and their appearance. A definition already present —
+      including one a later release or a hand edit added — keeps every field it
+      carries and is only completed where one is absent.
+    * every item gains ``attachments: []`` unless it already carries the field,
+      and every entry in an existing list gains ``title`` and ``order``.
+      ``order`` follows stored position, because position 0 is the cover.
 
-    Idempotent on both counts: re-applying only ever fills in what is absent.
+    Idempotent throughout: re-applying only ever fills in what is absent.
     """
 
     data = deepcopy(payload) if isinstance(payload, dict) else {}
@@ -126,8 +135,14 @@ def migrate_5_to_6(payload: dict[str, Any]) -> dict[str, Any]:
     statuses = data.get("statuses")
     if not isinstance(statuses, dict):
         statuses = {}
-    for order, (slug, label) in enumerate(_V6_SEED_STATUSES):
-        statuses.setdefault(slug, {"slug": slug, "label": label, "order": order})
+    for order, (slug, label, color, icon) in enumerate(_V6_SEED_STATUSES):
+        statuses.setdefault(
+            slug, {"slug": slug, "label": label, "order": order, "color": color, "icon": icon}
+        )
+    for definition in statuses.values():
+        if isinstance(definition, dict):
+            definition.setdefault("color", _V6_DEFAULT_STATUS_COLOR)
+            definition.setdefault("icon", _V6_DEFAULT_STATUS_ICON)
     data["statuses"] = statuses
 
     items = data.get("items")
@@ -135,4 +150,16 @@ def migrate_5_to_6(payload: dict[str, Any]) -> dict[str, Any]:
         for item in items.values():
             if isinstance(item, dict):
                 item.setdefault("attachments", [])
+                _backfill_attachment_fields(item.get("attachments"))
     return data
+
+
+def _backfill_attachment_fields(attachments: object) -> None:
+    """Give every stored attachment entry a ``title`` and an ``order``."""
+
+    if not isinstance(attachments, list):
+        return
+    for position, entry in enumerate(attachments):
+        if isinstance(entry, dict):
+            entry.setdefault("title", "")
+            entry.setdefault("order", position)

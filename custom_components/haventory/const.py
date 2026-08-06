@@ -85,6 +85,51 @@ MAX_MANUALS_PER_ITEM: int = 10
 MAX_ATTACHMENT_BYTES: int = 8 * 1024 * 1024
 
 # -----------------------------
+# Status appearance
+# -----------------------------
+
+# What a status may be painted. Five hues, each in a light and a strong form —
+# tokens rather than CSS, because the card resolves them against the Home
+# Assistant theme and both themes have to stay legible. The card holds the only
+# copy of what each one looks like; `tests/test_frontend_registration.py` pins
+# the two vocabularies to each other across the language boundary.
+#
+# A strong form is a saturated fill carrying fixed ink, so it draws attention a
+# tint cannot. That is the whole reason for the pairing: "Broken" and "Lent out"
+# are both statuses, and only one of them should shout.
+STATUS_COLORS: tuple[str, ...] = (
+    "neutral",
+    "neutral_strong",
+    "green",
+    "green_strong",
+    "blue",
+    "blue_strong",
+    "amber",
+    "amber_strong",
+    "red",
+    "red_strong",
+)
+DEFAULT_STATUS_COLOR: str = "neutral"
+
+# The glyphs a status may carry. A closed set, and deliberately small: the card
+# inlines its SVG path data rather than depending on Home Assistant's `ha-icon`
+# (see the deviation note in `docs/frontend_architecture.md`), so every name
+# here costs bundle bytes and has to earn them.
+STATUS_ICONS: tuple[str, ...] = (
+    "check",
+    "alert",
+    "wrench",
+    "hand",
+    "box",
+    "truck",
+    "clock",
+    "cancel",
+    "star",
+    "help",
+)
+DEFAULT_STATUS_ICON: str = "check"
+
+# -----------------------------
 # WebSocket rate limiting (config-entry options)
 # -----------------------------
 # Off by default so no development or test workflow is disturbed; enable via

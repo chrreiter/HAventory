@@ -115,9 +115,15 @@ async def test_config_reports_the_status_vocabulary() -> None:
     res = await _send(hass, 7, "haventory/config")
 
     assert res["result"]["statuses"] == [
-        {"slug": "ok", "label": "OK", "order": 0},
-        {"slug": "missing", "label": "Missing", "order": 1},
-        {"slug": "needs_repair", "label": "Needs repair", "order": 2},
+        {"slug": "ok", "label": "OK", "order": 0, "color": "green", "icon": "check"},
+        {"slug": "missing", "label": "Missing", "order": 1, "color": "amber", "icon": "alert"},
+        {
+            "slug": "needs_repair",
+            "label": "Needs repair",
+            "order": 2,
+            "color": "amber",
+            "icon": "wrench",
+        },
     ]
 
 

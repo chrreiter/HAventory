@@ -100,7 +100,13 @@ def _payload_with_custom_status() -> dict:
     repo = Repository()
     item = repo.create_item(ItemCreate(name="Ladder"))
     payload = repo.export_state()
-    payload["statuses"]["lent_out"] = {"slug": "lent_out", "label": "Lent out", "order": 9}
+    payload["statuses"]["lent_out"] = {
+        "slug": "lent_out",
+        "label": "Lent out",
+        "order": 9,
+        "color": "blue",
+        "icon": "hand",
+    }
     payload["items"][str(item.id)]["status"] = "lent_out"
     return payload
 
@@ -138,6 +144,8 @@ def test_a_loaded_repository_still_emits_its_statuses() -> None:
         "slug": "lent_out",
         "label": "Lent out",
         "order": 9,
+        "color": "blue",
+        "icon": "hand",
     }
 
 

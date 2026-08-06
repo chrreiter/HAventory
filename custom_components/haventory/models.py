@@ -19,6 +19,12 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final, Literal, NotRequired, TypedDict
 
+from .const import (
+    DEFAULT_STATUS_COLOR,
+    DEFAULT_STATUS_ICON,
+    STATUS_COLORS,
+    STATUS_ICONS,
+)
 from .exceptions import ValidationError
 
 # Scalar values allowed inside custom_fields.
@@ -67,6 +73,10 @@ EMPTY_LOCATION_PATH = LocationPath(id_path=[], name_path=[], display_path="", so
 
 NAME_MAX_LENGTH = 120
 LOCATION_GUARD_MAX_STEPS = 10_000
+# An attachment title is a caption, not a name, so it gets more room than a
+# location or a status label — a manual is plausibly "Dishwasher manual (EN,
+# model SMS4HVI31E)".
+ATTACHMENT_TITLE_MAX_LENGTH = 200
 
 
 @dataclass
@@ -92,6 +102,11 @@ class StatusDefinition:
     slug: str
     label: str
     order: int = 0
+    # Appearance. Both are tokens the card resolves, not literal CSS or an icon
+    # path: the card paints them against whatever Home Assistant theme is
+    # active, which a stored colour could not survive.
+    color: str = DEFAULT_STATUS_COLOR
+    icon: str = DEFAULT_STATUS_ICON
 
 
 @dataclass
@@ -109,6 +124,14 @@ class AttachmentMeta:
     mime: str
     size: int
     uploaded_at: str
+    # What the user chose to call this file. Empty means "show the filename" —
+    # storing a copy of it instead would make the two drift apart with no way to
+    # tell an untitled attachment from one deliberately titled after its file.
+    title: str = ""
+    # Position within the item's attachments of the same kind. The picture at 0
+    # is the item's cover, so there is no separate flag and no "exactly one
+    # cover" invariant for an import to repair.
+    order: int = 0
 
 
 @dataclass
@@ -428,7 +451,19 @@ def validate_status_definition(value: object) -> StatusDefinition:
     order = value.get("order", 0)
     if not _is_int_not_bool(order):
         raise ValidationError("status order must be an integer")
-    return StatusDefinition(slug=slug, label=label.strip(), order=int(order))
+    color = value.get("color", DEFAULT_STATUS_COLOR)
+    if color not in STATUS_COLORS:
+        raise ValidationError(f"status color must be one of: {', '.join(STATUS_COLORS)}")
+    icon = value.get("icon", DEFAULT_STATUS_ICON)
+    if icon not in STATUS_ICONS:
+        raise ValidationError(f"status icon must be one of: {', '.join(STATUS_ICONS)}")
+    return StatusDefinition(
+        slug=slug,
+        label=label.strip(),
+        order=int(order),
+        color=str(color),
+        icon=str(icon),
+    )
 
 
 def serialize_status_definition(definition: StatusDefinition) -> dict[str, Any]:
@@ -438,7 +473,19 @@ def serialize_status_definition(definition: StatusDefinition) -> dict[str, Any]:
         "slug": definition.slug,
         "label": definition.label,
         "order": int(definition.order),
+        "color": definition.color,
+        "icon": definition.icon,
     }
+
+
+# The built-in three, and what each one looks like. `ok` is green because it is
+# the resting state a healthy inventory sits in; the other two are amber because
+# they are chores, not failures.
+_SEED_STATUSES: Final[tuple[tuple[str, str, str, str], ...]] = (
+    ("ok", "OK", "green", "check"),
+    ("missing", "Missing", "amber", "alert"),
+    ("needs_repair", "Needs repair", "amber", "wrench"),
+)
 
 
 def seed_status_definitions() -> dict[str, StatusDefinition]:
@@ -450,10 +497,8 @@ def seed_status_definitions() -> dict[str, StatusDefinition]:
     """
 
     return {
-        slug: StatusDefinition(slug=slug, label=label, order=order)
-        for order, (slug, label) in enumerate(
-            (("ok", "OK"), ("missing", "Missing"), ("needs_repair", "Needs repair"))
-        )
+        slug: StatusDefinition(slug=slug, label=label, order=order, color=color, icon=icon)
+        for order, (slug, label, color, icon) in enumerate(_SEED_STATUSES)
     }
 
 
@@ -484,6 +529,16 @@ def validate_attachment_meta(value: object) -> AttachmentMeta:
         raise ValidationError(
             "attachment uploaded_at must be an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ)"
         )
+    title = value.get("title", "")
+    if not isinstance(title, str):
+        raise ValidationError("attachment title must be a string")
+    if len(title.strip()) > ATTACHMENT_TITLE_MAX_LENGTH:
+        raise ValidationError(
+            f"attachment title must be at most {ATTACHMENT_TITLE_MAX_LENGTH} characters"
+        )
+    order = value.get("order", 0)
+    if not _is_int_not_bool(order) or int(order) < 0:
+        raise ValidationError("attachment order must be an integer >= 0")
     return AttachmentMeta(
         id=att_id,
         kind=kind,
@@ -491,6 +546,8 @@ def validate_attachment_meta(value: object) -> AttachmentMeta:
         mime=mime.strip(),
         size=int(size),  # type: ignore[arg-type]
         uploaded_at=str(uploaded_at),
+        title=title.strip(),
+        order=int(order),
     )
 
 
@@ -504,6 +561,8 @@ def serialize_attachment_meta(meta: AttachmentMeta) -> dict[str, Any]:
         "mime": meta.mime,
         "size": int(meta.size),
         "uploaded_at": meta.uploaded_at,
+        "title": meta.title,
+        "order": int(meta.order),
     }
 
 
