@@ -5,6 +5,14 @@ import { chip } from '../ui/chip';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
+import {
+  DEFAULT_STATUS,
+  STATUS_COLORS,
+  STATUS_ICONS,
+  renderStatusChip,
+  statusLabel,
+  statusList,
+} from '../ui/status';
 import { closestMatch } from '../ui/fuzzy';
 import { describeRewrite, filterForValue, rewriteOps } from '../ui/value-rewrite';
 import type { ValueKind } from '../ui/value-rewrite';
@@ -23,12 +31,14 @@ import type {
   DistinctValue,
   Item,
   LocationTreeNode,
+  StatusColor,
+  StatusDefinition,
   StoreState,
 } from '../store/types';
 import './hv-confirm';
 import './hv-location-tree';
 
-export type OrganizeTab = 'locations' | 'categories' | 'tags';
+export type OrganizeTab = 'locations' | 'categories' | 'tags' | 'statuses';
 
 /**
  * The trees the two location pickers open, named so `aria-controls` can point at
@@ -223,12 +233,90 @@ export class HVOrganizeDialog extends LitElement {
       .value-row:hover {
         background: var(--hv-hover-overlay);
       }
+      /* Two arrow buttons rather than a drag handle: this is the card's first
+         reordering control, and buttons work from the keyboard without a
+         parallel implementation for it. */
+      .move {
+        display: flex;
+        flex-direction: column;
+        flex: none;
+        gap: 1px;
+      }
+      .move button {
+        border: none;
+        background: none;
+        color: var(--hv-text-tertiary);
+        cursor: pointer;
+        padding: 0;
+        line-height: 0;
+      }
+      .move button:hover:not([disabled]) {
+        color: var(--hv-text);
+      }
+      .move button[disabled] {
+        opacity: 0.3;
+        cursor: default;
+      }
+      /* The identity items store. Shown because services.yaml and an export
+         document carry it, muted because a household never needs to type it.
+
+         It is also the only part of the row that may be cut: at phone width a
+         long slug otherwise pushes the delete button past the dialog edge,
+         where it cannot be tapped at all. */
+      .status-slug {
+        font: 400 12px var(--hv-font);
+        color: var(--hv-text-tertiary);
+        white-space: nowrap;
+        flex: 0 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .swatches {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 2px 0 4px;
+      }
+      .swatch {
+        width: 26px;
+        height: 22px;
+        border-radius: var(--hv-radius-chip);
+        cursor: pointer;
+        padding: 0;
+      }
+      .glyph {
+        display: inline-grid;
+        place-items: center;
+        width: 30px;
+        height: 26px;
+        border-radius: var(--hv-radius-input);
+        border: 1px solid var(--hv-divider);
+        background: none;
+        color: var(--hv-text-secondary);
+        cursor: pointer;
+      }
+      .glyph:hover {
+        background: var(--hv-hover-overlay);
+      }
+      .swatch.on,
+      .glyph.on {
+        outline: 2px solid var(--hv-primary);
+        outline-offset: 1px;
+      }
+      .glyph.on {
+        color: var(--hv-primary-darker);
+      }
       .count-link {
         border: none;
         background: none;
         color: var(--hv-primary-dark);
         font: 400 12px var(--hv-font);
         padding: 0;
+        /* "12 items" wrapping to two lines makes the row taller without making
+           it narrower — the slug beside it is what gives way instead. */
+        white-space: nowrap;
+        flex: none;
       }
       .draft-note {
         font: 400 12px var(--hv-font);
@@ -239,6 +327,7 @@ export class HVOrganizeDialog extends LitElement {
         margin-left: auto;
         display: flex;
         gap: 2px;
+        flex: none;
       }
       :host(:not([mobile])) .value-row .row-actions {
         visibility: hidden;
@@ -436,6 +525,16 @@ export class HVOrganizeDialog extends LitElement {
   @state() private _confirmRemove: string | null = null;
   @state() private _sheetValue: string | null = null;
   /** The "New category"/"New tag" row, open with the name being typed. */
+  @state() private _editingStatus: string | 'new' | null = null;
+  @state() private _statusLabel = '';
+  @state() private _statusColor: StatusColor = 'neutral';
+  @state() private _statusIcon = 'check';
+  @state() private _statusError: string | null = null;
+  /** A delete refused because items still carry the slug, and how many. */
+  @state() private _statusGuard: { slug: string; count: number } | null = null;
+  @state() private _reassignTarget = '';
+  @state() private _confirmStatus: string | null = null;
+
   @state() private _creatingValue = false;
   @state() private _newValue = '';
   @state() private _newValueError: string | null = null;
@@ -1303,6 +1402,351 @@ export class HVOrganizeDialog extends LitElement {
     </div>`;
   }
 
+  // -----------------------------
+  // Statuses
+  // -----------------------------
+
+  /** The live vocabulary, or the built-ins until `haventory/config` answers. */
+  private get _statusDefs(): readonly StatusDefinition[] {
+    return statusList(this.st?.statuses);
+  }
+
+  /** How many items carry a slug. `haventory/stats` already reports this. */
+  private _statusCount(slug: string): number {
+    return this.st?.statsCounts?.status_counts?.[slug] ?? 0;
+  }
+
+  /**
+   * A slug from a label: lowercase, ASCII letters/digits/underscores, and never
+   * one already taken.
+   *
+   * The user never types this — a household should not have to think about the
+   * identifier — but it is what `services.yaml` and an export document carry, so
+   * it is shown beside the label for anyone writing an automation.
+   */
+  private _slugFrom(label: string): string {
+    const base =
+      label
+        .normalize('NFKD')
+        .replace(/[̀-ͯ]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 64) || 'status';
+    const taken = new Set(this._statusDefs.map((d) => d.slug));
+    if (!taken.has(base)) return base;
+    for (let n = 2; ; n += 1) {
+      const candidate = `${base.slice(0, 61)}_${n}`;
+      if (!taken.has(candidate)) return candidate;
+    }
+  }
+
+  private _startStatusEdit(slug: string | 'new') {
+    const existing = slug === 'new' ? undefined : this._statusDefs.find((d) => d.slug === slug);
+    this._editingStatus = slug;
+    this._statusLabel = existing?.label ?? '';
+    this._statusColor = existing?.color ?? 'neutral';
+    this._statusIcon = existing?.icon ?? 'check';
+    this._statusError = null;
+    this._statusGuard = null;
+  }
+
+  private _cancelStatusEdit() {
+    this._editingStatus = null;
+    this._statusError = null;
+  }
+
+  private async _saveStatus() {
+    const label = this._statusLabel.trim();
+    if (!label) return;
+    const editing = this._editingStatus;
+    try {
+      if (editing === 'new') {
+        await this.store?.createStatus({
+          slug: this._slugFrom(label),
+          label,
+          color: this._statusColor,
+          icon: this._statusIcon,
+        });
+      } else if (editing) {
+        await this.store?.updateStatus(editing, {
+          label,
+          color: this._statusColor,
+          icon: this._statusIcon,
+        });
+      }
+      this._editingStatus = null;
+      this._statusError = null;
+    } catch (err) {
+      this._statusError = (err as { message?: string })?.message ?? 'Could not save that status.';
+    }
+  }
+
+  /**
+   * Move a status one place. `status/reorder` takes the whole permutation, so a
+   * partial list cannot leave two definitions claiming one position.
+   */
+  private async _moveStatus(slug: string, delta: -1 | 1) {
+    const slugs = this._statusDefs.map((d) => d.slug);
+    const from = slugs.indexOf(slug);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= slugs.length) return;
+    [slugs[from], slugs[to]] = [slugs[to], slugs[from]];
+    try {
+      await this.store?.reorderStatuses(slugs);
+    } catch (err) {
+      this._statusError = (err as { message?: string })?.message ?? 'Could not reorder.';
+    }
+  }
+
+  /**
+   * Delete, guarding first when items still carry the slug.
+   *
+   * The backend refuses that case regardless; the guard is the explanation, and
+   * the reassign target is what turns the refusal into a completed move. Same
+   * shape as `_deleteLocation`.
+   */
+  private async _deleteStatus(slug: string, reassignTo?: string) {
+    const count = this._statusCount(slug);
+    if (count > 0 && !reassignTo) {
+      this._statusGuard = { slug, count };
+      this._reassignTarget = this._statusDefs.find((d) => d.slug !== slug)?.slug ?? '';
+      return;
+    }
+    try {
+      await this.store?.deleteStatus(slug, reassignTo);
+      this._statusGuard = null;
+      this._statusError = null;
+    } catch (err) {
+      this._statusError =
+        (err as { message?: string })?.message ?? 'Could not delete that status.';
+    }
+  }
+
+  private _renderStatusesTab() {
+    const defs = this._statusDefs;
+    return html`
+      <div class="toolbar">
+        <span class="toolbar-count" data-testid="organize-status-count"
+          >${counted(defs.length, 'status', 'statuses')}</span
+        >
+        <button
+          class="hv-pill"
+          data-testid="organize-new-status"
+          @click=${() => this._startStatusEdit('new')}
+        >
+          ${icon('plus', 15)}New status
+        </button>
+      </div>
+      <div class="body">
+        ${this._editingStatus === 'new' ? this._renderStatusEditor('new') : null}
+        ${defs.map((d, index) => {
+          const isDefault = d.slug === DEFAULT_STATUS;
+          const count = this._statusCount(d.slug);
+          return html`
+            <div class="value-row" data-testid="status-row" data-value=${d.slug}>
+              <span class="move">
+                <button
+                  data-testid="status-up"
+                  aria-label=${`Move ${d.label} up`}
+                  title="Move up"
+                  ?disabled=${index === 0}
+                  @click=${() => this._moveStatus(d.slug, -1)}
+                >
+                  ${icon('chevronUp', 15)}
+                </button>
+                <button
+                  data-testid="status-down"
+                  aria-label=${`Move ${d.label} down`}
+                  title="Move down"
+                  ?disabled=${index === defs.length - 1}
+                  @click=${() => this._moveStatus(d.slug, 1)}
+                >
+                  ${icon('chevronDown', 15)}
+                </button>
+              </span>
+              ${renderStatusChip(d.slug, defs, { testid: 'status-chip' })}
+              <span class="status-slug" data-testid="status-slug">${d.slug}</span>
+              <button class="count-link" data-testid="status-count" @click=${() =>
+                this._showStatus(d.slug)}>
+                ${counted(count, 'item')}
+              </button>
+              <span class="row-actions">
+                ${isDefault
+                  ? html`<span class="hv-chip quiet" data-testid="status-default">Default</span>`
+                  : html`
+                      <button
+                        data-testid="status-edit"
+                        aria-label=${`Edit ${d.label}`}
+                        title="Edit"
+                        @click=${() => this._startStatusEdit(d.slug)}
+                      >
+                        ${icon('pencil', 16)}
+                      </button>
+                      <button
+                        class="danger"
+                        data-testid="status-remove"
+                        aria-label=${`Delete ${d.label}`}
+                        title="Delete"
+                        @click=${() => {
+                          if (this._statusCount(d.slug) > 0) void this._deleteStatus(d.slug);
+                          else this._confirmStatus = d.slug;
+                        }}
+                      >
+                        ${icon('del', 16)}
+                      </button>
+                    `}
+              </span>
+            </div>
+            ${this._editingStatus === d.slug ? this._renderStatusEditor(d.slug) : null}
+            ${this._statusGuard?.slug === d.slug ? this._renderStatusGuard() : null}
+          `;
+        })}
+        ${this._statusError && !this._editingStatus
+          ? html`<div class="failure" role="alert" data-testid="status-error">
+              ${this._statusError}
+            </div>`
+          : null}
+      </div>
+    `;
+  }
+
+  /** Take the user to the items on a status, the way a value count does. */
+  private _showStatus(slug: string) {
+    this.dispatchEvent(
+      new CustomEvent('browse', { detail: { status: slug }, bubbles: true, composed: true }),
+    );
+  }
+
+  private _renderStatusEditor(slug: string | 'new') {
+    const creating = slug === 'new';
+    return html`<div class="expander" data-testid="status-editor">
+      <label style="display:flex;align-items:center;gap:8px">
+        <span class="hv-sr-only">Status name</span>
+        <input
+          class="control"
+          data-testid="status-label"
+          placeholder="Status name…"
+          .value=${this._statusLabel}
+          @input=${(e: Event) => {
+            this._statusLabel = (e.target as HTMLInputElement).value;
+            this._statusError = null;
+          }}
+          @keydown=${(e: KeyboardEvent) => {
+            if (e.key === 'Enter') void this._saveStatus();
+          }}
+        />
+        <span class="status-slug" data-testid="status-slug-preview"
+          >${creating ? this._slugFrom(this._statusLabel || '') : slug}</span
+        >
+      </label>
+
+      <span class="hv-label">Colour</span>
+      <div class="swatches" data-testid="status-colors">
+        ${STATUS_COLORS.map(
+          (c) => html`<button
+            class="swatch hv-status-chip tone-${c.replace(/_/g, '-')} ${this._statusColor === c
+              ? 'on'
+              : ''}"
+            data-testid="status-color"
+            data-value=${c}
+            aria-label=${c.replace(/_/g, ' ')}
+            aria-pressed=${String(this._statusColor === c)}
+            @click=${() => {
+              this._statusColor = c;
+            }}
+          ></button>`,
+        )}
+      </div>
+
+      <span class="hv-label">Icon</span>
+      <div class="swatches" data-testid="status-icons">
+        ${STATUS_ICONS.map(
+          (name) => html`<button
+            class="glyph ${this._statusIcon === name ? 'on' : ''}"
+            data-testid="status-icon"
+            data-value=${name}
+            aria-label=${name}
+            aria-pressed=${String(this._statusIcon === name)}
+            @click=${() => {
+              this._statusIcon = name;
+            }}
+          >
+            ${icon(name, 16)}
+          </button>`,
+        )}
+      </div>
+
+      ${this._statusError
+        ? html`<div class="failure" role="alert" data-testid="status-editor-error">
+            ${this._statusError}
+          </div>`
+        : null}
+      <div class="actions">
+        <span class="spacer"></span>
+        <button
+          class="hv-text-button"
+          data-testid="status-cancel"
+          @click=${() => this._cancelStatusEdit()}
+        >
+          Cancel
+        </button>
+        <button
+          class="hv-pill"
+          data-testid="status-save"
+          ?disabled=${!this._statusLabel.trim()}
+          @click=${() => this._saveStatus()}
+        >
+          ${creating ? 'Create' : 'Save'}
+        </button>
+      </div>
+    </div>`;
+  }
+
+  private _renderStatusGuard() {
+    const guard = this._statusGuard;
+    if (!guard) return null;
+    const label = statusLabel(guard.slug, this._statusDefs);
+    const targets = this._statusDefs.filter((d) => d.slug !== guard.slug);
+    return html`<div class="expander guard" data-testid="status-guard" role="alert">
+      <span class="note"
+        >“${label}” is on ${counted(guard.count, 'item')}. Choose where those items go.</span
+      >
+      <label style="display:flex;align-items:center;gap:8px">
+        <span>Move those items to</span>
+        <select
+          class="control"
+          data-testid="status-reassign"
+          .value=${this._reassignTarget}
+          @change=${(e: Event) => {
+            this._reassignTarget = (e.target as HTMLSelectElement).value;
+          }}
+        >
+          ${targets.map((d) => html`<option value=${d.slug}>${d.label}</option>`)}
+        </select>
+      </label>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button
+          class="hv-text-button"
+          data-testid="status-guard-cancel"
+          @click=${() => {
+            this._statusGuard = null;
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          class="hv-text-button danger"
+          data-testid="status-guard-confirm"
+          @click=${() => this._deleteStatus(guard.slug, this._reassignTarget)}
+        >
+          Reassign and delete
+        </button>
+      </div>
+    </div>`;
+  }
+
   private _renderValuesTab() {
     const values = this._values;
     const noun = this.tab === 'tags' ? 'tags' : 'categories';
@@ -1491,7 +1935,7 @@ export class HVOrganizeDialog extends LitElement {
                 </button>`}
           </div>
           <div class="tabs" role="tablist">
-            ${(['locations', 'categories', 'tags'] as OrganizeTab[]).map(
+            ${(['locations', 'categories', 'tags', 'statuses'] as OrganizeTab[]).map(
               (tab) => html`<button
                 class=${this.tab === tab ? 'on' : ''}
                 role="tab"
@@ -1502,13 +1946,40 @@ export class HVOrganizeDialog extends LitElement {
                   this.tab = tab;
                 }}
               >
-                ${tab === 'locations' ? 'Locations' : tab === 'categories' ? 'Categories' : 'Tags'}
+                ${tab === 'locations'
+                  ? 'Locations'
+                  : tab === 'categories'
+                    ? 'Categories'
+                    : tab === 'tags'
+                      ? 'Tags'
+                      : 'Statuses'}
               </button>`,
             )}
           </div>
-          ${this.tab === 'locations' ? this._renderLocationsTab() : this._renderValuesTab()}
+          ${this.tab === 'locations'
+            ? this._renderLocationsTab()
+            : this.tab === 'statuses'
+              ? this._renderStatusesTab()
+              : this._renderValuesTab()}
         </div>
       </div>
+
+      <hv-confirm
+        data-testid="organize-status-confirm"
+        ?open=${this._confirmStatus !== null}
+        .heading=${`Delete "${statusLabel(this._confirmStatus ?? '', this._statusDefs)}"?`}
+        message="No item carries this status, so nothing else changes."
+        confirmLabel="Delete"
+        destructive
+        @confirm=${() => {
+          const slug = this._confirmStatus;
+          this._confirmStatus = null;
+          if (slug) void this._deleteStatus(slug);
+        }}
+        @cancel=${() => {
+          this._confirmStatus = null;
+        }}
+      ></hv-confirm>
 
       <hv-confirm
         data-testid="organize-confirm"

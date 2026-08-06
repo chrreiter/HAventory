@@ -166,13 +166,16 @@ describe('hv-filter-panel: status', () => {
     ]);
   });
 
-  it('carries the warning tone only while a flagged status is selected', async () => {
+  // A chosen status shows its own colour; the rest stay outlines, so the row
+  // reads as choices rather than as facts. The default never fills, because
+  // "OK" is not a state worth marking.
+  it('fills a selected status with its own tone and leaves the default plain', async () => {
     const el = await mount({ status: 'needs_repair' });
     const chip = q(el, '[data-testid="filter-status"][data-value="needs_repair"]');
     expect(chip.classList.contains('on')).toBe(true);
-    expect(chip.classList.contains('warning')).toBe(true);
+    expect(chip.classList.contains('tone-amber')).toBe(true);
     expect(
-      q(el, '[data-testid="filter-status"][data-value="ok"]').classList.contains('warning'),
+      q(el, '[data-testid="filter-status"][data-value="ok"]').classList.contains('tone-green'),
     ).toBe(false);
   });
 });

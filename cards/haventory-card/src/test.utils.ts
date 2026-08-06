@@ -2,6 +2,7 @@ import type {
   AnyEventPayload,
   AreaRef,
   Attachment,
+  AttachmentKind,
   ExportDocument,
   HassLike,
   ImportPreview,
@@ -9,6 +10,7 @@ import type {
   Item,
   Location,
   StatsCounts,
+  StatusDefinition,
 } from './store/types';
 
 // Mirror real Home Assistant: `subscribeMessage` hands the callback the *inner*
@@ -23,6 +25,8 @@ interface MockConfig {
   cardTitle?: string;
   /** What `haventory/areas/list` reports — the HA area registry, read-only. */
   areas?: AreaRef[];
+  /** The status vocabulary; defaults to the built-in three the backend seeds. */
+  statuses?: StatusDefinition[];
 }
 
 type HealthPatch = {
@@ -48,6 +52,8 @@ export interface MockHass extends HassLike {
   __failSubscribeNext(n: number, err: unknown): void;
   /** Every callWS `type` seen so far, in order. */
   __calls: string[];
+  /** Every command message in full, for assertions about what went on the wire. */
+  __messages: Record<string, unknown>[];
   /** Every subscribed topic seen so far, in order — refused attempts included. */
   __subscribeCalls: string[];
   /** Deliver a Home Assistant core event to whoever subscribed to it. */
@@ -73,6 +79,15 @@ export function makeMockHass(initial?: MockConfig): MockHass {
   let conflictOnUpdate = !!initial?.conflictOnUpdate;
   const cardTitle = initial?.cardTitle ?? 'HAventory';
   let areas: AreaRef[] = initial?.areas ? [...initial.areas] : [];
+  // The three the backend seeds, so a test that says nothing about statuses
+  // still sees what a real install carries.
+  const statuses: StatusDefinition[] = initial?.statuses
+    ? initial.statuses.map((d) => ({ ...d }))
+    : [
+        { slug: 'ok', label: 'OK', order: 0, color: 'green', icon: 'check' },
+        { slug: 'missing', label: 'Missing', order: 1, color: 'amber', icon: 'alert' },
+        { slug: 'needs_repair', label: 'Needs repair', order: 2, color: 'amber', icon: 'wrench' },
+      ];
   let healthOverride: HealthPatch | null = null;
   let rateLimitRemaining = 0;
   let failRemaining = 0;
@@ -83,6 +98,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
   const lifecycleListeners: Record<string, (() => void)[]> = {};
   const haEventSubs: Record<string, SubCb[]> = {};
   const calls: string[] = [];
+  const messages: Record<string, unknown>[] = [];
   const subscribeCalls: string[] = [];
 
   const findItem = (msg: Record<string, unknown>): Item => {
@@ -100,10 +116,12 @@ export function makeMockHass(initial?: MockConfig): MockHass {
 
   const hass: MockHass = {
     __calls: calls,
+    __messages: messages,
     __subscribeCalls: subscribeCalls,
     async callWS<T>(msg: Record<string, unknown>): Promise<T> {
       const type = String(msg.type || '');
       calls.push(type);
+      messages.push({ ...msg });
       if (rateLimitRemaining > 0) {
         rateLimitRemaining -= 1;
         throw { code: 'rate_limited', message: 'rate limit exceeded; retry later' };
@@ -113,6 +131,57 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         throw failError;
       }
       switch (type) {
+        // ---- statuses ----
+        case 'haventory/status/list': {
+          return [...statuses].sort((a, b) => a.order - b.order || a.slug.localeCompare(b.slug)) as unknown as T;
+        }
+        case 'haventory/status/create': {
+          const slug = String(msg.slug);
+          if (statuses.some((d) => d.slug === slug)) throw { code: 'validation_error', message: 'status already exists' };
+          const created: StatusDefinition = {
+            slug,
+            label: String(msg.label),
+            order: typeof msg.order === 'number' ? msg.order : statuses.length,
+            color: (msg.color as StatusDefinition['color']) ?? 'neutral',
+            icon: (msg.icon as string) ?? 'check',
+          };
+          statuses.push(created);
+          return created as unknown as T;
+        }
+        case 'haventory/status/update': {
+          const found = statuses.find((d) => d.slug === msg.slug);
+          if (!found) throw { code: 'not_found', message: 'status not found' };
+          if (typeof msg.label === 'string') found.label = msg.label;
+          if (typeof msg.color === 'string') found.color = msg.color as StatusDefinition['color'];
+          if (typeof msg.icon === 'string') found.icon = msg.icon;
+          return { ...found } as unknown as T;
+        }
+        case 'haventory/status/reorder': {
+          const slugs = (msg.slugs as string[]) ?? [];
+          const live = statuses.map((d) => d.slug);
+          if ([...slugs].sort().join() !== [...live].sort().join()) {
+            throw { code: 'validation_error', message: 'reorder must name every status exactly once' };
+          }
+          slugs.forEach((slug, index) => {
+            const found = statuses.find((d) => d.slug === slug);
+            if (found) found.order = index;
+          });
+          return statuses.map((d) => ({ ...d })) as unknown as T;
+        }
+        case 'haventory/status/delete': {
+          const slug = String(msg.slug);
+          if (slug === 'ok') throw { code: 'validation_error', message: 'the default status cannot be deleted' };
+          const index = statuses.findIndex((d) => d.slug === slug);
+          if (index < 0) throw { code: 'not_found', message: 'status not found' };
+          const carrying = items.filter((i) => (i.status ?? 'ok') === slug);
+          const target = msg.reassign_to as string | undefined;
+          if (carrying.length > 0 && !target) {
+            throw { code: 'validation_error', message: `status '${slug}' is on ${carrying.length} item(s)` };
+          }
+          if (target) carrying.forEach((i) => (i.status = target));
+          const [removed] = statuses.splice(index, 1);
+          return { status: removed, reassigned: carrying.length } as unknown as T;
+        }
         case 'haventory/stats': {
           const counts: StatsCounts = {
             items_total: items.length,
@@ -122,6 +191,9 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             inspection_overdue_count: items.filter((i) => isMockInspectionDue(i)).length,
             missing_count: items.filter((i) => (i.status ?? 'ok') === 'missing').length,
             needs_repair_count: items.filter((i) => (i.status ?? 'ok') === 'needs_repair').length,
+            status_counts: Object.fromEntries(
+              statuses.map((d) => [d.slug, items.filter((i) => (i.status ?? 'ok') === d.slug).length]),
+            ),
             locations_total: locations.length,
             no_location_count: items.filter((i) => i.location_id == null).length,
           };
@@ -153,7 +225,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           return { integration_version: '0.0.1', schema_version: 4 } as unknown as T;
         }
         case 'haventory/config': {
-          return { card_title: cardTitle } as unknown as T;
+          return { card_title: cardTitle, statuses: [...statuses] } as unknown as T;
         }
         case 'haventory/areas/list': {
           return { areas } as unknown as T;
@@ -766,44 +838,74 @@ export function makeAttachment(partial?: Partial<Attachment>): Attachment {
     mime: partial?.mime ?? 'image/png',
     size: partial?.size ?? 2048,
     uploaded_at: partial?.uploaded_at ?? FIXTURE_TS,
+    // Left off unless asked for, so a bare fixture is shaped like the payload
+    // a backend that predates these two fields sends.
+    ...(partial?.title === undefined ? {} : { title: partial.title }),
+    ...(partial?.order === undefined ? {} : { order: partial.order }),
   };
+}
+
+/** One manual's metadata: the same fixture with the document defaults. */
+export function makeManual(partial?: Partial<Attachment>): Attachment {
+  return makeAttachment({
+    kind: 'manual',
+    filename: 'scan_0142.pdf',
+    mime: 'application/pdf',
+    ...partial,
+  });
 }
 
 /**
  * A `MediaBindings` whose calls are recorded and whose answers are scripted.
  *
  * Signing resolves immediately, so a mounted component has its URLs after one
- * more `updateComplete`. `uploads` and `removals` record what was asked for;
- * either can be made to reject, which is how the per-file error paths are
- * exercised.
+ * more `updateComplete`. `uploads`, `removals` and `retitles` record what was
+ * asked for; any of them can be made to reject, which is how the per-file error
+ * paths are exercised.
  */
 export function makeMediaBindings(
   options: {
-    upload?: (itemId: string, file: File) => Promise<Item>;
+    upload?: (itemId: string, file: File, kind: AttachmentKind) => Promise<Item>;
     remove?: (itemId: string, attachmentId: string) => Promise<Item>;
+    retitle?: (itemId: string, attachmentId: string, title: string) => Promise<Item>;
+    reorder?: (itemId: string, kind: AttachmentKind, attachmentIds: string[]) => Promise<Item>;
     signFails?: boolean;
   } = {},
 ) {
   const signed: string[] = [];
-  const uploads: { itemId: string; file: File }[] = [];
+  const uploads: { itemId: string; file: File; kind: AttachmentKind }[] = [];
   const removals: { itemId: string; attachmentId: string }[] = [];
+  const retitles: { itemId: string; attachmentId: string; title: string }[] = [];
+  const reorders: { itemId: string; kind: AttachmentKind; attachmentIds: string[] }[] = [];
   return {
     signed,
     uploads,
     removals,
+    retitles,
+    reorders,
     sign: async (path: string) => {
       signed.push(path);
       if (options.signFails) throw new Error('signing refused');
       return `${path}?authSig=test`;
     },
-    upload: async (itemId: string, file: File) => {
-      uploads.push({ itemId, file });
-      if (options.upload) return options.upload(itemId, file);
+    upload: async (itemId: string, file: File, kind: AttachmentKind = 'picture') => {
+      uploads.push({ itemId, file, kind });
+      if (options.upload) return options.upload(itemId, file, kind);
       return makeItem({ id: itemId });
     },
     remove: async (itemId: string, attachmentId: string) => {
       removals.push({ itemId, attachmentId });
       if (options.remove) return options.remove(itemId, attachmentId);
+      return makeItem({ id: itemId });
+    },
+    retitle: async (itemId: string, attachmentId: string, title: string) => {
+      retitles.push({ itemId, attachmentId, title });
+      if (options.retitle) return options.retitle(itemId, attachmentId, title);
+      return makeItem({ id: itemId });
+    },
+    reorder: async (itemId: string, kind: AttachmentKind, attachmentIds: string[]) => {
+      reorders.push({ itemId, kind, attachmentIds });
+      if (options.reorder) return options.reorder(itemId, kind, attachmentIds);
       return makeItem({ id: itemId });
     },
   };

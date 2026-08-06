@@ -618,3 +618,120 @@ async def test_attachment_remove_of_an_unknown_id_is_not_found() -> None:
 
     assert res["success"] is False
     assert res["error"]["code"] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_attachment_update_retitles_and_bumps_the_version(upload) -> None:
+    """A title is what a manuals list reads, so it is a real item edit."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Dishwasher")
+    item_id = created["result"]["id"]
+    upload("upload-1")
+    added = await _send(
+        hass, 2, "haventory/item/attachment/add", item_id=item_id, file_id="upload-1"
+    )
+    attachment_id = added["result"]["attachments"][0]["id"]
+
+    res = await _send(
+        hass,
+        3,
+        "haventory/item/attachment/update",
+        item_id=item_id,
+        attachment_id=attachment_id,
+        title="Warranty",
+    )
+
+    assert res["success"] is True
+    assert res["result"]["attachments"][0]["title"] == "Warranty"
+    assert res["result"]["version"] == added["result"]["version"] + 1
+
+
+@pytest.mark.asyncio
+async def test_attachment_update_reports_a_stale_version_as_conflict(upload) -> None:
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Dishwasher")
+    item_id = created["result"]["id"]
+    upload("upload-1")
+    added = await _send(
+        hass, 2, "haventory/item/attachment/add", item_id=item_id, file_id="upload-1"
+    )
+
+    res = await _send(
+        hass,
+        3,
+        "haventory/item/attachment/update",
+        item_id=item_id,
+        attachment_id=added["result"]["attachments"][0]["id"],
+        title="Warranty",
+        expected_version=1,
+    )
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "conflict"
+
+
+@pytest.mark.asyncio
+async def test_attachment_reorder_makes_the_named_first_one_the_cover(upload) -> None:
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    item_id = created["result"]["id"]
+    upload("upload-1")
+    await _send(hass, 2, "haventory/item/attachment/add", item_id=item_id, file_id="upload-1")
+    _stage_upload("upload-2")
+    two = await _send(hass, 3, "haventory/item/attachment/add", item_id=item_id, file_id="upload-2")
+    first, second = (a["id"] for a in two["result"]["attachments"])
+
+    res = await _send(
+        hass,
+        4,
+        "haventory/item/attachment/reorder",
+        item_id=item_id,
+        kind="picture",
+        attachment_ids=[second, first],
+    )
+
+    assert res["success"] is True
+    ordered = sorted(res["result"]["attachments"], key=lambda a: a["order"])
+    assert [a["id"] for a in ordered] == [second, first]
+
+
+@pytest.mark.asyncio
+async def test_attachment_reorder_refuses_a_partial_list(upload) -> None:
+    """A partial list would leave two attachments claiming the same position."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    item_id = created["result"]["id"]
+    upload("upload-1")
+    await _send(hass, 2, "haventory/item/attachment/add", item_id=item_id, file_id="upload-1")
+    _stage_upload("upload-2")
+    two = await _send(hass, 3, "haventory/item/attachment/add", item_id=item_id, file_id="upload-2")
+
+    res = await _send(
+        hass,
+        4,
+        "haventory/item/attachment/reorder",
+        item_id=item_id,
+        kind="picture",
+        attachment_ids=[two["result"]["attachments"][0]["id"]],
+    )
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"

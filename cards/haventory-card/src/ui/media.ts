@@ -10,7 +10,7 @@
  * read a URL out of it synchronously, which is what a Lit template needs.
  */
 
-import type { Attachment, Item } from '../store/types';
+import type { Attachment, AttachmentKind, Item } from '../store/types';
 
 /**
  * The route the backend serves attachments on.
@@ -38,18 +38,22 @@ const REFRESH_MARGIN_MS = 60_000;
 export type SignPath = (path: string, expires: number) => Promise<string>;
 
 /**
- * Everything a component needs to show or change an item's pictures.
+ * Everything a component needs to show or change an item's attachments.
  *
- * One object rather than three properties, and one instance per host rather
+ * One object rather than four properties, and one instance per host rather
  * than a closure per render: a fresh function each render reads as a changed
  * property and re-renders every row that holds it.
  */
 export interface MediaBindings {
   sign: SignPath;
   /** Upload one file; resolves to the item as the backend now holds it. */
-  upload(itemId: string, file: File): Promise<Item>;
-  /** Detach one picture; the backend deletes the bytes with it. */
+  upload(itemId: string, file: File, kind?: AttachmentKind): Promise<Item>;
+  /** Detach one file; the backend deletes the bytes with it. */
   remove(itemId: string, attachmentId: string): Promise<Item>;
+  /** Rename one attachment for display; the stored filename is untouched. */
+  retitle(itemId: string, attachmentId: string, title: string): Promise<Item>;
+  /** Renumber one kind; the first id named becomes position 0, the cover. */
+  reorder(itemId: string, kind: AttachmentKind, attachmentIds: string[]): Promise<Item>;
 }
 
 /** All `MediaUrls` needs from the element holding it. */
@@ -79,16 +83,67 @@ export function pictureAlt(itemName: string, index: number, total: number): stri
   return total > 1 ? `${itemName} — photo ${index + 1} of ${total}` : `Photo of ${itemName}`;
 }
 
-/** The pictures on an item, in stored order. */
-export function pictures(attachments: Attachment[] | undefined): Attachment[] {
-  return (attachments ?? []).filter((a) => a.kind === 'picture');
+/**
+ * One kind of attachment, in the order the item stores them in.
+ *
+ * `order` is per kind and counts from zero within it, so the two lists are
+ * sorted separately — a manual at 0 does not push a picture at 1 down the
+ * strip. It is absent on a payload written before the field existed, where the
+ * stored list order *is* the order, so position stands in for it.
+ */
+function ofKind(attachments: Attachment[] | undefined, kind: AttachmentKind): Attachment[] {
+  return (attachments ?? [])
+    .filter((a) => a.kind === kind)
+    .map((a, index) => ({ a, index }))
+    .sort((x, y) => (x.a.order ?? x.index) - (y.a.order ?? y.index) || x.index - y.index)
+    .map((e) => e.a);
 }
+
+/** The pictures on an item, cover first. */
+export function pictures(attachments: Attachment[] | undefined): Attachment[] {
+  return ofKind(attachments, 'picture');
+}
+
+/** The manuals on an item, in stored order. */
+export function manuals(attachments: Attachment[] | undefined): Attachment[] {
+  return ofKind(attachments, 'manual');
+}
+
+/**
+ * What to call an attachment on screen.
+ *
+ * The title the user gave it, or its filename — `scan_0142.pdf` is a poor name
+ * for a document list but it beats a blank row, and an untitled attachment is
+ * the normal state right after an upload.
+ */
+export function attachmentTitle(attachment: Attachment): string {
+  return attachment.title?.trim() || attachment.filename;
+}
+
+/**
+ * Whether the bytes a reference names are actually on disk.
+ *
+ * `unknown` is the honest answer both before the check has run and when it
+ * could not be made — only a 404 from the media route proves absence, and a
+ * failed probe must not disable a document that opens perfectly well.
+ */
+export type Presence = 'unknown' | 'present' | 'missing';
+
+/** Enough of a `Response` for a liveness check; `Response` itself in the browser. */
+interface ProbeResponse {
+  ok: boolean;
+  status: number;
+}
+
+type ProbeFetch = (url: string, init: { headers: Record<string, string> }) => Promise<ProbeResponse>;
 
 interface Entry {
   url: string | null;
   expiresAt: number;
   failed: boolean;
   pending: boolean;
+  presence: Presence;
+  probing: boolean;
 }
 
 /**
@@ -105,10 +160,12 @@ export class MediaUrls {
   private readonly entries = new Map<string, Entry>();
   private sign: SignPath | null = null;
   private readonly now: () => number;
+  private readonly fetch: ProbeFetch;
 
-  constructor(host: MediaHost, options: { now?: () => number } = {}) {
+  constructor(host: MediaHost, options: { now?: () => number; fetch?: ProbeFetch } = {}) {
     this.host = host;
     this.now = options.now ?? (() => Date.now());
+    this.fetch = options.fetch ?? ((url, init) => globalThis.fetch(url, init));
   }
 
   /**
@@ -145,17 +202,63 @@ export class MediaUrls {
     return this.entries.get(`${itemId}/${attachmentId}`)?.failed === true;
   }
 
+  /**
+   * Whether one attachment's file is really there, starting the check if not
+   * yet asked.
+   *
+   * Synchronous like `get`, and for the same reason: a template needs an answer
+   * now. A caller that draws a link uses this to decide whether the link can
+   * lead anywhere — metadata outlives its bytes, because a JSON export carries
+   * the references and not the files, so a fresh install can hold a document
+   * whose PDF was never uploaded to it.
+   *
+   * The probe asks for one byte. The media route rejects a missing file with
+   * 404 before it opens anything, so a range that small settles the question
+   * without pulling the document down to answer it.
+   */
+  presence(itemId: string, attachmentId: string): Presence {
+    const key = `${itemId}/${attachmentId}`;
+    const url = this.get(itemId, attachmentId);
+    const entry = this.entries.get(key);
+    if (!entry || !url) return entry?.presence ?? 'unknown';
+    if (entry.presence !== 'unknown' || entry.probing) return entry.presence;
+
+    entry.probing = true;
+    void this.fetch(url, { headers: { Range: 'bytes=0-0' } }).then(
+      (response) => {
+        this.settlePresence(key, response.ok ? 'present' : response.status === 404 ? 'missing' : 'unknown');
+      },
+      () => {
+        this.settlePresence(key, 'unknown');
+      },
+    );
+    return 'unknown';
+  }
+
+  private settlePresence(key: string, presence: Presence): void {
+    const entry = this.entries.get(key);
+    if (!entry) return;
+    // `probing` stays set on an inconclusive answer: re-asking on every render
+    // would put one request per frame on a connection that has already failed.
+    this.entries.set(key, { ...entry, presence });
+    this.host.requestUpdate();
+  }
+
   private request(key: string, itemId: string, attachmentId: string): void {
     const sign = this.sign;
     if (!sign) return;
     const existing = this.entries.get(key);
     if (existing?.pending) return;
 
+    // A re-sign is a new URL for the same bytes, so whatever was learned about
+    // whether those bytes exist carries across it.
     const entry: Entry = {
       url: existing?.url ?? null,
       expiresAt: 0,
       failed: false,
       pending: true,
+      presence: existing?.presence ?? 'unknown',
+      probing: existing?.probing ?? false,
     };
     this.entries.set(key, entry);
 
@@ -166,6 +269,8 @@ export class MediaUrls {
           expiresAt: this.now() + SIGNED_URL_TTL_SECONDS * 1000,
           failed: false,
           pending: false,
+          presence: this.entries.get(key)?.presence ?? entry.presence,
+          probing: this.entries.get(key)?.probing ?? entry.probing,
         });
         this.host.requestUpdate();
       },
@@ -177,6 +282,8 @@ export class MediaUrls {
           expiresAt: 0,
           failed: entry.url === null,
           pending: false,
+          presence: this.entries.get(key)?.presence ?? entry.presence,
+          probing: this.entries.get(key)?.probing ?? entry.probing,
         });
         this.host.requestUpdate();
       },

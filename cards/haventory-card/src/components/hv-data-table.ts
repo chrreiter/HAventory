@@ -7,10 +7,10 @@ import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import { COLUMN_DEFS, normalizeColumns, tableTemplateFor } from '../store/columns';
 import { getDefaultOrderFor } from '../store/sort';
-import type { AreaRef } from '../store/types';
+import type { AreaRef, StatusDefinition } from '../store/types';
 import type { ColumnKey } from '../store/columns';
 import { isLowStock } from './hv-list-row';
-import { itemStatus, statusLabel } from '../ui/status';
+import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
 import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import type { Item, Sort, SortField } from '../store/types';
 
@@ -237,6 +237,9 @@ export class HVDataTable extends LitElement {
     `,
   ];
 
+  /** The status vocabulary from `haventory/config`; the built-ins stand in
+   * until it answers. */
+  @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
   @property({ attribute: false }) items: Item[] = [];
   @property({ attribute: false }) columns: ColumnKey[] = [];
   @property({ attribute: false }) sort!: Sort;
@@ -349,11 +352,8 @@ export class HVDataTable extends LitElement {
         // "OK" is a chip too, quiet rather than amber: a column that draws half
         // its values as chips and prints the rest as bare text reads as two
         // columns interleaved.
-        const status = itemStatus(item);
         return html`<span class="cell" role="cell" data-testid="cell-status"
-          ><span class="hv-chip ${status === 'ok' ? 'quiet' : 'warning'}"
-            >${statusLabel(status)}</span
-          ></span
+          >${renderStatusChip(itemStatus(item), this.statuses)}</span
         >`;
       }
       case 'category':
@@ -476,10 +476,10 @@ export class HVDataTable extends LitElement {
                     ${isLowStock(item)
                       ? html`<span class="hv-chip warning" aria-label="Low stock">Low</span>`
                       : null}
-                    ${!statusColumn && itemStatus(item) !== 'ok'
-                      ? html`<span class="hv-chip warning" data-testid="table-status"
-                          >${statusLabel(itemStatus(item))}</span
-                        >`
+                    ${!statusColumn && itemStatus(item) !== DEFAULT_STATUS
+                      ? renderStatusChip(itemStatus(item), this.statuses, {
+                          testid: 'table-status',
+                        })
                       : null}
                     ${item.checked_out ? html`<span class="hv-chip state">Checked out</span>` : null}
                   </span>

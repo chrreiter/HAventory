@@ -1,5 +1,5 @@
 import './hv-list-row';
-import { makeAttachment, makeItem, makeMediaBindings } from '../test.utils';
+import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
 import { elidePath, isLowStock } from './hv-list-row';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVListRow } from './hv-list-row';
@@ -491,5 +491,33 @@ describe('hv-list-row thumbnail', () => {
     await el.updateComplete;
 
     expect(q(el, '[data-testid="row-thumb"]')).toBeNull();
+  });
+});
+
+describe('hv-list-row: document marker', () => {
+  it('marks a row whose item holds a manual', async () => {
+    const el = await mount({ attachments: [makeManual({ id: 'm-1' })] });
+    await el.updateComplete;
+
+    const mark = q(el, '[data-testid="row-has-document"]');
+    expect(mark).toBeTruthy();
+    // Glyph-only, so it needs a name of its own to reach a screen reader.
+    expect(mark?.getAttribute('aria-label')).toBe('Has a document');
+  });
+
+  it('marks nothing for an item with only pictures', async () => {
+    const el = await mount({ attachments: [makeAttachment({ id: 'p-1' })] });
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-has-document"]')).toBeNull();
+  });
+
+  // A marker that only appeared on desktop would make the phone list, which is
+  // where an item is most often looked up, silent about its documents.
+  it('marks a mobile row too', async () => {
+    const el = await mount({ attachments: [makeManual({ id: 'm-1' })] }, { mobile: true });
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-has-document"]')).toBeTruthy();
   });
 });

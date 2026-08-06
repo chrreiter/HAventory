@@ -6,16 +6,8 @@ import { locationPathParts, pathTitle } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { activeFilterCount, defaultFilters } from '../store/store';
-import { ITEM_STATUSES, statusLabel } from '../ui/status';
-import type {
-  DistinctValues,
-  ItemStatus,
-  Location,
-  LocationTreeNode,
-  SortField,
-  StatsCounts,
-  StoreFilters,
-} from '../store/types';
+import { DEFAULT_STATUS, statusLabel, statusList, statusToneClass } from '../ui/status';
+import type { DistinctValues, ItemStatus, Location, LocationTreeNode, SortField, StatsCounts, StatusDefinition, StoreFilters } from '../store/types';
 import './hv-location-tree';
 
 /** Sort fields the backend supports, in the order the menu lists them. */
@@ -340,6 +332,9 @@ export class HVFilterPanel extends LitElement {
   /** The applied filters. In staged mode this is the baseline, not the edit target. */
   @property({ attribute: false }) filters!: StoreFilters;
   @property({ attribute: false }) distinct: DistinctValues | null = null;
+  /** The status vocabulary from `haventory/config`; the built-ins stand in
+   * until it answers. */
+  @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
   @property({ attribute: false }) locations: Location[] | null = null;
   @property({ attribute: false }) locationTree: LocationTreeNode[] = [];
@@ -731,18 +726,20 @@ export class HVFilterPanel extends LitElement {
       <div class="group">
         <span class="hv-label">Status</span>
         <div class="chips">
-          ${ITEM_STATUSES.map((s) => {
+          ${statusList(this.statuses).map(({ slug: s }) => {
             const on = f.status === s;
-            const warning = on && s !== 'ok';
+            // A chosen status shows its own colour; the rest stay outlines, so
+            // the row reads as choices rather than as facts.
+            const tone = on && s !== DEFAULT_STATUS ? statusToneClass(s, this.statuses) : '';
             const tally = tallyFor(s);
             return html`<button
-              class="hv-chip toggle chip ${on ? 'on' : ''} ${warning ? 'warning' : ''}"
+              class="hv-chip toggle chip hv-status-chip ${on ? 'on' : ''} ${tone}"
               data-testid="filter-status"
               data-value=${s}
               aria-pressed=${String(on)}
               @click=${() => this._patch({ status: on ? null : s })}
             >
-              ${on ? icon('check', 12) : null}${statusLabel(s)}
+              ${on ? icon('check', 12) : null}${statusLabel(s, this.statuses)}
               ${tally === undefined || tally === null ? null : html`<span class="tally">${tally}</span>`}
             </button>`;
           })}

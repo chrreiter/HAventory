@@ -6,7 +6,7 @@ import { locationPathParts, pathTitle } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate } from '../ui/relative-time';
 import { statusLabel } from '../ui/status';
-import type { Location, StoreFilters } from '../store/types';
+import type { Location, StatusDefinition, StoreFilters } from '../store/types';
 
 /** Which filter a chip clears. Matches the keys of `StoreFilters`. */
 export type FilterChipKey =
@@ -39,7 +39,11 @@ export interface FilterChip {
  */
 export function chipsFor(
   filters: StoreFilters,
-  ctx: { locations?: Location[] | null; areas?: { id: string; name: string }[] | null } = {},
+  ctx: {
+    locations?: Location[] | null;
+    areas?: { id: string; name: string }[] | null;
+    statuses?: StatusDefinition[] | null;
+  } = {},
 ): FilterChip[] {
   const chips: FilterChip[] = [];
   if (filters.q) chips.push({ key: 'q', label: `"${filters.q}"`, tone: 'primary' });
@@ -80,7 +84,7 @@ export function chipsFor(
   if (filters.status)
     chips.push({
       key: 'status',
-      label: `Status: ${statusLabel(filters.status)}`,
+      label: `Status: ${statusLabel(filters.status, ctx.statuses)}`,
       // OK is the unremarkable state; the two flagged values carry the warning tone.
       tone: filters.status === 'ok' ? 'primary' : 'warning',
     });
@@ -163,11 +167,18 @@ export class HVFilterChips extends LitElement {
 
   @property({ attribute: false }) filters!: StoreFilters;
   @property({ attribute: false }) locations: Location[] | null = null;
+  /** The status vocabulary from `haventory/config`; the built-ins stand in
+   * until it answers. */
+  @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
 
   render() {
     if (!this.filters) return null;
-    const chips = chipsFor(this.filters, { locations: this.locations, areas: this.areas });
+    const chips = chipsFor(this.filters, {
+      locations: this.locations,
+      areas: this.areas,
+      statuses: this.statuses,
+    });
     if (!chips.length) return null;
     return html`
       <div class="row" data-testid="filter-chips">

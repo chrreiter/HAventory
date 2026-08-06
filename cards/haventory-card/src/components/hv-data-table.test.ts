@@ -417,22 +417,35 @@ describe('hv-data-table: status column', () => {
   });
 
   // Every value in the column is a chip, or half of it would read as a second
-  // column interleaved with the first. Only the flagged ones are amber.
-  it('chips every value and reserves the warning fill for the flagged ones', async () => {
+  // column interleaved with the first. The colour is the status definition's,
+  // not one of the fixed semantic hues — a household chooses it.
+  it('chips every value and paints each from its own definition', async () => {
     const el = await mount(mixed, { columns: ['status'] });
     const cells = all(el, '[data-testid="cell-status"]');
-    expect(cells.map((c) => !!c.querySelector('.hv-chip'))).toEqual([true, true, true, true]);
-    expect(cells.map((c) => !!c.querySelector('.hv-chip.warning'))).toEqual([
+    expect(cells.map((c) => !!c.querySelector('.hv-status-chip'))).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
+    expect(cells.map((c) => !!c.querySelector('.hv-status-chip.tone-amber'))).toEqual([
       true,
       true,
       false,
       false,
     ]);
-    expect(cells.map((c) => !!c.querySelector('.hv-chip.quiet'))).toEqual([
+    expect(cells.map((c) => !!c.querySelector('.hv-status-chip.tone-green'))).toEqual([
       false,
       false,
       true,
       true,
+    ]);
+    // The semantic vocabulary stays for the marks that do carry a fixed meaning.
+    expect(cells.map((c) => !!c.querySelector('.hv-chip.warning'))).toEqual([
+      false,
+      false,
+      false,
+      false,
     ]);
   });
 

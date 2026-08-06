@@ -1,4 +1,5 @@
 import type {
+  AnyEventPayload,
   AreasListResult,
   AttachmentKind,
   BulkOperation,
@@ -21,9 +22,10 @@ import type {
   ScalarValue,
   Sort,
   StatsCounts,
+  StatusColor,
+  StatusDefinition,
   Unsubscribe,
   VersionInfo,
-  AnyEventPayload,
 } from './types';
 
 let nextSubscriptionId = 1;
@@ -217,6 +219,51 @@ export class WSClient {
     return this.hass.callWS<Item>(payload);
   }
 
+  /**
+   * Retitle one attachment.
+   *
+   * The stored filename never changes — it is what the bytes were uploaded as,
+   * and the title is only what the card shows in its place.
+   */
+  updateAttachment(
+    itemId: string,
+    attachmentId: string,
+    title: string,
+    expectedVersion?: number,
+  ) {
+    const payload: Record<string, unknown> = {
+      type: 'haventory/item/attachment/update',
+      item_id: itemId,
+      attachment_id: attachmentId,
+      title,
+    };
+    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
+    return this.hass.callWS<Item>(payload);
+  }
+
+  /**
+   * Renumber one kind's attachments; the first id named takes position 0.
+   *
+   * A picture at position 0 is the item's cover, so "make cover" is this
+   * command rather than a flag of its own. The list must name every attachment
+   * of that kind exactly once — the backend refuses a partial permutation.
+   */
+  reorderAttachments(
+    itemId: string,
+    kind: AttachmentKind,
+    attachmentIds: string[],
+    expectedVersion?: number,
+  ) {
+    const payload: Record<string, unknown> = {
+      type: 'haventory/item/attachment/reorder',
+      item_id: itemId,
+      kind,
+      attachment_ids: attachmentIds,
+    };
+    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
+    return this.hass.callWS<Item>(payload);
+  }
+
   /** Detach one file from an item; the backend deletes the bytes with it. */
   removeAttachment(itemId: string, attachmentId: string, expectedVersion?: number) {
     const payload: Record<string, unknown> = {
@@ -324,9 +371,58 @@ export class WSClient {
     return this.hass.callWS<ImportSummary>({ type: 'haventory/import/execute', document, policy });
   }
 
+  // ---------- Status definitions ----------
+
+  /** The status vocabulary in display order. */
+  listStatuses() {
+    return this.hass.callWS<StatusDefinition[]>({ type: 'haventory/status/list' });
+  }
+
+  createStatus(status: {
+    slug: string;
+    label: string;
+    color?: StatusColor;
+    icon?: string;
+    order?: number;
+  }) {
+    return this.hass.callWS<StatusDefinition>({ type: 'haventory/status/create', ...status });
+  }
+
+  /** Edit presentation only — the slug is what items store and cannot change. */
+  updateStatus(
+    slug: string,
+    changes: { label?: string; color?: StatusColor; icon?: string; order?: number },
+  ) {
+    return this.hass.callWS<StatusDefinition>({
+      type: 'haventory/status/update',
+      slug,
+      ...changes,
+    });
+  }
+
+  /** Rewrite display order. `slugs` must name every status exactly once. */
+  reorderStatuses(slugs: string[]) {
+    return this.hass.callWS<StatusDefinition[]>({ type: 'haventory/status/reorder', slugs });
+  }
+
+  /**
+   * Delete a status.
+   *
+   * Refused while items still carry it unless `reassignTo` says where they go;
+   * the move and the delete happen in one call, so no client can observe an
+   * item naming a status that no longer exists.
+   */
+  deleteStatus(slug: string, reassignTo?: string) {
+    return this.hass.callWS<{ status: StatusDefinition; reassigned: number }>({
+      type: 'haventory/status/delete',
+      slug,
+      ...(reassignTo ? { reassign_to: reassignTo } : {}),
+    });
+  }
+
   // ---------- Subscriptions ----------
   subscribe(
-    topic: 'items' | 'locations' | 'stats',
+    topic: 'items' | 'locations' | 'stats' | 'statuses',
     cb: (payload: AnyEventPayload) => void,
     opts?: {
       location_id?: string | null;

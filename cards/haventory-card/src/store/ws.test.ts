@@ -307,6 +307,58 @@ describe('WSClient attachments', () => {
     );
   });
 
+  it('names the kind the file is being attached as', async () => {
+    const hass = makeUploadHass();
+    const ws = new WSClient(hass);
+
+    await ws.uploadAttachment('i-1', new File(['x'], 'manual.pdf'), 'manual');
+
+    expect(hass.sent[0]).toMatchObject({ kind: 'manual', filename: 'manual.pdf' });
+  });
+
+  it('retitles an attachment without touching its filename', async () => {
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.updateAttachment('i-1', 'att-1', 'Dishwasher manual', 6);
+
+    expect(hass.sent[0]).toEqual({
+      type: 'haventory/item/attachment/update',
+      item_id: 'i-1',
+      attachment_id: 'att-1',
+      title: 'Dishwasher manual',
+      expected_version: 6,
+    });
+  });
+
+  it('clears a title with an empty string rather than omitting the field', async () => {
+    // Omitting it would read as "leave the title alone", so a user who clears
+    // the field would keep the old title.
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.updateAttachment('i-1', 'att-1', '');
+
+    expect(hass.sent[0]).toMatchObject({ title: '' });
+    expect(hass.sent[0]).not.toHaveProperty('expected_version');
+  });
+
+  it('reorders one kind by naming its whole order', async () => {
+    // Position 0 is what makes a picture the cover, so "make cover" is this
+    // command rather than a flag of its own.
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.reorderAttachments('i-1', 'picture', ['c', 'a', 'b']);
+
+    expect(hass.sent[0]).toEqual({
+      type: 'haventory/item/attachment/reorder',
+      item_id: 'i-1',
+      kind: 'picture',
+      attachment_ids: ['c', 'a', 'b'],
+    });
+  });
+
   it('removes an attachment by both ids', async () => {
     const hass = makeSpyHass();
     const ws = new WSClient(hass);
@@ -340,5 +392,44 @@ describe('WSClient attachments', () => {
       expires: 300,
     });
     expect(signed).toBe('/api/haventory/media/i-1/att-1?authSig=abc');
+  });
+});
+
+describe('WSClient: status definitions', () => {
+  it('sends the CRUD commands the backend registers', async () => {
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.listStatuses();
+    await ws.createStatus({ slug: 'lent_out', label: 'Lent out', color: 'blue' });
+    await ws.updateStatus('lent_out', { label: 'On loan' });
+    await ws.reorderStatuses(['ok', 'lent_out']);
+
+    expect(hass.sent.map((c) => c.type)).toEqual([
+      'haventory/status/list',
+      'haventory/status/create',
+      'haventory/status/update',
+      'haventory/status/reorder',
+    ]);
+    expect(hass.sent[1]).toMatchObject({ slug: 'lent_out', label: 'Lent out', color: 'blue' });
+    expect(hass.sent[2]).toMatchObject({ slug: 'lent_out', label: 'On loan' });
+  });
+
+  // The backend refuses a delete that would orphan items, so the target is what
+  // turns a refusal into a completed move — but it must not be sent when absent,
+  // or an unused status could not be deleted at all.
+  it('omits reassign_to unless a target was chosen', async () => {
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.deleteStatus('lent_out');
+    await ws.deleteStatus('lent_out', 'ok');
+
+    expect(hass.sent[0]).toEqual({ type: 'haventory/status/delete', slug: 'lent_out' });
+    expect(hass.sent[1]).toEqual({
+      type: 'haventory/status/delete',
+      slug: 'lent_out',
+      reassign_to: 'ok',
+    });
   });
 });

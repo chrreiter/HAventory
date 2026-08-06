@@ -403,7 +403,7 @@ describe('hv-location-tree: area grouping', () => {
     // The other surfaces put this chip beside a path it qualifies, where it is
     // an annotation and stays smaller than the line carrying it.
     expect(String(chip.cssText).replace(/\s+/g, ' ')).toMatch(
-      /\.hv-chip, \.hv-area-chip \{[^}]*font-size: var\(--hv-chip-font-size\)/,
+      /\.hv-chip, \.hv-area-chip, \.hv-status-chip \{[^}]*font-size: var\(--hv-chip-font-size\)/,
     );
   });
 

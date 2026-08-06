@@ -1,6 +1,7 @@
 import type {
-  AreasListResult,
   AnyEventPayload,
+  AreasListResult,
+  AttachmentKind,
   BulkFailure,
   BulkOperation,
   BulkOutcome,
@@ -22,6 +23,8 @@ import type {
   Location,
   LocationTreeNode,
   StatsCounts,
+  StatusColor,
+  StatusDefinition,
   StoreFilters,
   StoreState,
   Unsubscribe,
@@ -83,8 +86,8 @@ const SUBSCRIBE_UNAVAILABLE_ATTEMPTS = 7;
  */
 const SUBSCRIBE_RETRY_MAX_MS = 30_000;
 
-/** Topics `subscribeTopics` opens as one round: items, stats, locations. */
-const SUBSCRIBE_TOPIC_COUNT = 3;
+/** Topics `subscribeTopics` opens as one round: items, stats, locations, statuses. */
+const SUBSCRIBE_TOPIC_COUNT = 4;
 
 /**
  * Re-opens allowed after Home Assistant refuses the area-registry watch.
@@ -273,6 +276,7 @@ export class Store {
   private itemsUnsub: Unsubscribe | null = null;
   private statsUnsub: Unsubscribe | null = null;
   private locationsUnsub: Unsubscribe | null = null;
+  private statusesUnsub: Unsubscribe | null = null;
   private areaRegistryUnsub: Unsubscribe | null = null;
   private retryBaseMs: number;
   private consecutiveTransportFailures = 0;
@@ -321,6 +325,7 @@ export class Store {
       versionInfo: null,
       cardTitle: null,
       mediaConfig: null,
+      statuses: null,
       distinctValuesCache: null,
       connected: { items: false, stats: false },
       degraded: { ...NO_DEGRADATION },
@@ -436,7 +441,7 @@ export class Store {
   }
 
   /**
-   * Open the three topic subscriptions as one round.
+   * Open the four topic subscriptions as one round.
    *
    * The round, not the individual topic, is the unit of health: the rate limiter
    * bills each subscribe separately, so it can let `items` through and refuse
@@ -477,6 +482,15 @@ export class Store {
       onEvent((evt) => this.onLocationsEvent(evt)),
       { onError, onOpen },
     );
+    if (this.statusesUnsub) this.statusesUnsub();
+    // The vocabulary is small and changes rarely, so any event on the topic
+    // re-reads the whole list rather than applying a per-action patch. It also
+    // keeps a card correct when another client reorders, which no single
+    // event payload describes better than the list itself does.
+    this.statusesUnsub = this.ws.subscribe('statuses', onEvent(() => void this.refreshStatuses()), {
+      onError,
+      onOpen,
+    });
   }
 
   /**
@@ -585,17 +599,18 @@ export class Store {
     this.subscribeRetryHandle = null;
   }
 
-  /** Tear down the three subscriptions and any pending tree refresh. */
+  /** Tear down the four subscriptions and any pending tree refresh. */
   dispose() {
     this.itemsUnsub?.();
     this.statsUnsub?.();
     this.locationsUnsub?.();
+    this.statusesUnsub?.();
     this.areaRegistryUnsub?.();
     // Held by Home Assistant's connection, which outlives every card on the
     // dashboard — a listener left behind would refetch for a disposed store on
     // every reconnect, for as long as the page is open.
     this.connectionReadyUnsub?.();
-    this.itemsUnsub = this.statsUnsub = this.locationsUnsub = null;
+    this.itemsUnsub = this.statsUnsub = this.locationsUnsub = this.statusesUnsub = null;
     this.areaRegistryUnsub = null;
     this.connectionReadyUnsub = null;
     // Nothing is listening after this, so a queued re-subscribe must not fire.
@@ -791,11 +806,18 @@ export class Store {
    * older than this bundle — leaves the card on its built-in heading instead
    * of failing the whole init.
    */
+  /** Re-read the status vocabulary after another client changed it. */
+  async refreshStatuses() {
+    const statuses = await this.run(() => this.ws.listStatuses()).catch(() => null);
+    if (statuses) this.stateObs.set({ statuses });
+  }
+
   async refreshConfig() {
     const config = await this.run(() => this.ws.config()).catch(() => null);
     const title = config?.card_title;
     if (typeof title === 'string' && title) this.stateObs.set({ cardTitle: title });
     if (config?.media) this.stateObs.set({ mediaConfig: config.media });
+    if (config?.statuses?.length) this.stateObs.set({ statuses: config.statuses });
   }
 
   // ---------- Attachments ----------
@@ -808,8 +830,42 @@ export class Store {
    * onto the error queue — the picker shows them per file, next to the file
    * that failed, which a global banner cannot do.
    */
-  async uploadAttachment(itemId: string, file: File, expectedVersion?: number): Promise<Item> {
-    const updated = await this.ws.uploadAttachment(itemId, file, 'picture', expectedVersion);
+  async uploadAttachment(
+    itemId: string,
+    file: File,
+    kind: AttachmentKind = 'picture',
+    expectedVersion?: number,
+  ): Promise<Item> {
+    const updated = await this.ws.uploadAttachment(itemId, file, kind, expectedVersion);
+    this.applyOptimistic(updated);
+    return updated;
+  }
+
+  /** Rename one attachment for display, leaving its filename and bytes alone. */
+  async updateAttachment(
+    itemId: string,
+    attachmentId: string,
+    title: string,
+    expectedVersion?: number,
+  ): Promise<Item> {
+    const updated = await this.ws.updateAttachment(itemId, attachmentId, title, expectedVersion);
+    this.applyOptimistic(updated);
+    return updated;
+  }
+
+  /** Renumber one kind's attachments; the first id named becomes position 0. */
+  async reorderAttachments(
+    itemId: string,
+    kind: AttachmentKind,
+    attachmentIds: string[],
+    expectedVersion?: number,
+  ): Promise<Item> {
+    const updated = await this.ws.reorderAttachments(
+      itemId,
+      kind,
+      attachmentIds,
+      expectedVersion,
+    );
     this.applyOptimistic(updated);
     return updated;
   }
@@ -1272,6 +1328,53 @@ export class Store {
     // Denormalized item location_path values changed for the whole subtree.
     await this.listItems(true);
     return moved;
+  }
+
+  // ---------- Status definitions ----------
+
+  async createStatus(status: {
+    slug: string;
+    label: string;
+    color?: StatusColor;
+    icon?: string;
+  }): Promise<StatusDefinition> {
+    const created = await this.ws.createStatus(status);
+    await this.refreshStatuses();
+    return created;
+  }
+
+  /** Edit presentation. No item moves, so nothing but the vocabulary refreshes. */
+  async updateStatus(
+    slug: string,
+    changes: { label?: string; color?: StatusColor; icon?: string },
+  ): Promise<StatusDefinition> {
+    const updated = await this.ws.updateStatus(slug, changes);
+    await this.refreshStatuses();
+    return updated;
+  }
+
+  async reorderStatuses(slugs: string[]): Promise<StatusDefinition[]> {
+    const ordered = await this.ws.reorderStatuses(slugs);
+    await this.refreshStatuses();
+    return ordered;
+  }
+
+  /**
+   * Delete a status, moving the items that carry it when a target is given.
+   *
+   * Rejects with `validation_error` when items still reference the slug and no
+   * target was chosen — the backend refuses rather than orphaning them.
+   *
+   * A reassignment rewrote items, so the item list and the counts are re-read
+   * too. The `statuses` subscription would deliver that eventually, but every
+   * other mutator here refreshes what it changed rather than waiting on its own
+   * broadcast.
+   */
+  async deleteStatus(slug: string, reassignTo?: string): Promise<number> {
+    const { reassigned } = await this.ws.deleteStatus(slug, reassignTo);
+    await this.refreshStatuses();
+    if (reassigned > 0) await Promise.all([this.listItems(true), this.refreshStats()]);
+    return reassigned;
   }
 
   // ---------- Bulk operations ----------

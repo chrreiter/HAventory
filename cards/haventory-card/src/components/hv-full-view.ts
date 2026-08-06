@@ -15,7 +15,7 @@ import { deepFocusables } from '../ui/dialog-focus';
 import { areaNameById, effectiveAreaIdForLocation } from '../ui/area';
 import { renderAreaChip } from '../ui/location-path';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
-import { ITEM_STATUSES, statusLabel } from '../ui/status';
+import { statusLabel, statusList } from '../ui/status';
 import type { ItemStatus } from '../store/types';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
@@ -733,8 +733,12 @@ export class HVFullView extends LitElement {
     if (!store) return null;
     this._media ??= {
       sign: (path, expires) => store.signMediaPath(path, expires),
-      upload: (itemId, file) => store.uploadAttachment(itemId, file),
+      upload: (itemId, file, kind) => store.uploadAttachment(itemId, file, kind),
       remove: (itemId, attachmentId) => store.removeAttachment(itemId, attachmentId),
+      retitle: (itemId, attachmentId, title) =>
+        store.updateAttachment(itemId, attachmentId, title),
+      reorder: (itemId, kind, attachmentIds) =>
+        store.reorderAttachments(itemId, kind, attachmentIds),
     };
     return this._media;
   }
@@ -1175,7 +1179,7 @@ export class HVFullView extends LitElement {
       </div>
       <div id=${sectionPanelId('status')} ?hidden=${!this._sections.status}>
         ${this._sections.status
-          ? ITEM_STATUSES.map((s) => {
+          ? statusList(this.st?.statuses).map(({ slug: s }) => {
               const on = filters.status === s;
               const tally = tallyFor(s);
               return html`<button
@@ -1186,7 +1190,7 @@ export class HVFullView extends LitElement {
                 @click=${() => this._setFilters({ status: on ? null : s })}
               >
                 ${on ? icon('check', 15) : null}
-                <span class="label">${statusLabel(s)}</span>
+                <span class="label">${statusLabel(s, this.st?.statuses)}</span>
                 ${tally === null ? null : html`<span class="tally">${tally}</span>`}
               </button>`;
             })
@@ -1477,6 +1481,7 @@ export class HVFullView extends LitElement {
         <span class="spacer"></span>
         ${filterCount > 0
           ? html`<hv-filter-chips
+              .statuses=${this.st?.statuses ?? null}
               .filters=${filters}
               .locations=${st?.locationsFlatCache ?? null}
               .areas=${st?.areasCache?.areas ?? []}
@@ -1615,12 +1620,12 @@ export class HVFullView extends LitElement {
    * while the other is on replaces it rather than asking for items that are
    * somehow both.
    */
-  private _renderStatusPill(status: 'missing' | 'needs_repair', count: number | undefined) {
+  private _renderStatusPill(status: string, count: number | undefined) {
     // Absent rather than zero: the same rule the overdue and inspection pills
     // follow, so the bar only ever carries counts worth acting on.
     if (!count) return null;
     const on = (this.st?.filters ?? defaultFilters()).status === status;
-    const noun = statusLabel(status).toLowerCase();
+    const noun = statusLabel(status, this.st?.statuses).toLowerCase();
     return html`<button
       class="hv-chip pill warning ${on ? 'on' : ''}"
       data-testid="full-badge-status"
@@ -1750,6 +1755,7 @@ export class HVFullView extends LitElement {
                 ? html`
                   <div class="panel-scroll">
                   <hv-filter-panel
+                    .statuses=${this.st?.statuses ?? null}
                     data-testid="full-filter-panel"
                     .filters=${filters}
                     .distinct=${st?.distinctValuesCache ?? null}
@@ -1777,6 +1783,7 @@ export class HVFullView extends LitElement {
             ${this._editing !== null
               ? html`<div class="editor-holder">
                   <hv-item-editor
+                    .statuses=${this.st?.statuses ?? null}
                     data-testid="full-editor"
                     .areas=${st?.areasCache?.areas ?? []}
                     .media=${this.media}
@@ -1810,6 +1817,7 @@ export class HVFullView extends LitElement {
               : null}
 
             <hv-data-table
+              .statuses=${this.st?.statuses ?? null}
               .areas=${st?.areasCache?.areas ?? []}
               data-testid="full-table"
               .items=${(st?.items ?? []) as Item[]}

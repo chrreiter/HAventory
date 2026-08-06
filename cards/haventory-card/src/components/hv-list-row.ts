@@ -5,10 +5,10 @@ import { chip } from '../ui/chip';
 import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue } from '../ui/relative-time';
-import { itemStatus, statusLabel } from '../ui/status';
-import { MediaUrls, pictureAlt, pictures } from '../ui/media';
+import { itemStatus, renderStatusChip, statusLabel } from '../ui/status';
+import { MediaUrls, manuals, pictureAlt, pictures } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
-import type { AreaRef, Item } from '../store/types';
+import type { AreaRef, Item, StatusDefinition } from '../store/types';
 import './hv-overflow-menu';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 
@@ -101,6 +101,15 @@ export class HVListRow extends LitElement {
       :host([mobile]) .thumb {
         width: 40px;
         height: 40px;
+      }
+      /* A mark, not a chip: that an item has a manual is a fact about it, not
+         a state anyone has to act on, so it stays out of the hue vocabulary the
+         chips next to it carry. */
+      .doc-marker {
+        flex: none;
+        display: inline-grid;
+        place-items: center;
+        color: var(--hv-text-tertiary);
       }
       /* Both lines must be block containers with inline content, or the
          ellipsis is silently ignored: overflow does not apply to an inline box,
@@ -279,6 +288,9 @@ export class HVListRow extends LitElement {
   /** Show the optimistic-write "pending" chip. */
   @property({ type: Boolean }) pending = false;
   /** Picture access; null means the row shows no thumbnail. */
+  /** The status vocabulary from `haventory/config`; the built-ins stand in
+   * until it answers. */
+  @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
   @property({ attribute: false }) media: MediaBindings | null = null;
 
   private readonly _urls = new MediaUrls(this);
@@ -483,7 +495,7 @@ export class HVListRow extends LitElement {
                   ? ` · due ${formatDate(item.due_date)}`
                   : ''}`
               : this.mobile && flagged
-                ? html`<span data-testid="row-status">${statusLabel(status)}</span>${mobileSecondary
+                ? html`<span data-testid="row-status">${statusLabel(status, this.statuses)}</span>${mobileSecondary
                     ? ` · ${mobileSecondary}`
                     : ''}`
                 : this.mobile && inspectionDue
@@ -495,6 +507,15 @@ export class HVListRow extends LitElement {
                       >`}
           </span>
         </span>
+        ${manuals(item.attachments).length
+          ? html`<span
+              class="doc-marker"
+              data-testid="row-has-document"
+              title="Has a document"
+              aria-label="Has a document"
+              >${icon('fileDocument', 14)}</span
+            >`
+          : null}
         ${this.pending
           ? html`<span class="hv-chip warning" data-testid="row-pending">Pending</span>`
           : null}
@@ -502,7 +523,7 @@ export class HVListRow extends LitElement {
           ? html`<span class="hv-chip warning" data-testid="row-low" aria-label="Low stock">Low</span>`
           : null}
         ${!this.mobile && flagged
-          ? html`<span class="hv-chip warning" data-testid="row-status">${statusLabel(status)}</span>`
+          ? renderStatusChip(status, this.statuses, { testid: 'row-status' })
           : null}
         ${!this.mobile && item.checked_out
           ? html`<span

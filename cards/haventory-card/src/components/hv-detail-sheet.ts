@@ -5,20 +5,13 @@ import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import { inferType } from '../ui/item-form';
-import { itemStatus, statusLabel } from '../ui/status';
+import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
 import { isLowStock } from './hv-list-row';
 import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
-import { MediaUrls, pictureAlt, pictures } from '../ui/media';
+import { MediaUrls, attachmentTitle, formatBytes, manuals, pictureAlt, pictures } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
 import { DialogFocus } from '../ui/dialog-focus';
-import type {
-  AreaRef,
-  Item,
-  Location,
-  LocationTreeNode,
-  MediaConfig,
-  ScalarValue,
-} from '../store/types';
+import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, ScalarValue, StatusDefinition } from '../store/types';
 import './hv-bottom-sheet';
 import './hv-checkout-popover';
 import './hv-item-editor';
@@ -279,6 +272,80 @@ export class HVDetailSheet extends LitElement {
         object-fit: cover;
         background: var(--hv-surface-raised);
       }
+      .documents {
+        padding: 0 18px 14px;
+      }
+      .documents h3 {
+        margin: 0 0 6px;
+        font-size: 12px;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--hv-text-secondary);
+      }
+      .documents ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 1px;
+        background: var(--hv-row-divider);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .documents li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 52px;
+        padding: 8px 12px;
+        background: var(--hv-surface);
+      }
+      .documents .doc-icon {
+        display: inline-grid;
+        place-items: center;
+        flex: none;
+        color: var(--hv-text-secondary);
+      }
+      .documents .doc-text {
+        flex: 1;
+        min-width: 0;
+      }
+      .documents .doc-title {
+        display: block;
+        font-size: 13.5px;
+        color: var(--hv-text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .documents .doc-meta {
+        display: block;
+        font-size: 11.5px;
+        color: var(--hv-text-secondary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .documents .doc-open {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        flex: none;
+        min-height: 40px;
+        padding: 0 12px;
+        border-radius: var(--hv-radius-chip);
+        color: var(--hv-primary-dark);
+        text-decoration: none;
+        font: 500 13px var(--hv-font);
+      }
+      /* The row still names the document and its file; only what it promised
+         to open is struck through, so the reference reads as a record rather
+         than as something broken beyond recognition. */
+      .documents li.missing .doc-title {
+        color: var(--hv-text-secondary);
+        text-decoration: line-through;
+      }
       .lightbox {
         position: fixed;
         inset: 0;
@@ -323,6 +390,9 @@ export class HVDetailSheet extends LitElement {
   @property({ type: String }) errorMessage: string | null = null;
 
   /** Picture access for the gallery, the lightbox and the editor it hosts. */
+  /** The status vocabulary from `haventory/config`; the built-ins stand in
+   * until it answers. */
+  @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
   @property({ attribute: false }) media: MediaBindings | null = null;
   /** Attachment caps and accepted types, forwarded to the editor's picker. */
   @property({ attribute: false }) mediaConfig: MediaConfig | null = null;
@@ -428,6 +498,57 @@ export class HVDetailSheet extends LitElement {
     </div>`;
   }
 
+  /**
+   * The documents attached to the item, or nothing when there are none.
+   *
+   * Each row is an anchor to the signed media URL rather than a button that
+   * opens one: the URL has to be on the element before the tap, or the popup
+   * blocker eats the new tab a handler would open after awaiting a signature.
+   *
+   * A reference whose file the backend cannot find is shown as missing instead
+   * of as a link that leads to a 404 — a JSON export carries the metadata and
+   * not the bytes, so a fresh install genuinely can hold one.
+   */
+  private _renderDocuments(item: Item) {
+    const docs = manuals(item.attachments);
+    if (!docs.length) return null;
+    return html`<div class="documents" data-testid="sheet-documents">
+      <h3>Documents</h3>
+      <ul>
+        ${docs.map((doc) => {
+          const src = this._urls.get(item.id, doc.id);
+          const missing = this._urls.presence(item.id, doc.id) === 'missing';
+          return html`<li class=${missing ? 'missing' : ''} data-testid="sheet-document">
+            <span class="doc-icon">${icon('fileDocument', 20)}</span>
+            <span class="doc-text">
+              <span class="doc-title" data-testid="sheet-document-title"
+                >${attachmentTitle(doc)}</span
+              >
+              <span class="doc-meta"
+                >${doc.filename} · ${formatBytes(doc.size)} ·
+                added ${relativeTime(doc.uploaded_at)}</span
+              >
+            </span>
+            ${missing
+              ? html`<span class="hv-chip warning" data-testid="sheet-document-missing"
+                  >File missing</span
+                >`
+              : src
+                ? html`<a
+                    class="doc-open"
+                    data-testid="sheet-document-open"
+                    href=${src}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >${icon('openInNew', 15)}Open</a
+                  >`
+                : null}
+          </li>`;
+        })}
+      </ul>
+    </div>`;
+  }
+
   private _renderLightbox(item: Item) {
     const shots = pictures(item.attachments);
     const index = this._lightbox;
@@ -499,10 +620,8 @@ export class HVDetailSheet extends LitElement {
                 >Low</span
               >`
             : null}
-          ${itemStatus(item) !== 'ok'
-            ? html`<span class="hv-chip warning" data-testid="sheet-status"
-                >${statusLabel(itemStatus(item))}</span
-              >`
+          ${itemStatus(item) !== DEFAULT_STATUS
+            ? renderStatusChip(itemStatus(item), this.statuses, { testid: 'sheet-status' })
             : null}
           ${item.checked_out
             ? html`<span
@@ -553,7 +672,7 @@ export class HVDetailSheet extends LitElement {
         </button>
       </div>
 
-      ${this._renderGallery(item)}
+      ${this._renderGallery(item)} ${this._renderDocuments(item)}
 
       ${item.description
         ? html`<div class="description" data-testid="sheet-description">${item.description}</div>`
@@ -660,6 +779,7 @@ export class HVDetailSheet extends LitElement {
         </button>
       </div>
       <hv-item-editor
+        .statuses=${this.statuses}
         .areas=${this.areas}
         .media=${this.media}
         .mediaConfig=${this.mediaConfig}

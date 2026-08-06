@@ -35,6 +35,8 @@ from custom_components.haventory.const import (
     PANEL_ELEMENT_NAME,
     PANEL_ICON,
     PANEL_URL_PATH,
+    STATUS_COLORS,
+    STATUS_ICONS,
 )
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, DATA_PANELS, UrlManager
 from homeassistant.config_entries import ConfigEntry
@@ -779,6 +781,56 @@ def test_the_card_builds_media_urls_on_the_route_the_backend_serves() -> None:
     assert match is not None, "MEDIA_URL_TEMPLATE is no longer declared in media.ts"
 
     assert match.group(1) == MEDIA_URL_TEMPLATE
+
+
+def test_every_status_icon_has_a_glyph_in_the_bundle() -> None:
+    """``STATUS_ICONS`` names glyphs only the card defines.
+
+    The backend validates a status's icon against this vocabulary and the card
+    looks it up in ``ICONS``; neither can see the other. A name the card lacks
+    stores fine and then renders nothing, with no error anywhere to say why.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "icons.ts").read_text(
+        encoding="utf-8"
+    )
+    defined = set(re.findall(r"^  ([A-Za-z][A-Za-z0-9]*):", source, re.MULTILINE))
+
+    assert set(STATUS_ICONS) <= defined, f"no glyph for: {sorted(set(STATUS_ICONS) - defined)}"
+
+
+def test_the_card_offers_exactly_the_vocabularies_the_backend_accepts() -> None:
+    """The management picker enumerates colours and glyphs from its own arrays.
+
+    The backend refuses anything outside `STATUS_COLORS` / `STATUS_ICONS`, so a
+    card offering one more choice hands the user a control that fails on save,
+    and one offering fewer hides a colour the store may already hold.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "status.ts").read_text(
+        encoding="utf-8"
+    )
+
+    def declared(name: str) -> list[str]:
+        match = re.search(rf"export const {name}: readonly \w+\[\] = \[(.*?)\];", source, re.S)
+        assert match is not None, f"{name} is no longer declared in status.ts"
+        return re.findall(r"'([^']+)'", match.group(1))
+
+    assert declared("STATUS_COLORS") == list(STATUS_COLORS)
+    assert declared("STATUS_ICONS") == list(STATUS_ICONS)
+
+
+def test_every_status_colour_has_a_rule_in_the_chip_stylesheet() -> None:
+    """``STATUS_COLORS`` names tones only the card can paint.
+
+    Same blind spot as the icons: a token with no rule falls back to the base
+    chip and the status renders in the wrong colour rather than failing.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "chip.ts").read_text(
+        encoding="utf-8"
+    )
+    styled = set(re.findall(r"\.hv-status-chip\.tone-([a-z-]+)", source))
+
+    expected = {token.replace("_", "-") for token in STATUS_COLORS}
+    assert expected <= styled, f"no rule for: {sorted(expected - styled)}"
 
 
 @pytest.mark.asyncio

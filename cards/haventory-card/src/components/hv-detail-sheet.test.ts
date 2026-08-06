@@ -1,5 +1,5 @@
 import './hv-detail-sheet';
-import { makeAttachment, makeItem, makeMediaBindings } from '../test.utils';
+import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
 import type { HVDetailSheet } from './hv-detail-sheet';
 import type { Item } from '../store/types';
 
@@ -443,5 +443,104 @@ describe('hv-detail-sheet: pictures', () => {
     await el.updateComplete;
 
     expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
+  });
+});
+
+describe('hv-detail-sheet: documents', () => {
+  /** Answers every liveness probe the section makes; 206 is a live file. */
+  function serve(status: number) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status })),
+    );
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const docs = () => [
+    makeManual({ id: 'm-1', title: 'Dishwasher manual (EN)', filename: 'bosch.pdf', size: 2516582 }),
+    makeManual({ id: 'm-2', filename: 'warranty.pdf', size: 184320 }),
+  ];
+
+  it('lists each manual with its title, falling back to the filename', async () => {
+    serve(206);
+    const el = await mount({ id: 'i-1', attachments: docs() }, { media: makeMediaBindings() });
+    await el.updateComplete;
+
+    const titles = all(el, '[data-testid="sheet-document-title"]').map((n) => n.textContent?.trim());
+    expect(titles).toEqual(['Dishwasher manual (EN)', 'warranty.pdf']);
+    expect(all(el, '[data-testid="sheet-document"]')[0].textContent).toContain('2.4 MB');
+  });
+
+  it('renders no section at all for an item with no documents', async () => {
+    serve(206);
+    const el = await mount(
+      { attachments: [makeAttachment({ id: 'att-1' })] },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-documents"]')).toBeNull();
+  });
+
+  // An anchor rather than a click handler: the URL must be on the element
+  // before the tap, or the new tab is blocked as an unrequested popup.
+  it('opens a document in a new tab through the signed URL', async () => {
+    serve(206);
+    const el = await mount({ id: 'i-1', attachments: docs() }, { media: makeMediaBindings() });
+    await el.updateComplete;
+
+    const open = all(el, '[data-testid="sheet-document-open"]')[0] as HTMLAnchorElement;
+    expect(open.getAttribute('href')).toBe('/api/haventory/media/i-1/m-1?authSig=test');
+    expect(open.getAttribute('target')).toBe('_blank');
+    expect(open.getAttribute('rel')).toContain('noopener');
+  });
+
+  it('marks a reference whose file is gone instead of offering a dead link', async () => {
+    serve(404);
+    const el = await mount({ id: 'i-1', attachments: docs() }, { media: makeMediaBindings() });
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+
+    expect(all(el, '[data-testid="sheet-document-missing"]')).toHaveLength(2);
+    expect(q(el, '[data-testid="sheet-document-open"]')).toBeNull();
+    // The row still names the document: it is a record of what was attached.
+    expect(all(el, '[data-testid="sheet-document-title"]')[0].textContent).toContain(
+      'Dishwasher manual (EN)',
+    );
+  });
+
+  it('keeps the link when the probe cannot reach the backend at all', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('offline');
+      }),
+    );
+    const el = await mount({ id: 'i-1', attachments: docs() }, { media: makeMediaBindings() });
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-document-missing"]')).toBeNull();
+    expect(all(el, '[data-testid="sheet-document-open"]')).toHaveLength(2);
+  });
+
+  it('shows the documents in stored order, not the order they were uploaded', async () => {
+    serve(206);
+    const el = await mount(
+      {
+        id: 'i-1',
+        attachments: [
+          makeManual({ id: 'm-late', title: 'Second', order: 1 }),
+          makeManual({ id: 'm-first', title: 'First', order: 0 }),
+        ],
+      },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    expect(all(el, '[data-testid="sheet-document-title"]').map((n) => n.textContent?.trim())).toEqual(
+      ['First', 'Second'],
+    );
   });
 });
