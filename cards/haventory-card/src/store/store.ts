@@ -83,8 +83,8 @@ const SUBSCRIBE_UNAVAILABLE_ATTEMPTS = 7;
  */
 const SUBSCRIBE_RETRY_MAX_MS = 30_000;
 
-/** Topics `subscribeTopics` opens as one round: items, stats, locations. */
-const SUBSCRIBE_TOPIC_COUNT = 3;
+/** Topics `subscribeTopics` opens as one round: items, stats, locations, statuses. */
+const SUBSCRIBE_TOPIC_COUNT = 4;
 
 /**
  * Re-opens allowed after Home Assistant refuses the area-registry watch.
@@ -273,6 +273,7 @@ export class Store {
   private itemsUnsub: Unsubscribe | null = null;
   private statsUnsub: Unsubscribe | null = null;
   private locationsUnsub: Unsubscribe | null = null;
+  private statusesUnsub: Unsubscribe | null = null;
   private areaRegistryUnsub: Unsubscribe | null = null;
   private retryBaseMs: number;
   private consecutiveTransportFailures = 0;
@@ -437,7 +438,7 @@ export class Store {
   }
 
   /**
-   * Open the three topic subscriptions as one round.
+   * Open the four topic subscriptions as one round.
    *
    * The round, not the individual topic, is the unit of health: the rate limiter
    * bills each subscribe separately, so it can let `items` through and refuse
@@ -478,6 +479,15 @@ export class Store {
       onEvent((evt) => this.onLocationsEvent(evt)),
       { onError, onOpen },
     );
+    if (this.statusesUnsub) this.statusesUnsub();
+    // The vocabulary is small and changes rarely, so any event on the topic
+    // re-reads the whole list rather than applying a per-action patch. It also
+    // keeps a card correct when another client reorders, which no single
+    // event payload describes better than the list itself does.
+    this.statusesUnsub = this.ws.subscribe('statuses', onEvent(() => void this.refreshStatuses()), {
+      onError,
+      onOpen,
+    });
   }
 
   /**
@@ -586,17 +596,18 @@ export class Store {
     this.subscribeRetryHandle = null;
   }
 
-  /** Tear down the three subscriptions and any pending tree refresh. */
+  /** Tear down the four subscriptions and any pending tree refresh. */
   dispose() {
     this.itemsUnsub?.();
     this.statsUnsub?.();
     this.locationsUnsub?.();
+    this.statusesUnsub?.();
     this.areaRegistryUnsub?.();
     // Held by Home Assistant's connection, which outlives every card on the
     // dashboard — a listener left behind would refetch for a disposed store on
     // every reconnect, for as long as the page is open.
     this.connectionReadyUnsub?.();
-    this.itemsUnsub = this.statsUnsub = this.locationsUnsub = null;
+    this.itemsUnsub = this.statsUnsub = this.locationsUnsub = this.statusesUnsub = null;
     this.areaRegistryUnsub = null;
     this.connectionReadyUnsub = null;
     // Nothing is listening after this, so a queued re-subscribe must not fire.
@@ -792,6 +803,12 @@ export class Store {
    * older than this bundle — leaves the card on its built-in heading instead
    * of failing the whole init.
    */
+  /** Re-read the status vocabulary after another client changed it. */
+  async refreshStatuses() {
+    const statuses = await this.run(() => this.ws.listStatuses()).catch(() => null);
+    if (statuses) this.stateObs.set({ statuses });
+  }
+
   async refreshConfig() {
     const config = await this.run(() => this.ws.config()).catch(() => null);
     const title = config?.card_title;

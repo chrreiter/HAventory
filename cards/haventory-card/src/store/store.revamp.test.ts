@@ -427,7 +427,7 @@ describe('Store: rate limiting and degraded state', () => {
 
   it('retries a rate-limited subscribe and goes live again', async () => {
     const hass = makeMockHass({ items: [] });
-    // One whole round refused — three topics — then the limiter lets us back in.
+    // One whole round refused — four topics — then the limiter lets us back in.
     hass.__failSubscribeNext(3, RATE_LIMITED);
     const store = new Store(hass, fast);
 
@@ -443,8 +443,8 @@ describe('Store: rate limiting and degraded state', () => {
     expect(store.state.value.degraded.nextLiveRetryAt).toBeNull();
     expect(store.state.value.connected.items).toBe(true);
     expect(store.state.value.errorQueue).toEqual([]);
-    // Two rounds of three, so the retry really did re-open every topic...
-    expect(hass.__subscribeCalls).toHaveLength(6);
+    // Two rounds of four, so the retry really did re-open every topic...
+    expect(hass.__subscribeCalls).toHaveLength(8);
     // ...and events flow again, which is the whole point of retrying.
     hass.__emit('items', 'created', { item: makeItem({ id: '9' }) });
     expect(store.state.value.items.map((i) => i.id)).toContain('9');
@@ -466,14 +466,14 @@ describe('Store: rate limiting and degraded state', () => {
     // The refusal reaches the user exactly once — when retrying is over, not on
     // every attempt.
     expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['rate_limited']);
-    // The first round plus four retries, three topics each. The cap is the point:
+    // The first round plus four retries, four topics each. The cap is the point:
     // a card that kept knocking would be indistinguishable from the load that
     // tripped the limiter.
-    expect(hass.__subscribeCalls).toHaveLength(15);
+    expect(hass.__subscribeCalls).toHaveLength(20);
 
     // The budget stays spent until something restarts it.
     await flush(6);
-    expect(hass.__subscribeCalls).toHaveLength(15);
+    expect(hass.__subscribeCalls).toHaveLength(20);
   });
 
   it('clears the paused indicator when a manual refresh gets back in', async () => {
@@ -517,12 +517,12 @@ describe('Store: rate limiting and degraded state', () => {
 
       // Not retried before the hint elapses...
       await vi.advanceTimersByTimeAsync(39);
-      expect(hass.__subscribeCalls).toHaveLength(3);
+      expect(hass.__subscribeCalls).toHaveLength(4);
 
       // ...and retried on the very millisecond it does.
       await vi.advanceTimersByTimeAsync(1);
       await settleSubscribes();
-      expect(hass.__subscribeCalls).toHaveLength(6);
+      expect(hass.__subscribeCalls).toHaveLength(8);
       expect(store.state.value.degraded.liveUpdates).toBe('live');
     } finally {
       vi.useRealTimers();
@@ -542,7 +542,7 @@ describe('Store: rate limiting and degraded state', () => {
     expect(store.state.value.degraded.connectionLost).toBe(true);
     expect(store.state.value.degraded.liveUpdates).toBe('paused');
     expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['unknown_error']);
-    expect(hass.__subscribeCalls).toHaveLength(3);
+    expect(hass.__subscribeCalls).toHaveLength(4);
   });
 });
 
@@ -560,14 +560,14 @@ describe('Store: the backend going away and coming back', () => {
     const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
     const store = new Store(hass, fast);
     await store.init();
-    expect(hass.__subscribeCalls).toHaveLength(3);
+    expect(hass.__subscribeCalls).toHaveLength(4);
 
     tearDown(hass);
     await flush(3);
 
     // One more round, and live updates are back without the user touching
     // anything — a reload must not cost a manual refresh.
-    expect(hass.__subscribeCalls).toHaveLength(6);
+    expect(hass.__subscribeCalls).toHaveLength(8);
     expect(store.state.value.degraded.liveUpdates).toBe('live');
     expect(store.state.value.degraded.liveUpdatesReason).toBeNull();
     expect(store.state.value.connected.items).toBe(true);
@@ -630,12 +630,12 @@ describe('Store: the backend going away and coming back', () => {
     expect(store.state.value.connected.items).toBe(false);
     // Reported once, when retrying is over — not on every attempt.
     expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['storage_error']);
-    // The first round from init plus a bounded seven, three topics each.
-    expect(hass.__subscribeCalls).toHaveLength(24);
+    // The first round from init plus a bounded seven, four topics each.
+    expect(hass.__subscribeCalls).toHaveLength(32);
 
     // The budget stays spent until something restarts it.
     await flush(6);
-    expect(hass.__subscribeCalls).toHaveLength(24);
+    expect(hass.__subscribeCalls).toHaveLength(32);
   });
 
   it('treats one teardown as one outage, however many topics report it', async () => {
@@ -643,12 +643,12 @@ describe('Store: the backend going away and coming back', () => {
     const store = new Store(hass, fast);
     await store.init();
 
-    // All three topics carry the same signal; three re-subscribe rounds for one
+    // All four topics carry the same signal; four re-subscribe rounds for one
     // reload would triple the load on a backend that is still starting up.
     tearDown(hass);
     await flush(3);
 
-    expect(hass.__subscribeCalls).toHaveLength(6);
+    expect(hass.__subscribeCalls).toHaveLength(8);
   });
 
   it('starts a fresh budget for a second teardown', async () => {

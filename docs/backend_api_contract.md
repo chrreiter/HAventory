@@ -88,7 +88,7 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - Result: `{card_title: string, statuses: StatusDefinition[], media: MediaConfig}`
   - `card_title` is the heading set in the integration's options flow (Settings → Devices & services → HAventory → **Configure**), defaulting to `"HAventory"`. Only display settings appear here — rate-limit tunables stay server-side.
   - `statuses` is the status vocabulary in display order (see data shapes). Items store only a slug, so this is where a surface gets the label to render one with.
-  - `media` is `{picture_mime_types: string[], max_pictures_per_item: number, max_attachment_bytes: number}` — the attachment limits, reported so a picker can refuse a doomed file before uploading it. **Advisory only**: every one of them is re-derived server-side from the file's own bytes. The media *route* is deliberately not here; it is a constant on both sides of the language boundary (`/api/haventory/media/{item_id}/{attachment_id}`), pinned by a test.
+  - `media` is `{picture_mime_types: string[], max_pictures_per_item: number, manual_mime_types: string[], max_manuals_per_item: number, max_attachment_bytes: number}` — the attachment limits, reported so a picker can refuse a doomed file before uploading it. **Advisory only**: every one of them is re-derived server-side from the file's own bytes. The media *route* is deliberately not here; it is a constant on both sides of the language boundary (`/api/haventory/media/{item_id}/{attachment_id}`), pinned by a test.
   - Read at card init and on refresh, not pushed: changing the option emits no event, so an open dashboard shows the new heading after a refresh or reload.
 
 - `haventory/stats`
@@ -111,7 +111,7 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 ### Subscriptions and events
 
 - Subscribe
-  - `haventory/subscribe` request: `{id, type, topic: "items"|"locations"|"stats", location_id?: string|null, include_subtree?: boolean, inspection_overdue_only?: boolean}`
+  - `haventory/subscribe` request: `{id, type, topic: "items"|"locations"|"stats"|"statuses", location_id?: string|null, include_subtree?: boolean, inspection_overdue_only?: boolean}`
   - Result: `null` (result envelope with `result: null`)
   - `inspection_overdue_only` narrows the `items` topic to items past their `inspection_date`, using the same rule as the `item/list` filter of that name. Like every subscription filter it is applied to the event's item payload as it stands *after* the mutation, so an item that leaves the filtered set (its inspection date rescheduled or cleared) produces no event for that subscription — a client that tracks a filtered set re-lists rather than relying on a departure event.
   - Subsequent events delivered as HA WS events to the same connection using this `id` as the subscription id.
@@ -127,9 +127,10 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
     backstop for dropped clients.
 
 - Event payloads (inside `event`):
-  - Common: `{domain: "haventory", topic: "items"|"locations"|"stats", action: string, ts: string, ...payload}`
+  - Common: `{domain: "haventory", topic: "items"|"locations"|"stats"|"statuses", action: string, ts: string, ...payload}`
   - Items topic payloads include `{item: <Item>}` and actions: `created`, `updated`, `moved`, `deleted`, `checked_out`, `checked_in`, `quantity_changed`. The `reloaded` action (emitted after `import/execute`) carries **no** `item` and signals a wholesale dataset replacement.
   - Locations topic payloads include `{location: <Location>}` and actions: `created`, `renamed`, `moved`, `deleted`. The `reloaded` action (emitted after `import/execute`) carries **no** `location`.
+  - Statuses topic payloads carry `{status: <StatusDefinition>}` for actions `created`, `updated` and `deleted`, and `{statuses: <StatusDefinition[]>}` for `reordered`. The vocabulary is small and changes rarely, so a client may equally re-read `status/list` on any event rather than applying a per-action patch — which is also what keeps it correct across a reorder.
   - Stats topic payload `action: "counts"` with `{counts: <stats shape>}`.
   - The `unavailable` action is sent on **every** topic, once per open subscription, when the config entry serving it tears down — an unload, a disable, a removal, or the first half of a reload. It carries no payload beyond the common fields: it says this subscription has stopped, not that anything in the inventory changed. It is the only event delivered regardless of the rate limiter's event budget, because its loss cannot be recovered by re-listing — a client that never receives it has no reason to re-list at all. Every command is refused with `storage_error` from this point (see "While no entry is loaded"), so a client that re-subscribes should expect to be refused for as long as setup takes and back off rather than give up on the first attempt.
   - When `location_id` filter is provided on subscription:
@@ -211,6 +212,23 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - Result: `<Item>`; emits `items/updated` and `stats/counts`. The file is deleted with the metadata, after the save.
   - Refusals: `not_found` for an unknown item or attachment, `conflict` for a stale `expected_version`.
 
+- `haventory/item/attachment/update`
+  - Payload: `{item_id: string, attachment_id: string, title: string, expected_version?: number}`
+  - Result: `<Item>`; emits `items/updated`.
+  - Retitles one attachment; the file on disk is untouched. An empty title means "show the
+    filename", so clearing one is how a caller gets back to the default.
+  - Refusals: `not_found` for an unknown item or attachment, `conflict` for a stale
+    `expected_version`, `validation_error` for a title over the length bound.
+
+- `haventory/item/attachment/reorder`
+  - Payload: `{item_id: string, kind: "picture"|"manual", attachment_ids: string[], expected_version?: number}`
+  - Result: `<Item>`; emits `items/updated`.
+  - Renumbers one kind. **The first id named takes position 0, which is what makes a picture
+    the item's cover** — there is no separate cover flag, so "make cover" is this command.
+    Order is per kind, so renumbering pictures never moves a manual.
+  - Refusals: `validation_error` unless `attachment_ids` names every attachment of that kind
+    exactly once, `not_found` for an unknown item, `conflict` for a stale `expected_version`.
+
 - Serving an attachment — `GET /api/haventory/media/{item_id}/{attachment_id}`
   - An authenticated `HomeAssistantView`, not `/local` and not `/haventory_static`: both of those are served without authentication, and an inventory photo is as private as the inventory.
   - Both ids are matched against stored metadata before any path is built, so no request segment reaches the filesystem. Anything unmatched — and any entry whose file is absent — is `404`. Once no config entry owns the data the view answers `503`, mirroring the WebSocket commands' refusal.
@@ -245,6 +263,52 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 - `haventory/location/delete`
   - Payload: `{location_id: string}`
   - Result: `null`; emits `locations/deleted` and `stats/counts`.
+
+### Status definitions
+
+The vocabulary items reference by slug. A slug is immutable — it is the exact string every
+item stores — so only the presentation is editable, and no command here rewrites an item
+except `status/delete` with a reassign target.
+
+- `haventory/status/list`
+  - Payload: `{}`
+  - Result: `<StatusDefinition[]>` in display order. The same array `haventory/config` carries,
+    for a client that wants it without re-reading the whole config.
+
+- `haventory/status/create`
+  - Payload: `{slug: string, label: string, color?: string, icon?: string, order?: number}`
+  - Result: `<StatusDefinition>`; emits `statuses/created`.
+  - Absent `order` places it last. `color` must be one of the ten tone tokens and `icon` one
+    of the ten glyph names (see data shapes); both default when omitted.
+  - Refusals: `validation_error` for a malformed or duplicate slug, or a colour or icon
+    outside its vocabulary.
+
+- `haventory/status/update`
+  - Payload: `{slug: string, label?: string, color?: string, icon?: string, order?: number}`
+  - Result: `<StatusDefinition>`; emits `statuses/updated`.
+  - **No item is touched and no item version moves.** The slug is the identity and the rest is
+    presentation — the same reasoning that keeps a location rename out of an item's `version`.
+  - Refusals: `not_found` for an unknown slug, `validation_error` for a bad value. A `slug`
+    that differs from the one being edited is `validation_error`: items store it.
+
+- `haventory/status/reorder`
+  - Payload: `{slugs: string[]}`
+  - Result: `<StatusDefinition[]>` in the new order; emits `statuses/reordered`.
+  - Refusals: `validation_error` unless `slugs` names every live status exactly once — a
+    partial list would leave two definitions claiming one position.
+
+- `haventory/status/delete`
+  - Payload: `{slug: string, reassign_to?: string}`
+  - Result: `{status: <StatusDefinition>, reassigned: number}`; emits `statuses/deleted`, and
+    when `reassigned` is non-zero also `items/updated` and `stats/counts`.
+  - **Refused while items still carry the slug and no `reassign_to` is given.** An item whose
+    status names nothing would be coerced to the default on the next load, silently. With a
+    target the items move and the definition is deleted in the same call, so no client can
+    observe an item naming a status that no longer exists; each moved item bumps its
+    `version` and `updated_at`.
+  - Refusals: `validation_error` for the default status (`ok`, which is never deletable), for
+    an in-use slug with no target, or for a target that is unknown or the slug itself;
+    `not_found` for an unknown slug.
 
 - `haventory/location/list`
   - Payload: `{}`

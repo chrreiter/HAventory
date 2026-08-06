@@ -342,3 +342,42 @@ describe('WSClient attachments', () => {
     expect(signed).toBe('/api/haventory/media/i-1/att-1?authSig=abc');
   });
 });
+
+describe('WSClient: status definitions', () => {
+  it('sends the CRUD commands the backend registers', async () => {
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.listStatuses();
+    await ws.createStatus({ slug: 'lent_out', label: 'Lent out', color: 'blue' });
+    await ws.updateStatus('lent_out', { label: 'On loan' });
+    await ws.reorderStatuses(['ok', 'lent_out']);
+
+    expect(hass.sent.map((c) => c.type)).toEqual([
+      'haventory/status/list',
+      'haventory/status/create',
+      'haventory/status/update',
+      'haventory/status/reorder',
+    ]);
+    expect(hass.sent[1]).toMatchObject({ slug: 'lent_out', label: 'Lent out', color: 'blue' });
+    expect(hass.sent[2]).toMatchObject({ slug: 'lent_out', label: 'On loan' });
+  });
+
+  // The backend refuses a delete that would orphan items, so the target is what
+  // turns a refusal into a completed move — but it must not be sent when absent,
+  // or an unused status could not be deleted at all.
+  it('omits reassign_to unless a target was chosen', async () => {
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.deleteStatus('lent_out');
+    await ws.deleteStatus('lent_out', 'ok');
+
+    expect(hass.sent[0]).toEqual({ type: 'haventory/status/delete', slug: 'lent_out' });
+    expect(hass.sent[1]).toEqual({
+      type: 'haventory/status/delete',
+      slug: 'lent_out',
+      reassign_to: 'ok',
+    });
+  });
+});

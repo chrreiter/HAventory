@@ -1,4 +1,5 @@
 import type {
+  AnyEventPayload,
   AreasListResult,
   AttachmentKind,
   BulkOperation,
@@ -21,9 +22,10 @@ import type {
   ScalarValue,
   Sort,
   StatsCounts,
+  StatusColor,
+  StatusDefinition,
   Unsubscribe,
   VersionInfo,
-  AnyEventPayload,
 } from './types';
 
 let nextSubscriptionId = 1;
@@ -324,9 +326,58 @@ export class WSClient {
     return this.hass.callWS<ImportSummary>({ type: 'haventory/import/execute', document, policy });
   }
 
+  // ---------- Status definitions ----------
+
+  /** The status vocabulary in display order. */
+  listStatuses() {
+    return this.hass.callWS<StatusDefinition[]>({ type: 'haventory/status/list' });
+  }
+
+  createStatus(status: {
+    slug: string;
+    label: string;
+    color?: StatusColor;
+    icon?: string;
+    order?: number;
+  }) {
+    return this.hass.callWS<StatusDefinition>({ type: 'haventory/status/create', ...status });
+  }
+
+  /** Edit presentation only — the slug is what items store and cannot change. */
+  updateStatus(
+    slug: string,
+    changes: { label?: string; color?: StatusColor; icon?: string; order?: number },
+  ) {
+    return this.hass.callWS<StatusDefinition>({
+      type: 'haventory/status/update',
+      slug,
+      ...changes,
+    });
+  }
+
+  /** Rewrite display order. `slugs` must name every status exactly once. */
+  reorderStatuses(slugs: string[]) {
+    return this.hass.callWS<StatusDefinition[]>({ type: 'haventory/status/reorder', slugs });
+  }
+
+  /**
+   * Delete a status.
+   *
+   * Refused while items still carry it unless `reassignTo` says where they go;
+   * the move and the delete happen in one call, so no client can observe an
+   * item naming a status that no longer exists.
+   */
+  deleteStatus(slug: string, reassignTo?: string) {
+    return this.hass.callWS<{ status: StatusDefinition; reassigned: number }>({
+      type: 'haventory/status/delete',
+      slug,
+      ...(reassignTo ? { reassign_to: reassignTo } : {}),
+    });
+  }
+
   // ---------- Subscriptions ----------
   subscribe(
-    topic: 'items' | 'locations' | 'stats',
+    topic: 'items' | 'locations' | 'stats' | 'statuses',
     cb: (payload: AnyEventPayload) => void,
     opts?: {
       location_id?: string | null;

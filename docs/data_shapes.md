@@ -102,7 +102,7 @@ writers, so an item save can never rewrite the list.
 The store's `statuses` collection, and the `statuses` array in `haventory/config` and in an
 export document:
 ```json
-{ "slug": "needs_repair", "label": "Needs repair", "order": 2 }
+{ "slug": "needs_repair", "label": "Needs repair", "order": 2, "color": "amber", "icon": "wrench" }
 ```
 
 - `slug` is the immutable identity — the exact string every item stores. It is 1–64
@@ -111,6 +111,16 @@ export document:
   raises no `version` question, exactly as a location rename does not touch `location_path`
   semantics.
 - `order` is display order alone; ties break by slug.
+- `color` is one of ten tone tokens — `neutral`, `green`, `blue`, `amber`, `red`, each also in
+  a `_strong` form. Tokens rather than CSS: the card resolves them against the active Home
+  Assistant theme, which a stored colour could not survive. A light form is a tint carrying
+  deep ink; a strong form is a saturated fill, so an urgent status can carry further than a
+  routine one. Defaults to `neutral`.
+- `icon` is one of ten glyph names the card bundle carries — `check`, `alert`, `wrench`,
+  `hand`, `box`, `truck`, `clock`, `cancel`, `star`, `help`. A name the bundle does not have
+  renders no glyph rather than failing; the chip keeps its label and colour. Defaults to
+  `check`.
+- Both are absent from a document written before they existed, and read as those defaults.
 - `ok` is the fixed default: it is what an unknown stored value coerces to and what
   "flagged" (`status !== "ok"`) is defined against, so it is always present.
 - **An absent `statuses` section means the built-in three**, permanently — that is what
@@ -128,7 +138,9 @@ rewritten in full on every mutation, so base64 content would multiply every save
   "filename": "drill.png",
   "mime": "image/png",
   "size": 20480,
-  "uploaded_at": "YYYY-MM-DDTHH:MM:SSZ"
+  "uploaded_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "title": "Dishwasher manual (EN)",
+  "order": 0
 }
 ```
 
@@ -137,6 +149,11 @@ rewritten in full on every mutation, so base64 content would multiply every save
   `image/gif`; `image/svg+xml` is refused outright, because SVG carries script and the
   media view serves from the Home Assistant origin. Manuals accept `application/pdf`.
 - `filename` is display metadata. The file on disk is named from `id` and the type.
+- `title` is what the user called it; **empty means show `filename`**, rather than storing a
+  copy of it that the two could then drift apart on.
+- `order` is position within the item's attachments of the same *kind*. **The picture at
+  `order` 0 is the item's cover** — there is no separate flag, so there is no "exactly one
+  cover" invariant for an import to repair. Both fields default (`""`, `0`) when absent.
 - Files live at `<config>/haventory/attachments/<item_id>/<attachment_id><ext>` — inside
   the config directory so HA backups carry them, and outside both the integration package
   (which HACS replaces on upgrade) and `<config>/www` (which is `/local`, unauthenticated).
