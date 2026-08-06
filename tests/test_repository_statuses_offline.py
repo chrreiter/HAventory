@@ -245,15 +245,37 @@ def test_reordering_leaves_the_other_kind_alone() -> None:
 
     repo = Repository()
     item = repo.create_item(ItemCreate(name="Drill"))
-    picture = _attachment()
-    manual = _attachment(kind="manual", filename="m.pdf", mime="application/pdf", order=3)
-    repo.add_attachment(item.id, picture)
+    front, back = _attachment(), _attachment()
+    first = _attachment(kind="manual", filename="a.pdf", mime="application/pdf")
+    second = _attachment(kind="manual", filename="b.pdf", mime="application/pdf")
+    for meta in (front, back, first, second):
+        item = repo.add_attachment(item.id, meta)
+
+    updated = repo.reorder_attachments(item.id, "picture", [str(back.id), str(front.id)])
+
+    manuals = {a.id: a.order for a in updated.attachments if a.kind == "manual"}
+    assert manuals == {first.id: 0, second.id: 1}
+
+
+def test_adding_appends_within_its_own_kind() -> None:
+    """A new upload lands after the ones already there, not tied with the cover.
+
+    The repository assigns the position: every ``AttachmentMeta`` arrives at the
+    default 0, so taking the caller's would sort each new picture into the
+    middle of the item's existing ones.
+    """
+
+    repo = Repository()
+    item = repo.create_item(ItemCreate(name="Drill"))
+    front, back = _attachment(), _attachment()
+    manual = _attachment(kind="manual", filename="m.pdf", mime="application/pdf")
+
+    item = repo.add_attachment(item.id, front)
+    item = repo.add_attachment(item.id, back)
     item = repo.add_attachment(item.id, manual)
 
-    updated = repo.reorder_attachments(item.id, "picture", [str(picture.id)])
-
-    kept = next(a for a in updated.attachments if a.kind == "manual")
-    assert kept.order == manual.order
+    placed = {a.id: a.order for a in item.attachments}
+    assert placed == {front.id: 0, back.id: 1, manual.id: 0}
 
 
 def test_reordering_must_name_every_attachment_of_that_kind() -> None:

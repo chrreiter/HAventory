@@ -733,8 +733,10 @@ export class HVFullView extends LitElement {
     if (!store) return null;
     this._media ??= {
       sign: (path, expires) => store.signMediaPath(path, expires),
-      upload: (itemId, file) => store.uploadAttachment(itemId, file),
+      upload: (itemId, file, kind) => store.uploadAttachment(itemId, file, kind),
       remove: (itemId, attachmentId) => store.removeAttachment(itemId, attachmentId),
+      retitle: (itemId, attachmentId, title) =>
+        store.updateAttachment(itemId, attachmentId, title),
     };
     return this._media;
   }

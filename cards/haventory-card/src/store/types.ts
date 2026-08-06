@@ -275,6 +275,9 @@ export interface VersionInfo {
 export interface MediaConfig {
   picture_mime_types: string[];
   max_pictures_per_item: number;
+  /** Accepted document types. Absent on a backend that predates manuals. */
+  manual_mime_types?: string[];
+  max_manuals_per_item?: number;
   max_attachment_bytes: number;
 }
 

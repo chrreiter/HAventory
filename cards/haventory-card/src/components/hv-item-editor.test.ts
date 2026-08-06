@@ -1,5 +1,5 @@
 import './hv-item-editor';
-import { makeAttachment, makeItem, makeMediaBindings } from '../test.utils';
+import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
 import { addDays } from '../ui/relative-time';
 import type { HVItemEditor } from './hv-item-editor';
 import type { Item, ItemCreate, ItemUpdate, Location, LocationTreeNode } from '../store/types';
@@ -1158,5 +1158,235 @@ describe('hv-item-editor: pictures', () => {
 
     expect(q(el, '[data-testid="editor-photo-placeholder"]')).toBeTruthy();
     expect(el.shadowRoot?.querySelector('[data-testid="editor-photo"] img')).toBeNull();
+  });
+});
+
+describe('hv-item-editor: documents', () => {
+  /** Drive the hidden document input the way a picker does. */
+  function pick(el: HVItemEditor, files: File[]) {
+    const input = q(el, '[data-testid="editor-manual-input"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    input.dispatchEvent(new Event('change'));
+  }
+
+  const pdf = (name = 'manual.pdf') => new File(['x'], name, { type: 'application/pdf' });
+
+  const CONFIG = {
+    picture_mime_types: ['image/png'],
+    max_pictures_per_item: 4,
+    manual_mime_types: ['application/pdf'],
+    max_manuals_per_item: 1,
+    max_attachment_bytes: 16,
+  };
+
+  it('shows no documents section while creating an item', async () => {
+    const el = await mount(null, { media: makeMediaBindings() });
+
+    expect(q(el, '[data-testid="editor-documents"]')).toBeNull();
+  });
+
+  it('lists the manuals and leaves the pictures to the strip above', async () => {
+    const el = await mount(
+      makeItem({
+        id: 'i-1',
+        attachments: [makeAttachment({ id: 'p-1' }), makeManual({ id: 'm-1' })],
+      }),
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    expect(all(el, '[data-testid="editor-document"]')).toHaveLength(1);
+    expect(all(el, '[data-testid="editor-photo"]')).toHaveLength(1);
+  });
+
+  it('uploads a picked file as a manual, not as a picture', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media, mediaConfig: CONFIG });
+
+    pick(el, [pdf()]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    expect(media.uploads).toHaveLength(1);
+    expect(media.uploads[0].kind).toBe('manual');
+  });
+
+  // A document comes off the file system; pointing the control at the camera
+  // would put a photo of a page where the PDF should be.
+  it('accepts documents only and never opens the camera', async () => {
+    const el = await mount(makeItem({ id: 'i-1' }), {
+      media: makeMediaBindings(),
+      mediaConfig: CONFIG,
+    });
+
+    const input = q(el, '[data-testid="editor-manual-input"]') as HTMLInputElement;
+    expect(input.getAttribute('accept')).toBe('application/pdf');
+    expect(input.getAttribute('capture')).toBeNull();
+  });
+
+  it('refuses a document past its own per-item cap, not the photo one', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(
+      makeItem({ id: 'i-1', attachments: [makeManual({ id: 'm-1' })] }),
+      { media, mediaConfig: CONFIG },
+    );
+
+    pick(el, [pdf()]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    expect(media.uploads).toHaveLength(0);
+    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain('1 documents is the limit');
+  });
+
+  it('refuses a type the backend does not accept as a document', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media, mediaConfig: CONFIG });
+
+    pick(el, [new File(['x'], 'notes.txt', { type: 'text/plain' })]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    expect(media.uploads).toHaveLength(0);
+    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain(
+      'not an accepted document type',
+    );
+  });
+
+  it('sends a document cap the config never mentioned to the backend to judge', async () => {
+    // An older backend reports no document cap. Guessing one here would refuse
+    // a file the server would have taken.
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1', attachments: [makeManual({ id: 'm-1' })] }), {
+      media,
+      mediaConfig: { picture_mime_types: ['image/png'], max_pictures_per_item: 4, max_attachment_bytes: 16 },
+    });
+
+    pick(el, [pdf()]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    expect(media.uploads).toHaveLength(1);
+  });
+
+  it('retitles a document on change and adopts the item that comes back', async () => {
+    const media = makeMediaBindings({
+      retitle: async (itemId) =>
+        makeItem({
+          id: itemId,
+          version: 6,
+          attachments: [makeManual({ id: 'm-1', title: 'Dishwasher manual' })],
+        }),
+    });
+    const el = await mount(
+      makeItem({ id: 'i-1', version: 5, attachments: [makeManual({ id: 'm-1' })] }),
+      { media },
+    );
+    await el.updateComplete;
+
+    const field = q(el, '[data-testid="editor-document-title"]') as HTMLInputElement;
+    field.value = '  Dishwasher manual  ';
+    field.dispatchEvent(new Event('change'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    expect(media.retitles).toEqual([
+      { itemId: 'i-1', attachmentId: 'm-1', title: 'Dishwasher manual' },
+    ]);
+    // The retitle bumped the version, so the next save must carry the new one.
+    const saves: CustomEvent[] = [];
+    el.addEventListener('save', (e) => saves.push(e as CustomEvent));
+    q(el, '[data-testid="editor-save"]')?.click();
+    expect(saves[0].detail.expectedVersion).toBe(6);
+  });
+
+  it('shows the filename as the placeholder for an untitled document', async () => {
+    const el = await mount(
+      makeItem({ id: 'i-1', attachments: [makeManual({ id: 'm-1', filename: 'scan_0142.pdf' })] }),
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    const field = q(el, '[data-testid="editor-document-title"]') as HTMLInputElement;
+    expect(field.getAttribute('placeholder')).toBe('scan_0142.pdf');
+    expect(field.value).toBe('');
+  });
+
+  it('removes a document and adopts the returned item', async () => {
+    const media = makeMediaBindings({
+      remove: async (itemId) => makeItem({ id: itemId, version: 9, attachments: [] }),
+    });
+    const el = await mount(
+      makeItem({ id: 'i-1', version: 4, attachments: [makeManual({ id: 'm-1' })] }),
+      { media },
+    );
+    await el.updateComplete;
+
+    q(el, '[data-testid="editor-document-remove"]')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    expect(media.removals).toEqual([{ itemId: 'i-1', attachmentId: 'm-1' }]);
+    expect(all(el, '[data-testid="editor-document"]')).toHaveLength(0);
+  });
+
+  it('names the file that failed rather than the section it came from', async () => {
+    const media = makeMediaBindings({
+      upload: async () => {
+        throw new Error('That file is not a PDF.');
+      },
+    });
+    const el = await mount(makeItem({ id: 'i-1' }), { media });
+
+    pick(el, [pdf('broken.pdf')]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    const entry = q(el, '[data-testid="editor-upload"]');
+    expect(entry?.textContent).toContain('broken.pdf');
+    expect(entry?.textContent).toContain('That file is not a PDF.');
+  });
+});
+
+describe('hv-item-editor: opening a document', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function serve(status: number) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status })),
+    );
+  }
+
+  // The detail sheet's read view is a phone surface; on a desktop this form is
+  // the only place a manual is reachable at all.
+  it('offers each document as a link to the signed URL', async () => {
+    serve(206);
+    const el = await mount(
+      makeItem({ id: 'i-1', attachments: [makeManual({ id: 'm-1', title: 'Warranty' })] }),
+      { media: makeMediaBindings() },
+    );
+    for (let i = 0; i < 3; i += 1) await el.updateComplete;
+
+    const open = q(el, '[data-testid="editor-document-open"]') as HTMLAnchorElement;
+    expect(open.getAttribute('href')).toBe('/api/haventory/media/i-1/m-1?authSig=test');
+    expect(open.getAttribute('target')).toBe('_blank');
+    expect(open.getAttribute('aria-label')).toBe('Open Warranty');
+  });
+
+  it('replaces the link with the missing state when the file is gone', async () => {
+    serve(404);
+    const el = await mount(
+      makeItem({ id: 'i-1', attachments: [makeManual({ id: 'm-1' })] }),
+      { media: makeMediaBindings() },
+    );
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+
+    expect(q(el, '[data-testid="editor-document-missing"]')).toBeTruthy();
+    expect(q(el, '[data-testid="editor-document-open"]')).toBeNull();
+    // The title stays editable: the metadata is still the item's to correct.
+    expect(q(el, '[data-testid="editor-document-title"]')).toBeTruthy();
   });
 });

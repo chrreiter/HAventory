@@ -11,9 +11,11 @@ plus a Lit + TypeScript Lovelace card. Local-push, single-instance, HA `Store`-b
 persistence — no external services.
 
 Items live in a nested location tree, carry tags, categories and typed custom fields, and
-can be checked out, flagged with a status, and **photographed**: pictures are stored on
-disk inside the config directory and served through an authenticated Home Assistant view,
-never from `/local`. On a phone, the picker opens the companion app's camera directly.
+can be checked out, flagged with a status, and carry **photos and PDF manuals**: both are
+stored on disk inside the config directory and served through an authenticated Home
+Assistant view, never from `/local`. On a phone, the photo picker opens the companion
+app's camera directly; a manual gets a title of your choosing, because `scan_0142.pdf`
+does not say which appliance it belongs to.
 
 **Targets:** Linux dev (Windows via WSL2) + `ubuntu-latest` CI. Minimum Home Assistant **2026.6.0** ⇒ Python
 **3.14** everywhere (uv provisions the interpreter automatically; the source uses 3.14-only
@@ -181,13 +183,15 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   you rebuilt by hand — which carry fresh uuids — therefore duplicates them instead of
   merging, and the backup's items follow their stored `location_id` onto the duplicate.
   Restore into an empty inventory, or onto one whose ids are still intact.
-- **A JSON export carries photo *metadata*, not the photos.** The export is one WebSocket
-  result the card writes to a file, so it cannot carry binaries; item photos live on disk
-  under `<config>/haventory/attachments/`. Importing a document onto an install that does
-  not hold those files keeps the references and shows a "file missing" state — the preview
-  reports how many before you write anything. **Home Assistant's own backups are the
-  full-fidelity path**: the media directory sits inside the config directory, so a backup
-  and restore carries the files and the store together and consistently.
+- **A JSON export carries attachment *metadata*, not the files.** The export is one
+  WebSocket result the card writes to a file, so it cannot carry binaries; photos and
+  manuals live on disk under `<config>/haventory/attachments/`. Importing a document onto
+  an install that does not hold those files keeps the references and shows a "file
+  missing" state — the preview reports how many before you write anything, and the item's
+  Documents list marks each affected row rather than offering a link to a 404.
+  **Home Assistant's own backups are the full-fidelity path**: the media directory sits
+  inside the config directory, so a backup and restore carries the files and the store
+  together and consistently.
 - **Photos are not resized or thumbnailed.** The full-size file is what a list row and the
   detail gallery load, bounded only by the 8 MB per-file cap (10 pictures per item).
   Server-side resizing would mean a Pillow dependency in a local-push integration — install

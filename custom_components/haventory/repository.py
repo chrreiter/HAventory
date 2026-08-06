@@ -1342,19 +1342,25 @@ class Repository:
 
         ``max_per_kind`` caps how many of *this* attachment's kind an item may
         carry — enforced here regardless of what the client checked first.
+
+        The position is assigned here rather than taken from ``meta``: order is
+        per kind, and adding appends. A caller-supplied ``order`` would leave
+        every upload at the default 0, tying with the item's cover and sorting
+        the newest picture into the middle of the ones already there.
         """
 
         current = self.get_item(item_id)
-        if max_per_kind is not None:
-            same_kind = sum(1 for a in current.attachments if a.kind == meta.kind)
-            if same_kind >= max_per_kind:
-                raise ValidationError(
-                    f"item already has {max_per_kind} attachment(s) of kind '{meta.kind}'"
-                )
+        same_kind = sum(1 for a in current.attachments if a.kind == meta.kind)
+        if max_per_kind is not None and same_kind >= max_per_kind:
+            raise ValidationError(
+                f"item already has {max_per_kind} attachment(s) of kind '{meta.kind}'"
+            )
         if any(a.id == meta.id for a in current.attachments):
             raise ValidationError("attachment id is already present on this item")
         return self._replace_attachments(
-            item_id, [*current.attachments, meta], expected_version=expected_version
+            item_id,
+            [*current.attachments, replace(meta, order=same_kind)],
+            expected_version=expected_version,
         )
 
     def remove_attachment(

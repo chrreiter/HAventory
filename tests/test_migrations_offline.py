@@ -305,6 +305,38 @@ def test_v5_to_v6_orders_attachments_by_their_stored_position() -> None:
     assert [a["title"] for a in out["items"]["i1"]["attachments"]] == ["", ""]
 
 
+def test_v5_to_v6_numbers_each_kind_from_zero() -> None:
+    """Order is per kind, the way `reorder_attachments` writes it.
+
+    Numbering straight down the list would make an item's first manual
+    position 1 or 5 depending on how many photos happened to precede it, and
+    nothing would ever be the documents list's own first entry.
+    """
+
+    existing = [
+        _v5_attachment("3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f"),
+        _v5_attachment(
+            "4a1d7e3b-2c5f-4b0d-8e4a-3b8c9d2e1f60",
+            kind="manual",
+            filename="a.pdf",
+            mime="application/pdf",
+        ),
+        _v5_attachment("5b2e8f4c-3d60-4c1e-9f5b-4c9d0e3f2a71"),
+        _v5_attachment(
+            "6c3f9a5d-4e71-4d2f-a06c-5d0e1f403b82",
+            kind="manual",
+            filename="b.pdf",
+            mime="application/pdf",
+        ),
+    ]
+    payload = _v5_payload(i1={"id": "i1", "name": "Drill", "attachments": existing})
+
+    out = migrate(payload, from_version=5, to_version=6)
+
+    placed = [(a["kind"], a["order"]) for a in out["items"]["i1"]["attachments"]]
+    assert placed == [("picture", 0), ("manual", 0), ("picture", 1), ("manual", 1)]
+
+
 def test_v5_to_v6_keeps_an_attachment_title_and_order_it_did_not_write() -> None:
     payload = _v5_payload(
         i1={

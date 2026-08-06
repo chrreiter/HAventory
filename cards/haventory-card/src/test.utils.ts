@@ -2,6 +2,7 @@ import type {
   AnyEventPayload,
   AreaRef,
   Attachment,
+  AttachmentKind,
   ExportDocument,
   HassLike,
   ImportPreview,
@@ -837,44 +838,66 @@ export function makeAttachment(partial?: Partial<Attachment>): Attachment {
     mime: partial?.mime ?? 'image/png',
     size: partial?.size ?? 2048,
     uploaded_at: partial?.uploaded_at ?? FIXTURE_TS,
+    // Left off unless asked for, so a bare fixture is shaped like the payload
+    // a backend that predates these two fields sends.
+    ...(partial?.title === undefined ? {} : { title: partial.title }),
+    ...(partial?.order === undefined ? {} : { order: partial.order }),
   };
+}
+
+/** One manual's metadata: the same fixture with the document defaults. */
+export function makeManual(partial?: Partial<Attachment>): Attachment {
+  return makeAttachment({
+    kind: 'manual',
+    filename: 'scan_0142.pdf',
+    mime: 'application/pdf',
+    ...partial,
+  });
 }
 
 /**
  * A `MediaBindings` whose calls are recorded and whose answers are scripted.
  *
  * Signing resolves immediately, so a mounted component has its URLs after one
- * more `updateComplete`. `uploads` and `removals` record what was asked for;
- * either can be made to reject, which is how the per-file error paths are
- * exercised.
+ * more `updateComplete`. `uploads`, `removals` and `retitles` record what was
+ * asked for; any of them can be made to reject, which is how the per-file error
+ * paths are exercised.
  */
 export function makeMediaBindings(
   options: {
-    upload?: (itemId: string, file: File) => Promise<Item>;
+    upload?: (itemId: string, file: File, kind: AttachmentKind) => Promise<Item>;
     remove?: (itemId: string, attachmentId: string) => Promise<Item>;
+    retitle?: (itemId: string, attachmentId: string, title: string) => Promise<Item>;
     signFails?: boolean;
   } = {},
 ) {
   const signed: string[] = [];
-  const uploads: { itemId: string; file: File }[] = [];
+  const uploads: { itemId: string; file: File; kind: AttachmentKind }[] = [];
   const removals: { itemId: string; attachmentId: string }[] = [];
+  const retitles: { itemId: string; attachmentId: string; title: string }[] = [];
   return {
     signed,
     uploads,
     removals,
+    retitles,
     sign: async (path: string) => {
       signed.push(path);
       if (options.signFails) throw new Error('signing refused');
       return `${path}?authSig=test`;
     },
-    upload: async (itemId: string, file: File) => {
-      uploads.push({ itemId, file });
-      if (options.upload) return options.upload(itemId, file);
+    upload: async (itemId: string, file: File, kind: AttachmentKind = 'picture') => {
+      uploads.push({ itemId, file, kind });
+      if (options.upload) return options.upload(itemId, file, kind);
       return makeItem({ id: itemId });
     },
     remove: async (itemId: string, attachmentId: string) => {
       removals.push({ itemId, attachmentId });
       if (options.remove) return options.remove(itemId, attachmentId);
+      return makeItem({ id: itemId });
+    },
+    retitle: async (itemId: string, attachmentId: string, title: string) => {
+      retitles.push({ itemId, attachmentId, title });
+      if (options.retitle) return options.retitle(itemId, attachmentId, title);
       return makeItem({ id: itemId });
     },
   };

@@ -307,6 +307,42 @@ describe('WSClient attachments', () => {
     );
   });
 
+  it('names the kind the file is being attached as', async () => {
+    const hass = makeUploadHass();
+    const ws = new WSClient(hass);
+
+    await ws.uploadAttachment('i-1', new File(['x'], 'manual.pdf'), 'manual');
+
+    expect(hass.sent[0]).toMatchObject({ kind: 'manual', filename: 'manual.pdf' });
+  });
+
+  it('retitles an attachment without touching its filename', async () => {
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.updateAttachment('i-1', 'att-1', 'Dishwasher manual', 6);
+
+    expect(hass.sent[0]).toEqual({
+      type: 'haventory/item/attachment/update',
+      item_id: 'i-1',
+      attachment_id: 'att-1',
+      title: 'Dishwasher manual',
+      expected_version: 6,
+    });
+  });
+
+  it('clears a title with an empty string rather than omitting the field', async () => {
+    // Omitting it would read as "leave the title alone", so a user who clears
+    // the field would keep the old title.
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.updateAttachment('i-1', 'att-1', '');
+
+    expect(hass.sent[0]).toMatchObject({ title: '' });
+    expect(hass.sent[0]).not.toHaveProperty('expected_version');
+  });
+
   it('removes an attachment by both ids', async () => {
     const hass = makeSpyHass();
     const ws = new WSClient(hass);

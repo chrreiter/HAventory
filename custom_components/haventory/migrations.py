@@ -155,11 +155,21 @@ def migrate_5_to_6(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _backfill_attachment_fields(attachments: object) -> None:
-    """Give every stored attachment entry a ``title`` and an ``order``."""
+    """Give every stored attachment entry a ``title`` and an ``order``.
+
+    Order is per kind and counts from zero within it — the same convention
+    ``reorder_attachments`` writes — so an item's first manual is position 0
+    however many pictures are stored ahead of it.
+    """
 
     if not isinstance(attachments, list):
         return
-    for position, entry in enumerate(attachments):
-        if isinstance(entry, dict):
-            entry.setdefault("title", "")
-            entry.setdefault("order", position)
+    placed: dict[object, int] = {}
+    for entry in attachments:
+        if not isinstance(entry, dict):
+            continue
+        kind = entry.get("kind")
+        position = placed.get(kind, 0)
+        placed[kind] = position + 1
+        entry.setdefault("title", "")
+        entry.setdefault("order", position)

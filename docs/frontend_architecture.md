@@ -65,12 +65,15 @@ haventory-card                     Lovelace element; store owner
     ├── hv-filter-panel            the complete filter set; desktop panel / mobile sheet
     │   └── hv-location-tree       recursive tree with backend counts
     ├── hv-list                    rows, skeletons, empty states, near-end scroll
-    │   ├── hv-list-row            stepper, badges, hover actions, row ⋮, photo thumbnail
-    │   └── hv-item-editor         inline expander (the one edit form); photo picker
+    │   ├── hv-list-row            stepper, badges, hover actions, row ⋮, photo thumbnail,
+    │   │                          document marker
+    │   └── hv-item-editor         inline expander (the one edit form); photo and
+    │                              document pickers, per-document title field
     │       ├── hv-chip-input      tag chips with suggestions
     │       └── hv-location-tree
     ├── hv-detail-sheet            mobile: read view + edit view in one sheet;
-    │   │                          photo gallery strip and full-size lightbox
+    │   │                          photo gallery strip, full-size lightbox and the
+    │   │                          Documents list
     │   ├── hv-item-editor
     │   └── hv-checkout-popover    inline due-date step
     ├── hv-checkout-popover        desktop: anchored due-date step
@@ -283,7 +286,7 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 | `area.ts` | Resolving the HA area behind a location: id → name, and the ancestor walk that mirrors the backend's own resolver. |
 | `location-path.ts` | The `/` → `›` convention for a location path, a location's label with a caller-supplied fallback, and the area-beside-the-path composition (`itemPathParts` / `locationPathParts` / `pathTitle` / `renderAreaChip`). |
 | `dialog-focus.ts` | Initial focus and focus return for modal surfaces. Opening must move focus into the panel or its Escape handler never fires. |
-| `media.ts` | Item pictures: the media path builder, the `MediaUrls` signed-URL cache (request, reuse, refresh before expiry, and a distinguishable failed state), and the `MediaBindings` shape a host hands its components. |
+| `media.ts` | Item attachments: the media path builder, the `MediaUrls` signed-URL cache (request, reuse, refresh before expiry, a distinguishable failed state, and the liveness probe that tells a reference whose file is gone from one that opens), the per-kind `pictures()` / `manuals()` selectors and the title-or-filename fallback, and the `MediaBindings` shape a host hands its components. |
 | `status.ts` | The item-status vocabulary: the definitions a surface renders from (backend's, or the built-in three until `haventory/config` answers), the label / tone-class / glyph lookups with their fallbacks, the colour and glyph vocabularies the management picker offers, and `renderStatusChip` — one renderer so the mark cannot drift between a table cell and a detail sheet. |
 | `keyboard.ts` | `onEscape()` for the surfaces where Escape means exactly "close", and the platform-correct save-shortcut label. |
 | `plural.ts` | Count agreement for every count string in the card. |

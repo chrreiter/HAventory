@@ -31,6 +31,16 @@ PNG_BYTES = bytes.fromhex(
     "0f9e0000000049454e44ae426082"
 )
 
+# A minimal but genuine PDF: the backend sniffs the leading %PDF- marker, so a
+# file that merely claimed the type would be refused.
+PDF_BYTES = (
+    b"%PDF-1.4\n"
+    b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+    b"2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\n"
+    b"trailer<</Root 1 0 R>>\n"
+    b"%%EOF\n"
+)
+
 
 async def _setup(hass: HomeAssistant) -> MockConfigEntry:
     entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
@@ -271,3 +281,86 @@ async def test_a_v5_store_boots_to_v6_with_both_backfills(
         "needs_repair",
         "lent_out",
     }
+
+
+async def test_a_pdf_round_trips_as_a_manual_and_can_be_retitled(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+) -> None:
+    """The document half of the same path: kind, sniffed type, and the title.
+
+    The retitle is asserted here rather than offline because only a real core
+    writes the change back through ``Store`` and hands the card the item it
+    then renders from.
+    """
+
+    await _setup(hass)
+    client = await hass_client()
+    ws = await hass_ws_client(hass)
+    item = await _create_item(ws, "Dishwasher")
+
+    file_id = await _upload(client, PDF_BYTES, "scan_0142.pdf")
+    await ws.send_json(
+        {
+            "id": 2,
+            "type": "haventory/item/attachment/add",
+            "item_id": item["id"],
+            "file_id": file_id,
+            "kind": "manual",
+            "filename": "scan_0142.pdf",
+        }
+    )
+    added = await ws.receive_json()
+    assert added["success"] is True, added
+    attachment = added["result"]["attachments"][0]
+    assert attachment["kind"] == "manual"
+    assert attachment["mime"] == "application/pdf"
+    # Untitled on arrival: the card falls back to the filename until asked.
+    assert attachment["title"] == ""
+    assert attachment["order"] == 0
+
+    await ws.send_json(
+        {
+            "id": 3,
+            "type": "haventory/item/attachment/update",
+            "item_id": item["id"],
+            "attachment_id": attachment["id"],
+            "title": "Dishwasher manual (EN)",
+        }
+    )
+    retitled = await ws.receive_json()
+    assert retitled["success"] is True, retitled
+    assert retitled["result"]["attachments"][0]["title"] == "Dishwasher manual (EN)"
+    # The filename is what the bytes arrived as and is never rewritten.
+    assert retitled["result"]["attachments"][0]["filename"] == "scan_0142.pdf"
+
+    served = await client.get(f"/api/haventory/media/{item['id']}/{attachment['id']}")
+    assert served.status == HTTPStatus.OK
+    assert served.headers["Content-Type"].startswith("application/pdf")
+    assert await served.read() == PDF_BYTES
+
+
+async def test_a_pdf_is_refused_as_a_picture(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+) -> None:
+    """The allow-list is per kind, so the picture strip cannot fill with PDFs."""
+
+    await _setup(hass)
+    client = await hass_client()
+    ws = await hass_ws_client(hass)
+    item = await _create_item(ws)
+
+    file_id = await _upload(client, PDF_BYTES, "manual.pdf")
+    await ws.send_json(
+        {
+            "id": 2,
+            "type": "haventory/item/attachment/add",
+            "item_id": item["id"],
+            "file_id": file_id,
+            "kind": "picture",
+        }
+    )
+    refused = await ws.receive_json()
+
+    assert refused["success"] is False
+    assert refused["error"]["code"] == "validation_error"
+    assert hass.data[DOMAIN]["repository"].get_item(item["id"]).attachments == []

@@ -26,9 +26,18 @@ import {
 } from '../ui/item-form';
 import type { CustomFieldRow, CustomFieldType, FieldError, ItemFormModel } from '../ui/item-form';
 import { statusLabel, statusList } from '../ui/status';
-import { MediaUrls, formatBytes, pictureAlt, pictures } from '../ui/media';
+import { MediaUrls, attachmentTitle, formatBytes, manuals, pictureAlt, pictures } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
-import type { AreaRef, Item, ItemStatus, Location, LocationTreeNode, MediaConfig, StatusDefinition } from '../store/types';
+import type {
+  AreaRef,
+  AttachmentKind,
+  Item,
+  ItemStatus,
+  Location,
+  LocationTreeNode,
+  MediaConfig,
+  StatusDefinition,
+} from '../store/types';
 import './hv-chip-input';
 import './hv-location-tree';
 import './hv-checkout-popover';
@@ -715,11 +724,67 @@ export class HVItemEditor extends LitElement {
       }
       /* Visually hidden but still focusable and still clicked by the label;
          display:none would take it out of the tab order entirely. */
-      .photos .reveal {
+      .reveal {
         position: absolute;
         width: 1px;
         height: 1px;
         opacity: 0;
+      }
+      .documents {
+        list-style: none;
+        margin: 4px 0 0;
+        padding: 0;
+        display: grid;
+        gap: 6px;
+      }
+      .documents li {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .documents .doc-icon {
+        display: inline-grid;
+        place-items: center;
+        flex: none;
+        color: var(--hv-text-secondary);
+      }
+      .documents .doc-title {
+        flex: 1;
+        min-width: 0;
+      }
+      .documents .doc-size {
+        flex: none;
+        font-size: 11.5px;
+        color: var(--hv-text-secondary);
+      }
+      .documents .doc-open,
+      .documents .doc-remove {
+        flex: none;
+        display: inline-grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border: none;
+        background: none;
+        border-radius: 50%;
+        color: var(--hv-text-secondary);
+      }
+      /* A row rather than the photo picker's 72px square: a document has a
+         name to read, so the control sits with the list it adds to. */
+      .doc-picker {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        align-self: start;
+        margin-top: 6px;
+        min-height: 36px;
+        padding: 0 12px;
+        border: 1px dashed var(--hv-input-border);
+        border-radius: var(--hv-radius-chip);
+        color: var(--hv-text-secondary);
+        font-size: 12.5px;
+        cursor: pointer;
       }
       .upload-list {
         list-style: none;
@@ -1451,7 +1516,7 @@ export class HVItemEditor extends LitElement {
     </div>`;
   }
 
-  // ---------- Pictures ----------
+  // ---------- Attachments ----------
 
   /**
    * Why this file cannot be uploaded, or null when it can.
@@ -1460,20 +1525,30 @@ export class HVItemEditor extends LitElement {
    * 80 MB video is refused instantly instead of after a minute of upload. The
    * backend re-derives all of it from the file's own bytes and is the only
    * thing that decides.
+   *
+   * A cap the config does not report is not checked here at all: an older
+   * backend that never mentioned documents still enforces its own limit, and
+   * guessing one would refuse a file the server would have taken.
    */
-  private _preflight(file: File, alreadyAttached: number): string | null {
+  private _preflight(file: File, kind: AttachmentKind, alreadyAttached: number): string | null {
     const config = this.mediaConfig;
     if (!config) return null;
-    if (alreadyAttached >= config.max_pictures_per_item) {
-      return `${config.max_pictures_per_item} photos is the limit for one item.`;
+    const cap = kind === 'manual' ? config.max_manuals_per_item : config.max_pictures_per_item;
+    if (cap !== undefined && alreadyAttached >= cap) {
+      return kind === 'manual'
+        ? `${cap} documents is the limit for one item.`
+        : `${cap} photos is the limit for one item.`;
     }
     if (file.size > config.max_attachment_bytes) {
       return `${formatBytes(file.size)} is over the ${formatBytes(
         config.max_attachment_bytes,
       )} limit.`;
     }
-    if (file.type && !config.picture_mime_types.includes(file.type)) {
-      return `${file.type} is not an accepted image type.`;
+    const accepted = kind === 'manual' ? config.manual_mime_types : config.picture_mime_types;
+    if (file.type && accepted && !accepted.includes(file.type)) {
+      return kind === 'manual'
+        ? `${file.type} is not an accepted document type.`
+        : `${file.type} is not an accepted image type.`;
     }
     return null;
   }
@@ -1491,7 +1566,7 @@ export class HVItemEditor extends LitElement {
    * A file that fails keeps its own error message and leaves the queue behind
    * it running.
    */
-  private async _uploadFiles(files: File[]) {
+  private async _uploadFiles(files: File[], kind: AttachmentKind) {
     const media = this.media;
     const item = this._current;
     if (!media || !item) return;
@@ -1506,13 +1581,17 @@ export class HVItemEditor extends LitElement {
     for (const [index, file] of files.entries()) {
       const entry = queued[index];
       this._patchUpload(entry.id, { state: 'uploading' });
-      const refused = this._preflight(file, pictures(this._current?.attachments).length);
+      const attached =
+        kind === 'manual'
+          ? manuals(this._current?.attachments)
+          : pictures(this._current?.attachments);
+      const refused = this._preflight(file, kind, attached.length);
       if (refused) {
         this._patchUpload(entry.id, { state: 'error', message: refused });
         continue;
       }
       try {
-        this._uploaded = await media.upload(item.id, file);
+        this._uploaded = await media.upload(item.id, file, kind);
         this._uploads = this._uploads.filter((u) => u.id !== entry.id);
       } catch (err) {
         this._patchUpload(entry.id, { state: 'error', message: errorText(err) });
@@ -1520,7 +1599,7 @@ export class HVItemEditor extends LitElement {
     }
   }
 
-  private async _removePicture(attachmentId: string) {
+  private async _removeAttachment(attachmentId: string, kind: AttachmentKind) {
     const media = this.media;
     const item = this._current;
     if (!media || !item) return;
@@ -1531,7 +1610,7 @@ export class HVItemEditor extends LitElement {
         ...this._uploads,
         {
           id: `remove-${(this._uploadSeq += 1)}`,
-          name: 'Remove photo',
+          name: kind === 'manual' ? 'Remove document' : 'Remove photo',
           state: 'error',
           message: errorText(err),
         },
@@ -1571,7 +1650,7 @@ export class HVItemEditor extends LitElement {
               class="remove"
               data-testid="editor-photo-remove"
               aria-label=${`Remove ${pictureAlt(item.name, index, shots.length)}`}
-              @click=${() => void this._removePicture(picture.id)}
+              @click=${() => void this._removeAttachment(picture.id, 'picture')}
             >
               ${icon('close', 15)}
             </button>
@@ -1590,32 +1669,152 @@ export class HVItemEditor extends LitElement {
             capture="environment"
             multiple
             data-testid="editor-photo-input"
-            @change=${(e: Event) => {
-              const input = e.target as HTMLInputElement;
-              const files = Array.from(input.files ?? []);
-              // Cleared so picking the same file twice still fires `change`.
-              input.value = '';
-              void this._uploadFiles(files);
-            }}
+            @change=${(e: Event) => this._onPicked(e, 'picture')}
           />
         </label>
       </div>
-      ${this._uploads.length
-        ? html`<ul class="upload-list" data-testid="editor-upload-list">
-            ${this._uploads.map(
-              (entry) => html`<li
-                class=${entry.state === 'error' ? 'failed' : ''}
-                data-testid="editor-upload"
-                data-state=${entry.state}
-              >
-                <span class="file">${entry.name}</span>
-                <span class="state"
-                  >${entry.state === 'error' ? entry.message : `${entry.state}…`}</span
-                >
-              </li>`,
-            )}
-          </ul>`
-        : null}
+    </div>`;
+  }
+
+  /** Hand the picked files to the queue and let the same file be picked again. */
+  private _onPicked(e: Event, kind: AttachmentKind) {
+    const input = e.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    // Cleared so picking the same file twice still fires `change`.
+    input.value = '';
+    void this._uploadFiles(files, kind);
+  }
+
+  /**
+   * Rename one document.
+   *
+   * On `change`, not `input`: a keystroke-per-command would bump the item's
+   * version on every letter typed, and every one of those is a broadcast to
+   * every open card.
+   */
+  private async _retitle(attachmentId: string, title: string) {
+    const media = this.media;
+    const item = this._current;
+    if (!media || !item) return;
+    try {
+      this._uploaded = await media.retitle(item.id, attachmentId, title);
+    } catch (err) {
+      this._uploads = [
+        ...this._uploads,
+        {
+          id: `retitle-${(this._uploadSeq += 1)}`,
+          name: 'Rename document',
+          state: 'error',
+          message: errorText(err),
+        },
+      ];
+    }
+  }
+
+  /**
+   * The documents already attached, and the picker that adds one.
+   *
+   * Each row carries its own title field because a filename is what a scanner
+   * or a manufacturer chose — `scan_0142.pdf` says nothing about which appliance
+   * it belongs to, and the list is unreadable without one. An empty title falls
+   * back to the filename rather than blanking the row.
+   *
+   * No `capture` on this input: a document comes from the file system, and
+   * pointing the control at the camera would put a photo of a page where the
+   * PDF should be.
+   *
+   * Each row can be opened from here as well as from the detail sheet's read
+   * view, because that sheet is a phone surface — on a desktop this form is the
+   * only place a manual is reachable at all.
+   */
+  private _renderDocuments() {
+    const item = this._current;
+    if (!item || !this.media) return null;
+    const docs = manuals(item.attachments);
+    const accepted = this.mediaConfig?.manual_mime_types?.join(',') ?? 'application/pdf';
+
+    return html`<div class="cell span3">
+      <span class="hv-label">Documents</span>
+      <ul class="documents" data-testid="editor-documents">
+        ${docs.map((doc) => {
+          const src = this._urls.get(item.id, doc.id);
+          const missing = this._urls.presence(item.id, doc.id) === 'missing';
+          return html`<li data-testid="editor-document">
+            <span class="doc-icon">${icon('fileDocument', 18)}</span>
+            <input
+              class="hv-input doc-title"
+              data-testid="editor-document-title"
+              .value=${doc.title ?? ''}
+              placeholder=${doc.filename}
+              aria-label=${`Title for ${doc.filename}`}
+              @change=${(e: Event) =>
+                void this._retitle(doc.id, (e.target as HTMLInputElement).value.trim())}
+            />
+            <span class="doc-size">${formatBytes(doc.size)}</span>
+            ${missing
+              ? html`<span class="hv-chip warning" data-testid="editor-document-missing"
+                  >File missing</span
+                >`
+              : src
+                ? html`<a
+                    class="doc-open"
+                    data-testid="editor-document-open"
+                    href=${src}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label=${`Open ${attachmentTitle(doc)}`}
+                    title="Open document"
+                    >${icon('openInNew', 15)}</a
+                  >`
+                : null}
+            <button
+              class="doc-remove"
+              data-testid="editor-document-remove"
+              aria-label=${`Remove ${attachmentTitle(doc)}`}
+              @click=${() => void this._removeAttachment(doc.id, 'manual')}
+            >
+              ${icon('close', 15)}
+            </button>
+          </li>`;
+        })}
+      </ul>
+      <label class="picker doc-picker" data-testid="editor-manual-picker">
+        ${icon('fileDocument', 18)}
+        <span>Add manual</span>
+        <input
+          class="reveal"
+          type="file"
+          accept=${accepted}
+          multiple
+          data-testid="editor-manual-input"
+          @change=${(e: Event) => this._onPicked(e, 'manual')}
+        />
+      </label>
+    </div>`;
+  }
+
+  /**
+   * What the upload queue is doing, for both pickers at once.
+   *
+   * One list below both controls rather than one under each: the queue itself
+   * is shared, and a failed document would otherwise report itself under
+   * "Photos".
+   */
+  private _renderUploadList() {
+    if (!this._uploads.length) return null;
+    return html`<div class="cell span3">
+      <ul class="upload-list" data-testid="editor-upload-list">
+        ${this._uploads.map(
+          (entry) => html`<li
+            class=${entry.state === 'error' ? 'failed' : ''}
+            data-testid="editor-upload"
+            data-state=${entry.state}
+          >
+            <span class="file">${entry.name}</span>
+            <span class="state">${entry.state === 'error' ? entry.message : `${entry.state}…`}</span>
+          </li>`,
+        )}
+      </ul>
     </div>`;
   }
 
@@ -1729,7 +1928,7 @@ export class HVItemEditor extends LitElement {
               @change=${(e: CustomEvent) => this._patch({ tags: (e.detail as { values: string[] }).values })}
             ></hv-chip-input>
           </div>
-          ${this._renderPictures()}
+          ${this._renderPictures()} ${this._renderDocuments()} ${this._renderUploadList()}
           ${this.mobile
             ? html`<div class="cell span3">${this._renderMoreFields()}</div>`
             : html`${this._renderStateFields()} ${this._renderCustomFields()}`}

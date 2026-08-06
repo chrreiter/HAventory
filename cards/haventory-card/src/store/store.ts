@@ -1,6 +1,7 @@
 import type {
   AnyEventPayload,
   AreasListResult,
+  AttachmentKind,
   BulkFailure,
   BulkOperation,
   BulkOutcome,
@@ -829,8 +830,25 @@ export class Store {
    * onto the error queue — the picker shows them per file, next to the file
    * that failed, which a global banner cannot do.
    */
-  async uploadAttachment(itemId: string, file: File, expectedVersion?: number): Promise<Item> {
-    const updated = await this.ws.uploadAttachment(itemId, file, 'picture', expectedVersion);
+  async uploadAttachment(
+    itemId: string,
+    file: File,
+    kind: AttachmentKind = 'picture',
+    expectedVersion?: number,
+  ): Promise<Item> {
+    const updated = await this.ws.uploadAttachment(itemId, file, kind, expectedVersion);
+    this.applyOptimistic(updated);
+    return updated;
+  }
+
+  /** Rename one attachment for display, leaving its filename and bytes alone. */
+  async updateAttachment(
+    itemId: string,
+    attachmentId: string,
+    title: string,
+    expectedVersion?: number,
+  ): Promise<Item> {
+    const updated = await this.ws.updateAttachment(itemId, attachmentId, title, expectedVersion);
     this.applyOptimistic(updated);
     return updated;
   }

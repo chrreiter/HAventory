@@ -219,6 +219,28 @@ export class WSClient {
     return this.hass.callWS<Item>(payload);
   }
 
+  /**
+   * Retitle one attachment.
+   *
+   * The stored filename never changes — it is what the bytes were uploaded as,
+   * and the title is only what the card shows in its place.
+   */
+  updateAttachment(
+    itemId: string,
+    attachmentId: string,
+    title: string,
+    expectedVersion?: number,
+  ) {
+    const payload: Record<string, unknown> = {
+      type: 'haventory/item/attachment/update',
+      item_id: itemId,
+      attachment_id: attachmentId,
+      title,
+    };
+    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
+    return this.hass.callWS<Item>(payload);
+  }
+
   /** Detach one file from an item; the backend deletes the bytes with it. */
   removeAttachment(itemId: string, attachmentId: string, expectedVersion?: number) {
     const payload: Record<string, unknown> = {

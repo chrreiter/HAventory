@@ -6,7 +6,7 @@ import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue } from '../ui/relative-time';
 import { itemStatus, renderStatusChip, statusLabel } from '../ui/status';
-import { MediaUrls, pictureAlt, pictures } from '../ui/media';
+import { MediaUrls, manuals, pictureAlt, pictures } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
 import type { AreaRef, Item, StatusDefinition } from '../store/types';
 import './hv-overflow-menu';
@@ -101,6 +101,15 @@ export class HVListRow extends LitElement {
       :host([mobile]) .thumb {
         width: 40px;
         height: 40px;
+      }
+      /* A mark, not a chip: that an item has a manual is a fact about it, not
+         a state anyone has to act on, so it stays out of the hue vocabulary the
+         chips next to it carry. */
+      .doc-marker {
+        flex: none;
+        display: inline-grid;
+        place-items: center;
+        color: var(--hv-text-tertiary);
       }
       /* Both lines must be block containers with inline content, or the
          ellipsis is silently ignored: overflow does not apply to an inline box,
@@ -498,6 +507,15 @@ export class HVListRow extends LitElement {
                       >`}
           </span>
         </span>
+        ${manuals(item.attachments).length
+          ? html`<span
+              class="doc-marker"
+              data-testid="row-has-document"
+              title="Has a document"
+              aria-label="Has a document"
+              >${icon('fileDocument', 14)}</span
+            >`
+          : null}
         ${this.pending
           ? html`<span class="hv-chip warning" data-testid="row-pending">Pending</span>`
           : null}

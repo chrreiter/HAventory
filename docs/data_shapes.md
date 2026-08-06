@@ -151,14 +151,19 @@ rewritten in full on every mutation, so base64 content would multiply every save
 - `filename` is display metadata. The file on disk is named from `id` and the type.
 - `title` is what the user called it; **empty means show `filename`**, rather than storing a
   copy of it that the two could then drift apart on.
-- `order` is position within the item's attachments of the same *kind*. **The picture at
-  `order` 0 is the item's cover** — there is no separate flag, so there is no "exactly one
-  cover" invariant for an import to repair. Both fields default (`""`, `0`) when absent.
+- `order` is position within the item's attachments of the same *kind*, counted from zero
+  within it — an item's first manual is `0` however many pictures are stored ahead of it.
+  **The picture at `order` 0 is the item's cover** — there is no separate flag, so there is
+  no "exactly one cover" invariant for an import to repair. Adding appends: the backend
+  assigns the next free position in the kind and ignores any `order` the caller sent. Both
+  fields default (`""`, `0`) when absent, and a list where every entry defaults reads in
+  stored order.
 - Files live at `<config>/haventory/attachments/<item_id>/<attachment_id><ext>` — inside
   the config directory so HA backups carry them, and outside both the integration package
   (which HACS replaces on upgrade) and `<config>/www` (which is `/local`, unauthenticated).
   They are served only through the authenticated view; see `backend_api_contract.md`.
-- Caps: 10 pictures per item, 8 MB per file. Nothing is thumbnailed server-side.
+- Caps: 10 pictures and 10 manuals per item, 8 MB per file. Nothing is thumbnailed
+  server-side. `haventory/config` reports all of them so a picker can refuse early.
 
 ### Location
 

@@ -173,7 +173,8 @@ def test_an_id_no_metadata_claims_resolves_to_nothing() -> None:
     meta = _meta()
     repo.add_attachment(item.id, meta)
 
-    assert repo.find_attachment(str(item.id), str(meta.id)) is meta
+    found = repo.find_attachment(str(item.id), str(meta.id))
+    assert found is not None and found.id == meta.id
     assert repo.find_attachment(str(item.id), str(new_uuid4())) is None
     assert repo.find_attachment(str(new_uuid4()), str(meta.id)) is None
 
