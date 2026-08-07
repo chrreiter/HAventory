@@ -431,7 +431,7 @@ export class HVItemEditor extends LitElement {
       }
       .option.selected {
         background: var(--hv-primary-tint);
-        color: var(--hv-primary-darker);
+        color: var(--hv-on-primary-tint);
         font-weight: 500;
       }
       .option.active {

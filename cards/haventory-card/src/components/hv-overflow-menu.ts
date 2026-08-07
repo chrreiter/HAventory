@@ -54,7 +54,7 @@ export class HVOverflowMenu extends LitElement {
       }
       .trigger[aria-expanded='true'] {
         background: var(--hv-primary-tint);
-        color: var(--hv-primary-darker);
+        color: var(--hv-on-primary-tint);
       }
       .menu {
         position: absolute;

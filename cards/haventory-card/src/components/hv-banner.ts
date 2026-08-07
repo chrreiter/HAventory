@@ -55,7 +55,7 @@ export class HVBanner extends LitElement {
       }
       .banner.info {
         background: var(--hv-primary-tint);
-        color: var(--hv-primary-darker);
+        color: var(--hv-on-primary-tint);
       }
       .banner.info .glyph {
         color: var(--hv-primary-dark);

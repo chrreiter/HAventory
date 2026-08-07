@@ -63,8 +63,25 @@ describe('ui/chip: the shared fragment', () => {
     expect(css).toMatch(/\.hv-chip\.state \{[^}]*var\(--hv-primary-tint\)/);
     expect(css).toMatch(/\.hv-chip\.warning \{[^}]*var\(--hv-warn-bg\)/);
     expect(css).toMatch(/\.hv-chip\.error \{[^}]*var\(--hv-error-bg\)/);
-    expect(css).toMatch(/\.hv-chip\.quiet, \.hv-area-chip\.quiet \{/);
+    // No fill of its own, so its label is read against the page — which is why
+    // it takes the secondary ink and not the tertiary grey.
+    expect(css).toMatch(
+      /\.hv-chip\.quiet, \.hv-area-chip\.quiet \{[^}]*background: none[^}]*color: var\(--hv-text-secondary\)/,
+    );
     expect(css).toMatch(/\.hv-chip\.toggle \{[^}]*cursor: pointer/);
+  });
+
+  // --hv-primary-darker on --hv-primary-tint measures 4.26:1, under the 4.5:1
+  // a 12px label asks. Both fills that pair with that tint take the ink minted
+  // for it; tone-contrast.test.ts checks the ratio the token resolves to.
+  it('inks every tint-backed fill with the ink minted for that tint', () => {
+    const css = String(chip.cssText).replace(/\s+/g, ' ');
+    for (const selector of ['\\.hv-chip\\.state', '\\.hv-chip\\.toggle\\.on']) {
+      expect(css, selector).toMatch(
+        new RegExp(`${selector} \\{[^}]*background: var\\(--hv-primary-tint\\)[^}]*color: var\\(--hv-on-primary-tint\\)`),
+      );
+    }
+    expect(css).not.toMatch(/--hv-primary-darker/);
   });
 
   // The whole point of the fragment: one size, not eleven. A component that

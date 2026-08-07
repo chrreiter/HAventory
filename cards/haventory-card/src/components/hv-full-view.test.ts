@@ -1300,58 +1300,23 @@ describe('hv-full-view: app bar filters', () => {
     expect(q(sr, '[data-testid="full-badge-overdue"]')?.getAttribute('aria-pressed')).toBe('true');
   });
 
-  // The bar priced every derived exception — low, overdue, due for inspection,
-  // checked out — and none of the stored one, so the two flags a person sets by
-  // hand were the only ones with no way back to them from here.
-  it('carries the two flagged statuses, and filters on them', async () => {
+  // The bar's chips are the fixed chore/state vocabulary, all of them derived
+  // from the item. A status is the household's own word in the household's own
+  // colour, so pricing one here rendered it as a chore in the bar's amber and
+  // kept saying "missing" after the household had renamed and recoloured it.
+  // The sidebar facet and the filter chips own status navigation.
+  it('prices no status in the app bar, whatever the counts carry', async () => {
     const statuses = [
       makeItem({ id: '1', status: 'missing' }),
       makeItem({ id: '2', status: 'needs_repair' }),
-      makeItem({ id: '3', status: 'needs_repair' }),
-      makeItem({ id: '4' }),
+      makeItem({ id: '3', status: 'ok', quantity: 0, low_stock_threshold: 5 }),
     ];
-    const pill = (sr: ShadowRoot, value: string) =>
-      sr.querySelector(`[data-testid="full-badge-status"][data-value="${value}"]`) as HTMLButtonElement;
-    const { el, store, sr } = await mount({ items: statuses });
+    const { sr } = await mount({ items: statuses });
 
-    expect(pill(sr, 'missing').textContent?.replace(/\s+/g, ' ').trim()).toBe('1 missing');
-    expect(pill(sr, 'needs_repair').textContent?.replace(/\s+/g, ' ').trim()).toBe('2 needs repair');
-
-    pill(sr, 'missing').click();
-    await settle(el);
-    expect(store.state.value.filters.status).toBe('missing');
-    expect(pill(sr, 'missing').getAttribute('aria-pressed')).toBe('true');
-
-    pill(sr, 'missing').click();
-    await settle(el);
-    expect(store.state.value.filters.status).toBe(null);
-  });
-
-  // Single-select, so the two pills are mutually exclusive — pressing one while
-  // the other is on replaces it rather than asking for items that are both.
-  it('replaces the active status pill rather than adding to it', async () => {
-    const statuses = [makeItem({ id: '1', status: 'missing' }), makeItem({ id: '2', status: 'needs_repair' })];
-    const pill = (sr: ShadowRoot, value: string) =>
-      sr.querySelector(`[data-testid="full-badge-status"][data-value="${value}"]`) as HTMLButtonElement;
-    const { el, store, sr } = await mount({ items: statuses });
-
-    pill(sr, 'missing').click();
-    await settle(el);
-    pill(sr, 'needs_repair').click();
-    await settle(el);
-
-    expect(store.state.value.filters.status).toBe('needs_repair');
-    expect(pill(sr, 'missing').getAttribute('aria-pressed')).toBe('false');
-    expect(pill(sr, 'needs_repair').getAttribute('aria-pressed')).toBe('true');
-  });
-
-  // "OK" is not an exception, and on a healthy inventory a status pill at all
-  // would be the loudest thing on a bar with nothing to report.
-  it('drops each status pill when nothing carries that flag', async () => {
-    const { sr } = await mount({ items: [makeItem({ id: '1', status: 'missing' })] });
-    expect(q(sr, '[data-testid="full-badge-status"][data-value="missing"]')).toBeTruthy();
-    expect(q(sr, '[data-testid="full-badge-status"][data-value="needs_repair"]')).toBe(null);
-    expect(q(sr, '[data-testid="full-badge-status"][data-value="ok"]')).toBe(null);
+    expect(sr.querySelectorAll('[data-testid="full-badge-status"]')).toHaveLength(0);
+    // The derived exceptions stay: dropping the two status pills is not a
+    // retreat from pricing the bar.
+    expect(q(sr, '[data-testid="full-badge-low"]')).toBeTruthy();
   });
 
   it('drops the overdue pill when nothing is overdue', async () => {
