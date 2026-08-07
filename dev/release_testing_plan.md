@@ -126,6 +126,16 @@ client + OS version, date. Put it in the results log.
 | A3 | YAML-mode Lovelace (ENV-B, `lovelace: mode: yaml`) | Resource registration is skipped with a clear log line, and the card still loads — the frontend extra-module URL covers YAML mode, so there is no manual step here either | ✅ |
 | A4 | Attempt a second config entry | HAventory is absent from the "Add integration" picker while an entry exists, so the attempt cannot start; a flow initiated outside the picker aborts with "Already configured. Only a single configuration is possible." No duplicate storage or resource | |
 | A5 | First-run with a pre-existing store (upgrade-in-place from a dev instance) | Existing items/locations load; `health` healthy | ✅ |
+| A6 | Attachment round trip, automated: `RUN_ONLINE=1 HA_TOKEN=<token> uv run --group probes python scripts/probe_attachments.py` | All probes pass. The stored bytes on HA's disk — not what the card reported — match what the card's re-encode should have produced: 4032×3024 JPEG capped at 2048, transparent PNG stored as WebP with its alpha, animated GIF untouched with all 24 frames, sub-2 MiB JPEG byte-identical | ✅ |
+| A7 | EXIF orientation, from the same run (case "EXIF Orientation=6 is applied before the re-encode") | The stored frame is upright — portrait 1536×2048, not landscape. This is the one attachment defect that looks correct in every automated test and wrong on every phone, so read this line even when the run is green overall | ✅ |
+| A8 | Attachment liveness and naming, from the same run | The presence probe answers `206` with `Content-Length: 1` on a live file, `404` on a deleted one, and nothing at all on an unreachable host; a manual is served `inline` under its title (its filename when untitled), non-ASCII intact | |
+| A9 | Save a manual from the browser: open an item's Documents row, save the file | It saves under the attachment's title — or the original filename when untitled — never the attachment UUID, and clicking still opens it in a tab rather than downloading it | |
+
+Fixtures for A6–A8 are generated, never committed: `scripts/probe_fixtures.py` writes them
+(~30 MB) into a temporary directory each run, and `--fixtures-dir DIR` reuses one across
+runs. Reading the stored bytes needs either `HA_CONFIG_DIR` (a bind-mounted config) or
+`HA_CONTAINER` (read out through `docker exec`). Pillow comes from the non-default `probes`
+dependency group — `uv sync --group probes` first.
 
 ### B — Mobile / touch (companion app)
 

@@ -234,6 +234,7 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - An authenticated `HomeAssistantView`, not `/local` and not `/haventory_static`: both of those are served without authentication, and an inventory photo is as private as the inventory.
   - Both ids are matched against stored metadata before any path is built, so no request segment reaches the filesystem. Anything unmatched — and any entry whose file is absent — is `404`. Once no config entry owns the data the view answers `503`, mirroring the WebSocket commands' refusal.
   - Responses carry the stored content type, `X-Content-Type-Options: nosniff`, and a long immutable `Cache-Control`: an attachment id addresses one fixed set of bytes, and a replacement is a new id.
+  - `Content-Disposition` is always `inline` — clicking a document opens it in a tab — and names the file the attachment's `title`, or its `filename` when untitled. The name travels percent-encoded as RFC 5987 `filename*=UTF-8''…`, with a quoted printable-ASCII `filename` beside it for clients without that support; a name with nothing printable in ASCII falls back to the attachment id there.
   - An `<img src>` carries no `Authorization` header, so a client signs the path with core's `auth/sign_path` first and renders the signed URL.
 
 - `haventory/items/bulk`

@@ -25,6 +25,7 @@ from collections.abc import Iterable
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from homeassistant.core import HomeAssistant
 
@@ -75,6 +76,11 @@ _EXTENSION_BY_MIME: dict[str, str] = {
 
 # Enough bytes for every signature below: WebP's marker ends at byte 12.
 SNIFF_BYTES = 16
+
+# How much of a served name reaches the response header. A filename carries no
+# length limit of its own, and a client is entitled to refuse an oversized
+# header line rather than the file behind it.
+DISPOSITION_NAME_MAX_CHARS = 200
 
 
 def sniff_mime(head: bytes) -> str | None:
@@ -303,6 +309,32 @@ async def async_sweep_orphans(
     return removed
 
 
+def _content_disposition(meta: AttachmentMeta) -> str:
+    """The ``Content-Disposition`` value one attachment is served under.
+
+    ``inline``, never ``attachment``: a document opens in a tab, and the header
+    exists to name the file the browser saves from there — not to turn the
+    click into a download. The name is the title the user gave the file, or the
+    name it arrived under, which is the precedence the card labels the row with,
+    so a saved file matches the row that was clicked.
+
+    Both halves are user-supplied text under no charset restriction, and this
+    value becomes a response header. The real name travels percent-encoded in
+    the RFC 5987 ``filename*`` form; the quoted ``filename`` a client without
+    that support reads is reduced to printable US-ASCII minus the two
+    characters the quoting itself uses, which is also what stops a CR or LF in
+    a title from splitting the header.
+    """
+
+    name = (meta.title.strip() or meta.filename)[:DISPOSITION_NAME_MAX_CHARS]
+    ascii_name = "".join(c for c in name if " " <= c <= "~" and c not in '"\\').strip()
+    # Nothing printable survived — a title written entirely in a non-Latin
+    # script. The attachment id is what such a client would have taken from the
+    # URL anyway, and `filename*` still carries the real name.
+    fallback = ascii_name or str(meta.id)
+    return f"inline; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}"
+
+
 class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
     """Serve one attachment, to an authenticated Home Assistant user.
 
@@ -345,5 +377,8 @@ class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
                 # An attachment id addresses one immutable set of bytes: a
                 # replacement is a new id, so this can never go stale.
                 "Cache-Control": "private, max-age=31536000, immutable",
+                # Without this the browser names a saved file after the last
+                # path segment, which is the attachment id.
+                "Content-Disposition": _content_disposition(meta),
             },
         )

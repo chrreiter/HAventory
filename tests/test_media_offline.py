@@ -12,6 +12,7 @@ Scenarios:
 - a file over the byte cap is refused, and an empty one too
 - the 11th picture on an item is refused
 - an id no metadata claims resolves to nothing
+- the served name follows title-then-filename, and no title can break the header
 - the sweep deletes an unreferenced file and keeps a referenced one
 - the sweep refuses a path resolving outside the media root
 """
@@ -191,6 +192,93 @@ def test_the_stored_extension_comes_from_the_sniffed_type(tmp_path: Path) -> Non
 
     assert path.name == "att.jpg"
     assert path.parent.name == "item"
+
+
+# -----------------------------
+# The served filename
+# -----------------------------
+
+
+def _disposition(*, filename: str = "photo.png", title: str = "") -> str:
+    meta = _meta()
+    meta.filename = filename
+    meta.title = title
+    return media._content_disposition(meta)
+
+
+def test_the_disposition_is_inline_and_names_the_uploaded_file() -> None:
+    """Saving is named; opening stays opening — `attachment` would download."""
+
+    value = _disposition(filename="bosch_smsec.pdf")
+
+    assert value.startswith("inline;")
+    assert 'filename="bosch_smsec.pdf"' in value
+    assert "filename*=UTF-8''bosch_smsec.pdf" in value
+
+
+def test_a_title_wins_over_the_filename_and_blank_space_does_not() -> None:
+    assert 'filename="Dishwasher manual"' in _disposition(
+        filename="scan_0142.pdf", title="Dishwasher manual"
+    )
+    assert 'filename="scan_0142.pdf"' in _disposition(filename="scan_0142.pdf", title="   ")
+
+
+def test_a_non_ascii_title_survives_in_the_rfc_5987_form() -> None:
+    """The percent-encoded half is the one a current browser reads."""
+
+    value = _disposition(title="Bedienungsanleitung Kühlschrank")
+
+    assert "filename*=UTF-8''Bedienungsanleitung%20K%C3%BChlschrank" in value
+    # The quoted fallback is ASCII-only, so the umlaut is dropped there.
+    assert 'filename="Bedienungsanleitung Khlschrank"' in value
+
+
+def test_a_title_of_only_non_ascii_characters_falls_back_to_the_attachment_id() -> None:
+    meta = _meta()
+    meta.title = "説明書"
+
+    value = media._content_disposition(meta)
+
+    assert f'filename="{meta.id}"' in value
+    assert "filename*=UTF-8''%E8%AA%AC%E6%98%8E%E6%9B%B8" in value
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        'evil"; filename="owned.exe',
+        "line\r\nX-Injected: yes",
+        "back\\slash",
+    ],
+)
+def test_the_header_value_cannot_be_broken_out_of(title: str) -> None:
+    """A stored title is user text and this value is a response header."""
+
+    value = _disposition(title=title)
+    _, quoted = value.split('filename="', 1)
+    quoted_name, rest = quoted.split('"', 1)
+
+    assert "\r" not in value
+    assert "\n" not in value
+    assert '"' not in quoted_name
+    assert "\\" not in quoted_name
+    # Nothing after the quoted name opens a parameter, or a header, of its own.
+    assert '"' not in rest
+
+
+def test_an_untitled_upload_with_no_filename_is_named_by_its_id() -> None:
+    """`item/attachment/add` stores the attachment id when the client sent no name."""
+
+    meta = _meta()
+    meta.filename = str(meta.id)
+
+    assert f'filename="{meta.id}"' in media._content_disposition(meta)
+
+
+def test_an_overlong_name_is_truncated_rather_than_sent_whole() -> None:
+    value = _disposition(title="x" * 500)
+
+    assert f'filename="{"x" * media.DISPOSITION_NAME_MAX_CHARS}"' in value
 
 
 # -----------------------------

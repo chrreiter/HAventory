@@ -30,6 +30,15 @@ dev = [
   # tests/test_repo_hardening_offline.py parses .github/workflows/*.yml.
   "pyyaml",
 ]
+# Not installed by `uv sync`, on purpose. `scripts/probe_fixtures.py` generates
+# the attachment fixtures with Pillow and `scripts/probe_attachments.py` decodes
+# what came back off Home Assistant's disk — but the integration does no image
+# work server-side (nothing is thumbnailed, nothing is re-encoded), and the
+# offline suite must keep running without an imaging library. Opt in with
+# `uv sync --group probes` / `uv run --group probes …`.
+probes = [
+  "pillow",
+]
 
 [tool.uv]
 # This is a custom-integration source tree, not a distributable package: HA loads
