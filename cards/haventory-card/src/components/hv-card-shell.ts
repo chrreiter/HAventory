@@ -253,7 +253,7 @@ export class HVCardShell extends LitElement {
       .icon-toggle.on {
         border-color: var(--hv-primary);
         background: var(--hv-primary-tint);
-        color: var(--hv-primary-darker);
+        color: var(--hv-on-primary-tint);
       }
       .icon-toggle .dot {
         position: absolute;

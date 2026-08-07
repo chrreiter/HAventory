@@ -43,6 +43,13 @@ export const tokens = css`
     --hv-primary-dark: light-dark(#0288d1, #4fc3f7);
     --hv-primary-darker: light-dark(#0277bd, #4fc3f7);
     --hv-primary-tint: light-dark(#e3f4fd, rgba(3, 169, 244, 0.16));
+    /* Ink for text laid on --hv-primary-tint — a state chip, a selected row, an
+       applied toggle. Not --hv-primary-darker, which is one step too light for
+       that tint at 4.26:1, under the 4.5:1 that 12px text asks: this pairs the
+       tint with the 900 shade of its own hue, the way every light status tone
+       below pairs with its own. The dark half is the light blue that already
+       reads on the translucent tint there. */
+    --hv-on-primary-tint: light-dark(#01579b, #4fc3f7);
     --hv-primary-tint-border: light-dark(#a8d8f0, rgba(3, 169, 244, 0.5));
     --hv-row-hover: light-dark(#f5f9fd, rgba(255, 255, 255, 0.04));
 
@@ -76,16 +83,21 @@ export const tokens = css`
      * A strong fill is one hue in both themes, so the ink that reads on it is
      * fixed too — the same constraint --hv-on-amber above is written for. All
      * five clear 4.5:1 against their ink.
+     *
+     * The blue pair is held deliberately off the card's own blues: the fixed
+     * vocabulary in chip.ts paints a state chip in --hv-primary-tint and every
+     * action in --hv-primary, so a status sharing either fill would render a
+     * household's free choice as one of the card's fixed meanings. Indigo is
+     * far enough from both to read as a different thing at a glance while
+     * still answering to the name "blue". tone-contrast.test.ts pins the
+     * separation as well as the ratios.
      */
     --hv-tone-neutral-bg: var(--hv-chip-bg);
     --hv-tone-neutral-fg: var(--hv-chip-text);
     --hv-tone-green-bg: light-dark(#e6f4ea, rgba(129, 199, 132, 0.16));
     --hv-tone-green-fg: light-dark(#1b5e20, #a5d6a7);
-    --hv-tone-blue-bg: var(--hv-primary-tint);
-    /* Not --hv-primary-darker: that blue is one step too light to carry 12px
-       text on this tint, at 4.26:1. Every other light tone pairs its tint with
-       the 900 shade of its own hue, and doing the same here clears AA. */
-    --hv-tone-blue-fg: light-dark(#01579b, #4fc3f7);
+    --hv-tone-blue-bg: light-dark(#e8eaf6, rgba(121, 134, 203, 0.26));
+    --hv-tone-blue-fg: light-dark(#1a237e, #9fa8da);
     --hv-tone-amber-bg: var(--hv-warn-bg);
     --hv-tone-amber-fg: var(--hv-warn-deep);
     --hv-tone-red-bg: var(--hv-error-bg);
@@ -95,7 +107,7 @@ export const tokens = css`
     --hv-tone-neutral-strong-fg: #fff;
     --hv-tone-green-strong-bg: #2e7d32;
     --hv-tone-green-strong-fg: #fff;
-    --hv-tone-blue-strong-bg: #0277bd;
+    --hv-tone-blue-strong-bg: #303f9f;
     --hv-tone-blue-strong-fg: #fff;
     --hv-tone-amber-strong-bg: var(--hv-amber);
     --hv-tone-amber-strong-fg: var(--hv-on-amber);

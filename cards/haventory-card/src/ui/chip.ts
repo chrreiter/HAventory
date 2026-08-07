@@ -21,7 +21,9 @@ import { css } from 'lit';
  *   and spelled-out label, because an area is not one of the facts above.
  * - `.hv-status-chip` reports an item's status. It shares the metrics for the
  *   same reason and opts out of the hue vocabulary below, because a household
- *   chooses what colour each status is.
+ *   chooses what colour each status is. Opting out only holds if the two
+ *   palettes stay apart, so the status tones in `tokens` are offset from the
+ *   fills here — see the note on that block.
  *
  * Usage: `static styles = [tokens, base, chip, css\`...\`]`.
  */
@@ -80,10 +82,11 @@ export const chip = css`
 
      .hv-status-chip at the foot of this file is the one exception, taking its
      colour from the status definition instead. That is why it is a separate
-     class: a user-chosen hue inside this vocabulary would dissolve it. */
+     class: a user-chosen hue inside this vocabulary would dissolve it, which
+     is also why the tone palette it draws from is offset from these fills. */
   .hv-chip.state {
     background: var(--hv-primary-tint);
-    color: var(--hv-primary-darker);
+    color: var(--hv-on-primary-tint);
     border-color: transparent;
   }
   .hv-chip.warning {
@@ -102,7 +105,9 @@ export const chip = css`
   .hv-chip.quiet,
   .hv-area-chip.quiet {
     background: none;
-    color: var(--hv-text-tertiary);
+    /* Secondary rather than tertiary ink: with no fill of its own this label is
+       read against the page, where the tertiary grey lands at 2.7:1. */
+    color: var(--hv-text-secondary);
     border-color: var(--hv-divider);
   }
 
@@ -121,7 +126,7 @@ export const chip = css`
   }
   .hv-chip.toggle.on {
     background: var(--hv-primary-tint);
-    color: var(--hv-primary-darker);
+    color: var(--hv-on-primary-tint);
     border-color: transparent;
   }
   .hv-chip.toggle.warning.on {
@@ -146,6 +151,11 @@ export const chip = css`
    * status painted from that palette would claim a meaning its label already
    * carries — a green "OK" beside an amber "Low stock" would read as two points
    * on one scale rather than two unrelated facts.
+   *
+   * Opting out is a property of the tones, not of this class: a tone that
+   * resolved to one of the fills above would collide with it wherever the two
+   * share a row, so the blue tones in ui/tokens are held off both the state
+   * chip's tint and the primary fill every action wears.
    *
    * Each tone comes in a light and a strong form. Strong exists so an urgent
    * status can carry further than a routine one in a dense row.

@@ -524,9 +524,10 @@ throughout.
   From the second selected tag on, the Tags heading carries the same any/all control the
   filter panel has, since that is the mode governing what the sidebar just selected. The
   app bar's stat pills are the card's: low in amber, overdue in red, to-inspect in amber,
-  checked out, each click-to-filter. Beside them, **Missing** and **Needs repair** price the
-  two flagged statuses in the status chip's own amber; each appears only while something
-  carries that flag, and the two are mutually exclusive because the filter takes one status.
+  checked out, each click-to-filter. All four are derived from the item and mean the same
+  thing in every household, which is what lets them share the bar's fixed hues; a status is
+  the household's own word in the household's own colour, so the sidebar's Status section
+  and the filter chips are where statuses are priced and picked.
   An empty table names the reason and offers a way out — the same
   wording and the same offers as the card's list.
 

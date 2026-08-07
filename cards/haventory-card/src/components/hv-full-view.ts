@@ -508,7 +508,7 @@ export class HVFullView extends LitElement {
       }
       .value-row.on {
         background: var(--hv-primary-tint);
-        color: var(--hv-primary-darker);
+        color: var(--hv-on-primary-tint);
         font-weight: 500;
         box-shadow: inset -3px 0 0 0 var(--hv-primary);
       }
@@ -565,7 +565,7 @@ export class HVFullView extends LitElement {
       .filters-button.on {
         border-color: var(--hv-primary);
         background: var(--hv-primary-tint);
-        color: var(--hv-primary-darker);
+        color: var(--hv-on-primary-tint);
       }
       /* The empty state is slotted into the table, so it stays in this tree and
          is styled here — the same block the card's list draws, since the words
@@ -1593,32 +1593,16 @@ export class HVFullView extends LitElement {
   }
 
   /**
-   * One flagged status as an app-bar toggle, beside the derived counts.
+   * The app bar prices derived exceptions only — low stock, overdue, due for
+   * inspection, checked out. Every one of those is computed from the item and
+   * means the same thing in every household, which is what lets them share the
+   * bar's fixed amber/red vocabulary.
    *
-   * Only `missing` and `needs_repair` get one: they are the exceptions worth
-   * interrupting for, and an "OK" pill would price the other 99% of a healthy
-   * inventory. Single-select like every other status surface, so pressing one
-   * while the other is on replaces it rather than asking for items that are
-   * somehow both.
+   * A status is not one of those: a household names and colours its own, so a
+   * status tally here would speak that vocabulary in the bar's hues, saying
+   * "chore" about whatever the household actually meant. The sidebar facet and
+   * the filter chips price and navigate statuses, in the household's own tones.
    */
-  private _renderStatusPill(status: string, count: number | undefined) {
-    // Absent rather than zero: the same rule the overdue and inspection pills
-    // follow, so the bar only ever carries counts worth acting on.
-    if (!count) return null;
-    const on = (this.st?.filters ?? defaultFilters()).status === status;
-    const noun = statusLabel(status, this.st?.statuses).toLowerCase();
-    return html`<button
-      class="hv-chip pill warning ${on ? 'on' : ''}"
-      data-testid="full-badge-status"
-      data-value=${status}
-      aria-pressed=${String(on)}
-      title=${`Show only items marked ${noun}`}
-      @click=${() => this._setFilters({ status: on ? null : status })}
-    >
-      ${count} ${noun}
-    </button>`;
-  }
-
   private _renderAppBar() {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
@@ -1690,8 +1674,6 @@ export class HVFullView extends LitElement {
                 ${counts.checked_out_count} checked out
               </button>`
             : null}
-          ${this._renderStatusPill('missing', counts?.missing_count)}
-          ${this._renderStatusPill('needs_repair', counts?.needs_repair_count)}
           <button
             class="add"
             data-testid="full-add-item"

@@ -5,7 +5,7 @@ import { chip } from '../ui/chip';
 import { locationPathParts, pathTitle } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate } from '../ui/relative-time';
-import { statusLabel } from '../ui/status';
+import { statusLabel, statusToneClass } from '../ui/status';
 import type { Location, StatusDefinition, StoreFilters } from '../store/types';
 
 /** Which filter a chip clears. Matches the keys of `StoreFilters`. */
@@ -31,6 +31,13 @@ export interface FilterChip {
   key: FilterChipKey;
   label: string;
   tone: 'primary' | 'warning';
+  /**
+   * A `tone-*` class from the status vocabulary, for the one chip whose colour
+   * a household picks rather than the card. Set, it replaces `tone` entirely:
+   * the two palettes are deliberately disjoint (see `ui/chip.ts`), so a chip
+   * cannot carry one of each.
+   */
+  toneClass?: string;
 }
 
 /**
@@ -85,8 +92,11 @@ export function chipsFor(
     chips.push({
       key: 'status',
       label: `Status: ${statusLabel(filters.status, ctx.statuses)}`,
-      // OK is the unremarkable state; the two flagged values carry the warning tone.
-      tone: filters.status === 'ok' ? 'primary' : 'warning',
+      // The status the household chose, in the colour the household gave it —
+      // the same chip the rows below this one carry. `tone` is the fallback for
+      // a consumer that ignores `toneClass`.
+      tone: 'primary',
+      toneClass: statusToneClass(filters.status, ctx.statuses),
     });
   if (filters.orphansOnly) chips.push({ key: 'orphansOnly', label: 'No location', tone: 'primary' });
   // One chip per bound rather than one per field: each is separately clearable,
@@ -184,7 +194,9 @@ export class HVFilterChips extends LitElement {
       <div class="row" data-testid="filter-chips">
         ${chips.map(
           (entry) => html`<button
-            class="hv-chip chip ${entry.tone === 'warning' ? 'warning' : 'state'}"
+            class=${entry.toneClass
+              ? `hv-status-chip chip ${entry.toneClass}`
+              : `hv-chip chip ${entry.tone === 'warning' ? 'warning' : 'state'}`}
             data-testid="filter-chip"
             data-key=${entry.key}
             aria-label=${`Clear filter ${entry.label}`}

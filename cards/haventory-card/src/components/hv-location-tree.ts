@@ -79,7 +79,7 @@ export class HVLocationTree extends LitElement {
       }
       .row.selected {
         background: var(--hv-primary-tint);
-        color: var(--hv-primary-darker);
+        color: var(--hv-on-primary-tint);
         font-weight: 500;
         box-shadow: inset -3px 0 0 0 var(--hv-primary);
       }

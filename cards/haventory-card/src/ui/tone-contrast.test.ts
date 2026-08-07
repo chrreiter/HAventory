@@ -132,10 +132,62 @@ describe('status tone contrast', () => {
     }
   }
 
+  // A tone is only "the household's own colour" if it cannot be mistaken for
+  // one of the card's fixed marks. The blue pair is where that nearly failed:
+  // the light tone *was* the state chip's tint and the strong tone was byte-for-
+  // byte the blue the card paints its own actions with.
+  it('keeps the blue tone clear of the blues the card reserves for itself', () => {
+    for (const theme of ['light', 'dark'] as const) {
+      expect(resolve('--hv-tone-blue-bg', theme, decls), theme).not.toEqual(
+        resolve('--hv-primary-tint', theme, decls),
+      );
+      expect(resolve('--hv-tone-blue-strong-bg', theme, decls), theme).not.toEqual(
+        resolve('--hv-primary-darker', theme, decls),
+      );
+      expect(resolve('--hv-tone-blue-strong-bg', theme, decls), theme).not.toEqual(
+        resolve('--hv-primary', theme, decls),
+      );
+    }
+  });
+
   it('resolves a translucent tint against the surface rather than reading it as opaque', () => {
     // Guards the harness itself: amber's dark tint is 14% over the dark surface,
     // so a reader that ignored alpha would measure a completely different colour.
     const fill = over(resolve('--hv-tone-amber-bg', 'dark', decls), SURFACE.dark as unknown as Rgb);
     expect(fill).toEqual([60, 47, 29]);
   });
+});
+
+/**
+ * The fixed vocabulary beside the household's: the fills in `ui/chip.ts` that
+ * mean the same thing in every install. They carry the same 12px label the
+ * tones above do and are measured the same way, so a token moved for one
+ * palette cannot quietly drop the other below AA.
+ */
+describe('chip variant contrast', () => {
+  const decls = declarations();
+
+  /** bg `null` = no fill of its own: the chip is read against the page. */
+  const VARIANTS: { variant: string; bg: string | null; fg: string }[] = [
+    { variant: 'state', bg: '--hv-primary-tint', fg: '--hv-on-primary-tint' },
+    { variant: 'warning', bg: '--hv-warn-bg', fg: '--hv-warn-deep' },
+    { variant: 'error', bg: '--hv-error-bg', fg: '--hv-error-deep' },
+    { variant: 'neutral', bg: '--hv-chip-bg', fg: '--hv-chip-text' },
+    { variant: 'quiet', bg: null, fg: '--hv-text-secondary' },
+  ];
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const { variant, bg, fg } of VARIANTS) {
+      it(`.hv-chip.${variant} clears WCAG AA in the ${theme} theme`, () => {
+        const surface = SURFACE[theme] as unknown as Rgb;
+        const fill = bg === null ? surface : over(resolve(bg, theme, decls), surface);
+        const ink = over(resolve(fg, theme, decls), fill);
+        const ratio = contrast(fill, ink);
+        expect(
+          ratio,
+          `.hv-chip.${variant} (${theme}) is ${ratio.toFixed(2)}:1 — chip text is 12px, so AA asks 4.5:1`,
+        ).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
 });
