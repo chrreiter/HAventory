@@ -1291,6 +1291,19 @@ describe('hv-organize-dialog: statuses', () => {
     expect(css).toMatch(/\.status-slug \{[^}]*flex: 0 1 auto[^}]*text-overflow: ellipsis/);
   });
 
+  // Measured in the sidebar panel at 390px: the row needed 404px of a 362px
+  // box, so the trash button for "Lent out to the neighbours" sat 28px past the
+  // dialog's right edge — off the screen, with no way to scroll to it.
+  it('lets a long status label elide so the row actions stay inside the dialog', () => {
+    const css = dialogCss();
+    // The chip is flex:none everywhere else; in a status row it has to give way.
+    expect(css).toMatch(/\.status-row \.hv-status-chip \{[^}]*flex: 0 1 auto/);
+    expect(css).toMatch(/\.status-row \.hv-status-chip \{[^}]*min-width: 0/);
+    // The slug still empties first — a shrink factor of 1 would take from both
+    // in proportion to their widths and cut the label while the slug held on.
+    expect(css).toMatch(/\.status-row \.status-slug \{[^}]*flex-shrink: 20/);
+  });
+
   // Five children on one row left the select ~44px wide, showing "O⌄" — the one
   // thing the guard exists to make legible before a destructive click.
   it('stacks the delete guard on a phone and keeps the reassign select readable', () => {
