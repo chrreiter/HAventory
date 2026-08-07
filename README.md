@@ -510,9 +510,11 @@ throughout.
   sidebar leads with the location tree carrying the backend's own per-location counts and
   an orphans row, then **Status**, **Categories** and **Tags** as sections of their own;
   each heading collapses from a chevron and states how many there are — locations counted
-  at every depth, Status excepted since it always holds the same three rows — and
-  Locations stays at the top. Status prices OK as whatever the two flagged counts leave
-  over. Category and status each pick one value and
+  at every depth, Status excepted because there that number would count the household's
+  vocabulary rather than anything in the inventory — and
+  Locations stays at the top. Every status row is priced from the backend's own per-status
+  counts, so a status nothing carries reads 0 rather than inheriting the rest of the
+  inventory. Category and status each pick one value and
   tags accumulate, matching how the backend treats them. With a filter on, each location
   row reads "4 / 37" — matches over total — so you can see where the matches are rather
   than a total that never moves. The counts ignore the *location* filter, since the sidebar

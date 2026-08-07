@@ -15,8 +15,7 @@ import { deepFocusables } from '../ui/dialog-focus';
 import { areaNameById, effectiveAreaIdForLocation } from '../ui/area';
 import { renderAreaChip } from '../ui/location-path';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
-import { statusLabel, statusList } from '../ui/status';
-import type { ItemStatus } from '../store/types';
+import { statusCount, statusLabel, statusList } from '../ui/status';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
@@ -519,14 +518,6 @@ export class HVFullView extends LitElement {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-      }
-      .value-row .tally {
-        flex: none;
-        font-size: 11.5px;
-        color: var(--hv-text-tertiary);
-      }
-      .value-row.on .tally {
-        color: inherit;
       }
       .section-empty {
         padding: 2px 16px 8px 34px;
@@ -1152,7 +1143,7 @@ export class HVFullView extends LitElement {
    *
    * Single-select, because the backend filter takes exactly one status, and
    * pressing the active row clears it — the same contract category has. Unlike
-   * the other two facets the rows are a closed set the backend defines rather
+   * the other two facets the rows are a closed set the household defines rather
    * than values discovered from the inventory, so there is nothing to create
    * and no empty state to fall back to.
    */
@@ -1160,28 +1151,18 @@ export class HVFullView extends LitElement {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
     const counts = st?.statsCounts;
-    // Only the two flagged states are priced by the counts payload; OK is
-    // whatever is left of the inventory. An older backend sends neither, and
-    // then no row claims a number rather than every row claiming a wrong one.
-    const missing = counts?.missing_count;
-    const needsRepair = counts?.needs_repair_count;
-    const tallyFor = (s: ItemStatus): number | null => {
-      if (missing === undefined || needsRepair === undefined) return null;
-      if (s === 'missing') return missing;
-      if (s === 'needs_repair') return needsRepair;
-      return Math.max(0, counts!.items_total - missing - needsRepair);
-    };
     return html`
       <div class="sidebar-head">
         ${this._renderSectionToggle('status', 'Status')}
-        <!-- The other sections tally how many rows they hold; this one always
-             holds three, so the number would say the same thing forever. -->
+        <!-- The other sections tally how many rows they hold. Here that number
+             is the size of the household's vocabulary, which says nothing
+             about the inventory the facet navigates. -->
       </div>
       <div id=${sectionPanelId('status')} ?hidden=${!this._sections.status}>
         ${this._sections.status
           ? statusList(this.st?.statuses).map(({ slug: s }) => {
               const on = filters.status === s;
-              const tally = tallyFor(s);
+              const tally = statusCount(counts, s);
               return html`<button
                 class="value-row ${on ? 'on' : ''}"
                 data-testid="sidebar-status-row"
@@ -1191,7 +1172,7 @@ export class HVFullView extends LitElement {
               >
                 ${on ? icon('check', 15) : null}
                 <span class="label">${statusLabel(s, this.st?.statuses)}</span>
-                ${tally === null ? null : html`<span class="tally">${tally}</span>`}
+                ${tally === null ? null : html`<span class="hv-tally">${tally}</span>`}
               </button>`;
             })
           : null}
@@ -1262,7 +1243,7 @@ export class HVFullView extends LitElement {
                        typed is otherwise unreadable — there is nowhere else in
                        the sidebar it appears in full. -->
                   <span class="label" title=${v.value}>${v.value}</span>
-                  <span class="tally">${v.count}</span>
+                  <span class="hv-tally">${v.count}</span>
                 </button>`,
               )
             : html`<div class="section-empty" data-testid=${`sidebar-${section}-empty`}>

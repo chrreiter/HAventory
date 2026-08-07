@@ -10,6 +10,7 @@ import {
   STATUS_COLORS,
   STATUS_ICONS,
   renderStatusChip,
+  statusCount,
   statusLabel,
   statusList,
 } from '../ui/status';
@@ -1411,9 +1412,16 @@ export class HVOrganizeDialog extends LitElement {
     return statusList(this.st?.statuses);
   }
 
-  /** How many items carry a slug. `haventory/stats` already reports this. */
+  /**
+   * How many items carry a slug.
+   *
+   * Every row here names a status this dialog just listed, so a slug the counts
+   * cannot price is one the payload has not caught up with — a row reading
+   * "0 items" for the moment it takes is better than a row with no count at
+   * all, because the count doubles as this tab's link into the items.
+   */
   private _statusCount(slug: string): number {
-    return this.st?.statsCounts?.status_counts?.[slug] ?? 0;
+    return statusCount(this.st?.statsCounts, slug) ?? 0;
   }
 
   /**
@@ -1613,9 +1621,8 @@ export class HVOrganizeDialog extends LitElement {
 
   /** Take the user to the items on a status, the way a value count does. */
   private _showStatus(slug: string) {
-    this.dispatchEvent(
-      new CustomEvent('browse', { detail: { status: slug }, bubbles: true, composed: true }),
-    );
+    this.store?.setFilters({ status: slug });
+    this._browse();
   }
 
   private _renderStatusEditor(slug: string | 'new') {

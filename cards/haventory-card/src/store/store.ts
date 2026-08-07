@@ -17,6 +17,7 @@ import type {
   Item,
   ItemCreate,
   ItemFilter,
+  ItemsEventPayload,
   ItemUpdate,
   ListItemsResult,
   LiveUpdatePause,
@@ -631,10 +632,13 @@ export class Store {
 
   private onItemsEvent(evt: AnyEventPayload) {
     if (evt.topic !== 'items') return;
-    if (evt.action === 'reloaded') {
-      // An import replaced the dataset wholesale — reload from scratch. The
-      // signal carries no payload, so there is nothing to merge; anything the
-      // user had open is now editing data that no longer exists.
+    const item = (evt as ItemsEventPayload).item;
+    if (evt.action === 'reloaded' || item === undefined) {
+      // The dataset moved wholesale and the signal carries no item to merge:
+      // an import replaced everything, or a status was deleted and every item
+      // carrying it reassigned in one call. Either way a merge is impossible —
+      // refetch, and say so while it is in flight, because anything the user
+      // has open may be editing data that no longer exists.
       this.setDegraded({ reloading: true });
       void this.listItems(true)
         .catch(() => undefined)
@@ -643,7 +647,6 @@ export class Store {
       this.scheduleTreeRefresh();
       return;
     }
-    const item = (evt as unknown as { item: Item }).item; // narrow by known payload structure
     const items = this.state.value.items.slice();
     const idx = items.findIndex((x) => x.id === item.id);
     switch (evt.action) {

@@ -1,7 +1,7 @@
 import { html } from 'lit';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import type { TemplateResult } from 'lit';
-import type { Item, StatusColor, StatusDefinition } from '../store/types';
+import type { Item, StatsCounts, StatusColor, StatusDefinition } from '../store/types';
 import { ICONS, icon } from './icons';
 import type { IconName } from './icons';
 
@@ -96,6 +96,34 @@ export function statusLabel(
   defs: readonly StatusDefinition[] | null | undefined,
 ): string {
   return definitionOf(slug, defs)?.label ?? slug;
+}
+
+/**
+ * How many items carry a slug, or `null` when the payload cannot say.
+ *
+ * One reading for every surface that prices a status — the sidebar facet, the
+ * filter chips, the organize tab — because three surfaces deriving the same
+ * number three ways is three chances to disagree with the backend.
+ *
+ * `status_counts` prices every *defined* slug, `ok` included, so a slug absent
+ * from a map that arrived names a status nothing defines: the card's
+ * vocabulary and its counts are momentarily out of step, and `null` (no tally)
+ * is the honest reading rather than a `0` that looks measured. A backend too
+ * old to send the map still prices the two flagged built-ins in their own
+ * fields; no other slug is knowable there.
+ *
+ * `null` means "no number to show", never "zero" — a caller that wants a zero
+ * instead says so at its own call site.
+ */
+export function statusCount(
+  counts: StatsCounts | null | undefined,
+  slug: string,
+): number | null {
+  const perSlug = counts?.status_counts;
+  if (perSlug) return perSlug[slug] ?? null;
+  if (slug === 'missing') return counts?.missing_count ?? null;
+  if (slug === 'needs_repair') return counts?.needs_repair_count ?? null;
+  return null;
 }
 
 /**

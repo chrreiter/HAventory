@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CSSResult } from 'lit';
 import { chip } from './chip';
-import { tokens } from './tokens';
+import { base, tokens } from './tokens';
 
 import '../components/hv-card-shell';
 import '../components/hv-chip-input';
@@ -145,6 +145,35 @@ describe('ui/chip: the shared fragment', () => {
         const declared = new RegExp(`--hv-tone-${hue}-strong-${part}: ([^;]+);`).exec(css);
         expect(declared, `${hue}-strong-${part}`).not.toBeNull();
         expect(declared?.[1], `${hue}-strong-${part}`).not.toMatch(/light-dark\(/);
+      }
+    }
+  });
+});
+
+/**
+ * The count beside a facet's name. Not a chip — it appears inside chips, on
+ * sidebar rows and on checkbox rows alike — but it shares the chip fragment's
+ * rule: one declaration, and no surface restating it in its own block.
+ */
+describe('ui/tokens: the shared tally', () => {
+  it('declares the tally once, in the fragment every surface takes', () => {
+    const css = String(base.cssText).replace(/\s+/g, ' ');
+    expect(css).toMatch(/\.hv-tally \{[^}]*font-size: [\d.]+px/);
+    // Dimmed against whatever ink surrounds it, so it survives a filled status
+    // chip where a fixed grey would drop out of the household's own tone.
+    expect(css).toMatch(/\.hv-tally \{[^}]*opacity: /);
+    expect(css).not.toMatch(/\.hv-tally \{[^}]*color: /);
+  });
+
+  it('leaves the surfaces that price a facet restating nothing but position', () => {
+    for (const tag of ['hv-filter-panel', 'hv-full-view']) {
+      const css = ownCss(tag);
+      // The old local rules, in the shapes that disagreed on size and dimming.
+      expect(css, tag).not.toMatch(/\.chip \.tally\b/);
+      expect(css, tag).not.toMatch(/\.value-row \.tally\b/);
+      // A rule keyed on `.hv-tally` may only place it, never re-size or re-ink it.
+      for (const [, body] of css.matchAll(/\.hv-tally[^{]*\{([^}]*)\}/g)) {
+        expect(body, `${tag}: ${body}`).not.toMatch(/font-size|opacity|color/);
       }
     }
   });

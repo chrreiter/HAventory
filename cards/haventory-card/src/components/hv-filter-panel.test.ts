@@ -1,7 +1,7 @@
 import './hv-filter-panel';
 import type { HVFilterPanel } from './hv-filter-panel';
 import { defaultFilters } from '../store/store';
-import type { DistinctValues, Location, LocationTreeNode, StoreFilters } from '../store/types';
+import type { DistinctValues, Location, LocationTreeNode, StatusDefinition, StoreFilters } from '../store/types';
 
 const distinct: DistinctValues = {
   categories: [
@@ -143,7 +143,39 @@ describe('hv-filter-panel: status', () => {
     expect(seen[1]).toEqual({ status: null });
   });
 
-  it('prices the two flagged statuses from the stats counts', async () => {
+  // Every chip priced, so a user picking what to filter by can see which
+  // statuses hold anything — the SHOW ONLY row above has always done this.
+  it('prices every status from the per-slug counts, zeroes included', async () => {
+    const statuses: StatusDefinition[] = [
+      { slug: 'ok', label: 'OK', order: 0, color: 'green', icon: 'check' },
+      { slug: 'lent_out', label: 'Lent out', order: 1, color: 'blue', icon: 'hand' },
+      { slug: 'in_transit', label: 'In transit', order: 2, color: 'blue_strong', icon: 'truck' },
+    ];
+    const el = await mount(
+      {},
+      {
+        statuses,
+        counts: {
+          items_total: 998,
+          low_stock_count: 0,
+          checked_out_count: 0,
+          locations_total: 0,
+          no_location_count: 0,
+          status_counts: { ok: 856, lent_out: 100, in_transit: 0 },
+        },
+      },
+    );
+    const chips = all(el, '[data-testid="filter-status"]');
+    expect(chips.map((c) => (c.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual([
+      'OK 856',
+      'Lent out 100',
+      'In transit 0',
+    ]);
+  });
+
+  // A backend too old to send the per-slug map still prices the two flagged
+  // built-ins in their own fields; nothing else is knowable there.
+  it('prices only the two flagged statuses when the per-slug map is absent', async () => {
     const el = await mount(
       {},
       {
@@ -247,6 +279,15 @@ describe('hv-filter-panel: tags', () => {
 });
 
 describe('hv-filter-panel: show only vs sort', () => {
+  // Sort is a daily toggle and the tag cloud renders every tag the household
+  // has, so on a phone anything under it is several screens into the sheet.
+  it('puts sort above the tag cloud', async () => {
+    const el = await mount();
+    const headings = all(el, '.hv-label').map((s) => s.textContent?.trim());
+
+    expect(headings).toEqual(['Where', 'Category', 'Show only', 'Status', 'Changed', 'Sort', 'Tags']);
+  });
+
   it('keeps low-stock-only and low-stock-first as separate controls', async () => {
     const el = await mount();
     const seen = changes(el);
@@ -275,7 +316,7 @@ describe('hv-filter-panel: show only vs sort', () => {
       },
     );
     const tallyOf = (testid: string) =>
-      q(el, `[data-testid="${testid}"]`).querySelector('.tally')?.textContent?.trim();
+      q(el, `[data-testid="${testid}"]`).querySelector('.hv-tally')?.textContent?.trim();
 
     expect(tallyOf('filter-low-stock-only')).toBe('102');
     expect(tallyOf('filter-checked-out')).toBe('82');
@@ -285,7 +326,7 @@ describe('hv-filter-panel: show only vs sort', () => {
 
   it('prints no tally at all when the counts have not arrived', async () => {
     const el = await mount();
-    expect(q(el, '[data-testid="filter-low-stock-only"]').querySelector('.tally')).toBe(null);
+    expect(q(el, '[data-testid="filter-low-stock-only"]').querySelector('.hv-tally')).toBe(null);
   });
 
   it('carries the same tallies into the phone layout', async () => {
