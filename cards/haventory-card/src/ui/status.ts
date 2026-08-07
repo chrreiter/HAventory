@@ -162,6 +162,11 @@ export function statusIconName(
  *
  * The glyph is decorative: it repeats what the label already says, and a status
  * whose icon this bundle does not carry simply renders without one.
+ *
+ * The label is wrapped rather than left as a bare text node so it can elide:
+ * the chip is an inline-flex box, and a cell's own `text-overflow` cannot reach
+ * inside one — a household label longer than its column hard-cut mid-word. The
+ * rule lives in `ui/chip.ts`, so every surface that chips a status inherits it.
  */
 export function renderStatusChip(
   slug: string,
@@ -172,6 +177,8 @@ export function renderStatusChip(
   return html`<span
     class="hv-status-chip ${statusToneClass(slug, defs)}"
     data-testid=${ifDefined(options.testid)}
-    >${glyph ? icon(glyph, 12) : null}${statusLabel(slug, defs)}</span
+    >${glyph ? icon(glyph, 12) : null}<span class="hv-chip-text"
+      >${statusLabel(slug, defs)}</span
+    ></span
   >`;
 }

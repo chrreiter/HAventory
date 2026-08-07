@@ -154,6 +154,20 @@ export const chip = css`
     gap: 4px;
     background: var(--hv-tone-neutral-bg);
     color: var(--hv-tone-neutral-fg);
+    /* A household names its own statuses, so a label can outrun the column it
+       sits in. The chip must be allowed to shrink for the label to elide at
+       all — the metrics above hold every chip at flex: none, which is right
+       beside other chips and wrong inside a cell narrower than this one. */
+    max-width: 100%;
+  }
+  /* Elision has to happen on the label, not on the cell around it: the chip is
+     an inline-flex box, and text-overflow on an ancestor cannot reach into one
+     — the label was hard-cut mid-word instead. As a flex item the label is a
+     block container already, so only the shrink and the overflow are needed. */
+  .hv-status-chip > .hv-chip-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .hv-status-chip.tone-neutral {
     background: var(--hv-tone-neutral-bg);

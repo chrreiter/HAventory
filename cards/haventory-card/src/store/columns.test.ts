@@ -3,6 +3,7 @@ import {
   COLUMN_DEFS,
   COLUMN_PREFS_STORAGE_KEY,
   DEFAULT_COLUMNS,
+  SELECT_COLUMN_WIDTH,
   loadColumnPrefs,
   normalizeColumns,
   saveColumnPrefs,
@@ -98,19 +99,61 @@ function minWidthOf(template: string): number {
     .reduce((a, b) => a + b, 0);
 }
 
+/** The growth factor of a track: the `fr` in a `minmax()`, or 0 for a fixed one. */
+function growthOf(template: string, index: number): number {
+  const track = template.split(/\s+(?![^(]*\))/)[index];
+  return Number(/,\s*([\d.]+)fr\)$/.exec(track)?.[1] ?? 0);
+}
+
 describe('table column widths', () => {
   // Pinned as a number so that adding a column, or widening one, shows up here
   // as a deliberate change rather than as another phone-width overflow.
   it('cannot lay the default table out narrower than a phone', () => {
-    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }))).toBe(1132);
-    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: true }))).toBe(1172);
+    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }))).toBe(1148);
+    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: true }))).toBe(1188);
   });
 
   it('only fits a phone when almost every column is turned off', () => {
-    // Name (180) + Qty (70) + the actions gutter (110). That clears 375px with
-    // 15px to spare and still overflows a 320px screen — so trimming columns
-    // was never a reliable answer, and it would have discarded a choice the
-    // user made. The table scrolls sideways instead.
-    expect(minWidthOf(tableTemplateFor(['quantity'], { selectable: false }))).toBe(360);
+    // Name (220) + Qty (70) + the actions gutter (110). That overflows a 375px
+    // screen on its own — so trimming columns was never a reliable answer, and
+    // it would have discarded a choice the user made. The table scrolls
+    // sideways instead, and pins the name column while it does.
+    expect(minWidthOf(tableTemplateFor(['quantity'], { selectable: false }))).toBe(400);
+  });
+
+  // With every column on, the flexible tracks all sit at their floor and the
+  // name loses to a column of tags: the audit frame read "Kärc…" beside two
+  // full tag chips. The name also carries the inline Low and Checked-out chips,
+  // which take their width before it gets any.
+  it('floors the name column above every flexible column beside it', () => {
+    const template = tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false });
+    const tracks = template.split(/\s+(?![^(]*\))/);
+    const nameMin = Number(/^minmax\((\d+)px,/.exec(tracks[0])![1]);
+    const flexible = tracks
+      .slice(1)
+      .map((t) => Number(/^minmax\((\d+)px,/.exec(t)?.[1] ?? 0))
+      .filter((min) => min > 0);
+
+    expect(flexible.length).toBe(3);
+    for (const min of flexible) expect(nameMin).toBeGreaterThan(min);
+  });
+
+  // Free width goes to the name first: a row identified by its tags and not by
+  // its name cannot be scanned.
+  it('grows the name column faster than the tags column', () => {
+    const template = tableTemplateFor(['category', 'location', 'tags'], { selectable: false });
+    // 0 is the name; the tags track is the last flexible one before the gutter.
+    expect(growthOf(template, 0)).toBeGreaterThan(growthOf(template, 3));
+    expect(growthOf(template, 3)).toBe(1);
+  });
+
+  // The pinned name cell offsets itself by the checkbox track, and an offset
+  // that disagreed with the template would sit over the checkboxes or short of
+  // them.
+  it('leads a selectable table with the track the sticky offset is built from', () => {
+    expect(tableTemplateFor([], { selectable: true }).startsWith(`${SELECT_COLUMN_WIDTH} `)).toBe(
+      true,
+    );
+    expect(tableTemplateFor([], { selectable: false }).startsWith('minmax(')).toBe(true);
   });
 });

@@ -388,6 +388,12 @@ than a plain one.
 `DEFAULT_COLUMNS` is every key: a browser that has made no choice sees the whole record,
 and the picker is what thins it. The full set is wider than a phone and wider than many
 desktops, which `hv-data-table` answers by scrolling sideways rather than dropping columns.
+The name track (`NAME_COLUMN_SIZE`) outweighs every flexible column beside it in both
+halves of its `minmax`, because the row's identity is the one column that cannot be
+allowed to lose — and at phone width the table pins it, so it holds while the rest scrolls
+under it. The pinning is why `hv-data-table` scrolls **both** axes on its host rather than
+scrolling the rows in a box of their own: a sticky cell resolves its offsets against the
+nearest scroll container, and a nested one that never moves sideways pins nothing.
 
 Preferences persist in `localStorage` under `haventory:columns:v1` as `{ expanded: [...] }`.
 Any other key in that record is ignored, so an older or newer payload never breaks the load.
