@@ -89,14 +89,18 @@ export const tokens = css`
      * action in --hv-primary, so a status sharing either fill would render a
      * household's free choice as one of the card's fixed meanings. Indigo is
      * far enough from both to read as a different thing at a glance while
-     * still answering to the name "blue". tone-contrast.test.ts pins the
-     * separation as well as the ratios.
+     * still answering to the name "blue". The light tint carries more of that
+     * distance than a 50-level indigo would: beside the state chip's tint the
+     * two inks separate plainly but the fills sit close, so the tint is a step
+     * deeper and more chromatic than its siblings on purpose.
+     * tone-contrast.test.ts pins the separation as a perceptual distance, not
+     * as mere inequality, alongside the ratios.
      */
     --hv-tone-neutral-bg: var(--hv-chip-bg);
     --hv-tone-neutral-fg: var(--hv-chip-text);
     --hv-tone-green-bg: light-dark(#e6f4ea, rgba(129, 199, 132, 0.16));
     --hv-tone-green-fg: light-dark(#1b5e20, #a5d6a7);
-    --hv-tone-blue-bg: light-dark(#e8eaf6, rgba(121, 134, 203, 0.26));
+    --hv-tone-blue-bg: light-dark(#dde0f7, rgba(121, 134, 203, 0.26));
     --hv-tone-blue-fg: light-dark(#1a237e, #9fa8da);
     --hv-tone-amber-bg: var(--hv-warn-bg);
     --hv-tone-amber-fg: var(--hv-warn-deep);

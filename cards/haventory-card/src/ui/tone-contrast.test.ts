@@ -99,6 +99,38 @@ const channel = (v: number) => {
   const c = v / 255;
   return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
 };
+
+/**
+ * CIE L*a*b*, D65 — the space the ΔE below is measured in.
+ *
+ * Contrast answers "can this be read", which is a different question from "are
+ * these two the same colour": two fills can differ by any amount of hue at an
+ * identical luminance and score 1:1 against each other. Lab is roughly
+ * perceptually uniform, so a plain distance in it stands in for how far apart
+ * two fills look.
+ */
+const WHITE_D65 = [0.95047, 1.0, 1.08883] as const;
+
+function lab([r, g, b]: Rgb): [number, number, number] {
+  const [lr, lg, lb] = [channel(r), channel(g), channel(b)];
+  const xyz = [
+    0.4124 * lr + 0.3576 * lg + 0.1805 * lb,
+    0.2126 * lr + 0.7152 * lg + 0.0722 * lb,
+    0.0193 * lr + 0.1192 * lg + 0.9505 * lb,
+  ];
+  const [fx, fy, fz] = xyz.map((v, i) => {
+    const t = v / WHITE_D65[i];
+    return t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+  });
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+
+/** ΔE*76 — straight-line distance in Lab. ~2.3 is the just-noticeable step. */
+function deltaE(a: Rgb, b: Rgb): number {
+  const [la, aa, ba] = lab(a);
+  const [lb, ab, bb] = lab(b);
+  return Math.hypot(la - lb, aa - ab, ba - bb);
+}
 const luminance = ([r, g, b]: Rgb) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 const contrast = (a: Rgb, b: Rgb) => {
   const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
@@ -136,19 +168,34 @@ describe('status tone contrast', () => {
   // one of the card's fixed marks. The blue pair is where that nearly failed:
   // the light tone *was* the state chip's tint and the strong tone was byte-for-
   // byte the blue the card paints its own actions with.
-  it('keeps the blue tone clear of the blues the card reserves for itself', () => {
-    for (const theme of ['light', 'dark'] as const) {
-      expect(resolve('--hv-tone-blue-bg', theme, decls), theme).not.toEqual(
-        resolve('--hv-primary-tint', theme, decls),
-      );
-      expect(resolve('--hv-tone-blue-strong-bg', theme, decls), theme).not.toEqual(
-        resolve('--hv-primary-darker', theme, decls),
-      );
-      expect(resolve('--hv-tone-blue-strong-bg', theme, decls), theme).not.toEqual(
-        resolve('--hv-primary', theme, decls),
-      );
+  // Measured, not merely unequal: a nudge that left the two tokens holding
+  // different hex and the same colour would satisfy `not.toEqual` and ship the
+  // collision back. A ΔE floor of 8 is a few times the just-noticeable step —
+  // a difference nobody has to look for.
+  const MIN_SEPARATION = 8;
+  const PAIRS: [string, string][] = [
+    ['--hv-tone-blue-bg', '--hv-primary-tint'],
+    ['--hv-tone-blue-strong-bg', '--hv-primary-darker'],
+    ['--hv-tone-blue-strong-bg', '--hv-primary'],
+  ];
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const [tone, fixed] of PAIRS) {
+      it(`keeps ${tone} clear of ${fixed} in the ${theme} theme`, () => {
+        const surface = SURFACE[theme] as unknown as Rgb;
+        // Composited first: the dark tints are translucent, so the declared
+        // value is not what the two are compared as on screen.
+        const distance = deltaE(
+          over(resolve(tone, theme, decls), surface),
+          over(resolve(fixed, theme, decls), surface),
+        );
+        expect(
+          distance,
+          `${tone} vs ${fixed} (${theme}) is ΔE ${distance.toFixed(1)} — a status must not wear one of the card's own blues`,
+        ).toBeGreaterThanOrEqual(MIN_SEPARATION);
+      });
     }
-  });
+  }
 
   it('resolves a translucent tint against the surface rather than reading it as opaque', () => {
     // Guards the harness itself: amber's dark tint is 14% over the dark surface,
