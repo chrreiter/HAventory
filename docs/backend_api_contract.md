@@ -128,7 +128,7 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 
 - Event payloads (inside `event`):
   - Common: `{domain: "haventory", topic: "items"|"locations"|"stats"|"statuses", action: string, ts: string, ...payload}`
-  - Items topic payloads include `{item: <Item>}` and actions: `created`, `updated`, `moved`, `deleted`, `checked_out`, `checked_in`, `quantity_changed`. The `reloaded` action (emitted after `import/execute`) carries **no** `item` and signals a wholesale dataset replacement.
+  - Items topic payloads include `{item: <Item>}` and actions: `created`, `updated`, `moved`, `deleted`, `checked_out`, `checked_in`, `quantity_changed`. An items event **may omit `item`**, and its absence is a refetch signal rather than a patch: the dataset moved wholesale and there is nothing to merge. Two cases emit one today — `reloaded` after `import/execute` replaces the dataset, and `updated` after `status/delete` with `reassign_to` moves every item carrying the slug in a single call. A client must therefore key on the presence of `item`, not on the action name. Subscription filters are not applied to a payload-less items event: with no item to match, every open items subscription receives it whatever its `location_id`.
   - Locations topic payloads include `{location: <Location>}` and actions: `created`, `renamed`, `moved`, `deleted`. The `reloaded` action (emitted after `import/execute`) carries **no** `location`.
   - Statuses topic payloads carry `{status: <StatusDefinition>}` for actions `created`, `updated` and `deleted`, and `{statuses: <StatusDefinition[]>}` for `reordered`. The vocabulary is small and changes rarely, so a client may equally re-read `status/list` on any event rather than applying a per-action patch — which is also what keeps it correct across a reorder.
   - Stats topic payload `action: "counts"` with `{counts: <stats shape>}`.
@@ -301,7 +301,9 @@ except `status/delete` with a reassign target.
 - `haventory/status/delete`
   - Payload: `{slug: string, reassign_to?: string}`
   - Result: `{status: <StatusDefinition>, reassigned: number}`; emits `statuses/deleted`, and
-    when `reassigned` is non-zero also `items/updated` and `stats/counts`.
+    when `reassigned` is non-zero also `items/updated` and `stats/counts`. That `items/updated`
+    carries **no `item`**: the move is a bulk rewrite, so the event is a refetch signal rather
+    than a per-item patch (see "Event payloads").
   - **Refused while items still carry the slug and no `reassign_to` is given.** An item whose
     status names nothing would be coerced to the default on the next load, silently. With a
     target the items move and the definition is deleted in the same call, so no client can

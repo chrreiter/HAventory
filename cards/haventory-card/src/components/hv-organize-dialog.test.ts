@@ -970,6 +970,28 @@ describe('hv-organize-dialog: statuses', () => {
     expect(row?.querySelector('[data-testid="status-count"]')?.textContent?.trim()).toBe('1 item');
   });
 
+  // The count is this tab's answer to "which items?", so it has to land on
+  // those items — the way a location count and a category count already do.
+  it('opens the items behind a status from its count', async () => {
+    const { el, store, sr } = await mount({
+      tab: 'statuses',
+      items: [ladder, makeItem({ id: 'i2', name: 'Rake' })],
+    });
+    let browsed = 0;
+    el.addEventListener('browse', () => {
+      browsed += 1;
+    });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-count"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(store.state.value.filters.status).toBe('missing');
+    // Organizing happens full-screen; so should the list it hands back.
+    expect(browsed).toBe(1);
+    expect(el.open).toBe(false);
+  });
+
   it('creates a status, deriving the slug from the label', async () => {
     const { el, sr, hass } = await mount({ tab: 'statuses' });
 

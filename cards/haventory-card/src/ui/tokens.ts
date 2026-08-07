@@ -282,6 +282,21 @@ export const base = css`
     outline: none;
   }
 
+  /*
+   * The count that follows a facet's name — on a chip, on a sidebar row, on a
+   * checkbox row. One rule so the same number reads the same size wherever the
+   * card prices a facet.
+   *
+   * It dims by opacity rather than by a fixed grey because it has to keep its
+   * relation to whatever ink surrounds it: inside a filled status chip that ink
+   * is the household's chosen tone, and a tertiary grey would drop out of it.
+   */
+  .hv-tally {
+    flex: none;
+    font-size: 11.5px;
+    opacity: 0.65;
+  }
+
   .hv-sr-only {
     position: absolute;
     width: 1px;

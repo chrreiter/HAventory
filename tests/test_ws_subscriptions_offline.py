@@ -3,7 +3,9 @@
 Scenarios:
 - subscribe/unsubscribe lifecycle and echo policy
 - item events delivered with correct shape; stats counts emitted on mutations
-- location_id + include_subtree filters constrain delivered events
+- location_id + include_subtree filters constrain delivered events, and a
+  payload-less items event reaches every subscription regardless, because it is
+  a refetch signal rather than a per-item patch
 - inspection_overdue_only narrows item events the way item/list narrows a page
 """
 
@@ -17,7 +19,7 @@ import pytest
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
-from custom_components.haventory.ws import _subs_bucket
+from custom_components.haventory.ws import _broadcast_event, _subs_bucket
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
@@ -321,6 +323,22 @@ async def test_location_filters_subtree_and_direct_only() -> None:
         if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
     }
     assert ids == {SUB_ID_SUBTREE}
+
+    # A payload-less items event has no item to match a filter against, so it
+    # reaches every open items subscription whatever its location. That is the
+    # right behaviour, not an oversight of the filter: the event says the
+    # dataset moved wholesale and the client must re-list, and a subscription
+    # watching one shelf has just as much reason to re-list as any other.
+    conn.messages.clear()
+    _broadcast_event(hass, topic="items", action="updated", payload=None)
+    ids = {
+        m.get("id")
+        for m in conn.messages
+        if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
+    }
+    assert ids == {SUB_ID_SUBTREE, SUB_ID_DIRECT}
+    delivered = next(m for m in conn.messages if m.get("type") == "event")["event"]
+    assert "item" not in delivered
 
 
 def _utc_day_offset(days: int) -> str:

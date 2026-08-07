@@ -437,7 +437,10 @@ export interface ImportSummary {
 // WS subscription event payloads
 export interface BaseEventPayload {
   domain: 'haventory';
-  topic: 'items' | 'locations' | 'stats';
+  // The four topics `haventory/subscribe` accepts. Only three have a payload
+  // shape below: a `statuses` event is a signal to re-read the vocabulary, not
+  // a patch to apply, so the store never narrows one.
+  topic: 'items' | 'locations' | 'stats' | 'statuses';
   action: string;
   ts: string;
 }
@@ -452,8 +455,10 @@ export type TeardownAction = 'unavailable';
 
 export interface ItemsEventPayload extends BaseEventPayload {
   topic: 'items';
-  // `item` is present for per-item actions; absent for the wholesale `reloaded`
-  // signal emitted after an import replaces the dataset.
+  // `item` is present for per-item actions and absent whenever the dataset
+  // moved wholesale — the `reloaded` signal after an import, and an `updated`
+  // signal after a status delete reassigned every item carrying the slug.
+  // Absence is a refetch signal: there is nothing to merge.
   item?: Item;
   action:
   | 'created'

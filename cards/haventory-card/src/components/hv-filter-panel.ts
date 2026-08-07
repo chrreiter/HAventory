@@ -6,8 +6,8 @@ import { locationPathParts, pathTitle } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { activeFilterCount, defaultFilters } from '../store/store';
-import { DEFAULT_STATUS, statusLabel, statusList, statusToneClass } from '../ui/status';
-import type { DistinctValues, ItemStatus, Location, LocationTreeNode, SortField, StatsCounts, StatusDefinition, StoreFilters } from '../store/types';
+import { DEFAULT_STATUS, statusCount, statusLabel, statusList, statusToneClass } from '../ui/status';
+import type { DistinctValues, Location, LocationTreeNode, SortField, StatsCounts, StatusDefinition, StoreFilters } from '../store/types';
 import './hv-location-tree';
 
 /** Sort fields the backend supports, in the order the menu lists them. */
@@ -110,9 +110,6 @@ export class HVFilterPanel extends LitElement {
          rather than a value that has. */
       .chip.more {
         border-style: dashed;
-      }
-      .chip .tally {
-        opacity: 0.65;
       }
       .hint {
         font-size: 11px;
@@ -278,10 +275,10 @@ export class HVFilterPanel extends LitElement {
       :host([mobile]) .check .mark {
         width: 15px;
       }
-      .tally-right {
+      /* The row form of a facet reads label-first, so its tally is pushed to
+         the far edge; the chip form sits right after the label. */
+      .hv-tally.tally-right {
         margin-left: auto;
-        font-size: 12.5px;
-        opacity: 0.65;
       }
       select {
         font: inherit;
@@ -345,12 +342,12 @@ export class HVFilterPanel extends LitElement {
   /** Stage edits and apply on commit (mobile sheet) instead of applying live. */
   @property({ type: Boolean, reflect: true }) mobile = false;
   /**
-   * Whole-inventory stat counts, for the "Show only" tallies.
+   * Whole-inventory stat counts, which price both the "Show only" rows and the
+   * status chips.
    *
-   * Those four rows were the only facet controls in the card with no number
-   * beside them — and the renderer already had a slot for one, filled with a
-   * hardcoded `null`, while both app bars showed the same counts a few pixels
-   * away.
+   * Every facet in this panel carries a number, so a user can see what a filter
+   * is worth before applying it. Null until the first `haventory/stats` answer
+   * arrives, and then each tally is drawn only where the payload prices it.
    */
   @property({ attribute: false }) counts: StatsCounts | null = null;
 
@@ -458,7 +455,7 @@ export class HVFilterPanel extends LitElement {
       <span class="mark">${on ? icon('check', this.mobile ? 15 : 12) : null}</span>
       <span>${label}</span>
       ${opts.tally !== undefined && opts.tally !== null
-        ? html`<span class="tally-right">${opts.tally}</span>`
+        ? html`<span class="hv-tally tally-right">${opts.tally}</span>`
         : null}
     </button>`;
   }
@@ -545,7 +542,7 @@ export class HVFilterPanel extends LitElement {
               @click=${() => this._patch({ category: f.category === c.value ? null : c.value })}
             >
               ${f.category === c.value ? icon('check', 12) : null}${c.value}
-              <span class="tally">${c.count}</span>
+              <span class="hv-tally">${c.count}</span>
             </button>`,
           )}
           ${hidden > 0
@@ -556,7 +553,7 @@ export class HVFilterPanel extends LitElement {
                   this._showAllCategories = true;
                 }}
               >
-                More… <span class="tally">${hidden}</span>
+                More… <span class="hv-tally">${hidden}</span>
               </button>`
             : null}
         </div>
@@ -606,7 +603,7 @@ export class HVFilterPanel extends LitElement {
               @click=${() => this._toggleTag(t.value)}
             >
               ${selected.has(t.value) ? icon('check', 12) : null}${t.value}
-              <span class="tally">${t.count}</span>
+              <span class="hv-tally">${t.count}</span>
             </button>`,
           )}
           ${extras.map(
@@ -649,7 +646,7 @@ export class HVFilterPanel extends LitElement {
     const f = this.working;
     const c = this.counts;
     const tally = (n: number | null | undefined) =>
-      n === null || n === undefined ? null : html`<span class="tally">${n}</span>`;
+      n === null || n === undefined ? null : html`<span class="hv-tally">${n}</span>`;
     return html`
       <div class="group">
         <span class="hv-label">Show only</span>
@@ -712,16 +709,15 @@ export class HVFilterPanel extends LitElement {
   /**
    * The stored item status, as one single-select chip row.
    *
-   * Single-select because the backend filter takes exactly one status, and the
-   * two flagged values carry the same warning tone their row badges use. OK
-   * gets no tally: the counts payload prices the two exception states, and
-   * "everything else" is not a number worth a chip.
+   * Single-select because the backend filter takes exactly one status, and each
+   * chip carries the tone its household picked. Every chip is priced the same
+   * way, so a user choosing what to filter by can see which statuses are worth
+   * filtering by — a backend too old to price them all leaves the rest bare
+   * rather than guessing.
    */
   private _renderStatusGroup() {
     const f = this.working;
     const c = this.counts;
-    const tallyFor = (s: ItemStatus) =>
-      s === 'missing' ? c?.missing_count : s === 'needs_repair' ? c?.needs_repair_count : undefined;
     return html`
       <div class="group">
         <span class="hv-label">Status</span>
@@ -731,7 +727,7 @@ export class HVFilterPanel extends LitElement {
             // A chosen status shows its own colour; the rest stay outlines, so
             // the row reads as choices rather than as facts.
             const tone = on && s !== DEFAULT_STATUS ? statusToneClass(s, this.statuses) : '';
-            const tally = tallyFor(s);
+            const tally = statusCount(c, s);
             return html`<button
               class="hv-chip toggle chip hv-status-chip ${on ? 'on' : ''} ${tone}"
               data-testid="filter-status"
@@ -740,7 +736,7 @@ export class HVFilterPanel extends LitElement {
               @click=${() => this._patch({ status: on ? null : s })}
             >
               ${on ? icon('check', 12) : null}${statusLabel(s, this.statuses)}
-              ${tally === undefined || tally === null ? null : html`<span class="tally">${tally}</span>`}
+              ${tally === null ? null : html`<span class="hv-tally">${tally}</span>`}
             </button>`;
           })}
         </div>
@@ -863,9 +859,12 @@ export class HVFilterPanel extends LitElement {
     const count = activeFilterCount(this.working);
     return html`
       <div class="panel" data-testid="filter-panel">
-        ${this._renderLocationGroup()} ${this._renderCategoryGroup()} ${this._renderTagGroup()}
+        ${this._renderLocationGroup()} ${this._renderCategoryGroup()}
         ${this._renderShowOnlyGroup()} ${this._renderStatusGroup()} ${this._renderDateGroup()}
-        ${this._renderSortGroup()}
+        <!-- Sort sits above the tag cloud: a household's tag list grows without
+             limit and this one renders every tag in it, so anything below it is
+             several screens down inside the phone's filter sheet. -->
+        ${this._renderSortGroup()} ${this._renderTagGroup()}
         ${this.mobile
           ? null
           : html`<div class="footer">

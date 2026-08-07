@@ -4,7 +4,7 @@ import { makeMockHass, makeItem } from '../test.utils';
 import { deepActiveElement } from '../ui/dialog-focus';
 import { Store } from '../store/store';
 import type { HVFullView } from './hv-full-view';
-import type { Item, Location } from '../store/types';
+import type { Item, Location, StatusDefinition } from '../store/types';
 
 function loc(id: string, name: string, parentId: string | null = null): Location {
   const display = parentId ? `${parentId} / ${name}` : name;
@@ -27,6 +27,7 @@ async function mount(
     items?: Item[];
     locations?: Location[];
     areas?: { id: string; name: string }[];
+    statuses?: StatusDefinition[];
     embedded?: boolean;
     narrow?: boolean;
   } = {},
@@ -35,6 +36,7 @@ async function mount(
     items: opts.items ?? [],
     locations: opts.locations ?? [],
     areas: opts.areas ?? [],
+    ...(opts.statuses ? { statuses: opts.statuses } : {}),
   });
   const store = new Store(hass, { retryBaseMs: 0 });
   await store.init();
@@ -753,14 +755,36 @@ describe('hv-full-view: sidebar status', () => {
   const rows = (sr: ShadowRoot) =>
     [...sr.querySelectorAll('[data-testid="sidebar-status-row"]')] as HTMLElement[];
   const tallies = (sr: ShadowRoot) =>
-    rows(sr).map((r) => r.querySelector('.tally')?.textContent?.trim() ?? null);
+    rows(sr).map((r) => r.querySelector('.hv-tally')?.textContent?.trim() ?? null);
 
-  // The counts payload prices only the two flagged states; OK is the rest of
-  // the inventory, which is the one number here that has to be derived.
+  // Every row is priced from the per-slug map, so the facet says what the
+  // backend says rather than what the facet can derive.
   it('lists the three statuses with their counts', async () => {
     const { sr } = await mount({ items: flagged });
     expect(rows(sr).map((r) => r.dataset.value)).toEqual(['ok', 'missing', 'needs_repair']);
     expect(tallies(sr)).toEqual(['1', '1', '2']);
+  });
+
+  // The audit's fixture in miniature: custom slugs used to inherit "everything
+  // that is not missing or needs_repair", so an empty status claimed the whole
+  // inventory and then showed no rows when it was clicked.
+  it('prices a household vocabulary per slug, including one nothing carries', async () => {
+    const statuses: StatusDefinition[] = [
+      { slug: 'ok', label: 'OK', order: 0, color: 'green', icon: 'check' },
+      { slug: 'lent_out', label: 'Lent out', order: 1, color: 'blue', icon: 'hand' },
+      { slug: 'in_transit', label: 'In transit', order: 2, color: 'blue_strong', icon: 'truck' },
+    ];
+    const items = [
+      makeItem({ id: '1', status: 'lent_out' }),
+      makeItem({ id: '2', status: 'lent_out' }),
+      makeItem({ id: '3' }),
+      makeItem({ id: '4' }),
+      makeItem({ id: '5' }),
+    ];
+    const { sr } = await mount({ items, statuses });
+
+    expect(rows(sr).map((r) => r.dataset.value)).toEqual(['ok', 'lent_out', 'in_transit']);
+    expect(tallies(sr)).toEqual(['3', '2', '0']);
   });
 
   it('filters to one status and clears it on a second press', async () => {
@@ -793,11 +817,23 @@ describe('hv-full-view: sidebar status', () => {
     ]);
   });
 
-  // An older backend sends neither count. Then no row claims a number, rather
-  // than every row claiming one derived from the halves that did arrive.
-  it('drops every tally when the backend prices no statuses', async () => {
+  // A backend too old to send the map still prices the two flagged built-ins in
+  // their own fields; the default is not knowable there, and stays unpriced
+  // rather than being derived from the halves that did arrive.
+  it('falls back to the legacy fields when the per-slug map is absent', async () => {
     const { el, store, sr } = await mount({ items: flagged });
     const counts = store.state.value.statsCounts as unknown as Record<string, unknown>;
+    delete counts.status_counts;
+    el.requestUpdate();
+    await settle(el);
+
+    expect(tallies(sr)).toEqual([null, '1', '2']);
+  });
+
+  it('drops every tally when the backend prices no statuses at all', async () => {
+    const { el, store, sr } = await mount({ items: flagged });
+    const counts = store.state.value.statsCounts as unknown as Record<string, unknown>;
+    delete counts.status_counts;
     delete counts.missing_count;
     delete counts.needs_repair_count;
     el.requestUpdate();
@@ -806,8 +842,8 @@ describe('hv-full-view: sidebar status', () => {
     expect(tallies(sr)).toEqual([null, null, null]);
   });
 
-  // Categories and tags tally how many rows they hold; this section always
-  // holds three, so the same number in that slot would be noise.
+  // Categories and tags tally how many rows they hold; here that number counts
+  // the household's vocabulary, not the inventory the facet navigates.
   it('heads the section without a tally', async () => {
     const { sr } = await mount({ items: flagged });
     expect(q(sr, '[data-testid="sidebar-status-tally"]')).toBe(null);

@@ -1249,4 +1249,24 @@ describe('Store: import reload signalling', () => {
     expect(seen).toContain(true);
     expect(store.state.value.degraded.reloading).toBe(false);
   });
+
+  // Deleting a status with a reassignment target moves every item carrying it
+  // in one call, so the backend announces the move with no item to merge. Read
+  // as a per-item event this threw and the card kept showing the old rows.
+  it('refetches on an item event that carries no item', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'Ladder' })] });
+    const store = new Store(hass, fast);
+    await store.init();
+    hass.__setItems([makeItem({ id: '1', name: 'Ladder', status: 'ok' }), makeItem({ id: '2' })]);
+
+    const seen: boolean[] = [];
+    store.state.onChange(() => seen.push(store.state.value.degraded.reloading));
+
+    hass.__emit('items', 'updated', {});
+    await new Promise((r) => setTimeout(r, 5));
+
+    expect(seen).toContain(true);
+    expect(store.state.value.degraded.reloading).toBe(false);
+    expect(store.state.value.items.map((i) => i.id)).toEqual(['1', '2']);
+  });
 });

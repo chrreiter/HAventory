@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { StatusDefinition } from '../store/types';
+import type { StatsCounts, StatusDefinition } from '../store/types';
 import {
   BUILT_IN_STATUSES,
   DEFAULT_STATUS,
   itemStatus,
+  statusCount,
   statusIconName,
   statusLabel,
   statusList,
@@ -65,5 +66,55 @@ describe('ui/status: rendering a slug', () => {
     ];
     expect(statusIconName('x', exotic)).toBeNull();
     expect(statusIconName('mystery', CUSTOM)).toBeNull();
+  });
+});
+
+describe('ui/status: pricing a slug', () => {
+  const base: StatsCounts = {
+    items_total: 998,
+    low_stock_count: 0,
+    checked_out_count: 0,
+    locations_total: 0,
+    no_location_count: 0,
+  };
+
+  it('reads the per-slug map, zeroes included', () => {
+    const counts: StatsCounts = {
+      ...base,
+      missing_count: 3,
+      needs_repair_count: 3,
+      status_counts: { ok: 856, missing: 3, needs_repair: 3, lent_out: 100, in_transit: 0 },
+    };
+    expect(statusCount(counts, 'ok')).toBe(856);
+    expect(statusCount(counts, 'lent_out')).toBe(100);
+    // The one the old derivation reported as 998.
+    expect(statusCount(counts, 'in_transit')).toBe(0);
+  });
+
+  // The map prices every defined slug, so a slug missing from one that arrived
+  // is a status nothing defines — the vocabulary and the counts are a moment
+  // out of step, and no number is honest where a zero would look measured.
+  it('reports nothing for a slug the map that arrived does not carry', () => {
+    const counts: StatsCounts = { ...base, status_counts: { ok: 998 } };
+    expect(statusCount(counts, 'mystery')).toBeNull();
+  });
+
+  it('falls back to the legacy fields for exactly the two flagged built-ins', () => {
+    const counts: StatsCounts = { ...base, missing_count: 3, needs_repair_count: 4 };
+    expect(statusCount(counts, 'missing')).toBe(3);
+    expect(statusCount(counts, 'needs_repair')).toBe(4);
+    // Not derivable from the two halves that arrived, so it is not derived.
+    expect(statusCount(counts, 'ok')).toBeNull();
+    expect(statusCount(counts, 'lent_out')).toBeNull();
+  });
+
+  it('prices nothing when the payload carries neither shape', () => {
+    expect(statusCount(base, 'ok')).toBeNull();
+    expect(statusCount(base, 'missing')).toBeNull();
+  });
+
+  it('prices nothing before any counts have arrived', () => {
+    expect(statusCount(null, 'ok')).toBeNull();
+    expect(statusCount(undefined, 'missing')).toBeNull();
   });
 });
