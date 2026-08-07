@@ -14,10 +14,11 @@ from __future__ import annotations
 
 from http import HTTPStatus
 from pathlib import Path
+from urllib.parse import unquote
 
 from aiohttp import FormData
 from custom_components.haventory import media
-from custom_components.haventory.const import DOMAIN, MEDIA_SUBDIR
+from custom_components.haventory.const import DOMAIN, MEDIA_NAME_TOKEN_PARAM, MEDIA_SUBDIR
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -69,6 +70,18 @@ async def _upload(client, content: bytes = PNG_BYTES, filename: str = "drill.png
     return (await response.json())["file_id"]
 
 
+def _rfc5987_filename(disposition: str) -> str:
+    """Decode the ``filename*=UTF-8''…`` half of a Content-Disposition value.
+
+    The half a current browser reads, and the only one that can carry a name
+    outside US-ASCII.
+    """
+
+    marker = "filename*=UTF-8''"
+    assert marker in disposition, disposition
+    return unquote(disposition.split(marker, 1)[1])
+
+
 async def _create_item(ws_client, name: str = "Drill") -> dict:
     await ws_client.send_json({"id": 1, "type": "haventory/item/create", "name": name})
     result = await ws_client.receive_json()
@@ -111,6 +124,11 @@ async def test_a_real_png_round_trips_through_upload_and_the_view(
     assert served.headers["Content-Type"].startswith("image/png")
     # The bytes are user-supplied, so the browser must not decide otherwise.
     assert served.headers["X-Content-Type-Options"] == "nosniff"
+    # Without a disposition the browser saves the file under the last path
+    # segment, which is the attachment id. `inline` keeps the click opening it.
+    disposition = served.headers["Content-Disposition"]
+    assert disposition.startswith("inline;")
+    assert 'filename="drill.png"' in disposition
     assert await served.read() == PNG_BYTES
 
 
@@ -290,7 +308,8 @@ async def test_a_pdf_round_trips_as_a_manual_and_can_be_retitled(
 
     The retitle is asserted here rather than offline because only a real core
     writes the change back through ``Store`` and hands the card the item it
-    then renders from.
+    then renders from — and because the served name follows the title, which is
+    a response header no offline test has a transport for.
     """
 
     await _setup(hass)
@@ -318,6 +337,10 @@ async def test_a_pdf_round_trips_as_a_manual_and_can_be_retitled(
     assert attachment["title"] == ""
     assert attachment["order"] == 0
 
+    url = f"/api/haventory/media/{item['id']}/{attachment['id']}"
+    untitled = await client.get(url)
+    assert _rfc5987_filename(untitled.headers["Content-Disposition"]) == "scan_0142.pdf"
+
     await ws.send_json(
         {
             "id": 3,
@@ -333,10 +356,74 @@ async def test_a_pdf_round_trips_as_a_manual_and_can_be_retitled(
     # The filename is what the bytes arrived as and is never rewritten.
     assert retitled["result"]["attachments"][0]["filename"] == "scan_0142.pdf"
 
-    served = await client.get(f"/api/haventory/media/{item['id']}/{attachment['id']}")
+    served = await client.get(url)
     assert served.status == HTTPStatus.OK
     assert served.headers["Content-Type"].startswith("application/pdf")
+    disposition = served.headers["Content-Disposition"]
+    assert disposition.startswith("inline;")
+    assert _rfc5987_filename(disposition) == "Dishwasher manual (EN)"
     assert await served.read() == PDF_BYTES
+
+    # A title outside US-ASCII is the case the quoted `filename` cannot carry.
+    await ws.send_json(
+        {
+            "id": 4,
+            "type": "haventory/item/attachment/update",
+            "item_id": item["id"],
+            "attachment_id": attachment["id"],
+            "title": "Spülmaschine - Anleitung (DE)",
+        }
+    )
+    assert (await ws.receive_json())["success"] is True
+
+    non_ascii = await client.get(url)
+    served = _rfc5987_filename(non_ascii.headers["Content-Disposition"])
+    assert served == "Spülmaschine - Anleitung (DE)"
+
+
+async def test_only_a_name_versioned_url_may_be_cached(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+) -> None:
+    """A retitle rewrites the served name for a URL that did not change.
+
+    The card versions its URL by that name, so its responses can be held for as
+    long as the bytes live. A URL without the token has no way to say which name
+    it was fetched under, and a browser that stored one would keep saving the
+    file under a title the user has already replaced — for the half hour a
+    signature lives, which is not a window anyone waits out.
+    """
+
+    await _setup(hass)
+    client = await hass_client()
+    ws = await hass_ws_client(hass)
+    item = await _create_item(ws)
+
+    file_id = await _upload(client, PDF_BYTES, "scan_0142.pdf")
+    await ws.send_json(
+        {
+            "id": 2,
+            "type": "haventory/item/attachment/add",
+            "item_id": item["id"],
+            "file_id": file_id,
+            "filename": "scan_0142.pdf",
+            "kind": "manual",
+        }
+    )
+    added = await ws.receive_json()
+    assert added["success"] is True, added
+    attachment = added["result"]["attachments"][0]
+
+    url = f"/api/haventory/media/{item['id']}/{attachment['id']}"
+    plain = await client.get(url)
+    assert plain.status == HTTPStatus.OK
+    assert plain.headers["Cache-Control"] == "private, no-store"
+
+    versioned = await client.get(f"{url}?{MEDIA_NAME_TOKEN_PARAM}=abc123")
+    assert versioned.status == HTTPStatus.OK
+    assert "immutable" in versioned.headers["Cache-Control"]
+    # The token is a cache key, never a lookup: the file it names is the one the
+    # two path segments name, whatever the token says.
+    assert await versioned.read() == PDF_BYTES
 
 
 async def test_a_pdf_is_refused_as_a_picture(

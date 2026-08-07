@@ -61,6 +61,13 @@ MEDIA_SUBDIR: str = "haventory/attachments"
 # segment ever reaches the filesystem as written.
 MEDIA_URL_TEMPLATE: str = "/api/haventory/media/{item_id}/{attachment_id}"
 
+# Query parameter a client adds to say "this URL is versioned by the name the
+# file is served under". The view reads only whether it is present, never its
+# value: it is a cache key, and the name it stands for is the one the response
+# carries anyway. Home Assistant signs query parameters along with the path, so
+# a client cannot bolt this onto a URL it was given.
+MEDIA_NAME_TOKEN_PARAM: str = "v"  # noqa: S105 - a query parameter name, not a credential
+
 # Accepted picture types. An allow-list, checked against the file's *sniffed*
 # leading bytes rather than the content type the browser declared.
 # `image/svg+xml` is deliberately absent: SVG carries script and the view serves

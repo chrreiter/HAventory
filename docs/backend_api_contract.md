@@ -233,8 +233,10 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 - Serving an attachment — `GET /api/haventory/media/{item_id}/{attachment_id}`
   - An authenticated `HomeAssistantView`, not `/local` and not `/haventory_static`: both of those are served without authentication, and an inventory photo is as private as the inventory.
   - Both ids are matched against stored metadata before any path is built, so no request segment reaches the filesystem. Anything unmatched — and any entry whose file is absent — is `404`. Once no config entry owns the data the view answers `503`, mirroring the WebSocket commands' refusal.
-  - Responses carry the stored content type, `X-Content-Type-Options: nosniff`, and a long immutable `Cache-Control`: an attachment id addresses one fixed set of bytes, and a replacement is a new id.
-  - An `<img src>` carries no `Authorization` header, so a client signs the path with core's `auth/sign_path` first and renders the signed URL.
+  - Responses carry the stored content type and `X-Content-Type-Options: nosniff`.
+  - `Content-Disposition` is always `inline` — clicking a document opens it in a tab — and names the file the attachment's `title`, or its `filename` when untitled. The name travels percent-encoded as RFC 5987 `filename*=UTF-8''…`, with a quoted printable-ASCII `filename` beside it for clients without that support; a name with nothing printable in ASCII falls back to the attachment id there.
+  - `Cache-Control` depends on whether the URL says which name it was fetched under. An attachment id addresses one fixed set of bytes — a replacement is a new id — but the name in `Content-Disposition` is not fixed: a retitle rewrites it for that same id. A URL carrying the `v` name-token parameter is therefore `private, max-age=31536000, immutable`, and one without it is `private, no-store`. Only the presence of `v` is read, never its value; it is a cache key, and the name it stands for is in the response anyway. Without this a retitled file would keep being saved under its old name for as long as the cached response lived, which a signature outlasts by half an hour.
+  - An `<img src>` carries no `Authorization` header, so a client signs the path with core's `auth/sign_path` first and renders the signed URL. Home Assistant signs query parameters along with the path, so `v` has to be on the path *before* signing — a client cannot add it to a URL it was handed.
 
 - `haventory/items/bulk`
   - Payload: `{operations: Array<{op_id: string|number, kind: string, payload: object}>}`

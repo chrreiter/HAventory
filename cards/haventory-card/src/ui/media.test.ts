@@ -1,8 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  MEDIA_NAME_TOKEN_PARAM,
   MEDIA_URL_TEMPLATE,
   MediaUrls,
   SIGNED_URL_TTL_SECONDS,
+  attachmentNameToken,
   attachmentTitle,
   formatBytes,
   manuals,
@@ -60,6 +62,46 @@ describe('mediaPath', () => {
 
   it('uses the route the backend serves', () => {
     expect(MEDIA_URL_TEMPLATE).toBe('/api/haventory/media/{item_id}/{attachment_id}');
+  });
+
+  it('carries the name token as the parameter the backend reads', () => {
+    expect(mediaPath('item-1', 'att-1', 'abc123')).toBe(
+      `/api/haventory/media/item-1/att-1?${MEDIA_NAME_TOKEN_PARAM}=abc123`,
+    );
+  });
+
+  it('leaves the path alone when there is no token to carry', () => {
+    expect(mediaPath('item-1', 'att-1')).not.toContain('?');
+  });
+});
+
+describe('attachmentNameToken', () => {
+  it('changes when the served name changes', () => {
+    const untitled = attachment({ filename: 'scan_0142.pdf' });
+    const titled = attachment({ filename: 'scan_0142.pdf', title: 'Dishwasher manual (EN)' });
+
+    expect(attachmentNameToken(titled)).not.toBe(attachmentNameToken(untitled));
+  });
+
+  it('is stable for the same served name', () => {
+    expect(attachmentNameToken(attachment({ title: 'Manual' }))).toBe(
+      attachmentNameToken(attachment({ title: 'Manual' })),
+    );
+  });
+
+  it('follows the same title-then-filename precedence the header does', () => {
+    // A title of only whitespace is not a title, so the filename is the name
+    // served — and the token has to agree, or the URL would change for a name
+    // that did not.
+    expect(attachmentNameToken(attachment({ title: '   ' }))).toBe(
+      attachmentNameToken(attachment({ title: '' })),
+    );
+  });
+
+  it('survives a name outside US-ASCII', () => {
+    expect(attachmentNameToken(attachment({ title: 'Spülmaschine - Anleitung' }))).toMatch(
+      /^[0-9a-z]+$/,
+    );
   });
 });
 
@@ -173,6 +215,70 @@ describe('MediaUrls', () => {
     expect(signer.sign).toHaveBeenCalledTimes(1);
     expect(signer.calls[0]).toBe('/api/haventory/media/item-1/att-1');
     expect(h.renders).toBe(1);
+  });
+
+  it('re-signs under a new name token so a retitled file stops saving under the old name', async () => {
+    const h = host();
+    const signer = deferredSigner();
+    const urls = new MediaUrls(h);
+    urls.configure(signer.sign);
+
+    urls.get('item-1', 'att-1', 'old');
+    signer.resolve('/api/haventory/media/item-1/att-1?v=old&authSig=abc');
+    await Promise.resolve();
+    expect(urls.get('item-1', 'att-1', 'old')).toBe(
+      '/api/haventory/media/item-1/att-1?v=old&authSig=abc',
+    );
+    expect(signer.sign).toHaveBeenCalledTimes(1);
+
+    // The retitle: the held URL was signed for a name that is no longer the one
+    // the row shows, and its cached response still carries that name.
+    urls.get('item-1', 'att-1', 'new');
+
+    expect(signer.sign).toHaveBeenCalledTimes(2);
+    expect(signer.calls[1]).toBe('/api/haventory/media/item-1/att-1?v=new');
+  });
+
+  it('does not re-sign for a reader that expressed no opinion about the name', async () => {
+    // Every row calls `get` with a token and `presence` without one, and
+    // `presence` reads the URL through `get`. Treating "no token" as a mismatch
+    // makes the two re-sign over each other on every render, and because each
+    // answer asks the host to render again, the component never settles.
+    const signer = deferredSigner();
+    const urls = new MediaUrls(host());
+    urls.configure(signer.sign);
+
+    urls.get('item-1', 'att-1', 'tok');
+    signer.resolve('/signed?v=tok');
+    await Promise.resolve();
+    expect(signer.sign).toHaveBeenCalledTimes(1);
+
+    expect(urls.get('item-1', 'att-1')).toBe('/signed?v=tok');
+    expect(urls.get('item-1', 'att-1', 'tok')).toBe('/signed?v=tok');
+
+    expect(signer.sign).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps what it learned about the bytes across a retitle', async () => {
+    const signer = deferredSigner();
+    const probe = vi.fn(async (_url: string, _init: { headers: Record<string, string> }) =>
+      Promise.resolve(new Response(null, { status: 206 })),
+    );
+    const urls = new MediaUrls(host(), { fetch: probe });
+    urls.configure(signer.sign);
+
+    urls.get('item-1', 'att-1', 'old');
+    signer.resolve('/signed-old');
+    await Promise.resolve();
+    urls.presence('item-1', 'att-1');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(urls.presence('item-1', 'att-1')).toBe('present');
+
+    // A new name is not new bytes: the entry is keyed on the two ids, so the
+    // presence answer must not be thrown away with the URL.
+    urls.get('item-1', 'att-1', 'new');
+
+    expect(urls.presence('item-1', 'att-1')).toBe('present');
   });
 
   it('asks for the lifetime it then respects', async () => {

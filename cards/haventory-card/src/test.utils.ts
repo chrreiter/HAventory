@@ -886,7 +886,10 @@ export function makeMediaBindings(
     sign: async (path: string) => {
       signed.push(path);
       if (options.signFails) throw new Error('signing refused');
-      return `${path}?authSig=test`;
+      // Core appends to whatever query the path already has — a media URL
+      // carries the name token — so the separator has to follow suit or every
+      // signed URL here is malformed in a way no real one is.
+      return `${path}${path.includes('?') ? '&' : '?'}authSig=test`;
     },
     upload: async (itemId: string, file: File, kind: AttachmentKind = 'picture') => {
       uploads.push({ itemId, file, kind });

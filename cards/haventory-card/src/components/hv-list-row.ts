@@ -6,7 +6,7 @@ import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue } from '../ui/relative-time';
 import { itemStatus, renderStatusChip, statusLabel } from '../ui/status';
-import { MediaUrls, manuals, pictureAlt, pictures } from '../ui/media';
+import { MediaUrls, attachmentNameToken, manuals, pictureAlt, pictures } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
 import type { AreaRef, Item, StatusDefinition } from '../store/types';
 import './hv-overflow-menu';
@@ -309,7 +309,7 @@ export class HVListRow extends LitElement {
   private _renderThumb() {
     const first = pictures(this.item.attachments)[0];
     if (!first) return null;
-    const src = this._urls.get(this.item.id, first.id);
+    const src = this._urls.get(this.item.id, first.id, attachmentNameToken(first));
     if (!src) return null;
     return html`<img
       class="thumb"

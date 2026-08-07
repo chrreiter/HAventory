@@ -727,6 +727,28 @@ uv run python scripts/stress_test.py --skip-deploy --skip-confirm  # quick re-ru
 Scenarios: rapid sequential mutations, concurrent burst, bulk-under-load, mixed workload,
 persistence-across-restart. Exit codes: `0` pass, `1` failures, `2` setup error.
 
+### Attachment probes
+
+`scripts/probe_attachments.py` checks the attachment path against a live instance — and
+against the **bytes on Home Assistant's disk**, not what the card reported. Pillow comes
+from the non-default `probes` dependency group, so a plain `uv sync` stays lean:
+
+```bash
+uv sync --group probes
+export RUN_ONLINE=1 HA_TOKEN=<token>   # HA_BASE_URL defaults to http://localhost:8123
+export HA_CONTAINER=home-assistant     # or HA_CONFIG_DIR for a bind-mounted config
+uv run --group probes python scripts/probe_attachments.py
+```
+
+It covers the 2 MiB re-encode threshold and the 2048-pixel cap, EXIF orientation applied
+before the re-encode, PNG transparency surviving as WebP, an animated GIF kept whole, a
+sub-threshold JPEG round-tripping byte-identical, the `206`/`404`/no-answer presence
+semantics, and the `Content-Disposition` name. Exit codes: `0` pass, `1` a probe failed,
+`2` setup error, `3` timeout.
+
+`scripts/probe_fixtures.py --out DIR` writes those fixtures on their own (~30 MB of
+generated images — they are never committed).
+
 ---
 
 ## Contributing

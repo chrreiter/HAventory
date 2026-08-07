@@ -22,6 +22,22 @@ import type { Attachment, AttachmentKind, Item } from '../store/types';
 export const MEDIA_URL_TEMPLATE = '/api/haventory/media/{item_id}/{attachment_id}';
 
 /**
+ * Query parameter that versions a media URL by the name the file is served
+ * under.
+ *
+ * The bytes behind an attachment id never change, but the name in the
+ * response's `Content-Disposition` does — a retitle rewrites it for that same
+ * id — and the backend will only let a client hold the response indefinitely
+ * when the URL says which name it was fetched for. Without it a retitled file
+ * would keep being saved under its old name for as long as the browser's cache
+ * entry lived, which a signature outlasts by half an hour.
+ *
+ * Pinned to the backend's `MEDIA_NAME_TOKEN_PARAM` by
+ * `tests/test_frontend_registration.py`.
+ */
+export const MEDIA_NAME_TOKEN_PARAM = 'v';
+
+/**
  * How long a signature is asked for.
  *
  * A browser caches by full URL, signature included, so a re-signed URL is a
@@ -61,12 +77,40 @@ interface MediaHost {
   requestUpdate(): void;
 }
 
-/** Build the unsigned media path for one attachment. */
-export function mediaPath(itemId: string, attachmentId: string): string {
-  return MEDIA_URL_TEMPLATE.replace('{item_id}', encodeURIComponent(itemId)).replace(
+/**
+ * Build the unsigned media path for one attachment.
+ *
+ * A name token makes the URL change when the served filename does, which is
+ * what lets the response be cached — see `MEDIA_NAME_TOKEN_PARAM`. Home
+ * Assistant signs query parameters together with the path, so the token has to
+ * be here before signing rather than appended to a signed URL.
+ */
+export function mediaPath(itemId: string, attachmentId: string, nameToken?: string): string {
+  const path = MEDIA_URL_TEMPLATE.replace('{item_id}', encodeURIComponent(itemId)).replace(
     '{attachment_id}',
     encodeURIComponent(attachmentId),
   );
+  return nameToken ? `${path}?${MEDIA_NAME_TOKEN_PARAM}=${encodeURIComponent(nameToken)}` : path;
+}
+
+/**
+ * A short stable token for the name one attachment is served under.
+ *
+ * A hash rather than the name itself: the name is user-supplied text of any
+ * length in any script, and this only has to *differ* when the name does. The
+ * input is `attachmentTitle`, which is the same precedence the backend builds
+ * `Content-Disposition` from, so the token changes exactly when the saved
+ * filename would.
+ */
+export function attachmentNameToken(attachment: Attachment): string {
+  const name = attachmentTitle(attachment);
+  // FNV-1a, 32-bit. Not a checksum and not a secret — a cache key.
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < name.length; i += 1) {
+    hash ^= name.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
 }
 
 /** A human-readable file size, for the caption under a picture. */
@@ -144,6 +188,8 @@ interface Entry {
   pending: boolean;
   presence: Presence;
   probing: boolean;
+  /** The name token this entry's URL was signed for; see `MEDIA_NAME_TOKEN_PARAM`. */
+  nameToken: string | undefined;
 }
 
 /**
@@ -182,15 +228,27 @@ export class MediaUrls {
     this.entries.clear();
   }
 
-  /** The signed URL for one attachment, or null while there is not one yet. */
-  get(itemId: string, attachmentId: string): string | null {
+  /**
+   * The signed URL for one attachment, or null while there is not one yet.
+   *
+   * Passing the attachment's `attachmentNameToken` keeps the URL in step with a
+   * retitle: a token the held URL was not signed for re-signs rather than
+   * serving a URL whose cached response still carries the old filename. The
+   * entry is keyed on the two ids alone, so what `failed` and `presence` know
+   * about these bytes survives the re-sign.
+   */
+  get(itemId: string, attachmentId: string, nameToken?: string): string | null {
     const key = `${itemId}/${attachmentId}`;
     const entry = this.entries.get(key);
-    if (entry) {
+    // No token means no opinion about the name, not "the untitled URL". The
+    // presence probe reads whatever URL is current without caring what it is
+    // called, and counting that as a mismatch would have the two callers
+    // re-sign over each other on every render.
+    if (entry && (nameToken === undefined || entry.nameToken === nameToken)) {
       if (entry.failed || entry.pending) return entry.url;
       if (entry.url && entry.expiresAt - REFRESH_MARGIN_MS > this.now()) return entry.url;
     }
-    this.request(key, itemId, attachmentId);
+    this.request(key, itemId, attachmentId, nameToken);
     // A lapsed URL is still shown while its replacement is in flight: the
     // browser has the image cached and swapping to a placeholder mid-view would
     // be a worse answer than a URL that is briefly stale.
@@ -244,11 +302,17 @@ export class MediaUrls {
     this.host.requestUpdate();
   }
 
-  private request(key: string, itemId: string, attachmentId: string): void {
+  private request(key: string, itemId: string, attachmentId: string, nameToken?: string): void {
     const sign = this.sign;
     if (!sign) return;
     const existing = this.entries.get(key);
-    if (existing?.pending) return;
+    // A caller with no opinion about the name keeps the one this entry was
+    // already signed for, rather than dropping it back to the untitled URL.
+    const token = nameToken ?? existing?.nameToken;
+    // A request already in flight for this same name is the one to wait for; a
+    // retitle mid-flight is not, because that URL would arrive naming the file
+    // the row no longer shows.
+    if (existing?.pending && existing.nameToken === token) return;
 
     // A re-sign is a new URL for the same bytes, so whatever was learned about
     // whether those bytes exist carries across it.
@@ -259,11 +323,18 @@ export class MediaUrls {
       pending: true,
       presence: existing?.presence ?? 'unknown',
       probing: existing?.probing ?? false,
+      nameToken: token,
     };
     this.entries.set(key, entry);
 
-    void sign(mediaPath(itemId, attachmentId), SIGNED_URL_TTL_SECONDS).then(
+    // A second retitle can start another sign before this one lands. The token
+    // on the entry is the name last asked for, so an answer that no longer
+    // matches it is a late one and is dropped rather than overwriting it.
+    const superseded = () => this.entries.get(key)?.nameToken !== token;
+
+    void sign(mediaPath(itemId, attachmentId, token), SIGNED_URL_TTL_SECONDS).then(
       (signed) => {
+        if (superseded()) return;
         this.entries.set(key, {
           url: signed,
           expiresAt: this.now() + SIGNED_URL_TTL_SECONDS * 1000,
@@ -271,10 +342,12 @@ export class MediaUrls {
           pending: false,
           presence: this.entries.get(key)?.presence ?? entry.presence,
           probing: this.entries.get(key)?.probing ?? entry.probing,
+          nameToken: token,
         });
         this.host.requestUpdate();
       },
       () => {
+        if (superseded()) return;
         // Keep whatever URL was already working: a failed refresh is not a
         // reason to blank an image the browser is still showing.
         this.entries.set(key, {
@@ -284,6 +357,7 @@ export class MediaUrls {
           pending: false,
           presence: this.entries.get(key)?.presence ?? entry.presence,
           probing: this.entries.get(key)?.probing ?? entry.probing,
+          nameToken: token,
         });
         this.host.requestUpdate();
       },

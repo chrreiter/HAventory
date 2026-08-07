@@ -8,7 +8,15 @@ import { inferType } from '../ui/item-form';
 import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
 import { isLowStock } from './hv-list-row';
 import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
-import { MediaUrls, attachmentTitle, formatBytes, manuals, pictureAlt, pictures } from '../ui/media';
+import {
+  MediaUrls,
+  attachmentNameToken,
+  attachmentTitle,
+  formatBytes,
+  manuals,
+  pictureAlt,
+  pictures,
+} from '../ui/media';
 import type { MediaBindings } from '../ui/media';
 import { DialogFocus } from '../ui/dialog-focus';
 import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, ScalarValue, StatusDefinition } from '../store/types';
@@ -491,7 +499,7 @@ export class HVDetailSheet extends LitElement {
     if (!shots.length) return null;
     return html`<div class="gallery" data-testid="sheet-gallery">
       ${shots.map((picture, index) => {
-        const src = this._urls.get(item.id, picture.id);
+        const src = this._urls.get(item.id, picture.id, attachmentNameToken(picture));
         if (!src) return null;
         return html`<figure data-testid="sheet-photo">
           <button
@@ -531,7 +539,7 @@ export class HVDetailSheet extends LitElement {
       <h3>Documents</h3>
       <ul>
         ${docs.map((doc) => {
-          const src = this._urls.get(item.id, doc.id);
+          const src = this._urls.get(item.id, doc.id, attachmentNameToken(doc));
           const missing = this._urls.presence(item.id, doc.id) === 'missing';
           return html`<li class=${missing ? 'missing' : ''} data-testid="sheet-document">
             <span class="doc-icon">${icon('fileDocument', 20)}</span>
@@ -568,7 +576,7 @@ export class HVDetailSheet extends LitElement {
     const shots = pictures(item.attachments);
     const index = this._lightbox;
     if (index === null || !shots[index]) return null;
-    const src = this._urls.get(item.id, shots[index].id);
+    const src = this._urls.get(item.id, shots[index].id, attachmentNameToken(shots[index]));
     if (!src) return null;
     const close = () => {
       this._lightbox = null;

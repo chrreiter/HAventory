@@ -25,6 +25,7 @@ from collections.abc import Iterable
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from homeassistant.core import HomeAssistant
 
@@ -45,6 +46,7 @@ from .const import (
     MAX_ATTACHMENT_BYTES,
     MAX_MANUALS_PER_ITEM,
     MAX_PICTURES_PER_ITEM,
+    MEDIA_NAME_TOKEN_PARAM,
     MEDIA_SUBDIR,
     MEDIA_URL_TEMPLATE,
 )
@@ -75,6 +77,11 @@ _EXTENSION_BY_MIME: dict[str, str] = {
 
 # Enough bytes for every signature below: WebP's marker ends at byte 12.
 SNIFF_BYTES = 16
+
+# How much of a served name reaches the response header. A filename carries no
+# length limit of its own, and a client is entitled to refuse an oversized
+# header line rather than the file behind it.
+DISPOSITION_NAME_MAX_CHARS = 200
 
 
 def sniff_mime(head: bytes) -> str | None:
@@ -303,6 +310,50 @@ async def async_sweep_orphans(
     return removed
 
 
+def _content_disposition(meta: AttachmentMeta) -> str:
+    """The ``Content-Disposition`` value one attachment is served under.
+
+    ``inline``, never ``attachment``: a document opens in a tab, and the header
+    exists to name the file the browser saves from there — not to turn the
+    click into a download. The name is the title the user gave the file, or the
+    name it arrived under, which is the precedence the card labels the row with,
+    so a saved file matches the row that was clicked.
+
+    Both halves are user-supplied text under no charset restriction, and this
+    value becomes a response header. The real name travels percent-encoded in
+    the RFC 5987 ``filename*`` form; the quoted ``filename`` a client without
+    that support reads is reduced to printable US-ASCII minus the two
+    characters the quoting itself uses, which is also what stops a CR or LF in
+    a title from splitting the header.
+    """
+
+    name = (meta.title.strip() or meta.filename)[:DISPOSITION_NAME_MAX_CHARS]
+    ascii_name = "".join(c for c in name if " " <= c <= "~" and c not in '"\\').strip()
+    # Nothing printable survived — a title written entirely in a non-Latin
+    # script. The attachment id is what such a client would have taken from the
+    # URL anyway, and `filename*` still carries the real name.
+    fallback = ascii_name or str(meta.id)
+    return f"inline; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}"
+
+
+def _cache_control(request: Any) -> str:
+    """How long a client may hold this response without asking again.
+
+    The bytes an attachment id names never change — a replacement is a new id —
+    but the name they are served under does: a retitle rewrites
+    ``Content-Disposition`` for that same id. Storing the response forever is
+    therefore only safe for a client whose URL changes when the name does, and
+    the card's carries the name token this looks for. Without it the response
+    must not be reused, or a retitle would keep saving the file under its old
+    name for as long as the entry lived — and a signed URL lives half an hour,
+    so that is not a window a user would wait out.
+    """
+
+    if request.query.get(MEDIA_NAME_TOKEN_PARAM):
+        return "private, max-age=31536000, immutable"
+    return "private, no-store"
+
+
 class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
     """Serve one attachment, to an authenticated Home Assistant user.
 
@@ -342,8 +393,9 @@ class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
                 # browser from deciding differently about user-supplied bytes.
                 "Content-Type": meta.mime,
                 "X-Content-Type-Options": "nosniff",
-                # An attachment id addresses one immutable set of bytes: a
-                # replacement is a new id, so this can never go stale.
-                "Cache-Control": "private, max-age=31536000, immutable",
+                "Cache-Control": _cache_control(request),
+                # Without this the browser names a saved file after the last
+                # path segment, which is the attachment id.
+                "Content-Disposition": _content_disposition(meta),
             },
         )

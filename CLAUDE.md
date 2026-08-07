@@ -181,7 +181,9 @@ Offline tests stub HA via `tests/conftest.py`.
 > there is **no Windows host support** — the helpers assume a UTF-8 terminal and the test
 > scaffolding carries no platform branch. Develop on Windows through WSL2. The Python
 > helpers (`ws_probe.py`, `ws_subscribe.py`, `ws_init_haventory.py`, `stress_test.py`,
-> `create_test_items.py`) run via `uv run python scripts/<name>.py`.
+> `create_test_items.py`) run via `uv run python scripts/<name>.py`. The attachment probes
+> (`probe_attachments.py`, `probe_fixtures.py`) additionally need the non-default `probes`
+> dependency group for Pillow: `uv run --group probes python scripts/<name>.py`.
 
 ## Conventions
 
