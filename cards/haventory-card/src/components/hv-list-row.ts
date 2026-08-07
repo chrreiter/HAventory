@@ -111,14 +111,28 @@ export class HVListRow extends LitElement {
         place-items: center;
         color: var(--hv-text-tertiary);
       }
+      /* The mark belongs to the name, so it sits on the name's own line and
+         follows wherever the name ends. Left on the row it was anchored to the
+         free space instead: on a row with a thumbnail it landed against the
+         truncated name, and on one without it floated out to the far edge,
+         where it read as part of the quantity stepper. */
+      .name-line {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
       /* Both lines must be block containers with inline content, or the
          ellipsis is silently ignored: overflow does not apply to an inline box,
-         and text-overflow does not apply to a flex container. As spans inside a
-         blockified flex item these were the first case, and .secondary was
-         explicitly the second — so a long path hard-cut mid-character with no
-         "…" to say anything had been dropped. */
+         and text-overflow does not apply to a flex container. .name is a flex
+         item on the line above, which blockifies it and gives it an automatic
+         minimum width it must give up to shrink at all; .secondary is a span
+         inside a blockified flex item and was explicitly the second case — so
+         a long path hard-cut mid-character with no "…" to say anything had
+         been dropped. */
       .name {
         display: block;
+        min-width: 0;
         font-size: 14px;
         font-weight: 500;
         overflow: hidden;
@@ -478,7 +492,18 @@ export class HVListRow extends LitElement {
           : null}
         ${this._renderThumb()}
         <span class="names">
-          <span class="name" data-testid="row-name" title=${item.name}>${item.name}</span>
+          <span class="name-line">
+            <span class="name" data-testid="row-name" title=${item.name}>${item.name}</span>
+            ${manuals(item.attachments).length
+              ? html`<span
+                  class="doc-marker"
+                  data-testid="row-has-document"
+                  title="Has a document"
+                  aria-label="Has a document"
+                  >${icon('fileDocument', 14)}</span
+                >`
+              : null}
+          </span>
           <span
             class="secondary ${this.mobile ? mobileState : 'hv-chip-line'} ${overdue &&
             this.mobile
@@ -507,15 +532,6 @@ export class HVListRow extends LitElement {
                       >`}
           </span>
         </span>
-        ${manuals(item.attachments).length
-          ? html`<span
-              class="doc-marker"
-              data-testid="row-has-document"
-              title="Has a document"
-              aria-label="Has a document"
-              >${icon('fileDocument', 14)}</span
-            >`
-          : null}
         ${this.pending
           ? html`<span class="hv-chip warning" data-testid="row-pending">Pending</span>`
           : null}

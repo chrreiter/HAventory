@@ -1,11 +1,16 @@
-import { LitElement, css, html } from 'lit';
+import { LitElement, css, html, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
-import { COLUMN_DEFS, normalizeColumns, tableTemplateFor } from '../store/columns';
+import {
+  COLUMN_DEFS,
+  SELECT_COLUMN_WIDTH,
+  normalizeColumns,
+  tableTemplateFor,
+} from '../store/columns';
 import { getDefaultOrderFor } from '../store/sort';
 import type { AreaRef, StatusDefinition } from '../store/types';
 import type { ColumnKey } from '../store/columns';
@@ -33,16 +38,35 @@ export class HVDataTable extends LitElement {
         flex-direction: column;
         min-height: 0;
         min-width: 0;
-        /* The column template has a hard minimum — 1020px for the default set,
-           1060px with the selection column — and a grid whose tracks do not fit
-           overflows its own box rather than shrinking. With overflow visible
-           that spilled content was simply clipped by the shell: at 375px the
-           rows measured clientWidth 634 against scrollWidth 854, and the Tags,
-           Due and Updated columns could not be reached by any gesture. The
-           table scrolls sideways instead, which keeps whichever columns the
-           user chose rather than quietly dropping them on small screens. */
+        /* The row's own metrics, named because the sticky offsets below are
+           built from them: a pinned cell carries the row's left padding, and
+           in selecting mode the name also carries the gap after the checkbox
+           track. */
+        --hv-table-gap: 8px;
+        --hv-table-pad-x: 20px;
+        /* The one scroll container on this surface, in both axes.
+
+           Sideways because the column template has a hard minimum — about
+           1260px for the default set, 1308px with the selection column — and a
+           grid whose tracks do not fit overflows its own box rather than
+           shrinking. With overflow visible that spilled content was simply
+           clipped by the shell: at 375px the rows measured clientWidth 634
+           against scrollWidth 854, and the Tags, Due and Updated columns could
+           not be reached by any gesture. Scrolling keeps whichever columns the
+           user chose rather than quietly dropping them on small screens.
+
+           Vertically here rather than on the row group, because a sticky cell
+           resolves its offsets against the nearest scroll container: with the
+           rows inside a box of their own that scrolls, left: 0 on a name cell
+           resolves against a box that never moves sideways and pins the cell to
+           nothing. One container for both axes is what makes the name column
+           below hold. The header keeps its place with position: sticky instead
+           of by sitting outside the scrolled box. */
         overflow-x: auto;
-        overscroll-behavior-x: contain;
+        overflow-y: auto;
+        /* A flick that runs past the last row or the last column must not
+           scroll the dashboard behind this surface. */
+        overscroll-behavior: contain;
       }
       /* Sizing the two boxes to the grid's own minimum is what makes the
          scroll work: left at the container's width they would stay 375px wide
@@ -53,15 +77,21 @@ export class HVDataTable extends LitElement {
       .body {
         min-width: min-content;
       }
+      /* Its own height, not the leftover space: the host is what scrolls, and a
+         row group stretched to the visible height would have nothing to give
+         the scroll. */
+      .body {
+        flex: none;
+      }
       .head,
       .row {
         display: grid;
-        gap: 8px;
+        gap: var(--hv-table-gap);
         align-items: center;
-        padding: 10px 20px;
+        padding: 10px var(--hv-table-pad-x);
       }
       .head {
-        padding: 7px 20px;
+        padding: 7px var(--hv-table-pad-x);
         border-bottom: 1px solid var(--hv-divider);
         font-size: 11.5px;
         font-weight: 500;
@@ -69,6 +99,12 @@ export class HVDataTable extends LitElement {
         text-transform: uppercase;
         color: var(--hv-text-secondary);
         flex: none;
+        /* Held against the top of the scroll container the rows now share with
+           it. Opaque, or the rows would read through it as they pass under. */
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        background: var(--hv-surface);
       }
       /* This reset must stay keyed to the sort buttons' own class. Written as
          .head button it also reaches the select-all box, which is a button in
@@ -92,27 +128,6 @@ export class HVDataTable extends LitElement {
       .head button.sort.sorted {
         color: var(--hv-primary-dark);
       }
-      .body {
-        flex: 1;
-        min-height: 0;
-        overflow-y: auto;
-        /*
-         * Contain the vertical overscroll — a flick that runs past the last row
-         * must not scroll the dashboard behind this surface — but only the
-         * vertical.
-         *
-         * The shorthand set both axes, and that is what stopped the sideways
-         * scroll above from working at all. Declaring overflow on one axis
-         * makes the other compute to auto, so this box is a horizontal scroll
-         * container too; it is exactly as wide as its own content, so it has
-         * nothing to scroll, and contain on that axis means a horizontal swipe
-         * starting over a row is neither used nor handed on. The host measured
-         * scrollWidth 874 against clientWidth 390 and stayed at scrollLeft 0
-         * through the whole gesture, so the Tags, Due and Updated columns could
-         * not be reached by any gesture — only by setting scrollLeft in script.
-         */
-        overscroll-behavior-y: contain;
-      }
       .row {
         border-bottom: 1px solid var(--hv-row-divider);
         font-size: 13.5px;
@@ -124,17 +139,87 @@ export class HVDataTable extends LitElement {
       .row.selected {
         background: var(--hv-row-hover);
       }
-      .name-cell {
+      .name-cell,
+      .select-cell,
+      .name-head {
         display: flex;
         align-items: center;
-        gap: 8px;
         min-width: 0;
+      }
+      .name-cell {
+        gap: 8px;
       }
       .name {
         font-weight: 500;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+      /*
+       * A phone shows about a third of this table — the template's floor is
+       * around 1260px — so the identity column holds while the rest scrolls
+       * under it, and the right edge says there is more to reach.
+       *
+       * The offsets are the row's own metrics, so nothing shifts as the swipe
+       * starts: a cell pinned where it already sits simply stops moving. The
+       * pinned cells take the row's left padding with them (negative margin,
+       * matching padding) so the name never ends up flush against the edge,
+       * and they stretch to the row's full height with an opaque fill, or the
+       * columns passing beneath would show through them.
+       *
+       * These resolve against the host, which is the scroll container for both
+       * axes — see the overflow note there.
+       */
+      @media (max-width: 700px) {
+        .name-head,
+        .name-cell,
+        .select-cell {
+          position: sticky;
+          left: 0;
+          z-index: 1;
+          align-self: stretch;
+          margin-left: calc(-1 * var(--hv-table-pad-x));
+          padding-left: var(--hv-table-pad-x);
+          background: var(--hv-surface);
+        }
+        /* Behind the checkbox track, which is pinned first — and the gap
+           between the two travels with the name, or the columns underneath
+           would show through the 8px between the two pinned cells. */
+        :host([selectable]) .name-head,
+        :host([selectable]) .name-cell {
+          left: calc(var(--hv-table-pad-x) + ${unsafeCSS(SELECT_COLUMN_WIDTH)});
+          margin-left: calc(-1 * var(--hv-table-gap));
+          padding-left: var(--hv-table-gap);
+        }
+        /* The row's wash is painted on the row, which the pinned cells cover.
+           A second layer over their own fill restores it — and it has to be a
+           layer rather than a colour, because the dark half of the wash is
+           translucent and would take the opacity with it. */
+        .row:hover .name-cell,
+        .row:hover .select-cell,
+        .row.selected .name-cell,
+        .row.selected .select-cell {
+          background-image: linear-gradient(var(--hv-row-hover), var(--hv-row-hover));
+        }
+        /*
+         * The overflow affordance: a shade at the right edge, and a cover in
+         * the surface colour parked at the right end of the *content*. The
+         * cover scrolls with the rows (background-attachment: local) while the
+         * shade stays with the box (scroll), so the shade shows exactly while
+         * there is something further right, and the two coincide — hiding it —
+         * when there is not. A table that fits shows nothing at all.
+         */
+        :host {
+          background:
+            linear-gradient(var(--hv-surface), var(--hv-surface)) right / 28px 100% no-repeat
+              local,
+            linear-gradient(
+                to left,
+                light-dark(rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0.5)),
+                rgba(0, 0, 0, 0)
+              )
+              right / 28px 100% no-repeat scroll;
+        }
       }
       .cell {
         min-width: 0;
@@ -243,7 +328,9 @@ export class HVDataTable extends LitElement {
   @property({ attribute: false }) items: Item[] = [];
   @property({ attribute: false }) columns: ColumnKey[] = [];
   @property({ attribute: false }) sort!: Sort;
-  @property({ type: Boolean }) selectable = false;
+  /** Reflected: the sticky name column offsets itself past the checkbox track
+   * from CSS, which can only see an attribute. */
+  @property({ type: Boolean, reflect: true }) selectable = false;
   /** HA areas, to name the one each item's location resolves to. */
   @property({ attribute: false }) areas: AreaRef[] = [];
   @property({ attribute: false }) selection: Set<string> = new Set();
@@ -261,7 +348,24 @@ export class HVDataTable extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     if (!this.hasAttribute('role')) this.setAttribute('role', 'table');
+    this.addEventListener('scroll', this._onScroll);
   }
+
+  disconnectedCallback(): void {
+    this.removeEventListener('scroll', this._onScroll);
+    super.disconnectedCallback();
+  }
+
+  /**
+   * Paging: the host is the scrolled box, so the host is where the position can
+   * be read. A scroll event fires on the box that scrolled and does not bubble,
+   * which is why this is bound on the element rather than in the template.
+   */
+  private _onScroll = () => {
+    this._emit('near-end', {
+      ratio: (this.scrollTop + this.clientHeight) / Math.max(1, this.scrollHeight),
+    });
+  };
 
   private get _columns(): ColumnKey[] {
     return normalizeColumns(this.columns);
@@ -408,18 +512,20 @@ export class HVDataTable extends LitElement {
     return html`
       <div class="head" role="row" style="grid-template-columns: ${template}">
         ${this.selectable
-          ? html`<button
-              class="box ${allSelected ? 'on' : someSelected ? 'mixed' : ''}"
-              role="checkbox"
-              aria-checked=${allSelected ? 'true' : someSelected ? 'mixed' : 'false'}
-              aria-label="Select all loaded rows"
-              data-testid="table-select-all"
-              @click=${() => this._emit(allSelected ? 'clear-selection' : 'select-all-loaded')}
-            >
-              ${allSelected ? icon('check', 13) : someSelected ? icon('minus', 13) : null}
-            </button>`
+          ? html`<span class="select-cell"
+              ><button
+                class="box ${allSelected ? 'on' : someSelected ? 'mixed' : ''}"
+                role="checkbox"
+                aria-checked=${allSelected ? 'true' : someSelected ? 'mixed' : 'false'}
+                aria-label="Select all loaded rows"
+                data-testid="table-select-all"
+                @click=${() => this._emit(allSelected ? 'clear-selection' : 'select-all-loaded')}
+              >
+                ${allSelected ? icon('check', 13) : someSelected ? icon('minus', 13) : null}
+              </button></span
+            >`
           : null}
-        <span role="columnheader">${this._sortHeader('name', 'Name')}</span>
+        <span class="name-head" role="columnheader">${this._sortHeader('name', 'Name')}</span>
         ${columns.map((key) => {
           const def = COLUMN_DEFS.find((d) => d.key === key)!;
           return html`<span role="columnheader"
@@ -429,17 +535,7 @@ export class HVDataTable extends LitElement {
         <span role="columnheader"></span>
       </div>
 
-      <div
-        class="body"
-        role="rowgroup"
-        data-testid="table-body"
-        @scroll=${(e: Event) => {
-          const el = e.currentTarget as HTMLElement;
-          this._emit('near-end', {
-            ratio: (el.scrollTop + el.clientHeight) / Math.max(1, el.scrollHeight),
-          });
-        }}
-      >
+      <div class="body" role="rowgroup" data-testid="table-body">
         ${this.items.length
           ? repeat(
               this.items,
@@ -457,19 +553,21 @@ export class HVDataTable extends LitElement {
                     this._emit(this.selectable ? 'toggle-select' : 'open-item', { itemId: item.id })}
                 >
                   ${this.selectable
-                    ? html`<button
-                        class="box ${this.selection.has(item.id) ? 'on' : ''}"
-                        role="checkbox"
-                        aria-checked=${String(this.selection.has(item.id))}
-                        aria-label=${`Select ${item.name}`}
-                        data-testid="table-row-select"
-                        @click=${(e: Event) => {
-                          e.stopPropagation();
-                          this._emit('toggle-select', { itemId: item.id });
-                        }}
-                      >
-                        ${this.selection.has(item.id) ? icon('check', 13) : null}
-                      </button>`
+                    ? html`<span class="select-cell"
+                        ><button
+                          class="box ${this.selection.has(item.id) ? 'on' : ''}"
+                          role="checkbox"
+                          aria-checked=${String(this.selection.has(item.id))}
+                          aria-label=${`Select ${item.name}`}
+                          data-testid="table-row-select"
+                          @click=${(e: Event) => {
+                            e.stopPropagation();
+                            this._emit('toggle-select', { itemId: item.id });
+                          }}
+                        >
+                          ${this.selection.has(item.id) ? icon('check', 13) : null}
+                        </button></span
+                      >`
                     : null}
                   <span class="name-cell" role="cell">
                     <span class="name" data-testid="table-name" title=${item.name}>${item.name}</span>

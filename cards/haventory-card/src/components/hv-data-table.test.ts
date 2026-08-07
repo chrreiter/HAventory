@@ -65,20 +65,17 @@ describe('hv-data-table: narrow screens', () => {
     expect(css).toMatch(/:host \{[^}]*min-width: 0/);
   });
 
-  // Making the host the sideways scroller was not enough on its own: the rows
-  // live in a vertical scroll box inside it, declaring overflow on one axis
-  // makes the other compute to auto, and that box is exactly as wide as its own
-  // content. So a horizontal swipe starting over a row landed on a scroll
-  // container with nothing to scroll, and `overscroll-behavior: contain` on
-  // both axes meant it was not handed on either. The host measured scrollWidth
-  // 874 against clientWidth 390 and never moved off scrollLeft 0.
-  it('contains the vertical overscroll only, so a sideways swipe reaches the host', () => {
+  // A swipe that runs out of table must not scroll the dashboard behind this
+  // surface, on either axis — and with one scroll container there is one place
+  // to say so. Split across two boxes it was the row group that swallowed the
+  // sideways gesture: it is exactly as wide as its own content, so it had
+  // nothing to scroll and contained the overscroll rather than handing it on.
+  // The host measured scrollWidth 874 against clientWidth 390 and never moved
+  // off scrollLeft 0.
+  it('contains the overscroll on the box that owns both axes', () => {
     const css = tableCss();
-    expect(css).toMatch(/\.body \{[^}]*overscroll-behavior-y: contain/);
-    expect(css).not.toMatch(/\.body \{[^}]*overscroll-behavior: contain/);
-    // The host still contains its own, which is what keeps a flick that runs
-    // out of table off the dashboard behind it.
-    expect(css).toMatch(/:host \{[^}]*overscroll-behavior-x: contain/);
+    expect(css).toMatch(/:host \{[^}]*overscroll-behavior: contain/);
+    expect(css).not.toMatch(/\.body \{[^}]*overscroll-behavior/);
   });
 
   it('sizes the header and body to the grid minimum so they scroll together', () => {
@@ -98,10 +95,82 @@ describe('hv-data-table: narrow screens', () => {
     expect(tableCss()).toMatch(/\.head button\.sort \{[^}]*min-height: var\(--hv-tap-min, auto\)/);
   });
 
-  it('keeps rows scrolling vertically inside the body', () => {
-    // The horizontal scroller is the host; the body stays the vertical one, so
-    // the header does not scroll away with the rows.
-    expect(tableCss()).toMatch(/\.body \{[^}]*overflow-y: auto/);
+  // jsdom computes no layout, so nothing here can watch a cell hold its place;
+  // what is assertable is that the rules resolve against the box that scrolls.
+  // A sticky cell resolves its offsets against the nearest scroll container, so
+  // rows in a vertical scroll box of their own would pin `left` to a box that
+  // never moves sideways — passing every offline check while doing nothing.
+  it('scrolls both axes on one box, so a pinned cell has something to pin to', () => {
+    const css = tableCss();
+    expect(css).toMatch(/:host \{[^}]*overflow-y: auto/);
+    expect(css).not.toMatch(/\.body \{[^}]*overflow/);
+    // Its own height rather than the leftover space, or it would stretch to the
+    // visible height and leave the scroll nothing to move.
+    expect(css).toMatch(/\.body \{ flex: none; \}/);
+  });
+
+  it('holds the header against the top of that same box', () => {
+    const css = tableCss();
+    expect(css).toMatch(/\.head \{[^}]*position: sticky/);
+    expect(css).toMatch(/\.head \{[^}]*top: 0/);
+    // Opaque, or the rows read through it as they pass underneath.
+    expect(css).toMatch(/\.head \{[^}]*background: var\(--hv-surface\)/);
+  });
+
+  it('pins the name column and its header at the phone breakpoint', () => {
+    const css = tableCss();
+    // The same width the full view drops its sidebar at.
+    expect(css).toMatch(/@media \(max-width: 700px\) \{ \.name-head, \.name-cell, \.select-cell \{/);
+    expect(css).toMatch(
+      /\.name-head, \.name-cell, \.select-cell \{[^}]*position: sticky[^}]*left: 0/,
+    );
+    // Opaque and full height, or the columns passing underneath show through.
+    expect(css).toMatch(
+      /\.name-head, \.name-cell, \.select-cell \{[^}]*align-self: stretch[^}]*background: var\(--hv-surface\)/,
+    );
+    // The row's own left padding travels with the pinned cell.
+    expect(css).toMatch(
+      /\.name-head, \.name-cell, \.select-cell \{[^}]*margin-left: calc\(-1 \* var\(--hv-table-pad-x\)\)[^}]*padding-left: var\(--hv-table-pad-x\)/,
+    );
+  });
+
+  it('offsets the pinned name past the checkbox track while selecting', () => {
+    // Built from the template's own track width, so the two cannot disagree —
+    // an offset short of the track would leave the name over the checkboxes.
+    // The gap between the two pinned cells travels with the name, or the
+    // columns underneath show through it.
+    expect(tableCss()).toMatch(
+      /:host\(\[selectable\]\) \.name-head, :host\(\[selectable\]\) \.name-cell \{ left: calc\(var\(--hv-table-pad-x\) \+ 40px\); margin-left: calc\(-1 \* var\(--hv-table-gap\)\); padding-left: var\(--hv-table-gap\)/,
+    );
+  });
+
+  // The wash is painted on the row, which the pinned cells cover; a colour
+  // would not do, because the dark half of the wash is translucent.
+  it('repaints the row wash on the pinned cells', () => {
+    expect(tableCss()).toMatch(
+      /\.row:hover \.name-cell,[^{]*\.row\.selected \.select-cell \{ background-image: linear-gradient\(var\(--hv-row-hover\), var\(--hv-row-hover\)\)/,
+    );
+  });
+
+  // Nothing said the table scrolled but a chip clipped at the right edge. The
+  // cover rides with the content and the shade with the box, so the shade shows
+  // exactly while there is something further right.
+  it('fades the edge it can still be scrolled towards', () => {
+    const css = tableCss();
+    expect(css).toMatch(
+      /:host \{ background: linear-gradient\(var\(--hv-surface\), var\(--hv-surface\)\) right \/ 28px 100% no-repeat local/,
+    );
+    // The shade underneath it, and a dark theme reads a black wash as nothing.
+    expect(css).toMatch(/light-dark\(rgba\(0, 0, 0, 0\.16\), rgba\(0, 0, 0, 0\.5\)\)/);
+    expect(css).toMatch(/no-repeat scroll; \}/);
+  });
+
+  it('reflects the selecting flag, which is all the pinning rules can read', async () => {
+    const el = await mount([{ id: '1' }], { selectable: true });
+    expect(el.hasAttribute('selectable')).toBe(true);
+    el.selectable = false;
+    await el.updateComplete;
+    expect(el.hasAttribute('selectable')).toBe(false);
   });
 });
 
@@ -255,14 +324,25 @@ describe('hv-data-table: rows', () => {
     ).toBe(true);
   });
 
+  // The host is the box that scrolls, so the host is where the position can be
+  // read — and a scroll event fires on that box and does not bubble.
   it('reports scroll position so the host can page in more', async () => {
     const el = await mount([{ id: '1' }]);
     let ratio: number | null = null;
     el.addEventListener('near-end', (e) => {
       ratio = (e as CustomEvent).detail.ratio;
     });
-    (q(el, '[data-testid="table-body"]') as HTMLElement).dispatchEvent(new Event('scroll'));
+    el.dispatchEvent(new Event('scroll'));
     expect(typeof ratio).toBe('number');
+  });
+
+  it('stops reporting once it is off the page', async () => {
+    const el = await mount([{ id: '1' }]);
+    let seen = 0;
+    el.addEventListener('near-end', () => (seen += 1));
+    el.remove();
+    el.dispatchEvent(new Event('scroll'));
+    expect(seen).toBe(0);
   });
 
   it('shows the host-supplied empty message', async () => {

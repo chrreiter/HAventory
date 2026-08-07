@@ -524,4 +524,31 @@ describe('hv-list-row: document marker', () => {
 
     expect(q(el, '[data-testid="row-has-document"]')).toBeTruthy();
   });
+
+  // Left on the row it was anchored to the free space: against the name on a
+  // row with a thumbnail, and out at the quantity stepper on one without.
+  it('sits on the line the name owns, whatever else the row carries', async () => {
+    const el = await mount({ attachments: [makeManual({ id: 'm-1' })] });
+    await el.updateComplete;
+
+    const mark = q(el, '[data-testid="row-has-document"]');
+    const line = mark?.parentElement;
+    expect(line?.classList.contains('name-line')).toBe(true);
+    expect(line?.querySelector('[data-testid="row-name"]')).toBeTruthy();
+    // Immediately after the name, so it reads as belonging to it.
+    expect(mark?.previousElementSibling?.getAttribute('data-testid')).toBe('row-name');
+  });
+
+  // A flex item takes an automatic minimum width from its content, so the name
+  // stops eliding the moment it shares a line with the mark unless it gives
+  // that minimum up.
+  it('leaves the name able to shrink on that line', () => {
+    const styles = (customElements.get('hv-list-row') as typeof HVListRow).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+    expect(css).toMatch(/\.name-line \{[^}]*display: flex/);
+    expect(css).toMatch(/\.name \{[^}]*min-width: 0[^}]*text-overflow: ellipsis/);
+  });
 });

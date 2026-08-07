@@ -152,6 +152,21 @@ describe('ui/chip: the shared fragment', () => {
     }
   });
 
+  // A household names its own statuses, so a label can outrun the column it
+  // sits in — the table's 112px status column hard-cut "Lent out to the ne".
+  // A cell's own text-overflow cannot reach into an inline-flex chip, so the
+  // elision has to be on the label, and the chip has to be allowed to shrink
+  // for it to have anywhere to elide to.
+  it('elides a status label rather than cutting it mid-word', () => {
+    const css = String(chip.cssText).replace(/\s+/g, ' ');
+    expect(css).toMatch(/\.hv-status-chip \{[^}]*max-width: 100%/);
+    expect(css).toMatch(
+      /\.hv-status-chip > \.hv-chip-text \{[^}]*min-width: 0[^}]*overflow: hidden[^}]*text-overflow: ellipsis/,
+    );
+    // Once, in the fragment — not restated by the surfaces that chip a status.
+    for (const tag of CHIPPED) expect(ownCss(tag), tag).not.toMatch(/\.hv-chip-text\b/);
+  });
+
   // A strong fill is one hue in both themes, so the ink that reads on it is
   // fixed too. A light-dark() pair there flips the ink while the fill stays put
   // — which is how white ends up on amber at 1.9:1.

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { render } from 'lit';
 import type { StatsCounts, StatusDefinition } from '../store/types';
 import {
   BUILT_IN_STATUSES,
   DEFAULT_STATUS,
   itemStatus,
+  renderStatusChip,
   statusCount,
   statusIconName,
   statusLabel,
@@ -116,5 +118,37 @@ describe('ui/status: pricing a slug', () => {
   it('prices nothing before any counts have arrived', () => {
     expect(statusCount(null, 'ok')).toBeNull();
     expect(statusCount(undefined, 'missing')).toBeNull();
+  });
+});
+
+describe('renderStatusChip', () => {
+  function chipOf(slug: string, defs: StatusDefinition[] | null = CUSTOM) {
+    const host = document.createElement('div');
+    render(renderStatusChip(slug, defs), host);
+    return host.querySelector('.hv-status-chip');
+  }
+
+  it('paints the tone from the definition and names the status', () => {
+    const chip = chipOf('lent_out');
+    expect(chip?.classList.contains('tone-blue-strong')).toBe(true);
+    expect(chip?.textContent?.trim()).toBe('Lent out');
+    expect(chip?.querySelector('svg')?.getAttribute('data-icon')).toBe('hand');
+  });
+
+  // A cell's own text-overflow cannot reach inside an inline-flex chip, so a
+  // label longer than its column hard-cut mid-word. The wrapper is what the
+  // shared rule in ui/chip.ts elides — and every surface that chips a status
+  // gets it from here rather than restating it.
+  it('wraps the label so it can elide inside a narrow cell', () => {
+    const label = chipOf('lent_out')?.querySelector('.hv-chip-text');
+    expect(label?.textContent).toBe('Lent out');
+    // The glyph stays outside it: a chip that elided its own mark would be
+    // eliding the half that costs nothing to keep.
+    expect(label?.querySelector('svg')).toBe(null);
+  });
+
+  it('wraps a label it has no definition for just the same', () => {
+    // An import can define a status this card has not been told about yet.
+    expect(chipOf('mystery')?.querySelector('.hv-chip-text')?.textContent).toBe('mystery');
   });
 });
