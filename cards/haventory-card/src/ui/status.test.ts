@@ -5,7 +5,9 @@ import {
   BUILT_IN_STATUSES,
   DEFAULT_STATUS,
   itemStatus,
+  knownIcon,
   renderStatusChip,
+  slugFromLabel,
   statusCount,
   statusIconName,
   statusLabel,
@@ -68,6 +70,48 @@ describe('ui/status: rendering a slug', () => {
     ];
     expect(statusIconName('x', exotic)).toBeNull();
     expect(statusIconName('mystery', CUSTOM)).toBeNull();
+  });
+
+  // The organize dialog's swatches paint the glyph being chosen, so they narrow
+  // a stored name the same way a chip does rather than trusting it.
+  it('narrows a bare icon name to one the bundle carries', () => {
+    expect(knownIcon('hand')).toBe('hand');
+    expect(knownIcon('not-a-glyph')).toBeNull();
+    expect(knownIcon(undefined)).toBeNull();
+    expect(knownIcon(null)).toBeNull();
+  });
+});
+
+describe('ui/status: deriving a slug from a label', () => {
+  it('strips accents rather than turning them into separators', () => {
+    // NFKD splits the mark off the letter; without the strip the label would
+    // slug to "caf_" and a household writing an automation would never guess it.
+    expect(slugFromLabel('Café', CUSTOM)).toBe('cafe');
+    expect(slugFromLabel('Zu verschenken', CUSTOM)).toBe('zu_verschenken');
+    expect(slugFromLabel('Ausgeliehen — Nachbarn', CUSTOM)).toBe('ausgeliehen_nachbarn');
+  });
+
+  it('never mints an empty identifier', () => {
+    expect(slugFromLabel('', CUSTOM)).toBe('status');
+    expect(slugFromLabel('   ', CUSTOM)).toBe('status');
+    expect(slugFromLabel('!!!', CUSTOM)).toBe('status');
+  });
+
+  it('caps the identifier at 64 characters', () => {
+    expect(slugFromLabel('a'.repeat(80), CUSTOM)).toBe('a'.repeat(64));
+  });
+
+  it('walks the suffix past every slug already taken', () => {
+    const taken: StatusDefinition[] = [
+      ...CUSTOM,
+      { slug: 'lent_out_2', label: 'Lent out (again)', order: 2, color: 'blue', icon: 'hand' },
+    ];
+    expect(slugFromLabel('Lent out', taken)).toBe('lent_out_3');
+  });
+
+  it('derives against the built-ins until the backend has answered', () => {
+    expect(slugFromLabel('OK', null)).toBe('ok_2');
+    expect(slugFromLabel('Lent out', null)).toBe('lent_out');
   });
 });
 
