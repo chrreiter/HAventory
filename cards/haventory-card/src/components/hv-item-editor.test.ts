@@ -1181,6 +1181,54 @@ describe('hv-item-editor: creating the first location from the picker', () => {
     expect(saves[0].create?.location_id).toBe('loc-new');
   });
 
+  /** Type a name into the empty picker's create row and submit it. */
+  async function submitCreate(el: HVItemEditor, tree: HTMLElement, name: string) {
+    (tree.shadowRoot?.querySelector('[data-testid="tree-create"]') as HTMLButtonElement).click();
+    await (tree as HTMLElement & { updateComplete: Promise<unknown> }).updateComplete;
+    const input = tree.shadowRoot?.querySelector('[data-testid="tree-create-name"]') as HTMLInputElement;
+    input.value = name;
+    input.dispatchEvent(new Event('input'));
+    await (tree as HTMLElement & { updateComplete: Promise<unknown> }).updateComplete;
+    (tree.shadowRoot?.querySelector('[data-testid="tree-create-submit"]') as HTMLButtonElement).click();
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+  }
+
+  // The inline expander reaches this form through a template callback `hv-list`
+  // re-invokes only when one of its own properties changes. A location create
+  // changes none of them, so `locations` can stay empty for as long as the form
+  // is open — and the field would name nothing it had just filled.
+  it('names the location it created even when the host list never catches up', async () => {
+    const el = await mount(null, { ...empty, createLocation: async () => created });
+    const tree = await openTree(el);
+    await submitCreate(el, tree, 'Shed');
+
+    expect(el.locations).toEqual([]);
+    expect(q(el, '[data-testid="editor-location"]')?.textContent).toContain('Shed');
+  });
+
+  it('lists what it created when the picker is reopened', async () => {
+    const el = await mount(null, { ...empty, createLocation: async () => created });
+    await submitCreate(el, await openTree(el), 'Shed');
+    const reopened = await openTree(el);
+
+    // Still the empty state would offer to create the same name a second time.
+    expect(reopened.shadowRoot?.querySelector('[data-testid="tree-empty"]')).toBe(null);
+    expect(reopened.shadowRoot?.textContent).toContain('Shed');
+  });
+
+  it('does not double the row once the host list carries it too', async () => {
+    const el = await mount(null, { ...empty, createLocation: async () => created });
+    await submitCreate(el, await openTree(el), 'Shed');
+
+    el.locations = [created];
+    el.locationTree = [{ ...created, direct_item_count: 0, subtree_item_count: 0, children: [] }];
+    await el.updateComplete;
+    const reopened = await openTree(el);
+
+    const rows = [...(reopened.shadowRoot?.querySelectorAll('[data-testid="tree-row"]') ?? [])];
+    expect(rows.filter((r) => r.textContent?.includes('Shed'))).toHaveLength(1);
+  });
+
   it('reports a refused name against the field instead of swallowing it', async () => {
     const el = await mount(null, {
       ...empty,

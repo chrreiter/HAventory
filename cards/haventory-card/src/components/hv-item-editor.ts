@@ -1028,6 +1028,18 @@ export class HVItemEditor extends LitElement {
   @state() private _confirmDiscard = false;
   /** Why creating a first location from the picker failed. */
   @state() private _locationError: string | null = null;
+  /**
+   * Locations this form created, until the `locations` prop carries them.
+   *
+   * The inline expander is handed to `hv-list` as a template callback, which it
+   * re-invokes only when one of its *own* properties changes. A location create
+   * changes neither the item list nor anything else that component binds, so
+   * the refreshed store state can reach the host without ever reaching this
+   * form — leaving the field it just filled reading "No location". The created
+   * `Location` is in hand regardless, so holding it is what makes the picker
+   * name what it created on every host.
+   */
+  @state() private _createdLocations: Location[] = [];
 
   private readonly _urls = new MediaUrls(this);
   private _uploadSeq = 0;
@@ -1080,6 +1092,7 @@ export class HVItemEditor extends LitElement {
       this._confirmRemove = null;
       this._confirmDiscard = false;
       this._locationError = null;
+      this._createdLocations = [];
       this._closeCategory();
       return;
     }
@@ -1199,8 +1212,48 @@ export class HVItemEditor extends LitElement {
     </div>`;
   }
 
+  /** The host's flat list, plus anything this form created that it still lacks. */
+  private get _knownLocations(): Location[] {
+    const known = this.locations ?? [];
+    if (!this._createdLocations.length) return known;
+    const extra = this._createdLocations.filter((c) => !known.some((l) => l.id === c.id));
+    return extra.length ? [...known, ...extra] : known;
+  }
+
+  /**
+   * The host's tree, plus the same additions as roots.
+   *
+   * The picker only ever creates a root with no area, so a created location
+   * needs no placement inside the existing nodes and carries no children.
+   */
+  private get _knownLocationTree(): LocationTreeNode[] {
+    const known = this.locationTree ?? [];
+    if (!this._createdLocations.length) return known;
+    const seen = new Set<string>();
+    const mark = (nodes: LocationTreeNode[]) => {
+      for (const n of nodes) {
+        seen.add(n.id);
+        mark(n.children ?? []);
+      }
+    };
+    mark(known);
+    const extra = this._createdLocations
+      .filter((c) => !seen.has(c.id))
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        parent_id: c.parent_id,
+        area_id: c.area_id,
+        path: c.path,
+        direct_item_count: 0,
+        subtree_item_count: 0,
+        children: [],
+      }));
+    return extra.length ? [...known, ...extra] : known;
+  }
+
   private _renderLocationField() {
-    const locations = this.locations ?? [];
+    const locations = this._knownLocations;
     const loc = locations.find((l) => l.id === this._model.locationId);
     const parts = locationPathParts(loc, locations, this.areas, 'No location');
     return html`<div class="cell span2">
@@ -1221,7 +1274,7 @@ export class HVItemEditor extends LitElement {
         ${this._locationOpen
           ? html`<hv-location-tree
               data-testid="editor-location-tree"
-              .nodes=${this.locationTree}
+              .nodes=${this._knownLocationTree}
               .areas=${this.areas}
               .selectedId=${this._model.locationId}
               showAll
@@ -1259,6 +1312,7 @@ export class HVItemEditor extends LitElement {
     this._locationError = null;
     try {
       const created = await create(name);
+      this._createdLocations = [...this._createdLocations, created];
       this._patch({ locationId: created.id });
       this._locationOpen = false;
     } catch (err) {
