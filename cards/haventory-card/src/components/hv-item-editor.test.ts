@@ -1619,3 +1619,178 @@ describe('hv-item-editor: shrinking a photo before it is sent', () => {
     expect(media.uploads[0].file).toBe(pdf);
   });
 });
+
+// Every host re-binds `.item` from a fresh lookup on each store broadcast, so
+// an upload landing — or anyone else editing the same row — hands the open form
+// a new object for the item it is already on.
+describe('hv-item-editor: same-item refreshes', () => {
+  /** The broadcast arriving: same id, new object, version moved on. */
+  const refreshed = (el: HVItemEditor, partial: Partial<Item>) => {
+    el.item = makeItem({ id: 'i-1', name: 'Drill', ...partial });
+    return el.updateComplete;
+  };
+
+  it('keeps unsaved typing when the same item comes back with a new version', async () => {
+    const el = await mount(makeItem({ id: 'i-1', name: 'Drill', version: 3 }));
+    await type(el, 'editor-description', 'IMPORTANT NOTE typed but not yet saved');
+    expect(el.dirty).toBe(true);
+
+    await refreshed(el, { version: 4 });
+
+    const description = q(el, '[data-testid="editor-description"]') as HTMLInputElement;
+    expect(description.value).toBe('IMPORTANT NOTE typed but not yet saved');
+    expect(el.dirty).toBe(true);
+  });
+
+  // On a phone the description lives behind the More fields disclosure, so the
+  // refresh has to leave that open too or the typing survives out of sight.
+  it('leaves the mobile disclosure open around the text it holds', async () => {
+    const el = await mount(makeItem({ id: 'i-1', name: 'Drill', version: 3 }), { mobile: true });
+    (q(el, '[data-testid="editor-more-toggle"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    await type(el, 'editor-description', 'typed on a phone');
+
+    await refreshed(el, { version: 4 });
+
+    expect((q(el, '[data-testid="editor-description"]') as HTMLInputElement)?.value).toBe(
+      'typed on a phone',
+    );
+    expect(q(el, '[data-testid="editor-more-toggle"]')?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('adopts the attachments the refreshed item carries', async () => {
+    const el = await mount(
+      makeItem({ id: 'i-1', name: 'Drill', version: 3, attachments: [makeAttachment({ id: 'att-1' })] }),
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    expect(all(el, '[data-testid="editor-photo"]')).toHaveLength(1);
+
+    await refreshed(el, {
+      version: 4,
+      attachments: [makeAttachment({ id: 'att-1' }), makeAttachment({ id: 'att-2' })],
+    });
+    await el.updateComplete;
+
+    expect(all(el, '[data-testid="editor-photo"]')).toHaveLength(2);
+  });
+
+  // The prop is the fresher copy the moment it reaches the version an upload
+  // returned; saving against the older one would come back `conflict`.
+  it('saves against the refreshed item once it has caught up with an upload', async () => {
+    const media = makeMediaBindings({
+      upload: async (itemId) => makeItem({ id: itemId, version: 7 }),
+    });
+    const el = await mount(makeItem({ id: 'i-1', name: 'Drill', version: 3 }), { media });
+
+    const input = q(el, '[data-testid="editor-photo-input"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', {
+      value: [new File(['x'], 'photo.png', { type: 'image/png' })],
+      configurable: true,
+    });
+    input.dispatchEvent(new Event('change'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    const saves = onSave(el);
+    q(el, '[data-testid="editor-save"]')?.click();
+    expect(saves[0].expectedVersion).toBe(7);
+
+    await refreshed(el, { version: 9 });
+    q(el, '[data-testid="editor-save"]')?.click();
+    expect(saves[1].expectedVersion).toBe(9);
+  });
+
+  it('rebuilds the form when the create form saves into a real item', async () => {
+    const el = await mount(null);
+    await type(el, 'editor-name', 'Drill');
+    expect(el.dirty).toBe(true);
+
+    await refreshed(el, { version: 1 });
+
+    expect(el.dirty).toBe(false);
+    expect((q(el, '[data-testid="editor-name"]') as HTMLInputElement).value).toBe('Drill');
+  });
+});
+
+describe('hv-item-editor: upload errors outlive their siblings', () => {
+  function pick(el: HVItemEditor, files: File[]) {
+    const input = q(el, '[data-testid="editor-photo-input"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    input.dispatchEvent(new Event('change'));
+  }
+
+  const png = (name: string) => new File(['x'], name, { type: 'image/png' });
+
+  /** Refuses anything named "broken", takes everything else. */
+  async function mountWithOneRefusal() {
+    const media = makeMediaBindings({
+      upload: async (itemId, file) => {
+        if (file.name.includes('broken')) {
+          throw new Error('file content is not one of the accepted types');
+        }
+        return makeItem({ id: itemId, version: 5 });
+      },
+    });
+    const el = await mount(makeItem({ id: 'i-1', version: 1 }), { media });
+
+    pick(el, [png('broken.jpg'), png('photo-3-landscape.jpg')]);
+    // A macrotask, so the whole sequential queue drains before the assertion.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The sibling's success reaches the card as a broadcast, and the host hands
+    // the still-open editor a fresh object for the same item.
+    el.item = makeItem({ id: 'i-1', version: 5 });
+    await el.updateComplete;
+    return el;
+  }
+
+  it('keeps the refused file reported after the item refreshes', async () => {
+    const el = await mountWithOneRefusal();
+
+    const entries = all(el, '[data-testid="editor-upload"]');
+    expect(entries).toHaveLength(1);
+    expect(entries[0].dataset.state).toBe('error');
+    expect(entries[0].textContent).toContain('broken.jpg');
+    expect(entries[0].textContent).toContain('not one of the accepted types');
+    expect(q(el, '[data-testid="editor-upload-retry"]')).toBeTruthy();
+  });
+
+  it('clears exactly the row whose dismiss was pressed', async () => {
+    const el = await mountWithOneRefusal();
+    pick(el, [png('also-broken.jpg')]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+    expect(all(el, '[data-testid="editor-upload"]')).toHaveLength(2);
+
+    (all(el, '[data-testid="editor-upload-dismiss"]')[0] as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    const left = all(el, '[data-testid="editor-upload"]');
+    expect(left).toHaveLength(1);
+    expect(left[0].textContent).toContain('also-broken.jpg');
+  });
+
+  // Nothing else clears the queue any more, so a row with no Retry — a failed
+  // reorder or removal — would otherwise stay for the life of the form.
+  it('offers a dismiss on an error row that carries no file to retry', async () => {
+    const media = makeMediaBindings({
+      remove: async () => {
+        throw new Error('gone already');
+      },
+    });
+    const el = await mount(
+      makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'att-1' })] }),
+      { media },
+    );
+    await el.updateComplete;
+
+    q(el, '[data-testid="editor-photo-remove"]')?.click();
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+    expect(q(el, '[data-testid="editor-upload-retry"]')).toBeNull();
+
+    (q(el, '[data-testid="editor-upload-dismiss"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="editor-upload"]')).toBeNull();
+  });
+});

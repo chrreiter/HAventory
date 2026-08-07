@@ -406,11 +406,26 @@ export class HVDetailSheet extends LitElement {
   private readonly _urls = new MediaUrls(this);
   /** Returns focus to the thumbnail the lightbox was opened from. */
   private readonly _lightboxFocus = new DialogFocus();
+  /**
+   * The item id the sheet is showing. `undefined` until the first update, so
+   * that pass settles the view the same way a move to another item does.
+   */
+  private _shownItemId: string | null | undefined;
 
+  /**
+   * Another item, or a re-open, always lands on the read view.
+   *
+   * Keyed on the item *id*, not on the `item` object: the host re-binds it from
+   * a fresh lookup on every store broadcast, so each attachment mutation hands
+   * the sheet a new object for the item it is already showing. Resetting on
+   * that would close the edit form — and the lightbox — under the user mid-tap.
+   */
   protected willUpdate(changed: Map<string, unknown>) {
     this._urls.configure(this.media?.sign ?? null);
-    // A fresh item, or a re-open, always lands on the read view.
-    if (changed.has('item') || (changed.has('open') && this.open)) {
+    const id = this.item?.id ?? null;
+    const moved = id !== this._shownItemId;
+    this._shownItemId = id;
+    if (moved || (changed.has('open') && this.open)) {
       this._mode = 'read';
       this._checkoutOpen = false;
       this._lightbox = null;

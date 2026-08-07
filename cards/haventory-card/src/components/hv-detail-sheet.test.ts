@@ -321,6 +321,33 @@ describe('hv-detail-sheet: edit view', () => {
     await el.updateComplete;
     expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
   });
+
+  // On a phone every attachment mutation broadcasts, and the host re-binds
+  // `.item` from the fresh copy — closing the form the user is standing in.
+  it('stays in the edit form when the same item comes back with a new version', async () => {
+    const el = await mount({ id: '1', name: 'A', version: 3 });
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    el.item = makeItem({ id: '1', name: 'A', version: 4 });
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
+    expect(q(el, '[data-testid="sheet-qty"]')).toBeNull();
+  });
+
+  it('returns to the read view when the sheet is re-opened on the same item', async () => {
+    const el = await mount({ id: '1', name: 'A' });
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    el.open = false;
+    await el.updateComplete;
+    el.open = true;
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
+  });
 });
 
 describe('hv-detail-sheet: pictures', () => {
@@ -443,6 +470,26 @@ describe('hv-detail-sheet: pictures', () => {
     await el.updateComplete;
 
     expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
+  });
+
+  // Setting a cover or removing another photo re-broadcasts the same item; the
+  // photo on screen has no reason to go with it.
+  it('keeps the lightbox open when the same item comes back with a new version', async () => {
+    const el = await mount(
+      { id: 'i-1', name: 'Drill', version: 3, attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    all(el, '[data-testid="sheet-photo-open"]')[1].click();
+    await el.updateComplete;
+
+    el.item = makeItem({ id: 'i-1', name: 'Drill', version: 4, attachments: shots() });
+    await el.updateComplete;
+    await el.updateComplete;
+
+    const lightbox = q(el, '[data-testid="sheet-lightbox"]');
+    expect(lightbox).toBeTruthy();
+    expect(lightbox?.getAttribute('aria-label')).toBe('Drill — photo 2 of 2');
   });
 });
 
