@@ -845,13 +845,22 @@ export class HVItemEditor extends LitElement {
       .upload-list li.failed .state {
         color: var(--hv-error);
       }
-      .upload-list li .retry {
+      .upload-list li .retry,
+      .upload-list li .dismiss {
         margin-left: auto;
         border: none;
         background: none;
         padding: 0 4px;
         color: var(--hv-primary-dark);
         font: 500 11.5px var(--hv-font);
+        cursor: pointer;
+      }
+      .upload-list li .dismiss {
+        color: var(--hv-text-secondary);
+      }
+      /* Retry already claimed the free space; the dismiss follows it. */
+      .upload-list li .retry ~ .dismiss {
+        margin-left: 0;
       }
     `,
   ];
@@ -904,7 +913,11 @@ export class HVItemEditor extends LitElement {
   /** The inspection field's "+X days" row is showing, and owns the date. */
   @state() private _inspectionCustomOpen = false;
   @state() private _inspectionCustomDays = DEFAULT_CUSTOM_DAYS;
-  /** Files the picker is working through; a finished one leaves the list. */
+  /**
+   * Files the picker is working through. A finished one leaves the list; a
+   * failed one stays until it is retried or dismissed, so a sibling's success
+   * cannot carry away the only report the user gets of a refused file.
+   */
   @state() private _uploads: UploadEntry[] = [];
   /**
    * The item as the backend now holds it, once an upload has moved past the
@@ -915,6 +928,12 @@ export class HVItemEditor extends LitElement {
 
   private readonly _urls = new MediaUrls(this);
   private _uploadSeq = 0;
+  /**
+   * The item id `_model` was built from. `undefined` until the first update,
+   * which is what makes that first pass build the form; `null` is the create
+   * form, a real id every other case.
+   */
+  private _formItemId: string | null | undefined;
 
   /** The item to save against: whatever the last upload returned, else the input. */
   private get _current(): Item | null {
@@ -931,9 +950,22 @@ export class HVItemEditor extends LitElement {
     this.renderRoot.querySelector<HTMLInputElement>('[data-testid="editor-name"]')?.focus();
   }
 
-  protected willUpdate(changed: Map<string, unknown>) {
+  /**
+   * The form belongs to an item *id*, not to one `item` object.
+   *
+   * Every host re-binds `.item` from a fresh lookup on each store broadcast, so
+   * an upload finishing — or anyone editing the same row elsewhere — hands this
+   * component a new object for the item the user is still typing into.
+   * Rebuilding on that would throw away everything typed since the last save,
+   * so the reset is keyed on the id: a different one (including the null→id hop
+   * a create makes the moment it saves) is a different form, and everything
+   * else is a refresh the open form absorbs.
+   */
+  protected willUpdate() {
     this._urls.configure(this.media?.sign ?? null);
-    if (changed.has('item')) {
+    const id = this.item?.id ?? null;
+    if (id !== this._formItemId) {
+      this._formItemId = id;
       this._model = formFromItem(this.item);
       this._errors = [];
       this._showErrors = false;
@@ -943,6 +975,14 @@ export class HVItemEditor extends LitElement {
       this._uploads = [];
       this._uploaded = null;
       this._closeCategory();
+      return;
+    }
+    // `_uploaded` stands in for `item` only while the prop lags an upload's
+    // result. Once the prop is at that version or past it, it is the fresher of
+    // the two — holding the older copy would render stale attachments and send
+    // a superseded `expectedVersion` on the next save.
+    if (this._uploaded && this.item && this.item.version >= this._uploaded.version) {
+      this._uploaded = null;
     }
   }
 
@@ -1667,6 +1707,15 @@ export class HVItemEditor extends LitElement {
   }
 
   /**
+   * Drop one entry from the queue, and only that one. An upload clears its own
+   * row when it succeeds and a different item rebuilds the form; nothing else
+   * touches the queue, so an error row is the user's to dismiss.
+   */
+  private _dismissUpload(id: string) {
+    this._uploads = this._uploads.filter((u) => u.id !== id);
+  }
+
+  /**
    * Move one attachment within its kind, and adopt the item that comes back.
    *
    * `delta` of `-Infinity` is "make this the cover" — the same command, since
@@ -1972,6 +2021,16 @@ export class HVItemEditor extends LitElement {
                   @click=${() => void this._retryUpload(entry.id)}
                 >
                   Retry
+                </button>`
+              : null}
+            ${entry.state === 'error'
+              ? html`<button
+                  class="dismiss"
+                  data-testid="editor-upload-dismiss"
+                  aria-label=${`Dismiss the error for ${entry.name}`}
+                  @click=${() => this._dismissUpload(entry.id)}
+                >
+                  ${icon('close', 13)}
                 </button>`
               : null}
           </li>`,
