@@ -1,5 +1,6 @@
 import './hv-list-row';
 import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
+import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import { elidePath, isLowStock } from './hv-list-row';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVListRow } from './hv-list-row';
@@ -453,7 +454,10 @@ describe('hv-list-row thumbnail', () => {
 
     const img = q(el, '[data-testid="row-thumb"]') as HTMLImageElement | null;
     expect(img).toBeTruthy();
-    expect(img?.getAttribute('src')).toBe('/api/haventory/media/i-thumb/att-1?authSig=test');
+    expect(img?.getAttribute('src')).toBe(
+      `/api/haventory/media/i-thumb/att-1?${MEDIA_NAME_TOKEN_PARAM}=`
+        + `${attachmentNameToken(makeAttachment({ id: 'att-1' }))}&authSig=test`,
+    );
     expect(img?.getAttribute('alt')).toBe('Photo of Cordless drill');
     // Nothing is thumbnailed server-side, so the browser must be told not to
     // fetch and decode every row's full-size photo at once.

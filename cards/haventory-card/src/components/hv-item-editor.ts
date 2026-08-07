@@ -26,7 +26,15 @@ import {
 } from '../ui/item-form';
 import type { CustomFieldRow, CustomFieldType, FieldError, ItemFormModel } from '../ui/item-form';
 import { statusLabel, statusList } from '../ui/status';
-import { MediaUrls, attachmentTitle, formatBytes, manuals, pictureAlt, pictures } from '../ui/media';
+import {
+  MediaUrls,
+  attachmentNameToken,
+  attachmentTitle,
+  formatBytes,
+  manuals,
+  pictureAlt,
+  pictures,
+} from '../ui/media';
 import { prepareForUpload } from '../ui/downscale';
 import type { MediaBindings } from '../ui/media';
 import type {
@@ -1832,7 +1840,7 @@ export class HVItemEditor extends LitElement {
       <span class="hv-label">Photos</span>
       <div class="photos" data-testid="editor-photos">
         ${shots.map((picture, index) => {
-          const src = this._urls.get(item.id, picture.id);
+          const src = this._urls.get(item.id, picture.id, attachmentNameToken(picture));
           return html`<figure data-testid="editor-photo">
             ${src
               ? html`<img
@@ -1938,7 +1946,7 @@ export class HVItemEditor extends LitElement {
       <span class="hv-label">Documents</span>
       <ul class="documents" data-testid="editor-documents">
         ${docs.map((doc) => {
-          const src = this._urls.get(item.id, doc.id);
+          const src = this._urls.get(item.id, doc.id, attachmentNameToken(doc));
           const missing = this._urls.presence(item.id, doc.id) === 'missing';
           return html`<li data-testid="editor-document">
             <span class="doc-icon">${icon('fileDocument', 18)}</span>

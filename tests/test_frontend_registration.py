@@ -31,6 +31,7 @@ from custom_components.haventory.const import (
     CONF_CARD_TITLE,
     CONF_SIDEBAR_PANEL_ENABLED,
     DEFAULT_CARD_TITLE,
+    MEDIA_NAME_TOKEN_PARAM,
     MEDIA_URL_TEMPLATE,
     PANEL_ELEMENT_NAME,
     PANEL_ICON,
@@ -781,6 +782,24 @@ def test_the_card_builds_media_urls_on_the_route_the_backend_serves() -> None:
     assert match is not None, "MEDIA_URL_TEMPLATE is no longer declared in media.ts"
 
     assert match.group(1) == MEDIA_URL_TEMPLATE
+
+
+def test_the_card_versions_media_urls_under_the_parameter_the_backend_reads() -> None:
+    """The name-token parameter is a constant on both sides and checked by neither.
+
+    Drift here fails silently in the direction that matters least at first: the
+    card keeps working, the backend simply stops seeing the token and serves
+    every attachment uncacheable. The visible symptom is a photo grid that
+    refetches on every render, which reads as a performance problem rather than
+    a renamed constant.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "media.ts").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r"^export const MEDIA_NAME_TOKEN_PARAM = '([^']+)';$", source, re.MULTILINE)
+    assert match is not None, "MEDIA_NAME_TOKEN_PARAM is no longer declared in media.ts"
+
+    assert match.group(1) == MEDIA_NAME_TOKEN_PARAM
 
 
 def test_every_status_icon_has_a_glyph_in_the_bundle() -> None:

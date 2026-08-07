@@ -46,6 +46,7 @@ from .const import (
     MAX_ATTACHMENT_BYTES,
     MAX_MANUALS_PER_ITEM,
     MAX_PICTURES_PER_ITEM,
+    MEDIA_NAME_TOKEN_PARAM,
     MEDIA_SUBDIR,
     MEDIA_URL_TEMPLATE,
 )
@@ -335,6 +336,24 @@ def _content_disposition(meta: AttachmentMeta) -> str:
     return f"inline; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}"
 
 
+def _cache_control(request: Any) -> str:
+    """How long a client may hold this response without asking again.
+
+    The bytes an attachment id names never change — a replacement is a new id —
+    but the name they are served under does: a retitle rewrites
+    ``Content-Disposition`` for that same id. Storing the response forever is
+    therefore only safe for a client whose URL changes when the name does, and
+    the card's carries the name token this looks for. Without it the response
+    must not be reused, or a retitle would keep saving the file under its old
+    name for as long as the entry lived — and a signed URL lives half an hour,
+    so that is not a window a user would wait out.
+    """
+
+    if request.query.get(MEDIA_NAME_TOKEN_PARAM):
+        return "private, max-age=31536000, immutable"
+    return "private, no-store"
+
+
 class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
     """Serve one attachment, to an authenticated Home Assistant user.
 
@@ -374,9 +393,7 @@ class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
                 # browser from deciding differently about user-supplied bytes.
                 "Content-Type": meta.mime,
                 "X-Content-Type-Options": "nosniff",
-                # An attachment id addresses one immutable set of bytes: a
-                # replacement is a new id, so this can never go stale.
-                "Cache-Control": "private, max-age=31536000, immutable",
+                "Cache-Control": _cache_control(request),
                 # Without this the browser names a saved file after the last
                 # path segment, which is the attachment id.
                 "Content-Disposition": _content_disposition(meta),

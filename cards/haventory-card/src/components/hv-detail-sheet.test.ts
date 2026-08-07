@@ -1,5 +1,6 @@
 import './hv-detail-sheet';
 import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
+import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import type { HVDetailSheet } from './hv-detail-sheet';
 import type { Item } from '../store/types';
 
@@ -540,7 +541,11 @@ describe('hv-detail-sheet: documents', () => {
     await el.updateComplete;
 
     const open = all(el, '[data-testid="sheet-document-open"]')[0] as HTMLAnchorElement;
-    expect(open.getAttribute('href')).toBe('/api/haventory/media/i-1/m-1?authSig=test');
+    // Versioned by the served name, so a retitle cannot be answered from the
+    // browser's cache with the filename this document used to carry.
+    expect(open.getAttribute('href')).toBe(
+      `/api/haventory/media/i-1/m-1?${MEDIA_NAME_TOKEN_PARAM}=${attachmentNameToken(docs()[0])}&authSig=test`,
+    );
     expect(open.getAttribute('target')).toBe('_blank');
     expect(open.getAttribute('rel')).toContain('noopener');
   });

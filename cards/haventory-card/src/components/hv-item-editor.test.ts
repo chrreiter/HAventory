@@ -1,5 +1,6 @@
 import './hv-item-editor';
 import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
+import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import { addDays } from '../ui/relative-time';
 import type { HVItemEditor } from './hv-item-editor';
 import type { Item, ItemCreate, ItemUpdate, Location, LocationTreeNode } from '../store/types';
@@ -1371,7 +1372,10 @@ describe('hv-item-editor: opening a document', () => {
     for (let i = 0; i < 3; i += 1) await el.updateComplete;
 
     const open = q(el, '[data-testid="editor-document-open"]') as HTMLAnchorElement;
-    expect(open.getAttribute('href')).toBe('/api/haventory/media/i-1/m-1?authSig=test');
+    expect(open.getAttribute('href')).toBe(
+      `/api/haventory/media/i-1/m-1?${MEDIA_NAME_TOKEN_PARAM}=`
+        + `${attachmentNameToken(makeManual({ id: 'm-1', title: 'Warranty' }))}&authSig=test`,
+    );
     expect(open.getAttribute('target')).toBe('_blank');
     expect(open.getAttribute('aria-label')).toBe('Open Warranty');
   });

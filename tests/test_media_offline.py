@@ -13,6 +13,7 @@ Scenarios:
 - the 11th picture on an item is refused
 - an id no metadata claims resolves to nothing
 - the served name follows title-then-filename, and no title can break the header
+- only a URL versioned by that name may be cached, because the name can change
 - the sweep deletes an unreferenced file and keeps a referenced one
 - the sweep refuses a path resolving outside the media root
 """
@@ -27,6 +28,7 @@ from custom_components.haventory import media
 from custom_components.haventory.const import (
     MAX_ATTACHMENT_BYTES,
     MAX_PICTURES_PER_ITEM,
+    MEDIA_NAME_TOKEN_PARAM,
 )
 from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.models import (
@@ -279,6 +281,36 @@ def test_an_overlong_name_is_truncated_rather_than_sent_whole() -> None:
     value = _disposition(title="x" * 500)
 
     assert f'filename="{"x" * media.DISPOSITION_NAME_MAX_CHARS}"' in value
+
+
+class _Request:
+    """Just the query mapping ``_cache_control`` reads off a real request."""
+
+    def __init__(self, **query: str) -> None:
+        self.query = query
+
+
+def test_a_url_versioned_by_name_may_be_held_indefinitely() -> None:
+    """The bytes never change, and this URL says which name they were fetched under."""
+
+    value = media._cache_control(_Request(**{MEDIA_NAME_TOKEN_PARAM: "1x2y3z"}))
+
+    assert "immutable" in value
+    assert "max-age=31536000" in value
+
+
+def test_a_url_not_versioned_by_name_is_not_stored_at_all() -> None:
+    """A retitle rewrites `Content-Disposition` for a URL that did not change.
+
+    Reusing such a response is what makes a retitled file save under its old
+    name, and a signed URL outlives the retitle by half an hour — so the answer
+    cannot be kept at all rather than merely revalidated.
+    """
+
+    value = media._cache_control(_Request())
+
+    assert value == "private, no-store"
+    assert "immutable" not in value
 
 
 # -----------------------------
