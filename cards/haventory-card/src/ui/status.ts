@@ -141,18 +141,63 @@ export function statusToneClass(
 }
 
 /**
+ * A stored icon name narrowed to one this bundle carries, or null.
+ *
+ * `IconName` is a compile-time set and a stored icon is just a string — an
+ * import or a newer backend can name a glyph this bundle has never heard of —
+ * so anything read back from a definition has to pass through here before it
+ * can be rendered.
+ */
+export function knownIcon(name: string | null | undefined): IconName | null {
+  return name != null && name in ICONS ? (name as IconName) : null;
+}
+
+/**
  * The glyph for a slug, or null when it names one this bundle does not carry.
  *
- * `IconName` is a compile-time set and a stored icon is just a string, so the
- * lookup has to narrow it. Null renders no glyph, which is the right outcome:
- * the chip still carries its label and its colour.
+ * Null renders no glyph, which is the right outcome: the chip still carries its
+ * label and its colour.
  */
 export function statusIconName(
   slug: string,
   defs: readonly StatusDefinition[] | null | undefined,
 ): IconName | null {
-  const name = definitionOf(slug, defs)?.icon;
-  return name !== undefined && name in ICONS ? (name as IconName) : null;
+  return knownIcon(definitionOf(slug, defs)?.icon);
+}
+
+/**
+ * A slug from a label: lowercase, ASCII letters/digits/underscores, and never
+ * one the vocabulary already carries.
+ *
+ * The user never types this — a household should not have to think about the
+ * identifier — but it is what `services.yaml` and an export document carry, so
+ * the editor shows it beside the label for anyone writing an automation.
+ *
+ * The numeric suffix is a backstop against the backend refusing a slug already
+ * taken, not the answer to a duplicate label: two statuses named the same thing
+ * are indistinguishable in every chip on the card, so the editor warns about
+ * that separately rather than leaving this walk to resolve it silently.
+ */
+export function slugFromLabel(
+  label: string,
+  defs: readonly StatusDefinition[] | null | undefined,
+): string {
+  const base =
+    label
+      .normalize('NFKD')
+      // The combining marks NFKD just split off; stripping them is what turns
+      // "Ausgeliehen" with an umlaut into ASCII rather than into underscores.
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 64) || 'status';
+  const taken = new Set(statusList(defs).map((d) => d.slug));
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n += 1) {
+    const candidate = `${base.slice(0, 61)}_${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
 }
 
 /**

@@ -9,7 +9,9 @@ import {
   DEFAULT_STATUS,
   STATUS_COLORS,
   STATUS_ICONS,
+  knownIcon,
   renderStatusChip,
+  slugFromLabel,
   statusCount,
   statusLabel,
   statusList,
@@ -243,13 +245,25 @@ export class HVOrganizeDialog extends LitElement {
         flex: none;
         gap: 1px;
       }
+      /* Sized rather than left at the glyph: two chevrons stacked a pixel apart
+         are one target to a finger, and WCAG 2.2 asks 24px of every pointer.
+         The token is what a host declares when the card is narrow; the fallback
+         covers the sidebar panel, which declares none. */
       .move button {
+        display: inline-grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
         border: none;
         background: none;
         color: var(--hv-text-tertiary);
         cursor: pointer;
         padding: 0;
         line-height: 0;
+      }
+      :host([mobile]) .move button {
+        width: var(--hv-tap-min, 44px);
+        height: var(--hv-tap-min, 44px);
       }
       .move button:hover:not([disabled]) {
         color: var(--hv-text);
@@ -261,9 +275,10 @@ export class HVOrganizeDialog extends LitElement {
       /* The identity items store. Shown because services.yaml and an export
          document carry it, muted because a household never needs to type it.
 
-         It is also the only part of the row that may be cut: at phone width a
-         long slug otherwise pushes the delete button past the dialog edge,
-         where it cannot be tapped at all. */
+         In a list row it is the one part that may be cut: at phone width a long
+         slug otherwise pushes the delete button past the dialog edge, where it
+         cannot be tapped at all. Both places carry it as a title attribute too,
+         because either can end up eliding it. */
       .status-slug {
         font: 400 12px var(--hv-font);
         color: var(--hv-text-tertiary);
@@ -273,18 +288,49 @@ export class HVOrganizeDialog extends LitElement {
         overflow: hidden;
         text-overflow: ellipsis;
       }
+      .status-name {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .status-name .control {
+        flex: 1 1 180px;
+        width: auto;
+      }
+      /* The editor shows the slug for people writing automations, so here it
+         keeps its full width and drops to a line of its own rather than eliding
+         while the row still has room — the opposite of the list row above. */
+      .status-name .status-slug {
+        flex: 0 0 auto;
+        max-width: 100%;
+      }
       .swatches {
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
         margin: 2px 0 4px;
       }
+      /* A tone is a pair — a tint and the ink that reads on it — so the swatch
+         shows both, with the glyph the status will carry standing in for the
+         label. A bare fill leaves the five light tints all but identical on
+         white, and in dark it leaves them washes with nothing behind them. */
       .swatch {
-        width: 26px;
-        height: 22px;
+        justify-content: center;
+        width: 34px;
+        height: 26px;
         border-radius: var(--hv-radius-chip);
         cursor: pointer;
         padding: 0;
+      }
+      :host([mobile]) .swatch {
+        width: var(--hv-tap-min, 44px);
+        height: var(--hv-tap-min, 44px);
+      }
+      /* The stand-in when a definition names a glyph this bundle does not
+         carry: the swatch still has to show ink on its tint. */
+      .swatch .letters {
+        font: 600 12px var(--hv-font);
       }
       .glyph {
         display: inline-grid;
@@ -299,6 +345,12 @@ export class HVOrganizeDialog extends LitElement {
       }
       .glyph:hover {
         background: var(--hv-hover-overlay);
+      }
+      /* Scoped to the picker rows: .glyph also marks the location guard's alert,
+         which is not a target and must not grow into one. */
+      :host([mobile]) .swatches .glyph {
+        width: var(--hv-tap-min, 44px);
+        height: var(--hv-tap-min, 44px);
       }
       .swatch.on,
       .glyph.on {
@@ -318,6 +370,17 @@ export class HVOrganizeDialog extends LitElement {
            it narrower — the slug beside it is what gives way instead. */
         white-space: nowrap;
         flex: none;
+      }
+      /* 12px text is a 14px-tall target; the box has to be told to be bigger
+         than its own line. Confined to the status rows, whose controls this
+         pass sized for touch. */
+      .status-row .count-link {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+      }
+      :host([mobile]) .status-row .count-link {
+        min-height: var(--hv-tap-min, 44px);
       }
       .draft-note {
         font: 400 12px var(--hv-font);
@@ -347,6 +410,10 @@ export class HVOrganizeDialog extends LitElement {
         background: none;
         color: var(--hv-text-secondary);
         padding: 0;
+      }
+      :host([mobile]) .status-row .row-actions button {
+        width: var(--hv-tap-min, 44px);
+        height: var(--hv-tap-min, 44px);
       }
       .row-actions button.danger {
         color: var(--hv-error);
@@ -433,6 +500,10 @@ export class HVOrganizeDialog extends LitElement {
       .guard {
         display: flex;
         align-items: flex-start;
+        /* The reassign guard puts three parts in here; unwrapped they share one
+           row and the select comes out ~44px wide, which hides the one thing
+           the guard exists to show. */
+        flex-wrap: wrap;
         gap: 9px;
         padding: 10px 12px;
         margin: 0 8px 8px;
@@ -445,6 +516,46 @@ export class HVOrganizeDialog extends LitElement {
       .guard .glyph {
         color: var(--hv-warn);
         flex: none;
+      }
+      /* Where the items go is the guard's own sentence, not a note beside one:
+         it takes a line to itself rather than competing with the select for
+         width, and the guard's ink rather than the tertiary grey a note carries
+         on a plain surface, which lands at 2.5:1 over this fill. */
+      .status-guard .guard-message {
+        flex: 1 1 100%;
+      }
+      .status-guard .actions {
+        flex: 1 1 auto;
+      }
+      :host([mobile]) .status-guard {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      /* Stacked, the three parts each take a line of their own; the basis above
+         is a width and means nothing once the main axis is vertical. */
+      :host([mobile]) .status-guard .guard-message,
+      :host([mobile]) .status-guard .actions {
+        flex: none;
+      }
+      .guard-target {
+        display: flex;
+        align-items: center;
+        /* Below ~330px the label and a readable select no longer share a line;
+           the select drops under it rather than overflowing the dialog. */
+        flex-wrap: wrap;
+        gap: 8px;
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .guard-target > span {
+        flex: none;
+      }
+      /* A select showing "O⌄" names nothing. It grows into the row instead of
+         collapsing to its own arrow. */
+      .guard-target select.control {
+        flex: 1 1 auto;
+        width: auto;
+        min-width: 140px;
       }
       .track {
         height: 6px;
@@ -464,6 +575,17 @@ export class HVOrganizeDialog extends LitElement {
         border-radius: var(--hv-radius-input);
         background: var(--hv-error-bg);
         color: var(--hv-error-deep);
+        font-size: 12.5px;
+      }
+      /* Shaped like .failure and coloured a step softer: it reports something
+         the household may go ahead with, so it must not read as a refusal. */
+      .hint {
+        display: flex;
+        gap: 8px;
+        padding: 9px 11px;
+        border-radius: var(--hv-radius-input);
+        background: var(--hv-warn-bg);
+        color: var(--hv-warn-deep);
         font-size: 12.5px;
       }
       .note {
@@ -1425,28 +1547,21 @@ export class HVOrganizeDialog extends LitElement {
   }
 
   /**
-   * A slug from a label: lowercase, ASCII letters/digits/underscores, and never
-   * one already taken.
+   * The label of the status the one being typed would duplicate, or null.
    *
-   * The user never types this — a household should not have to think about the
-   * identifier — but it is what `services.yaml` and an export document carry, so
-   * it is shown beside the label for anyone writing an automation.
+   * Two statuses labelled the same are indistinguishable in every row badge,
+   * filter chip and select on the card — only the slug tells them apart, and
+   * the slug is what the editor hides. The status being edited is excluded:
+   * keeping its own name is not a collision.
    */
-  private _slugFrom(label: string): string {
-    const base =
-      label
-        .normalize('NFKD')
-        .replace(/[̀-ͯ]/g, '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '')
-        .slice(0, 64) || 'status';
-    const taken = new Set(this._statusDefs.map((d) => d.slug));
-    if (!taken.has(base)) return base;
-    for (let n = 2; ; n += 1) {
-      const candidate = `${base.slice(0, 61)}_${n}`;
-      if (!taken.has(candidate)) return candidate;
-    }
+  private get _duplicateLabel(): string | null {
+    const typed = this._statusLabel.trim().toLowerCase();
+    if (!typed) return null;
+    const editing = this._editingStatus;
+    return (
+      this._statusDefs.find((d) => d.slug !== editing && d.label.trim().toLowerCase() === typed)
+        ?.label ?? null
+    );
   }
 
   private _startStatusEdit(slug: string | 'new') {
@@ -1471,7 +1586,7 @@ export class HVOrganizeDialog extends LitElement {
     try {
       if (editing === 'new') {
         await this.store?.createStatus({
-          slug: this._slugFrom(label),
+          slug: slugFromLabel(label, this.st?.statuses),
           label,
           color: this._statusColor,
           icon: this._statusIcon,
@@ -1552,7 +1667,7 @@ export class HVOrganizeDialog extends LitElement {
           const isDefault = d.slug === DEFAULT_STATUS;
           const count = this._statusCount(d.slug);
           return html`
-            <div class="value-row" data-testid="status-row" data-value=${d.slug}>
+            <div class="value-row status-row" data-testid="status-row" data-value=${d.slug}>
               <span class="move">
                 <button
                   data-testid="status-up"
@@ -1574,7 +1689,7 @@ export class HVOrganizeDialog extends LitElement {
                 </button>
               </span>
               ${renderStatusChip(d.slug, defs, { testid: 'status-chip' })}
-              <span class="status-slug" data-testid="status-slug">${d.slug}</span>
+              <span class="status-slug" data-testid="status-slug" title=${d.slug}>${d.slug}</span>
               <button class="count-link" data-testid="status-count" @click=${() =>
                 this._showStatus(d.slug)}>
                 ${counted(count, 'item')}
@@ -1582,15 +1697,18 @@ export class HVOrganizeDialog extends LitElement {
               <span class="row-actions">
                 ${isDefault
                   ? html`<span class="hv-chip quiet" data-testid="status-default">Default</span>`
+                  : null}
+                <button
+                  data-testid="status-edit"
+                  aria-label=${`Edit ${d.label}`}
+                  title="Edit"
+                  @click=${() => this._startStatusEdit(d.slug)}
+                >
+                  ${icon('pencil', 16)}
+                </button>
+                ${isDefault
+                  ? null
                   : html`
-                      <button
-                        data-testid="status-edit"
-                        aria-label=${`Edit ${d.label}`}
-                        title="Edit"
-                        @click=${() => this._startStatusEdit(d.slug)}
-                      >
-                        ${icon('pencil', 16)}
-                      </button>
                       <button
                         class="danger"
                         data-testid="status-remove"
@@ -1627,8 +1745,11 @@ export class HVOrganizeDialog extends LitElement {
 
   private _renderStatusEditor(slug: string | 'new') {
     const creating = slug === 'new';
+    const derived = creating ? slugFromLabel(this._statusLabel, this.st?.statuses) : slug;
+    const duplicate = this._duplicateLabel;
+    const glyph = knownIcon(this._statusIcon);
     return html`<div class="expander" data-testid="status-editor">
-      <label style="display:flex;align-items:center;gap:8px">
+      <label class="status-name">
         <span class="hv-sr-only">Status name</span>
         <input
           class="control"
@@ -1643,10 +1764,15 @@ export class HVOrganizeDialog extends LitElement {
             if (e.key === 'Enter') void this._saveStatus();
           }}
         />
-        <span class="status-slug" data-testid="status-slug-preview"
-          >${creating ? this._slugFrom(this._statusLabel || '') : slug}</span
+        <span class="status-slug" data-testid="status-slug-preview" title=${derived}
+          >${derived}</span
         >
       </label>
+      ${duplicate
+        ? html`<div class="hint" data-testid="status-duplicate-hint">
+            A status called “${duplicate}” already exists.
+          </div>`
+        : null}
 
       <span class="hv-label">Colour</span>
       <div class="swatches" data-testid="status-colors">
@@ -1662,7 +1788,9 @@ export class HVOrganizeDialog extends LitElement {
             @click=${() => {
               this._statusColor = c;
             }}
-          ></button>`,
+          >
+            ${glyph ? icon(glyph, 15) : html`<span class="letters">Aa</span>`}
+          </button>`,
         )}
       </div>
 
@@ -1715,11 +1843,11 @@ export class HVOrganizeDialog extends LitElement {
     if (!guard) return null;
     const label = statusLabel(guard.slug, this._statusDefs);
     const targets = this._statusDefs.filter((d) => d.slug !== guard.slug);
-    return html`<div class="expander guard" data-testid="status-guard" role="alert">
-      <span class="note"
+    return html`<div class="expander guard status-guard" data-testid="status-guard" role="alert">
+      <span class="guard-message" data-testid="status-guard-message"
         >“${label}” is on ${counted(guard.count, 'item')}. Choose where those items go.</span
       >
-      <label style="display:flex;align-items:center;gap:8px">
+      <label class="guard-target">
         <span>Move those items to</span>
         <select
           class="control"
