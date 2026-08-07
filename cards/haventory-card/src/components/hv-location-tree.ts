@@ -217,6 +217,52 @@ export class HVLocationTree extends LitElement {
         font-size: 12.5px;
         color: var(--hv-text-tertiary);
       }
+      /* An inventory with no locations at all: the picker is the first place a
+         user meets the concept, so it offers the way in rather than naming a
+         menu three steps away. Only the empty state carries it — the organize
+         dialog stays the surface that manages a tree that exists. */
+      .create {
+        display: grid;
+        gap: 6px;
+        padding: 0 12px 10px;
+      }
+      .create-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .create-row .hv-input {
+        flex: 1;
+        min-width: 0;
+      }
+      .create-open {
+        justify-self: start;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: var(--hv-tap-min, 30px);
+        border: 1px dashed var(--hv-primary-tint-border);
+        background: none;
+        color: var(--hv-primary-dark);
+        border-radius: var(--hv-radius-input);
+        padding: 0 12px;
+        font: 500 12.5px var(--hv-font);
+        cursor: pointer;
+      }
+      .create-submit {
+        flex: none;
+        min-height: var(--hv-tap-min, 30px);
+        border: none;
+        border-radius: var(--hv-radius-chip);
+        background: var(--hv-primary);
+        color: var(--hv-text-on-primary);
+        padding: 0 14px;
+        font: 500 12.5px var(--hv-font);
+        cursor: pointer;
+      }
+      .create-submit[disabled] {
+        opacity: 0.5;
+      }
       .divider {
         height: 1px;
         background: var(--hv-row-divider);
@@ -284,6 +330,12 @@ export class HVLocationTree extends LitElement {
   @property({ type: String }) excludeSubtreeOf: string | null = null;
   /** Substring filter over name and display path. */
   @property({ type: String }) filterText = '';
+  /**
+   * Offer to create a first location from the empty state, emitting
+   * `create-location`. Only a host that can actually run the command sets it —
+   * an affordance that leads nowhere is worse than the plain statement.
+   */
+  @property({ type: Boolean }) allowCreate = false;
   /** Resolves the area ids on the nodes to names for the group headers. */
   @property({ attribute: false }) areas: AreaRef[] = [];
 
@@ -294,6 +346,17 @@ export class HVLocationTree extends LitElement {
    * user came for until they open every band would be the wrong default.
    */
   @state() private _collapsedAreas = new Set<string>();
+  /** The first-location field is showing, and what has been typed into it. */
+  @state() private _creating = false;
+  @state() private _newName = '';
+
+  /** Revealing the name field has to put the caret in it, or it asks for a
+   *  second tap before it can be typed into. */
+  protected updated(changed: Map<string, unknown>) {
+    if (changed.has('_creating') && this._creating) {
+      this.renderRoot.querySelector<HTMLInputElement>('[data-testid="tree-create-name"]')?.focus();
+    }
+  }
 
   /** Open the ancestors of `id`, and its area group, so a deep selection is visible. */
   revealPathTo(id: string | null) {
@@ -620,6 +683,73 @@ export class HVLocationTree extends LitElement {
     return Math.max(0, this.matchingTotalCount - filed);
   }
 
+  /**
+   * The way out of an empty tree: a name, and the location it becomes.
+   *
+   * The new location is filed at the root with no area — the only placement
+   * that needs no tree to point at, which is the situation this exists for.
+   * Creating it is the host's job; this emits the name and closes.
+   */
+  private _renderCreate() {
+    if (!this._creating) {
+      return html`<div class="create">
+        <button
+          class="create-open"
+          data-testid="tree-create"
+          @click=${() => {
+            this._creating = true;
+            this._newName = '';
+          }}
+        >
+          ${icon('plus', 15)} New location…
+        </button>
+      </div>`;
+    }
+    const name = this._newName.trim();
+    return html`<div class="create">
+      <div class="create-row">
+        <input
+          class="hv-input"
+          data-testid="tree-create-name"
+          aria-label="New location name"
+          placeholder="Location name"
+          .value=${this._newName}
+          @input=${(e: Event) => {
+            this._newName = (e.target as HTMLInputElement).value;
+          }}
+          @keydown=${(e: KeyboardEvent) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              this._submitCreate();
+            } else if (e.key === 'Escape') {
+              // The field is what Escape takes back here; the picker around it
+              // — and the form around that — are not what the user just opened.
+              e.preventDefault();
+              e.stopPropagation();
+              this._creating = false;
+            }
+          }}
+        />
+        <button
+          class="create-submit"
+          data-testid="tree-create-submit"
+          ?disabled=${!name}
+          @click=${() => this._submitCreate()}
+        >
+          Create
+        </button>
+      </div>
+    </div>`;
+  }
+
+  private _submitCreate() {
+    const name = this._newName.trim();
+    if (!name) return;
+    this._creating = false;
+    this._newName = '';
+    this._emit('create-location', { name });
+  }
+
   render() {
     const filtering = this.filterText.trim().length > 0;
     const { areaGroups, ungrouped } = groupRootsByArea(this.nodes, this.areas, {
@@ -651,9 +781,12 @@ export class HVLocationTree extends LitElement {
           : null}
         ${rendered.length
           ? rendered
-          : html`<div class="empty" data-testid="tree-empty">
-              ${this.filterText.trim() ? 'No locations match' : 'No locations yet'}
-            </div>`}
+          : html`
+              <div class="empty" data-testid="tree-empty">
+                ${filtering ? 'No locations match' : 'No locations yet'}
+              </div>
+              ${this.allowCreate && !filtering ? this._renderCreate() : null}
+            `}
         ${this.showOrphans
           ? html`
               <div class="divider"></div>

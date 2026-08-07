@@ -394,6 +394,9 @@ export class HVDetailSheet extends LitElement {
   @property({ attribute: false }) categorySuggestions: string[] = [];
   @property({ attribute: false }) tagSuggestions: string[] = [];
   @property({ attribute: false }) customFieldKeys: string[] = [];
+  /** Passed straight to the editor: creating a first location from its picker. */
+  @property({ attribute: false }) createLocation: ((name: string) => Promise<Location>) | null =
+    null;
   @property({ type: Boolean }) busy = false;
   @property({ type: String }) errorMessage: string | null = null;
 
@@ -815,6 +818,7 @@ export class HVDetailSheet extends LitElement {
         .categorySuggestions=${this.categorySuggestions}
         .tagSuggestions=${this.tagSuggestions}
         .customFieldKeys=${this.customFieldKeys}
+        .createLocation=${this.createLocation}
         .busy=${this.busy}
         .errorMessage=${this.errorMessage}
         @cancel=${() => {
