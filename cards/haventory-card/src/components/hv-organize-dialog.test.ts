@@ -1549,4 +1549,46 @@ describe('hv-organize-dialog: disclosures come into view', () => {
     expect(scrolls).toHaveLength(1);
     expect(sr.activeElement).toBe(q(sr, '[data-testid="organize-dialog"]'));
   });
+
+  // On a phone the ⋮ sheet replaces the row's separate buttons, so it is the
+  // only way into edit, merge and delete. DOM-measured at 390px: opened from
+  // the bottom row it stood 216px tall with 16px of it on screen.
+  it('brings the location ⋮ sheet into view', async () => {
+    const { el, sr } = await mount({ items, locations, mobile: true });
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+    (tree.shadowRoot?.querySelector('[data-testid="tree-more"][data-id="garage"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(scrolled()).toEqual([q(sr, '[data-testid="location-sheet"]')]);
+    expect(scrolls[0].options).toEqual({ block: 'nearest' });
+    // A menu of what the row can do, not a form: it claims no field, so the
+    // caret stays where the tap left it.
+    expect(q(sr, '[data-testid="location-sheet"]')?.contains(sr.activeElement)).toBe(false);
+  });
+
+  it('brings the value ⋮ sheet into view', async () => {
+    const { el, sr } = await mount({ items, tab: 'tags', mobile: true });
+    const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'battery')!;
+    (row.querySelector('[data-testid="value-more"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(scrolled()).toEqual([q(sr, '[data-testid="value-sheet"]')]);
+    expect(q(sr, '[data-testid="value-sheet"]')?.contains(sr.activeElement)).toBe(false);
+  });
+
+  // The sheet closes as the editor it launched opens, and it is the editor the
+  // household is now looking at.
+  it('follows the ⋮ sheet to the editor it opens', async () => {
+    const { el, sr } = await mount({ items, locations, mobile: true });
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+    (tree.shadowRoot?.querySelector('[data-testid="tree-more"][data-id="garage"]') as HTMLButtonElement).click();
+    await settle(el);
+    (q(sr, '[data-testid="location-sheet-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="location-sheet"]')).toBe(null);
+    expect(scrolls).toHaveLength(2);
+    expect(scrolls[1].el).toBe(q(sr, '[data-testid="location-editor"]'));
+    expect(sr.activeElement).toBe(q(sr, '[data-testid="location-name"]'));
+  });
 });

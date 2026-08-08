@@ -716,13 +716,19 @@ export class HVOrganizeDialog extends LitElement {
    * no focus: it is a refusal to act, and pulling the caret out of the list
    * would answer a tap the household did not make. The editors are forms, and a
    * form opened from a row leaves the keyboard on that row's button unless its
-   * first field claims the caret.
+   * first field claims the caret. The touch layout's ⋮ sheets are neither: a
+   * menu of what the row can do, which needs showing but claims no field.
    */
   private get _disclosures(): { testid: string; open: string | null; field?: string }[] {
     const value = this._editingValue;
     return [
       { testid: 'location-editor', open: this._editingLocation, field: 'location-name' },
       { testid: 'location-guard', open: this._guard?.locationId ?? null },
+      // On a phone the ⋮ sheet is the only way into edit, merge and delete, so
+      // it is the tap that has to land somewhere visible for any of them to be
+      // reachable at all.
+      { testid: 'location-sheet', open: this._sheetLocation },
+      { testid: 'value-sheet', open: this._sheetValue },
       // The mode is half the identity: switching a row from rename to merge
       // swaps the form under the same element.
       {
