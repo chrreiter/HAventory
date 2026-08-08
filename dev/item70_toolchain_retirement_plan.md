@@ -27,9 +27,10 @@ whatever survives earns one line in `CONTRIBUTING.md` saying what it is for.
 `item23_rename_version_plan.md` and `item46_area_preview_plan.md` went with
 [#286](https://github.com/chrreiter/HAventory/issues/286) item 4; their durable content
 is in `docs/frontend_architecture.md` and `docs/data_shapes.md`, and git history holds
-the rest. The remaining plan docs stage work that has not shipped — `v1_prompts.md`,
-`schema_exercise_plan.md`, `schema_collapse_plan.md`, and this file itself — and each
-retires in the PR that merges the work it stages, not before.
+the rest; `schema_exercise_plan.md` followed once the exercise shipped in v0.3.0. The
+remaining plan docs stage work that has not shipped — `v1_prompts.md`,
+`schema_collapse_plan.md`, and this file itself — and each retires in the PR that
+merges the work it stages, not before.
 
 - **Exception:** `dev/release_testing_plan.md` retires only after the validation run is
   complete and its evidence (results log) is archived in the run's PR/issue —

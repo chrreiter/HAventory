@@ -100,24 +100,6 @@ retires only with its evidence archived) and its note that ledger history may ke
 naming retired docs while live tables and CLAUDE.md may not.
 ```
 
-### Item 80
-
-**Schema exercise — the first real migration.** Plan:
-[`schema_exercise_plan.md`](schema_exercise_plan.md). Next 0.x minor after the last
-feature release; live verification is owner-in-the-loop.
-
-```text
-You are working in the HAventory repo. Read CLAUDE.md first and follow it exactly.
-Read dev/schema_exercise_plan.md — it is the design. First ask me whether a pending
-feature needs a real shape change; if none does, implement its default (the top-level
-`meta` block) as migrate_4_to_5. Deliver per its list: offline migration tests
-(idempotency, the 0→5 chain, downgrade refusal), the integration-suite boot-and-migrate
-case, CURRENT_SCHEMA_VERSION → 5, shipped as feat: so release-please cuts the minor.
-Then walk me through the live verification protocol (export + counts before; upgrade;
-schema 5 + identical counts + export diff after) and record the result. The watch
-window I define closes before the collapse (#229) starts.
-```
-
 ### Item 81
 
 **Schema collapse to v1 + the export→import crossing.** Plan:
