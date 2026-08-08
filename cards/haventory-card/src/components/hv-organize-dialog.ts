@@ -363,9 +363,7 @@ export class HVOrganizeDialog extends LitElement {
       .glyph:hover {
         background: var(--hv-hover-overlay);
       }
-      /* Scoped to the picker rows: .glyph also marks the location guard's alert,
-         which is not a target and must not grow into one. */
-      :host([mobile]) .swatches .glyph {
+      :host([mobile]) .glyph {
         width: var(--hv-tap-min, 44px);
         height: var(--hv-tap-min, 44px);
       }
@@ -387,16 +385,14 @@ export class HVOrganizeDialog extends LitElement {
            it narrower — the slug beside it is what gives way instead. */
         white-space: nowrap;
         flex: none;
-      }
-      /* 12px text is a 14px-tall target; the box has to be told to be bigger
-         than its own line. Confined to the status rows, whose controls this
-         pass sized for touch. */
-      .status-row .count-link {
+        /* 12px text is a 14px-tall target, so the box is told to be bigger than
+           its own line: WCAG 2.2 asks 24px of any pointer. Every tab prints a
+           count, and one dialog cannot offer two sizes for one control. */
         display: inline-flex;
         align-items: center;
         min-height: 24px;
       }
-      :host([mobile]) .status-row .count-link {
+      :host([mobile]) .count-link {
         min-height: var(--hv-tap-min, 44px);
       }
       .draft-note {
@@ -428,7 +424,11 @@ export class HVOrganizeDialog extends LitElement {
         color: var(--hv-text-secondary);
         padding: 0;
       }
-      :host([mobile]) .status-row .row-actions button {
+      /* A phone row grows to hold a tappable action — a 44px child takes a
+         ~44px row to ~66px. That height is the cost of the target: sizing one
+         tab's actions and not the rest leaves 26px controls beside 44px ones
+         in the same dialog. */
+      :host([mobile]) .row-actions button {
         width: var(--hv-tap-min, 44px);
         height: var(--hv-tap-min, 44px);
       }
@@ -530,7 +530,9 @@ export class HVOrganizeDialog extends LitElement {
         font-size: 12.5px;
         line-height: 1.5;
       }
-      .guard .glyph {
+      /* A guard's alert mark is a statement, not a control: warn ink and a
+         width it will not give up, and nothing that would read as a button. */
+      .guard-mark {
         color: var(--hv-warn);
         flex: none;
       }
@@ -702,6 +704,78 @@ export class HVOrganizeDialog extends LitElement {
   /** Opening a surface must put focus in it, or Escape never reaches it. */
   private _dialogFocus = new DialogFocus();
 
+  /** Which disclosure of each kind the last render left on screen. */
+  private _shown = new Map<string, string | null>();
+
+  /**
+   * Every surface that expands *after* the row that opened it, inside the
+   * scrolling `.body`: what identifies the one currently open, the element to
+   * bring into view, and — for the forms — the field that takes focus.
+   *
+   * A guard is `role="alert"`, so it announces itself where it stands and takes
+   * no focus: it is a refusal to act, and pulling the caret out of the list
+   * would answer a tap the household did not make. The editors are forms, and a
+   * form opened from a row leaves the keyboard on that row's button unless its
+   * first field claims the caret.
+   */
+  private get _disclosures(): { testid: string; open: string | null; field?: string }[] {
+    const value = this._editingValue;
+    return [
+      { testid: 'location-editor', open: this._editingLocation, field: 'location-name' },
+      { testid: 'location-guard', open: this._guard?.locationId ?? null },
+      // The mode is half the identity: switching a row from rename to merge
+      // swaps the form under the same element.
+      {
+        testid: 'value-editor',
+        open: value ? `${value.mode}:${value.value}` : null,
+        field: 'value-target',
+      },
+      { testid: 'status-editor', open: this._editingStatus, field: 'status-label' },
+      { testid: 'status-guard', open: this._statusGuard?.slug ?? null },
+    ];
+  }
+
+  /**
+   * Bring a disclosure into view as it opens.
+   *
+   * Every one of them renders below its trigger inside a pane that scrolls, so
+   * one opened from a row near the bottom lands off-screen and the tap reads as
+   * having done nothing — worst on the two guards, which are what stands
+   * between a tap and a batch of items changing.
+   *
+   * `block: 'nearest'` scrolls only as far as it must, so a disclosure already
+   * on screen does not move under the user, and it names no `behavior`, so
+   * there is no motion to gate on a reduced-motion preference. Keyed on which
+   * disclosure is open rather than on the render, so typing inside an open
+   * editor never moves the pane.
+   */
+  private _revealDisclosures() {
+    if (!this.open) {
+      this._shown.clear();
+      return;
+    }
+    // A dialog re-opened with a disclosure still expanded is DialogFocus's
+    // moment, not this one's: the first render after open records what is on
+    // screen and moves nothing.
+    const seeding = this._shown.size === 0;
+    for (const disclosure of this._disclosures) {
+      const was = this._shown.get(disclosure.testid) ?? null;
+      this._shown.set(disclosure.testid, disclosure.open);
+      if (seeding || disclosure.open === null || disclosure.open === was) continue;
+      const el = this.renderRoot.querySelector<HTMLElement>(
+        `[data-testid="${disclosure.testid}"]`,
+      );
+      // Scrolling needs a layout, and an environment that performs none offers
+      // no `scrollIntoView` to call.
+      el?.scrollIntoView?.({ block: 'nearest' });
+      if (disclosure.field) {
+        this.renderRoot
+          .querySelector<HTMLElement>(`[data-testid="${disclosure.field}"]`)
+          ?.focus();
+      }
+    }
+  }
+
   protected updated() {
     this._dialogFocus.sync(this.open, () =>
       this.renderRoot.querySelector<HTMLElement>('[data-testid="organize-dialog"]'),
@@ -713,6 +787,7 @@ export class HVOrganizeDialog extends LitElement {
       '[data-testid="location-area"]',
     );
     if (areaSelect) areaSelect.value = this._locArea ?? '';
+    this._revealDisclosures();
   }
 
   protected willUpdate(changed: Map<string, unknown>) {
@@ -1365,7 +1440,7 @@ export class HVOrganizeDialog extends LitElement {
           : null}
         ${this._guard
           ? html`<div class="guard" role="alert" data-testid="location-guard">
-              <span class="glyph">${icon('alert', 17)}</span>
+              <span class="guard-mark">${icon('alert', 17)}</span>
               <span>${this._guard.message}</span>
             </div>`
           : null}

@@ -33,10 +33,12 @@ export const BUILT_IN_STATUSES: readonly StatusDefinition[] = [
 
 /**
  * Every colour a status may take: five hues, each in a light and a strong form.
- * Ordered hue-major so a five-by-two picker grid reads as hue across, intensity
- * down. Pinned to the backend's `STATUS_COLORS` by
- * `tests/test_frontend_registration.py` — the backend refuses a value outside
- * its own list, and neither side can see the other.
+ * Ordered hue-major so the two intensities of a hue stay adjacent: the picker
+ * lays the swatches out as a wrapping row, and a neighbouring pair reads as one
+ * hue at two strengths wherever the line happens to break. Pinned to the
+ * backend's `STATUS_COLORS` by `tests/test_frontend_registration.py` — the
+ * backend refuses a value outside its own list, and neither side can see the
+ * other.
  */
 export const STATUS_COLORS: readonly StatusColor[] = [
   'neutral',
