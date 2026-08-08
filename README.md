@@ -499,7 +499,8 @@ throughout.
   (picked from a tree inside the form), checked-out with due date, next inspection (with the same
   +7 / +31 / +90 / +X quick offsets the check-out popover offers), and typed
   custom fields (text / number / yes-no / date). Saves send the item's expected version so
-  a concurrent edit surfaces as a conflict. Escape takes back one thing at a time: an open
+  a concurrent edit surfaces as a conflict; a save that does not land says so in the form
+  you are looking at and leaves your edits in it. Escape takes back one thing at a time: an open
   picker first, then the form — and a form you have typed into asks before it discards.
   With no locations yet, the location picker creates the first one and files the item in
   it, rather than pointing at a menu three steps away.
