@@ -1,10 +1,12 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { locationLabel } from '../ui/location-path';
+import { chip } from '../ui/chip';
+import { locationPathParts, pathTitle } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate } from '../ui/relative-time';
-import type { Location, StoreFilters } from '../store/types';
+import { statusLabel, statusToneClass } from '../ui/status';
+import type { Location, StatusDefinition, StoreFilters } from '../store/types';
 
 /** Which filter a chip clears. Matches the keys of `StoreFilters`. */
 export type FilterChipKey =
@@ -17,6 +19,7 @@ export type FilterChipKey =
   | 'lowStockFirst'
   | 'overdueOnly'
   | 'inspectionDueOnly'
+  | 'status'
   | 'category'
   | 'tags'
   | 'updatedAfter'
@@ -28,6 +31,13 @@ export interface FilterChip {
   key: FilterChipKey;
   label: string;
   tone: 'primary' | 'warning';
+  /**
+   * A `tone-*` class from the status vocabulary, for the one chip whose colour
+   * a household picks rather than the card. Set, it replaces `tone` entirely:
+   * the two palettes are deliberately disjoint (see `ui/chip.ts`), so a chip
+   * cannot carry one of each.
+   */
+  toneClass?: string;
 }
 
 /**
@@ -36,14 +46,22 @@ export interface FilterChip {
  */
 export function chipsFor(
   filters: StoreFilters,
-  ctx: { locations?: Location[] | null; areas?: { id: string; name: string }[] | null } = {},
+  ctx: {
+    locations?: Location[] | null;
+    areas?: { id: string; name: string }[] | null;
+    statuses?: StatusDefinition[] | null;
+  } = {},
 ): FilterChip[] {
   const chips: FilterChip[] = [];
   if (filters.q) chips.push({ key: 'q', label: `"${filters.q}"`, tone: 'primary' });
 
   if (filters.locationId) {
-    const loc = (ctx.locations ?? []).find((l) => l.id === filters.locationId);
-    const path = locationLabel(loc, 'Location');
+    const locations = ctx.locations ?? [];
+    const loc = locations.find((l) => l.id === filters.locationId);
+    // A chip is already the smallest thing on this row, so the area is named in
+    // words rather than nested in a chip of its own — the same "Area: X" the
+    // area filter's own chip prints two lines down.
+    const path = pathTitle(locationPathParts(loc, locations, ctx.areas ?? [], 'Location'));
     chips.push({
       key: 'locationId',
       label: filters.includeSubtree ? `${path} + sub` : path,
@@ -70,6 +88,16 @@ export function chipsFor(
   if (filters.overdueOnly) chips.push({ key: 'overdueOnly', label: 'Overdue', tone: 'warning' });
   if (filters.inspectionDueOnly)
     chips.push({ key: 'inspectionDueOnly', label: 'Inspection due', tone: 'warning' });
+  if (filters.status)
+    chips.push({
+      key: 'status',
+      label: `Status: ${statusLabel(filters.status, ctx.statuses)}`,
+      // The status the household chose, in the colour the household gave it —
+      // the same chip the rows below this one carry. `tone` is the fallback for
+      // a consumer that ignores `toneClass`.
+      tone: 'primary',
+      toneClass: statusToneClass(filters.status, ctx.statuses),
+    });
   if (filters.orphansOnly) chips.push({ key: 'orphansOnly', label: 'No location', tone: 'primary' });
   // One chip per bound rather than one per field: each is separately clearable,
   // so a range narrowed too far can be half-undone.
@@ -94,6 +122,7 @@ export function clearedValueFor(key: FilterChipKey): Partial<StoreFilters> {
       return { tags: [] };
     case 'areaId':
     case 'locationId':
+    case 'status':
     case 'category':
     case 'updatedAfter':
     case 'createdAfter':
@@ -111,6 +140,7 @@ export class HVFilterChips extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -121,20 +151,10 @@ export class HVFilterChips extends LitElement {
         gap: 6px;
         align-items: center;
       }
+      /* Each of these removes the filter it names, so the trailing × is part of
+         the target and the chip carries a little more room on that side. */
       .chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        border: none;
-        border-radius: var(--hv-radius-chip);
-        padding: 4px 9px 4px 11px;
-        font: 500 12px var(--hv-font);
-        color: var(--hv-primary-darker);
-        background: var(--hv-primary-tint);
-      }
-      .chip.warning {
-        color: var(--hv-warn);
-        background: var(--hv-warn-bg);
+        padding-right: 6px;
       }
       .chip:hover {
         opacity: 0.85;
@@ -157,30 +177,39 @@ export class HVFilterChips extends LitElement {
 
   @property({ attribute: false }) filters!: StoreFilters;
   @property({ attribute: false }) locations: Location[] | null = null;
+  /** The status vocabulary from `haventory/config`; the built-ins stand in
+   * until it answers. */
+  @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
 
   render() {
     if (!this.filters) return null;
-    const chips = chipsFor(this.filters, { locations: this.locations, areas: this.areas });
+    const chips = chipsFor(this.filters, {
+      locations: this.locations,
+      areas: this.areas,
+      statuses: this.statuses,
+    });
     if (!chips.length) return null;
     return html`
       <div class="row" data-testid="filter-chips">
         ${chips.map(
-          (chip) => html`<button
-            class="chip ${chip.tone === 'warning' ? 'warning' : ''}"
+          (entry) => html`<button
+            class=${entry.toneClass
+              ? `hv-status-chip chip ${entry.toneClass}`
+              : `hv-chip chip ${entry.tone === 'warning' ? 'warning' : 'state'}`}
             data-testid="filter-chip"
-            data-key=${chip.key}
-            aria-label=${`Clear filter ${chip.label}`}
+            data-key=${entry.key}
+            aria-label=${`Clear filter ${entry.label}`}
             @click=${() =>
               this.dispatchEvent(
                 new CustomEvent('remove-filter', {
-                  detail: { key: chip.key, patch: clearedValueFor(chip.key) },
+                  detail: { key: entry.key, patch: clearedValueFor(entry.key) },
                   bubbles: true,
                   composed: true,
                 }),
               )}
           >
-            ${chip.label}${icon('close', 15)}
+            ${entry.label}${icon('close', 15)}
           </button>`,
         )}
         <button

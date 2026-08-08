@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any, Final, cast
 
@@ -26,12 +27,18 @@ from homeassistant.helpers.storage import Store
 
 from . import migrations
 from .const import DOMAIN
-from .exceptions import SchemaDowngradeError, StorageError
+from .exceptions import (
+    CorruptSchemaVersionError,
+    NotLoadedError,
+    SchemaDowngradeError,
+    StorageError,
+)
+from .models import seed_status_definitions, serialize_status_definition
 
 _LOGGER = logging.getLogger(__name__)
 
 # Current schema version for persisted payloads
-CURRENT_SCHEMA_VERSION: Final[int] = 4
+CURRENT_SCHEMA_VERSION: Final[int] = 6
 
 # Storage key under which the persisted dataset is saved
 STORAGE_KEY: Final[str] = "haventory_store"
@@ -39,14 +46,41 @@ STORAGE_KEY: Final[str] = "haventory_store"
 # Debounce delay for persistence operations (seconds)
 PERSIST_DEBOUNCE_DELAY: Final[float] = 1.0
 
+# How much of a corrupt ``schema_version`` the refusal quotes back. The value is
+# whatever the file holds, and the message reaches the config entry's error state
+# in the UI, so a misplaced items dict landing on that key must not paste the
+# whole inventory into it.
+_MAX_REPORTED_VERSION_CHARS: Final[int] = 60
+
+
+# Every top-level collection the stored payload carries, in one place because
+# three call sites have to agree about the set: `_empty_payload`, `async_load`'s
+# backfill, and `async_save`'s.
+#
+# The load path is wider than the save path by construction — `async_load` keeps
+# whatever the file holds, while a save writes exactly what
+# `Repository.export_state()` produced. A collection listed here that the
+# repository does not emit is therefore read back correctly at boot and erased by
+# the first save afterwards, with nothing logged. `tests/test_storage_offline.py`
+# pins `export_state()` to this tuple so that mistake fails a test instead.
+STORE_COLLECTIONS: Final[tuple[str, ...]] = ("items", "locations", "statuses")
+
 
 def _empty_payload() -> dict[str, Any]:
     """Create a new empty payload matching the current schema.
 
     Returns a fresh dict each time to avoid shared mutation across callers.
+    A fresh install starts with the built-in statuses seeded, which is also what
+    an absent ``statuses`` section means everywhere else.
     """
 
-    return {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+    payload: dict[str, Any] = {"schema_version": CURRENT_SCHEMA_VERSION}
+    payload.update({name: {} for name in STORE_COLLECTIONS})
+    payload["statuses"] = {
+        slug: serialize_status_definition(definition)
+        for slug, definition in seed_status_definitions().items()
+    }
+    return payload
 
 
 def schema_downgrade_message(*, stored_version: int, supported_version: int) -> str:
@@ -62,6 +96,38 @@ def schema_downgrade_message(*, stored_version: int, supported_version: int) -> 
         "Upgrade HAventory to a version that understands this data, or restore a backup "
         "taken with this version. The stored data was left unchanged."
     )
+
+
+def _corrupt_schema_version_message(value: object) -> str:
+    """Build the refusal shown when ``schema_version`` is not an integer."""
+
+    shown = repr(value)
+    if len(shown) > _MAX_REPORTED_VERSION_CHARS:
+        shown = shown[: _MAX_REPORTED_VERSION_CHARS - 1] + "…"
+    return (
+        f"stored data has a corrupt schema_version ({shown}); expected an integer. "
+        "HAventory will not guess which schema this data uses. Repair the stored file "
+        "or restore a backup, then reload HAventory. The stored data was left unchanged."
+    )
+
+
+def read_schema_version(payload: Mapping[str, Any], *, missing: int) -> int:
+    """Read ``schema_version`` out of a stored payload, refusing to guess.
+
+    A hand-edited or truncated store can hold anything under this key, and
+    ``int()`` treats the two failure modes inconsistently: it raises on ``None``
+    or ``"abc"``, and silently invents a version for anything it can parse —
+    ``"4"`` becoming 4, ``True`` becoming 1 — so the data would be read, and
+    rewritten, under a version the file never claimed. Only a genuine ``int`` is
+    a version here; ``missing`` is what an absent key means to the caller.
+    """
+
+    if "schema_version" not in payload:
+        return missing
+    value = payload["schema_version"]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise CorruptSchemaVersionError(_corrupt_schema_version_message(value))
+    return value
 
 
 def _get_persist_lock(hass: HomeAssistant) -> asyncio.Lock:
@@ -118,18 +184,15 @@ class DomainStore:
             return _empty_payload()
 
         # Defensive: missing schema_version means treat as version 0
-        from_version = int(raw.get("schema_version", 0)) if isinstance(raw, dict) else 0
+        from_version = read_schema_version(raw, missing=0) if isinstance(raw, dict) else 0
 
         if from_version != self._schema_version:
             migrated = await self.async_migrate_if_needed(raw)
             return deepcopy(migrated)
 
         # Ensure required keys exist (older stubs or external mutations)
-        data: dict[str, Any] = {
-            "schema_version": self._schema_version,
-            "items": {},
-            "locations": {},
-        }
+        data: dict[str, Any] = {"schema_version": self._schema_version}
+        data.update({name: {} for name in STORE_COLLECTIONS})
         if isinstance(raw, dict):
             data.update(raw)
         return deepcopy(data)
@@ -139,8 +202,8 @@ class DomainStore:
 
         payload = deepcopy(data) if isinstance(data, dict) else {}
         payload.setdefault("schema_version", self._schema_version)
-        payload.setdefault("items", {})
-        payload.setdefault("locations", {})
+        for name in STORE_COLLECTIONS:
+            payload.setdefault(name, {})
         await self._store.async_save(payload)
 
     async def async_migrate_if_needed(self, raw: dict[str, Any]) -> dict[str, Any]:
@@ -150,7 +213,9 @@ class DomainStore:
         Returns the migrated (or original) payload.
 
         Raises ``SchemaDowngradeError`` when ``raw`` was written by a newer schema
-        version than this build supports, leaving the stored payload untouched.
+        version than this build supports, and ``CorruptSchemaVersionError`` when
+        it carries no readable version at all. Both leave the stored payload
+        untouched.
         """
 
         if not isinstance(raw, dict):  # Corrupted or unexpected
@@ -167,15 +232,12 @@ class DomainStore:
             )
             raise StorageError("corrupted storage payload: not a dict")
 
-        from_version = int(raw.get("schema_version", 0))
+        from_version = read_schema_version(raw, missing=0)
         to_version = self._schema_version
         if from_version == to_version:
             # Normalize missing keys even when versions match
-            normalized = {
-                "schema_version": to_version,
-                "items": {},
-                "locations": {},
-            }
+            normalized: dict[str, Any] = {"schema_version": to_version}
+            normalized.update({name: {} for name in STORE_COLLECTIONS})
             normalized.update(raw)
             return normalized
 
@@ -226,8 +288,8 @@ class DomainStore:
             )
             raise StorageError("storage migration returned non-dict payload")
         # Guarantee required fields and version
-        migrated.setdefault("items", {})
-        migrated.setdefault("locations", {})
+        for name in STORE_COLLECTIONS:
+            migrated.setdefault(name, {})
         migrated["schema_version"] = to_version
 
         await self._store.async_save(migrated)
@@ -251,9 +313,9 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
         store = bucket.get("store")
         repo = bucket.get("repository")
         if store is None:
-            raise StorageError("storage manager not initialized; run integration setup")
+            raise NotLoadedError("storage manager not initialized; run integration setup")
         if repo is None:
-            raise StorageError("repository not initialized; run integration setup")
+            raise NotLoadedError("repository not initialized; run integration setup")
 
         start_time = time.monotonic()
         generation = getattr(repo, "generation", None)
@@ -294,6 +356,26 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
             raise StorageError("failed to persist repository") from exc
 
 
+def cancel_pending_persist(hass: HomeAssistant, *, op: str = "persist_cancel") -> None:
+    """Cancel a scheduled debounced persist, if one is pending.
+
+    Anything about to write itself — or about to take away the repository the
+    write would read — has to clear the pending task first, or it fires against
+    state that has moved on.
+    """
+    bucket = hass.data.setdefault(DOMAIN, {})
+
+    existing_task = bucket.get("persist_task")
+    if existing_task is None or existing_task.done():
+        return
+
+    existing_task.cancel()
+    _LOGGER.debug(
+        "Cancelled pending persist task",
+        extra={"domain": DOMAIN, "op": op},
+    )
+
+
 async def async_request_persist(hass: HomeAssistant) -> None:
     """Request a debounced persistence operation.
 
@@ -306,14 +388,7 @@ async def async_request_persist(hass: HomeAssistant) -> None:
     """
     bucket = hass.data.setdefault(DOMAIN, {})
 
-    # Cancel any pending persist task
-    existing_task = bucket.get("persist_task")
-    if existing_task is not None and not existing_task.done():
-        existing_task.cancel()
-        _LOGGER.debug(
-            "Cancelled pending persist task",
-            extra={"domain": DOMAIN, "op": "persist_debounce_cancel"},
-        )
+    cancel_pending_persist(hass, op="persist_debounce_cancel")
 
     async def _delayed_persist() -> None:
         """Execute persistence after debounce delay."""
@@ -357,16 +432,7 @@ async def async_persist_immediate(hass: HomeAssistant) -> None:
     synchronously. Use this for critical paths like shutdown where we need
     to ensure data is written to disk before the process exits.
     """
-    bucket = hass.data.setdefault(DOMAIN, {})
-
-    # Cancel any pending debounced task
-    existing_task = bucket.get("persist_task")
-    if existing_task is not None and not existing_task.done():
-        existing_task.cancel()
-        _LOGGER.debug(
-            "Cancelled pending persist task for immediate persist",
-            extra={"domain": DOMAIN, "op": "persist_immediate_cancel"},
-        )
+    cancel_pending_persist(hass, op="persist_immediate_cancel")
 
     _LOGGER.debug(
         "Immediate persist requested",

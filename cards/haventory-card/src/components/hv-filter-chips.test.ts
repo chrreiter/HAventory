@@ -2,24 +2,32 @@ import { describe, it, expect, afterEach } from 'vitest';
 import './hv-filter-chips';
 import { chipsFor, clearedValueFor } from './hv-filter-chips';
 import { defaultFilters } from '../store/store';
-import type { Location, StoreFilters } from '../store/types';
+import type { Location, StatusDefinition, StoreFilters } from '../store/types';
 
 type Chips = HTMLElement & {
   filters: StoreFilters;
   locations: Location[] | null;
+  statuses: StatusDefinition[] | null;
   areas: { id: string; name: string }[];
   updateComplete?: Promise<unknown>;
 };
 
-function loc(id: string, name: string, displayPath: string): Location {
+function loc(id: string, name: string, displayPath: string, extra: Partial<Location> = {}): Location {
   return {
     id,
     name,
     parent_id: null,
     area_id: null,
     path: { id_path: [id], name_path: [name], display_path: displayPath, sort_key: displayPath.toLowerCase() },
+    ...extra,
   };
 }
+
+/** A shelf inside a garage, where only the garage carries the area. */
+const nested = (areaId: string | null): Location[] => [
+  loc('garage', 'Garage', 'Garage', { area_id: areaId }),
+  loc('shelf', 'Shelf A', 'Garage / Shelf A', { parent_id: 'garage' }),
+];
 
 async function mount(props: Partial<Chips>): Promise<Chips> {
   const el = document.createElement('hv-filter-chips') as Chips;
@@ -63,6 +71,36 @@ describe('chipsFor', () => {
     expect(chipsFor(filters, { locations: [] })[0].label).toBe('Location');
   });
 
+  it('names the area a location inherits from its tree, in the chip row own wording', () => {
+    const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: false };
+    const [chip] = chipsFor(filters, {
+      locations: nested('a1'),
+      areas: [{ id: 'a1', name: 'Kitchen' }],
+    });
+    expect(chip.label).toBe('Area: Kitchen · Garage › Shelf A');
+  });
+
+  it('keeps the subtree marker last, behind the area and the path', () => {
+    const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: true };
+    const [chip] = chipsFor(filters, {
+      locations: nested('a1'),
+      areas: [{ id: 'a1', name: 'Kitchen' }],
+    });
+    expect(chip.label).toBe('Area: Kitchen · Garage › Shelf A + sub');
+  });
+
+  it('leaves a location in no area labelled exactly as before', () => {
+    const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: false };
+    expect(chipsFor(filters, { locations: nested(null), areas: [] })[0].label).toBe('Garage › Shelf A');
+  });
+
+  it('names an area the registry has dropped by its id, so the chip never reads as arealess', () => {
+    const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: false };
+    expect(chipsFor(filters, { locations: nested('a-gone'), areas: [] })[0].label).toBe(
+      'Area: a-gone · Garage › Shelf A',
+    );
+  });
+
   it('resolves an area name, falling back to its id', () => {
     const filters = { ...defaultFilters(), areaId: 'a1' };
     expect(chipsFor(filters, { areas: [{ id: 'a1', name: 'Kitchen' }] })[0].label).toBe('Area: Kitchen');
@@ -99,6 +137,36 @@ describe('chipsFor', () => {
     expect(chips).toEqual([{ key: 'inspectionDueOnly', label: 'Inspection due', tone: 'warning' }]);
   });
 
+  // Amber means "chore" everywhere else on the card, so painting every
+  // non-default status with it said something about the household's vocabulary
+  // that the household never said.
+  it('names the status filter and carries the status own tone, not the chore hue', () => {
+    expect(chipsFor({ ...defaultFilters(), status: 'missing' })).toEqual([
+      { key: 'status', label: 'Status: Missing', tone: 'primary', toneClass: 'tone-amber' },
+    ]);
+    expect(chipsFor({ ...defaultFilters(), status: 'ok' })).toEqual([
+      { key: 'status', label: 'Status: OK', tone: 'primary', toneClass: 'tone-green' },
+    ]);
+  });
+
+  it('takes the tone from the household definitions when they have answered', () => {
+    const statuses: StatusDefinition[] = [
+      { slug: 'sold', label: 'Verkauft', order: 3, color: 'blue_strong', icon: 'box' },
+    ];
+    expect(chipsFor({ ...defaultFilters(), status: 'sold' }, { statuses })).toEqual([
+      { key: 'status', label: 'Status: Verkauft', tone: 'primary', toneClass: 'tone-blue-strong' },
+    ]);
+  });
+
+  // A slug this card has not been told about — an import defined it, or another
+  // client created it since `haventory/config` was last read.
+  it('falls back to the neutral tone for a status it has no definition for', () => {
+    expect(chipsFor({ ...defaultFilters(), status: 'no_such' })[0]).toMatchObject({
+      label: 'Status: no_such',
+      toneClass: 'tone-neutral',
+    });
+  });
+
   it('emits one chip per date bound so a range can be half-undone', () => {
     const filters = {
       ...defaultFilters(),
@@ -126,7 +194,7 @@ describe('clearedValueFor', () => {
   });
 
   it('clears the nullable filters to null', () => {
-    for (const key of ['areaId', 'locationId', 'category', 'updatedAfter', 'createdAfter', 'updatedBefore', 'createdBefore'] as const) {
+    for (const key of ['areaId', 'locationId', 'status', 'category', 'updatedAfter', 'createdAfter', 'updatedBefore', 'createdBefore'] as const) {
       expect(clearedValueFor(key)).toEqual({ [key]: null });
     }
   });
@@ -178,6 +246,35 @@ describe('hv-filter-chips', () => {
     (el.shadowRoot?.querySelector('[data-testid="filter-chips-clear"]') as HTMLButtonElement).click();
 
     expect(fired).toBe(1);
+  });
+
+  // The status chip is the one on this row whose colour is the household's, so
+  // it is drawn as the same status chip the rows below carry rather than out of
+  // the fixed primary/warning pair every other applied filter uses.
+  it('draws the status chip in the status vocabulary and the rest in the fixed one', async () => {
+    const el = await mount({
+      filters: { ...defaultFilters(), status: 'sold', overdueOnly: true },
+      statuses: [{ slug: 'sold', label: 'Verkauft', order: 3, color: 'green_strong', icon: 'box' }],
+    });
+    const chips = [...(el.shadowRoot?.querySelectorAll('[data-testid="filter-chip"]') ?? [])];
+    const status = chips.find((c) => (c as HTMLElement).dataset.key === 'status') as HTMLElement;
+    const overdue = chips.find((c) => (c as HTMLElement).dataset.key === 'overdueOnly') as HTMLElement;
+
+    expect([...status.classList]).toEqual(['hv-status-chip', 'chip', 'tone-green-strong']);
+    expect(status.classList.contains('warning')).toBe(false);
+    expect([...overdue.classList]).toEqual(['hv-chip', 'chip', 'warning']);
+  });
+
+  it('still hands the host the patch that clears a status chip', async () => {
+    const el = await mount({ filters: { ...defaultFilters(), status: 'missing' } });
+    let detail: { key: string; patch: Partial<StoreFilters> } | null = null;
+    el.addEventListener('remove-filter', (e) => {
+      detail = (e as CustomEvent).detail;
+    });
+
+    (el.shadowRoot?.querySelector('[data-testid="filter-chip"]') as HTMLButtonElement).click();
+
+    expect(detail).toEqual({ key: 'status', patch: { status: null } });
   });
 
   it('gives every chip an accessible name saying what it clears', async () => {

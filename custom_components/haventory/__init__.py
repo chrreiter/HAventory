@@ -35,17 +35,42 @@ except ImportError:  # pragma: no cover - minimal harness without the frontend c
     add_extra_js_url = None  # type: ignore[assignment]
     remove_extra_js_url = None  # type: ignore[assignment]
 
+# Separate from the import above so a frontend that carries only one of the two
+# still hands us the other, rather than losing both to a single ImportError.
+try:
+    from homeassistant.components.frontend import async_remove_panel
+except ImportError:  # pragma: no cover - minimal harness without the frontend component
+    async_remove_panel = None  # type: ignore[assignment]
+
+try:
+    from homeassistant.components.panel_custom import async_register_panel
+except ImportError:  # pragma: no cover - minimal harness without panel_custom
+    async_register_panel = None  # type: ignore[assignment]
+
+from . import media as media_mod
 from . import services as services_mod
+from . import stale_files
 from . import ws as ws_mod
-from .const import DOMAIN
-from .exceptions import SchemaDowngradeError, StorageError
+from .const import (
+    CONF_CARD_TITLE,
+    CONF_SIDEBAR_PANEL_ENABLED,
+    DEFAULT_CARD_TITLE,
+    DEFAULT_SIDEBAR_PANEL_ENABLED,
+    DOMAIN,
+    PANEL_ELEMENT_NAME,
+    PANEL_ICON,
+    PANEL_URL_PATH,
+)
+from .exceptions import CorruptSchemaVersionError, SchemaDowngradeError, StorageError
 from .rate_limit import RateLimitConfig, RateLimiter
-from .repository import Repository
+from .repository import LoadReport, Repository
 from .storage import (
     CURRENT_SCHEMA_VERSION,
     STORAGE_KEY,
     DomainStore,
     async_persist_immediate,
+    cancel_pending_persist,
+    read_schema_version,
     schema_downgrade_message,
 )
 
@@ -73,6 +98,20 @@ _CARD_URL_PATHS = frozenset({_CARD_URL_PATH, _LEGACY_CARD_URL_PATH})
 _STATIC_PATH_KEY = "static_path_registered"
 _EXTRA_JS_URL_KEY = "extra_js_url"
 
+# Whether the authenticated media view has been registered in this Home
+# Assistant run. Outlives the config entry for the same reason as the static
+# route: aiohttp cannot unregister a route, so a reload must not add a second.
+_MEDIA_VIEW_KEY = "media_view_registered"
+
+# Whether the sidebar panel is currently registered. Entry-scoped: unload takes
+# the panel back, so a reload starts from nothing registered.
+_PANEL_REGISTERED_KEY = "panel_registered"
+
+# How many ids of each kind the corrupt-store refusal quotes. Enough to grep the
+# file with, few enough that a wholesale corruption does not paste thousands of
+# uuids into the config entry's error state.
+_CORRUPT_SAMPLE_IDS = 3
+
 
 # This integration is config-entry only; no YAML configuration is accepted.
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -93,6 +132,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if DOMAIN not in hass.data:
         hass.data[DOMAIN] = {}
 
+    # An upgrade extracts over the install directory without clearing it, so
+    # anything an earlier version shipped and this one dropped is still on disk.
+    # First, so a retired bundle is gone before the card directory is served.
+    await stale_files.async_sweep_retired_files(hass)
+
     # Expose storage manager via hass.data[DOMAIN]["store"]. Keep name compatible
     # with tests while upgrading to a schema-aware wrapper.
     store = DomainStore(hass, key=STORAGE_KEY, version=CURRENT_SCHEMA_VERSION)
@@ -112,6 +156,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # ConfigEntryError, not ConfigEntryNotReady: retrying cannot teach this build
         # a newer schema, and the message reaches the user in the entry's error state.
         raise ConfigEntryError(str(exc)) from exc
+    except CorruptSchemaVersionError as exc:
+        LOGGER.error(
+            "Refusing to set up against storage whose schema_version is unreadable",
+            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
+            exc_info=True,
+        )
+        # Same reasoning as the downgrade above: no number of retries turns a
+        # corrupt version into a readable one, so the entry stops with the
+        # specific message instead of backing off behind a generic one.
+        raise ConfigEntryError(str(exc)) from exc
     except StorageError as exc:
         LOGGER.error(
             "Storage validation failed during setup",
@@ -126,13 +180,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             exc_info=True,
         )
         raise ConfigEntryNotReady("storage load failed") from exc
-    hass.data[DOMAIN]["repository"] = Repository.from_state(payload)
+    repository = Repository.from_state(payload)
+    load_report = repository.last_load_report
+    if load_report.has_corruption:
+        LOGGER.error(
+            "Refusing to set up against a store this build cannot fully read",
+            extra={
+                "domain": DOMAIN,
+                "op": "setup_storage",
+                "dropped_items": len(load_report.dropped_item_ids),
+                "dropped_locations": len(load_report.dropped_location_ids),
+                "cyclic_locations": len(load_report.cyclic_location_ids),
+                "unrooted_locations": len(load_report.unrooted_location_ids),
+            },
+        )
+        # Refuse rather than load what could be read. Every WS and service handler
+        # persists immediately, so a loaded entry rewrites the store without the
+        # unreadable rows on the very first mutation — a notification would narrate
+        # the loss, not prevent it. Refusing leaves the file intact for repair, and
+        # matches the two schema refusals above: retrying cannot fix any of them.
+        raise ConfigEntryError(_corrupt_store_message(load_report, store_key=store.key))
+    hass.data[DOMAIN]["repository"] = repository
+
+    # Serve attachment files, and collect the ones nothing references any more.
+    # Both need the repository, so both come after it is in the bucket.
+    _register_media_view(hass)
+    await _async_sweep_orphaned_media(hass, repository)
+
+    # Heading served to the card by `haventory/config`.
+    hass.data[DOMAIN]["card_title"] = _resolve_card_title(entry)
 
     # WebSocket rate limiting (off by default; configured via the options flow)
     hass.data[DOMAIN]["rate_limiter"] = RateLimiter(
         RateLimitConfig.from_options(getattr(entry, "options", None))
     )
-    # Rebuild the limiter when options change. Guarded with getattr so the
+    # Re-read the options when they change. Guarded with getattr so the
     # minimal offline-test ConfigEntry stubs keep working.
     add_listener = getattr(entry, "add_update_listener", None)
     on_unload = getattr(entry, "async_on_unload", None)
@@ -148,56 +230,131 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Serve the bundled card and point the frontend at it
     await _register_frontend_module(hass)
 
+    # The sidebar entry loads the same bundle, so it can only be registered once
+    # that bundle is being served.
+    await _async_apply_sidebar_panel(hass, entry)
+
     return True
 
 
+def _register_media_view(hass: HomeAssistant) -> None:
+    """Serve `/api/haventory/media/...`, at most once per Home Assistant run.
+
+    Same shape as `_async_register_static_path`, and for the same reason:
+    aiohttp cannot unregister a route, so the guard flag has to outlive the
+    config entry or a reload would register a second view for one URL.
+    """
+    bucket = hass.data.setdefault(DOMAIN, {})
+    if bucket.get(_MEDIA_VIEW_KEY):
+        return
+
+    register = getattr(getattr(hass, "http", None), "register_view", None)
+    if register is None:
+        LOGGER.debug(
+            "HTTP component unavailable; item attachments cannot be served",
+            extra={"domain": DOMAIN, "op": "media_register"},
+        )
+        return
+
+    try:
+        register(media_mod.HaventoryMediaView())
+    except Exception:
+        # WARNING, not ERROR: the inventory works without it, but every
+        # attachment on every card is a broken image until it is fixed.
+        LOGGER.warning(
+            "Failed to register the HAventory media view; attachments will not load",
+            extra={"domain": DOMAIN, "op": "media_register"},
+            exc_info=True,
+        )
+        return
+
+    bucket[_MEDIA_VIEW_KEY] = True
+    LOGGER.debug(
+        "Serving HAventory item attachments",
+        extra={"domain": DOMAIN, "op": "media_register"},
+    )
+
+
+async def _async_sweep_orphaned_media(hass: HomeAssistant, repository: Repository) -> None:
+    """Delete attachment files no stored metadata references.
+
+    Runs at setup because that is the one moment the metadata is known to be
+    complete and nothing is mid-write. A failure here costs disk, not data, so
+    it never stops the entry from loading.
+    """
+    try:
+        await media_mod.async_sweep_orphans(hass, repository.iter_attachments())
+    except Exception:
+        LOGGER.warning(
+            "Could not sweep orphaned attachment files",
+            extra={"domain": DOMAIN, "op": "media_sweep"},
+            exc_info=True,
+        )
+
+
+def _resolve_card_title(entry: ConfigEntry) -> str:
+    """Read the configured card title, falling back to the default.
+
+    Entries created before the option existed simply have no value for it, so
+    an unset or blank title is the default rather than an empty heading.
+    """
+    options = getattr(entry, "options", None) or {}
+    title = options.get(CONF_CARD_TITLE)
+    if isinstance(title, str) and title.strip():
+        return title.strip()
+    return DEFAULT_CARD_TITLE
+
+
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Apply changed options by rebuilding the WS rate limiter."""
-    hass.data.setdefault(DOMAIN, {})["rate_limiter"] = RateLimiter(
+    """Apply changed options: card title, sidebar panel, rebuilt WS rate limiter."""
+    bucket = hass.data.setdefault(DOMAIN, {})
+    bucket["card_title"] = _resolve_card_title(entry)
+    bucket["rate_limiter"] = RateLimiter(
         RateLimitConfig.from_options(getattr(entry, "options", None))
     )
+    # Covers the toggle and a renamed card alike: the sidebar entry carries the
+    # card title, and re-registering is how a changed one reaches the sidebar.
+    await _async_apply_sidebar_panel(hass, entry)
     LOGGER.info(
         "Applied updated HAventory options",
         extra={"domain": DOMAIN, "op": "options_updated"},
     )
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry.
+async def _async_flush_pending_writes(hass: HomeAssistant, *, op: str) -> None:
+    """Write out whatever is still unsaved, before the state that holds it goes.
 
-    Clears idempotent registration flags and ephemeral data such as WS
-    subscriptions. If the test websocket stub is present, remove our
-    registered handlers from its registry.
+    A pending debounce is cleared either way: with nothing loaded there is
+    nothing to write, and leaving the task scheduled would only fire it against
+    a repository that is on its way out.
     """
 
     bucket = hass.data.get(DOMAIN) or {}
+    if bucket.get("store") is None or bucket.get("repository") is None:
+        cancel_pending_persist(hass, op=op)
+        return
 
-    # Ensure any pending changes are persisted before unload
     try:
         await async_persist_immediate(hass)
     except Exception:  # pragma: no cover - defensive
-        # Unload is the last chance to write; a failure here silently drops
+        # This is the last chance to write; a failure here silently drops
         # whatever was still unsaved, which nobody but an operator can recover.
         LOGGER.error(
-            "Failed to persist during unload",
-            extra={"domain": DOMAIN, "op": "unload"},
+            "Failed to persist during teardown",
+            extra={"domain": DOMAIN, "op": op},
             exc_info=True,
         )
 
-    # Hand back the frontend module URL; setup re-adds it on the next load. The
-    # static route stays, along with the flag that records it: aiohttp cannot
-    # unregister a route, and a reload must not try to add it twice.
-    _remove_extra_js_url(hass)
 
-    # Clear registration flags
-    bucket.pop("services_registered", None)
-    bucket.pop("ws_registered", None)
+def _cleanup_ws_test_stub_registry(hass: HomeAssistant) -> None:
+    """Take our handlers back out of the offline stub's command registry.
 
-    # Drop ephemeral data
-    bucket.pop("subscriptions", None)
-    bucket.pop("rate_limiter", None)
+    Real Home Assistant has no API for this, which is why teardown drops the
+    runtime instead; the stub does, and leaving handlers in its list would carry
+    them into the next test.
+    """
 
-    # Test stub cleanup: remove our handlers from __ws_commands__
+    bucket = hass.data.get(DOMAIN) or {}
     try:  # pragma: no cover - exercised in offline tests only
         registry = hass.data.get("__ws_commands__")
         handlers = bucket.get("ws_handlers") or []
@@ -219,9 +376,73 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             exc_info=True,
         )
 
-    bucket.pop("ws_handlers", None)
+
+async def _async_teardown_entry(hass: HomeAssistant, *, op: str) -> None:
+    """Give up everything the config entry owns, in the order that keeps it safe.
+
+    Flush first, while the repository is still reachable; then tell open
+    subscribers, while the subscription registry still lists them; then hand back
+    the frontend registrations, which read the URL the bucket recorded; and only
+    then empty the bucket.
+    """
+
+    await _async_flush_pending_writes(hass, op=op)
+
+    ws_mod.notify_backend_unavailable(hass)
+
+    # Hand back the frontend module URL; setup re-adds it on the next load. The
+    # static route stays, along with the flag that records it: aiohttp cannot
+    # unregister a route, and a reload must not try to add it twice.
+    _remove_extra_js_url(hass)
+
+    # A sidebar entry outliving the backend it opens is a link to a page that
+    # cannot load; setup registers it again.
+    _remove_sidebar_panel(hass)
+
+    _drop_entry_runtime(hass)
+
+
+async def async_unload_entry(hass: HomeAssistant, _entry: ConfigEntry) -> bool:
+    """Unload a config entry.
+
+    An unloaded entry owns nothing, so it serves nothing: the runtime goes the
+    way it does on removal, and the WebSocket commands — which Home Assistant
+    cannot unregister — refuse from here until setup runs again. That covers a
+    disabled entry, which stays in this state, and a reload, which passes through
+    it for as long as setup takes.
+    """
+
+    # Ahead of the teardown, which empties the bucket the handler list lives in.
+    _cleanup_ws_test_stub_registry(hass)
+
+    await _async_teardown_entry(hass, op="unload")
 
     return True
+
+
+def _drop_entry_runtime(hass: HomeAssistant) -> None:
+    """Leave the domain bucket holding only what outlives the config entry.
+
+    Home Assistant has no API for unregistering a WebSocket command, so ours go
+    on listening whether the entry is unloaded, disabled or removed. Emptying the
+    bucket is what makes them refuse: `ws._repo` raises `NotLoadedError` without a
+    repository, so every command answers the contract's `storage_error` envelope
+    instead of letting a dashboard left open read — and write — state the entry
+    no longer owns. The same lookup backs the `haventory.*` service handlers.
+
+    `_STATIC_PATH_KEY` and `_MEDIA_VIEW_KEY` are kept: each records an aiohttp
+    route, which cannot be unregistered and so outlives every entry. Dropping
+    either flag would make the next setup in the same run register the same
+    route a second time.
+    """
+
+    bucket = hass.data.get(DOMAIN)
+    if not isinstance(bucket, dict):
+        return
+
+    kept = {key: bucket[key] for key in (_STATIC_PATH_KEY, _MEDIA_VIEW_KEY) if key in bucket}
+    bucket.clear()
+    bucket.update(kept)
 
 
 async def async_remove_entry(hass: HomeAssistant, _entry: ConfigEntry) -> None:
@@ -232,12 +453,18 @@ async def async_remove_entry(hass: HomeAssistant, _entry: ConfigEntry) -> None:
     behind, either points at an asset that disappears with the integration, and
     a dead `module` URL fails to load on every dashboard render.
 
+    It then runs the same teardown an unload does, so the API stops answering for
+    an integration that is gone rather than serving on until the next restart.
+    Home Assistant unloads before it removes, so that teardown has usually
+    already run and finds nothing left to give up.
+
     The HA `Store` file is deliberately kept, so re-adding the integration
     restores the inventory. Purging it is a manual step (README → Installation
     → "Removing HAventory").
     """
 
     await _unregister_frontend_module(hass)
+    await _async_teardown_entry(hass, op="remove")
 
 
 def _read_manifest_version() -> str:
@@ -336,7 +563,14 @@ async def _async_lovelace_resources(hass: HomeAssistant, *, op: str) -> Any:
         )
         return None
 
-    if hasattr(resources, "loaded") and not resources.loaded:
+    # The collection's create/update/delete each load storage on demand, but
+    # `async_items` cannot — it is a sync callback over an in-memory dict, so an
+    # unloaded collection reports no resources at all. Both callers read it
+    # first: register would add a second entry for a card already registered,
+    # unregister would leave ours behind. Setting the flag is part of the
+    # contract rather than bookkeeping — `async_load` leaves it False, and the
+    # collection's next write would then load and re-add every item again.
+    if not getattr(resources, "loaded", True):
         await resources.async_load()
         resources.loaded = True
 
@@ -370,9 +604,13 @@ async def _async_register_static_path(hass: HomeAssistant) -> bool:
         # rebuild during development. The `?v=` on the URL covers the other
         # direction (see _async_card_url).
         await register([StaticPathConfig(_STATIC_URL_PATH, str(_WWW_DIR), cache_headers=False)])
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.warning(
-            "Failed to serve the HAventory card directory",
+    except Exception:
+        # ERROR, not WARNING: this return short-circuits both card loaders below,
+        # so the bundle is served by nothing and the card cannot load at all. The
+        # integration keeps working headlessly, which is what keeps it out of the
+        # error taxonomy, but an operator has to act.
+        LOGGER.error(
+            "Failed to serve the HAventory card directory; the card cannot load",
             extra={"domain": DOMAIN, "op": "frontend_register", "path": str(_WWW_DIR)},
             exc_info=True,
         )
@@ -446,6 +684,115 @@ def _remove_extra_js_url(hass: HomeAssistant, fallback_url: str | None = None) -
     LOGGER.debug(
         "Removed the HAventory card frontend module URL",
         extra={"domain": DOMAIN, "op": "frontend_unregister", "url": url},
+    )
+
+
+def _sidebar_panel_enabled(entry: ConfigEntry) -> bool:
+    """Whether the config entry asks for a sidebar entry.
+
+    Entries created before the option existed carry no value for it, and the
+    panel is what makes a fresh install discoverable — so absence reads as on.
+    Only an explicit opt-out turns it off.
+    """
+    options = getattr(entry, "options", None) or {}
+    return bool(options.get(CONF_SIDEBAR_PANEL_ENABLED, DEFAULT_SIDEBAR_PANEL_ENABLED))
+
+
+def _remove_sidebar_panel(hass: HomeAssistant) -> None:
+    """Take the sidebar entry back, whether or not one is registered.
+
+    `warn_if_unknown=False`: this also runs as the first half of a register, and
+    on the first setup of an install there is nothing there to remove.
+    """
+    hass.data.setdefault(DOMAIN, {}).pop(_PANEL_REGISTERED_KEY, None)
+    if async_remove_panel is None:
+        return
+
+    try:
+        async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.debug(
+            "Could not remove the HAventory sidebar panel",
+            extra={"domain": DOMAIN, "op": "panel_unregister", "url": PANEL_URL_PATH},
+            exc_info=True,
+        )
+
+
+async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Converge the sidebar entry on what the options and the build ask for.
+
+    Removing first makes every path — first setup, reload, options toggle,
+    rename — the same one call, and is what keeps a second registration from
+    raising `ValueError: Overwriting panel haventory`. Both calls fire the
+    frontend's panel-update event, so the sidebar follows without a restart.
+    """
+    bucket = hass.data.setdefault(DOMAIN, {})
+    _remove_sidebar_panel(hass)
+
+    if not _sidebar_panel_enabled(entry):
+        LOGGER.debug(
+            "Sidebar panel disabled in the options; not registering",
+            extra={"domain": DOMAIN, "op": "panel_register"},
+        )
+        return
+
+    # The panel is the card bundle's second element, so without a build there is
+    # nothing for it to load — same graceful skip the card loaders take.
+    if not os.path.isfile(_CARD_BUNDLE_PATH):  # noqa: ASYNC240
+        LOGGER.debug(
+            "Card bundle not built; skipping sidebar panel registration",
+            extra={
+                "domain": DOMAIN,
+                "op": "panel_register",
+                "path": str(_CARD_BUNDLE_PATH),
+            },
+        )
+        return
+
+    if async_register_panel is None:
+        LOGGER.debug(
+            "panel_custom component not available; HAventory gets no sidebar entry",
+            extra={"domain": DOMAIN, "op": "panel_register", "url": PANEL_URL_PATH},
+        )
+        return
+
+    title = _resolve_card_title(entry)
+    # The exact string both card loaders receive: a second URL for the same
+    # module defeats the browser's module map and defines the element twice.
+    url = await _async_card_url(hass)
+
+    try:
+        await async_register_panel(
+            hass,
+            frontend_url_path=PANEL_URL_PATH,
+            webcomponent_name=PANEL_ELEMENT_NAME,
+            sidebar_title=title,
+            sidebar_icon=PANEL_ICON,
+            module_url=url,
+            embed_iframe=False,
+            trust_external=False,
+            # The panel element reads its heading from here, the way the card
+            # reads it from `haventory/config`.
+            config={"title": title},
+            require_admin=False,
+        )
+    except Exception:
+        LOGGER.warning(
+            "Failed to register the HAventory sidebar panel",
+            extra={"domain": DOMAIN, "op": "panel_register", "url": PANEL_URL_PATH},
+            exc_info=True,
+        )
+        return
+
+    bucket[_PANEL_REGISTERED_KEY] = True
+    LOGGER.debug(
+        "Registered the HAventory sidebar panel",
+        extra={
+            "domain": DOMAIN,
+            "op": "panel_register",
+            "url": PANEL_URL_PATH,
+            "module_url": url,
+        },
     )
 
 
@@ -614,13 +961,52 @@ async def _unregister_frontend_module(hass: HomeAssistant) -> None:
             await _delete_card_resource(resources, item, op="frontend_unregister")
 
 
+def _corrupt_store_message(report: LoadReport, *, store_key: str) -> str:
+    """Explain a refused load in terms of the file the user has to fix.
+
+    The message reaches the config entry's error state, so it names counts, a few
+    ids to grep for, and the file itself — a bare "corrupt storage" would leave
+    the user with nowhere to look. Ids are labelled by kind, because they are the
+    key to search under and an unlabelled mixed list says which to try only by
+    luck.
+    """
+
+    parts: list[str] = []
+    if report.dropped_item_ids:
+        parts.append(f"{len(report.dropped_item_ids)} item(s)")
+    if report.dropped_location_ids:
+        parts.append(f"{len(report.dropped_location_ids)} location(s)")
+    if report.cyclic_location_ids:
+        cycle = f"{len(report.cyclic_location_ids)} location(s) in a parent cycle"
+        if report.unrooted_location_ids:
+            cycle += f" (blocking {len(report.unrooted_location_ids)} below them)"
+        parts.append(cycle)
+
+    # Cycle members only. A location merely sitting below a cycle needs no edit,
+    # so naming it sends the user to a row where there is nothing to change.
+    sample = [
+        *(f"item {i}" for i in report.dropped_item_ids[:_CORRUPT_SAMPLE_IDS]),
+        *(f"location {i}" for i in report.dropped_location_ids[:_CORRUPT_SAMPLE_IDS]),
+        *(f"location {i} (parent_id)" for i in report.cyclic_location_ids[:_CORRUPT_SAMPLE_IDS]),
+    ]
+    detail = f" First affected ids: {'; '.join(sample)}." if sample else ""
+    return (
+        f"HAventory could not read {' and '.join(parts)} from .storage/{store_key}, "
+        f"so setup stopped instead of loading a partial inventory and overwriting the "
+        f"file on the next change.{detail} The store has been left untouched — restore "
+        f"it from a backup, or repair those entries, then reload the integration. "
+        f"Removing and re-adding the integration will not help: it leaves the file "
+        f"exactly as it is, so setup stops here again."
+    )
+
+
 def _validate_storage_payload(payload: dict[str, Any], *, schema_version: int) -> None:
     """Validate loaded storage payload shape and version."""
 
     if not isinstance(payload, dict):
         raise StorageError("storage payload is not a dict")
 
-    stored_version = int(payload.get("schema_version", -1))
+    stored_version = read_schema_version(payload, missing=-1)
     if stored_version > int(schema_version):
         raise SchemaDowngradeError(
             schema_downgrade_message(

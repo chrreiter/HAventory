@@ -44,16 +44,20 @@ export function hasCommandKey(nav: KeyboardPlatform = navigator): boolean {
 /**
  * A `keydown` listener that closes a surface on Escape.
  *
- * `preventDefault` matters: without it the key also reaches whatever is behind
- * the surface, so dismissing a dialog opened from another one would close both.
+ * The key stops here: `preventDefault` keeps the browser from acting on it, and
+ * `stopPropagation` keeps whatever is behind the surface from closing too. One
+ * Escape dismisses one thing — a popover opened from a form must not take the
+ * form with it, and a dialog opened from another must not take both.
+ *
  * Only for surfaces where Escape means exactly "close" — anything that has to
- * discriminate (the item editor also handles Ctrl/Cmd+Enter, and its category
- * dropdown swallows Escape so the edit survives) writes its own.
+ * discriminate (the item editor also handles Ctrl/Cmd+Enter, and asks before
+ * discarding a dirty form) writes its own.
  */
 export function onEscape(close: () => void): (e: KeyboardEvent) => void {
   return (e: KeyboardEvent) => {
     if (e.key !== 'Escape') return;
     e.preventDefault();
+    e.stopPropagation();
     close();
   };
 }

@@ -10,7 +10,14 @@ Home Assistant custom integration (domain `haventory`) for household inventory t
 plus a Lit + TypeScript Lovelace card. Local-push, single-instance, HA `Store`-backed
 persistence — no external services.
 
-**Targets:** Linux dev + `ubuntu-latest` CI. Minimum Home Assistant **2026.6.0** ⇒ Python
+Items live in a nested location tree, carry tags, categories and typed custom fields, and
+can be checked out, flagged with a status, and carry **photos and PDF manuals**: both are
+stored on disk inside the config directory and served through an authenticated Home
+Assistant view, never from `/local`. On a phone, the photo picker opens the companion
+app's camera directly; a manual gets a title of your choosing, because `scan_0142.pdf`
+does not say which appliance it belongs to.
+
+**Targets:** Linux dev (Windows via WSL2) + `ubuntu-latest` CI. Minimum Home Assistant **2026.6.0** ⇒ Python
 **3.14** everywhere (uv provisions the interpreter automatically; the source uses 3.14-only
 PEP 758 syntax). Node **22.13+ / 24 LTS** for the card.
 
@@ -35,6 +42,43 @@ Minimum Home Assistant version: **2026.6.0** — the oldest release that both ru
 integration and carries no known security advisory. Developers: see the Developer
 Checklist below and [CONTRIBUTING.md](CONTRIBUTING.md).
 
+### Finding HAventory after install
+
+Setup asks two things — what the card is called, and whether HAventory gets a **sidebar**
+entry (yes by default, so there is somewhere to click before you have built a dashboard).
+Both are editable afterwards under **Configure**. The entry opens the full view as a page
+of its own — the same workspace the card's ⋮ → full view opens, with the same menu,
+dialogs and editors — and carries the HAventory mark and whatever name you gave the card.
+
+- **Reload the browser page once after installing.** Home Assistant hands an integration's
+  JavaScript to a page when that page loads, so a tab that was already open when HAventory
+  was installed or updated has neither the card nor the artwork behind its sidebar icon
+  yet — the entry shows up without its mark until the next load. One ordinary reload is
+  all it takes; no cache clearing, and nothing to repeat later. Clicking the bare sidebar
+  entry works too: panel and card ship in one bundle, and a dashboard replaces its "custom
+  element doesn't exist" tile with the real card the moment that bundle loads. Either way,
+  a page that has shown the card once keeps it for as long as it stays open — the backend
+  restarting or updating underneath changes nothing until the page next loads.
+
+- **Turning it off:** Settings → Devices & services → HAventory → **Configure** →
+  *Show HAventory in the sidebar*. The entry appears and disappears as you save the form;
+  no restart, no reload. Renaming the card renames the sidebar entry the same way.
+- **Hiding it for one user only:** the option above is instance-wide. Home Assistant's own
+  **Edit sidebar** mode hides any entry for the logged-in user alone, and that setting
+  follows the user across their devices.
+- **If you are on the page when it is turned off**, Home Assistant shows "panel not found"
+  the next time you navigate; nothing breaks and turning it back on restores the page.
+
+**Pinning HAventory onto the Overview.** Home Assistant's redesigned Overview — the
+landing page on a fresh install — is not a Lovelace dashboard and hosts **no cards at
+all**, core or custom, so the HAventory card cannot be placed there. What it does take is
+a shortcut to a panel: open the Overview, **Edit** it, choose **Add shortcut**, and pick
+**HAventory** from the list. That tile is per-user (Home Assistant stores it with your
+profile), which is why HAventory cannot add it for you.
+
+On a dashboard you created yourself the card works as it always has: **Add card** →
+search *HAventory*.
+
 ### How the card gets loaded
 
 The card bundle ships inside the integration, and the integration serves it at
@@ -45,7 +89,8 @@ Two mechanisms then point the frontend at that one URL, so every way of viewing 
 dashboard is covered: a Lovelace resource entry (registered automatically in the default
 storage mode — this is what HA Cast reads) and the frontend's extra-module
 list (which needs no stored state and works in YAML resource mode). Both receive the same
-URL, so the card is only ever defined once.
+URL, so the card is only ever defined once. The sidebar page loads that same URL as its
+module — same string again, so the browser reuses the bundle it already has.
 
 **YAML-mode dashboards** therefore need no manual step either. You are in YAML mode if
 `configuration.yaml` has a `lovelace:` block with `mode: yaml`; in the UI, with
@@ -70,9 +115,21 @@ lovelace:
 ### Removing HAventory
 
 Deleting the integration under **Settings → Devices & Services** takes back both loaders —
-the Lovelace resource entry and the extra-module URL — so no dashboard is left loading a
-card that is about to disappear. (If your Lovelace runs in YAML mode any entry is yours, in
-`configuration.yaml` — delete the `resources:` line by hand.)
+the Lovelace resource entry and the extra-module URL — plus the sidebar entry, so nothing
+is left pointing at a card that is about to disappear. (If your Lovelace runs in YAML mode
+any entry is yours, in `configuration.yaml` — delete the `resources:` line by hand. An
+Overview shortcut is yours too, and is removed the same way it was added.)
+
+**The API stops answering at once.** Home Assistant keeps a WebSocket command registered
+until it restarts, so a dashboard still open in another tab can go on talking to HAventory
+after you remove it. It is refused rather than served: every command comes back as an
+error, and nothing more is written to your inventory. Reload that tab and the card is gone.
+
+The same holds while the integration is **disabled**, and briefly while it **reloads** — an
+entry that owns nothing serves nothing. A card left open is told its live updates stopped
+and re-opens them by itself once setup finishes, so a reload costs it a few seconds of a
+"Live updates paused" banner and no refresh. Disable it for longer and the card stops
+waiting and offers Refresh instead.
 
 **Your inventory is deliberately kept.** Items and locations live in the Home Assistant
 store file `<config>/.storage/haventory_store`, which removal does not touch: adding the
@@ -119,15 +176,32 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   re-opens the refused round up to four times, waiting out a retry-after hint when the
   refusal carries one and backing off exponentially when it does not, and once that budget
   is spent it says **Live updates paused** and offers a Refresh — so a list that has
-  stopped updating never passes for one with nothing to report.
+  stopped updating never passes for one with nothing to report. What the settings mean, and
+  when turning them on is worth it: [`docs/rate_limiting.md`](docs/rate_limiting.md).
 - **Import identity is the id, never the name.** The `merge` / `replace` / `skip` policies
   all classify an incoming item or location by its id. Restoring a backup onto entities
   you rebuilt by hand — which carry fresh uuids — therefore duplicates them instead of
   merging, and the backup's items follow their stored `location_id` onto the duplicate.
   Restore into an empty inventory, or onto one whose ids are still intact.
+- **A JSON export carries attachment *metadata*, not the files.** The export is one
+  WebSocket result the card writes to a file, so it cannot carry binaries; photos and
+  manuals live on disk under `<config>/haventory/attachments/`. Importing a document onto
+  an install that does not hold those files keeps the references and shows a "file
+  missing" state — the preview reports how many before you write anything, and the item's
+  Documents list marks each affected row rather than offering a link to a 404.
+  **Home Assistant's own backups are the full-fidelity path**: the media directory sits
+  inside the config directory, so a backup and restore carries the files and the store
+  together and consistently.
+- **Nothing is resized or thumbnailed on the server.** Server-side resizing would mean a
+  Pillow dependency in a local-push integration — install size, wheel availability on every
+  HA architecture, and CPU on a Pi. The *card* re-encodes a photo over 2 MB before it
+  uploads, capped at 2048px on the longest edge, which is what keeps a phone frame under
+  the 8 MB per-file cap; the file that arrives is the one that is stored, and a re-encode
+  that fails or comes out larger simply uploads the original. Lists still load the stored
+  file at full size, leaning on `loading="lazy"` and `decoding="async"`.
 
-These are tracked, with their measurements and proposed fixes, in
-[`docs/open-items.md`](docs/open-items.md).
+These are tracked, with their measurements and proposed fixes, in the
+[issue tracker](https://github.com/chrreiter/HAventory/issues).
 
 ---
 
@@ -309,9 +383,11 @@ npm i && npx playwright install chromium   # one-time
 npm run test:e2e                            # skips cleanly if RUN_ONLINE is unset
 ```
 
-The card must be deployed on a dashboard at `--path` (default `/lovelace/default_view`),
-e.g. via `scripts/reload_addon.sh`. The test is idempotent — it creates a uniquely-named
-item and deletes it (best-effort cleanup even on failure).
+The card must be on a dashboard (deploy e.g. via `scripts/reload_addon.sh`), but no path is
+assumed: the run walks the instance's dashboards for a view holding a `custom:haventory-card`
+in a normal column — the narrow layout the assertions target — and prints the one it chose.
+`--path <ha-url-path>` forces a different view. The test is idempotent — it creates a
+uniquely-named item and deletes it (best-effort cleanup even on failure).
 
 #### Coverage
 
@@ -336,19 +412,31 @@ item and deletes it (best-effort cleanup even on failure).
 - Services via `hass.services.async_register` with `voluptuous` schemas; handlers re-raise
   validation/repository/storage errors so HA surfaces them.
 - Areas via `homeassistant.helpers.area_registry.async_get(hass)`; never auto-create areas.
-- Case-insensitive search; denormalized `location_path` on items; item `version` for optimistic concurrency.
+- Case-insensitive search; denormalized `location_path` on items; item `version` for optimistic
+  concurrency. `version` counts *item* mutations only — renaming or moving a location rewrites
+  the derived `location_path` across its whole subtree without bumping `version` or restamping
+  `updated_at`, so an expected version taken before the rename is still accepted after it.
 - Two calendar-derived counts on `haventory/stats`, each with a matching `item/list` filter:
   `overdue_count` / `overdue_only` for a passed `due_date` (checked-out items only, since
   that is where a due date can exist), and `inspection_overdue_count` /
   `inspection_overdue_only` for a passed `inspection_date` — the date the item is next due
   for inspection, over the whole inventory, since an inspection is independent of any
   check-out. Both move with the calendar and emit no event when the date rolls over.
+- A stored per-item **status** — `ok` / `missing` / `needs_repair`, always exactly one,
+  `ok` being the default and the way a flagged state clears. Filterable via the
+  `item/list` `status` filter, counted on `haventory/stats` as `missing_count` /
+  `needs_repair_count` (stored state, so unlike the calendar counts every change emits
+  an event), and settable everywhere an item is written — WS create/update, the
+  `haventory.item_create` / `haventory.item_update` services, and import. A store written
+  before the field existed is migrated on load (schema v5 backfills `ok`); an export
+  without it reads as `ok` too.
 - **WebSocket rate limiting (opt-in, off by default)**: per-connection **and** global
   token buckets for commands (excess requests get a `rate_limited` error) and for
   subscription broadcasts (excess events are dropped, never breaking the command).
   Enable and tune it under Settings → Devices & services → HAventory → **Configure**;
   `haventory/health` reports drop counters. Leave it disabled for stress testing
-  (`scripts/stress_test.py`). Semantics and defaults:
+  (`scripts/stress_test.py`). What each setting means and when to enable it:
+  [`docs/rate_limiting.md`](docs/rate_limiting.md); wire-level semantics and defaults:
   [`docs/backend_api_contract.md`](docs/backend_api_contract.md) → "Rate limiting".
 - **JSON import/export (data safety)** via `haventory/export`, `haventory/import/preview`,
   and `haventory/import/execute`: back up to a versioned document before a breaking update
@@ -387,30 +475,54 @@ Redesigned in WP4.1. Lit + TypeScript + Vite; tests with Vitest; build outputs t
 `custom_components/haventory/www/`. Real-time over WebSocket with optimistic writes
 throughout.
 
+- **Sidebar page** — HAventory gets an entry in Home Assistant's sidebar, opening the full
+  view as a page of its own with the same ⋮ menu, dialogs and editors the card's full view
+  has. It loads the one card bundle and is named after the card title. Turn it off under
+  Settings → Devices & services → HAventory → **Configure**; see
+  [Finding HAventory after install](#finding-haventory-after-install).
 - **Standard card** — one Add button and a single ⋮ menu (Select items, Organize, Refresh,
   Diagnostics, Export backup / Export current view, Import); Columns is offered in the full
   view, which is the only surface it changes. Live stat badges — items, low stock, overdue,
   due for inspection, checked out — are click-to-filter. Rows carry a quantity stepper, a
-  LOW badge, an overdue check-out chip, an "Inspection due" chip, and hover actions.
+  LOW badge, an overdue check-out chip, an "Inspection due" chip, an amber status chip
+  when an item is flagged Missing / Needs repair, and hover actions.
 - **Filters** — a collapsible panel exposing the whole backend filter object: location
   (from a real tree), area, include-subtree, category chips with counts, tag chips with an
   any/all toggle, low-stock-only, checked-out, overdue, inspection-due and no-location —
-  each with the count of what it would keep — plus updated / created windows (each row's ≥ flips to ≤ for
-  "before") and sort across all six sortable fields.
+  each with the count of what it would keep — a single-select status row (OK / Missing /
+  Needs repair, the flagged two priced from the stats counts), plus updated / created
+  windows (each row's ≥ flips to ≤ for "before") and sort across all six sortable fields.
   "Low stock" (a filter) and "Low stock first" (an ordering) are separate, independently
   clearable controls. Active filters appear as removable chips.
 - **Editing** — the row expands in place; there is no dialog chain. Full field parity:
-  name, description, quantity, low-stock threshold, category, tags, location (picked from
-  a tree inside the form), checked-out with due date, next inspection (with the same
+  name, description, quantity, low-stock threshold, category, status, tags, location
+  (picked from a tree inside the form), checked-out with due date, next inspection (with the same
   +7 / +31 / +90 / +X quick offsets the check-out popover offers), and typed
   custom fields (text / number / yes-no / date). Saves send the item's expected version so
-  a concurrent edit surfaces as a conflict.
+  a concurrent edit surfaces as a conflict. Escape takes back one thing at a time: an open
+  picker first, then the form — and a form you have typed into asks before it discards.
+  With no locations yet, the location picker creates the first one and files the item in
+  it, rather than pointing at a menu three steps away.
+- **Photos and manuals** attach from the same form, once the item exists — an upload is
+  filed against an item id, and the create form says so instead of leaving the sections
+  unexplained. Each queue reports itself under the section that started it, with a moving
+  indicator while a file is in flight; a refused file keeps its error and Retry until you
+  dismiss them. Removing an attachment asks first, because the file goes with it.
 - **Full view** — a fullscreen workspace with a coloured app bar, a **browse sidebar**, and
-  a sortable table. Only columns the backend can sort by get a clickable header. The
+  a sortable table. Only columns the backend can sort by get a clickable header. A browser
+  that has made no choice yet shows every optional column — quantity, status, category,
+  location, tags, due, next inspection, updated — and the ⋮ → **Columns** picker is where
+  you thin that down; the table scrolls sideways rather than dropping a column you kept.
+  The Status column names every row, OK included, and the name's amber status chip stands
+  down while it is shown so no row says the same word twice. The
   sidebar leads with the location tree carrying the backend's own per-location counts and
-  an orphans row, then **Categories** and **Tags** as sections of their own; each heading
-  collapses from a chevron and states how many there are — locations counted at every
-  depth — and Locations stays at the top. Category picks one value and
+  an orphans row, then **Status**, **Categories** and **Tags** as sections of their own;
+  each heading collapses from a chevron and states how many there are — locations counted
+  at every depth, Status excepted because there that number would count the household's
+  vocabulary rather than anything in the inventory — and
+  Locations stays at the top. Every status row is priced from the backend's own per-status
+  counts, so a status nothing carries reads 0 rather than inheriting the rest of the
+  inventory. Category and status each pick one value and
   tags accumulate, matching how the backend treats them. With a filter on, each location
   row reads "4 / 37" — matches over total — so you can see where the matches are rather
   than a total that never moves. The counts ignore the *location* filter, since the sidebar
@@ -420,7 +532,11 @@ throughout.
   From the second selected tag on, the Tags heading carries the same any/all control the
   filter panel has, since that is the mode governing what the sidebar just selected. The
   app bar's stat pills are the card's: low in amber, overdue in red, to-inspect in amber,
-  checked out, each click-to-filter. An empty table names the reason and offers a way out — the same
+  checked out, each click-to-filter. All four are derived from the item and mean the same
+  thing in every household, which is what lets them share the bar's fixed hues; a status is
+  the household's own word in the household's own colour, so the sidebar's Status section
+  and the filter chips are where statuses are priced and picked.
+  An empty table names the reason and offers a way out — the same
   wording and the same offers as the card's list.
 
   At phone width the sidebar folds away and the surface hands its own breakpoint down to
@@ -437,7 +553,16 @@ throughout.
   delete that explains what is in the way. Category and tag rename, merge and removal are
   batch rewrites over every affected item; a location merge re-files that location's items,
   re-parents its children and deletes the husk — all with the same progress and
-  partial-failure reporting.
+  partial-failure reporting. A location's Area field says what picking one will do before
+  you save it: an area belongs to a whole tree, so the line under the select names the tree
+  root it will be stored on and how many locations that reaches — and on a location that
+  merely inherits, it names the area it inherits. With no Home Assistant areas defined the
+  field is not shown at all. The **Parent location** picker offers the areas alongside the
+  locations, including areas nothing is filed under yet: picking one moves the whole
+  subtree out to the top level *and* into that area, which is how a tree changes rooms.
+  The merge target picker offers locations only — an area heads the tree without being part
+  of it and holds no items itself, so a merge, which has to hand this location's items to
+  something, always names a location.
 - **Check-out** invites an optional due date (+7 / +31 / +90 / +X day suggestions) rather
   than silently checking out with none — the date is what makes overdue highlighting mean
   anything. "No due date" stays a first-class choice.
@@ -463,11 +588,17 @@ throughout.
 
 ```yaml
 type: custom:haventory-card
-title: Inventory   # optional; defaults to "Inventory"
+title: Pantry   # optional; overrides the integration-wide card title
 ```
 
 `title` is the only option the card reads. Any other key is ignored rather than rejected,
 so a stale dashboard config never breaks the card.
+
+Without it, the card uses the name set under Settings → Devices & services → HAventory →
+**Configure** (asked for at setup too, and defaulting to "HAventory"), so one setting
+renames every card. Per-dashboard `title:` wins over it — use that when two dashboards
+should name the same inventory differently. An open dashboard picks up a changed name on
+its next refresh or reload; the change is not pushed live.
 
 ### CI/CD & Ops
 
@@ -547,14 +678,19 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
   components and the `ui: legacy` option that reached them were removed — there is one
   card now, not two.
 
-### 🚧 Phase 3: Polish & HACS (Planned)
-- HACS publication; release automation (release-please); additional optimizations.
+### 🚧 Phase 3: Polish & HACS (In progress)
+- Release automation is in place: release-please cuts the version and the release workflow
+  publishes the HACS zip asset.
+- Remaining: HACS publication (public repository, custom-repository install, default-store
+  submission) and the polish staged alongside it, tracked under
+  [#236](https://github.com/chrreiter/HAventory/issues/236).
 
 ---
 
 ## Dev helper scripts
 
-All scripts are Linux/bash under `scripts/` (the former `.ps1` scripts were retired in WP1).
+All scripts are Linux/bash under `scripts/`, and the Python helpers assume a UTF-8
+terminal. There is no Windows host support — use WSL2.
 
 ### Reload into a running HA dev container
 
@@ -599,6 +735,28 @@ uv run python scripts/stress_test.py --skip-deploy --skip-confirm  # quick re-ru
 Scenarios: rapid sequential mutations, concurrent burst, bulk-under-load, mixed workload,
 persistence-across-restart. Exit codes: `0` pass, `1` failures, `2` setup error.
 
+### Attachment probes
+
+`scripts/probe_attachments.py` checks the attachment path against a live instance — and
+against the **bytes on Home Assistant's disk**, not what the card reported. Pillow comes
+from the non-default `probes` dependency group, so a plain `uv sync` stays lean:
+
+```bash
+uv sync --group probes
+export RUN_ONLINE=1 HA_TOKEN=<token>   # HA_BASE_URL defaults to http://localhost:8123
+export HA_CONTAINER=home-assistant     # or HA_CONFIG_DIR for a bind-mounted config
+uv run --group probes python scripts/probe_attachments.py
+```
+
+It covers the 2 MiB re-encode threshold and the 2048-pixel cap, EXIF orientation applied
+before the re-encode, PNG transparency surviving as WebP, an animated GIF kept whole, a
+sub-threshold JPEG round-tripping byte-identical, the `206`/`404`/no-answer presence
+semantics, and the `Content-Disposition` name. Exit codes: `0` pass, `1` a probe failed,
+`2` setup error, `3` timeout.
+
+`scripts/probe_fixtures.py --out DIR` writes those fixtures on their own (~30 MB of
+generated images — they are never committed).
+
 ---
 
 ## Contributing
@@ -606,24 +764,33 @@ persistence-across-restart. Exit codes: `0` pass, `1` failures, `2` setup error.
 Contributions are welcome! See **[CONTRIBUTING.md](CONTRIBUTING.md)**. File bugs and feature
 requests through the [issue tracker](https://github.com/chrreiter/HAventory/issues/new/choose),
 and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discussions).
+Taking part means following the [Code of Conduct](CODE_OF_CONDUCT.md). Security problems go
+through [private reporting](SECURITY.md), never a public issue.
 
 ## Conventions
 
 - Domain/package: `haventory` under `custom_components/haventory`; services `haventory.*`;
   built assets `custom_components/haventory/www/`, served at `/haventory_static/`;
-  calendar entity `calendar.haventory` — a reserved name for
-  the post-1.0 calendar work ([open item 9](docs/open-items.md)), not an entity that exists
-  today.
+  calendar entity `calendar.haventory` — a reserved name for the calendar work
+  ([#187](https://github.com/chrreiter/HAventory/issues/187)), staged after the first
+  public release, not an entity that exists today.
 - Logging: avoid reserved `LogRecord` keys in logger extras — use `item_name` /
   `location_name`, not `name`.
 
 ## Developer docs
 
 - WebSocket API contract: `docs/backend_api_contract.md`
+- WebSocket rate limiting (what the options mean, when to enable): `docs/rate_limiting.md`
 - Data shapes (Item/Location/filter/sort/events): `docs/data_shapes.md`
 - Frontend architecture: `docs/frontend_architecture.md`
-- Release testing plan (manual v1.0 readiness run): `docs/release_testing_plan.md`
-- Open items / future work: `docs/open-items.md`
+- Release testing plan (the manual pre-release validation run): `dev/release_testing_plan.md`
+
+`docs/` holds what a user or contributor of the shipped integration needs; `dev/` holds the
+development process — the testing plan, the release review, and the per-task design
+documents. Work is tracked in the
+[issue tracker](https://github.com/chrreiter/HAventory/issues);
+[#236](https://github.com/chrreiter/HAventory/issues/236) carries what is mandatory before
+the first public release.
 
 ## Troubleshooting
 
@@ -635,3 +802,15 @@ and ask questions in [Discussions](https://github.com/chrreiter/HAventory/discus
   after restoring a backup taken on a newer version. The entry stops with that error and the
   store is left untouched; re-install the newer version to read it, or replace
   `haventory_store` with a backup taken on the running version.
+- **"stored data has a corrupt schema_version (…); expected an integer"**: `haventory_store`
+  holds something other than a whole number under `schema_version` — a hand edit, a truncated
+  write, or a quoted number such as `"5"`, which is not the same as `5` and is not assumed to
+  mean it. The entry stops with that error and the store is left untouched; fix the value in
+  the file, or replace `haventory_store` with a backup.
+- **"HAventory could not read N item(s) / location(s) from .storage/haventory_store"**: some
+  entries in the store are structurally broken — a hand edit, a truncated write, or a
+  location whose parent chain loops back on itself. The entry stops rather than loading the
+  readable remainder, because HAventory saves on every change: a partial load would rewrite
+  the file without those entries on the first edit and make the loss permanent. The store is
+  left untouched, and the message names the first few affected ids. Fix those entries, or
+  restore `haventory_store` from a backup, then reload the integration.

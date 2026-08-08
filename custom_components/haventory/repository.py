@@ -18,14 +18,16 @@ import logging
 import re
 import uuid
 from collections import deque
-from collections.abc import Iterable
-from dataclasses import replace
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, replace
 from typing import Any, NamedTuple, TypedDict
 
 from .exceptions import ConflictError, NotFoundError, ValidationError
 from .models import (
+    DEFAULT_ITEM_STATUS,
     EMPTY_LOCATION_PATH,
     LOCATION_GUARD_MAX_STEPS,
+    AttachmentMeta,
     Item,
     ItemCreate,
     ItemFilter,
@@ -33,8 +35,10 @@ from .models import (
     Location,
     LocationPath,
     Sort,
+    StatusDefinition,
     apply_item_update,
     build_location_path,
+    coerce_item_status,
     create_item_from_create,
     date_sort_key,
     filter_items,
@@ -43,15 +47,21 @@ from .models import (
     item_inspection_is_overdue,
     item_is_low_stock,
     item_is_overdue,
+    load_attachments,
     monotonic_timestamp_after,
     new_uuid4,
     normalize_search_text,
     normalize_tags,
     normalize_text_for_sort,
     parse_uuid4,
+    seed_status_definitions,
+    serialize_attachment_meta,
+    serialize_status_definition,
     sort_items,
     today_utc_date,
     validate_location_name,
+    validate_status_definition,
+    validate_status_slug,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -85,6 +95,7 @@ class InternalIndexes(TypedDict):
     locations_by_id: dict[str, Location]
     tags_to_item_ids: dict[str, set[str]]
     category_to_item_ids: dict[str, set[str]]
+    status_to_item_ids: dict[str, set[str]]
     checked_out_item_ids: set[str]
     low_stock_item_ids: set[str]
     items_by_location_id: dict[str, set[str]]
@@ -97,6 +108,30 @@ UNSET: object = object()
 
 TRIGRAM_MIN_LEN = 3
 PREFIX_MIN_LEN = 2
+
+#: Rows of one kind logged individually before ``load_state`` switches to a total.
+#:
+#: A drop is per-row, so a wholesale corruption would otherwise emit one ERROR
+#: record per row — a store with a thousand broken items buries every other line
+#: in the log the user was told to go and read. Enough ids to grep for, then the
+#: count, which is the part that says how bad it is.
+LOAD_DROP_LOG_LIMIT = 10
+
+
+def _log_dropped_overflow(op: str, dropped: int) -> None:
+    """Report the drops that were counted but not logged individually."""
+
+    if dropped <= LOAD_DROP_LOG_LIMIT:
+        return
+    LOGGER.error(
+        "Further rows failed to load from persisted state; ids omitted",
+        extra={
+            "domain": "haventory",
+            "op": op,
+            "dropped_total": dropped,
+            "dropped_logged": LOAD_DROP_LOG_LIMIT,
+        },
+    )
 
 
 def _coerce_canonical_ts(value: object, *, fallback: str | None = None) -> str:
@@ -111,6 +146,41 @@ def _coerce_canonical_ts(value: object, *, fallback: str | None = None) -> str:
     if fallback is not None and is_canonical_utc_timestamp(fallback):
         return fallback
     return iso_utc_now()
+
+
+@dataclass(frozen=True)
+class LoadReport:
+    """What ``load_state`` had to refuse or could not make sense of.
+
+    ``load_state`` coerces where it can — an unknown status, a non-canonical
+    timestamp, a missing ``sort_key`` — so an entry reaching one of these tuples
+    is structurally broken rather than merely odd. The distinction matters because
+    setup refuses on a non-empty report: with the entry loaded, the repo's
+    persist-immediately convention means the first mutation rewrites the store
+    without the dropped rows, turning a readable corrupt file into a permanent
+    loss.
+
+    #225 replaces the refusal with a repairs issue offering "load anyway"; this is
+    the payload that flow needs, which is why it carries ids and not just counts.
+    """
+
+    dropped_item_ids: tuple[str, ...] = ()
+    dropped_location_ids: tuple[str, ...] = ()
+    #: Locations whose own ``parent_id`` closes a loop — the entries a repair edits.
+    cyclic_location_ids: tuple[str, ...] = ()
+    #: Locations left unreachable *because* of those, needing no edit of their own.
+    unrooted_location_ids: tuple[str, ...] = ()
+
+    @property
+    def has_corruption(self) -> bool:
+        """True when the payload held anything this build could not load."""
+
+        return bool(
+            self.dropped_item_ids
+            or self.dropped_location_ids
+            or self.cyclic_location_ids
+            or self.unrooted_location_ids
+        )
 
 
 class Repository:
@@ -131,10 +201,16 @@ class Repository:
         # Primary stores
         self._items_by_id: dict[str, Item] = {}
         self._locations_by_id: dict[str, Location] = {}
+        # Status definitions, keyed by their immutable slug. Seeded with the
+        # built-ins, which is also what a store carrying no section means.
+        self._statuses_by_slug: dict[str, StatusDefinition] = seed_status_definitions()
 
         # Item indexes
         self._tags_to_item_ids: dict[str, set[str]] = {}
         self._category_to_item_ids: dict[str, set[str]] = {}
+        # Only non-default statuses are bucketed: "ok" is the overwhelming
+        # majority, so a bucket for it would mirror the whole item map.
+        self._status_to_item_ids: dict[str, set[str]] = {}
         self._checked_out_item_ids: set[str] = set()
         self._low_stock_item_ids: set[str] = set()
         self._items_by_location_id: dict[str, set[str]] = {}
@@ -161,6 +237,130 @@ class Repository:
         # Location Hierarchy Indexes (O(1) subtree lookup)
         self._location_descendants: dict[str, set[str]] = {}  # loc_id -> all descendant ids
         self._items_in_subtree: dict[str, set[str]] = {}  # loc_id -> all item ids in subtree
+
+        # What the last load_state could not make sense of; empty on a fresh repo.
+        self._last_load_report = LoadReport()
+
+    @property
+    def last_load_report(self) -> LoadReport:
+        """What the most recent ``load_state`` dropped or found cyclic."""
+
+        return self._last_load_report
+
+    # -----------------------------
+    # Public API — Status definitions
+    # -----------------------------
+
+    def status_slugs(self) -> frozenset[str]:
+        """The live status slugs, for every caller that validates one."""
+
+        return frozenset(self._statuses_by_slug)
+
+    def list_statuses(self) -> list[StatusDefinition]:
+        """Status definitions in display order, ties broken by slug."""
+
+        return sorted(self._statuses_by_slug.values(), key=lambda d: (d.order, d.slug))
+
+    def count_items_with_status(self, slug: str) -> int:
+        """How many items carry a slug.
+
+        The index buckets only non-default statuses, so the default's population
+        is everything not in a bucket — the same arithmetic ``get_counts`` does.
+        """
+
+        if slug == DEFAULT_ITEM_STATUS:
+            flagged = sum(len(ids) for ids in self._status_to_item_ids.values())
+            return len(self._items_by_id) - flagged
+        return len(self._status_to_item_ids.get(slug, set()))
+
+    def create_status(self, doc: dict[str, Any]) -> StatusDefinition:
+        """Define a new status. Absent ``order`` places it last."""
+
+        slug = validate_status_slug(doc.get("slug"))
+        if slug in self._statuses_by_slug:
+            raise ValidationError(f"status '{slug}' already exists")
+        if "order" not in doc:
+            doc = {**doc, "order": len(self._statuses_by_slug)}
+        definition = validate_status_definition(doc)
+        self._statuses_by_slug[definition.slug] = definition
+        self._increment_generation()
+        return definition
+
+    def update_status(self, slug: str, changes: dict[str, Any]) -> StatusDefinition:
+        """Edit a definition's presentation. The slug itself is immutable."""
+
+        current = self._statuses_by_slug.get(slug)
+        if current is None:
+            raise NotFoundError(f"status '{slug}' not found")
+        if "slug" in changes and changes["slug"] != slug:
+            raise ValidationError("a status slug cannot be changed; items store it")
+        merged = {**serialize_status_definition(current), **changes, "slug": slug}
+        definition = validate_status_definition(merged)
+        self._statuses_by_slug[slug] = definition
+        self._increment_generation()
+        return definition
+
+    def reorder_statuses(self, slugs: Sequence[str]) -> list[StatusDefinition]:
+        """Rewrite display order from a full permutation of the live slugs."""
+
+        if sorted(slugs) != sorted(self._statuses_by_slug):
+            raise ValidationError("reorder must name every status exactly once")
+        for order, slug in enumerate(slugs):
+            self._statuses_by_slug[slug] = replace(self._statuses_by_slug[slug], order=order)
+        self._increment_generation()
+        return self.list_statuses()
+
+    def delete_status(
+        self, slug: str, *, reassign_to: str | None = None
+    ) -> tuple[StatusDefinition, int]:
+        """Remove a definition, optionally moving the items that carry it.
+
+        Refuses while items still reference the slug unless given somewhere to
+        put them: an item whose status names nothing would be coerced to the
+        default on the next load, silently. Returns what was removed and how
+        many items moved.
+        """
+
+        if slug == DEFAULT_ITEM_STATUS:
+            raise ValidationError(f"'{slug}' is the default status and cannot be deleted")
+        current = self._statuses_by_slug.get(slug)
+        if current is None:
+            raise NotFoundError(f"status '{slug}' not found")
+
+        in_use = self.count_items_with_status(slug)
+        if in_use and reassign_to is None:
+            raise ValidationError(
+                f"status '{slug}' is on {in_use} item(s); "
+                "choose a status to move them to before deleting it"
+            )
+        if reassign_to is not None:
+            if reassign_to == slug:
+                raise ValidationError("cannot reassign a status to itself")
+            if reassign_to not in self._statuses_by_slug:
+                raise ValidationError(f"status '{reassign_to}' not found")
+
+        moved = self._reassign_status(slug, reassign_to) if reassign_to is not None else 0
+        del self._statuses_by_slug[slug]
+        self._status_to_item_ids.pop(slug, None)
+        self._increment_generation()
+        return current, moved
+
+    def _reassign_status(self, slug: str, target: str) -> int:
+        """Move every item on ``slug`` to ``target``, as ordinary item edits."""
+
+        # Materialized first: the loop reindexes, which mutates the bucket the
+        # ids come from.
+        affected = [item_id for item_id, item in self._items_by_id.items() if item.status == slug]
+        for item_id in affected:
+            current = self._items_by_id[item_id]
+            updated = replace(
+                current,
+                status=target,
+                updated_at=monotonic_timestamp_after(current.updated_at),
+                version=current.version + 1,
+            )
+            self._reindex_item_replacement(current, updated)
+        return len(affected)
 
     # -----------------------------
     # Internal helpers — indexing
@@ -197,6 +397,10 @@ class Repository:
         cat = (item.category or "").strip().casefold()
         if cat:
             self._add_to_bucket(self._category_to_item_ids, cat, item_key)
+
+        # status (non-default statuses only)
+        if item.status != DEFAULT_ITEM_STATUS:
+            self._add_to_bucket(self._status_to_item_ids, item.status, item_key)
 
         # checked_out
         if item.checked_out:
@@ -236,6 +440,9 @@ class Repository:
         cat = (item.category or "").strip().casefold()
         if cat:
             self._remove_from_bucket(self._category_to_item_ids, cat, item_key)
+
+        if item.status != DEFAULT_ITEM_STATUS:
+            self._remove_from_bucket(self._status_to_item_ids, item.status, item_key)
 
         self._checked_out_item_ids.discard(item_key)
         self._low_stock_item_ids.discard(item_key)
@@ -437,6 +644,24 @@ class Repository:
                     matches.update(fuzzy_matches)
 
         return matches
+
+    def _text_index_covers_query(self, query: str) -> bool:
+        """Return True when the text index can answer ``query`` without false negatives.
+
+        ``_item_matches_q`` matches a query word anywhere inside an item's text,
+        mid-word included. The index only reaches that far through trigrams, so a
+        word shorter than ``TRIGRAM_MIN_LEN`` is reachable only where it happens to
+        start a name word — "wi" finds "Wine" and never "Kiwi". A query with no
+        indexable word at all (punctuation only) is outside the index entirely.
+
+        For those queries the index is a lossy filter rather than a pre-filter, and
+        callers must let the ``filter_items`` scan answer instead. Tokenizes exactly
+        as ``_search_by_text`` does, so the two always agree on the word boundaries
+        the judgement is made over.
+        """
+
+        words = self._tokenize(query)
+        return bool(words) and all(len(w) >= TRIGRAM_MIN_LEN for w in words)
 
     def _search_by_text(self, query: str) -> set[str]:
         """Return item IDs matching the query using indexes.
@@ -677,17 +902,102 @@ class Repository:
         return result
 
     def _get_ancestors(self, location_id: str) -> list[str]:
-        """Return list of ancestor location IDs from parent up to root."""
+        """Return list of ancestor location IDs from parent up to root.
+
+        A hand-edited or corrupt store can carry a cyclic ``parent_id`` chain,
+        which this walk would otherwise follow forever — during setup, since
+        ``load_state`` reaches it once per item. The visited set is what bounds the
+        walk to the size of the cycle; the step ceiling its four siblings cite is
+        the backstop for a chain that is merely absurdly deep. Breaking rather than
+        raising matches ``_find_location_root``, because
+        ``_remove_item_from_subtree_index`` walks the same chain on the mutation
+        path and must not learn to throw.
+        """
         ancestors: list[str] = []
+        visited: set[str] = {location_id}
         cursor: str | None = location_id
+        guard = 0
         while cursor:
+            guard += 1
+            if guard > LOCATION_GUARD_MAX_STEPS:  # pragma: no cover - degenerate
+                break
             loc = self._locations_by_id.get(cursor)
             if not loc or not loc.parent_id:
                 break
             parent_key = str(loc.parent_id)
+            if parent_key in visited:
+                break
+            visited.add(parent_key)
             ancestors.append(parent_key)
             cursor = parent_key
         return ancestors
+
+    def _unrooted_location_ids(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Split the locations that never reach a root into members and descendants.
+
+        Returns ``(cycle_members, blocked_below)``. Only a member's own
+        ``parent_id`` closes the loop, so it is the only entry editing can fix;
+        everything below it is unreachable purely as a consequence and needs no
+        edit of its own. Reporting the two together would name ids whose repair
+        changes nothing — and since ids sort arbitrarily, the members can fall
+        outside any truncated sample.
+
+        Reported rather than dropped: removing a cyclic location cascades into its
+        children and their items, and setup refuses on a corrupt store anyway, so
+        nothing is rewritten. One pass with a shared acyclic memo keeps a deep tree
+        at O(N) instead of O(N * depth).
+        """
+
+        acyclic: set[str] = set()
+        members: set[str] = set()
+        unrooted: set[str] = set()
+        for start in self._locations_by_id:
+            if start in acyclic or start in unrooted:
+                continue
+            chain: list[str] = []
+            depth_of: dict[str, int] = {}
+            cursor: str | None = start
+            # Where in `chain` the loop closes; None means the walk ended at a
+            # root or a dangling parent, neither of which is a cycle.
+            closes_at: int | None = None
+            while cursor is not None:
+                if cursor in acyclic:
+                    break
+                if cursor in depth_of:
+                    closes_at = depth_of[cursor]
+                    break
+                if cursor in unrooted:
+                    # Runs into a loop already charted: this whole chain is
+                    # blocked, and the members were recorded when it was found.
+                    closes_at = len(chain)
+                    break
+                depth_of[cursor] = len(chain)
+                chain.append(cursor)
+                loc = self._locations_by_id.get(cursor)
+                if loc is None:
+                    break
+                cursor = str(loc.parent_id) if loc.parent_id is not None else None
+            if closes_at is None:
+                acyclic.update(chain)
+                continue
+            unrooted.update(chain)
+            members.update(chain[closes_at:])
+        return tuple(sorted(members)), tuple(sorted(unrooted - members))
+
+    def _build_load_report(
+        self, dropped_item_ids: list[str], dropped_location_ids: list[str]
+    ) -> LoadReport:
+        """Summarize what the load could not read, closing off the capped logging."""
+
+        _log_dropped_overflow("load_state_items", len(dropped_item_ids))
+        _log_dropped_overflow("load_state_locations", len(dropped_location_ids))
+        cycle_members, blocked_below = self._unrooted_location_ids()
+        return LoadReport(
+            dropped_item_ids=tuple(dropped_item_ids),
+            dropped_location_ids=tuple(dropped_location_ids),
+            cyclic_location_ids=cycle_members,
+            unrooted_location_ids=blocked_below,
+        )
 
     def _rebuild_location_hierarchy_indexes(self) -> None:
         """Rebuild location-based hierarchy indexes from scratch."""
@@ -802,23 +1112,25 @@ class Repository:
         """Refresh ``location_path`` for items under any of the given locations.
 
         Fast path for subtree renames/moves. All items in one location share
-        that location's (already recomputed) ``path``, and only three things
-        change per item: the denormalized ``location_path``, the version /
-        ``updated_at`` bump, and the path-derived text tokens. Everything else
-        is either untouched (location/category/tag/checkout/low-stock buckets,
-        name sort keys) or rebuilt wholesale by the caller via
+        that location's (already recomputed) ``path``, and only two things
+        change per item: the denormalized ``location_path`` and the
+        path-derived text tokens. Everything else is either untouched
+        (location/category/tag/checkout/low-stock buckets, name sort keys) or
+        rebuilt wholesale by the caller via
         ``_rebuild_location_hierarchy_indexes`` (subtree index). The effective
         area is re-resolved once per location and items are re-bucketed only
         when it actually changed.
+
+        ``version`` and ``updated_at`` deliberately stay put. ``location_path``
+        is derived from the location tree — no client can write it — so its
+        rewrite is not an item mutation: bumping ``version`` here would
+        invalidate every optimistic-concurrency token in the subtree, and
+        re-stamping ``updated_at`` would shuffle the "recently updated" sort
+        with rows nobody touched.
         """
 
         if not affected_location_ids:
             return
-
-        # One clock read for the whole batch; per-item monotonicity is still
-        # guaranteed because each item only needs to exceed its own previous
-        # updated_at.
-        now_ts = iso_utc_now()
 
         for loc_id in affected_location_ids:
             item_ids = self._items_by_location_id.get(loc_id)
@@ -846,8 +1158,6 @@ class Repository:
                 # dataclasses.replace on this hot path.
                 updated = copy.copy(old_item)
                 updated.location_path = new_path
-                updated.updated_at = monotonic_timestamp_after(old_item.updated_at, now_ts=now_ts)
-                updated.version = old_item.version + 1
                 self._items_by_id[item_id] = updated
 
                 tokens = self._item_text_tokens.get(item_id)
@@ -881,7 +1191,11 @@ class Repository:
         # Delegate all validation and normalization to models; always provide
         # the current locations map so location_id can be validated and
         # location_path can be denormalized when present.
-        item = create_item_from_create(payload, locations_by_id=self._locations_by_id)
+        item = create_item_from_create(
+            payload,
+            locations_by_id=self._locations_by_id,
+            known_statuses=self.status_slugs(),
+        )
         self._index_item(item)
         return item
 
@@ -903,7 +1217,12 @@ class Repository:
                 f"version conflict: expected {expected_version}, actual {current.version}"
             )
 
-        updated = apply_item_update(current, update, locations_by_id=self._locations_by_id)
+        updated = apply_item_update(
+            current,
+            update,
+            locations_by_id=self._locations_by_id,
+            known_statuses=self.status_slugs(),
+        )
         self._reindex_item_replacement(current, updated)
         LOGGER.debug(
             "Item updated",
@@ -974,6 +1293,165 @@ class Repository:
         )
 
     # -----------------------------
+    # Public API — Attachments
+    # -----------------------------
+
+    def _replace_attachments(
+        self,
+        item_id: str | uuid.UUID,
+        attachments: list[AttachmentMeta],
+        expected_version: int | None,
+    ) -> Item:
+        """Swap an item's attachment list, as an ordinary versioned item edit.
+
+        Attaching or detaching a file *is* an edit of the item, unlike the
+        derived ``location_path``: it bumps ``version`` and ``updated_at`` and
+        goes through the same optimistic-concurrency check as every other
+        mutation. Not routed through ``apply_item_update``, because
+        ``ItemUpdate`` deliberately has no ``attachments`` key — the two
+        attachment commands are the only writers.
+        """
+
+        key = str(item_id)
+        current = self._items_by_id.get(key)
+        if current is None:
+            raise NotFoundError("item not found")
+        if expected_version is not None and current.version != expected_version:
+            raise ConflictError(
+                f"version conflict: expected {expected_version}, actual {current.version}"
+            )
+
+        updated = replace(
+            current,
+            attachments=attachments,
+            updated_at=monotonic_timestamp_after(current.updated_at),
+            version=current.version + 1,
+        )
+        self._reindex_item_replacement(current, updated)
+        return updated
+
+    def add_attachment(
+        self,
+        item_id: str | uuid.UUID,
+        meta: AttachmentMeta,
+        *,
+        max_per_kind: int | None = None,
+        expected_version: int | None = None,
+    ) -> Item:
+        """Append attachment metadata to an item and return the updated item.
+
+        ``max_per_kind`` caps how many of *this* attachment's kind an item may
+        carry — enforced here regardless of what the client checked first.
+
+        The position is assigned here rather than taken from ``meta``: order is
+        per kind, and adding appends. A caller-supplied ``order`` would leave
+        every upload at the default 0, tying with the item's cover and sorting
+        the newest picture into the middle of the ones already there.
+        """
+
+        current = self.get_item(item_id)
+        same_kind = sum(1 for a in current.attachments if a.kind == meta.kind)
+        if max_per_kind is not None and same_kind >= max_per_kind:
+            raise ValidationError(
+                f"item already has {max_per_kind} attachment(s) of kind '{meta.kind}'"
+            )
+        if any(a.id == meta.id for a in current.attachments):
+            raise ValidationError("attachment id is already present on this item")
+        return self._replace_attachments(
+            item_id,
+            [*current.attachments, replace(meta, order=same_kind)],
+            expected_version=expected_version,
+        )
+
+    def remove_attachment(
+        self,
+        item_id: str | uuid.UUID,
+        attachment_id: str | uuid.UUID,
+        *,
+        expected_version: int | None = None,
+    ) -> tuple[Item, AttachmentMeta]:
+        """Drop one attachment entry, returning the updated item and what went.
+
+        The removed metadata comes back because the caller still has to delete
+        the file it names, and nothing else records where that file is.
+        """
+
+        current = self.get_item(item_id)
+        wanted = str(attachment_id)
+        removed = next((a for a in current.attachments if str(a.id) == wanted), None)
+        if removed is None:
+            raise NotFoundError("attachment not found")
+        remaining = [a for a in current.attachments if str(a.id) != wanted]
+        updated = self._replace_attachments(item_id, remaining, expected_version=expected_version)
+        return updated, removed
+
+    def update_attachment(
+        self,
+        item_id: str | uuid.UUID,
+        attachment_id: str | uuid.UUID,
+        *,
+        title: str,
+        expected_version: int | None = None,
+    ) -> Item:
+        """Retitle one attachment. The file on disk is untouched."""
+
+        current = self.get_item(item_id)
+        wanted = str(attachment_id)
+        if not any(str(a.id) == wanted for a in current.attachments):
+            raise NotFoundError("attachment not found")
+        rewritten = [
+            replace(a, title=title.strip()) if str(a.id) == wanted else a
+            for a in current.attachments
+        ]
+        return self._replace_attachments(item_id, rewritten, expected_version=expected_version)
+
+    def reorder_attachments(
+        self,
+        item_id: str | uuid.UUID,
+        kind: str,
+        attachment_ids: Sequence[str],
+        *,
+        expected_version: int | None = None,
+    ) -> Item:
+        """Renumber one kind's attachments. Position 0 is the item's cover.
+
+        Order is per kind, so the other kind keeps whatever numbering it had —
+        renumbering pictures must not move a manual.
+        """
+
+        current = self.get_item(item_id)
+        of_kind = {str(a.id) for a in current.attachments if a.kind == kind}
+        if sorted(attachment_ids) != sorted(of_kind):
+            raise ValidationError(
+                f"reorder must name every attachment of kind '{kind}' exactly once"
+            )
+        positions = {att_id: order for order, att_id in enumerate(attachment_ids)}
+        rewritten = [
+            replace(a, order=positions[str(a.id)]) if a.kind == kind else a
+            for a in current.attachments
+        ]
+        return self._replace_attachments(item_id, rewritten, expected_version=expected_version)
+
+    def iter_attachments(self) -> Iterable[tuple[str, AttachmentMeta]]:
+        """Every (item id, attachment) pair currently referenced by metadata."""
+
+        for item_key, item in self._items_by_id.items():
+            for attachment in item.attachments:
+                yield item_key, attachment
+
+    def find_attachment(self, item_id: str, attachment_id: str) -> AttachmentMeta | None:
+        """Look one attachment up by both ids, or ``None`` when nothing owns it.
+
+        The media view resolves files through here rather than from the request
+        path, so an id no metadata claims never reaches the filesystem.
+        """
+
+        item = self._items_by_id.get(item_id)
+        if item is None:
+            return None
+        return next((a for a in item.attachments if str(a.id) == attachment_id), None)
+
+    # -----------------------------
     # Public API — Item querying
     # -----------------------------
 
@@ -1006,9 +1484,12 @@ class Repository:
                 candidate_sets.append(s)
 
         # 0. Text Search Index (q)
+        # A pre-filter, authoritative only over the queries the index covers
+        # (``_text_index_covers_query``). Where it does not, ``q`` contributes no
+        # candidate set and the ``filter_items`` post-filter decides on its own —
+        # an index miss there means "cannot tell", not "no match".
         q = (flt.get("q") or "").strip()
-        if q:
-            # We treat text index as authoritative for text matches
+        if q and self._text_index_covers_query(q):
             has_indexed_filter = True
             text_matches = self._search_by_text(q)
             if not text_matches:
@@ -1036,6 +1517,21 @@ class Repository:
         if cat:
             has_indexed_filter = True
             s = self._category_to_item_ids.get(cat, set())
+            if not s:
+                return []
+            candidate_sets.append(s)
+
+        # 3b. Status Index (only non-default known statuses are bucketed; "ok"
+        # and unrecognized values fall through to the scan path, where
+        # filter_items validates and rejects the latter)
+        status_filter = flt.get("status")
+        if (
+            isinstance(status_filter, str)
+            and status_filter != DEFAULT_ITEM_STATUS
+            and status_filter in self._statuses_by_slug
+        ):
+            has_indexed_filter = True
+            s = self._status_to_item_ids.get(status_filter, set())
             if not s:
                 return []
             candidate_sets.append(s)
@@ -1110,7 +1606,7 @@ class Repository:
         else:
             source = self._items_by_id.values()
 
-        filtered = filter_items(source, flt)
+        filtered = filter_items(source, flt, known_statuses=self.status_slugs())
         sorted_items = sort_items(filtered, sort)
         # Optional preference: group low-stock items first without filtering, while
         # preserving the selected primary ordering within groups (stable sort).
@@ -1136,14 +1632,35 @@ class Repository:
     # Public API — Counts
     # -----------------------------
 
-    def get_counts(self) -> dict[str, int]:
+    def get_counts(self) -> dict[str, Any]:
+        """Aggregate counts for ``haventory/stats``, ``haventory/health`` and events.
+
+        ``status_counts`` covers every defined slug, including the default one
+        the index deliberately does not bucket. The two legacy
+        ``missing_count`` / ``needs_repair_count`` keys stay beside it: one
+        shape serves all three surfaces, and dropping them would move the card
+        in the same release that widens the vocabulary.
+        """
+
         items_with_location = sum(len(ids) for ids in self._items_by_location_id.values())
+        flagged_total = sum(len(ids) for ids in self._status_to_item_ids.values())
+        status_counts = {
+            slug: (
+                len(self._items_by_id) - flagged_total
+                if slug == DEFAULT_ITEM_STATUS
+                else len(self._status_to_item_ids.get(slug, set()))
+            )
+            for slug in self._statuses_by_slug
+        }
         return {
             "items_total": len(self._items_by_id),
             "low_stock_count": len(self._low_stock_item_ids),
             "checked_out_count": len(self._checked_out_item_ids),
             "overdue_count": self._count_overdue(),
             "inspection_overdue_count": self._count_inspection_overdue(),
+            "missing_count": len(self._status_to_item_ids.get("missing", set())),
+            "needs_repair_count": len(self._status_to_item_ids.get("needs_repair", set())),
+            "status_counts": status_counts,
             "locations_total": len(self._locations_by_id),
             "no_location_count": len(self._items_by_id) - items_with_location,
         }
@@ -1192,7 +1709,7 @@ class Repository:
             candidates if candidates is not None else self._items_by_id.values()
         )
         counts: dict[str | None, int] = {}
-        for item in filter_items(source, flt):
+        for item in filter_items(source, flt, known_statuses=self.status_slugs()):
             key = str(item.location_id) if item.location_id is not None else None
             counts[key] = counts.get(key, 0) + 1
         return counts
@@ -1407,7 +1924,7 @@ class Repository:
         # Update affected items (now that live maps are consistent)
         affected = {key}
         affected.update(self._collect_descendant_ids(key))
-        # Only rebuild item location_path (and bump versions) when the path can change:
+        # Only rebuild item location_path when the path can actually change:
         # - name change affects display paths
         # - parent change affects ancestry
         if parent_changed or name_changed:
@@ -1597,6 +2114,7 @@ class Repository:
             "locations_by_id": self._locations_by_id,
             "tags_to_item_ids": self._tags_to_item_ids,
             "category_to_item_ids": self._category_to_item_ids,
+            "status_to_item_ids": self._status_to_item_ids,
             "checked_out_item_ids": self._checked_out_item_ids,
             "low_stock_item_ids": self._low_stock_item_ids,
             "items_by_location_id": self._items_by_location_id,
@@ -1612,7 +2130,13 @@ class Repository:
         """Serialize the repository to a plain dict for storage.
 
         Shape:
-            {"items": {id -> ItemDict}, "locations": {id -> LocationDict}}
+            {"items": {id -> ItemDict}, "locations": {id -> LocationDict},
+             "statuses": {slug -> StatusDict}}
+
+        Every top-level collection the store carries has to appear here:
+        ``async_persist_repo`` saves exactly this dict, so a collection this
+        method omits is read correctly at boot and erased by the first save
+        afterwards. ``tests/test_storage_offline.py`` pins that.
         """
 
         def _serialize_item(item: Item) -> dict[str, Any]:
@@ -1621,6 +2145,7 @@ class Repository:
                 "name": item.name,
                 "description": item.description,
                 "quantity": int(item.quantity),
+                "status": item.status,
                 "checked_out": bool(item.checked_out),
                 "due_date": item.due_date,
                 "inspection_date": item.inspection_date,
@@ -1638,6 +2163,7 @@ class Repository:
                     "display_path": item.location_path.display_path,
                     "sort_key": item.location_path.sort_key,
                 },
+                "attachments": [serialize_attachment_meta(a) for a in item.attachments],
             }
 
         def _serialize_location(loc: Location) -> dict[str, Any]:
@@ -1662,9 +2188,15 @@ class Repository:
         for loc_id in sorted(self._locations_by_id.keys()):
             locations_dict[loc_id] = _serialize_location(self._locations_by_id[loc_id])
 
+        statuses_dict: dict[str, Any] = {
+            slug: serialize_status_definition(self._statuses_by_slug[slug])
+            for slug in sorted(self._statuses_by_slug)
+        }
+
         return {
             "items": items_dict,
             "locations": locations_dict,
+            "statuses": statuses_dict,
             "_generation": self._generation,
         }
 
@@ -1672,32 +2204,29 @@ class Repository:
         """Load repository content from a persisted payload.
 
         Replaces current maps and rebuilds all indexes deterministically.
+
+        Entries this build cannot make sense of are recorded in
+        ``last_load_report`` rather than passed over in silence; setup consults it
+        and refuses instead of loading a partial dataset over a repairable file.
         """
 
-        # Reset all in-memory structures
-        self._items_by_id = {}
-        self._locations_by_id = {}
-        self._tags_to_item_ids = {}
-        self._category_to_item_ids = {}
-        self._word_to_item_ids = {}
-        self._name_prefix_to_item_ids = {}
-        self._trigram_to_item_ids = {}
-        self._checked_out_item_ids = set()
-        self._low_stock_item_ids = set()
-        self._items_by_location_id = {}
-        self._locations_by_area_id = {}
-        self._items_by_area_id = {}
-        self._name_sort_key_by_item_id = {}
-        self._item_text_tokens = {}
-        self._children_ids_by_parent_id = {}
-        self._location_descendants = {}
-        self._items_in_subtree = {}
+        dropped_item_ids: list[str] = []
+        dropped_location_ids: list[str] = []
+
+        self._reset_state()
 
         if not isinstance(data, dict):
             return
 
         # Restore generation counter from persisted state
         self._generation = int(data.get("_generation", 0))
+
+        # Statuses BEFORE the item loop, or ``coerce_item_status`` would see
+        # only the built-ins and rewrite every item on a custom status to "ok"
+        # — silently, on the first restart after the upgrade that added it. An
+        # absent or unreadable section means the built-ins, which is what a
+        # pre-v6 store carries.
+        self._load_statuses(data.get("statuses"))
 
         # Load locations first so items can reference them
         locations = data.get("locations") or {}
@@ -1740,18 +2269,24 @@ class Repository:
                     TypeError,
                     ValueError,
                     ValidationError,
-                ):  # pragma: no cover - defensive
-                    LOGGER.debug(
-                        "Failed to load location from persisted state",
-                        extra={
-                            "domain": "haventory",
-                            "op": "load_state_locations",
-                            "location_id": str(loc_id),
-                        },
-                    )
+                ):
+                    # ERROR: the row is gone from memory, and the next save would
+                    # write the store without it. Setup refuses on this, so the
+                    # file still holds it when the user goes looking.
+                    if len(dropped_location_ids) < LOAD_DROP_LOG_LIMIT:
+                        LOGGER.error(
+                            "Failed to load location from persisted state",
+                            extra={
+                                "domain": "haventory",
+                                "op": "load_state_locations",
+                                "location_id": str(loc_id),
+                            },
+                        )
+                    dropped_location_ids.append(str(loc_id))
                     continue
 
         # Load items
+        known_statuses = self.status_slugs()
         items = data.get("items") or {}
         if isinstance(items, dict):
             for item_id, item_data in items.items():
@@ -1774,6 +2309,11 @@ class Repository:
                         name=str(item_data.get("name", "")),
                         description=item_data.get("description"),
                         quantity=int(item_data.get("quantity", 0)),
+                        # Stores written before the field existed carry no
+                        # status; they read as the default rather than failing.
+                        status=coerce_item_status(
+                            item_data.get("status"), known_statuses=known_statuses
+                        ),
                         checked_out=bool(item_data.get("checked_out", False)),
                         due_date=item_data.get("due_date"),
                         inspection_date=item_data.get("inspection_date"),
@@ -1798,6 +2338,11 @@ class Repository:
                         ),
                         version=int(item_data.get("version", 1)),
                         location_path=location_path,
+                        # Tolerant of absence and of a non-list value (both read
+                        # as none), but not of a malformed *entry*: dropping one
+                        # would lose the only reference to a file on disk, which
+                        # the orphan sweep would then delete.
+                        attachments=load_attachments(item_data.get("attachments")),
                     )
                     self._index_item(item)
                 except (
@@ -1805,22 +2350,87 @@ class Repository:
                     TypeError,
                     ValueError,
                     ValidationError,
-                ):  # pragma: no cover - defensive
-                    LOGGER.debug(
-                        "Failed to load item from persisted state",
-                        extra={
-                            "domain": "haventory",
-                            "op": "load_state_items",
-                            "item_id": str(item_id),
-                        },
-                    )
+                ):
+                    # ERROR for the same reason as the location path above.
+                    if len(dropped_item_ids) < LOAD_DROP_LOG_LIMIT:
+                        LOGGER.error(
+                            "Failed to load item from persisted state",
+                            extra={
+                                "domain": "haventory",
+                                "op": "load_state_items",
+                                "item_id": str(item_id),
+                            },
+                        )
+                    dropped_item_ids.append(str(item_id))
                     continue
+
+        self._last_load_report = self._build_load_report(dropped_item_ids, dropped_location_ids)
 
         # Increment generation after load to mark as modified since load
         self._increment_generation()
 
         # Rebuild location hierarchy indexes ensuring consistency
         self._rebuild_location_hierarchy_indexes()
+
+    def _reset_state(self) -> None:
+        """Drop every primary store and index, back to a fresh repository."""
+
+        self._items_by_id = {}
+        self._locations_by_id = {}
+        self._statuses_by_slug = seed_status_definitions()
+        self._tags_to_item_ids = {}
+        self._category_to_item_ids = {}
+        self._status_to_item_ids = {}
+        self._word_to_item_ids = {}
+        self._name_prefix_to_item_ids = {}
+        self._trigram_to_item_ids = {}
+        self._checked_out_item_ids = set()
+        self._low_stock_item_ids = set()
+        self._items_by_location_id = {}
+        self._locations_by_area_id = {}
+        self._items_by_area_id = {}
+        self._name_sort_key_by_item_id = {}
+        self._item_text_tokens = {}
+        self._children_ids_by_parent_id = {}
+        self._location_descendants = {}
+        self._items_in_subtree = {}
+
+    def _load_statuses(self, raw: object) -> None:
+        """Read the ``statuses`` collection out of a persisted payload.
+
+        Accepts the stored slug-keyed map and the list form an export document
+        carries. Definitions that do not parse are skipped rather than failing
+        the load: an unreadable label costs a display string, while refusing the
+        whole store over one would take the inventory with it. ``ok`` is
+        re-seeded whichever way, because it is the default every item falls back
+        to and the value "flagged" is defined against.
+        """
+
+        entries: list[object]
+        if isinstance(raw, dict):
+            entries = list(raw.values())
+        elif isinstance(raw, list):
+            entries = list(raw)
+        else:
+            return
+
+        loaded: dict[str, StatusDefinition] = {}
+        for entry in entries:
+            try:
+                definition = validate_status_definition(entry)
+            except ValidationError:
+                LOGGER.warning(
+                    "Skipping an unreadable status definition",
+                    extra={"domain": "haventory", "op": "load_state_statuses"},
+                )
+                continue
+            loaded[definition.slug] = definition
+
+        if loaded:
+            self._statuses_by_slug = loaded
+        self._statuses_by_slug.setdefault(
+            DEFAULT_ITEM_STATUS, seed_status_definitions()[DEFAULT_ITEM_STATUS]
+        )
 
     @staticmethod
     def from_state(data: dict[str, Any]) -> Repository:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import functools
 import logging
 from collections.abc import Awaitable, Callable
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 
@@ -16,13 +17,29 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
+try:
+    from homeassistant.components.file_upload import process_uploaded_file
+except ImportError:  # pragma: no cover - offline harness without the component
+    process_uploaded_file = None
+
 from . import import_export
+from . import media as media_mod
 from . import storage as storage_mod
 from .areas import async_get_area_registry
-from .const import DOMAIN, INTEGRATION_VERSION
+from .const import (
+    ATTACHMENT_MANUAL_MIME_TYPES,
+    ATTACHMENT_PICTURE_MIME_TYPES,
+    DEFAULT_CARD_TITLE,
+    DOMAIN,
+    INTEGRATION_VERSION,
+    MAX_ATTACHMENT_BYTES,
+    MAX_MANUALS_PER_ITEM,
+    MAX_PICTURES_PER_ITEM,
+)
 from .exceptions import (
     ConflictError,
     NotFoundError,
+    NotLoadedError,
     StorageError,
     ValidationError,
     error_code,
@@ -30,7 +47,21 @@ from .exceptions import (
     log_severity,
 )
 from .import_export import POLICIES, Policy
-from .models import Item, ItemUpdate, Location, normalize_tags, today_utc_date
+from .models import (
+    ATTACHMENT_KINDS,
+    DEFAULT_ITEM_STATUS,
+    AttachmentMeta,
+    Item,
+    ItemUpdate,
+    Location,
+    iso_utc_now,
+    new_uuid4,
+    normalize_tags,
+    serialize_attachment_meta,
+    serialize_status_definition,
+    today_utc_date,
+    validate_attachment_meta,
+)
 from .rate_limit import RateLimiter
 from .repository import UNSET, InternalIndexes, Repository
 from .storage import CURRENT_SCHEMA_VERSION
@@ -42,8 +73,22 @@ def _repo(hass: HomeAssistant) -> Repository:
     bucket = hass.data.get(DOMAIN) or {}
     repo = bucket.get("repository")
     if repo is None:
-        raise StorageError("repository not initialized; run integration setup")
+        raise NotLoadedError("repository not initialized; run integration setup")
     return cast("Repository", repo)
+
+
+def _require_loaded(hass: HomeAssistant) -> None:
+    """Refuse the command when no config entry owns the data.
+
+    Home Assistant cannot unregister a WebSocket command, so these keep
+    listening after the integration is unloaded, disabled or removed — and each
+    of those empties the domain bucket for exactly this check to find. It sits in
+    the guard rather than in the handlers so the whole surface goes quiet at
+    once: the commands that read no inventory (ping, version, config) would
+    otherwise keep answering for a backend that owns nothing.
+    """
+
+    _repo(hass)
 
 
 def _rate_limiter(hass: HomeAssistant) -> RateLimiter | None:
@@ -92,10 +137,10 @@ def _error_envelope(
 def _error_message(_id: int, exc: Exception, *, context: dict[str, Any]) -> dict[str, Any]:
     code = error_code(exc)
     LOGGER.log(
-        log_severity(code),
+        log_severity(code, exc),
         str(exc),
         extra={"domain": DOMAIN, **(context or {})},
-        exc_info=log_exc_info(code),
+        exc_info=log_exc_info(code, exc),
     )
     return _error_envelope(_id, code, str(exc), context or None)
 
@@ -171,6 +216,7 @@ def ws_guard(
                 _send_error(conn, err)
                 return err
             try:
+                _require_loaded(hass)
                 return await func(hass, conn, msg)
             except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
                 ctx = _context_from_msg(op, msg, context_fields)
@@ -641,9 +687,9 @@ def _broadcast_event(
     action: str,
     payload: dict[str, Any] | None = None,
 ) -> None:
-    # Broadcasts are best-effort: they run after a mutation has already been
-    # applied (and usually persisted), so a broadcast failure must never turn
-    # the originating command into an error.
+    # Broadcasts are best-effort: they run after a mutation has been applied and
+    # persisted, so a broadcast failure must never turn the originating command
+    # into an error.
     try:
         event: dict[str, Any] = {
             "domain": DOMAIN,
@@ -679,6 +725,39 @@ def _broadcast_event(
         )
 
 
+# Action every open subscription receives when the config entry serving it goes
+# away. A subscription is bound to a WebSocket connection, which outlives the
+# entry, so without it nothing on the wire marks the end: no further event ever
+# arrives and a client cannot tell that from an inventory nobody is editing.
+BACKEND_UNAVAILABLE_ACTION = "unavailable"
+
+
+def notify_backend_unavailable(hass: HomeAssistant) -> None:
+    """Tell every open subscription that it has stopped delivering.
+
+    Teardown calls this while the registry is still populated; the subscriptions
+    themselves go with the rest of the runtime immediately after.
+
+    Deliberately not routed through ``_broadcast_event``: this is a lifecycle
+    signal rather than inventory traffic, so it ignores the rate limiter. A
+    connection whose event budget happened to be spent would otherwise be the one
+    client left believing its topics are still live.
+    """
+
+    for conn, subs in list(_subs_bucket(hass).items()):
+        for sub_id, sub in list(subs.items()):
+            _send_event_message(
+                conn,
+                sub_id,
+                {
+                    "domain": DOMAIN,
+                    "topic": sub.get("topic"),
+                    "action": BACKEND_UNAVAILABLE_ACTION,
+                    "ts": _now_ts(),
+                },
+            )
+
+
 def _broadcast_counts(hass: HomeAssistant) -> None:
     try:
         counts_payload = _repo(hass).get_counts()
@@ -696,9 +775,21 @@ def _broadcast_counts(hass: HomeAssistant) -> None:
 
 
 async def _persist_repo(hass: HomeAssistant) -> None:
-    # Use immediate persistence to ensure storage errors propagate to clients.
-    # Debounced persistence (async_request_persist) swallows errors in background
-    # tasks, breaking the @ws_guard error mapping contract.
+    """Write the repository to disk, propagating failure to the caller.
+
+    Uses immediate persistence so storage errors reach clients: debounced
+    persistence (``async_request_persist``) swallows errors in background tasks,
+    breaking the ``@ws_guard`` error mapping contract.
+
+    **Every mutation handler awaits this before it broadcasts or replies.** That
+    ordering is the whole guarantee an event carries: a subscriber that receives
+    ``items/created`` knows the write behind it succeeded. Broadcasting first
+    would tell subscribers about a change the originating client is about to be
+    told failed, and which a restart then erases. Bulk import
+    (``ws_import_execute``) additionally rolls the dataset back, because a
+    wholesale swap has more to undo than one entity does.
+    """
+
     await storage_mod.async_persist_repo(hass)
 
 
@@ -738,6 +829,39 @@ async def ws_version(
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
 
+@websocket_api.websocket_command({"type": "haventory/config"})
+@websocket_api.async_response
+@ws_guard("config", ())
+async def ws_config(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Return the settings the frontend renders, not the whole options set.
+
+    Rate-limit tunables stay server-side. What is here is what the card cannot
+    know on its own: the configured heading, the status vocabulary items are
+    labelled with, and the attachment caps — reported so the picker can refuse
+    an oversized file before it is sent, never so the backend can trust that it
+    did.
+    """
+    bucket = hass.data.get(DOMAIN) or {}
+    title = bucket.get("card_title")
+    result = {
+        "card_title": title if isinstance(title, str) and title else DEFAULT_CARD_TITLE,
+        "statuses": [serialize_status_definition(d) for d in _repo(hass).list_statuses()],
+        # The route itself is not here: it is a constant on both sides, pinned
+        # across the language boundary by tests/test_frontend_registration.py.
+        # What the card cannot derive is the caps and the accepted types.
+        "media": {
+            "picture_mime_types": list(ATTACHMENT_PICTURE_MIME_TYPES),
+            "max_pictures_per_item": MAX_PICTURES_PER_ITEM,
+            "manual_mime_types": list(ATTACHMENT_MANUAL_MIME_TYPES),
+            "max_manuals_per_item": MAX_MANUALS_PER_ITEM,
+            "max_attachment_bytes": MAX_ATTACHMENT_BYTES,
+        },
+    }
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+
+
 @websocket_api.websocket_command({"type": "haventory/stats"})
 @websocket_api.async_response
 @ws_guard("stats", ())
@@ -758,12 +882,32 @@ async def ws_distinct_values(
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
 
+def _collect_item_status_issues(
+    item_id: str, item: Item, status_to_item_ids: dict[str, set[str]]
+) -> list[str]:
+    """Check the item's membership in the status index against its status.
+
+    Only non-default statuses are bucketed, so a default-status item found in
+    any bucket is drift just as much as a flagged item missing from its own.
+    """
+
+    issues: list[str] = []
+    status = str(getattr(item, "status", DEFAULT_ITEM_STATUS))
+    if status != DEFAULT_ITEM_STATUS:
+        if item_id not in status_to_item_ids.get(status, set()):
+            issues.append("status_item_missing_from_index")
+    elif any(item_id in ids for ids in status_to_item_ids.values()):
+        issues.append("default_status_item_present_in_index")
+    return issues
+
+
 def _collect_item_issues(item_id: str, item: Item, idx: InternalIndexes) -> list[str]:
     issues: list[str] = []
     items_by_location_id = idx["items_by_location_id"]
     locations_by_id = idx["locations_by_id"]
     checked_out_item_ids = idx["checked_out_item_ids"]
     low_stock_item_ids = idx["low_stock_item_ids"]
+    status_to_item_ids = idx["status_to_item_ids"]
 
     # Normalize types for comparison (UUID vs string)
     if str(getattr(item, "id", "")) != item_id:
@@ -784,6 +928,8 @@ def _collect_item_issues(item_id: str, item: Item, idx: InternalIndexes) -> list
             issues.append("checked_out_item_missing_from_index")
     elif item_id in checked_out_item_ids:
         issues.append("non_checked_out_item_present_in_index")
+
+    issues.extend(_collect_item_status_issues(item_id, item, status_to_item_ids))
 
     thr = getattr(item, "low_stock_threshold", None)
     is_low = False
@@ -826,6 +972,8 @@ def _check_index_references(idx: InternalIndexes) -> list[str]:
         _assert_known_ids("tags_index", set(ids))
     for _cat, ids in list(category_to_item_ids.items()):
         _assert_known_ids("category_index", set(ids))
+    for _status, ids in list(idx["status_to_item_ids"].items()):
+        _assert_known_ids("status_index", set(ids))
 
     _assert_known_ids("checked_out_index", set(checked_out_item_ids))
     _assert_known_ids("low_stock_index", set(low_stock_item_ids))
@@ -926,8 +1074,8 @@ async def ws_subscribe(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     topic = msg.get("topic")
-    if topic not in {"items", "locations", "stats"}:
-        raise ValidationError("topic must be one of: items, locations, stats")
+    if topic not in {"items", "locations", "stats", "statuses"}:
+        raise ValidationError("topic must be one of: items, locations, stats, statuses")
     sub: _Subscription = {
         "topic": topic,
     }
@@ -1005,6 +1153,9 @@ async def ws_unsubscribe(
         vol.Required("name"): str,
         vol.Optional("description"): object,
         vol.Optional("quantity"): int,
+        # Widened to object so the model layer rejects bad values as a typed
+        # validation_error instead of HA core logging a schema ERROR.
+        vol.Optional("status"): object,
         vol.Optional("checked_out"): bool,
         vol.Optional("due_date"): vol.Any(str, None),
         vol.Optional("inspection_date"): vol.Any(str, None),
@@ -1023,8 +1174,8 @@ async def ws_item_create(
     payload = {k: v for k, v in msg.items() if k not in {"id", "type"}}
     item = _repo(hass).create_item(payload)  # type: ignore[arg-type]
     serialized = _serialize_item(hass, item)
-    _broadcast_event(hass, topic="items", action="created", payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="created", payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1050,6 +1201,7 @@ async def ws_item_get(
         vol.Optional("name"): object,
         vol.Optional("description"): object,
         vol.Optional("quantity"): int,
+        vol.Optional("status"): object,
         vol.Optional("checked_out"): bool,
         vol.Optional("due_date"): vol.Any(str, None),
         vol.Optional("inspection_date"): vol.Any(str, None),
@@ -1075,8 +1227,8 @@ async def ws_item_update(
     updated = _repo(hass).update_item(item_id, update, expected_version=expected)
     serialized = _serialize_item(hass, updated)
     action = "moved" if "location_id" in update else "updated"
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1098,13 +1250,19 @@ async def ws_item_delete(
     before = repo.get_item(item_id)
     serialized_before = _serialize_item(hass, before)
     repo.delete_item(item_id, expected_version=msg.get("expected_version"))
+    await _persist_repo(hass)
+    # After the save, for the same reason attachment/remove deletes last: an
+    # orphaned file is swept at setup, while a file deleted ahead of a failed
+    # save would leave stored metadata pointing at nothing.
+    await media_mod.async_delete_attachments(
+        hass, [(str(before.id), a) for a in before.attachments]
+    )
     _broadcast_event(
         hass,
         topic="items",
         action="deleted",
         payload={"item": serialized_before},
     )
-    await _persist_repo(hass)
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
 
@@ -1126,8 +1284,8 @@ async def ws_item_adjust_quantity(
         msg["item_id"], msg["delta"], expected_version=msg.get("expected_version")
     )
     serialized = _serialize_item(hass, item)
-    _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1153,8 +1311,8 @@ async def ws_item_set_quantity(
         msg["item_id"], qty, expected_version=msg.get("expected_version")
     )
     serialized = _serialize_item(hass, item)
-    _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1178,8 +1336,8 @@ async def ws_item_check_out(
         expected_version=msg.get("expected_version"),
     )
     serialized = _serialize_item(hass, item)
-    _broadcast_event(hass, topic="items", action="checked_out", payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="checked_out", payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1198,8 +1356,8 @@ async def ws_item_check_in(
 ) -> None:
     item = _repo(hass).check_in(msg["item_id"], expected_version=msg.get("expected_version"))
     serialized = _serialize_item(hass, item)
-    _broadcast_event(hass, topic="items", action="checked_in", payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="checked_in", payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1226,8 +1384,8 @@ async def ws_item_add_tags(
             "tags": msg.get("tags"),
         },
     )
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1254,8 +1412,8 @@ async def ws_item_remove_tags(
             "tags": msg.get("tags"),
         },
     )
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1284,8 +1442,8 @@ async def ws_item_update_custom_fields(
             "unset": msg.get("unset"),
         },
     )
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1312,9 +1470,191 @@ async def ws_item_set_low_stock_threshold(
             "low_stock_threshold": msg.get("low_stock_threshold"),
         },
     )
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     _broadcast_counts(hass)
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/attachment/add",
+        vol.Required("item_id"): object,
+        # The handle core's `/api/file_upload` hands back after the POST.
+        vol.Required("file_id"): str,
+        vol.Optional("kind"): str,
+        # What the user's file was called. Display only — the stored name is
+        # derived from the attachment id and the sniffed type.
+        vol.Optional("filename"): str,
+        vol.Optional("expected_version"): int,
+    }
+)
+@websocket_api.async_response
+@ws_guard("item_attachment_add", ("item_id", "kind", "expected_version"))
+async def ws_item_attachment_add(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Consume an uploaded file and attach it to an item.
+
+    The upload rides core's ``file_upload``, so the bytes never cross the
+    WebSocket. Everything the client claimed about the file — its content type,
+    its size — is re-derived here: the accepted type comes from sniffing the
+    file's own leading bytes, and both caps are enforced regardless of whether
+    the card checked them first.
+    """
+
+    if process_uploaded_file is None:  # pragma: no cover - real HA always has it
+        raise StorageError("Home Assistant's file_upload component is unavailable")
+
+    kind = msg.get("kind", "picture")
+    if kind not in ATTACHMENT_KINDS:
+        raise ValidationError(f"kind must be one of: {', '.join(ATTACHMENT_KINDS)}")
+
+    repo = _repo(hass)
+    item_id = msg["item_id"]
+    expected = msg.get("expected_version")
+    # Read the item — and its version — before the upload is consumed: the temp
+    # file is destroyed either way, so failing after eating it would cost the
+    # user the upload as well as the round trip.
+    current = repo.get_item(item_id)
+    if expected is not None and current.version != expected:
+        raise ConflictError(f"version conflict: expected {expected}, actual {current.version}")
+
+    attachment_id = new_uuid4()
+    with ExitStack() as stack:
+        try:
+            # Entered through the stack so only *this* call is guarded: a
+            # `ValueError` from anywhere else must not be relabelled as a
+            # missing upload. `file_upload` raises it for an id it does not
+            # know — an expired handle, or one an earlier call consumed.
+            source = stack.enter_context(process_uploaded_file(hass, msg["file_id"]))
+        except ValueError as exc:
+            raise NotFoundError("uploaded file not found; upload it again") from exc
+
+        mime, size = await media_mod.async_consume_upload(
+            hass,
+            source=source,
+            kind=kind,
+            item_id=str(current.id),
+            attachment_id=str(attachment_id),
+        )
+
+    meta = AttachmentMeta(
+        id=attachment_id,
+        kind=kind,
+        filename=str(msg.get("filename") or f"{attachment_id}"),
+        mime=mime,
+        size=size,
+        uploaded_at=iso_utc_now(),
+    )
+    updated = repo.add_attachment(
+        item_id,
+        meta,
+        max_per_kind=media_mod.max_per_item(kind),
+        expected_version=expected,
+    )
+    serialized = _serialize_item(hass, updated)
+    # A failed persist leaves the file on disk with no saved metadata; setup's
+    # orphan sweep is what collects it, so there is nothing to undo here beyond
+    # letting the error through the way every other mutation does.
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
+    _broadcast_counts(hass)
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/attachment/remove",
+        vol.Required("item_id"): object,
+        vol.Required("attachment_id"): object,
+        vol.Optional("expected_version"): int,
+    }
+)
+@websocket_api.async_response
+@ws_guard("item_attachment_remove", ("item_id", "attachment_id", "expected_version"))
+async def ws_item_attachment_remove(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Detach one file from an item and delete its bytes."""
+
+    repo = _repo(hass)
+    item_id = msg["item_id"]
+    updated, removed = repo.remove_attachment(
+        item_id,
+        str(msg["attachment_id"]),
+        expected_version=msg.get("expected_version"),
+    )
+    serialized = _serialize_item(hass, updated)
+    # Persist before unlinking: a failed save with the file still there leaves
+    # an orphan the sweep collects, while the reverse order would leave stored
+    # metadata pointing at bytes that are already gone.
+    await _persist_repo(hass)
+    await media_mod.async_delete_attachments(hass, [(str(updated.id), removed)])
+    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
+    _broadcast_counts(hass)
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/attachment/update",
+        vol.Required("item_id"): object,
+        vol.Required("attachment_id"): object,
+        vol.Required("title"): str,
+        vol.Optional("expected_version"): int,
+    }
+)
+@websocket_api.async_response
+@ws_guard("item_attachment_update", ("item_id", "attachment_id", "expected_version"))
+async def ws_item_attachment_update(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Retitle one attachment. The file on disk is untouched."""
+
+    repo = _repo(hass)
+    updated = repo.update_attachment(
+        msg["item_id"],
+        str(msg["attachment_id"]),
+        title=msg["title"],
+        expected_version=msg.get("expected_version"),
+    )
+    serialized = _serialize_item(hass, updated)
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/item/attachment/reorder",
+        vol.Required("item_id"): object,
+        vol.Required("kind"): str,
+        vol.Required("attachment_ids"): [str],
+        vol.Optional("expected_version"): int,
+    }
+)
+@websocket_api.async_response
+@ws_guard("item_attachment_reorder", ("item_id", "kind", "expected_version"))
+async def ws_item_attachment_reorder(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Renumber one kind's attachments; the first named becomes position 0.
+
+    A picture at position 0 is the item's cover, so "make cover" is this command
+    rather than a flag of its own.
+    """
+
+    repo = _repo(hass)
+    updated = repo.reorder_attachments(
+        msg["item_id"],
+        msg["kind"],
+        list(msg["attachment_ids"]),
+        expected_version=msg.get("expected_version"),
+    )
+    serialized = _serialize_item(hass, updated)
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1340,8 +1680,8 @@ async def ws_item_move(
             "location_id": msg.get("location_id"),
         },
     )
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1397,14 +1737,14 @@ async def ws_items_bulk(
             # on its own.
             code = error_code(exc)
             LOGGER.log(
-                log_severity(code),
+                log_severity(code, exc),
                 "Bulk operation failed, continuing with remaining ops",
                 extra={
                     "domain": DOMAIN,
                     "op": "items_bulk_op_failed",
                     **ctx,
                 },
-                exc_info=log_exc_info(code),
+                exc_info=log_exc_info(code, exc),
             )
 
             results[op_id] = {
@@ -1432,8 +1772,16 @@ async def ws_items_bulk(
                 },
             }
 
+    # Only a batch that changed something writes or announces anything. An
+    # all-failed batch deliberately logs no summary of its own: each op already
+    # logged its op_id and reason above, which is what an operator acts on, and a
+    # line repeating "none of them worked" only doubles the log on the worst path.
     if successful_ops:
-        # Log summary of bulk operation
+        # Persist immediately so storage errors surface through @ws_guard, and
+        # before anything else so neither the summary nor an event describes a
+        # batch that never reached disk. The whole batch shares this one write.
+        await _persist_repo(hass)
+
         LOGGER.info(
             "Bulk operation completed",
             extra={
@@ -1447,22 +1795,10 @@ async def ws_items_bulk(
             },
         )
 
-        # Broadcast all successful operations
         for _op_id, serialized, action in successful_ops:
             _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
 
-        # Persist immediately so storage errors surface through @ws_guard.
-        await _persist_repo(hass)
         _broadcast_counts(hass)
-    else:
-        LOGGER.warning(
-            "Bulk operation completed with no successful operations",
-            extra={
-                "domain": DOMAIN,
-                "op": "items_bulk",
-                "total_ops": len(operations),
-            },
-        )
 
     conn.send_message(websocket_api.result_message(msg.get("id", 0), {"results": results}))
 
@@ -1523,8 +1859,8 @@ async def ws_location_create(
         name=msg["name"], parent_id=msg.get("parent_id"), area_id=area_id
     )
     serialized = _serialize_location(loc)
-    _broadcast_event(hass, topic="locations", action="created", payload={"location": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="locations", action="created", payload={"location": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1565,6 +1901,7 @@ async def ws_location_update(
         msg["location_id"], name=msg.get("name"), new_parent_id=new_parent, area_id=area_id
     )
     serialized = _serialize_location(loc)
+    await _persist_repo(hass)
     # If parent changed emit moved; if name changed emit renamed
     # (move takes precedence when both)
     if "new_parent_id" in msg:
@@ -1573,7 +1910,6 @@ async def ws_location_update(
         _broadcast_event(
             hass, topic="locations", action="renamed", payload={"location": serialized}
         )
-    await _persist_repo(hass)
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1591,13 +1927,13 @@ async def ws_location_delete(
     before = repo.get_location(loc_id)
     serialized_before = _serialize_location(before)
     repo.delete_location(loc_id)
+    await _persist_repo(hass)
     _broadcast_event(
         hass,
         topic="locations",
         action="deleted",
         payload={"location": serialized_before},
     )
-    await _persist_repo(hass)
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
 
@@ -1686,8 +2022,8 @@ async def ws_location_move_subtree(
     new_parent = msg.get("new_parent_id") if "new_parent_id" in msg else UNSET
     loc = _repo(hass).update_location(msg["location_id"], new_parent_id=new_parent)
     serialized = _serialize_location(loc)
-    _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
     await _persist_repo(hass)
+    _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1714,6 +2050,7 @@ def _serialize_item(hass: HomeAssistant, item: Item) -> dict[str, Any]:
         "name": item.name,
         "description": item.description,
         "quantity": item.quantity,
+        "status": item.status,
         "checked_out": item.checked_out,
         "due_date": item.due_date,
         "inspection_date": item.inspection_date,
@@ -1732,6 +2069,7 @@ def _serialize_item(hass: HomeAssistant, item: Item) -> dict[str, Any]:
             "display_path": item.location_path.display_path,
             "sort_key": item.location_path.sort_key,
         },
+        "attachments": [serialize_attachment_meta(a) for a in item.attachments],
     }
 
 
@@ -1748,6 +2086,134 @@ def _serialize_location(loc: Location) -> dict[str, Any]:
             "sort_key": loc.path.sort_key,
         },
     }
+
+
+@websocket_api.websocket_command({"type": "haventory/status/list"})
+@websocket_api.async_response
+@ws_guard("status_list", ())
+async def ws_status_list(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The status vocabulary in display order."""
+
+    data = [serialize_status_definition(d) for d in _repo(hass).list_statuses()]
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), data))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/status/create",
+        vol.Required("slug"): str,
+        vol.Required("label"): str,
+        vol.Optional("color"): str,
+        vol.Optional("icon"): str,
+        vol.Optional("order"): int,
+    }
+)
+@websocket_api.async_response
+@ws_guard("status_create", ("slug",))
+async def ws_status_create(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Define a new status."""
+
+    repo = _repo(hass)
+    doc: dict[str, Any] = {
+        k: msg[k] for k in ("slug", "label", "color", "icon", "order") if k in msg
+    }
+    created = repo.create_status(doc)
+    serialized = serialize_status_definition(created)
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="statuses", action="created", payload={"status": serialized})
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/status/update",
+        vol.Required("slug"): str,
+        vol.Optional("label"): str,
+        vol.Optional("color"): str,
+        vol.Optional("icon"): str,
+        vol.Optional("order"): int,
+    }
+)
+@websocket_api.async_response
+@ws_guard("status_update", ("slug",))
+async def ws_status_update(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Edit a status's presentation.
+
+    No item is touched and no item version moves: the slug is the identity, and
+    a label or colour is presentation — the same reasoning that keeps a location
+    rename out of an item's version.
+    """
+
+    repo = _repo(hass)
+    changes: dict[str, Any] = {k: msg[k] for k in ("label", "color", "icon", "order") if k in msg}
+    updated = repo.update_status(msg["slug"], changes)
+    serialized = serialize_status_definition(updated)
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="statuses", action="updated", payload={"status": serialized})
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/status/reorder",
+        vol.Required("slugs"): [str],
+    }
+)
+@websocket_api.async_response
+@ws_guard("status_reorder", ())
+async def ws_status_reorder(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Rewrite display order from a full permutation of the live slugs."""
+
+    repo = _repo(hass)
+    ordered = repo.reorder_statuses(list(msg["slugs"]))
+    serialized = [serialize_status_definition(d) for d in ordered]
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="statuses", action="reordered", payload={"statuses": serialized})
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/status/delete",
+        vol.Required("slug"): str,
+        vol.Optional("reassign_to"): str,
+    }
+)
+@websocket_api.async_response
+@ws_guard("status_delete", ("slug", "reassign_to"))
+async def ws_status_delete(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Remove a status, optionally moving the items that carry it.
+
+    Refuses while items still reference the slug and no target is given. With a
+    target the items move first, in the same call, so no client can observe a
+    state where an item names a status that no longer exists.
+    """
+
+    repo = _repo(hass)
+    removed, reassigned = repo.delete_status(msg["slug"], reassign_to=msg.get("reassign_to"))
+    serialized = serialize_status_definition(removed)
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="statuses", action="deleted", payload={"status": serialized})
+    if reassigned:
+        # Two topics on purpose: one card is showing the vocabulary, another is
+        # showing the items that just moved underneath it.
+        _broadcast_event(hass, topic="items", action="updated", payload=None)
+        _broadcast_counts(hass)
+    conn.send_message(
+        websocket_api.result_message(
+            msg.get("id", 0), {"status": serialized, "reassigned": reassigned}
+        )
+    )
 
 
 @websocket_api.websocket_command({"type": "haventory/areas/list"})
@@ -1786,6 +2252,37 @@ async def ws_export(
     conn.send_message(websocket_api.result_message(msg.get("id", 0), document))
 
 
+async def _count_missing_attachments(hass: HomeAssistant, target: dict[str, Any]) -> dict[str, int]:
+    """How many attachment references the planned dataset has no file for.
+
+    A JSON export carries metadata and not bytes, so importing one onto a fresh
+    install leaves references pointing at nothing. That is a caveat rather than
+    an error — the card renders a "file missing" state — so preview reports the
+    number instead of refusing the document.
+    """
+
+    pairs = import_export.referenced_attachments(target)
+    if not pairs:
+        return {"referenced": 0, "missing": 0}
+
+    root = media_mod.media_root(hass)
+
+    def _count() -> int:
+        missing = 0
+        for item_id, entry in pairs:
+            try:
+                meta = validate_attachment_meta(entry)
+                path = media_mod.attachment_path(root, item_id, str(meta.id), meta.mime)
+            except ValidationError:  # pragma: no cover - planning validated these
+                missing += 1
+                continue
+            if not path.is_file():
+                missing += 1
+        return missing
+
+    return {"referenced": len(pairs), "missing": await hass.async_add_executor_job(_count)}
+
+
 def _import_policy(msg: dict[str, Any]) -> Policy:
     policy = msg.get("policy", "merge")
     if policy not in POLICIES:
@@ -1806,12 +2303,14 @@ async def ws_import_preview(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     policy = _import_policy(msg)
-    report, _target = import_export.plan_import(
+    report, target = import_export.plan_import(
         _repo(hass),
         msg.get("document"),
         policy=policy,
         current_schema_version=_schema_version_from_hass(hass),
     )
+    if target is not None:
+        report["attachments"] = await _count_missing_attachments(hass, target)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), report))
 
 
@@ -1869,6 +2368,13 @@ async def ws_import_execute(
         )
         raise
 
+    # `replace` overwrites an item's attachment list wholesale, so an entry the
+    # incoming document does not carry has just lost its only reference — and
+    # that metadata was the only record of where the file is. Sweeping against
+    # the new metadata deletes exactly those, and costs a directory walk that
+    # finds nothing at all on an install with no attachments.
+    await media_mod.async_sweep_orphans(hass, repo.iter_attachments())
+
     # Tell every subscriber the dataset was replaced wholesale.
     _broadcast_event(hass, topic="items", action="reloaded", payload=None)
     _broadcast_event(hass, topic="locations", action="reloaded", payload=None)
@@ -1908,6 +2414,7 @@ def setup(hass: HomeAssistant) -> None:
     handlers = [
         ws_ping,
         ws_version,
+        ws_config,
         ws_stats,
         ws_distinct_values,
         ws_health,
@@ -1925,6 +2432,10 @@ def setup(hass: HomeAssistant) -> None:
         ws_item_remove_tags,
         ws_item_update_custom_fields,
         ws_item_set_low_stock_threshold,
+        ws_item_attachment_add,
+        ws_item_attachment_remove,
+        ws_item_attachment_update,
+        ws_item_attachment_reorder,
         ws_item_move,
         ws_items_bulk,
         ws_item_list,
@@ -1935,6 +2446,11 @@ def setup(hass: HomeAssistant) -> None:
         ws_location_list,
         ws_location_tree,
         ws_location_move_subtree,
+        ws_status_list,
+        ws_status_create,
+        ws_status_update,
+        ws_status_reorder,
+        ws_status_delete,
         ws_areas_list,
         ws_export,
         ws_import_preview,

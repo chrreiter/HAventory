@@ -1,6 +1,7 @@
 import './hv-list-row';
-import { makeItem } from '../test.utils';
-import { displayPath, elidePath, isLowStock } from './hv-list-row';
+import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
+import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
+import { elidePath, isLowStock } from './hv-list-row';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVListRow } from './hv-list-row';
 import type { Item } from '../store/types';
@@ -22,7 +23,7 @@ function captured(el: HVListRow, names: string[]) {
   return seen;
 }
 
-describe('isLowStock / displayPath', () => {
+describe('isLowStock', () => {
   it('treats a null threshold as never low', () => {
     expect(isLowStock(makeItem({ quantity: 0, low_stock_threshold: null }))).toBe(false);
   });
@@ -30,17 +31,6 @@ describe('isLowStock / displayPath', () => {
   it('is low at or below the threshold', () => {
     expect(isLowStock(makeItem({ quantity: 3, low_stock_threshold: 3 }))).toBe(true);
     expect(isLowStock(makeItem({ quantity: 4, low_stock_threshold: 3 }))).toBe(false);
-  });
-
-  it('renders the backend path with the design separator', () => {
-    const item = makeItem({});
-    item.location_path = {
-      id_path: ['g', 's'],
-      name_path: ['Garage', 'Shelf A'],
-      display_path: 'Garage / Shelf A',
-      sort_key: '',
-    };
-    expect(displayPath(item)).toBe('Garage › Shelf A');
   });
 });
 
@@ -103,13 +93,15 @@ describe('hv-list-row: content', () => {
   it('calls out an overdue check-out in error colour', async () => {
     const el = await mount({ checked_out: true, due_date: '2020-01-01' });
     const chip = q(el, '[data-testid="row-checked-out"]');
-    expect(chip?.classList.contains('overdue')).toBe(true);
+    expect(chip?.classList.contains('error')).toBe(true);
     expect(chip?.textContent).toContain('Overdue');
   });
 
   it('does not call a future due date overdue', async () => {
     const el = await mount({ checked_out: true, due_date: '2099-01-01' });
-    expect(q(el, '[data-testid="row-checked-out"]')?.classList.contains('overdue')).toBe(false);
+    const chip = q(el, '[data-testid="row-checked-out"]');
+    expect(chip?.classList.contains('error')).toBe(false);
+    expect(chip?.classList.contains('state')).toBe(true);
   });
 
   // `inspection_date` says when the item is next due for inspection, so a date
@@ -160,6 +152,41 @@ describe('hv-list-row: content', () => {
       const el = await mount({ inspection_date: toIsoDate() }, { mobile });
       expect(q(el, '[data-testid="row-inspection-due"]'), `mobile=${mobile}`).toBe(null);
     }
+  });
+
+  it('chips a flagged status on the wide row and leaves ok rows quiet', async () => {
+    const missing = await mount({ status: 'missing' });
+    expect(q(missing, '[data-testid="row-status"]')?.textContent?.trim()).toBe('Missing');
+
+    const repair = await mount({ status: 'needs_repair' });
+    expect(q(repair, '[data-testid="row-status"]')?.textContent?.trim()).toBe('Needs repair');
+
+    // ok explicitly, and absent (an older backend's payload) — quiet both ways.
+    for (const partial of [{ status: 'ok' as const }, {}]) {
+      const quiet = await mount(partial);
+      expect(q(quiet, '[data-testid="row-status"]')).toBe(null);
+    }
+  });
+
+  it('says the flagged status on the phone line, keeping the amber tone', async () => {
+    const el = await mount({ status: 'needs_repair' }, { mobile: true });
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(q(el, '[data-testid="row-status"]')?.textContent?.trim()).toBe('Needs repair');
+    expect(secondary?.classList.contains('inspect')).toBe(true);
+  });
+
+  it('lets the flagged status outrank the inspection chore, but not the checkout', async () => {
+    const flaggedAndDue = await mount(
+      { status: 'missing', inspection_date: '2020-05-06' },
+      { mobile: true },
+    );
+    const secondary = q(flaggedAndDue, '[data-testid="row-secondary"]');
+    expect(secondary?.textContent).toContain('Missing');
+    expect(secondary?.textContent).not.toContain('Inspection due');
+
+    const out = await mount({ status: 'missing', checked_out: true }, { mobile: true });
+    expect(q(out, '[data-testid="row-secondary"]')?.textContent).toContain('Checked out');
+    expect(q(out, '[data-testid="row-status"]')).toBe(null);
   });
 });
 
@@ -213,6 +240,43 @@ describe('hv-list-row: interaction', () => {
   });
 });
 
+describe('hv-list-row: area', () => {
+  const AREAS = [{ id: 'area-kitchen', name: 'Kitchen' }];
+  const pantry = { id_path: [], name_path: [], display_path: 'Fridge / Pantry', sort_key: '' };
+
+  it('marks which room the item is in, beside the path', async () => {
+    const el = await mount(
+      { effective_area_id: 'area-kitchen', category: 'Consumables', location_path: pantry },
+      { areas: AREAS },
+    );
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(secondary?.querySelector('.hv-area-chip')?.textContent).toContain('Kitchen');
+    expect(secondary?.textContent).toContain('Fridge › Pantry · Consumables');
+    expect(secondary?.getAttribute('title')).toBe('Area: Kitchen · Fridge › Pantry · Consumables');
+  });
+
+  it('shows an area the cache has no name for rather than dropping it', async () => {
+    const el = await mount({ effective_area_id: 'area-gone', location_path: pantry }, { areas: AREAS });
+    expect(q(el, '[data-testid="row-secondary"]')?.querySelector('.hv-area-chip')?.textContent).toContain(
+      'area-gone',
+    );
+  });
+
+  it('reads exactly as before for an item in no area', async () => {
+    const el = await mount({ category: 'Consumables', location_path: pantry }, { areas: AREAS });
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(secondary?.querySelector('.hv-area-chip')).toBe(null);
+    expect(secondary?.textContent?.trim()).toBe('Fridge › Pantry · Consumables');
+    expect(secondary?.getAttribute('title')).toBe('Fridge › Pantry · Consumables');
+  });
+
+  it('reads exactly as before for a host that passes no areas at all', async () => {
+    const el = await mount({ effective_area_id: 'area-kitchen', location_path: pantry });
+    // The id is all there is to show without the cache, but the row still works.
+    expect(q(el, '[data-testid="row-secondary"]')?.textContent).toContain('Fridge › Pantry');
+  });
+});
+
 describe('hv-list-row: mobile affordances', () => {
   const deepPath = {
     id_path: [],
@@ -231,6 +295,28 @@ describe('hv-list-row: mobile affordances', () => {
     expect(q(el, '[data-testid="row-secondary"]')?.textContent).toContain(
       'Workshop › Parts Cabinet › Drawer A › Small Bin',
     );
+  });
+
+  it('spends the phone row on the room, which the elision keeps', async () => {
+    // No chip fits this line, so the area goes in as the leading segment — the
+    // half elidePath keeps.
+    const el = await mount(
+      { category: null, effective_area_id: 'area-workshop', location_path: deepPath },
+      { mobile: true, areas: [{ id: 'area-workshop', name: 'Garage' }] },
+    );
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(secondary?.textContent).toContain('Garage › … › Small Bin');
+    expect(secondary?.querySelector('.hv-area-chip')).toBe(null);
+  });
+
+  it('leaves a checked-out phone row saying what it always said', async () => {
+    const el = await mount(
+      { checked_out: true, due_date: '2099-07-31', effective_area_id: 'area-workshop', location_path: deepPath },
+      { mobile: true, areas: [{ id: 'area-workshop', name: 'Garage' }] },
+    );
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(secondary?.textContent).toContain('Checked out');
+    expect(secondary?.textContent).not.toContain('Garage');
   });
 
   // Both lines clip with an ellipsis, and the phone row drops the middle of the
@@ -352,5 +438,117 @@ describe('hv-list-row: selection mode', () => {
   it('reflects the selected state on the checkbox', async () => {
     const el = await mount({ id: 'item-1' }, { selectable: true, selected: true });
     expect(q(el, '[data-testid="row-select"]')?.getAttribute('aria-checked')).toBe('true');
+  });
+});
+
+describe('hv-list-row thumbnail', () => {
+  it('shows the first picture with alt text naming the item', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(
+      { id: 'i-thumb', name: 'Cordless drill', attachments: [makeAttachment({ id: 'att-1' })] },
+      { media },
+    );
+    // One more frame: the signed URL arrives from a resolved promise.
+    await el.updateComplete;
+    await el.updateComplete;
+
+    const img = q(el, '[data-testid="row-thumb"]') as HTMLImageElement | null;
+    expect(img).toBeTruthy();
+    expect(img?.getAttribute('src')).toBe(
+      `/api/haventory/media/i-thumb/att-1?${MEDIA_NAME_TOKEN_PARAM}=`
+        + `${attachmentNameToken(makeAttachment({ id: 'att-1' }))}&authSig=test`,
+    );
+    expect(img?.getAttribute('alt')).toBe('Photo of Cordless drill');
+    // Nothing is thumbnailed server-side, so the browser must be told not to
+    // fetch and decode every row's full-size photo at once.
+    expect(img?.getAttribute('loading')).toBe('lazy');
+    expect(img?.getAttribute('decoding')).toBe('async');
+  });
+
+  // A placeholder here would add a column of empty squares to a mostly
+  // photo-less inventory.
+  it('renders no image element at all for a row without a picture', async () => {
+    const el = await mount({ name: 'Screws' }, { media: makeMediaBindings() });
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-thumb"]')).toBeNull();
+    expect(el.shadowRoot?.querySelector('img')).toBeNull();
+  });
+
+  it('shows nothing rather than a broken image when signing fails', async () => {
+    const el = await mount(
+      { attachments: [makeAttachment()] },
+      { media: makeMediaBindings({ signFails: true }) },
+    );
+    await el.updateComplete;
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-thumb"]')).toBeNull();
+  });
+
+  it('ignores a non-picture attachment', async () => {
+    const el = await mount(
+      { attachments: [makeAttachment({ kind: 'manual', mime: 'application/pdf' })] },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-thumb"]')).toBeNull();
+  });
+});
+
+describe('hv-list-row: document marker', () => {
+  it('marks a row whose item holds a manual', async () => {
+    const el = await mount({ attachments: [makeManual({ id: 'm-1' })] });
+    await el.updateComplete;
+
+    const mark = q(el, '[data-testid="row-has-document"]');
+    expect(mark).toBeTruthy();
+    // Glyph-only, so it needs a name of its own to reach a screen reader.
+    expect(mark?.getAttribute('aria-label')).toBe('Has a document');
+  });
+
+  it('marks nothing for an item with only pictures', async () => {
+    const el = await mount({ attachments: [makeAttachment({ id: 'p-1' })] });
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-has-document"]')).toBeNull();
+  });
+
+  // A marker that only appeared on desktop would make the phone list, which is
+  // where an item is most often looked up, silent about its documents.
+  it('marks a mobile row too', async () => {
+    const el = await mount({ attachments: [makeManual({ id: 'm-1' })] }, { mobile: true });
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-has-document"]')).toBeTruthy();
+  });
+
+  // Left on the row it was anchored to the free space: against the name on a
+  // row with a thumbnail, and out at the quantity stepper on one without.
+  it('sits on the line the name owns, whatever else the row carries', async () => {
+    const el = await mount({ attachments: [makeManual({ id: 'm-1' })] });
+    await el.updateComplete;
+
+    const mark = q(el, '[data-testid="row-has-document"]');
+    const line = mark?.parentElement;
+    expect(line?.classList.contains('name-line')).toBe(true);
+    expect(line?.querySelector('[data-testid="row-name"]')).toBeTruthy();
+    // Immediately after the name, so it reads as belonging to it.
+    expect(mark?.previousElementSibling?.getAttribute('data-testid')).toBe('row-name');
+  });
+
+  // A flex item takes an automatic minimum width from its content, so the name
+  // stops eliding the moment it shares a line with the mark unless it gives
+  // that minimum up.
+  it('leaves the name able to shrink on that line', () => {
+    const styles = (customElements.get('hv-list-row') as typeof HVListRow).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+    expect(css).toMatch(/\.name-line \{[^}]*display: flex/);
+    expect(css).toMatch(/\.name \{[^}]*min-width: 0[^}]*text-overflow: ellipsis/);
   });
 });

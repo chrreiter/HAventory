@@ -1,5 +1,7 @@
 import type {
+  AnyEventPayload,
   AreasListResult,
+  AttachmentKind,
   BulkOperation,
   BulkResults,
   DistinctValues,
@@ -9,6 +11,7 @@ import type {
   ImportPolicy,
   ImportPreview,
   ImportSummary,
+  IntegrationConfig,
   Item,
   ItemCreate,
   ItemFilter,
@@ -19,9 +22,10 @@ import type {
   ScalarValue,
   Sort,
   StatsCounts,
+  StatusColor,
+  StatusDefinition,
   Unsubscribe,
   VersionInfo,
-  AnyEventPayload,
 } from './types';
 
 let nextSubscriptionId = 1;
@@ -40,6 +44,10 @@ export class WSClient {
 
   version() {
     return this.hass.callWS<VersionInfo>({ type: 'haventory/version' });
+  }
+
+  config() {
+    return this.hass.callWS<IntegrationConfig>({ type: 'haventory/config' });
   }
 
   stats() {
@@ -165,6 +173,127 @@ export class WSClient {
     return this.hass.callWS<BulkResults>({ type: 'haventory/items/bulk', operations });
   }
 
+  // ---------- Attachments ----------
+
+  /**
+   * Upload a file and attach it to an item, in the two steps the backend expects.
+   *
+   * The bytes go to Home Assistant core's `/api/file_upload` over HTTP — the
+   * WebSocket carries JSON frames, and an 8 MB photo base64'd into one would be
+   * both slower and larger. That POST hands back a `file_id`, which the
+   * `attachment/add` command consumes.
+   *
+   * Resolves to the item as the backend now holds it, one version on: the
+   * caller must take that item back into its form model, or its next save
+   * fails with `conflict` against a version the upload already moved past.
+   */
+  async uploadAttachment(
+    itemId: string,
+    file: File,
+    kind: AttachmentKind = 'picture',
+    expectedVersion?: number,
+  ): Promise<Item> {
+    const fetchWithAuth = this.hass.fetchWithAuth;
+    if (typeof fetchWithAuth !== 'function') {
+      throw new Error('This Home Assistant connection cannot upload files.');
+    }
+    const body = new FormData();
+    body.append('file', file);
+    const response = await fetchWithAuth.call(this.hass, '/api/file_upload', {
+      method: 'POST',
+      body,
+    });
+    if (!response.ok) {
+      throw new Error(`Upload failed (${response.status})`);
+    }
+    const { file_id: fileId } = (await response.json()) as { file_id: string };
+
+    const payload: Record<string, unknown> = {
+      type: 'haventory/item/attachment/add',
+      item_id: itemId,
+      file_id: fileId,
+      kind,
+      filename: file.name,
+    };
+    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
+    return this.hass.callWS<Item>(payload);
+  }
+
+  /**
+   * Retitle one attachment.
+   *
+   * The stored filename never changes — it is what the bytes were uploaded as,
+   * and the title is only what the card shows in its place.
+   */
+  updateAttachment(
+    itemId: string,
+    attachmentId: string,
+    title: string,
+    expectedVersion?: number,
+  ) {
+    const payload: Record<string, unknown> = {
+      type: 'haventory/item/attachment/update',
+      item_id: itemId,
+      attachment_id: attachmentId,
+      title,
+    };
+    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
+    return this.hass.callWS<Item>(payload);
+  }
+
+  /**
+   * Renumber one kind's attachments; the first id named takes position 0.
+   *
+   * A picture at position 0 is the item's cover, so "make cover" is this
+   * command rather than a flag of its own. The list must name every attachment
+   * of that kind exactly once — the backend refuses a partial permutation.
+   */
+  reorderAttachments(
+    itemId: string,
+    kind: AttachmentKind,
+    attachmentIds: string[],
+    expectedVersion?: number,
+  ) {
+    const payload: Record<string, unknown> = {
+      type: 'haventory/item/attachment/reorder',
+      item_id: itemId,
+      kind,
+      attachment_ids: attachmentIds,
+    };
+    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
+    return this.hass.callWS<Item>(payload);
+  }
+
+  /** Detach one file from an item; the backend deletes the bytes with it. */
+  removeAttachment(itemId: string, attachmentId: string, expectedVersion?: number) {
+    const payload: Record<string, unknown> = {
+      type: 'haventory/item/attachment/remove',
+      item_id: itemId,
+      attachment_id: attachmentId,
+    };
+    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
+    return this.hass.callWS<Item>(payload);
+  }
+
+  /**
+   * Sign a path so an `<img>` can fetch it.
+   *
+   * An `<img src>` carries no Authorization header, and the media view requires
+   * one. Core's `auth/sign_path` hands back the same path with a short-lived
+   * signature on it, which is what makes the tag work at all. The alternative —
+   * `fetchWithAuth` plus `URL.createObjectURL` — pins every decoded image in JS
+   * memory for the life of the view and needs manual revocation; a signed URL
+   * lets the browser cache and evict it normally.
+   */
+  async signPath(path: string, expires: number): Promise<string> {
+    const signed = await this.hass.callWS<{ path: string }>({
+      type: 'auth/sign_path',
+      path,
+      expires,
+    });
+    return signed.path;
+  }
+
   // ---------- Locations / Areas ----------
   listLocations() {
     return this.hass.callWS<Location[]>({ type: 'haventory/location/list' });
@@ -242,9 +371,58 @@ export class WSClient {
     return this.hass.callWS<ImportSummary>({ type: 'haventory/import/execute', document, policy });
   }
 
+  // ---------- Status definitions ----------
+
+  /** The status vocabulary in display order. */
+  listStatuses() {
+    return this.hass.callWS<StatusDefinition[]>({ type: 'haventory/status/list' });
+  }
+
+  createStatus(status: {
+    slug: string;
+    label: string;
+    color?: StatusColor;
+    icon?: string;
+    order?: number;
+  }) {
+    return this.hass.callWS<StatusDefinition>({ type: 'haventory/status/create', ...status });
+  }
+
+  /** Edit presentation only — the slug is what items store and cannot change. */
+  updateStatus(
+    slug: string,
+    changes: { label?: string; color?: StatusColor; icon?: string; order?: number },
+  ) {
+    return this.hass.callWS<StatusDefinition>({
+      type: 'haventory/status/update',
+      slug,
+      ...changes,
+    });
+  }
+
+  /** Rewrite display order. `slugs` must name every status exactly once. */
+  reorderStatuses(slugs: string[]) {
+    return this.hass.callWS<StatusDefinition[]>({ type: 'haventory/status/reorder', slugs });
+  }
+
+  /**
+   * Delete a status.
+   *
+   * Refused while items still carry it unless `reassignTo` says where they go;
+   * the move and the delete happen in one call, so no client can observe an
+   * item naming a status that no longer exists.
+   */
+  deleteStatus(slug: string, reassignTo?: string) {
+    return this.hass.callWS<{ status: StatusDefinition; reassigned: number }>({
+      type: 'haventory/status/delete',
+      slug,
+      ...(reassignTo ? { reassign_to: reassignTo } : {}),
+    });
+  }
+
   // ---------- Subscriptions ----------
   subscribe(
-    topic: 'items' | 'locations' | 'stats',
+    topic: 'items' | 'locations' | 'stats' | 'statuses',
     cb: (payload: AnyEventPayload) => void,
     opts?: {
       location_id?: string | null;
@@ -305,6 +483,80 @@ export class WSClient {
         // quietly showing stale data.
         opts?.onError?.(err);
       },
+    );
+
+    return () => {
+      if (resolvedUnsub) {
+        resolvedUnsub();
+      } else {
+        cancelRequested = true;
+      }
+    };
+  }
+
+  /**
+   * Call back each time the connection comes back after a drop.
+   *
+   * Home Assistant re-issues the subscriptions it was holding before it fires
+   * `ready`, so a dropped socket produces neither a refusal nor a fresh
+   * `subscribeAreaRegistry` call — the watch simply resumes, and anything the
+   * registry did meanwhile went to nobody. This event is the only notice the
+   * card gets that such a gap happened at all.
+   *
+   * Returns a no-op unsubscribe when the connection does not expose the
+   * lifecycle, so a caller never has to branch on it.
+   */
+  onConnectionReady(cb: () => void): Unsubscribe {
+    const connection = this.hass.connection;
+    const { addEventListener, removeEventListener } = connection;
+    if (typeof addEventListener !== 'function' || typeof removeEventListener !== 'function') {
+      return () => undefined;
+    }
+    const handler = () => cb();
+    addEventListener.call(connection, 'ready', handler);
+    return () => removeEventListener.call(connection, 'ready', handler);
+  }
+
+  /**
+   * Watch Home Assistant's area registry.
+   *
+   * Areas belong to HA, not to HAventory: renaming or deleting one moves no
+   * inventory data, so no `haventory/subscribe` topic reports it. This is HA's
+   * own event bus, subscribed the way the frontend's `subscribeEvents` does.
+   * The callback takes no payload — the event says only that the registry
+   * moved, and the caller refetches.
+   *
+   * A refusal is reported rather than thrown: the card keeps the areas it
+   * already holds, which is the whole of what it had before it listened at all,
+   * so the caller decides whether to retry. `onOpen` fires once the watch is
+   * actually established, which is the caller's cue that a gap has closed.
+   */
+  subscribeAreaRegistry(
+    cb: () => void,
+    opts?: { onOpen?: () => void; onError?: (err: unknown) => void },
+  ): Unsubscribe {
+    const unsubOrPromise = this.hass.connection.subscribeMessage(() => cb(), {
+      type: 'subscribe_events',
+      event_type: 'area_registry_updated',
+    });
+
+    if (typeof unsubOrPromise === 'function') {
+      opts?.onOpen?.();
+      return unsubOrPromise as unknown as Unsubscribe;
+    }
+
+    let resolvedUnsub: Unsubscribe | null = null;
+    let cancelRequested = false;
+    Promise.resolve(unsubOrPromise).then(
+      (fn) => {
+        resolvedUnsub = fn as Unsubscribe;
+        if (cancelRequested) {
+          resolvedUnsub();
+          return;
+        }
+        opts?.onOpen?.();
+      },
+      (err: unknown) => opts?.onError?.(err),
     );
 
     return () => {

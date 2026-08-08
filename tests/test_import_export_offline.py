@@ -9,15 +9,20 @@ Covers the ``import_export`` module and the three WebSocket commands
 - merge / replace / skip conflict resolution,
 - structured errors for invalid documents (envelope, entity, and referential),
 - an invalid-field case for export (matching the suite's convention),
-- execute rollback so a failed persist never leaves partial state.
+- execute rollback so a failed persist never leaves partial state,
+- the two sections whose absence has to keep meaning something permanently:
+  ``statuses`` (absent = the built-ins) and per-item ``attachments``
+  (metadata only, so a reference can outlive the file it names).
 """
 
 from __future__ import annotations
 
 import pytest
 from custom_components.haventory import import_export as ie
+from custom_components.haventory import media
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import StorageError, ValidationError
+from custom_components.haventory.models import validate_attachment_meta
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
 from custom_components.haventory.ws import setup as ws_setup
@@ -31,10 +36,7 @@ SEEDED_LOCATIONS = 2
 async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
     handlers = hass.data.get("__ws_commands__", [])
     for h in handlers:
-        schema = getattr(h, "_ws_schema", None)
-        if not callable(h) or not isinstance(schema, dict):
-            continue
-        if schema.get("type") != type_:
+        if not callable(h) or getattr(h, "_ws_command", None) != type_:
             continue
         req = {"id": _id, "type": type_}
         req.update(payload)
@@ -123,12 +125,17 @@ async def test_ws_export_returns_document() -> None:
 
 @pytest.mark.asyncio
 async def test_ws_export_invalid_filter_field() -> None:
-    """Invalid-field case: a non-object filter is rejected as validation_error."""
+    """Invalid-field case: a non-object filter never reaches the handler.
+
+    ``haventory/export`` declares ``filter`` as a dict, so Home Assistant
+    refuses the frame with the transport-level ``invalid_format`` before
+    dispatch — not with the handler's own ``validation_error``.
+    """
 
     hass = _new_hass()
     res = await _send(hass, 1, "haventory/export", filter="not-an-object")
     assert res["success"] is False, res
-    assert res["error"]["code"] == "validation_error"
+    assert res["error"]["code"] == "invalid_format"
 
 
 # -----------------------------
@@ -393,3 +400,244 @@ async def test_ws_import_execute_rolls_back_on_persist_failure() -> None:
     # State rolled back: the new item must NOT be present and counts unchanged.
     assert repo.get_counts() == before_counts
     assert "44444444-4444-4444-8444-444444444444" not in repo._items_by_id
+
+
+# -----------------------------
+# Status definitions in the document
+# -----------------------------
+
+
+def _repo_with_custom_status() -> Repository:
+    repo = Repository()
+    state = repo.export_state()
+    state["statuses"]["lent_out"] = {
+        "slug": "lent_out",
+        "label": "Lent out",
+        "order": 9,
+        "color": "blue",
+        "icon": "hand",
+    }
+    repo.load_state(state)
+    return repo
+
+
+def test_export_carries_the_status_definitions() -> None:
+    """Items store only a slug, so the labels have to ride in the same document."""
+
+    doc = ie.build_export_document(
+        _repo_with_custom_status(), schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert {
+        "slug": "lent_out",
+        "label": "Lent out",
+        "order": 9,
+        "color": "blue",
+        "icon": "hand",
+    } in doc["statuses"]
+
+
+def test_a_document_with_no_statuses_section_reads_as_the_built_ins() -> None:
+    """The permanent fallback that keeps every pre-v6 export importable."""
+
+    repo = Repository()
+    doc = _doc_from(repo)
+    doc.pop("statuses")
+    doc["items"] = [{**doc_item, "status": "missing"} for doc_item in doc["items"]]
+
+    report, target = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert report["valid"] is True
+    assert set(target["statuses"]) == {"ok", "missing", "needs_repair"}
+
+
+def test_a_document_defining_a_custom_slug_its_items_use_imports_cleanly() -> None:
+    source = _repo_with_custom_status()
+    ladder = source.create_item({"name": "Ladder", "status": "lent_out"})
+    doc = _doc_from(source)
+
+    target_repo = Repository()
+    report, target = ie.plan_import(target_repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert report["valid"] is True, report["errors"]
+    assert target["statuses"]["lent_out"]["label"] == "Lent out"
+    assert target["items"][str(ladder.id)]["status"] == "lent_out"
+
+
+def test_a_document_whose_item_references_an_undefined_slug_is_rejected() -> None:
+    """A slug nothing defines would import as a state no surface can name."""
+
+    repo = Repository()
+    repo.create_item({"name": "Ladder"})
+    doc = _doc_from(repo)
+    doc["items"][0]["status"] = "lent_out"
+
+    report, target = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert report["valid"] is False
+    assert target is None
+    assert any(
+        e["path"] == "items[0].status" and "status must be one of" in e["message"]
+        for e in report["errors"]
+    )
+
+
+def test_a_malformed_status_definition_is_reported_with_its_path() -> None:
+    repo = Repository()
+    doc = _doc_from(repo)
+    doc["statuses"] = [{"slug": "Not A Slug", "label": "Nope"}]
+
+    report, _ = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert report["valid"] is False
+    assert any(e["path"] == "statuses[0]" for e in report["errors"])
+
+
+# -----------------------------
+# Attachment metadata in the document
+# -----------------------------
+
+
+def _attachment_doc(**overrides) -> dict:
+    doc = {
+        "id": "3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f",
+        "kind": "picture",
+        "filename": "photo.png",
+        "mime": "image/png",
+        "size": 1234,
+        "uploaded_at": "2026-08-05T10:00:00Z",
+    }
+    doc.update(overrides)
+    return doc
+
+
+def test_a_round_trip_preserves_attachment_metadata() -> None:
+    source = Repository()
+    item = source.create_item({"name": "Drill"})
+    source.add_attachment(item.id, validate_attachment_meta(_attachment_doc()))
+    doc = _doc_from(source)
+
+    target = Repository()
+    report, payload = ie.plan_import(
+        target, doc, policy="merge", current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+    assert report["valid"] is True, report["errors"]
+    target.load_state(payload)
+
+    assert [a.filename for a in target.get_item(item.id).attachments] == ["photo.png"]
+
+
+def test_a_document_with_a_malformed_attachment_entry_is_rejected_in_preview() -> None:
+    repo = Repository()
+    repo.create_item({"name": "Drill"})
+    doc = _doc_from(repo)
+    doc["items"][0]["attachments"] = [_attachment_doc(mime="")]
+
+    report, target = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert report["valid"] is False
+    assert target is None
+    assert any(e["path"] == "items[0].attachments[0]" for e in report["errors"])
+
+
+def test_merge_unions_attachments_by_id() -> None:
+    """An entry the other side does not mention still names a file on disk."""
+
+    repo = Repository()
+    item = repo.create_item({"name": "Drill"})
+    kept = validate_attachment_meta(_attachment_doc())
+    repo.add_attachment(item.id, kept)
+
+    doc = _doc_from(repo)
+    incoming = _attachment_doc(id="8b2c1a44-5d6e-4f70-8192-a3b4c5d6e7f8", filename="manual.png")
+    doc["items"][0]["attachments"] = [incoming]
+    doc["items"][0]["name"] = "Drill (renamed)"
+
+    report, payload = ie.plan_import(
+        repo, doc, policy="merge", current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert report["valid"] is True, report["errors"]
+    merged = payload["items"][str(item.id)]["attachments"]
+    assert {a["id"] for a in merged} == {str(kept.id), incoming["id"]}
+
+
+def test_referenced_attachments_lists_every_pair_the_payload_carries() -> None:
+    """The preview's missing-file count is built from this; the module does no I/O."""
+
+    repo = Repository()
+    item = repo.create_item({"name": "Drill"})
+    repo.add_attachment(item.id, validate_attachment_meta(_attachment_doc()))
+
+    pairs = ie.referenced_attachments(repo.export_state())
+
+    assert pairs == [(str(item.id), _attachment_doc(title="", order=0))]
+
+
+@pytest.mark.asyncio
+async def test_import_preview_reports_references_with_no_file_on_this_install() -> None:
+    """A JSON export carries metadata and not bytes, so this is a caveat, not an error."""
+
+    hass = _new_hass()
+    repo = hass.data[DOMAIN]["repository"]
+    item = repo.create_item({"name": "Drill"})
+    repo.add_attachment(item.id, validate_attachment_meta(_attachment_doc()))
+    doc = _doc_from(repo)
+
+    res = await _send(hass, 1, "haventory/import/preview", document=doc, policy="merge")
+
+    assert res["success"] is True
+    assert res["result"]["attachments"] == {"referenced": 1, "missing": 1}
+
+
+@pytest.mark.asyncio
+async def test_import_replace_deletes_a_file_whose_metadata_it_overwrote() -> None:
+    """`replace` overwrites an item's attachment list, references and all.
+
+    Metadata is the only record of where a file is, so an entry the incoming
+    document does not carry has to take its bytes with it — otherwise nothing
+    would ever collect them. (An import never *drops* an item: a document that
+    omits one leaves it exactly as it stands.)
+    """
+
+    hass = _new_hass()
+    repo = hass.data[DOMAIN]["repository"]
+    item = repo.create_item({"name": "Drill"})
+    meta = validate_attachment_meta(_attachment_doc())
+    repo.add_attachment(item.id, meta)
+    path = media.attachment_path(media.media_root(hass), str(item.id), str(meta.id), meta.mime)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    # The same item, renamed and carrying no attachments at all.
+    document = _doc_from(repo)
+    document["items"][0]["attachments"] = []
+    document["items"][0]["name"] = "Drill (restored)"
+    res = await _send(hass, 1, "haventory/import/execute", document=document, policy="replace")
+
+    assert res["success"] is True, res
+    assert repo.get_item(item.id).attachments == []
+    assert not path.exists()
+
+
+@pytest.mark.asyncio
+async def test_import_merge_keeps_a_file_the_document_does_not_mention() -> None:
+    """The other side of the same coin: `merge` unions, so nothing is orphaned."""
+
+    hass = _new_hass()
+    repo = hass.data[DOMAIN]["repository"]
+    item = repo.create_item({"name": "Drill"})
+    meta = validate_attachment_meta(_attachment_doc())
+    repo.add_attachment(item.id, meta)
+    path = media.attachment_path(media.media_root(hass), str(item.id), str(meta.id), meta.mime)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    document = _doc_from(repo)
+    document["items"][0]["attachments"] = []
+    document["items"][0]["name"] = "Drill (restored)"
+    res = await _send(hass, 1, "haventory/import/execute", document=document, policy="merge")
+
+    assert res["success"] is True, res
+    assert [str(a.id) for a in repo.get_item(item.id).attachments] == [str(meta.id)]
+    assert path.is_file()

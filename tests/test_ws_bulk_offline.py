@@ -18,10 +18,7 @@ from homeassistant.core import HomeAssistant
 async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
     handlers = hass.data.get("__ws_commands__", [])
     for h in handlers:
-        schema = getattr(h, "_ws_schema", None)
-        if not callable(h) or not isinstance(schema, dict):
-            continue
-        if schema.get("type") != type_:
+        if not callable(h) or getattr(h, "_ws_command", None) != type_:
             continue
         req = {"id": _id, "type": type_}
         req.update(payload)
@@ -102,12 +99,18 @@ async def test_bulk_empty_and_invalid_operations_and_duplicate_ids(monkeypatch) 
     assert res["success"] is True and res["result"]["results"] == {}
     assert calls["count"] == 0  # nothing to persist
 
-    # Invalid operations type
+    # Invalid operations type: the command declares `operations` as a list, so
+    # Home Assistant refuses the frame before the handler runs.
     res = await _send(hass, 2, "haventory/items/bulk", operations="oops")
+    assert res["success"] is False and res["error"]["code"] == "invalid_format"
+
+    # The shape of each entry is the handler's to check — the schema only knows
+    # `operations` is a list.
+    res = await _send(hass, 3, "haventory/items/bulk", operations=["oops"])
     assert res["success"] is False and res["error"]["code"] == "validation_error"
 
     # Duplicate op_id: last result should be in the map
-    created = await _send(hass, 3, "haventory/item/create", name="X", quantity=1)
+    created = await _send(hass, 4, "haventory/item/create", name="X", quantity=1)
     iid = created["result"]["id"]
     FINAL_QTY = 3
     ops = [
@@ -122,7 +125,7 @@ async def test_bulk_empty_and_invalid_operations_and_duplicate_ids(monkeypatch) 
             "payload": {"item_id": iid, "quantity": FINAL_QTY},
         },
     ]
-    res = await _send(hass, 4, "haventory/items/bulk", operations=ops)
+    res = await _send(hass, 5, "haventory/items/bulk", operations=ops)
     assert res["success"] is True
     assert res["result"]["results"]["dup"]["success"] is True
     assert res["result"]["results"]["dup"]["result"]["quantity"] == FINAL_QTY

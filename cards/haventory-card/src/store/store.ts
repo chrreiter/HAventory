@@ -1,6 +1,7 @@
 import type {
-  AreasListResult,
   AnyEventPayload,
+  AreasListResult,
+  AttachmentKind,
   BulkFailure,
   BulkOperation,
   BulkOutcome,
@@ -16,11 +17,15 @@ import type {
   Item,
   ItemCreate,
   ItemFilter,
+  ItemsEventPayload,
   ItemUpdate,
   ListItemsResult,
+  LiveUpdatePause,
   Location,
   LocationTreeNode,
   StatsCounts,
+  StatusColor,
+  StatusDefinition,
   StoreFilters,
   StoreState,
   Unsubscribe,
@@ -66,13 +71,40 @@ const RATE_LIMIT_ATTEMPTS = 4;
 const SUBSCRIBE_RETRY_ATTEMPTS = 4;
 
 /**
+ * Re-subscribes allowed while the backend reports itself unavailable.
+ *
+ * Larger than the rate-limited budget because it is spent on a different bet: a
+ * config-entry reload refuses for as long as setup takes, and giving up inside
+ * that window would leave a card that only ever needed to wait stuck asking for
+ * a manual refresh. Still bounded — a disabled or removed integration is not
+ * coming back on its own, and the banner has to stop promising otherwise.
+ */
+const SUBSCRIBE_UNAVAILABLE_ATTEMPTS = 7;
+
+/**
  * Ceiling on a single re-subscribe wait. Also clamps a server-sent retry-after
  * hint, so a wrong or hostile value cannot park live updates indefinitely.
  */
 const SUBSCRIBE_RETRY_MAX_MS = 30_000;
 
-/** Topics `subscribeTopics` opens as one round: items, stats, locations. */
-const SUBSCRIBE_TOPIC_COUNT = 3;
+/** Topics `subscribeTopics` opens as one round: items, stats, locations, statuses. */
+const SUBSCRIBE_TOPIC_COUNT = 4;
+
+/**
+ * Re-opens allowed after Home Assistant refuses the area-registry watch.
+ *
+ * Smaller than the topic budgets and spent quietly, because the two failures are
+ * not the same size: a refused topic subscription stops live updates and raises a
+ * banner, while this one costs freshness only — the card falls back to the areas
+ * it fetched at boot. Without any retry, though, a single refusal freezes area
+ * names for the life of the element, so the transient cases (a limiter, a
+ * connection reopening mid-subscribe) get a few backoffs before the card settles
+ * for the snapshot it has.
+ */
+const AREA_REGISTRY_RETRY_ATTEMPTS = 3;
+
+/** Event action the backend sends every open subscription as its entry tears down. */
+const BACKEND_UNAVAILABLE_ACTION = 'unavailable';
 
 const NO_DEGRADATION: DegradedState = {
   rateLimited: false,
@@ -81,6 +113,7 @@ const NO_DEGRADATION: DegradedState = {
   nextRetryAt: null,
   reloading: false,
   liveUpdates: 'live',
+  liveUpdatesReason: null,
   nextLiveRetryAt: null,
 };
 
@@ -146,6 +179,7 @@ export function toWireFilter(filters: StoreFilters): ItemFilter {
     orphaned_only: filters.orphansOnly || undefined,
     overdue_only: filters.overdueOnly || undefined,
     inspection_overdue_only: filters.inspectionDueOnly || undefined,
+    status: filters.status ?? undefined,
     category: filters.category || undefined,
     updated_after: filters.updatedAfter || undefined,
     created_after: filters.createdAfter || undefined,
@@ -172,6 +206,7 @@ export function defaultFilters(): StoreFilters {
     lowStockOnly: false,
     overdueOnly: false,
     inspectionDueOnly: false,
+    status: null,
     category: null,
     tags: [],
     tagsMode: 'any',
@@ -195,6 +230,7 @@ export function activeFilterCount(filters: StoreFilters): number {
   if (filters.lowStockFirst) n += 1;
   if (filters.overdueOnly) n += 1;
   if (filters.inspectionDueOnly) n += 1;
+  if (filters.status) n += 1;
   if (filters.category) n += 1;
   if (filters.tags.length) n += 1;
   if (filters.updatedAfter) n += 1;
@@ -241,9 +277,12 @@ export class Store {
   private itemsUnsub: Unsubscribe | null = null;
   private statsUnsub: Unsubscribe | null = null;
   private locationsUnsub: Unsubscribe | null = null;
+  private statusesUnsub: Unsubscribe | null = null;
+  private areaRegistryUnsub: Unsubscribe | null = null;
   private retryBaseMs: number;
   private consecutiveTransportFailures = 0;
   private treeRefreshHandle: ReturnType<typeof setTimeout> | null = null;
+  private areasRefreshHandle: ReturnType<typeof setTimeout> | null = null;
   /** Identifies the newest subscribe round, so a superseded one stops reporting. */
   private subscribeRound = 0;
   /** Subscribes in the current round that have not resolved or been refused yet. */
@@ -253,6 +292,13 @@ export class Store {
   /** Automatic re-subscribes already spent on the current outage. */
   private subscribeAttempt = 0;
   private subscribeRetryHandle: ReturnType<typeof setTimeout> | null = null;
+  /** Re-opens of the area-registry watch already spent on the current refusal. */
+  private areaRegistryAttempt = 0;
+  private areaRegistryRetryHandle: ReturnType<typeof setTimeout> | null = null;
+  /** Identifies the newest area-registry watch, so a superseded one stops reporting. */
+  private areaRegistryGeneration = 0;
+  /** Detaches the connection-lifecycle listener; null while none is attached. */
+  private connectionReadyUnsub: Unsubscribe | null = null;
   /** Last untouched `distinct_values` result, so drafts can be re-merged. */
   private serverDistinct: DistinctValues | null = null;
   /** Values named in the organize dialog that no item carries yet. */
@@ -278,6 +324,9 @@ export class Store {
       statsCounts: null,
       healthCache: null,
       versionInfo: null,
+      cardTitle: null,
+      mediaConfig: null,
+      statuses: null,
       distinctValuesCache: null,
       connected: { items: false, stats: false },
       degraded: { ...NO_DEGRADATION },
@@ -299,9 +348,92 @@ export class Store {
       this.refreshLocationsFlat(),
       this.refreshDistinctValues(),
       this.refreshVersion(),
+      this.refreshConfig(),
     ]);
     await this.listItems(true);
     this.subscribeTopics();
+    this.watchAreaRegistry();
+    this.watchConnectionGaps();
+  }
+
+  /**
+   * Re-read the areas whenever the connection comes back from a drop.
+   *
+   * A dropped socket is the gap the registry watch cannot see: Home Assistant
+   * re-issues the subscriptions it held before it reports `ready`, so the
+   * subscribe neither fails nor re-opens and `watchAreaRegistry`'s catch-up
+   * never runs — yet an area renamed while the socket was down fired its event
+   * into a closed connection. Only a refetch closes that, so it is driven off
+   * the connection's own lifecycle rather than off the watch.
+   */
+  private watchConnectionGaps() {
+    this.connectionReadyUnsub?.();
+    this.connectionReadyUnsub = this.ws.onConnectionReady(() => this.scheduleAreasRefresh());
+  }
+
+  /**
+   * Keep the area cache honest for as long as the card is mounted.
+   *
+   * The store is built once per element and a dashboard stays open for days, so
+   * a one-shot fetch would name areas by whatever the registry said at boot —
+   * every path the card prints carries an area, so a rename would go stale
+   * everywhere at once, and a deletion would show a raw id. Areas move rarely
+   * and the list is small, so the event only triggers a refetch.
+   */
+  private watchAreaRegistry(resetRetryBudget = true) {
+    this.cancelAreaRegistryRetry();
+    if (resetRetryBudget) this.areaRegistryAttempt = 0;
+    // A re-open spans a window in which the registry could have moved with
+    // nothing listening to say so, so the cache is re-read on the way back. The
+    // first open needs no catch-up: `init` fetched the areas moments ago.
+    const catchUp = this.areaRegistryAttempt > 0;
+    // A refusal can arrive after this watch has been replaced or the store
+    // disposed, and HA's own subscribe carries no cancellation of its own.
+    const generation = ++this.areaRegistryGeneration;
+    if (this.areaRegistryUnsub) this.areaRegistryUnsub();
+    this.areaRegistryUnsub = this.ws.subscribeAreaRegistry(() => this.scheduleAreasRefresh(), {
+      onOpen: () => {
+        if (catchUp && generation === this.areaRegistryGeneration) this.scheduleAreasRefresh();
+      },
+      onError: (err) => {
+        if (generation === this.areaRegistryGeneration) this.onAreaRegistryRefused(err);
+      },
+    });
+  }
+
+  /**
+   * Home Assistant refused the registry watch — back off and try again, quietly.
+   *
+   * Nothing is reported to the user: the fallback is the area list the card
+   * already holds, so a banner would name a degradation nobody can act on, and
+   * the topic subscriptions' `degraded` state means live *inventory* updates are
+   * gone, which is not what happened here. Once the budget is spent the card
+   * keeps its boot-time snapshot, which is what it did before it listened.
+   */
+  private onAreaRegistryRefused(err: unknown) {
+    if (this.areaRegistryAttempt >= AREA_REGISTRY_RETRY_ATTEMPTS) return;
+    const delay = subscribeRetryDelayMs(err, this.areaRegistryAttempt, this.retryBaseMs);
+    this.areaRegistryAttempt += 1;
+    this.cancelAreaRegistryRetry();
+    this.areaRegistryRetryHandle = setTimeout(() => {
+      this.areaRegistryRetryHandle = null;
+      this.watchAreaRegistry(false);
+    }, delay);
+  }
+
+  private cancelAreaRegistryRetry() {
+    if (this.areaRegistryRetryHandle === null) return;
+    clearTimeout(this.areaRegistryRetryHandle);
+    this.areaRegistryRetryHandle = null;
+  }
+
+  /** Coalesce area refetches: editing a handful of areas fires one event each. */
+  private scheduleAreasRefresh(delayMs = 250) {
+    if (this.areasRefreshHandle !== null) clearTimeout(this.areasRefreshHandle);
+    this.areasRefreshHandle = setTimeout(() => {
+      this.areasRefreshHandle = null;
+      void this.refreshAreas().catch(() => undefined);
+    }, delayMs);
   }
 
   /** (Re)open the topic subscriptions, starting the retry budget over. */
@@ -310,7 +442,7 @@ export class Store {
   }
 
   /**
-   * Open the three topic subscriptions as one round.
+   * Open the four topic subscriptions as one round.
    *
    * The round, not the individual topic, is the unit of health: the rate limiter
    * bills each subscribe separately, so it can let `items` through and refuse
@@ -325,25 +457,58 @@ export class Store {
     this.subscribeRefusal = null;
     const onOpen = () => this.onSubscribeSettled(round, null);
     const onError = (err: unknown) => this.onSubscribeSettled(round, { err });
+    // The backend's teardown signal arrives on whichever topics are open, and
+    // says the same thing on each — handle it once, ahead of the topic handlers,
+    // which only know how to fold an inventory payload into the view.
+    const onEvent = (handle: (evt: AnyEventPayload) => void) => (evt: AnyEventPayload) => {
+      if (evt.action === BACKEND_UNAVAILABLE_ACTION) this.onBackendUnavailable();
+      else handle(evt);
+    };
 
     if (this.itemsUnsub) this.itemsUnsub();
-    this.itemsUnsub = this.ws.subscribe('items', (evt: AnyEventPayload) => this.onItemsEvent(evt), {
+    this.itemsUnsub = this.ws.subscribe('items', onEvent((evt) => this.onItemsEvent(evt)), {
       location_id: this.state.value.filters.locationId ?? undefined,
       include_subtree: true, // Always include sublocations
       onError,
       onOpen,
     });
     if (this.statsUnsub) this.statsUnsub();
-    this.statsUnsub = this.ws.subscribe('stats', (evt: AnyEventPayload) => this.onStatsEvent(evt), {
+    this.statsUnsub = this.ws.subscribe('stats', onEvent((evt) => this.onStatsEvent(evt)), {
       onError,
       onOpen,
     });
     if (this.locationsUnsub) this.locationsUnsub();
     this.locationsUnsub = this.ws.subscribe(
       'locations',
-      (evt: AnyEventPayload) => this.onLocationsEvent(evt),
+      onEvent((evt) => this.onLocationsEvent(evt)),
       { onError, onOpen },
     );
+    if (this.statusesUnsub) this.statusesUnsub();
+    // The vocabulary is small and changes rarely, so any event on the topic
+    // re-reads the whole list rather than applying a per-action patch. It also
+    // keeps a card correct when another client reorders, which no single
+    // event payload describes better than the list itself does.
+    this.statusesUnsub = this.ws.subscribe('statuses', onEvent(() => void this.refreshStatuses()), {
+      onError,
+      onOpen,
+    });
+  }
+
+  /**
+   * The config entry serving these subscriptions is tearing down.
+   *
+   * A reload is the common case and it ends by itself, so the card waits it out
+   * on the same backoff a refused subscribe uses rather than reporting an error
+   * for something that will be over in a moment. The first attempt is scheduled
+   * rather than immediate: the backend is mid-teardown and would certainly
+   * refuse. Disabled and removed look identical from here, and end as the
+   * budget running out.
+   */
+  private onBackendUnavailable() {
+    if (this.state.value.degraded.liveUpdatesReason === 'unavailable') return;
+    this.stateObs.set({ connected: { items: false, stats: false } });
+    this.subscribeAttempt = 0;
+    this.scheduleReopen('unavailable', null);
   }
 
   /** Fold one subscribe outcome into its round, and act once the round is complete. */
@@ -355,9 +520,14 @@ export class Store {
 
     const refused = this.subscribeRefusal;
     if (!refused) {
+      const wasUnavailable = this.state.value.degraded.liveUpdatesReason === 'unavailable';
       this.subscribeAttempt = 0;
       this.stateObs.set({ connected: { items: true, stats: true } });
-      this.setDegraded({ liveUpdates: 'live', nextLiveRetryAt: null });
+      this.setDegraded({ liveUpdates: 'live', liveUpdatesReason: null, nextLiveRetryAt: null });
+      // A backend that went away and came back was reading its store afresh, and
+      // every event in between was addressed to subscriptions that no longer
+      // existed. Nothing on screen is trustworthy until it has been re-read.
+      if (wasUnavailable) void this.reloadAll().catch(() => undefined);
       return;
     }
     this.onSubscribeRefused(refused.err);
@@ -367,30 +537,57 @@ export class Store {
    * A refused subscribe means live updates are gone, silently — no event will
    * ever arrive to hint at it.
    *
-   * `rate_limited` is the expected refusal and the contract's guidance is to
-   * retry later, so the card backs off and says it is retrying instead of
-   * dropping an error on a user who has done nothing wrong. Once the budget is
-   * spent it stops, reports the refusal and leaves the manual refresh as the way
-   * back. Any other refusal is an outage and is reported at once.
+   * Two refusals are worth waiting out. `rate_limited` is the expected one and
+   * the contract's guidance is to retry later; `storage_error` is what a backend
+   * with no config entry answers, which a reload clears on its own. Either way
+   * the card backs off and says it is retrying instead of dropping an error on a
+   * user who has done nothing wrong. Once the budget is spent it stops, reports
+   * the refusal and leaves the manual refresh as the way back. Any other refusal
+   * is an outage and is reported at once.
    */
   private onSubscribeRefused(err: unknown) {
     this.stateObs.set({ connected: { items: false, stats: false } });
 
-    if (errorCode(err) !== 'rate_limited') {
-      this.setDegraded({ connectionLost: true, liveUpdates: 'paused', nextLiveRetryAt: null });
+    const code = errorCode(err);
+    const reason: LiveUpdatePause | null =
+      code === 'rate_limited' ? 'rate_limited' : code === 'storage_error' ? 'unavailable' : null;
+    if (reason === null) {
+      this.setDegraded({
+        connectionLost: true,
+        liveUpdates: 'paused',
+        liveUpdatesReason: null,
+        nextLiveRetryAt: null,
+      });
       this.pushError(err);
       return;
     }
 
-    if (this.subscribeAttempt >= SUBSCRIBE_RETRY_ATTEMPTS) {
-      this.setDegraded({ rateLimited: true, liveUpdates: 'paused', nextLiveRetryAt: null });
+    // Sticky, and set here rather than alongside the pause: it says events may
+    // have been dropped, which stays true for the rest of the session however
+    // the subscriptions end up.
+    if (reason === 'rate_limited') this.setDegraded({ rateLimited: true });
+
+    const budget =
+      reason === 'unavailable' ? SUBSCRIBE_UNAVAILABLE_ATTEMPTS : SUBSCRIBE_RETRY_ATTEMPTS;
+    if (this.subscribeAttempt >= budget) {
+      this.setDegraded({ liveUpdates: 'paused', liveUpdatesReason: reason, nextLiveRetryAt: null });
       this.pushError(err);
       return;
     }
 
+    this.scheduleReopen(reason, err);
+  }
+
+  /** Book the next re-subscribe and say so, so the banner can show the wait. */
+  private scheduleReopen(reason: LiveUpdatePause, err: unknown) {
     const delay = subscribeRetryDelayMs(err, this.subscribeAttempt, this.retryBaseMs);
     this.subscribeAttempt += 1;
-    this.setDegraded({ rateLimited: true, liveUpdates: 'retrying', nextLiveRetryAt: Date.now() + delay });
+    this.setDegraded({
+      liveUpdates: 'retrying',
+      liveUpdatesReason: reason,
+      nextLiveRetryAt: Date.now() + delay,
+    });
+    this.cancelSubscribeRetry();
     this.subscribeRetryHandle = setTimeout(() => {
       this.subscribeRetryHandle = null;
       this.openSubscriptions(false);
@@ -403,28 +600,45 @@ export class Store {
     this.subscribeRetryHandle = null;
   }
 
-  /** Tear down the three subscriptions and any pending tree refresh. */
+  /** Tear down the four subscriptions and any pending tree refresh. */
   dispose() {
     this.itemsUnsub?.();
     this.statsUnsub?.();
     this.locationsUnsub?.();
-    this.itemsUnsub = this.statsUnsub = this.locationsUnsub = null;
+    this.statusesUnsub?.();
+    this.areaRegistryUnsub?.();
+    // Held by Home Assistant's connection, which outlives every card on the
+    // dashboard — a listener left behind would refetch for a disposed store on
+    // every reconnect, for as long as the page is open.
+    this.connectionReadyUnsub?.();
+    this.itemsUnsub = this.statsUnsub = this.locationsUnsub = this.statusesUnsub = null;
+    this.areaRegistryUnsub = null;
+    this.connectionReadyUnsub = null;
     // Nothing is listening after this, so a queued re-subscribe must not fire.
     this.subscribeRound += 1;
+    this.areaRegistryGeneration += 1;
     this.cancelSubscribeRetry();
+    this.cancelAreaRegistryRetry();
     if (this.treeRefreshHandle !== null) {
       clearTimeout(this.treeRefreshHandle);
       this.treeRefreshHandle = null;
+    }
+    if (this.areasRefreshHandle !== null) {
+      clearTimeout(this.areasRefreshHandle);
+      this.areasRefreshHandle = null;
     }
     this.stateObs.set({ connected: { items: false, stats: false } });
   }
 
   private onItemsEvent(evt: AnyEventPayload) {
     if (evt.topic !== 'items') return;
-    if (evt.action === 'reloaded') {
-      // An import replaced the dataset wholesale — reload from scratch. The
-      // signal carries no payload, so there is nothing to merge; anything the
-      // user had open is now editing data that no longer exists.
+    const item = (evt as ItemsEventPayload).item;
+    if (evt.action === 'reloaded' || item === undefined) {
+      // The dataset moved wholesale and the signal carries no item to merge:
+      // an import replaced everything, or a status was deleted and every item
+      // carrying it reassigned in one call. Either way a merge is impossible —
+      // refetch, and say so while it is in flight, because anything the user
+      // has open may be editing data that no longer exists.
       this.setDegraded({ reloading: true });
       void this.listItems(true)
         .catch(() => undefined)
@@ -433,7 +647,6 @@ export class Store {
       this.scheduleTreeRefresh();
       return;
     }
-    const item = (evt as unknown as { item: Item }).item; // narrow by known payload structure
     const items = this.state.value.items.slice();
     const idx = items.findIndex((x) => x.id === item.id);
     switch (evt.action) {
@@ -587,6 +800,93 @@ export class Store {
   async refreshVersion() {
     const info = await this.run(() => this.ws.version());
     this.stateObs.set({ versionInfo: info });
+  }
+
+  /**
+   * Card heading configured in the integration's options flow.
+   *
+   * Cosmetic, so a backend that does not answer the command — an integration
+   * older than this bundle — leaves the card on its built-in heading instead
+   * of failing the whole init.
+   */
+  /** Re-read the status vocabulary after another client changed it. */
+  async refreshStatuses() {
+    const statuses = await this.run(() => this.ws.listStatuses()).catch(() => null);
+    if (statuses) this.stateObs.set({ statuses });
+  }
+
+  async refreshConfig() {
+    const config = await this.run(() => this.ws.config()).catch(() => null);
+    const title = config?.card_title;
+    if (typeof title === 'string' && title) this.stateObs.set({ cardTitle: title });
+    if (config?.media) this.stateObs.set({ mediaConfig: config.media });
+    if (config?.statuses?.length) this.stateObs.set({ statuses: config.statuses });
+  }
+
+  // ---------- Attachments ----------
+
+  /**
+   * Upload one file and attach it to an item.
+   *
+   * Its own action rather than part of the item save: an 8 MB POST inside a
+   * form submit makes the save look hung. Errors are thrown rather than pushed
+   * onto the error queue — the picker shows them per file, next to the file
+   * that failed, which a global banner cannot do.
+   */
+  async uploadAttachment(
+    itemId: string,
+    file: File,
+    kind: AttachmentKind = 'picture',
+    expectedVersion?: number,
+  ): Promise<Item> {
+    const updated = await this.ws.uploadAttachment(itemId, file, kind, expectedVersion);
+    this.applyOptimistic(updated);
+    return updated;
+  }
+
+  /** Rename one attachment for display, leaving its filename and bytes alone. */
+  async updateAttachment(
+    itemId: string,
+    attachmentId: string,
+    title: string,
+    expectedVersion?: number,
+  ): Promise<Item> {
+    const updated = await this.ws.updateAttachment(itemId, attachmentId, title, expectedVersion);
+    this.applyOptimistic(updated);
+    return updated;
+  }
+
+  /** Renumber one kind's attachments; the first id named becomes position 0. */
+  async reorderAttachments(
+    itemId: string,
+    kind: AttachmentKind,
+    attachmentIds: string[],
+    expectedVersion?: number,
+  ): Promise<Item> {
+    const updated = await this.ws.reorderAttachments(
+      itemId,
+      kind,
+      attachmentIds,
+      expectedVersion,
+    );
+    this.applyOptimistic(updated);
+    return updated;
+  }
+
+  /** Detach one file; the backend deletes the bytes with it. */
+  async removeAttachment(
+    itemId: string,
+    attachmentId: string,
+    expectedVersion?: number,
+  ): Promise<Item> {
+    const updated = await this.ws.removeAttachment(itemId, attachmentId, expectedVersion);
+    this.applyOptimistic(updated);
+    return updated;
+  }
+
+  /** Sign one attachment's media path so an `<img>` can load it. */
+  signMediaPath(path: string, expires: number): Promise<string> {
+    return this.ws.signPath(path, expires);
   }
 
   /**
@@ -779,6 +1079,7 @@ export class Store {
       cur.nextRetryAt === next.nextRetryAt &&
       cur.reloading === next.reloading &&
       cur.liveUpdates === next.liveUpdates &&
+      cur.liveUpdatesReason === next.liveUpdatesReason &&
       cur.nextLiveRetryAt === next.nextLiveRetryAt;
     if (same) return;
     this.stateObs.set({ degraded: next });
@@ -1032,6 +1333,53 @@ export class Store {
     return moved;
   }
 
+  // ---------- Status definitions ----------
+
+  async createStatus(status: {
+    slug: string;
+    label: string;
+    color?: StatusColor;
+    icon?: string;
+  }): Promise<StatusDefinition> {
+    const created = await this.ws.createStatus(status);
+    await this.refreshStatuses();
+    return created;
+  }
+
+  /** Edit presentation. No item moves, so nothing but the vocabulary refreshes. */
+  async updateStatus(
+    slug: string,
+    changes: { label?: string; color?: StatusColor; icon?: string },
+  ): Promise<StatusDefinition> {
+    const updated = await this.ws.updateStatus(slug, changes);
+    await this.refreshStatuses();
+    return updated;
+  }
+
+  async reorderStatuses(slugs: string[]): Promise<StatusDefinition[]> {
+    const ordered = await this.ws.reorderStatuses(slugs);
+    await this.refreshStatuses();
+    return ordered;
+  }
+
+  /**
+   * Delete a status, moving the items that carry it when a target is given.
+   *
+   * Rejects with `validation_error` when items still reference the slug and no
+   * target was chosen — the backend refuses rather than orphaning them.
+   *
+   * A reassignment rewrote items, so the item list and the counts are re-read
+   * too. The `statuses` subscription would deliver that eventually, but every
+   * other mutator here refreshes what it changed rather than waiting on its own
+   * broadcast.
+   */
+  async deleteStatus(slug: string, reassignTo?: string): Promise<number> {
+    const { reassigned } = await this.ws.deleteStatus(slug, reassignTo);
+    await this.refreshStatuses();
+    if (reassigned > 0) await Promise.all([this.listItems(true), this.refreshStats()]);
+    return reassigned;
+  }
+
   // ---------- Bulk operations ----------
   /**
    * Run a batch of item operations, chunked, reporting progress as it goes.
@@ -1153,6 +1501,7 @@ export class Store {
       this.refreshLocationsFlat(),
       this.refreshLocationTree(),
       this.refreshDistinctValues(),
+      this.refreshConfig(),
     ]);
     await this.listItems(true);
   }

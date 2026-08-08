@@ -1,21 +1,33 @@
-# Release Testing Plan — v1.0 readiness
+# Release Testing Plan — first public release readiness
 
-Manual validation of HAventory on **real** Home Assistant instances before tagging a 1.0.
+Manual validation of HAventory on **real** Home Assistant instances, executed against the
+release candidate proposed for the HACS listing.
 
 The automated suites (offline gate, in-process integration tests, online WS smokes, the
 adversarial stress regimen) are assumed green before this plan starts — see the README
 "Developer Checklist". This document covers only what those suites structurally cannot:
 real hardware, real phones, real networks, real upgrades, real backups.
 
-Out of scope: feature work, and anything tracked as **post-v1.0** in
-[`open-items.md`](open-items.md). Pre-v1.0 *tasks* (fixes/docs/release chores identified
-alongside this plan) also live in `open-items.md` — this file is tests only.
+Out of scope: feature work, and the backlog — all of it lives in the GitHub issue tracker.
+Fixes, docs and release chores identified alongside this plan are issues too, staged under
+[#236](https://github.com/chrreiter/HAventory/issues/236) when they block the first public
+release. This file is tests only.
 
-**Sequencing.** The run belongs after feature freeze. D6's prerequisite is met: the minimum
-supported HA version is **2026.6.0** — set at feature freeze from the HA APIs the
-integration actually touches and the security floor below which every release carries a
-known advisory (see CLAUDE.md) — so D6 runs against that number. D6 is the live half of
-that claim; the in-process suite already runs the integration at the floor in CI.
+**Which release this runs against.** The release candidate proposed for the HACS listing —
+whatever `0.x` carries every pending fix when the listing is cut. There is no feature freeze:
+features land in `0.x` releases as they are accepted, so the candidate is identified when the
+run starts rather than fixed in advance. `1.0.0` is deferred indefinitely and gates nothing
+([#278](https://github.com/chrreiter/HAventory/issues/278)) — it is not what this plan
+validates. [#236](https://github.com/chrreiter/HAventory/issues/236) is authoritative if this
+paragraph ever falls behind it, and
+[#276](https://github.com/chrreiter/HAventory/issues/276) is the issue that executes the run.
+
+**Sequencing.** The run belongs after the candidate is cut and before the listing is
+submitted. D6's prerequisite is met: the minimum supported HA version is the floor declared
+in `hacs.json` — derived from the HA APIs the integration actually touches and the security
+floor below which every release carries a known advisory (see CLAUDE.md) — so D6 runs
+against whatever that file declares at the time. D6 is the live half of that claim; the
+in-process suite already runs the integration at the floor in CI.
 
 ---
 
@@ -24,14 +36,16 @@ that claim; the in-process suite already runs the integration at the floor in CI
 A release is "ready" when **all** of the following hold:
 
 1. Every scenario marked **Blocker** below passes on at least the environments listed for it.
-2. Every non-blocker failure is triaged into `open-items.md` with an impact rating, and
+2. Every non-blocker failure is triaged with an impact rating — a GitHub issue, staged
+   under #236 if it must land before the first public release — and
    **no failure rated High remains open**.
 3. `haventory/health` returns `healthy: true` (empty `issues`) after **every** lifecycle
    scenario in groups D and E — checked after the restart, not before.
 4. No unhandled exception or traceback from `custom_components.haventory` appears in the
    HA log across the entire run.
 5. No uncaught frontend console error on desktop **or** on the phone webview.
-6. The pre-v1.0 release-readiness tasks in `open-items.md` (items 25–31) are closed.
+6. Every item [#236](https://github.com/chrreiter/HAventory/issues/236) lists as mandatory
+   before the first public release is closed.
 
 ---
 
@@ -41,7 +55,7 @@ A release is "ready" when **all** of the following hold:
 |-----|------|----------|
 | **ENV-A** | Personal production HA instance, real data, real hardware | Everything except destructive scenarios (D8, E2–E4) |
 | **ENV-B** | Throwaway HA in Docker (`scripts/reload_addon.sh`, `run-haventory` skill) | Destructive + adversarial scenarios; YAML-mode Lovelace |
-| **ENV-C** | Docker HA pinned to the **declared minimum supported version**, `2026.6.0` (`hacs.json` `homeassistant`) | D6 — validates the floor |
+| **ENV-C** | Docker HA pinned to the **declared minimum supported version** (`hacs.json` `homeassistant`) | D6 — validates the floor |
 | **ENV-D** | Docker HA restored from an **ENV-A production backup** | E2–E4 restore scenarios, without risking ENV-A |
 
 Clients to cover: desktop Chrome, one of Firefox/Safari desktop, **iOS companion app**,
@@ -110,8 +124,18 @@ client + OS version, date. Put it in the results log.
 | A1 | Fresh install on a clean HA (ENV-B): HACS/manual copy → restart → add integration via config flow → add card via the UI card picker | Integration sets up without error; card appears in the picker; empty state renders with no locations and no console error | ✅ |
 | A2 | Card resource auto-registration (storage-mode Lovelace) | `/haventory_static/haventory-card.js?v=<version>` present exactly once in `.storage/lovelace_resources`; `curl -I` on it returns 200 with **no** `Cache-Control` header; card loads without a manual step | ✅ |
 | A3 | YAML-mode Lovelace (ENV-B, `lovelace: mode: yaml`) | Resource registration is skipped with a clear log line, and the card still loads — the frontend extra-module URL covers YAML mode, so there is no manual step here either | ✅ |
-| A4 | Attempt a second config entry | Rejected as single-instance; no duplicate storage or resource | |
+| A4 | Attempt a second config entry | HAventory is absent from the "Add integration" picker while an entry exists, so the attempt cannot start; a flow initiated outside the picker aborts with "Already configured. Only a single configuration is possible." No duplicate storage or resource | |
 | A5 | First-run with a pre-existing store (upgrade-in-place from a dev instance) | Existing items/locations load; `health` healthy | ✅ |
+| A6 | Attachment round trip, automated: `RUN_ONLINE=1 HA_TOKEN=<token> uv run --group probes python scripts/probe_attachments.py` | All probes pass. The stored bytes on HA's disk — not what the card reported — match what the card's re-encode should have produced: 4032×3024 JPEG capped at 2048, transparent PNG stored as WebP with its alpha, animated GIF untouched with all 24 frames, sub-2 MiB JPEG byte-identical | ✅ |
+| A7 | EXIF orientation, from the same run (case "EXIF Orientation=6 is applied before the re-encode") | The stored frame is upright — portrait 1536×2048, not landscape. This is the one attachment defect that looks correct in every automated test and wrong on every phone, so read this line even when the run is green overall | ✅ |
+| A8 | Attachment liveness and naming, from the same run | The presence probe answers `206` with `Content-Length: 1` on a live file, `404` on a deleted one, and nothing at all on an unreachable host; a manual is served `inline` under its title (its filename when untitled), non-ASCII intact | |
+| A9 | Save a manual from the browser: open an item's Documents row, save the file | It saves under the attachment's title — or the original filename when untitled — never the attachment UUID, and clicking still opens it in a tab rather than downloading it | |
+
+Fixtures for A6–A8 are generated, never committed: `scripts/probe_fixtures.py` writes them
+(~30 MB) into a temporary directory each run, and `--fixtures-dir DIR` reuses one across
+runs. Reading the stored bytes needs either `HA_CONFIG_DIR` (a bind-mounted config) or
+`HA_CONTAINER` (read out through `docker exec`). Pillow comes from the non-default `probes`
+dependency group — `uv sync --group probes` first.
 
 ### B — Mobile / touch (companion app)
 
@@ -151,7 +175,7 @@ Run `haventory/health` after **each** of these, and snapshot the store around D7
 | D3 | Config-entry reload (no HA restart) | Reload succeeds; subscriptions re-established; no duplicate WS handler registration | ✅ |
 | D4 | HA minor update (current stable → next stable) with HAventory installed | Setup succeeds; no deprecation warnings from `custom_components.haventory` | ✅ |
 | D5 | HA **next beta** | Same; any breakage is filed before it reaches stable | |
-| D6 | Minimum supported HA `2026.6.0` (ENV-C). The phacc suite already runs the integration in-process at this version in CI; D6 is the live counterpart — a real container, the card, and the browser | Integration sets up and the full CRUD path works on the declared floor; if it does not, the floor is wrong and must be raised before release | ✅ |
+| D6 | Minimum supported HA, the `hacs.json` floor (ENV-C). The phacc suite already runs the integration in-process at that version in CI; D6 is the live counterpart — a real container, the card, and the browser | Integration sets up and the full CRUD path works on the declared floor; if it does not, the floor is wrong and must be raised before release | ✅ |
 | D7 | Integration update N → N+1 **with real data**, including a schema migration | Migration runs once, is idempotent on a second restart, data intact, `health` healthy | ✅ |
 | D8 | Integration **rollback** N+1 → N (ENV-B only) | Newer-schema data is **refused loudly**: setup fails with `ConfigEntryError` naming both versions and the store file is left byte-identical — never migrated down, never silently relabeled (decided; item 25 fixed by #120) | ✅ |
 | D9 | Card update with a warm browser cache: update the integration, then reload normally (no hard refresh), on desktop **and** in the companion app | New card version actually loads; check `haventory/version` vs. the card build. The resource is now registered as `…haventory-card.js?v=<manifest version>` and a stale entry is rewritten in place (item 26, fixed by #122) | ✅ |
@@ -174,7 +198,7 @@ Run `haventory/health` after **each** of these, and snapshot the store around D7
 | F2 | `health` after each of D1–D9 and E2–E4 | `healthy: true`, empty `issues` | ✅ |
 | F3 | Scale on **real** hardware: load ~2× the real inventory and measure create/update/list latency | Latency is acceptable at the target size; record the size at which it degrades and publish it as a supported ceiling. Known: whole-dataset rewrite per mutation, ~200 ms/create @1000 items (open item 19) | ✅ |
 | F4 | Store file size across the run | Growth is proportional to content — no unbounded growth from repeated edits | |
-| F5 | Rename a location near the root of a deep tree | All descendant items' `location_path` rewritten; `health` healthy. Note the known version-bump side effect (open item 23) | |
+| F5 | Rename a location near the root of a deep tree | All descendant items' `location_path` rewritten; their `version` and `updated_at` unchanged (item 23); `health` healthy | |
 
 ### G — Multi-client & permissions
 
@@ -226,7 +250,8 @@ Copy a row per attempt. `Result` = pass / fail / n-a.
 
 ## Handling failures
 
-Every failure gets an entry in [`open-items.md`](open-items.md) with impact and effort.
-High-impact failures are release blockers. A scenario that fails, gets fixed, and passes on
+Every failure gets an impact-and-effort-rated GitHub issue, staged under
+[#236](https://github.com/chrreiter/HAventory/issues/236) if it must land before the first
+public release. High-impact failures are release blockers. A scenario that fails, gets fixed, and passes on
 retest is recorded twice (fail → fix PR → pass), so the log shows what actually changed
 before the release rather than only the final green state.

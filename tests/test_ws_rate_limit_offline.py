@@ -21,8 +21,13 @@ import voluptuous as vol
 from custom_components.haventory import _async_options_updated
 from custom_components.haventory import rate_limit as rate_limit_module
 from custom_components.haventory import ws as ws_module
-from custom_components.haventory.config_flow import HAventoryOptionsFlowHandler, _options_schema
+from custom_components.haventory.config_flow import (
+    SECTION_RATE_LIMIT,
+    HAventoryOptionsFlowHandler,
+    _options_schema,
+)
 from custom_components.haventory.const import (
+    CONF_CARD_TITLE,
     CONF_RATE_LIMIT_COMMANDS_BURST,
     CONF_RATE_LIMIT_COMMANDS_PER_SECOND,
     CONF_RATE_LIMIT_ENABLED,
@@ -65,10 +70,7 @@ def _get_handler(
 ) -> Callable[[HomeAssistant, object, dict], Coroutine[Any, Any, dict]]:
     handlers = hass.data.get("__ws_commands__", [])
     for h in handlers:
-        schema = getattr(h, "_ws_schema", None)
-        if not callable(h) or not isinstance(schema, dict):
-            continue
-        if schema.get("type") == type_:
+        if callable(h) and getattr(h, "_ws_command", None) == type_:
             return h
     raise AssertionError("No handler found for type " + type_)
 
@@ -384,14 +386,64 @@ async def test_options_flow_shows_form_and_creates_entry() -> None:
     assert form["type"] == "form"
     assert form["step_id"] == "init"
 
-    submitted = {
+    # The form nests the rate-limit fields under a section; the stored options
+    # must come back flat, because that is what RateLimitConfig reads.
+    result = await flow.async_step_init(
+        {
+            CONF_CARD_TITLE: "Pantry",
+            SECTION_RATE_LIMIT: {
+                CONF_RATE_LIMIT_ENABLED: True,
+                CONF_RATE_LIMIT_COMMANDS_PER_SECOND: 5.0,
+                CONF_RATE_LIMIT_COMMANDS_BURST: 10.0,
+            },
+        }
+    )
+    assert result["type"] == "create_entry"
+    assert result["data"] == {
+        CONF_CARD_TITLE: "Pantry",
         CONF_RATE_LIMIT_ENABLED: True,
         CONF_RATE_LIMIT_COMMANDS_PER_SECOND: 5.0,
         CONF_RATE_LIMIT_COMMANDS_BURST: 10.0,
     }
-    result = await flow.async_step_init(submitted)
-    assert result["type"] == "create_entry"
-    assert result["data"] == submitted
+
+
+@pytest.mark.asyncio
+async def test_options_flow_survives_a_missing_rate_limit_section() -> None:
+    """A submission without the section keeps the card title and adds nothing nested."""
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = ConfigEntry(options={})
+
+    result = await flow.async_step_init({CONF_CARD_TITLE: "Pantry"})
+    assert result["data"] == {CONF_CARD_TITLE: "Pantry"}
+
+
+def test_options_schema_collapses_only_while_untouched() -> None:
+    """A customized limiter opens expanded instead of hiding its values."""
+
+    def _section(current: dict[str, Any]):  # type: ignore[no-untyped-def]
+        return _options_schema(current).schema[SECTION_RATE_LIMIT]
+
+    assert _section({}).options == {"collapsed": True}
+    assert _section({CONF_CARD_TITLE: "Pantry"}).options == {"collapsed": True}
+    assert _section({CONF_RATE_LIMIT_ENABLED: True}).options == {"collapsed": False}
+    assert _section({CONF_RATE_LIMIT_COMMANDS_PER_SECOND: 1.0}).options == {"collapsed": False}
+
+
+def test_options_schema_defaults_to_the_stored_options() -> None:
+    """Re-opening the form shows what is stored, section fields included."""
+
+    stored_rate = 3.0
+    schema = _options_schema(
+        {CONF_CARD_TITLE: "Pantry", CONF_RATE_LIMIT_COMMANDS_PER_SECOND: stored_rate}
+    )
+    filled = schema({SECTION_RATE_LIMIT: {}})
+    assert filled[CONF_CARD_TITLE] == "Pantry"
+    assert filled[SECTION_RATE_LIMIT][CONF_RATE_LIMIT_COMMANDS_PER_SECOND] == stored_rate
+    assert (
+        filled[SECTION_RATE_LIMIT][CONF_RATE_LIMIT_COMMANDS_BURST]
+        == DEFAULT_RATE_LIMIT_COMMANDS_BURST
+    )
 
 
 @pytest.mark.asyncio
@@ -450,17 +502,21 @@ def test_options_schema_enforces_burst_minimum() -> None:
     RATE = CONF_RATE_LIMIT_COMMANDS_PER_SECOND
 
     schema = _options_schema({})
-    base = schema({CONF_RATE_LIMIT_ENABLED: True})  # defaults fill the rest
-    assert base[BURST] >= 1
+
+    def _submit(**section_fields: float) -> dict[str, Any]:
+        return schema({SECTION_RATE_LIMIT: {CONF_RATE_LIMIT_ENABLED: True, **section_fields}})
+
+    base = _submit()  # defaults fill the rest
+    assert base[SECTION_RATE_LIMIT][BURST] >= 1
 
     with pytest.raises(vol.Invalid):
-        schema({CONF_RATE_LIMIT_ENABLED: True, BURST: 0.5})
+        _submit(**{BURST: 0.5})
     with pytest.raises(vol.Invalid):
-        schema({CONF_RATE_LIMIT_ENABLED: True, RATE: 0})
+        _submit(**{RATE: 0})
     # A fractional sustained rate remains valid.
     fractional_rate = 0.5
-    ok = schema({CONF_RATE_LIMIT_ENABLED: True, RATE: fractional_rate})
-    assert ok[RATE] == fractional_rate
+    ok = _submit(**{RATE: fractional_rate})
+    assert ok[SECTION_RATE_LIMIT][RATE] == fractional_rate
 
 
 @pytest.mark.asyncio

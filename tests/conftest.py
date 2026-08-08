@@ -27,23 +27,26 @@ the offline suite and gets the stubs. As a result:
 * the phacc suite never sees the stubs (real HA is present and autoload is on),
   and is never collected by the offline run (``collect_ignore`` below).
 
-It also ensures sockets are enabled when pytest-socket is auto-loaded by IDEs
-(required on Windows where creating the event loop uses ``socket.socket``) and,
-on Windows, makes pytest-asyncio hand out a selector-based event loop to avoid
-ProactorEventLoop self-pipe issues when sockets are tampered with by plugins.
-That's done via the ``pytest_asyncio_loop_factories`` hook rather than
-``asyncio.set_event_loop_policy``/``WindowsSelectorEventLoopPolicy`` — both are
-deprecated since Python 3.14 and slated for removal in 3.16.
+The WebSocket stub validates: it applies each command's schema to a frame
+before dispatch, as an ``ActiveConnection`` does, so an offline test cannot hand
+a handler a payload no client could send. Write offline WS tests against frames
+a real client would produce, and expect ``invalid_format`` for the rest.
+
+It also re-enables sockets when pytest-socket is auto-loaded by an IDE, which
+otherwise blocks the loopback the event loop sets itself up on.
 """
 
 import asyncio
 import dataclasses
 import json
 import os
-import platform
 import sys
+import tempfile
 import types
 from pathlib import Path
+
+import voluptuous as vol
+from voluptuous.humanize import humanize_error
 
 # Ensure project root is on sys.path for module imports (both modes).
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,9 +90,30 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     # homeassistant.core
     ha_core = types.ModuleType("homeassistant.core")
 
+    class _Config:  # type: ignore[override]
+        """Stand in for HA's ``hass.config``, for the paths under the config dir.
+
+        The directory is created on first use rather than per instance: nearly
+        every offline test constructs a ``HomeAssistant`` and only the ones
+        touching attachment media ever ask for a path.
+        """
+
+        def __init__(self) -> None:
+            self._config_dir: str | None = None
+
+        @property
+        def config_dir(self) -> str:
+            if self._config_dir is None:
+                self._config_dir = tempfile.mkdtemp(prefix="haventory-offline-")
+            return self._config_dir
+
+        def path(self, *parts: str) -> str:
+            return os.path.join(self.config_dir, *parts)
+
     class HomeAssistant:  # type: ignore[override]
         def __init__(self) -> None:
             self.data = {}
+            self.config = _Config()
 
         def async_create_background_task(self, target, name, eager_start=True):
             """Stand in for HA's tracked-task helper; the real one also cancels on shutdown."""
@@ -165,8 +189,24 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def async_abort(self, *, reason: str):
             return {"type": "abort", "reason": reason}
 
-        def async_create_entry(self, *, title: str, data: dict):
-            return {"type": "create_entry", "title": title, "data": data}
+        # `options` mirrors the real ConfigFlow.async_create_entry, which seeds
+        # the entry's options at creation time and always puts them (empty when
+        # unset) in the flow result.
+        def async_create_entry(self, *, title: str, data: dict, options: dict | None = None):
+            return {
+                "type": "create_entry",
+                "title": title,
+                "data": data,
+                "options": dict(options or {}),
+            }
+
+        def async_show_form(self, *, step_id: str, data_schema=None, description_placeholders=None):
+            return {
+                "type": "form",
+                "step_id": step_id,
+                "data_schema": data_schema,
+                "description_placeholders": description_placeholders,
+            }
 
     class OptionsFlow:  # type: ignore[override]
         # The real OptionsFlow resolves config_entry via hass; tests assign it.
@@ -175,8 +215,13 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def async_create_entry(self, *, title: str, data: dict):
             return {"type": "create_entry", "title": title, "data": data}
 
-        def async_show_form(self, *, step_id: str, data_schema=None):
-            return {"type": "form", "step_id": step_id, "data_schema": data_schema}
+        def async_show_form(self, *, step_id: str, data_schema=None, description_placeholders=None):
+            return {
+                "type": "form",
+                "step_id": step_id,
+                "data_schema": data_schema,
+                "description_placeholders": description_placeholders,
+            }
 
     ha_config_entries.ConfigEntry = ConfigEntry
     ha_config_entries.ConfigFlow = ConfigFlow
@@ -189,8 +234,23 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     class FlowResult(dict):  # type: ignore[override]
         pass
 
+    class section:  # type: ignore[override]
+        """Voluptuous validator wrapping a nested schema, as HA's does.
+
+        Real HA hands the second argument (``{"collapsed": ...}``) to the
+        frontend only; validation is the inner schema's, unchanged.
+        """
+
+        def __init__(self, schema, options=None) -> None:  # type: ignore[no-untyped-def]
+            self.schema = schema
+            self.options = options or {}
+
+        def __call__(self, value):  # type: ignore[no-untyped-def]
+            return self.schema(value)
+
     sys.modules["homeassistant.data_entry_flow"] = ha_data_entry_flow
     ha_data_entry_flow.FlowResult = FlowResult
+    ha_data_entry_flow.section = section
 
     # homeassistant.helpers and homeassistant.helpers.storage
     ha_helpers = types.ModuleType("homeassistant.helpers")
@@ -210,6 +270,9 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     ha_helpers_cv.empty_config_schema = empty_config_schema
     ha_helpers_cv.platform_only_config_schema = platform_only_config_schema
     ha_helpers_cv.config_entry_only_config_schema = config_entry_only_config_schema
+    # Verbatim from HA's config_validation; the WebSocket base command schema
+    # below validates every frame's `id` with it.
+    ha_helpers_cv.positive_int = vol.All(vol.Coerce(int), vol.Range(min=0))
     sys.modules["homeassistant.helpers.config_validation"] = ha_helpers_cv
 
     ha_helpers_storage = types.ModuleType("homeassistant.helpers.storage")
@@ -237,10 +300,42 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
 
     ha_ws = types.ModuleType("homeassistant.components.websocket_api")
 
-    def websocket_command(schema=None):  # type: ignore[override]
+    # What real HA extends every dict command schema with before validating. Its
+    # default PREVENT_EXTRA is what refuses a field the command never declared.
+    BASE_COMMAND_MESSAGE_SCHEMA = vol.Schema({vol.Required("id"): ha_helpers_cv.positive_int})
+
+    # The code HA answers with for a frame that never reaches a handler.
+    ERR_INVALID_FORMAT = "invalid_format"
+
+    # How many keys a frame for a type-only command may carry: `id` and `type`.
+    TYPE_ONLY_FRAME_KEYS = 2
+
+    def websocket_command(schema):  # type: ignore[override]
+        """Tag a handler with its command name and compiled schema, as HA does.
+
+        ``_ws_command`` carries the command string — the key real HA registers
+        the handler under, and so the one a test looks a handler up by.
+        ``_ws_schema`` carries what the connection applies to a frame before
+        dispatch, with ``False`` standing for a schema that declares nothing but
+        its ``type``: such a frame may carry no key beyond ``id`` and ``type``.
+        """
+        is_dict = isinstance(schema, dict)
+        command = schema["type"] if is_dict else schema.validators[0].schema["type"]
+
         def decorator(func):
-            func._ws_command = True
-            func._ws_schema = schema
+            if is_dict and len(schema) == 1:
+                func._ws_schema = False
+            elif is_dict:
+                func._ws_schema = BASE_COMMAND_MESSAGE_SCHEMA.extend(schema)
+            else:
+                # vol.All: extend the leading mapping, keep the trailing
+                # cross-field validators, which is where a cap or a
+                # mutually-exclusive-fields refusal lives.
+                func._ws_schema = vol.All(
+                    schema.validators[0].extend(BASE_COMMAND_MESSAGE_SCHEMA.schema),
+                    *schema.validators[1:],
+                )
+            func._ws_command = command
             return func
 
         return decorator
@@ -258,8 +353,42 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             error["data"] = data
         return {"id": _id, "type": "result", "success": False, "error": error}
 
+    def _validate_frame(handler, msg):
+        """Apply what an ``ActiveConnection`` applies to a frame before dispatch.
+
+        Returns ``(validated_msg, None)`` for a frame that would have reached the
+        handler on a real connection, and ``(None, error_envelope)`` for one it
+        would have refused — the handler body never runs for the latter. Without
+        this the offline suite would let handlers see payloads no client can
+        send, and any refusal expressed as a schema constraint would be invisible
+        to it.
+        """
+        # HA checks id and type before it even looks the command up: an id that
+        # is a positive int of exactly that type (so ``True`` is not an id), and
+        # a non-empty string type.
+        iden = msg.get("id") if isinstance(msg, dict) else None
+        type_ = msg.get("type") if isinstance(msg, dict) else None
+        if type(iden) is not int or iden <= 0 or type(type_) is not str or not type_:
+            return None, error_message(iden, ERR_INVALID_FORMAT, "Message incorrectly formatted.")
+
+        schema = handler._ws_schema
+        try:
+            if schema is False:
+                if len(msg) > TYPE_ONLY_FRAME_KEYS:
+                    raise vol.Invalid("extra keys not allowed")
+                return msg, None
+            return schema(msg), None
+        except vol.Invalid as err:
+            return None, error_message(iden, ERR_INVALID_FORMAT, humanize_error(msg, err))
+
     def async_register_command(hass: HomeAssistant, handler):  # type: ignore[override]
         registry = hass.data.setdefault("__ws_commands__", [])
+
+        if not hasattr(handler, "_ws_schema"):
+            # Real HA reads the same attributes off the handler and fails here
+            # too. Refusing loudly keeps an undecorated handler from becoming the
+            # one command in the suite that skips validation.
+            raise ValueError("handler is not decorated with @websocket_command")
 
         async def _wrapped(hass: HomeAssistant, conn, msg):  # type: ignore[override]
             local_conn = conn
@@ -275,7 +404,14 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
 
                 stub = _StubConn()
                 local_conn = stub
-            res = await handler(hass, local_conn, msg)
+            validated, refusal = _validate_frame(handler, msg)
+            if refusal is not None:
+                # HA answers a refused frame on the connection and stops there.
+                send = getattr(local_conn, "send_message", None)
+                if callable(send):
+                    send(refusal)
+                return refusal
+            res = await handler(hass, local_conn, validated)
             if res is not None:
                 return res
             # Prefer captured message from our stub, then from provided conn if it collects messages
@@ -289,7 +425,7 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
                 pass
             return None
 
-        # Preserve HA websocket metadata so tests can discover handlers by schema
+        # Preserve HA websocket metadata so tests can discover handlers by command
         for attr in ("_ws_schema", "_ws_command", "_ws_async_response"):
             try:
                 setattr(_wrapped, attr, getattr(handler, attr, None))
@@ -298,6 +434,8 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
 
         registry.append(_wrapped)
 
+    ha_ws.BASE_COMMAND_MESSAGE_SCHEMA = BASE_COMMAND_MESSAGE_SCHEMA
+    ha_ws.ERR_INVALID_FORMAT = ERR_INVALID_FORMAT
     ha_ws.websocket_command = websocket_command
     ha_ws.async_response = async_response
     ha_ws.result_message = result_message
@@ -352,11 +490,91 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     def remove_extra_js_url(hass: HomeAssistant, url: str) -> None:  # type: ignore[override]
         hass.data[DATA_EXTRA_MODULE_URL].remove(url)
 
+    # The frontend's panel registry, keyed by URL path exactly as in real HA.
+    DATA_PANELS = "frontend_panels"
+
+    def async_remove_panel(  # type: ignore[override]
+        hass: HomeAssistant, frontend_url_path: str, *, warn_if_unknown: bool = True
+    ) -> None:
+        """Drop a panel, tolerating one that was never registered.
+
+        Real HA only logs a warning for an unknown path, so removal is never an
+        error here either — which is what makes remove-before-register safe.
+        """
+        hass.data.setdefault(DATA_PANELS, {}).pop(frontend_url_path, None)
+
     ha_frontend.DATA_EXTRA_MODULE_URL = DATA_EXTRA_MODULE_URL
+    ha_frontend.DATA_PANELS = DATA_PANELS
     ha_frontend.UrlManager = UrlManager
     ha_frontend.add_extra_js_url = add_extra_js_url
     ha_frontend.remove_extra_js_url = remove_extra_js_url
+    ha_frontend.async_remove_panel = async_remove_panel
     sys.modules["homeassistant.components.frontend"] = ha_frontend
+
+    # homeassistant.components.panel_custom
+    ha_panel_custom = types.ModuleType("homeassistant.components.panel_custom")
+
+    async def async_register_panel(  # type: ignore[override]  # noqa: PLR0913 - mirrors HA's signature
+        hass: HomeAssistant,
+        frontend_url_path: str,
+        webcomponent_name: str,
+        sidebar_title: str | None = None,
+        sidebar_icon: str | None = None,
+        js_url: str | None = None,
+        module_url: str | None = None,
+        embed_iframe: bool = False,
+        trust_external: bool = False,
+        config: dict | None = None,
+        require_admin: bool = False,
+        config_panel_domain: str | None = None,
+    ) -> None:
+        """Register a custom panel the way HA's helper does.
+
+        Reproduces the two behaviours callers have to live with: the panel is
+        stored as a ``component_name="custom"`` entry whose config carries the
+        ``_panel_custom`` block (module URL and element name included), and a
+        second registration for a path already taken raises rather than
+        replacing — the trap an idempotent registration exists to avoid.
+        """
+        if js_url is None and module_url is None:
+            raise ValueError("Either js_url, module_url or html_url is required.")
+        if config is not None and not isinstance(config, dict):
+            raise ValueError("Config needs to be a dictionary.")
+
+        custom: dict = {
+            "name": webcomponent_name,
+            "embed_iframe": embed_iframe,
+            "trust_external": trust_external,
+        }
+        if js_url is not None:
+            custom["js_url"] = js_url
+        if module_url is not None:
+            custom["module_url"] = module_url
+
+        panel_config = dict(config or {})
+        panel_config["_panel_custom"] = custom
+
+        panels = hass.data.setdefault(DATA_PANELS, {})
+        if frontend_url_path in panels:
+            raise ValueError(f"Overwriting panel {frontend_url_path}")
+
+        panels[frontend_url_path] = types.SimpleNamespace(
+            component_name="custom",
+            sidebar_title=sidebar_title,
+            sidebar_icon=sidebar_icon,
+            sidebar_default_visible=True,
+            show_in_sidebar=True,
+            frontend_url_path=frontend_url_path,
+            config=panel_config,
+            require_admin=require_admin,
+            config_panel_domain=config_panel_domain,
+        )
+        # Every call, not just the ones that stick: a test asserting "registered
+        # exactly once" needs the attempts, which the registry alone cannot show.
+        hass.data.setdefault("__panel_registrations__", []).append(frontend_url_path)
+
+    ha_panel_custom.async_register_panel = async_register_panel
+    sys.modules["homeassistant.components.panel_custom"] = ha_panel_custom
 
     # homeassistant.helpers.area_registry
     ha_helpers_area_registry = types.ModuleType("homeassistant.helpers.area_registry")
@@ -460,17 +678,6 @@ else:
         enable_socket()
     except Exception:
         pass
-
-    # On Windows, hand pytest-asyncio a selector-based loop factory instead of
-    # forcing a process-wide event loop policy: asyncio.set_event_loop_policy()
-    # and WindowsSelectorEventLoopPolicy are both deprecated since Python 3.14
-    # (removal slated for 3.16). A single-entry mapping keeps every async test
-    # parametrized exactly as before (one run, id hidden) while going through
-    # pytest-asyncio's supported extension point.
-    if platform.system() == "Windows":  # pragma: no cover - environment-specific
-
-        def pytest_asyncio_loop_factories():
-            return {"selector": asyncio.SelectorEventLoop}
 
     _install_offline_ha_stubs()
 

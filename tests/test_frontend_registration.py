@@ -1,11 +1,16 @@
 """Tests for how the HAventory card bundle is served and loaded.
 
 The bundle ships inside the integration package and is served from there over a
-registered static path. Two loaders then point the frontend at it — the Lovelace
-resource collection (storage mode only; covers HA Cast) and the
-frontend's extra-module URL (covers YAML resource mode) — and they must receive
-the *same* URL string, or the card module is evaluated twice and the second
-``customElements.define`` throws.
+registered static path. Three consumers then point the frontend at it — the
+Lovelace resource collection (storage mode only; covers HA Cast), the frontend's
+extra-module URL (covers YAML resource mode), and the sidebar panel's
+``module_url`` — and they must receive the *same* URL string, or the card module
+is evaluated more than once and the second ``customElements.define`` throws.
+
+The sidebar panel section additionally covers the lifecycle the options toggle
+drives: registration has to be idempotent, because HA raises
+``ValueError: Overwriting panel haventory`` on a second registration of a path
+that is already taken.
 """
 
 from __future__ import annotations
@@ -13,6 +18,8 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import logging
+import re
 import sys
 import threading
 import types
@@ -20,16 +27,27 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, UrlManager
+from custom_components.haventory.const import (
+    CONF_CARD_TITLE,
+    CONF_SIDEBAR_PANEL_ENABLED,
+    DEFAULT_CARD_TITLE,
+    MEDIA_NAME_TOKEN_PARAM,
+    MEDIA_URL_TEMPLATE,
+    PANEL_ELEMENT_NAME,
+    PANEL_ICON,
+    PANEL_URL_PATH,
+    STATUS_COLORS,
+    STATUS_ICONS,
+)
+from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, DATA_PANELS, UrlManager
 from homeassistant.config_entries import ConfigEntry
 
 STATIC_URL_PATH = "/haventory_static"
 CARD_PATH = f"{STATIC_URL_PATH}/haventory-card.js"
 # Where installs from before the bundle moved into the package loaded it from.
 LEGACY_CARD_PATH = "/local/haventory/haventory-card.js"
-MANIFEST_PATH = (
-    Path(__file__).resolve().parents[1] / "custom_components" / "haventory" / "manifest.json"
-)
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MANIFEST_PATH = REPO_ROOT / "custom_components" / "haventory" / "manifest.json"
 
 # Distinguishes "leave the loader stub at its default (the shipped manifest)" from
 # "register None", which makes the lookup raise the way an absent integration does.
@@ -54,28 +72,35 @@ def import_haventory(monkeypatch, lovelace_key: str):
 
 
 class MockResourceCollection:
-    """Mock Lovelace resource collection in storage mode (create/update/delete)."""
+    """Mock Lovelace resource collection in storage mode (create/update/delete).
 
-    def __init__(self, items: list[dict[str, Any]] | None = None):
-        self.loaded = True
+    Mirrors where the real collection loads storage and where it does not:
+    `async_items` reports nothing until something loads it, while each mutation
+    method loads first — so a caller that reads before writing has to say so.
+    """
+
+    def __init__(self, items: list[dict[str, Any]] | None = None, *, loaded: bool = True):
+        self.loaded = loaded
         self._items: list[dict[str, Any]] = list(items or [])
         self.created: list[dict[str, Any]] = []
         self.updated: list[tuple[str, dict[str, Any]]] = []
         self.deleted: list[str] = []
 
     def async_items(self) -> list[dict[str, Any]]:
-        return self._items
+        return self._items if self.loaded else []
 
     async def async_load(self):
         self.loaded = True
 
     async def async_create_item(self, data: dict[str, Any]) -> dict[str, Any]:
+        self.loaded = True
         self.created.append(data)
         item = {"id": f"created_{len(self.created)}", **data}
         self._items.append(item)
         return item
 
     async def async_update_item(self, item_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+        self.loaded = True
         for item in self._items:
             if item.get("id") == item_id:
                 item.update(updates)
@@ -84,6 +109,7 @@ class MockResourceCollection:
         raise KeyError(item_id)
 
     async def async_delete_item(self, item_id: str) -> None:
+        self.loaded = True
         self.deleted.append(item_id)
         self._items = [item for item in self._items if item.get("id") != item_id]
 
@@ -179,6 +205,22 @@ def extra_js_urls(hass: HassStub) -> set[str]:
     return set(hass.data[DATA_EXTRA_MODULE_URL].urls)
 
 
+def registered_panel(hass: HassStub) -> Any:
+    """The HAventory entry in the frontend's panel registry, or None."""
+    return hass.data.get(DATA_PANELS, {}).get(PANEL_URL_PATH)
+
+
+def panel_registration_attempts(hass: HassStub) -> list[str]:
+    """Every ``async_register_panel`` call, successful or not (see conftest)."""
+    return hass.data.get("__panel_registrations__", [])
+
+
+async def setup_frontend(hav_init, hass: HassStub, entry: ConfigEntry) -> None:
+    """The two frontend steps of ``async_setup_entry``, in the order it runs them."""
+    await hav_init._register_frontend_module(hass)
+    await hav_init._async_apply_sidebar_panel(hass, entry)
+
+
 def track_manifest_reads(monkeypatch) -> list[int]:
     """Record the thread of every `Path.read_text` call from here on.
 
@@ -207,6 +249,20 @@ def hav_init(monkeypatch, tmp_path):
 # --------------------------------------------------------------------------- #
 # Serving the bundle
 # --------------------------------------------------------------------------- #
+
+
+def test_the_card_build_emits_a_single_file() -> None:
+    """The card build keeps code splitting off, so the bundle has no siblings.
+
+    Everything the loaders name is one file. A split chunk would land in the
+    served directory beside it, and both the directory's ``.gitignore`` entry and
+    the release-zip check — which asserts the bundle is present, not that it is
+    alone — would pass it through into the HACS asset. ``emptyOutDir: false``
+    then keeps every such chunk across later builds.
+    """
+    config = (REPO_ROOT / "cards" / "haventory-card" / "vite.config.ts").read_text(encoding="utf-8")
+
+    assert re.search(r"^\s*codeSplitting: false$", config, re.MULTILINE) is not None
 
 
 @pytest.mark.asyncio
@@ -300,6 +356,33 @@ async def test_skips_everything_when_http_is_unavailable(hav_init):
 
     await hav_init._register_frontend_module(hass)
 
+    assert lovelace_data.resources.created == []
+    assert extra_js_urls(hass) == set()
+
+
+@pytest.mark.asyncio
+async def test_a_failed_static_route_logs_at_error(hav_init, caplog):
+    """A route that fails to register leaves the card served by nothing.
+
+    This is the one frontend-registration failure worth an operator's attention:
+    it short-circuits both loaders below it. The Lovelace-resource sites stay at
+    WARNING because ``add_extra_js_url`` has already run on the identical URL, so
+    the card still loads.
+    """
+    hass = make_hass()
+    lovelace_data = MockLovelaceData()
+    hass.data["lovelace_data_key"] = lovelace_data
+
+    async def refuse(configs):
+        raise RuntimeError("aiohttp refused the route")
+
+    hass.http.async_register_static_paths = refuse
+
+    with caplog.at_level(logging.DEBUG):
+        await hav_init._register_frontend_module(hass)
+
+    failures = [r for r in caplog.records if "cannot load" in r.getMessage()]
+    assert [r.levelno for r in failures] == [logging.ERROR]
     assert lovelace_data.resources.created == []
     assert extra_js_urls(hass) == set()
 
@@ -526,6 +609,28 @@ async def test_collapses_duplicate_card_resources(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_finds_the_existing_entry_in_an_unloaded_collection(hav_init):
+    """Registering against a collection nobody has read yet must not add a second entry.
+
+    Nothing loads the resource collection at Lovelace setup, so this is the state
+    setup meets on a Home Assistant that has served no dashboard. An unloaded
+    collection reports no items, and creating on the strength of that would leave
+    two resources for one module — the second `customElements.define` throws.
+    """
+    hass = make_hass()
+    current_url = f"{CARD_PATH}?v={manifest_version()}"
+    resources = MockResourceCollection(
+        [{"id": "existing", "url": current_url, "type": "module"}], loaded=False
+    )
+    hass.data["lovelace_data_key"] = MockLovelaceData(resources)
+
+    await hav_init._register_frontend_module(hass)
+
+    assert resources.created == []
+    assert [i["url"] for i in resources.async_items()] == [current_url]
+
+
+@pytest.mark.asyncio
 async def test_leaves_a_stale_entry_alone_when_it_has_no_id(hav_init):
     """An entry with no id cannot be addressed for update => leave it, add nothing."""
     hass = make_hass()
@@ -637,3 +742,263 @@ async def test_frontend_without_a_url_manager_degrades_gracefully(hav_init):
     assert [c["url"] for c in lovelace_data.resources.created] == [
         f"{CARD_PATH}?v={manifest_version()}"
     ]
+
+
+# --------------------------------------------------------------------------- #
+# The sidebar panel
+# --------------------------------------------------------------------------- #
+
+
+def test_the_sidebar_icon_is_the_one_the_card_bundle_publishes() -> None:
+    """``PANEL_ICON`` names an icon set that only the card bundle registers.
+
+    A non-``mdi:`` prefix is resolved against the frontend's icon registry, so
+    the sidebar shows the mark only while the two spellings agree — and a
+    disagreement is silent, costing the entry its icon and nothing else.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "brand-icon.ts").read_text(
+        encoding="utf-8"
+    )
+
+    def declared(name: str) -> str:
+        match = re.search(rf"^export const {name} = '([^']+)';$", source, re.MULTILINE)
+        assert match is not None, f"{name} is no longer declared in brand-icon.ts"
+        return match.group(1)
+
+    assert PANEL_ICON == f"{declared('HAVENTORY_ICONSET')}:{declared('HAVENTORY_ICON_NAME')}"
+
+
+def test_the_card_builds_media_urls_on_the_route_the_backend_serves() -> None:
+    """The attachment route is a constant on both sides and checked by neither.
+
+    The card builds a media path itself, signs it, and puts the result straight
+    into an ``<img src>``; a disagreement here is a 404 per photo, with nothing
+    in any log to say the two spellings drifted apart.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "media.ts").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r"^export const MEDIA_URL_TEMPLATE = '([^']+)';$", source, re.MULTILINE)
+    assert match is not None, "MEDIA_URL_TEMPLATE is no longer declared in media.ts"
+
+    assert match.group(1) == MEDIA_URL_TEMPLATE
+
+
+def test_the_card_versions_media_urls_under_the_parameter_the_backend_reads() -> None:
+    """The name-token parameter is a constant on both sides and checked by neither.
+
+    Drift here fails silently in the direction that matters least at first: the
+    card keeps working, the backend simply stops seeing the token and serves
+    every attachment uncacheable. The visible symptom is a photo grid that
+    refetches on every render, which reads as a performance problem rather than
+    a renamed constant.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "media.ts").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r"^export const MEDIA_NAME_TOKEN_PARAM = '([^']+)';$", source, re.MULTILINE)
+    assert match is not None, "MEDIA_NAME_TOKEN_PARAM is no longer declared in media.ts"
+
+    assert match.group(1) == MEDIA_NAME_TOKEN_PARAM
+
+
+def test_every_status_icon_has_a_glyph_in_the_bundle() -> None:
+    """``STATUS_ICONS`` names glyphs only the card defines.
+
+    The backend validates a status's icon against this vocabulary and the card
+    looks it up in ``ICONS``; neither can see the other. A name the card lacks
+    stores fine and then renders nothing, with no error anywhere to say why.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "icons.ts").read_text(
+        encoding="utf-8"
+    )
+    defined = set(re.findall(r"^  ([A-Za-z][A-Za-z0-9]*):", source, re.MULTILINE))
+
+    assert set(STATUS_ICONS) <= defined, f"no glyph for: {sorted(set(STATUS_ICONS) - defined)}"
+
+
+def test_the_card_offers_exactly_the_vocabularies_the_backend_accepts() -> None:
+    """The management picker enumerates colours and glyphs from its own arrays.
+
+    The backend refuses anything outside `STATUS_COLORS` / `STATUS_ICONS`, so a
+    card offering one more choice hands the user a control that fails on save,
+    and one offering fewer hides a colour the store may already hold.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "status.ts").read_text(
+        encoding="utf-8"
+    )
+
+    def declared(name: str) -> list[str]:
+        match = re.search(rf"export const {name}: readonly \w+\[\] = \[(.*?)\];", source, re.S)
+        assert match is not None, f"{name} is no longer declared in status.ts"
+        return re.findall(r"'([^']+)'", match.group(1))
+
+    assert declared("STATUS_COLORS") == list(STATUS_COLORS)
+    assert declared("STATUS_ICONS") == list(STATUS_ICONS)
+
+
+def test_every_status_colour_has_a_rule_in_the_chip_stylesheet() -> None:
+    """``STATUS_COLORS`` names tones only the card can paint.
+
+    Same blind spot as the icons: a token with no rule falls back to the base
+    chip and the status renders in the wrong colour rather than failing.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "chip.ts").read_text(
+        encoding="utf-8"
+    )
+    styled = set(re.findall(r"\.hv-status-chip\.tone-([a-z-]+)", source))
+
+    expected = {token.replace("_", "-") for token in STATUS_COLORS}
+    assert expected <= styled, f"no rule for: {sorted(expected - styled)}"
+
+
+@pytest.mark.asyncio
+async def test_registers_the_sidebar_panel_against_the_card_bundle(hav_init):
+    """The panel is a custom panel loading the card bundle, named by the card title.
+
+    Its `module_url` is the string the extra-module loader got, character for
+    character: a second URL for the same module makes the browser evaluate the
+    bundle twice, and `defineCardElement` has nothing to say about a second
+    evaluation of itself.
+    """
+    hass = make_hass()
+
+    await setup_frontend(hav_init, hass, ConfigEntry())
+
+    expected_url = f"{CARD_PATH}?v={manifest_version()}"
+    panel = registered_panel(hass)
+    assert panel.component_name == "custom"
+    assert panel.frontend_url_path == PANEL_URL_PATH
+    assert panel.sidebar_title == DEFAULT_CARD_TITLE
+    assert panel.sidebar_icon == PANEL_ICON
+    assert panel.require_admin is False
+    assert panel.config == {
+        "title": DEFAULT_CARD_TITLE,
+        "_panel_custom": {
+            "name": PANEL_ELEMENT_NAME,
+            "embed_iframe": False,
+            "trust_external": False,
+            "module_url": expected_url,
+        },
+    }
+    assert extra_js_urls(hass) == {expected_url}
+
+
+@pytest.mark.asyncio
+async def test_applying_twice_over_leaves_one_panel(hav_init):
+    """Registering onto a path already taken raises in HA — so remove first, always."""
+    hass = make_hass()
+    entry = ConfigEntry()
+
+    await setup_frontend(hav_init, hass, entry)
+    await hav_init._async_apply_sidebar_panel(hass, entry)
+
+    assert list(hass.data[DATA_PANELS]) == [PANEL_URL_PATH]
+    assert panel_registration_attempts(hass) == [PANEL_URL_PATH] * 2
+
+
+@pytest.mark.asyncio
+async def test_reload_re_registers_the_panel_exactly_once(hav_init):
+    """Setup → unload → setup: two registrations attempted, one panel live, nothing raised."""
+    hass = make_hass()
+    entry = ConfigEntry()
+
+    await setup_frontend(hav_init, hass, entry)
+    await hav_init.async_unload_entry(hass, entry)
+    await setup_frontend(hav_init, hass, entry)
+
+    assert list(hass.data[DATA_PANELS]) == [PANEL_URL_PATH]
+    assert panel_registration_attempts(hass) == [PANEL_URL_PATH] * 2
+
+
+@pytest.mark.asyncio
+async def test_unload_takes_the_sidebar_entry_back(hav_init):
+    """A sidebar entry outliving its backend opens a page that cannot load."""
+    hass = make_hass()
+    entry = ConfigEntry()
+
+    await setup_frontend(hav_init, hass, entry)
+    assert registered_panel(hass) is not None
+
+    await hav_init.async_unload_entry(hass, entry)
+
+    assert registered_panel(hass) is None
+    assert hass.data[hav_init.DOMAIN].get("panel_registered") is None
+
+
+@pytest.mark.asyncio
+async def test_toggling_the_option_removes_and_restores_the_entry(hav_init):
+    """The toggle applies through the options listener — no entry reload, no restart."""
+    hass = make_hass()
+    entry = ConfigEntry(options={CONF_SIDEBAR_PANEL_ENABLED: True})
+
+    await setup_frontend(hav_init, hass, entry)
+    assert registered_panel(hass) is not None
+
+    entry.options[CONF_SIDEBAR_PANEL_ENABLED] = False
+    await hav_init._async_options_updated(hass, entry)
+    assert registered_panel(hass) is None
+
+    entry.options[CONF_SIDEBAR_PANEL_ENABLED] = True
+    await hav_init._async_options_updated(hass, entry)
+    assert registered_panel(hass) is not None
+
+
+@pytest.mark.asyncio
+async def test_renaming_the_card_renames_the_sidebar_entry(hav_init):
+    """One name for both surfaces: the panel carries the card title, live."""
+    hass = make_hass()
+    entry = ConfigEntry(options={CONF_CARD_TITLE: "Pantry"})
+
+    await setup_frontend(hav_init, hass, entry)
+    assert registered_panel(hass).sidebar_title == "Pantry"
+
+    entry.options[CONF_CARD_TITLE] = "Garage"
+    await hav_init._async_options_updated(hass, entry)
+
+    panel = registered_panel(hass)
+    assert panel.sidebar_title == "Garage"
+    assert panel.config["title"] == "Garage"
+
+
+@pytest.mark.asyncio
+async def test_an_explicit_opt_out_registers_no_panel(hav_init):
+    """Off in the options means off at setup too, not just on the toggle path."""
+    hass = make_hass()
+
+    await setup_frontend(hav_init, hass, ConfigEntry(options={CONF_SIDEBAR_PANEL_ENABLED: False}))
+
+    assert registered_panel(hass) is None
+    assert panel_registration_attempts(hass) == []
+    # The card itself is unaffected: only the sidebar entry is opted out of.
+    assert extra_js_urls(hass) == {f"{CARD_PATH}?v={manifest_version()}"}
+
+
+@pytest.mark.asyncio
+async def test_missing_panel_custom_degrades_to_a_debug_log(monkeypatch, tmp_path, caplog):
+    """`panel_custom` is an internal component — treat its absence as our problem, not HA's."""
+    monkeypatch.delitem(sys.modules, "homeassistant.components.panel_custom")
+    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
+    install_bundle(monkeypatch, hav_init, tmp_path)
+    assert hav_init.async_register_panel is None
+
+    hass = make_hass()
+    with caplog.at_level(logging.DEBUG, logger="custom_components.haventory"):
+        await setup_frontend(hav_init, hass, ConfigEntry())
+
+    assert registered_panel(hass) is None
+    assert any("panel_custom" in record.message for record in caplog.records)
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
+@pytest.mark.asyncio
+async def test_no_sidebar_panel_without_a_built_bundle(monkeypatch, tmp_path):
+    """The panel is the bundle's second element; with no bundle there is nothing to show."""
+    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
+    install_bundle(monkeypatch, hav_init, tmp_path, built=False)
+    hass = make_hass()
+
+    await setup_frontend(hav_init, hass, ConfigEntry())
+
+    assert registered_panel(hass) is None
+    assert panel_registration_attempts(hass) == []

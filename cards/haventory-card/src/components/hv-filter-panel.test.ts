@@ -1,7 +1,7 @@
 import './hv-filter-panel';
 import type { HVFilterPanel } from './hv-filter-panel';
 import { defaultFilters } from '../store/store';
-import type { DistinctValues, LocationTreeNode, StoreFilters } from '../store/types';
+import type { DistinctValues, Location, LocationTreeNode, StatusDefinition, StoreFilters } from '../store/types';
 
 const distinct: DistinctValues = {
   categories: [
@@ -68,6 +68,31 @@ function changes(el: HVFilterPanel) {
 
 const q = (el: HVFilterPanel, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement;
 const all = (el: HVFilterPanel, sel: string) => [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
+const label = (el: HVFilterPanel, testid: string) =>
+  (q(el, `[data-testid="${testid}"]`).textContent ?? '').replace(/\s+/g, ' ').trim();
+
+/** The flat cache behind `tree`, where only the root carries the area. */
+const nestedLocations = (areaId: string | null): Location[] => [
+  {
+    id: 'garage',
+    name: 'Garage',
+    parent_id: null,
+    area_id: areaId,
+    path: { id_path: ['garage'], name_path: ['Garage'], display_path: 'Garage', sort_key: 'garage' },
+  },
+  {
+    id: 'shelf-a',
+    name: 'Shelf A',
+    parent_id: 'garage',
+    area_id: null,
+    path: {
+      id_path: ['garage', 'shelf-a'],
+      name_path: ['Garage', 'Shelf A'],
+      display_path: 'Garage / Shelf A',
+      sort_key: 'garage/shelf a',
+    },
+  },
+];
 
 describe('hv-filter-panel: category', () => {
   it('shows counted chips and collapses the tail behind More…', async () => {
@@ -96,6 +121,94 @@ describe('hv-filter-panel: category', () => {
     await el.updateComplete;
     (q(el, '[data-value="Hardware"]') as HTMLButtonElement).click();
     expect(seen[1]).toEqual({ category: null });
+  });
+});
+
+describe('hv-filter-panel: status', () => {
+  it('offers every status as a single-select chip that toggles off when re-picked', async () => {
+    const el = await mount();
+    expect(all(el, '[data-testid="filter-status"]').map((c) => c.dataset.value)).toEqual([
+      'ok',
+      'missing',
+      'needs_repair',
+    ]);
+
+    const seen = changes(el);
+    (q(el, '[data-testid="filter-status"][data-value="missing"]') as HTMLButtonElement).click();
+    expect(seen).toEqual([{ status: 'missing' }]);
+
+    el.filters = { ...el.filters, status: 'missing' };
+    await el.updateComplete;
+    (q(el, '[data-testid="filter-status"][data-value="missing"]') as HTMLButtonElement).click();
+    expect(seen[1]).toEqual({ status: null });
+  });
+
+  // Every chip priced, so a user picking what to filter by can see which
+  // statuses hold anything — the SHOW ONLY row above has always done this.
+  it('prices every status from the per-slug counts, zeroes included', async () => {
+    const statuses: StatusDefinition[] = [
+      { slug: 'ok', label: 'OK', order: 0, color: 'green', icon: 'check' },
+      { slug: 'lent_out', label: 'Lent out', order: 1, color: 'blue', icon: 'hand' },
+      { slug: 'in_transit', label: 'In transit', order: 2, color: 'blue_strong', icon: 'truck' },
+    ];
+    const el = await mount(
+      {},
+      {
+        statuses,
+        counts: {
+          items_total: 998,
+          low_stock_count: 0,
+          checked_out_count: 0,
+          locations_total: 0,
+          no_location_count: 0,
+          status_counts: { ok: 856, lent_out: 100, in_transit: 0 },
+        },
+      },
+    );
+    const chips = all(el, '[data-testid="filter-status"]');
+    expect(chips.map((c) => (c.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual([
+      'OK 856',
+      'Lent out 100',
+      'In transit 0',
+    ]);
+  });
+
+  // A backend too old to send the per-slug map still prices the two flagged
+  // built-ins in their own fields; nothing else is knowable there.
+  it('prices only the two flagged statuses when the per-slug map is absent', async () => {
+    const el = await mount(
+      {},
+      {
+        counts: {
+          items_total: 10,
+          low_stock_count: 0,
+          checked_out_count: 0,
+          missing_count: 2,
+          needs_repair_count: 1,
+          locations_total: 0,
+          no_location_count: 0,
+        },
+      },
+    );
+    const chips = all(el, '[data-testid="filter-status"]');
+    expect(chips.map((c) => (c.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual([
+      'OK',
+      'Missing 2',
+      'Needs repair 1',
+    ]);
+  });
+
+  // A chosen status shows its own colour; the rest stay outlines, so the row
+  // reads as choices rather than as facts. The default never fills, because
+  // "OK" is not a state worth marking.
+  it('fills a selected status with its own tone and leaves the default plain', async () => {
+    const el = await mount({ status: 'needs_repair' });
+    const chip = q(el, '[data-testid="filter-status"][data-value="needs_repair"]');
+    expect(chip.classList.contains('on')).toBe(true);
+    expect(chip.classList.contains('tone-amber')).toBe(true);
+    expect(
+      q(el, '[data-testid="filter-status"][data-value="ok"]').classList.contains('tone-green'),
+    ).toBe(false);
   });
 });
 
@@ -166,6 +279,15 @@ describe('hv-filter-panel: tags', () => {
 });
 
 describe('hv-filter-panel: show only vs sort', () => {
+  // Sort is a daily toggle and the tag cloud renders every tag the household
+  // has, so on a phone anything under it is several screens into the sheet.
+  it('puts sort above the tag cloud', async () => {
+    const el = await mount();
+    const headings = all(el, '.hv-label').map((s) => s.textContent?.trim());
+
+    expect(headings).toEqual(['Where', 'Category', 'Show only', 'Status', 'Changed', 'Sort', 'Tags']);
+  });
+
   it('keeps low-stock-only and low-stock-first as separate controls', async () => {
     const el = await mount();
     const seen = changes(el);
@@ -194,7 +316,7 @@ describe('hv-filter-panel: show only vs sort', () => {
       },
     );
     const tallyOf = (testid: string) =>
-      q(el, `[data-testid="${testid}"]`).querySelector('.tally')?.textContent?.trim();
+      q(el, `[data-testid="${testid}"]`).querySelector('.hv-tally')?.textContent?.trim();
 
     expect(tallyOf('filter-low-stock-only')).toBe('102');
     expect(tallyOf('filter-checked-out')).toBe('82');
@@ -204,7 +326,7 @@ describe('hv-filter-panel: show only vs sort', () => {
 
   it('prints no tally at all when the counts have not arrived', async () => {
     const el = await mount();
-    expect(q(el, '[data-testid="filter-low-stock-only"]').querySelector('.tally')).toBe(null);
+    expect(q(el, '[data-testid="filter-low-stock-only"]').querySelector('.hv-tally')).toBe(null);
   });
 
   it('carries the same tallies into the phone layout', async () => {
@@ -291,6 +413,30 @@ describe('hv-filter-panel: dates and location', () => {
     expect(el.shadowRoot?.querySelector('hv-location-tree')).toBe(null);
   });
 
+  // aria-expanded on its own says only that something opened; which element it
+  // opened was left to whatever happened to follow the chip in reading order.
+  it('names the holder the location chip discloses, open or shut', async () => {
+    const el = await mount();
+    const chip = () => q(el, '[data-testid="filter-location"]') as HTMLButtonElement;
+    const id = 'filter-location-tree-holder';
+
+    expect(chip().getAttribute('aria-controls')).toBe(id);
+    expect(chip().getAttribute('aria-expanded')).toBe('false');
+    // The id has to resolve in both states — a control pointing at nothing
+    // announces as controlling nothing — so the holder outlives the tree in it.
+    const shut = el.shadowRoot?.getElementById(id);
+    expect(shut, 'holder shut').toBeTruthy();
+    expect(shut?.querySelector('hv-location-tree'), 'no tree while shut').toBe(null);
+
+    chip().click();
+    await el.updateComplete;
+
+    expect(chip().getAttribute('aria-expanded')).toBe('true');
+    expect(chip().getAttribute('aria-controls')).toBe(id);
+    const open = el.shadowRoot?.getElementById(id);
+    expect(open?.querySelector('hv-location-tree'), 'tree open inside the holder').toBeTruthy();
+  });
+
   it('names the picked location on the chip', async () => {
     const el = await mount(
       { locationId: 'shelf-a' },
@@ -312,6 +458,23 @@ describe('hv-filter-panel: dates and location', () => {
       },
     );
     expect(q(el, '[data-testid="filter-location"]').textContent).toContain('Garage › Shelf A');
+  });
+
+  it('names the area the picked location inherits, matching the chip row wording', async () => {
+    const el = await mount({ locationId: 'shelf-a' }, { locations: nestedLocations('area-garage') });
+    expect(label(el, 'filter-location')).toContain('Area: Garage · Garage › Shelf A');
+  });
+
+  it('leaves a location in no area labelled exactly as before', async () => {
+    const el = await mount({ locationId: 'shelf-a' }, { locations: nestedLocations(null) });
+    expect(label(el, 'filter-location')).toContain('Garage › Shelf A');
+    expect(label(el, 'filter-location')).not.toContain('Area:');
+  });
+
+  it('says nothing about an area while no location is picked', async () => {
+    const el = await mount({}, { locations: nestedLocations('area-garage') });
+    expect(label(el, 'filter-location')).toContain('Any location');
+    expect(label(el, 'filter-location')).not.toContain('Area:');
   });
 });
 
@@ -451,9 +614,9 @@ describe('hv-filter-panel: native control affordances', () => {
   });
 
   // On a phone the fields took --hv-input-font (16px on this surface) while the
-  // chips beside them are 13.5px and the checkbox rows 14px, so the area select
-  // — the one full-width control in the panel — was the largest text on the
-  // page. Desktop has always matched its chips at 12.5px.
+  // chips beside them are 13.5px, so the area select — the one full-width
+  // control in the panel — was the largest text on the page. Desktop has always
+  // matched its chips at 12.5px.
   it('sizes its fields like the chips beside them, in both layouts', () => {
     const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
     const css = (Array.isArray(sheet) ? sheet : [sheet])
@@ -607,6 +770,190 @@ describe('hv-filter-panel: inspection due', () => {
       );
       (chip as HTMLButtonElement).click();
       expect(applied[0], `mobile=${mobile}`).toMatchObject({ inspectionDueOnly: true });
+      el.remove();
+    }
+  });
+});
+
+/**
+ * The seven chips that hold a filter's on/off state, and the filter that turns
+ * each one on. The location chip and "More…" are not among them: the first is a
+ * disclosure that names the location it holds, the second only reveals the rest
+ * of the category tail.
+ */
+const STATEFUL_CHIPS: { name: string; sel: string; on: Partial<StoreFilters> }[] = [
+  {
+    name: 'category',
+    sel: '[data-testid="filter-category"][data-value="Hardware"]',
+    on: { category: 'Hardware' },
+  },
+  { name: 'tag', sel: '[data-testid="filter-tag"][data-value="metric"]', on: { tags: ['metric'] } },
+  { name: 'low stock', sel: '[data-testid="filter-low-stock-only"]', on: { lowStockOnly: true } },
+  { name: 'checked out', sel: '[data-testid="filter-checked-out"]', on: { checkedOutOnly: true } },
+  { name: 'overdue', sel: '[data-testid="filter-overdue"]', on: { overdueOnly: true } },
+  {
+    name: 'inspection due',
+    sel: '[data-testid="filter-inspection-due"]',
+    on: { inspectionDueOnly: true },
+  },
+  { name: 'no location', sel: '[data-testid="filter-orphans"]', on: { orphansOnly: true } },
+];
+
+describe('hv-filter-panel: pressed state', () => {
+  // Colour was the whole signal on the desktop panel, so a screen reader could
+  // not tell an active filter from an inactive one — while the same facets
+  // announced their state in the sheet, on both app bars and in the sidebar.
+  it('announces every chip pressed or not, on both widths', async () => {
+    for (const mobile of [false, true]) {
+      for (const chip of STATEFUL_CHIPS) {
+        const off = await mount({}, { mobile });
+        expect(
+          q(off, chip.sel).getAttribute('aria-pressed'),
+          `${chip.name} off, mobile=${mobile}`,
+        ).toBe('false');
+        off.remove();
+
+        const on = await mount(chip.on, { mobile });
+        expect(
+          q(on, chip.sel).getAttribute('aria-pressed'),
+          `${chip.name} on, mobile=${mobile}`,
+        ).toBe('true');
+        on.remove();
+      }
+    }
+  });
+
+  it('keeps the announced state in step with the paint, chip for chip', async () => {
+    for (const mobile of [false, true]) {
+      const el = await mount(
+        { category: 'Tools', tags: ['m4'], overdueOnly: true, includeSubtree: true },
+        { mobile },
+      );
+      // Every toggle in the panel paints itself, rows included: a row is a chip
+      // in another shape, not a checkbox that paints a box inside it.
+      const painted = (b: HTMLElement) => b.classList.contains('on');
+      const toggles = all(el, 'button.chip, button.check').filter(
+        (b) => b.dataset.testid !== 'filter-location' && b.dataset.testid !== 'filter-category-more',
+      );
+
+      expect(toggles.length, `mobile=${mobile}`).toBeGreaterThanOrEqual(STATEFUL_CHIPS.length);
+      for (const toggle of toggles) {
+        expect(toggle.getAttribute('aria-pressed'), `${toggle.dataset.testid}, mobile=${mobile}`).toBe(
+          String(painted(toggle)),
+        );
+      }
+      // Not vacuous: this mount has some on and some off.
+      const states = toggles.map((t) => t.getAttribute('aria-pressed'));
+      expect(states, `mobile=${mobile}`).toContain('true');
+      expect(states, `mobile=${mobile}`).toContain('false');
+      el.remove();
+    }
+  });
+
+  // The rows announce as toggle buttons but drew a checkbox's box, which left
+  // the sheet as the one surface where the paint and the announcement disagreed.
+  it('paints every row as a chip rather than a checkbox, at both widths', async () => {
+    const ROWS = ['filter-include-subtree', 'filter-low-stock-first', 'filter-low-stock-only'];
+    for (const mobile of [false, true]) {
+      const el = await mount({ lowStockOnly: true, includeSubtree: true, lowStockFirst: true }, { mobile });
+      for (const testid of ROWS) {
+        const row = q(el, `[data-testid="${testid}"]`);
+        // "Low stock" is a chip on a desktop and a row in the sheet; the other
+        // two are rows at both widths.
+        if (!mobile && testid === 'filter-low-stock-only') continue;
+        const where = `${testid}, mobile=${mobile}`;
+        expect(row.classList.contains('chip'), where).toBe(true);
+        expect(row.querySelector('.box'), where).toBe(null);
+        expect(row.querySelector('.mark'), where).toBeTruthy();
+      }
+      el.remove();
+    }
+  });
+
+  // The row's on state has to be the shared chip's on state, not a second set
+  // of colours that happens to look similar.
+  it('takes its on state from the shared chip rule, warning variant included', () => {
+    const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
+    const css = (Array.isArray(sheet) ? sheet : [sheet])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+
+    expect(css).toMatch(/\.hv-chip\.toggle\.on \{[^}]*background: var\(--hv-primary-tint\)/);
+    expect(css).toMatch(/\.hv-chip\.toggle\.warning\.on \{[^}]*background: var\(--hv-warn-bg\)/);
+    // No rule of its own to drift from those, and no checkbox box left to draw.
+    expect(css).not.toMatch(/[^-]\.chip\.on \{/);
+    expect(css).not.toMatch(/\.check\.on \{/);
+    expect(css).not.toMatch(/\.box[ .{]/);
+  });
+
+  it('reserves the mark so a row keeps its label in place as it is pressed', async () => {
+    const el = await mount({}, { mobile: true });
+    const row = q(el, '[data-testid="filter-low-stock-only"]');
+    expect(row.getAttribute('aria-pressed')).toBe('false');
+    expect(row.querySelector('.mark'), 'off rows still hold the slot open').toBeTruthy();
+
+    const el2 = await mount({ lowStockOnly: true }, { mobile: true });
+    expect(q(el2, '[data-testid="filter-low-stock-only"]').querySelector('.mark svg')).toBeTruthy();
+
+    const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
+    const css = (Array.isArray(sheet) ? sheet : [sheet])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+    expect(css).toMatch(/\.check \.mark \{[^}]*width: 12px/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.check \.mark \{[^}]*width: 15px/);
+  });
+
+  it('flips as the filter is applied, not only on mount', async () => {
+    const el = await mount();
+    const chip = () => q(el, '[data-testid="filter-overdue"]');
+    expect(chip().getAttribute('aria-pressed')).toBe('false');
+
+    (chip() as HTMLButtonElement).click();
+    // Desktop applies through the host, which hands the new filters back down.
+    el.filters = { ...el.filters, overdueOnly: true };
+    await el.updateComplete;
+    expect(chip().getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('presses a selected tag no item currently carries', async () => {
+    const el = await mount({ tags: ['nobody-uses-this'] });
+    expect(
+      q(el, '[data-testid="filter-tag"][data-value="nobody-uses-this"]').getAttribute(
+        'aria-pressed',
+      ),
+    ).toBe('true');
+  });
+
+  it('marks the two toggle rows too, on both widths', async () => {
+    for (const mobile of [false, true]) {
+      const fresh = await mount({}, { mobile });
+      const state = (el: HVFilterPanel, testid: string) =>
+        q(el, `[data-testid="${testid}"]`).getAttribute('aria-pressed');
+
+      // Sub-locations are included by default; low-stock-first is not.
+      expect(state(fresh, 'filter-include-subtree'), `mobile=${mobile}`).toBe('true');
+      expect(state(fresh, 'filter-low-stock-first'), `mobile=${mobile}`).toBe('false');
+      fresh.remove();
+
+      const flipped = await mount({ includeSubtree: false, lowStockFirst: true }, { mobile });
+      expect(state(flipped, 'filter-include-subtree'), `mobile=${mobile}`).toBe('false');
+      expect(state(flipped, 'filter-low-stock-first'), `mobile=${mobile}`).toBe('true');
+      flipped.remove();
+    }
+  });
+
+  // One vocabulary for the whole card: the same facet must not be a checkbox in
+  // the sheet and a toggle button on the panel.
+  it('leaves no control announcing as a checkbox', async () => {
+    for (const mobile of [false, true]) {
+      const el = await mount({}, { mobile });
+      expect(all(el, '[role="checkbox"]'), `mobile=${mobile}`).toEqual([]);
+      // Tag match mode and sort direction are radiogroups, where aria-checked
+      // is the right word for the same idea.
+      const checked = all(el, '[aria-checked]').filter((n) => n.getAttribute('role') !== 'radio');
+      expect(checked, `mobile=${mobile}`).toEqual([]);
       el.remove();
     }
   });

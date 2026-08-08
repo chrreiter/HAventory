@@ -1,5 +1,93 @@
 # Changelog
 
+## [0.3.3](https://github.com/chrreiter/HAventory/compare/v0.3.2...v0.3.3) (2026-08-05)
+
+
+### Bug Fixes
+
+* **hooks:** stop the session hook destroying the integration env ([#290](https://github.com/chrreiter/HAventory/issues/290)) ([f675ec3](https://github.com/chrreiter/HAventory/commit/f675ec3284ce0c488268e912ea1390650ed2037e))
+* V0.3.3 — clean-slate fixes ahead of V0.4.0 ([#287](https://github.com/chrreiter/HAventory/issues/287)) ([1cce96e](https://github.com/chrreiter/HAventory/commit/1cce96e1b337fcd2bcae7ed2bf33180e6a559a77))
+
+## [0.3.2](https://github.com/chrreiter/HAventory/compare/v0.3.1...v0.3.2) (2026-08-05)
+
+
+### Bug Fixes
+
+* **test-harness:** close the WS session on every connect() failure path ([#270](https://github.com/chrreiter/HAventory/issues/270)) ([1f2bcca](https://github.com/chrreiter/HAventory/commit/1f2bccaa33e88767b931fd05af303802ac91b0bb)), closes [#266](https://github.com/chrreiter/HAventory/issues/266)
+
+
+### Documentation
+
+* add public-release review (competitive position, code audit, roadmap) ([#267](https://github.com/chrreiter/HAventory/issues/267)) ([345532a](https://github.com/chrreiter/HAventory/commit/345532a73be397dc8a4ceb8be551a32bd3f2846a))
+* correct CLAUDE.md staging claims, retire the ledger, split docs/ and dev/ ([#271](https://github.com/chrreiter/HAventory/issues/271)) ([0bcb6e7](https://github.com/chrreiter/HAventory/commit/0bcb6e7929e933c79f0326c7bfc6d8981eb05b20)), closes [#269](https://github.com/chrreiter/HAventory/issues/269)
+* **skills:** refresh stale test counts and frame them as a growth oracle ([#272](https://github.com/chrreiter/HAventory/issues/272)) ([a7081ee](https://github.com/chrreiter/HAventory/commit/a7081eea9a4e387e639d07fe4df822f4c799b13e)), closes [#265](https://github.com/chrreiter/HAventory/issues/265)
+* **skills:** scope the Windows/Git Bash notes to the host they apply to ([#275](https://github.com/chrreiter/HAventory/issues/275)) ([a026a64](https://github.com/chrreiter/HAventory/commit/a026a643918c35fef6475a4885ecb753ef85eb46))
+
+## [0.3.1](https://github.com/chrreiter/HAventory/compare/v0.3.0...v0.3.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* **card:** bring the full view's table up to the card's accessibility bar ([#253](https://github.com/chrreiter/HAventory/issues/253)) ([c553470](https://github.com/chrreiter/HAventory/commit/c55347020dab6e9cc3ac2d04afdc2b173e1a15d6))
+* **card:** give every informational chip one shared style ([#262](https://github.com/chrreiter/HAventory/issues/262)) ([796baed](https://github.com/chrreiter/HAventory/commit/796baed62b9cd39a56fb8178f8aee3ed4a1f3f12))
+* **config:** declare single_config_entry in the manifest ([#257](https://github.com/chrreiter/HAventory/issues/257)) ([c60868c](https://github.com/chrreiter/HAventory/commit/c60868ca76b10c9e7c47c8cf66bb255e9bdfbdb4)), closes [#233](https://github.com/chrreiter/HAventory/issues/233)
+* **search:** let short query fragments match mid-word ([#251](https://github.com/chrreiter/HAventory/issues/251)) ([7d3aece](https://github.com/chrreiter/HAventory/commit/7d3aece19ece0e7025a642f004eba40f9658a18e)), closes [#220](https://github.com/chrreiter/HAventory/issues/220)
+* **ws:** persist before broadcasting so an event implies a durable write ([#250](https://github.com/chrreiter/HAventory/issues/250)) ([0841a37](https://github.com/chrreiter/HAventory/commit/0841a37a31d47ecb3081175edc88084df9ca7855)), closes [#221](https://github.com/chrreiter/HAventory/issues/221) [#247](https://github.com/chrreiter/HAventory/issues/247)
+
+## [0.3.0](https://github.com/chrreiter/HAventory/compare/v0.2.0...v0.3.0) (2026-08-03)
+
+
+### Features
+
+* allow filing locations under empty areas in organize dialog ([#185](https://github.com/chrreiter/HAventory/issues/185)) ([f6059fc](https://github.com/chrreiter/HAventory/commit/f6059fca684acba2aaf7f688fc9ad5f0fd94bc8a))
+* **card:** make item status a table column and a sidebar facet ([#240](https://github.com/chrreiter/HAventory/issues/240)) ([3e1cefe](https://github.com/chrreiter/HAventory/commit/3e1cefefb8b4076e8d194962924c2b9531953ac2))
+* item status field (OK / Missing / Needs Repair) ([#238](https://github.com/chrreiter/HAventory/issues/238)) ([a8982f6](https://github.com/chrreiter/HAventory/commit/a8982f6b3a9075598b1a351b520d2b522fd3a365))
+
+
+### Documentation
+
+* make CLAUDE.md release-stable and re-verify its claims ([#215](https://github.com/chrreiter/HAventory/issues/215)) ([336cc58](https://github.com/chrreiter/HAventory/commit/336cc584e3dc7cec0f855c277b09e255ad0026aa)), closes [#213](https://github.com/chrreiter/HAventory/issues/213)
+* point already-open tabs at a reload or the sidebar entry after install ([#237](https://github.com/chrreiter/HAventory/issues/237)) ([7349037](https://github.com/chrreiter/HAventory/commit/7349037ba40ea7a59e884d444e97e0f1ea7be883))
+
+## [0.2.0](https://github.com/chrreiter/HAventory/compare/v0.1.1...v0.2.0) (2026-08-03)
+
+
+### Features
+
+* **card:** embedded full view, haventory-panel, and shared host surfaces ([#159](https://github.com/chrreiter/HAventory/issues/159)) ([08218f0](https://github.com/chrreiter/HAventory/commit/08218f0b87a6ac83d20ef8f19c22731d84fc1800))
+* **card:** follow Home Assistant's area registry (item 75) ([#165](https://github.com/chrreiter/HAventory/issues/165)) ([04ff0b3](https://github.com/chrreiter/HAventory/commit/04ff0b3fbe9f16d2b3a381e93f303923ffd6ba1e))
+* **card:** preview what the location editor's area select does (item 46) ([#172](https://github.com/chrreiter/HAventory/issues/172)) ([f699e3d](https://github.com/chrreiter/HAventory/commit/f699e3d6bcab2d73ef842cb37cb70a5598921d27))
+* **card:** show an item's area everywhere a location is printed (item 38) ([#162](https://github.com/chrreiter/HAventory/issues/162)) ([9180d8f](https://github.com/chrreiter/HAventory/commit/9180d8f5cca371640d1571b38c459ab6716a9dca))
+* **config:** name the card in the config flow ([#157](https://github.com/chrreiter/HAventory/issues/157)) ([1510959](https://github.com/chrreiter/HAventory/commit/15109591b5b0f3ed8888673c295e992a243e26ec))
+* **frontend:** give the sidebar entry the HAventory mark ([#183](https://github.com/chrreiter/HAventory/issues/183)) ([65dd4c8](https://github.com/chrreiter/HAventory/commit/65dd4c81a7d2780a9a690db14f60e78a6a7c7e31))
+* **frontend:** register HAventory as a sidebar panel ([#160](https://github.com/chrreiter/HAventory/issues/160)) ([d65ff64](https://github.com/chrreiter/HAventory/commit/d65ff6402240aabda18f924b86eaea5e636c4d71))
+* **skill:** shoot the sidebar panel with the screenshot harness (item 69) ([#170](https://github.com/chrreiter/HAventory/issues/170)) ([e93f4a9](https://github.com/chrreiter/HAventory/commit/e93f4a9e13e7be6178d5b26e907e827f9bd640eb))
+* sweep files an earlier release left in the install directory (item 57) ([#169](https://github.com/chrreiter/HAventory/issues/169)) ([7597f5e](https://github.com/chrreiter/HAventory/commit/7597f5e7034431db67f9cb888dffa2bd48315f64))
+
+
+### Bug Fixes
+
+* **api:** refuse WebSocket commands after config-entry removal ([#171](https://github.com/chrreiter/HAventory/issues/171)) ([22d6528](https://github.com/chrreiter/HAventory/commit/22d6528bbff8715667aeeeb1d06fedd39487e32e))
+* **api:** refuse while no config entry is loaded, and let the card recover ([#176](https://github.com/chrreiter/HAventory/issues/176)) ([6a779d6](https://github.com/chrreiter/HAventory/commit/6a779d6dd8ad4279f8382f1b2969f86d07e905b6))
+* **card:** announce filter state on the desktop panel's chips (item 34) ([#167](https://github.com/chrreiter/HAventory/issues/167)) ([0583c29](https://github.com/chrreiter/HAventory/commit/0583c295e782028882a053140730f698aa56a337))
+* **card:** announce only the filter surface the width uses, and no aria-expanded on leaves ([#179](https://github.com/chrreiter/HAventory/issues/179)) ([1c0c1a9](https://github.com/chrreiter/HAventory/commit/1c0c1a9818ecb8e4971a5511200e8603a2d01c95))
+* **card:** say what a filter disclosure opens, and paint the sheet's rows as toggles ([#174](https://github.com/chrreiter/HAventory/issues/174)) ([4d005fd](https://github.com/chrreiter/HAventory/commit/4d005fdb5a3e53327f42fe7dec85000483084999))
+* **card:** say what every remaining disclosure opens ([#177](https://github.com/chrreiter/HAventory/issues/177)) ([28f5ccd](https://github.com/chrreiter/HAventory/commit/28f5ccd9d3a288e85caf9f83f235ef3873707b78))
+* **card:** size the area chip like the tree rows it heads ([#181](https://github.com/chrreiter/HAventory/issues/181)) ([67ef6bb](https://github.com/chrreiter/HAventory/commit/67ef6bb2ebf9c52c818fed13bf3b9c28ea8039f9))
+* **e2e:** let the live-update smoke discover the view holding the card ([#182](https://github.com/chrreiter/HAventory/issues/182)) ([6fd4d9d](https://github.com/chrreiter/HAventory/commit/6fd4d9d15fe971a084c9d299f83f5776243ef2c2))
+* location rename must not bump subtree item versions (item 23) ([#168](https://github.com/chrreiter/HAventory/issues/168)) ([9d1daa7](https://github.com/chrreiter/HAventory/commit/9d1daa702345c61fcf5897146db2ffb4f114c74f))
+* **skill:** ask the instance where the card lives instead of hard-coding it ([#178](https://github.com/chrreiter/HAventory/issues/178)) ([c2f99ce](https://github.com/chrreiter/HAventory/commit/c2f99ce2027da3000db9b2316060b5bc0a946103))
+* **skill:** point the screenshot harness at the dashboard the card lives on ([#175](https://github.com/chrreiter/HAventory/issues/175)) ([3607706](https://github.com/chrreiter/HAventory/commit/36077061a989b03f7d8414843b763035ca05959d))
+* **skill:** submit the options form the way the flow shapes it ([#180](https://github.com/chrreiter/HAventory/issues/180)) ([5a8521e](https://github.com/chrreiter/HAventory/commit/5a8521e6e21a17614d845ab6788a55360388f4e5))
+
+
+### Documentation
+
+* **open-items:** collect and triage [#162](https://github.com/chrreiter/HAventory/issues/162)'s open items ([#163](https://github.com/chrreiter/HAventory/issues/163)) ([ea95457](https://github.com/chrreiter/HAventory/commit/ea9545731b35346aa0cf661c46207460880448f7))
+* **open-items:** reconcile the ledger after the v0.2.0 payload batch ([#173](https://github.com/chrreiter/HAventory/issues/173)) ([6908efc](https://github.com/chrreiter/HAventory/commit/6908efc1e07f30cfe9abea19e7d11e9e6bac77a3))
+* **open-items:** reconcile the ledger and re-scope pre-v1.0 ([#161](https://github.com/chrreiter/HAventory/issues/161)) ([8eb844a](https://github.com/chrreiter/HAventory/commit/8eb844a687f620af52e7f737674e684c3d2ed695))
+* plan the sidebar panel for the post-Overview-redesign frontend ([#156](https://github.com/chrreiter/HAventory/issues/156)) ([0464966](https://github.com/chrreiter/HAventory/commit/04649664dfa08edf5d931832800542b85dead6f8))
+
 ## [0.1.1](https://github.com/chrreiter/HAventory/compare/v0.1.0...v0.1.1) (2026-07-31)
 
 

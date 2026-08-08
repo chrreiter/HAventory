@@ -7,19 +7,35 @@ Scenarios:
 - Migration failure raises StorageError and does not persist changes
 - Corrupted payload (non-dict) raises StorageError
 - A payload written by a newer schema is refused without rewriting the store
+- A payload whose schema_version is not an integer is refused, never coerced
 """
 
 from __future__ import annotations
 
 from copy import deepcopy
+from typing import Any
 
 import pytest
 from custom_components.haventory import migrations
-from custom_components.haventory.exceptions import SchemaDowngradeError, StorageError
+from custom_components.haventory.exceptions import (
+    CorruptSchemaVersionError,
+    SchemaDowngradeError,
+    StorageError,
+)
+from custom_components.haventory.models import ItemCreate
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
+from custom_components.haventory.storage import (
+    CURRENT_SCHEMA_VERSION,
+    STORE_COLLECTIONS,
+    DomainStore,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
+
+#: Schema versions that introduced each backfill, so a payload stored below one
+#: is the payload that step rewrites.
+_STATUS_BACKFILL_VERSION = 5
+_ATTACHMENTS_BACKFILL_VERSION = 6
 
 
 @pytest.mark.asyncio
@@ -51,6 +67,9 @@ async def test_save_then_load_roundtrip() -> None:
         "schema_version": CURRENT_SCHEMA_VERSION,
         "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 50}},
         "locations": {"l1": {"id": "l1", "name": "Garage"}},
+        # Save backfills any collection the caller omits, so naming every one
+        # of them is what keeps this an equality test rather than a subset one.
+        "statuses": {},
     }
 
     # Act
@@ -195,8 +214,13 @@ async def test_migration_from_v1_to_current_preserves_payload() -> None:
     migrated = await store.async_load()
 
     assert migrated["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert migrated["items"] == pre_payload["items"]
+    # v4 -> v5 backfills the per-item status and v5 -> v6 the attachment list;
+    # everything else passes through.
+    expected_items = {"i1": {**pre_payload["items"]["i1"], "status": "ok", "attachments": []}}
+    assert migrated["items"] == expected_items
     assert migrated["locations"] == pre_payload["locations"]
+    # v6 seeds the status definitions the items' slugs resolve against.
+    assert sorted(migrated["statuses"]) == ["missing", "needs_repair", "ok"]
     # on-disk should be updated to current schema_version
     persisted = await raw_store.async_load()
     assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION
@@ -222,7 +246,15 @@ async def test_equal_and_older_versions_still_load(stored_version: int) -> None:
     loaded = await store.async_load()
 
     assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert loaded["items"] == pre_payload["items"]
+    # Each step only runs for a payload below it: migrate_4_to_5 backfills the
+    # status, migrate_5_to_6 the attachment list. A payload already at the
+    # current version is normalized, never migrated.
+    expected_items = deepcopy(pre_payload["items"])
+    if stored_version < _STATUS_BACKFILL_VERSION:
+        expected_items["i1"]["status"] = "ok"
+    if stored_version < _ATTACHMENTS_BACKFILL_VERSION:
+        expected_items["i1"]["attachments"] = []
+    assert loaded["items"] == expected_items
     assert loaded["locations"] == pre_payload["locations"]
 
 
@@ -281,6 +313,110 @@ async def test_newer_schema_version_never_reaches_migrations(monkeypatch) -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("label", "stored"),
+    [
+        ("null", None),
+        ("numeric_string", "4"),
+        ("word", "abc"),
+        ("float", 4.0),
+        ("bool", True),
+        ("list", [4]),
+        ("dict", {"v": 4}),
+    ],
+)
+async def test_corrupt_schema_version_is_refused_and_store_untouched(
+    label: str, stored: Any
+) -> None:
+    """A non-integer schema_version is named as corruption, not coerced or crashed on."""
+
+    hass = HomeAssistant()
+    key = f"test_store_corrupt_version_{label}"
+    store = DomainStore(hass, key=key)
+
+    pre_payload = {
+        "schema_version": stored,
+        "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 5}},
+        "locations": {"l1": {"id": "l1", "name": "Garage"}},
+    }
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save(deepcopy(pre_payload))
+
+    with pytest.raises(CorruptSchemaVersionError) as excinfo:
+        await store.async_load()
+
+    # The message quotes the offending value back, so `"4"` is distinguishable
+    # from `4` in the log — that pair is exactly what coercion used to hide.
+    message = str(excinfo.value)
+    assert "schema_version" in message
+    assert repr(stored) in message
+
+    # Still a storage failure, so every existing handler keeps mapping it.
+    assert isinstance(excinfo.value, StorageError)
+
+    # Refusing means refusing to write, too.
+    assert await raw_store.async_load() == pre_payload
+
+
+@pytest.mark.asyncio
+async def test_corrupt_schema_version_message_is_bounded() -> None:
+    """A huge value under the key is truncated, not pasted into the error state."""
+
+    hass = HomeAssistant()
+    key = "test_store_corrupt_version_huge"
+    store = DomainStore(hass, key=key)
+
+    huge = "x" * 5000
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save({"schema_version": huge, "items": {}, "locations": {}})
+
+    with pytest.raises(CorruptSchemaVersionError) as excinfo:
+        await store.async_load()
+
+    message = str(excinfo.value)
+    assert huge not in message
+    assert "…" in message
+    assert len(message) < len(huge)
+
+
+@pytest.mark.asyncio
+async def test_corrupt_schema_version_never_reaches_migrations(monkeypatch) -> None:
+    """The refusal happens before ``migrations.migrate`` is consulted."""
+
+    hass = HomeAssistant()
+    key = "test_store_corrupt_version_skips_migrate"
+    store = DomainStore(hass, key=key)
+
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save({"schema_version": None, "items": {}, "locations": {}})
+
+    def _fail(_payload, *, from_version, to_version):  # type: ignore[no-untyped-def]
+        raise AssertionError("migrations.migrate must not run for a corrupt version")
+
+    monkeypatch.setattr(migrations, "migrate", _fail)
+
+    with pytest.raises(CorruptSchemaVersionError):
+        await store.async_load()
+
+
+@pytest.mark.asyncio
+async def test_absent_schema_version_still_loads_as_version_zero() -> None:
+    """A missing key is not corruption: it means v0 and migrates forward."""
+
+    hass = HomeAssistant()
+    key = "test_store_missing_version"
+    store = DomainStore(hass, key=key)
+
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save({"items": {"i1": {"id": "i1", "name": "Screws"}}, "locations": {}})
+
+    loaded = await store.async_load()
+
+    assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert loaded["items"]["i1"]["name"] == "Screws"
+
+
+@pytest.mark.asyncio
 async def test_corrupted_payload_non_dict_raises_storage_error() -> None:
     """Non-dict payload in storage should raise StorageError on load."""
 
@@ -295,3 +431,55 @@ async def test_corrupted_payload_non_dict_raises_storage_error() -> None:
     # Act + Assert
     with pytest.raises(StorageError):
         await store.async_load()
+
+
+@pytest.mark.asyncio
+async def test_export_state_emits_every_stored_collection() -> None:
+    """The repository must emit every collection the store persists.
+
+    A save writes exactly ``Repository.export_state()``. The load path is wider —
+    it keeps whatever the file holds — so a collection the store knows about but
+    the repository does not emit survives a restart and is erased by the first
+    save afterwards, with nothing logged. Adding a name to ``STORE_COLLECTIONS``
+    without teaching the repository to emit it fails here instead.
+    """
+
+    repo = Repository()
+
+    exported = repo.export_state()
+
+    missing = [name for name in STORE_COLLECTIONS if name not in exported]
+    assert not missing, (
+        f"Repository.export_state() omits {missing}; the first save after boot "
+        f"would erase them from the store"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_stored_collection_survives_a_repository_roundtrip() -> None:
+    """Every stored collection survives export -> save -> load -> export.
+
+    The guard above pins the key set; this pins the contents, which is what a user
+    actually loses. Entities are built through the repository API rather than
+    hand-written dicts, so a drop here means the persistence path lost them and
+    not that validation rejected a malformed fixture.
+    """
+
+    hass = HomeAssistant()
+    key = "test_store_collection_roundtrip"
+    store = DomainStore(hass, key=key)
+
+    source = Repository()
+    garage = source.create_location(name="Garage")
+    source.create_item(ItemCreate(name="Drill", location_id=str(garage.id)))
+    await store.async_save(source.export_state())
+
+    restored = Repository()
+    restored.load_state(await store.async_load())
+    await store.async_save(restored.export_state())
+
+    reloaded = await store.async_load()
+    for name in STORE_COLLECTIONS:
+        assert reloaded[name], f"{name} was emptied by the roundtrip"
+    assert [i["name"] for i in reloaded["items"].values()] == ["Drill"]
+    assert [loc["name"] for loc in reloaded["locations"].values()] == ["Garage"]

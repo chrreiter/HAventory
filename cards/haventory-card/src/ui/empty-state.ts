@@ -4,7 +4,7 @@ import { activeFilterCount, defaultFilters } from '../store/store';
 import type { StoreFilters } from '../store/types';
 
 /**
- * The four ways a list of items can be empty, and what to say about each.
+ * The ways a list of items can have no rows, and what to say about each.
  *
  * The card's list said it properly — a headline, a line of explanation and
  * something to press ("No items match these filters" + Clear all). The expanded
@@ -21,7 +21,7 @@ import type { StoreFilters } from '../store/types';
  * stop; a detail line or a prose note is written as sentences and punctuated as
  * such.
  */
-export type EmptyKind = 'no-items' | 'no-matches' | 'empty-location' | 'connection-lost';
+export type EmptyKind = 'loading' | 'no-items' | 'no-matches' | 'empty-location' | 'connection-lost';
 
 /** An action offered from an empty list; the first is drawn as primary. */
 export interface EmptyOffer {
@@ -30,12 +30,19 @@ export interface EmptyOffer {
 }
 
 /**
- * Which of the four situations an empty list is in.
+ * Which situation a list with no rows is in.
  *
- * An outage outranks every filter-derived reason: clearing a filter would not
- * bring the rows back. A lone location filter is "nothing filed here" rather
- * than "nothing matched", because the location is the thing the user chose and
- * the offer differs.
+ * An outage outranks everything else: clearing a filter would not bring the
+ * rows back, and a request that cannot be sent is not in flight.
+ *
+ * An in-flight fetch outranks both filter-derived reasons, because changing a
+ * filter empties the list on purpose and refills it when the answer arrives —
+ * naming the filters as the reason during that gap accuses a filter of
+ * matching nothing before anything has been counted.
+ *
+ * A lone location filter is "nothing filed here" rather than "nothing
+ * matched", because the location is the thing the user chose and the offer
+ * differs.
  *
  * Lives here rather than on the components so the card's list and the expanded
  * view's table cannot answer the same situation two different ways.
@@ -43,8 +50,10 @@ export interface EmptyOffer {
 export function emptyKindFor(state: {
   degraded: { connectionLost: boolean };
   filters: StoreFilters;
+  loading: boolean;
 } | null | undefined): EmptyKind {
   if (state?.degraded.connectionLost) return 'connection-lost';
+  if (state?.loading) return 'loading';
   const filters = state?.filters ?? defaultFilters();
   if (filters.locationId && activeFilterCount(filters) === 1) return 'empty-location';
   if (activeFilterCount(filters) > 0) return 'no-matches';
@@ -59,6 +68,11 @@ export interface EmptyStateCopy {
 
 export function emptyStateCopy(kind: EmptyKind, locationName?: string | null): EmptyStateCopy {
   switch (kind) {
+    // The one kind with nothing to offer: the rows are on their way, and every
+    // action the other kinds offer would be an answer to a question that has
+    // not been asked yet.
+    case 'loading':
+      return { headline: 'Loading items', offers: [] };
     case 'connection-lost':
       return {
         headline: "Can't reach Home Assistant",
@@ -103,17 +117,19 @@ export function renderEmptyState(
   return html`<div class="empty" role="status" data-testid="empty-state" data-kind=${kind}>
     <span class="headline">${copy.headline}</span>
     ${copy.detail ? html`<span>${copy.detail}</span>` : null}
-    <div class="offers">
-      ${copy.offers.map(
-        (offer, i) => html`<button
-          class=${i === 0 ? 'hv-pill' : 'hv-pill outline'}
-          data-testid="empty-action"
-          data-id=${offer.id}
-          @click=${() => opts.onAction(offer.id)}
-        >
-          ${offer.label}
-        </button>`,
-      )}
-    </div>
+    ${copy.offers.length
+      ? html`<div class="offers">
+          ${copy.offers.map(
+            (offer, i) => html`<button
+              class=${i === 0 ? 'hv-pill' : 'hv-pill outline'}
+              data-testid="empty-action"
+              data-id=${offer.id}
+              @click=${() => opts.onAction(offer.id)}
+            >
+              ${offer.label}
+            </button>`,
+          )}
+        </div>`
+      : null}
   </div>`;
 }

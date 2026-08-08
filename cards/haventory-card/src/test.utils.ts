@@ -1,5 +1,8 @@
 import type {
   AnyEventPayload,
+  AreaRef,
+  Attachment,
+  AttachmentKind,
   ExportDocument,
   HassLike,
   ImportPreview,
@@ -7,6 +10,7 @@ import type {
   Item,
   Location,
   StatsCounts,
+  StatusDefinition,
 } from './store/types';
 
 // Mirror real Home Assistant: `subscribeMessage` hands the callback the *inner*
@@ -17,6 +21,12 @@ interface MockConfig {
   items?: Item[];
   locations?: Location[];
   conflictOnUpdate?: boolean;
+  /** What `haventory/config` reports as the configured card heading. */
+  cardTitle?: string;
+  /** What `haventory/areas/list` reports — the HA area registry, read-only. */
+  areas?: AreaRef[];
+  /** The status vocabulary; defaults to the built-in three the backend seeds. */
+  statuses?: StatusDefinition[];
 }
 
 type HealthPatch = {
@@ -42,14 +52,42 @@ export interface MockHass extends HassLike {
   __failSubscribeNext(n: number, err: unknown): void;
   /** Every callWS `type` seen so far, in order. */
   __calls: string[];
+  /** Every command message in full, for assertions about what went on the wire. */
+  __messages: Record<string, unknown>[];
   /** Every subscribed topic seen so far, in order — refused attempts included. */
   __subscribeCalls: string[];
+  /** Deliver a Home Assistant core event to whoever subscribed to it. */
+  __emitHaEvent(eventType: string, data?: Record<string, unknown>): void;
+  /** Open core-event subscriptions for `eventType` — 0 once a store disposes. */
+  __haEventSubscriberCount(eventType: string): number;
+  /** Replace what `haventory/areas/list` reports, as an HA area edit would. */
+  __setAreas(areas: AreaRef[]): void;
+  /**
+   * Drop the socket and bring it back, the way Home Assistant does.
+   *
+   * The order is the point: HA re-issues the subscriptions it was holding and
+   * only then fires `ready`, so a live watch survives a reconnect without ever
+   * reporting a refusal — and any event fired while the socket was down is
+   * simply gone. Subscribers stay registered; nothing is replayed.
+   */
+  __reconnect(): void;
 }
 
 export function makeMockHass(initial?: MockConfig): MockHass {
   let items: Item[] = initial?.items ? [...initial.items] : [];
   let locations: Location[] = initial?.locations ? [...initial.locations] : [];
   let conflictOnUpdate = !!initial?.conflictOnUpdate;
+  const cardTitle = initial?.cardTitle ?? 'HAventory';
+  let areas: AreaRef[] = initial?.areas ? [...initial.areas] : [];
+  // The three the backend seeds, so a test that says nothing about statuses
+  // still sees what a real install carries.
+  const statuses: StatusDefinition[] = initial?.statuses
+    ? initial.statuses.map((d) => ({ ...d }))
+    : [
+        { slug: 'ok', label: 'OK', order: 0, color: 'green', icon: 'check' },
+        { slug: 'missing', label: 'Missing', order: 1, color: 'amber', icon: 'alert' },
+        { slug: 'needs_repair', label: 'Needs repair', order: 2, color: 'amber', icon: 'wrench' },
+      ];
   let healthOverride: HealthPatch | null = null;
   let rateLimitRemaining = 0;
   let failRemaining = 0;
@@ -57,7 +95,10 @@ export function makeMockHass(initial?: MockConfig): MockHass {
   let subscribeError: unknown | null = null;
   let subscribeFailRemaining = 0;
   const subs: Record<string, SubCb[]> = {};
+  const lifecycleListeners: Record<string, (() => void)[]> = {};
+  const haEventSubs: Record<string, SubCb[]> = {};
   const calls: string[] = [];
+  const messages: Record<string, unknown>[] = [];
   const subscribeCalls: string[] = [];
 
   const findItem = (msg: Record<string, unknown>): Item => {
@@ -75,10 +116,12 @@ export function makeMockHass(initial?: MockConfig): MockHass {
 
   const hass: MockHass = {
     __calls: calls,
+    __messages: messages,
     __subscribeCalls: subscribeCalls,
     async callWS<T>(msg: Record<string, unknown>): Promise<T> {
       const type = String(msg.type || '');
       calls.push(type);
+      messages.push({ ...msg });
       if (rateLimitRemaining > 0) {
         rateLimitRemaining -= 1;
         throw { code: 'rate_limited', message: 'rate limit exceeded; retry later' };
@@ -88,6 +131,57 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         throw failError;
       }
       switch (type) {
+        // ---- statuses ----
+        case 'haventory/status/list': {
+          return [...statuses].sort((a, b) => a.order - b.order || a.slug.localeCompare(b.slug)) as unknown as T;
+        }
+        case 'haventory/status/create': {
+          const slug = String(msg.slug);
+          if (statuses.some((d) => d.slug === slug)) throw { code: 'validation_error', message: 'status already exists' };
+          const created: StatusDefinition = {
+            slug,
+            label: String(msg.label),
+            order: typeof msg.order === 'number' ? msg.order : statuses.length,
+            color: (msg.color as StatusDefinition['color']) ?? 'neutral',
+            icon: (msg.icon as string) ?? 'check',
+          };
+          statuses.push(created);
+          return created as unknown as T;
+        }
+        case 'haventory/status/update': {
+          const found = statuses.find((d) => d.slug === msg.slug);
+          if (!found) throw { code: 'not_found', message: 'status not found' };
+          if (typeof msg.label === 'string') found.label = msg.label;
+          if (typeof msg.color === 'string') found.color = msg.color as StatusDefinition['color'];
+          if (typeof msg.icon === 'string') found.icon = msg.icon;
+          return { ...found } as unknown as T;
+        }
+        case 'haventory/status/reorder': {
+          const slugs = (msg.slugs as string[]) ?? [];
+          const live = statuses.map((d) => d.slug);
+          if ([...slugs].sort().join() !== [...live].sort().join()) {
+            throw { code: 'validation_error', message: 'reorder must name every status exactly once' };
+          }
+          slugs.forEach((slug, index) => {
+            const found = statuses.find((d) => d.slug === slug);
+            if (found) found.order = index;
+          });
+          return statuses.map((d) => ({ ...d })) as unknown as T;
+        }
+        case 'haventory/status/delete': {
+          const slug = String(msg.slug);
+          if (slug === 'ok') throw { code: 'validation_error', message: 'the default status cannot be deleted' };
+          const index = statuses.findIndex((d) => d.slug === slug);
+          if (index < 0) throw { code: 'not_found', message: 'status not found' };
+          const carrying = items.filter((i) => (i.status ?? 'ok') === slug);
+          const target = msg.reassign_to as string | undefined;
+          if (carrying.length > 0 && !target) {
+            throw { code: 'validation_error', message: `status '${slug}' is on ${carrying.length} item(s)` };
+          }
+          if (target) carrying.forEach((i) => (i.status = target));
+          const [removed] = statuses.splice(index, 1);
+          return { status: removed, reassigned: carrying.length } as unknown as T;
+        }
         case 'haventory/stats': {
           const counts: StatsCounts = {
             items_total: items.length,
@@ -95,6 +189,11 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             checked_out_count: items.filter((i) => i.checked_out).length,
             overdue_count: items.filter((i) => isMockOverdue(i)).length,
             inspection_overdue_count: items.filter((i) => isMockInspectionDue(i)).length,
+            missing_count: items.filter((i) => (i.status ?? 'ok') === 'missing').length,
+            needs_repair_count: items.filter((i) => (i.status ?? 'ok') === 'needs_repair').length,
+            status_counts: Object.fromEntries(
+              statuses.map((d) => [d.slug, items.filter((i) => (i.status ?? 'ok') === d.slug).length]),
+            ),
             locations_total: locations.length,
             no_location_count: items.filter((i) => i.location_id == null).length,
           };
@@ -125,8 +224,11 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         case 'haventory/version': {
           return { integration_version: '0.0.1', schema_version: 4 } as unknown as T;
         }
+        case 'haventory/config': {
+          return { card_title: cardTitle, statuses: [...statuses] } as unknown as T;
+        }
         case 'haventory/areas/list': {
-          return { areas: [] } as unknown as T;
+          return { areas } as unknown as T;
         }
         case 'haventory/export': {
           const doc: ExportDocument = {
@@ -510,6 +612,17 @@ export function makeMockHass(initial?: MockConfig): MockHass {
     },
     connection: {
       subscribeMessage(cb: SubCb, msg: Record<string, unknown>) {
+        // Home Assistant's own event bus, not a `haventory/subscribe` topic:
+        // core events are neither billed by the rate limiter nor part of a
+        // subscribe round, so they stay out of `__subscribeCalls` too.
+        if (String(msg.type || '') === 'subscribe_events') {
+          const eventType = String((msg as any).event_type || '');
+          haEventSubs[eventType] ||= [];
+          haEventSubs[eventType].push(cb);
+          return () => {
+            haEventSubs[eventType] = (haEventSubs[eventType] || []).filter((x) => x !== cb);
+          };
+        }
         const topic = String((msg as any).topic || '');
         subscribeCalls.push(topic);
         if (subscribeFailRemaining > 0) {
@@ -524,12 +637,31 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           subs[topic] = (subs[topic] || []).filter((x) => x !== cb);
         };
       },
+      addEventListener(event: string, cb: () => void) {
+        lifecycleListeners[event] ||= [];
+        lifecycleListeners[event].push(cb);
+      },
+      removeEventListener(event: string, cb: () => void) {
+        lifecycleListeners[event] = (lifecycleListeners[event] || []).filter((x) => x !== cb);
+      },
     },
     __emit(topic: AnyEventPayload['topic'], action: string, payload: Record<string, unknown>) {
       const callbacks = subs[topic] || [];
       // Deliver the inner payload exactly as real Home Assistant does.
       const event = { domain: 'haventory', topic, action, ts: new Date().toISOString(), ...payload } as AnyEventPayload;
       callbacks.forEach((cb) => cb(event));
+    },
+    __emitHaEvent(eventType: string, data: Record<string, unknown> = {}) {
+      const event = { event_type: eventType, data } as unknown as AnyEventPayload;
+      (haEventSubs[eventType] || []).forEach((cb) => cb(event));
+    },
+    __haEventSubscriberCount(eventType: string) {
+      return (haEventSubs[eventType] || []).length;
+    },
+    __setAreas(next: AreaRef[]) { areas = [...next]; },
+    __reconnect() {
+      (lifecycleListeners.disconnected || []).forEach((cb) => cb());
+      (lifecycleListeners.ready || []).forEach((cb) => cb());
     },
     __setConflict(on: boolean) { conflictOnUpdate = on; },
     __setItems(it: Item[]) { items = [...it]; },
@@ -569,6 +701,7 @@ function isMockInspectionDue(item: Item): boolean {
 function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
   const filter = (rawFilter ?? null) as {
     q?: string;
+    status?: string;
     checked_out?: boolean;
     orphaned_only?: boolean;
     overdue_only?: boolean;
@@ -602,6 +735,7 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
       ].join(' ').toLowerCase();
       if (!blob.includes(q)) return false;
     }
+    if (filter.status && (it.status ?? 'ok') !== filter.status) return false;
     if (typeof filter.checked_out === 'boolean' && it.checked_out !== filter.checked_out) return false;
     if (filter.orphaned_only && it.location_id !== null) return false;
     if (filter.overdue_only && !isMockOverdue(it)) return false;
@@ -645,9 +779,27 @@ function applyMockSort(list: Item[], rawSort: unknown): Item[] {
   });
 }
 
+/**
+ * Fixture stamps are fixed rather than "now".
+ *
+ * The default item order is `updated_at` descending with an id-ascending
+ * tie-break, so two wall-clock fixtures order by id only while both stamps land
+ * inside the same millisecond, and by construction order when they straddle
+ * one — the same list, two orders, decided by how busy the machine is. A
+ * constant makes every default fixture tie, so the tie-break always decides. A
+ * test that needs a distinct stamp passes one; the mock backend still stamps
+ * its own mutations from the clock, so a mutated item still sorts above these.
+ */
+const FIXTURE_TS = '2026-01-01T00:00:00.000Z';
+
+/** Counts anonymous fixtures, which the clock cannot number uniquely: two
+ * `makeItem()` calls in one millisecond used to share an id. Zero-padded so
+ * lexical order — what the id tie-break compares — follows creation order. */
+let anonymousItems = 0;
+
 export function makeItem(partial?: Partial<Item>): Item {
-  const id = partial?.id ?? `${Date.now()}`;
-  const now = new Date().toISOString();
+  const id = partial?.id ?? `fixture-item-${String((anonymousItems += 1)).padStart(4, '0')}`;
+  const now = FIXTURE_TS;
   return {
     id: String(id),
     name: partial?.name ?? 'Item',
@@ -665,5 +817,99 @@ export function makeItem(partial?: Partial<Item>): Item {
     updated_at: partial?.updated_at ?? now,
     version: partial?.version ?? 1,
     location_path: partial?.location_path ?? { id_path: [], name_path: [], display_path: '', sort_key: '' },
+    // Optional on the wire, so it stays off the object unless a caller asks for
+    // it — an item built without one looks exactly like an older backend's.
+    ...(partial?.effective_area_id === undefined
+      ? {}
+      : { effective_area_id: partial.effective_area_id }),
+    ...(partial?.status === undefined ? {} : { status: partial.status }),
+    ...(partial?.attachments === undefined ? {} : { attachments: partial.attachments }),
+  };
+}
+
+let anonymousAttachments = 0;
+
+/** One picture's metadata, as the backend reports it on an item. */
+export function makeAttachment(partial?: Partial<Attachment>): Attachment {
+  return {
+    id: partial?.id ?? `fixture-att-${String((anonymousAttachments += 1)).padStart(4, '0')}`,
+    kind: partial?.kind ?? 'picture',
+    filename: partial?.filename ?? 'photo.png',
+    mime: partial?.mime ?? 'image/png',
+    size: partial?.size ?? 2048,
+    uploaded_at: partial?.uploaded_at ?? FIXTURE_TS,
+    // Left off unless asked for, so a bare fixture is shaped like the payload
+    // a backend that predates these two fields sends.
+    ...(partial?.title === undefined ? {} : { title: partial.title }),
+    ...(partial?.order === undefined ? {} : { order: partial.order }),
+  };
+}
+
+/** One manual's metadata: the same fixture with the document defaults. */
+export function makeManual(partial?: Partial<Attachment>): Attachment {
+  return makeAttachment({
+    kind: 'manual',
+    filename: 'scan_0142.pdf',
+    mime: 'application/pdf',
+    ...partial,
+  });
+}
+
+/**
+ * A `MediaBindings` whose calls are recorded and whose answers are scripted.
+ *
+ * Signing resolves immediately, so a mounted component has its URLs after one
+ * more `updateComplete`. `uploads`, `removals` and `retitles` record what was
+ * asked for; any of them can be made to reject, which is how the per-file error
+ * paths are exercised.
+ */
+export function makeMediaBindings(
+  options: {
+    upload?: (itemId: string, file: File, kind: AttachmentKind) => Promise<Item>;
+    remove?: (itemId: string, attachmentId: string) => Promise<Item>;
+    retitle?: (itemId: string, attachmentId: string, title: string) => Promise<Item>;
+    reorder?: (itemId: string, kind: AttachmentKind, attachmentIds: string[]) => Promise<Item>;
+    signFails?: boolean;
+  } = {},
+) {
+  const signed: string[] = [];
+  const uploads: { itemId: string; file: File; kind: AttachmentKind }[] = [];
+  const removals: { itemId: string; attachmentId: string }[] = [];
+  const retitles: { itemId: string; attachmentId: string; title: string }[] = [];
+  const reorders: { itemId: string; kind: AttachmentKind; attachmentIds: string[] }[] = [];
+  return {
+    signed,
+    uploads,
+    removals,
+    retitles,
+    reorders,
+    sign: async (path: string) => {
+      signed.push(path);
+      if (options.signFails) throw new Error('signing refused');
+      // Core appends to whatever query the path already has — a media URL
+      // carries the name token — so the separator has to follow suit or every
+      // signed URL here is malformed in a way no real one is.
+      return `${path}${path.includes('?') ? '&' : '?'}authSig=test`;
+    },
+    upload: async (itemId: string, file: File, kind: AttachmentKind = 'picture') => {
+      uploads.push({ itemId, file, kind });
+      if (options.upload) return options.upload(itemId, file, kind);
+      return makeItem({ id: itemId });
+    },
+    remove: async (itemId: string, attachmentId: string) => {
+      removals.push({ itemId, attachmentId });
+      if (options.remove) return options.remove(itemId, attachmentId);
+      return makeItem({ id: itemId });
+    },
+    retitle: async (itemId: string, attachmentId: string, title: string) => {
+      retitles.push({ itemId, attachmentId, title });
+      if (options.retitle) return options.retitle(itemId, attachmentId, title);
+      return makeItem({ id: itemId });
+    },
+    reorder: async (itemId: string, kind: AttachmentKind, attachmentIds: string[]) => {
+      reorders.push({ itemId, kind, attachmentIds });
+      if (options.reorder) return options.reorder(itemId, kind, attachmentIds);
+      return makeItem({ id: itemId });
+    },
   };
 }

@@ -24,34 +24,61 @@ substance:
 
 ```ts
 setConfig(cfg) → { title?: string }   // every other key is ignored, not rejected
-render()       → <hv-card-shell> + <hv-column-picker>
+render()       → <hv-card-shell>
 ```
 
-It renders `<hv-card-shell>` and keeps only the two surfaces the shell hands back up: the
-column picker and the export download (which needs a DOM anchor click). It also publishes
-the active HA theme as `color-scheme` on the host, which every nested component inherits.
+It also publishes the active HA theme as `color-scheme` on the host, which every nested
+component inherits.
+
+`src/haventory-panel.ts` defines `haventory-panel` — the same bundle's second element,
+which HA's custom-panel loader instantiates for the sidebar page. It mirrors the card's
+store lifecycle and renders `<hv-full-view embedded open>`.
+
+The integration registers that panel at `/haventory` through `panel_custom`, handing it
+the *same* module URL both card loaders get (`__init__.py`, `_async_apply_sidebar_panel`),
+so the browser's module map evaluates the bundle once whichever surface is opened first.
+The registration's `config` carries `{"title": <card title option>}`, which is where the
+panel's `panel.config.title` heading comes from; the sidebar entry itself is named by the
+same option. Registration is remove-then-register, because HA raises on a second
+registration of a URL path that is already taken. The `sidebar_panel_enabled` option turns
+it off, and both calls fire the frontend's panel-update event, so the sidebar follows
+without a restart.
+
+Both hosts hold a `HostSurfaces` instance (`src/host-surfaces.ts`): every surface
+`hv-full-view` can raise but not answer itself — the column picker, the export download,
+the delete/discard confirmation, the organize dialog, the import sheet, the diagnostics
+panel with its refresh state, and the shared ⋮ menu-entry builder. On the card side the
+instance lives in `hv-card-shell`; on the panel it lives in the panel element directly.
+Host differences enter as constructor hooks (`isMobile`, `onItemDeleted`, `onBrowse`).
 
 ---
 
 ## Component map
 
 ```
-haventory-card                     Lovelace element; dispatcher + store owner
-└── hv-card-shell                  container: header, search, filters, list, footer
+haventory-card                     Lovelace element; store owner
+└── hv-card-shell                  container: header, search, filters, list, footer;
+    │                              holds the HostSurfaces instance (the four dialogs
+    │                              below it render through that)
     ├── hv-overflow-menu           the ⋮ menu (also used by the app bar and rows)
     ├── hv-filter-chips            removable chips for every active filter
     ├── hv-filter-panel            the complete filter set; desktop panel / mobile sheet
     │   └── hv-location-tree       recursive tree with backend counts
     ├── hv-list                    rows, skeletons, empty states, near-end scroll
-    │   ├── hv-list-row            stepper, badges, hover actions, row ⋮
-    │   └── hv-item-editor         inline expander (the one edit form)
+    │   ├── hv-list-row            stepper, badges, hover actions, row ⋮, photo thumbnail,
+    │   │                          document marker
+    │   └── hv-item-editor         inline expander (the one edit form); photo and
+    │                              document pickers, cover/reorder controls,
+    │                              per-document title field, per-file retry
     │       ├── hv-chip-input      tag chips with suggestions
     │       └── hv-location-tree
-    ├── hv-detail-sheet            mobile: read view + edit view in one sheet
+    ├── hv-detail-sheet            mobile: read view + edit view in one sheet;
+    │   │                          photo gallery strip, a navigable full-size
+    │   │                          lightbox and the Documents list
     │   ├── hv-item-editor
     │   └── hv-checkout-popover    inline due-date step
     ├── hv-checkout-popover        desktop: anchored due-date step
-    ├── hv-organize-dialog         Locations / Categories / Tags
+    ├── hv-organize-dialog         Locations / Categories / Tags / Statuses
     ├── hv-import-sheet            input → preview → summary (+ invalid-document state)
     ├── hv-diagnostics-panel       health, drop counters, subscriptions, copy report
     ├── hv-confirm                 in-app confirmation (replaces window.confirm)
@@ -104,6 +131,130 @@ that prints a location path uses. Only the CSS is per-component — style rules 
 shadow boundary, which is also why the sidebar's value rows restate `hv-location-tree`'s row
 styling.
 
+### How a control says it is on
+
+A filter that is on announces with `aria-pressed`, everywhere: both app bars' stat pills,
+the sidebar's category and tag rows, and every chip and row in `hv-filter-panel`. The panel
+draws the same "Show only" facets as chips on a desktop and as full-width rows in the phone
+sheet, so the shared word is what stops one facet from announcing as a checkbox at one width
+and a toggle at another — colour alone says nothing to a screen reader.
+
+The paint follows the same rule. A row in the sheet carries the `chip` class beside its own,
+so it takes the chip's outline and on-state tokens rather than drawing a checkbox's box; the
+one thing it adds is a fixed-width mark, which holds a stacked column's labels on one left
+edge as rows are pressed. Anything still drawing a box is selecting, not filtering.
+
+The other two vocabularies mark genuinely different widgets, and neither is a filter:
+`role="radio"` for a segmented picker whose options are exclusive (tag match mode in both
+the panel and the sidebar, sort direction, the import sheet's policy) plus `role="switch"`
+for the item editor's boolean custom field, and `role="checkbox"` for *selecting* rows
+rather than filtering them — `hv-list-row`, `hv-data-table`'s header and row boxes (the
+header carries `aria-checked="mixed"` for a partial page), and `hv-column-picker`.
+
+### What a disclosure opens
+
+A control that expands something carries `aria-expanded` **and** `aria-controls`, and the
+element it names stays in the tree whether or not it is open — an `aria-controls` that
+resolves to nothing announces the control as controlling nothing. Only the contents come and
+go, so collapsing still discards the state inside. Every disclosure in the card is wired this
+way: `hv-filter-panel`'s location chip, `hv-full-view`'s sidebar headings and Filters button,
+`hv-card-shell`'s expand and filter buttons, `hv-item-editor`'s location, category and "More
+fields" fields, `hv-organize-dialog`'s two location pickers, and `hv-location-tree`'s rows and
+area bands. Ids are shadow-scoped, so the desktop panel and the phone sheet can both be
+mounted without colliding. `hv-overflow-menu` is the one disclosure outside this rule: a menu
+button announces its popup with `aria-haspopup`, so its menu is free to leave the DOM.
+
+Where the target keeps a rendered box of its own it is held in the tree with `hidden`, so an
+empty one neither paints nor takes a grid gap; a holder that sets a `display` of its own
+needs a `[hidden]` rule to go with it, because an author rule outranks the browser's. Where
+the contents belong to a layout the holder must not join — the item editor's "More fields"
+are cells of the form grid — the holder takes `display: contents` instead and stays empty.
+
+Two ids are generated rather than fixed, both in `hv-location-tree`: a row names a container
+derived from its node id, and an area band names one derived from its collapse key. Anything
+outside the id alphabet is escaped as `_<code point>_`, escaping `_` itself, which keeps the
+mapping one-to-one — two nodes cannot collapse onto one container — and keeps the result
+usable as a selector. A row with no children discloses nothing and so names nothing.
+
+### The area beside a location
+
+An item arrives with `effective_area_id` already resolved; a `Location` carries `area_id`
+only on the root of its tree, because assigning an area moves it there and clears every
+node below. So there are two resolutions, and `ui/area.ts` owns both: `areaNameById` for
+the item half, and `effectiveAreaIdForLocation` — a cycle-guarded walk up a location's
+ancestors — for the location half. Nothing is computed server-side beyond what is already
+on the wire; no command changed.
+
+`ui/location-path.ts` composes the result. `itemPathParts` and `locationPathParts` split
+"where" into `{ areaName, path }`, `pathTitle` writes both as one string
+(`Area: Kitchen · Garage › Shelf A`) for a `title` attribute, and `renderAreaChip` is the
+single visual treatment — a home glyph and the name, styled by `.hv-area-chip` in `tokens`'
+`base` so every shadow root draws it identically. That chip is how an area is told apart
+from a path segment: an area is never printed as one. It renders nothing when there is no
+area, so callers embed it unguarded and a location outside every area reads exactly as it
+did before areas were shown at all.
+
+Two surfaces spell the area out in words instead — `hv-filter-chips`' location chip and
+`hv-filter-panel`'s selected-location label. Both already sit inside a chip, and a chip
+within a chip is noise, so they print `pathTitle`'s text form, which is also the wording
+the area *filter*'s own chip has always used. `hv-list-row` does the same on a phone for a
+different reason: with no room for a chip the area goes in as the leading text segment,
+where `elidePath` keeps it.
+
+Threading is by property, outward from the two containers that hold `areasCache`.
+`hv-card-shell` and `hv-full-view` pass `.areas` to `hv-list` (which forwards to
+`hv-list-row`), `hv-data-table`, `hv-detail-sheet`, `hv-item-editor`, `hv-filter-panel`,
+`hv-filter-chips`, `hv-bulk-bar` and every `hv-location-tree`; `hv-organize-dialog` passes
+it to its three trees. Resolution happens in the component that renders — a `find` over a
+handful of areas per render, not memoized.
+
+`areasCache` is kept current for as long as the card is mounted. Areas are Home
+Assistant's, so no `haventory/subscribe` topic reports a rename or a deletion; the store
+subscribes to HA's own `area_registry_updated` event (`WSClient.subscribeAreaRegistry`)
+and refetches the list, coalescing a burst into one call the way the location tree does.
+A refused subscription is swallowed — the card keeps the areas it already fetched.
+
+### The location editor states what its area select does
+
+An area belongs to a tree, not to a location, so the organize dialog's area `<select>`
+reaches further than it looks: an explicit pick moves the assignment to the tree root and
+clears every node below, and giving one up empties the tree. `areaChangePreview`
+(`ui/area.ts`, pure) turns the pending edit into `{ kind, rootId, rootName, treeSize,
+effectiveAreaId, editsRoot }`, and `hv-organize-dialog` renders one muted line under the
+select, updating on change, with the area in the shared `.hv-area-chip`.
+
+Two things it has to get right. `kind` is `none` unless the selection differs from the
+location's **own stored** `area_id` — the backend's own test — which on a nested location
+is null, so the inherit option is a no-op there rather than a tree-wide clear; that case
+prints the area being inherited instead, which the select itself cannot name. And it walks
+the parent **as picked in the dialog**: a re-parent and an area change travel in one
+`location/update` and the backend propagates after the move, so the area lands on the root
+of the tree the save produces. With no areas defined there is nothing to pick and no
+consequence to state, and the field is left out entirely.
+
+### Location trees group by area
+
+`hv-location-tree` partitions the roots it is handed with `groupRootsByArea`
+(`store/location-tree.ts`, pure and DOM-free) and draws one header row per area, ordered by
+area name with the same collator that sorts the tree. Roots belonging to no area follow
+under a "No area" header, which appears only when at least one area group does — an
+inventory that uses no areas renders as it did before. Headers are `treeitem`s one level
+above their members, collapse like any node (a `_collapsedAreas` set, so absence means
+open), sum their members' subtree counts, and stay visible while any member survives the
+text filter without matching it themselves.
+
+A header is never a location: it carries no id a picker could assign, so `areaSelectable`
+makes it emit `select-area` rather than `select`, and what that means belongs to the host.
+The full-view sidebar sets `filters.areaId` from it — a filter the item query already
+accepts. The organize dialog's **parent** picker files the location at the top level of the
+area, which is both halves of moving a subtree between areas in one gesture; it also sets
+`showEmptyAreas`, so `groupRootsByArea` bands every area in the registry and not only the
+ones already holding a tree (an area you cannot reach until something is in it is no target
+at all). An empty band heads nothing, so it renders without a twisty and without
+`aria-expanded`/`aria-controls`, and a text filter suspends the empty bands entirely.
+Everywhere a `location_id` is what comes back — the item editor, bulk move, the merge
+target — headers stay inert labels that only collapse: an area holds no items itself.
+
 ### Container vs presentation
 
 `hv-card-shell` and `hv-full-view` are **containers**: they hold the `Store` and call it
@@ -125,6 +276,7 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 |---|---|
 | `tokens.ts` | Every design token as a `--hv-*` custom property, bound to the HA theme variable first with the mock hex as fallback, plus dark-mode and reduced-motion overrides. `base` adds the pill/icon-button/chip/input primitives. Composed as `static styles = [tokens, base, css\`…\`]`. |
 | `icons.ts` | ~30 MDI glyphs as inline path data, rendered as `<svg fill="currentColor">`. See the deviation note below. |
+| `brand-icon.ts` | The HAventory mark as one path, published to HA's icon registry (`window.customIcons`) under the `haventory:` prefix so the sidebar entry can name it. The backend's `PANEL_ICON` is the matching string. |
 | `responsive.ts` | `ResponsiveController` — a Lit reactive controller that drives mobile mode from the card's own measured width (≤600px). |
 | `relative-time.ts` | "2 h ago" / "Jul 31" formatting, overdue checks, and the `+N days` arithmetic the check-out chips use. |
 | `item-form.ts` | Form model and payload building for the edit surfaces: validation per field, typed custom fields, tag normalization, and the `custom_fields_set` / `custom_fields_unset` diff. |
@@ -132,8 +284,12 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 | `health-codes.ts` | Turns the health payload's repeated bare issue codes into one counted sentence each. |
 | `fuzzy.ts` | Nearest-existing-value suggestion for the merge flow. |
 | `empty-state.ts` | The four empty-list situations: which one applies (`emptyKindFor`), its copy and offered actions, and the markup. |
-| `location-path.ts` | The `/` → `›` convention for a location path, and a location's label with a caller-supplied fallback. |
+| `area.ts` | Resolving the HA area behind a location: id → name, and the ancestor walk that mirrors the backend's own resolver. |
+| `location-path.ts` | The `/` → `›` convention for a location path, a location's label with a caller-supplied fallback, and the area-beside-the-path composition (`itemPathParts` / `locationPathParts` / `pathTitle` / `renderAreaChip`). |
 | `dialog-focus.ts` | Initial focus and focus return for modal surfaces. Opening must move focus into the panel or its Escape handler never fires. |
+| `media.ts` | Item attachments: the media path builder, the `MediaUrls` signed-URL cache (request, reuse, refresh before expiry, a distinguishable failed state, and the liveness probe that tells a reference whose file is gone from one that opens), the per-kind `pictures()` / `manuals()` selectors and the title-or-filename fallback, and the `MediaBindings` shape a host hands its components. |
+| `downscale.ts` | Re-encoding an oversized photo in the browser before it is uploaded: the size and type rules, the capped-edge arithmetic, and the decode/encode seam. Fails open — anything that does not work hands the original file back. |
+| `status.ts` | The item-status vocabulary: the definitions a surface renders from (backend's, or the built-in three until `haventory/config` answers), the label / tone-class / glyph lookups with their fallbacks, the colour and glyph vocabularies the management picker offers, and `renderStatusChip` — one renderer so the mark cannot drift between a table cell and a detail sheet. |
 | `keyboard.ts` | `onEscape()` for the surfaces where Escape means exactly "close", and the platform-correct save-shortcut label. |
 | `plural.ts` | Count agreement for every count string in the card. |
 | `theme.ts` | Whether the card is painted on a light or dark surface, read from HA's own theme variables rather than `prefers-color-scheme`. |
@@ -209,10 +365,17 @@ A typed wrapper over `hass.callWS` for each `haventory/*` command, plus `subscri
 takes `onError` and `onOpen` callbacks so both a refused and an accepted subscribe are
 observable.
 
-It is a deliberate 1:1 mirror of the command catalogue in `backend_api_contract.md`: it
-wraps 32 of the backend's 34 commands, omitting only `haventory/cleanup` and
-`haventory/unsubscribe` (the latter handled by HA's own `subscribeMessage`). A few wrappers
-have no caller in the card today; they complete the mirror and are kept on purpose.
+It is a deliberate 1:1 mirror of the command catalogue in `backend_api_contract.md`,
+omitting only `haventory/cleanup` and `haventory/unsubscribe` (the latter handled by HA's
+own `subscribeMessage`). A few wrappers have no caller in the card today; they complete the
+mirror and are kept on purpose.
+
+Two members are not plain `callWS` wrappers. `uploadAttachment` POSTs the bytes to Home
+Assistant core's `/api/file_upload` through `hass.fetchWithAuth` and only then names the
+resulting handle over the socket — a WebSocket frame carries JSON, and an 8 MB photo
+base64'd into one would be both slower and larger. `signPath` calls core's
+`auth/sign_path`, because an `<img src>` carries no `Authorization` header and the media
+view requires one.
 
 ### Column preferences (`src/store/columns.ts`)
 
@@ -221,6 +384,16 @@ updated. Each definition carries a `tableSize` for the full-view table and — o
 backend can actually sort by it — a `sortField`. Category, location and tags have none, so
 their headers are not clickable: a header that looks interactive but does nothing is worse
 than a plain one.
+
+`DEFAULT_COLUMNS` is every key: a browser that has made no choice sees the whole record,
+and the picker is what thins it. The full set is wider than a phone and wider than many
+desktops, which `hv-data-table` answers by scrolling sideways rather than dropping columns.
+The name track (`NAME_COLUMN_SIZE`) outweighs every flexible column beside it in both
+halves of its `minmax`, because the row's identity is the one column that cannot be
+allowed to lose — and at phone width the table pins it, so it holds while the rest scrolls
+under it. The pinning is why `hv-data-table` scrolls **both** axes on its host rather than
+scrolling the rows in a box of their own: a sticky cell resolves its offsets against the
+nearest scroll container, and a nested one that never moves sideways pins nothing.
 
 Preferences persist in `localStorage` under `haventory:columns:v1` as `{ expanded: [...] }`.
 Any other key in that record is ignored, so an older or newer payload never breaks the load.
@@ -256,7 +429,7 @@ Any other key in that record is ignored, so an older or newer payload never brea
 
 **Startup** — `hass` set → `new Store(hass)` → `init()` warms stats, health, areas, tree,
 flat locations, distinct values and version in parallel → `listItems(true)` → subscribe to
-items / locations / stats.
+items / locations / stats, and to HA's `area_registry_updated`.
 
 **A user action** — container calls the store → store applies the change optimistically and
 notifies → container re-renders → WS resolves → store applies the server's copy (or rolls
@@ -324,6 +497,6 @@ track `prefers-color-scheme`.
 ## Known gaps
 
 - Drag-and-drop of items onto sidebar tree nodes (optional in the handoff) is not built.
-- `@lit-labs/virtualizer` is still a dependency but unused; large lists rely on paging.
+- Large lists rely on paging; no row virtualization.
 - The backend cannot sort by category, location or tags, filter by due date, or bulk-create
   items — the UI is shaped around those limits rather than hiding them.

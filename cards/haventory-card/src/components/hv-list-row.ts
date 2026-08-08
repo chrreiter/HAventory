@@ -1,21 +1,20 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { prettyPath } from '../ui/location-path';
+import { chip } from '../ui/chip';
+import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue } from '../ui/relative-time';
-import type { Item } from '../store/types';
+import { itemStatus, renderStatusChip, statusLabel } from '../ui/status';
+import { MediaUrls, attachmentNameToken, manuals, pictureAlt, pictures } from '../ui/media';
+import type { MediaBindings } from '../ui/media';
+import type { AreaRef, Item, StatusDefinition } from '../store/types';
 import './hv-overflow-menu';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 
 /** True when an item is at or under its low-stock threshold. */
 export function isLowStock(item: Item): boolean {
   return typeof item.low_stock_threshold === 'number' && item.quantity <= item.low_stock_threshold;
-}
-
-/** "Garage › Shelf A" from the denormalized path the backend already ships. */
-export function displayPath(item: Item): string {
-  return prettyPath(item.location_path?.display_path ?? '');
 }
 
 /**
@@ -52,6 +51,7 @@ export class HVListRow extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -86,14 +86,53 @@ export class HVListRow extends LitElement {
         flex: 1;
         min-width: 0;
       }
+      /* A fixed box, so a portrait photo and a landscape one leave the row the
+         same height and the list keeps a single rhythm. Rows without a picture
+         render nothing here rather than a placeholder: a mostly photo-less
+         inventory would otherwise grow a column of empty squares. */
+      .thumb {
+        flex: none;
+        width: 34px;
+        height: 34px;
+        border-radius: 6px;
+        object-fit: cover;
+        background: var(--hv-surface-raised);
+      }
+      :host([mobile]) .thumb {
+        width: 40px;
+        height: 40px;
+      }
+      /* A mark, not a chip: that an item has a manual is a fact about it, not
+         a state anyone has to act on, so it stays out of the hue vocabulary the
+         chips next to it carry. */
+      .doc-marker {
+        flex: none;
+        display: inline-grid;
+        place-items: center;
+        color: var(--hv-text-tertiary);
+      }
+      /* The mark belongs to the name, so it sits on the name's own line and
+         follows wherever the name ends. Left on the row it was anchored to the
+         free space instead: on a row with a thumbnail it landed against the
+         truncated name, and on one without it floated out to the far edge,
+         where it read as part of the quantity stepper. */
+      .name-line {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
       /* Both lines must be block containers with inline content, or the
          ellipsis is silently ignored: overflow does not apply to an inline box,
-         and text-overflow does not apply to a flex container. As spans inside a
-         blockified flex item these were the first case, and .secondary was
-         explicitly the second — so a long path hard-cut mid-character with no
-         "…" to say anything had been dropped. */
+         and text-overflow does not apply to a flex container. .name is a flex
+         item on the line above, which blockifies it and gives it an automatic
+         minimum width it must give up to shrink at all; .secondary is a span
+         inside a blockified flex item and was explicitly the second case — so
+         a long path hard-cut mid-character with no "…" to say anything had
+         been dropped. */
       .name {
         display: block;
+        min-width: 0;
         font-size: 14px;
         font-weight: 500;
         overflow: hidden;
@@ -107,6 +146,17 @@ export class HVListRow extends LitElement {
         display: block;
         font-size: 12px;
         color: var(--hv-text-secondary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      /* Beats .secondary's own display:block, which is declared later than the
+         shared fragment and would otherwise keep the row inline. */
+      .secondary.hv-chip-line {
+        display: flex;
+      }
+      /* The path elides; the chip ahead of it does not. */
+      .secondary.hv-chip-line > .hv-chip-line-text {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -134,42 +184,6 @@ export class HVListRow extends LitElement {
         height: 6px;
         border-radius: 50%;
         background: var(--hv-amber);
-      }
-      .low-badge {
-        flex: none;
-        font: 700 10.5px var(--hv-font);
-        letter-spacing: 0.4px;
-        text-transform: uppercase;
-        color: var(--hv-warn);
-        background: var(--hv-warn-bg);
-        border-radius: 4px;
-        padding: 2px 6px;
-      }
-      .out-chip {
-        flex: none;
-        font: 500 11px var(--hv-font);
-        color: var(--hv-primary-darker);
-        border: 1px solid var(--hv-primary-tint-border);
-        border-radius: var(--hv-radius-chip);
-        padding: 2px 8px;
-      }
-      .out-chip.overdue {
-        color: #fff;
-        background: var(--hv-error);
-        border-color: var(--hv-error);
-      }
-      /* Amber, not the out-chip's red: red on this card is reserved for an item
-         that is out and late back, while an inspection that has come due is a
-         chore on something still on the shelf. */
-      .inspect-chip {
-        flex: none;
-        font: 500 11px var(--hv-font);
-        color: var(--hv-warn-deep);
-        background: var(--hv-warn-bg);
-        border: 1px solid var(--hv-warn-border);
-        border-radius: var(--hv-radius-chip);
-        padding: 2px 8px;
-        white-space: nowrap;
       }
       .hover-actions {
         flex: none;
@@ -248,14 +262,6 @@ export class HVListRow extends LitElement {
         padding: 0 18px;
         font: 500 13.5px var(--hv-font);
       }
-      .pending {
-        flex: none;
-        font: 500 11px var(--hv-font);
-        color: var(--hv-warn);
-        background: var(--hv-warn-bg);
-        border-radius: var(--hv-radius-chip);
-        padding: 3px 8px;
-      }
       .box {
         flex: none;
         display: inline-grid;
@@ -288,11 +294,46 @@ export class HVListRow extends LitElement {
 
   @property({ attribute: false }) item!: Item;
   @property({ type: Boolean, reflect: true }) mobile = false;
+  /** HA areas, to name the one the item's location resolves to. */
+  @property({ attribute: false }) areas: AreaRef[] = [];
   /** Selection mode: show a checkbox and suppress row navigation. */
   @property({ type: Boolean }) selectable = false;
   @property({ type: Boolean }) selected = false;
   /** Show the optimistic-write "pending" chip. */
   @property({ type: Boolean }) pending = false;
+  /** Picture access; null means the row shows no thumbnail. */
+  /** The status vocabulary from `haventory/config`; the built-ins stand in
+   * until it answers. */
+  @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
+  @property({ attribute: false }) media: MediaBindings | null = null;
+
+  private readonly _urls = new MediaUrls(this);
+
+  protected willUpdate() {
+    this._urls.configure(this.media?.sign ?? null);
+  }
+
+  /**
+   * The row's leading thumbnail: the item's first picture, or nothing.
+   *
+   * The full-size file is what loads — nothing is thumbnailed server-side, so
+   * `loading="lazy"` and `decoding="async"` are what keep a long list from
+   * fetching and decoding everything at once.
+   */
+  private _renderThumb() {
+    const first = pictures(this.item.attachments)[0];
+    if (!first) return null;
+    const src = this._urls.get(this.item.id, first.id, attachmentNameToken(first));
+    if (!src) return null;
+    return html`<img
+      class="thumb"
+      data-testid="row-thumb"
+      src=${src}
+      alt=${pictureAlt(this.item.name, 0, 1)}
+      loading="lazy"
+      decoding="async"
+    />`;
+  }
 
   private _emit(name: string, detail: Record<string, unknown> = {}) {
     this.dispatchEvent(
@@ -400,19 +441,25 @@ export class HVListRow extends LitElement {
     // `inspection_date` is when the item is next due for inspection, so a date
     // already behind us means it is waiting to be done.
     const inspectionDue = isOverdue(item.inspection_date);
-    // The desktop row has room for the whole path; the phone row does not, and
-    // clipping it from the right would take the leaf with it.
-    const full = displayPath(item);
-    const path = this.mobile ? elidePath(full) : full;
-    const secondary = [path, item.category].filter(Boolean).join(' · ');
+    const parts = itemPathParts(item, this.areas);
+    // The desktop row has room for the whole path and the area chip beside it.
+    const secondary = [parts.path, item.category].filter(Boolean).join(' · ');
+    // A phone line fits neither, so the area goes in as the leading text
+    // segment — the half elidePath keeps — and the room survives a path deep
+    // enough to lose its middle.
+    const mobilePath = elidePath([parts.areaName, parts.path].filter(Boolean).join(' › '));
+    const mobileSecondary = [mobilePath, item.category].filter(Boolean).join(' · ');
     // The tooltip carries the *unelided* path: on a phone the middle of it is
     // dropped on purpose, and this is where the whole thing can still be read.
-    const secondaryFull = [full, item.category].filter(Boolean).join(' · ');
+    const secondaryFull = [pathTitle(parts), item.category].filter(Boolean).join(' · ');
     // A phone row has one line for all of this and no room for the chips the
     // wide row hangs on the right, so the line says the most interrupting
-    // thing it has: who has the item, then what the item is waiting for, then
-    // where it lives. The path is a tap away in the detail sheet either way.
-    const mobileState = item.checked_out ? 'out' : inspectionDue ? 'inspect' : '';
+    // thing it has: who has the item, then what state it is flagged with, then
+    // what it is waiting for, then where it lives. The path is a tap away in
+    // the detail sheet either way.
+    const status = itemStatus(item);
+    const flagged = status !== 'ok';
+    const mobileState = item.checked_out ? 'out' : flagged || inspectionDue ? 'inspect' : '';
 
     return html`
       <div
@@ -443,10 +490,23 @@ export class HVListRow extends LitElement {
               ${this.selected ? icon('check', 13) : null}
             </button>`
           : null}
+        ${this._renderThumb()}
         <span class="names">
-          <span class="name" data-testid="row-name" title=${item.name}>${item.name}</span>
+          <span class="name-line">
+            <span class="name" data-testid="row-name" title=${item.name}>${item.name}</span>
+            ${manuals(item.attachments).length
+              ? html`<span
+                  class="doc-marker"
+                  data-testid="row-has-document"
+                  title="Has a document"
+                  aria-label="Has a document"
+                  >${icon('fileDocument', 14)}</span
+                >`
+              : null}
+          </span>
           <span
-            class="secondary ${this.mobile ? mobileState : ''} ${overdue && this.mobile
+            class="secondary ${this.mobile ? mobileState : 'hv-chip-line'} ${overdue &&
+            this.mobile
               ? 'overdue'
               : ''}"
             data-testid="row-secondary"
@@ -459,22 +519,38 @@ export class HVListRow extends LitElement {
               ? html`${overdue ? 'Overdue' : 'Checked out'}${item.due_date
                   ? ` · due ${formatDate(item.due_date)}`
                   : ''}`
-              : this.mobile && inspectionDue
-                ? html`<span data-testid="row-inspection-due">Inspection due</span> · ${formatDate(item.inspection_date)}`
-                : secondary || 'No location'}
+              : this.mobile && flagged
+                ? html`<span data-testid="row-status">${statusLabel(status, this.statuses)}</span>${mobileSecondary
+                    ? ` · ${mobileSecondary}`
+                    : ''}`
+                : this.mobile && inspectionDue
+                  ? html`<span data-testid="row-inspection-due">Inspection due</span> · ${formatDate(item.inspection_date)}`
+                  : this.mobile
+                    ? mobileSecondary || 'No location'
+                    : html`${renderAreaChip(parts.areaName)}<span class="hv-chip-line-text"
+                        >${secondary || 'No location'}</span
+                      >`}
           </span>
         </span>
-        ${this.pending ? html`<span class="pending" data-testid="row-pending">pending</span>` : null}
+        ${this.pending
+          ? html`<span class="hv-chip warning" data-testid="row-pending">Pending</span>`
+          : null}
         ${!this.mobile && low
-          ? html`<span class="low-badge" data-testid="row-low" aria-label="Low stock">LOW</span>`
+          ? html`<span class="hv-chip warning" data-testid="row-low" aria-label="Low stock">Low</span>`
+          : null}
+        ${!this.mobile && flagged
+          ? renderStatusChip(status, this.statuses, { testid: 'row-status' })
           : null}
         ${!this.mobile && item.checked_out
-          ? html`<span class="out-chip ${overdue ? 'overdue' : ''}" data-testid="row-checked-out">
+          ? html`<span
+              class="hv-chip ${overdue ? 'error' : 'state'}"
+              data-testid="row-checked-out"
+            >
               ${overdue ? `Overdue · ${formatDate(item.due_date)}` : 'Checked out'}
             </span>`
           : null}
         ${!this.mobile && inspectionDue
-          ? html`<span class="inspect-chip" data-testid="row-inspection-due">
+          ? html`<span class="hv-chip warning" data-testid="row-inspection-due">
               Inspection due
             </span>`
           : null}

@@ -126,3 +126,99 @@ async def test_text_search_multi_word_and_logic() -> None:
     # "Blue Large" -> i2 has Blue but Small. i1/i3 have Large but Red. Should be 0.
     results = repo.list_items(flt={"q": "Blue Large"})["items"]
     assert len(results) == 0
+
+
+@pytest.mark.asyncio
+async def test_text_search_short_fragment_matches_mid_word() -> None:
+    """A fragment shorter than a trigram still matches mid-word.
+
+    Regression: the text index was authoritative for ``q``, so a two-character
+    fragment that starts no word found no word bucket, no name-prefix bucket and
+    no trigram fallback (which needs three characters) — and the empty index
+    result was reported as "no match" instead of falling through to the scan that
+    implements the documented substring contract.
+    """
+    repo = Repository()
+    i1 = repo.create_item({"name": "Kiwi"})
+    repo.create_item({"name": "Hammer"})
+
+    results = repo.list_items(flt={"q": "wi"})["items"]
+    assert len(results) == 1
+    assert results[0].id == i1.id
+
+    # One character is below the prefix floor as well, so no index reaches it.
+    results = repo.list_items(flt={"q": "w"})["items"]
+    assert len(results) == 1
+    assert results[0].id == i1.id
+
+
+@pytest.mark.asyncio
+async def test_short_fragment_matches_beyond_the_word_starts_it_hits() -> None:
+    """A short fragment returns mid-word matches alongside the word-start ones.
+
+    The name-prefix index is built from two characters up, so "wi" *does* find
+    "Wine" — a non-empty index result that is still missing "Kiwi". Treating a
+    non-empty result as complete would leave the bug alive whenever the inventory
+    happens to hold a word starting with the fragment.
+    """
+    repo = Repository()
+    kiwi = repo.create_item({"name": "Kiwi"})
+    wine = repo.create_item({"name": "Wine"})
+    repo.create_item({"name": "Hammer"})
+
+    results = repo.list_items(flt={"q": "wi"})["items"]
+    assert {x.id for x in results} == {kiwi.id, wine.id}
+
+
+@pytest.mark.asyncio
+async def test_short_fragment_falls_through_while_long_one_stays_indexed() -> None:
+    """Only queries the index cannot cover give up the indexed path.
+
+    ``_get_filtered_candidates`` returning ``None`` means "scan everything";
+    returning a list means the index narrowed the field. The fall-through must be
+    confined to sub-trigram fragments, or the fast path is disabled for every
+    search.
+    """
+    repo = Repository()
+    repo.create_item({"name": "Kiwi"})
+    repo.create_item({"name": "Hammer"})
+
+    assert repo._get_filtered_candidates({"q": "wi"}) is None
+    assert repo._get_filtered_candidates({"q": "w"}) is None
+
+    # Three characters reach the trigram fallback, so the index stays in charge.
+    candidates = repo._get_filtered_candidates({"q": "iwi"})
+    assert candidates is not None
+    assert [c.name for c in candidates] == ["Kiwi"]
+
+    # An indexed query that genuinely matches nothing still short-circuits.
+    assert repo._get_filtered_candidates({"q": "zzz"}) == []
+
+
+@pytest.mark.asyncio
+async def test_short_fragment_still_uses_the_other_indexes() -> None:
+    """Dropping ``q`` from the index pre-filter leaves the sibling indexes intact."""
+    repo = Repository()
+    kiwi = repo.create_item({"name": "Kiwi", "category": "Fruit"})
+    repo.create_item({"name": "Kiwi Box", "category": "Storage"})
+
+    candidates = repo._get_filtered_candidates({"q": "wi", "category": "Fruit"})
+    assert candidates is not None
+    assert [c.id for c in candidates] == [kiwi.id]
+
+    results = repo.list_items(flt={"q": "wi", "category": "Fruit"})["items"]
+    assert [x.id for x in results] == [kiwi.id]
+
+
+@pytest.mark.asyncio
+async def test_punctuation_only_query_falls_through_to_the_scan() -> None:
+    """A query with no indexable word is outside the index, not proof of no match."""
+    repo = Repository()
+    i1 = repo.create_item({"name": "Wow!!!"})
+    repo.create_item({"name": "Hammer"})
+
+    assert repo._get_filtered_candidates({"q": "!!!"}) is None
+
+    results = repo.list_items(flt={"q": "!!!"})["items"]
+    assert len(results) == 1
+    assert results[0].id == i1.id

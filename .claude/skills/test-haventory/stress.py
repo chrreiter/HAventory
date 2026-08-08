@@ -133,13 +133,21 @@ async def connect() -> WSConn:
     base = os.environ["HA_BASE_URL"]
     token = os.environ["HA_TOKEN"]
     session = aiohttp.ClientSession()
-    ws = await session.ws_connect(ws_url(base), timeout=aiohttp.ClientWSTimeout(ws_receive=20))
-    await asyncio.wait_for(ws.receive_json(), timeout=20)  # hello
-    await ws.send_json({"type": "auth", "access_token": token})
-    auth = await asyncio.wait_for(ws.receive_json(), timeout=20)
-    if auth.get("type") != "auth_ok":
+    # The session is this function's to own until a WSConn takes it: every failure
+    # path has to close it. Callers legitimately retry connect() against an HA that
+    # is down (the restart layer's ready-poll) and swallow the failure, so an
+    # abandoned session there surfaces as an "Unclosed client session" warning — and
+    # the log sweep is an oracle whose value is that a clean run is silent.
+    try:
+        ws = await session.ws_connect(ws_url(base), timeout=aiohttp.ClientWSTimeout(ws_receive=20))
+        await asyncio.wait_for(ws.receive_json(), timeout=20)  # hello
+        await ws.send_json({"type": "auth", "access_token": token})
+        auth = await asyncio.wait_for(ws.receive_json(), timeout=20)
+        if auth.get("type") != "auth_ok":
+            raise RuntimeError(f"auth failed: {auth}")
+    except BaseException:
         await session.close()
-        raise RuntimeError(f"auth failed: {auth}")
+        raise
     return WSConn(session, ws)
 
 
@@ -574,10 +582,26 @@ async def set_rate_limit(
     flow_id = flow.get("flow_id")
     if not flow_id:
         raise RuntimeError(f"could not start options flow: {flow}")
-    user_input: dict[str, Any] = {"rate_limit_enabled": enabled, **RL_DEFAULTS, **overrides}
+
+    # The form groups the rate-limit knobs into a section, so they must be submitted nested
+    # under that section's name rather than flat, and every top-level key is required — a
+    # partial submit is rejected with "required key not provided". HA seeds each field's
+    # `default` from the entry's current options, so echoing the returned schema back
+    # preserves the settings this layer is not trying to change.
+    user_input: dict[str, Any] = {}
+    for field in flow.get("data_schema", []):
+        if field.get("type") == "expandable":
+            section = {f["name"]: f.get("default") for f in field.get("schema", [])}
+            section.update({"rate_limit_enabled": enabled, **RL_DEFAULTS, **overrides})
+            user_input[field["name"]] = section
+        else:
+            user_input[field["name"]] = field.get("default")
+
     res = await _http(
         session, "POST", f"/api/config/config_entries/options/flow/{flow_id}", user_input
     )
+    if res.get("errors"):
+        raise RuntimeError(f"options flow rejected the submit: {res['errors']}")
     return res
 
 
@@ -620,6 +644,9 @@ async def cmd_ratelimit() -> None:
         print(f"  options-flow result type={res.get('type')}")
         ok = await wait_rl_state(True, 30)
         print(f"  rate_limit enabled now: {ok} {'PASS' if ok else '**FAIL**'}")
+        # Everything below asserts on enforcement, which is vacuously satisfied when the
+        # limiter never came up — so stop here rather than report a green run.
+        assert ok, "rate limiting did not turn on; enforcement checks below would be vacuous"
 
         h_pre = await health(control)
         dropped_pre = h_pre["rate_limit"]["dropped_commands"]
@@ -994,7 +1021,7 @@ async def cmd_races() -> None:
     a = await connect()
     b = await connect()
     try:
-        print("== RACE 1: location rename invalidates subtree item versions ==")
+        print("== RACE 1: location rename leaves subtree item versions valid ==")
         await assert_healthy(control, "races/before")
         loc = (await control.call("haventory/location/create", name=PREFIX + "race_loc"))["result"]
         loc_id = loc["id"]
@@ -1010,7 +1037,7 @@ async def cmd_races() -> None:
             )["result"]
             item_versions[it["id"]] = it["version"]
         first_id = next(iter(item_versions))
-        stale_v = item_versions[first_id]
+        held_v = item_versions[first_id]
 
         # rename the location on conn A
         ren = await a.call(
@@ -1018,28 +1045,38 @@ async def cmd_races() -> None:
         )
         print(f"  rename success={ren.get('success')}")
 
-        # conn B updates an item with the now-stale expected_version
+        # conn B updates an item with the version it read before the rename
         upd = await b.call(
             "haventory/item/update",
             item_id=first_id,
-            expected_version=stale_v,
+            expected_version=held_v,
             description="post-rename",
         )
         code = upd.get("error", {}).get("code") if not upd.get("success") else "SUCCESS"
         print(
-            f"  item/update with stale expected_version -> {code} "
-            f"({'EXPECTED conflict (documented hazard)' if code == 'conflict' else 'no invalidation'})"
+            f"  item/update with pre-rename expected_version -> {code} "
+            f"({'OK, token survived the rename' if code == 'SUCCESS' else '**INVALIDATED**'})"
         )
 
-        # verify every subtree item's version bumped by exactly 1
-        bumped = 0
+        # The path rewrite is derived data: every subtree item keeps the version
+        # it had before the rename. The one just updated is the exception —
+        # that was a real mutation — and every path must carry the new name.
+        held = 0
+        repathed = 0
         for iid, v0 in item_versions.items():
             cur = (await control.call("haventory/item/get", item_id=iid))["result"]
-            if cur["version"] == v0 + 1:
-                bumped += 1
+            expected = v0 + 1 if iid == first_id and code == "SUCCESS" else v0
+            if cur["version"] == expected:
+                held += 1
+            if "race_loc_renamed" in cur["location_path"]["display_path"]:
+                repathed += 1
         print(
-            f"  subtree items version-bumped by exactly 1: {bumped}/{len(item_versions)} "
-            f"{'OK' if bumped == len(item_versions) else '**PARTIAL**'}"
+            f"  subtree items keeping their version: {held}/{len(item_versions)} "
+            f"{'OK' if held == len(item_versions) else '**BUMPED**'}"
+        )
+        print(
+            f"  subtree items carrying the new path: {repathed}/{len(item_versions)} "
+            f"{'OK' if repathed == len(item_versions) else '**STALE PATH**'}"
         )
         await assert_healthy(control, "races/after-rename")
 
@@ -1277,18 +1314,24 @@ async def cmd_restart() -> None:
         print("\n  waiting for HA to come back ...")
         control = None
         ready = False
-        for i in range(30):
+        for _ in range(30):
             await asyncio.sleep(3)
             try:
                 c = await connect()
-                h = await health(c)
-                if h.get("healthy") is not None:
-                    control = c
-                    ready = True
-                    break
-                await c.close()
             except Exception:  # noqa: BLE001
-                pass
+                continue
+            # Past this point the connection is ours: it is either adopted as the new
+            # control connection or closed here, including when health() fails on a
+            # half-booted HA.
+            try:
+                ready = (await health(c)).get("healthy") is not None
+            except Exception:  # noqa: BLE001
+                ready = False
+            if ready:
+                control = c
+                break
+            with contextlib.suppress(Exception):
+                await c.close()
         if not ready:
             print("  **FAIL: HA did not become ready within timeout**")
             return

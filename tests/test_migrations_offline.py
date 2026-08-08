@@ -4,19 +4,29 @@ Scenarios:
 - Older version N → current version: transformed shape and version update
 - No-op when already current; idempotency on repeated runs
 - Empty file / missing keys → safe defaults
+- Backwards migration → refused rather than passed through and relabelled
 - Corrupt payload / loader exception → logged with context and safe fallback
 """
 
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from typing import Any
 
 import pytest
-from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.exceptions import StorageError
-from custom_components.haventory.migrations import migrate
-from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
+from custom_components.haventory.const import (
+    DEFAULT_STATUS_COLOR,
+    DEFAULT_STATUS_ICON,
+    DOMAIN,
+)
+from custom_components.haventory.exceptions import SchemaDowngradeError, StorageError
+from custom_components.haventory.migrations import migrate, migrate_5_to_6
+from custom_components.haventory.storage import (
+    CURRENT_SCHEMA_VERSION,
+    STORE_COLLECTIONS,
+    DomainStore,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
 
@@ -87,20 +97,28 @@ async def test_missing_keys_and_empty_payload_safe_defaults() -> None:
 
 
 @pytest.mark.asyncio
-async def test_downgrade_returns_original(caplog: pytest.LogCaptureFixture) -> None:
-    """Downgrade returns original payload; migrate stays quiet."""
+async def test_downgrade_is_refused_rather_than_relabelled() -> None:
+    """A backwards migration raises instead of passing the payload through.
 
-    caplog.set_level(logging.DEBUG)
+    Passing it through is the dangerous half: the caller stamps ``to_version``
+    onto whatever comes back, so data written by a schema this build cannot read
+    would be relabelled as one it can.
+    """
+
     payload = {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+    before = deepcopy(payload)
 
-    # Act: request a downgrade path (from_version > to_version)
-    result = migrate(
-        payload, from_version=CURRENT_SCHEMA_VERSION, to_version=CURRENT_SCHEMA_VERSION - 1
-    )
+    with pytest.raises(SchemaDowngradeError) as excinfo:
+        migrate(payload, from_version=CURRENT_SCHEMA_VERSION, to_version=CURRENT_SCHEMA_VERSION - 1)
 
-    # Assert: original returned unchanged; we don't enforce specific log content
-    assert result is payload or result == payload
-    # No strict log assertion since migrate() intentionally stays quiet for downgrades
+    # Both versions named, so a caller's log says which direction was asked for.
+    message = str(excinfo.value)
+    assert str(CURRENT_SCHEMA_VERSION) in message
+    assert str(CURRENT_SCHEMA_VERSION - 1) in message
+
+    # A refusal touches nothing.
+    assert payload == before
+    assert isinstance(excinfo.value, StorageError)
 
 
 @pytest.mark.asyncio
@@ -136,3 +154,213 @@ async def test_log_context_on_corrupted_payload_via_storage(
             assert getattr(rec, "to_version", None) == store.schema_version
             break
     assert found, "expected migration error log with context"
+
+
+def test_the_migration_chain_produces_every_stored_collection() -> None:
+    """A store crossing a version boundary arrives holding every collection.
+
+    ``async_load`` backfills ``STORE_COLLECTIONS`` only on the branch where the
+    stored version already matches; a payload that goes through ``migrate`` comes
+    back as whatever the chain produced. So the chain, not the backfill, is what
+    an *upgrading* store depends on — and the backfill deliberately does not cover
+    it, because a new collection generally needs deriving rather than defaulting
+    to empty, and a silent ``{}`` would hide the missing step exactly the way the
+    erased-collection bug it guards against was hidden.
+
+    Adding a name to ``STORE_COLLECTIONS`` without a migration step that produces
+    it fails here.
+    """
+
+    migrated = migrate({}, from_version=0, to_version=CURRENT_SCHEMA_VERSION)
+
+    missing = [name for name in STORE_COLLECTIONS if name not in migrated]
+    assert not missing, (
+        f"the 0 -> {CURRENT_SCHEMA_VERSION} chain produces no {missing}; an existing "
+        f"store would finish migrating without them"
+    )
+
+
+# -----------------------------
+# v5 -> v6: statuses + attachments (one step for the whole milestone)
+# -----------------------------
+
+
+def _v5_payload(**items: Any) -> dict[str, Any]:
+    return {
+        "schema_version": 5,
+        "items": dict(items),
+        "locations": {},
+    }
+
+
+def _v5_attachment(att_id: str, **overrides: Any) -> dict[str, Any]:
+    """An attachment as v5 stored it — before `title` and `order` existed."""
+
+    doc = {
+        "id": att_id,
+        "kind": "picture",
+        "filename": "photo.png",
+        "mime": "image/png",
+        "size": 12,
+        "uploaded_at": "2026-08-05T10:00:00Z",
+    }
+    doc.update(overrides)
+    return doc
+
+
+def test_v5_to_v6_seeds_exactly_the_three_built_ins() -> None:
+    out = migrate(_v5_payload(), from_version=5, to_version=6)
+
+    assert out["statuses"] == {
+        "ok": {"slug": "ok", "label": "OK", "order": 0, "color": "green", "icon": "check"},
+        "missing": {
+            "slug": "missing",
+            "label": "Missing",
+            "order": 1,
+            "color": "amber",
+            "icon": "alert",
+        },
+        "needs_repair": {
+            "slug": "needs_repair",
+            "label": "Needs repair",
+            "order": 2,
+            "color": "amber",
+            "icon": "wrench",
+        },
+    }
+
+
+def test_v5_to_v6_backfills_attachments_on_every_item() -> None:
+    payload = _v5_payload(
+        i1={"id": "i1", "name": "Drill", "status": "ok"},
+        i2={"id": "i2", "name": "Saw", "status": "missing"},
+    )
+
+    out = migrate(payload, from_version=5, to_version=6)
+
+    assert out["items"]["i1"]["attachments"] == []
+    assert out["items"]["i2"]["attachments"] == []
+
+
+def test_v5_to_v6_does_not_replace_a_list_that_already_has_entries() -> None:
+    """The backfill fills in what is absent; it never clears what is there."""
+
+    existing = [_v5_attachment("3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f")]
+    payload = _v5_payload(i1={"id": "i1", "name": "Drill", "attachments": existing})
+
+    out = migrate(payload, from_version=5, to_version=6)
+
+    assert out["items"]["i1"]["attachments"] == [
+        {**existing[0], "title": "", "order": 0},
+    ]
+
+
+def test_v5_to_v6_keeps_a_status_definition_it_did_not_seed() -> None:
+    """A hand-added or later-release definition survives the seeding step."""
+
+    payload = _v5_payload()
+    payload["statuses"] = {"lent_out": {"slug": "lent_out", "label": "Lent out", "order": 9}}
+
+    out = migrate(payload, from_version=5, to_version=6)
+
+    assert out["statuses"]["lent_out"] == {
+        "slug": "lent_out",
+        "label": "Lent out",
+        "order": 9,
+        "color": DEFAULT_STATUS_COLOR,
+        "icon": DEFAULT_STATUS_ICON,
+    }
+    assert set(out["statuses"]) == {"lent_out", "ok", "missing", "needs_repair"}
+
+
+def test_v5_to_v6_gives_an_existing_definition_the_default_appearance() -> None:
+    """A store already stamped v6 never re-runs this step, so a definition that
+    predates the appearance fields has to read its defaults at load time — but a
+    v5 store crossing now gets them written, and a partial one is completed."""
+
+    payload = _v5_payload()
+    payload["statuses"] = {
+        "lent_out": {"slug": "lent_out", "label": "Lent out", "order": 9, "color": "blue"}
+    }
+
+    out = migrate(payload, from_version=5, to_version=6)
+
+    assert out["statuses"]["lent_out"]["color"] == "blue"
+    assert out["statuses"]["lent_out"]["icon"] == DEFAULT_STATUS_ICON
+
+
+def test_v5_to_v6_orders_attachments_by_their_stored_position() -> None:
+    """`order` is what the cover convention reads, so an existing list has to
+    acquire one — position 0 is the item's cover from the moment it exists."""
+
+    existing = [
+        _v5_attachment("3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f"),
+        _v5_attachment("4a1d7e3b-2c5f-4b0d-8e4a-3b8c9d2e1f60"),
+    ]
+    payload = _v5_payload(i1={"id": "i1", "name": "Drill", "attachments": existing})
+
+    out = migrate(payload, from_version=5, to_version=6)
+
+    assert [a["order"] for a in out["items"]["i1"]["attachments"]] == [0, 1]
+    assert [a["title"] for a in out["items"]["i1"]["attachments"]] == ["", ""]
+
+
+def test_v5_to_v6_numbers_each_kind_from_zero() -> None:
+    """Order is per kind, the way `reorder_attachments` writes it.
+
+    Numbering straight down the list would make an item's first manual
+    position 1 or 5 depending on how many photos happened to precede it, and
+    nothing would ever be the documents list's own first entry.
+    """
+
+    existing = [
+        _v5_attachment("3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f"),
+        _v5_attachment(
+            "4a1d7e3b-2c5f-4b0d-8e4a-3b8c9d2e1f60",
+            kind="manual",
+            filename="a.pdf",
+            mime="application/pdf",
+        ),
+        _v5_attachment("5b2e8f4c-3d60-4c1e-9f5b-4c9d0e3f2a71"),
+        _v5_attachment(
+            "6c3f9a5d-4e71-4d2f-a06c-5d0e1f403b82",
+            kind="manual",
+            filename="b.pdf",
+            mime="application/pdf",
+        ),
+    ]
+    payload = _v5_payload(i1={"id": "i1", "name": "Drill", "attachments": existing})
+
+    out = migrate(payload, from_version=5, to_version=6)
+
+    placed = [(a["kind"], a["order"]) for a in out["items"]["i1"]["attachments"]]
+    assert placed == [("picture", 0), ("manual", 0), ("picture", 1), ("manual", 1)]
+
+
+def test_v5_to_v6_keeps_an_attachment_title_and_order_it_did_not_write() -> None:
+    payload = _v5_payload(
+        i1={
+            "id": "i1",
+            "name": "Drill",
+            "attachments": [
+                _v5_attachment("3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f", title="Cover", order=4)
+            ],
+        }
+    )
+
+    out = migrate(payload, from_version=5, to_version=6)
+
+    assert out["items"]["i1"]["attachments"][0] == _v5_attachment(
+        "3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f", title="Cover", order=4
+    )
+
+
+def test_v5_to_v6_is_idempotent() -> None:
+    """The step itself, re-applied — not the driver, which would skip it."""
+
+    payload = _v5_payload(i1={"id": "i1", "name": "Drill"})
+
+    once = migrate_5_to_6(deepcopy(payload))
+    twice = migrate_5_to_6(deepcopy(once))
+
+    assert twice == once

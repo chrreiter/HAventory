@@ -1,16 +1,47 @@
 """Offline tests for HAventory config flow.
 
 Scenarios:
-- Single-instance guard aborts with reason
+- Single-instance guard aborts with reason, and the manifest declares the same rule
 - async_step_user happy path creates entry
+- The card title is asked for at setup, normalized, and seeded into the options
 - Import path: create entry if no existing (if supported)
 - Validation errors surfaced to form (simulated)
 """
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
-from custom_components.haventory.config_flow import HAventoryConfigFlow
+from custom_components.haventory.config_flow import (
+    RATE_LIMIT_DOCS_URL,
+    HAventoryConfigFlow,
+    HAventoryOptionsFlowHandler,
+)
+from custom_components.haventory.const import (
+    CONF_CARD_TITLE,
+    CONF_SIDEBAR_PANEL_ENABLED,
+    DEFAULT_CARD_TITLE,
+    DEFAULT_SIDEBAR_PANEL_ENABLED,
+)
+from homeassistant.config_entries import ConfigEntry
+
+
+def _entry(options: dict) -> ConfigEntry:
+    return ConfigEntry(options=options)
+
+
+def _schema_keys(schema) -> set[str]:
+    return {str(marker) for marker in schema.schema}
+
+
+def _schema_default(schema, key: str):
+    """Read a field's prefilled value without validating a whole payload."""
+    for marker in schema.schema:
+        if str(marker) == key:
+            return marker.default()
+    raise AssertionError(f"no field {key} in schema")
 
 
 @pytest.mark.asyncio
@@ -27,6 +58,21 @@ async def test_single_instance_guard_aborts(monkeypatch) -> None:
     assert result["reason"] == "single_instance_allowed"
 
 
+def test_manifest_declares_single_config_entry() -> None:
+    """The manifest must declare the same single-instance rule the flow enforces.
+
+    `single_config_entry` is what removes HAventory from the "Add integration"
+    picker once an entry exists, so the second attempt never starts. The in-flow
+    guard above still covers the paths that bypass the picker, and the two must
+    agree: dropping the manifest key would silently put the entry back in the
+    picker only to abort on its first step.
+    """
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest.get("single_config_entry") is True
+
+
 @pytest.mark.asyncio
 async def test_user_step_creates_entry(monkeypatch) -> None:
     """Happy path: no existing entries -> create entry immediately."""
@@ -38,8 +84,175 @@ async def test_user_step_creates_entry(monkeypatch) -> None:
 
     result = await flow.async_step_user(user_input={})
     assert result["type"] == "create_entry"
-    assert result["title"] == "HAventory"
+    assert result["title"] == DEFAULT_CARD_TITLE
     assert result["data"] == {}
+    assert result["options"] == {
+        CONF_CARD_TITLE: DEFAULT_CARD_TITLE,
+        CONF_SIDEBAR_PANEL_ENABLED: DEFAULT_SIDEBAR_PANEL_ENABLED,
+    }
+
+
+@pytest.mark.asyncio
+async def test_user_step_asks_for_the_title_and_the_sidebar(monkeypatch) -> None:
+    """Setup opens a form rather than creating an unnamed entry outright.
+
+    Both fields the options flow opens with are asked here, so the sidebar entry
+    is a decision at setup rather than a discovery under Configure.
+    """
+
+    flow = HAventoryConfigFlow()
+    monkeypatch.setattr(flow, "_async_current_entries", lambda: [], raising=False)
+
+    result = await flow.async_step_user(user_input=None)
+    assert result["type"] == "form"
+    assert result["step_id"] == "user"
+    assert _schema_keys(result["data_schema"]) == {CONF_CARD_TITLE, CONF_SIDEBAR_PANEL_ENABLED}
+    assert (
+        _schema_default(result["data_schema"], CONF_SIDEBAR_PANEL_ENABLED)
+        is DEFAULT_SIDEBAR_PANEL_ENABLED
+    )
+
+
+@pytest.mark.asyncio
+async def test_user_step_uses_the_submitted_title(monkeypatch) -> None:
+    """The submitted name becomes both the entry title and the card-title option."""
+
+    flow = HAventoryConfigFlow()
+    monkeypatch.setattr(flow, "_async_current_entries", lambda: [], raising=False)
+
+    result = await flow.async_step_user(user_input={CONF_CARD_TITLE: "  Pantry  "})
+    assert result["title"] == "Pantry"
+    assert result["options"][CONF_CARD_TITLE] == "Pantry"
+
+
+@pytest.mark.asyncio
+async def test_user_step_stores_a_declined_sidebar(monkeypatch) -> None:
+    """Answering "no" at setup has to survive as the stored option.
+
+    Absence reads as on everywhere the panel is applied, so an opt-out only
+    holds if the setup step writes it down.
+    """
+
+    flow = HAventoryConfigFlow()
+    monkeypatch.setattr(flow, "_async_current_entries", lambda: [], raising=False)
+
+    result = await flow.async_step_user(
+        user_input={CONF_CARD_TITLE: "Pantry", CONF_SIDEBAR_PANEL_ENABLED: False}
+    )
+    assert result["options"][CONF_SIDEBAR_PANEL_ENABLED] is False
+
+
+@pytest.mark.asyncio
+async def test_blank_title_falls_back_to_the_default(monkeypatch) -> None:
+    """A cleared field asks for the default back, not for an empty heading."""
+
+    flow = HAventoryConfigFlow()
+    monkeypatch.setattr(flow, "_async_current_entries", lambda: [], raising=False)
+
+    result = await flow.async_step_user(user_input={CONF_CARD_TITLE: "   "})
+    assert result["options"][CONF_CARD_TITLE] == DEFAULT_CARD_TITLE
+
+
+@pytest.mark.asyncio
+async def test_options_flow_edits_the_card_title() -> None:
+    """The options flow offers the stored title and stores the edited one."""
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({CONF_CARD_TITLE: "Pantry"})
+
+    form = await flow.async_step_init(user_input=None)
+    assert _schema_default(form["data_schema"], CONF_CARD_TITLE) == "Pantry"
+
+    result = await flow.async_step_init(user_input={CONF_CARD_TITLE: " Garage  "})
+    assert result["type"] == "create_entry"
+    assert result["data"][CONF_CARD_TITLE] == "Garage"
+
+
+@pytest.mark.asyncio
+async def test_sidebar_toggle_defaults_on_for_an_entry_that_predates_it() -> None:
+    """No stored value reads as on: the sidebar entry is what makes HAventory findable."""
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({CONF_CARD_TITLE: "Pantry"})
+
+    form = await flow.async_step_init(user_input=None)
+    assert _schema_default(form["data_schema"], CONF_SIDEBAR_PANEL_ENABLED) is True
+
+
+@pytest.mark.asyncio
+async def test_sidebar_toggle_offers_and_stores_an_opt_out() -> None:
+    """An explicit off survives a trip through the form rather than reverting to the default."""
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({CONF_SIDEBAR_PANEL_ENABLED: False})
+
+    form = await flow.async_step_init(user_input=None)
+    assert _schema_default(form["data_schema"], CONF_SIDEBAR_PANEL_ENABLED) is False
+
+    result = await flow.async_step_init(
+        user_input={CONF_CARD_TITLE: "Pantry", CONF_SIDEBAR_PANEL_ENABLED: False}
+    )
+    assert result["data"][CONF_SIDEBAR_PANEL_ENABLED] is False
+
+
+@pytest.mark.asyncio
+async def test_sidebar_toggle_sits_outside_the_rate_limit_section() -> None:
+    """Visibility of the integration has nothing to do with rate limiting.
+
+    Nested in the section, the option would also be folded by `_flatten_options`
+    only as a side effect of that grouping — and hidden behind a collapsed
+    header the moment the limiter is at its defaults.
+    """
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({})
+
+    form = await flow.async_step_init(user_input=None)
+    assert CONF_SIDEBAR_PANEL_ENABLED in _schema_keys(form["data_schema"])
+
+
+@pytest.mark.asyncio
+async def test_options_form_fills_the_docs_link() -> None:
+    """The step text links the rate-limit docs through a placeholder.
+
+    Translation strings may not carry URLs — hassfest rejects them — so the
+    link target arrives as `description_placeholders`. Without it the form
+    renders a literal `{docs_url}`.
+    """
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({})
+
+    form = await flow.async_step_init(user_input=None)
+    assert form["description_placeholders"] == {"docs_url": RATE_LIMIT_DOCS_URL}
+
+
+def test_translation_strings_carry_no_urls() -> None:
+    """hassfest fails the build on a URL in a translation string.
+
+    It only runs in CI, so catch the mistake here: a link belongs in a
+    `{placeholder}` the flow fills, never inline in the string.
+    """
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
+    for path in (root / "strings.json", root / "translations" / "en.json"):
+        text = path.read_text(encoding="utf-8")
+        assert "http://" not in text and "https://" not in text, f"{path.name} contains a URL"
+
+
+def test_translation_flow_sections_match_strings() -> None:
+    """`translations/en.json` must repeat every section `strings.json` declares.
+
+    Home Assistant renders the config flow, the options flow and the service
+    catalog from the translation file; `strings.json` is only the source
+    hassfest validates. An edit that lands in one file but not the other ships a
+    screen with the stale text and nothing fails.
+    """
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
+    strings = json.loads((root / "strings.json").read_text(encoding="utf-8"))
+    en = json.loads((root / "translations" / "en.json").read_text(encoding="utf-8"))
+    assert en == strings
 
 
 @pytest.mark.asyncio

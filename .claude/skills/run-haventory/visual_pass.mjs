@@ -1,5 +1,5 @@
-// Walk the card's surfaces at desktop and mobile widths, screenshotting each and
-// reporting whether it actually opened.
+// Walk HAventory's surfaces — the card and the sidebar panel, each at a desktop
+// and a phone width — screenshotting each and reporting whether it actually opened.
 //
 // A single screenshot proves one view renders; this proves the set of them do,
 // which is what a UI change needs before and after. Each surface is a named
@@ -11,12 +11,17 @@
 // exits non-zero if any surface, at any width, failed to open.
 //
 // Usage (from the skill dir, .claude/skills/run-haventory/):
-//   node visual_pass.mjs                       # desktop + mobile into ./visual/
+//   node visual_pass.mjs                       # every pass into ./visual/
 //   node visual_pass.mjs --out before          # ./before/  (then --out after to compare)
-//   node visual_pass.mjs --only desktop        # or --only mobile
+//   node visual_pass.mjs --only desktop        # or mobile, panel, panel-mobile
 //   node visual_pass.mjs --surfaces list,search,full-view
 //   node visual_pass.mjs --dark                # HA dark theme + dark OS scheme
 //   node visual_pass.mjs --list                # print the surface names and exit
+//   node visual_pass.mjs --path desktop=/other/wide   # one pass onto another view
+//
+// The four passes open three different URLs, so `--path` names the pass it
+// applies to and may be repeated. A bare `--path <url>` is taken only alongside
+// `--only`, where there is exactly one pass for it to mean.
 //
 // Everything it drives is read-only: it opens panels, sheets and editors but
 // never saves, imports or deletes. The one exception is the search box, which is
@@ -25,12 +30,13 @@
 // Reads HA_BASE_URL / HA_TOKEN from the environment or the repo-root .env.
 
 import { chromium, devices } from "playwright";
-import { readFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+import { cardPath, haConfig, parsePathOverrides } from "./card_views.mjs";
+
 const skillDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(skillDir, "..", "..", "..");
 
 const args = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -39,10 +45,12 @@ const flag = (name, dflt) => {
 };
 
 // --- surface recipes ------------------------------------------------------
-// `open` is a list of steps run in order against the card:
+// `open` is a list of steps run in order against the pass's root element:
 //   ["click", <sel>]  ["hover", <sel>]  ["fill", <sel>, <text>]  ["key", <key>]  ["wait", <ms>]
-// `expect` is the selector that must be visible once the recipe has run.
-// Selectors pierce shadow DOM, so nested components address directly.
+// `expect` is the selector — or list of selectors — that must be visible once the
+// recipe has run; `hidden` is the optional counterpart, for a layout whose point
+// is that something is gone. Selectors pierce shadow DOM, so nested components
+// address directly.
 //
 // Every recipe starts from a freshly loaded page. Chaining them instead would be
 // faster, but a modal left standing puts a scrim over everything that follows
@@ -51,14 +59,20 @@ const flag = (name, dflt) => {
 // the full view rather than assuming the previous surface left it up.
 //
 // Surfaces are named after what a reader would call the screen, and prefixed
-// d-/m- in the file name so a desktop and a mobile capture of the same surface
-// sort next to each other.
+// d-/m-/p-/pm- in the file name so the desktop, mobile and the two panel
+// captures of the same surface sort next to each other.
 //
 // The card chooses its layout from ITS OWN width, not the viewport's, so the
-// desktop pass runs on the `wide` dashboard view: in a normal dashboard column
-// even a 1440px window gets the narrow branch, where the filter panel is a modal
-// sheet and the full-view link is absent entirely.
+// desktop pass runs on a panel-mode view: in a normal dashboard column even a
+// 1440px window gets the narrow branch, where the filter panel is a modal sheet
+// and the full-view link is absent entirely. Which view that is, on this
+// instance, is discovered — see card_views.mjs.
+//
+// Each pass names the root element it waits for and scopes its selectors to:
+// the sidebar panel at /haventory is a different custom element and renders no
+// card at all, so waiting for `haventory-card` there only ever times out.
 const CARD = "haventory-card";
+const PANEL = "haventory-panel";
 const OVERFLOW = `${CARD} [data-testid="card-overflow"] button`;
 const menu = (id) => `${CARD} [data-testid="overflow-item"][data-id="${id}"]`;
 
@@ -232,53 +246,242 @@ const MOBILE_SURFACES = [
   },
 ];
 
+// The sidebar panel embeds the same full view the card opens in a modal, so its
+// inner testids are the full view's — but the surrounding host is `haventory-panel`
+// with its own dialog set, which is exactly what these recipes prove. The panel's
+// overflow lives on the full view's app bar, not behind the card's `card-overflow`.
+const PANEL_OVERFLOW = `${PANEL} [data-testid="full-overflow"] [data-testid="overflow-trigger"]`;
+const panelMenu = (id) => `${PANEL} [data-testid="overflow-item"][data-id="${id}"]`;
+
+const PANEL_SURFACES = [
+  { id: "01-page", open: [], expect: `${PANEL} [data-testid="full-table"]` },
+  {
+    id: "02-filters",
+    open: [["click", `${PANEL} [data-testid="full-filters-toggle"]`], ["wait", 500]],
+    expect: `${PANEL} [data-testid="full-filter-panel"]`,
+  },
+  {
+    id: "03-search",
+    open: [
+      ["fill", `${PANEL} [data-testid="full-search"]`, "box"],
+      ["wait", 1500],
+    ],
+    expect: `${PANEL} [data-testid="full-table"]`,
+  },
+  {
+    id: "04-add-editor",
+    open: [["click", `${PANEL} [data-testid="full-add-item"]`], ["wait", 600]],
+    expect: `${PANEL} [data-testid="item-editor"]`,
+  },
+  {
+    id: "05-row-editor",
+    // The table's row actions are `visibility: hidden` until the row is
+    // hovered, so the edit button has to be revealed before it can be clicked.
+    open: [
+      ["hover", `${PANEL} [data-testid="table-row"]`],
+      ["click", `${PANEL} [data-testid="table-edit"]`],
+      ["wait", 600],
+    ],
+    expect: `${PANEL} [data-testid="item-editor"]`,
+  },
+  {
+    id: "06-overflow",
+    open: [["click", PANEL_OVERFLOW]],
+    expect: `${PANEL} [data-testid="overflow-menu"]`,
+  },
+  {
+    id: "07-organize",
+    open: [
+      ["click", PANEL_OVERFLOW],
+      ["click", panelMenu("organize")],
+      ["wait", 800],
+    ],
+    expect: `${PANEL} [data-testid="organize-dialog"]`,
+  },
+  {
+    id: "08-columns",
+    open: [["click", `${PANEL} [data-testid="columns-expanded"]`], ["wait", 600]],
+    expect: `${PANEL} [data-testid="column-options"]`,
+  },
+  {
+    id: "09-diagnostics",
+    open: [
+      ["click", PANEL_OVERFLOW],
+      ["click", panelMenu("diagnostics")],
+      ["wait", 800],
+    ],
+    expect: `${PANEL} [data-testid="diagnostics-status"]`,
+  },
+  {
+    id: "10-import",
+    open: [
+      ["click", PANEL_OVERFLOW],
+      ["click", panelMenu("import")],
+    ],
+    expect: `${PANEL} [data-testid="import-text"]`,
+  },
+];
+
+// The panel on a phone. Unlike the card, whose narrow layout is a different
+// component tree, `hv-full-view` keeps one tree and switches on a media query at
+// 700px — so these are the panel recipes again, at a width where that branch is
+// live, plus the three assertions that only hold there: the sidebar is gone, the
+// filter panel grows a staged apply/cancel footer, and the app bar trades the
+// close button for the button that reopens Home Assistant's own drawer (which a
+// panel must offer itself once HA has collapsed it).
+const PANEL_MOBILE_SURFACES = [
+  {
+    id: "01-page",
+    open: [],
+    expect: [`${PANEL} [data-testid="full-table"]`, `${PANEL} [data-testid="panel-menu"]`],
+    hidden: `${PANEL} [data-testid="full-sidebar"]`,
+  },
+  {
+    id: "02-filters",
+    open: [["click", `${PANEL} [data-testid="full-filters-toggle"]`], ["wait", 500]],
+    // The footer is the narrow branch's own: the wide panel applies each change
+    // as it is made, this one stages them behind Apply.
+    expect: [`${PANEL} [data-testid="full-filter-panel"]`, `${PANEL} [data-testid="full-panel-foot"]`],
+  },
+  {
+    id: "03-search",
+    open: [
+      ["fill", `${PANEL} [data-testid="full-search"]`, "box"],
+      ["wait", 1500],
+    ],
+    expect: `${PANEL} [data-testid="full-table"]`,
+  },
+  {
+    id: "04-add-editor",
+    open: [["click", `${PANEL} [data-testid="full-add-item"]`], ["wait", 600]],
+    expect: `${PANEL} [data-testid="item-editor"]`,
+  },
+  {
+    id: "05-row-editor",
+    open: [
+      ["hover", `${PANEL} [data-testid="table-row"]`],
+      ["click", `${PANEL} [data-testid="table-edit"]`],
+      ["wait", 600],
+    ],
+    expect: `${PANEL} [data-testid="item-editor"]`,
+  },
+  {
+    id: "06-overflow",
+    open: [["click", PANEL_OVERFLOW]],
+    expect: `${PANEL} [data-testid="overflow-menu"]`,
+  },
+  {
+    id: "07-organize",
+    open: [
+      ["click", PANEL_OVERFLOW],
+      ["click", panelMenu("organize")],
+      ["wait", 800],
+    ],
+    expect: `${PANEL} [data-testid="organize-dialog"]`,
+  },
+  {
+    id: "08-columns",
+    open: [["click", `${PANEL} [data-testid="columns-expanded"]`], ["wait", 600]],
+    expect: `${PANEL} [data-testid="column-options"]`,
+  },
+];
+
 if (args.includes("--list")) {
-  console.log("desktop:", DESKTOP_SURFACES.map((s) => s.id).join(", "));
-  console.log("mobile: ", MOBILE_SURFACES.map((s) => s.id).join(", "));
+  console.log("desktop:     ", DESKTOP_SURFACES.map((s) => s.id).join(", "));
+  console.log("mobile:      ", MOBILE_SURFACES.map((s) => s.id).join(", "));
+  console.log("panel:       ", PANEL_SURFACES.map((s) => s.id).join(", "));
+  console.log("panel-mobile:", PANEL_MOBILE_SURFACES.map((s) => s.id).join(", "));
   process.exit(0);
 }
 
-// --- config: env wins, .env fills the gaps -------------------------------
-try {
-  for (const line of readFileSync(path.join(repoRoot, ".env"), "utf8").split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
-  }
-} catch {
-  /* no .env — rely on real env vars */
-}
-const base = (process.env.HA_BASE_URL ?? "http://localhost:8123").replace(/\/$/, "");
-const token = process.env.HA_TOKEN;
+const { base, token } = haConfig();
 if (!token) {
   console.error("Missing HA_TOKEN (env or repo-root .env)");
   process.exit(2);
 }
 
 const outDir = path.resolve(skillDir, flag("--out", "visual"));
-// Per-pass by default; --path forces one view for both, which is how you check
-// a single dashboard layout rather than the two the card is designed for.
-const urlPathOverride = flag("--path", null);
 const haDark = args.includes("--dark");
 const only = flag("--only", null);
 const wanted = flag("--surfaces", null)?.split(",").map((s) => s.trim());
 mkdirSync(outDir, { recursive: true });
 
-const PASSES = [
+// The sidebar panel is Home Assistant's own route into the integration, so it
+// needs no dashboard at all — and it gets the whole content area, which is why
+// both panel passes use it at both widths.
+const PANEL_ROUTE = "/haventory";
+
+// `shape` is what the pass needs of a dashboard view (see card_views.mjs); the
+// panel passes name a route instead, because theirs is not a dashboard.
+const ALL_PASSES = [
   {
     key: "desktop",
     prefix: "d",
+    root: CARD,
     surfaces: DESKTOP_SURFACES,
-    urlPath: "/lovelace/wide",
+    shape: "wide",
+    layout: "desktop",
     contextOptions: { viewport: { width: 1440, height: 900 } },
   },
   {
     key: "mobile",
     prefix: "m",
+    root: CARD,
     surfaces: MOBILE_SURFACES,
-    urlPath: "/lovelace/default_view",
+    shape: "column",
+    layout: "mobile",
     contextOptions: { ...devices["iPhone 15"], deviceScaleFactor: 2 },
   },
-].filter((p) => !only || p.key === only);
+  {
+    key: "panel",
+    prefix: "p",
+    root: PANEL,
+    surfaces: PANEL_SURFACES,
+    route: PANEL_ROUTE,
+    contextOptions: { viewport: { width: 1440, height: 900 } },
+  },
+  {
+    // 375px is below `hv-full-view`'s own 700px breakpoint AND narrow enough for
+    // Home Assistant to collapse its sidebar, which is what sets the panel's
+    // `narrow` property — the two independent switches this pass exists to cover.
+    key: "panel-mobile",
+    prefix: "pm",
+    root: PANEL,
+    surfaces: PANEL_MOBILE_SURFACES,
+    route: PANEL_ROUTE,
+    contextOptions: {
+      viewport: { width: 375, height: 812 },
+      hasTouch: true,
+      isMobile: true,
+      deviceScaleFactor: 2,
+    },
+  },
+];
+
+const PASS_KEYS = ALL_PASSES.map((p) => p.key);
+// An unrecognised --only would otherwise select no pass at all and the run would
+// report 0/0 captured and exit 0 — a typo that reads as a clean run.
+if (only && !PASS_KEYS.includes(only)) {
+  console.error(`--only ${only}: unknown pass (expected ${PASS_KEYS.join(", ")})`);
+  process.exit(2);
+}
+
+const { overrides, error } = parsePathOverrides(args, PASS_KEYS, only);
+if (error) {
+  console.error(error);
+  process.exit(2);
+}
+
+const PASSES = ALL_PASSES.filter((p) => !only || p.key === only);
+for (const pass of PASSES) {
+  const override = overrides[pass.key] ?? null;
+  if (pass.route && !override) {
+    pass.urlPath = pass.route;
+    console.log(`view (${pass.key}): ${pass.route}  ← the integration's own panel route`);
+  } else {
+    pass.urlPath = await cardPath(pass.shape, { override, label: pass.key });
+  }
+}
 
 const results = [];
 const browser = await chromium.launch({ args: ["--touch-events=enabled"] });
@@ -327,15 +530,15 @@ for (const pass of PASSES) {
     [base, token, haDark],
   );
 
-  const url = base + (urlPathOverride ?? pass.urlPath);
-  const loadCard = async () => {
+  const url = base + pass.urlPath;
+  const loadRoot = async () => {
     await page.goto(url, { waitUntil: "domcontentloaded" });
     if (page.url().includes("/auth/authorize")) {
       console.error("Redirected to the login page — hassTokens injection was rejected. Is HA_TOKEN valid?");
       await browser.close();
       process.exit(1);
     }
-    await page.waitForSelector(CARD, { timeout: 30000 });
+    await page.waitForSelector(pass.root, { timeout: 30000 });
     await page.waitForTimeout(2500); // let the WS subscription deliver the first page
   };
 
@@ -353,14 +556,45 @@ for (const pass of PASSES) {
     return el.click();
   };
 
+  // A view of the wrong shape still renders the card, and enough testids are
+  // shared between the two branches that the recipes below would pass while
+  // photographing the other layout — the failure this pass exists to rule out.
+  // The shell reflects the branch it measured itself into, so ask it once, up
+  // front, and fail the pass instead of the reader's trust.
+  if (pass.layout) {
+    const name = `${pass.prefix}-layout`;
+    try {
+      await loadRoot();
+      const mobile = await page
+        .locator(CARD)
+        .first()
+        .evaluate((el) => el.shadowRoot?.querySelector("hv-card-shell")?.hasAttribute("mobile") ?? null);
+      if (mobile !== (pass.layout === "mobile")) {
+        throw new Error(
+          `card took its ${mobile ? "narrow" : "desktop"} branch on ${pass.urlPath}, but this pass needs the ${pass.layout} one`,
+        );
+      }
+      console.log(`  PASS  ${name} (${pass.layout} branch on ${pass.urlPath})`);
+      results.push({ name, ok: true });
+    } catch (err) {
+      console.log(`  FAIL  ${name}: ${err.message.split("\n")[0]}`);
+      results.push({ name, ok: false, error: err.message.split("\n")[0] });
+    }
+  }
+
   for (const surface of pass.surfaces) {
     if (wanted && !wanted.some((w) => surface.id.includes(w))) continue;
     const name = `${pass.prefix}-${surface.id}`;
     const file = path.join(outDir, `${name}.png`);
     try {
-      await loadCard();
+      await loadRoot();
       for (const s of surface.open) await step(s);
-      await page.waitForSelector(surface.expect, { timeout: 10000 });
+      for (const sel of [surface.expect].flat()) {
+        await page.waitForSelector(sel, { timeout: 10000 });
+      }
+      // A layout defined by what it drops needs the absence asserted too, or the
+      // recipe passes on the branch it was written to rule out.
+      if (surface.hidden) await page.waitForSelector(surface.hidden, { state: "hidden", timeout: 10000 });
       await page.waitForTimeout(500); // let transitions settle before the capture
       await page.screenshot({ path: file });
       console.log(`  PASS  ${name}`);

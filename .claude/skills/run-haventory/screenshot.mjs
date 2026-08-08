@@ -1,16 +1,24 @@
-// Screenshot / drive the HAventory Lovelace card inside a real Home Assistant frontend.
+// Screenshot / drive an HAventory surface — the Lovelace card or the sidebar
+// panel — inside a real Home Assistant frontend.
 //
 // Bypasses the HA login form by injecting the long-lived token into the
 // frontend's `hassTokens` localStorage entry before any page script runs.
 //
 // Usage (from the skill dir, .claude/skills/run-haventory/):
 //   node screenshot.mjs [--out <file.png>] [--path <ha-url-path>] [--full]
+//                       [--element <selector>]
 //                       [--device <name> | --mobile | --viewport <WxH>] [--dsf <n>]
 //                       [--dark] [--scheme light|dark]
 //                       [--search <text>] [--tap <selector>]
 //                       [--swipe <dir>[@<selector>]] [--wait <ms>]
 //
-// Defaults: --out screenshot.png, --path /lovelace/default_view, desktop 1280x900.
+// Defaults: --out screenshot.png, desktop 1280x900, and — without --path — the
+// dashboard view discovered to hold the card in a normal column (card_views.mjs).
+//
+// --element names the root the run waits for and scopes --search/--swipe to. The
+// dashboard card is the default; the sidebar panel at /haventory renders
+// <haventory-panel> and no card at all, so shooting it needs
+// `--path /haventory --element haventory-panel`.
 //
 // Mobile view + touch:
 //   --mobile            shorthand for --device "iPhone 15"
@@ -33,12 +41,12 @@
 // renders blank.
 
 import { chromium, devices } from "playwright";
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+import { cardPath, haConfig } from "./card_views.mjs";
+
 const skillDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(skillDir, "..", "..", "..");
 
 const args = process.argv.slice(2);
 
@@ -47,17 +55,7 @@ if (args.includes("--devices")) {
   process.exit(0);
 }
 
-// --- config: env wins, .env fills the gaps -------------------------------
-try {
-  for (const line of readFileSync(path.join(repoRoot, ".env"), "utf8").split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
-  }
-} catch {
-  /* no .env — rely on real env vars */
-}
-const base = (process.env.HA_BASE_URL ?? "http://localhost:8123").replace(/\/$/, "");
-const token = process.env.HA_TOKEN;
+const { base, token } = haConfig();
 if (!token) {
   console.error("Missing HA_TOKEN (env or repo-root .env)");
   process.exit(2);
@@ -71,7 +69,11 @@ const flag = (name, dflt) => {
 const has = (name) => args.includes(name);
 
 const outFile = path.resolve(skillDir, flag("--out", "screenshot.png"));
-const urlPath = flag("--path", "/lovelace/default_view");
+// With no --path, ask the instance which dashboard view holds the card in a
+// normal column — the shape a single screenshot is normally after. The sidebar
+// panel is not a dashboard view and is reached with an explicit --path.
+const urlPath = flag("--path", null) ?? (await cardPath("column"));
+const rootElement = flag("--element", "haventory-card");
 const fullPage = has("--full");
 const haDark = has("--dark");
 const colorScheme = flag("--scheme", haDark ? "dark" : "light");
@@ -175,9 +177,20 @@ if (page.url().includes("/auth/authorize")) {
   process.exit(1);
 }
 
-// Playwright selectors pierce shadow DOM: wait for the card element itself.
-await page.waitForSelector("haventory-card", { timeout: 30000 });
-await page.waitForTimeout(2500); // let the card's WS subscription deliver data
+// Playwright selectors pierce shadow DOM: wait for the root element itself.
+try {
+  await page.waitForSelector(rootElement, { timeout: 30000 });
+} catch {
+  // A root that never appears is the one failure with two very different
+  // causes — the wrong root for this path, or a page whose bundle never
+  // loaded — so say which root and which path, and hand over the console.
+  console.error(`Timed out waiting for "${rootElement}" on ${urlPath}.`);
+  console.error('The dashboard card is "haventory-card"; the sidebar panel at /haventory is "haventory-panel".');
+  for (const e of consoleErrors.slice(0, 10)) console.error(`  ${e}`);
+  await browser.close();
+  process.exit(1);
+}
+await page.waitForTimeout(2500); // let the root's WS subscription deliver data
 
 // --- touch gestures ------------------------------------------------------
 // Playwright's public API has tap() but no drag-with-a-finger, so swipes go
@@ -199,7 +212,7 @@ async function swipe(spec) {
   // spec: "<up|down|left|right>[@<selector>][:<distance-px>]"
   const [dirPart, selPart] = spec.split("@");
   const [dir, distStr] = dirPart.split(":");
-  const selector = selPart || "haventory-card";
+  const selector = selPart || rootElement;
   const box = await page.locator(selector).first().boundingBox();
   if (!box) throw new Error(`--swipe target not visible: ${selector}`);
 
@@ -233,10 +246,11 @@ async function swipe(spec) {
 // --- run the requested actions in order ----------------------------------
 for (const action of actions) {
   if (action.kind === "search") {
-    // Revamped card: [data-testid="search-input"], placeholder is dynamic
-    // ("Search 560 matching items…"). Legacy POC card: placeholder="Search".
+    // The card's list search is [data-testid="search-input"]; the full view and
+    // the panel own a different box, and every one of them has a dynamic
+    // placeholder ("Search 560 matching items…") that starts with "Search".
     const search = page
-      .locator('haventory-card [data-testid="search-input"], haventory-card input[placeholder^="Search"]')
+      .locator(`${rootElement} [data-testid="search-input"], ${rootElement} input[placeholder^="Search"]`)
       .first();
     await search.fill(action.value);
     await page.waitForTimeout(1500); // debounce + round-trip through the WS filter

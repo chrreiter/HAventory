@@ -3,30 +3,109 @@
     "step": {
       "user": {
         "title": "HAventory",
-        "description": "Set up HAventory integration for inventory management in Home Assistant."
+        "description": "Set up HAventory for inventory management in Home Assistant. Both answers below, and everything else, can be changed later under Configure. Heads-up for afterwards: a browser page that is already open picks up the card only when it next loads — one reload, or a visit to the new HAventory sidebar entry, brings it in.",
+        "data": {
+          "card_title": "Card title",
+          "sidebar_panel_enabled": "Show HAventory in the sidebar"
+        },
+        "data_description": {
+          "card_title": "Heading shown on the HAventory card.",
+          "sidebar_panel_enabled": "Gives HAventory a page of its own, named after the card title above. Each user can still hide the entry through the sidebar's own Edit sidebar mode."
+        }
       }
     },
     "create_entry": {
-      "default": "Successfully configured HAventory"
+      "default": "Successfully configured HAventory. Reload this browser page once: the card and its sidebar icon are loaded when a page opens, so a page that was already open has neither yet. Opening the new HAventory sidebar entry does the same job — panel and card ship in one bundle, and an open dashboard shows the card the moment that bundle loads."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "HAventory Options",
-        "description": "Configure WebSocket rate limiting. Limits are off by default; when enabled, excess commands receive a rate_limited error and excess subscription events are dropped.",
+        "description": "Set the heading the card carries and whether HAventory has its own sidebar entry.",
         "data": {
-          "rate_limit_enabled": "Enable WebSocket rate limiting",
-          "rate_limit_commands_per_second": "Commands per second (per connection)",
-          "rate_limit_commands_burst": "Command burst (per connection)",
-          "rate_limit_global_commands_per_second": "Commands per second (global)",
-          "rate_limit_global_commands_burst": "Command burst (global)",
-          "rate_limit_events_per_second": "Events per second (per connection)",
-          "rate_limit_events_burst": "Event burst (per connection)",
-          "rate_limit_global_events_per_second": "Events per second (global)",
-          "rate_limit_global_events_burst": "Event burst (global)"
+          "card_title": "Card title",
+          "sidebar_panel_enabled": "Show HAventory in the sidebar"
+        },
+        "data_description": {
+          "card_title": "Heading shown on the HAventory card. A dashboard card with its own title: option keeps that one. Reload the dashboard to see a change.",
+          "sidebar_panel_enabled": "Gives HAventory a page of its own, named after the card title above. This applies to everyone using this Home Assistant; each user can still hide the entry through the sidebar's own Edit sidebar mode. The entry appears and disappears as you save this form — no restart. On the Overview page, Edit then Add shortcut can also pin HAventory as a tile."
+        },
+        "sections": {
+          "rate_limit": {
+            "name": "WebSocket rate limiting",
+            "description": "Caps how fast one client may use HAventory: over-budget commands are refused instead of executed, and surplus live-update events are dropped. Off by default — ordinary card use never comes close. Turn it on when something you don't fully control talks to HAventory, such as a wall panel stuck reconnecting or a script in a loop; leave it off during large imports and stress tests. What each setting means, and how to tell whether limiting is firing: {docs_url}",
+            "data": {
+              "rate_limit_enabled": "Enable WebSocket rate limiting",
+              "rate_limit_commands_per_second": "Commands per second (one client)",
+              "rate_limit_commands_burst": "Command burst (one client)",
+              "rate_limit_global_commands_per_second": "Commands per second (all clients)",
+              "rate_limit_global_commands_burst": "Command burst (all clients)",
+              "rate_limit_events_per_second": "Live-update events per second (one client)",
+              "rate_limit_events_burst": "Live-update event burst (one client)",
+              "rate_limit_global_events_per_second": "Live-update events per second (all clients)",
+              "rate_limit_global_events_burst": "Live-update event burst (all clients)"
+            },
+            "data_description": {
+              "rate_limit_enabled": "While off, nothing is limited and the values below are ignored.",
+              "rate_limit_commands_per_second": "Sustained requests one client may send. Default 20.",
+              "rate_limit_commands_burst": "Requests one client may send back-to-back after being idle. Default 60.",
+              "rate_limit_global_commands_per_second": "Sustained requests across all clients together. Default 100.",
+              "rate_limit_global_commands_burst": "Requests all clients together may send back-to-back. Default 200.",
+              "rate_limit_events_per_second": "Sustained events one client may be sent. Default 50.",
+              "rate_limit_events_burst": "Events one client may be sent back-to-back after a quiet spell. Default 200.",
+              "rate_limit_global_events_per_second": "Sustained events across all clients together. Default 500.",
+              "rate_limit_global_events_burst": "Events all clients together may be sent back-to-back. Default 1000."
+            }
+          }
         }
       }
+    }
+  },
+  "services": {
+    "item_create": {
+      "name": "Create item",
+      "description": "Create a new inventory item."
+    },
+    "item_update": {
+      "name": "Update item",
+      "description": "Update an existing inventory item."
+    },
+    "item_delete": {
+      "name": "Delete item",
+      "description": "Delete an inventory item."
+    },
+    "item_move": {
+      "name": "Move item",
+      "description": "Move an item to a new location (or root)."
+    },
+    "item_adjust_quantity": {
+      "name": "Adjust quantity",
+      "description": "Add or subtract from item quantity."
+    },
+    "item_set_quantity": {
+      "name": "Set quantity",
+      "description": "Set item quantity exactly."
+    },
+    "item_check_out": {
+      "name": "Check out item",
+      "description": "Mark an item as checked out with due date."
+    },
+    "item_check_in": {
+      "name": "Check in item",
+      "description": "Mark an item as not checked out."
+    },
+    "location_create": {
+      "name": "Create location",
+      "description": "Create a new storage location."
+    },
+    "location_update": {
+      "name": "Update location",
+      "description": "Update an existing storage location."
+    },
+    "location_delete": {
+      "name": "Delete location",
+      "description": "Delete a storage location."
     }
   }
 }

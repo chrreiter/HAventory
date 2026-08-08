@@ -182,7 +182,10 @@ describe('hv-card-shell: overflow menu', () => {
     expect(await idsOf(full.shadowRoot?.querySelector('[data-testid="full-overflow"]'))).toContain('columns');
   });
 
-  it('handles Refresh itself and hands the rest to the host card', async () => {
+  // Every id the menu can name is answered inside the shell — by the store,
+  // by a shared host surface, or by the shell itself. Nothing bounces off the
+  // element above, whose only job is the store and the heading.
+  it('answers every menu action itself, letting none escape upward', async () => {
     const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     const actions: string[] = [];
     el.addEventListener('menu-action', (e) => actions.push((e as CustomEvent).detail.id));
@@ -190,6 +193,10 @@ describe('hv-card-shell: overflow menu', () => {
     let refreshed = 0;
     store.refreshAll = async () => {
       refreshed += 1;
+    };
+    const downloads: string[] = [];
+    el.surfaces.download = (filename) => {
+      downloads.push(filename);
     };
 
     const menu = sr.querySelector('[data-testid="card-overflow"]') as HTMLElement;
@@ -203,24 +210,23 @@ describe('hv-card-shell: overflow menu', () => {
     pick('refresh');
     await settle(el);
     expect(refreshed).toBe(1);
-    expect(actions).toEqual([]);
 
-    // Import opens the shell's own sheet rather than bouncing off the host.
     open();
     await settle(el);
     pick('import');
     await settle(el);
-    expect(actions).toEqual([]);
-    expect((sr.querySelector('[data-testid="card-import"]') as HTMLElement & { open: boolean }).open).toBe(
+    expect((sr.querySelector('[data-testid="host-import"]') as HTMLElement & { open: boolean }).open).toBe(
       true,
     );
 
-    // Export still belongs to the host, which owns the download.
     open();
     await settle(el);
     pick('export-all');
     await settle(el);
-    expect(actions).toEqual(['export-all']);
+    await settle(el);
+    expect(downloads).toHaveLength(1);
+
+    expect(actions).toEqual([]);
   });
 
   it('disables "Export current view" until a filter is actually narrowing the list', async () => {
@@ -273,6 +279,86 @@ describe('hv-card-shell: search and filters', () => {
     store.setFilters({ checkedOutOnly: true });
     await settle(el);
     expect(sr.querySelector('[data-testid="filter-active-dot"]')).toBeTruthy();
+  });
+
+  // aria-expanded on its own says only that something opened; which element it
+  // opened was left to whatever happened to follow the button in reading order.
+  it('names the surface the filter button discloses, at either width', async () => {
+    const id = 'card-filter-surface';
+    for (const mobile of [false, true]) {
+      const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile });
+      const toggle = () => sr.querySelector('[data-testid="filter-toggle"]') as HTMLButtonElement;
+      // What the surface holds while it is shut. On a phone that surface is the
+      // sheet, which is slotted whether or not it shows, so its own state tells.
+      const showing = () => {
+        const surface = sr.getElementById(id) as (HTMLElement & { open?: boolean }) | null;
+        return mobile ? !!surface?.open : !!surface?.querySelector('hv-filter-panel');
+      };
+
+      // The desktop panel remembers whether it was left open, so this starts
+      // from whatever that remembered and proves the pairing across the flip.
+      for (const step of ['as mounted', 'after the flip']) {
+        const was = { expanded: toggle().getAttribute('aria-expanded'), showing: showing() };
+        const where = `mobile=${mobile}, ${step}`;
+        expect(toggle().getAttribute('aria-controls'), where).toBe(id);
+        // The id has to resolve in both states — a button pointing at nothing
+        // announces as controlling nothing — so the surface outlives the panel.
+        expect(sr.getElementById(id), where).toBeTruthy();
+
+        toggle().click();
+        await settle(el);
+        // Only the contents come and go; the element the button names stays.
+        expect(showing(), `${where}, contents flipped`).toBe(!was.showing);
+        expect(sr.getElementById(id), `${where}, still there`).toBeTruthy();
+        // The button reports the surface its own width uses, so the press
+        // shows in the announcement at either width.
+        expect(toggle().getAttribute('aria-expanded'), `${where}, flipped`).toBe(
+          String(!was.showing),
+        );
+      }
+      el.remove();
+    }
+  });
+
+  it('keeps the remembered desktop panel out of the phone button announcement', async () => {
+    // A desktop session that left the panel open is remembered across loads;
+    // the phone's button reports its own sheet, which starts shut regardless.
+    window.localStorage.setItem('haventory:filter-panel-open:v1', '1');
+    try {
+      const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+      const toggle = () => sr.querySelector('[data-testid="filter-toggle"]') as HTMLButtonElement;
+
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+      expect(toggle().classList.contains('on')).toBe(false);
+
+      toggle().click();
+      await settle(el);
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+
+      toggle().click();
+      await settle(el);
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+      el.remove();
+    } finally {
+      window.localStorage.removeItem('haventory:filter-panel-open:v1');
+    }
+  });
+
+  it('names the full view the expand button discloses, open or shut', async () => {
+    const id = 'card-full-view-surface';
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const toggle = () => sr.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement;
+
+    expect(toggle().getAttribute('aria-controls')).toBe(id);
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    expect(sr.getElementById(id), 'shut').toBeTruthy();
+
+    toggle().click();
+    await settle(el);
+
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(toggle().getAttribute('aria-controls')).toBe(id);
+    expect(sr.getElementById(id), 'open').toBe(sr.querySelector('[data-testid="card-full-view"]'));
   });
 
   it('shows a removable chip per active filter and clears them', async () => {
@@ -383,7 +469,7 @@ describe('hv-card-shell: list and footer', () => {
     );
     await settle(el);
 
-    const confirm = sr.querySelector('[data-testid="card-confirm"]') as HTMLElement & { open: boolean };
+    const confirm = sr.querySelector('[data-testid="host-confirm"]') as HTMLElement & { open: boolean };
     expect(confirm.open).toBe(true);
     expect(confirm.shadowRoot?.textContent).toContain('Wood Glue');
 
@@ -461,9 +547,9 @@ describe('hv-card-shell: list and footer', () => {
     expect(store.state.value.filters.q).toBe('');
   });
 
-  // The offer names the same action as the ⋮ menu's "Import backup…", and the
-  // shell owns that sheet. Handing the id up to the host instead drops it: the
-  // host's switch knows only the surfaces it owns, so the press does nothing.
+  // The offer names the same action as the ⋮ menu's "Import backup…", and both
+  // must land on the shared import surface — an id handed upward instead would
+  // find no listener there and the press would do nothing.
   it('opens the import sheet from the untouched-inventory offer', async () => {
     const { el, sr } = await mountShell({ items: [] });
     const handedUp: string[] = [];
@@ -476,7 +562,7 @@ describe('hv-card-shell: list and footer', () => {
     offer.click();
     await settle(el);
 
-    expect((sr.querySelector('[data-testid="card-import"]') as HTMLElement & { open: boolean }).open).toBe(
+    expect((sr.querySelector('[data-testid="host-import"]') as HTMLElement & { open: boolean }).open).toBe(
       true,
     );
     expect(handedUp).toEqual([]);
@@ -960,7 +1046,7 @@ describe('hv-card-shell: inline editing', () => {
     await settle(el);
 
     // Still on the first item, with a prompt in the way.
-    const confirm = sr.querySelector('[data-testid="card-confirm"]') as HTMLElement & { open: boolean };
+    const confirm = sr.querySelector('[data-testid="host-confirm"]') as HTMLElement & { open: boolean };
     expect(confirm.open).toBe(true);
     expect(editor(sr)?.shadowRoot?.textContent).toContain('One — editing');
 
@@ -977,7 +1063,7 @@ describe('hv-card-shell: inline editing', () => {
     (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-delete"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const confirm = sr.querySelector('[data-testid="card-confirm"]') as HTMLElement & { open: boolean };
+    const confirm = sr.querySelector('[data-testid="host-confirm"]') as HTMLElement & { open: boolean };
     expect(confirm.open).toBe(true);
     (confirm.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
     await settle(el);
@@ -1087,7 +1173,7 @@ describe('hv-card-shell: mobile detail sheet', () => {
     (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-delete"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const confirm = sr.querySelector('[data-testid="card-confirm"]') as HTMLElement & { open: boolean };
+    const confirm = sr.querySelector('[data-testid="host-confirm"]') as HTMLElement & { open: boolean };
     expect(confirm.open).toBe(true);
     (confirm.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
     await settle(el);
@@ -1164,7 +1250,7 @@ describe('hv-card-shell: full view', () => {
   // at the filter it just applied means expanding again straight away.
   it('opens when the organize dialog hands back a filtered view', async () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1', category: 'Tools' })] });
-    const organize = sr.querySelector('[data-testid="card-organize"]') as HTMLElement & { open: boolean };
+    const organize = sr.querySelector('[data-testid="host-organize"]') as HTMLElement & { open: boolean };
     organize.open = true;
     await settle(el);
 
@@ -1179,7 +1265,7 @@ describe('hv-card-shell: full view', () => {
   it('opens the organize dialog on the tab that was asked for', async () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1', tags: ['metric'] })] });
     const organize = () =>
-      sr.querySelector('[data-testid="card-organize"]') as HTMLElement & { open: boolean; tab: string };
+      sr.querySelector('[data-testid="host-organize"]') as HTMLElement & { open: boolean; tab: string };
 
     fullView(sr).dispatchEvent(
       new CustomEvent('menu-action', { detail: { id: 'organize', tab: 'tags' }, bubbles: true, composed: true }),
@@ -1195,7 +1281,7 @@ describe('hv-card-shell: full view', () => {
     expect(organize().tab).toBe('locations');
   });
 
-  it('routes the full view menu through the card, exactly once', async () => {
+  it('answers the full view menu inside the shell, letting nothing escape', async () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     const seen: string[] = [];
     el.addEventListener('menu-action', (e) => seen.push((e as CustomEvent).detail.id));
@@ -1209,7 +1295,8 @@ describe('hv-card-shell: full view', () => {
     columnsBtn.click();
     await settle(el);
 
-    expect(seen).toEqual(['columns']);
+    expect((sr.querySelector('hv-column-picker') as HTMLElement & { open: boolean }).open).toBe(true);
+    expect(seen).toEqual([]);
   });
 });
 
@@ -1306,7 +1393,7 @@ describe('hv-card-shell: check-out with a due date', () => {
     (menu.shadowRoot?.querySelector('[data-id="delete"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const confirm = sr.querySelector('[data-testid="card-confirm"]') as HTMLElement & { open: boolean };
+    const confirm = sr.querySelector('[data-testid="host-confirm"]') as HTMLElement & { open: boolean };
     expect(confirm.open).toBe(true);
     (confirm.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
     await settle(el);
@@ -1392,6 +1479,21 @@ describe('hv-card-shell: degraded states', () => {
     expect(banner(sr, 'degraded-live-updates')).toBe(null);
   });
 
+  it('blames the backend, not a limiter, when HAventory itself went away', async () => {
+    // The two pauses look identical to the subscription machinery and nothing
+    // alike to the person reading the banner: one means events may be dropped,
+    // the other that there is no backend to send them.
+    const { el, store, hass, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    hass.__failSubscribe({ code: 'storage_error', message: 'repository not initialized' });
+    hass.__emit('items', 'unavailable', {});
+    for (let i = 0; i < 20; i++) await settle(el);
+
+    expect(store.state.value.degraded.liveUpdates).toBe('paused');
+    const paused = banner(sr, 'degraded-live-updates');
+    expect(paused?.shadowRoot?.textContent).toContain('HAventory is not available');
+    expect(paused?.shadowRoot?.textContent).not.toContain('rate limited');
+  });
+
   it('announces a wholesale reload after an import', async () => {
     const { el, hass, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     const seen: boolean[] = [];
@@ -1448,7 +1550,7 @@ describe('hv-card-shell: diagnostics and import', () => {
     (menu.shadowRoot?.querySelector('[data-id="diagnostics"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const panel = sr.querySelector('[data-testid="card-diagnostics"]') as HTMLElement & { open: boolean };
+    const panel = sr.querySelector('[data-testid="host-diagnostics"]') as HTMLElement & { open: boolean };
     expect(panel.open).toBe(true);
     expect(panel.shadowRoot?.querySelector('[data-testid="diagnostics-version"]')?.textContent).toContain(
       '0.0.1',
@@ -1461,7 +1563,7 @@ describe('hv-card-shell: diagnostics and import', () => {
     (menu.shadowRoot?.querySelector('[data-id="import"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const sheet = sr.querySelector('[data-testid="card-import"]') as HTMLElement & { open: boolean };
+    const sheet = sr.querySelector('[data-testid="host-import"]') as HTMLElement & { open: boolean };
     expect(sheet.open).toBe(true);
 
     const text = sheet.shadowRoot?.querySelector('[data-testid="import-text"]') as HTMLTextAreaElement;
@@ -1501,7 +1603,7 @@ describe('hv-card-shell: diagnostics and import', () => {
     (menu.shadowRoot?.querySelector('[data-id="import"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const sheet = sr.querySelector('[data-testid="card-import"]') as HTMLElement;
+    const sheet = sr.querySelector('[data-testid="host-import"]') as HTMLElement;
     const text = sheet.shadowRoot?.querySelector('[data-testid="import-text"]') as HTMLTextAreaElement;
     text.value = '{"items":[]}';
     text.dispatchEvent(new Event('input'));

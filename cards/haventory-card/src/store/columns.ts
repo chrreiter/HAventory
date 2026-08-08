@@ -9,6 +9,7 @@
 
 export type ColumnKey =
   | 'quantity'
+  | 'status'
   | 'category'
   | 'location'
   | 'tags'
@@ -22,9 +23,10 @@ export interface ColumnDef {
   /** grid-template-columns sizing for the full-view table. */
   tableSize: string;
   /**
-   * The backend sort field this column maps to, when it has one. Category,
-   * location and tags are deliberately absent: the API cannot sort by them, and
-   * a header that looks clickable but does nothing is worse than a plain one.
+   * The backend sort field this column maps to, when it has one. Status,
+   * category, location and tags are deliberately absent: the API cannot sort by
+   * them, and a header that looks clickable but does nothing is worse than a
+   * plain one.
    */
   sortField?: 'quantity' | 'due_date' | 'inspection_date' | 'updated_at';
 }
@@ -32,9 +34,15 @@ export interface ColumnDef {
 /** Canonical column order. Selections are normalized to this order. */
 export const COLUMN_DEFS: readonly ColumnDef[] = [
   { key: 'quantity', label: 'Qty', tableSize: '70px', sortField: 'quantity' },
+  // Wide enough for the "Needs repair" chip on one line: a status that wrapped
+  // or clipped would be unreadable in exactly the rows that matter most.
+  { key: 'status', label: 'Status', tableSize: '112px' },
   { key: 'category', label: 'Category', tableSize: 'minmax(110px, 1fr)' },
   { key: 'location', label: 'Location', tableSize: 'minmax(110px, 1fr)' },
-  { key: 'tags', label: 'Tags', tableSize: 'minmax(120px, 1.4fr)' },
+  // The narrowest of the flexible columns, and the only one that yields to the
+  // name: a row identified by its tags and not by its name cannot be scanned,
+  // and tags are the column a reader can most afford to see one of.
+  { key: 'tags', label: 'Tags', tableSize: 'minmax(96px, 1fr)' },
   { key: 'due_date', label: 'Due', tableSize: '100px', sortField: 'due_date' },
   {
     key: 'inspection_date',
@@ -49,14 +57,14 @@ export const COLUMN_DEFS: readonly ColumnDef[] = [
 
 const COLUMN_ORDER: ColumnKey[] = COLUMN_DEFS.map((c) => c.key);
 
-/** The table opens on Name | Qty | Category | Tags | Due | Updated. */
-export const DEFAULT_COLUMNS: readonly ColumnKey[] = [
-  'quantity',
-  'category',
-  'tags',
-  'due_date',
-  'updated_at',
-];
+/**
+ * A browser that has made no choice yet gets every column.
+ *
+ * Showing the whole record is what makes the optional columns discoverable at
+ * all; the picker is there to thin it down. The table scrolls sideways when the
+ * full set is wider than the viewport, so no column is unreachable.
+ */
+export const DEFAULT_COLUMNS: readonly ColumnKey[] = COLUMN_DEFS.map((c) => c.key);
 
 export const COLUMN_PREFS_STORAGE_KEY = 'haventory:columns:v1';
 
@@ -74,11 +82,27 @@ const COLUMN_TABLE_SIZE: Record<ColumnKey, string> = Object.fromEntries(
 /**
  * grid-template-columns for the full-view table: an optional selection column,
  * the name, the chosen columns, then room for the hover actions.
+ *
+ * The name track outweighs every flexible column beside it, in both halves of
+ * its `minmax`: the name is the row's identity, and it also carries the inline
+ * Low and Checked-out chips, which take their width before the name gets any.
+ * With the full column set the flexible tracks all sit at their minimum
+ * anyway — there the floor is the whole answer, and the growth factor decides
+ * only what a wider window hands out.
  */
+export const NAME_COLUMN_SIZE = 'minmax(220px, 3fr)';
+
+/**
+ * The selection column's track. Exported because the table pins the name cell
+ * to the right of it while scrolling sideways, and an offset that disagreed
+ * with the track would leave the name over the checkboxes or short of them.
+ */
+export const SELECT_COLUMN_WIDTH = '40px';
+
 export function tableTemplateFor(columns: ColumnKey[], opts: { selectable: boolean }): string {
   const cols = [
-    ...(opts.selectable ? ['40px'] : []),
-    'minmax(180px, 2fr)',
+    ...(opts.selectable ? [SELECT_COLUMN_WIDTH] : []),
+    NAME_COLUMN_SIZE,
     ...normalizeColumns(columns).map((k) => COLUMN_TABLE_SIZE[k]),
     '110px',
   ];

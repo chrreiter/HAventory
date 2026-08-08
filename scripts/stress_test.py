@@ -21,7 +21,7 @@ Environment variables:
     HA_TOKEN: Long-lived access token (required)
 
 The optional deployment step (omitted with --skip-deploy) shells out to
-``scripts/reload_addon.sh``, so it needs bash on PATH (Git Bash on Windows).
+``scripts/reload_addon.sh``, so it needs bash on PATH.
 """
 
 from __future__ import annotations
@@ -136,7 +136,6 @@ def _ws_url_from_base(base_url: str) -> str:
 
 def print_status(msg: str, status: str = "info") -> None:
     """Print a status message with color coding."""
-    # Use ASCII-safe symbols for Windows compatibility
     if status == "pass":
         print(f"{GREEN}[OK] {msg}{RESET}")
     elif status == "fail":
@@ -158,7 +157,6 @@ def print_progress(current: int, total: int, prefix: str = "") -> None:
     pct = int(100 * current / total) if total > 0 else 0
     bar_len = 30
     filled = int(bar_len * current / total) if total > 0 else 0
-    # Use ASCII-safe characters for Windows compatibility
     bar = "#" * filled + "-" * (bar_len - filled)
     print(f"\r{prefix}[{bar}] {current}/{total} ({pct}%)", end="", flush=True)
 
@@ -388,7 +386,7 @@ async def deploy_code(container_name: str) -> bool:
         # ASYNC221: Blocking subprocess is acceptable here (deployment step).
         # S603/S607: subprocess with trusted input (known script path).
         # reload_addon.sh does npm ci + vite build + docker restart, so allow
-        # a generous timeout; needs bash on PATH (Git Bash on Windows).
+        # a generous timeout; needs bash on PATH.
         result = subprocess.run(  # noqa: ASYNC221, S603
             [  # noqa: S607
                 "bash",

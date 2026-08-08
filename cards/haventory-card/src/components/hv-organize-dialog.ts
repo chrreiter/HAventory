@@ -1,23 +1,57 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
+import {
+  DEFAULT_STATUS,
+  STATUS_COLORS,
+  STATUS_ICONS,
+  knownIcon,
+  renderStatusChip,
+  slugFromLabel,
+  statusCount,
+  statusLabel,
+  statusList,
+} from '../ui/status';
 import { closestMatch } from '../ui/fuzzy';
 import { describeRewrite, filterForValue, rewriteOps } from '../ui/value-rewrite';
 import type { ValueKind } from '../ui/value-rewrite';
+import { areaChangePreview, areaNameById } from '../ui/area';
+import type { AreaChangePreview } from '../ui/area';
+import { renderAreaChip } from '../ui/location-path';
 import { countLocations } from '../store/location-tree';
 import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
 import { describeFailure } from './hv-bulk-bar';
 import { makeBulkOp } from '../store/store';
 import type { Store } from '../store/store';
-import type { BulkFailure, DistinctValue, Item, LocationTreeNode, StoreState } from '../store/types';
+import type {
+  AreaRef,
+  BulkFailure,
+  DistinctValue,
+  Item,
+  LocationTreeNode,
+  StatusColor,
+  StatusDefinition,
+  StoreState,
+} from '../store/types';
 import './hv-confirm';
 import './hv-location-tree';
 
-export type OrganizeTab = 'locations' | 'categories' | 'tags';
+export type OrganizeTab = 'locations' | 'categories' | 'tags' | 'statuses';
+
+/**
+ * The trees the two location pickers open, named so `aria-controls` can point at
+ * them. Each holder stays in the tree whether or not it is open — an
+ * `aria-controls` that resolves to nothing announces the control as controlling
+ * nothing — and only the tree inside comes and goes, so closing a picker still
+ * discards its scroll and filter.
+ */
+const LOC_PARENT_TREE_ID = 'location-parent-tree-holder';
+const MERGE_TARGET_TREE_ID = 'merge-target-tree-holder';
 
 /** The three batch rewrites, and how each reads once it is over. */
 const PAST_TENSE: Record<string, string> = {
@@ -52,6 +86,7 @@ export class HVOrganizeDialog extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -201,12 +236,146 @@ export class HVOrganizeDialog extends LitElement {
       .value-row:hover {
         background: var(--hv-hover-overlay);
       }
-      .value-chip {
-        border: 1px solid var(--hv-divider);
+      /* Two arrow buttons rather than a drag handle: this is the card's first
+         reordering control, and buttons work from the keyboard without a
+         parallel implementation for it. */
+      .move {
+        display: flex;
+        flex-direction: column;
+        flex: none;
+        gap: 1px;
+      }
+      /* Sized rather than left at the glyph: two chevrons stacked a pixel apart
+         are one target to a finger, and WCAG 2.2 asks 24px of every pointer.
+         The token is what a host declares when the card is narrow; the fallback
+         covers the sidebar panel, which declares none. */
+      .move button {
+        display: inline-grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border: none;
+        background: none;
+        color: var(--hv-text-tertiary);
+        cursor: pointer;
+        padding: 0;
+        line-height: 0;
+      }
+      :host([mobile]) .move button {
+        width: var(--hv-tap-min, 44px);
+        height: var(--hv-tap-min, 44px);
+      }
+      .move button:hover:not([disabled]) {
+        color: var(--hv-text);
+      }
+      .move button[disabled] {
+        opacity: 0.3;
+        cursor: default;
+      }
+      /* The identity items store. Shown because services.yaml and an export
+         document carry it, muted because a household never needs to type it.
+
+         In a list row it is the one part that may be cut: at phone width a long
+         slug otherwise pushes the delete button past the dialog edge, where it
+         cannot be tapped at all. Both places carry it as a title attribute too,
+         because either can end up eliding it. */
+      .status-slug {
+        font: 400 12px var(--hv-font);
+        color: var(--hv-text-tertiary);
+        white-space: nowrap;
+        flex: 0 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      /* Giving up its width before the chip does is what "the one part that may
+         be cut" means, and a plain shrink factor of 1 does not say it: flexbox
+         would take from both in proportion to their widths, eliding a label the
+         household wrote while the slug it never types still holds 60px. */
+      .status-row .status-slug {
+        flex-shrink: 20;
+      }
+      /* A label is a household's own words and can be long enough that the row
+         overruns on its own — the fixed parts beside it (a 44px reorder column,
+         the count, two 44px actions) leave a phone row barely 130px for it. The
+         chip elides too, once the slug has nothing left to give; unshrinkable,
+         it pushes the delete button past the dialog edge where no finger
+         reaches it. */
+      .status-row .hv-status-chip {
+        flex: 0 1 auto;
+        min-width: 0;
+      }
+      .status-name {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .status-name .control {
+        flex: 1 1 180px;
+        width: auto;
+      }
+      /* The editor shows the slug for people writing automations, so here it
+         keeps its full width and drops to a line of its own rather than eliding
+         while the row still has room — the opposite of the list row above. */
+      .status-name .status-slug {
+        flex: 0 0 auto;
+        max-width: 100%;
+      }
+      .swatches {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 2px 0 4px;
+      }
+      /* A tone is a pair — a tint and the ink that reads on it — so the swatch
+         shows both, with the glyph the status will carry standing in for the
+         label. A bare fill leaves the five light tints all but identical on
+         white, and in dark it leaves them washes with nothing behind them. */
+      .swatch {
+        justify-content: center;
+        width: 34px;
+        height: 26px;
         border-radius: var(--hv-radius-chip);
-        padding: 4px 11px;
-        font-size: 12.5px;
-        color: var(--hv-chip-text);
+        cursor: pointer;
+        padding: 0;
+      }
+      :host([mobile]) .swatch {
+        width: var(--hv-tap-min, 44px);
+        height: var(--hv-tap-min, 44px);
+      }
+      /* The stand-in when a definition names a glyph this bundle does not
+         carry: the swatch still has to show ink on its tint. */
+      .swatch .letters {
+        font: 600 12px var(--hv-font);
+      }
+      .glyph {
+        display: inline-grid;
+        place-items: center;
+        width: 30px;
+        height: 26px;
+        border-radius: var(--hv-radius-input);
+        border: 1px solid var(--hv-divider);
+        background: none;
+        color: var(--hv-text-secondary);
+        cursor: pointer;
+      }
+      .glyph:hover {
+        background: var(--hv-hover-overlay);
+      }
+      /* Scoped to the picker rows: .glyph also marks the location guard's alert,
+         which is not a target and must not grow into one. */
+      :host([mobile]) .swatches .glyph {
+        width: var(--hv-tap-min, 44px);
+        height: var(--hv-tap-min, 44px);
+      }
+      .swatch.on,
+      .glyph.on {
+        outline: 2px solid var(--hv-primary);
+        outline-offset: 1px;
+      }
+      .glyph.on {
+        color: var(--hv-primary-darker);
       }
       .count-link {
         border: none;
@@ -214,6 +383,21 @@ export class HVOrganizeDialog extends LitElement {
         color: var(--hv-primary-dark);
         font: 400 12px var(--hv-font);
         padding: 0;
+        /* "12 items" wrapping to two lines makes the row taller without making
+           it narrower — the slug beside it is what gives way instead. */
+        white-space: nowrap;
+        flex: none;
+      }
+      /* 12px text is a 14px-tall target; the box has to be told to be bigger
+         than its own line. Confined to the status rows, whose controls this
+         pass sized for touch. */
+      .status-row .count-link {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+      }
+      :host([mobile]) .status-row .count-link {
+        min-height: var(--hv-tap-min, 44px);
       }
       .draft-note {
         font: 400 12px var(--hv-font);
@@ -224,6 +408,7 @@ export class HVOrganizeDialog extends LitElement {
         margin-left: auto;
         display: flex;
         gap: 2px;
+        flex: none;
       }
       :host(:not([mobile])) .value-row .row-actions {
         visibility: hidden;
@@ -242,6 +427,10 @@ export class HVOrganizeDialog extends LitElement {
         background: none;
         color: var(--hv-text-secondary);
         padding: 0;
+      }
+      :host([mobile]) .status-row .row-actions button {
+        width: var(--hv-tap-min, 44px);
+        height: var(--hv-tap-min, 44px);
       }
       .row-actions button.danger {
         color: var(--hv-error);
@@ -270,6 +459,11 @@ export class HVOrganizeDialog extends LitElement {
         display: grid;
         gap: 4px;
         min-width: 0;
+        /* The area cell carries a preview line the name cell has no counterpart
+           for, so the two are not the same height; packed to the start, the
+           shorter one's field stays beside the other's instead of sinking to the
+           bottom of the row. */
+        align-content: start;
       }
       .cell.wide {
         grid-column: span 2;
@@ -323,6 +517,10 @@ export class HVOrganizeDialog extends LitElement {
       .guard {
         display: flex;
         align-items: flex-start;
+        /* The reassign guard puts three parts in here; unwrapped they share one
+           row and the select comes out ~44px wide, which hides the one thing
+           the guard exists to show. */
+        flex-wrap: wrap;
         gap: 9px;
         padding: 10px 12px;
         margin: 0 8px 8px;
@@ -335,6 +533,46 @@ export class HVOrganizeDialog extends LitElement {
       .guard .glyph {
         color: var(--hv-warn);
         flex: none;
+      }
+      /* Where the items go is the guard's own sentence, not a note beside one:
+         it takes a line to itself rather than competing with the select for
+         width, and the guard's ink rather than the tertiary grey a note carries
+         on a plain surface, which lands at 2.5:1 over this fill. */
+      .status-guard .guard-message {
+        flex: 1 1 100%;
+      }
+      .status-guard .actions {
+        flex: 1 1 auto;
+      }
+      :host([mobile]) .status-guard {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      /* Stacked, the three parts each take a line of their own; the basis above
+         is a width and means nothing once the main axis is vertical. */
+      :host([mobile]) .status-guard .guard-message,
+      :host([mobile]) .status-guard .actions {
+        flex: none;
+      }
+      .guard-target {
+        display: flex;
+        align-items: center;
+        /* Below ~330px the label and a readable select no longer share a line;
+           the select drops under it rather than overflowing the dialog. */
+        flex-wrap: wrap;
+        gap: 8px;
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .guard-target > span {
+        flex: none;
+      }
+      /* A select showing "O⌄" names nothing. It grows into the row instead of
+         collapsing to its own arrow. */
+      .guard-target select.control {
+        flex: 1 1 auto;
+        width: auto;
+        min-width: 140px;
       }
       .track {
         height: 6px;
@@ -354,6 +592,17 @@ export class HVOrganizeDialog extends LitElement {
         border-radius: var(--hv-radius-input);
         background: var(--hv-error-bg);
         color: var(--hv-error-deep);
+        font-size: 12.5px;
+      }
+      /* Shaped like .failure and coloured a step softer: it reports something
+         the household may go ahead with, so it must not read as a refusal. */
+      .hint {
+        display: flex;
+        gap: 8px;
+        padding: 9px 11px;
+        border-radius: var(--hv-radius-input);
+        background: var(--hv-warn-bg);
+        color: var(--hv-warn-deep);
         font-size: 12.5px;
       }
       .note {
@@ -416,6 +665,16 @@ export class HVOrganizeDialog extends LitElement {
   @state() private _confirmRemove: string | null = null;
   @state() private _sheetValue: string | null = null;
   /** The "New category"/"New tag" row, open with the name being typed. */
+  @state() private _editingStatus: string | 'new' | null = null;
+  @state() private _statusLabel = '';
+  @state() private _statusColor: StatusColor = 'neutral';
+  @state() private _statusIcon = 'check';
+  @state() private _statusError: string | null = null;
+  /** A delete refused because items still carry the slug, and how many. */
+  @state() private _statusGuard: { slug: string; count: number } | null = null;
+  @state() private _reassignTarget = '';
+  @state() private _confirmStatus: string | null = null;
+
   @state() private _creatingValue = false;
   @state() private _newValue = '';
   @state() private _newValueError: string | null = null;
@@ -447,6 +706,13 @@ export class HVOrganizeDialog extends LitElement {
     this._dialogFocus.sync(this.open, () =>
       this.renderRoot.querySelector<HTMLElement>('[data-testid="organize-dialog"]'),
     );
+    // A native select stops following its options' `selected` attributes once it
+    // has been touched, so an area chosen in the parent tree is written to the
+    // live element rather than left to the bindings to express.
+    const areaSelect = this.renderRoot.querySelector<HTMLSelectElement>(
+      '[data-testid="location-area"]',
+    );
+    if (areaSelect) areaSelect.value = this._locArea ?? '';
   }
 
   protected willUpdate(changed: Map<string, unknown>) {
@@ -743,6 +1009,55 @@ export class HVOrganizeDialog extends LitElement {
   }
 
   // ---------- Render ----------
+  /**
+   * The consequence of the area select, spelled out before Save.
+   *
+   * An area belongs to a location tree, not to a location: assigning one moves it
+   * to the tree's root and clears every node below, and clearing one empties the
+   * tree. Both reach locations the editor does not show.
+   */
+  private _renderAreaPreview(preview: AreaChangePreview) {
+    const areas = this.st?.areasCache?.areas ?? [];
+    const chip = renderAreaChip(areaNameById(areas, preview.effectiveAreaId));
+    const wholeTree = preview.treeSize > 1 && preview.rootName !== null;
+    const size = counted(preview.treeSize, 'location');
+
+    let line;
+    if (preview.kind === 'assign-root') {
+      line = wholeTree
+        ? html`Assigns ${chip} to the whole ${preview.rootName} tree, ${size}.${preview.editsRoot
+              ? ''
+              : ` The area is stored on ${preview.rootName}, not on this one.`}`
+        : html`Assigns ${chip} to this location.`;
+    } else if (preview.kind === 'clear-tree') {
+      line = wholeTree
+        ? html`Removes the area from the whole ${preview.rootName} tree, ${size}.`
+        : html`Removes the area from this location.`;
+    } else if (this._locArea === null && preview.effectiveAreaId !== null) {
+      // Nothing to warn about — the save is a no-op — but a location that stores no
+      // area of its own still resolves to one, and the empty option it sits on says
+      // only where that comes from, never which area it is.
+      line = html`Inherits ${chip} from its location tree.`;
+    } else {
+      return null;
+    }
+
+    return html`<span class="note" data-testid="location-area-preview">${line}</span>`;
+  }
+
+  /**
+   * What the parent button reads.
+   *
+   * A top-level location names the area it is filed under as well: the picker
+   * sets both, and the button would otherwise look untouched after an area was
+   * chosen in it.
+   */
+  private _parentLabel(parent: LocationTreeNode | null, areas: readonly AreaRef[]): string {
+    if (parent) return parent.name;
+    const areaName = areaNameById(areas, this._locArea);
+    return areaName ? `Top level · ${areaName}` : 'Top level';
+  }
+
   private _renderLocationEditor(nodeId: string | 'new') {
     const tree = this.st?.locationTreeCache ?? [];
     const node = nodeId === 'new' ? null : this._findNode(tree, nodeId);
@@ -753,10 +1068,15 @@ export class HVOrganizeDialog extends LitElement {
     // — naming the parent here would point at the wrong node. A top-level location has
     // nothing above it to resolve from, so for it the empty value just means no area.
     const areaDefaultLabel = parent ? 'Inherit from location tree' : 'No area';
+    const preview = areaChangePreview(
+      this.st?.locationsFlatCache ?? [],
+      { id: nodeId === 'new' ? null : nodeId, parentId: this._locParent },
+      this._locArea,
+    );
 
     return html`<div class="expander" data-testid="location-editor">
       <div class="grid2">
-        <div class="cell">
+        <div class="cell ${areas.length ? '' : 'wide'}">
           <label class="hv-label" for="org-loc-name">Name</label>
           <input
             id="org-loc-name"
@@ -768,22 +1088,29 @@ export class HVOrganizeDialog extends LitElement {
             }}
           />
         </div>
-        <div class="cell">
-          <label class="hv-label" for="org-loc-area">Area (HA)</label>
-          <select
-            id="org-loc-area"
-            class="control"
-            data-testid="location-area"
-            @change=${(e: Event) => {
-              this._locArea = (e.target as HTMLSelectElement).value || null;
-            }}
-          >
-            <option value="" ?selected=${!this._locArea}>${areaDefaultLabel}</option>
-            ${areas.map(
-              (a) => html`<option value=${a.id} ?selected=${this._locArea === a.id}>${a.name}</option>`,
-            )}
-          </select>
-        </div>
+        ${
+          // An inventory whose Home Assistant defines no areas has nothing to pick
+          // from, and the select would offer its own empty option alone.
+          areas.length
+            ? html`<div class="cell">
+                <label class="hv-label" for="org-loc-area">Area (HA)</label>
+                <select
+                  id="org-loc-area"
+                  class="control"
+                  data-testid="location-area"
+                  @change=${(e: Event) => {
+                    this._locArea = (e.target as HTMLSelectElement).value || null;
+                  }}
+                >
+                  <option value="" ?selected=${!this._locArea}>${areaDefaultLabel}</option>
+                  ${areas.map(
+                    (a) => html`<option value=${a.id} ?selected=${this._locArea === a.id}>${a.name}</option>`,
+                  )}
+                </select>
+                ${this._renderAreaPreview(preview)}
+              </div>`
+            : null
+        }
         <div class="cell wide">
           <span class="hv-label">
             Parent location
@@ -795,28 +1122,42 @@ export class HVOrganizeDialog extends LitElement {
             class="control"
             data-testid="location-parent"
             aria-expanded=${String(this._locParentOpen)}
+            aria-controls=${LOC_PARENT_TREE_ID}
             @click=${() => {
               this._locParentOpen = !this._locParentOpen;
             }}
           >
-            ${icon('mapMarker', 15)}<span class="value">${parent?.name ?? 'Top level'}</span>
+            ${icon('mapMarker', 15)}<span class="value">${this._parentLabel(parent, areas)}</span>
             ${icon('chevronDown', 15)}
           </button>
-          ${this._locParentOpen
-            ? html`<div class="tree-holder">
-                <hv-location-tree
+          <div class="tree-holder" id=${LOC_PARENT_TREE_ID} ?hidden=${!this._locParentOpen}>
+            ${this._locParentOpen
+              ? html`<hv-location-tree
                   data-testid="location-parent-tree"
                   .nodes=${tree}
+                  .areas=${areas}
                   .selectedId=${this._locParent}
+                  .selectedAreaId=${this._locParent === null ? this._locArea : null}
                   .excludeSubtreeOf=${node?.id ?? null}
                   showAll
+                  allLabel="Top level"
+                  areaSelectable
+                  showEmptyAreas
                   @select=${(e: CustomEvent) => {
                     this._locParent = (e.detail as { locationId: string | null }).locationId;
                     this._locParentOpen = false;
                   }}
-                ></hv-location-tree>
-              </div>`
-            : null}
+                  @select-area=${(e: CustomEvent) => {
+                    // An area heads the top level rather than sitting in the
+                    // tree, so picking one is both halves of the move: out to
+                    // the top level, and into that area.
+                    this._locParent = null;
+                    this._locArea = (e.detail as { areaId: string }).areaId;
+                    this._locParentOpen = false;
+                  }}
+                ></hv-location-tree>`
+              : null}
+          </div>
         </div>
       </div>
       ${this._locError
@@ -888,13 +1229,14 @@ export class HVOrganizeDialog extends LitElement {
 
     return html`<div class="expander" data-testid="location-merge">
       <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
-        <span class="value-chip" style="text-decoration: line-through">${source.name}</span>
+        <span class="hv-chip" style="text-decoration: line-through">${source.name}</span>
         ${icon('arrowRight', 18)}
         <button
           class="control"
           style="flex:1;min-width:180px"
           data-testid="merge-target"
           aria-expanded=${String(this._mergeTargetOpen)}
+          aria-controls=${MERGE_TARGET_TREE_ID}
           @click=${() => {
             this._mergeTargetOpen = !this._mergeTargetOpen;
           }}
@@ -903,25 +1245,33 @@ export class HVOrganizeDialog extends LitElement {
           ${icon('chevronDown', 15)}
         </button>
       </div>
-      ${this._mergeTargetOpen
-        ? html`<div class="tree-holder">
-            <hv-location-tree
+      <div class="tree-holder" id=${MERGE_TARGET_TREE_ID} ?hidden=${!this._mergeTargetOpen}>
+        ${this._mergeTargetOpen
+          ? html`<hv-location-tree
               data-testid="merge-target-tree"
               .nodes=${tree}
+              .areas=${this.st?.areasCache?.areas ?? []}
               .selectedId=${this._mergeTarget}
               .excludeSubtreeOf=${source.id}
               @select=${(e: CustomEvent) => {
                 this._mergeTarget = (e.detail as { locationId: string | null }).locationId;
                 this._mergeTargetOpen = false;
               }}
-            ></hv-location-tree>
-          </div>`
-        : null}
+            ></hv-location-tree>`
+          : null}
+      </div>
       <span class="note" data-testid="merge-effect">
         ${target
           ? `${parts.join(' and ')} move to "${target.name}", then "${source.name}" is deleted.
              Items in sub-locations stay where they are; their paths just change.`
-          : 'Pick a location to continue.'}
+          : // An area heads the tree without being part of it and holds no items
+            // of its own, so it is the one row here that cannot take a merge.
+            // Editing the location is where a whole subtree moves into an area.
+            `Pick a location to continue.${
+              (this.st?.areasCache?.areas?.length ?? 0) > 0
+                ? ' Areas group location trees and hold no items themselves, so the contents need a location to go to — to move this one into an area instead, edit it and pick the area as its parent.'
+                : ''
+            }`}
       </span>
       <div class="actions">
         <span class="spacer"></span>
@@ -987,7 +1337,6 @@ export class HVOrganizeDialog extends LitElement {
           data-testid="organize-tree"
           manage
           showCounts
-          showAreas
           ?mobile=${this.mobile}
           .nodes=${tree}
           .areas=${this.st?.areasCache?.areas ?? []}
@@ -1098,7 +1447,7 @@ export class HVOrganizeDialog extends LitElement {
 
     return html`<div class="expander" data-testid="value-editor" data-mode=${editing.mode}>
       <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
-        <span class="value-chip" style=${merging ? 'text-decoration: line-through' : ''}>${value}</span>
+        <span class="hv-chip" style=${merging ? 'text-decoration: line-through' : ''}>${value}</span>
         <span style="font-size:12.5px;color:var(--hv-text-secondary)">${counted(count, 'item')}</span>
         ${merging ? icon('arrowRight', 18) : null}
         <label style="display:flex;align-items:center;gap:8px;flex:1;min-width:180px">
@@ -1193,6 +1542,363 @@ export class HVOrganizeDialog extends LitElement {
     </div>`;
   }
 
+  // -----------------------------
+  // Statuses
+  // -----------------------------
+
+  /** The live vocabulary, or the built-ins until `haventory/config` answers. */
+  private get _statusDefs(): readonly StatusDefinition[] {
+    return statusList(this.st?.statuses);
+  }
+
+  /**
+   * How many items carry a slug.
+   *
+   * Every row here names a status this dialog just listed, so a slug the counts
+   * cannot price is one the payload has not caught up with — a row reading
+   * "0 items" for the moment it takes is better than a row with no count at
+   * all, because the count doubles as this tab's link into the items.
+   */
+  private _statusCount(slug: string): number {
+    return statusCount(this.st?.statsCounts, slug) ?? 0;
+  }
+
+  /**
+   * The label of the status the one being typed would duplicate, or null.
+   *
+   * Two statuses labelled the same are indistinguishable in every row badge,
+   * filter chip and select on the card — only the slug tells them apart, and
+   * the slug is what the editor hides. The status being edited is excluded:
+   * keeping its own name is not a collision.
+   */
+  private get _duplicateLabel(): string | null {
+    const typed = this._statusLabel.trim().toLowerCase();
+    if (!typed) return null;
+    const editing = this._editingStatus;
+    return (
+      this._statusDefs.find((d) => d.slug !== editing && d.label.trim().toLowerCase() === typed)
+        ?.label ?? null
+    );
+  }
+
+  private _startStatusEdit(slug: string | 'new') {
+    const existing = slug === 'new' ? undefined : this._statusDefs.find((d) => d.slug === slug);
+    this._editingStatus = slug;
+    this._statusLabel = existing?.label ?? '';
+    this._statusColor = existing?.color ?? 'neutral';
+    this._statusIcon = existing?.icon ?? 'check';
+    this._statusError = null;
+    this._statusGuard = null;
+  }
+
+  private _cancelStatusEdit() {
+    this._editingStatus = null;
+    this._statusError = null;
+  }
+
+  private async _saveStatus() {
+    const label = this._statusLabel.trim();
+    if (!label) return;
+    const editing = this._editingStatus;
+    try {
+      if (editing === 'new') {
+        await this.store?.createStatus({
+          slug: slugFromLabel(label, this.st?.statuses),
+          label,
+          color: this._statusColor,
+          icon: this._statusIcon,
+        });
+      } else if (editing) {
+        await this.store?.updateStatus(editing, {
+          label,
+          color: this._statusColor,
+          icon: this._statusIcon,
+        });
+      }
+      this._editingStatus = null;
+      this._statusError = null;
+    } catch (err) {
+      this._statusError = (err as { message?: string })?.message ?? 'Could not save that status.';
+    }
+  }
+
+  /**
+   * Move a status one place. `status/reorder` takes the whole permutation, so a
+   * partial list cannot leave two definitions claiming one position.
+   */
+  private async _moveStatus(slug: string, delta: -1 | 1) {
+    const slugs = this._statusDefs.map((d) => d.slug);
+    const from = slugs.indexOf(slug);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= slugs.length) return;
+    [slugs[from], slugs[to]] = [slugs[to], slugs[from]];
+    try {
+      await this.store?.reorderStatuses(slugs);
+    } catch (err) {
+      this._statusError = (err as { message?: string })?.message ?? 'Could not reorder.';
+    }
+  }
+
+  /**
+   * Delete, guarding first when items still carry the slug.
+   *
+   * The backend refuses that case regardless; the guard is the explanation, and
+   * the reassign target is what turns the refusal into a completed move. Same
+   * shape as `_deleteLocation`.
+   */
+  private async _deleteStatus(slug: string, reassignTo?: string) {
+    const count = this._statusCount(slug);
+    if (count > 0 && !reassignTo) {
+      this._statusGuard = { slug, count };
+      this._reassignTarget = this._statusDefs.find((d) => d.slug !== slug)?.slug ?? '';
+      return;
+    }
+    try {
+      await this.store?.deleteStatus(slug, reassignTo);
+      this._statusGuard = null;
+      this._statusError = null;
+    } catch (err) {
+      this._statusError =
+        (err as { message?: string })?.message ?? 'Could not delete that status.';
+    }
+  }
+
+  private _renderStatusesTab() {
+    const defs = this._statusDefs;
+    return html`
+      <div class="toolbar">
+        <span class="toolbar-count" data-testid="organize-status-count"
+          >${counted(defs.length, 'status', 'statuses')}</span
+        >
+        <button
+          class="hv-pill"
+          data-testid="organize-new-status"
+          @click=${() => this._startStatusEdit('new')}
+        >
+          ${icon('plus', 15)}New status
+        </button>
+      </div>
+      <div class="body">
+        ${this._editingStatus === 'new' ? this._renderStatusEditor('new') : null}
+        ${defs.map((d, index) => {
+          const isDefault = d.slug === DEFAULT_STATUS;
+          const count = this._statusCount(d.slug);
+          return html`
+            <div class="value-row status-row" data-testid="status-row" data-value=${d.slug}>
+              <span class="move">
+                <button
+                  data-testid="status-up"
+                  aria-label=${`Move ${d.label} up`}
+                  title="Move up"
+                  ?disabled=${index === 0}
+                  @click=${() => this._moveStatus(d.slug, -1)}
+                >
+                  ${icon('chevronUp', 15)}
+                </button>
+                <button
+                  data-testid="status-down"
+                  aria-label=${`Move ${d.label} down`}
+                  title="Move down"
+                  ?disabled=${index === defs.length - 1}
+                  @click=${() => this._moveStatus(d.slug, 1)}
+                >
+                  ${icon('chevronDown', 15)}
+                </button>
+              </span>
+              ${renderStatusChip(d.slug, defs, { testid: 'status-chip' })}
+              <span class="status-slug" data-testid="status-slug" title=${d.slug}>${d.slug}</span>
+              <button class="count-link" data-testid="status-count" @click=${() =>
+                this._showStatus(d.slug)}>
+                ${counted(count, 'item')}
+              </button>
+              <span class="row-actions">
+                ${isDefault
+                  ? html`<span class="hv-chip quiet" data-testid="status-default">Default</span>`
+                  : null}
+                <button
+                  data-testid="status-edit"
+                  aria-label=${`Edit ${d.label}`}
+                  title="Edit"
+                  @click=${() => this._startStatusEdit(d.slug)}
+                >
+                  ${icon('pencil', 16)}
+                </button>
+                ${isDefault
+                  ? null
+                  : html`
+                      <button
+                        class="danger"
+                        data-testid="status-remove"
+                        aria-label=${`Delete ${d.label}`}
+                        title="Delete"
+                        @click=${() => {
+                          if (this._statusCount(d.slug) > 0) void this._deleteStatus(d.slug);
+                          else this._confirmStatus = d.slug;
+                        }}
+                      >
+                        ${icon('del', 16)}
+                      </button>
+                    `}
+              </span>
+            </div>
+            ${this._editingStatus === d.slug ? this._renderStatusEditor(d.slug) : null}
+            ${this._statusGuard?.slug === d.slug ? this._renderStatusGuard() : null}
+          `;
+        })}
+        ${this._statusError && !this._editingStatus
+          ? html`<div class="failure" role="alert" data-testid="status-error">
+              ${this._statusError}
+            </div>`
+          : null}
+      </div>
+    `;
+  }
+
+  /** Take the user to the items on a status, the way a value count does. */
+  private _showStatus(slug: string) {
+    this.store?.setFilters({ status: slug });
+    this._browse();
+  }
+
+  private _renderStatusEditor(slug: string | 'new') {
+    const creating = slug === 'new';
+    const derived = creating ? slugFromLabel(this._statusLabel, this.st?.statuses) : slug;
+    const duplicate = this._duplicateLabel;
+    const glyph = knownIcon(this._statusIcon);
+    return html`<div class="expander" data-testid="status-editor">
+      <label class="status-name">
+        <span class="hv-sr-only">Status name</span>
+        <input
+          class="control"
+          data-testid="status-label"
+          placeholder="Status name…"
+          .value=${this._statusLabel}
+          @input=${(e: Event) => {
+            this._statusLabel = (e.target as HTMLInputElement).value;
+            this._statusError = null;
+          }}
+          @keydown=${(e: KeyboardEvent) => {
+            if (e.key === 'Enter') void this._saveStatus();
+          }}
+        />
+        <span class="status-slug" data-testid="status-slug-preview" title=${derived}
+          >${derived}</span
+        >
+      </label>
+      ${duplicate
+        ? html`<div class="hint" data-testid="status-duplicate-hint">
+            A status called “${duplicate}” already exists.
+          </div>`
+        : null}
+
+      <span class="hv-label">Colour</span>
+      <div class="swatches" data-testid="status-colors">
+        ${STATUS_COLORS.map(
+          (c) => html`<button
+            class="swatch hv-status-chip tone-${c.replace(/_/g, '-')} ${this._statusColor === c
+              ? 'on'
+              : ''}"
+            data-testid="status-color"
+            data-value=${c}
+            aria-label=${c.replace(/_/g, ' ')}
+            aria-pressed=${String(this._statusColor === c)}
+            @click=${() => {
+              this._statusColor = c;
+            }}
+          >
+            ${glyph ? icon(glyph, 15) : html`<span class="letters">Aa</span>`}
+          </button>`,
+        )}
+      </div>
+
+      <span class="hv-label">Icon</span>
+      <div class="swatches" data-testid="status-icons">
+        ${STATUS_ICONS.map(
+          (name) => html`<button
+            class="glyph ${this._statusIcon === name ? 'on' : ''}"
+            data-testid="status-icon"
+            data-value=${name}
+            aria-label=${name}
+            aria-pressed=${String(this._statusIcon === name)}
+            @click=${() => {
+              this._statusIcon = name;
+            }}
+          >
+            ${icon(name, 16)}
+          </button>`,
+        )}
+      </div>
+
+      ${this._statusError
+        ? html`<div class="failure" role="alert" data-testid="status-editor-error">
+            ${this._statusError}
+          </div>`
+        : null}
+      <div class="actions">
+        <span class="spacer"></span>
+        <button
+          class="hv-text-button"
+          data-testid="status-cancel"
+          @click=${() => this._cancelStatusEdit()}
+        >
+          Cancel
+        </button>
+        <button
+          class="hv-pill"
+          data-testid="status-save"
+          ?disabled=${!this._statusLabel.trim()}
+          @click=${() => this._saveStatus()}
+        >
+          ${creating ? 'Create' : 'Save'}
+        </button>
+      </div>
+    </div>`;
+  }
+
+  private _renderStatusGuard() {
+    const guard = this._statusGuard;
+    if (!guard) return null;
+    const label = statusLabel(guard.slug, this._statusDefs);
+    const targets = this._statusDefs.filter((d) => d.slug !== guard.slug);
+    return html`<div class="expander guard status-guard" data-testid="status-guard" role="alert">
+      <span class="guard-message" data-testid="status-guard-message"
+        >“${label}” is on ${counted(guard.count, 'item')}. Choose where those items go.</span
+      >
+      <label class="guard-target">
+        <span>Move those items to</span>
+        <select
+          class="control"
+          data-testid="status-reassign"
+          .value=${this._reassignTarget}
+          @change=${(e: Event) => {
+            this._reassignTarget = (e.target as HTMLSelectElement).value;
+          }}
+        >
+          ${targets.map((d) => html`<option value=${d.slug}>${d.label}</option>`)}
+        </select>
+      </label>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button
+          class="hv-text-button"
+          data-testid="status-guard-cancel"
+          @click=${() => {
+            this._statusGuard = null;
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          class="hv-text-button danger"
+          data-testid="status-guard-confirm"
+          @click=${() => this._deleteStatus(guard.slug, this._reassignTarget)}
+        >
+          Reassign and delete
+        </button>
+      </div>
+    </div>`;
+  }
+
   private _renderValuesTab() {
     const values = this._values;
     const noun = this.tab === 'tags' ? 'tags' : 'categories';
@@ -1231,7 +1937,7 @@ export class HVOrganizeDialog extends LitElement {
           ? values.map(
               (v) => html`
                 <div class="value-row" data-testid="value-row" data-value=${v.value}>
-                  <span class="value-chip">${v.value}</span>
+                  <span class="hv-chip">${v.value}</span>
                   ${this._isDraft(v.value)
                     ? html`<span class="draft-note" data-testid="value-draft">
                         new · not saved until an item uses it
@@ -1326,7 +2032,7 @@ export class HVOrganizeDialog extends LitElement {
         <button data-testid="sheet-merge" @click=${() => this._startValueEdit(value, 'merge')}>
           ${icon('callMerge', 20)}Merge into…
           ${suggestion
-            ? html`<span class="value-chip" style="margin-left:auto" data-testid="sheet-merge-suggestion"
+            ? html`<span class="hv-chip" style="margin-left:auto" data-testid="sheet-merge-suggestion"
                 >${suggestion}</span
               >`
             : null}
@@ -1381,7 +2087,7 @@ export class HVOrganizeDialog extends LitElement {
                 </button>`}
           </div>
           <div class="tabs" role="tablist">
-            ${(['locations', 'categories', 'tags'] as OrganizeTab[]).map(
+            ${(['locations', 'categories', 'tags', 'statuses'] as OrganizeTab[]).map(
               (tab) => html`<button
                 class=${this.tab === tab ? 'on' : ''}
                 role="tab"
@@ -1392,13 +2098,40 @@ export class HVOrganizeDialog extends LitElement {
                   this.tab = tab;
                 }}
               >
-                ${tab === 'locations' ? 'Locations' : tab === 'categories' ? 'Categories' : 'Tags'}
+                ${tab === 'locations'
+                  ? 'Locations'
+                  : tab === 'categories'
+                    ? 'Categories'
+                    : tab === 'tags'
+                      ? 'Tags'
+                      : 'Statuses'}
               </button>`,
             )}
           </div>
-          ${this.tab === 'locations' ? this._renderLocationsTab() : this._renderValuesTab()}
+          ${this.tab === 'locations'
+            ? this._renderLocationsTab()
+            : this.tab === 'statuses'
+              ? this._renderStatusesTab()
+              : this._renderValuesTab()}
         </div>
       </div>
+
+      <hv-confirm
+        data-testid="organize-status-confirm"
+        ?open=${this._confirmStatus !== null}
+        .heading=${`Delete "${statusLabel(this._confirmStatus ?? '', this._statusDefs)}"?`}
+        message="No item carries this status, so nothing else changes."
+        confirmLabel="Delete"
+        destructive
+        @confirm=${() => {
+          const slug = this._confirmStatus;
+          this._confirmStatus = null;
+          if (slug) void this._deleteStatus(slug);
+        }}
+        @cancel=${() => {
+          this._confirmStatus = null;
+        }}
+      ></hv-confirm>
 
       <hv-confirm
         data-testid="organize-confirm"

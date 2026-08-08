@@ -1,4 +1,5 @@
-import type { LocationTreeNode } from './types';
+import { areaNameById } from '../ui/area';
+import type { AreaRef, LocationTreeNode } from './types';
 
 /**
  * `location/tree` returns nodes in the repository's own order, which is
@@ -50,4 +51,61 @@ export function countLocations(nodes: readonly LocationTreeNode[], filterText = 
       sum + (locationMatches(n, filterText) ? 1 : 0) + countLocations(n.children ?? [], filterText),
     0,
   );
+}
+
+/** Top-level locations that share one HA area, in the order they should render. */
+export interface AreaGroup {
+  id: string;
+  /** The area's name, or its raw id when the area cache has no entry for it. */
+  name: string;
+  roots: LocationTreeNode[];
+}
+
+export interface GroupedRoots {
+  areaGroups: AreaGroup[];
+  /** Roots belonging to no area, in their incoming order. */
+  ungrouped: LocationTreeNode[];
+}
+
+/**
+ * Partition top-level locations by the area they belong to.
+ *
+ * Only roots are read: the backend keeps a tree's area on its root node and
+ * resolves it downwards for every descendant, so a root's `area_id` is the whole
+ * tree's area — and a nested node never holds one to disagree with.
+ *
+ * Groups are ordered by area name on the collator the rows themselves use, tied
+ * on id so equally-named areas cannot swap places between renders. Returns new
+ * arrays over the caller's nodes; nothing is mutated.
+ */
+export function groupRootsByArea(
+  nodes: readonly LocationTreeNode[],
+  areas: readonly AreaRef[],
+  opts: { includeEmptyAreas?: boolean } = {},
+): GroupedRoots {
+  const byArea = new Map<string, LocationTreeNode[]>();
+  const ungrouped: LocationTreeNode[] = [];
+
+  // A picker that files locations under areas has to offer every area Home
+  // Assistant knows, including the ones holding nothing yet — otherwise an area
+  // can only be reached once something is already in it. Browsing bands only
+  // the areas in use.
+  if (opts.includeEmptyAreas) for (const area of areas) byArea.set(area.id, []);
+
+  for (const node of nodes) {
+    const areaId = node.area_id ?? null;
+    if (areaId === null) {
+      ungrouped.push(node);
+      continue;
+    }
+    const roots = byArea.get(areaId);
+    if (roots) roots.push(node);
+    else byArea.set(areaId, [node]);
+  }
+
+  const areaGroups = [...byArea.entries()]
+    .map(([id, roots]) => ({ id, name: areaNameById(areas, id) ?? id, roots }))
+    .sort((a, b) => collator.compare(a.name, b.name) || collator.compare(a.id, b.id));
+
+  return { areaGroups, ungrouped };
 }

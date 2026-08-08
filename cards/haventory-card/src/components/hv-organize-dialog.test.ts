@@ -2,7 +2,7 @@ import './hv-organize-dialog';
 import { makeMockHass, makeItem } from '../test.utils';
 import { Store } from '../store/store';
 import type { HVOrganizeDialog, OrganizeTab } from './hv-organize-dialog';
-import type { Item, Location } from '../store/types';
+import type { AreaRef, Item, Location, StatusDefinition } from '../store/types';
 
 function loc(id: string, name: string, parentId: string | null = null, areaId: string | null = null): Location {
   const display = parentId ? `${parentId} / ${name}` : name;
@@ -20,10 +20,28 @@ function loc(id: string, name: string, parentId: string | null = null, areaId: s
   };
 }
 
+/** The registry every area-facing test picks from; empty is its own case. */
+const AREAS = [
+  { id: 'area-garage', name: 'Garage area' },
+  { id: 'area-kitchen', name: 'Kitchen' },
+];
+
 async function mount(
-  opts: { items?: Item[]; locations?: Location[]; tab?: OrganizeTab; mobile?: boolean } = {},
+  opts: {
+    items?: Item[];
+    locations?: Location[];
+    areas?: AreaRef[];
+    statuses?: StatusDefinition[];
+    tab?: OrganizeTab;
+    mobile?: boolean;
+  } = {},
 ) {
-  const hass = makeMockHass({ items: opts.items ?? [], locations: opts.locations ?? [] });
+  const hass = makeMockHass({
+    items: opts.items ?? [],
+    locations: opts.locations ?? [],
+    areas: opts.areas ?? AREAS,
+    ...(opts.statuses ? { statuses: opts.statuses } : {}),
+  });
   const store = new Store(hass, { retryBaseMs: 0 });
   await store.init();
 
@@ -46,6 +64,15 @@ const settle = async (el: HVOrganizeDialog) => {
 const q = (sr: ShadowRoot, sel: string) => sr.querySelector(sel) as HTMLElement | null;
 const all = (sr: ShadowRoot, sel: string) => [...sr.querySelectorAll(sel)] as HTMLElement[];
 
+/** jsdom lays out no shadow DOM, so geometry is asserted on the stylesheet. */
+const dialogCss = () => {
+  const styles = (customElements.get('hv-organize-dialog') as typeof HVOrganizeDialog).styles;
+  return (Array.isArray(styles) ? styles : [styles])
+    .map((s) => String(s.cssText))
+    .join('\n')
+    .replace(/\s+/g, ' ');
+};
+
 describe('hv-organize-dialog: shell', () => {
   it('renders nothing when closed', async () => {
     const { el, sr } = await mount();
@@ -54,12 +81,13 @@ describe('hv-organize-dialog: shell', () => {
     expect(q(sr, '[data-testid="organize-dialog"]')).toBe(null);
   });
 
-  it('replaces three separate browsers with one tabbed dialog', async () => {
+  it('replaces four separate browsers with one tabbed dialog', async () => {
     const { sr } = await mount();
     expect(all(sr, '[data-testid="organize-tab"]').map((t) => t.dataset.tab)).toEqual([
       'locations',
       'categories',
       'tags',
+      'statuses',
     ]);
   });
 
@@ -231,6 +259,122 @@ describe('hv-organize-dialog: locations', () => {
     });
   });
 
+  // The select reads like a per-location field and is not one: the backend keeps a
+  // tree's area on its root, so saving one rewrites every location in the tree —
+  // including the ones the editor does not show.
+  describe('area change preview', () => {
+    const previewText = (sr: ShadowRoot) =>
+      q(sr, '[data-testid="location-area-preview"]')?.textContent?.replace(/\s+/g, ' ').trim();
+
+    async function editLocation(id: 'garage' | 'shelf-a', opts: { areas?: AreaRef[] } = {}) {
+      const ctx = await mount({ locations, areas: opts.areas });
+      const tree = q(ctx.sr, '[data-testid="organize-tree"]') as HTMLElement;
+      if (id === 'shelf-a') {
+        // The tree opens collapsed, so Shelf A is only reachable under Garage.
+        (
+          tree.shadowRoot?.querySelector(
+            '[data-testid="tree-row"][data-id="garage"] [data-testid="tree-twisty"]',
+          ) as HTMLButtonElement
+        ).click();
+        await settle(ctx.el);
+      }
+      (tree.shadowRoot?.querySelector(`[data-testid="tree-edit"][data-id="${id}"]`) as HTMLButtonElement).click();
+      await settle(ctx.el);
+      return ctx;
+    }
+
+    async function pickArea(el: HVOrganizeDialog, sr: ShadowRoot, areaId: string) {
+      const select = q(sr, '[data-testid="location-area"]') as HTMLSelectElement;
+      select.value = areaId;
+      select.dispatchEvent(new Event('change'));
+      await settle(el);
+    }
+
+    it('says an area picked on a nested location lands on the tree root', async () => {
+      const { el, sr } = await editLocation('shelf-a');
+      await pickArea(el, sr, 'area-kitchen');
+
+      const text = previewText(sr);
+      expect(text).toContain('Kitchen');
+      expect(text).toContain('the whole Garage tree, 2 locations');
+      expect(text).toContain('stored on Garage, not on this one');
+      // The area name gets the same chip every other surface prints it in.
+      expect(q(sr, '[data-testid="location-area-preview"]')?.querySelector('.hv-area-chip')).toBeTruthy();
+    });
+
+    it('says clearing the area empties the whole tree, and updates as the select changes', async () => {
+      const { el, sr } = await editLocation('garage');
+      expect(previewText(sr)).toBeUndefined();
+
+      await pickArea(el, sr, 'area-kitchen');
+      expect(previewText(sr)).toContain('Assigns');
+
+      await pickArea(el, sr, '');
+      expect(previewText(sr)).toBe('Removes the area from the whole Garage tree, 2 locations.');
+    });
+
+    it('drops the tree wording for a location that is a tree of one', async () => {
+      const { el, sr } = await mount({ locations: [loc('attic', 'Attic')] });
+      const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+      (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="attic"]') as HTMLButtonElement).click();
+      await settle(el);
+      await pickArea(el, sr, 'area-kitchen');
+
+      expect(previewText(sr)).toBe('Assigns Area: Kitchen to this location.');
+    });
+
+    it('names the area a nested location inherits, which the select cannot show', async () => {
+      // "Inherit from location tree" says where the area comes from but never what it is.
+      const { sr } = await editLocation('shelf-a');
+      expect(previewText(sr)).toBe('Inherits Area: Garage area from its location tree.');
+    });
+
+    it('stays quiet for a selection that changes nothing on save', async () => {
+      const { sr } = await editLocation('garage');
+      expect(q(sr, '[data-testid="location-area-preview"]')).toBe(null);
+    });
+
+    it('hides the area field altogether when Home Assistant defines no areas', async () => {
+      const { sr } = await editLocation('garage', { areas: [] });
+      expect(q(sr, '[data-testid="location-area"]')).toBe(null);
+      expect(q(sr, '[data-testid="location-area-preview"]')).toBe(null);
+      // With nothing beside it, the name field takes the row rather than half of it.
+      expect(q(sr, '[data-testid="location-name"]')?.parentElement?.classList.contains('wide')).toBe(true);
+    });
+  });
+
+  // aria-expanded on its own says only that something opened; which element it
+  // opened was left to whatever happened to follow the picker in reading order.
+  it('names the holder each location picker discloses, open or shut', async () => {
+    const items = [makeItem({ id: '1', location_id: 'shelf-a' })];
+    const { el, sr } = await mount({ items, locations });
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+
+    for (const [action, picker, id] of [
+      ['tree-edit', 'location-parent', 'location-parent-tree-holder'],
+      ['tree-merge', 'merge-target', 'merge-target-tree-holder'],
+    ]) {
+      (tree.shadowRoot?.querySelector(`[data-testid="${action}"][data-id="garage"]`) as HTMLButtonElement).click();
+      await settle(el);
+      const control = () => q(sr, `[data-testid="${picker}"]`) as HTMLButtonElement;
+
+      expect(control().getAttribute('aria-controls'), picker).toBe(id);
+      expect(control().getAttribute('aria-expanded'), picker).toBe('false');
+      // The id has to resolve in both states — a picker pointing at nothing
+      // announces as controlling nothing — so the holder outlives the tree.
+      const shut = sr.getElementById(id);
+      expect(shut, `${picker} shut`).toBeTruthy();
+      expect(shut?.querySelector('hv-location-tree'), `${picker}: no tree while shut`).toBe(null);
+
+      control().click();
+      await settle(el);
+
+      expect(control().getAttribute('aria-expanded'), picker).toBe('true');
+      expect(control().getAttribute('aria-controls'), picker).toBe(id);
+      expect(sr.getElementById(id)?.querySelector('hv-location-tree'), `${picker} open`).toBeTruthy();
+    }
+  });
+
   it('excludes the location itself from its own parent picker, so no cycle is possible', async () => {
     const { el, sr } = await mount({ locations });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
@@ -318,6 +462,75 @@ describe('hv-organize-dialog: locations', () => {
       await settle(el);
 
       expect(calls[0].changes.newParentId).toBeNull();
+    });
+  });
+
+  // An area heads the top level rather than sitting anywhere in the tree, so
+  // moving a subtree into one is both halves at once: out to the top level, and
+  // into that area. The picker is where both are said in one gesture.
+  describe('filing a subtree under an area', () => {
+    const tree = [loc('garage', 'Garage', null, 'area-garage'), loc('shelf-a', 'Shelf A', 'garage')];
+
+    async function openParentPicker() {
+      const ctx = await mount({ locations: tree });
+      const calls: { id: string; changes: Record<string, unknown> }[] = [];
+      const real = ctx.store.updateLocation.bind(ctx.store);
+      ctx.store.updateLocation = (id, changes) => {
+        calls.push({ id, changes: changes as Record<string, unknown> });
+        return real(id, changes);
+      };
+
+      const treeEl = q(ctx.sr, '[data-testid="organize-tree"]') as HTMLElement;
+      (
+        treeEl.shadowRoot?.querySelector(
+          '[data-testid="tree-row"][data-id="garage"] [data-testid="tree-twisty"]',
+        ) as HTMLButtonElement
+      ).click();
+      await settle(ctx.el);
+      (
+        treeEl.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="shelf-a"]') as HTMLButtonElement
+      ).click();
+      await settle(ctx.el);
+      (q(ctx.sr, '[data-testid="location-parent"]') as HTMLButtonElement).click();
+      await settle(ctx.el);
+      const picker = q(ctx.sr, '[data-testid="location-parent-tree"]') as HTMLElement;
+      return { ...ctx, calls, picker };
+    }
+
+    it('offers every area, including the one nothing is filed under yet', async () => {
+      const { picker } = await openParentPicker();
+      const offered = [
+        ...(picker.shadowRoot?.querySelectorAll('[data-testid="tree-area-select"]') ?? []),
+      ].map((b) => (b as HTMLElement).dataset.area);
+      expect(offered).toEqual(['area-garage', 'area-kitchen']);
+    });
+
+    it('moves the subtree to the top level of the area picked, in one save', async () => {
+      const { el, sr, picker, calls } = await openParentPicker();
+      (
+        picker.shadowRoot?.querySelector(
+          '[data-testid="tree-area-select"][data-area="area-kitchen"]',
+        ) as HTMLButtonElement
+      ).click();
+      await settle(el);
+
+      // Both halves of the move, on both controls that state them.
+      expect(q(sr, '[data-testid="location-parent"]')?.textContent).toContain('Top level · Kitchen');
+      expect((q(sr, '[data-testid="location-area"]') as HTMLSelectElement).value).toBe('area-kitchen');
+      expect(q(sr, '[data-testid="location-area-preview"]')?.textContent).toContain('Kitchen');
+
+      (q(sr, '[data-testid="location-save"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      expect(calls[0].changes.newParentId).toBeNull();
+      expect(calls[0].changes.areaId).toBe('area-kitchen');
+    });
+
+    it('calls the row that clears the parent what it does in a parent picker', async () => {
+      const { picker } = await openParentPicker();
+      expect(
+        picker.shadowRoot?.querySelector('[data-testid="tree-all"]')?.textContent?.trim(),
+      ).toContain('Top level');
     });
   });
 
@@ -428,6 +641,8 @@ describe('hv-organize-dialog: locations', () => {
     (tree.shadowRoot?.querySelector('[data-testid="tree-merge"][data-id="garage"]') as HTMLButtonElement).click();
     await settle(el);
     expect(q(sr, '[data-testid="merge-effect"]')?.textContent).toContain('Pick a location');
+    // The one row in that picker a merge cannot land on, and why.
+    expect(q(sr, '[data-testid="merge-effect"]')?.textContent).toContain('hold no items themselves');
 
     (q(sr, '[data-testid="merge-target"]') as HTMLButtonElement).click();
     await settle(el);
@@ -710,11 +925,7 @@ describe('hv-organize-dialog: mobile value actions', () => {
   // stylesheet. At 375px the filter, the count and the create button shared a
   // 335px row and the field came out 110px wide — its own placeholder clipped.
   it('gives the filter field a row of its own', () => {
-    const styles = (customElements.get('hv-organize-dialog') as typeof HVOrganizeDialog).styles;
-    const css = (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = dialogCss();
     expect(css).toMatch(/:host\(\[mobile\]\) \.toolbar \{[^}]*flex-wrap: wrap/);
     expect(css).toMatch(/:host\(\[mobile\]\) \.search \{[^}]*flex-basis: 100%/);
     // …with the count keeping the button company on the second row.
@@ -732,5 +943,442 @@ describe('hv-organize-dialog: mobile value actions', () => {
 
     expect((q(sr, '[data-testid="value-editor"]') as HTMLElement).dataset.mode).toBe('merge');
     expect(q(sr, '[data-testid="value-sheet"]')).toBe(null);
+  });
+});
+
+describe('hv-organize-dialog: statuses', () => {
+  const ladder = makeItem({ id: 'i1', name: 'Ladder', status: 'missing' });
+
+  it('lists the vocabulary in display order, with each definition its own chip', async () => {
+    const { sr } = await mount({ tab: 'statuses' });
+
+    expect(all(sr, '[data-testid="status-row"]').map((r) => r.dataset.value)).toEqual([
+      'ok',
+      'missing',
+      'needs_repair',
+    ]);
+    expect(q(sr, '[data-testid="status-chip"]')?.classList.contains('tone-green')).toBe(true);
+  });
+
+  it('shows the slug beside the label, because an automation has to name it', async () => {
+    const { sr } = await mount({ tab: 'statuses' });
+
+    expect(all(sr, '[data-testid="status-slug"]').map((s) => s.textContent?.trim())).toEqual([
+      'ok',
+      'missing',
+      'needs_repair',
+    ]);
+  });
+
+  it('counts the items on each status', async () => {
+    const { sr } = await mount({ tab: 'statuses', items: [ladder] });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    expect(row?.querySelector('[data-testid="status-count"]')?.textContent?.trim()).toBe('1 item');
+  });
+
+  // The count is this tab's answer to "which items?", so it has to land on
+  // those items — the way a location count and a category count already do.
+  it('opens the items behind a status from its count', async () => {
+    const { el, store, sr } = await mount({
+      tab: 'statuses',
+      items: [ladder, makeItem({ id: 'i2', name: 'Rake' })],
+    });
+    let browsed = 0;
+    el.addEventListener('browse', () => {
+      browsed += 1;
+    });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-count"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(store.state.value.filters.status).toBe('missing');
+    // Organizing happens full-screen; so should the list it hands back.
+    expect(browsed).toBe(1);
+    expect(el.open).toBe(false);
+  });
+
+  it('creates a status, deriving the slug from the label', async () => {
+    const { el, sr, hass } = await mount({ tab: 'statuses' });
+
+    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
+    await settle(el);
+    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
+    input.value = 'Lent out';
+    input.dispatchEvent(new Event('input'));
+    await settle(el);
+    expect(q(sr, '[data-testid="status-slug-preview"]')?.textContent?.trim()).toBe('lent_out');
+
+    (q(sr, '[data-testid="status-save"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const sent = hass.__messages.find((m) => m.type === 'haventory/status/create');
+    expect(sent).toMatchObject({ slug: 'lent_out', label: 'Lent out' });
+  });
+
+  it('renames without touching any item', async () => {
+    const { el, sr, hass } = await mount({ tab: 'statuses', items: [ladder] });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
+    input.value = 'Gone walkabout';
+    input.dispatchEvent(new Event('input'));
+    (q(sr, '[data-testid="status-save"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(hass.__messages.find((m) => m.type === 'haventory/status/update')).toMatchObject({
+      slug: 'missing',
+      label: 'Gone walkabout',
+    });
+    expect(hass.__messages.some((m) => m.type === 'haventory/item/update')).toBe(false);
+  });
+
+  // The command takes the whole permutation, so a partial list cannot leave two
+  // definitions claiming one position.
+  it('moves a status by sending every slug in the new order', async () => {
+    const { el, sr, hass } = await mount({ tab: 'statuses' });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-down"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(hass.__messages.find((m) => m.type === 'haventory/status/reorder')).toMatchObject({
+      slugs: ['ok', 'needs_repair', 'missing'],
+    });
+  });
+
+  it('cannot move the first row up or the last row down', async () => {
+    const { sr } = await mount({ tab: 'statuses' });
+
+    const rows = all(sr, '[data-testid="status-row"]');
+    expect((rows[0].querySelector('[data-testid="status-up"]') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(
+      (rows[rows.length - 1].querySelector('[data-testid="status-down"]') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  // The backend takes label, colour and icon changes for any slug, the default
+  // included — a household that wants a quieter "OK", or one in its own
+  // language, has to be able to say so. Only the delete stays withheld.
+  it('withholds delete from the default status but not the rename', async () => {
+    const { el, sr } = await mount({ tab: 'statuses' });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'ok');
+    expect(row?.querySelector('[data-testid="status-default"]')).not.toBe(null);
+    expect(row?.querySelector('[data-testid="status-remove"]')).toBe(null);
+
+    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="status-editor"]')).not.toBe(null);
+    expect((q(sr, '[data-testid="status-label"]') as HTMLInputElement).value).toBe('OK');
+  });
+
+  it('renames the default status without the backend hearing about any item', async () => {
+    const { el, sr, hass } = await mount({ tab: 'statuses' });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'ok');
+    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
+    input.value = 'In Ordnung';
+    input.dispatchEvent(new Event('input'));
+    (q(sr, '[data-testid="status-save"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(hass.__messages.find((m) => m.type === 'haventory/status/update')).toMatchObject({
+      slug: 'ok',
+      label: 'In Ordnung',
+    });
+  });
+
+  // The backend refuses this regardless; the guard is the explanation, and the
+  // target is what turns the refusal into a completed move.
+  it('guards a delete that would orphan items, then reassigns them', async () => {
+    const { el, sr, hass } = await mount({ tab: 'statuses', items: [ladder] });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-remove"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const guard = q(sr, '[data-testid="status-guard"]');
+    expect(guard?.textContent).toContain('1 item');
+    expect(hass.__messages.some((m) => m.type === 'haventory/status/delete')).toBe(false);
+
+    (q(sr, '[data-testid="status-guard-confirm"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(hass.__messages.find((m) => m.type === 'haventory/status/delete')).toMatchObject({
+      slug: 'missing',
+      reassign_to: 'ok',
+    });
+  });
+
+  it('confirms rather than guards when nothing carries the status', async () => {
+    const { el, sr } = await mount({ tab: 'statuses' });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-remove"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="status-guard"]')).toBe(null);
+    expect(
+      (q(sr, '[data-testid="organize-status-confirm"]') as HTMLElement).hasAttribute('open'),
+    ).toBe(true);
+  });
+
+  it('sends the colour and glyph chosen in the picker', async () => {
+    const { el, sr, hass } = await mount({ tab: 'statuses' });
+
+    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
+    await settle(el);
+    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
+    input.value = 'Lent out';
+    input.dispatchEvent(new Event('input'));
+    await settle(el);
+    (
+      all(sr, '[data-testid="status-color"]').find(
+        (b) => (b as HTMLElement).dataset.value === 'blue_strong',
+      ) as HTMLButtonElement
+    ).click();
+    (
+      all(sr, '[data-testid="status-icon"]').find(
+        (b) => (b as HTMLElement).dataset.value === 'hand',
+      ) as HTMLButtonElement
+    ).click();
+    await settle(el);
+    (q(sr, '[data-testid="status-save"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(hass.__messages.find((m) => m.type === 'haventory/status/create')).toMatchObject({
+      color: 'blue_strong',
+      icon: 'hand',
+    });
+  });
+
+  // A tone is a tint plus the ink that reads on it. Painting only the tint left
+  // the five light tones near-identical on white and near-black in dark, where
+  // they are washes never meant to stand on their own.
+  it('paints each swatch as a miniature chip carrying the glyph being chosen', async () => {
+    const { el, sr } = await mount({ tab: 'statuses' });
+    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const swatches = all(sr, '[data-testid="status-color"]');
+    expect(swatches).toHaveLength(10);
+    for (const s of swatches) {
+      expect(s.querySelector('svg')?.getAttribute('data-icon')).toBe('check');
+    }
+    // Both halves of the tone: the fill comes from the class, the ink with it.
+    expect(swatches.map((s) => s.dataset.value)).toContain('amber_strong');
+    expect(
+      swatches.find((s) => s.dataset.value === 'amber_strong')?.classList.contains('tone-amber-strong'),
+    ).toBe(true);
+
+    (
+      all(sr, '[data-testid="status-icon"]').find((b) => b.dataset.value === 'truck') as HTMLButtonElement
+    ).click();
+    await settle(el);
+
+    for (const s of all(sr, '[data-testid="status-color"]')) {
+      expect(s.querySelector('svg')?.getAttribute('data-icon')).toBe('truck');
+    }
+  });
+
+  // An import can define a status naming a glyph this bundle has never carried.
+  // The swatch still has to put ink on its tint, or the tone is half-shown again.
+  it('letters a swatch whose glyph this bundle does not carry', async () => {
+    const { el, sr } = await mount({
+      tab: 'statuses',
+      statuses: [
+        { slug: 'ok', label: 'OK', order: 0, color: 'green', icon: 'check' },
+        { slug: 'sold', label: 'Sold', order: 1, color: 'red', icon: 'not-a-glyph' },
+      ],
+    });
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'sold');
+    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    for (const s of all(sr, '[data-testid="status-color"]')) {
+      expect(s.querySelector('svg')).toBe(null);
+      expect(s.querySelector('.letters')?.textContent).toBe('Aa');
+    }
+  });
+
+  // Two statuses labelled the same are indistinguishable in every row badge,
+  // filter chip and select — only the slug tells them apart, and the slug is
+  // what this editor hides.
+  it('warns when a label collides with one already in use, without blocking it', async () => {
+    const { el, sr } = await mount({ tab: 'statuses' });
+    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
+    input.value = '  missing ';
+    input.dispatchEvent(new Event('input'));
+    await settle(el);
+
+    expect(q(sr, '[data-testid="status-duplicate-hint"]')?.textContent).toContain('Missing');
+    // A warning, not a refusal: creating anyway stays available.
+    expect((q(sr, '[data-testid="status-save"]') as HTMLButtonElement).disabled).toBe(false);
+    // The slug dedupe stays as the backstop the backend needs.
+    expect(q(sr, '[data-testid="status-slug-preview"]')?.textContent?.trim()).toBe('missing_2');
+  });
+
+  it('drops the hint once the label is its own again', async () => {
+    const { el, sr } = await mount({ tab: 'statuses' });
+    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
+    input.value = 'Missing';
+    input.dispatchEvent(new Event('input'));
+    await settle(el);
+    expect(q(sr, '[data-testid="status-duplicate-hint"]')).not.toBe(null);
+
+    input.value = 'Lent out';
+    input.dispatchEvent(new Event('input'));
+    await settle(el);
+    expect(q(sr, '[data-testid="status-duplicate-hint"]')).toBe(null);
+  });
+
+  it('does not call a status a duplicate of itself while it is being edited', async () => {
+    const { el, sr } = await mount({ tab: 'statuses' });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect((q(sr, '[data-testid="status-label"]') as HTMLInputElement).value).toBe('Missing');
+    expect(q(sr, '[data-testid="status-duplicate-hint"]')).toBe(null);
+  });
+
+  // The preview exists for people writing automations, and it was eliding the
+  // identifier it exists to show while the row still had free width.
+  it('shows the derived slug in full, and titles both places it appears', async () => {
+    const { el, sr } = await mount({ tab: 'statuses' });
+    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
+    input.value = 'Lent out to the neighbours';
+    input.dispatchEvent(new Event('input'));
+    await settle(el);
+
+    const preview = q(sr, '[data-testid="status-slug-preview"]');
+    expect(preview?.textContent?.trim()).toBe('lent_out_to_the_neighbours');
+    expect(preview?.getAttribute('title')).toBe('lent_out_to_the_neighbours');
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'needs_repair');
+    expect(row?.querySelector('[data-testid="status-slug"]')?.getAttribute('title')).toBe(
+      'needs_repair',
+    );
+  });
+
+  it('lets the slug wrap under the name field rather than eliding beside it', () => {
+    const css = dialogCss();
+    expect(css).toMatch(/\.status-name \{[^}]*flex-wrap: wrap/);
+    // Not shrinkable, so it wraps to a line of its own instead of being cut…
+    expect(css).toMatch(/\.status-name \.status-slug \{[^}]*flex: 0 0 auto/);
+    // …while the list row keeps the elision that stops a long slug pushing the
+    // delete button off the dialog.
+    expect(css).toMatch(/\.status-slug \{[^}]*flex: 0 1 auto[^}]*text-overflow: ellipsis/);
+  });
+
+  // Measured in the sidebar panel at 390px: the row needed 404px of a 362px
+  // box, so the trash button for "Lent out to the neighbours" sat 28px past the
+  // dialog's right edge — off the screen, with no way to scroll to it.
+  it('lets a long status label elide so the row actions stay inside the dialog', () => {
+    const css = dialogCss();
+    // The chip is flex:none everywhere else; in a status row it has to give way.
+    expect(css).toMatch(/\.status-row \.hv-status-chip \{[^}]*flex: 0 1 auto/);
+    expect(css).toMatch(/\.status-row \.hv-status-chip \{[^}]*min-width: 0/);
+    // The slug still empties first — a shrink factor of 1 would take from both
+    // in proportion to their widths and cut the label while the slug held on.
+    expect(css).toMatch(/\.status-row \.status-slug \{[^}]*flex-shrink: 20/);
+  });
+
+  // Five children on one row left the select ~44px wide, showing "O⌄" — the one
+  // thing the guard exists to make legible before a destructive click.
+  it('stacks the delete guard on a phone and keeps the reassign select readable', () => {
+    const css = dialogCss();
+    expect(css).toMatch(/\.guard \{[^}]*flex-wrap: wrap/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.status-guard \{[^}]*flex-direction: column/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.status-guard \{[^}]*align-items: stretch/);
+    expect(css).toMatch(/\.status-guard \.guard-message \{[^}]*flex: 1 1 100%/);
+    expect(css).toMatch(/\.guard-target select\.control \{[^}]*min-width: 140px/);
+  });
+
+  // The sentence naming where 40 items are about to go carried .note's tertiary
+  // grey, which measures 2.5:1 over the guard's fill. It is the guard's own
+  // message, so it takes the guard's ink.
+  it('inks the guard message with the guard, not with a note grey', async () => {
+    const { el, sr } = await mount({
+      tab: 'statuses',
+      items: [makeItem({ id: 'i8', name: 'Ladder', status: 'missing' })],
+    });
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-remove"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const message = q(sr, '[data-testid="status-guard-message"]');
+    expect(message?.textContent).toContain('1 item');
+    expect(message?.classList.contains('note')).toBe(false);
+  });
+
+  it('marks the guard so its stacking cannot reach the location guard', async () => {
+    const { el, sr } = await mount({
+      tab: 'statuses',
+      items: [makeItem({ id: 'i9', name: 'Ladder', status: 'missing' })],
+    });
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-remove"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const guard = q(sr, '[data-testid="status-guard"]');
+    expect(guard?.classList.contains('status-guard')).toBe(true);
+    expect(guard?.querySelector('.guard-target select')).not.toBe(null);
+  });
+
+  // DOM-measured on a phone before this pass: chevrons 15×15 stacked a pixel
+  // apart, edit/delete 26×26, swatches 26×22, the count link 14px tall. WCAG
+  // 2.2 asks 24px of every pointer; a finger wants the platform's 44.
+  it('sizes every statuses-tab control for a finger', () => {
+    const css = dialogCss();
+    for (const [selector, size] of [
+      ['\\.move button', '24px'],
+      ['\\.swatch', '26px'],
+    ] as const) {
+      expect(css, selector).toMatch(new RegExp(`${selector} \\{[^}]*height: ${size}`));
+    }
+    expect(css).toMatch(/\.status-row \.count-link \{[^}]*min-height: 24px/);
+
+    for (const selector of [
+      '\\.move button',
+      '\\.swatch',
+      '\\.swatches \\.glyph',
+      '\\.status-row \\.row-actions button',
+    ]) {
+      expect(css, selector).toMatch(
+        new RegExp(
+          `:host\\(\\[mobile\\]\\) ${selector} \\{[^}]*width: var\\(--hv-tap-min, 44px\\)[^}]*height: var\\(--hv-tap-min, 44px\\)`,
+        ),
+      );
+    }
+    expect(css).toMatch(
+      /:host\(\[mobile\]\) \.status-row \.count-link \{[^}]*min-height: var\(--hv-tap-min, 44px\)/,
+    );
+  });
+
+  // The colour row compressed ten swatches onto one line while the icon row
+  // wrapped; at touch size neither fits, so both must wrap.
+  it('wraps the swatch rows instead of squeezing them onto one line', () => {
+    expect(dialogCss()).toMatch(/\.swatches \{[^}]*flex-wrap: wrap/);
   });
 });

@@ -22,6 +22,7 @@ from .const import DOMAIN
 from .exceptions import (
     ConflictError,
     NotFoundError,
+    NotLoadedError,
     StorageError,
     ValidationError,
     error_code,
@@ -45,6 +46,7 @@ SCHEMA_ITEM_CREATE = vol.Schema(
         vol.Required("name"): str,
         vol.Optional("description"): vol.Any(str, None),
         vol.Optional("quantity", default=1): int,
+        vol.Optional("status"): str,
         vol.Optional("checked_out", default=False): bool,
         vol.Optional("due_date"): str,
         vol.Optional("inspection_date"): str,
@@ -63,6 +65,7 @@ SCHEMA_ITEM_UPDATE = vol.Schema(
         vol.Optional("name"): str,
         vol.Optional("description"): vol.Any(str, None),
         vol.Optional("quantity"): int,
+        vol.Optional("status"): str,
         vol.Optional("checked_out"): bool,
         vol.Optional("due_date"): vol.Any(str, None),
         vol.Optional("inspection_date"): vol.Any(str, None),
@@ -144,7 +147,7 @@ def _get_repo(hass: HomeAssistant) -> Repository:
     bucket = hass.data.get(DOMAIN) or {}
     repo = bucket.get("repository")
     if repo is None:
-        raise StorageError("repository not initialized; run integration setup")
+        raise NotLoadedError("repository not initialized; run integration setup")
     return repo  # type: ignore[return-value]
 
 
@@ -153,10 +156,10 @@ def _log_domain_error(op: str, context: dict[str, Any], exc: Exception) -> None:
     # just raises it before the domain layer gets a chance to.
     code = "validation_error" if isinstance(exc, vol.Invalid) else error_code(exc)
     LOGGER.log(
-        log_severity(code),
+        log_severity(code, exc),
         str(exc),
         extra={"domain": DOMAIN, "op": op, **context},
-        exc_info=log_exc_info(code),
+        exc_info=log_exc_info(code, exc),
     )
 
 

@@ -1,9 +1,9 @@
 r"""Initialize HAventory config entry via Home Assistant WebSocket API.
 
-Usage (PowerShell):
-  $env:HA_BASE_URL = 'http://localhost:8123'
-  $env:HA_TOKEN = '<your-long-lived-token>'
-  python .\scripts\ws_init_haventory.py
+Usage:
+  export HA_BASE_URL='http://localhost:8123'
+  export HA_TOKEN='<your-long-lived-token>'
+  uv run python scripts/ws_init_haventory.py
 
 Behavior:
 - Starts the HAventory config flow (domain "haventory").

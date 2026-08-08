@@ -230,3 +230,206 @@ describe('WSClient.subscribe when Home Assistant returns a promise', () => {
     expect(sent[1]).not.toHaveProperty('location_id');
   });
 });
+
+describe('WSClient attachments', () => {
+  /** A hass that records the upload POST and the WS frames that follow it. */
+  function makeUploadHass(response?: Partial<Response>) {
+    const sent: Record<string, unknown>[] = [];
+    const posts: { path: string; init?: RequestInit }[] = [];
+    const hass = {
+      sent,
+      posts,
+      callWS<T>(msg: Record<string, unknown>): Promise<T> {
+        sent.push(msg);
+        return Promise.resolve(undefined as T);
+      },
+      fetchWithAuth(path: string, init?: RequestInit) {
+        posts.push({ path, init });
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ file_id: 'upload-1' }),
+          ...response,
+        } as Response);
+      },
+      connection: { subscribeMessage: () => () => undefined },
+    };
+    return hass as unknown as HassLike & { sent: Record<string, unknown>[]; posts: typeof posts };
+  }
+
+  it('POSTs the bytes to core and then names the handle over the socket', async () => {
+    // The WebSocket carries JSON frames; an 8 MB photo base64'd into one would
+    // be both slower and larger, so the bytes go over HTTP instead.
+    const hass = makeUploadHass();
+    const ws = new WSClient(hass);
+
+    await ws.uploadAttachment('i-1', new File(['x'], 'drill.png', { type: 'image/png' }));
+
+    expect(hass.posts[0].path).toBe('/api/file_upload');
+    expect(hass.posts[0].init?.method).toBe('POST');
+    expect(hass.posts[0].init?.body).toBeInstanceOf(FormData);
+    expect(hass.sent[0]).toEqual({
+      type: 'haventory/item/attachment/add',
+      item_id: 'i-1',
+      file_id: 'upload-1',
+      kind: 'picture',
+      filename: 'drill.png',
+    });
+  });
+
+  it('sends expected_version only when one was supplied', async () => {
+    const hass = makeUploadHass();
+    const ws = new WSClient(hass);
+
+    await ws.uploadAttachment('i-1', new File(['x'], 'a.png'), 'picture', 4);
+    await ws.uploadAttachment('i-1', new File(['x'], 'b.png'));
+
+    expect(hass.sent[0]).toMatchObject({ expected_version: 4 });
+    expect(hass.sent[1]).not.toHaveProperty('expected_version');
+  });
+
+  it('never reaches the socket when the upload itself failed', async () => {
+    const hass = makeUploadHass({ ok: false, status: 413 });
+    const ws = new WSClient(hass);
+
+    await expect(
+      ws.uploadAttachment('i-1', new File(['x'], 'huge.png')),
+    ).rejects.toThrow(/413/);
+    expect(hass.sent).toEqual([]);
+  });
+
+  it('says so plainly when the connection cannot upload at all', async () => {
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await expect(ws.uploadAttachment('i-1', new File(['x'], 'a.png'))).rejects.toThrow(
+      /cannot upload files/,
+    );
+  });
+
+  it('names the kind the file is being attached as', async () => {
+    const hass = makeUploadHass();
+    const ws = new WSClient(hass);
+
+    await ws.uploadAttachment('i-1', new File(['x'], 'manual.pdf'), 'manual');
+
+    expect(hass.sent[0]).toMatchObject({ kind: 'manual', filename: 'manual.pdf' });
+  });
+
+  it('retitles an attachment without touching its filename', async () => {
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.updateAttachment('i-1', 'att-1', 'Dishwasher manual', 6);
+
+    expect(hass.sent[0]).toEqual({
+      type: 'haventory/item/attachment/update',
+      item_id: 'i-1',
+      attachment_id: 'att-1',
+      title: 'Dishwasher manual',
+      expected_version: 6,
+    });
+  });
+
+  it('clears a title with an empty string rather than omitting the field', async () => {
+    // Omitting it would read as "leave the title alone", so a user who clears
+    // the field would keep the old title.
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.updateAttachment('i-1', 'att-1', '');
+
+    expect(hass.sent[0]).toMatchObject({ title: '' });
+    expect(hass.sent[0]).not.toHaveProperty('expected_version');
+  });
+
+  it('reorders one kind by naming its whole order', async () => {
+    // Position 0 is what makes a picture the cover, so "make cover" is this
+    // command rather than a flag of its own.
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.reorderAttachments('i-1', 'picture', ['c', 'a', 'b']);
+
+    expect(hass.sent[0]).toEqual({
+      type: 'haventory/item/attachment/reorder',
+      item_id: 'i-1',
+      kind: 'picture',
+      attachment_ids: ['c', 'a', 'b'],
+    });
+  });
+
+  it('removes an attachment by both ids', async () => {
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.removeAttachment('i-1', 'att-1', 6);
+
+    expect(hass.sent[0]).toEqual({
+      type: 'haventory/item/attachment/remove',
+      item_id: 'i-1',
+      attachment_id: 'att-1',
+      expected_version: 6,
+    });
+  });
+
+  it('signs a media path through core, and hands back the signed one', async () => {
+    const sent: Record<string, unknown>[] = [];
+    const hass = {
+      callWS<T>(msg: Record<string, unknown>): Promise<T> {
+        sent.push(msg);
+        return Promise.resolve({ path: '/api/haventory/media/i-1/att-1?authSig=abc' } as T);
+      },
+      connection: { subscribeMessage: () => () => undefined },
+    } as unknown as HassLike;
+    const ws = new WSClient(hass);
+
+    const signed = await ws.signPath('/api/haventory/media/i-1/att-1', 300);
+
+    expect(sent[0]).toEqual({
+      type: 'auth/sign_path',
+      path: '/api/haventory/media/i-1/att-1',
+      expires: 300,
+    });
+    expect(signed).toBe('/api/haventory/media/i-1/att-1?authSig=abc');
+  });
+});
+
+describe('WSClient: status definitions', () => {
+  it('sends the CRUD commands the backend registers', async () => {
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.listStatuses();
+    await ws.createStatus({ slug: 'lent_out', label: 'Lent out', color: 'blue' });
+    await ws.updateStatus('lent_out', { label: 'On loan' });
+    await ws.reorderStatuses(['ok', 'lent_out']);
+
+    expect(hass.sent.map((c) => c.type)).toEqual([
+      'haventory/status/list',
+      'haventory/status/create',
+      'haventory/status/update',
+      'haventory/status/reorder',
+    ]);
+    expect(hass.sent[1]).toMatchObject({ slug: 'lent_out', label: 'Lent out', color: 'blue' });
+    expect(hass.sent[2]).toMatchObject({ slug: 'lent_out', label: 'On loan' });
+  });
+
+  // The backend refuses a delete that would orphan items, so the target is what
+  // turns a refusal into a completed move — but it must not be sent when absent,
+  // or an unused status could not be deleted at all.
+  it('omits reassign_to unless a target was chosen', async () => {
+    const hass = makeSpyHass();
+    const ws = new WSClient(hass);
+
+    await ws.deleteStatus('lent_out');
+    await ws.deleteStatus('lent_out', 'ok');
+
+    expect(hass.sent[0]).toEqual({ type: 'haventory/status/delete', slug: 'lent_out' });
+    expect(hass.sent[1]).toEqual({
+      type: 'haventory/status/delete',
+      slug: 'lent_out',
+      reassign_to: 'ok',
+    });
+  });
+});

@@ -1,8 +1,10 @@
 import './hv-full-view';
+import { NARROW_QUERY } from './hv-full-view';
 import { makeMockHass, makeItem } from '../test.utils';
+import { deepActiveElement } from '../ui/dialog-focus';
 import { Store } from '../store/store';
 import type { HVFullView } from './hv-full-view';
-import type { Item, Location } from '../store/types';
+import type { Item, Location, StatusDefinition } from '../store/types';
 
 function loc(id: string, name: string, parentId: string | null = null): Location {
   const display = parentId ? `${parentId} / ${name}` : name;
@@ -20,14 +22,30 @@ function loc(id: string, name: string, parentId: string | null = null): Location
   };
 }
 
-async function mount(opts: { items?: Item[]; locations?: Location[] } = {}) {
-  const hass = makeMockHass({ items: opts.items ?? [], locations: opts.locations ?? [] });
+async function mount(
+  opts: {
+    items?: Item[];
+    locations?: Location[];
+    areas?: { id: string; name: string }[];
+    statuses?: StatusDefinition[];
+    embedded?: boolean;
+    narrow?: boolean;
+  } = {},
+) {
+  const hass = makeMockHass({
+    items: opts.items ?? [],
+    locations: opts.locations ?? [],
+    areas: opts.areas ?? [],
+    ...(opts.statuses ? { statuses: opts.statuses } : {}),
+  });
   const store = new Store(hass, { retryBaseMs: 0 });
   await store.init();
 
   const el = document.createElement('hv-full-view') as HVFullView;
   el.store = store;
   el.columns = ['quantity', 'category'];
+  if (opts.embedded) el.embedded = true;
+  if (opts.narrow) el.narrow = true;
   el.open = true;
   document.body.appendChild(el);
   await el.updateComplete;
@@ -67,9 +85,10 @@ describe('hv-full-view: phone-width app bar', () => {
     expect(narrow()).toMatch(/\.appbar \{[^}]*flex-wrap: wrap/);
   });
 
-  it('lets the search field shrink at any width', () => {
+  it('lets the search field shrink to nothing at phone widths', () => {
     // `flex: 1` alone leaves min-width at auto, so the field refuses to
-    // compress below its content and shoves its siblings off the bar.
+    // compress below its content and shoves its siblings off the bar. The
+    // desktop block puts a floor back under it — see the wide-bar describe.
     expect(fullCss()).toMatch(/\.appbar \.search \{[^}]*min-width: 0/);
   });
 
@@ -195,6 +214,43 @@ describe('hv-full-view: phone-width app bar', () => {
   });
 });
 
+// The search is the only item on the bar that can shrink — every pill, the
+// title and both trailing buttons are flex:none — so each pill added comes out
+// of it. With all six showing it collapsed to "Search all 1(" in a 1024px
+// content area, which is what this block exists to stop.
+describe('hv-full-view: wide app bar', () => {
+  const wide = () => {
+    const css = fullCss();
+    const start = css.indexOf('@media (min-width: 701px)');
+    expect(start, 'no wide-viewport block').toBeGreaterThan(-1);
+    // Stop at the phone block so a rule from it can never satisfy these.
+    const end = css.indexOf('@media (max-width: 700px)', start);
+    return end > start ? css.slice(start, end) : css.slice(start);
+  };
+
+  // The complement of NARROW_QUERY: the two blocks must not both apply, and
+  // must not leave a width where neither does.
+  it('picks up exactly where the phone block leaves off', () => {
+    expect(NARROW_QUERY).toBe('(max-width: 700px)');
+    expect(fullCss()).toContain('@media (min-width: 701px)');
+  });
+
+  it('puts a floor under the search rather than letting the pills eat it', () => {
+    expect(wide()).toMatch(/\.appbar \.search \{[^}]*min-width: 260px/);
+  });
+
+  it('lets the bar take a second line once the pills stop fitting', () => {
+    expect(wide()).toMatch(/\.appbar \{[^}]*flex-wrap: wrap/);
+  });
+
+  // A spacer can only push on the line it is on, so once the bar wraps it holds
+  // the first line open while the actions land left-aligned under the title.
+  it('carries the right-alignment on the actions, not on a spacer', () => {
+    expect(wide()).toMatch(/\.appbar \.spacer \{[^}]*display: none/);
+    expect(wide()).toMatch(/\.appbar \.add \{[^}]*margin-left: auto/);
+  });
+});
+
 describe('hv-full-view: shell', () => {
   it('renders nothing when closed', async () => {
     const { el, sr } = await mount();
@@ -238,6 +294,151 @@ describe('hv-full-view: shell', () => {
   });
 });
 
+// The same surface, hosted by a Home Assistant panel rather than by the card.
+// It is a page there: nothing sits behind it, it has nowhere to close to, and
+// it shares the tab order and the Escape key with the rest of the frontend.
+describe('hv-full-view: embedded', () => {
+  it('renders neither backdrop nor focus sentinels', async () => {
+    const { sr } = await mount({ embedded: true });
+    expect(q(sr, '.backdrop')).toBe(null);
+    expect(sr.querySelectorAll('.sentinel')).toHaveLength(0);
+  });
+
+  it('drops the dialog semantics but keeps the surface', async () => {
+    const { sr } = await mount({ embedded: true, items: [makeItem({ id: '1' })] });
+    const shell = q(sr, '[data-testid="full-view"]') as HTMLElement;
+    expect(shell.hasAttribute('role')).toBe(false);
+    expect(shell.hasAttribute('aria-modal')).toBe(false);
+    expect(shell.getAttribute('aria-label')).toBe('HAventory');
+    expect(q(sr, '.appbar')).toBeTruthy();
+    expect(q(sr, '[data-testid="full-table"]')).toBeTruthy();
+    expect(q(sr, '[data-testid="full-sidebar"]')).toBeTruthy();
+  });
+
+  it('has no close button — a page has nowhere to close to', async () => {
+    const { sr } = await mount({ embedded: true });
+    expect(q(sr, '[data-testid="expand-toggle"]')).toBe(null);
+  });
+
+  // Swallowing Escape here would take the key away from whatever Home Assistant
+  // has open over the panel.
+  it('ignores Escape, and lets it through', async () => {
+    const { el, sr } = await mount({ embedded: true });
+    let closes = 0;
+    el.addEventListener('close', () => {
+      closes += 1;
+    });
+
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    (q(sr, '[data-testid="full-view"]') as HTMLElement).dispatchEvent(event);
+    await el.updateComplete;
+
+    expect(closes).toBe(0);
+    expect(el.open).toBe(true);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('does not pull focus into itself the way a dialog does', async () => {
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    outside.focus();
+
+    const { el } = await mount({ embedded: true });
+    await el.updateComplete;
+
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+
+  it('is sized by its host rather than by the viewport', () => {
+    const css = fullCss();
+    expect(css).toContain(':host([embedded]) { display: block; height: 100%; }');
+    expect(css).toContain(
+      ':host([embedded]) .shell { position: relative; inset: auto; height: 100%; box-shadow: none; }',
+    );
+  });
+
+  // The embedded rules override the shell's box and nothing else: the grid rows
+  // and the sideways pan are what the layout inside depends on.
+  it('keeps the shell a two-row grid that can be panned sideways', () => {
+    const css = fullCss();
+    expect(css).toContain('.shell { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr;');
+    expect(css).toContain('overflow-x: auto;');
+  });
+
+  it('leaves the overlay variant modal', async () => {
+    const { sr } = await mount();
+    const shell = q(sr, '[data-testid="full-view"]') as HTMLElement;
+    expect(shell.getAttribute('role')).toBe('dialog');
+    expect(shell.getAttribute('aria-modal')).toBe('true');
+    expect(q(sr, '.backdrop')).toBeTruthy();
+    expect(sr.querySelectorAll('.sentinel')).toHaveLength(2);
+    expect(q(sr, '[data-testid="expand-toggle"]')).toBeTruthy();
+  });
+
+  // The trap's two ends came from a query rooted in this shadow root, which
+  // stops at every `hv-*` boundary below it. The rows, the sidebar tree and the
+  // editor were all past one, so "last focusable" landed in the middle of the
+  // surface and Tab walked out through everything behind it.
+  it('bounces off the end of the trap into a child component, not out of it', async () => {
+    const { el, sr } = await mount({ items: [makeItem({ id: '1' }), makeItem({ id: '2' })] });
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    const rows = [...(table.shadowRoot?.querySelectorAll('[data-testid="table-row"]') ?? [])];
+    const lastEdit = rows[rows.length - 1].querySelector('[data-testid="table-edit"]');
+
+    // Shift+Tab off the front lands on the leading sentinel, which sends focus
+    // to the last thing inside the trap.
+    (sr.querySelector('.sentinel') as HTMLElement).focus();
+    await el.updateComplete;
+
+    expect(deepActiveElement()).toBe(lastEdit);
+  });
+
+  it('opens on the first control of the surface, not on something nested in it', async () => {
+    const { sr } = await mount({ items: [makeItem({ id: '1' })] });
+    expect(deepActiveElement()).toBe(q(sr, '[data-testid="expand-toggle"]'));
+  });
+});
+
+describe('hv-full-view: the narrow-mode sidebar affordance', () => {
+  it('leads the app bar with a menu button when embedded and narrow', async () => {
+    const { sr } = await mount({ embedded: true, narrow: true });
+    const bar = q(sr, '.appbar') as HTMLElement;
+    expect(bar.firstElementChild?.getAttribute('data-testid')).toBe('panel-menu');
+  });
+
+  it('offers no menu button when the sidebar is already showing', async () => {
+    const { sr } = await mount({ embedded: true });
+    expect(q(sr, '[data-testid="panel-menu"]')).toBe(null);
+  });
+
+  // Narrow is Home Assistant's flag, so it means nothing to the card's overlay —
+  // which has its own close button in that slot.
+  it('offers no menu button in the overlay variant', async () => {
+    const { sr } = await mount({ narrow: true });
+    expect(q(sr, '[data-testid="panel-menu"]')).toBe(null);
+    expect(q(sr, '[data-testid="expand-toggle"]')).toBeTruthy();
+  });
+
+  // `home-assistant-main` listens for this by name and toggles its drawer; with
+  // no detail it flips whatever the drawer is currently doing.
+  it('asks Home Assistant to toggle its menu', async () => {
+    const { el, sr } = await mount({ embedded: true, narrow: true });
+    const seen: Event[] = [];
+    const onToggle = (e: Event) => seen.push(e);
+    window.addEventListener('hass-toggle-menu', onToggle);
+
+    (q(sr, '[data-testid="panel-menu"]') as HTMLButtonElement).click();
+    window.removeEventListener('hass-toggle-menu', onToggle);
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].composed).toBe(true);
+    expect(seen[0].bubbles).toBe(true);
+    expect((seen[0] as CustomEvent).detail).toBeUndefined();
+    el.remove();
+  });
+});
+
 describe('hv-full-view: sidebar', () => {
   const locations = [loc('garage', 'Garage'), loc('shelf-a', 'Shelf A', 'garage'), loc('kitchen', 'Kitchen')];
 
@@ -256,6 +457,43 @@ describe('hv-full-view: sidebar', () => {
     expect(rows[0].querySelector('[data-testid="tree-count"]')?.textContent?.trim()).toBe('2');
     expect(tree.shadowRoot?.querySelector('[data-testid="tree-all"]')?.textContent).toContain('All items');
     expect(tree.shadowRoot?.querySelector('[data-testid="tree-orphans"]')?.textContent).toContain('1');
+  });
+
+  it('drives the area filter from a sidebar area header', async () => {
+    // Browsing is the one surface where an area row means something to press:
+    // the item filter already takes an area, so the header is a way into it.
+    const areaLocations = [{ ...loc('garage', 'Garage'), area_id: 'area-garage' }, loc('kitchen', 'Kitchen')];
+    const { el, store, sr } = await mount({
+      items: [makeItem({ id: '1', location_id: 'garage' })],
+      locations: areaLocations,
+      areas: [{ id: 'area-garage', name: 'Garage' }],
+    });
+    const tree = q(sr, '[data-testid="sidebar-tree"]') as HTMLElement;
+
+    const head = tree.shadowRoot?.querySelector('[data-testid="tree-area-select"]') as HTMLButtonElement;
+    expect(head).toBeTruthy();
+    head.click();
+    await settle(el);
+    expect(store.state.value.filters.areaId).toBe('area-garage');
+  });
+
+  it('assigns only real locations from the pickers, never an area', async () => {
+    const areaLocations = [{ ...loc('garage', 'Garage'), area_id: 'area-garage' }];
+    const { el, sr } = await mount({
+      items: [makeItem({ id: '1', location_id: 'garage' })],
+      locations: areaLocations,
+      areas: [{ id: 'area-garage', name: 'Garage' }],
+    });
+    (q(sr, '[data-testid="full-add-item"]') as HTMLButtonElement).click();
+    await settle(el);
+    const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement;
+    (editor.shadowRoot?.querySelector('[data-testid="editor-location"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const picker = editor.shadowRoot?.querySelector('[data-testid="editor-location-tree"]') as HTMLElement;
+    const head = picker.shadowRoot?.querySelector('[data-testid="tree-area-head"]');
+    expect(head, 'the picker groups by area too').toBeTruthy();
+    expect(picker.shadowRoot?.querySelector('[data-testid="tree-area-select"]')).toBe(null);
   });
 
   it('drives the location filter from the tree', async () => {
@@ -333,6 +571,7 @@ describe('hv-full-view: sidebar facets', () => {
     const heads = [...sr.querySelectorAll('.sidebar-head .section-toggle')] as HTMLElement[];
     expect(heads.map((h) => h.dataset.testid)).toEqual([
       'sidebar-toggle-locations',
+      'sidebar-toggle-status',
       'sidebar-toggle-categories',
       'sidebar-toggle-tags',
     ]);
@@ -397,6 +636,33 @@ describe('hv-full-view: sidebar facets', () => {
     expect(
       (sr.querySelectorAll('[data-testid="sidebar-tags-mode"]')[1] as HTMLElement).getAttribute('aria-checked'),
     ).toBe('true');
+  });
+
+  // aria-expanded on its own says only that something opened; which element it
+  // opened was left to whatever happened to follow the heading in reading order.
+  it('names the panel each heading discloses, open or shut', async () => {
+    const { el, sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
+    const toggle = (section: string) =>
+      q(sr, `[data-testid="sidebar-toggle-${section}"]`) as HTMLButtonElement;
+
+    for (const section of ['locations', 'status', 'categories', 'tags']) {
+      const id = `sidebar-section-${section}`;
+      expect(toggle(section).getAttribute('aria-controls'), section).toBe(id);
+      expect(toggle(section).getAttribute('aria-expanded'), `${section} open`).toBe('true');
+      // The id has to resolve in both states — a control pointing at nothing
+      // announces as controlling nothing.
+      expect(sr.getElementById(id), `${section} open`).toBeTruthy();
+
+      toggle(section).click();
+      await settle(el);
+
+      expect(toggle(section).getAttribute('aria-expanded'), `${section} shut`).toBe('false');
+      expect(toggle(section).getAttribute('aria-controls'), `${section} shut`).toBe(id);
+      expect(sr.getElementById(id), `${section} shut`).toBeTruthy();
+
+      toggle(section).click();
+      await settle(el);
+    }
   });
 
   it('collapses a section from its heading, keeping the heading reachable', async () => {
@@ -479,6 +745,112 @@ describe('hv-full-view: sidebar facets', () => {
   });
 });
 
+describe('hv-full-view: sidebar status', () => {
+  const flagged = [
+    makeItem({ id: '1', status: 'missing' }),
+    makeItem({ id: '2', status: 'needs_repair' }),
+    makeItem({ id: '3', status: 'needs_repair' }),
+    makeItem({ id: '4' }),
+  ];
+  const rows = (sr: ShadowRoot) =>
+    [...sr.querySelectorAll('[data-testid="sidebar-status-row"]')] as HTMLElement[];
+  const tallies = (sr: ShadowRoot) =>
+    rows(sr).map((r) => r.querySelector('.hv-tally')?.textContent?.trim() ?? null);
+
+  // Every row is priced from the per-slug map, so the facet says what the
+  // backend says rather than what the facet can derive.
+  it('lists the three statuses with their counts', async () => {
+    const { sr } = await mount({ items: flagged });
+    expect(rows(sr).map((r) => r.dataset.value)).toEqual(['ok', 'missing', 'needs_repair']);
+    expect(tallies(sr)).toEqual(['1', '1', '2']);
+  });
+
+  // The audit's fixture in miniature: custom slugs used to inherit "everything
+  // that is not missing or needs_repair", so an empty status claimed the whole
+  // inventory and then showed no rows when it was clicked.
+  it('prices a household vocabulary per slug, including one nothing carries', async () => {
+    const statuses: StatusDefinition[] = [
+      { slug: 'ok', label: 'OK', order: 0, color: 'green', icon: 'check' },
+      { slug: 'lent_out', label: 'Lent out', order: 1, color: 'blue', icon: 'hand' },
+      { slug: 'in_transit', label: 'In transit', order: 2, color: 'blue_strong', icon: 'truck' },
+    ];
+    const items = [
+      makeItem({ id: '1', status: 'lent_out' }),
+      makeItem({ id: '2', status: 'lent_out' }),
+      makeItem({ id: '3' }),
+      makeItem({ id: '4' }),
+      makeItem({ id: '5' }),
+    ];
+    const { sr } = await mount({ items, statuses });
+
+    expect(rows(sr).map((r) => r.dataset.value)).toEqual(['ok', 'lent_out', 'in_transit']);
+    expect(tallies(sr)).toEqual(['3', '2', '0']);
+  });
+
+  it('filters to one status and clears it on a second press', async () => {
+    const { el, store, sr } = await mount({ items: flagged });
+    const missing = () => rows(sr).find((r) => r.dataset.value === 'missing');
+
+    missing()?.click();
+    await settle(el);
+    expect(store.state.value.filters.status).toBe('missing');
+    expect(missing()?.classList).toContain('on');
+
+    missing()?.click();
+    await settle(el);
+    expect(store.state.value.filters.status).toBe(null);
+  });
+
+  // Single-select, because the backend filter takes exactly one status — so a
+  // second pick replaces the first rather than adding to it, as category does.
+  it('replaces the selection rather than accumulating it', async () => {
+    const { el, store, sr } = await mount({ items: flagged });
+
+    rows(sr).find((r) => r.dataset.value === 'missing')?.click();
+    await settle(el);
+    rows(sr).find((r) => r.dataset.value === 'needs_repair')?.click();
+    await settle(el);
+
+    expect(store.state.value.filters.status).toBe('needs_repair');
+    expect(rows(sr).filter((r) => r.classList.contains('on')).map((r) => r.dataset.value)).toEqual([
+      'needs_repair',
+    ]);
+  });
+
+  // A backend too old to send the map still prices the two flagged built-ins in
+  // their own fields; the default is not knowable there, and stays unpriced
+  // rather than being derived from the halves that did arrive.
+  it('falls back to the legacy fields when the per-slug map is absent', async () => {
+    const { el, store, sr } = await mount({ items: flagged });
+    const counts = store.state.value.statsCounts as unknown as Record<string, unknown>;
+    delete counts.status_counts;
+    el.requestUpdate();
+    await settle(el);
+
+    expect(tallies(sr)).toEqual([null, '1', '2']);
+  });
+
+  it('drops every tally when the backend prices no statuses at all', async () => {
+    const { el, store, sr } = await mount({ items: flagged });
+    const counts = store.state.value.statsCounts as unknown as Record<string, unknown>;
+    delete counts.status_counts;
+    delete counts.missing_count;
+    delete counts.needs_repair_count;
+    el.requestUpdate();
+    await settle(el);
+
+    expect(tallies(sr)).toEqual([null, null, null]);
+  });
+
+  // Categories and tags tally how many rows they hold; here that number counts
+  // the household's vocabulary, not the inventory the facet navigates.
+  it('heads the section without a tally', async () => {
+    const { sr } = await mount({ items: flagged });
+    expect(q(sr, '[data-testid="sidebar-status-tally"]')).toBe(null);
+    expect(q(sr, '[data-testid="sidebar-toggle-status"]')?.textContent).toContain('Status');
+  });
+});
+
 describe('hv-full-view: context bar and table', () => {
   it('breadcrumbs the selected location with its filtered count', async () => {
     const locations = [loc('garage', 'Garage'), loc('shelf-a', 'Shelf A', 'garage')];
@@ -493,6 +865,37 @@ describe('hv-full-view: context bar and table', () => {
     expect(crumb).toContain('garage › Shelf A');
     // One item is one item — the crumb used to say "1 items".
     expect(crumb).toContain('1 item');
+  });
+
+  it('marks the area behind the crumb, where a segment span would read as part of the path', async () => {
+    const locations = [
+      { ...loc('garage', 'Garage'), area_id: 'area-kitchen' },
+      loc('shelf-a', 'Shelf A', 'garage'),
+    ];
+    const { el, store, sr } = await mount({
+      items: [makeItem({ id: '1', location_id: 'shelf-a' })],
+      locations,
+      areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
+    });
+
+    store.setFilters({ locationId: 'shelf-a' });
+    await settle(el);
+    const crumb = q(sr, '[data-testid="full-breadcrumb"]');
+    expect(crumb?.querySelector('.hv-area-chip')?.textContent).toContain('Kitchen');
+    expect(crumb?.textContent?.replace(/\s+/g, ' ')).toContain('garage › Shelf A');
+  });
+
+  it('leaves the crumb of an arealess tree exactly as it was', async () => {
+    const locations = [loc('garage', 'Garage'), loc('shelf-a', 'Shelf A', 'garage')];
+    const { el, store, sr } = await mount({
+      items: [makeItem({ id: '1', location_id: 'shelf-a' })],
+      locations,
+      areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
+    });
+
+    store.setFilters({ locationId: 'shelf-a' });
+    await settle(el);
+    expect(q(sr, '[data-testid="full-breadcrumb"]')?.querySelector('.hv-area-chip')).toBeNull();
   });
 
   it('sorts from the table headers', async () => {
@@ -582,6 +985,26 @@ describe('hv-full-view: empty table', () => {
     expect(empty.dataset.kind).toBe('no-items');
     expect(empty.textContent).toContain('No items yet');
   });
+
+  it('waits for the fetch instead of blaming the filters for the gap', async () => {
+    // Changing a filter clears the rows and asks for the next page, so between
+    // the two the table has nothing to show and no answer yet. It used to fill
+    // that gap with "No items match these filters" and a Clear all button,
+    // against a filter nothing had been counted for.
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
+    store.setFilters({ q: 'wood' });
+    await el.updateComplete;
+
+    const empty = q(sr, '[data-testid="empty-state"]') as HTMLElement;
+    expect(empty.dataset.kind).toBe('loading');
+    expect(empty.textContent).toContain('Loading items');
+    expect(q(sr, '[data-testid="empty-action"]')).toBe(null);
+
+    await settle(el);
+    await settle(el);
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    expect(table.shadowRoot?.querySelector('[data-testid="table-row"]')).toBeTruthy();
+  });
 });
 
 describe('hv-full-view: editing', () => {
@@ -611,6 +1034,50 @@ describe('hv-full-view: editing', () => {
     await settle(el);
 
     expect(store.state.value.items.map((i) => i.name)).toContain('From full view');
+    expect(q(sr, '[data-testid="full-editor"]')).toBe(null);
+  });
+
+  // Without this the editor renders `.item` as null once the row is gone —
+  // and a null item is the create form. On the panel there is no shell to
+  // clean up after the editor, so the view closes it itself.
+  it('closes the editor when the item being edited is deleted', async () => {
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(q(sr, '[data-testid="full-editor"]')).toBeTruthy();
+
+    await store.deleteItem('1', 1);
+    await settle(el);
+
+    expect(q(sr, '[data-testid="full-editor"]')).toBe(null);
+  });
+
+  it('keeps the editor open when some other item is deleted', async () => {
+    const { el, store, sr } = await mount({
+      items: [makeItem({ id: '1', name: 'Wood Glue' }), makeItem({ id: '2', name: 'Clamps' })],
+    });
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(q(sr, '[data-testid="full-editor"]')).toBeTruthy();
+
+    await store.deleteItem('2', 1);
+    await settle(el);
+
+    expect(q(sr, '[data-testid="full-editor"]')).toBeTruthy();
+  });
+
+  it('closes the editor when a filter change drops the item from the list', async () => {
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    store.setFilters({ q: 'matches nothing at all' });
+    await settle(el);
+    await settle(el);
+
     expect(q(sr, '[data-testid="full-editor"]')).toBe(null);
   });
 
@@ -745,6 +1212,41 @@ describe('hv-full-view: phone-width children', () => {
     }
   });
 
+  // aria-expanded on its own says only that something opened; which element it
+  // opened was left to whatever happened to follow the button in reading order.
+  it('names the holder the Filters button discloses, open or shut', async () => {
+    const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
+    const toggle = () => q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement;
+    const id = 'full-view-filter-panel';
+
+    expect(toggle().getAttribute('aria-controls')).toBe(id);
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    // The id has to resolve in both states — a button pointing at nothing
+    // announces as controlling nothing — so the holder outlives the panel.
+    const shut = sr.getElementById(id);
+    expect(shut, 'holder shut').toBeTruthy();
+    expect(shut?.querySelector('[data-testid="full-filter-panel"]'), 'no panel while shut').toBe(null);
+
+    toggle().click();
+    await settle(el);
+
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(toggle().getAttribute('aria-controls')).toBe(id);
+    expect(sr.getElementById(id)?.querySelector('[data-testid="full-filter-panel"]')).toBeTruthy();
+  });
+
+  // The holder sets a display of its own, which outranks the browser's rule for
+  // [hidden] — without this it would lay out its padding while empty.
+  it('takes the shut holder out of the layout it would otherwise pad', async () => {
+    const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
+    expect((sr.getElementById('full-view-filter-panel') as HTMLElement).hidden).toBe(true);
+    expect(fullCss()).toMatch(/\.panel-holder\[hidden\] \{[^}]*display: none/);
+
+    (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect((sr.getElementById('full-view-filter-panel') as HTMLElement).hidden).toBe(false);
+  });
+
   it('keeps the desktop panel live-applying, with no commit row', async () => {
     const restore = stubViewport(false);
     try {
@@ -798,6 +1300,25 @@ describe('hv-full-view: app bar filters', () => {
     expect(q(sr, '[data-testid="full-badge-overdue"]')?.getAttribute('aria-pressed')).toBe('true');
   });
 
+  // The bar's chips are the fixed chore/state vocabulary, all of them derived
+  // from the item. A status is the household's own word in the household's own
+  // colour, so pricing one here rendered it as a chore in the bar's amber and
+  // kept saying "missing" after the household had renamed and recoloured it.
+  // The sidebar facet and the filter chips own status navigation.
+  it('prices no status in the app bar, whatever the counts carry', async () => {
+    const statuses = [
+      makeItem({ id: '1', status: 'missing' }),
+      makeItem({ id: '2', status: 'needs_repair' }),
+      makeItem({ id: '3', status: 'ok', quantity: 0, low_stock_threshold: 5 }),
+    ];
+    const { sr } = await mount({ items: statuses });
+
+    expect(sr.querySelectorAll('[data-testid="full-badge-status"]')).toHaveLength(0);
+    // The derived exceptions stay: dropping the two status pills is not a
+    // retreat from pricing the bar.
+    expect(q(sr, '[data-testid="full-badge-low"]')).toBeTruthy();
+  });
+
   it('drops the overdue pill when nothing is overdue', async () => {
     const { sr } = await mount({ items: [makeItem({ id: '1', checked_out: true })] });
     expect(q(sr, '[data-testid="full-badge-overdue"]')).toBe(null);
@@ -834,13 +1355,13 @@ describe('hv-full-view: app bar filters', () => {
     expect(q(sr, '[data-testid="full-badge-out"]')?.textContent?.trim()).toBe('2 checked out');
   });
 
-  // Three identically washed pills said nothing apart. The card's hues carry the
-  // meaning; the fills are solid rather than the card's pale tints, because a
-  // tint over this already-coloured bar is unreadable in dark mode.
+  // The card's hues carry the meaning on this bar too, but the fills are solid
+  // rather than the card's pale tints, because a tint over an already-coloured
+  // bar is unreadable in dark mode.
   it('colours low and overdue the way the card does', () => {
     const css = fullCss();
-    expect(css).toMatch(/\.appbar \.pill\.low \{[^}]*background: var\(--hv-amber\)/);
-    expect(css).toMatch(/\.appbar \.pill\.overdue \{[^}]*background: var\(--hv-error\)/);
+    expect(css).toMatch(/\.appbar \.hv-chip\.warning \{[^}]*background: var\(--hv-amber\)/);
+    expect(css).toMatch(/\.appbar \.hv-chip\.error \{[^}]*background: var\(--hv-error\)/);
   });
 
   it('debounces the app bar search', async () => {

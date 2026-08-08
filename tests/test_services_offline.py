@@ -4,14 +4,18 @@ Scenarios:
 - item_create validates and creates an item; logs context on success
 - item_update applies update and logs validation errors without stack trace
 - location_create and update wire through to repository
+- the service catalog agrees across registration, `services.yaml` and `strings.json`
 """
 
 from __future__ import annotations
 
 import inspect
+import json
+from pathlib import Path
 
 import pytest
 import voluptuous as vol
+import yaml
 from custom_components.haventory import services as services_mod
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import ConflictError, NotFoundError, StorageError
@@ -236,3 +240,25 @@ async def test_repository_exceptions_are_logged(monkeypatch, caplog) -> None:
     with pytest.raises(StorageError):
         await services_mod.service_location_create(hass, {"name": "Root"})
     assert any(getattr(r, "op", None) == "location_create" for r in caplog.records)
+
+
+def test_service_catalog_agrees_across_registration_yaml_and_strings() -> None:
+    """Every registered service is described in `services.yaml` and translated.
+
+    Home Assistant renders a service in the UI from three files that nothing
+    joins up: `services.py` registers it, `services.yaml` declares its fields,
+    and `strings.json` supplies the name and description the frontend shows —
+    falling back to the `services.yaml` text only where the translation is
+    missing. A service added to one file and not the others still works over the
+    API, so the gap shows up as a shabby entry in the service picker rather than
+    as a failure.
+    """
+
+    package = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
+    registered = {name for name, _handler, _schema in services_mod.SERVICES}
+    documented = set(yaml.safe_load((package / "services.yaml").read_text(encoding="utf-8")))
+    translated = json.loads((package / "strings.json").read_text(encoding="utf-8"))["services"]
+
+    assert documented == registered, "services.yaml and the SERVICES table disagree"
+    assert set(translated) == registered, "strings.json and the SERVICES table disagree"
+    assert all(entry.keys() == {"name", "description"} for entry in translated.values())

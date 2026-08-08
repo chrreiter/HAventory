@@ -1,23 +1,27 @@
-"""Offline tests: storage save failure maps to storage_error at WS boundary.
+"""Offline tests: a save failure maps to storage_error and lets no event escape.
 
-Scenarios:
-- Simulate that persisting the repository raises StorageError
-- Invoke a WS command that persists (e.g., item/create)
-- Expect WS error with code 'storage_error' and an ERROR-level log
+Every mutation handler persists before it broadcasts, so a broadcast is a promise
+that the write behind it succeeded. These tests hold both halves of that:
 
-Edge case documentation:
-- When persist fails, mutation is already applied in memory
-- Broadcasts are sent before persist, so subscribers see the change
-- On restart, changes are lost (not persisted to disk)
-- This is a known limitation; rollback would add complexity for a rare edge case
+- a failing persist returns ``storage_error`` to the caller and delivers nothing
+  to subscribers, across every mutation shape the API exposes;
+- a *succeeding* persist delivers the event only once the store write resolved,
+  not merely at some point after the mutation was applied.
+
+The mutation does remain applied in memory when the write fails — the handlers do
+not roll back (``import/execute`` does, because a wholesale dataset swap has more
+to undo than one entity does). That divergence is documented at the bottom of this
+file: it survives only until restart, and no client is told about it.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import Callable
+from typing import Any
 
 import pytest
-from custom_components.haventory import ws as ws_module
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import StorageError
 from custom_components.haventory.repository import Repository
@@ -26,36 +30,57 @@ from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
 
-async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
+class _ConnStub:
+    """Collects everything the backend sends, so tests can read the wire."""
+
+    def __init__(self) -> None:
+        self.messages: list[dict[str, Any]] = []
+
+    def send_message(self, msg: dict[str, Any]) -> None:
+        self.messages.append(msg)
+
+    def on_close(self, callback: Callable[[], None]) -> None:
+        pass
+
+
+async def _send(hass: HomeAssistant, _id: int, type_: str, conn: object = None, **payload):
     handlers = hass.data.get("__ws_commands__", [])
     for h in handlers:
-        schema = getattr(h, "_ws_schema", None)
-        if not callable(h) or not isinstance(schema, dict):
-            continue
-        if schema.get("type") != type_:
+        if not callable(h) or getattr(h, "_ws_command", None) != type_:
             continue
         req = {"id": _id, "type": type_}
         req.update(payload)
-        return await h(hass, None, req)
+        return await h(hass, conn, req)
     raise AssertionError("No handler responded for type " + type_)
+
+
+def _events(conn: _ConnStub) -> list[dict[str, Any]]:
+    return [m["event"] for m in conn.messages if m.get("type") == "event"]
+
+
+def _make_hass() -> tuple[HomeAssistant, Repository, DomainStore]:
+    hass = HomeAssistant()
+    repo = Repository()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    store = DomainStore(hass)
+    hass.data[DOMAIN]["store"] = store
+    ws_setup(hass)
+    return hass, repo, store
+
+
+def _fail_next_save(monkeypatch: pytest.MonkeyPatch, store: DomainStore) -> None:
+    async def _raise(*_args, **_kwargs):
+        raise StorageError("disk full")
+
+    monkeypatch.setattr(store, "async_save", _raise)
 
 
 @pytest.mark.asyncio
 async def test_ws_maps_storage_error_and_logs(caplog, monkeypatch) -> None:
     """WS should return storage_error when persist fails and log at ERROR level."""
 
-    hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
-    ws_setup(hass)
-
-    # Force persist to raise StorageError via async_save on underlying store
-    async def _raise(*_args, **_kwargs):  # type: ignore[no-untyped-def]
-        raise StorageError("failed to persist repository")
-
-    # Monkeypatch DomainStore.async_save through the instance stored in hass
-    store = hass.data[DOMAIN]["store"]
-    monkeypatch.setattr(store, "async_save", _raise)
+    hass, _repo, store = _make_hass()
+    _fail_next_save(monkeypatch, store)
 
     caplog.set_level(logging.ERROR, logger="custom_components.haventory.ws")
 
@@ -70,185 +95,277 @@ async def test_ws_maps_storage_error_and_logs(caplog, monkeypatch) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Edge case tests: document behavior when persist fails after mutation
+# A failing persist lets nothing onto the wire — every mutation shape
+# -----------------------------------------------------------------------------
+
+
+# One entry per distinct mutation shape in ws.py: everything that persists.
+# (command, payload builder over the seeded ids)
+MUTATIONS: list[tuple[str, str, Callable[[str, str], dict[str, Any]]]] = [
+    ("item_create", "haventory/item/create", lambda _i, _l: {"name": "Fresh"}),
+    ("item_update", "haventory/item/update", lambda i, _l: {"item_id": i, "quantity": 5}),
+    ("item_delete", "haventory/item/delete", lambda i, _l: {"item_id": i}),
+    (
+        "item_adjust_quantity",
+        "haventory/item/adjust_quantity",
+        lambda i, _l: {"item_id": i, "delta": 1},
+    ),
+    (
+        "item_set_quantity",
+        "haventory/item/set_quantity",
+        lambda i, _l: {"item_id": i, "quantity": 7},
+    ),
+    ("item_check_out", "haventory/item/check_out", lambda i, _l: {"item_id": i}),
+    ("item_check_in", "haventory/item/check_in", lambda i, _l: {"item_id": i}),
+    ("item_add_tags", "haventory/item/add_tags", lambda i, _l: {"item_id": i, "tags": ["new"]}),
+    (
+        "item_remove_tags",
+        "haventory/item/remove_tags",
+        lambda i, _l: {"item_id": i, "tags": ["seed"]},
+    ),
+    (
+        "item_update_custom_fields",
+        "haventory/item/update_custom_fields",
+        lambda i, _l: {"item_id": i, "set": {"k": "v"}},
+    ),
+    (
+        "item_set_low_stock_threshold",
+        "haventory/item/set_low_stock_threshold",
+        lambda i, _l: {"item_id": i, "low_stock_threshold": 2},
+    ),
+    ("item_move", "haventory/item/move", lambda i, loc: {"item_id": i, "location_id": loc}),
+    (
+        "items_bulk",
+        "haventory/items/bulk",
+        lambda i, _l: {
+            "operations": [
+                {
+                    "op_id": "a",
+                    "kind": "item_adjust_quantity",
+                    "payload": {"item_id": i, "delta": 1},
+                }
+            ]
+        },
+    ),
+    ("location_create", "haventory/location/create", lambda _i, _l: {"name": "Shed"}),
+    (
+        "location_rename",
+        "haventory/location/update",
+        lambda _i, loc: {"location_id": loc, "name": "Renamed"},
+    ),
+    (
+        "location_reparent",
+        "haventory/location/update",
+        lambda _i, loc: {"location_id": loc, "new_parent_id": None},
+    ),
+    ("location_delete", "haventory/location/delete", lambda _i, loc: {"location_id": loc}),
+    (
+        "location_move_subtree",
+        "haventory/location/move_subtree",
+        lambda _i, loc: {"location_id": loc, "new_parent_id": None},
+    ),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("shape", "command", "build"), MUTATIONS, ids=[m[0] for m in MUTATIONS])
+async def test_failed_persist_delivers_no_event(
+    shape: str,
+    command: str,
+    build: Callable[[str, str], dict[str, Any]],
+    monkeypatch,
+    caplog,
+) -> None:
+    """No mutation shape may broadcast a change whose write failed.
+
+    The caller still learns the truth (``storage_error``); the subscribers learn
+    nothing at all, which is the correct thing to tell them about a change that
+    did not reach disk.
+    """
+
+    hass, repo, store = _make_hass()
+
+    # Seed a target for the mutations that need one. The location is a child so
+    # the reparent/move shapes have somewhere to move *from*.
+    parent = repo.create_location(name="House")
+    child = repo.create_location(name="Garage", parent_id=str(parent.id))
+    item = repo.create_item({"name": "Seeded", "quantity": 3, "tags": ["seed"]})
+
+    conn = _ConnStub()
+    for sub_id, topic in ((901, "items"), (902, "locations"), (903, "stats")):
+        res = await _send(hass, sub_id, "haventory/subscribe", conn=conn, topic=topic)
+        assert res["success"] is True
+    conn.messages.clear()
+
+    _fail_next_save(monkeypatch, store)
+    caplog.set_level(logging.ERROR)
+
+    res = await _send(hass, 1, command, conn=conn, **build(str(item.id), str(child.id)))
+
+    assert res["success"] is False, f"{shape} should have failed"
+    assert res["error"]["code"] == "storage_error"
+    assert _events(conn) == [], f"{shape} leaked an event for a write that failed"
+
+
+@pytest.mark.asyncio
+async def test_failed_persist_in_bulk_discards_the_whole_batch(monkeypatch, caplog) -> None:
+    """A bulk whose write fails reports storage_error, not per-op successes.
+
+    Every op in the batch shares one write, so a caller that received per-op
+    ``success: true`` alongside a failed save could not tell which half to trust.
+    """
+
+    hass, repo, store = _make_hass()
+    first = repo.create_item({"name": "One", "quantity": 1})
+    second = repo.create_item({"name": "Two", "quantity": 1})
+
+    conn = _ConnStub()
+    await _send(hass, 901, "haventory/subscribe", conn=conn, topic="items")
+    conn.messages.clear()
+
+    _fail_next_save(monkeypatch, store)
+    caplog.set_level(logging.ERROR)
+
+    res = await _send(
+        hass,
+        1,
+        "haventory/items/bulk",
+        conn=conn,
+        operations=[
+            {
+                "op_id": "a",
+                "kind": "item_adjust_quantity",
+                "payload": {"item_id": str(first.id), "delta": 1},
+            },
+            {
+                "op_id": "b",
+                "kind": "item_set_quantity",
+                "payload": {"item_id": str(second.id), "quantity": 9},
+            },
+        ],
+    )
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "storage_error"
+    assert _events(conn) == []
+
+
+# -----------------------------------------------------------------------------
+# A succeeding persist broadcasts only once the write has resolved
 # -----------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_storage_error_leaves_item_in_memory_but_not_persisted(caplog, monkeypatch) -> None:
-    """When persist fails, item exists in memory but won't survive restart.
+async def test_event_reaches_subscriber_only_after_the_write_resolves(monkeypatch) -> None:
+    """Assert the ordering directly, not just the absence of a broadcast.
 
-    This documents expected edge-case behavior: the mutation succeeds in memory,
-    but the client receives storage_error. On HA restart, the item is lost.
+    A store write that is *in flight* — entered but not yet resolved — must not
+    have produced an event yet. Without this, a handler that broadcast before
+    awaiting would still pass every failure test above whenever the write happens
+    to succeed.
     """
-    hass = HomeAssistant()
-    repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    store = DomainStore(hass)
-    hass.data[DOMAIN]["store"] = store
-    ws_setup(hass)
 
-    # Force persist to fail
-    persist_called = []
+    hass, _repo, store = _make_hass()
 
-    async def _fail_persist(*_args, **_kwargs):
-        persist_called.append(True)
-        raise StorageError("disk full")
+    conn = _ConnStub()
+    await _send(hass, 901, "haventory/subscribe", conn=conn, topic="items")
+    conn.messages.clear()
 
-    monkeypatch.setattr(store, "async_save", _fail_persist)
+    write_entered = asyncio.Event()
+    finish_write = asyncio.Event()
+    events_seen_during_write: list[dict[str, Any]] = []
 
+    async def _slow_save(*_args, **_kwargs):
+        events_seen_during_write.extend(_events(conn))
+        write_entered.set()
+        await finish_write.wait()
+
+    monkeypatch.setattr(store, "async_save", _slow_save)
+
+    task = asyncio.create_task(_send(hass, 1, "haventory/item/create", conn=conn, name="Anvil"))
+    await asyncio.wait_for(write_entered.wait(), timeout=5)
+
+    # The write is open. Nothing may have reached the subscriber yet.
+    assert events_seen_during_write == []
+    assert _events(conn) == []
+
+    finish_write.set()
+    res = await asyncio.wait_for(task, timeout=5)
+
+    assert res["success"] is True
+    actions = [ev.get("action") for ev in _events(conn)]
+    assert actions == ["created"], "the created event must arrive once, after the write"
+
+
+# -----------------------------------------------------------------------------
+# What a failed persist still leaves behind: in-memory divergence, told to nobody
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_failed_create_stays_in_memory_until_restart(monkeypatch, caplog) -> None:
+    """The handlers do not roll back: the item lives in memory but not on disk.
+
+    Nothing on the wire claims otherwise — the caller was told ``storage_error``
+    and no subscriber was told anything — so the divergence is invisible to
+    clients and ends at the next restart.
+    """
+
+    hass, repo, store = _make_hass()
+    _fail_next_save(monkeypatch, store)
     caplog.set_level(logging.ERROR)
 
-    # Create item - mutation succeeds but persist fails
     res = await _send(hass, 1, "haventory/item/create", name="Fragile Item")
 
-    # Client receives error
     assert res["success"] is False
     assert res["error"]["code"] == "storage_error"
-    assert persist_called, "Persist should have been attempted"
 
-    # But item exists in memory (edge case: mutation already applied)
-    result = repo.list_items()
-    items = result["items"]
+    items = repo.list_items()["items"]
     assert len(items) == 1
     assert items[0].name == "Fragile Item"
 
-    # Simulate restart: load fresh repo from what would be on disk (empty)
+    # Restart reads what reached disk, which is nothing.
     fresh_repo = Repository.from_state({"items": {}, "locations": {}})
-    fresh_result = fresh_repo.list_items()
-    assert len(fresh_result["items"]) == 0, "Item lost on restart as expected"
+    assert fresh_repo.list_items()["items"] == []
 
 
 @pytest.mark.asyncio
-async def test_storage_error_broadcast_already_sent(caplog, monkeypatch) -> None:
-    """When persist fails, broadcast has already been sent to subscribers.
+async def test_failed_delete_stays_removed_in_memory_until_restart(monkeypatch, caplog) -> None:
+    """The inverse divergence: the item is gone from memory and still on disk."""
 
-    This documents that subscribers receive the 'created' event even though
-    the client gets storage_error. This is a known limitation - rolling back
-    would add complexity for a rare edge case.
-    """
-    hass = HomeAssistant()
-    repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    store = DomainStore(hass)
-    hass.data[DOMAIN]["store"] = store
-    ws_setup(hass)
-
-    # Track broadcasts
-    broadcast_events: list[dict] = []
-
-    def tracking_broadcast(hass, topic, action, payload):
-        broadcast_events.append({"topic": topic, "action": action, "payload": payload})
-        # Don't actually broadcast in tests (no real subscriptions)
-
-    monkeypatch.setattr(ws_module, "_broadcast_event", tracking_broadcast)
-
-    # Force persist to fail
-    async def _fail_persist(*_args, **_kwargs):
-        raise StorageError("permission denied")
-
-    monkeypatch.setattr(store, "async_save", _fail_persist)
-
-    caplog.set_level(logging.ERROR)
-
-    # Create item
-    res = await _send(hass, 1, "haventory/item/create", name="Broadcast Test")
-
-    # Client receives error
-    assert res["success"] is False
-    assert res["error"]["code"] == "storage_error"
-
-    # But broadcast was already sent (before persist attempted)
-    assert len(broadcast_events) == 1
-    assert broadcast_events[0]["topic"] == "items"
-    assert broadcast_events[0]["action"] == "created"
-    assert broadcast_events[0]["payload"]["item"]["name"] == "Broadcast Test"
-
-
-@pytest.mark.asyncio
-async def test_storage_error_on_delete_item_removed_from_memory(caplog, monkeypatch) -> None:
-    """When persist fails on delete, item is already removed from memory.
-
-    For delete operations, if persist fails, the item was already removed
-    from memory. On restart it would reappear (since delete wasn't persisted).
-    """
-    hass = HomeAssistant()
-    repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    store = DomainStore(hass)
-    hass.data[DOMAIN]["store"] = store
-    ws_setup(hass)
-
-    # Create an item first (with working persistence - mock it to succeed)
+    hass, repo, store = _make_hass()
     item = repo.create_item({"name": "To Delete"})
-    item_id = item.id
 
-    # Now make persist fail
-    async def _fail_persist(*_args, **_kwargs):
-        raise StorageError("io error")
-
-    monkeypatch.setattr(store, "async_save", _fail_persist)
-
+    _fail_next_save(monkeypatch, store)
     caplog.set_level(logging.ERROR)
 
-    # Delete item - mutation succeeds but persist fails
-    res = await _send(hass, 1, "haventory/item/delete", item_id=str(item_id))
+    res = await _send(hass, 1, "haventory/item/delete", item_id=str(item.id))
 
-    # Client receives error
     assert res["success"] is False
     assert res["error"]["code"] == "storage_error"
-
-    # Item is deleted from memory (mutation already applied)
-    result = repo.list_items()
-    items = result["items"]
-    assert len(items) == 0, "Item was deleted from memory"
-
-    # On restart, the item would reappear (since delete wasn't persisted)
-    # This is the inverse edge case - data appears "restored" unexpectedly
+    assert repo.list_items()["items"] == []
 
 
 @pytest.mark.asyncio
-async def test_storage_error_on_update_change_in_memory_only(caplog, monkeypatch) -> None:
-    """When persist fails on update, change exists in memory but not on disk.
+async def test_failed_update_keeps_the_new_value_in_memory(monkeypatch, caplog) -> None:
+    """A partial update is applied in memory even when the write fails."""
 
-    Documents that partial updates are applied in-memory even when persist fails.
-    """
-    hass = HomeAssistant()
-    repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    store = DomainStore(hass)
-    hass.data[DOMAIN]["store"] = store
-    ws_setup(hass)
-
-    # Create item with initial quantity
+    hass, repo, store = _make_hass()
     INITIAL_QTY = 10
+    NEW_QTY = 25
     item = repo.create_item({"name": "Quantity Test", "quantity": INITIAL_QTY})
-    item_id = item.id
 
-    # Now make persist fail
-    async def _fail_persist(*_args, **_kwargs):
-        raise StorageError("readonly filesystem")
-
-    monkeypatch.setattr(store, "async_save", _fail_persist)
-
+    _fail_next_save(monkeypatch, store)
     caplog.set_level(logging.ERROR)
 
-    # Update quantity
-    NEW_QTY = 25
     res = await _send(
         hass,
         1,
         "haventory/item/update",
-        item_id=str(item_id),
+        item_id=str(item.id),
         quantity=NEW_QTY,
     )
 
-    # Client receives error
     assert res["success"] is False
     assert res["error"]["code"] == "storage_error"
-
-    # But change is in memory
-    updated = repo.get_item(item_id)
-    assert updated.quantity == NEW_QTY, "Update applied in memory despite persist failure"
-
-    # On restart, would revert to INITIAL_QTY (the last persisted value)
+    assert repo.get_item(item.id).quantity == NEW_QTY

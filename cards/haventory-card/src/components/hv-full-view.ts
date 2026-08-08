@@ -1,6 +1,8 @@
-import { LitElement, css, html } from 'lit';
+import { LitElement, css, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { ifDefined } from 'lit/directives/if-defined.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted, plural } from '../ui/plural';
@@ -9,10 +11,15 @@ import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { countLocations } from '../store/location-tree';
 import { emptyKindFor, renderEmptyState } from '../ui/empty-state';
+import { deepFocusables } from '../ui/dialog-focus';
+import { areaNameById, effectiveAreaIdForLocation } from '../ui/area';
+import { renderAreaChip } from '../ui/location-path';
+import { DEFAULT_CARD_TITLE } from '../ui/card-title';
+import { statusCount, statusLabel, statusList } from '../ui/status';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
-import type { Item, LocationTreeNode, Sort, StoreFilters, StoreState } from '../store/types';
+import type { Item, Location, LocationTreeNode, Sort, StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 import { makeBulkOp } from '../store/store';
 import type { BulkOperation, BulkOutcome } from '../store/types';
@@ -20,6 +27,7 @@ import type { BulkProgress, BulkResultView, BulkRunDetail } from './hv-bulk-bar'
 import './hv-bulk-bar';
 import './hv-confirm';
 import './hv-data-table';
+import type { MediaBindings } from '../ui/media';
 import './hv-filter-chips';
 import './hv-filter-panel';
 import './hv-item-editor';
@@ -41,12 +49,27 @@ const SEARCH_DEBOUNCE_MS = 200;
  * over its own field and Category too narrow to show a value. A media query
  * cannot set a property, so the same breakpoint is read here and handed down.
  *
- * Keep this string and the media query in agreement.
+ * Keep this string and the media query in agreement. Exported so the sidebar
+ * panel can put the dialogs it hosts on the same breakpoint as this view.
  */
-const NARROW_QUERY = '(max-width: 700px)';
+export const NARROW_QUERY = '(max-width: 700px)';
 
 /** The sidebar's collapsible sections, in the order they appear. */
-type SidebarSection = 'locations' | 'categories' | 'tags';
+type SidebarSection = 'locations' | 'status' | 'categories' | 'tags';
+
+/**
+ * The element a section heading discloses, named so `aria-controls` can point at
+ * it. Each panel stays in the tree whether or not its section is open — an
+ * `aria-controls` that resolves to nothing announces the heading as controlling
+ * nothing — and only its contents come and go.
+ */
+const sectionPanelId = (section: SidebarSection) => `sidebar-section-${section}`;
+
+/**
+ * What the context bar's Filters button discloses, on the same terms: the holder
+ * stays in the tree shut or open, and only the panel inside it comes and goes.
+ */
+const FILTER_PANEL_ID = 'full-view-filter-panel';
 
 /**
  * The expanded workspace.
@@ -60,6 +83,7 @@ export class HVFullView extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: contents;
@@ -91,6 +115,20 @@ export class HVFullView extends LitElement {
         overflow-y: hidden;
         overscroll-behavior: contain;
         box-shadow: var(--hv-shadow-overlay);
+      }
+      /* Embedded, this surface is a page rather than an overlay: the host sizes
+         it and there is nothing behind it to lift off. Only the box changes —
+         the grid rows and the horizontal pan above are what the layout inside
+         depends on, and they still apply. */
+      :host([embedded]) {
+        display: block;
+        height: 100%;
+      }
+      :host([embedded]) .shell {
+        position: relative;
+        inset: auto;
+        height: 100%;
+        box-shadow: none;
       }
       .appbar {
         display: flex;
@@ -180,45 +218,65 @@ export class HVFullView extends LitElement {
       .appbar .search input::placeholder {
         color: rgba(255, 255, 255, 0.8);
       }
-      .appbar .pill {
-        flex: none;
-        border: none;
-        border-radius: var(--hv-radius-chip);
+      /*
+       * The bar's filter toggles are the card's chips with the fills
+       * substituted, and they take none of the pressable variant: it reads as an empty
+       * outline until it is applied, and nothing on a primary-coloured bar can.
+       *
+       * The card's tints are pale washes of their hue chosen to sit on a plain
+       * card surface, and in dark mode they are translucent — laid over this
+       * already-blue bar, "low" comes out as faintly warm blue with amber text
+       * on it. Same hues and same meanings, solid fills that do not depend on
+       * what is behind them, and a white ring rather than a primary one,
+       * because primary is what the bar itself is painted.
+       */
+      .appbar .hv-chip {
         background: rgba(255, 255, 255, 0.22);
         color: #fff;
-        padding: 4px 11px;
-        font: 500 11.5px var(--hv-font);
       }
-      .appbar .pill.on {
-        outline: 2px solid #fff;
+      .appbar .hv-chip:hover {
+        background: rgba(255, 255, 255, 0.32);
       }
-      /*
-       * Low and overdue carry the card's meanings here too: amber for a stock
-       * warning, red for a passed due date. Two identical translucent pills
-       * reading "102 low" and "82 out" told you nothing apart.
-       *
-       * They cannot reuse the card's exact fills, though. Those are pale tints
-       * of their hue chosen to sit on a plain card surface, and in dark mode
-       * they are translucent — laid over this already-blue bar, "low" would come
-       * out as faintly warm blue with amber text on it. Same hues, same
-       * meanings, solid fills that do not depend on what is behind them.
-       * Checked out keeps the neutral wash, which is what the card's
-       * primary-tint amounts to on a primary-coloured bar.
-       */
-      .appbar .pill.low {
+      .appbar .hv-chip.on {
+        outline-color: #fff;
+      }
+      .appbar .hv-chip.warning {
         background: var(--hv-amber);
-        color: #3b2600;
+        color: var(--hv-on-amber);
       }
-      .appbar .pill.overdue {
+      .appbar .hv-chip.error {
         background: var(--hv-error);
         color: #fff;
       }
-      /* Amber like low stock, not red like overdue: red is reserved here for an
-         item that is out and late back, while an inspection that has come due
-         is a chore on something still on the shelf. */
-      .appbar .pill.inspect {
-        background: var(--hv-amber);
-        color: #3b2600;
+      /*
+       * Above the phone breakpoint — the complement of NARROW_QUERY, whose own
+       * block below owns everything at or under it.
+       *
+       * The search is the only item on this bar that can shrink: every pill,
+       * the title and both trailing buttons are flex:none. So each pill added
+       * comes out of the search box, and with all six showing it collapsed to
+       * "Search all 1(" in a 1024px content area. A floor stops that, and the
+       * bar takes a second line instead — which is what the phone layout
+       * already does with these same pills.
+       */
+      @media (min-width: 701px) {
+        .appbar {
+          flex-wrap: wrap;
+        }
+        .appbar .search {
+          min-width: 260px;
+        }
+        /* The spacer can only push on the line it sits on, so once the bar
+           wraps it holds the first line open while the actions it was meant to
+           push land left-aligned under the title. Carrying the margin on the
+           actions themselves keeps them at the right edge of whichever line
+           they end up on, and reads the same as today when nothing wraps. */
+        .appbar .spacer {
+          display: none;
+        }
+        .appbar .add {
+          margin-left: auto;
+        }
       }
       .appbar .add {
         flex: none;
@@ -450,7 +508,7 @@ export class HVFullView extends LitElement {
       }
       .value-row.on {
         background: var(--hv-primary-tint);
-        color: var(--hv-primary-darker);
+        color: var(--hv-on-primary-tint);
         font-weight: 500;
         box-shadow: inset -3px 0 0 0 var(--hv-primary);
       }
@@ -460,14 +518,6 @@ export class HVFullView extends LitElement {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-      }
-      .value-row .tally {
-        flex: none;
-        font-size: 11.5px;
-        color: var(--hv-text-tertiary);
-      }
-      .value-row.on .tally {
-        color: inherit;
       }
       .section-empty {
         padding: 2px 16px 8px 34px;
@@ -496,6 +546,11 @@ export class HVFullView extends LitElement {
         font-weight: 500;
         color: var(--hv-text);
       }
+      /* The segments and the count wrap as one run of text; only the chip is
+         held out of it, so the row can centre the two against each other. */
+      .crumb > .hv-chip-line-text {
+        flex: 1;
+      }
       .filters-button {
         display: inline-flex;
         align-items: center;
@@ -510,7 +565,7 @@ export class HVFullView extends LitElement {
       .filters-button.on {
         border-color: var(--hv-primary);
         background: var(--hv-primary-tint);
-        color: var(--hv-primary-darker);
+        color: var(--hv-on-primary-tint);
       }
       /* The empty state is slotted into the table, so it stays in this tree and
          is styled here — the same block the card's list draws, since the words
@@ -565,6 +620,13 @@ export class HVFullView extends LitElement {
            hung 5px off the bottom of a landscape screen. */
         box-sizing: border-box;
         max-height: min(80dvh, calc(100% - 116px));
+      }
+      /* The holder outlives the panel inside it so the id the Filters button
+         names always resolves. The display above would otherwise beat the
+         browser's own rule for [hidden] and leave the empty box laying out its
+         padding. */
+      .panel-holder[hidden] {
+        display: none;
       }
       .panel-scroll {
         flex: 1;
@@ -653,13 +715,49 @@ export class HVFullView extends LitElement {
   ];
 
   @property({ attribute: false }) store!: Store;
+
+  private _media: MediaBindings | null = null;
+
+  /** Picture access for the editor this view hosts; built once per store. */
+  private get media(): MediaBindings | null {
+    const store = this.store;
+    if (!store) return null;
+    this._media ??= {
+      sign: (path, expires) => store.signMediaPath(path, expires),
+      upload: (itemId, file, kind) => store.uploadAttachment(itemId, file, kind),
+      remove: (itemId, attachmentId) => store.removeAttachment(itemId, attachmentId),
+      retitle: (itemId, attachmentId, title) =>
+        store.updateAttachment(itemId, attachmentId, title),
+      reorder: (itemId, kind, attachmentIds) =>
+        store.reorderAttachments(itemId, kind, attachmentIds),
+    };
+    return this._media;
+  }
   @property({ type: Boolean, reflect: true }) open = false;
-  @property({ type: String }) heading = 'Inventory';
+  @property({ type: String }) heading = DEFAULT_CARD_TITLE;
   @property({ attribute: false }) columns: ColumnKey[] = [];
   /** Extra entries the host adds to the app bar's ⋮ menu. */
   @property({ attribute: false }) menuEntries: OverflowMenuEntry[] = [];
   /** Open straight into selection mode (the card's "Select items…" entry). */
   @property({ type: Boolean }) startSelecting = false;
+  /**
+   * Fill the host instead of taking over the viewport.
+   *
+   * The overlay variant is a modal takeover of the page the card sits on. A
+   * Home Assistant panel is the page: it owns the whole content area, has
+   * nowhere to close to, and shares the tab order and the Escape key with
+   * whatever else the frontend puts on screen. So the modal apparatus —
+   * backdrop, dialog role, focus sentinels, Escape-to-close, the close button —
+   * comes off, and only that.
+   */
+  @property({ type: Boolean, reflect: true }) embedded = false;
+  /**
+   * Home Assistant's own narrow flag, forwarded by the panel host.
+   *
+   * Distinct from `_narrow` below, which is this surface's own phone
+   * breakpoint: HA sets this whenever the sidebar is collapsed, at any width.
+   */
+  @property({ type: Boolean }) narrow = false;
 
   @state() private _zBase = 0;
   @state() private _filtersOpen = false;
@@ -675,6 +773,7 @@ export class HVFullView extends LitElement {
    */
   @state() private _sections: Record<SidebarSection, boolean> = {
     locations: true,
+    status: true,
     categories: true,
     tags: true,
   };
@@ -738,6 +837,20 @@ export class HVFullView extends LitElement {
       this._storeUnsub?.();
       this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
+    // An editor whose item has left the store — deleted here, by another
+    // client, or filtered out of the list — would otherwise render `.item` as
+    // null, which is the create form. Gated on `loading`: a filter change
+    // empties the list while the next page is fetched, and that absence says
+    // nothing yet.
+    if (
+      this._editing !== null &&
+      this._editing !== 'new' &&
+      this.st !== null &&
+      !this.st.loading &&
+      !this.st.items.some((i) => i.id === this._editing)
+    ) {
+      this._editing = null;
+    }
     if (changed.has('open')) {
       if (this.open) {
         this._zBase = nextZBase();
@@ -759,7 +872,11 @@ export class HVFullView extends LitElement {
   protected updated(changed: Map<string, unknown>) {
     if (changed.has('open')) {
       if (this.open) {
-        this._focusFirst();
+        // Pulling focus in is dialog behaviour, and there is no trap here to
+        // pull it into. Embedded it would also fire on plain navigation, where
+        // landing the caret in the app bar's search field raises a phone's
+        // keyboard over the list the user came to read.
+        if (!this.embedded) this._focusFirst();
         // Reveal the selected branch so the sidebar isn't showing roots only.
         this._tree?.revealPathTo(this.st?.filters.locationId ?? null);
       } else if (this._prevFocus?.isConnected) {
@@ -778,12 +895,18 @@ export class HVFullView extends LitElement {
   };
 
   // ---------- Focus trap ----------
+  /**
+   * The trap's two sentinels bounce focus to the first and last of these, so the
+   * walk has to reach every control the shell renders — including the ones the
+   * sidebar tree, the filter panel, the editor and the table draw inside their
+   * own shadow roots, which a query rooted here cannot see.
+   *
+   * The sentinels themselves are focusable and would otherwise be their own
+   * first and last, which is a trap that only ever bounces between them.
+   */
   private _focusables(): HTMLElement[] {
-    const root = this.shadowRoot?.querySelector('.shell');
-    if (!root) return [];
-    const sel = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-    return [...root.querySelectorAll<HTMLElement>(sel)].filter(
-      (el) => !el.hasAttribute('disabled') && !el.classList.contains('sentinel'),
+    return deepFocusables(this.shadowRoot?.querySelector('.shell')).filter(
+      (el) => !el.classList.contains('sentinel'),
     );
   }
 
@@ -967,6 +1090,20 @@ export class HVFullView extends LitElement {
     }
   }
 
+  /**
+   * The editor's first-run way out of an empty location picker.
+   *
+   * A root location with no area — the only placement that needs no tree to
+   * point at — and the created object handed back, because the form files the
+   * item in it as soon as it exists. Distinct from the sidebar's own creator
+   * above, which files under whatever the sidebar has selected.
+   */
+  private _createLocationForEditor = (name: string): Promise<Location> => {
+    const store = this.store;
+    if (!store) return Promise.reject(new Error('Not connected to Home Assistant yet.'));
+    return store.createLocation(name, null, null);
+  };
+
   // ---------- Sections ----------
   /**
    * One collapsible sidebar heading. The chevron and the words are one target —
@@ -979,6 +1116,7 @@ export class HVFullView extends LitElement {
       class="section-toggle"
       data-testid=${`sidebar-toggle-${section}`}
       aria-expanded=${String(open)}
+      aria-controls=${sectionPanelId(section)}
       @click=${() => {
         this._sections = { ...this._sections, [section]: !open };
       }}
@@ -1012,6 +1150,48 @@ export class HVFullView extends LitElement {
         </button>`,
       )}
     </span>`;
+  }
+
+  /**
+   * The stored item status as a sidebar facet.
+   *
+   * Single-select, because the backend filter takes exactly one status, and
+   * pressing the active row clears it — the same contract category has. Unlike
+   * the other two facets the rows are a closed set the household defines rather
+   * than values discovered from the inventory, so there is nothing to create
+   * and no empty state to fall back to.
+   */
+  private _renderStatusSection() {
+    const st = this.st;
+    const filters = st?.filters ?? defaultFilters();
+    const counts = st?.statsCounts;
+    return html`
+      <div class="sidebar-head">
+        ${this._renderSectionToggle('status', 'Status')}
+        <!-- The other sections tally how many rows they hold. Here that number
+             is the size of the household's vocabulary, which says nothing
+             about the inventory the facet navigates. -->
+      </div>
+      <div id=${sectionPanelId('status')} ?hidden=${!this._sections.status}>
+        ${this._sections.status
+          ? statusList(this.st?.statuses).map(({ slug: s }) => {
+              const on = filters.status === s;
+              const tally = statusCount(counts, s);
+              return html`<button
+                class="value-row ${on ? 'on' : ''}"
+                data-testid="sidebar-status-row"
+                data-value=${s}
+                aria-pressed=${String(on)}
+                @click=${() => this._setFilters({ status: on ? null : s })}
+              >
+                ${on ? icon('check', 15) : null}
+                <span class="label">${statusLabel(s, this.st?.statuses)}</span>
+                ${tally === null ? null : html`<span class="hv-tally">${tally}</span>`}
+              </button>`;
+            })
+          : null}
+      </div>
+    `;
   }
 
   /**
@@ -1061,28 +1241,30 @@ export class HVFullView extends LitElement {
           </button>
         </span>
       </div>
-      ${open
-        ? values.length
-          ? values.map(
-              (v) => html`<button
-                class="value-row ${isOn(v.value) ? 'on' : ''}"
-                data-testid=${`sidebar-${section}-row`}
-                data-value=${v.value}
-                aria-pressed=${String(isOn(v.value))}
-                @click=${() => onPick(v.value)}
-              >
-                ${isOn(v.value) ? icon('check', 15) : null}
-                <!-- These clip with an ellipsis, and a clipped value the user
-                     typed is otherwise unreadable — there is nowhere else in
-                     the sidebar it appears in full. -->
-                <span class="label" title=${v.value}>${v.value}</span>
-                <span class="tally">${v.count}</span>
-              </button>`,
-            )
-          : html`<div class="section-empty" data-testid=${`sidebar-${section}-empty`}>
-              ${section === 'tags' ? 'No tags in use yet' : 'No categories in use yet'}
-            </div>`
-        : null}
+      <div id=${sectionPanelId(section)} ?hidden=${!open}>
+        ${open
+          ? values.length
+            ? values.map(
+                (v) => html`<button
+                  class="value-row ${isOn(v.value) ? 'on' : ''}"
+                  data-testid=${`sidebar-${section}-row`}
+                  data-value=${v.value}
+                  aria-pressed=${String(isOn(v.value))}
+                  @click=${() => onPick(v.value)}
+                >
+                  ${isOn(v.value) ? icon('check', 15) : null}
+                  <!-- These clip with an ellipsis, and a clipped value the user
+                       typed is otherwise unreadable — there is nowhere else in
+                       the sidebar it appears in full. -->
+                  <span class="label" title=${v.value}>${v.value}</span>
+                  <span class="hv-tally">${v.count}</span>
+                </button>`,
+              )
+            : html`<div class="section-empty" data-testid=${`sidebar-${section}-empty`}>
+                ${section === 'tags' ? 'No tags in use yet' : 'No categories in use yet'}
+              </div>`
+          : null}
+      </div>
     `;
   }
 
@@ -1118,7 +1300,10 @@ export class HVFullView extends LitElement {
             </button>
           </span>
         </div>
-        ${this._sections.locations ? this._renderLocationSection() : null}
+        <div id=${sectionPanelId('locations')} ?hidden=${!this._sections.locations}>
+          ${this._sections.locations ? this._renderLocationSection() : null}
+        </div>
+        ${this._renderStatusSection()}
         ${this._renderFacetSection(
           'categories',
           'Categories',
@@ -1181,6 +1366,8 @@ export class HVFullView extends LitElement {
           .selectedId=${filters.locationId}
           .orphansSelected=${filters.orphansOnly}
           .areas=${st?.areasCache?.areas ?? []}
+          .selectedAreaId=${filters.areaId}
+          areaSelectable
           showAll
           showOrphans
           showCounts
@@ -1193,6 +1380,12 @@ export class HVFullView extends LitElement {
               orphansOnly: false,
             })}
           @select-orphans=${() => this._setFilters({ locationId: null, orphansOnly: true })}
+          @select-area=${(e: CustomEvent) =>
+            this._setFilters({
+              areaId: (e.detail as { areaId: string }).areaId,
+              locationId: null,
+              orphansOnly: false,
+            })}
         ></hv-location-tree>
     `;
   }
@@ -1251,27 +1444,39 @@ export class HVFullView extends LitElement {
   private _renderContextBar() {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
-    const loc = (st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId);
+    const locations = st?.locationsFlatCache ?? [];
+    const loc = locations.find((l) => l.id === filters.locationId);
     const segments = loc ? (loc.path?.display_path ?? loc.name).split('/').map((s) => s.trim()) : [];
+    // The crumb prints each path segment as its own span, so the area needs the
+    // chip to stay out of that sequence rather than reading as a first segment.
+    const areaName = loc
+      ? areaNameById(st?.areasCache?.areas ?? [], effectiveAreaIdForLocation(locations, loc.id))
+      : null;
     const filterCount = activeFilterCount(filters);
 
     return html`
       <div class="context">
-        <span class="crumb" data-testid="full-breadcrumb">
-          ${filters.orphansOnly
-            ? html`<span class="current">No location</span>`
-            : segments.length
-              ? segments.map((seg, i) =>
-                  i === segments.length - 1
-                    ? html`<span class="current">${seg}</span>`
-                    : html`<span>${seg} › </span>`,
-                )
-              : html`<span class="current">All items</span>`}
-          ${st?.total !== null && st?.total !== undefined ? html` · ${counted(st.total, 'item')}` : null}
+        <span class="crumb hv-chip-line" data-testid="full-breadcrumb">
+          ${filters.orphansOnly || !segments.length ? null : renderAreaChip(areaName)}
+          <span class="hv-chip-line-text">
+            ${filters.orphansOnly
+              ? html`<span class="current">No location</span>`
+              : segments.length
+                ? segments.map((seg, i) =>
+                    i === segments.length - 1
+                      ? html`<span class="current">${seg}</span>`
+                      : html`<span>${seg} › </span>`,
+                  )
+                : html`<span class="current">All items</span>`}${st?.total !== null &&
+            st?.total !== undefined
+              ? html` · ${counted(st.total, 'item')}`
+              : null}
+          </span>
         </span>
         <span class="spacer"></span>
         ${filterCount > 0
           ? html`<hv-filter-chips
+              .statuses=${this.st?.statuses ?? null}
               .filters=${filters}
               .locations=${st?.locationsFlatCache ?? null}
               .areas=${st?.areasCache?.areas ?? []}
@@ -1284,6 +1489,7 @@ export class HVFullView extends LitElement {
           class="filters-button ${this._filtersOpen ? 'on' : ''}"
           data-testid="full-filters-toggle"
           aria-expanded=${String(this._filtersOpen)}
+          aria-controls=${FILTER_PANEL_ID}
           @click=${() => {
             this._filtersOpen = !this._filtersOpen;
             // The phone panel stages its edits, so its button has a number to
@@ -1312,22 +1518,25 @@ export class HVFullView extends LitElement {
   render() {
     if (!this.open) return null;
     const z = this._zBase || 9998;
+    const modal = !this.embedded;
 
     return html`
-      <div class="backdrop" role="presentation" style="z-index: ${z};" @click=${this._close}></div>
+      ${modal
+        ? html`<div class="backdrop" role="presentation" style="z-index: ${z};" @click=${this._close}></div>`
+        : null}
       <div
         class="shell"
-        role="dialog"
-        aria-modal="true"
+        role=${ifDefined(modal ? 'dialog' : undefined)}
+        aria-modal=${ifDefined(modal ? 'true' : undefined)}
         aria-label=${this.heading}
         data-testid="full-view"
-        style="z-index: ${z + 1};"
-        @keydown=${onEscape(() => this._close())}
+        style=${modal ? `z-index: ${z + 1};` : ''}
+        @keydown=${modal ? onEscape(() => this._close()) : nothing}
       >
-        <span class="sentinel" tabindex="0" @focus=${() => this._focusLast()}></span>
+        ${modal ? html`<span class="sentinel" tabindex="0" @focus=${() => this._focusLast()}></span>` : null}
         ${this._selecting ? this._renderSelectionBar() : this._renderAppBar()}
         ${this._renderBody()}
-        <span class="sentinel" tabindex="0" @focus=${() => this._focusFirst()}></span>
+        ${modal ? html`<span class="sentinel" tabindex="0" @focus=${() => this._focusFirst()}></span>` : null}
       </div>
     `;
   }
@@ -1375,15 +1584,50 @@ export class HVFullView extends LitElement {
     `;
   }
 
+  /**
+   * The way back to a collapsed sidebar, which a panel has to offer itself.
+   *
+   * A custom panel is handed the whole content area, so once Home Assistant
+   * hides the sidebar — which is what `narrow` means — nothing else on screen
+   * can bring it back. `hass-toggle-menu` is the event `home-assistant-main`
+   * listens for; with no detail it toggles the drawer. It leaves this shadow
+   * root only because it is composed.
+   */
+  private _renderMenuButton() {
+    if (!this.narrow) return null;
+    return html`<button
+      class="tap"
+      data-testid="panel-menu"
+      aria-label="Open the Home Assistant menu"
+      title="Menu"
+      @click=${() => this.dispatchEvent(new Event('hass-toggle-menu', { bubbles: true, composed: true }))}
+    >
+      ${icon('menu', 20)}
+    </button>`;
+  }
+
+  /**
+   * The app bar prices derived exceptions only — low stock, overdue, due for
+   * inspection, checked out. Every one of those is computed from the item and
+   * means the same thing in every household, which is what lets them share the
+   * bar's fixed amber/red vocabulary.
+   *
+   * A status is not one of those: a household names and colours its own, so a
+   * status tally here would speak that vocabulary in the bar's hues, saying
+   * "chore" about whatever the household actually meant. The sidebar facet and
+   * the filter chips price and navigate statuses, in the household's own tones.
+   */
   private _renderAppBar() {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
     const counts = st?.statsCounts;
     return html`
         <div class="appbar">
-          <button class="tap" data-testid="expand-toggle" aria-label="Close full view" @click=${this._close}>
-            ${icon('close', 20)}
-          </button>
+          ${this.embedded
+            ? this._renderMenuButton()
+            : html`<button class="tap" data-testid="expand-toggle" aria-label="Close full view" @click=${this._close}>
+                ${icon('close', 20)}
+              </button>`}
           <h2>${this.heading}</h2>
           <label class="search">
             ${icon('magnify', 18)}
@@ -1402,7 +1646,7 @@ export class HVFullView extends LitElement {
           <span class="spacer"></span>
           ${counts && counts.low_stock_count > 0
             ? html`<button
-                class="pill low ${filters.lowStockOnly ? 'on' : ''}"
+                class="hv-chip pill warning ${filters.lowStockOnly ? 'on' : ''}"
                 data-testid="full-badge-low"
                 aria-pressed=${String(filters.lowStockOnly)}
                 title="Show only low-stock items"
@@ -1413,7 +1657,7 @@ export class HVFullView extends LitElement {
             : null}
           ${counts && (counts.overdue_count ?? 0) > 0
             ? html`<button
-                class="pill overdue ${filters.overdueOnly ? 'on' : ''}"
+                class="hv-chip pill error ${filters.overdueOnly ? 'on' : ''}"
                 data-testid="full-badge-overdue"
                 aria-pressed=${String(filters.overdueOnly)}
                 title="Show only overdue items"
@@ -1424,7 +1668,7 @@ export class HVFullView extends LitElement {
             : null}
           ${counts && (counts.inspection_overdue_count ?? 0) > 0
             ? html`<button
-                class="pill inspect ${filters.inspectionDueOnly ? 'on' : ''}"
+                class="hv-chip pill warning ${filters.inspectionDueOnly ? 'on' : ''}"
                 data-testid="full-badge-inspection"
                 aria-pressed=${String(filters.inspectionDueOnly)}
                 title="Show only items due for inspection"
@@ -1435,7 +1679,7 @@ export class HVFullView extends LitElement {
             : null}
           ${counts && counts.checked_out_count > 0
             ? html`<button
-                class="pill out ${filters.checkedOutOnly ? 'on' : ''}"
+                class="hv-chip pill ${filters.checkedOutOnly ? 'on' : ''}"
                 data-testid="full-badge-out"
                 aria-pressed=${String(filters.checkedOutOnly)}
                 title="Show only checked-out items"
@@ -1483,10 +1727,12 @@ export class HVFullView extends LitElement {
           ${this._renderSidebar()}
           <div class="main">
             ${this._renderContextBar()}
-            ${this._filtersOpen
-              ? html`<div class="panel-holder">
+            <div class="panel-holder" id=${FILTER_PANEL_ID} ?hidden=${!this._filtersOpen}>
+              ${this._filtersOpen
+                ? html`
                   <div class="panel-scroll">
                   <hv-filter-panel
+                    .statuses=${this.st?.statuses ?? null}
                     data-testid="full-filter-panel"
                     .filters=${filters}
                     .distinct=${st?.distinctValuesCache ?? null}
@@ -1508,12 +1754,17 @@ export class HVFullView extends LitElement {
                   ></hv-filter-panel>
                   </div>
                   ${this._narrow ? this._renderPanelFoot() : null}
-                </div>`
-              : null}
+                `
+                : null}
+            </div>
             ${this._editing !== null
               ? html`<div class="editor-holder">
                   <hv-item-editor
+                    .statuses=${this.st?.statuses ?? null}
                     data-testid="full-editor"
+                    .areas=${st?.areasCache?.areas ?? []}
+                    .media=${this.media}
+                    .mediaConfig=${st?.mediaConfig ?? null}
                     .item=${this._editing === 'new'
                       ? null
                       : (st?.items.find((i) => i.id === this._editing) ?? null)}
@@ -1522,6 +1773,7 @@ export class HVFullView extends LitElement {
                     .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
                     .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
                     .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
+                    .createLocation=${this._createLocationForEditor}
                     .busy=${this._editorBusy}
                     ?mobile=${this._narrow}
                     @save=${this._onEditorSave}
@@ -1543,6 +1795,8 @@ export class HVFullView extends LitElement {
               : null}
 
             <hv-data-table
+              .statuses=${this.st?.statuses ?? null}
+              .areas=${st?.areasCache?.areas ?? []}
               data-testid="full-table"
               .items=${(st?.items ?? []) as Item[]}
               .columns=${this.columns}
@@ -1567,6 +1821,7 @@ export class HVFullView extends LitElement {
             ${this._selecting
               ? html`<hv-bulk-bar
                   data-testid="full-bulk-bar"
+                  .areas=${st?.areasCache?.areas ?? []}
                   .selectedCount=${selection.size}
                   .selectedItems=${this._selectedItems}
                   .locationTree=${st?.locationTreeCache ?? []}

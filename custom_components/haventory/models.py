@@ -14,15 +14,41 @@ from __future__ import annotations
 import re
 import unicodedata
 import uuid
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
-from typing import Final, Literal, NotRequired, TypedDict
+from typing import Any, Final, Literal, NotRequired, TypedDict
 
+from .const import (
+    DEFAULT_STATUS_COLOR,
+    DEFAULT_STATUS_ICON,
+    STATUS_COLORS,
+    STATUS_ICONS,
+)
 from .exceptions import ValidationError
 
 # Scalar values allowed inside custom_fields.
 ScalarValue = str | int | float | bool
+
+# Stored per-item condition, identified by an immutable slug. Every item carries
+# exactly one; "ok" is the default, so a payload written before the field
+# existed reads as "ok". Not a Literal: the set of slugs is data, seeded with
+# the three below and read from the store, so the functions that check a status
+# take the live set as `known_statuses` rather than closing over this tuple.
+ItemStatus = str
+ITEM_STATUSES: Final[tuple[ItemStatus, ...]] = ("ok", "missing", "needs_repair")
+DEFAULT_ITEM_STATUS: Final[ItemStatus] = "ok"
+
+# A slug is what items store and what the media/index paths key on, so it is
+# restricted to what reads back identically everywhere: lowercase ASCII, digits
+# and underscores.
+STATUS_SLUG_RE = re.compile(r"^[a-z0-9_]{1,64}$")
+
+# What an item can carry as an attachment. "picture" is the kind the card
+# renders; "manual" exists on the backend so a document does not have to be
+# migrated onto the shape later.
+AttachmentKind = Literal["picture", "manual"]
+ATTACHMENT_KINDS: Final[tuple[AttachmentKind, ...]] = ("picture", "manual")
 
 
 @dataclass(frozen=True)
@@ -47,6 +73,10 @@ EMPTY_LOCATION_PATH = LocationPath(id_path=[], name_path=[], display_path="", so
 
 NAME_MAX_LENGTH = 120
 LOCATION_GUARD_MAX_STEPS = 10_000
+# An attachment title is a caption, not a name, so it gets more room than a
+# location or a status label — a manual is plausibly "Dishwasher manual (EN,
+# model SMS4HVI31E)".
+ATTACHMENT_TITLE_MAX_LENGTH = 200
 
 
 @dataclass
@@ -61,6 +91,50 @@ class Location:
 
 
 @dataclass
+class StatusDefinition:
+    """One entry of the store's ``statuses`` collection.
+
+    The ``slug`` is the immutable identity — it is what every item stores — and
+    the ``label`` is the only part a rename touches, so renaming never rewrites
+    an item. ``order`` is display order alone.
+    """
+
+    slug: str
+    label: str
+    order: int = 0
+    # Appearance. Both are tokens the card resolves, not literal CSS or an icon
+    # path: the card paints them against whatever Home Assistant theme is
+    # active, which a stored colour could not survive.
+    color: str = DEFAULT_STATUS_COLOR
+    icon: str = DEFAULT_STATUS_ICON
+
+
+@dataclass
+class AttachmentMeta:
+    """Metadata for one file attached to an item.
+
+    Only metadata is persisted: the bytes live under the media root (see
+    ``media.py``), because the store is one JSON document rewritten in full on
+    every mutation.
+    """
+
+    id: uuid.UUID
+    kind: AttachmentKind
+    filename: str
+    mime: str
+    size: int
+    uploaded_at: str
+    # What the user chose to call this file. Empty means "show the filename" —
+    # storing a copy of it instead would make the two drift apart with no way to
+    # tell an untitled attachment from one deliberately titled after its file.
+    title: str = ""
+    # Position within the item's attachments of the same kind. The picture at 0
+    # is the item's cover, so there is no separate flag and no "exactly one
+    # cover" invariant for an import to repair.
+    order: int = 0
+
+
+@dataclass
 class Item:
     """Persisted shape for an inventory item."""
 
@@ -68,6 +142,7 @@ class Item:
     name: str
     description: str | None = None
     quantity: int = 1
+    status: ItemStatus = DEFAULT_ITEM_STATUS
     checked_out: bool = False
     due_date: str | None = None  # YYYY-MM-DD
     # When the item is next due for inspection — a forward-looking date, so a
@@ -84,6 +159,9 @@ class Item:
     updated_at: str = field(default_factory=lambda: iso_utc_now())  # noqa: PLW0108
     version: int = 1
     location_path: LocationPath = field(default_factory=lambda: EMPTY_LOCATION_PATH)
+    # Deliberately absent from ItemCreate / ItemUpdate: the two attachment
+    # commands own this field, so an ordinary item edit can never rewrite it.
+    attachments: list[AttachmentMeta] = field(default_factory=list)
 
 
 class ItemCreate(TypedDict, total=False):
@@ -92,6 +170,7 @@ class ItemCreate(TypedDict, total=False):
     name: str
     description: str | None
     quantity: int
+    status: ItemStatus
     checked_out: bool
     due_date: str | None
     inspection_date: str | None
@@ -108,6 +187,7 @@ class ItemUpdate(TypedDict, total=False):
     name: str
     description: str | None
     quantity: int
+    status: ItemStatus
     checked_out: bool
     due_date: str | None
     inspection_date: str | None
@@ -126,6 +206,7 @@ class ItemFilter(TypedDict, total=False):
     tags_any: list[str]
     tags_all: list[str]
     category: str
+    status: ItemStatus
     checked_out: bool
     low_stock_only: bool
     # When true, do not filter; instead, prefer low-stock items first in ordering
@@ -310,6 +391,194 @@ def validate_due_date_rules(*, checked_out: bool, due_date: str | None) -> str |
     return normalize_date_yyyy_mm_dd(due_date)
 
 
+def validate_item_status(
+    value: object, *, known_statuses: Collection[str] = ITEM_STATUSES
+) -> ItemStatus:
+    """Validate an item status against the live set and return it.
+
+    Status is non-nullable: an item always has one, so ``None`` is rejected the
+    same as any other unknown value ("ok" is the way to clear a flagged state).
+
+    ``known_statuses`` is an explicit parameter rather than module-level mutable
+    state: the default keeps every caller that has no repository to ask meaning
+    what it has always meant, and nothing global needs resetting between tests.
+    """
+
+    if isinstance(value, str) and value in known_statuses:
+        return value
+    raise ValidationError(f"status must be one of: {', '.join(sorted(known_statuses))}")
+
+
+def coerce_item_status(
+    value: object, *, known_statuses: Collection[str] = ITEM_STATUSES
+) -> ItemStatus:
+    """Return ``value`` when it is a known status, otherwise the default.
+
+    The tolerant twin of :func:`validate_item_status`, for loading persisted
+    payloads: a store written before the field existed (or hand-edited into an
+    unknown value) reads as "ok" rather than failing the whole item. Callers
+    loading a store MUST pass the definitions that store carries — with the
+    built-ins alone, every custom status would be silently rewritten to "ok" on
+    the first restart after the upgrade that introduced it.
+    """
+
+    if isinstance(value, str) and value in known_statuses:
+        return value
+    return DEFAULT_ITEM_STATUS
+
+
+def validate_status_slug(value: object) -> str:
+    """Validate a status slug: the immutable identity items store."""
+
+    if not isinstance(value, str) or not STATUS_SLUG_RE.match(value):
+        raise ValidationError(
+            "status slug must be 1-64 characters of lowercase letters, digits or underscores"
+        )
+    return value
+
+
+def validate_status_definition(value: object) -> StatusDefinition:
+    """Build a :class:`StatusDefinition` from a stored/incoming mapping."""
+
+    if not isinstance(value, dict):
+        raise ValidationError("status definition must be an object")
+    slug = validate_status_slug(value.get("slug"))
+    label = value.get("label")
+    if not isinstance(label, str) or not label.strip():
+        raise ValidationError("status label is required and must be a non-empty string")
+    if len(label.strip()) > NAME_MAX_LENGTH:
+        raise ValidationError("status label must be at most 120 characters")
+    order = value.get("order", 0)
+    if not _is_int_not_bool(order):
+        raise ValidationError("status order must be an integer")
+    color = value.get("color", DEFAULT_STATUS_COLOR)
+    if color not in STATUS_COLORS:
+        raise ValidationError(f"status color must be one of: {', '.join(STATUS_COLORS)}")
+    icon = value.get("icon", DEFAULT_STATUS_ICON)
+    if icon not in STATUS_ICONS:
+        raise ValidationError(f"status icon must be one of: {', '.join(STATUS_ICONS)}")
+    return StatusDefinition(
+        slug=slug,
+        label=label.strip(),
+        order=int(order),
+        color=str(color),
+        icon=str(icon),
+    )
+
+
+def serialize_status_definition(definition: StatusDefinition) -> dict[str, Any]:
+    """Serialize a status definition to its stored/exported shape."""
+
+    return {
+        "slug": definition.slug,
+        "label": definition.label,
+        "order": int(definition.order),
+        "color": definition.color,
+        "icon": definition.icon,
+    }
+
+
+# The built-in three, and what each one looks like. `ok` is green because it is
+# the resting state a healthy inventory sits in; the other two are amber because
+# they are chores, not failures.
+_SEED_STATUSES: Final[tuple[tuple[str, str, str, str], ...]] = (
+    ("ok", "OK", "green", "check"),
+    ("missing", "Missing", "amber", "alert"),
+    ("needs_repair", "Needs repair", "amber", "wrench"),
+)
+
+
+def seed_status_definitions() -> dict[str, StatusDefinition]:
+    """The built-in definitions, in display order — the permanent fallback.
+
+    A store or an export document carrying no ``statuses`` section means exactly
+    this set, so every pre-v6 document stays readable without a migration of its
+    own.
+    """
+
+    return {
+        slug: StatusDefinition(slug=slug, label=label, order=order, color=color, icon=icon)
+        for order, (slug, label, color, icon) in enumerate(_SEED_STATUSES)
+    }
+
+
+def validate_attachment_meta(value: object) -> AttachmentMeta:
+    """Build an :class:`AttachmentMeta` from a stored/incoming mapping.
+
+    The id is a UUID v4 because it is also the file's name under the media root
+    — a value that round-trips through a path is the only kind allowed there.
+    """
+
+    if not isinstance(value, dict):
+        raise ValidationError("attachment must be an object")
+    att_id = parse_uuid4(value.get("id"), field_name="attachment.id")  # type: ignore[arg-type]
+    kind = value.get("kind")
+    if kind not in ATTACHMENT_KINDS:
+        raise ValidationError(f"attachment kind must be one of: {', '.join(ATTACHMENT_KINDS)}")
+    filename = value.get("filename")
+    if not isinstance(filename, str) or not filename.strip():
+        raise ValidationError("attachment filename is required and must be a non-empty string")
+    mime = value.get("mime")
+    if not isinstance(mime, str) or not mime.strip():
+        raise ValidationError("attachment mime is required and must be a non-empty string")
+    size = value.get("size")
+    if not _is_int_not_bool(size) or int(size) < 0:  # type: ignore[arg-type]
+        raise ValidationError("attachment size must be an integer >= 0")
+    uploaded_at = value.get("uploaded_at")
+    if not is_canonical_utc_timestamp(uploaded_at):
+        raise ValidationError(
+            "attachment uploaded_at must be an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ)"
+        )
+    title = value.get("title", "")
+    if not isinstance(title, str):
+        raise ValidationError("attachment title must be a string")
+    if len(title.strip()) > ATTACHMENT_TITLE_MAX_LENGTH:
+        raise ValidationError(
+            f"attachment title must be at most {ATTACHMENT_TITLE_MAX_LENGTH} characters"
+        )
+    order = value.get("order", 0)
+    if not _is_int_not_bool(order) or int(order) < 0:
+        raise ValidationError("attachment order must be an integer >= 0")
+    return AttachmentMeta(
+        id=att_id,
+        kind=kind,
+        filename=filename.strip(),
+        mime=mime.strip(),
+        size=int(size),  # type: ignore[arg-type]
+        uploaded_at=str(uploaded_at),
+        title=title.strip(),
+        order=int(order),
+    )
+
+
+def serialize_attachment_meta(meta: AttachmentMeta) -> dict[str, Any]:
+    """Serialize attachment metadata to its stored/exported shape."""
+
+    return {
+        "id": str(meta.id),
+        "kind": meta.kind,
+        "filename": meta.filename,
+        "mime": meta.mime,
+        "size": int(meta.size),
+        "uploaded_at": meta.uploaded_at,
+        "title": meta.title,
+        "order": int(meta.order),
+    }
+
+
+def load_attachments(value: object) -> list[AttachmentMeta]:
+    """Read a stored ``attachments`` list, tolerating what predates the field.
+
+    A missing or non-list value reads as none rather than failing the whole
+    item; a malformed *entry* is the caller's problem, because dropping one
+    silently would lose the only reference to a file on disk.
+    """
+
+    if not isinstance(value, list):
+        return []
+    return [validate_attachment_meta(entry) for entry in value]
+
+
 def validate_inspection_date(inspection_date: str | None) -> str | None:
     """Validate inspection_date format (YYYY-MM-DD) if provided.
 
@@ -404,6 +673,7 @@ def create_item_from_create(
     payload: ItemCreate,
     *,
     locations_by_id: dict[str, Location] | None = None,
+    known_statuses: Collection[str] = ITEM_STATUSES,
 ) -> Item:
     """Create a validated Item from an ItemCreate payload.
 
@@ -411,6 +681,7 @@ def create_item_from_create(
         payload: Input fields from the client.
         locations_by_id: Optional map of locations used to validate location_id and
             construct a denormalized location_path when provided.
+        known_statuses: The live status slugs to validate ``status`` against.
 
     Returns:
         A fully-populated Item instance with defaults applied.
@@ -426,6 +697,9 @@ def create_item_from_create(
     if isinstance(raw_quantity, bool):
         raise ValidationError("quantity must be an integer >= 0")
     quantity = int(raw_quantity)
+    status = validate_item_status(
+        payload.get("status", DEFAULT_ITEM_STATUS), known_statuses=known_statuses
+    )
     checked_out = bool(payload.get("checked_out", False))
     due_date = payload.get("due_date")
     inspection_date = payload.get("inspection_date")
@@ -460,6 +734,7 @@ def create_item_from_create(
         name=name,
         description=description,
         quantity=quantity,
+        status=status,
         checked_out=checked_out,
         due_date=normalized_due_date,
         inspection_date=normalized_inspection_date,
@@ -497,6 +772,11 @@ def _update_quantity(new_item: Item, update: ItemUpdate) -> None:
         if not _is_int_not_bool(q) or q < 0:
             raise ValidationError("quantity must be an integer >= 0")
         new_item.quantity = q
+
+
+def _update_status(new_item: Item, update: ItemUpdate, known_statuses: Collection[str]) -> None:
+    if "status" in update:
+        new_item.status = validate_item_status(update["status"], known_statuses=known_statuses)
 
 
 def _update_checkout_and_due_date(new_item: Item, update: ItemUpdate) -> None:
@@ -567,6 +847,7 @@ def apply_item_update(
     update: ItemUpdate,
     *,
     locations_by_id: dict[str, Location] | None = None,
+    known_statuses: Collection[str] = ITEM_STATUSES,
 ) -> Item:
     """Apply an update payload to an Item and return a new updated instance."""
 
@@ -574,6 +855,7 @@ def apply_item_update(
 
     _update_name_and_description(new_item, update)
     _update_quantity(new_item, update)
+    _update_status(new_item, update, known_statuses)
     _update_checkout_and_due_date(new_item, update)
     _update_inspection_date(new_item, update)
     _update_location_and_path(new_item, update, locations_by_id)
@@ -755,13 +1037,19 @@ def _item_matches_location(item: Item, location_id: str | None, include_subtree:
     return item.location_id == needle
 
 
-def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[Item]:
+def filter_items(
+    items: Iterable[Item],
+    flt: ItemFilter | None = None,
+    *,
+    known_statuses: Collection[str] = ITEM_STATUSES,
+) -> list[Item]:
     """Filter items according to ItemFilter semantics.
 
     - q: case-insensitive match in name, description, tags, location display_path
     - tags_any: at least one matches
     - tags_all: all must be present
     - category: case-insensitive equals
+    - status: exact match against one of the known statuses
     - checked_out: exact match
     - low_stock_only: quantity <= threshold (0 valid, None disables)
     - orphaned_only: only items without a location (location_id is None)
@@ -779,6 +1067,11 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
     tags_any = normalize_tags(flt.get("tags_any")) if "tags_any" in flt else []
     tags_all = normalize_tags(flt.get("tags_all")) if "tags_all" in flt else []
     category = (flt.get("category") or "").strip().casefold() if "category" in flt else ""
+    status = (
+        validate_item_status(flt["status"], known_statuses=known_statuses)
+        if "status" in flt
+        else None
+    )
     checked_out = flt.get("checked_out") if "checked_out" in flt else None
     low_stock_only = bool(flt.get("low_stock_only")) if "low_stock_only" in flt else False
     orphaned_only = bool(flt.get("orphaned_only")) if "orphaned_only" in flt else False
@@ -809,6 +1102,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
         or bool(tags_any)
         or bool(tags_all)
         or bool(category)
+        or status is not None
         or checked_out is not None
         or low_stock_only
         or orphaned_only
@@ -830,6 +1124,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
         matches_any = (not tags_any) or any(tag in it.tags for tag in tags_any)
         matches_all = (not tags_all) or all(tag in it.tags for tag in tags_all)
         matches_category = (not category) or ((it.category or "").strip().casefold() == category)
+        matches_status = (status is None) or (it.status == status)
         matches_checked = (checked_out is None) or (it.checked_out == bool(checked_out))
         matches_low_stock = (not low_stock_only) or item_is_low_stock(it)
         matches_orphaned = (not orphaned_only) or (it.location_id is None)
@@ -851,6 +1146,7 @@ def filter_items(items: Iterable[Item], flt: ItemFilter | None = None) -> list[I
             and matches_any
             and matches_all
             and matches_category
+            and matches_status
             and matches_checked
             and matches_low_stock
             and matches_orphaned

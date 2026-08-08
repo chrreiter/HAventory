@@ -1,18 +1,13 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { locationLabel } from '../ui/location-path';
+import { chip } from '../ui/chip';
+import { locationPathParts, pathTitle } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { activeFilterCount, defaultFilters } from '../store/store';
-import type {
-  DistinctValues,
-  Location,
-  LocationTreeNode,
-  SortField,
-  StatsCounts,
-  StoreFilters,
-} from '../store/types';
+import { DEFAULT_STATUS, statusCount, statusLabel, statusList, statusToneClass } from '../ui/status';
+import type { DistinctValues, Location, LocationTreeNode, SortField, StatsCounts, StatusDefinition, StoreFilters } from '../store/types';
 import './hv-location-tree';
 
 /** Sort fields the backend supports, in the order the menu lists them. */
@@ -27,6 +22,15 @@ const SORT_FIELDS: { field: SortField; label: string }[] = [
 
 /** How many category chips to show before collapsing the rest behind "More…". */
 const CATEGORY_CHIP_LIMIT = 4;
+
+/**
+ * The element the location chip discloses, named so `aria-controls` can point at
+ * it. The holder stays in the tree whether or not it is open — an `aria-controls`
+ * that resolves to nothing announces the chip as controlling nothing — and only
+ * its contents come and go. Shadow scoping keeps the id unique even with the
+ * desktop panel and the phone sheet both mounted.
+ */
+const LOCATION_TREE_ID = 'filter-location-tree-holder';
 
 /** The two timestamps a "Changed" row can compare, and the filter keys behind them. */
 type DateField = 'updated' | 'created';
@@ -54,6 +58,7 @@ export class HVFilterPanel extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -88,38 +93,23 @@ export class HVFilterPanel extends LitElement {
         gap: 7px;
         align-items: center;
       }
+      /* These are values in a form, sat beside the panel's own selects and date
+         fields, so they read at the size of those rather than at the size of a
+         chip that annotates a row elsewhere in the card. */
       .chip {
-        display: inline-flex;
-        align-items: center;
         gap: 5px;
-        border: 1px solid var(--hv-divider);
-        background: transparent;
-        color: var(--hv-chip-text);
-        border-radius: var(--hv-radius-chip);
         padding: 5px 12px;
-        font: 400 12.5px var(--hv-font);
+        font-size: 12.5px;
       }
       :host([mobile]) .chip {
         min-height: var(--hv-tap-min, 36px);
         padding: 0 14px;
         font-size: 13.5px;
       }
-      .chip.on {
-        color: var(--hv-primary-darker);
-        background: var(--hv-primary-tint);
-        border-color: var(--hv-primary);
-      }
-      .chip.on.warning {
-        color: var(--hv-warn);
-        background: var(--hv-warn-bg);
-        border-color: var(--hv-amber);
-      }
+      /* Nothing is picked here yet — an outline that has not been drawn in
+         rather than a value that has. */
       .chip.more {
         border-style: dashed;
-        color: var(--hv-text-secondary);
-      }
-      .chip .tally {
-        opacity: 0.65;
       }
       .hint {
         font-size: 11px;
@@ -257,48 +247,38 @@ export class HVFilterPanel extends LitElement {
         color: var(--hv-text-on-primary);
         font-weight: 500;
       }
-      .check {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 12.5px;
-        color: var(--hv-chip-text);
-        border: none;
-        background: none;
-        padding: 4px 0;
-      }
+      /*
+       * A "Show only" row is a chip in another shape, and carries the chip class
+       * to say so: it holds the same filter the wider panel draws as a chip and
+       * announces the same way, so it takes the chip's outline and on-state
+       * rather than restating those tokens — a row that paints a checkbox while
+       * announcing a toggle describes two widgets. Only what a full-width row
+       * needs on top of a chip lives here.
+       *
+       * Five of these stack under "Show only" in the sheet, and pills each sized
+       * to their own label leave that column with a ragged right edge.
+       */
       :host([mobile]) .check {
-        min-height: var(--hv-tap-min, 44px);
+        box-sizing: border-box;
         width: 100%;
-        font-size: 14px;
+        min-height: var(--hv-tap-min, 44px);
       }
-      .box {
+      /* The mark holds its width while the row is off, so a stacked column keeps
+         one left edge for its labels instead of shifting each row as it is
+         pressed. The two widths are the glyph sizes the row renderer asks for. */
+      .check .mark {
         display: inline-grid;
         place-items: center;
-        width: 15px;
-        height: 15px;
-        border-radius: 4px;
-        border: 1.5px solid var(--hv-text-tertiary);
-        color: #fff;
+        width: 12px;
         flex: none;
       }
-      :host([mobile]) .box {
-        width: 20px;
-        height: 20px;
-        border-radius: 5px;
+      :host([mobile]) .check .mark {
+        width: 15px;
       }
-      .box.on {
-        background: var(--hv-primary);
-        border-color: var(--hv-primary);
-      }
-      .box.on.warning {
-        background: var(--hv-amber);
-        border-color: var(--hv-amber);
-      }
-      .tally-right {
+      /* The row form of a facet reads label-first, so its tally is pushed to
+         the far edge; the chip form sits right after the label. */
+      .hv-tally.tally-right {
         margin-left: auto;
-        font-size: 12.5px;
-        color: var(--hv-text-tertiary);
       }
       select {
         font: inherit;
@@ -349,6 +329,9 @@ export class HVFilterPanel extends LitElement {
   /** The applied filters. In staged mode this is the baseline, not the edit target. */
   @property({ attribute: false }) filters!: StoreFilters;
   @property({ attribute: false }) distinct: DistinctValues | null = null;
+  /** The status vocabulary from `haventory/config`; the built-ins stand in
+   * until it answers. */
+  @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
   @property({ attribute: false }) locations: Location[] | null = null;
   @property({ attribute: false }) locationTree: LocationTreeNode[] = [];
@@ -359,12 +342,12 @@ export class HVFilterPanel extends LitElement {
   /** Stage edits and apply on commit (mobile sheet) instead of applying live. */
   @property({ type: Boolean, reflect: true }) mobile = false;
   /**
-   * Whole-inventory stat counts, for the "Show only" tallies.
+   * Whole-inventory stat counts, which price both the "Show only" rows and the
+   * status chips.
    *
-   * Those four rows were the only facet controls in the card with no number
-   * beside them — and the renderer already had a slot for one, filled with a
-   * hardcoded `null`, while both app bars showed the same counts a few pixels
-   * away.
+   * Every facet in this panel carries a number, so a user can see what a filter
+   * is worth before applying it. Null until the first `haventory/stats` answer
+   * arrives, and then each tally is drawn only where the payload prices it.
    */
   @property({ attribute: false }) counts: StatsCounts | null = null;
 
@@ -446,6 +429,17 @@ export class HVFilterPanel extends LitElement {
     this._patch({ tags: [...this.working.tags, tag] });
   }
 
+  /**
+   * A labelled on/off filter row.
+   *
+   * Its state is `aria-pressed`, not a checkbox role: every filter toggle in the
+   * card announces as a pressed toggle button — the app bars' stat pills, the
+   * sidebar's facet rows, this panel's chips — and the "Show only" facets render
+   * as rows here and as chips on a wider screen, so a single facet would
+   * otherwise change vocabulary with the viewport it is read on. The row is
+   * painted to match: it takes the chip's on state, so what the row draws and
+   * what it announces describe the same widget.
+   */
   private _renderCheckbox(
     label: string,
     on: boolean,
@@ -453,34 +447,35 @@ export class HVFilterPanel extends LitElement {
     opts: { warning?: boolean; tally?: number | null; testid?: string } = {},
   ) {
     return html`<button
-      class="check"
-      role="checkbox"
-      aria-checked=${String(on)}
+      class="hv-chip toggle chip check ${on ? 'on' : ''} ${opts.warning ? 'warning' : ''}"
+      aria-pressed=${String(on)}
       data-testid=${opts.testid ?? 'filter-check'}
       @click=${onToggle}
     >
-      <span class="box ${on ? 'on' : ''} ${opts.warning ? 'warning' : ''}">
-        ${on ? icon('check', this.mobile ? 15 : 12) : null}
-      </span>
+      <span class="mark">${on ? icon('check', this.mobile ? 15 : 12) : null}</span>
       <span>${label}</span>
       ${opts.tally !== undefined && opts.tally !== null
-        ? html`<span class="tally-right">${opts.tally}</span>`
+        ? html`<span class="hv-tally tally-right">${opts.tally}</span>`
         : null}
     </button>`;
   }
 
   private _renderLocationGroup() {
     const f = this.working;
-    const loc = (this.locations ?? []).find((l) => l.id === f.locationId);
-    const label = locationLabel(loc, 'Any location');
+    const locations = this.locations ?? [];
+    const loc = locations.find((l) => l.id === f.locationId);
+    // Named in words, not in a nested chip: this label lives inside a chip, and
+    // it has to read the same as the chip row the applied filter turns into.
+    const label = pathTitle(locationPathParts(loc, locations, this.areas, 'Any location'));
     return html`
       <div class="group">
         <span class="hv-label">Where</span>
         <div class="chips">
           <button
-            class="chip ${f.locationId ? 'on' : ''}"
+            class="hv-chip toggle chip ${f.locationId ? 'on' : ''}"
             data-testid="filter-location"
             aria-expanded=${String(this._locationOpen)}
+            aria-controls=${LOCATION_TREE_ID}
             @click=${() => {
               this._locationOpen = !this._locationOpen;
             }}
@@ -507,11 +502,12 @@ export class HVFilterPanel extends LitElement {
             { testid: 'filter-include-subtree' },
           )}
         </div>
-        ${this._locationOpen
-          ? html`<div class="tree-holder">
-              <hv-location-tree
+        <div class="tree-holder" id=${LOCATION_TREE_ID} ?hidden=${!this._locationOpen}>
+          ${this._locationOpen
+            ? html`<hv-location-tree
                 data-testid="filter-location-tree"
                 .nodes=${this.locationTree}
+                .areas=${this.areas}
                 .selectedId=${f.locationId}
                 showAll
                 showCounts
@@ -520,9 +516,9 @@ export class HVFilterPanel extends LitElement {
                   this._patch({ locationId: (e.detail as { locationId: string | null }).locationId });
                   this._locationOpen = false;
                 }}
-              ></hv-location-tree>
-            </div>`
-          : null}
+              ></hv-location-tree>`
+            : null}
+        </div>
       </div>
     `;
   }
@@ -539,24 +535,25 @@ export class HVFilterPanel extends LitElement {
         <div class="chips">
           ${shown.map(
             (c) => html`<button
-              class="chip ${f.category === c.value ? 'on' : ''}"
+              class="hv-chip toggle chip ${f.category === c.value ? 'on' : ''}"
               data-testid="filter-category"
               data-value=${c.value}
+              aria-pressed=${String(f.category === c.value)}
               @click=${() => this._patch({ category: f.category === c.value ? null : c.value })}
             >
               ${f.category === c.value ? icon('check', 12) : null}${c.value}
-              <span class="tally">${c.count}</span>
+              <span class="hv-tally">${c.count}</span>
             </button>`,
           )}
           ${hidden > 0
             ? html`<button
-                class="chip more"
+                class="hv-chip toggle chip more"
                 data-testid="filter-category-more"
                 @click=${() => {
                   this._showAllCategories = true;
                 }}
               >
-                More… <span class="tally">${hidden}</span>
+                More… <span class="hv-tally">${hidden}</span>
               </button>`
             : null}
         </div>
@@ -599,20 +596,22 @@ export class HVFilterPanel extends LitElement {
         <div class="chips">
           ${all.map(
             (t) => html`<button
-              class="chip ${selected.has(t.value) ? 'on' : ''}"
+              class="hv-chip toggle chip ${selected.has(t.value) ? 'on' : ''}"
               data-testid="filter-tag"
               data-value=${t.value}
+              aria-pressed=${String(selected.has(t.value))}
               @click=${() => this._toggleTag(t.value)}
             >
               ${selected.has(t.value) ? icon('check', 12) : null}${t.value}
-              <span class="tally">${t.count}</span>
+              <span class="hv-tally">${t.count}</span>
             </button>`,
           )}
           ${extras.map(
             (t) => html`<button
-              class="chip on"
+              class="hv-chip toggle chip on"
               data-testid="filter-tag"
               data-value=${t}
+              aria-pressed="true"
               @click=${() => this._toggleTag(t)}
             >
               ${icon('check', 12)}${t}
@@ -647,7 +646,7 @@ export class HVFilterPanel extends LitElement {
     const f = this.working;
     const c = this.counts;
     const tally = (n: number | null | undefined) =>
-      n === null || n === undefined ? null : html`<span class="tally">${n}</span>`;
+      n === null || n === undefined ? null : html`<span class="hv-tally">${n}</span>`;
     return html`
       <div class="group">
         <span class="hv-label">Show only</span>
@@ -662,41 +661,84 @@ export class HVFilterPanel extends LitElement {
               `
             : html`
                 <button
-                  class="chip ${f.lowStockOnly ? 'on warning' : ''}"
+                  class="hv-chip toggle chip ${f.lowStockOnly ? 'on warning' : ''}"
                   data-testid="filter-low-stock-only"
+                  aria-pressed=${String(f.lowStockOnly)}
                   @click=${() => this._patch({ lowStockOnly: !f.lowStockOnly })}
                 >
                   ${f.lowStockOnly ? icon('check', 12) : null}Low stock${tally(c?.low_stock_count)}
                 </button>
                 <button
-                  class="chip ${f.checkedOutOnly ? 'on' : ''}"
+                  class="hv-chip toggle chip ${f.checkedOutOnly ? 'on' : ''}"
                   data-testid="filter-checked-out"
+                  aria-pressed=${String(f.checkedOutOnly)}
                   @click=${() => this._patch({ checkedOutOnly: !f.checkedOutOnly })}
                 >
                   ${f.checkedOutOnly ? icon('check', 12) : null}Checked out${tally(c?.checked_out_count)}
                 </button>
                 <button
-                  class="chip ${f.overdueOnly ? 'on warning' : ''}"
+                  class="hv-chip toggle chip ${f.overdueOnly ? 'on error' : ''}"
                   data-testid="filter-overdue"
+                  aria-pressed=${String(f.overdueOnly)}
                   @click=${() => this._patch({ overdueOnly: !f.overdueOnly })}
                 >
                   ${f.overdueOnly ? icon('check', 12) : null}Overdue${tally(c?.overdue_count)}
                 </button>
                 <button
-                  class="chip ${f.inspectionDueOnly ? 'on warning' : ''}"
+                  class="hv-chip toggle chip ${f.inspectionDueOnly ? 'on warning' : ''}"
                   data-testid="filter-inspection-due"
+                  aria-pressed=${String(f.inspectionDueOnly)}
                   @click=${() => this._patch({ inspectionDueOnly: !f.inspectionDueOnly })}
                 >
                   ${f.inspectionDueOnly ? icon('check', 12) : null}Inspection due${tally(c?.inspection_overdue_count)}
                 </button>
                 <button
-                  class="chip ${f.orphansOnly ? 'on' : ''}"
+                  class="hv-chip toggle chip ${f.orphansOnly ? 'on' : ''}"
                   data-testid="filter-orphans"
+                  aria-pressed=${String(f.orphansOnly)}
                   @click=${() => this._patch({ orphansOnly: !f.orphansOnly })}
                 >
                   ${f.orphansOnly ? icon('check', 12) : null}No location${tally(c?.no_location_count)}
                 </button>
               `}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * The stored item status, as one single-select chip row.
+   *
+   * Single-select because the backend filter takes exactly one status, and each
+   * chip carries the tone its household picked. Every chip is priced the same
+   * way, so a user choosing what to filter by can see which statuses are worth
+   * filtering by — a backend too old to price them all leaves the rest bare
+   * rather than guessing.
+   */
+  private _renderStatusGroup() {
+    const f = this.working;
+    const c = this.counts;
+    return html`
+      <div class="group">
+        <span class="hv-label">Status</span>
+        <div class="chips">
+          ${statusList(this.statuses).map(({ slug: s }) => {
+            const on = f.status === s;
+            // A chosen status shows its own colour; the rest stay outlines, so
+            // the row reads as choices rather than as facts.
+            const tone = on && s !== DEFAULT_STATUS ? statusToneClass(s, this.statuses) : '';
+            const tally = statusCount(c, s);
+            return html`<button
+              class="hv-chip toggle chip hv-status-chip ${on ? 'on' : ''} ${tone}"
+              data-testid="filter-status"
+              data-value=${s}
+              aria-pressed=${String(on)}
+              @click=${() => this._patch({ status: on ? null : s })}
+            >
+              ${on ? icon('check', 12) : null}${statusLabel(s, this.statuses)}
+              ${tally === null ? null : html`<span class="hv-tally">${tally}</span>`}
+            </button>`;
+          })}
         </div>
       </div>
     `;
@@ -817,8 +859,12 @@ export class HVFilterPanel extends LitElement {
     const count = activeFilterCount(this.working);
     return html`
       <div class="panel" data-testid="filter-panel">
-        ${this._renderLocationGroup()} ${this._renderCategoryGroup()} ${this._renderTagGroup()}
-        ${this._renderShowOnlyGroup()} ${this._renderDateGroup()} ${this._renderSortGroup()}
+        ${this._renderLocationGroup()} ${this._renderCategoryGroup()}
+        ${this._renderShowOnlyGroup()} ${this._renderStatusGroup()} ${this._renderDateGroup()}
+        <!-- Sort sits above the tag cloud: a household's tag list grows without
+             limit and this one renders every tag in it, so anything below it is
+             several screens down inside the phone's filter sheet. -->
+        ${this._renderSortGroup()} ${this._renderTagGroup()}
         ${this.mobile
           ? null
           : html`<div class="footer">

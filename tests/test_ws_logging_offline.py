@@ -5,9 +5,10 @@ One policy governs every error the API boundary logs:
 - ERROR only where an operator has to act — ``storage_error`` and
   ``unknown_error``.
 - WARNING for contract-defined, client-recoverable rejections —
-  ``validation_error``, ``not_found``, ``conflict``, ``rate_limited``.
-- ``exc_info`` only where a traceback says something the message does not,
-  which is the same two operator-actionable codes.
+  ``validation_error``, ``not_found``, ``conflict``, ``rate_limited``, and the
+  ``storage_error`` a teardown leaves behind, which is a state somebody chose
+  rather than a failure.
+- ``exc_info`` only where a traceback says something the message does not.
 
 The conflict and not-found cases are load-bearing: ``release_testing_plan.md``
 exit criterion 4 forbids any traceback from ``custom_components.haventory`` in
@@ -23,7 +24,7 @@ import pytest
 import voluptuous as vol
 from custom_components.haventory import services as services_mod
 from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.exceptions import StorageError
+from custom_components.haventory.exceptions import NotLoadedError, StorageError
 from custom_components.haventory.rate_limit import RateLimitConfig, RateLimiter
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
@@ -38,10 +39,7 @@ RATE_LIMIT_LOGGER = "custom_components.haventory.rate_limit"
 async def _send(hass: HomeAssistant, _id: int, type_: str, conn: object = None, **payload):
     handlers = hass.data.get("__ws_commands__", [])
     for h in handlers:
-        schema = getattr(h, "_ws_schema", None)
-        if not callable(h) or not isinstance(schema, dict):
-            continue
-        if schema.get("type") != type_:
+        if not callable(h) or getattr(h, "_ws_command", None) != type_:
             continue
         req = {"id": _id, "type": type_}
         req.update(payload)
@@ -214,6 +212,118 @@ async def test_unknown_error_logs_error_with_traceback(caplog, monkeypatch) -> N
 
 
 # -----------------------------
+# The refusal a teardown leaves behind: same envelope, quieter log
+# -----------------------------
+
+
+def _make_unloaded_hass() -> HomeAssistant:
+    """Commands registered with nothing behind them — what a teardown leaves."""
+
+    hass = HomeAssistant()
+    ws_setup(hass)
+    return hass
+
+
+@pytest.mark.asyncio
+async def test_not_loaded_refusal_logs_warning_without_traceback(caplog) -> None:
+    """An entry that is unloaded, disabled or removed is a state, not a fault.
+
+    Nothing broke and no cause chain exists to print; the operator's move is to
+    re-enable the entry, and the client's is to stop asking.
+    """
+
+    hass = _make_unloaded_hass()
+    caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
+
+    res = await _send(hass, 1, "haventory/item/create", name="X")
+    assert res["success"] is False and res["error"]["code"] == "storage_error"
+
+    record = _only(caplog)
+    assert record.op == "item_create"
+    assert record.levelno == logging.WARNING
+    assert record.exc_info is None
+
+
+@pytest.mark.asyncio
+async def test_not_loaded_refusal_keeps_the_storage_error_envelope() -> None:
+    """The wire contract does not move with the log level.
+
+    ``NotLoadedError`` is a ``StorageError``, so clients that key on the code go
+    on seeing exactly what they saw before.
+    """
+
+    hass = _make_unloaded_hass()
+    conn = _ConnStub()
+
+    res = await _send(hass, 1, "haventory/item/list", conn=conn)
+
+    assert res["error"]["code"] == "storage_error"
+    assert res["error"]["data"]["op"] == "item_list"
+    assert res["error"]["message"]
+    assert conn.messages[-1] == res
+
+
+@pytest.mark.asyncio
+async def test_a_retrying_client_leaves_no_tracebacks(caplog) -> None:
+    """The flood case: a dashboard that keeps knocking must not fill the log.
+
+    ``release_testing_plan.md`` exit criterion 4 audits the Home Assistant log
+    for tracebacks from this integration, and a card left open across a removal
+    retries for as long as the tab does.
+    """
+
+    hass = _make_unloaded_hass()
+    caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
+
+    retries = 12
+    # Frame ids start at 1: Home Assistant refuses a non-positive id outright,
+    # so a 0 would never reach the handler whose logging is under test.
+    for i in range(1, retries + 1):
+        assert (await _send(hass, i, "haventory/stats"))["error"]["code"] == "storage_error"
+
+    records = _records(caplog)
+    assert len(records) == retries
+    assert {r.levelno for r in records} == {logging.WARNING}
+    assert all(r.exc_info is None for r in records)
+
+
+@pytest.mark.asyncio
+async def test_a_real_storage_failure_still_logs_error_with_traceback(caplog, monkeypatch) -> None:
+    """The quieter rule is scoped to the refusal, not to the code it maps to."""
+
+    hass = _make_hass()
+
+    async def _raise(*_args: Any, **_kwargs: Any) -> None:
+        raise StorageError("failed to persist repository")
+
+    monkeypatch.setattr(hass.data[DOMAIN]["store"], "async_save", _raise)
+    caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
+
+    res = await _send(hass, 1, "haventory/item/create", name="X")
+    assert res["success"] is False and res["error"]["code"] == "storage_error"
+
+    record = _only(caplog)
+    assert record.levelno == logging.ERROR
+    assert record.exc_info is not None
+
+
+@pytest.mark.asyncio
+async def test_service_not_loaded_refusal_logs_warning_without_traceback(caplog) -> None:
+    """The service boundary grades the same refusal the same way."""
+
+    hass = _make_unloaded_hass()
+    caplog.set_level(logging.DEBUG, logger=SERVICES_LOGGER)
+
+    with pytest.raises(NotLoadedError):
+        await services_mod.service_item_create(hass, {"name": "X"})
+
+    record = _only(caplog, SERVICES_LOGGER)
+    assert record.op == "item_create"
+    assert record.levelno == logging.WARNING
+    assert record.exc_info is None
+
+
+# -----------------------------
 # Bulk ops classify per failing op, not per batch
 # -----------------------------
 
@@ -274,6 +384,67 @@ async def test_bulk_unexpected_error_logs_error_with_traceback(caplog, monkeypat
     assert len(failures) == 1
     assert failures[0].levelno == logging.ERROR
     assert failures[0].exc_info is not None
+
+
+@pytest.mark.asyncio
+async def test_all_failed_bulk_logs_only_its_per_op_lines(caplog) -> None:
+    """A batch where nothing succeeded adds no summary of its own.
+
+    The per-op lines already carry the ``op_id`` and reason an operator acts on;
+    a batch-level "none of them worked" repeats that on the one path where the
+    log is already at its longest.
+    """
+
+    hass = _make_hass()
+    caplog.clear()
+    caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
+
+    res = await _send(
+        hass,
+        1,
+        "haventory/items/bulk",
+        operations=[
+            {"op_id": "a", "kind": "item_update", "payload": {"item_id": "missing-1"}},
+            {"op_id": "b", "kind": "item_delete", "payload": {"item_id": "missing-2"}},
+        ],
+    )
+    results = res["result"]["results"]
+    assert {k: v["success"] for k, v in results.items()} == {"a": False, "b": False}
+
+    records = _records(caplog)
+    assert [r.op for r in records] == ["items_bulk_op_failed"] * 2
+    assert {r.op_id for r in records} == {"a", "b"}
+
+
+@pytest.mark.asyncio
+async def test_partly_successful_bulk_still_logs_its_summary(caplog) -> None:
+    """The summary survives where it still says something: a batch that changed state."""
+
+    hass = _make_hass()
+    created = await _send(hass, 1, "haventory/item/create", name="Widget")
+    item_id = created["result"]["id"]
+
+    caplog.clear()
+    caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
+
+    await _send(
+        hass,
+        2,
+        "haventory/items/bulk",
+        operations=[
+            {
+                "op_id": "a",
+                "kind": "item_adjust_quantity",
+                "payload": {"item_id": item_id, "delta": 1},
+            },
+            {"op_id": "b", "kind": "item_delete", "payload": {"item_id": "missing"}},
+        ],
+    )
+
+    summaries = [r for r in _records(caplog) if r.op == "items_bulk"]
+    assert len(summaries) == 1
+    assert summaries[0].levelno == logging.INFO
+    assert (summaries[0].successful, summaries[0].failed) == (1, 1)
 
 
 # -----------------------------

@@ -1,7 +1,7 @@
 """Constants for the HAventory integration.
 
-Defines the integration domain, the public integration version, and the
-option keys/defaults for WebSocket rate limiting.
+Defines the integration domain, the public integration version, the card
+title option, and the option keys/defaults for WebSocket rate limiting.
 """
 
 # Integration domain used across all modules and entity unique IDs
@@ -11,7 +11,130 @@ DOMAIN: str = "haventory"
 # export documents. release-please rewrites the literal below on the annotation;
 # tests/test_release_version_consistency.py fails if it ever disagrees with
 # manifest.json.
-INTEGRATION_VERSION: str = "0.1.1"  # x-release-please-version
+INTEGRATION_VERSION: str = "0.3.3"  # x-release-please-version
+
+# -----------------------------
+# Card title (config-entry option)
+# -----------------------------
+# Heading the Lovelace card and its full view show. Set during setup, changed
+# in the options flow, and read by the card through `haventory/config`. A
+# per-dashboard `title:` in the card's YAML still wins over it.
+
+CONF_CARD_TITLE: str = "card_title"
+DEFAULT_CARD_TITLE: str = "HAventory"
+
+# -----------------------------
+# Sidebar panel (config-entry option)
+# -----------------------------
+# HAventory as a page of its own, registered with `panel_custom` and rendered by
+# the `haventory-panel` element out of the card bundle. On by default: the
+# redesigned Overview has no card surface at all, so the sidebar entry is the
+# only thing that makes a fresh install discoverable. An explicit opt-out is
+# kept; an entry created before the option existed has no value and reads as on.
+
+CONF_SIDEBAR_PANEL_ENABLED: str = "sidebar_panel_enabled"
+DEFAULT_SIDEBAR_PANEL_ENABLED: bool = True
+
+# The panel's URL path doubles as its key in the frontend's panel registry, so
+# it is also what a removal has to name.
+PANEL_URL_PATH: str = "haventory"
+PANEL_ELEMENT_NAME: str = "haventory-panel"
+# The HAventory mark, which the card bundle publishes as an icon set under the
+# `haventory:` prefix (`cards/haventory-card/src/ui/brand-icon.ts`) — a
+# non-`mdi:` prefix resolves out of the frontend's own icon registry, nowhere
+# else, so the two spellings have to agree. Nothing resolves it without the
+# bundle, and without the bundle there is no panel to put an icon on.
+PANEL_ICON: str = "haventory:logo"
+
+# -----------------------------
+# Item attachments
+# -----------------------------
+# Files attached to an item live under the config directory, outside the
+# integration package (HACS replaces that on upgrade) and outside `<config>/www`
+# (which is `/local`, served without authentication). Inside the config dir, HA
+# backups carry them with no extra work.
+
+MEDIA_SUBDIR: str = "haventory/attachments"
+
+# Where the authenticated view serves them. `{item_id}` and `{attachment_id}`
+# are matched against stored metadata before any path is built, so neither
+# segment ever reaches the filesystem as written.
+MEDIA_URL_TEMPLATE: str = "/api/haventory/media/{item_id}/{attachment_id}"
+
+# Query parameter a client adds to say "this URL is versioned by the name the
+# file is served under". The view reads only whether it is present, never its
+# value: it is a cache key, and the name it stands for is the one the response
+# carries anyway. Home Assistant signs query parameters along with the path, so
+# a client cannot bolt this onto a URL it was given.
+MEDIA_NAME_TOKEN_PARAM: str = "v"  # noqa: S105 - a query parameter name, not a credential
+
+# Accepted picture types. An allow-list, checked against the file's *sniffed*
+# leading bytes rather than the content type the browser declared.
+# `image/svg+xml` is deliberately absent: SVG carries script and the view serves
+# it from the Home Assistant origin.
+ATTACHMENT_PICTURE_MIME_TYPES: tuple[str, ...] = (
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+)
+# The manual kind exists on the backend so the shape does not have to be
+# migrated when its card surface lands.
+ATTACHMENT_MANUAL_MIME_TYPES: tuple[str, ...] = ("application/pdf",)
+
+# Per-item caps, reported through `haventory/config` so the card can refuse
+# before an upload starts, and enforced server-side regardless.
+MAX_PICTURES_PER_ITEM: int = 10
+MAX_MANUALS_PER_ITEM: int = 10
+# 8 MB. Nothing is thumbnailed server-side — Pillow is not a dependency and a
+# local-push integration should not grow one for a list-row thumbnail — so this
+# is the only bound on what a browser has to decode.
+MAX_ATTACHMENT_BYTES: int = 8 * 1024 * 1024
+
+# -----------------------------
+# Status appearance
+# -----------------------------
+
+# What a status may be painted. Five hues, each in a light and a strong form —
+# tokens rather than CSS, because the card resolves them against the Home
+# Assistant theme and both themes have to stay legible. The card holds the only
+# copy of what each one looks like; `tests/test_frontend_registration.py` pins
+# the two vocabularies to each other across the language boundary.
+#
+# A strong form is a saturated fill carrying fixed ink, so it draws attention a
+# tint cannot. That is the whole reason for the pairing: "Broken" and "Lent out"
+# are both statuses, and only one of them should shout.
+STATUS_COLORS: tuple[str, ...] = (
+    "neutral",
+    "neutral_strong",
+    "green",
+    "green_strong",
+    "blue",
+    "blue_strong",
+    "amber",
+    "amber_strong",
+    "red",
+    "red_strong",
+)
+DEFAULT_STATUS_COLOR: str = "neutral"
+
+# The glyphs a status may carry. A closed set, and deliberately small: the card
+# inlines its SVG path data rather than depending on Home Assistant's `ha-icon`
+# (see the deviation note in `docs/frontend_architecture.md`), so every name
+# here costs bundle bytes and has to earn them.
+STATUS_ICONS: tuple[str, ...] = (
+    "check",
+    "alert",
+    "wrench",
+    "hand",
+    "box",
+    "truck",
+    "clock",
+    "cancel",
+    "star",
+    "help",
+)
+DEFAULT_STATUS_ICON: str = "check"
 
 # -----------------------------
 # WebSocket rate limiting (config-entry options)

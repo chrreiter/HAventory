@@ -25,6 +25,35 @@ const tableCss = () => {
     .replace(/\s+/g, ' ');
 };
 
+describe('hv-data-table: area', () => {
+  const AREAS = [{ id: 'area-kitchen', name: 'Kitchen' }];
+  const pantry = { id_path: [], name_path: [], display_path: 'Fridge / Pantry', sort_key: '' };
+
+  it('names the room in the location cell, beside the path', async () => {
+    const el = await mount([{ id: '1', effective_area_id: 'area-kitchen', location_path: pantry }], {
+      columns: ['location'],
+      areas: AREAS,
+    });
+    const cell = q(el, '[data-testid="cell-location"]');
+    expect(cell?.querySelector('.hv-area-chip')?.textContent).toContain('Kitchen');
+    expect(cell?.textContent).toContain('Fridge › Pantry');
+    expect(cell?.getAttribute('title')).toBe('Area: Kitchen · Fridge › Pantry');
+  });
+
+  it('leaves a cell with no area exactly as it was', async () => {
+    const el = await mount([{ id: '1', location_path: pantry }], { columns: ['location'], areas: AREAS });
+    const cell = q(el, '[data-testid="cell-location"]');
+    expect(cell?.querySelector('.hv-area-chip')).toBe(null);
+    expect(cell?.textContent?.trim()).toBe('Fridge › Pantry');
+    expect(cell?.getAttribute('title')).toBe('Fridge › Pantry');
+  });
+
+  it('still says nothing is filed there with an em dash', async () => {
+    const el = await mount([{ id: '1' }], { columns: ['location'], areas: AREAS });
+    expect(q(el, '[data-testid="cell-location"]')?.textContent?.trim()).toBe('—');
+  });
+});
+
 describe('hv-data-table: narrow screens', () => {
   // The template has a hard ~786px minimum, and a grid whose tracks do not fit
   // overflows its box rather than shrinking. With overflow visible the spill
@@ -36,20 +65,17 @@ describe('hv-data-table: narrow screens', () => {
     expect(css).toMatch(/:host \{[^}]*min-width: 0/);
   });
 
-  // Making the host the sideways scroller was not enough on its own: the rows
-  // live in a vertical scroll box inside it, declaring overflow on one axis
-  // makes the other compute to auto, and that box is exactly as wide as its own
-  // content. So a horizontal swipe starting over a row landed on a scroll
-  // container with nothing to scroll, and `overscroll-behavior: contain` on
-  // both axes meant it was not handed on either. The host measured scrollWidth
-  // 874 against clientWidth 390 and never moved off scrollLeft 0.
-  it('contains the vertical overscroll only, so a sideways swipe reaches the host', () => {
+  // A swipe that runs out of table must not scroll the dashboard behind this
+  // surface, on either axis — and with one scroll container there is one place
+  // to say so. Split across two boxes it was the row group that swallowed the
+  // sideways gesture: it is exactly as wide as its own content, so it had
+  // nothing to scroll and contained the overscroll rather than handing it on.
+  // The host measured scrollWidth 874 against clientWidth 390 and never moved
+  // off scrollLeft 0.
+  it('contains the overscroll on the box that owns both axes', () => {
     const css = tableCss();
-    expect(css).toMatch(/\.body \{[^}]*overscroll-behavior-y: contain/);
-    expect(css).not.toMatch(/\.body \{[^}]*overscroll-behavior: contain/);
-    // The host still contains its own, which is what keeps a flick that runs
-    // out of table off the dashboard behind it.
-    expect(css).toMatch(/:host \{[^}]*overscroll-behavior-x: contain/);
+    expect(css).toMatch(/:host \{[^}]*overscroll-behavior: contain/);
+    expect(css).not.toMatch(/\.body \{[^}]*overscroll-behavior/);
   });
 
   it('sizes the header and body to the grid minimum so they scroll together', () => {
@@ -69,10 +95,82 @@ describe('hv-data-table: narrow screens', () => {
     expect(tableCss()).toMatch(/\.head button\.sort \{[^}]*min-height: var\(--hv-tap-min, auto\)/);
   });
 
-  it('keeps rows scrolling vertically inside the body', () => {
-    // The horizontal scroller is the host; the body stays the vertical one, so
-    // the header does not scroll away with the rows.
-    expect(tableCss()).toMatch(/\.body \{[^}]*overflow-y: auto/);
+  // jsdom computes no layout, so nothing here can watch a cell hold its place;
+  // what is assertable is that the rules resolve against the box that scrolls.
+  // A sticky cell resolves its offsets against the nearest scroll container, so
+  // rows in a vertical scroll box of their own would pin `left` to a box that
+  // never moves sideways — passing every offline check while doing nothing.
+  it('scrolls both axes on one box, so a pinned cell has something to pin to', () => {
+    const css = tableCss();
+    expect(css).toMatch(/:host \{[^}]*overflow-y: auto/);
+    expect(css).not.toMatch(/\.body \{[^}]*overflow/);
+    // Its own height rather than the leftover space, or it would stretch to the
+    // visible height and leave the scroll nothing to move.
+    expect(css).toMatch(/\.body \{ flex: none; \}/);
+  });
+
+  it('holds the header against the top of that same box', () => {
+    const css = tableCss();
+    expect(css).toMatch(/\.head \{[^}]*position: sticky/);
+    expect(css).toMatch(/\.head \{[^}]*top: 0/);
+    // Opaque, or the rows read through it as they pass underneath.
+    expect(css).toMatch(/\.head \{[^}]*background: var\(--hv-surface\)/);
+  });
+
+  it('pins the name column and its header at the phone breakpoint', () => {
+    const css = tableCss();
+    // The same width the full view drops its sidebar at.
+    expect(css).toMatch(/@media \(max-width: 700px\) \{ \.name-head, \.name-cell, \.select-cell \{/);
+    expect(css).toMatch(
+      /\.name-head, \.name-cell, \.select-cell \{[^}]*position: sticky[^}]*left: 0/,
+    );
+    // Opaque and full height, or the columns passing underneath show through.
+    expect(css).toMatch(
+      /\.name-head, \.name-cell, \.select-cell \{[^}]*align-self: stretch[^}]*background: var\(--hv-surface\)/,
+    );
+    // The row's own left padding travels with the pinned cell.
+    expect(css).toMatch(
+      /\.name-head, \.name-cell, \.select-cell \{[^}]*margin-left: calc\(-1 \* var\(--hv-table-pad-x\)\)[^}]*padding-left: var\(--hv-table-pad-x\)/,
+    );
+  });
+
+  it('offsets the pinned name past the checkbox track while selecting', () => {
+    // Built from the template's own track width, so the two cannot disagree —
+    // an offset short of the track would leave the name over the checkboxes.
+    // The gap between the two pinned cells travels with the name, or the
+    // columns underneath show through it.
+    expect(tableCss()).toMatch(
+      /:host\(\[selectable\]\) \.name-head, :host\(\[selectable\]\) \.name-cell \{ left: calc\(var\(--hv-table-pad-x\) \+ 40px\); margin-left: calc\(-1 \* var\(--hv-table-gap\)\); padding-left: var\(--hv-table-gap\)/,
+    );
+  });
+
+  // The wash is painted on the row, which the pinned cells cover; a colour
+  // would not do, because the dark half of the wash is translucent.
+  it('repaints the row wash on the pinned cells', () => {
+    expect(tableCss()).toMatch(
+      /\.row:hover \.name-cell,[^{]*\.row\.selected \.select-cell \{ background-image: linear-gradient\(var\(--hv-row-hover\), var\(--hv-row-hover\)\)/,
+    );
+  });
+
+  // Nothing said the table scrolled but a chip clipped at the right edge. The
+  // cover rides with the content and the shade with the box, so the shade shows
+  // exactly while there is something further right.
+  it('fades the edge it can still be scrolled towards', () => {
+    const css = tableCss();
+    expect(css).toMatch(
+      /:host \{ background: linear-gradient\(var\(--hv-surface\), var\(--hv-surface\)\) right \/ 28px 100% no-repeat local/,
+    );
+    // The shade underneath it, and a dark theme reads a black wash as nothing.
+    expect(css).toMatch(/light-dark\(rgba\(0, 0, 0, 0\.16\), rgba\(0, 0, 0, 0\.5\)\)/);
+    expect(css).toMatch(/no-repeat scroll; \}/);
+  });
+
+  it('reflects the selecting flag, which is all the pinning rules can read', async () => {
+    const el = await mount([{ id: '1' }], { selectable: true });
+    expect(el.hasAttribute('selectable')).toBe(true);
+    el.selectable = false;
+    await el.updateComplete;
+    expect(el.hasAttribute('selectable')).toBe(false);
   });
 });
 
@@ -107,7 +205,7 @@ describe('hv-data-table: columns', () => {
     ]);
     expect(q(el, '[data-testid="cell-quantity"]')?.classList.contains('low')).toBe(true);
     expect(q(el, '[data-testid="cell-due_date"]')?.classList.contains('overdue')).toBe(true);
-    expect(el.shadowRoot?.textContent).toContain('LOW');
+    expect(el.shadowRoot?.textContent).toContain('Low');
     expect(el.shadowRoot?.textContent).toContain('Checked out');
   });
 });
@@ -226,19 +324,225 @@ describe('hv-data-table: rows', () => {
     ).toBe(true);
   });
 
+  // The host is the box that scrolls, so the host is where the position can be
+  // read — and a scroll event fires on that box and does not bubble.
   it('reports scroll position so the host can page in more', async () => {
     const el = await mount([{ id: '1' }]);
     let ratio: number | null = null;
     el.addEventListener('near-end', (e) => {
       ratio = (e as CustomEvent).detail.ratio;
     });
-    (q(el, '[data-testid="table-body"]') as HTMLElement).dispatchEvent(new Event('scroll'));
+    el.dispatchEvent(new Event('scroll'));
     expect(typeof ratio).toBe('number');
+  });
+
+  it('stops reporting once it is off the page', async () => {
+    const el = await mount([{ id: '1' }]);
+    let seen = 0;
+    el.addEventListener('near-end', () => (seen += 1));
+    el.remove();
+    el.dispatchEvent(new Event('scroll'));
+    expect(seen).toBe(0);
   });
 
   it('shows the host-supplied empty message', async () => {
     const el = await mount([]);
     expect(q(el, '[data-testid="table-empty"]')).toBeTruthy();
+  });
+
+  it('chips a flagged status in the name cell and leaves ok rows quiet', async () => {
+    const el = await mount([
+      { id: '1', status: 'missing' },
+      { id: '2', status: 'needs_repair' },
+      { id: '3', status: 'ok' },
+      { id: '4' },
+    ]);
+    const rows = all(el, '[data-testid="table-row"]');
+    const chip = (row: HTMLElement) =>
+      row.querySelector('[data-testid="table-status"]')?.textContent?.trim() ?? null;
+    expect(rows.map(chip)).toEqual(['Missing', 'Needs repair', null, null]);
+  });
+});
+
+describe('hv-data-table: keyboard', () => {
+  const captured = (el: HVDataTable, names: string[]) => {
+    const seen: string[] = [];
+    for (const name of names) {
+      el.addEventListener(name, (e) => seen.push(`${name}:${(e as CustomEvent).detail.itemId}`));
+    }
+    return seen;
+  };
+  const press = (el: HTMLElement, key: string) =>
+    el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+
+  // The rows were tabbable and had a click handler and nothing else, so on the
+  // one surface that lists every item, no item could be reached without a mouse.
+  it('keeps the same shortcuts the card list row has', async () => {
+    const el = await mount([{ id: 'item-1' }]);
+    const seen = captured(el, ['open-item', 'request-delete', 'increment', 'decrement']);
+    const row = q(el, '[data-testid="table-row"]') as HTMLElement;
+
+    for (const key of ['Enter', 'Delete', '+', '-']) press(row, key);
+
+    expect(seen).toEqual([
+      'open-item:item-1',
+      'request-delete:item-1',
+      'increment:item-1',
+      'decrement:item-1',
+    ]);
+  });
+
+  it('takes the numpad and shifted spellings of the same two keys', async () => {
+    const el = await mount([{ id: 'item-1' }]);
+    const seen = captured(el, ['increment', 'decrement']);
+    const row = q(el, '[data-testid="table-row"]') as HTMLElement;
+
+    // `=` is what an unshifted `+` reports on a US layout; `Add`/`Subtract` are
+    // the numpad's.
+    for (const key of ['=', 'Add', 'Subtract']) press(row, key);
+
+    expect(seen).toEqual(['increment:item-1', 'increment:item-1', 'decrement:item-1']);
+  });
+
+  it('claims the keys it acts on, so the surface below does not answer too', async () => {
+    const el = await mount([{ id: 'item-1' }]);
+    const row = q(el, '[data-testid="table-row"]') as HTMLElement;
+    expect(press(row, 'Enter')).toBe(false);
+    // Anything else is still the browser's — Tab has to keep leaving the row.
+    expect(press(row, 'Tab')).toBe(true);
+  });
+
+  it('follows the row click into selection mode rather than opening the item', async () => {
+    const el = await mount([{ id: 'item-1' }], { selectable: true });
+    const seen = captured(el, ['open-item', 'toggle-select']);
+    press(q(el, '[data-testid="table-row"]') as HTMLElement, 'Enter');
+    expect(seen).toEqual(['toggle-select:item-1']);
+  });
+
+  it('leaves a key pressed on a control inside the row to that control', async () => {
+    // Enter on Edit already opens the editor; the row acting on the same press
+    // would open it a second time, and Delete on any of the three buttons would
+    // ask to delete the item.
+    const el = await mount([{ id: 'item-1' }]);
+    const seen = captured(el, ['open-item', 'request-delete', 'increment', 'decrement']);
+    const edit = q(el, '[data-testid="table-edit"]') as HTMLElement;
+
+    for (const key of ['Enter', 'Delete', '+', '-']) press(edit, key);
+
+    expect(seen).toEqual([]);
+  });
+});
+
+describe('hv-data-table: table semantics', () => {
+  // `row`, `columnheader` and `cell` are only meaningful under a table role.
+  // Without one the structure is dropped and the rows read as a run of text.
+  it('carries the table role the rows and cells hang off', async () => {
+    const el = await mount([{ id: '1' }]);
+    expect(el.getAttribute('role')).toBe('table');
+  });
+
+  it('marks every value in a row as a cell', async () => {
+    const el = await mount([{ id: '1', tags: ['m4'] }]);
+    const row = q(el, '[data-testid="table-row"]') as HTMLElement;
+    const cells = [...row.querySelectorAll('[role="cell"]')];
+    // Name, the five mounted columns, and the action group.
+    expect(cells).toHaveLength(7);
+    expect(cells[0].querySelector('[data-testid="table-name"]')).toBeTruthy();
+    expect(cells.map((c) => c.getAttribute('data-testid'))).toContain('cell-quantity');
+  });
+
+  it('gives each row a cell for every column header', async () => {
+    const el = await mount([{ id: '1' }], { columns: ['quantity', 'location', 'status'] });
+    const headers = all(el, '[role="columnheader"]').length;
+    const cells = (q(el, '[data-testid="table-row"]') as HTMLElement).querySelectorAll('[role="cell"]');
+    expect(cells).toHaveLength(headers);
+  });
+
+  it('spans the empty message across a row, the way a table has to', async () => {
+    // A row group whose only child is a loose message owns something a table
+    // cannot contain, and the whole structure is dropped rather than repaired.
+    const el = await mount([]);
+    const empty = q(el, '[data-testid="table-empty"]') as HTMLElement;
+    expect(empty.getAttribute('role')).toBe('cell');
+    expect(empty.parentElement?.getAttribute('role')).toBe('row');
+    expect(empty.closest('[role="rowgroup"]')).toBeTruthy();
+  });
+
+  it('leaves the announcing to whatever fills the slot', async () => {
+    // The shared empty state is a live region already; a second one wrapped
+    // around it says everything twice.
+    const el = await mount([]);
+    expect(q(el, '[data-testid="table-empty"]')?.getAttribute('role')).not.toBe('status');
+  });
+});
+
+describe('hv-data-table: status column', () => {
+  const mixed = [
+    { id: '1', status: 'missing' as const },
+    { id: '2', status: 'needs_repair' as const },
+    { id: '3', status: 'ok' as const },
+    { id: '4' },
+  ];
+
+  // The name-cell chip only ever marks the exceptions. A column that did the
+  // same would leave most rows blank under a header promising a value.
+  it('names every row, ok included, and reads an absent status as ok', async () => {
+    const el = await mount(mixed, { columns: ['status'] });
+    expect(all(el, '[data-testid="cell-status"]').map((c) => c.textContent?.trim())).toEqual([
+      'Missing',
+      'Needs repair',
+      'OK',
+      'OK',
+    ]);
+  });
+
+  // Every value in the column is a chip, or half of it would read as a second
+  // column interleaved with the first. The colour is the status definition's,
+  // not one of the fixed semantic hues — a household chooses it.
+  it('chips every value and paints each from its own definition', async () => {
+    const el = await mount(mixed, { columns: ['status'] });
+    const cells = all(el, '[data-testid="cell-status"]');
+    expect(cells.map((c) => !!c.querySelector('.hv-status-chip'))).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
+    expect(cells.map((c) => !!c.querySelector('.hv-status-chip.tone-amber'))).toEqual([
+      true,
+      true,
+      false,
+      false,
+    ]);
+    expect(cells.map((c) => !!c.querySelector('.hv-status-chip.tone-green'))).toEqual([
+      false,
+      false,
+      true,
+      true,
+    ]);
+    // The semantic vocabulary stays for the marks that do carry a fixed meaning.
+    expect(cells.map((c) => !!c.querySelector('.hv-chip.warning'))).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  it('stands the name-cell chip down, so no row says it twice', async () => {
+    const el = await mount([{ id: '1', status: 'missing' }], { columns: ['status'] });
+    expect(q(el, '[data-testid="table-status"]')).toBe(null);
+    expect(q(el, '[data-testid="cell-status"]')?.textContent?.trim()).toBe('Missing');
+  });
+
+  it('keeps the name-cell chip when the column is turned off', async () => {
+    const el = await mount([{ id: '1', status: 'missing' }], { columns: ['quantity'] });
+    expect(q(el, '[data-testid="table-status"]')?.textContent?.trim()).toBe('Missing');
+  });
+
+  it('gives the header no sort button — the API cannot order by status', async () => {
+    const el = await mount([{ id: '1' }], { columns: ['status'] });
+    expect(all(el, '[data-testid="table-sort"]').map((b) => b.dataset.field)).not.toContain('status');
   });
 });
 

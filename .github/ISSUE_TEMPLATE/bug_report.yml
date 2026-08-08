@@ -21,8 +21,8 @@ body:
     id: haventory_version
     attributes:
       label: HAventory version
-      description: The integration version (HACS, or `manifest.json`), e.g. 0.0.1.
-      placeholder: "0.0.1"
+      description: The version HACS lists for HAventory, or the `version` field in `manifest.json`.
+      placeholder: "e.g. 1.2.3"
     validations:
       required: true
   - type: input

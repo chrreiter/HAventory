@@ -63,6 +63,69 @@ async def test_ws_item_create_get_list(hass: HomeAssistant, hass_ws_client) -> N
     assert "Screwdriver" in names
 
 
+async def test_ws_rename_keeps_item_versions_valid(hass: HomeAssistant, hass_ws_client) -> None:
+    """A location rename must not spend the client's optimistic-concurrency token.
+
+    The rename rewrites the item's derived ``location_path``; a client holding
+    the pre-rename ``version`` for an unrelated field must still be able to
+    update. Exercised against real HA because a stub could get the concurrency
+    check wrong without anything failing.
+    """
+
+    await _setup(hass)
+    client = await hass_ws_client(hass)
+
+    await client.send_json({"id": 1, "type": "haventory/location/create", "name": "Garage"})
+    created_loc = await client.receive_json()
+    assert created_loc["success"] is True, created_loc
+    location_id = created_loc["result"]["id"]
+
+    await client.send_json(
+        {
+            "id": 2,
+            "type": "haventory/item/create",
+            "name": "Hammer",
+            "quantity": 1,
+            "location_id": location_id,
+        }
+    )
+    created = await client.receive_json()
+    assert created["success"] is True, created
+    item_id = created["result"]["id"]
+    held_version = created["result"]["version"]
+
+    await client.send_json(
+        {
+            "id": 3,
+            "type": "haventory/location/update",
+            "location_id": location_id,
+            "name": "Workshop",
+        }
+    )
+    renamed = await client.receive_json()
+    assert renamed["success"] is True, renamed
+
+    await client.send_json({"id": 4, "type": "haventory/item/get", "item_id": item_id})
+    fetched = await client.receive_json()
+    assert fetched["success"] is True, fetched
+    assert fetched["result"]["location_path"]["display_path"] == "Workshop"
+    assert fetched["result"]["version"] == held_version
+
+    await client.send_json(
+        {
+            "id": 5,
+            "type": "haventory/item/update",
+            "item_id": item_id,
+            "expected_version": held_version,
+            "name": "Sledgehammer",
+        }
+    )
+    updated = await client.receive_json()
+    assert updated["success"] is True, updated
+    assert updated["result"]["name"] == "Sledgehammer"
+    assert updated["result"]["version"] == held_version + 1
+
+
 async def test_ws_item_get_unknown_returns_error(hass: HomeAssistant, hass_ws_client) -> None:
     """Fetching a missing item surfaces a structured error, not a crash."""
 

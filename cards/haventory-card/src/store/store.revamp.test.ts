@@ -66,6 +66,7 @@ describe('toWireFilter', () => {
       orphansOnly: true,
       overdueOnly: true,
       inspectionDueOnly: true,
+      status: 'missing',
       category: 'Hardware',
       updatedAfter: '2026-07-01T00:00:00Z',
       createdAfter: '2026-01-01T00:00:00Z',
@@ -82,6 +83,7 @@ describe('toWireFilter', () => {
       orphaned_only: true,
       overdue_only: true,
       inspection_overdue_only: true,
+      status: 'missing',
       category: 'Hardware',
       updated_after: '2026-07-01T00:00:00Z',
       created_after: '2026-01-01T00:00:00Z',
@@ -96,6 +98,7 @@ describe('toWireFilter', () => {
     expect(wire.created_before).toBeUndefined();
     expect(wire.overdue_only).toBeUndefined();
     expect(wire.inspection_overdue_only).toBeUndefined();
+    expect(wire.status).toBeUndefined();
   });
 
   it('keeps low-stock-only and low-stock-first independent', () => {
@@ -131,6 +134,12 @@ describe('activeFilterCount', () => {
 
   it('ignores sort, which is not a filter', () => {
     expect(activeFilterCount({ ...defaultFilters(), sort: { field: 'name', order: 'asc' } })).toBe(0);
+  });
+
+  it('counts a status selection as one filter', () => {
+    expect(activeFilterCount({ ...defaultFilters(), status: 'needs_repair' })).toBe(1);
+    // OK narrows too — most of the inventory is ok, but not all of it need be.
+    expect(activeFilterCount({ ...defaultFilters(), status: 'ok' })).toBe(1);
   });
 
   it('counts each date bound and the overdue toggle', () => {
@@ -418,7 +427,7 @@ describe('Store: rate limiting and degraded state', () => {
 
   it('retries a rate-limited subscribe and goes live again', async () => {
     const hass = makeMockHass({ items: [] });
-    // One whole round refused — three topics — then the limiter lets us back in.
+    // One whole round refused — four topics — then the limiter lets us back in.
     hass.__failSubscribeNext(3, RATE_LIMITED);
     const store = new Store(hass, fast);
 
@@ -434,8 +443,8 @@ describe('Store: rate limiting and degraded state', () => {
     expect(store.state.value.degraded.nextLiveRetryAt).toBeNull();
     expect(store.state.value.connected.items).toBe(true);
     expect(store.state.value.errorQueue).toEqual([]);
-    // Two rounds of three, so the retry really did re-open every topic...
-    expect(hass.__subscribeCalls).toHaveLength(6);
+    // Two rounds of four, so the retry really did re-open every topic...
+    expect(hass.__subscribeCalls).toHaveLength(8);
     // ...and events flow again, which is the whole point of retrying.
     hass.__emit('items', 'created', { item: makeItem({ id: '9' }) });
     expect(store.state.value.items.map((i) => i.id)).toContain('9');
@@ -457,14 +466,14 @@ describe('Store: rate limiting and degraded state', () => {
     // The refusal reaches the user exactly once — when retrying is over, not on
     // every attempt.
     expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['rate_limited']);
-    // The first round plus four retries, three topics each. The cap is the point:
+    // The first round plus four retries, four topics each. The cap is the point:
     // a card that kept knocking would be indistinguishable from the load that
     // tripped the limiter.
-    expect(hass.__subscribeCalls).toHaveLength(15);
+    expect(hass.__subscribeCalls).toHaveLength(20);
 
     // The budget stays spent until something restarts it.
     await flush(6);
-    expect(hass.__subscribeCalls).toHaveLength(15);
+    expect(hass.__subscribeCalls).toHaveLength(20);
   });
 
   it('clears the paused indicator when a manual refresh gets back in', async () => {
@@ -508,12 +517,12 @@ describe('Store: rate limiting and degraded state', () => {
 
       // Not retried before the hint elapses...
       await vi.advanceTimersByTimeAsync(39);
-      expect(hass.__subscribeCalls).toHaveLength(3);
+      expect(hass.__subscribeCalls).toHaveLength(4);
 
       // ...and retried on the very millisecond it does.
       await vi.advanceTimersByTimeAsync(1);
       await settleSubscribes();
-      expect(hass.__subscribeCalls).toHaveLength(6);
+      expect(hass.__subscribeCalls).toHaveLength(8);
       expect(store.state.value.degraded.liveUpdates).toBe('live');
     } finally {
       vi.useRealTimers();
@@ -533,7 +542,132 @@ describe('Store: rate limiting and degraded state', () => {
     expect(store.state.value.degraded.connectionLost).toBe(true);
     expect(store.state.value.degraded.liveUpdates).toBe('paused');
     expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['unknown_error']);
-    expect(hass.__subscribeCalls).toHaveLength(3);
+    expect(hass.__subscribeCalls).toHaveLength(4);
+  });
+});
+
+describe('Store: the backend going away and coming back', () => {
+  const UNAVAILABLE = { code: 'storage_error', message: 'repository not initialized; run integration setup' };
+
+  /** What a config-entry teardown puts on every open subscription. */
+  function tearDown(hass: ReturnType<typeof makeMockHass>) {
+    hass.__emit('items', 'unavailable', {});
+    hass.__emit('locations', 'unavailable', {});
+    hass.__emit('stats', 'unavailable', {});
+  }
+
+  it('re-opens the subscriptions a reload took away', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+    const store = new Store(hass, fast);
+    await store.init();
+    expect(hass.__subscribeCalls).toHaveLength(4);
+
+    tearDown(hass);
+    await flush(3);
+
+    // One more round, and live updates are back without the user touching
+    // anything — a reload must not cost a manual refresh.
+    expect(hass.__subscribeCalls).toHaveLength(8);
+    expect(store.state.value.degraded.liveUpdates).toBe('live');
+    expect(store.state.value.degraded.liveUpdatesReason).toBeNull();
+    expect(store.state.value.connected.items).toBe(true);
+    expect(store.state.value.errorQueue).toEqual([]);
+    hass.__emit('items', 'created', { item: makeItem({ id: '9' }) });
+    expect(store.state.value.items.map((i) => i.id)).toContain('9');
+  });
+
+  it('waits out the window in which the backend is still refusing', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    // Setup has not finished, so the first two re-subscribe rounds are refused
+    // exactly the way a command is during a reload.
+    hass.__failSubscribeNext(6, UNAVAILABLE);
+    tearDown(hass);
+    await settleSubscribes();
+    expect(store.state.value.degraded.liveUpdates).toBe('retrying');
+    expect(store.state.value.degraded.liveUpdatesReason).toBe('unavailable');
+    // Not rate limiting — the banner must not blame a limiter that is off.
+    expect(store.state.value.degraded.rateLimited).toBe(false);
+
+    await flush(6);
+
+    expect(store.state.value.degraded.liveUpdates).toBe('live');
+    expect(store.state.value.degraded.liveUpdatesReason).toBeNull();
+    // Nothing reached the user: waiting out a reload is not an error.
+    expect(store.state.value.errorQueue).toEqual([]);
+  });
+
+  it('re-reads the inventory once the backend answers again', async () => {
+    // A backend that went away and came back re-read its store, and every event
+    // in between went to a subscription that no longer existed.
+    const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'Before' })] });
+    const store = new Store(hass, fast);
+    await store.init();
+    expect(store.state.value.items.map((i) => i.name)).toEqual(['Before']);
+
+    hass.__setItems([makeItem({ id: '2', name: 'After' })]);
+    tearDown(hass);
+    await flush(4);
+
+    expect(store.state.value.items.map((i) => i.name)).toEqual(['After']);
+  });
+
+  it('gives up once the budget is spent, and says what stopped', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    // Disabled or removed rather than reloading: nothing is coming back.
+    hass.__failSubscribe(UNAVAILABLE);
+    tearDown(hass);
+    await flush(20);
+
+    expect(store.state.value.degraded.liveUpdates).toBe('paused');
+    expect(store.state.value.degraded.liveUpdatesReason).toBe('unavailable');
+    expect(store.state.value.degraded.nextLiveRetryAt).toBeNull();
+    expect(store.state.value.connected.items).toBe(false);
+    // Reported once, when retrying is over — not on every attempt.
+    expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['storage_error']);
+    // The first round from init plus a bounded seven, four topics each.
+    expect(hass.__subscribeCalls).toHaveLength(32);
+
+    // The budget stays spent until something restarts it.
+    await flush(6);
+    expect(hass.__subscribeCalls).toHaveLength(32);
+  });
+
+  it('treats one teardown as one outage, however many topics report it', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    // All four topics carry the same signal; four re-subscribe rounds for one
+    // reload would triple the load on a backend that is still starting up.
+    tearDown(hass);
+    await flush(3);
+
+    expect(hass.__subscribeCalls).toHaveLength(8);
+  });
+
+  it('starts a fresh budget for a second teardown', async () => {
+    const hass = makeMockHass({ items: [] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    tearDown(hass);
+    await flush(3);
+    expect(store.state.value.degraded.liveUpdates).toBe('live');
+
+    // A dashboard open for days sees more than one reload; the second must not
+    // inherit an exhausted budget from the first.
+    hass.__failSubscribeNext(3, UNAVAILABLE);
+    tearDown(hass);
+    await flush(4);
+
+    expect(store.state.value.degraded.liveUpdates).toBe('live');
+    expect(store.state.value.errorQueue).toEqual([]);
   });
 });
 
@@ -679,6 +813,289 @@ describe('Store: subscription lifecycle', () => {
   });
 });
 
+// Areas are Home Assistant's, and the card prints their names beside every
+// location path. A dashboard stays open for days, so a boot-time snapshot would
+// keep naming an area the registry has since renamed or dropped.
+describe('Store: HA area registry watch', () => {
+  const AREA_EVENT = 'area_registry_updated';
+
+  it('refetches the areas when the registry changes', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const store = new Store(hass, fast);
+      await store.init();
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+
+      hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
+      hass.__emitHaEvent(AREA_EVENT, { action: 'update', area_id: 'kitchen' });
+      await vi.advanceTimersByTimeAsync(300);
+
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Scullery');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('coalesces a burst of registry events into one refetch', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const store = new Store(hass, fast);
+      await store.init();
+      const before = hass.__calls.filter((c) => c === 'haventory/areas/list').length;
+
+      hass.__emitHaEvent(AREA_EVENT, { action: 'create', area_id: 'a' });
+      hass.__emitHaEvent(AREA_EVENT, { action: 'create', area_id: 'b' });
+      hass.__emitHaEvent(AREA_EVENT, { action: 'remove', area_id: 'c' });
+      await vi.advanceTimersByTimeAsync(300);
+
+      const after = hass.__calls.filter((c) => c === 'haventory/areas/list').length;
+      expect(after - before).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops watching the registry once disposed', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const store = new Store(hass, fast);
+      await store.init();
+      expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(1);
+
+      hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
+      hass.__emitHaEvent(AREA_EVENT, { action: 'update', area_id: 'kitchen' });
+      store.dispose();
+      await vi.advanceTimersByTimeAsync(300);
+
+      // Both halves: the pending refetch is cancelled, and a later event finds
+      // nobody listening.
+      expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(0);
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps working when Home Assistant refuses the registry subscription', async () => {
+    const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+    const failing = {
+      ...hass,
+      connection: {
+        subscribeMessage(cb: (event: never) => void, msg: Record<string, unknown>) {
+          if (msg.type === 'subscribe_events') return Promise.reject(new Error('nope'));
+          return hass.connection.subscribeMessage(cb as never, msg);
+        },
+      },
+    };
+    const store = new Store(failing, fast);
+
+    await store.init();
+
+    // No throw, no degraded state: the card keeps the areas it fetched, which
+    // is everything it had before it listened at all.
+    expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+    expect(store.state.value.connected).toEqual({ items: true, stats: true });
+  });
+
+  /**
+   * A hass that refuses the first `refusals` `subscribe_events` calls and then
+   * delegates to the mock, counting every attempt — the point of the retry is
+   * that a second attempt happens at all.
+   */
+  function refusingRegistry(hass: ReturnType<typeof makeMockHass>, refusals: number) {
+    let attempts = 0;
+    const wrapped = {
+      ...hass,
+      connection: {
+        subscribeMessage(cb: (event: never) => void, msg: Record<string, unknown>) {
+          if (msg.type !== 'subscribe_events') {
+            return hass.connection.subscribeMessage(cb as never, msg);
+          }
+          attempts += 1;
+          if (attempts <= refusals) return Promise.reject({ code: 'rate_limited' });
+          return hass.connection.subscribeMessage(cb as never, msg);
+        },
+      },
+    };
+    return { hass: wrapped, attempts: () => attempts };
+  }
+
+  // Backoff off a base the card can actually wait on, so "it retried" is
+  // distinguishable from "it never stopped trying".
+  const backoff = { retryBaseMs: 100 };
+
+  it('retries a refused registry subscribe and watches once it is accepted', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const refusing = refusingRegistry(hass, 1);
+      const store = new Store(refusing.hass, backoff);
+      await store.init();
+      expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(200);
+      expect(refusing.attempts()).toBe(2);
+      expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(1);
+
+      // The watch is live, not merely open: a later rename still lands.
+      hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
+      hass.__emitHaEvent(AREA_EVENT, { action: 'update', area_id: 'kitchen' });
+      await vi.advanceTimersByTimeAsync(300);
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Scullery');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('re-reads the areas after a gap nothing was listening through', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const refusing = refusingRegistry(hass, 1);
+      const store = new Store(refusing.hass, backoff);
+      await store.init();
+
+      // The rename lands while the watch is refused, so no event reports it.
+      // Re-opening the watch alone would leave the card naming a stale area.
+      hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Scullery');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // A dropped socket is the gap the watch itself cannot report: Home Assistant
+  // re-issues the subscriptions it held before it says `ready`, so nothing is
+  // refused and nothing re-opens, while the events fired meanwhile are gone.
+  it('re-reads the areas after a reconnect the watch never noticed', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const store = new Store(hass, backoff);
+      await store.init();
+
+      // The registry moves while the socket is down: no event is delivered.
+      hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+
+      hass.__reconnect();
+      await vi.advanceTimersByTimeAsync(300);
+
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Scullery');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the watch it already holds across a reconnect', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const store = new Store(hass, backoff);
+      await store.init();
+
+      hass.__reconnect();
+      await vi.advanceTimersByTimeAsync(300);
+
+      // Home Assistant restored the subscription itself. Opening a second one
+      // would leave two watches refetching for every registry edit, and the
+      // first one unreferenced and unstoppable.
+      expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops re-reading the areas once the store is disposed', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const store = new Store(hass, backoff);
+      await store.init();
+
+      store.dispose();
+      const before = hass.__calls.filter((c) => c === 'haventory/areas/list').length;
+      hass.__reconnect();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      // The connection outlives the card, so a listener left attached would
+      // refetch for a dead store on every reconnect for as long as the page is
+      // open.
+      expect(hass.__calls.filter((c) => c === 'haventory/areas/list').length).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('works against a connection that exposes no lifecycle events', async () => {
+    const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+    // `HassLike.connection` is structural, so `addEventListener` may be absent.
+    const bare = {
+      ...hass,
+      connection: {
+        subscribeMessage: (cb: (event: never) => void, msg: Record<string, unknown>) =>
+          hass.connection.subscribeMessage(cb as never, msg),
+      },
+    };
+    const store = new Store(bare, backoff);
+
+    await store.init();
+    expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+    expect(() => store.dispose()).not.toThrow();
+  });
+
+  it('gives up on the registry watch quietly once the budget is spent', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const refusing = refusingRegistry(hass, Number.POSITIVE_INFINITY);
+      const store = new Store(refusing.hass, backoff);
+      await store.init();
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      const spent = refusing.attempts();
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      // Bounded — and it stays bounded, rather than knocking forever.
+      expect(spent).toBeGreaterThan(1);
+      expect(refusing.attempts()).toBe(spent);
+      // Silent: a refused area watch costs freshness, not function, so it
+      // raises no banner and queues no error for the user to dismiss.
+      expect(store.state.value.errorQueue).toEqual([]);
+      expect(store.state.value.degraded.rateLimited).toBe(false);
+      expect(store.state.value.degraded.liveUpdates).toBe('live');
+      expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not re-open the registry watch after dispose', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const refusing = refusingRegistry(hass, 1);
+      const store = new Store(refusing.hass, backoff);
+      await store.init();
+      expect(refusing.attempts()).toBe(1);
+
+      store.dispose();
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(refusing.attempts()).toBe(1);
+      expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('Store: location tree and diagnostics data', () => {
   it('exposes tree nodes with per-location counts', async () => {
     const locations = [loc('garage', 'Garage'), loc('shelf-a', 'Shelf A', 'garage')];
@@ -762,6 +1179,32 @@ describe('Store: location tree and diagnostics data', () => {
     });
     expect(store.state.value.versionInfo?.integration_version).toBe('0.0.1');
   });
+
+  it('reads the card heading configured in the integration', async () => {
+    const hass = makeMockHass({ items: [], cardTitle: 'Pantry' });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    expect(store.state.value.cardTitle).toBe('Pantry');
+  });
+
+  // The card bundle is served by the integration, so this only happens with a
+  // stale cached bundle — and a missing heading must not cost the user their
+  // items, which init loads after this call.
+  it('still loads when the backend does not know haventory/config', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+    const realCallWS = hass.callWS.bind(hass);
+    hass.callWS = (async (msg: Record<string, unknown>) => {
+      if (msg.type === 'haventory/config') throw { code: 'unknown_command', message: 'nope' };
+      return realCallWS(msg);
+    }) as typeof hass.callWS;
+
+    const store = new Store(hass, fast);
+    await store.init();
+
+    expect(store.state.value.cardTitle).toBeNull();
+    expect(store.state.value.items).toHaveLength(1);
+  });
 });
 
 describe('Store: export scopes', () => {
@@ -805,5 +1248,25 @@ describe('Store: import reload signalling', () => {
     // It went up and came back down; nothing is left stuck.
     expect(seen).toContain(true);
     expect(store.state.value.degraded.reloading).toBe(false);
+  });
+
+  // Deleting a status with a reassignment target moves every item carrying it
+  // in one call, so the backend announces the move with no item to merge. Read
+  // as a per-item event this threw and the card kept showing the old rows.
+  it('refetches on an item event that carries no item', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'Ladder' })] });
+    const store = new Store(hass, fast);
+    await store.init();
+    hass.__setItems([makeItem({ id: '1', name: 'Ladder', status: 'ok' }), makeItem({ id: '2' })]);
+
+    const seen: boolean[] = [];
+    store.state.onChange(() => seen.push(store.state.value.degraded.reloading));
+
+    hass.__emit('items', 'updated', {});
+    await new Promise((r) => setTimeout(r, 5));
+
+    expect(seen).toContain(true);
+    expect(store.state.value.degraded.reloading).toBe(false);
+    expect(store.state.value.items.map((i) => i.id)).toEqual(['1', '2']);
   });
 });

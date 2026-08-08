@@ -1,14 +1,29 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import { inferType } from '../ui/item-form';
-import { displayPath, isLowStock } from './hv-list-row';
-import type { Item, Location, LocationTreeNode, ScalarValue } from '../store/types';
+import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
+import { isLowStock } from './hv-list-row';
+import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
+import {
+  MediaUrls,
+  attachmentNameToken,
+  attachmentTitle,
+  formatBytes,
+  manuals,
+  pictureAlt,
+  pictures,
+} from '../ui/media';
+import type { MediaBindings } from '../ui/media';
+import { DialogFocus } from '../ui/dialog-focus';
+import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, ScalarValue, StatusDefinition } from '../store/types';
 import './hv-bottom-sheet';
 import './hv-checkout-popover';
 import './hv-item-editor';
+import type { HVBottomSheet } from './hv-bottom-sheet';
 import type { HVItemEditor } from './hv-item-editor';
 
 /**
@@ -23,6 +38,7 @@ export class HVDetailSheet extends LitElement {
   static styles = [
     tokens,
     base,
+    chip,
     css`
       :host {
         display: block;
@@ -46,6 +62,10 @@ export class HVDetailSheet extends LitElement {
            reads at body size, like the description under it. */
         font-size: 13.5px;
         color: var(--hv-text-secondary);
+        overflow: hidden;
+      }
+      /* The path elides; the chip ahead of it does not. */
+      .bar .crumb > .hv-chip-line-text {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -97,38 +117,6 @@ export class HVDetailSheet extends LitElement {
         flex-wrap: wrap;
         gap: 6px;
         margin-top: 8px;
-      }
-      .chip {
-        border: none;
-        border-radius: var(--hv-radius-chip);
-        background: var(--hv-chip-bg);
-        color: var(--hv-chip-text);
-        padding: 3px 9px;
-        font: 400 11.5px var(--hv-font);
-      }
-      .chip.state {
-        background: var(--hv-primary-tint);
-        color: var(--hv-primary-darker);
-      }
-      .chip.overdue {
-        background: var(--hv-error);
-        color: #fff;
-      }
-      .chip.low {
-        background: var(--hv-warn-bg);
-        color: var(--hv-warn);
-        font-weight: 700;
-        letter-spacing: 0.4px;
-      }
-      /* Amber, not the red the overdue chip takes: red on this card means an
-         item is out and late back, while an inspection that has come due is a
-         chore on something still on the shelf — the same kind of signal as low
-         stock. Keeping the two hues apart is what lets both chips sit in this
-         row without reading as one alarm. */
-      .chip.inspect {
-        background: var(--hv-warn-bg);
-        color: var(--hv-warn-deep);
-        font-weight: 500;
       }
       .hero {
         margin: 0 14px 14px;
@@ -262,6 +250,178 @@ export class HVDetailSheet extends LitElement {
         color: var(--hv-error-soft);
         font: 400 14px var(--hv-font);
       }
+      /* One row that scrolls sideways rather than a grid that grows the sheet:
+         the sheet's own vertical scroll is how you reach the facts below, and a
+         wrapping gallery would push them off a phone screen entirely. */
+      .gallery {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding: 0 14px 14px;
+        margin: 0;
+        scroll-snap-type: x mandatory;
+      }
+      .gallery figure {
+        margin: 0;
+        flex: none;
+        scroll-snap-align: start;
+      }
+      .gallery button {
+        display: block;
+        padding: 0;
+        border: none;
+        background: none;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .gallery img {
+        display: block;
+        width: 116px;
+        height: 116px;
+        object-fit: cover;
+        background: var(--hv-surface-raised);
+      }
+      .documents {
+        padding: 0 18px 14px;
+      }
+      .documents h3 {
+        margin: 0 0 6px;
+        font-size: 12px;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--hv-text-secondary);
+      }
+      .documents ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 1px;
+        background: var(--hv-row-divider);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .documents li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 52px;
+        padding: 8px 12px;
+        background: var(--hv-surface);
+      }
+      .documents .doc-icon {
+        display: inline-grid;
+        place-items: center;
+        flex: none;
+        color: var(--hv-text-secondary);
+      }
+      .documents .doc-text {
+        flex: 1;
+        min-width: 0;
+      }
+      .documents .doc-title {
+        display: block;
+        font-size: 13.5px;
+        color: var(--hv-text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .documents .doc-meta {
+        display: block;
+        font-size: 11.5px;
+        color: var(--hv-text-secondary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .documents .doc-open {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        flex: none;
+        min-height: 40px;
+        padding: 0 12px;
+        border-radius: var(--hv-radius-chip);
+        color: var(--hv-primary-dark);
+        text-decoration: none;
+        font: 500 13px var(--hv-font);
+      }
+      /* The row still names the document; only what it promised to open is
+         struck through, so the reference reads as a record rather than as
+         something broken beyond recognition. */
+      .documents li.missing .doc-title {
+        color: var(--hv-text-secondary);
+        text-decoration: line-through;
+      }
+      .lightbox {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        /* Opaque rather than a scrim: a photo is what the surface is for, and
+           the sheet behind it competes at any transparency. */
+        background: #000;
+        z-index: 10;
+        /* Every control here floats on the photo, so its own backing is the
+           only contrast it is guaranteed. The worst case is a white frame,
+           where this resolves to #6B6B6B — 5.3:1 under the white ink, enough
+           for the counter, which is 13px text and therefore wants 4.5:1 rather
+           than the 3:1 the chevrons would settle for. One value for all three,
+           set by the strictest thing sitting on it. */
+        --hv-lightbox-scrim: rgba(0, 0, 0, 0.58);
+      }
+      .lightbox img {
+        max-width: 100vw;
+        max-height: 100vh;
+        object-fit: contain;
+      }
+      .lightbox .close {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        min-width: 44px;
+        min-height: 44px;
+        display: inline-grid;
+        place-items: center;
+        border: none;
+        border-radius: 50%;
+        background: var(--hv-lightbox-scrim);
+        color: #fff;
+      }
+      /* Both controls sit on the photo, which is any colour at all — hence the
+         scrim behind them rather than bare white glyphs. */
+      .lightbox .nav {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        min-width: 44px;
+        min-height: 44px;
+        display: inline-grid;
+        place-items: center;
+        border: none;
+        border-radius: 50%;
+        background: var(--hv-lightbox-scrim);
+        color: #fff;
+      }
+      .lightbox .nav.prev {
+        left: 8px;
+      }
+      .lightbox .nav.next {
+        right: 8px;
+      }
+      .lightbox .counter {
+        position: absolute;
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 4px 12px;
+        border-radius: var(--hv-radius-chip);
+        background: var(--hv-lightbox-scrim);
+        color: #fff;
+        font: 500 13px var(--hv-font);
+      }
     `,
   ];
 
@@ -269,22 +429,77 @@ export class HVDetailSheet extends LitElement {
   @property({ type: Boolean, reflect: true }) open = false;
   @property({ attribute: false }) locations: Location[] | null = null;
   @property({ attribute: false }) locationTree: LocationTreeNode[] = [];
+  /** HA areas, for the editor this sheet hosts. */
+  @property({ attribute: false }) areas: AreaRef[] = [];
   @property({ attribute: false }) categorySuggestions: string[] = [];
   @property({ attribute: false }) tagSuggestions: string[] = [];
   @property({ attribute: false }) customFieldKeys: string[] = [];
+  /** Passed straight to the editor: creating a first location from its picker. */
+  @property({ attribute: false }) createLocation: ((name: string) => Promise<Location>) | null =
+    null;
   @property({ type: Boolean }) busy = false;
   @property({ type: String }) errorMessage: string | null = null;
+
+  /** Picture access for the gallery, the lightbox and the editor it hosts. */
+  /** The status vocabulary from `haventory/config`; the built-ins stand in
+   * until it answers. */
+  @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
+  @property({ attribute: false }) media: MediaBindings | null = null;
+  /** Attachment caps and accepted types, forwarded to the editor's picker. */
+  @property({ attribute: false }) mediaConfig: MediaConfig | null = null;
 
   @state() private _mode: 'read' | 'edit' = 'read';
   /** The check-out date step, shown inline in the sheet rather than as a popup. */
   @state() private _checkoutOpen = false;
+  /** Index of the picture shown full-size, or null when the lightbox is closed. */
+  @state() private _lightbox: number | null = null;
 
+  private readonly _urls = new MediaUrls(this);
+  /** Returns focus to the thumbnail the lightbox was opened from. */
+  private readonly _lightboxFocus = new DialogFocus();
+  /**
+   * The item id the sheet is showing. `undefined` until the first update, so
+   * that pass settles the view the same way a move to another item does.
+   */
+  private _shownItemId: string | null | undefined;
+
+  /**
+   * Another item, or a re-open, always lands on the read view.
+   *
+   * Keyed on the item *id*, not on the `item` object: the host re-binds it from
+   * a fresh lookup on every store broadcast, so each attachment mutation hands
+   * the sheet a new object for the item it is already showing. Resetting on
+   * that would close the edit form — and the lightbox — under the user mid-tap.
+   */
   protected willUpdate(changed: Map<string, unknown>) {
-    // A fresh item, or a re-open, always lands on the read view.
-    if (changed.has('item') || (changed.has('open') && this.open)) {
+    this._urls.configure(this.media?.sign ?? null);
+    const id = this.item?.id ?? null;
+    const moved = id !== this._shownItemId;
+    this._shownItemId = id;
+    if (moved || (changed.has('open') && this.open)) {
       this._mode = 'read';
       this._checkoutOpen = false;
+      this._lightbox = null;
     }
+    if (this._lightbox !== null) {
+      // The lightbox survives a same-item refresh, and one of those refreshes
+      // is a photo being removed from under it. An index past the end renders
+      // nothing while still counting as open, which strands focus on a panel
+      // that is no longer there.
+      const count = pictures(this.item?.attachments).length;
+      this._lightbox = count === 0 ? null : Math.min(this._lightbox, count - 1);
+    }
+  }
+
+  protected updated() {
+    this._lightboxFocus.sync(
+      this._lightbox !== null,
+      () => this.shadowRoot?.querySelector<HTMLElement>('[data-testid="sheet-lightbox"]'),
+      // The thumbnail the lightbox was opened from is gone exactly when the
+      // lightbox closed because that photo was removed. The sheet is still on
+      // screen, so focus belongs on its panel rather than on the document.
+      () => this._sheet?.focusPanel(),
+    );
   }
 
   /** True when the edit form is open with unsaved changes. */
@@ -295,6 +510,10 @@ export class HVDetailSheet extends LitElement {
 
   private get _editor(): HVItemEditor | null {
     return this.shadowRoot?.querySelector('hv-item-editor') ?? null;
+  }
+
+  private get _sheet(): HVBottomSheet | null {
+    return this.shadowRoot?.querySelector('hv-bottom-sheet') ?? null;
   }
 
   private _emit(name: string, detail: Record<string, unknown> = {}) {
@@ -329,13 +548,182 @@ export class HVDetailSheet extends LitElement {
     </div>`;
   }
 
+  /**
+   * The picture strip, or nothing at all when the item has none.
+   *
+   * Each figure is a button: tapping one opens the lightbox, which is the only
+   * way to see a photo at a useful size on a phone.
+   */
+  private _renderGallery(item: Item) {
+    const shots = pictures(item.attachments);
+    if (!shots.length) return null;
+    return html`<div class="gallery" data-testid="sheet-gallery">
+      ${shots.map((picture, index) => {
+        const src = this._urls.get(item.id, picture.id, attachmentNameToken(picture));
+        if (!src) return null;
+        return html`<figure data-testid="sheet-photo">
+          <button
+            data-testid="sheet-photo-open"
+            aria-label=${`Open ${pictureAlt(item.name, index, shots.length)}`}
+            @click=${() => {
+              this._lightbox = index;
+            }}
+          >
+            <img
+              src=${src}
+              alt=${pictureAlt(item.name, index, shots.length)}
+              loading="lazy"
+              decoding="async"
+            />
+          </button>
+        </figure>`;
+      })}
+    </div>`;
+  }
+
+  /**
+   * The documents attached to the item, or nothing when there are none.
+   *
+   * Each row is an anchor to the signed media URL rather than a button that
+   * opens one: the URL has to be on the element before the tap, or the popup
+   * blocker eats the new tab a handler would open after awaiting a signature.
+   *
+   * A reference whose file the backend cannot find is shown as missing instead
+   * of as a link that leads to a 404 — a JSON export carries the metadata and
+   * not the bytes, so a fresh install genuinely can hold one.
+   */
+  private _renderDocuments(item: Item) {
+    const docs = manuals(item.attachments);
+    if (!docs.length) return null;
+    return html`<div class="documents" data-testid="sheet-documents">
+      <h3>Documents</h3>
+      <ul>
+        ${docs.map((doc) => {
+          const src = this._urls.get(item.id, doc.id, attachmentNameToken(doc));
+          const missing = this._urls.presence(item.id, doc.id) === 'missing';
+          const title = attachmentTitle(doc);
+          // The title falls back to the filename, which is the state every
+          // document is in until someone renames it — naming the file again
+          // underneath prints the same string twice and costs a line.
+          const meta = [
+            ...(title === doc.filename ? [] : [doc.filename]),
+            formatBytes(doc.size),
+            `added ${relativeTime(doc.uploaded_at)}`,
+          ].join(' · ');
+          return html`<li class=${missing ? 'missing' : ''} data-testid="sheet-document">
+            <span class="doc-icon">${icon('fileDocument', 20)}</span>
+            <span class="doc-text">
+              <span class="doc-title" data-testid="sheet-document-title">${title}</span>
+              <span class="doc-meta" data-testid="sheet-document-meta">${meta}</span>
+            </span>
+            ${missing
+              ? html`<span class="hv-chip warning" data-testid="sheet-document-missing"
+                  >File missing</span
+                >`
+              : src
+                ? html`<a
+                    class="doc-open"
+                    data-testid="sheet-document-open"
+                    href=${src}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >${icon('openInNew', 15)}Open</a
+                  >`
+                : null}
+          </li>`;
+        })}
+      </ul>
+    </div>`;
+  }
+
+  /**
+   * One picture at full size, with a way through the rest of the strip.
+   *
+   * Stepping wraps rather than stopping at the ends: these are one item's
+   * photos and comparing them is what the surface is for, so no press is ever a
+   * no-op — and a control that disabled itself under the finger that pressed it
+   * would drop focus to the document, taking Escape and the arrow keys with it.
+   */
+  private _renderLightbox(item: Item) {
+    const shots = pictures(item.attachments);
+    const index = this._lightbox;
+    if (index === null || !shots[index]) return null;
+    const src = this._urls.get(item.id, shots[index].id, attachmentNameToken(shots[index]));
+    if (!src) return null;
+    const close = () => {
+      this._lightbox = null;
+    };
+    const step = (delta: number) => {
+      this._lightbox = (index + delta + shots.length) % shots.length;
+    };
+    const nav = (delta: number) => (e: Event) => {
+      // The backdrop closes on click and these sit on top of it.
+      e.stopPropagation();
+      step(delta);
+    };
+    const many = shots.length > 1;
+    return html`<div
+      class="lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label=${pictureAlt(item.name, index, shots.length)}
+      data-testid="sheet-lightbox"
+      tabindex="-1"
+      @keydown=${(e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          // Stopped here, or the bottom sheet under it takes the same Escape
+          // and closes the whole item rather than the photo on top of it.
+          e.preventDefault();
+          e.stopPropagation();
+          close();
+          return;
+        }
+        if (!many) return;
+        if (e.key === 'ArrowLeft') step(-1);
+        else if (e.key === 'ArrowRight') step(1);
+        else return;
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      @click=${close}
+    >
+      <img src=${src} alt=${pictureAlt(item.name, index, shots.length)} />
+      <button class="close" data-testid="sheet-lightbox-close" aria-label="Close photo" @click=${close}>
+        ${icon('close', 22)}
+      </button>
+      ${many
+        ? html`<button
+              class="nav prev"
+              data-testid="sheet-lightbox-prev"
+              aria-label="Previous photo"
+              @click=${nav(-1)}
+            >
+              ${icon('chevronLeft', 26)}
+            </button>
+            <button
+              class="nav next"
+              data-testid="sheet-lightbox-next"
+              aria-label="Next photo"
+              @click=${nav(1)}
+            >
+              ${icon('chevronRight', 26)}
+            </button>
+            <!-- Announced rather than only drawn: the dialog's own label
+                 changes with the photo, and a changed label is not re-read. -->
+            <span class="counter" data-testid="sheet-lightbox-counter" aria-live="polite"
+              >${index + 1} of ${shots.length}</span
+            >`
+        : null}
+    </div>`;
+  }
+
   private _renderRead(item: Item) {
     const low = isLowStock(item);
     const overdue = isOverdue(item.due_date);
     // `inspection_date` is when the item is next due for inspection, so the
     // same passed-date test the due date gets answers "needs inspecting".
     const inspectionDue = isOverdue(item.inspection_date);
-    const path = displayPath(item);
+    const parts = itemPathParts(item, this.areas);
     const customEntries = Object.entries(item.custom_fields ?? {});
 
     return html`
@@ -343,7 +731,11 @@ export class HVDetailSheet extends LitElement {
         <button class="tap" data-testid="sheet-close" aria-label="Close" @click=${this._close}>
           ${icon('close', 22)}
         </button>
-        <span class="crumb" data-testid="sheet-path">${path || 'No location'}</span>
+        <span class="crumb hv-chip-line" data-testid="sheet-path" title=${pathTitle(parts)}
+          >${renderAreaChip(parts.areaName)}<span class="hv-chip-line-text"
+            >${parts.path || 'No location'}</span
+          ></span
+        >
         <button
           class="text-action"
           data-testid="sheet-edit"
@@ -358,21 +750,31 @@ export class HVDetailSheet extends LitElement {
       <div class="title">
         <h2 data-testid="sheet-name">${item.name}</h2>
         <div class="chips">
-          ${low ? html`<span class="chip low" data-testid="sheet-low">LOW</span>` : null}
+          ${low
+            ? html`<span class="hv-chip warning" data-testid="sheet-low" aria-label="Low stock"
+                >Low</span
+              >`
+            : null}
+          ${itemStatus(item) !== DEFAULT_STATUS
+            ? renderStatusChip(itemStatus(item), this.statuses, { testid: 'sheet-status' })
+            : null}
           ${item.checked_out
-            ? html`<span class="chip state ${overdue ? 'overdue' : ''}" data-testid="sheet-out">
+            ? html`<span
+                class="hv-chip ${overdue ? 'error' : 'state'}"
+                data-testid="sheet-out"
+              >
                 ${overdue ? 'Overdue' : 'Checked out'}${item.due_date
                   ? ` · due ${formatDate(item.due_date)}`
                   : ''}
               </span>`
             : null}
           ${inspectionDue
-            ? html`<span class="chip inspect" data-testid="sheet-inspection-due">
+            ? html`<span class="hv-chip warning" data-testid="sheet-inspection-due">
                 Inspection due · ${formatDate(item.inspection_date)}
               </span>`
             : null}
-          ${item.category ? html`<span class="chip" data-testid="sheet-category">${item.category}</span>` : null}
-          ${item.tags.map((t) => html`<span class="chip" data-testid="sheet-tag">${t}</span>`)}
+          ${item.category ? html`<span class="hv-chip" data-testid="sheet-category">${item.category}</span>` : null}
+          ${item.tags.map((t) => html`<span class="hv-chip" data-testid="sheet-tag">${t}</span>`)}
         </div>
       </div>
 
@@ -404,6 +806,8 @@ export class HVDetailSheet extends LitElement {
           ${icon('plus', 22)}
         </button>
       </div>
+
+      ${this._renderGallery(item)} ${this._renderDocuments(item)}
 
       ${item.description
         ? html`<div class="description" data-testid="sheet-description">${item.description}</div>`
@@ -510,6 +914,10 @@ export class HVDetailSheet extends LitElement {
         </button>
       </div>
       <hv-item-editor
+        .statuses=${this.statuses}
+        .areas=${this.areas}
+        .media=${this.media}
+        .mediaConfig=${this.mediaConfig}
         data-testid="sheet-editor"
         mobile
         noHeader
@@ -519,6 +927,7 @@ export class HVDetailSheet extends LitElement {
         .categorySuggestions=${this.categorySuggestions}
         .tagSuggestions=${this.tagSuggestions}
         .customFieldKeys=${this.customFieldKeys}
+        .createLocation=${this.createLocation}
         .busy=${this.busy}
         .errorMessage=${this.errorMessage}
         @cancel=${() => {
@@ -546,6 +955,7 @@ export class HVDetailSheet extends LitElement {
       @cancel=${this._close}
     >
       ${item ? (this._mode === 'edit' ? this._renderEdit(item) : this._renderRead(item)) : null}
+      ${item ? this._renderLightbox(item) : null}
     </hv-bottom-sheet>`;
   }
 }

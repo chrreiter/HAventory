@@ -3,6 +3,7 @@
 Thanks for your interest in HAventory! This project is a Home Assistant custom
 integration (domain `haventory`) plus a Lit + TypeScript Lovelace card.
 Contributions of all kinds are welcome — bug reports, features, docs, and code.
+Taking part means following the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Ways to contribute
 
@@ -14,10 +15,18 @@ Contributions of all kinds are welcome — bug reports, features, docs, and code
   [Home Assistant community](https://community.home-assistant.io/).
 - **Send a pull request** (see below).
 
+Found a security problem? Do not open an issue — [SECURITY.md](SECURITY.md) has the
+private reporting route and says what to expect from a one-maintainer project.
+
 ## Development setup
 
 Prerequisites: [uv](https://docs.astral.sh/uv/), Node 22.13+ (or 24 LTS), git.
 Targets are **Home Assistant 2026.6.0+** ⇒ **Python 3.14** and **Node 22.13+/24**.
+
+The development toolchain is **Linux/bash only** — the scripts, the test
+scaffolding and CI all assume it, and nothing here is tested on a Windows host.
+On Windows, develop inside WSL2. (This is about contributing, not about running
+HAventory: the integration itself runs wherever Home Assistant does.)
 
 ```bash
 # One-shot bootstrap: uv env + card deps + pre-commit hooks
@@ -54,14 +63,25 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
 
 - **Test-driven**: every feature/fix ships with tests — happy path plus at least
   one edge/error case. Default to offline tests (HA is stubbed in
-  `tests/conftest.py`); async tests use `@pytest.mark.asyncio`.
+  `tests/conftest.py`); async tests use `@pytest.mark.asyncio`. The WebSocket
+  stub applies each command's schema before dispatch, so an offline test sends
+  frames a real client could send and gets `invalid_format` for the rest.
 - **Conventional Commits** for commit messages *and PR titles* (a CI check
   enforces the PR title). Examples: `feat: add low-stock filter`,
   `fix: preserve location_path on move`, `docs: …`, `chore: …`.
 - **Keep the API docs in sync**: WebSocket/API changes must update `ws.py`,
   `docs/backend_api_contract.md`, and `docs/data_shapes.md` together.
+- **Two documentation trees**: `docs/` is for what a user or a contributor of the
+  shipped integration needs; `dev/` is for the development process — the release
+  testing plan, the release review, and per-task design documents. A new document
+  goes in one of the two, and neither is a tracker: work lives in GitHub issues.
 - **Preserve load-bearing invariants**: case-insensitive search, denormalized
   `location_path` on items, and optimistic concurrency via the item `version`.
+- **Deleting or renaming a file inside `custom_components/haventory/`?** Add its
+  old path to `RETIRED_PATHS` in `custom_components/haventory/stale_files.py` in
+  the same PR — an upgrade extracts the release asset over the install directory
+  without clearing it, so the file survives on every existing install until the
+  setup-time sweep removes it.
 - Update `README.md` when behavior changes. Report out-of-scope findings under a
   "Follow-ups" note rather than fixing them in the same PR.
 

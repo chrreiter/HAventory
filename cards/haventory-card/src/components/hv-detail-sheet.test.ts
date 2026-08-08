@@ -1,6 +1,8 @@
 import './hv-detail-sheet';
-import { makeItem } from '../test.utils';
+import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
+import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import type { HVDetailSheet } from './hv-detail-sheet';
+import type { HVBottomSheet } from './hv-bottom-sheet';
 import type { Item } from '../store/types';
 
 async function mount(item: Partial<Item>, props: Partial<HVDetailSheet> = {}) {
@@ -32,6 +34,32 @@ function captured(el: HVDetailSheet, names: string[]) {
   for (const name of names) el.addEventListener(name, () => seen.push(name));
   return seen;
 }
+
+describe('hv-detail-sheet: area', () => {
+  const AREAS = [{ id: 'area-garage', name: 'Garage' }];
+
+  it('names the room on the path crumb', async () => {
+    const el = await mount(
+      {
+        effective_area_id: 'area-garage',
+        location_path: { id_path: [], name_path: [], display_path: 'Workbench / Shelf B', sort_key: '' },
+      },
+      { areas: AREAS },
+    );
+    const crumb = q(el, '[data-testid="sheet-path"]');
+    expect(crumb?.querySelector('.hv-area-chip')?.textContent).toContain('Garage');
+    expect(crumb?.textContent).toContain('Workbench › Shelf B');
+  });
+
+  it('says only "No location" for an item filed nowhere', async () => {
+    // The backend derives the area from the location, so one cannot outlive
+    // the other.
+    const el = await mount({ location_id: null }, { areas: AREAS });
+    const crumb = q(el, '[data-testid="sheet-path"]');
+    expect(crumb?.textContent?.trim()).toBe('No location');
+    expect(crumb?.querySelector('.hv-area-chip')).toBe(null);
+  });
+});
 
 describe('hv-detail-sheet: read view', () => {
   it('leads with the name, path and state chips', async () => {
@@ -147,6 +175,17 @@ describe('hv-detail-sheet: read view', () => {
   it('shows the version alongside when it was updated', async () => {
     const el = await mount({ version: 14 });
     expect(q(el, '[data-testid="sheet-updated"]')?.textContent).toContain('v14');
+  });
+
+  it('chips a flagged status and stays quiet for ok', async () => {
+    const flagged = await mount({ status: 'missing' });
+    expect(q(flagged, '[data-testid="sheet-status"]')?.textContent?.trim()).toBe('Missing');
+
+    // ok explicitly, and absent (an older backend's payload) — quiet both ways.
+    const ok = await mount({ status: 'ok' });
+    expect(q(ok, '[data-testid="sheet-status"]')).toBe(null);
+    const absent = await mount({});
+    expect(q(absent, '[data-testid="sheet-status"]')).toBe(null);
   });
 
   it('offers check out or check in depending on the state', async () => {
@@ -283,5 +322,502 @@ describe('hv-detail-sheet: edit view', () => {
     el.item = makeItem({ id: '2', name: 'B' });
     await el.updateComplete;
     expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
+  });
+
+  // On a phone every attachment mutation broadcasts, and the host re-binds
+  // `.item` from the fresh copy — closing the form the user is standing in.
+  it('stays in the edit form when the same item comes back with a new version', async () => {
+    const el = await mount({ id: '1', name: 'A', version: 3 });
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    el.item = makeItem({ id: '1', name: 'A', version: 4 });
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
+    expect(q(el, '[data-testid="sheet-qty"]')).toBeNull();
+  });
+
+  it('returns to the read view when the sheet is re-opened on the same item', async () => {
+    const el = await mount({ id: '1', name: 'A' });
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    el.open = false;
+    await el.updateComplete;
+    el.open = true;
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
+  });
+});
+
+describe('hv-detail-sheet: pictures', () => {
+  const shots = () => [makeAttachment({ id: 'att-1' }), makeAttachment({ id: 'att-2' })];
+
+  it('renders one figure per picture', async () => {
+    const el = await mount(
+      { id: 'i-1', name: 'Drill', attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    const figures = all(el, '[data-testid="sheet-photo"]');
+    expect(figures).toHaveLength(2);
+    const images = all(el, '[data-testid="sheet-gallery"] img') as HTMLImageElement[];
+    expect(images.map((i) => i.getAttribute('alt'))).toEqual([
+      'Drill — photo 1 of 2',
+      'Drill — photo 2 of 2',
+    ]);
+  });
+
+  it('renders no gallery at all for an item with no pictures', async () => {
+    const el = await mount({ name: 'Screws' }, { media: makeMediaBindings() });
+
+    expect(q(el, '[data-testid="sheet-gallery"]')).toBeNull();
+  });
+
+  it('leaves a manual out of the picture strip', async () => {
+    const el = await mount(
+      { attachments: [makeAttachment({ kind: 'manual', mime: 'application/pdf' })] },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-gallery"]')).toBeNull();
+  });
+
+  it('opens the lightbox on the picture that was tapped', async () => {
+    const el = await mount(
+      { id: 'i-1', name: 'Drill', attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    all(el, '[data-testid="sheet-photo-open"]')[1].click();
+    await el.updateComplete;
+
+    const lightbox = q(el, '[data-testid="sheet-lightbox"]');
+    expect(lightbox).toBeTruthy();
+    expect(lightbox?.getAttribute('aria-label')).toBe('Drill — photo 2 of 2');
+  });
+
+  it('closes the lightbox on Escape and returns focus to the opener', async () => {
+    const el = await mount(
+      { id: 'i-1', name: 'Drill', attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    const opener = all(el, '[data-testid="sheet-photo-open"]')[0];
+    opener.focus();
+    opener.click();
+    await el.updateComplete;
+    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeTruthy();
+
+    q(el, '[data-testid="sheet-lightbox"]')?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
+    expect(el.shadowRoot?.activeElement).toBe(opener);
+  });
+
+  // The bottom sheet under it closes on Escape too; without stopping the event
+  // the photo and the whole item would go at once.
+  it('does not let the sheet close on the Escape that closes the lightbox', async () => {
+    const el = await mount(
+      { id: 'i-1', attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    const seen = captured(el, ['cancel']);
+
+    all(el, '[data-testid="sheet-photo-open"]')[0].click();
+    await el.updateComplete;
+    q(el, '[data-testid="sheet-lightbox"]')?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    await el.updateComplete;
+
+    expect(seen).toEqual([]);
+  });
+
+  it('closes the lightbox from its own close button', async () => {
+    const el = await mount(
+      { id: 'i-1', attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    all(el, '[data-testid="sheet-photo-open"]')[0].click();
+    await el.updateComplete;
+    q(el, '[data-testid="sheet-lightbox-close"]')?.click();
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
+  });
+
+  it('drops the lightbox when the sheet moves to another item', async () => {
+    const el = await mount(
+      { id: 'i-1', attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    all(el, '[data-testid="sheet-photo-open"]')[0].click();
+    await el.updateComplete;
+
+    el.item = makeItem({ id: 'i-2' });
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
+  });
+
+  // Setting a cover or removing another photo re-broadcasts the same item; the
+  // photo on screen has no reason to go with it.
+  it('keeps the lightbox open when the same item comes back with a new version', async () => {
+    const el = await mount(
+      { id: 'i-1', name: 'Drill', version: 3, attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    all(el, '[data-testid="sheet-photo-open"]')[1].click();
+    await el.updateComplete;
+
+    el.item = makeItem({ id: 'i-1', name: 'Drill', version: 4, attachments: shots() });
+    await el.updateComplete;
+    await el.updateComplete;
+
+    const lightbox = q(el, '[data-testid="sheet-lightbox"]');
+    expect(lightbox).toBeTruthy();
+    expect(lightbox?.getAttribute('aria-label')).toBe('Drill — photo 2 of 2');
+  });
+
+  // The lightbox outlives a same-item refresh, and one of those refreshes is
+  // the photo it is showing being deleted from another surface.
+  it('falls back to the last photo when the strip shrinks under an open lightbox', async () => {
+    const el = await mount(
+      { id: 'i-1', name: 'Drill', version: 3, attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    all(el, '[data-testid="sheet-photo-open"]')[1].click();
+    await el.updateComplete;
+
+    el.item = makeItem({
+      id: 'i-1',
+      name: 'Drill',
+      version: 4,
+      attachments: [makeAttachment({ id: 'att-1' })],
+    });
+    await el.updateComplete;
+    await el.updateComplete;
+
+    const lightbox = q(el, '[data-testid="sheet-lightbox"]');
+    expect(lightbox).toBeTruthy();
+    expect(lightbox?.getAttribute('aria-label')).toBe('Photo of Drill');
+  });
+
+  it('closes the lightbox when the last photo is removed under it', async () => {
+    const el = await mount(
+      { id: 'i-1', name: 'Drill', version: 3, attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    all(el, '[data-testid="sheet-photo-open"]')[0].click();
+    await el.updateComplete;
+
+    el.item = makeItem({ id: 'i-1', name: 'Drill', version: 4, attachments: [] });
+    await el.updateComplete;
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
+  });
+
+  // The lightbox chrome floats on the photo, so a white frame is the worst
+  // case its scrim has to survive: the counter is 13px text and wants 4.5:1
+  // against whatever it lands on, which the chevrons beside it do not.
+  it('keeps the lightbox controls readable over a white photo', () => {
+    const alpha = Number(
+      /--hv-lightbox-scrim: rgba\(0, 0, 0, ([\d.]+)\)/.exec(sheetCss())?.[1],
+    );
+    expect(alpha).toBeGreaterThan(0);
+
+    const channel = (c: number) => {
+      const s = c / 255;
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    };
+    // The scrim over a pure white frame, which is what the white ink sits on.
+    const backing = channel(255 * (1 - alpha));
+    expect((1.05) / (backing + 0.05)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('backs every lightbox control with that one scrim', () => {
+    const css = sheetCss();
+    for (const selector of ['\\.lightbox \\.close', '\\.lightbox \\.nav', '\\.lightbox \\.counter']) {
+      const rule = new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+      expect(rule).toContain('background: var(--hv-lightbox-scrim)');
+    }
+  });
+
+  // That close takes the thumbnail focus would have gone back to with it, so
+  // there is nothing left to return to and focus falls out of the sheet —
+  // onto <body>, where the sheet's own Escape can no longer reach it.
+  it('keeps focus in the sheet when the photo it would return to is gone', async () => {
+    const el = await mount(
+      { id: 'i-1', name: 'Drill', version: 3, attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    const opener = all(el, '[data-testid="sheet-photo-open"]')[0];
+    opener.focus();
+    opener.click();
+    await el.updateComplete;
+
+    el.item = makeItem({ id: 'i-1', name: 'Drill', version: 4, attachments: [] });
+    await el.updateComplete;
+    await el.updateComplete;
+
+    expect(opener.isConnected).toBe(false);
+    const sheet = q(el, 'hv-bottom-sheet') as HVBottomSheet;
+    const panel = sheet.shadowRoot?.querySelector('[data-testid="bottom-sheet"]');
+    expect(document.activeElement).not.toBe(document.body);
+    expect(sheet.shadowRoot?.activeElement).toBe(panel);
+  });
+});
+
+describe('hv-detail-sheet: lightbox navigation', () => {
+  const shots = () => [
+    makeAttachment({ id: 'att-1' }),
+    makeAttachment({ id: 'att-2' }),
+    makeAttachment({ id: 'att-3' }),
+  ];
+
+  async function opened(index: number, attachments = shots()) {
+    const el = await mount({ id: 'i-1', name: 'Drill', attachments }, { media: makeMediaBindings() });
+    await el.updateComplete;
+    all(el, '[data-testid="sheet-photo-open"]')[index].click();
+    await el.updateComplete;
+    return el;
+  }
+
+  const shown = (el: HVDetailSheet) =>
+    (q(el, '[data-testid="sheet-lightbox"] img') as HTMLImageElement | null)?.getAttribute('alt');
+  const counter = (el: HVDetailSheet) =>
+    q(el, '[data-testid="sheet-lightbox-counter"]')?.textContent?.trim();
+  const press = async (el: HVDetailSheet, key: string) => {
+    q(el, '[data-testid="sheet-lightbox"]')?.dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true }),
+    );
+    await el.updateComplete;
+  };
+
+  it('counts the photo out of the strip it belongs to', async () => {
+    const el = await opened(1);
+    expect(counter(el)).toBe('2 of 3');
+    // A changed dialog label is not re-announced; the counter is.
+    expect(q(el, '[data-testid="sheet-lightbox-counter"]')?.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('steps forward and back from the tap-edge buttons', async () => {
+    const el = await opened(0);
+    expect(shown(el)).toBe('Drill — photo 1 of 3');
+
+    (q(el, '[data-testid="sheet-lightbox-next"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(shown(el)).toBe('Drill — photo 2 of 3');
+    expect(counter(el)).toBe('2 of 3');
+
+    (q(el, '[data-testid="sheet-lightbox-prev"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(shown(el)).toBe('Drill — photo 1 of 3');
+    expect(counter(el)).toBe('1 of 3');
+  });
+
+  // Every press does something: no control disables itself under the finger
+  // that pressed it, which would drop focus out of the dialog.
+  it('wraps at both ends rather than stopping', async () => {
+    const el = await opened(0);
+    (q(el, '[data-testid="sheet-lightbox-prev"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(counter(el)).toBe('3 of 3');
+
+    (q(el, '[data-testid="sheet-lightbox-next"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(counter(el)).toBe('1 of 3');
+  });
+
+  // The backdrop closes on click and the buttons sit on top of it.
+  it('does not close the lightbox when a nav button is pressed', async () => {
+    const el = await opened(0);
+    (q(el, '[data-testid="sheet-lightbox-next"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeTruthy();
+  });
+
+  it('moves with the arrow keys', async () => {
+    const el = await opened(0);
+    await press(el, 'ArrowRight');
+    expect(shown(el)).toBe('Drill — photo 2 of 3');
+    await press(el, 'ArrowLeft');
+    expect(shown(el)).toBe('Drill — photo 1 of 3');
+    await press(el, 'ArrowLeft');
+    expect(shown(el)).toBe('Drill — photo 3 of 3');
+  });
+
+  it('leaves the sheet under it alone on an arrow key', async () => {
+    const el = await opened(0);
+    const seen = captured(el, ['cancel']);
+    await press(el, 'ArrowRight');
+    expect(seen).toEqual([]);
+    expect(el.open).toBe(true);
+  });
+
+  it('offers no navigation for a single photo', async () => {
+    const el = await opened(0, [makeAttachment({ id: 'att-1' })]);
+    expect(q(el, '[data-testid="sheet-lightbox-prev"]')).toBeNull();
+    expect(q(el, '[data-testid="sheet-lightbox-next"]')).toBeNull();
+    expect(q(el, '[data-testid="sheet-lightbox-counter"]')).toBeNull();
+    // The arrow key has nowhere to go and must not be swallowed by a dialog
+    // that cannot act on it.
+    await press(el, 'ArrowRight');
+    expect(shown(el)).toBe('Photo of Drill');
+  });
+
+  it('still closes on Escape with the navigation on screen', async () => {
+    const el = await mount({ id: 'i-1', name: 'Drill', attachments: shots() }, { media: makeMediaBindings() });
+    await el.updateComplete;
+    const opener = all(el, '[data-testid="sheet-photo-open"]')[1];
+    opener.focus();
+    opener.click();
+    await el.updateComplete;
+    const seen = captured(el, ['cancel']);
+
+    await press(el, 'Escape');
+
+    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
+    expect(seen).toEqual([]);
+    expect(el.shadowRoot?.activeElement).toBe(opener);
+  });
+});
+
+describe('hv-detail-sheet: documents', () => {
+  /** Answers every liveness probe the section makes; 206 is a live file. */
+  function serve(status: number) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status })),
+    );
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const docs = () => [
+    makeManual({ id: 'm-1', title: 'Dishwasher manual (EN)', filename: 'bosch.pdf', size: 2516582 }),
+    makeManual({ id: 'm-2', filename: 'warranty.pdf', size: 184320 }),
+  ];
+
+  it('lists each manual with its title, falling back to the filename', async () => {
+    serve(206);
+    const el = await mount({ id: 'i-1', attachments: docs() }, { media: makeMediaBindings() });
+    await el.updateComplete;
+
+    const titles = all(el, '[data-testid="sheet-document-title"]').map((n) => n.textContent?.trim());
+    expect(titles).toEqual(['Dishwasher manual (EN)', 'warranty.pdf']);
+    expect(all(el, '[data-testid="sheet-document"]')[0].textContent).toContain('2.4 MB');
+  });
+
+  // The title falls back to the filename, so an untitled document printed the
+  // same string as its own subtitle — the state every upload starts in.
+  it('names the file under a title only when the two differ', async () => {
+    serve(206);
+    const el = await mount({ id: 'i-1', attachments: docs() }, { media: makeMediaBindings() });
+    await el.updateComplete;
+
+    const [titled, untitled] = all(el, '[data-testid="sheet-document-meta"]').map((n) =>
+      n.textContent?.trim(),
+    );
+    expect(titled).toContain('bosch.pdf');
+    expect(untitled).not.toContain('warranty.pdf');
+    // What the filename was standing beside is still there.
+    expect(untitled).toContain('180 KB');
+    expect(untitled).toContain('added');
+  });
+
+  it('renders no section at all for an item with no documents', async () => {
+    serve(206);
+    const el = await mount(
+      { attachments: [makeAttachment({ id: 'att-1' })] },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-documents"]')).toBeNull();
+  });
+
+  // An anchor rather than a click handler: the URL must be on the element
+  // before the tap, or the new tab is blocked as an unrequested popup.
+  it('opens a document in a new tab through the signed URL', async () => {
+    serve(206);
+    const el = await mount({ id: 'i-1', attachments: docs() }, { media: makeMediaBindings() });
+    await el.updateComplete;
+
+    const open = all(el, '[data-testid="sheet-document-open"]')[0] as HTMLAnchorElement;
+    // Versioned by the served name, so a retitle cannot be answered from the
+    // browser's cache with the filename this document used to carry.
+    expect(open.getAttribute('href')).toBe(
+      `/api/haventory/media/i-1/m-1?${MEDIA_NAME_TOKEN_PARAM}=${attachmentNameToken(docs()[0])}&authSig=test`,
+    );
+    expect(open.getAttribute('target')).toBe('_blank');
+    expect(open.getAttribute('rel')).toContain('noopener');
+  });
+
+  it('marks a reference whose file is gone instead of offering a dead link', async () => {
+    serve(404);
+    const el = await mount({ id: 'i-1', attachments: docs() }, { media: makeMediaBindings() });
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+
+    expect(all(el, '[data-testid="sheet-document-missing"]')).toHaveLength(2);
+    expect(q(el, '[data-testid="sheet-document-open"]')).toBeNull();
+    // The row still names the document: it is a record of what was attached.
+    expect(all(el, '[data-testid="sheet-document-title"]')[0].textContent).toContain(
+      'Dishwasher manual (EN)',
+    );
+  });
+
+  it('keeps the link when the probe cannot reach the backend at all', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('offline');
+      }),
+    );
+    const el = await mount({ id: 'i-1', attachments: docs() }, { media: makeMediaBindings() });
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-document-missing"]')).toBeNull();
+    expect(all(el, '[data-testid="sheet-document-open"]')).toHaveLength(2);
+  });
+
+  it('shows the documents in stored order, not the order they were uploaded', async () => {
+    serve(206);
+    const el = await mount(
+      {
+        id: 'i-1',
+        attachments: [
+          makeManual({ id: 'm-late', title: 'Second', order: 1 }),
+          makeManual({ id: 'm-first', title: 'First', order: 0 }),
+        ],
+      },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+
+    expect(all(el, '[data-testid="sheet-document-title"]').map((n) => n.textContent?.trim())).toEqual(
+      ['First', 'Second'],
+    );
   });
 });

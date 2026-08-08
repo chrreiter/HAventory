@@ -6,6 +6,67 @@
 
 export type ScalarValue = string | number | boolean;
 
+/**
+ * Stored per-item condition: the slug of one status definition. Non-nullable on
+ * the backend — every item has exactly one, `ok` being the default and the way a
+ * flagged state clears.
+ *
+ * Not a union of the built-in three: a household defines its own statuses, so
+ * the set is data the backend reports, not something this file can enumerate.
+ */
+export type ItemStatus = string;
+
+/**
+ * One entry of the backend's status vocabulary: an immutable `slug` (what items
+ * store) and an editable `label` (what a surface shows). Renaming a status
+ * touches only the label, so no item is ever rewritten.
+ *
+ * A tone: five hues, each in a light and a strong form.
+ */
+export type StatusColor =
+  | 'neutral'
+  | 'neutral_strong'
+  | 'green'
+  | 'green_strong'
+  | 'blue'
+  | 'blue_strong'
+  | 'amber'
+  | 'amber_strong'
+  | 'red'
+  | 'red_strong';
+
+export interface StatusDefinition {
+  slug: string;
+  label: string;
+  order: number;
+  /** Optional: a backend older than the appearance fields does not send them. */
+  color?: StatusColor;
+  /** One of the glyph names in `ui/icons.ts`. */
+  icon?: string;
+}
+
+/** What an item can carry. Only `picture` has a card surface today. */
+export type AttachmentKind = 'picture' | 'manual';
+
+/**
+ * Metadata for one file attached to an item. The bytes live on the server and
+ * are fetched from the authenticated media view, never embedded here — and a
+ * JSON export carries this metadata without them, so a reference can outlive
+ * the file it names.
+ */
+export interface Attachment {
+  id: string;
+  kind: AttachmentKind;
+  filename: string;
+  mime: string;
+  size: number;
+  uploaded_at: string;
+  /** What the user called it. Empty means show `filename` instead. */
+  title?: string;
+  /** Position within the item's attachments of this kind; 0 is the cover. */
+  order?: number;
+}
+
 export interface LocationPath {
   id_path: string[];
   name_path: string[];
@@ -26,6 +87,8 @@ export interface Item {
   name: string;
   description: string | null;
   quantity: number;
+  /** Optional because older backends do not send it; absent reads as `ok`. */
+  status?: ItemStatus;
   checked_out: boolean;
   due_date: string | null;
   inspection_date: string | null;
@@ -39,12 +102,19 @@ export interface Item {
   version: number;
   effective_area_id?: string | null;
   location_path: LocationPath;
+  /**
+   * Optional because older backends do not send it; absent reads as none.
+   * Written only by the two attachment commands — an ordinary item save never
+   * carries it.
+   */
+  attachments?: Attachment[];
 }
 
 export interface ItemCreate {
   name: string;
   description?: string | null;
   quantity?: number;
+  status?: ItemStatus;
   checked_out?: boolean;
   due_date?: string | null;
   inspection_date?: string | null;
@@ -59,6 +129,8 @@ export interface ItemUpdate {
   name?: string;
   description?: string | null;
   quantity?: number;
+  /** Non-nullable: `ok` is how a flagged state clears, never `null`. */
+  status?: ItemStatus;
   checked_out?: boolean;
   due_date?: string | null;
   inspection_date?: string | null;
@@ -75,6 +147,8 @@ export interface ItemFilter {
   tags_any?: string[];
   tags_all?: string[];
   category?: string;
+  /** Exact match against one status; unknown values are `validation_error`. */
+  status?: ItemStatus;
   checked_out?: boolean;
   low_stock_only?: boolean;
   low_stock_first?: boolean;
@@ -126,13 +200,32 @@ export interface StatsCounts {
    * same reason: an older backend does not send it.
    */
   inspection_overdue_count?: number;
+  /**
+   * Items whose stored `status` is `missing` / `needs_repair`. Stored state,
+   * not calendar-derived — every mutation that moves them emits fresh counts.
+   * Optional because an older backend does not send them.
+   */
+  missing_count?: number;
+  needs_repair_count?: number;
+  /**
+   * Every defined status slug to its item count, including `ok` — which the
+   * backend's index deliberately does not bucket but still counts. Additive to
+   * the two keys above rather than a replacement for them.
+   */
+  status_counts?: Record<string, number>;
   locations_total: number;
   /** Items without a location (location_id == null). */
   no_location_count: number;
 }
 
+/** An HA area as `haventory/areas` reports it: registry id and display name. */
+export interface AreaRef {
+  id: string;
+  name: string;
+}
+
 export interface AreasListResult {
-  areas: { id: string; name: string }[];
+  areas: AreaRef[];
 }
 
 /** A distinct field value with its usage count (see haventory/distinct_values). */
@@ -170,6 +263,32 @@ export interface HealthResult {
 export interface VersionInfo {
   integration_version: string;
   schema_version: number;
+}
+
+/**
+ * Attachment limits and routes, as `haventory/config` reports them.
+ *
+ * Reported so the picker can refuse an oversized or wrong-typed file before it
+ * is sent — never so the backend can trust that it did. Every one of these is
+ * re-checked server-side, against the file's own bytes.
+ */
+export interface MediaConfig {
+  picture_mime_types: string[];
+  max_pictures_per_item: number;
+  /** Accepted document types. Absent on a backend that predates manuals. */
+  manual_mime_types?: string[];
+  max_manuals_per_item?: number;
+  max_attachment_bytes: number;
+}
+
+/** Result of haventory/config: the config-entry settings the card renders. */
+export interface IntegrationConfig {
+  /** Heading set in the integration's options flow. */
+  card_title: string;
+  /** The status vocabulary. Optional: an older backend does not send it. */
+  statuses?: StatusDefinition[];
+  /** Attachment caps and the media route. Optional for the same reason. */
+  media?: MediaConfig;
 }
 
 /**
@@ -318,15 +437,28 @@ export interface ImportSummary {
 // WS subscription event payloads
 export interface BaseEventPayload {
   domain: 'haventory';
-  topic: 'items' | 'locations' | 'stats';
+  // The four topics `haventory/subscribe` accepts. Only three have a payload
+  // shape below: a `statuses` event is a signal to re-read the vocabulary, not
+  // a patch to apply, so the store never narrows one.
+  topic: 'items' | 'locations' | 'stats' | 'statuses';
   action: string;
   ts: string;
 }
 
+/**
+ * Sent on every open subscription, whatever its topic, when the config entry
+ * serving it tears down — an unload, a disable, a removal, or the first half of
+ * a reload. Carries no payload: it says the subscription has stopped, not that
+ * anything in the inventory changed.
+ */
+export type TeardownAction = 'unavailable';
+
 export interface ItemsEventPayload extends BaseEventPayload {
   topic: 'items';
-  // `item` is present for per-item actions; absent for the wholesale `reloaded`
-  // signal emitted after an import replaces the dataset.
+  // `item` is present for per-item actions and absent whenever the dataset
+  // moved wholesale — the `reloaded` signal after an import, and an `updated`
+  // signal after a status delete reassigned every item carrying the slug.
+  // Absence is a refetch signal: there is nothing to merge.
   item?: Item;
   action:
   | 'created'
@@ -336,18 +468,19 @@ export interface ItemsEventPayload extends BaseEventPayload {
   | 'checked_out'
   | 'checked_in'
   | 'quantity_changed'
-  | 'reloaded';
+  | 'reloaded'
+  | TeardownAction;
 }
 
 export interface LocationsEventPayload extends BaseEventPayload {
   topic: 'locations';
   location?: Location;
-  action: 'created' | 'renamed' | 'moved' | 'deleted' | 'reloaded';
+  action: 'created' | 'renamed' | 'moved' | 'deleted' | 'reloaded' | TeardownAction;
 }
 
 export interface StatsEventPayload extends BaseEventPayload {
   topic: 'stats';
-  action: 'counts';
+  action: 'counts' | TeardownAction;
   counts: StatsCounts;
 }
 
@@ -359,6 +492,13 @@ export type Unsubscribe = () => void;
 export interface HassLike {
   // Home Assistant's callWS returns the `result` part of the message.
   callWS<T>(msg: Record<string, unknown>): Promise<T>;
+  /**
+   * `fetch` with the user's auth header attached — the only way to POST to
+   * core's `/api/file_upload`, which is how attachment bytes reach the server
+   * without crossing the WebSocket. Optional because this interface is
+   * structural: a caller that never uploads need not provide it.
+   */
+  fetchWithAuth?(path: string, init?: RequestInit): Promise<Response>;
   // WebSocket connection with subscribeMessage to receive event messages; returns unsubscribe.
   // Home Assistant delivers the *inner* event payload to the callback (the `event`
   // field of the `{id, type:'event', event}` wire frame), not the whole envelope.
@@ -367,6 +507,12 @@ export interface HassLike {
       cb: (event: AnyEventPayload) => void,
       msg: Record<string, unknown>,
     ): Unsubscribe | Promise<Unsubscribe>;
+    // Connection lifecycle. `ready` fires once the socket is back and Home
+    // Assistant has re-issued the subscriptions it was holding, so a listener
+    // runs with the watches already live again. Optional because the interface
+    // is structural: a caller may pass a connection that only sends messages.
+    addEventListener?(event: 'ready' | 'disconnected', cb: () => void): void;
+    removeEventListener?(event: 'ready' | 'disconnected', cb: () => void): void;
   };
 }
 
@@ -388,6 +534,8 @@ export interface StoreFilters {
   overdueOnly: boolean;
   /** Only items past the date they were next due for inspection. */
   inspectionDueOnly: boolean;
+  /** Only items with this stored status; null means any. */
+  status: ItemStatus | null;
   category: string | null;
   tags: string[];
   tagsMode: TagMatchMode;
@@ -421,6 +569,8 @@ export interface DegradedState {
   reloading: boolean;
   /** Whether the topic subscriptions are up, being re-opened, or given up on. */
   liveUpdates: LiveUpdateState;
+  /** Why live updates are not `live`; null while they are. */
+  liveUpdatesReason: LiveUpdatePause | null;
   /** Epoch ms of the next automatic re-subscribe, when one is scheduled. */
   nextLiveRetryAt: number | null;
 }
@@ -433,6 +583,17 @@ export interface DegradedState {
  * brings live updates back.
  */
 export type LiveUpdateState = 'live' | 'retrying' | 'paused';
+
+/**
+ * What stopped live updates — the two cases read the same to the subscription
+ * machinery and completely differently to the person reading the banner.
+ *
+ * `rate_limited`: the limiter refused the subscribe; the backend is there and
+ * the data on screen is current as of the last event.
+ * `unavailable`: no config entry owns the data — HAventory is reloading, or has
+ * been disabled or removed — so every command is being refused too.
+ */
+export type LiveUpdatePause = 'rate_limited' | 'unavailable';
 
 export interface StoreState {
   items: Item[];
@@ -457,6 +618,19 @@ export interface StoreState {
   statsCounts: StatsCounts | null;
   healthCache: HealthResult | null;
   versionInfo: VersionInfo | null;
+  /** Heading configured in the integration, or null until it has been read. */
+  cardTitle: string | null;
+  /**
+   * Attachment caps and the media route, or null until `haventory/config` has
+   * answered — or permanently, against a backend too old to report them.
+   */
+  mediaConfig: MediaConfig | null;
+  /**
+   * The status vocabulary, or null until `haventory/config` has answered — or
+   * permanently, against a backend too old to report it. `ui/status` falls back
+   * to the built-in three either way.
+   */
+  statuses: StatusDefinition[] | null;
   // Distinct categories/tags with counts, sourcing category/tag autocomplete.
   distinctValuesCache: DistinctValues | null;
   connected: { items: boolean; stats: boolean };

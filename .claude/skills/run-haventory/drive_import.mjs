@@ -9,7 +9,8 @@
 //   node drive_import.mjs <document.json> [--policy merge|replace|skip]
 //                         [--apply] [--out <prefix>] [--path <ha-url-path>]
 //
-// Defaults: --policy merge, --out import, --path /lovelace/wide.
+// Defaults: --policy merge, --out import, and — without --path — the panel-mode
+// dashboard view discovered to hold the card (card_views.mjs).
 //
 // The document is pasted verbatim and is NOT validated here — driving the
 // card's own parse-error and server-rejection paths is a supported use, so
@@ -26,22 +27,13 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+import { cardPath, haConfig } from "./card_views.mjs";
+
 const skillDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(skillDir, "..", "..", "..");
 
 const args = process.argv.slice(2);
 
-// --- config: env wins, .env fills the gaps -------------------------------
-try {
-  for (const line of readFileSync(path.join(repoRoot, ".env"), "utf8").split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
-  }
-} catch {
-  /* no .env — rely on real env vars */
-}
-const base = (process.env.HA_BASE_URL ?? "http://localhost:8123").replace(/\/$/, "");
-const token = process.env.HA_TOKEN;
+const { base, token } = haConfig();
 if (!token) {
   console.error("Missing HA_TOKEN (env or repo-root .env)");
   process.exit(2);
@@ -76,7 +68,9 @@ if (!["merge", "replace", "skip"].includes(policy)) {
 }
 
 const outPrefix = flag("--out", "import");
-const urlPath = flag("--path", "/lovelace/wide");
+// The import sheet is a wide surface: with no --path, ask the instance for a
+// panel-mode view so the sheet gets the room its preview table needs.
+const urlPathArg = flag("--path", null);
 const apply = args.includes("--apply");
 const shot = (suffix) => path.resolve(skillDir, `${outPrefix}-${suffix}.png`);
 
@@ -91,6 +85,8 @@ console.log(
   `document: ${docPath} (${(documentJson.length / 1024).toFixed(0)} KiB) · policy=${policy}` +
     (apply ? " · APPLY (this writes)" : " · preview only"),
 );
+
+const urlPath = urlPathArg ?? (await cardPath("wide"));
 
 // --- drive ---------------------------------------------------------------
 const browser = await chromium.launch();

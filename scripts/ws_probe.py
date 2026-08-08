@@ -1,10 +1,10 @@
 r"""WebSocket probe for HAventory commands.
 
-Usage (PowerShell examples):
-  $env:HA_BASE_URL = 'http://localhost:8123'
-  $env:HA_TOKEN = '<your-long-lived-token>'
-  $env:HAV_MSG = '{"id":1, "type":"haventory/ping", "echo":"hi"}'
-  python .\scripts\ws_probe.py | cat
+Usage:
+  export HA_BASE_URL='http://localhost:8123'
+  export HA_TOKEN='<your-long-lived-token>'
+  export HAV_MSG='{"id":1, "type":"haventory/ping", "echo":"hi"}'
+  uv run python scripts/ws_probe.py
 
 Environment variables:
 - HA_BASE_URL: Home Assistant base URL (http/https). Default: http://localhost:8123
