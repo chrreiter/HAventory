@@ -9,7 +9,7 @@ Execution plan for the six issues left in the v0.4.0 milestone after the 2026-08
 [#322](https://github.com/chrreiter/HAventory/issues/322).
 Three work packages — **F1** (backend), **F2** (card shell), **F3** (organize dialog) —
 with **no file overlap between them: all three run in parallel**, each as one PR
-implemented by a fresh cloud session. The package sections below are written to be that
+implemented by a fresh **Opus 5 (xhigh) cloud session**. The package sections below are written to be that
 session's working brief; each session also reads the GitHub issues its package closes.
 
 All `file:line` anchors are taken at `main` @ `8ac7adf`. **Anchors drift: locate by
