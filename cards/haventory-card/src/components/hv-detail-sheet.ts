@@ -23,6 +23,7 @@ import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, ScalarValu
 import './hv-bottom-sheet';
 import './hv-checkout-popover';
 import './hv-item-editor';
+import type { HVBottomSheet } from './hv-bottom-sheet';
 import type { HVItemEditor } from './hv-item-editor';
 
 /**
@@ -347,9 +348,9 @@ export class HVDetailSheet extends LitElement {
         text-decoration: none;
         font: 500 13px var(--hv-font);
       }
-      /* The row still names the document and its file; only what it promised
-         to open is struck through, so the reference reads as a record rather
-         than as something broken beyond recognition. */
+      /* The row still names the document; only what it promised to open is
+         struck through, so the reference reads as a record rather than as
+         something broken beyond recognition. */
       .documents li.missing .doc-title {
         color: var(--hv-text-secondary);
         text-decoration: line-through;
@@ -363,6 +364,13 @@ export class HVDetailSheet extends LitElement {
            the sheet behind it competes at any transparency. */
         background: #000;
         z-index: 10;
+        /* Every control here floats on the photo, so its own backing is the
+           only contrast it is guaranteed. The worst case is a white frame,
+           where this resolves to #6B6B6B — 5.3:1 under the white ink, enough
+           for the counter, which is 13px text and therefore wants 4.5:1 rather
+           than the 3:1 the chevrons would settle for. One value for all three,
+           set by the strictest thing sitting on it. */
+        --hv-lightbox-scrim: rgba(0, 0, 0, 0.58);
       }
       .lightbox img {
         max-width: 100vw;
@@ -379,8 +387,40 @@ export class HVDetailSheet extends LitElement {
         place-items: center;
         border: none;
         border-radius: 50%;
-        background: rgba(0, 0, 0, 0.5);
+        background: var(--hv-lightbox-scrim);
         color: #fff;
+      }
+      /* Both controls sit on the photo, which is any colour at all — hence the
+         scrim behind them rather than bare white glyphs. */
+      .lightbox .nav {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        min-width: 44px;
+        min-height: 44px;
+        display: inline-grid;
+        place-items: center;
+        border: none;
+        border-radius: 50%;
+        background: var(--hv-lightbox-scrim);
+        color: #fff;
+      }
+      .lightbox .nav.prev {
+        left: 8px;
+      }
+      .lightbox .nav.next {
+        right: 8px;
+      }
+      .lightbox .counter {
+        position: absolute;
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 4px 12px;
+        border-radius: var(--hv-radius-chip);
+        background: var(--hv-lightbox-scrim);
+        color: #fff;
+        font: 500 13px var(--hv-font);
       }
     `,
   ];
@@ -394,6 +434,9 @@ export class HVDetailSheet extends LitElement {
   @property({ attribute: false }) categorySuggestions: string[] = [];
   @property({ attribute: false }) tagSuggestions: string[] = [];
   @property({ attribute: false }) customFieldKeys: string[] = [];
+  /** Passed straight to the editor: creating a first location from its picker. */
+  @property({ attribute: false }) createLocation: ((name: string) => Promise<Location>) | null =
+    null;
   @property({ type: Boolean }) busy = false;
   @property({ type: String }) errorMessage: string | null = null;
 
@@ -438,11 +481,24 @@ export class HVDetailSheet extends LitElement {
       this._checkoutOpen = false;
       this._lightbox = null;
     }
+    if (this._lightbox !== null) {
+      // The lightbox survives a same-item refresh, and one of those refreshes
+      // is a photo being removed from under it. An index past the end renders
+      // nothing while still counting as open, which strands focus on a panel
+      // that is no longer there.
+      const count = pictures(this.item?.attachments).length;
+      this._lightbox = count === 0 ? null : Math.min(this._lightbox, count - 1);
+    }
   }
 
   protected updated() {
-    this._lightboxFocus.sync(this._lightbox !== null, () =>
-      this.shadowRoot?.querySelector<HTMLElement>('[data-testid="sheet-lightbox"]'),
+    this._lightboxFocus.sync(
+      this._lightbox !== null,
+      () => this.shadowRoot?.querySelector<HTMLElement>('[data-testid="sheet-lightbox"]'),
+      // The thumbnail the lightbox was opened from is gone exactly when the
+      // lightbox closed because that photo was removed. The sheet is still on
+      // screen, so focus belongs on its panel rather than on the document.
+      () => this._sheet?.focusPanel(),
     );
   }
 
@@ -454,6 +510,10 @@ export class HVDetailSheet extends LitElement {
 
   private get _editor(): HVItemEditor | null {
     return this.shadowRoot?.querySelector('hv-item-editor') ?? null;
+  }
+
+  private get _sheet(): HVBottomSheet | null {
+    return this.shadowRoot?.querySelector('hv-bottom-sheet') ?? null;
   }
 
   private _emit(name: string, detail: Record<string, unknown> = {}) {
@@ -541,16 +601,20 @@ export class HVDetailSheet extends LitElement {
         ${docs.map((doc) => {
           const src = this._urls.get(item.id, doc.id, attachmentNameToken(doc));
           const missing = this._urls.presence(item.id, doc.id) === 'missing';
+          const title = attachmentTitle(doc);
+          // The title falls back to the filename, which is the state every
+          // document is in until someone renames it — naming the file again
+          // underneath prints the same string twice and costs a line.
+          const meta = [
+            ...(title === doc.filename ? [] : [doc.filename]),
+            formatBytes(doc.size),
+            `added ${relativeTime(doc.uploaded_at)}`,
+          ].join(' · ');
           return html`<li class=${missing ? 'missing' : ''} data-testid="sheet-document">
             <span class="doc-icon">${icon('fileDocument', 20)}</span>
             <span class="doc-text">
-              <span class="doc-title" data-testid="sheet-document-title"
-                >${attachmentTitle(doc)}</span
-              >
-              <span class="doc-meta"
-                >${doc.filename} · ${formatBytes(doc.size)} ·
-                added ${relativeTime(doc.uploaded_at)}</span
-              >
+              <span class="doc-title" data-testid="sheet-document-title">${title}</span>
+              <span class="doc-meta" data-testid="sheet-document-meta">${meta}</span>
             </span>
             ${missing
               ? html`<span class="hv-chip warning" data-testid="sheet-document-missing"
@@ -572,6 +636,14 @@ export class HVDetailSheet extends LitElement {
     </div>`;
   }
 
+  /**
+   * One picture at full size, with a way through the rest of the strip.
+   *
+   * Stepping wraps rather than stopping at the ends: these are one item's
+   * photos and comparing them is what the surface is for, so no press is ever a
+   * no-op — and a control that disabled itself under the finger that pressed it
+   * would drop focus to the document, taking Escape and the arrow keys with it.
+   */
   private _renderLightbox(item: Item) {
     const shots = pictures(item.attachments);
     const index = this._lightbox;
@@ -581,6 +653,15 @@ export class HVDetailSheet extends LitElement {
     const close = () => {
       this._lightbox = null;
     };
+    const step = (delta: number) => {
+      this._lightbox = (index + delta + shots.length) % shots.length;
+    };
+    const nav = (delta: number) => (e: Event) => {
+      // The backdrop closes on click and these sit on top of it.
+      e.stopPropagation();
+      step(delta);
+    };
+    const many = shots.length > 1;
     return html`<div
       class="lightbox"
       role="dialog"
@@ -589,12 +670,20 @@ export class HVDetailSheet extends LitElement {
       data-testid="sheet-lightbox"
       tabindex="-1"
       @keydown=${(e: KeyboardEvent) => {
-        if (e.key !== 'Escape') return;
-        // Stopped here, or the bottom sheet under it takes the same Escape and
-        // closes the whole item rather than the photo on top of it.
+        if (e.key === 'Escape') {
+          // Stopped here, or the bottom sheet under it takes the same Escape
+          // and closes the whole item rather than the photo on top of it.
+          e.preventDefault();
+          e.stopPropagation();
+          close();
+          return;
+        }
+        if (!many) return;
+        if (e.key === 'ArrowLeft') step(-1);
+        else if (e.key === 'ArrowRight') step(1);
+        else return;
         e.preventDefault();
         e.stopPropagation();
-        close();
       }}
       @click=${close}
     >
@@ -602,6 +691,29 @@ export class HVDetailSheet extends LitElement {
       <button class="close" data-testid="sheet-lightbox-close" aria-label="Close photo" @click=${close}>
         ${icon('close', 22)}
       </button>
+      ${many
+        ? html`<button
+              class="nav prev"
+              data-testid="sheet-lightbox-prev"
+              aria-label="Previous photo"
+              @click=${nav(-1)}
+            >
+              ${icon('chevronLeft', 26)}
+            </button>
+            <button
+              class="nav next"
+              data-testid="sheet-lightbox-next"
+              aria-label="Next photo"
+              @click=${nav(1)}
+            >
+              ${icon('chevronRight', 26)}
+            </button>
+            <!-- Announced rather than only drawn: the dialog's own label
+                 changes with the photo, and a changed label is not re-read. -->
+            <span class="counter" data-testid="sheet-lightbox-counter" aria-live="polite"
+              >${index + 1} of ${shots.length}</span
+            >`
+        : null}
     </div>`;
   }
 
@@ -815,6 +927,7 @@ export class HVDetailSheet extends LitElement {
         .categorySuggestions=${this.categorySuggestions}
         .tagSuggestions=${this.tagSuggestions}
         .customFieldKeys=${this.customFieldKeys}
+        .createLocation=${this.createLocation}
         .busy=${this.busy}
         .errorMessage=${this.errorMessage}
         @cancel=${() => {

@@ -595,3 +595,87 @@ describe('hv-location-tree: manage mode', () => {
     expect(editId).toBe('garage');
   });
 });
+
+// A first run has no locations at all, and the picker is where the concept is
+// first met — so the empty state carries the way in rather than naming a menu
+// three steps away.
+describe('hv-location-tree: the first location', () => {
+  it('stays a plain statement unless a host can act on it', async () => {
+    const el = await mount({ nodes: [] });
+
+    expect(q(el, '[data-testid="tree-empty"]')).toBeTruthy();
+    expect(q(el, '[data-testid="tree-create"]')).toBe(null);
+  });
+
+  it('emits the name it was given, once', async () => {
+    const el = await mount({ nodes: [], allowCreate: true });
+    const names: string[] = [];
+    el.addEventListener('create-location', (e) => names.push((e as CustomEvent).detail.name));
+
+    (q(el, '[data-testid="tree-create"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const input = q(el, '[data-testid="tree-create-name"]') as HTMLInputElement;
+    // Revealing the field puts the caret in it — one tap, not two.
+    expect(el.shadowRoot?.activeElement).toBe(input);
+    input.value = '  Shed  ';
+    input.dispatchEvent(new Event('input'));
+    await el.updateComplete;
+    (q(el, '[data-testid="tree-create-submit"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    expect(names).toEqual(['Shed']);
+    // The field closes behind it rather than inviting a second one.
+    expect(q(el, '[data-testid="tree-create-name"]')).toBe(null);
+  });
+
+  it('takes Enter as the submit, and refuses a name that is only spaces', async () => {
+    const el = await mount({ nodes: [], allowCreate: true });
+    const names: string[] = [];
+    el.addEventListener('create-location', (e) => names.push((e as CustomEvent).detail.name));
+
+    (q(el, '[data-testid="tree-create"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const input = q(el, '[data-testid="tree-create-name"]') as HTMLInputElement;
+    input.value = '   ';
+    input.dispatchEvent(new Event('input'));
+    await el.updateComplete;
+    expect((q(el, '[data-testid="tree-create-submit"]') as HTMLButtonElement).disabled).toBe(true);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await el.updateComplete;
+    expect(names).toEqual([]);
+
+    input.value = 'Shed';
+    input.dispatchEvent(new Event('input'));
+    await el.updateComplete;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await el.updateComplete;
+    expect(names).toEqual(['Shed']);
+  });
+
+  // The tree is opened from inside a form whose own Escape discards it, so the
+  // field has to take that key rather than pass it on.
+  it('closes the field on Escape without letting the key travel', async () => {
+    const el = await mount({ nodes: [], allowCreate: true });
+    (q(el, '[data-testid="tree-create"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true, cancelable: true });
+    let escaped = false;
+    document.addEventListener('keydown', () => (escaped = true), { once: true });
+    (q(el, '[data-testid="tree-create-name"]') as HTMLInputElement).dispatchEvent(event);
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="tree-create-name"]')).toBe(null);
+    expect(q(el, '[data-testid="tree-create"]')).toBeTruthy();
+    expect(escaped).toBe(false);
+  });
+
+  // A filter that matches nothing is a different fact from an empty tree, and
+  // creating a location would not answer it.
+  it('offers nothing when a filter is what emptied the tree', async () => {
+    const el = await mount({ filterText: 'zzz', allowCreate: true });
+
+    expect(q(el, '[data-testid="tree-empty"]')?.textContent).toContain('No locations match');
+    expect(q(el, '[data-testid="tree-create"]')).toBe(null);
+  });
+});

@@ -48,6 +48,7 @@ import type {
   StatusDefinition,
 } from '../store/types';
 import './hv-chip-input';
+import './hv-confirm';
 import './hv-location-tree';
 import './hv-checkout-popover';
 
@@ -93,11 +94,23 @@ interface UploadEntry {
   kind: AttachmentKind;
 }
 
-/** The message on a rejected upload, whatever shape the rejection arrived in. */
-function errorText(err: unknown): string {
+/** How each kind of attachment names itself in a confirmation. */
+const REMOVE_COPY: Record<AttachmentKind, { heading: string; message: string }> = {
+  picture: {
+    heading: 'Remove this photo?',
+    message: 'The photo file is deleted with it, and there is no way back.',
+  },
+  manual: {
+    heading: 'Remove this document?',
+    message: 'The document file is deleted with it, and there is no way back.',
+  },
+};
+
+/** The message on a rejected command, whatever shape the rejection arrived in. */
+function errorText(err: unknown, fallback = 'Upload failed.'): string {
   if (err instanceof Error && err.message) return err.message;
   const message = (err as { message?: unknown } | null)?.message;
-  return typeof message === 'string' && message ? message : 'Upload failed.';
+  return typeof message === 'string' && message ? message : fallback;
 }
 
 /**
@@ -502,10 +515,8 @@ export class HVItemEditor extends LitElement {
         align-items: center;
         gap: 8px;
       }
-      .custom-head .tally {
+      .custom-head .hv-tally {
         margin-left: auto;
-        font-size: 11.5px;
-        color: var(--hv-text-tertiary);
       }
       .cf-row {
         display: grid;
@@ -711,13 +722,21 @@ export class HVItemEditor extends LitElement {
         color: var(--hv-text-tertiary);
       }
       /* Under the thumbnail rather than over it: these sit on whatever photo
-         was uploaded, and no overlay treatment is legible against every one. */
+         was uploaded, and no overlay treatment is legible against every one.
+         The same 24px square the organize dialog's reorder buttons take, so
+         one reordering control is one size across the card. A finger gets the
+         strip's full height instead of the dialog's 44px square, because these
+         are three controls sharing the width of the thumbnail they belong to
+         and a square each would be wider than the tile. */
       .tile-controls {
         display: flex;
-        align-items: center;
+        align-items: stretch;
         justify-content: space-between;
         height: 24px;
         background: var(--hv-surface-raised);
+      }
+      :host([mobile]) .tile-controls {
+        height: var(--hv-tap-min, 24px);
       }
       .tile-controls button,
       .tile-controls .is-cover {
@@ -730,6 +749,10 @@ export class HVItemEditor extends LitElement {
         background: none;
         color: var(--hv-text-secondary);
       }
+      :host([mobile]) .tile-controls button,
+      :host([mobile]) .tile-controls .is-cover {
+        height: auto;
+      }
       .tile-controls button[disabled] {
         opacity: 0.3;
       }
@@ -738,14 +761,18 @@ export class HVItemEditor extends LitElement {
       .tile-controls .is-cover {
         color: var(--hv-amber);
       }
+      /* 24px is the floor WCAG asks of a pointer target, and also the ceiling
+         a control sitting *on* a 72px thumbnail can take: a full tap-min square
+         would cover a third of the photo it is asking about. The confirm step
+         behind it is what makes the small target survivable. */
       .photos .remove {
         position: absolute;
         top: 2px;
         right: 2px;
         display: inline-grid;
         place-items: center;
-        width: 22px;
-        height: 22px;
+        width: 24px;
+        height: 24px;
         padding: 0;
         border: none;
         border-radius: 50%;
@@ -836,13 +863,21 @@ export class HVItemEditor extends LitElement {
         margin: 6px 0 0;
         padding: 0;
         display: grid;
-        gap: 3px;
+        gap: 5px;
         font-size: 11.5px;
         color: var(--hv-text-secondary);
       }
       .upload-list li {
         display: flex;
-        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+      }
+      .upload-list li .kind {
+        flex: none;
+        display: inline-grid;
+        place-items: center;
+        color: var(--hv-text-tertiary);
       }
       .upload-list li .file {
         overflow: hidden;
@@ -855,7 +890,11 @@ export class HVItemEditor extends LitElement {
       }
       .upload-list li .retry,
       .upload-list li .dismiss {
+        display: inline-grid;
+        place-items: center;
         margin-left: auto;
+        min-width: var(--hv-tap-min, 24px);
+        min-height: var(--hv-tap-min, 24px);
         border: none;
         background: none;
         padding: 0 4px;
@@ -869,6 +908,47 @@ export class HVItemEditor extends LitElement {
       /* Retry already claimed the free space; the dismiss follows it. */
       .upload-list li .retry ~ .dismiss {
         margin-left: 0;
+      }
+      /* Nothing on the WebSocket path reports bytes sent, so the bar says
+         "working" and never lies about how far along it is. It takes the whole
+         row width on a line of its own, because on a phone the file name and
+         the state word already fill the first one. */
+      .progress {
+        flex: 0 0 100%;
+        position: relative;
+        overflow: hidden;
+        height: 3px;
+        border-radius: 999px;
+        background: var(--hv-divider);
+      }
+      .progress .fill {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 40%;
+        border-radius: inherit;
+        background: var(--hv-primary);
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        .progress .fill {
+          animation: hv-upload-sweep 1.3s ease-in-out infinite;
+        }
+      }
+      @keyframes hv-upload-sweep {
+        from {
+          transform: translateX(-100%);
+        }
+        to {
+          transform: translateX(250%);
+        }
+      }
+      /* Create mode has no attachment sections at all — an upload is filed
+         against an item id and there is none yet. Said once, where the photo
+         grid will be, rather than left as an unexplained absence. */
+      .attach-hint {
+        font-size: 12px;
+        color: var(--hv-text-tertiary);
       }
     `,
   ];
@@ -895,6 +975,15 @@ export class HVItemEditor extends LitElement {
   @property({ attribute: false }) media: MediaBindings | null = null;
   /** Caps and accepted types, so a doomed file is refused before it is sent. */
   @property({ attribute: false }) mediaConfig: MediaConfig | null = null;
+  /**
+   * Creating a location from inside the picker, for an inventory that has none
+   * yet — the form's most important field is otherwise unsatisfiable on a first
+   * run. Null leaves the empty picker as a plain statement: only a host holding
+   * the store can run the command, and an affordance that cannot is worse than
+   * none.
+   */
+  @property({ attribute: false }) createLocation: ((name: string) => Promise<Location>) | null =
+    null;
 
   @state() private _model: ItemFormModel = formFromItem(null);
   @state() private _errors: FieldError[] = [];
@@ -933,6 +1022,24 @@ export class HVItemEditor extends LitElement {
    * the pre-upload one would come back `conflict`.
    */
   @state() private _uploaded: Item | null = null;
+  /** The attachment awaiting a yes, and what kind it is. */
+  @state() private _confirmRemove: { id: string; kind: AttachmentKind } | null = null;
+  /** Escape on a dirty form asks before it throws the typing away. */
+  @state() private _confirmDiscard = false;
+  /** Why creating a first location from the picker failed. */
+  @state() private _locationError: string | null = null;
+  /**
+   * Locations this form created, until the `locations` prop carries them.
+   *
+   * The inline expander is handed to `hv-list` as a template callback, which it
+   * re-invokes only when one of its *own* properties changes. A location create
+   * changes neither the item list nor anything else that component binds, so
+   * the refreshed store state can reach the host without ever reaching this
+   * form — leaving the field it just filled reading "No location". The created
+   * `Location` is in hand regardless, so holding it is what makes the picker
+   * name what it created on every host.
+   */
+  @state() private _createdLocations: Location[] = [];
 
   private readonly _urls = new MediaUrls(this);
   private _uploadSeq = 0;
@@ -982,6 +1089,10 @@ export class HVItemEditor extends LitElement {
       this._checkoutOpen = false;
       this._uploads = [];
       this._uploaded = null;
+      this._confirmRemove = null;
+      this._confirmDiscard = false;
+      this._locationError = null;
+      this._createdLocations = [];
       this._closeCategory();
       return;
     }
@@ -1031,16 +1142,47 @@ export class HVItemEditor extends LitElement {
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
   };
 
+  /**
+   * Escape takes back one thing at a time.
+   *
+   * Whatever the form has open on top of itself goes first — a dropdown is what
+   * the user just opened, and closing it is what the key is muscle memory for.
+   * With nothing open, Escape means the form, and typing that has not been
+   * saved is worth a question before it is thrown away. A clean form has
+   * nothing to lose and closes on the spot.
+   */
   private _onKeydown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
-      this._cancel();
+      if (this._categoryOpen) {
+        this._closeCategory();
+      } else if (this._checkoutOpen) {
+        this._checkoutOpen = false;
+      } else if (this._locationOpen) {
+        this._closeLocation();
+      } else if (this.dirty) {
+        this._confirmDiscard = true;
+      } else {
+        this._cancel();
+      }
     } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       this._save();
     }
   };
+
+  /** Shut the location picker and put focus back on the control that opened it. */
+  private _closeLocation() {
+    this._locationOpen = false;
+    this._locationError = null;
+    this.renderRoot.querySelector<HTMLElement>('[data-testid="editor-location"]')?.focus();
+  }
+
+  /** Hand focus back to the form after a dialog over it closes. */
+  private _refocus() {
+    this.renderRoot.querySelector<HTMLElement>('[data-testid="editor-name"]')?.focus();
+  }
 
   // ---------- Field renderers ----------
   private _text(
@@ -1070,8 +1212,48 @@ export class HVItemEditor extends LitElement {
     </div>`;
   }
 
+  /** The host's flat list, plus anything this form created that it still lacks. */
+  private get _knownLocations(): Location[] {
+    const known = this.locations ?? [];
+    if (!this._createdLocations.length) return known;
+    const extra = this._createdLocations.filter((c) => !known.some((l) => l.id === c.id));
+    return extra.length ? [...known, ...extra] : known;
+  }
+
+  /**
+   * The host's tree, plus the same additions as roots.
+   *
+   * The picker only ever creates a root with no area, so a created location
+   * needs no placement inside the existing nodes and carries no children.
+   */
+  private get _knownLocationTree(): LocationTreeNode[] {
+    const known = this.locationTree ?? [];
+    if (!this._createdLocations.length) return known;
+    const seen = new Set<string>();
+    const mark = (nodes: LocationTreeNode[]) => {
+      for (const n of nodes) {
+        seen.add(n.id);
+        mark(n.children ?? []);
+      }
+    };
+    mark(known);
+    const extra = this._createdLocations
+      .filter((c) => !seen.has(c.id))
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        parent_id: c.parent_id,
+        area_id: c.area_id,
+        path: c.path,
+        direct_item_count: 0,
+        subtree_item_count: 0,
+        children: [],
+      }));
+    return extra.length ? [...known, ...extra] : known;
+  }
+
   private _renderLocationField() {
-    const locations = this.locations ?? [];
+    const locations = this._knownLocations;
     const loc = locations.find((l) => l.id === this._model.locationId);
     const parts = locationPathParts(loc, locations, this.areas, 'No location');
     return html`<div class="cell span2">
@@ -1092,20 +1274,50 @@ export class HVItemEditor extends LitElement {
         ${this._locationOpen
           ? html`<hv-location-tree
               data-testid="editor-location-tree"
-              .nodes=${this.locationTree}
+              .nodes=${this._knownLocationTree}
               .areas=${this.areas}
               .selectedId=${this._model.locationId}
               showAll
               allLabel="No location"
               allIcon="close"
+              ?allowCreate=${this.createLocation !== null}
               @select=${(e: CustomEvent) => {
                 this._patch({ locationId: (e.detail as { locationId: string | null }).locationId });
                 this._locationOpen = false;
+                this._locationError = null;
+              }}
+              @create-location=${(e: CustomEvent) => {
+                e.stopPropagation();
+                void this._createLocation((e.detail as { name: string }).name);
               }}
             ></hv-location-tree>`
           : null}
       </div>
+      ${this._locationError
+        ? html`<span class="field-error" data-testid="editor-location-error">${this._locationError}</span>`
+        : null}
     </div>`;
+  }
+
+  /**
+   * Make the first location and file the item in it in one move.
+   *
+   * The picker is where a first-run user meets locations at all, so the one it
+   * creates is also the one they were reaching for — anything else would send
+   * them back through the same empty dropdown.
+   */
+  private async _createLocation(name: string) {
+    const create = this.createLocation;
+    if (!create) return;
+    this._locationError = null;
+    try {
+      const created = await create(name);
+      this._createdLocations = [...this._createdLocations, created];
+      this._patch({ locationId: created.id });
+      this._locationOpen = false;
+    } catch (err) {
+      this._locationError = errorText(err, 'The location could not be created.');
+    }
   }
 
   /**
@@ -1526,7 +1738,7 @@ export class HVItemEditor extends LitElement {
       <div class="custom">
         <div class="custom-head">
           <span class="hv-label">Custom fields</span>
-          <span class="tally" data-testid="editor-cf-tally">
+          <span class="hv-tally" data-testid="editor-cf-tally">
             ${used} of ${counted(this.customFieldKeys.length || used, 'key')} in use
           </span>
         </div>
@@ -1651,6 +1863,27 @@ export class HVItemEditor extends LitElement {
   }
 
   /**
+   * Report a failed attachment command in the queue the uploads already use.
+   *
+   * A reorder, a removal and a retitle all fail the same way and have nowhere
+   * else to be seen — the item they act on is unchanged, so nothing on the form
+   * would move. The entry carries no `File`, so it offers dismiss and no Retry.
+   */
+  private _pushUploadError(prefix: string, kind: AttachmentKind, name: string, err: unknown) {
+    this._uploads = [
+      ...this._uploads,
+      {
+        id: `${prefix}-${(this._uploadSeq += 1)}`,
+        name,
+        state: 'error',
+        message: errorText(err),
+        file: null,
+        kind,
+      },
+    ];
+  }
+
+  /**
    * Upload the picked files, one at a time.
    *
    * Sequential rather than parallel: every upload bumps the item's version and
@@ -1743,20 +1976,17 @@ export class HVItemEditor extends LitElement {
     try {
       this._uploaded = await media.reorder(item.id, kind, ordered);
     } catch (err) {
-      this._uploads = [
-        ...this._uploads,
-        {
-          id: `reorder-${(this._uploadSeq += 1)}`,
-          name: 'Reorder photos',
-          state: 'error',
-          message: errorText(err),
-          file: null,
-          kind,
-        },
-      ];
+      this._pushUploadError('reorder', kind, 'Reorder photos', err);
     }
   }
 
+  /**
+   * Delete one attachment, once it has been confirmed.
+   *
+   * Every other destructive action on the card asks first, and this one destroys
+   * the only copy of a file the household may not have anywhere else — so the
+   * buttons open `_confirmRemove` and only this runs the command.
+   */
   private async _removeAttachment(attachmentId: string, kind: AttachmentKind) {
     const media = this.media;
     const item = this._current;
@@ -1764,17 +1994,12 @@ export class HVItemEditor extends LitElement {
     try {
       this._uploaded = await media.remove(item.id, attachmentId);
     } catch (err) {
-      this._uploads = [
-        ...this._uploads,
-        {
-          id: `remove-${(this._uploadSeq += 1)}`,
-          name: kind === 'manual' ? 'Remove document' : 'Remove photo',
-          state: 'error',
-          message: errorText(err),
-          file: null,
-          kind,
-        },
-      ];
+      this._pushUploadError(
+        'remove',
+        kind,
+        kind === 'manual' ? 'Remove document' : 'Remove photo',
+        err,
+      );
     }
   }
 
@@ -1856,7 +2081,9 @@ export class HVItemEditor extends LitElement {
               class="remove"
               data-testid="editor-photo-remove"
               aria-label=${`Remove ${pictureAlt(item.name, index, shots.length)}`}
-              @click=${() => void this._removeAttachment(picture.id, 'picture')}
+              @click=${() => {
+                this._confirmRemove = { id: picture.id, kind: 'picture' };
+              }}
             >
               ${icon('close', 15)}
             </button>
@@ -1880,6 +2107,25 @@ export class HVItemEditor extends LitElement {
           />
         </label>
       </div>
+      ${this._renderUploadList('picture')}
+    </div>`;
+  }
+
+  /**
+   * Why the photo grid is not here yet, in create mode.
+   *
+   * An attachment is filed against an item id and a new item has none, so the
+   * sections cannot exist before the first save. Unexplained, that absence
+   * reads as a missing feature at exactly the moment the user is holding the
+   * object they wanted to photograph.
+   */
+  private _renderCreateAttachmentHint() {
+    if (this.item !== null || !this.media) return null;
+    return html`<div class="cell span3">
+      <span class="hv-label">Photos and documents</span>
+      <span class="attach-hint" data-testid="editor-attachment-hint">
+        Save the item first to add photos and manuals.
+      </span>
     </div>`;
   }
 
@@ -1906,17 +2152,7 @@ export class HVItemEditor extends LitElement {
     try {
       this._uploaded = await media.retitle(item.id, attachmentId, title);
     } catch (err) {
-      this._uploads = [
-        ...this._uploads,
-        {
-          id: `retitle-${(this._uploadSeq += 1)}`,
-          name: 'Rename document',
-          state: 'error',
-          message: errorText(err),
-          file: null,
-          kind: 'manual',
-        },
-      ];
+      this._pushUploadError('retitle', 'manual', 'Rename document', err);
     }
   }
 
@@ -1980,7 +2216,9 @@ export class HVItemEditor extends LitElement {
               class="doc-remove"
               data-testid="editor-document-remove"
               aria-label=${`Remove ${attachmentTitle(doc)}`}
-              @click=${() => void this._removeAttachment(doc.id, 'manual')}
+              @click=${() => {
+                this._confirmRemove = { id: doc.id, kind: 'manual' };
+              }}
             >
               ${icon('close', 15)}
             </button>
@@ -1999,52 +2237,64 @@ export class HVItemEditor extends LitElement {
           @change=${(e: Event) => this._onPicked(e, 'manual')}
         />
       </label>
+      ${this._renderUploadList('manual')}
     </div>`;
   }
 
   /**
-   * What the upload queue is doing, for both pickers at once.
+   * What the upload queue is doing, under the section it is doing it to.
    *
-   * One list below both controls rather than one under each: the queue itself
-   * is shared, and a failed document would otherwise report itself under
-   * "Photos".
+   * A queue rendered below both pickers put a phone's photo uploads two
+   * sections away from the grid the user is watching them fill, and reported a
+   * refused document under "Photos". One list per kind keeps each report beside
+   * the control that started it.
    */
-  private _renderUploadList() {
-    if (!this._uploads.length) return null;
-    return html`<div class="cell span3">
-      <ul class="upload-list" data-testid="editor-upload-list">
-        ${this._uploads.map(
-          (entry) => html`<li
-            class=${entry.state === 'error' ? 'failed' : ''}
-            data-testid="editor-upload"
-            data-state=${entry.state}
-          >
-            <span class="file">${entry.name}</span>
-            <span class="state">${entry.state === 'error' ? entry.message : `${entry.state}…`}</span>
-            ${entry.state === 'error' && entry.file
-              ? html`<button
-                  class="retry"
-                  data-testid="editor-upload-retry"
-                  aria-label=${`Try ${entry.name} again`}
-                  @click=${() => void this._retryUpload(entry.id)}
-                >
-                  Retry
-                </button>`
-              : null}
-            ${entry.state === 'error'
-              ? html`<button
-                  class="dismiss"
-                  data-testid="editor-upload-dismiss"
-                  aria-label=${`Dismiss the error for ${entry.name}`}
-                  @click=${() => this._dismissUpload(entry.id)}
-                >
-                  ${icon('close', 13)}
-                </button>`
-              : null}
-          </li>`,
-        )}
-      </ul>
-    </div>`;
+  private _renderUploadList(kind: AttachmentKind) {
+    const entries = this._uploads.filter((u) => u.kind === kind);
+    if (!entries.length) return null;
+    const glyph = kind === 'manual' ? 'fileDocument' : 'camera';
+    return html`<ul class="upload-list" data-testid="editor-upload-list" data-kind=${kind}>
+      ${entries.map(
+        (entry) => html`<li
+          class=${entry.state === 'error' ? 'failed' : ''}
+          data-testid="editor-upload"
+          data-state=${entry.state}
+        >
+          <span class="kind">${icon(glyph, 14)}</span>
+          <span class="file">${entry.name}</span>
+          <span class="state">${entry.state === 'error' ? entry.message : `${entry.state}…`}</span>
+          ${entry.state === 'error' && entry.file
+            ? html`<button
+                class="retry"
+                data-testid="editor-upload-retry"
+                aria-label=${`Try ${entry.name} again`}
+                @click=${() => void this._retryUpload(entry.id)}
+              >
+                Retry
+              </button>`
+            : null}
+          ${entry.state === 'error'
+            ? html`<button
+                class="dismiss"
+                data-testid="editor-upload-dismiss"
+                aria-label=${`Dismiss the error for ${entry.name}`}
+                @click=${() => this._dismissUpload(entry.id)}
+              >
+                ${icon('close', 13)}
+              </button>`
+            : null}
+          ${entry.state === 'error'
+            ? null
+            : html`<span
+                class="progress"
+                role="progressbar"
+                aria-label=${`${entry.name}: ${entry.state}`}
+                data-testid="editor-upload-progress"
+                ><span class="fill"></span
+              ></span>`}
+        </li>`,
+      )}
+    </ul>`;
   }
 
   private _renderMoreFields() {
@@ -2157,7 +2407,7 @@ export class HVItemEditor extends LitElement {
               @change=${(e: CustomEvent) => this._patch({ tags: (e.detail as { values: string[] }).values })}
             ></hv-chip-input>
           </div>
-          ${this._renderPictures()} ${this._renderDocuments()} ${this._renderUploadList()}
+          ${this._renderPictures()} ${this._renderDocuments()} ${this._renderCreateAttachmentHint()}
           ${this.mobile
             ? html`<div class="cell span3">${this._renderMoreFields()}</div>`
             : html`${this._renderStateFields()} ${this._renderCustomFields()}`}
@@ -2194,6 +2444,49 @@ export class HVItemEditor extends LitElement {
           </div>
         </div>
       </div>
+
+      <!-- Outside the form's own keydown scope, and their events stopped here:
+           a host listens for the cancel event on this editor to close it, and a
+           dialog saying "no, keep the photo" must not read as "close the
+           form". -->
+      <hv-confirm
+        data-testid="editor-remove-confirm"
+        ?open=${this._confirmRemove !== null}
+        .heading=${REMOVE_COPY[this._confirmRemove?.kind ?? 'picture'].heading}
+        .message=${REMOVE_COPY[this._confirmRemove?.kind ?? 'picture'].message}
+        confirmLabel="Remove"
+        destructive
+        @confirm=${(e: Event) => {
+          e.stopPropagation();
+          const target = this._confirmRemove;
+          this._confirmRemove = null;
+          if (target) void this._removeAttachment(target.id, target.kind);
+        }}
+        @cancel=${(e: Event) => {
+          e.stopPropagation();
+          this._confirmRemove = null;
+          this._refocus();
+        }}
+      ></hv-confirm>
+
+      <hv-confirm
+        data-testid="editor-discard-confirm"
+        ?open=${this._confirmDiscard}
+        heading="Discard your changes?"
+        message="What you have typed since the last save is lost."
+        confirmLabel="Discard"
+        destructive
+        @confirm=${(e: Event) => {
+          e.stopPropagation();
+          this._confirmDiscard = false;
+          this._cancel();
+        }}
+        @cancel=${(e: Event) => {
+          e.stopPropagation();
+          this._confirmDiscard = false;
+          this._refocus();
+        }}
+      ></hv-confirm>
     `;
   }
 }
