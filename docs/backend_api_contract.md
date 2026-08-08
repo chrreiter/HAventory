@@ -96,7 +96,7 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - `no_location_count` is the number of items without a location (`location_id == null`, i.e. the `orphaned_only` filter's population).
   - `overdue_count` is the number of items whose `due_date` is strictly before today in UTC (the `overdue_only` filter's population). It is derived from the calendar, not from stored state, so it can change without any mutation — no event is emitted when the date rolls over.
   - `inspection_overdue_count` is the number of items whose `inspection_date` — the date the item is next due for inspection — is strictly before today in UTC (the `inspection_overdue_only` filter's population). It counts the whole inventory, not just checked-out items, because an inspection is independent of any check-out. Calendar-derived in the same way as `overdue_count`, with the same no-event caveat.
-  - `missing_count` / `needs_repair_count` count items whose stored `status` is `missing` / `needs_repair` (the populations of the `status` filter's two non-default values). Stored state, not calendar-derived: they only change on a mutation, and every mutation emits `stats/counts`.
+  - `missing_count` / `needs_repair_count` count items whose stored `status` is `missing` / `needs_repair` — each the population of the `status` filter set to that slug. Stored state, not calendar-derived: they only change on a mutation, and every mutation emits `stats/counts`.
   - `status_counts` is the same figure for **every** defined slug, including `ok`. Additive to the two keys above rather than a replacement for them, so a client written against the earlier shape keeps working.
 
 - `haventory/distinct_values`

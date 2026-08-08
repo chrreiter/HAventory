@@ -212,7 +212,7 @@ counts items at the node or any descendant (so it is always >= the direct count)
   - `tags_any?: string[]`
   - `tags_all?: string[]`
   - `category?: string`
-  - `status?: "ok"|"missing"|"needs_repair"` (exact match; unknown values are `validation_error`)
+  - `status?: <status slug>` (exact match against the live status set; unknown values are `validation_error`)
   - `checked_out?: boolean`
   - `low_stock_only?: boolean`
   - `orphaned_only?: boolean` (only items without a location, i.e. `location_id == null`)

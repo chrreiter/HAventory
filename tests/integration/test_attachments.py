@@ -12,10 +12,13 @@ is here is the transport and the view around it.
 
 from __future__ import annotations
 
+import shutil
+import threading
 from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import unquote
 
+import pytest
 from aiohttp import FormData
 from custom_components.haventory import media
 from custom_components.haventory.const import DOMAIN, MEDIA_NAME_TOKEN_PARAM, MEDIA_SUBDIR
@@ -82,6 +85,29 @@ def _rfc5987_filename(disposition: str) -> str:
     return unquote(disposition.split(marker, 1)[1])
 
 
+@pytest.fixture
+def upload_teardowns(monkeypatch) -> list[tuple[int, Path]]:
+    """Record every temp-directory teardown as (thread id, directory).
+
+    Core's `file_upload` ends its context manager with a synchronous
+    `shutil.rmtree`, and which thread pays for that walk is the whole question.
+    Home Assistant's own blocking-call detector cannot answer it here: it skips
+    the `os.scandir`, `os.listdir` and `open` protections whenever `unittest` is
+    imported, which is every pytest run. A live instance is where that log line
+    appears, so this records the thread directly instead.
+    """
+
+    calls: list[tuple[int, Path]] = []
+    real_rmtree = shutil.rmtree
+
+    def _record(path, *args, **kwargs):
+        calls.append((threading.get_ident(), Path(path)))
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", _record)
+    return calls
+
+
 async def _create_item(ws_client, name: str = "Drill") -> dict:
     await ws_client.send_json({"id": 1, "type": "haventory/item/create", "name": name})
     result = await ws_client.receive_json()
@@ -130,6 +156,75 @@ async def test_a_real_png_round_trips_through_upload_and_the_view(
     assert disposition.startswith("inline;")
     assert 'filename="drill.png"' in disposition
     assert await served.read() == PNG_BYTES
+
+
+async def test_the_upload_handle_is_consumed_off_the_event_loop(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    hass_ws_client,
+    upload_teardowns: list[tuple[int, Path]],
+) -> None:
+    """Every byte of the temp directory's teardown is paid by a worker thread.
+
+    On the loop it stalls every other connection for as long as the walk takes,
+    and the stall grows with the file — worst on the phone burst-uploading
+    photos, which is the case the feature exists for.
+    """
+
+    await _setup(hass)
+    client = await hass_client()
+    ws = await hass_ws_client(hass)
+    item = await _create_item(ws)
+    file_id = await _upload(client)
+
+    loop_thread = threading.get_ident()
+    await ws.send_json(
+        {
+            "id": 2,
+            "type": "haventory/item/attachment/add",
+            "item_id": item["id"],
+            "file_id": file_id,
+        }
+    )
+    added = await ws.receive_json()
+
+    assert added["success"] is True, added
+    assert len(upload_teardowns) == 1
+    torn_down_on, temp_dir = upload_teardowns[0]
+    assert torn_down_on != loop_thread
+    assert not temp_dir.exists()
+
+
+async def test_a_consumed_handle_cannot_be_used_again(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+) -> None:
+    """The upload is destroyed with the command, so the second call is a 404.
+
+    The same envelope an expired handle gets: `file_upload` no longer knows the
+    id, and the message tells the card to upload the bytes again rather than
+    retry a handle that can never come back.
+    """
+
+    await _setup(hass)
+    client = await hass_client()
+    ws = await hass_ws_client(hass)
+    item = await _create_item(ws)
+    file_id = await _upload(client)
+
+    add = {
+        "type": "haventory/item/attachment/add",
+        "item_id": item["id"],
+        "file_id": file_id,
+    }
+    await ws.send_json({"id": 2, **add})
+    assert (await ws.receive_json())["success"] is True
+
+    await ws.send_json({"id": 3, **add})
+    refused = await ws.receive_json()
+
+    assert refused["success"] is False
+    assert refused["error"]["code"] == "not_found"
+    assert refused["error"]["message"] == "uploaded file not found; upload it again"
 
 
 async def test_the_media_view_refuses_an_unauthenticated_request(
@@ -181,7 +276,10 @@ async def test_an_id_no_metadata_claims_is_a_404(
 
 
 async def test_a_non_image_is_refused_and_leaves_nothing_behind(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    hass_ws_client,
+    upload_teardowns: list[tuple[int, Path]],
 ) -> None:
     """SVG carries script and the view serves it from the Home Assistant origin."""
 
@@ -193,6 +291,7 @@ async def test_a_non_image_is_refused_and_leaves_nothing_behind(
     file_id = await _upload(
         client, b'<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>', "drawing.svg"
     )
+    loop_thread = threading.get_ident()
     await ws.send_json(
         {
             "id": 2,
@@ -206,6 +305,12 @@ async def test_a_non_image_is_refused_and_leaves_nothing_behind(
     assert refused["success"] is False
     assert refused["error"]["code"] == "validation_error"
     assert hass.data[DOMAIN]["repository"].get_item(item["id"]).attachments == []
+    # Refused bytes are torn down on the same terms as accepted ones: off the
+    # loop, and gone by the time the caller is told no.
+    assert len(upload_teardowns) == 1
+    torn_down_on, temp_dir = upload_teardowns[0]
+    assert torn_down_on != loop_thread
+    assert not temp_dir.exists()
 
 
 async def test_deleting_the_item_deletes_its_files(
