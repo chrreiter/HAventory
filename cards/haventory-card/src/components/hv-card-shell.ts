@@ -460,8 +460,12 @@ export class HVCardShell extends LitElement {
    *
    * Identity comparison is enough — the store replaces each of these wholesale
    * rather than mutating it. Comparing at all, rather than bumping on every
-   * update, is what keeps a filter chip or a keystroke in the search box from
-   * redrawing the list and every row in it.
+   * update, is what keeps a re-render that changed none of them — a dialog
+   * opening, the filter panel expanding, a row being selected — from redrawing
+   * the list and every row in it.
+   *
+   * Changing a filter is not one of those: `setFilters` refetches the location
+   * tree, which the open form reads, so it moves the epoch and should.
    */
   private _syncEditorEpoch() {
     const st = this.st;

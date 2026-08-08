@@ -1221,6 +1221,24 @@ describe('hv-card-shell: inline editor reactivity', () => {
     expect(sr.querySelector('hv-filter-panel')).toBeTruthy();
     expect(list(sr).editorEpoch).toBe(before);
   });
+
+  // The other half of the same contract, and the one a reader is likelier to
+  // get backwards: the location tree is state the open form renders, so when it
+  // is replaced the list has to redraw. Changing a filter refetches that tree,
+  // which is why a filter chip moves the epoch rather than leaving it alone.
+  it('moves the epoch when the location tree the open form reads is replaced', async () => {
+    const { el, hass, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Drill' })] });
+    await openEditor(el, sr, '1');
+    const before = list(sr).editorEpoch;
+
+    hass.__setLocations([loc('L1', 'Garage')]);
+    hass.__emit('locations', 'created', { location_id: 'L1' });
+    await settle(el);
+    await settle(el);
+
+    expect(list(sr).editorEpoch).not.toBe(before);
+    expect(editor(sr)?.locationTree.map((n) => n.id)).toEqual(['L1']);
+  });
 });
 
 describe('hv-card-shell: mobile detail sheet', () => {
