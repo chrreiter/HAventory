@@ -16,8 +16,10 @@ code path: sniffing, the caps, the move onto disk, and the deletes.
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 import tempfile
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -359,29 +361,41 @@ def _fake_upload(_hass, file_id: str):
     and destroys the directory afterwards. `_UPLOADS` is what the tests POST
     into; an id that is not in it raises `ValueError`, which is exactly how the
     real component reports an expired or already-consumed upload.
+
+    Both halves record the thread they ran on. The real teardown is a
+    synchronous `shutil.rmtree`, so neither may run on the event loop thread —
+    and the stub `HomeAssistant` dispatches `async_add_executor_job` to a
+    genuine worker, which is what makes the difference observable.
     """
 
     if file_id not in _UPLOADS:
         raise ValueError("File does not exist")
     source = _UPLOADS.pop(file_id)
+    _UPLOAD_THREADS["enter"] = threading.get_ident()
     try:
         yield source
     finally:
+        _UPLOAD_THREADS["exit"] = threading.get_ident()
         shutil.rmtree(source.parent, ignore_errors=True)
 
 
 _UPLOADS: dict[str, Path] = {}
+_UPLOAD_THREADS: dict[str, int] = {}
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 
 
-def _stage_upload(file_id: str, content: bytes = PNG_BYTES) -> None:
-    """Put a file where the fake `process_uploaded_file` will find it."""
+def _stage_upload(file_id: str, content: bytes = PNG_BYTES) -> Path:
+    """Put a file where the fake `process_uploaded_file` will find it.
+
+    Returns the temp directory holding it, which the teardown must delete.
+    """
 
     directory = Path(tempfile.mkdtemp(prefix="haventory-upload-"))
     source = directory / "photo.png"
     source.write_bytes(content)
     _UPLOADS[file_id] = source
+    return directory
 
 
 @pytest.fixture
@@ -389,6 +403,7 @@ def upload(monkeypatch):
     """Route the attachment command through the fake upload component."""
 
     _UPLOADS.clear()
+    _UPLOAD_THREADS.clear()
     monkeypatch.setattr(ws_mod, "process_uploaded_file", _fake_upload)
     return _stage_upload
 
@@ -558,6 +573,111 @@ async def test_attachment_add_refuses_a_file_whose_bytes_are_not_an_image(upload
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
     assert _repo_of(hass).get_item(created["result"]["id"]).attachments == []
+
+
+@pytest.mark.asyncio
+async def test_attachment_add_consumes_the_upload_handle_off_the_event_loop(upload) -> None:
+    """Core's handle enters and leaves on a worker, never on the loop thread.
+
+    Its teardown deletes the upload's temp directory with a synchronous
+    `shutil.rmtree`; on the loop that stalls every other connection for as long
+    as the walk takes, and Home Assistant's blocking-call detector reports it
+    against this integration.
+    """
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    directory = upload("upload-1")
+    loop_thread = threading.get_ident()
+
+    added = await _send(
+        hass,
+        2,
+        "haventory/item/attachment/add",
+        item_id=created["result"]["id"],
+        file_id="upload-1",
+    )
+
+    assert added["success"] is True
+    assert _UPLOAD_THREADS["enter"] != loop_thread
+    assert _UPLOAD_THREADS["exit"] != loop_thread
+    assert not directory.exists()
+
+
+@pytest.mark.asyncio
+async def test_attachment_add_tears_the_upload_down_off_the_loop_when_it_is_refused(
+    upload,
+) -> None:
+    """The failure path pays the same teardown, so it offloads it the same way."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    directory = upload("upload-1", b'<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>')
+    loop_thread = threading.get_ident()
+
+    refused = await _send(
+        hass,
+        2,
+        "haventory/item/attachment/add",
+        item_id=created["result"]["id"],
+        file_id="upload-1",
+    )
+
+    assert refused["success"] is False
+    assert refused["error"]["code"] == "validation_error"
+    assert _UPLOAD_THREADS["exit"] != loop_thread
+    assert not directory.exists()
+
+
+@pytest.mark.asyncio
+async def test_attachment_add_tears_the_upload_down_when_the_command_is_cancelled(
+    upload, monkeypatch
+) -> None:
+    """A dropped connection mid-upload must not leave the bytes behind.
+
+    Nothing else collects an abandoned `file_upload` directory: the media sweep
+    only knows the integration's own media root.
+    """
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    directory = upload("upload-1")
+
+    consuming = asyncio.Event()
+
+    async def _hang(*_args, **_kwargs):
+        consuming.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(media_mod, "async_consume_upload", _hang)
+
+    task = asyncio.create_task(
+        _send(
+            hass,
+            2,
+            "haventory/item/attachment/add",
+            item_id=created["result"]["id"],
+            file_id="upload-1",
+        )
+    )
+    await consuming.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert not directory.exists()
 
 
 @pytest.mark.asyncio
