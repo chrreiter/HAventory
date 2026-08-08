@@ -11,17 +11,15 @@ open issues
 the twenty-eight findings of the 2026-08-08 frontend UX triage, folded in below as the
 **findings register** and packages **P5–P11**.
 
-Eleven work packages in six waves, then a **final verification gate** in real Home
-Assistant. **P1** (editor survival), **P2** (full view), **P3** (editor drop target) run
-in parallel; **P4** (configurable quick filters) follows; **P5–P7** (dialog surfaces,
-organize, editor reconciliation) run in parallel after that; **P8–P9** (dirty guards,
-surface parity) follow; then **P10** (shared read view) and **P11** (consistency sweep),
-in that order. Each package is one PR, implemented by a fresh **Opus 5 (xhigh) cloud
-session**; the package sections below are that session's working brief, and each session
-also reads the GitHub issues its package closes. Opus 5 at xhigh is expected to carry
-every package; P1 and P10 are the two where, if the work fights back, a higher tier
-would pay for itself. The final gate is different: it runs **locally against the Docker
-dev HA and must use Fable 5** — see §Final gate.
+Eleven work packages, four implementation sessions, then a **final verification gate**
+in real Home Assistant. The sessions run **strictly one at a time**, in order —
+**Session A** (P1 → P2 → P3 → P4), **Session B** (P5 → P6 → P7), **Session C**
+(P8 → P9 → P10), **Session D** (P11) — each a fresh **Opus 5 (xhigh) cloud session**
+carrying its packages serially, **one PR per package**. The package sections below are
+the working brief; each session also reads the GitHub issues its packages close. Opus 5
+at xhigh is expected to carry every session; A and C are the two where, if the work
+fights back, a higher tier would pay for itself. The final gate is different: it runs
+**locally against the Docker dev HA and must use Fable 5** — see §Final gate.
 
 All `file:line` anchors are taken at `main` @ `1e6c7e4`. **Anchors drift: locate by
 symbol/testid first, treat the line number as a hint, and re-read every touched region
@@ -75,9 +73,10 @@ at every count site), shared empty states, optimistic single-item writes with ro
 
 ## Decisions already made with the repository owner
 
-Sessions treat these as settled — do not relitigate them. The owner can veto any of them
-before launching the sessions; after that they are the spec. Decisions 7–17 come from
-the 2026-08-08 triage and follow the same veto rule.
+Sessions treat these as settled — do not relitigate them. Decisions 7–17 come from the
+2026-08-08 triage and were **ratified by the owner on 2026-08-08**; they are the spec.
+Decisions 1–6 date from this plan's first draft and stand unless the owner vetoes one
+before Session A launches.
 
 1. **#332 — what the list shows during a filtered refetch:** the rows already loaded,
    with the loading state signalled on top of them. The skeleton renders only when
@@ -124,7 +123,9 @@ the 2026-08-08 triage and follow the same veto rule.
 9. **F3 — status reordering stays buttons** (pointer drag remains #297's later
    one-answer decision, additive when it comes): a horizontal pair at ≥28px on desktop,
    the 44px vertical stack stays on phones where a horizontal pair does not fit the row.
-   Row padding tightens so status rows match the sibling tabs' height.
+   Row padding tightens so status rows match the sibling tabs' height — and the
+   Categories, Tags and Locations tabs tighten with them (owner, 2026-08-08): the
+   density pass covers all four tabs, not only Statuses.
 10. **F18 — status delete asks in both branches, one idiom:** the inline disclosure the
     in-use branch already uses (it scrolls into view since #329). The zero-count branch
     moves off `hv-confirm` into the same disclosure, minus the reassign select.
@@ -134,6 +135,9 @@ the 2026-08-08 triage and follow the same veto rule.
     Escape, Cancel, ✕, scrim tap, sheet swipe, row switch, backdrop, view close — all
     consult the editor's `dirty` and route through the same confirm with the same
     wording. (P1's pinned-row invariant is the same rule applied to data refetches.)
+    Draft autosave — the feature that would make most of these questions unnecessary —
+    is filed as [#334](https://github.com/chrreiter/HAventory/issues/334) and stays
+    outside this campaign: the guards land first.
 13. **F13 — failures are visible on every surface:** the full view (and through it the
     panel) gains the shell's degraded banners and error queue, actions included. Builds
     on P2's minimal `.errorMessage` binding; the inline sentence stays the save-failure
@@ -155,30 +159,53 @@ the 2026-08-08 triage and follow the same veto rule.
 
 ## Session model
 
-Implementation sessions run **in the cloud** — no Docker dev HA, no screenshot tooling. A
-cloud session must not attempt live verification itself. The flow per package:
+Four implementation sessions, each carrying its packages **serially, one PR per
+package**:
 
-1. **Cloud session**: implement → run both offline gates → commit → push → **open the PR**.
+| Session | Packages, in order | Substance |
+|---|---|---|
+| A | P1 → P2 → P3 → P4 | the issue-closing four |
+| B | P5 → P6 → P7 | dialog surfaces, organize, editor reconciliation |
+| C | P8 → P9 → P10 | dirty guards, surface parity, shared read view |
+| D | P11 | the consistency sweep |
+
+Sessions run **one at a time, in order** — every session builds on the merged result of
+the one before, and serial execution also keeps the owner's usage limits out of the
+schedule: a single Opus 5 (xhigh) session is heavy on its own, and two running at once
+would race each other into the cap and stall both mid-implementation.
+
+Implementation sessions run **in the cloud** — no Docker dev HA, no screenshot tooling.
+A cloud session must not attempt live verification itself. The flow:
+
+1. **Cloud session**: for each package in its list — implement → run both offline
+   gates → commit → push → **open the PR** — then start the next package on a branch
+   cut from the previous package's branch. The repo squash-merges, so a session's PRs
+   are **stacked**: each PR body names its base PR and says "merge in order", and after
+   a parent squash-merges, the child is rebased onto `main`
+   (`git rebase --onto origin/main <parent-branch>`) before it merges — the local
+   verification session does that rebase as part of its pass.
 2. The cloud session's final message is a **handover prompt** for a local session
-   (template below), and the PR body states plainly which checks are delegated to that
-   local pass.
-3. **Local session** (has the Docker dev container + the `run-haventory` skill): executes
-   the checklist, and on any defect fixes it, re-runs the gates, and pushes to the same PR
-   branch.
+   (template below) covering every package it shipped, and each PR body states plainly
+   which checks are delegated to that local pass.
+3. **Local session** (has the Docker dev container + the `run-haventory` skill): works
+   through the session's per-package checklists in merge order, and on any defect fixes
+   it, re-runs the gates, and pushes to that package's PR branch.
 4. The **user** merges. Nobody else merges; auto-merge is never enabled.
 
 The **final gate** (§Final gate) is not a per-package handover: it is one whole-campaign
 verification session, run locally, after all eleven packages have merged — and it
 **must use Fable 5**.
 
-### Kickoff prompt (per package, for a fresh cloud session)
+### Kickoff prompt (per session, for a fresh cloud session)
 
-> Read `dev/v040_frontend_completeness_plan.md` in full, then the GitHub issues work
-> package **Pn** closes (if any — P5–P11 may carry register findings instead). Implement
-> Pn exactly as scoped, on a new branch from the latest `main`. Follow the campaign rules
-> and the "Decisions already made" section — settled decisions are the spec, not a
-> starting point. Your final message is the handover prompt for a local verification
-> session (template in the plan).
+> Read `dev/v040_frontend_completeness_plan.md` in full, then the GitHub issues your
+> session's packages close (if any — P5–P11 may carry register findings instead).
+> Implement Session **X**'s packages in their listed order, exactly as scoped — one
+> branch and one PR per package, stacked per the session model, the first branch cut
+> from the latest `main`. Follow the campaign rules and the "Decisions already made"
+> section — settled decisions are the spec, not a starting point. Your final message is
+> the handover prompt for a local verification session (template in the plan), covering
+> every package you shipped.
 
 ### Handover prompt template
 
@@ -224,53 +251,46 @@ The handover prompt must work for a cold local session with zero context:
 ## Sequencing
 
 ```
-Wave 1 (parallel, disjoint files up to one declared seam):
-  P1 — store/store.ts · hv-list.ts · hv-card-shell.ts · their tests
-  P2 — hv-full-view.ts · hv-data-table.ts · hv-column-picker.ts · store/columns.ts
-       · new ui/editor-error.ts · their tests
-  P3 — hv-item-editor.ts · its tests
-
-Wave 2 (after P1 AND P2 merge):
-  P4 — index.ts · hv-card-shell.ts · hv-full-view.ts · README · their tests
-
-Wave 3 (parallel, after Wave 2; disjoint up to seam A):
-  P5 — hv-card-shell.ts · host-surfaces.ts · hv-column-picker.ts · hv-import-sheet.ts
-       · hv-diagnostics-panel.ts · hv-confirm.ts · hv-overflow-menu.ts · ui/responsive.ts
-  P6 — hv-organize-dialog.ts · hv-full-view.ts (app bar + statuses section)
-  P7 — hv-item-editor.ts · ui/tokens.ts · hv-chip-input.ts
-
-Wave 4 (parallel, after Wave 3; disjoint up to seams B and C):
-  P8 — hv-item-editor.ts (close paths) · hv-detail-sheet.ts · hv-card-shell.ts
-       (sheet-cancel handlers) · hv-full-view.ts (editor-close handlers)
-  P9 — hv-full-view.ts (render/banner region) · hv-data-table.ts · hv-card-shell.ts
-       (banner render block) · new shared banner piece
-
-Wave 5 (after Wave 4): P10 — hv-detail-sheet.ts · hv-item-editor.ts (thumbnails)
-       · hv-full-view.ts (narrow hosting) · new shared lightbox
-
-Wave 6 (after Wave 5): P11 — many files, each edit small; runs last on purpose
-
-Final gate (after Wave 6): whole-campaign verification, local Docker HA, Fable 5.
+Session A: P1 → P2 → P3 → P4    then merge all four, in order
+Session B: P5 → P6 → P7         then merge all three, in order
+Session C: P8 → P9 → P10        then merge all three, in order
+Session D: P11                  last on purpose: many small edits everywhere
+Final gate: whole-campaign verification, local Docker HA, Fable 5
 ```
 
-**Seam A (Wave 3):** P5 moves the viewport query constant (`NARROW_QUERY`,
-`hv-full-view.ts:55`) into `ui/responsive.ts` so both hosts and the dialogs share one
-definition — that constant move is P5's only edit in a file P6 owns; the regions
-(top-of-file constant vs app-bar template) are far apart. P7 owns `ui/tokens.ts` in this
-wave; P5 and P6 do not touch it. Whichever PR merges second rebases trivially.
+Files per package — the dependency map. Under the serial session model no cross-session
+coordination is needed, and within a session the stack order resolves every overlap:
 
-**Seam B (Wave 4, `hv-full-view.ts`):** P8 owns the editor-closing handlers (row switch,
-backdrop, Escape); P9 owns the render/app-bar/banner region. **Seam C (Wave 4,
-`hv-card-shell.ts`):** P8 owns the sheet-cancel handlers; P9 owns the banner render
-block and its import swap. The regions are far apart in both files.
+```
+P1  — store/store.ts · hv-list.ts · hv-card-shell.ts
+P2  — hv-full-view.ts · hv-data-table.ts · hv-column-picker.ts · store/columns.ts
+      · new ui/editor-error.ts
+P3  — hv-item-editor.ts
+P4  — index.ts · hv-card-shell.ts · hv-full-view.ts · README
+P5  — hv-card-shell.ts · host-surfaces.ts · hv-column-picker.ts · hv-import-sheet.ts
+      · hv-diagnostics-panel.ts · hv-confirm.ts · hv-overflow-menu.ts · ui/responsive.ts
+P6  — hv-organize-dialog.ts · hv-location-tree.ts (organize density only)
+      · hv-full-view.ts (app bar + statuses section)
+P7  — hv-item-editor.ts · ui/tokens.ts · hv-chip-input.ts
+P8  — hv-item-editor.ts · hv-detail-sheet.ts · hv-card-shell.ts · hv-full-view.ts
+P9  — hv-full-view.ts · hv-data-table.ts · hv-card-shell.ts · new shared banner piece
+P10 — hv-detail-sheet.ts · hv-item-editor.ts · hv-full-view.ts · new shared lightbox
+P11 — many files, each edit small
+```
 
-**The P2 seam (Wave 1, unchanged):** P2 moves `editorErrorText` out of
-`hv-card-shell.ts` (`:1316`) into `src/ui/editor-error.ts`, so P2 makes a three-line
-edit in a file P1 owns. P1 must not touch that function or its import block.
+(each package also owns its tests)
 
-P3 is independent of Wave 1: `hv-item-editor.ts` belongs to no other Wave-1 package.
-(P1's fix keeps the editor *element* alive from the outside; it must not edit the editor
-itself.)
+If the owner ever re-parallelizes into per-package sessions, the grouping that keeps
+files disjoint is {P1, P2, P3} · {P4} · {P5, P6, P7} · {P8, P9} · {P10} · {P11}, with
+three declared seams: P2 moves `editorErrorText` (`hv-card-shell.ts:1316`) into
+`ui/editor-error.ts` inside a P1 file; P5 moves `NARROW_QUERY` (`hv-full-view.ts:55`)
+into `ui/responsive.ts` inside a P6 file; P8/P9 split `hv-full-view.ts` and
+`hv-card-shell.ts` between editor-close handlers (P8) and the render/banner regions
+(P9). Under the serial model these need no coordination.
+
+One rule holds regardless of packing: P1's fix keeps the editor *element* alive from
+the outside; it must not edit the editor itself — `hv-item-editor.ts` first changes in
+P3.
 
 ## P1 — #332: an open editor survives filter, search, and sort changes  `size M`
 
@@ -546,7 +566,12 @@ has one name.
    `hv-organize-dialog.test.ts:1373-1395` pins the exact geometry **and** the rule that
    sizing is not `.status-row`-scoped ("one dialog cannot offer two target sizes for one
    control") — rewrite those pins deliberately, keeping the principle: the new sizes
-   apply to every tab's row controls alike.
+   apply to every tab's row controls alike. Per decision 9 the density pass covers
+   **all four tabs**: the `.value-row` padding cut lands unscoped, so Categories and
+   Tags rows come down with Statuses, and the Locations tab hands the same vertical
+   rhythm to its `hv-location-tree` rows — scoped to the organize dialog's hosting (a
+   host attribute or CSS custom property on the tree), so the full-view sidebar tree
+   keeps its current spacing.
 4. **One delete idiom (F18, decision 10).** The zero-count branch
    (`hv-organize-dialog.ts:1815-1817`) moves off `hv-confirm` (`:2200-2215`) into the
    inline disclosure the in-use branch uses (`:1730-1735`), minus the reassign select.
@@ -560,7 +585,10 @@ has one name.
 
 - App bar renders the organize button on modal and embedded variants; clicking it opens
   the dialog on the Locations tab; the statuses head action opens the Statuses tab.
-- Geometry pins rewritten per scope 3 (desktop row/button/glyph sizes, mobile stack).
+- Geometry pins rewritten per scope 3 (desktop row/button/glyph sizes, mobile stack),
+  plus a parity pin: one row rhythm across all four tabs.
+- Tree density is scoped: the organize hosting carries the tighter rhythm, the
+  full-view sidebar tree's spacing is untouched (pin the discriminating selector).
 - Delete: zero-count status opens the disclosure (not `hv-confirm`); confirm deletes;
   in-use path unchanged apart from sharing the markup.
 - Title pin updated to "Organize" at both widths.
@@ -678,6 +706,10 @@ One case per path — editor Cancel, editor ✕, Escape, sheet scrim, sheet swip
 row switch, full-view backdrop, full-view Escape: dirty asks (confirm-discard proceeds,
 confirm-keep retains the typed text), clean closes silently. `hv-bottom-sheet`'s tests
 already simulate the swipe gesture — reuse that harness.
+
+Out of scope: draft autosave
+([#334](https://github.com/chrreiter/HAventory/issues/334)) — the follow-on that makes
+most of these questions unnecessary. The guards land first; do not start it here.
 
 ### Verification & closing
 
@@ -847,7 +879,7 @@ the PR. The user merges only after this pass.
 | P3 | **Required** | Desktop: drag an image and a PDF from the OS file manager onto each cell — four combinations, kind follows the file type every time; multi-file drop queues sequentially; a drop missed beside the target does **not** navigate the tab away; over-state appears and clears. 390px: no drop target rendered. |
 | P4 | Short smoke | Edit the card YAML in the dev dashboard: no `quick_filters` → all pills (counts permitting); a two-entry list → exactly those; an unknown entry → ignored without console errors. Check the shell and the full view both follow it. Screenshot (light + dark) of a subset config. |
 | P5 | **Required** | Desktop browser, dashboard with the card in a normal (narrow) column: open Organize from the card ⋮ — centered popup, not a full-bleed page; expand the card, open Organize — still a popup; same from the panel. 390px emulation: Organize full-bleed with the back arrow; Columns, Import, Diagnostics and a delete confirm each rise as bottom sheets; the ⋮ menu still does; a confirm stacked over a sheet stays on top and works. |
-| P6 | Short smoke | Expanded view and panel: the app bar shows the Organize button; it opens on Locations; the Statuses section's head action opens on Statuses. Status rows sit at the same height as category rows; the reorder pair is side-by-side and comfortably clickable; a reorder persists across a reload. Deleting an unused status asks inline; deleting an in-use status asks inline with the reassign select. 390px: arrows stacked at 44px, rows unchanged from before. |
+| P6 | Short smoke | Expanded view and panel: the app bar shows the Organize button; it opens on Locations; the Statuses section's head action opens on Statuses. All four tabs sit at the same tightened row rhythm — status rows match category rows, and the Locations tab is visibly denser while the full-view sidebar tree is unchanged. The reorder pair is side-by-side and comfortably clickable; a reorder persists across a reload. Deleting an unused status asks inline; deleting an in-use status asks inline with the reassign select. 390px: arrows stacked at 44px. |
 | P7 | **Required** | Expanded view at 1080p, an item with photos, documents and custom fields: Save/Delete/Cancel visible without scrolling; scroll the form — the bar stays pinned, opaque edge to edge. Quantity/Low-stock at fixed width; the status select is input-height beside the taller Description. One label size across TAGS/PHOTOS/DOCUMENTS/CHECK OUT/NEXT INSPECTION, one note size below them; the tag input's text matches the other fields. The two state boxes: no dead air above the first control, offset chips wrap at most once at card width. Tally reads "N fields set". Screenshots light + dark, desktop + 390px. |
 | P8 | **Required** | The eight-path matrix with a dirty form — editor Cancel, editor ✕, Escape, sheet scrim tap, sheet swipe-down (390px), full-view row switch, full-view backdrop, full-view Escape: every path asks; "Discard" proceeds, keeping asks nothing twice; the same paths with a clean form close silently. Wording identical everywhere. |
 | P9 | Short smoke | Full view open, stop the HA container: banner appears; restart: it clears and data recovers. Reject a save (bump the version from a second tab): inline sentence in the form **and** the queue banner behave per the stated split. Table rows: ⋮ offers Check out / Check in / Set due date / Delete and each works; the Delete key still deletes with its confirm. Panel shows the same banners. |
