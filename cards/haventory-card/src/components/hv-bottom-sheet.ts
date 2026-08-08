@@ -159,6 +159,20 @@ export class HVBottomSheet extends LitElement {
     if (farEnough || flicked) this._cancel();
   };
 
+  /**
+   * Put focus on the dialog panel.
+   *
+   * The panel — not the host — because Escape is bound there: an event fired on
+   * the host would never reach the handler, so focus that landed outside it
+   * would leave the sheet unclosable from the keyboard.
+   */
+  focusPanel(): void {
+    const panel = this.renderRoot.querySelector<HTMLElement>('.sheet');
+    if (!panel) return;
+    if (!panel.hasAttribute('tabindex')) panel.setAttribute('tabindex', '-1');
+    panel.focus({ preventScroll: true });
+  }
+
   render() {
     if (!this.open) return null;
     const z = this._zBase ?? 9998;
