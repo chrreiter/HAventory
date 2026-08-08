@@ -73,6 +73,29 @@ async function checkOut(el: HVItemEditor) {
   return popover;
 }
 
+/** The dialog behind a testid, awaited so its own render has run. */
+async function dialog(el: HVItemEditor, testid: string) {
+  const found = q(el, `[data-testid="${testid}"]`) as HTMLElement & {
+    updateComplete: Promise<unknown>;
+    open: boolean;
+  };
+  await found.updateComplete;
+  return found;
+}
+
+/** Press a remove control and answer the guard it opens. */
+async function removeAttachment(el: HVItemEditor, testid: string, answer: 'confirm' | 'cancel') {
+  (q(el, `[data-testid="${testid}"]`) as HTMLButtonElement).click();
+  await el.updateComplete;
+  const guard = await dialog(el, 'editor-remove-confirm');
+  (
+    guard.shadowRoot?.querySelector(
+      answer === 'confirm' ? '[data-testid="confirm-accept"]' : '[data-testid="confirm-cancel"]',
+    ) as HTMLButtonElement
+  ).click();
+  await el.updateComplete;
+}
+
 function onSave(el: HVItemEditor) {
   const saves: { itemId: string | null; expectedVersion?: number; changes?: ItemUpdate; create?: ItemCreate }[] =
     [];
@@ -998,6 +1021,238 @@ describe('hv-item-editor: opening', () => {
   });
 });
 
+// Escape-to-close-a-dropdown is muscle memory; here it used to cost the whole
+// form, dropdown and typing together.
+describe('hv-item-editor: Escape takes back one thing at a time', () => {
+  const esc = (el: HVItemEditor, from?: HTMLElement) =>
+    (from ?? (q(el, '[data-testid="item-editor"]') as HTMLElement)).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+    );
+
+  function onCancel(el: HVItemEditor) {
+    const seen = { count: 0 };
+    el.addEventListener('cancel', () => {
+      seen.count += 1;
+    });
+    return seen;
+  }
+
+  it('closes the location picker and leaves the form standing', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    const cancels = onCancel(el);
+
+    (q(el, '[data-testid="editor-location"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(q(el, '[data-testid="editor-location-tree"]')).toBeTruthy();
+
+    esc(el);
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="editor-location-tree"]')).toBe(null);
+    expect(cancels.count).toBe(0);
+    // And the control that opened it takes the focus back.
+    expect(el.shadowRoot?.activeElement).toBe(q(el, '[data-testid="editor-location"]'));
+  });
+
+  // The popover renders in a shadow root of its own; without the key stopping
+  // there it reached this form's handler too and closed both.
+  it('closes the check-out popover and leaves the form standing', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    const cancels = onCancel(el);
+
+    (q(el, '[data-testid="editor-checked-out"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const popover = (await dialog(el, 'editor-checkout')) as HTMLElement & { open: boolean };
+    expect(popover.open).toBe(true);
+
+    (popover.shadowRoot?.querySelector('[data-testid="checkout-popover"]') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+    );
+    await el.updateComplete;
+
+    expect(popover.open).toBe(false);
+    expect(cancels.count).toBe(0);
+  });
+
+  it('asks before discarding a form that has been typed into', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    const cancels = onCancel(el);
+    await type(el, 'editor-name', 'A longer name');
+    expect(el.dirty).toBe(true);
+
+    esc(el);
+    await el.updateComplete;
+
+    const guard = await dialog(el, 'editor-discard-confirm');
+    expect(guard.open).toBe(true);
+    expect(cancels.count).toBe(0);
+
+    (guard.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(cancels.count).toBe(1);
+  });
+
+  it('keeps the form when the discard guard is dismissed', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    const cancels = onCancel(el);
+    await type(el, 'editor-name', 'A longer name');
+
+    esc(el);
+    await el.updateComplete;
+    const guard = await dialog(el, 'editor-discard-confirm');
+    (guard.shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    expect(cancels.count).toBe(0);
+    expect((q(el, '[data-testid="editor-name"]') as HTMLInputElement).value).toBe('A longer name');
+    expect(el.dirty).toBe(true);
+  });
+
+  it('closes a clean form on the spot, with nothing to ask about', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    const cancels = onCancel(el);
+
+    esc(el);
+    await el.updateComplete;
+
+    expect(cancels.count).toBe(1);
+    expect((await dialog(el, 'editor-discard-confirm')).open).toBe(false);
+  });
+});
+
+// The first minute of a fresh install: an item form whose most important field
+// cannot be satisfied, and no way in sight to make it satisfiable.
+describe('hv-item-editor: creating the first location from the picker', () => {
+  const empty = { locationTree: [] as LocationTreeNode[], locations: [] as Location[] };
+
+  const created: Location = {
+    id: 'loc-new',
+    name: 'Shed',
+    parent_id: null,
+    area_id: null,
+    path: { id_path: ['loc-new'], name_path: ['Shed'], display_path: 'Shed', sort_key: 'shed' },
+  };
+
+  async function openTree(el: HVItemEditor) {
+    (q(el, '[data-testid="editor-location"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const tree = el.shadowRoot?.querySelector('hv-location-tree') as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    await tree.updateComplete;
+    return tree;
+  }
+
+  it('offers no create affordance when the host cannot run the command', async () => {
+    const el = await mount(null, empty);
+    const tree = await openTree(el);
+
+    expect(tree.shadowRoot?.querySelector('[data-testid="tree-empty"]')).toBeTruthy();
+    expect(tree.shadowRoot?.querySelector('[data-testid="tree-create"]')).toBe(null);
+  });
+
+  it('creates the location and files the item in it', async () => {
+    const names: string[] = [];
+    const el = await mount(null, {
+      ...empty,
+      createLocation: async (name: string) => {
+        names.push(name);
+        return created;
+      },
+    });
+    const saves = onSave(el);
+    await type(el, 'editor-name', 'Ladder');
+    const tree = await openTree(el);
+
+    (tree.shadowRoot?.querySelector('[data-testid="tree-create"]') as HTMLButtonElement).click();
+    await tree.updateComplete;
+    const input = tree.shadowRoot?.querySelector('[data-testid="tree-create-name"]') as HTMLInputElement;
+    input.value = 'Shed';
+    input.dispatchEvent(new Event('input'));
+    await tree.updateComplete;
+    (tree.shadowRoot?.querySelector('[data-testid="tree-create-submit"]') as HTMLButtonElement).click();
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+
+    expect(names).toEqual(['Shed']);
+    // Picked, and the picker closed behind it — the same shape as picking an
+    // existing location.
+    expect(el.shadowRoot?.querySelector('hv-location-tree')).toBe(null);
+    (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
+    expect(saves[0].create?.location_id).toBe('loc-new');
+  });
+
+  /** Type a name into the empty picker's create row and submit it. */
+  async function submitCreate(el: HVItemEditor, tree: HTMLElement, name: string) {
+    (tree.shadowRoot?.querySelector('[data-testid="tree-create"]') as HTMLButtonElement).click();
+    await (tree as HTMLElement & { updateComplete: Promise<unknown> }).updateComplete;
+    const input = tree.shadowRoot?.querySelector('[data-testid="tree-create-name"]') as HTMLInputElement;
+    input.value = name;
+    input.dispatchEvent(new Event('input'));
+    await (tree as HTMLElement & { updateComplete: Promise<unknown> }).updateComplete;
+    (tree.shadowRoot?.querySelector('[data-testid="tree-create-submit"]') as HTMLButtonElement).click();
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+  }
+
+  // The inline expander reaches this form through a template callback `hv-list`
+  // re-invokes only when one of its own properties changes. A location create
+  // changes none of them, so `locations` can stay empty for as long as the form
+  // is open — and the field would name nothing it had just filled.
+  it('names the location it created even when the host list never catches up', async () => {
+    const el = await mount(null, { ...empty, createLocation: async () => created });
+    const tree = await openTree(el);
+    await submitCreate(el, tree, 'Shed');
+
+    expect(el.locations).toEqual([]);
+    expect(q(el, '[data-testid="editor-location"]')?.textContent).toContain('Shed');
+  });
+
+  it('lists what it created when the picker is reopened', async () => {
+    const el = await mount(null, { ...empty, createLocation: async () => created });
+    await submitCreate(el, await openTree(el), 'Shed');
+    const reopened = await openTree(el);
+
+    // Still the empty state would offer to create the same name a second time.
+    expect(reopened.shadowRoot?.querySelector('[data-testid="tree-empty"]')).toBe(null);
+    expect(reopened.shadowRoot?.textContent).toContain('Shed');
+  });
+
+  it('does not double the row once the host list carries it too', async () => {
+    const el = await mount(null, { ...empty, createLocation: async () => created });
+    await submitCreate(el, await openTree(el), 'Shed');
+
+    el.locations = [created];
+    el.locationTree = [{ ...created, direct_item_count: 0, subtree_item_count: 0, children: [] }];
+    await el.updateComplete;
+    const reopened = await openTree(el);
+
+    const rows = [...(reopened.shadowRoot?.querySelectorAll('[data-testid="tree-row"]') ?? [])];
+    expect(rows.filter((r) => r.textContent?.includes('Shed'))).toHaveLength(1);
+  });
+
+  it('reports a refused name against the field instead of swallowing it', async () => {
+    const el = await mount(null, {
+      ...empty,
+      createLocation: async () => {
+        throw new Error('A location called Shed already exists');
+      },
+    });
+    const tree = await openTree(el);
+
+    (tree.shadowRoot?.querySelector('[data-testid="tree-create"]') as HTMLButtonElement).click();
+    await tree.updateComplete;
+    const input = tree.shadowRoot?.querySelector('[data-testid="tree-create-name"]') as HTMLInputElement;
+    input.value = 'Shed';
+    input.dispatchEvent(new Event('input'));
+    await tree.updateComplete;
+    (tree.shadowRoot?.querySelector('[data-testid="tree-create-submit"]') as HTMLButtonElement).click();
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+
+    expect(q(el, '[data-testid="editor-location-error"]')?.textContent).toContain('already exists');
+    // The picker stays open so the name can be corrected where it was typed.
+    expect(el.shadowRoot?.querySelector('hv-location-tree')).toBeTruthy();
+  });
+});
+
 describe('hv-item-editor: pictures', () => {
   /** Drive the hidden file input the way a picker does. */
   function pick(el: HVItemEditor, files: File[]) {
@@ -1121,7 +1376,9 @@ describe('hv-item-editor: pictures', () => {
     expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain('2 photos is the limit');
   });
 
-  it('removes a picture and adopts the returned item', async () => {
+  // Deleting an attachment destroys the only copy of the file, so it asks —
+  // like every other destructive action on the card.
+  it('removes a picture once the guard is answered, and adopts the returned item', async () => {
     const media = makeMediaBindings({
       remove: async (itemId) => makeItem({ id: itemId, version: 9, attachments: [] }),
     });
@@ -1131,11 +1388,54 @@ describe('hv-item-editor: pictures', () => {
     );
     await el.updateComplete;
 
-    q(el, '[data-testid="editor-photo-remove"]')?.click();
+    (q(el, '[data-testid="editor-photo-remove"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    // Nothing is sent on the press itself.
+    expect(media.removals).toEqual([]);
+    expect((await dialog(el, 'editor-remove-confirm')).open).toBe(true);
+
+    (
+      (await dialog(el, 'editor-remove-confirm')).shadowRoot?.querySelector(
+        '[data-testid="confirm-accept"]',
+      ) as HTMLButtonElement
+    ).click();
     for (let i = 0; i < 4; i += 1) await el.updateComplete;
 
     expect(media.removals).toEqual([{ itemId: 'i-1', attachmentId: 'att-1' }]);
     expect(all(el, '[data-testid="editor-photo"]')).toHaveLength(0);
+  });
+
+  it('keeps the picture when the guard is dismissed', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'att-1' })] }), {
+      media,
+    });
+    await el.updateComplete;
+
+    await removeAttachment(el, 'editor-photo-remove', 'cancel');
+    for (let i = 0; i < 3; i += 1) await el.updateComplete;
+
+    expect(media.removals).toEqual([]);
+    expect(all(el, '[data-testid="editor-photo"]')).toHaveLength(1);
+  });
+
+  // The guard sits outside the form's own event scope: a host closes the editor
+  // on `cancel`, and answering "no, keep the photo" is not that.
+  it('keeps its guard events to itself', async () => {
+    const el = await mount(makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'att-1' })] }), {
+      media: makeMediaBindings(),
+    });
+    await el.updateComplete;
+    let cancels = 0;
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
+
+    await removeAttachment(el, 'editor-photo-remove', 'cancel');
+    await removeAttachment(el, 'editor-photo-remove', 'confirm');
+    for (let i = 0; i < 3; i += 1) await el.updateComplete;
+
+    expect(cancels).toBe(0);
   });
 
   it('offers the camera from the same control that picks a file', async () => {
@@ -1323,12 +1623,28 @@ describe('hv-item-editor: documents', () => {
     );
     await el.updateComplete;
 
-    q(el, '[data-testid="editor-document-remove"]')?.click();
+    await removeAttachment(el, 'editor-document-remove', 'confirm');
     await new Promise((resolve) => setTimeout(resolve, 0));
     await el.updateComplete;
 
     expect(media.removals).toEqual([{ itemId: 'i-1', attachmentId: 'm-1' }]);
     expect(all(el, '[data-testid="editor-document"]')).toHaveLength(0);
+  });
+
+  it('names the document in the guard, not the photo copy', async () => {
+    const el = await mount(makeItem({ id: 'i-1', attachments: [makeManual({ id: 'm-1' })] }), {
+      media: makeMediaBindings(),
+    });
+    await el.updateComplete;
+
+    (q(el, '[data-testid="editor-document-remove"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const guard = await dialog(el, 'editor-remove-confirm');
+
+    expect(guard.shadowRoot?.querySelector('h2')?.textContent).toContain('document');
+    expect(guard.shadowRoot?.querySelector('[data-testid="confirm-message"]')?.textContent).toContain(
+      'deleted',
+    );
   });
 
   it('names the file that failed rather than the section it came from', async () => {
@@ -1526,7 +1842,7 @@ describe('hv-item-editor: photo order and the cover', () => {
     });
     await el.updateComplete;
 
-    q(el, '[data-testid="editor-photo-remove"]')?.click();
+    await removeAttachment(el, 'editor-photo-remove', 'confirm');
     await drain();
     await el.updateComplete;
 
@@ -1788,7 +2104,7 @@ describe('hv-item-editor: upload errors outlive their siblings', () => {
     );
     await el.updateComplete;
 
-    q(el, '[data-testid="editor-photo-remove"]')?.click();
+    await removeAttachment(el, 'editor-photo-remove', 'confirm');
     for (let i = 0; i < 4; i += 1) await el.updateComplete;
     expect(q(el, '[data-testid="editor-upload-retry"]')).toBeNull();
 
@@ -1796,5 +2112,146 @@ describe('hv-item-editor: upload errors outlive their siblings', () => {
     await el.updateComplete;
 
     expect(q(el, '[data-testid="editor-upload"]')).toBeNull();
+  });
+});
+
+// A multi-MB photo on a phone connection renders as one static word for twenty
+// seconds unless something moves, and the queue that reported it sat two
+// sections below the grid the user was watching.
+describe('hv-item-editor: the upload queue reports where the work is', () => {
+  function pick(el: HVItemEditor, testid: string, files: File[]) {
+    const input = q(el, `[data-testid="${testid}"]`) as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    input.dispatchEvent(new Event('change'));
+  }
+
+  /** Hold the upload open so the queue can be inspected mid-flight. */
+  function stalledMedia() {
+    return makeMediaBindings({ upload: () => new Promise<Item>(() => {}) });
+  }
+
+  it('files each queue under the section that started it', async () => {
+    const el = await mount(makeItem({ id: 'i-1' }), { media: stalledMedia() });
+    await el.updateComplete;
+
+    pick(el, 'editor-photo-input', [new File(['x'], 'shelf.png', { type: 'image/png' })]);
+    pick(el, 'editor-manual-input', [new File(['x'], 'manual.pdf', { type: 'application/pdf' })]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    const lists = all(el, '[data-testid="editor-upload-list"]');
+    expect(lists.map((l) => l.dataset.kind)).toEqual(['picture', 'manual']);
+    expect(lists[0].textContent).toContain('shelf.png');
+    expect(lists[0].textContent).not.toContain('manual.pdf');
+    expect(lists[1].textContent).toContain('manual.pdf');
+    // Each list sits inside the section whose picker filled it.
+    expect(lists[0].closest('.cell')?.querySelector('[data-testid="editor-photos"]')).toBeTruthy();
+    expect(lists[1].closest('.cell')?.querySelector('[data-testid="editor-documents"]')).toBeTruthy();
+  });
+
+  it('moves something while a file is in flight, and stops when it fails', async () => {
+    const el = await mount(makeItem({ id: 'i-1' }), { media: stalledMedia() });
+    await el.updateComplete;
+
+    pick(el, 'editor-photo-input', [new File(['x'], 'shelf.png', { type: 'image/png' })]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    const row = q(el, '[data-testid="editor-upload"]') as HTMLElement;
+    expect(row.dataset.state).toBe('uploading');
+    const bar = q(el, '[data-testid="editor-upload-progress"]') as HTMLElement;
+    expect(bar).toBeTruthy();
+    // Indeterminate on purpose: the WebSocket path reports no bytes sent, so
+    // the bar must not carry a value it would have to invent.
+    expect(bar.getAttribute('role')).toBe('progressbar');
+    expect(bar.hasAttribute('aria-valuenow')).toBe(false);
+  });
+
+  it('drops the indicator once the row is an error someone has to read', async () => {
+    const el = await mount(makeItem({ id: 'i-1' }), {
+      media: makeMediaBindings({
+        upload: async () => {
+          throw new Error('file content is not one of the accepted types');
+        },
+      }),
+    });
+    await el.updateComplete;
+
+    pick(el, 'editor-photo-input', [new File(['x'], 'broken.jpg', { type: 'image/png' })]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    expect((q(el, '[data-testid="editor-upload"]') as HTMLElement).dataset.state).toBe('error');
+    expect(q(el, '[data-testid="editor-upload-progress"]')).toBe(null);
+  });
+
+  it('leaves the motion to the people who asked for it', async () => {
+    const css = editorCss();
+    expect(css).toMatch(/@media \(prefers-reduced-motion: no-preference\) \{ \.progress \.fill \{[^}]*animation:/);
+    expect(css).toMatch(/@keyframes hv-upload-sweep/);
+  });
+});
+
+describe('hv-item-editor: touch targets and the shared tally', () => {
+  // WCAG 2.2 asks 24px of every pointer target; the remove X measured 22.
+  it('gives the photo remove control the pointer minimum', () => {
+    expect(editorCss()).toMatch(/\.photos \.remove \{[^}]*width: 24px;[^}]*height: 24px/);
+  });
+
+  it('grows the tile controls into a real strip on a phone', () => {
+    const css = editorCss();
+    expect(css).toMatch(/\.tile-controls \{[^}]*height: 24px/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.tile-controls \{[^}]*height: var\(--hv-tap-min, 24px\)/);
+  });
+
+  it('sizes the queue controls from the same token', () => {
+    const css = editorCss();
+    expect(css).toMatch(
+      /\.upload-list li \.retry,\s*\.upload-list li \.dismiss \{[^}]*min-height: var\(--hv-tap-min, 24px\)/,
+    );
+  });
+
+  // The count beside a facet is declared once, in the shared sheet.
+  it('prices its custom fields with the shared tally', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    expect(q(el, '[data-testid="editor-cf-tally"]')?.classList.contains('hv-tally')).toBe(true);
+    // This component's own sheet may place the tally and nothing more — size
+    // and dimming belong to the one declaration in `base`.
+    const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
+    const own = String((styles as { cssText: string }[])[(styles as unknown[]).length - 1].cssText).replace(
+      /\s+/g,
+      ' ',
+    );
+    for (const [, body] of own.matchAll(/\.hv-tally[^{]*\{([^}]*)\}/g)) {
+      expect(body).not.toMatch(/font-size|opacity|color/);
+    }
+    expect(own).not.toMatch(/\.custom-head \.tally\b/);
+  });
+});
+
+// The create form has no PHOTOS section at all — an upload is filed against an
+// item id and there is none yet. Unexplained, that reads as a missing feature.
+describe('hv-item-editor: why attachments wait for the first save', () => {
+  it('says so where the photo grid will be', async () => {
+    const el = await mount(null, { media: makeMediaBindings() });
+
+    expect(q(el, '[data-testid="editor-photos"]')).toBe(null);
+    expect(q(el, '[data-testid="editor-attachment-hint"]')?.textContent).toContain('Save the item first');
+  });
+
+  it('says nothing once the sections are actually there', async () => {
+    const el = await mount(makeItem({ id: 'i-1' }), { media: makeMediaBindings() });
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="editor-attachment-hint"]')).toBe(null);
+    expect(q(el, '[data-testid="editor-photos"]')).toBeTruthy();
+  });
+
+  // A host that hands over no media bindings offers no attachments at any
+  // point, so there is nothing to explain the absence of.
+  it('stays quiet when the card carries no attachment support at all', async () => {
+    const el = await mount(null);
+
+    expect(q(el, '[data-testid="editor-attachment-hint"]')).toBe(null);
   });
 });

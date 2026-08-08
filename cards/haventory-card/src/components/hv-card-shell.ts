@@ -11,7 +11,7 @@ import { emptyKindFor } from '../ui/empty-state';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import { HostSurfaces } from '../host-surfaces';
 import type { Store } from '../store/store';
-import type { Item, StoreFilters, StoreState } from '../store/types';
+import type { Item, Location, StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 import './hv-banner';
 import './hv-bottom-sheet';
@@ -541,6 +541,16 @@ export class HVCardShell extends LitElement {
     this._editing = next;
   }
 
+  /**
+   * The editor's first-run way out of an empty location picker: a root location
+   * with no area, handed back so the form can file the item in it at once.
+   */
+  private _createLocationForEditor = (name: string): Promise<Location> => {
+    const store = this.store;
+    if (!store) return Promise.reject(new Error('Not connected to Home Assistant yet.'));
+    return store.createLocation(name, null, null);
+  };
+
   private _onEditorSave = async (e: CustomEvent) => {
     const detail = e.detail as {
       itemId: string | null;
@@ -594,6 +604,7 @@ export class HVCardShell extends LitElement {
       .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
       .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
       .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
+      .createLocation=${this._createLocationForEditor}
       ?mobile=${this.mobile}
       .busy=${this._editorBusy}
       .errorMessage=${this._editorError}
@@ -1186,6 +1197,7 @@ export class HVCardShell extends LitElement {
             .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
             .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
             .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
+            .createLocation=${this._createLocationForEditor}
             .busy=${this._editorBusy}
             .errorMessage=${this._editorError}
             @cancel=${() => {
