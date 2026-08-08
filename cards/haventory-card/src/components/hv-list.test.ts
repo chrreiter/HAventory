@@ -65,6 +65,31 @@ describe('hv-list: editing', () => {
     expect(el.hasAttribute('editing')).toBe(false);
   });
 
+  // The template is a stable callback, so Lit re-runs it only when one of this
+  // component's own properties changes. The token is how a host says its editor
+  // needs redrawing for a reason nothing here binds.
+  it('re-runs the editor template when the opaque token changes', async () => {
+    let runs = 0;
+    const el = await mount({
+      editingItemId: 'a',
+      editorTemplate: () => {
+        runs += 1;
+        return html`<div data-testid="stub-editor">${runs}</div>`;
+      },
+    });
+    expect(runs).toBe(1);
+
+    el.editorEpoch = 2;
+    await el.updateComplete;
+    expect(runs).toBe(2);
+    expect(el.shadowRoot?.querySelector('[data-testid="stub-editor"]')?.textContent).toBe('2');
+  });
+
+  it('does not treat the token as an editing signal', async () => {
+    const el = await mount({ editorEpoch: 7 });
+    expect(el.hasAttribute('editing')).toBe(false);
+  });
+
   it('gives the scroller more room while editing', () => {
     const css = (customElements.get('hv-list') as typeof HVList).styles;
     const text = (Array.isArray(css) ? css : [css]).map((s) => String(s.cssText)).join('\n');

@@ -1073,6 +1073,174 @@ describe('hv-card-shell: inline editing', () => {
   });
 });
 
+// The inline expander is the one surface that renders the editor through
+// `hv-list`'s template callback rather than directly, so it is the only one
+// where shell state can reach the host and stop there. Everything below is
+// about state the list itself does not bind.
+describe('hv-card-shell: inline editor reactivity', () => {
+  type EditorProps = {
+    locations: Location[] | null;
+    locationTree: { id: string }[];
+    tagSuggestions: string[];
+    busy: boolean;
+    errorMessage: string | null;
+  };
+  const list = (sr: ShadowRoot) => sr.querySelector('hv-list') as HTMLElement & { editorEpoch: unknown };
+  const editor = (sr: ShadowRoot) =>
+    list(sr).shadowRoot?.querySelector('hv-item-editor') as (HTMLElement & EditorProps) | null;
+  const row = (sr: ShadowRoot, id: string) =>
+    [...(list(sr).shadowRoot?.querySelectorAll('hv-list-row') ?? [])]
+      .map((r) => r as HTMLElement & { item: Item })
+      .find((r) => r.item.id === id) ?? null;
+  const openEditor = async (el: HVCardShell, sr: ShadowRoot, id: string) => {
+    (row(sr, id)!.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+  };
+
+  it('delivers a location created elsewhere into the open expander', async () => {
+    const { el, hass, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Drill' })] });
+    await openEditor(el, sr, '1');
+    expect(editor(sr)?.locations ?? []).toHaveLength(0);
+
+    hass.__setLocations([loc('L1', 'Garage')]);
+    hass.__emit('locations', 'created', { location_id: 'L1' });
+    await settle(el);
+    await settle(el);
+
+    expect(editor(sr)?.locations?.map((l) => l.name)).toEqual(['Garage']);
+    expect(editor(sr)?.locationTree.map((n) => n.id)).toEqual(['L1']);
+  });
+
+  it('delivers a newly named tag into the open expander’s suggestions', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Drill' })] });
+    await openEditor(el, sr, '1');
+    expect(editor(sr)?.tagSuggestions).toEqual([]);
+
+    store.addDraftValue('tag', 'power-tools');
+    await settle(el);
+
+    expect(editor(sr)?.tagSuggestions).toEqual(['power-tools']);
+  });
+
+  it('carries the save busy state into the open expander', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Old' })] });
+    let land!: (item: Item) => void;
+    store['ws'].updateItem = () => new Promise<Item>((resolve) => (land = resolve));
+
+    await openEditor(el, sr, '1');
+    const nameInput = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    nameInput.value = 'New';
+    nameInput.dispatchEvent(new Event('input'));
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const save = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement;
+    expect(editor(sr)?.busy).toBe(true);
+    expect(save.textContent?.trim()).toBe('Saving…');
+    expect(save.disabled).toBe(true);
+
+    land(makeItem({ id: '1', name: 'New', version: 2 }));
+    await settle(el);
+  });
+
+  // The expander can be scrolled well past the card's banner list, so a save
+  // that did not land has to say so inside the form the user is still looking at.
+  it('shows a rejected save inside the open expander and clears the busy state', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Old' })] });
+    store['ws'].updateItem = async () => {
+      throw { code: 'storage_error', message: 'the store is read-only' };
+    };
+
+    await openEditor(el, sr, '1');
+    const nameInput = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    nameInput.value = 'New';
+    nameInput.dispatchEvent(new Event('input'));
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    const banner = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-error"]');
+    expect(banner?.textContent).toContain('the store is read-only');
+    expect(editor(sr)?.busy).toBe(false);
+    expect(
+      (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).textContent?.trim(),
+    ).toBe('Save');
+  });
+
+  it('says a conflict in the same words the card banner uses', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Old' })] });
+    store['ws'].updateItem = async () => {
+      throw { code: 'conflict', message: 'version conflict: expected 1, actual 2' };
+    };
+
+    await openEditor(el, sr, '1');
+    const nameInput = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    nameInput.value = 'New';
+    nameInput.dispatchEvent(new Event('input'));
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    // Version numbers mean nothing inside a form; the card's banner already
+    // frames this case in words and the two surfaces have to agree.
+    expect(editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-error"]')?.textContent).toContain(
+      'Someone else changed this item',
+    );
+  });
+
+  it('drops the error again when the next edit opens', async () => {
+    const items = [makeItem({ id: '1', name: 'Old' }), makeItem({ id: '2', name: 'Other' })];
+    const { el, store, sr } = await mountShell({ items });
+    store['ws'].updateItem = async () => {
+      throw { code: 'storage_error', message: 'the store is read-only' };
+    };
+
+    await openEditor(el, sr, '1');
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+    expect(editor(sr)?.errorMessage).toBe('the store is read-only');
+
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+    await openEditor(el, sr, '2');
+    expect(editor(sr)?.errorMessage).toBe(null);
+  });
+
+  // The token is derived from what the editor reads, not stamped every render:
+  // a re-render for anything else must leave the list — and every row in it —
+  // exactly where it was.
+  it('leaves the list alone when the shell re-renders for something else', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Drill' })] });
+    await openEditor(el, sr, '1');
+    const before = list(sr).editorEpoch;
+
+    (sr.querySelector('[data-testid="filter-toggle"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(sr.querySelector('hv-filter-panel')).toBeTruthy();
+    expect(list(sr).editorEpoch).toBe(before);
+  });
+
+  // The other half of the same contract, and the one a reader is likelier to
+  // get backwards: the location tree is state the open form renders, so when it
+  // is replaced the list has to redraw. Changing a filter refetches that tree,
+  // which is why a filter chip moves the epoch rather than leaving it alone.
+  it('moves the epoch when the location tree the open form reads is replaced', async () => {
+    const { el, hass, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Drill' })] });
+    await openEditor(el, sr, '1');
+    const before = list(sr).editorEpoch;
+
+    hass.__setLocations([loc('L1', 'Garage')]);
+    hass.__emit('locations', 'created', { location_id: 'L1' });
+    await settle(el);
+    await settle(el);
+
+    expect(list(sr).editorEpoch).not.toBe(before);
+    expect(editor(sr)?.locationTree.map((n) => n.id)).toEqual(['L1']);
+  });
+});
+
 describe('hv-card-shell: mobile detail sheet', () => {
   const sheet = (sr: ShadowRoot) =>
     sr.querySelector('[data-testid="card-detail-sheet"]') as HTMLElement & { open: boolean; item: Item | null };

@@ -1031,13 +1031,11 @@ export class HVItemEditor extends LitElement {
   /**
    * Locations this form created, until the `locations` prop carries them.
    *
-   * The inline expander is handed to `hv-list` as a template callback, which it
-   * re-invokes only when one of its *own* properties changes. A location create
-   * changes neither the item list nor anything else that component binds, so
-   * the refreshed store state can reach the host without ever reaching this
-   * form — leaving the field it just filled reading "No location". The created
-   * `Location` is in hand regardless, so holding it is what makes the picker
-   * name what it created on every host.
+   * The picker fills the Location field the moment the create resolves, but the
+   * list it names from is a host property that reaches this form an update
+   * later at the earliest. The created `Location` is in hand regardless, so
+   * holding it is what keeps the field from reading "No location" in the gap —
+   * the same defence `_uploaded` gives the attachment list.
    */
   @state() private _createdLocations: Location[] = [];
 

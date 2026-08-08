@@ -11,7 +11,7 @@ import { emptyKindFor } from '../ui/empty-state';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import { HostSurfaces } from '../host-surfaces';
 import type { Store } from '../store/store';
-import type { Item, Location, StoreFilters, StoreState } from '../store/types';
+import type { ErrorEntry, Item, Location, StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 import './hv-banner';
 import './hv-bottom-sheet';
@@ -357,6 +357,11 @@ export class HVCardShell extends LitElement {
   @state() private _editing: string | 'new' | null = null;
   @state() private _editorBusy = false;
   @state() private _editorError: string | null = null;
+  /**
+   * Changes whenever anything `_renderEditor` reads has changed identity — see
+   * `_syncEditorEpoch`, which is the list of what that is.
+   */
+  @state() private _editorEpoch = 0;
   /** Item shown in the mobile detail sheet. */
   @state() private _detailItemId: string | null = null;
   @state() private _fullViewOpen = false;
@@ -383,6 +388,8 @@ export class HVCardShell extends LitElement {
   private readonly responsive = new ResponsiveController(this);
   private _storeUnsub?: () => void;
   private _media: MediaBindings | null = null;
+  /** Identities `_editorEpoch` was last bumped for; see `_syncEditorEpoch`. */
+  private _editorInputs: unknown[] = [];
 
   /**
    * Picture access for every surface below, built once per store.
@@ -439,6 +446,43 @@ export class HVCardShell extends LitElement {
     if (changed.has('forceMobile')) this.responsive.setForced(this.forceMobile);
     // Reflect the mode so child selectors and :host([mobile]) rules apply.
     this.toggleAttribute('mobile', this.mobile);
+    this._syncEditorEpoch();
+  }
+
+  /**
+   * Move `_editorEpoch` on when the inline editor's inputs have.
+   *
+   * On the desktop card the editor is not rendered here: `hv-list` gets it as a
+   * template callback and re-runs it only when one of *its* properties changes.
+   * Everything below is state `_renderEditor` reads that the list does not
+   * bind, so without a signal of its own a store change reaches this element
+   * and stops — leaving an open form showing what was true when it opened.
+   *
+   * Identity comparison is enough — the store replaces each of these wholesale
+   * rather than mutating it. Comparing at all, rather than bumping on every
+   * update, is what keeps a re-render that changed none of them — a dialog
+   * opening, the filter panel expanding, a row being selected — from redrawing
+   * the list and every row in it.
+   *
+   * Changing a filter is not one of those: `setFilters` refetches the location
+   * tree, which the open form reads, so it moves the epoch and should.
+   */
+  private _syncEditorEpoch() {
+    const st = this.st;
+    const next: unknown[] = [
+      st?.areasCache,
+      st?.mediaConfig,
+      st?.locationsFlatCache,
+      st?.locationTreeCache,
+      st?.distinctValuesCache,
+      this.media,
+      this._editorBusy,
+      this._editorError,
+    ];
+    if (next.some((value, i) => value !== this._editorInputs[i])) {
+      this._editorInputs = next;
+      this._editorEpoch += 1;
+    }
   }
 
   protected updated() {
@@ -572,8 +616,12 @@ export class HVCardShell extends LitElement {
     }
     // The store reports failures through its error queue rather than throwing,
     // so a new entry is how we know the save did not land. Keep the expander
-    // open in that case so the user's edits are still there to retry.
-    const failed = (this.st?.errorQueue.length ?? 0) > errorsBefore;
+    // open in that case so the user's edits are still there to retry — and say
+    // why inside it, because the card's banner list is above a form tall enough
+    // to have scrolled it off the screen.
+    const queue = this.st?.errorQueue ?? [];
+    const failed = queue.length > errorsBefore;
+    this._editorError = failed ? editorErrorText(queue[queue.length - 1]) : null;
     if (!failed) this._editing = null;
   };
 
@@ -1050,6 +1098,7 @@ export class HVCardShell extends LitElement {
         .loading=${st?.loading ?? true}
         .mobile=${mobile}
         .editorTemplate=${this._renderEditor}
+        .editorEpoch=${this._editorEpoch}
         .editingItemId=${this._editing === 'new' ? null : this._editing}
         .addingNew=${!mobile && this._editing === 'new'}
         .emptyKind=${emptyKindFor(this.st)}
@@ -1254,6 +1303,18 @@ export class HVCardShell extends LitElement {
   private get _filterPanel(): HVFilterPanel | null {
     return this.shadowRoot?.querySelector('hv-filter-panel') ?? null;
   }
+}
+
+/**
+ * What an open editor says about a save that did not land.
+ *
+ * A conflict's own message names version numbers, which say nothing to someone
+ * looking at a form; the card's banner already frames that case in words and
+ * carries the ways out of it, so the form repeats that sentence rather than
+ * giving a second, differently worded account of the same event.
+ */
+function editorErrorText(entry: ErrorEntry): string {
+  return entry.kind === 'conflict' ? 'Someone else changed this item.' : entry.message;
 }
 
 function readPanelPref(): boolean {

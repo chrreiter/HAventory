@@ -131,6 +131,16 @@ export class HVList extends LitElement {
    * needing to know anything about the edit form.
    */
   @property({ attribute: false }) editorTemplate: ((itemId: string | null) => unknown) | null = null;
+  /**
+   * Opaque token the host changes when the template would draw something new.
+   *
+   * The template is a stable callback, so Lit re-runs it only when one of this
+   * component's *own* reactive properties changes — and the form it returns
+   * reads host state that has nothing to do with a list of rows. Carrying the
+   * signal as a value nothing here reads is what keeps that ignorance intact:
+   * the host decides what counts as a change, this component only redraws.
+   */
+  @property({ attribute: false }) editorEpoch: unknown = 0;
   /** Row currently expanded into the editor; its own row is hidden while it is. */
   @property({ type: String }) editingItemId: string | null = null;
   /** Pin an empty editor at the top of the list ("Add item"). */
