@@ -1440,8 +1440,9 @@ describe('hv-organize-dialog: disclosures come into view', () => {
 
   const scrolled = () => scrolls.map((s) => s.el);
 
-  // The destructive one: it is what stands between a tap and every item on a
-  // status being reassigned, and it was the case found in the live pass.
+  // The destructive one: it stands between a tap and every item on a status
+  // being reassigned, so rendering it off-screen makes delete look broken and
+  // invites the second tap.
   it('brings the status delete guard into view', async () => {
     const { el, sr } = await mount({ tab: 'statuses', items });
     const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
@@ -1453,8 +1454,8 @@ describe('hv-organize-dialog: disclosures come into view', () => {
     // screen does not move; no `behavior`, so there is no motion to gate on a
     // reduced-motion preference.
     expect(scrolls[0].options).toEqual({ block: 'nearest' });
-    // A guard announces itself where it stands and takes no focus.
-    expect(sr.activeElement).not.toBe(q(sr, '[data-testid="status-reassign"]'));
+    // A guard announces itself through role="alert" and takes no focus.
+    expect(q(sr, '[data-testid="status-guard"]')?.contains(sr.activeElement)).toBe(false);
   });
 
   // This one renders after the whole tree rather than beside its row, so it is
@@ -1466,6 +1467,7 @@ describe('hv-organize-dialog: disclosures come into view', () => {
     await settle(el);
 
     expect(scrolled()).toEqual([q(sr, '[data-testid="location-guard"]')]);
+    expect(q(sr, '[data-testid="location-guard"]')?.contains(sr.activeElement)).toBe(false);
   });
 
   it('brings the location editor into view and puts the caret in its name field', async () => {
