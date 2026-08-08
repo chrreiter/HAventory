@@ -594,6 +594,35 @@ describe('hv-location-tree: manage mode', () => {
     expect(seen).toEqual(['edit', 'delete']);
     expect(editId).toBe('garage');
   });
+
+  // The organize dialog sizes its own rows for a finger, but the Locations tab
+  // is this component and its stylesheet is out of that dialog's reach: DOM-
+  // measured at 390px, the count link came to 14px tall and the ⋮ to 26×26
+  // beside 44px controls on the other three tabs.
+  it('sizes the managed row for a finger, matching the dialog it renders in', () => {
+    const styles = (customElements.get('hv-location-tree') as typeof HVLocationTree).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+
+    // WCAG 2.2 asks 24px of any pointer, wherever the count is a link.
+    expect(css).toMatch(/\.count\.link \{[^}]*min-height: 24px/);
+    expect(css).toMatch(/\.row\.manage\.touch \.count\.link \{[^}]*min-height: var\(--hv-tap-min, 44px\)/);
+    expect(css).toMatch(
+      /\.row\.manage\.touch \.action \{[^}]*width: var\(--hv-tap-min, 44px\)[^}]*height: var\(--hv-tap-min, 44px\)/,
+    );
+    // Browsing is a list to read down; 44px counts would stretch it past what a
+    // phone shows at once, so the bump stops at the managing tree.
+    expect(css).not.toMatch(/:host\(\[mobile\]\) \.count/);
+  });
+
+  it('marks the row so the touch sizing has something to hang on', async () => {
+    const el = await mount({ manage: true, mobile: true });
+    expect(rows(el)[0].className).toContain('manage');
+    expect(rows(el)[0].className).toContain('touch');
+    expect(q(el, '[data-testid="tree-more"]')).toBeTruthy();
+  });
 });
 
 // A first run has no locations at all, and the picker is where the concept is

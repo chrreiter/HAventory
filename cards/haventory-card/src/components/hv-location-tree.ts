@@ -131,9 +131,22 @@ export class HVLocationTree extends LitElement {
         padding: 0 2px;
         font: 400 12px var(--hv-font);
         color: var(--hv-primary-dark);
+        /* 12px text is a 14px-tall target; the box has to be told to be bigger
+           than its own line. WCAG 2.2 asks 24px of any pointer, and the count
+           is a target wherever it is a link — the browsing sidebar included. */
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
       }
       .count.link:hover {
         text-decoration: underline;
+      }
+      /* A phone reaching for a managed row needs the full 44px, and the row it
+         sits in grows to hold it. Confined to the managing tree: the browsing
+         sidebar is a list to read down, and 44px counts would stretch it past
+         what a phone can show at once. */
+      .row.manage.touch .count.link {
+        min-height: var(--hv-tap-min, 44px);
       }
       /* Left-packed like a value row (name, then count) instead of the name
          pushing the count to the far edge. */
@@ -205,6 +218,13 @@ export class HVLocationTree extends LitElement {
         background: none;
         color: var(--hv-primary-dark);
         padding: 0;
+      }
+      /* The touch layout's single ⋮ is the whole of a row's reach on a phone,
+         so it carries the tap target the organize dialog's other tabs give
+         their row actions. */
+      .row.manage.touch .action {
+        width: var(--hv-tap-min, 44px);
+        height: var(--hv-tap-min, 44px);
       }
       .action.danger {
         color: var(--hv-error);

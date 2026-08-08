@@ -571,6 +571,27 @@ describe('hv-organize-dialog: locations', () => {
     expect(store.state.value.locationsFlatCache).toHaveLength(2);
   });
 
+  // The mark sat on `.glyph`, the icon-picker button's class, so a span that
+  // does nothing rendered as a 30×26 bordered box under a pointer cursor.
+  it('inks the guard mark with warn and gives it nothing a button carries', async () => {
+    const items = [makeItem({ id: '1', location_id: 'shelf-a' })];
+    const { el, sr } = await mount({ items, locations });
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+
+    (tree.shadowRoot?.querySelector('[data-testid="tree-delete"][data-id="garage"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const guard = q(sr, '[data-testid="location-guard"]');
+    expect(guard?.querySelector('.guard-mark')).not.toBe(null);
+    expect(guard?.querySelector('.glyph')).toBe(null);
+
+    const css = dialogCss();
+    expect(css).toMatch(/\.guard-mark \{[^}]*color: var\(--hv-warn\)/);
+    expect(css).toMatch(/\.guard-mark \{[^}]*flex: none/);
+    expect(css).not.toMatch(/\.guard-mark \{[^}]*border/);
+    expect(css).not.toMatch(/\.guard-mark \{[^}]*cursor/);
+  });
+
   it('deletes an empty location without a guard', async () => {
     const { el, store, sr } = await mount({ locations: [loc('spare', 'Spare')] });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
@@ -1346,10 +1367,10 @@ describe('hv-organize-dialog: statuses', () => {
     expect(guard?.querySelector('.guard-target select')).not.toBe(null);
   });
 
-  // DOM-measured on a phone before this pass: chevrons 15×15 stacked a pixel
-  // apart, edit/delete 26×26, swatches 26×22, the count link 14px tall. WCAG
-  // 2.2 asks 24px of every pointer; a finger wants the platform's 44.
-  it('sizes every statuses-tab control for a finger', () => {
+  // DOM-measured on a phone: chevrons 15×15 stacked a pixel apart, edit/delete
+  // 26×26, swatches 26×22, the count link 14px tall. WCAG 2.2 asks 24px of
+  // every pointer; a finger wants the platform's 44.
+  it('sizes every row control for a finger, on all four tabs', () => {
     const css = dialogCss();
     for (const [selector, size] of [
       ['\\.move button', '24px'],
@@ -1357,28 +1378,217 @@ describe('hv-organize-dialog: statuses', () => {
     ] as const) {
       expect(css, selector).toMatch(new RegExp(`${selector} \\{[^}]*height: ${size}`));
     }
-    expect(css).toMatch(/\.status-row \.count-link \{[^}]*min-height: 24px/);
+    expect(css).toMatch(/\.count-link \{[^}]*min-height: 24px/);
 
-    for (const selector of [
-      '\\.move button',
-      '\\.swatch',
-      '\\.swatches \\.glyph',
-      '\\.status-row \\.row-actions button',
-    ]) {
+    for (const selector of ['\\.move button', '\\.swatch', '\\.glyph', '\\.row-actions button']) {
       expect(css, selector).toMatch(
         new RegExp(
           `:host\\(\\[mobile\\]\\) ${selector} \\{[^}]*width: var\\(--hv-tap-min, 44px\\)[^}]*height: var\\(--hv-tap-min, 44px\\)`,
         ),
       );
     }
-    expect(css).toMatch(
-      /:host\(\[mobile\]\) \.status-row \.count-link \{[^}]*min-height: var\(--hv-tap-min, 44px\)/,
-    );
+    expect(css).toMatch(/:host\(\[mobile\]\) \.count-link \{[^}]*min-height: var\(--hv-tap-min, 44px\)/);
+
+    // The count link and the row actions are the same controls on Locations,
+    // Categories and Tags, so none of the sizing is scoped to a status row —
+    // one dialog cannot offer two target sizes for one control.
+    expect(css).not.toMatch(/\.status-row \.count-link/);
+    expect(css).not.toMatch(/:host\(\[mobile\]\) \.status-row/);
+  });
+
+  // `.glyph` is the icon-picker button — a bordered box with a pointer cursor.
+  // Sharing it made the mobile picker sizing reach for `.swatches` to stay off
+  // the guard; with the mark on a class of its own, neither needs the scoping.
+  it('keeps .glyph meaning the icon-picker button alone', () => {
+    const css = dialogCss();
+    expect(css).not.toMatch(/\.swatches \.glyph/);
+    expect(css).not.toMatch(/\.guard \.glyph/);
   });
 
   // The colour row compressed ten swatches onto one line while the icon row
   // wrapped; at touch size neither fits, so both must wrap.
   it('wraps the swatch rows instead of squeezing them onto one line', () => {
     expect(dialogCss()).toMatch(/\.swatches \{[^}]*flex-wrap: wrap/);
+  });
+});
+
+// Every disclosure renders after the row that opened it, inside a `.body` that
+// scrolls, so one opened from a row near the bottom lands below the fold and
+// the tap reads as having done nothing.
+describe('hv-organize-dialog: disclosures come into view', () => {
+  const locations = [loc('garage', 'Garage', null, 'area-garage'), loc('shelf-a', 'Shelf A', 'garage')];
+  const items = [
+    makeItem({ id: '1', location_id: 'shelf-a', tags: ['battery'], category: 'Tools' }),
+    makeItem({ id: '2', tags: ['aa'], category: 'Consumables', status: 'missing' }),
+  ];
+
+  // jsdom performs no layout and implements no `scrollIntoView`, so these pin
+  // the call and its options; whether the element ends up visible is a live
+  // check.
+  type Scrollable = { scrollIntoView?: (options?: unknown) => void };
+  let scrolls: { el: Element; options: unknown }[] = [];
+  beforeEach(() => {
+    scrolls = [];
+    (Element.prototype as Scrollable).scrollIntoView = function (this: Element, options?: unknown) {
+      scrolls.push({ el: this, options });
+    };
+  });
+  afterEach(() => {
+    delete (Element.prototype as Scrollable).scrollIntoView;
+    document.body.innerHTML = '';
+  });
+
+  const scrolled = () => scrolls.map((s) => s.el);
+
+  // The destructive one: it stands between a tap and every item on a status
+  // being reassigned, so rendering it off-screen makes delete look broken and
+  // invites the second tap.
+  it('brings the status delete guard into view', async () => {
+    const { el, sr } = await mount({ tab: 'statuses', items });
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-remove"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(scrolled()).toEqual([q(sr, '[data-testid="status-guard"]')]);
+    // 'nearest' scrolls no further than it must, so a disclosure already on
+    // screen does not move; no `behavior`, so there is no motion to gate on a
+    // reduced-motion preference.
+    expect(scrolls[0].options).toEqual({ block: 'nearest' });
+    // A guard announces itself through role="alert" and takes no focus.
+    expect(q(sr, '[data-testid="status-guard"]')?.contains(sr.activeElement)).toBe(false);
+  });
+
+  // This one renders after the whole tree rather than beside its row, so it is
+  // below the fold for any tree taller than the panel.
+  it('brings the location delete guard into view', async () => {
+    const { el, sr } = await mount({ items, locations });
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+    (tree.shadowRoot?.querySelector('[data-testid="tree-delete"][data-id="garage"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(scrolled()).toEqual([q(sr, '[data-testid="location-guard"]')]);
+    expect(q(sr, '[data-testid="location-guard"]')?.contains(sr.activeElement)).toBe(false);
+  });
+
+  it('brings the location editor into view and puts the caret in its name field', async () => {
+    const { el, sr } = await mount({ locations });
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+    (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(scrolled()).toEqual([q(sr, '[data-testid="location-editor"]')]);
+    expect(sr.activeElement).toBe(q(sr, '[data-testid="location-name"]'));
+  });
+
+  it('brings the value editor into view and puts the caret in its target field', async () => {
+    const { el, sr } = await mount({ items, tab: 'tags' });
+    const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'battery')!;
+    (row.querySelector('[data-testid="value-rename"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(scrolled()).toEqual([q(sr, '[data-testid="value-editor"]')]);
+    expect(sr.activeElement).toBe(q(sr, '[data-testid="value-target"]'));
+  });
+
+  it('brings the status editor into view and puts the caret in its label field', async () => {
+    const { el, sr } = await mount({ tab: 'statuses', items });
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'ok');
+    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(scrolled()).toEqual([q(sr, '[data-testid="status-editor"]')]);
+    expect(sr.activeElement).toBe(q(sr, '[data-testid="status-label"]'));
+  });
+
+  // The pane must not jump while the household is typing in the form it just
+  // opened, nor when anything else re-renders the dialog.
+  it('scrolls once per open, not on the re-renders that follow', async () => {
+    const { el, sr } = await mount({ locations });
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+    (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(scrolls).toHaveLength(1);
+
+    const name = q(sr, '[data-testid="location-name"]') as HTMLInputElement;
+    name.value = 'Big Garage';
+    name.dispatchEvent(new Event('input'));
+    await settle(el);
+
+    el.requestUpdate();
+    await settle(el);
+
+    expect(scrolls).toHaveLength(1);
+  });
+
+  it('scrolls again when a second row opens the same kind of disclosure', async () => {
+    const { el, sr } = await mount({ locations: [loc('garage', 'Garage'), loc('attic', 'Attic')] });
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+    (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement).click();
+    await settle(el);
+    (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="attic"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(scrolls).toHaveLength(2);
+    expect(scrolls[1].el).toBe(q(sr, '[data-testid="location-editor"]'));
+  });
+
+  // Re-opening the dialog is DialogFocus's moment: it puts focus on the panel,
+  // and a disclosure carried over from last time must not pull it away.
+  it('moves nothing when the dialog re-opens with a disclosure still expanded', async () => {
+    const { el, sr } = await mount({ tab: 'statuses', items });
+    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(scrolls).toHaveLength(1);
+
+    el.open = false;
+    await settle(el);
+    el.open = true;
+    await settle(el);
+
+    expect(q(sr, '[data-testid="status-editor"]')).not.toBe(null);
+    expect(scrolls).toHaveLength(1);
+    expect(sr.activeElement).toBe(q(sr, '[data-testid="organize-dialog"]'));
+  });
+
+  // On a phone the ⋮ sheet replaces the row's separate buttons, so it is the
+  // only way into edit, merge and delete. DOM-measured at 390px: opened from
+  // the bottom row it stood 216px tall with 16px of it on screen.
+  it('brings the location ⋮ sheet into view', async () => {
+    const { el, sr } = await mount({ items, locations, mobile: true });
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+    (tree.shadowRoot?.querySelector('[data-testid="tree-more"][data-id="garage"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(scrolled()).toEqual([q(sr, '[data-testid="location-sheet"]')]);
+    expect(scrolls[0].options).toEqual({ block: 'nearest' });
+    // A menu of what the row can do, not a form: it claims no field, so the
+    // caret stays where the tap left it.
+    expect(q(sr, '[data-testid="location-sheet"]')?.contains(sr.activeElement)).toBe(false);
+  });
+
+  it('brings the value ⋮ sheet into view', async () => {
+    const { el, sr } = await mount({ items, tab: 'tags', mobile: true });
+    const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'battery')!;
+    (row.querySelector('[data-testid="value-more"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(scrolled()).toEqual([q(sr, '[data-testid="value-sheet"]')]);
+    expect(q(sr, '[data-testid="value-sheet"]')?.contains(sr.activeElement)).toBe(false);
+  });
+
+  // The sheet closes as the editor it launched opens, and it is the editor the
+  // household is now looking at.
+  it('follows the ⋮ sheet to the editor it opens', async () => {
+    const { el, sr } = await mount({ items, locations, mobile: true });
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+    (tree.shadowRoot?.querySelector('[data-testid="tree-more"][data-id="garage"]') as HTMLButtonElement).click();
+    await settle(el);
+    (q(sr, '[data-testid="location-sheet-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="location-sheet"]')).toBe(null);
+    expect(scrolls).toHaveLength(2);
+    expect(scrolls[1].el).toBe(q(sr, '[data-testid="location-editor"]'));
+    expect(sr.activeElement).toBe(q(sr, '[data-testid="location-name"]'));
   });
 });
