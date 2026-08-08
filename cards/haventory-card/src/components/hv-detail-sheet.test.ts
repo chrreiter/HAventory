@@ -2,6 +2,7 @@ import './hv-detail-sheet';
 import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import type { HVDetailSheet } from './hv-detail-sheet';
+import type { HVBottomSheet } from './hv-bottom-sheet';
 import type { Item } from '../store/types';
 
 async function mount(item: Partial<Item>, props: Partial<HVDetailSheet> = {}) {
@@ -532,6 +533,57 @@ describe('hv-detail-sheet: pictures', () => {
     await el.updateComplete;
 
     expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
+  });
+
+  // The lightbox chrome floats on the photo, so a white frame is the worst
+  // case its scrim has to survive: the counter is 13px text and wants 4.5:1
+  // against whatever it lands on, which the chevrons beside it do not.
+  it('keeps the lightbox controls readable over a white photo', () => {
+    const alpha = Number(
+      /--hv-lightbox-scrim: rgba\(0, 0, 0, ([\d.]+)\)/.exec(sheetCss())?.[1],
+    );
+    expect(alpha).toBeGreaterThan(0);
+
+    const channel = (c: number) => {
+      const s = c / 255;
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    };
+    // The scrim over a pure white frame, which is what the white ink sits on.
+    const backing = channel(255 * (1 - alpha));
+    expect((1.05) / (backing + 0.05)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('backs every lightbox control with that one scrim', () => {
+    const css = sheetCss();
+    for (const selector of ['\\.lightbox \\.close', '\\.lightbox \\.nav', '\\.lightbox \\.counter']) {
+      const rule = new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+      expect(rule).toContain('background: var(--hv-lightbox-scrim)');
+    }
+  });
+
+  // That close takes the thumbnail focus would have gone back to with it, so
+  // there is nothing left to return to and focus falls out of the sheet —
+  // onto <body>, where the sheet's own Escape can no longer reach it.
+  it('keeps focus in the sheet when the photo it would return to is gone', async () => {
+    const el = await mount(
+      { id: 'i-1', name: 'Drill', version: 3, attachments: shots() },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    const opener = all(el, '[data-testid="sheet-photo-open"]')[0];
+    opener.focus();
+    opener.click();
+    await el.updateComplete;
+
+    el.item = makeItem({ id: 'i-1', name: 'Drill', version: 4, attachments: [] });
+    await el.updateComplete;
+    await el.updateComplete;
+
+    expect(opener.isConnected).toBe(false);
+    const sheet = q(el, 'hv-bottom-sheet') as HVBottomSheet;
+    const panel = sheet.shadowRoot?.querySelector('[data-testid="bottom-sheet"]');
+    expect(document.activeElement).not.toBe(document.body);
+    expect(sheet.shadowRoot?.activeElement).toBe(panel);
   });
 });
 

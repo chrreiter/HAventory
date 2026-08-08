@@ -23,6 +23,7 @@ import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, ScalarValu
 import './hv-bottom-sheet';
 import './hv-checkout-popover';
 import './hv-item-editor';
+import type { HVBottomSheet } from './hv-bottom-sheet';
 import type { HVItemEditor } from './hv-item-editor';
 
 /**
@@ -363,6 +364,13 @@ export class HVDetailSheet extends LitElement {
            the sheet behind it competes at any transparency. */
         background: #000;
         z-index: 10;
+        /* Every control here floats on the photo, so its own backing is the
+           only contrast it is guaranteed. The worst case is a white frame,
+           where this resolves to #6B6B6B — 5.3:1 under the white ink, enough
+           for the counter, which is 13px text and therefore wants 4.5:1 rather
+           than the 3:1 the chevrons would settle for. One value for all three,
+           set by the strictest thing sitting on it. */
+        --hv-lightbox-scrim: rgba(0, 0, 0, 0.58);
       }
       .lightbox img {
         max-width: 100vw;
@@ -379,7 +387,7 @@ export class HVDetailSheet extends LitElement {
         place-items: center;
         border: none;
         border-radius: 50%;
-        background: rgba(0, 0, 0, 0.5);
+        background: var(--hv-lightbox-scrim);
         color: #fff;
       }
       /* Both controls sit on the photo, which is any colour at all — hence the
@@ -394,7 +402,7 @@ export class HVDetailSheet extends LitElement {
         place-items: center;
         border: none;
         border-radius: 50%;
-        background: rgba(0, 0, 0, 0.5);
+        background: var(--hv-lightbox-scrim);
         color: #fff;
       }
       .lightbox .nav.prev {
@@ -410,7 +418,7 @@ export class HVDetailSheet extends LitElement {
         transform: translateX(-50%);
         padding: 4px 12px;
         border-radius: var(--hv-radius-chip);
-        background: rgba(0, 0, 0, 0.5);
+        background: var(--hv-lightbox-scrim);
         color: #fff;
         font: 500 13px var(--hv-font);
       }
@@ -484,8 +492,13 @@ export class HVDetailSheet extends LitElement {
   }
 
   protected updated() {
-    this._lightboxFocus.sync(this._lightbox !== null, () =>
-      this.shadowRoot?.querySelector<HTMLElement>('[data-testid="sheet-lightbox"]'),
+    this._lightboxFocus.sync(
+      this._lightbox !== null,
+      () => this.shadowRoot?.querySelector<HTMLElement>('[data-testid="sheet-lightbox"]'),
+      // The thumbnail the lightbox was opened from is gone exactly when the
+      // lightbox closed because that photo was removed. The sheet is still on
+      // screen, so focus belongs on its panel rather than on the document.
+      () => this._sheet?.focusPanel(),
     );
   }
 
@@ -497,6 +510,10 @@ export class HVDetailSheet extends LitElement {
 
   private get _editor(): HVItemEditor | null {
     return this.shadowRoot?.querySelector('hv-item-editor') ?? null;
+  }
+
+  private get _sheet(): HVBottomSheet | null {
+    return this.shadowRoot?.querySelector('hv-bottom-sheet') ?? null;
   }
 
   private _emit(name: string, detail: Record<string, unknown> = {}) {

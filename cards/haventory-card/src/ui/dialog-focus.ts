@@ -97,8 +97,20 @@ export class DialogFocus {
    * Call from `updated()` with the current open state and a getter for the
    * panel. Acts only on the open/close transitions, so re-renders never pull
    * focus away from whatever the user is typing in.
+   *
+   * `onOpenerGone` is the caller's answer to a close whose opener no longer
+   * exists — a row deleted by the action, a photo removed from under the
+   * lightbox. Focus was on the panel that has just been taken out of the
+   * document, so the browser drops it on `<body>`: outside the surface still on
+   * screen, out of reach of the Escape that would close it, and back at the top
+   * of the page for the next Tab. Only the caller knows where focus belongs
+   * instead, so it acts rather than naming an element.
    */
-  sync(open: boolean, panel: () => HTMLElement | null | undefined): void {
+  sync(
+    open: boolean,
+    panel: () => HTMLElement | null | undefined,
+    onOpenerGone?: () => void,
+  ): void {
     if (open && !this._active) {
       this._active = true;
       this._returnTo = deepActiveElement();
@@ -113,8 +125,15 @@ export class DialogFocus {
       this._active = false;
       const back = this._returnTo;
       this._returnTo = null;
-      // The opener can be gone by now (a row that the action deleted).
-      if (back?.isConnected) back.focus({ preventScroll: true });
+      if (back?.isConnected) {
+        back.focus({ preventScroll: true });
+        return;
+      }
+      // Nothing to return to. Rescue focus only if it really was stranded:
+      // a close that happened while the user was already somewhere else must
+      // not have focus yanked out from under them.
+      const stranded = deepActiveElement();
+      if (!stranded || stranded === document.body || !stranded.isConnected) onOpenerGone?.();
     }
   }
 }
