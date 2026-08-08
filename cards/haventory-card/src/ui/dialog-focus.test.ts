@@ -93,6 +93,61 @@ describe('DialogFocus', () => {
     f.sync(false, () => panel());
     expect(document.activeElement).toBe(btn);
   });
+
+  // A surface can close because the thing that opened it was deleted. Focus is
+  // on the panel being removed, so leaving it there drops it on <body>.
+  it('asks the caller where focus goes when the opener is gone', () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const p = panel();
+    const f = new DialogFocus();
+    f.sync(true, () => p);
+
+    trigger.remove();
+    p.remove();
+    const rescue = vi.fn();
+    f.sync(false, () => p, rescue);
+    expect(rescue).toHaveBeenCalledOnce();
+  });
+
+  it('leaves the fallback alone when the opener is still there', () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const p = panel();
+    const f = new DialogFocus();
+    f.sync(true, () => p);
+
+    const rescue = vi.fn();
+    f.sync(false, () => p, rescue);
+    expect(document.activeElement).toBe(trigger);
+    expect(rescue).not.toHaveBeenCalled();
+  });
+
+  // Closing a dialog whose opener is gone is not on its own a reason to move
+  // focus: the user may already be typing somewhere else entirely.
+  it('does not yank focus away from wherever it already went', () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const p = panel();
+    const f = new DialogFocus();
+    f.sync(true, () => p);
+
+    trigger.remove();
+    const elsewhere = document.createElement('input');
+    document.body.appendChild(elsewhere);
+    elsewhere.focus();
+
+    const rescue = vi.fn();
+    f.sync(false, () => p, rescue);
+    expect(rescue).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(elsewhere);
+  });
 });
 
 describe('deepFocusables', () => {

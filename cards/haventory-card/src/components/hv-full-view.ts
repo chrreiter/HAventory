@@ -19,7 +19,7 @@ import { statusCount, statusLabel, statusList } from '../ui/status';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
-import type { Item, LocationTreeNode, Sort, StoreFilters, StoreState } from '../store/types';
+import type { Item, Location, LocationTreeNode, Sort, StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 import { makeBulkOp } from '../store/store';
 import type { BulkOperation, BulkOutcome } from '../store/types';
@@ -1090,6 +1090,20 @@ export class HVFullView extends LitElement {
     }
   }
 
+  /**
+   * The editor's first-run way out of an empty location picker.
+   *
+   * A root location with no area — the only placement that needs no tree to
+   * point at — and the created object handed back, because the form files the
+   * item in it as soon as it exists. Distinct from the sidebar's own creator
+   * above, which files under whatever the sidebar has selected.
+   */
+  private _createLocationForEditor = (name: string): Promise<Location> => {
+    const store = this.store;
+    if (!store) return Promise.reject(new Error('Not connected to Home Assistant yet.'));
+    return store.createLocation(name, null, null);
+  };
+
   // ---------- Sections ----------
   /**
    * One collapsible sidebar heading. The chevron and the words are one target —
@@ -1759,6 +1773,7 @@ export class HVFullView extends LitElement {
                     .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
                     .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
                     .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
+                    .createLocation=${this._createLocationForEditor}
                     .busy=${this._editorBusy}
                     ?mobile=${this._narrow}
                     @save=${this._onEditorSave}

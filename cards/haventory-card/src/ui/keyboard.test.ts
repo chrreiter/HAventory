@@ -1,4 +1,4 @@
-import { hasCommandKey, saveShortcutLabel } from './keyboard';
+import { hasCommandKey, onEscape, saveShortcutLabel } from './keyboard';
 
 describe('hasCommandKey', () => {
   it('reads the modern platform hint first', () => {
@@ -40,5 +40,32 @@ describe('saveShortcutLabel', () => {
     expect(saveShortcutLabel({ platform: 'MacIntel' })).toBe('⌘↵');
     expect(saveShortcutLabel({ platform: 'Win32' })).toBe('Ctrl+Enter');
     expect(saveShortcutLabel({})).toBe('Ctrl+Enter');
+  });
+});
+
+describe('onEscape', () => {
+  function press(key: string) {
+    let closed = 0;
+    let prevented = false;
+    let stopped = false;
+    const event = {
+      key,
+      preventDefault: () => (prevented = true),
+      stopPropagation: () => (stopped = true),
+    } as unknown as KeyboardEvent;
+    onEscape(() => (closed += 1))(event);
+    return { closed, prevented, stopped };
+  }
+
+  // One Escape dismisses one thing: without stopping the key, a popover opened
+  // from a form takes the form with it, and a dialog opened from another closes
+  // both.
+  it('takes the key out of circulation on the way to closing', () => {
+    expect(press('Escape')).toEqual({ closed: 1, prevented: true, stopped: true });
+  });
+
+  it('leaves every other key alone', () => {
+    expect(press('Enter')).toEqual({ closed: 0, prevented: false, stopped: false });
+    expect(press('Tab')).toEqual({ closed: 0, prevented: false, stopped: false });
   });
 });

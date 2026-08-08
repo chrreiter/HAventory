@@ -73,8 +73,8 @@ haventory-card                     Lovelace element; store owner
     │       ├── hv-chip-input      tag chips with suggestions
     │       └── hv-location-tree
     ├── hv-detail-sheet            mobile: read view + edit view in one sheet;
-    │   │                          photo gallery strip, full-size lightbox and the
-    │   │                          Documents list
+    │   │                          photo gallery strip, a navigable full-size
+    │   │                          lightbox and the Documents list
     │   ├── hv-item-editor
     │   └── hv-checkout-popover    inline due-date step
     ├── hv-checkout-popover        desktop: anchored due-date step

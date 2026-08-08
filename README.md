@@ -499,7 +499,15 @@ throughout.
   (picked from a tree inside the form), checked-out with due date, next inspection (with the same
   +7 / +31 / +90 / +X quick offsets the check-out popover offers), and typed
   custom fields (text / number / yes-no / date). Saves send the item's expected version so
-  a concurrent edit surfaces as a conflict.
+  a concurrent edit surfaces as a conflict. Escape takes back one thing at a time: an open
+  picker first, then the form — and a form you have typed into asks before it discards.
+  With no locations yet, the location picker creates the first one and files the item in
+  it, rather than pointing at a menu three steps away.
+- **Photos and manuals** attach from the same form, once the item exists — an upload is
+  filed against an item id, and the create form says so instead of leaving the sections
+  unexplained. Each queue reports itself under the section that started it, with a moving
+  indicator while a file is in flight; a refused file keeps its error and Retry until you
+  dismiss them. Removing an attachment asks first, because the file goes with it.
 - **Full view** — a fullscreen workspace with a coloured app bar, a **browse sidebar**, and
   a sortable table. Only columns the backend can sort by get a clickable header. A browser
   that has made no choice yet shows every optional column — quantity, status, category,
