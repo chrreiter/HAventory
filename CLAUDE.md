@@ -18,7 +18,7 @@ The released version lives in `custom_components/haventory/manifest.json` and
 `tests/test_release_version_consistency.py` (CI) keep the two in agreement. Never hand-edit
 either number.
 
-### Platform floors (load-bearing)
+### Platform floors
 
 Three floors constrain everything, none of them written down here:
 
@@ -194,10 +194,10 @@ Offline tests stub HA via `tests/conftest.py`.
   stubbed. Async tests use `@pytest.mark.asyncio`.
 - **WebSocket API contract lives in `docs/`** — keep `ws.py`, `docs/backend_api_contract.md`,
   and `docs/data_shapes.md` in sync when the API changes.
-- **Case-insensitive search** and **denormalized `location_path`** on items are load-bearing
-  invariants — preserve them. `location_path` is derived: the backend computes it from the
-  tree, no client can write it, and rewriting it must not touch an item's `version` or
-  `updated_at` (a location rename is not an item edit).
+- **Case-insensitive search** and **denormalized `location_path`** on items are invariants
+  the rest of the code depends on — preserve them. `location_path` is derived: the backend
+  computes it from the tree, no client can write it, and rewriting it must not touch an
+  item's `version` or `updated_at` (a location rename is not an item edit).
 - **Optimistic concurrency** via the item `version` field — mutations expect/return it.
 - **Conventional Commits**; small, focused commits. Update `README.md` when behavior changes.
 - **Persistence**: WS and service handlers save immediately (errors propagate as
@@ -231,11 +231,17 @@ Offline tests stub HA via `tests/conftest.py`.
   - Applies to TypeScript and Python alike. Enforced by review, not by a lint rule — the
     distinction is a judgment call and a mechanical check would be wrong often enough to be
     ignored.
+- **Plain words, no stock AI-review vocabulary** — in everything written for this repo:
+  issues, PR bodies, commit messages, docs, comments, plans, handover prompts.
+  "Load-bearing", "blast radius" and phrases of that family are out; instead name
+  concretely what depends on the thing, or what a change would break. Rewrite existing
+  occurrences whenever a touched file carries one ([#216](https://github.com/chrreiter/HAventory/issues/216)
+  and [#231](https://github.com/chrreiter/HAventory/issues/231) sweep the rest).
 - Naming: domain/package `haventory`, services `haventory.*`, built assets
   `custom_components/haventory/www/` served at `/haventory_static/`, calendar entity
   `calendar.haventory` — a name reserved for the calendar work
-  ([#187](https://github.com/chrreiter/HAventory/issues/187)), staged after the first public
-  release, not an entity that exists today.
+  ([#187](https://github.com/chrreiter/HAventory/issues/187)), staged for the automation
+  milestone, not an entity that exists today.
 - Report out-of-scope findings under a "Follow-ups" note rather than fixing them.
 
 See the README "Developer Checklist" for the full backend/frontend/CI checklist.
@@ -251,8 +257,9 @@ See the README "Developer Checklist" for the full backend/frontend/CI checklist.
   areas. An item's area is inherited from its location tree's root, exposed as
   `effective_area_id`, and shown with one chip vocabulary wherever the card marks an area.
 - **Reminders/calendar, when built, ride HA-native primitives** — a `CalendarEntity` plus
-  automations, not a bespoke scheduler. Staged after the first public release
-  ([#187](https://github.com/chrreiter/HAventory/issues/187)); do not start it.
+  automations, not a bespoke scheduler. Staged for the automation milestone
+  ([#187](https://github.com/chrreiter/HAventory/issues/187)); do not start it before that
+  milestone is the current one.
 
 ## Where work is tracked
 
@@ -262,11 +269,17 @@ issue is staged for, and there is no second tracker: a finding is an issue or it
 tracked.
 
 The release that matters is the **first public one** — repository public, installable as a
-HACS custom repository, submitted to the HACS default store. `1.0.0` is deferred
-indefinitely and gates nothing; do not treat a version number as a boundary.
-[#236](https://github.com/chrreiter/HAventory/issues/236) is that release's tracker and is
-authoritative for what is mandatory before it, what is merely recommended, and what is
-explicitly staged after it.
+HACS custom repository, submitted to the HACS default store — and it ships as **v1.0.0**:
+the version switch and the HACS release are one event, at the end of the planned `0.x`
+milestones. [#236](https://github.com/chrreiter/HAventory/issues/236) is that release's
+tracker and is authoritative for what is mandatory before it, what is merely recommended,
+and what is explicitly staged after it.
+
+**A finding earns an issue only when it can matter in the real world.** Purely academic
+findings, and edge cases a typical install would not hit once in a hundred years, do not
+get filed — a sentence in the PR's "Follow-ups" note is their ceiling. The same bar
+applies to existing issues: closing one as not-planned because it clears no real-world
+bar is a good outcome, not a failure.
 
 There is **no feature freeze**: features land in `0.x` releases as they are accepted.
 `dev/open-items.md` is the ledger this tracker replaced — retired 2026-08-04, kept for the
