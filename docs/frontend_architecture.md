@@ -93,12 +93,16 @@ haventory-card                     Lovelace element; store owner
     ├── hv-import-sheet            input → preview → summary (+ invalid-document state)
     ├── hv-diagnostics-panel       health, drop counters, subscriptions, copy report
     ├── hv-confirm                 in-app confirmation (replaces window.confirm)
-    ├── hv-banner                  the one alert treatment
+    ├── hv-banner                  the one alert treatment; the degraded and error
+    │                              stacks are built in ui/banners.ts and rendered
+    │                              by the card and the full view alike
     └── hv-full-view               fullscreen workspace
         ├── hv-location-tree       sidebar's Locations section, manage-capable
         ├── hv-filter-panel        same panel, staged behind a commit row on a phone
         ├── hv-item-editor         inline above the table (the same one edit form)
-        ├── hv-data-table          sortable table + selection column
+        ├── hv-data-table          sortable table + selection column; rows carry the
+        │                          same ⋮ actions the card's rows do
+        ├── hv-checkout-popover    the row menu's due-date step
         └── hv-bulk-bar            bulk actions, progress, per-operation results
 ```
 
@@ -387,8 +391,8 @@ automatically up to four times, waiting the envelope's retry-after hint when it 
 (`retry_after_ms`, or `retry_after` in seconds, read from `data`, `context` or the top level
 and clamped to 30 s) and otherwise backing off exponentially. `degraded.liveUpdates` tracks
 this as `'live' | 'retrying' | 'paused'`, with `degraded.nextLiveRetryAt` for the scheduled
-attempt; the shell renders it as a non-blocking banner that clears itself when a retry gets
-back in. Once the budget is spent the state goes `'paused'`, the refusal reaches the error
+attempt; every surface renders it as a non-blocking banner that clears itself when a retry
+gets back in. Once the budget is spent the state goes `'paused'`, the refusal reaches the error
 queue once, and the banner's Refresh (i.e. `refreshAll()`) is the way back. Any other
 refusal is an outage: reported immediately, never retried.
 

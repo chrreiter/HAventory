@@ -18,6 +18,35 @@ export function isLowStock(item: Item): boolean {
 }
 
 /**
+ * What a row's ⋮ offers, which depends on whether the item is out and whether
+ * it has a due date.
+ *
+ * Shared with the full view's table rows, which used to offer nothing at all —
+ * so one list, one set of ids, and the hosts' existing `row-action` handlers
+ * answer both surfaces.
+ */
+export function rowMenuEntries(item: Item): OverflowMenuEntry[] {
+  if (item.checked_out) {
+    return [
+      { id: 'check-in', label: 'Check in', glyph: 'account' },
+      {
+        id: 'set-due-date',
+        label: item.due_date ? 'Change due date…' : 'Set due date…',
+        glyph: 'calendar',
+      },
+      { divider: true },
+      { id: 'delete', label: 'Delete item', glyph: 'del' },
+    ];
+  }
+  return [
+    { id: 'check-out', label: 'Check out…', glyph: 'account' },
+    { id: 'edit', label: 'Edit', glyph: 'pencil' },
+    { divider: true },
+    { id: 'delete', label: 'Delete item', glyph: 'del' },
+  ];
+}
+
+/**
  * Drop the middle of a long path so both ends survive a narrow row.
  *
  * A path reads root-first and clips from the right, so on a phone the half that
@@ -341,28 +370,6 @@ export class HVListRow extends LitElement {
     );
   }
 
-  /** Row menu contents depend on whether the item is out, and whether it has a due date. */
-  private _menuEntries(item: Item): OverflowMenuEntry[] {
-    if (item.checked_out) {
-      return [
-        { id: 'check-in', label: 'Check in', glyph: 'account' },
-        {
-          id: 'set-due-date',
-          label: item.due_date ? 'Change due date…' : 'Set due date…',
-          glyph: 'calendar',
-        },
-        { divider: true },
-        { id: 'delete', label: 'Delete item', glyph: 'del' },
-      ];
-    }
-    return [
-      { id: 'check-out', label: 'Check out…', glyph: 'account' },
-      { id: 'edit', label: 'Edit', glyph: 'pencil' },
-      { divider: true },
-      { id: 'delete', label: 'Delete item', glyph: 'del' },
-    ];
-  }
-
   private _onKeydown = (e: KeyboardEvent) => {
     switch (e.key) {
       case 'Enter':
@@ -571,7 +578,7 @@ export class HVListRow extends LitElement {
               <hv-overflow-menu
                 data-testid="row-menu"
                 label=${`Actions for ${item.name}`}
-                .entries=${this._menuEntries(item)}
+                .entries=${rowMenuEntries(item)}
                 @click=${(e: Event) => e.stopPropagation()}
                 @select=${(e: CustomEvent) => {
                   e.stopPropagation();

@@ -150,16 +150,16 @@ describe('table column widths', () => {
   // Pinned as a number so that adding a column, or widening one, shows up here
   // as a deliberate change rather than as another phone-width overflow.
   it('cannot lay the default table out narrower than a phone', () => {
-    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }))).toBe(1148);
-    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: true }))).toBe(1188);
+    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }))).toBe(1178);
+    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: true }))).toBe(1218);
   });
 
   it('only fits a phone when almost every column is turned off', () => {
-    // Name (220) + Qty (70) + the actions gutter (110). That overflows a 375px
+    // Name (220) + Qty (70) + the actions gutter (140). That overflows a 375px
     // screen on its own — so trimming columns was never a reliable answer, and
     // it would have discarded a choice the user made. The table scrolls
     // sideways instead, and pins the name column while it does.
-    expect(minWidthOf(tableTemplateFor(['quantity'], { selectable: false }))).toBe(400);
+    expect(minWidthOf(tableTemplateFor(['quantity'], { selectable: false }))).toBe(430);
   });
 
   // With every column on, the flexible tracks all sit at their floor and the

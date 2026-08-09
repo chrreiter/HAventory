@@ -385,14 +385,18 @@ describe('hv-full-view: embedded', () => {
     const { el, sr } = await mount({ items: [makeItem({ id: '1' }), makeItem({ id: '2' })] });
     const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
     const rows = [...(table.shadowRoot?.querySelectorAll('[data-testid="table-row"]') ?? [])];
-    const lastEdit = rows[rows.length - 1].querySelector('[data-testid="table-edit"]');
+    // The row menu is the row's last control, and its trigger lives one shadow
+    // root deeper still — which is the case this test exists for.
+    const lastMenu = rows[rows.length - 1]
+      .querySelector('[data-testid="table-row-menu"]')
+      ?.shadowRoot?.querySelector('.trigger');
 
     // Shift+Tab off the front lands on the leading sentinel, which sends focus
     // to the last thing inside the trap.
     (sr.querySelector('.sentinel') as HTMLElement).focus();
     await el.updateComplete;
 
-    expect(deepActiveElement()).toBe(lastEdit);
+    expect(deepActiveElement()).toBe(lastMenu);
   });
 
   it('opens on the first control of the surface, not on something nested in it', async () => {
@@ -1936,5 +1940,184 @@ describe('hv-full-view: selection and bulk actions', () => {
     expect(store.state.value.selection.size).toBe(0);
     expect(q(sr, '[data-testid="selection-bar"]')).toBe(null);
     expect(q(sr, '[data-testid="full-add-item"]')).toBeTruthy();
+  });
+});
+
+// A lost connection, paused live updates and a refused operation showed on the
+// card and nowhere else — and this surface and the panel are the ones that fill
+// the screen, so the card's copy is not behind them to be read.
+describe('hv-full-view: failures are visible here too', () => {
+  const banner = (sr: ShadowRoot, testid: string) => q(sr, `[data-testid="${testid}"]`);
+
+  it('says nothing while everything is fine', async () => {
+    const { sr } = await mount({ items: [makeItem({ id: '1' })] });
+    expect(banner(sr, 'degraded-banners')).toBe(null);
+    expect(banner(sr, 'banners')).toBe(null);
+  });
+
+  it('says the connection is lost and asks its host for the re-read', async () => {
+    const { el, store, hass, sr } = await mount({ items: [makeItem({ id: '1' })] });
+    const actions: string[] = [];
+    el.addEventListener('menu-action', (e) => actions.push((e as CustomEvent).detail.id));
+
+    hass.__failNext(2, new Error('socket closed'));
+    await store.refreshStats().catch(() => undefined);
+    await store.refreshStats().catch(() => undefined);
+    await settle(el);
+
+    expect(banner(sr, 'degraded-offline')).toBeTruthy();
+    (banner(sr, 'degraded-reconnect') as HTMLButtonElement).click();
+    // The dialogs and the re-read live in the host's HostSurfaces, and both
+    // hosts already answer this entry.
+    expect(actions).toEqual(['refresh']);
+  });
+
+  it('carries the error queue with its conflict actions', async () => {
+    const { el, store, hass, sr } = await mount({ items: [makeItem({ id: '1', name: 'A' })] });
+    store['pushError']({ code: 'conflict', message: 'version conflict' }, { itemId: '1', changes: { name: 'B' } });
+    await settle(el);
+
+    expect((banner(sr, 'banner-entry') as HTMLElement).dataset.code).toBe('conflict');
+    expect(banner(sr, 'banner-view-latest')).toBeTruthy();
+
+    hass.__setConflict(false);
+    (banner(sr, 'banner-reapply') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(store.state.value.items.find((i) => i.id === '1')?.name).toBe('B');
+    expect(banner(sr, 'banner-entry')).toBe(null);
+  });
+
+  it('dismisses a plain error, which carries no conflict actions', async () => {
+    const { el, store, sr } = await mount({ items: [] });
+    store['pushError']({ code: 'storage_error', message: 'disk full' });
+    await settle(el);
+
+    expect(banner(sr, 'banner-view-latest')).toBe(null);
+    (banner(sr, 'banner-dismiss') as HTMLButtonElement).click();
+    await settle(el);
+    expect(banner(sr, 'banner-entry')).toBe(null);
+  });
+
+  // The panel renders nothing but this component's embedded variant, so this is
+  // the only place its banners can come from.
+  it('renders them in the embedded variant the panel uses', async () => {
+    const { el, store, sr } = await mount({ items: [], embedded: true });
+    store['pushError']({ code: 'storage_error', message: 'disk full' });
+    await settle(el);
+
+    expect(banner(sr, 'banner-entry')?.shadowRoot?.textContent).toContain('disk full');
+  });
+
+  // Two ways of saying a save failed would be one too many. The sentence in the
+  // form is the save's; the queue carries everything with nowhere else to be.
+  it('leaves the open form to speak for a refused save', async () => {
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Old' })] });
+    store['ws'].updateItem = async () => {
+      throw { code: 'storage_error', message: 'the store is read-only' };
+    };
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement;
+    (editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    expect(
+      (q(sr, '[data-testid="full-editor"]') as HTMLElement).shadowRoot?.querySelector(
+        '[data-testid="editor-error"]',
+      )?.textContent,
+    ).toContain('the store is read-only');
+    // And the queue still holds it, so dismissing the form does not lose it.
+    expect(banner(sr, 'banner-entry')).toBeTruthy();
+  });
+});
+
+// The table's rows had a Delete key and no visible equivalent, and none of the
+// three actions the card's rows offer.
+describe('hv-full-view: table row actions', () => {
+  const pick = (sr: ShadowRoot, id: string, row = 0) => {
+    const menus = [
+      ...((q(sr, '[data-testid="full-table"]') as HTMLElement).shadowRoot?.querySelectorAll(
+        '[data-testid="table-row-menu"]',
+      ) ?? []),
+    ];
+    menus[row].dispatchEvent(new CustomEvent('select', { detail: { id }, bubbles: true, composed: true }));
+  };
+
+  it('checks an item back in', async () => {
+    const { el, store, sr } = await mount({
+      items: [makeItem({ id: '1', name: 'Drill', checked_out: true })],
+    });
+
+    pick(sr, 'check-in');
+    await settle(el);
+
+    expect(store.state.value.items.find((i) => i.id === '1')?.checked_out).toBe(false);
+  });
+
+  it('asks for a due date before checking out, and applies the one picked', async () => {
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Drill' })] });
+
+    pick(sr, 'check-out');
+    await settle(el);
+    const popover = q(sr, '[data-testid="full-checkout"]') as HTMLElement & { open: boolean };
+    expect(popover.open).toBe(true);
+
+    (popover.shadowRoot?.querySelector('[data-testid="checkout-no-date"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(popover.open).toBe(false);
+    expect(store.state.value.items.find((i) => i.id === '1')?.checked_out).toBe(true);
+  });
+
+  it('sets a due date on an item already out', async () => {
+    const { el, sr } = await mount({
+      items: [makeItem({ id: '1', name: 'Drill', checked_out: true })],
+    });
+
+    pick(sr, 'set-due-date');
+    await settle(el);
+
+    const popover = q(sr, '[data-testid="full-checkout"]') as HTMLElement & {
+      open: boolean;
+      mode: string;
+    };
+    expect(popover.open).toBe(true);
+    expect(popover.mode).toBe('set-due-date');
+  });
+
+  it('hands Delete to the host, which owns the confirmation', async () => {
+    const { el, sr } = await mount({ items: [makeItem({ id: '1', name: 'Drill' })] });
+    const asked: { itemId: string; name: string }[] = [];
+    el.addEventListener('request-delete', (e) => asked.push((e as CustomEvent).detail));
+
+    pick(sr, 'delete');
+    await settle(el);
+
+    expect(asked).toEqual([{ itemId: '1', name: 'Drill' }]);
+  });
+
+  it('opens the form from the menu, through the same dirty guard as a row click', async () => {
+    const { el, sr } = await mount({
+      items: [makeItem({ id: '1', name: 'First' }), makeItem({ id: '2', name: 'Second' })],
+    });
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const name = (q(sr, '[data-testid="full-editor"]') as HTMLElement).shadowRoot?.querySelector(
+      '[data-testid="editor-name"]',
+    ) as HTMLInputElement;
+    name.value = 'Typed but unsaved';
+    name.dispatchEvent(new Event('input'));
+    await settle(el);
+
+    pick(sr, 'edit', 1);
+    await settle(el);
+
+    expect((q(sr, '[data-testid="full-discard-confirm"]') as HTMLElement & { open: boolean }).open).toBe(
+      true,
+    );
   });
 });

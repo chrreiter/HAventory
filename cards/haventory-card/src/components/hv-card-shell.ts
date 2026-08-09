@@ -13,11 +13,12 @@ import { quickFilterAllowed } from '../ui/quick-filters';
 import type { QuickFilterKey } from '../ui/quick-filters';
 import { editorErrorText } from '../ui/editor-error';
 import { DISCARD_PROMPT } from '../ui/discard';
+import { bannerStack, renderDegradedBanners, renderErrorBanners } from '../ui/banners';
+import type { BannerHooks } from '../ui/banners';
 import { HostSurfaces } from '../host-surfaces';
 import type { Store } from '../store/store';
 import type { Item, Location, StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
-import './hv-banner';
 import './hv-bottom-sheet';
 import './hv-filter-chips';
 import './hv-filter-panel';
@@ -66,6 +67,7 @@ export class HVCardShell extends LitElement {
     tokens,
     base,
     chip,
+    bannerStack,
     css`
       :host {
         display: block;
@@ -274,11 +276,6 @@ export class HVCardShell extends LitElement {
       }
       .panel-holder {
         margin: 0 16px 12px;
-      }
-      .banners {
-        display: grid;
-        gap: 6px;
-        padding: 0 16px 10px;
       }
       .footer {
         display: flex;
@@ -855,159 +852,6 @@ export class HVCardShell extends LitElement {
     `;
   }
 
-  /**
-   * Conditions that make the card untrustworthy, said out loud.
-   *
-   * Rate limiting can drop subscription events silently and events carry no
-   * sequence number, so the card cannot detect a gap on its own — the honest
-   * move is to say it might be stale and offer the re-read.
-   */
-  private _renderDegradedBanners() {
-    const degraded = this.st?.degraded;
-    if (!degraded) return null;
-    const banners = [];
-
-    if (degraded.connectionLost) {
-      banners.push(html`<hv-banner
-        kind="error"
-        glyph="wifiOff"
-        heading="Connection lost"
-        message=" · showing the data already loaded. Changes may not save."
-        data-testid="degraded-offline"
-      >
-        <button
-          slot="actions"
-          class="hv-pill outline"
-          data-testid="degraded-reconnect"
-          @click=${() => void this.surfaces.refresh()}
-        >
-          Reconnect
-        </button>
-      </hv-banner>`);
-    } else if (degraded.liveUpdates !== 'live') {
-      // Ranked above the generic rate-limit warning below: that one says events
-      // *may* have been dropped, this one says there are no events at all.
-      const retrying = degraded.liveUpdates === 'retrying';
-      const cause =
-        degraded.liveUpdatesReason === 'unavailable'
-          ? 'HAventory is not available'
-          : 'rate limited';
-      banners.push(html`<hv-banner
-        kind="warning"
-        glyph="clock"
-        heading="Live updates paused"
-        message=${retrying
-          ? ` · ${cause}. Retrying automatically; this list may be out of date until then.`
-          : ` · ${cause}. This list may be out of date until you refresh.`}
-        data-testid="degraded-live-updates"
-      >
-        ${retrying
-          ? null
-          : html`<button
-              slot="actions"
-              class="hv-pill outline"
-              data-testid="degraded-live-refresh"
-              @click=${() => void this.surfaces.refresh()}
-            >
-              Refresh
-            </button>`}
-      </hv-banner>`);
-    } else if (degraded.retrying > 0) {
-      banners.push(html`<hv-banner
-        kind="warning"
-        glyph="clock"
-        heading="Busy — retrying"
-        message=${` · ${counted(degraded.retrying, 'change')} queued`}
-        data-testid="degraded-retrying"
-      ></hv-banner>`);
-    } else if (degraded.rateLimited) {
-      banners.push(html`<hv-banner
-        kind="warning"
-        glyph="clock"
-        heading="Rate limited"
-        message=" · some live updates may have been dropped, so this list can be out of date."
-        data-testid="degraded-rate-limited"
-      >
-        <button
-          slot="actions"
-          class="hv-pill outline"
-          data-testid="degraded-refresh"
-          @click=${() => void this.surfaces.refresh()}
-        >
-          Refresh
-        </button>
-      </hv-banner>`);
-    }
-
-    if (degraded.reloading) {
-      banners.push(html`<hv-banner
-        kind="info"
-        glyph="refresh"
-        heading="Inventory was replaced by an import"
-        message=" · reloading…"
-        data-testid="degraded-reloading"
-      ></hv-banner>`);
-    }
-
-    return banners.length ? html`<div class="banners" data-testid="degraded-banners">${banners}</div>` : null;
-  }
-
-  private _renderBanners() {
-    const errors = this.st?.errorQueue ?? [];
-    if (!errors.length) return null;
-    return html`
-      <div class="banners" data-testid="banners">
-        ${errors.map((e) => {
-          const conflict = e.kind === 'conflict' && e.itemId;
-          return html`<hv-banner
-            kind=${conflict ? 'warning' : 'error'}
-            .heading=${conflict ? 'Someone else changed this item.' : null}
-            .message=${e.message}
-            data-testid="banner-entry"
-            data-code=${e.code}
-          >
-            ${conflict
-              ? html`<span slot="below">
-                  <button
-                    class="hv-pill outline"
-                    data-testid="banner-view-latest"
-                    @click=${() => {
-                      void this.store?.refreshItem(e.itemId!);
-                      this.store?.dismissError(e.id);
-                    }}
-                  >
-                    View latest
-                  </button>
-                  ${e.changes
-                    ? html`<button
-                        class="hv-pill"
-                        data-testid="banner-reapply"
-                        @click=${() => {
-                          void this.store?.updateItem(e.itemId!, e.changes!);
-                          this.store?.dismissError(e.id);
-                        }}
-                      >
-                        Re-apply my change
-                      </button>`
-                    : null}
-                </span>`
-              : null}
-            <button
-              slot="actions"
-              class="hv-icon-button"
-              data-testid="banner-dismiss"
-              aria-label="Dismiss"
-              @click=${() => this.store?.dismissError(e.id)}
-            >
-              ${icon('close', 16)}
-            </button>
-          </hv-banner>`;
-        })}
-      </div>
-    `;
-  }
-
-
   private _onEmptyAction = (e: CustomEvent) => {
     const { id } = e.detail as { id: string };
     if (id === 'clear-filters') this.store?.clearFilters();
@@ -1140,7 +984,7 @@ export class HVCardShell extends LitElement {
         : html`<div class="panel-holder" id=${FILTER_SURFACE_ID} ?hidden=${!this._filterPanelOpen}>
             ${this._filterPanelOpen ? this._renderFilterPanel(false) : null}
           </div>`}
-      ${this._renderDegradedBanners()} ${this._renderBanners()}
+      ${renderDegradedBanners(st, this._bannerHooks)} ${renderErrorBanners(st, this._bannerHooks)}
 
       <hv-list
         .statuses=${st?.statuses ?? null}
@@ -1347,6 +1191,11 @@ export class HVCardShell extends LitElement {
 
       ${this.surfaces.renderSurfaces()}
     `;
+  }
+
+  /** What the shared banner stacks act through; Reconnect and Refresh are ours. */
+  private get _bannerHooks(): BannerHooks {
+    return { store: this.store, onRefresh: () => void this.surfaces.refresh() };
   }
 
   private get _filterPanel(): HVFilterPanel | null {

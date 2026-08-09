@@ -135,12 +135,20 @@ export const NAME_COLUMN_SIZE = 'minmax(220px, 3fr)';
  */
 export const SELECT_COLUMN_WIDTH = '40px';
 
+/**
+ * The trailing actions track. It has to hold four controls at their real sizes
+ * — two 26px quantity buttons, a 30px Edit and the 34px row menu, plus the gaps
+ * — because they are fixed-width circles: a track short of their sum squashes
+ * them into ovals rather than wrapping or scrolling.
+ */
+export const ACTIONS_COLUMN_WIDTH = '140px';
+
 export function tableTemplateFor(columns: ColumnKey[], opts: { selectable: boolean }): string {
   const cols = [
     ...(opts.selectable ? [SELECT_COLUMN_WIDTH] : []),
     NAME_COLUMN_SIZE,
     ...normalizeColumns(columns).map((k) => COLUMN_TABLE_SIZE[k]),
-    '110px',
+    ACTIONS_COLUMN_WIDTH,
   ];
   return cols.join(' ');
 }
