@@ -20,11 +20,9 @@ import { COLUMN_DEFS, canonicalOrder, moveColumn, normalizeColumns } from '../st
  * status rows and the editor's photo strip: they work from the keyboard without
  * a second implementation beside the pointer one.
  *
- * This was the one surface that never adopted the card's design tokens: it
- * styled itself straight from HA's variables, with its own 8px radius, native
- * checkboxes and a filled "Done" at a fourth border radius — so it read as a
- * different application, and its 32px rows were the only targets on a phone
- * that ignored the 44px minimum everything else honours.
+ * Styled from the card's design tokens alone — nothing here reaches past them
+ * to Home Assistant's own variables, and every row and button honours the touch
+ * minimum a narrow host declares, the same as any other target in the card.
  */
 @customElement('hv-column-picker')
 export class HVColumnPicker extends LitElement {
