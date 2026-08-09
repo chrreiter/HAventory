@@ -704,6 +704,7 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     status?: string;
     checked_out?: boolean;
     orphaned_only?: boolean;
+    low_stock_only?: boolean;
     overdue_only?: boolean;
     inspection_overdue_only?: boolean;
     location_id?: string | null;
@@ -738,6 +739,14 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     if (filter.status && (it.status ?? 'ok') !== filter.status) return false;
     if (typeof filter.checked_out === 'boolean' && it.checked_out !== filter.checked_out) return false;
     if (filter.orphaned_only && it.location_id !== null) return false;
+    // Low stock needs a threshold to be below: an item without one is never low,
+    // which is also how the stats counts read it.
+    if (
+      filter.low_stock_only &&
+      !(typeof it.low_stock_threshold === 'number' && it.quantity <= it.low_stock_threshold)
+    ) {
+      return false;
+    }
     if (filter.overdue_only && !isMockOverdue(it)) return false;
     if (filter.inspection_overdue_only && !isMockInspectionDue(it)) return false;
     // Canonical 'Z' timestamps compare lexicographically; both bounds are exclusive.

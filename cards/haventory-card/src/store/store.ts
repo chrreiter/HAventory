@@ -106,6 +106,14 @@ const AREA_REGISTRY_RETRY_ATTEMPTS = 3;
 /** Event action the backend sends every open subscription as its entry tears down. */
 const BACKEND_UNAVAILABLE_ACTION = 'unavailable';
 
+/**
+ * Removed item ids kept for `wasRemoved`.
+ *
+ * Only a host holding an open editor asks, and it asks about one id, so the
+ * memory has to outlive a bulk delete of the surrounding rows and nothing more.
+ */
+const REMOVED_ID_MEMORY = 200;
+
 const NO_DEGRADATION: DegradedState = {
   rateLimited: false,
   connectionLost: false,
@@ -274,6 +282,10 @@ export class Store {
   private ws: WSClient;
   private stateObs: ReturnType<typeof createObservable<StoreState>>;
   private inflight: Map<string, Promise<unknown>> = new Map();
+  /** Ids removed since this store connected — see `noteRemoved`. */
+  private readonly removedIds = new Set<string>();
+  /** The same ids in removal order, so the oldest can be evicted. */
+  private readonly removedOrder: string[] = [];
   private itemsUnsub: Unsubscribe | null = null;
   private statsUnsub: Unsubscribe | null = null;
   private locationsUnsub: Unsubscribe | null = null;
@@ -657,10 +669,12 @@ export class Store {
       case 'checked_in':
       case 'quantity_changed': {
         if (idx >= 0) items[idx] = item; else items.unshift(item);
+        this.forgetRemoved(item.id);
         break;
       }
       case 'deleted': {
         if (idx >= 0) items.splice(idx, 1);
+        this.noteRemoved(item.id);
         break;
       }
     }
@@ -1007,11 +1021,13 @@ export class Store {
   setFilters(patch: Partial<StoreFilters>) {
     const next = { ...this.state.value.filters, ...patch };
     const locationChanged = next.locationId !== this.state.value.filters.locationId;
+    // The rows already loaded stay on screen until the refetch lands, marked as
+    // loading. Blanking them is what tore the scroller down mid-edit and took an
+    // open editor with it; `listItems(true)` replaces the array wholesale anyway,
+    // so nothing here has to clear it first.
     this.stateObs.set({
       filters: next,
       cursor: null,
-      items: [],
-      total: null,
       loading: true,
       // A row that is no longer listed cannot stay selected.
       selection: new Set<string>(),
@@ -1545,12 +1561,45 @@ export class Store {
     const items = this.state.value.items.slice();
     const idx = items.findIndex((x) => x.id === item.id);
     if (idx >= 0) items[idx] = item; else items.unshift(item);
+    // A rolled-back delete puts the row back, so it is no longer gone.
+    this.forgetRemoved(item.id);
     this.stateObs.set({ items });
   }
 
   private removeById(itemId: string) {
     const items = this.state.value.items.filter((x) => x.id !== itemId);
+    this.noteRemoved(itemId);
     this.stateObs.set({ items });
+  }
+
+  /**
+   * Remember an id the backend no longer has, newest last and bounded.
+   *
+   * A host with an open editor has to tell two disappearances apart: the row
+   * fell out of the filtered page, where the typed edits are still worth
+   * keeping, or the item is gone, where the form has nothing left to save
+   * against. Only a real removal is recorded — a refetch that stops listing an
+   * id says nothing about whether it still exists.
+   */
+  private noteRemoved(itemId: string) {
+    if (this.removedIds.has(itemId)) return;
+    this.removedIds.add(itemId);
+    this.removedOrder.push(itemId);
+    while (this.removedOrder.length > REMOVED_ID_MEMORY) {
+      const evicted = this.removedOrder.shift();
+      if (evicted !== undefined) this.removedIds.delete(evicted);
+    }
+  }
+
+  private forgetRemoved(itemId: string) {
+    if (!this.removedIds.delete(itemId)) return;
+    const idx = this.removedOrder.indexOf(itemId);
+    if (idx >= 0) this.removedOrder.splice(idx, 1);
+  }
+
+  /** True when this id was removed rather than merely filtered off the page. */
+  wasRemoved(itemId: string): boolean {
+    return this.removedIds.has(itemId);
   }
 }
 

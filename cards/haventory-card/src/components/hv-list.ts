@@ -1,4 +1,4 @@
-import { LitElement, css, html } from 'lit';
+import { LitElement, css, html, nothing } from 'lit';
 import type { PropertyValues } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
@@ -26,10 +26,58 @@ export class HVList extends LitElement {
     css`
       :host {
         display: block;
+        position: relative;
       }
       .scroller {
         overflow-y: auto;
         overscroll-behavior: contain;
+      }
+      /*
+       * A refetch keeps the rows it already has, so the only thing left to say
+       * is that fresher ones are on the way. Absolutely positioned over the
+       * list's top edge: a bar in the flow would move every row by two pixels
+       * on each keystroke in the search box.
+       */
+      .refreshing {
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 2px;
+        overflow: hidden;
+        background: var(--hv-row-divider);
+        pointer-events: none;
+      }
+      .refreshing::after {
+        content: '';
+        display: block;
+        height: 100%;
+        width: 40%;
+        background: var(--hv-primary);
+        opacity: 0.7;
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        .refreshing::after {
+          animation: sweep 1.1s ease-in-out infinite;
+        }
+      }
+      @keyframes sweep {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(250%);
+        }
+      }
+      /*
+       * The row being edited can stop matching the filter the user just changed.
+       * Pinning it keeps typed edits alive; the hint is what stops the pin from
+       * reading as a list that failed to filter.
+       */
+      .pinned-hint {
+        margin: 0;
+        padding: 6px 16px;
+        font-size: 12px;
+        color: var(--hv-text-secondary);
+        border-top: 1px solid var(--hv-row-divider);
       }
       :host(:not([fill])) .scroller {
         max-height: var(--hv-list-max-height, 420px);
@@ -143,6 +191,11 @@ export class HVList extends LitElement {
   @property({ attribute: false }) editorEpoch: unknown = 0;
   /** Row currently expanded into the editor; its own row is hidden while it is. */
   @property({ type: String }) editingItemId: string | null = null;
+  /**
+   * The host's copy of the row being edited, so the open form can outlive a
+   * refetch that stops listing it — see `_rows`.
+   */
+  @property({ attribute: false }) pinnedItem: Item | null = null;
   /** Pin an empty editor at the top of the list ("Add item"). */
   @property({ type: Boolean }) addingNew = false;
   /** Reflected so the stylesheet can give the open editor more room. */
@@ -174,8 +227,30 @@ export class HVList extends LitElement {
     });
   }
 
+  /**
+   * The rows to draw: the listed ones, plus the edited row if it has fallen off
+   * the page.
+   *
+   * Changing a filter refetches, and the row being edited can legitimately drop
+   * out of the result. It is put back at the top rather than rendered beside the
+   * list, because `repeat` only carries a DOM node across renders while its key
+   * stays in the same keyed set — moving the open form out of it would rebuild
+   * the element and discard everything typed into it, which is the whole bug.
+   */
+  private _rows(): { rows: Item[]; pinnedId: string | null } {
+    const id = this.editingItemId;
+    const pinned = this.pinnedItem;
+    if (id === null || !this.editorTemplate || pinned?.id !== id) return { rows: this.items, pinnedId: null };
+    if (this.items.some((it) => it.id === id)) return { rows: this.items, pinnedId: null };
+    return { rows: [pinned, ...this.items], pinnedId: id };
+  }
+
   render() {
-    if (this.loading && !this.items.length) {
+    // An open editor outranks the skeleton: replacing the scroller is what
+    // discards the form, and a filter that currently matches nothing is exactly
+    // when the pinned row has to survive.
+    const editorOpen = Boolean(this.editorTemplate) && (this.addingNew || this.editingItemId !== null);
+    if (this.loading && !this.items.length && !editorOpen) {
       return html`<div class="scroller" data-testid="list-skeleton" aria-busy="true">
         ${Array.from(
           { length: this.skeletonRows },
@@ -188,19 +263,31 @@ export class HVList extends LitElement {
     }
 
     const newEditor = this.addingNew && this.editorTemplate ? this.editorTemplate(null) : null;
-    if (!this.items.length && !newEditor) return this._renderEmpty();
+    const { rows, pinnedId } = this._rows();
+    if (!rows.length && !newEditor) return this._renderEmpty();
 
     return html`
-      <div class="scroller" role="rowgroup" data-testid="list-rows" @scroll=${this._onScroll}>
+      ${this.loading ? html`<div class="refreshing" data-testid="list-refreshing"></div>` : null}
+      <div
+        class="scroller"
+        role="rowgroup"
+        data-testid="list-rows"
+        aria-busy=${this.loading ? 'true' : 'false'}
+        @scroll=${this._onScroll}
+      >
         ${newEditor}
         ${repeat(
-          this.items,
+          rows,
           (it) => it.id,
           (it) =>
             this.editingItemId === it.id && this.editorTemplate
               ? // The expander carries the item's name in its own header, so
                 // showing the collapsed row as well would just be a duplicate.
-                this.editorTemplate(it.id)
+                html`${it.id === pinnedId
+                  ? html`<p class="pinned-hint" data-testid="pinned-editor-hint">
+                      No longer matches the current filters
+                    </p>`
+                  : nothing}${this.editorTemplate(it.id)}`
               : html`<hv-list-row
                   .statuses=${this.statuses}
                   .item=${it}

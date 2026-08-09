@@ -1073,6 +1073,135 @@ describe('hv-card-shell: inline editing', () => {
   });
 });
 
+// Typing in the search box, toggling a filter and changing the sort all run
+// through `Store.setFilters`. It used to blank the item list, which sent
+// `hv-list` into its skeleton branch and replaced the scroller the open form
+// lives in — the element was rebuilt from the stored item and everything typed
+// into it was gone, while the form still looked open.
+describe('hv-card-shell: the open editor survives a refetch', () => {
+  const list = (sr: ShadowRoot) => sr.querySelector('hv-list') as HTMLElement;
+  const editor = (sr: ShadowRoot) =>
+    (list(sr).shadowRoot?.querySelector('hv-item-editor') as HTMLElement | null) ?? null;
+  const nameField = (sr: ShadowRoot) =>
+    editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+
+  const openAndType = async (el: HVCardShell, sr: ShadowRoot, id: string, typed: string) => {
+    const row = [...(list(sr).shadowRoot?.querySelectorAll('hv-list-row') ?? [])]
+      .map((r) => r as HTMLElement & { item: Item })
+      .find((r) => r.item.id === id)!;
+    (row.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const field = nameField(sr);
+    field.value = typed;
+    field.dispatchEvent(new Event('input'));
+    await settle(el);
+    return editor(sr)!;
+  };
+
+  const twoItems = () => [
+    makeItem({ id: '1', name: 'Target', quantity: 9, low_stock_threshold: 1 }),
+    makeItem({ id: '2', name: 'Decoy', quantity: 0, low_stock_threshold: 4 }),
+  ];
+
+  it('survives typing in the search box', async () => {
+    const { el, store, sr } = await mountShell({ items: twoItems() });
+    const before = await openAndType(el, sr, '1', 'Target EDITED');
+
+    store.setFilters({ q: 'Tar' });
+    await settle(el);
+    await settle(el);
+
+    expect(editor(sr)).toBe(before);
+    expect(nameField(sr).value).toBe('Target EDITED');
+  });
+
+  it('survives a filter toggle', async () => {
+    const { el, store, sr } = await mountShell({ items: twoItems() });
+    const before = await openAndType(el, sr, '1', 'Target EDITED');
+
+    store.setFilters({ lowStockOnly: true });
+    await settle(el);
+    await settle(el);
+
+    expect(editor(sr)).toBe(before);
+    expect(nameField(sr).value).toBe('Target EDITED');
+  });
+
+  // The sort patch is the one `setFilters` skips the tree refresh for, so it
+  // moves no editor-epoch input — which is how the issue proved this is not the
+  // epoch's doing.
+  it('survives a sort change', async () => {
+    const { el, store, sr } = await mountShell({ items: twoItems() });
+    const before = await openAndType(el, sr, '1', 'Target EDITED');
+
+    store.setFilters({ sort: { field: 'name', order: 'desc' } });
+    await settle(el);
+    await settle(el);
+
+    expect(editor(sr)).toBe(before);
+    expect(nameField(sr).value).toBe('Target EDITED');
+  });
+
+  it('pins the row, and says so, when the filter stops matching it', async () => {
+    const { el, store, sr } = await mountShell({ items: twoItems() });
+    const before = await openAndType(el, sr, '1', 'Target EDITED');
+
+    // Item 1 has stock to spare, so "low stock only" excludes exactly it.
+    store.setFilters({ lowStockOnly: true });
+    await settle(el);
+    await settle(el);
+
+    expect(store.state.value.items.map((i) => i.id)).toEqual(['2']);
+    expect(editor(sr)).toBe(before);
+    expect(nameField(sr).value).toBe('Target EDITED');
+    expect(
+      list(sr).shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')?.textContent,
+    ).toContain('No longer matches the current filters');
+  });
+
+  it('releases the pin on cancel', async () => {
+    const { el, store, sr } = await mountShell({ items: twoItems() });
+    await openAndType(el, sr, '1', 'Target EDITED');
+    store.setFilters({ lowStockOnly: true });
+    await settle(el);
+    await settle(el);
+
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(editor(sr)).toBe(null);
+    expect(list(sr).shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')).toBe(null);
+  });
+
+  it('releases the pin on save', async () => {
+    const { el, store, sr } = await mountShell({ items: twoItems() });
+    await openAndType(el, sr, '1', 'Target EDITED');
+    store.setFilters({ lowStockOnly: true });
+    await settle(el);
+    await settle(el);
+
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    expect(store.state.value.items.find((i) => i.id === '1')?.name).toBe('Target EDITED');
+    expect(editor(sr)).toBe(null);
+    expect(list(sr).shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')).toBe(null);
+  });
+
+  // A pin is for a row that fell off the page, not for one that is gone.
+  it('closes rather than pins when the item is deleted', async () => {
+    const { el, store, sr } = await mountShell({ items: twoItems() });
+    await openAndType(el, sr, '1', 'Target EDITED');
+
+    await store.deleteItem('1', 1);
+    await settle(el);
+
+    expect(editor(sr)).toBe(null);
+    expect(list(sr).shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')).toBe(null);
+  });
+});
+
 // The inline expander is the one surface that renders the editor through
 // `hv-list`'s template callback rather than directly, so it is the only one
 // where shell state can reach the host and stop there. Everything below is
