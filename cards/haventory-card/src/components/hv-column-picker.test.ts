@@ -92,6 +92,16 @@ describe('hv-column-picker', () => {
       expect(received).toEqual(['quantity', 'tags', 'status']);
     });
 
+    // The rows are stacked and the glyphs are vertical chevrons, so the words
+    // are too — the same pair the organize dialog's reorder rows carry.
+    it('names each direction the way its glyph and its list read', async () => {
+      const el = await mount({ columns: ['quantity', 'status'] });
+      expect(arrow(el, 'up', 'status').getAttribute('aria-label')).toBe('Move Status up');
+      expect(arrow(el, 'up', 'status').getAttribute('title')).toBe('Move up');
+      expect(arrow(el, 'down', 'quantity').getAttribute('aria-label')).toBe('Move Qty down');
+      expect(arrow(el, 'down', 'quantity').getAttribute('title')).toBe('Move down');
+    });
+
     it('disables the direction the first and last rows cannot go', async () => {
       const el = await mount({ columns: ['quantity', 'status', 'tags'] });
       expect(arrow(el, 'up', 'quantity').disabled).toBe(true);

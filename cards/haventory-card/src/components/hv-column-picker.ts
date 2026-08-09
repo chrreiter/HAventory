@@ -250,8 +250,8 @@ export class HVColumnPicker extends LitElement {
                         <button
                           data-testid="column-up"
                           data-key=${r.key}
-                          aria-label=${`Move ${r.label} left`}
-                          title="Move left"
+                          aria-label=${`Move ${r.label} up`}
+                          title="Move up"
                           ?disabled=${index === 0}
                           @click=${() => this._move(r.key, -1)}
                         >
@@ -260,8 +260,8 @@ export class HVColumnPicker extends LitElement {
                         <button
                           data-testid="column-down"
                           data-key=${r.key}
-                          aria-label=${`Move ${r.label} right`}
-                          title="Move right"
+                          aria-label=${`Move ${r.label} down`}
+                          title="Move down"
                           ?disabled=${index === shown - 1}
                           @click=${() => this._move(r.key, 1)}
                         >
