@@ -129,6 +129,18 @@ describe('hv-organize-dialog: shell', () => {
     expect(q(sr, '[data-testid="organize-back"]')).toBeTruthy();
     expect(q(sr, '[data-testid="organize-close"]')).toBe(null);
   });
+
+  // The surface answered to three names — "Organize…" in the menu, "Organize
+  // inventory" on a wide screen and "Organize" on a narrow one — so the heading
+  // never confirmed which thing the menu entry had opened.
+  it('calls itself Organize at every width', async () => {
+    for (const mobile of [false, true]) {
+      const { el, sr } = await mount({ mobile });
+      expect(q(sr, 'h2')?.textContent?.trim(), `mobile=${mobile}`).toBe('Organize');
+      expect(q(sr, '[data-testid="organize-dialog"]')?.getAttribute('aria-label')).toBe('Organize');
+      el.remove();
+    }
+  });
 });
 
 describe('hv-organize-dialog: locations', () => {
@@ -1141,17 +1153,54 @@ describe('hv-organize-dialog: statuses', () => {
     });
   });
 
-  it('confirms rather than guards when nothing carries the status', async () => {
+  // One question, one idiom, whichever branch it is: the unused status used to
+  // get a modal and the in-use one an inline disclosure, so the consequential
+  // path carried the lighter ceremony.
+  it('asks in the same disclosure when nothing carries the status', async () => {
     const { el, sr } = await mount({ tab: 'statuses' });
 
     const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
     (row?.querySelector('[data-testid="status-remove"]') as HTMLButtonElement).click();
     await settle(el);
 
+    const guard = q(sr, '[data-testid="status-guard"]');
+    expect(guard).toBeTruthy();
+    expect(guard?.textContent).toContain('No item carries this status');
+    // Nothing to reassign, so the select the in-use branch needs is absent...
+    expect(guard?.querySelector('[data-testid="status-reassign"]')).toBe(null);
+    // ...and the action says what it does rather than promising a reassign.
+    expect(q(sr, '[data-testid="status-guard-confirm"]')?.textContent?.trim()).toBe('Delete');
+    // The modal it used to raise is gone from the component entirely.
+    expect(q(sr, '[data-testid="organize-status-confirm"]')).toBe(null);
+  });
+
+  it('deletes an unused status once the disclosure is confirmed', async () => {
+    const { el, sr, hass } = await mount({ tab: 'statuses' });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-remove"]') as HTMLButtonElement).click();
+    await settle(el);
+    (q(sr, '[data-testid="status-guard-confirm"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const deleted = hass.__messages.filter((m) => m.type === 'haventory/status/delete');
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0].slug).toBe('missing');
+    // No reassign target travels with a status nothing carries.
+    expect(deleted[0].reassign_to ?? null).toBe(null);
+  });
+
+  it('backs out of an unused status delete', async () => {
+    const { el, sr, hass } = await mount({ tab: 'statuses' });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-remove"]') as HTMLButtonElement).click();
+    await settle(el);
+    (q(sr, '[data-testid="status-guard-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+
     expect(q(sr, '[data-testid="status-guard"]')).toBe(null);
-    expect(
-      (q(sr, '[data-testid="organize-status-confirm"]') as HTMLElement).hasAttribute('open'),
-    ).toBe(true);
+    expect(hass.__messages.some((m) => m.type === 'haventory/status/delete')).toBe(false);
   });
 
   it('sends the colour and glyph chosen in the picker', async () => {
@@ -1367,13 +1416,45 @@ describe('hv-organize-dialog: statuses', () => {
     expect(guard?.querySelector('.guard-target select')).not.toBe(null);
   });
 
-  // DOM-measured on a phone: chevrons 15×15 stacked a pixel apart, edit/delete
-  // 26×26, swatches 26×22, the count link 14px tall. WCAG 2.2 asks 24px of
-  // every pointer; a finger wants the platform's 44.
+  // The stacked pair was the whole of the gap: a status row stood ~71px tall
+  // against ~48px on the sibling tabs, and the arrows were 24px boxes around a
+  // 15px glyph that had to be aimed at.
+  it('lays the reorder pair out side by side, at a size a pointer can hit', () => {
+    const css = dialogCss();
+    expect(css).toMatch(/\.move \{[^}]*flex-direction: row/);
+    expect(css).toMatch(/\.move button \{[^}]*width: 28px/);
+    // A phone keeps them stacked — 88px of horizontal pair does not fit a row
+    // that also carries the chip, the slug, the count and two 44px actions.
+    expect(css).toMatch(/:host\(\[mobile\]\) \.move \{[^}]*flex-direction: column/);
+  });
+
+  it('draws a chevron big enough to read at the button it sits in', async () => {
+    const { sr } = await mount({ tab: 'statuses' });
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    for (const dir of ['up', 'down'] as const) {
+      const glyph = row?.querySelector(`[data-testid="status-${dir}"] svg`) as SVGElement;
+      expect(glyph?.getAttribute('width'), dir).toBe('18');
+    }
+  });
+
+  // One rhythm across all four tabs, from one declaration: the value rows read
+  // it directly and it inherits into the location tree the Locations tab hosts.
+  it('gives every tab one row rhythm, the hosted tree included', () => {
+    const css = dialogCss();
+    expect(css).toMatch(/:host \{[^}]*--hv-organize-row-pad: 8px/);
+    expect(css).toMatch(/\.value-row \{[^}]*padding: var\(--hv-organize-row-pad\) 8px/);
+    // Nothing re-declares it per tab, or the tabs could drift again.
+    expect(css.match(/--hv-organize-row-pad:/g)).toHaveLength(1);
+  });
+
+  // DOM-measured on a phone: edit/delete 26×26, swatches 26×22, the count link
+  // 14px tall. WCAG 2.2 asks 24px of every pointer; a finger wants the
+  // platform's 44. The reorder pair takes more than the minimum — a pair that
+  // has to be aimed at is the complaint it answers.
   it('sizes every row control for a finger, on all four tabs', () => {
     const css = dialogCss();
     for (const [selector, size] of [
-      ['\\.move button', '24px'],
+      ['\\.move button', '28px'],
       ['\\.swatch', '26px'],
     ] as const) {
       expect(css, selector).toMatch(new RegExp(`${selector} \\{[^}]*height: ${size}`));

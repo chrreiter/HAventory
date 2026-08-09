@@ -1644,6 +1644,27 @@ describe('hv-card-shell: full view', () => {
     expect(organize().tab).toBe('locations');
   });
 
+  // The button and the sidebar heading are new front doors onto the surface the
+  // ⋮ already reached; both have to arrive at the dialog, on the tab they name.
+  it('opens organize from the expanded view\'s app bar and Status heading', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const organize = () =>
+      sr.querySelector('[data-testid="host-organize"]') as HTMLElement & { open: boolean; tab: string };
+
+    (sr.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement).click();
+    await settle(el);
+    const view = fullView(sr);
+
+    (view.shadowRoot?.querySelector('[data-testid="full-organize"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(organize().open).toBe(true);
+    expect(organize().tab).toBe('locations');
+
+    (view.shadowRoot?.querySelector('[data-testid="sidebar-new-status"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(organize().tab).toBe('statuses');
+  });
+
   it('answers the full view menu inside the shell, letting nothing escape', async () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     const seen: string[] = [];

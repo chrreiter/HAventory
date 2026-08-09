@@ -1228,6 +1228,24 @@ export class HVFullView extends LitElement {
         <!-- The other sections tally how many rows they hold. Here that number
              is the size of the household's vocabulary, which says nothing
              about the inventory the facet navigates. -->
+        <span class="head-action">
+          <button
+            class="hv-icon-button"
+            data-testid="sidebar-new-status"
+            aria-label="New status…"
+            title="New status…"
+            @click=${() =>
+              this.dispatchEvent(
+                new CustomEvent('menu-action', {
+                  detail: { id: 'organize', tab: 'statuses' },
+                  bubbles: true,
+                  composed: true,
+                }),
+              )}
+          >
+            ${icon('plus', 20)}
+          </button>
+        </span>
       </div>
       <div id=${sectionPanelId('status')} ?hidden=${!this._sections.status}>
         ${this._sections.status
@@ -1760,6 +1778,18 @@ export class HVFullView extends LitElement {
             }}
           >
             ${icon('plus', 16)}Add item
+          </button>
+          <button
+            class="tap"
+            data-testid="full-organize"
+            aria-label="Organize"
+            title="Organize"
+            @click=${() =>
+              this.dispatchEvent(
+                new CustomEvent('menu-action', { detail: { id: 'organize' }, bubbles: true, composed: true }),
+              )}
+          >
+            ${icon('mapMarker', 20)}
           </button>
           <hv-overflow-menu
             onPrimary

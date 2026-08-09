@@ -71,9 +71,9 @@ interface RewriteState {
 }
 
 /**
- * "Organize inventory".
+ * "Organize".
  *
- * One dialog, three tabs: locations, categories and tags.
+ * One dialog, four tabs: locations, categories, tags and statuses.
  *
  * Locations edit in place with a guarded delete — a location that still holds
  * items or children gets an inline explanation, never a browser confirm.
@@ -90,6 +90,15 @@ export class HVOrganizeDialog extends LitElement {
     css`
       :host {
         display: block;
+        /*
+         * The vertical padding of every row in this dialog, declared once here
+         * so the four tabs cannot drift apart: the value rows below read it,
+         * and it inherits through the shadow boundary into the
+         * hv-location-tree the Locations tab hosts, which reads the same
+         * property with its own fallback. Nothing outside this dialog declares
+         * it, so the full-view sidebar's tree keeps its own spacing.
+         */
+        --hv-organize-row-pad: 8px;
       }
       .backdrop {
         position: fixed;
@@ -230,7 +239,7 @@ export class HVOrganizeDialog extends LitElement {
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 11px 8px;
+        padding: var(--hv-organize-row-pad) 8px;
         border-radius: var(--hv-radius-input);
       }
       .value-row:hover {
@@ -238,28 +247,38 @@ export class HVOrganizeDialog extends LitElement {
       }
       /* Two arrow buttons rather than a drag handle: this is the card's first
          reordering control, and buttons work from the keyboard without a
-         parallel implementation for it. */
+         parallel implementation for it.
+
+         Side by side, because stacked they made the row they sit in twice as
+         tall as the same row on every other tab — the pair was the whole of
+         that difference. */
       .move {
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
         flex: none;
-        gap: 1px;
+        gap: 3px;
       }
-      /* Sized rather than left at the glyph: two chevrons stacked a pixel apart
-         are one target to a finger, and WCAG 2.2 asks 24px of every pointer.
-         The token is what a host declares when the card is narrow; the fallback
-         covers the sidebar panel, which declares none. */
+      /* Sized rather than left at the glyph: WCAG 2.2 asks 24px of every
+         pointer, and a pair that has to be aimed at is the complaint this
+         answers, so they take more than the minimum. */
       .move button {
         display: inline-grid;
         place-items: center;
-        width: 24px;
-        height: 24px;
+        width: 28px;
+        height: 28px;
         border: none;
         background: none;
         color: var(--hv-text-tertiary);
         cursor: pointer;
         padding: 0;
         line-height: 0;
+      }
+      /* A phone keeps them stacked: a horizontal pair at the platform's 44px
+         is 88px of row, which does not fit beside the chip, the slug, the count
+         and two 44px actions. */
+      :host([mobile]) .move {
+        flex-direction: column;
+        gap: 1px;
       }
       :host([mobile]) .move button {
         width: var(--hv-tap-min, 44px);
@@ -675,7 +694,6 @@ export class HVOrganizeDialog extends LitElement {
   /** A delete refused because items still carry the slug, and how many. */
   @state() private _statusGuard: { slug: string; count: number } | null = null;
   @state() private _reassignTarget = '';
-  @state() private _confirmStatus: string | null = null;
 
   @state() private _creatingValue = false;
   @state() private _newValue = '';
@@ -1721,19 +1739,22 @@ export class HVOrganizeDialog extends LitElement {
   }
 
   /**
-   * Delete, guarding first when items still carry the slug.
+   * Ask before deleting, in one idiom whichever branch it is.
    *
-   * The backend refuses that case regardless; the guard is the explanation, and
-   * the reassign target is what turns the refusal into a completed move. Same
-   * shape as `_deleteLocation`.
+   * Both branches open the same inline disclosure. The in-use one carries the
+   * reassign select — the backend refuses a delete that would strand items, and
+   * picking where they go is what turns that refusal into a completed move —
+   * and the unused one carries the question alone. Splitting them across a
+   * disclosure and a modal gave the consequential path the lighter ceremony.
    */
-  private async _deleteStatus(slug: string, reassignTo?: string) {
+  private _askDeleteStatus(slug: string) {
     const count = this._statusCount(slug);
-    if (count > 0 && !reassignTo) {
-      this._statusGuard = { slug, count };
-      this._reassignTarget = this._statusDefs.find((d) => d.slug !== slug)?.slug ?? '';
-      return;
-    }
+    this._statusGuard = { slug, count };
+    this._reassignTarget = count > 0 ? (this._statusDefs.find((d) => d.slug !== slug)?.slug ?? '') : '';
+  }
+
+  /** Send the delete, reassigning the items that carry the slug if any do. */
+  private async _deleteStatus(slug: string, reassignTo?: string) {
     try {
       await this.store?.deleteStatus(slug, reassignTo);
       this._statusGuard = null;
@@ -1774,7 +1795,7 @@ export class HVOrganizeDialog extends LitElement {
                   ?disabled=${index === 0}
                   @click=${() => this._moveStatus(d.slug, -1)}
                 >
-                  ${icon('chevronUp', 15)}
+                  ${icon('chevronUp', 18)}
                 </button>
                 <button
                   data-testid="status-down"
@@ -1783,7 +1804,7 @@ export class HVOrganizeDialog extends LitElement {
                   ?disabled=${index === defs.length - 1}
                   @click=${() => this._moveStatus(d.slug, 1)}
                 >
-                  ${icon('chevronDown', 15)}
+                  ${icon('chevronDown', 18)}
                 </button>
               </span>
               ${renderStatusChip(d.slug, defs, { testid: 'status-chip' })}
@@ -1812,10 +1833,7 @@ export class HVOrganizeDialog extends LitElement {
                         data-testid="status-remove"
                         aria-label=${`Delete ${d.label}`}
                         title="Delete"
-                        @click=${() => {
-                          if (this._statusCount(d.slug) > 0) void this._deleteStatus(d.slug);
-                          else this._confirmStatus = d.slug;
-                        }}
+                        @click=${() => this._askDeleteStatus(d.slug)}
                       >
                         ${icon('del', 16)}
                       </button>
@@ -1941,23 +1959,28 @@ export class HVOrganizeDialog extends LitElement {
     if (!guard) return null;
     const label = statusLabel(guard.slug, this._statusDefs);
     const targets = this._statusDefs.filter((d) => d.slug !== guard.slug);
+    const inUse = guard.count > 0;
     return html`<div class="expander guard status-guard" data-testid="status-guard" role="alert">
       <span class="guard-message" data-testid="status-guard-message"
-        >“${label}” is on ${counted(guard.count, 'item')}. Choose where those items go.</span
+        >${inUse
+          ? html`“${label}” is on ${counted(guard.count, 'item')}. Choose where those items go.`
+          : html`Delete “${label}”? No item carries this status, so nothing else changes.`}</span
       >
-      <label class="guard-target">
-        <span>Move those items to</span>
-        <select
-          class="control"
-          data-testid="status-reassign"
-          .value=${this._reassignTarget}
-          @change=${(e: Event) => {
-            this._reassignTarget = (e.target as HTMLSelectElement).value;
-          }}
-        >
-          ${targets.map((d) => html`<option value=${d.slug}>${d.label}</option>`)}
-        </select>
-      </label>
+      ${inUse
+        ? html`<label class="guard-target">
+            <span>Move those items to</span>
+            <select
+              class="control"
+              data-testid="status-reassign"
+              .value=${this._reassignTarget}
+              @change=${(e: Event) => {
+                this._reassignTarget = (e.target as HTMLSelectElement).value;
+              }}
+            >
+              ${targets.map((d) => html`<option value=${d.slug}>${d.label}</option>`)}
+            </select>
+          </label>`
+        : null}
       <div class="actions">
         <span class="spacer"></span>
         <button
@@ -1972,9 +1995,9 @@ export class HVOrganizeDialog extends LitElement {
         <button
           class="hv-text-button danger"
           data-testid="status-guard-confirm"
-          @click=${() => this._deleteStatus(guard.slug, this._reassignTarget)}
+          @click=${() => this._deleteStatus(guard.slug, inUse ? this._reassignTarget : undefined)}
         >
-          Reassign and delete
+          ${inUse ? 'Reassign and delete' : 'Delete'}
         </button>
       </div>
     </div>`;
@@ -2150,7 +2173,7 @@ export class HVOrganizeDialog extends LitElement {
           class="panel"
           role="dialog"
           aria-modal="true"
-          aria-label="Organize inventory"
+          aria-label="Organize"
           data-testid="organize-dialog"
           @keydown=${onEscape(() => this._close())}
         >
@@ -2160,7 +2183,7 @@ export class HVOrganizeDialog extends LitElement {
                   ${icon('arrowLeft', 21)}
                 </button>`
               : null}
-            <h2>${this.mobile ? 'Organize' : 'Organize inventory'}</h2>
+            <h2>Organize</h2>
             ${this.mobile
               ? null
               : html`<button class="hv-icon-button" data-testid="organize-close" aria-label="Close" @click=${this._close}>
@@ -2198,25 +2221,9 @@ export class HVOrganizeDialog extends LitElement {
       </div>
 
       <hv-confirm
-        data-testid="organize-status-confirm"
-        ?open=${this._confirmStatus !== null}
-        .heading=${`Delete "${statusLabel(this._confirmStatus ?? '', this._statusDefs)}"?`}
-        message="No item carries this status, so nothing else changes."
-        confirmLabel="Delete"
-        destructive
-        @confirm=${() => {
-          const slug = this._confirmStatus;
-          this._confirmStatus = null;
-          if (slug) void this._deleteStatus(slug);
-        }}
-        @cancel=${() => {
-          this._confirmStatus = null;
-        }}
-      ></hv-confirm>
-
-      <hv-confirm
         data-testid="organize-confirm"
         ?open=${this._confirmRemove !== null}
+        ?mobile=${this.mobile}
         .heading=${`Remove "${this._confirmRemove}" from ${counted(removeCount, 'item')}?`}
         message="The value is cleared on every item that carries it. The items themselves are not deleted."
         confirmLabel="Remove"

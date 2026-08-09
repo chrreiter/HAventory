@@ -617,6 +617,23 @@ describe('hv-location-tree: manage mode', () => {
     expect(css).not.toMatch(/:host\(\[mobile\]\) \.count/);
   });
 
+  // The Locations tab is this component, so the dialog cannot reach its rows
+  // with a selector. It reaches them with an inherited custom property instead,
+  // which is what keeps the tightening scoped: the sidebar, the filter panel
+  // and the editor's location field declare nothing and take the fallback.
+  it('takes the organize dialog\'s row rhythm only when it is hosted there', () => {
+    const styles = (customElements.get('hv-location-tree') as typeof HVLocationTree).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+
+    expect(css).toMatch(/\.row \{[^}]*padding: var\(--hv-organize-row-pad, 7px\) 12px/);
+    // Nothing here declares it — a tree that declared its own would answer for
+    // every host at once.
+    expect(css).not.toContain('--hv-organize-row-pad:');
+  });
+
   it('marks the row so the touch sizing has something to hang on', async () => {
     const el = await mount({ manage: true, mobile: true });
     expect(rows(el)[0].className).toContain('manage');

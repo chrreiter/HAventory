@@ -71,7 +71,12 @@ export class HVLocationTree extends LitElement {
         text-align: left;
         font: 400 13.5px var(--hv-font);
         color: var(--hv-text);
-        padding: 7px 12px;
+        /* The organize dialog declares this property, so the tree it hosts
+           keeps the same vertical rhythm as the value rows on its other three
+           tabs. Nothing else declares it, so every other host — the sidebar,
+           the filter panel, the editor's location field — takes the fallback
+           and is unaffected. */
+        padding: var(--hv-organize-row-pad, 7px) 12px;
         border-radius: var(--hv-radius-input);
       }
       .row:hover {

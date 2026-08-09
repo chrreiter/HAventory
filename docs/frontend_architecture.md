@@ -107,14 +107,19 @@ than by a component of their own: they are flat lists of `distinct_values` entri
 rows only have to look like `hv-location-tree`'s — which, being in another shadow root,
 could not have shared the rule either way.
 
-Each of the three headings states how many of its thing there is, and offers a create
-action. Categories and tags come with their `distinct_values` length; locations are counted
-by `countLocations` in `store/location-tree.ts`, which walks every depth and takes the same
-optional filter needle `hv-location-tree` matches rows with, so the organize dialog's
-"N locations" can never disagree with the tree printed under it. Creating differs by facet
-because the backend does: a location is a real object and is created inline, while a
-category or tag exists only through the items using it, so those buttons ask the card to
-open `hv-organize-dialog` on the matching tab (`menu-action` with `{ id: 'organize', tab }`).
+Each of the four headings offers a create action, and the three that can be counted state
+how many of their thing there is — Status is the household's own vocabulary, whose size says
+nothing about the inventory the facet navigates. Categories and tags come with their
+`distinct_values` length; locations are counted by `countLocations` in
+`store/location-tree.ts`, which walks every depth and takes the same optional filter needle
+`hv-location-tree` matches rows with, so the organize dialog's "N locations" can never
+disagree with the tree printed under it. Creating differs by facet because the backend does:
+a location is a real object and is created inline, while a category, tag or status is made
+in the organize dialog, so those buttons ask the card to open `hv-organize-dialog` on the
+matching tab (`menu-action` with `{ id: 'organize', tab }`). The app bar carries an Organize
+button raising the same event with no tab, so the surface is one click from the view rather
+than two through the ⋮ — which keeps its entry, since the plain card's header has no room
+for a button.
 
 ### Two different "is this a phone?" signals
 
@@ -145,6 +150,12 @@ On a phone viewport the four smaller dialogs — column picker, confirm, import,
 rise from the bottom edge like every other phone surface, through the shared
 `ui/dialog-sheet.ts` block rather than four private ones. The organize dialog keeps its
 full-bleed page, which is what a four-tab management surface needs at that width.
+
+Inside that dialog one declaration governs row height: `--hv-organize-row-pad` on its host,
+read by its own value rows and inherited through the shadow boundary into the
+`hv-location-tree` its Locations tab hosts, which reads the same property with its own
+fallback. That is what keeps the tightening scoped — no other host declares it, so the
+sidebar tree, the filter panel's picker and the editor's location field are untouched.
 
 ### Shared wording
 
