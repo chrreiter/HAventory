@@ -445,7 +445,11 @@ Any other key in that record is ignored, so an older or newer payload never brea
 
 - **One edit form.** `hv-item-editor` is used by the inline expander, the full view and the
   mobile sheet. On mobile it stacks and collapses description / dates / custom fields
-  behind a single "More fields" disclosure.
+  behind a single "More fields" disclosure. Its action bar is sticky on **every** host, not
+  only the phone: each of them scrolls the form in a box (the card's list, the sheet, the
+  expanded view's 70dvh cap), so Save and Cancel land below the fold on all three. The
+  editor solves that once; no host grows a pinned footer of its own. The bar bleeds past
+  `.grid`'s side padding so its opaque background reaches the form's edges.
 - **Only one expander at a time.** Opening another while the current one is dirty asks
   first.
 - **Optimistic writes** stay as they were; a rejected save keeps the expander open with the
