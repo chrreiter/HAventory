@@ -1,4 +1,4 @@
-import { MOBILE_BREAKPOINT, ResponsiveController } from './responsive';
+import { MOBILE_BREAKPOINT, NARROW_QUERY, ResponsiveController } from './responsive';
 
 function makeHost() {
   const el = document.createElement('div') as HTMLDivElement & {
@@ -72,5 +72,15 @@ describe('ResponsiveController', () => {
     expect(c.mobile).toBe(false);
     c.setWidth(420);
     expect(c.mobile).toBe(true);
+  });
+});
+
+// Two breakpoints, two questions: the card's own width decides in-card layout,
+// the viewport decides what an overlay does. Feeding the card measurement to a
+// dialog is what put the full-bleed organize page on a desktop monitor.
+describe('NARROW_QUERY', () => {
+  it('is a viewport query, distinct from the card-element breakpoint', () => {
+    expect(NARROW_QUERY).toBe('(max-width: 700px)');
+    expect(NARROW_QUERY).not.toContain(String(MOBILE_BREAKPOINT));
   });
 });

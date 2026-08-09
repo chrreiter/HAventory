@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { dialogSheet } from '../ui/dialog-sheet';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { nextZBase } from '../utils/zindex';
@@ -38,7 +39,7 @@ export class HVColumnPicker extends LitElement {
         inset: 0;
         background: rgba(0, 0, 0, 0.35);
       }
-      .panel-wrap {
+      .wrap {
         position: fixed;
         inset: 0;
         display: grid;
@@ -148,9 +149,12 @@ export class HVColumnPicker extends LitElement {
         margin-right: auto;
       }
     `,
+    dialogSheet,
   ];
 
   @property({ type: Boolean, reflect: true }) open: boolean = false;
+  /** Phone viewport: rise from the bottom edge instead of centring. */
+  @property({ type: Boolean, reflect: true }) mobile = false;
   @property({ attribute: false }) columns: ColumnKey[] = [];
   @property({ type: String }) heading: string = 'Columns';
 
@@ -224,7 +228,7 @@ export class HVColumnPicker extends LitElement {
     const isCanonical = ordered.join() === canonicalOrder(ordered).join();
     return html`
       <div class="backdrop" role="presentation" style="z-index: ${this._zBase ?? 9998};" @click=${this._close}></div>
-      <div class="panel-wrap" role="none" style="z-index: ${(this._zBase ?? 9998) + 1};">
+      <div class="wrap" role="none" style="z-index: ${(this._zBase ?? 9998) + 1};">
         <div class="panel" role="dialog" aria-modal="true" aria-label="Column selection"
           @keydown=${onEscape(() => this._close())}>
           <h2>${this.heading}</h2>

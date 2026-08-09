@@ -1,5 +1,5 @@
 import './hv-card-shell';
-import { makeMockHass, makeItem } from '../test.utils';
+import { makeMockHass, makeItem, stubViewport } from '../test.utils';
 import { base, tokens } from '../ui/tokens';
 import { Store } from '../store/store';
 import type { HVCardShell } from './hv-card-shell';
@@ -1660,6 +1660,61 @@ describe('hv-card-shell: full view', () => {
 
     expect((sr.querySelector('hv-column-picker') as HTMLElement & { open: boolean }).open).toBe(true);
     expect(seen).toEqual([]);
+  });
+});
+
+// A dialog is `position: fixed`, so it is laid out against the window and not
+// against the card that opened it. Feeding it the card's measured width put the
+// organize dialog in its full-bleed phone page on a desktop monitor, from every
+// surface — a card in a dashboard column is 300–500px wide, and expanding it
+// changed nothing because the measured element was still the card underneath.
+describe('hv-card-shell: host dialogs follow the viewport, not the card', () => {
+  const HOSTED = ['host-columns', 'host-confirm', 'host-organize', 'host-import', 'host-diagnostics'];
+
+  it('leaves them centred for a narrow card in a wide window', async () => {
+    const restore = stubViewport(false);
+    try {
+      const { sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+      for (const id of HOSTED) {
+        expect(sr.querySelector(`[data-testid="${id}"]`)?.hasAttribute('mobile'), id).toBe(false);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  it('gives every one of them the phone form on a phone viewport', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: false });
+      for (const id of HOSTED) {
+        expect(sr.querySelector(`[data-testid="${id}"]`)?.hasAttribute('mobile'), id).toBe(true);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  it('stops listening to the viewport once the card is gone', async () => {
+    const removed: string[] = [];
+    const original = window.matchMedia;
+    window.matchMedia = ((media: string) => ({
+      matches: true,
+      media,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: (type: string) => removed.push(type),
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    try {
+      const { el } = await mountShell({ items: [] });
+      el.remove();
+      expect(removed).toContain('change');
+    } finally {
+      window.matchMedia = original;
+    }
   });
 });
 

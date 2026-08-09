@@ -8,7 +8,6 @@ import { defineCardElement } from './register';
 import { HostSurfaces } from './host-surfaces';
 import type { OrganizeTab } from './components/hv-organize-dialog';
 import './components/hv-full-view';
-import { NARROW_QUERY } from './components/hv-full-view';
 
 /** The slice of Home Assistant's panel object this element reads. */
 interface PanelInfo {
@@ -54,19 +53,16 @@ export class HAventoryPanel extends LitElement {
   private store?: Store;
   private _storeUnsub?: () => void;
   private _hass?: HassLike;
-  private _phoneQuery?: MediaQueryList | null;
-  private readonly _onPhoneChange = () => this.requestUpdate();
 
   /**
    * No `onItemDeleted` hook — the embedded view closes its own editor when the
    * item vanishes. No `onBrowse` — the full view here is the page itself, so
    * there is nothing to open when the organize dialog hands back a filter.
+   *
+   * The dialogs read the viewport themselves, and deliberately not HA's
+   * `narrow` — that flag is about the sidebar and flips at a tablet width.
    */
-  readonly surfaces = new HostSurfaces(this, () => this.store, {
-    // The dialogs share the embedded view's own phone breakpoint, not HA's
-    // `narrow` — that flag is about the sidebar and flips at a tablet width.
-    isMobile: () => this._phoneQuery?.matches ?? false,
-  });
+  readonly surfaces = new HostSurfaces(this, () => this.store);
 
   get hass(): HassLike | undefined {
     return this._hass;
@@ -97,8 +93,7 @@ export class HAventoryPanel extends LitElement {
         this.requestUpdate();
       });
     }
-    this._phoneQuery ??= window.matchMedia?.(NARROW_QUERY) ?? null;
-    this._phoneQuery?.addEventListener('change', this._onPhoneChange);
+    this.surfaces.connect();
     this._syncColorScheme();
   }
 
@@ -108,7 +103,7 @@ export class HAventoryPanel extends LitElement {
       this._storeUnsub();
       this._storeUnsub = undefined;
     }
-    this._phoneQuery?.removeEventListener('change', this._onPhoneChange);
+    this.surfaces.disconnect();
   }
 
   firstUpdated(): void {

@@ -18,6 +18,7 @@ import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import { quickFilterAllowed } from '../ui/quick-filters';
 import type { QuickFilterKey } from '../ui/quick-filters';
 import { editorErrorText } from '../ui/editor-error';
+import { NARROW_QUERY } from '../ui/responsive';
 import { statusCount, statusLabel, statusList } from '../ui/status';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
@@ -40,22 +41,6 @@ import type { HVLocationTree } from './hv-location-tree';
 import type { HVFilterPanel } from './hv-filter-panel';
 
 const SEARCH_DEBOUNCE_MS = 200;
-
-/**
- * The phone breakpoint, in JS.
- *
- * This surface fills the viewport rather than being sized by the card, so its
- * own layout switches on the `@media (max-width: 700px)` block below. Its two
- * biggest children take their layout from a `mobile` *property* instead, which
- * only the card ever set — so at 375px the expanded view drew the item editor's
- * three-column desktop grid in 156px + 78px + 78px, with "Low-stock at" wrapping
- * over its own field and Category too narrow to show a value. A media query
- * cannot set a property, so the same breakpoint is read here and handed down.
- *
- * Keep this string and the media query in agreement. Exported so the sidebar
- * panel can put the dialogs it hosts on the same breakpoint as this view.
- */
-export const NARROW_QUERY = '(max-width: 700px)';
 
 /** The sidebar's collapsible sections, in the order they appear. */
 type SidebarSection = 'locations' | 'status' | 'categories' | 'tags';
@@ -814,7 +799,16 @@ export class HVFullView extends LitElement {
     categories: true,
     tags: true,
   };
-  /** True on a phone-width viewport — see NARROW_QUERY. */
+  /**
+   * True on a phone-width viewport (`NARROW_QUERY`).
+   *
+   * This surface switches its own layout on the matching `@media` block below,
+   * but its two biggest children take theirs from a `mobile` *property*, which
+   * only the card ever set — so at 375px the expanded view drew the item
+   * editor's three-column desktop grid in 156px + 78px + 78px, with "Low-stock
+   * at" wrapping over its own field. A media query cannot set a property, so
+   * the same breakpoint is read here and handed down.
+   */
   @state() private _narrow = false;
   /**
    * The staged filter set's match count, so the phone footer's button can say
@@ -1934,6 +1928,7 @@ export class HVFullView extends LitElement {
         <hv-confirm
           data-testid="bulk-confirm"
           ?open=${this._pendingDelete}
+          ?mobile=${this._narrow}
           .heading=${`Delete ${counted(selection.size, 'item')}?`}
           message="This cannot be undone. Items are removed for every connected client. Locations and tags are not affected."
           .warning=${this._checkedOutWarning}

@@ -1,7 +1,7 @@
 import './hv-full-view';
-import { NARROW_QUERY } from './hv-full-view';
-import { makeMockHass, makeItem } from '../test.utils';
+import { makeMockHass, makeItem, stubViewport } from '../test.utils';
 import { deepActiveElement } from '../ui/dialog-focus';
+import { NARROW_QUERY } from '../ui/responsive';
 import { Store } from '../store/store';
 import type { HVFullView } from './hv-full-view';
 import type { Item, Location, StatusDefinition } from '../store/types';
@@ -1272,24 +1272,6 @@ describe('hv-full-view: editing', () => {
 // so at 375px the expanded view drew the editor's three-column desktop grid in
 // 156px + 78px + 78px, with "Low-stock at" wrapping over its own field.
 describe('hv-full-view: phone-width children', () => {
-  /** jsdom's matchMedia always reports false, so the breakpoint is stubbed. */
-  const stubViewport = (matches: boolean) => {
-    const original = window.matchMedia;
-    window.matchMedia = ((media: string) => ({
-      matches,
-      media,
-      onchange: null,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      addListener: () => {},
-      removeListener: () => {},
-      dispatchEvent: () => false,
-    })) as unknown as typeof window.matchMedia;
-    return () => {
-      window.matchMedia = original;
-    };
-  };
-
   it('tells the item editor when it is on a phone', async () => {
     const restore = stubViewport(true);
     try {
@@ -1685,6 +1667,28 @@ describe('hv-full-view: selection and bulk actions', () => {
     await settle(el);
     await settle(el);
     expect(store.state.value.items).toHaveLength(0);
+  });
+
+  // This view's own confirm belongs to the same family as the dialogs the host
+  // owns: one width flips every overlay, so a phone never shows a centred box
+  // over sheets.
+  it('raises its delete confirm as a sheet on a phone viewport', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
+      el.menuEntries = withSelectEntry.entries;
+      await settle(el);
+      await enterSelection(el, sr);
+
+      (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
+      await settle(el);
+      (bulkBar(sr).shadowRoot?.querySelector('[data-action="delete"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      expect(q(sr, '[data-testid="bulk-confirm"]')?.hasAttribute('mobile')).toBe(true);
+    } finally {
+      restore();
+    }
   });
 
   it('leaves everything alone when the delete is cancelled', async () => {
