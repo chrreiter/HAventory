@@ -1,4 +1,4 @@
-import { MOBILE_BREAKPOINT, NARROW_QUERY, ResponsiveController } from './responsive';
+import { MOBILE_BREAKPOINT, NARROW_QUERY, ResponsiveController, ViewportNarrow } from './responsive';
 
 function makeHost() {
   const el = document.createElement('div') as HTMLDivElement & {
@@ -82,5 +82,77 @@ describe('NARROW_QUERY', () => {
   it('is a viewport query, distinct from the card-element breakpoint', () => {
     expect(NARROW_QUERY).toBe('(max-width: 700px)');
     expect(NARROW_QUERY).not.toContain(String(MOBILE_BREAKPOINT));
+  });
+});
+
+describe('ViewportNarrow', () => {
+  /** A matchMedia whose answer the test can change and then announce. */
+  function stub(initial: boolean) {
+    const listeners: ((e: MediaQueryListEvent) => void)[] = [];
+    const original = window.matchMedia;
+    let asked: string | null = null;
+    window.matchMedia = ((media: string) => {
+      asked = media;
+      return {
+        matches: initial,
+        media,
+        addEventListener: (_: string, fn: (e: MediaQueryListEvent) => void) => listeners.push(fn),
+        removeEventListener: (_: string, fn: (e: MediaQueryListEvent) => void) => {
+          const at = listeners.indexOf(fn);
+          if (at >= 0) listeners.splice(at, 1);
+        },
+      };
+    }) as unknown as typeof window.matchMedia;
+    return {
+      get query() {
+        return asked;
+      },
+      get listeners() {
+        return listeners.length;
+      },
+      announce(matches: boolean) {
+        for (const fn of [...listeners]) fn({ matches } as MediaQueryListEvent);
+      },
+      restore: () => {
+        window.matchMedia = original;
+      },
+    };
+  }
+
+  it('reads the viewport query on connect and re-renders on a change', () => {
+    const media = stub(true);
+    try {
+      const host = makeHost();
+      const c = new ViewportNarrow(host as never);
+      expect(c.narrow).toBe(false); // nothing asked until the host connects
+
+      c.hostConnected();
+      expect(media.query).toBe(NARROW_QUERY);
+      expect(c.narrow).toBe(true);
+
+      media.announce(false);
+      expect(c.narrow).toBe(false);
+      expect(host.updates).toBe(1);
+
+      c.hostDisconnected();
+      expect(media.listeners).toBe(0);
+    } finally {
+      media.restore();
+    }
+  });
+
+  // jsdom answers no media query, and a host that cannot say how wide the window
+  // is has no business claiming it is a phone.
+  it('stays on the desktop answer when matchMedia is missing', () => {
+    const original = window.matchMedia;
+    (window as unknown as { matchMedia: undefined }).matchMedia = undefined;
+    try {
+      const c = new ViewportNarrow(makeHost() as never);
+      c.hostConnected();
+      expect(c.narrow).toBe(false);
+      expect(() => c.hostDisconnected()).not.toThrow();
+    } finally {
+      window.matchMedia = original;
+    }
   });
 });

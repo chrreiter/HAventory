@@ -1,5 +1,6 @@
 import './hv-card-shell';
 import { makeMockHass, makeItem, stubViewport } from '../test.utils';
+import { DISCARD_PROMPT } from '../ui/discard';
 import { base, tokens } from '../ui/tokens';
 import { Store } from '../store/store';
 import type { HVCardShell } from './hv-card-shell';
@@ -872,6 +873,90 @@ describe('hv-card-shell: adding an item on a phone', () => {
     const list = sr.querySelector('hv-list') as HTMLElement & { addingNew: boolean };
     expect(list.addingNew).toBe(true);
   });
+
+  // The sheet's scrim, its swipe and its ✕ all threw a half-typed new item away
+  // without a word, while switching rows on the same shell had always asked.
+  describe('a half-filled new item is asked about before it goes', () => {
+    async function dirtyAddSheet() {
+      const mounted = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+      const { el, sr } = mounted;
+      (sr.querySelector('[data-testid="add-item"]') as HTMLButtonElement).click();
+      await settle(el);
+      const form = sr.querySelector('hv-item-editor') as HTMLElement;
+      const name = form.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+      name.value = 'Half typed';
+      name.dispatchEvent(new Event('input'));
+      await settle(el);
+      return mounted;
+    }
+
+    const hostGuard = (sr: ShadowRoot) =>
+      sr.querySelector('[data-testid="host-confirm"]') as HTMLElement & { open: boolean };
+    const typed = (sr: ShadowRoot) =>
+      (
+        sr.querySelector('hv-item-editor')?.shadowRoot?.querySelector(
+          '[data-testid="editor-name"]',
+        ) as HTMLInputElement | null
+      )?.value;
+
+    const dismiss = {
+      'close button': (sr: ShadowRoot) =>
+        (sr.querySelector('[data-testid="add-sheet-close"]') as HTMLButtonElement).click(),
+      scrim: (sr: ShadowRoot) =>
+        (addSheet(sr)?.shadowRoot?.querySelector('.scrim') as HTMLElement).click(),
+    } as const;
+
+    it.each(Object.keys(dismiss) as (keyof typeof dismiss)[])(
+      '%s asks, and the sheet stays up with the typing in it',
+      async (how) => {
+        const { el, sr } = await dirtyAddSheet();
+
+        dismiss[how](sr);
+        await settle(el);
+
+        expect(hostGuard(sr).open).toBe(true);
+        expect(addSheet(sr)?.open).toBe(true);
+        expect(typed(sr)).toBe('Half typed');
+
+        (
+          hostGuard(sr).shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement
+        ).click();
+        await settle(el);
+        expect(addSheet(sr)?.open).toBe(false);
+      },
+    );
+
+    it('keeps the sheet and the typing when the question is declined', async () => {
+      const { el, sr } = await dirtyAddSheet();
+
+      dismiss.scrim(sr);
+      await settle(el);
+      (
+        hostGuard(sr).shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement
+      ).click();
+      await settle(el);
+
+      expect(addSheet(sr)?.open).toBe(true);
+      expect(typed(sr)).toBe('Half typed');
+    });
+
+    it('asks the same question every other surface asks', async () => {
+      const { el, sr } = await dirtyAddSheet();
+      dismiss.scrim(sr);
+      await settle(el);
+
+      const panel = hostGuard(sr).shadowRoot as ShadowRoot;
+      expect(panel.querySelector('[data-testid="confirm-dialog"]')?.getAttribute('aria-label')).toBe(
+        DISCARD_PROMPT.heading,
+      );
+      expect(panel.querySelector('[data-testid="confirm-message"]')?.textContent).toContain(
+        DISCARD_PROMPT.message,
+      );
+      expect(panel.querySelector('[data-testid="confirm-accept"]')?.textContent).toContain(
+        DISCARD_PROMPT.confirmLabel,
+      );
+    });
+  });
 });
 
 describe('hv-card-shell: mobile', () => {
@@ -1233,6 +1318,14 @@ describe('hv-card-shell: the open editor survives a refetch', () => {
     await settle(el);
 
     (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+    // Typed edits are on the form, so Cancel asks; the pin survives the question
+    // and is released by the answer.
+    const guard = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-discard-confirm"]') as HTMLElement & {
+      open: boolean;
+    };
+    expect(guard.open).toBe(true);
+    (guard.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
     await settle(el);
 
     expect(editor(sr)).toBe(null);

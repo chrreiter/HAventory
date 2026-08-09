@@ -12,6 +12,7 @@ import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import { quickFilterAllowed } from '../ui/quick-filters';
 import type { QuickFilterKey } from '../ui/quick-filters';
 import { editorErrorText } from '../ui/editor-error';
+import { DISCARD_PROMPT } from '../ui/discard';
 import { HostSurfaces } from '../host-surfaces';
 import type { Store } from '../store/store';
 import type { Item, Location, StoreFilters, StoreState } from '../store/types';
@@ -619,10 +620,7 @@ export class HVCardShell extends LitElement {
     if (this._editing === next) return;
     if (this._editing !== null && this._editor?.dirty) {
       this.surfaces.confirm({
-        heading: 'Discard your changes?',
-        message: 'The item you are editing has unsaved changes.',
-        confirmLabel: 'Discard',
-        destructive: true,
+        ...DISCARD_PROMPT,
         onConfirm: () => {
           this._editorError = null;
           this._editing = next;
@@ -1265,10 +1263,7 @@ export class HVCardShell extends LitElement {
             label="New item"
             ?open=${this._editing === 'new'}
             data-testid="add-sheet"
-            @cancel=${() => {
-              this._editing = null;
-              this._editorError = null;
-            }}
+            @cancel=${() => this._startEdit(null)}
           >
             <div class="sheet-head">
               <span class="heading">New item</span>
@@ -1277,10 +1272,7 @@ export class HVCardShell extends LitElement {
                 style="margin-left:auto"
                 data-testid="add-sheet-close"
                 aria-label="Close"
-                @click=${() => {
-                  this._editing = null;
-                  this._editorError = null;
-                }}
+                @click=${() => this._startEdit(null)}
               >
                 ${icon('close', 18)}
               </button>

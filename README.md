@@ -501,7 +501,10 @@ throughout.
   custom fields (text / number / yes-no / date). Saves send the item's expected version so
   a concurrent edit surfaces as a conflict; a save that does not land says so in the form
   you are looking at and leaves your edits in it. Escape takes back one thing at a time: an open
-  picker first, then the form — and a form you have typed into asks before it discards.
+  picker first, then the form. **Nothing throws typed edits away without asking** — Cancel,
+  the ✕, Escape, tapping the scrim or swiping a phone sheet down, switching to another row,
+  and closing the expanded view all raise the same question, and answering "keep" leaves the
+  form exactly as it was.
   With no locations yet, the location picker creates the first one and files the item in
   it, rather than pointing at a menu three steps away.
 - **Photos and manuals** attach from the same form, once the item exists — an upload is

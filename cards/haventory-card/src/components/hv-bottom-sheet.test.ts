@@ -33,7 +33,11 @@ describe('hv-bottom-sheet', () => {
     expect(el.shadowRoot?.querySelector('[data-testid="sheet-handle"]')).toBe(null);
   });
 
-  it('closes and emits cancel from the scrim and from Escape', async () => {
+  // The sheet reports a dismissal and leaves the closing to the host, whose
+  // state the `open` binding comes from. Closing itself put it out of step with
+  // that binding — Lit had committed `true` and would never write it back — so
+  // a host that wanted to ask something first had nowhere to put the sheet back.
+  it('emits cancel from the scrim and from Escape without closing itself', async () => {
     for (const trigger of ['scrim', 'escape'] as const) {
       const el = await mount();
       let fired = 0;
@@ -51,7 +55,7 @@ describe('hv-bottom-sheet', () => {
       }
 
       expect(fired, `cancel via ${trigger}`).toBe(1);
-      expect(el.open).toBe(false);
+      expect(el.open, `still up after ${trigger}`).toBe(true);
       el.remove();
     }
   });
@@ -122,7 +126,8 @@ describe('hv-bottom-sheet: drag to dismiss', () => {
     await (await grip(el)).drag(100, 400);
 
     expect(cancelled).toBe(1);
-    expect(el.open).toBe(false);
+    // Reported, not acted on: the host closes, so a dirty form can be asked about.
+    expect(el.open).toBe(true);
   });
 
   it('springs back from a drag too short to mean it', async () => {
@@ -196,7 +201,7 @@ describe('hv-bottom-sheet: drag to dismiss', () => {
     opener.remove();
   });
 
-  it('closes on Escape raised from inside the sheet', async () => {
+  it('reports Escape raised from inside the sheet', async () => {
     const el = await mount();
     let cancels = 0;
     el.addEventListener('cancel', () => { cancels += 1; });
@@ -207,6 +212,28 @@ describe('hv-bottom-sheet: drag to dismiss', () => {
     await el.updateComplete;
 
     expect(cancels).toBe(1);
+    expect(el.open).toBe(true);
+  });
+
+  // The whole point of not self-closing: a host can hold the sheet up while it
+  // asks a question, and the binding it holds it with still agrees with the DOM.
+  it('stays up when the host declines to close it, and goes down when it does', async () => {
+    const el = await mount();
+    let allow = false;
+    el.addEventListener('cancel', () => {
+      if (allow) el.open = false;
+    });
+    const scrim = () => (el.shadowRoot?.querySelector('.scrim') as HTMLElement | null)?.click();
+
+    scrim();
+    await el.updateComplete;
+    expect(el.open).toBe(true);
+    expect(el.shadowRoot?.querySelector('[data-testid="bottom-sheet"]')).toBeTruthy();
+
+    allow = true;
+    scrim();
+    await el.updateComplete;
     expect(el.open).toBe(false);
+    expect(el.shadowRoot?.querySelector('[data-testid="bottom-sheet"]')).toBe(null);
   });
 });

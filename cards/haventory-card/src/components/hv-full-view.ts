@@ -18,6 +18,7 @@ import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import { quickFilterAllowed } from '../ui/quick-filters';
 import type { QuickFilterKey } from '../ui/quick-filters';
 import { editorErrorText } from '../ui/editor-error';
+import { DISCARD_PROMPT } from '../ui/discard';
 import { NARROW_QUERY } from '../ui/responsive';
 import { statusCount, statusLabel, statusList } from '../ui/status';
 import type { EmptyOffer } from '../ui/empty-state';
@@ -37,6 +38,7 @@ import './hv-filter-panel';
 import './hv-item-editor';
 import './hv-location-tree';
 import './hv-overflow-menu';
+import type { HVItemEditor } from './hv-item-editor';
 import type { HVLocationTree } from './hv-location-tree';
 import type { HVFilterPanel } from './hv-filter-panel';
 
@@ -819,6 +821,11 @@ export class HVFullView extends LitElement {
   @state() private _bulkProgress: BulkProgress | null = null;
   @state() private _bulkResult: BulkResultView | null = null;
   @state() private _pendingDelete = false;
+  /**
+   * Where the surface goes once a discard is confirmed, or null while nothing
+   * is being asked: another row, the create form, or the view closing.
+   */
+  @state() private _pendingDiscard: string | 'new' | 'close' | null = null;
   @state() private _loadingAll = false;
   /** Set while a batch is running so Cancel can stop it between chunks. */
   private _bulkCancelled = false;
@@ -879,6 +886,7 @@ export class HVFullView extends LitElement {
         this._filtersOpen = false;
         this._editing = null;
         this._editorError = null;
+        this._pendingDiscard = null;
         this._creatingLocation = false;
         this._locationError = null;
         this._selecting = false;
@@ -912,6 +920,36 @@ export class HVFullView extends LitElement {
     this.open = false;
     this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
   };
+
+  private get _editor(): HVItemEditor | null {
+    return this.shadowRoot?.querySelector('hv-item-editor') ?? null;
+  }
+
+  /**
+   * Leave the open form — for another row, for the create form, or by closing
+   * the whole surface — asking first if there is typing to lose.
+   *
+   * The form asks for its own Cancel, ✕ and Escape, but only about closing.
+   * Everything here has somewhere else to be afterwards, so the question is
+   * raised on this side and the destination held until it is answered. Same
+   * wording either way: `ui/discard` owns it.
+   */
+  private _leaveEditor(to: string | 'new' | 'close') {
+    if (this._editing !== null && this._editor?.dirty) {
+      this._pendingDiscard = to;
+      return;
+    }
+    this._applyLeave(to);
+  }
+
+  private _applyLeave(to: string | 'new' | 'close') {
+    if (to === 'close') {
+      this._close();
+      return;
+    }
+    this._editing = to;
+    this._editorError = null;
+  }
 
   // ---------- Focus trap ----------
   /**
@@ -961,6 +999,8 @@ export class HVFullView extends LitElement {
       this._pinnedItem = null;
       this._editing = null;
       this._editorError = null;
+      // Nothing left to discard, so the question — if one was up — is moot.
+      this._pendingDiscard = null;
       return;
     }
     const listed = this.st?.items.find((i) => i.id === editing);
@@ -986,8 +1026,7 @@ export class HVFullView extends LitElement {
         break;
       case 'edit':
       case 'open-item':
-        this._editing = item.id;
-        this._editorError = null;
+        this._leaveEditor(item.id);
         break;
     }
   }
@@ -1506,10 +1545,7 @@ export class HVFullView extends LitElement {
       locationName: (st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId)?.name ?? null,
       onAction: (id: EmptyOffer['id']) => {
         if (id === 'clear-filters') this.store?.clearFilters();
-        else if (id === 'add-item') {
-          this._editing = 'new';
-          this._editorError = null;
-        }
+        else if (id === 'add-item') this._leaveEditor('new');
         else if (id === 'refresh') void this.store?.refreshAll();
         else
           this.dispatchEvent(
@@ -1600,7 +1636,12 @@ export class HVFullView extends LitElement {
 
     return html`
       ${modal
-        ? html`<div class="backdrop" role="presentation" style="z-index: ${z};" @click=${this._close}></div>`
+        ? html`<div
+            class="backdrop"
+            role="presentation"
+            style="z-index: ${z};"
+            @click=${() => this._leaveEditor('close')}
+          ></div>`
         : null}
       <div
         class="shell"
@@ -1609,7 +1650,7 @@ export class HVFullView extends LitElement {
         aria-label=${this.heading}
         data-testid="full-view"
         style=${modal ? `z-index: ${z + 1};` : ''}
-        @keydown=${modal ? onEscape(() => this._close()) : nothing}
+        @keydown=${modal ? onEscape(() => this._leaveEditor('close')) : nothing}
       >
         ${modal ? html`<span class="sentinel" tabindex="0" @focus=${() => this._focusLast()}></span>` : null}
         ${this._selecting ? this._renderSelectionBar() : this._renderAppBar()}
@@ -1706,7 +1747,12 @@ export class HVFullView extends LitElement {
         <div class="appbar">
           ${this.embedded
             ? this._renderMenuButton()
-            : html`<button class="tap" data-testid="expand-toggle" aria-label="Close full view" @click=${this._close}>
+            : html`<button
+                class="tap"
+                data-testid="expand-toggle"
+                aria-label="Close full view"
+                @click=${() => this._leaveEditor('close')}
+              >
                 ${icon('close', 20)}
               </button>`}
           <h2>${this.heading}</h2>
@@ -1772,10 +1818,7 @@ export class HVFullView extends LitElement {
           <button
             class="add"
             data-testid="full-add-item"
-            @click=${() => {
-              this._editing = 'new';
-              this._editorError = null;
-            }}
+            @click=${() => this._leaveEditor('new')}
           >
             ${icon('plus', 16)}Add item
           </button>
@@ -1970,6 +2013,24 @@ export class HVFullView extends LitElement {
           }}
           @cancel=${() => {
             this._pendingDelete = false;
+          }}
+        ></hv-confirm>
+
+        <hv-confirm
+          data-testid="full-discard-confirm"
+          ?open=${this._pendingDiscard !== null}
+          ?mobile=${this._narrow}
+          .heading=${DISCARD_PROMPT.heading}
+          .message=${DISCARD_PROMPT.message}
+          .confirmLabel=${DISCARD_PROMPT.confirmLabel}
+          destructive
+          @confirm=${() => {
+            const to = this._pendingDiscard;
+            this._pendingDiscard = null;
+            if (to !== null) this._applyLeave(to);
+          }}
+          @cancel=${() => {
+            this._pendingDiscard = null;
           }}
         ></hv-confirm>
     `;

@@ -1,5 +1,6 @@
 import './hv-detail-sheet';
 import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
+import { DISCARD_PROMPT } from '../ui/discard';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import type { HVDetailSheet } from './hv-detail-sheet';
 import type { HVBottomSheet } from './hv-bottom-sheet';
@@ -349,6 +350,185 @@ describe('hv-detail-sheet: edit view', () => {
     await el.updateComplete;
 
     expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
+  });
+});
+
+// The sheet published a `dirty` getter and nothing read it: a scrim tap, a
+// swipe-down or the Back arrow took the typing with them. The sheet answers for
+// the form it hosts — a host outside cannot see into this shadow root.
+describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
+  /** Open the edit form and type into it. */
+  async function dirtySheet() {
+    const el = await mount({ id: '1', name: 'A' });
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
+    const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    name.value = 'A longer name';
+    name.dispatchEvent(new Event('input'));
+    await el.updateComplete;
+    expect(el.dirty).toBe(true);
+    return el;
+  }
+
+  const guard = (el: HVDetailSheet) =>
+    q(el, '[data-testid="sheet-discard-confirm"]') as HTMLElement & { open: boolean };
+  const press = (el: HVDetailSheet, testid: 'confirm-accept' | 'confirm-cancel') =>
+    (guard(el).shadowRoot?.querySelector(`[data-testid="${testid}"]`) as HTMLButtonElement).click();
+
+  /** The three ways out, each landing on the sheet's own cancel path. */
+  const dismissals = {
+    scrim: (el: HVDetailSheet) =>
+      ((q(el, 'hv-bottom-sheet') as HVBottomSheet).shadowRoot?.querySelector('.scrim') as HTMLElement).click(),
+    escape: (el: HVDetailSheet) =>
+      (
+        (q(el, 'hv-bottom-sheet') as HVBottomSheet).shadowRoot?.querySelector(
+          '[data-testid="bottom-sheet"]',
+        ) as HTMLElement
+      ).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+    swipe: (el: HVDetailSheet) => {
+      const sheet = q(el, 'hv-bottom-sheet') as HVBottomSheet;
+      const node = sheet.shadowRoot?.querySelector('[data-testid="sheet-grip"]') as HTMLElement | null;
+      // Edit mode hides the grip, so the swipe is raised on the panel the
+      // gesture handlers would have received it through.
+      if (!node) return;
+      node.setPointerCapture = () => {};
+      for (const [type, clientY] of [
+        ['pointerdown', 100],
+        ['pointermove', 480],
+        ['pointerup', 480],
+      ] as const) {
+        node.dispatchEvent(new MouseEvent(type, { clientY, bubbles: true }));
+      }
+    },
+  } as const;
+
+  it.each(['scrim', 'escape'] as const)('%s asks, and the sheet stays up until it is answered', async (how) => {
+    const el = await dirtySheet();
+    let cancels = 0;
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
+
+    dismissals[how](el);
+    await el.updateComplete;
+
+    expect(guard(el).open).toBe(true);
+    expect(cancels).toBe(0);
+    expect(el.open).toBe(true);
+    expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
+
+    press(el, 'confirm-accept');
+    await el.updateComplete;
+    expect(cancels).toBe(1);
+    expect(el.open).toBe(false);
+  });
+
+  it.each(['scrim', 'escape'] as const)('%s keeps the form when the question is declined', async (how) => {
+    const el = await dirtySheet();
+    let cancels = 0;
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
+
+    dismissals[how](el);
+    await el.updateComplete;
+    press(el, 'confirm-cancel');
+    await el.updateComplete;
+
+    expect(cancels).toBe(0);
+    expect(el.open).toBe(true);
+    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
+    expect((editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement).value).toBe(
+      'A longer name',
+    );
+  });
+
+  // The grip is hidden in edit mode, so the drag is exercised on the read view:
+  // clean there, and it must not start asking about nothing.
+  it('dismisses a clean read view on a swipe without a question', async () => {
+    const el = await mount({ id: '1', name: 'A' });
+    let cancels = 0;
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
+
+    dismissals.swipe(el);
+    await el.updateComplete;
+
+    expect(guard(el).open).toBe(false);
+    expect(cancels).toBe(1);
+    expect(el.open).toBe(false);
+  });
+
+  it('asks before the Back arrow drops the form for the read view', async () => {
+    const el = await dirtySheet();
+
+    (q(el, '[data-testid="sheet-back"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(guard(el).open).toBe(true);
+    expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
+
+    press(el, 'confirm-accept');
+    await el.updateComplete;
+    // Back lands on the read view; the sheet itself stays up.
+    expect(el.open).toBe(true);
+    expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
+  });
+
+  it('asks the same question the form asks itself', async () => {
+    const el = await dirtySheet();
+    dismissals.scrim(el);
+    await el.updateComplete;
+
+    const panel = guard(el).shadowRoot as ShadowRoot;
+    expect(panel.querySelector('[data-testid="confirm-dialog"]')?.getAttribute('aria-label')).toBe(
+      DISCARD_PROMPT.heading,
+    );
+    expect(panel.querySelector('[data-testid="confirm-message"]')?.textContent).toContain(
+      DISCARD_PROMPT.message,
+    );
+    expect(panel.querySelector('[data-testid="confirm-accept"]')?.textContent).toContain(
+      DISCARD_PROMPT.confirmLabel,
+    );
+  });
+
+  // Every cancel in the card is composed. Backing out of the date step used to
+  // reach the host as "the sheet closed" and took the item down with it.
+  it('keeps the sheet up when the check-out date step is backed out of', async () => {
+    const el = await mount({ id: '1', name: 'A' });
+    let cancels = 0;
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
+
+    (q(el, '[data-testid="sheet-check-out"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const step = q(el, '[data-testid="sheet-checkout"]') as HTMLElement;
+    (step.shadowRoot?.querySelector('[data-testid="checkout-cancel"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    expect(cancels).toBe(0);
+    expect(el.open).toBe(true);
+    expect(q(el, '[data-testid="sheet-checkout"]')).toBe(null);
+    expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
+  });
+
+  it('closes a clean form on the scrim without asking', async () => {
+    const el = await mount({ id: '1', name: 'A' });
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    let cancels = 0;
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
+
+    dismissals.scrim(el);
+    await el.updateComplete;
+
+    expect(guard(el).open).toBe(false);
+    expect(cancels).toBe(1);
+    expect(el.open).toBe(false);
   });
 });
 
