@@ -18,8 +18,24 @@ async function mount(item: Partial<Item>, props: Partial<HVDetailSheet> = {}) {
 }
 
 const q = (el: HVDetailSheet, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
+
+/**
+ * The lightbox is a component of its own — shared with the edit form on every
+ * host — so its panel sits one shadow root below this sheet's.
+ */
+const lightbox = (el: HVDetailSheet, sel = '[data-testid="lightbox"]') =>
+  (q(el, 'hv-lightbox')?.shadowRoot?.querySelector(sel) ?? null) as HTMLElement | null;
 const all = (el: HVDetailSheet, sel: string) =>
   [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
+
+/**
+ * A host's own update does not carry its children's, and the lightbox is a
+ * child now — so anything that opens or moves it needs its update too.
+ */
+const settle = async (el: HVDetailSheet) => {
+  await el.updateComplete;
+  await (q(el, 'hv-lightbox') as (HTMLElement & { updateComplete?: Promise<unknown> }) | null)?.updateComplete;
+};
 
 /** jsdom lays out no shadow DOM, so type sizes are asserted on the sheet. */
 const sheetCss = () => {
@@ -207,14 +223,14 @@ describe('hv-detail-sheet: read view', () => {
     expect(seen).toEqual(['request-delete']);
 
     (q(el, '[data-testid="sheet-check-out"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
     // Nothing is checked out until the date step is answered.
     expect(seen).toEqual(['request-delete']);
     expect(q(el, '[data-testid="sheet-checkout"]')).toBeTruthy();
 
     const step = q(el, '[data-testid="sheet-checkout"]') as HTMLElement;
     (step.shadowRoot?.querySelector('[data-testid="checkout-no-date"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
     expect(seen).toEqual(['request-delete', 'check-out-confirmed']);
     expect(q(el, '[data-testid="sheet-checkout"]')).toBe(null);
   });
@@ -237,7 +253,7 @@ describe('hv-detail-sheet: edit view', () => {
     expect(q(el, '[data-testid="sheet-editor"]')).toBe(null);
 
     (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
 
     expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
     // Still one sheet.
@@ -249,17 +265,17 @@ describe('hv-detail-sheet: edit view', () => {
   it('reaches the form from "Edit details" too', async () => {
     const el = await mount({ id: '1' });
     (q(el, '[data-testid="sheet-edit-details"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
     expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
   });
 
   it('goes back to the read view', async () => {
     const el = await mount({ id: '1' });
     (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
 
     (q(el, '[data-testid="sheet-back"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
     expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
   });
 
@@ -269,13 +285,13 @@ describe('hv-detail-sheet: edit view', () => {
     el.addEventListener('save', (e) => saves.push((e as CustomEvent).detail));
 
     (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
 
     const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
     const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
     name.value = 'New';
     name.dispatchEvent(new Event('input'));
-    await el.updateComplete;
+    await settle(el);
 
     (q(el, '[data-testid="sheet-save"]') as HTMLButtonElement).click();
     expect(saves).toHaveLength(1);
@@ -289,7 +305,7 @@ describe('hv-detail-sheet: edit view', () => {
     const seen = captured(el, ['request-delete', 'delete-item']);
 
     (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
 
     const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
     (editor.shadowRoot?.querySelector('[data-testid="editor-delete"]') as HTMLButtonElement).click();
@@ -304,24 +320,24 @@ describe('hv-detail-sheet: edit view', () => {
     expect(el.dirty).toBe(false);
 
     (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
     expect(el.dirty).toBe(false);
 
     const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
     const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
     name.value = 'B';
     name.dispatchEvent(new Event('input'));
-    await el.updateComplete;
+    await settle(el);
     expect(el.dirty).toBe(true);
   });
 
   it('returns to the read view when a different item is loaded', async () => {
     const el = await mount({ id: '1', name: 'A' });
     (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
 
     el.item = makeItem({ id: '2', name: 'B' });
-    await el.updateComplete;
+    await settle(el);
     expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
   });
 
@@ -330,10 +346,10 @@ describe('hv-detail-sheet: edit view', () => {
   it('stays in the edit form when the same item comes back with a new version', async () => {
     const el = await mount({ id: '1', name: 'A', version: 3 });
     (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
 
     el.item = makeItem({ id: '1', name: 'A', version: 4 });
-    await el.updateComplete;
+    await settle(el);
 
     expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
     expect(q(el, '[data-testid="sheet-qty"]')).toBeNull();
@@ -342,12 +358,12 @@ describe('hv-detail-sheet: edit view', () => {
   it('returns to the read view when the sheet is re-opened on the same item', async () => {
     const el = await mount({ id: '1', name: 'A' });
     (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
 
     el.open = false;
-    await el.updateComplete;
+    await settle(el);
     el.open = true;
-    await el.updateComplete;
+    await settle(el);
 
     expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
   });
@@ -361,12 +377,12 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
   async function dirtySheet() {
     const el = await mount({ id: '1', name: 'A' });
     (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
     const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
     const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
     name.value = 'A longer name';
     name.dispatchEvent(new Event('input'));
-    await el.updateComplete;
+    await settle(el);
     expect(el.dirty).toBe(true);
     return el;
   }
@@ -411,7 +427,7 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     });
 
     dismissals[how](el);
-    await el.updateComplete;
+    await settle(el);
 
     expect(guard(el).open).toBe(true);
     expect(cancels).toBe(0);
@@ -419,7 +435,7 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
 
     press(el, 'confirm-accept');
-    await el.updateComplete;
+    await settle(el);
     expect(cancels).toBe(1);
     expect(el.open).toBe(false);
   });
@@ -432,9 +448,9 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     });
 
     dismissals[how](el);
-    await el.updateComplete;
+    await settle(el);
     press(el, 'confirm-cancel');
-    await el.updateComplete;
+    await settle(el);
 
     expect(cancels).toBe(0);
     expect(el.open).toBe(true);
@@ -454,7 +470,7 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     });
 
     dismissals.swipe(el);
-    await el.updateComplete;
+    await settle(el);
 
     expect(guard(el).open).toBe(false);
     expect(cancels).toBe(1);
@@ -465,12 +481,12 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     const el = await dirtySheet();
 
     (q(el, '[data-testid="sheet-back"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
     expect(guard(el).open).toBe(true);
     expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
 
     press(el, 'confirm-accept');
-    await el.updateComplete;
+    await settle(el);
     // Back lands on the read view; the sheet itself stays up.
     expect(el.open).toBe(true);
     expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
@@ -479,7 +495,7 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
   it('asks the same question the form asks itself', async () => {
     const el = await dirtySheet();
     dismissals.scrim(el);
-    await el.updateComplete;
+    await settle(el);
 
     const panel = guard(el).shadowRoot as ShadowRoot;
     expect(panel.querySelector('[data-testid="confirm-dialog"]')?.getAttribute('aria-label')).toBe(
@@ -503,10 +519,10 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     });
 
     (q(el, '[data-testid="sheet-check-out"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
     const step = q(el, '[data-testid="sheet-checkout"]') as HTMLElement;
     (step.shadowRoot?.querySelector('[data-testid="checkout-cancel"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
 
     expect(cancels).toBe(0);
     expect(el.open).toBe(true);
@@ -517,14 +533,14 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
   it('closes a clean form on the scrim without asking', async () => {
     const el = await mount({ id: '1', name: 'A' });
     (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await settle(el);
     let cancels = 0;
     el.addEventListener('cancel', () => {
       cancels += 1;
     });
 
     dismissals.scrim(el);
-    await el.updateComplete;
+    await settle(el);
 
     expect(guard(el).open).toBe(false);
     expect(cancels).toBe(1);
@@ -540,7 +556,7 @@ describe('hv-detail-sheet: pictures', () => {
       { id: 'i-1', name: 'Drill', attachments: shots() },
       { media: makeMediaBindings() },
     );
-    await el.updateComplete;
+    await settle(el);
 
     const figures = all(el, '[data-testid="sheet-photo"]');
     expect(figures).toHaveLength(2);
@@ -562,7 +578,7 @@ describe('hv-detail-sheet: pictures', () => {
       { attachments: [makeAttachment({ kind: 'manual', mime: 'application/pdf' })] },
       { media: makeMediaBindings() },
     );
-    await el.updateComplete;
+    await settle(el);
 
     expect(q(el, '[data-testid="sheet-gallery"]')).toBeNull();
   });
@@ -572,14 +588,14 @@ describe('hv-detail-sheet: pictures', () => {
       { id: 'i-1', name: 'Drill', attachments: shots() },
       { media: makeMediaBindings() },
     );
-    await el.updateComplete;
+    await settle(el);
 
     all(el, '[data-testid="sheet-photo-open"]')[1].click();
-    await el.updateComplete;
+    await settle(el);
 
-    const lightbox = q(el, '[data-testid="sheet-lightbox"]');
-    expect(lightbox).toBeTruthy();
-    expect(lightbox?.getAttribute('aria-label')).toBe('Drill — photo 2 of 2');
+    const panel = lightbox(el);
+    expect(panel).toBeTruthy();
+    expect(panel?.getAttribute('aria-label')).toBe('Drill — photo 2 of 2');
   });
 
   it('closes the lightbox on Escape and returns focus to the opener', async () => {
@@ -587,20 +603,20 @@ describe('hv-detail-sheet: pictures', () => {
       { id: 'i-1', name: 'Drill', attachments: shots() },
       { media: makeMediaBindings() },
     );
-    await el.updateComplete;
+    await settle(el);
 
     const opener = all(el, '[data-testid="sheet-photo-open"]')[0];
     opener.focus();
     opener.click();
-    await el.updateComplete;
-    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeTruthy();
+    await settle(el);
+    expect(lightbox(el)).toBeTruthy();
 
-    q(el, '[data-testid="sheet-lightbox"]')?.dispatchEvent(
+    lightbox(el)?.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
     );
-    await el.updateComplete;
+    await settle(el);
 
-    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
+    expect(lightbox(el)).toBeNull();
     expect(el.shadowRoot?.activeElement).toBe(opener);
   });
 
@@ -611,15 +627,15 @@ describe('hv-detail-sheet: pictures', () => {
       { id: 'i-1', attachments: shots() },
       { media: makeMediaBindings() },
     );
-    await el.updateComplete;
+    await settle(el);
     const seen = captured(el, ['cancel']);
 
     all(el, '[data-testid="sheet-photo-open"]')[0].click();
-    await el.updateComplete;
-    q(el, '[data-testid="sheet-lightbox"]')?.dispatchEvent(
+    await settle(el);
+    lightbox(el)?.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
     );
-    await el.updateComplete;
+    await settle(el);
 
     expect(seen).toEqual([]);
   });
@@ -629,14 +645,14 @@ describe('hv-detail-sheet: pictures', () => {
       { id: 'i-1', attachments: shots() },
       { media: makeMediaBindings() },
     );
-    await el.updateComplete;
+    await settle(el);
 
     all(el, '[data-testid="sheet-photo-open"]')[0].click();
-    await el.updateComplete;
-    q(el, '[data-testid="sheet-lightbox-close"]')?.click();
-    await el.updateComplete;
+    await settle(el);
+    lightbox(el, '[data-testid="lightbox-close"]')?.click();
+    await settle(el);
 
-    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
+    expect(lightbox(el)).toBeNull();
   });
 
   it('drops the lightbox when the sheet moves to another item', async () => {
@@ -644,14 +660,14 @@ describe('hv-detail-sheet: pictures', () => {
       { id: 'i-1', attachments: shots() },
       { media: makeMediaBindings() },
     );
-    await el.updateComplete;
+    await settle(el);
     all(el, '[data-testid="sheet-photo-open"]')[0].click();
-    await el.updateComplete;
+    await settle(el);
 
     el.item = makeItem({ id: 'i-2' });
-    await el.updateComplete;
+    await settle(el);
 
-    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
+    expect(lightbox(el)).toBeNull();
   });
 
   // Setting a cover or removing another photo re-broadcasts the same item; the
@@ -661,17 +677,17 @@ describe('hv-detail-sheet: pictures', () => {
       { id: 'i-1', name: 'Drill', version: 3, attachments: shots() },
       { media: makeMediaBindings() },
     );
-    await el.updateComplete;
+    await settle(el);
     all(el, '[data-testid="sheet-photo-open"]')[1].click();
-    await el.updateComplete;
+    await settle(el);
 
     el.item = makeItem({ id: 'i-1', name: 'Drill', version: 4, attachments: shots() });
-    await el.updateComplete;
-    await el.updateComplete;
+    await settle(el);
+    await settle(el);
 
-    const lightbox = q(el, '[data-testid="sheet-lightbox"]');
-    expect(lightbox).toBeTruthy();
-    expect(lightbox?.getAttribute('aria-label')).toBe('Drill — photo 2 of 2');
+    const panel = lightbox(el);
+    expect(panel).toBeTruthy();
+    expect(panel?.getAttribute('aria-label')).toBe('Drill — photo 2 of 2');
   });
 
   // The lightbox outlives a same-item refresh, and one of those refreshes is
@@ -681,9 +697,9 @@ describe('hv-detail-sheet: pictures', () => {
       { id: 'i-1', name: 'Drill', version: 3, attachments: shots() },
       { media: makeMediaBindings() },
     );
-    await el.updateComplete;
+    await settle(el);
     all(el, '[data-testid="sheet-photo-open"]')[1].click();
-    await el.updateComplete;
+    await settle(el);
 
     el.item = makeItem({
       id: 'i-1',
@@ -691,12 +707,12 @@ describe('hv-detail-sheet: pictures', () => {
       version: 4,
       attachments: [makeAttachment({ id: 'att-1' })],
     });
-    await el.updateComplete;
-    await el.updateComplete;
+    await settle(el);
+    await settle(el);
 
-    const lightbox = q(el, '[data-testid="sheet-lightbox"]');
-    expect(lightbox).toBeTruthy();
-    expect(lightbox?.getAttribute('aria-label')).toBe('Photo of Drill');
+    const panel = lightbox(el);
+    expect(panel).toBeTruthy();
+    expect(panel?.getAttribute('aria-label')).toBe('Photo of Drill');
   });
 
   it('closes the lightbox when the last photo is removed under it', async () => {
@@ -704,41 +720,15 @@ describe('hv-detail-sheet: pictures', () => {
       { id: 'i-1', name: 'Drill', version: 3, attachments: shots() },
       { media: makeMediaBindings() },
     );
-    await el.updateComplete;
+    await settle(el);
     all(el, '[data-testid="sheet-photo-open"]')[0].click();
-    await el.updateComplete;
+    await settle(el);
 
     el.item = makeItem({ id: 'i-1', name: 'Drill', version: 4, attachments: [] });
-    await el.updateComplete;
-    await el.updateComplete;
+    await settle(el);
+    await settle(el);
 
-    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
-  });
-
-  // The lightbox chrome floats on the photo, so a white frame is the worst
-  // case its scrim has to survive: the counter is 13px text and wants 4.5:1
-  // against whatever it lands on, which the chevrons beside it do not.
-  it('keeps the lightbox controls readable over a white photo', () => {
-    const alpha = Number(
-      /--hv-lightbox-scrim: rgba\(0, 0, 0, ([\d.]+)\)/.exec(sheetCss())?.[1],
-    );
-    expect(alpha).toBeGreaterThan(0);
-
-    const channel = (c: number) => {
-      const s = c / 255;
-      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-    };
-    // The scrim over a pure white frame, which is what the white ink sits on.
-    const backing = channel(255 * (1 - alpha));
-    expect((1.05) / (backing + 0.05)).toBeGreaterThanOrEqual(4.5);
-  });
-
-  it('backs every lightbox control with that one scrim', () => {
-    const css = sheetCss();
-    for (const selector of ['\\.lightbox \\.close', '\\.lightbox \\.nav', '\\.lightbox \\.counter']) {
-      const rule = new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
-      expect(rule).toContain('background: var(--hv-lightbox-scrim)');
-    }
+    expect(lightbox(el)).toBeNull();
   });
 
   // That close takes the thumbnail focus would have gone back to with it, so
@@ -749,15 +739,15 @@ describe('hv-detail-sheet: pictures', () => {
       { id: 'i-1', name: 'Drill', version: 3, attachments: shots() },
       { media: makeMediaBindings() },
     );
-    await el.updateComplete;
+    await settle(el);
     const opener = all(el, '[data-testid="sheet-photo-open"]')[0];
     opener.focus();
     opener.click();
-    await el.updateComplete;
+    await settle(el);
 
     el.item = makeItem({ id: 'i-1', name: 'Drill', version: 4, attachments: [] });
-    await el.updateComplete;
-    await el.updateComplete;
+    await settle(el);
+    await settle(el);
 
     expect(opener.isConnected).toBe(false);
     const sheet = q(el, 'hv-bottom-sheet') as HVBottomSheet;
@@ -776,41 +766,41 @@ describe('hv-detail-sheet: lightbox navigation', () => {
 
   async function opened(index: number, attachments = shots()) {
     const el = await mount({ id: 'i-1', name: 'Drill', attachments }, { media: makeMediaBindings() });
-    await el.updateComplete;
+    await settle(el);
     all(el, '[data-testid="sheet-photo-open"]')[index].click();
-    await el.updateComplete;
+    await settle(el);
     return el;
   }
 
   const shown = (el: HVDetailSheet) =>
-    (q(el, '[data-testid="sheet-lightbox"] img') as HTMLImageElement | null)?.getAttribute('alt');
+    (lightbox(el, '[data-testid="lightbox"] img') as HTMLImageElement | null)?.getAttribute('alt');
   const counter = (el: HVDetailSheet) =>
-    q(el, '[data-testid="sheet-lightbox-counter"]')?.textContent?.trim();
+    lightbox(el, '[data-testid="lightbox-counter"]')?.textContent?.trim();
   const press = async (el: HVDetailSheet, key: string) => {
-    q(el, '[data-testid="sheet-lightbox"]')?.dispatchEvent(
+    lightbox(el)?.dispatchEvent(
       new KeyboardEvent('keydown', { key, bubbles: true }),
     );
-    await el.updateComplete;
+    await settle(el);
   };
 
   it('counts the photo out of the strip it belongs to', async () => {
     const el = await opened(1);
     expect(counter(el)).toBe('2 of 3');
     // A changed dialog label is not re-announced; the counter is.
-    expect(q(el, '[data-testid="sheet-lightbox-counter"]')?.getAttribute('aria-live')).toBe('polite');
+    expect(lightbox(el, '[data-testid="lightbox-counter"]')?.getAttribute('aria-live')).toBe('polite');
   });
 
   it('steps forward and back from the tap-edge buttons', async () => {
     const el = await opened(0);
     expect(shown(el)).toBe('Drill — photo 1 of 3');
 
-    (q(el, '[data-testid="sheet-lightbox-next"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    (lightbox(el, '[data-testid="lightbox-next"]') as HTMLButtonElement).click();
+    await settle(el);
     expect(shown(el)).toBe('Drill — photo 2 of 3');
     expect(counter(el)).toBe('2 of 3');
 
-    (q(el, '[data-testid="sheet-lightbox-prev"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    (lightbox(el, '[data-testid="lightbox-prev"]') as HTMLButtonElement).click();
+    await settle(el);
     expect(shown(el)).toBe('Drill — photo 1 of 3');
     expect(counter(el)).toBe('1 of 3');
   });
@@ -819,21 +809,21 @@ describe('hv-detail-sheet: lightbox navigation', () => {
   // that pressed it, which would drop focus out of the dialog.
   it('wraps at both ends rather than stopping', async () => {
     const el = await opened(0);
-    (q(el, '[data-testid="sheet-lightbox-prev"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    (lightbox(el, '[data-testid="lightbox-prev"]') as HTMLButtonElement).click();
+    await settle(el);
     expect(counter(el)).toBe('3 of 3');
 
-    (q(el, '[data-testid="sheet-lightbox-next"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    (lightbox(el, '[data-testid="lightbox-next"]') as HTMLButtonElement).click();
+    await settle(el);
     expect(counter(el)).toBe('1 of 3');
   });
 
   // The backdrop closes on click and the buttons sit on top of it.
   it('does not close the lightbox when a nav button is pressed', async () => {
     const el = await opened(0);
-    (q(el, '[data-testid="sheet-lightbox-next"]') as HTMLButtonElement).click();
-    await el.updateComplete;
-    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeTruthy();
+    (lightbox(el, '[data-testid="lightbox-next"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(lightbox(el)).toBeTruthy();
   });
 
   it('moves with the arrow keys', async () => {
@@ -856,9 +846,9 @@ describe('hv-detail-sheet: lightbox navigation', () => {
 
   it('offers no navigation for a single photo', async () => {
     const el = await opened(0, [makeAttachment({ id: 'att-1' })]);
-    expect(q(el, '[data-testid="sheet-lightbox-prev"]')).toBeNull();
-    expect(q(el, '[data-testid="sheet-lightbox-next"]')).toBeNull();
-    expect(q(el, '[data-testid="sheet-lightbox-counter"]')).toBeNull();
+    expect(lightbox(el, '[data-testid="lightbox-prev"]')).toBeNull();
+    expect(lightbox(el, '[data-testid="lightbox-next"]')).toBeNull();
+    expect(lightbox(el, '[data-testid="lightbox-counter"]')).toBeNull();
     // The arrow key has nowhere to go and must not be swallowed by a dialog
     // that cannot act on it.
     await press(el, 'ArrowRight');
@@ -867,16 +857,16 @@ describe('hv-detail-sheet: lightbox navigation', () => {
 
   it('still closes on Escape with the navigation on screen', async () => {
     const el = await mount({ id: 'i-1', name: 'Drill', attachments: shots() }, { media: makeMediaBindings() });
-    await el.updateComplete;
+    await settle(el);
     const opener = all(el, '[data-testid="sheet-photo-open"]')[1];
     opener.focus();
     opener.click();
-    await el.updateComplete;
+    await settle(el);
     const seen = captured(el, ['cancel']);
 
     await press(el, 'Escape');
 
-    expect(q(el, '[data-testid="sheet-lightbox"]')).toBeNull();
+    expect(lightbox(el)).toBeNull();
     expect(seen).toEqual([]);
     expect(el.shadowRoot?.activeElement).toBe(opener);
   });
@@ -903,7 +893,7 @@ describe('hv-detail-sheet: documents', () => {
   it('lists each manual with its title, falling back to the filename', async () => {
     serve(206);
     const el = await mount({ id: 'i-1', attachments: docs() }, { media: makeMediaBindings() });
-    await el.updateComplete;
+    await settle(el);
 
     const titles = all(el, '[data-testid="sheet-document-title"]').map((n) => n.textContent?.trim());
     expect(titles).toEqual(['Dishwasher manual (EN)', 'warranty.pdf']);
@@ -915,7 +905,7 @@ describe('hv-detail-sheet: documents', () => {
   it('names the file under a title only when the two differ', async () => {
     serve(206);
     const el = await mount({ id: 'i-1', attachments: docs() }, { media: makeMediaBindings() });
-    await el.updateComplete;
+    await settle(el);
 
     const [titled, untitled] = all(el, '[data-testid="sheet-document-meta"]').map((n) =>
       n.textContent?.trim(),
@@ -933,7 +923,7 @@ describe('hv-detail-sheet: documents', () => {
       { attachments: [makeAttachment({ id: 'att-1' })] },
       { media: makeMediaBindings() },
     );
-    await el.updateComplete;
+    await settle(el);
 
     expect(q(el, '[data-testid="sheet-documents"]')).toBeNull();
   });
@@ -943,7 +933,7 @@ describe('hv-detail-sheet: documents', () => {
   it('opens a document in a new tab through the signed URL', async () => {
     serve(206);
     const el = await mount({ id: 'i-1', attachments: docs() }, { media: makeMediaBindings() });
-    await el.updateComplete;
+    await settle(el);
 
     const open = all(el, '[data-testid="sheet-document-open"]')[0] as HTMLAnchorElement;
     // Versioned by the served name, so a retitle cannot be answered from the
@@ -958,7 +948,7 @@ describe('hv-detail-sheet: documents', () => {
   it('marks a reference whose file is gone instead of offering a dead link', async () => {
     serve(404);
     const el = await mount({ id: 'i-1', attachments: docs() }, { media: makeMediaBindings() });
-    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+    for (let i = 0; i < 4; i += 1) await settle(el);
 
     expect(all(el, '[data-testid="sheet-document-missing"]')).toHaveLength(2);
     expect(q(el, '[data-testid="sheet-document-open"]')).toBeNull();
@@ -976,7 +966,7 @@ describe('hv-detail-sheet: documents', () => {
       }),
     );
     const el = await mount({ id: 'i-1', attachments: docs() }, { media: makeMediaBindings() });
-    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+    for (let i = 0; i < 4; i += 1) await settle(el);
 
     expect(q(el, '[data-testid="sheet-document-missing"]')).toBeNull();
     expect(all(el, '[data-testid="sheet-document-open"]')).toHaveLength(2);
@@ -994,7 +984,7 @@ describe('hv-detail-sheet: documents', () => {
       },
       { media: makeMediaBindings() },
     );
-    await el.updateComplete;
+    await settle(el);
 
     expect(all(el, '[data-testid="sheet-document-title"]').map((n) => n.textContent?.trim())).toEqual(
       ['First', 'Second'],

@@ -2653,3 +2653,74 @@ describe('hv-item-editor: one verb for checking out', () => {
     expect(q(el, '[data-testid="editor-checked-out"]')?.textContent).toContain('Check out');
   });
 });
+
+// The form's thumbnails were 72px squares of a photo and nothing more: the
+// lightbox existed on the phone's detail sheet and nowhere else, so on the card
+// and the expanded view there was no way to see a photo at a useful size.
+describe('hv-item-editor: photos open full-size', () => {
+  const shots = () => [makeAttachment({ id: 'att-1' }), makeAttachment({ id: 'att-2' })];
+
+  async function withPhotos() {
+    const el = await mount(makeItem({ id: 'i-1', name: 'Drill', attachments: shots() }), {
+      media: makeMediaBindings(),
+    });
+    await el.updateComplete;
+    await el.updateComplete;
+    return el;
+  }
+
+  const box = (el: HVItemEditor) =>
+    q(el, 'hv-lightbox')?.shadowRoot?.querySelector('[data-testid="lightbox"]') as HTMLElement | null;
+
+  const settleBox = async (el: HVItemEditor) => {
+    await el.updateComplete;
+    await (q(el, 'hv-lightbox') as (HTMLElement & { updateComplete?: Promise<unknown> }) | null)
+      ?.updateComplete;
+  };
+
+  it('opens the photo that was clicked', async () => {
+    const el = await withPhotos();
+
+    (all(el, '[data-testid="editor-photo-open"]')[1] as HTMLButtonElement).click();
+    await settleBox(el);
+    await settleBox(el);
+
+    expect(box(el)?.getAttribute('aria-label')).toBe('Drill — photo 2 of 2');
+  });
+
+  it('names each thumbnail for the photo it opens', async () => {
+    const el = await withPhotos();
+    expect(all(el, '[data-testid="editor-photo-open"]').map((b) => b.getAttribute('aria-label'))).toEqual([
+      'View Drill — photo 1 of 2',
+      'View Drill — photo 2 of 2',
+    ]);
+  });
+
+  it('closes again and leaves the form standing', async () => {
+    const el = await withPhotos();
+    let cancels = 0;
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
+
+    (all(el, '[data-testid="editor-photo-open"]')[0] as HTMLButtonElement).click();
+    await settleBox(el);
+    await settleBox(el);
+    (
+      q(el, 'hv-lightbox')?.shadowRoot?.querySelector('[data-testid="lightbox-close"]') as HTMLButtonElement
+    ).click();
+    await settleBox(el);
+
+    expect(box(el)).toBe(null);
+    // Escape inside the lightbox must not read as Escape on the form.
+    expect(cancels).toBe(0);
+    expect(q(el, '[data-testid="item-editor"]')).toBeTruthy();
+  });
+
+  // Without a signed URL there is no photo to open, only the camera placeholder.
+  it('offers nothing to open where the URL has not arrived', async () => {
+    const el = await mount(makeItem({ id: 'i-1', attachments: shots() }), { media: null });
+    await el.updateComplete;
+    expect(q(el, '[data-testid="editor-photo-open"]')).toBe(null);
+  });
+});

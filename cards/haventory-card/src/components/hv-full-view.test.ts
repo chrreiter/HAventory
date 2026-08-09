@@ -2121,3 +2121,109 @@ describe('hv-full-view: table row actions', () => {
     );
   });
 });
+
+// The card answers a tap on a row with the detail sheet; this surface answered
+// it with the edit form, so the sidebar page at phone width had no read view at
+// all — the table it would have been is off the side of the screen.
+describe('hv-full-view: the detail sheet is the narrow read view', () => {
+  const sheet = (sr: ShadowRoot) =>
+    q(sr, '[data-testid="full-detail-sheet"]') as
+      | (HTMLElement & { open: boolean; item: Item | null; updateComplete: Promise<unknown> })
+      | null;
+  const openRow = async (el: HVFullView, sr: ShadowRoot, index = 0) => {
+    const rows = [
+      ...((q(sr, '[data-testid="full-table"]') as HTMLElement).shadowRoot?.querySelectorAll(
+        '[data-testid="table-row"]',
+      ) ?? []),
+    ] as HTMLElement[];
+    rows[index].click();
+    await settle(el);
+    await settle(el);
+  };
+
+  it('opens the sheet on a row tap, not the form', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { el, sr } = await mount({ items: [makeItem({ id: '1', name: 'Drill' })] });
+      await openRow(el, sr);
+
+      expect(sheet(sr)?.open).toBe(true);
+      expect(sheet(sr)?.item?.name).toBe('Drill');
+      expect(q(sr, '[data-testid="full-editor"]')).toBe(null);
+    } finally {
+      restore();
+    }
+  });
+
+  it('puts Edit one tap deeper, inside the sheet', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { el, sr } = await mount({ items: [makeItem({ id: '1', name: 'Drill' })] });
+      await openRow(el, sr);
+
+      const inner = sheet(sr)!;
+      (inner.shadowRoot?.querySelector('[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+      await inner.updateComplete;
+
+      expect(inner.shadowRoot?.querySelector('[data-testid="sheet-editor"]')).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
+
+  it('saves through the surface that owns the store', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Old' })] });
+      await openRow(el, sr);
+
+      const inner = sheet(sr)!;
+      (inner.shadowRoot?.querySelector('[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+      await inner.updateComplete;
+      const editor = inner.shadowRoot?.querySelector('[data-testid="sheet-editor"]') as HTMLElement;
+      const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+      name.value = 'New';
+      name.dispatchEvent(new Event('input'));
+      await inner.updateComplete;
+      (inner.shadowRoot?.querySelector('[data-testid="sheet-save"]') as HTMLButtonElement).click();
+      await settle(el);
+      await settle(el);
+
+      expect(store.state.value.items.find((i) => i.id === '1')?.name).toBe('New');
+    } finally {
+      restore();
+    }
+  });
+
+  it('closes the sheet when the item it shows is deleted', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Drill' })] });
+      await openRow(el, sr);
+      expect(sheet(sr)?.open).toBe(true);
+
+      const item = store.state.value.items[0];
+      await store.deleteItem(item.id, item.version);
+      await settle(el);
+
+      expect(sheet(sr)?.open).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
+  // The table is its own read surface at a width that can show it, and the row
+  // says most of what the sheet would.
+  it('keeps the inline form on a desktop viewport', async () => {
+    const restore = stubViewport(false);
+    try {
+      const { el, sr } = await mount({ items: [makeItem({ id: '1', name: 'Drill' })] });
+      await openRow(el, sr);
+
+      expect(q(sr, '[data-testid="full-detail-sheet"]')).toBe(null);
+      expect(q(sr, '[data-testid="full-editor"]')).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
+});

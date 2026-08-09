@@ -51,6 +51,7 @@ import type {
 } from '../store/types';
 import './hv-chip-input';
 import './hv-confirm';
+import './hv-lightbox';
 import './hv-location-tree';
 import './hv-checkout-popover';
 
@@ -755,6 +756,14 @@ export class HVItemEditor extends LitElement {
         overflow: hidden;
         background: var(--hv-surface-raised);
       }
+      /* A 72px square of photo is not a photo; every surface that shows one
+         opens it full-size, and the strip is the one that did not. */
+      .photos .open {
+        display: block;
+        padding: 0;
+        border: none;
+        background: none;
+      }
       .photos img {
         width: 72px;
         height: 72px;
@@ -1084,6 +1093,8 @@ export class HVItemEditor extends LitElement {
   @state() private _confirmRemove: { id: string; kind: AttachmentKind } | null = null;
   /** Which attachment section a drag is currently over, for the over-state. */
   @state() private _dropTarget: AttachmentKind | null = null;
+  /** Which photo the lightbox was opened on, or null when it is closed. */
+  @state() private _lightbox: number | null = null;
   /** Escape on a dirty form asks before it throws the typing away. */
   @state() private _confirmDiscard = false;
   /** Why creating a first location from the picker failed. */
@@ -1151,6 +1162,7 @@ export class HVItemEditor extends LitElement {
       this._uploaded = null;
       this._confirmRemove = null;
       this._confirmDiscard = false;
+      this._lightbox = null;
       this._locationError = null;
       this._createdLocations = [];
       this._closeCategory();
@@ -2151,12 +2163,21 @@ export class HVItemEditor extends LitElement {
           const src = this._urls.get(item.id, picture.id, attachmentNameToken(picture));
           return html`<figure data-testid="editor-photo">
             ${src
-              ? html`<img
-                  src=${src}
-                  alt=${pictureAlt(item.name, index, shots.length)}
-                  loading="lazy"
-                  decoding="async"
-                />`
+              ? html`<button
+                  class="open"
+                  data-testid="editor-photo-open"
+                  aria-label=${`View ${pictureAlt(item.name, index, shots.length)}`}
+                  @click=${() => {
+                    this._lightbox = index;
+                  }}
+                >
+                  <img
+                    src=${src}
+                    alt=${pictureAlt(item.name, index, shots.length)}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </button>`
               : html`<span class="placeholder" data-testid="editor-photo-placeholder"
                   >${icon('camera', 20)}</span
                 >`}
@@ -2617,6 +2638,18 @@ export class HVItemEditor extends LitElement {
           </div>
         </div>
       </div>
+
+      <hv-lightbox
+        data-testid="editor-lightbox-host"
+        .item=${this._current}
+        .media=${this.media}
+        .index=${this._lightbox}
+        .onOpenerGone=${() => this._refocus()}
+        @close=${(e: Event) => {
+          e.stopPropagation();
+          this._lightbox = null;
+        }}
+      ></hv-lightbox>
 
       <!-- Outside the form's own keydown scope, and their events stopped here:
            a host listens for the cancel event on this editor to close it, and a
