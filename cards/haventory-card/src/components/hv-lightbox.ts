@@ -166,8 +166,12 @@ export class HVLightbox extends LitElement {
     const shots = pictures(item.attachments);
     const shot = shots[index];
     if (!shot) return null;
+    // A URL that is not signed yet leaves the frame empty for a moment; it does
+    // not take the surface down. Every arrow press moves to a photo this
+    // component has not shown before, and an overlay that unmounted while the
+    // signature was in flight would flash the page underneath, drop focus on
+    // `<body>` — taking Escape with it — and come back a stranger.
     const src = this._urls.get(item.id, shot.id, attachmentNameToken(shot));
-    if (!src) return null;
 
     const many = shots.length > 1;
     const nav = (delta: number) => (e: Event) => {
@@ -202,7 +206,7 @@ export class HVLightbox extends LitElement {
       }}
       @click=${this._close}
     >
-      <img src=${src} alt=${pictureAlt(item.name, index, shots.length)} />
+      ${src ? html`<img src=${src} alt=${pictureAlt(item.name, index, shots.length)} />` : null}
       <button class="close" data-testid="lightbox-close" aria-label="Close photo" @click=${this._close}>
         ${icon('close', 22)}
       </button>

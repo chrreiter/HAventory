@@ -94,6 +94,10 @@ describe('hv-lightbox: opening and closing', () => {
     }
   });
 
+  // The URL is signed over the connection, so the update that opens this draws
+  // nothing at all; focus has to land once the photo is there. Waiting for one
+  // update only would compare a null panel against a null activeElement and
+  // pass while nothing was focused.
   it('takes focus so Escape reaches it, and hands it back on close', async () => {
     const opener = document.createElement('button');
     document.body.appendChild(opener);
@@ -101,11 +105,11 @@ describe('hv-lightbox: opening and closing', () => {
 
     const el = await mount({ id: 'i-1', attachments: shots(2) });
     el.index = 0;
-    await el.updateComplete;
+    await settle(el);
+    expect(panel(el)).not.toBe(null);
     expect(el.shadowRoot?.activeElement).toBe(panel(el));
 
-    el.index = null;
-    await el.updateComplete;
+    await press(el, 'Escape');
     expect(document.activeElement).toBe(opener);
     opener.remove();
   });
@@ -175,6 +179,25 @@ describe('hv-lightbox: navigation', () => {
 
     await tap(el, 'lightbox-next');
     expect(shown(el)).toBe('Drill — photo 1 of 3');
+  });
+
+  // The next photo's URL is signed over the connection, so there is an update
+  // with nothing to draw. Standing the surface down for it would flash the page
+  // underneath and drop focus on <body>, which takes Escape with it.
+  it('stays up, and keeps focus, while the next photo is still being signed', async () => {
+    const el = await mount({ id: 'i-1', name: 'Drill', attachments: shots(3) }, 0);
+    const before = panel(el);
+
+    (q(el, '[data-testid="lightbox-next"]') as HTMLButtonElement).click();
+    await el.updateComplete; // the signature has not come back yet
+
+    expect(panel(el)).toBe(before);
+    expect(el.shadowRoot?.activeElement).toBe(before);
+    expect(q(el, 'img')).toBe(null);
+
+    await settle(el);
+    expect(shown(el)).toBe('Drill — photo 2 of 3');
+    expect(panel(el)).toBe(before);
   });
 
   it('does not close when a nav button is pressed', async () => {
