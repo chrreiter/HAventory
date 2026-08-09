@@ -97,6 +97,40 @@ describe('haventory-card: the Lovelace element', () => {
     expect(() => el.setConfig('nope')).toThrow(/Invalid config/);
   });
 
+  // The pills are filter toggles, not decoration, so a dashboard can say which
+  // it offers. Nothing about the key may break a dashboard that never sets it.
+  describe('quick_filters', () => {
+    const shellOf = (sr: ShadowRoot) =>
+      sr.querySelector('[data-testid="card-shell"]') as HTMLElement & {
+        quickFilters: string[] | null;
+      };
+
+    it('offers every pill when the key is omitted', async () => {
+      const { sr } = await mountCard({});
+      expect(shellOf(sr).quickFilters).toBe(null);
+    });
+
+    it('passes a chosen subset down to the shell', async () => {
+      const { sr } = await mountCard({ quick_filters: ['low_stock', 'overdue'] });
+      expect(shellOf(sr).quickFilters).toEqual(['low_stock', 'overdue']);
+    });
+
+    it('drops an unknown entry without dropping the rest', async () => {
+      const { sr } = await mountCard({ quick_filters: ['low_stock', 'sideways'] });
+      expect(shellOf(sr).quickFilters).toEqual(['low_stock']);
+    });
+
+    it('reads a non-list value as the key being absent, and never throws', async () => {
+      const { sr } = await mountCard({ quick_filters: 'low_stock' });
+      expect(shellOf(sr).quickFilters).toBe(null);
+    });
+
+    it('honours an explicit empty list', async () => {
+      const { sr } = await mountCard({ quick_filters: [] });
+      expect(shellOf(sr).quickFilters).toEqual([]);
+    });
+  });
+
   it('reports a card size for the dashboard layout', async () => {
     const { el } = await mountCard();
     expect(el.getCardSize()).toBeGreaterThan(0);

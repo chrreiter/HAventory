@@ -9,6 +9,8 @@ import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { emptyKindFor } from '../ui/empty-state';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
+import { quickFilterAllowed } from '../ui/quick-filters';
+import type { QuickFilterKey } from '../ui/quick-filters';
 import { editorErrorText } from '../ui/editor-error';
 import { HostSurfaces } from '../host-surfaces';
 import type { Store } from '../store/store';
@@ -347,6 +349,11 @@ export class HVCardShell extends LitElement {
   @property({ type: String }) heading = DEFAULT_CARD_TITLE;
   /** Force a layout instead of measuring; `null` measures. */
   @property({ attribute: false }) forceMobile: boolean | null = null;
+  /**
+   * Which quick-filter pills this dashboard offers, or `null` for all of them.
+   * Passed on to the full view unchanged — one vocabulary on both surfaces.
+   */
+  @property({ attribute: false }) quickFilters: QuickFilterKey[] | null = null;
 
   @state() private _filterPanelOpen = false;
   @state() private _filterSheetOpen = false;
@@ -783,21 +790,25 @@ export class HVCardShell extends LitElement {
     const counts = st?.statsCounts;
     if (!counts) return null;
     const f = st?.filters;
+    // A pill shows when the dashboard allows it *and* its count clears the gate
+    // it always had — the config decides what is on offer, the count decides
+    // whether there is anything to say.
+    const allows = (key: QuickFilterKey) => quickFilterAllowed(this.quickFilters, key);
+    const lowStock = allows('low_stock') && counts.low_stock_count > 0;
+    const overdue = allows('overdue') && (counts.overdue_count ?? 0) > 0;
+    const inspection = allows('inspection_due') && (counts.inspection_overdue_count ?? 0) > 0;
+    const checkedOut = allows('checked_out') && counts.checked_out_count > 0;
     // On mobile the wrapper takes a row of its own, so an empty one would leave
-    // a blank band under the title rather than nothing at all.
-    const anyBadge =
-      !this.mobile ||
-      counts.low_stock_count > 0 ||
-      (counts.overdue_count ?? 0) > 0 ||
-      (counts.inspection_overdue_count ?? 0) > 0 ||
-      counts.checked_out_count > 0;
+    // a blank band under the title rather than nothing at all. The total is not
+    // among them: it does not render on a phone at all.
+    const anyBadge = !this.mobile || lowStock || overdue || inspection || checkedOut;
     if (!anyBadge) return null;
     return html`
       <div class="badges">
-        ${this.mobile
+        ${this.mobile || !allows('total')
           ? null
           : html`<span class="hv-chip badge quiet" data-testid="badge-total">${counted(counts.items_total, 'item')}</span>`}
-        ${counts.low_stock_count > 0
+        ${lowStock
           ? html`<button
               class="hv-chip badge toggle warning ${f?.lowStockOnly ? 'on' : ''}"
               data-testid="badge-low"
@@ -808,7 +819,7 @@ export class HVCardShell extends LitElement {
               ${counts.low_stock_count} low
             </button>`
           : null}
-        ${(counts.overdue_count ?? 0) > 0
+        ${overdue
           ? html`<button
               class="hv-chip badge toggle error ${f?.overdueOnly ? 'on' : ''}"
               data-testid="badge-overdue"
@@ -819,7 +830,7 @@ export class HVCardShell extends LitElement {
               ${counts.overdue_count} overdue
             </button>`
           : null}
-        ${(counts.inspection_overdue_count ?? 0) > 0
+        ${inspection
           ? html`<button
               class="hv-chip badge toggle warning ${f?.inspectionDueOnly ? 'on' : ''}"
               data-testid="badge-inspection"
@@ -830,7 +841,7 @@ export class HVCardShell extends LitElement {
               ${counts.inspection_overdue_count} to inspect
             </button>`
           : null}
-        ${counts.checked_out_count > 0
+        ${checkedOut
           ? html`<button
               class="hv-chip badge toggle state ${f?.checkedOutOnly ? 'on' : ''}"
               data-testid="badge-out"
@@ -1188,6 +1199,7 @@ export class HVCardShell extends LitElement {
         .store=${this.store}
         .heading=${this.heading}
         .columns=${this.surfaces.columns}
+        .quickFilters=${this.quickFilters}
         .menuEntries=${this.surfaces.menuEntries()}
         ?startSelecting=${this._startSelecting}
         @close=${() => {

@@ -63,6 +63,72 @@ describe('hv-card-shell: header', () => {
     expect(sr.querySelector('[data-testid="badge-total"]')?.textContent?.trim()).toBe('1 item');
   });
 
+  // The pills are filter toggles, not decoration; a dashboard that never checks
+  // anything out has no use for the checked-out one. The config decides what is
+  // on offer, the count still decides whether there is anything to say.
+  describe('configurable quick-filter pills', () => {
+    const stocked = () => [
+      makeItem({ id: '1', name: 'AA Batteries', quantity: 2, low_stock_threshold: 8 }),
+      makeItem({ id: '2', name: 'Impact Driver', checked_out: true }),
+    ];
+
+    it('draws every pill by default', async () => {
+      const { sr } = await mountShell({ items: stocked() });
+      expect(sr.querySelector('[data-testid="badge-total"]')).toBeTruthy();
+      expect(sr.querySelector('[data-testid="badge-low"]')).toBeTruthy();
+      expect(sr.querySelector('[data-testid="badge-out"]')).toBeTruthy();
+    });
+
+    it('draws only the pills the config names', async () => {
+      const { el, sr } = await mountShell({ items: stocked() });
+      el.quickFilters = ['low_stock'];
+      await el.updateComplete;
+
+      expect(sr.querySelector('[data-testid="badge-low"]')).toBeTruthy();
+      expect(sr.querySelector('[data-testid="badge-total"]')).toBe(null);
+      expect(sr.querySelector('[data-testid="badge-out"]')).toBe(null);
+    });
+
+    // Allowed is not the same as shown: the count gate is unchanged.
+    it('still hides an allowed pill whose count is zero', async () => {
+      const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+      el.quickFilters = ['low_stock', 'checked_out'];
+      await el.updateComplete;
+
+      expect(sr.querySelector('[data-testid="badge-low"]')).toBe(null);
+      expect(sr.querySelector('[data-testid="badge-out"]')).toBe(null);
+    });
+
+    // On a phone the wrapper takes a row of its own, so a band with nothing
+    // allowed in it would be a blank strip under the title.
+    it('draws no badge row on a phone when the subset leaves nothing to show', async () => {
+      const { el, sr } = await mountShell({ items: stocked(), mobile: true });
+      el.quickFilters = ['overdue'];
+      await el.updateComplete;
+
+      expect(sr.querySelector('.badges')).toBe(null);
+    });
+
+    it('keeps the phone badge row when the subset still has something to show', async () => {
+      const { el, sr } = await mountShell({ items: stocked(), mobile: true });
+      el.quickFilters = ['low_stock'];
+      await el.updateComplete;
+
+      expect(sr.querySelector('[data-testid="badge-low"]')).toBeTruthy();
+    });
+
+    it('hands the same list to the full view, so both surfaces agree', async () => {
+      const { el, sr } = await mountShell({ items: stocked() });
+      el.quickFilters = ['low_stock'];
+      await el.updateComplete;
+
+      const full = sr.querySelector('[data-testid="card-full-view"]') as HTMLElement & {
+        quickFilters: string[] | null;
+      };
+      expect(full.quickFilters).toEqual(['low_stock']);
+    });
+  });
+
   it('hides a stat badge that would read zero', async () => {
     const { sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     expect(sr.querySelector('[data-testid="badge-low"]')).toBe(null);

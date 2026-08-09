@@ -23,9 +23,17 @@ the `Store` (created on the first `hass` assignment), the Lovelace interface
 substance:
 
 ```ts
-setConfig(cfg) → { title?: string }   // every other key is ignored, not rejected
+setConfig(cfg) → { title?: string; quickFilters?: QuickFilterKey[] | null }
+                                      // every other key is ignored, not rejected
 render()       → <hv-card-shell>
 ```
+
+`quick_filters` names the quick-filter pills the dashboard offers (`ui/quick-filters.ts`
+holds the vocabulary). `null` — the omitted key, or anything that is not a list — means
+all of them. The shell passes it to `hv-full-view` unchanged, so the card's badges and the
+full view's pills offer one vocabulary; the sidebar panel, which has no dashboard config,
+takes the default. It decides what is *allowed*: whether an allowed pill draws is still
+the count's call.
 
 It also publishes the active HA theme as `color-scheme` on the host, which every nested
 component inherits.
