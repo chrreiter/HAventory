@@ -133,6 +133,14 @@ export class HVItemEditor extends LitElement {
     css`
       :host {
         display: block;
+        /*
+         * The form's small print, at one size. Labels are 11px (the shared
+         * hv-label recipe and the photo picker's caption); everything that is a
+         * note about a field
+         * — hints, tallies, sizes, errors, the upload queue — reads at this one
+         * instead of the 11/11.5/12/12.5px band they used to spread across.
+         */
+        --hv-editor-note: 12px;
         background: var(--hv-row-hover);
         border-left: 3px solid var(--hv-primary);
       }
@@ -156,13 +164,17 @@ export class HVItemEditor extends LitElement {
       }
       .head .meta {
         margin-left: auto;
-        font-size: 11.5px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-text-tertiary);
         white-space: nowrap;
       }
+      /* Name takes what is left; the two numbers take what a number needs.
+         The proportional tracks were authored for a 600–900px card, where 1fr
+         landed near 180px — in the expanded view at 1080p they handed a
+         three-digit quantity a field about 400px wide. */
       .grid {
         display: grid;
-        grid-template-columns: 2fr 1fr 1fr;
+        grid-template-columns: minmax(0, 1fr) 140px 160px;
         gap: 12px;
         padding: 8px 18px 14px;
       }
@@ -181,8 +193,16 @@ export class HVItemEditor extends LitElement {
       :host([mobile]) .cell.span3 {
         grid-column: span 1;
       }
+      /* Packed to the top rather than sharing out the row's surplus. A grid
+         item stretches by default, so a cell holding a label and a control grew
+         to whatever the tallest cell in the row needed — the Description
+         textarea — and its two auto rows split the difference between them.
+         That is why the status select came out taller than an input and shorter
+         than the textarea beside it: exactly the midpoint. The same hazard is
+         guarded one level down on the state row; this closes it at the top. */
       .cell {
         display: grid;
+        align-content: start;
         gap: 4px;
         min-width: 0;
       }
@@ -191,7 +211,10 @@ export class HVItemEditor extends LitElement {
          three fields are never read as three peer settings of the same kind. */
       .state {
         display: grid;
-        grid-template-columns: 2fr 1fr;
+        /* Even halves. At 2fr/1fr the inspection box was narrow enough that its
+           three offset chips wrapped onto three rows beside a check-out box
+           with room to spare. */
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         gap: 12px;
         align-items: start;
       }
@@ -206,15 +229,13 @@ export class HVItemEditor extends LitElement {
         border-radius: var(--hv-radius-input);
         padding: 9px 11px 11px;
       }
+      /* Layout only: the type is the shared hv-label recipe, which every
+         other label in this form already uses. Two recipes differing by one
+         weight step read as two kinds of label. */
       .group-caption {
         display: flex;
         align-items: center;
         gap: 5px;
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-        color: var(--hv-text-secondary);
       }
       .group-caption .hv-icon {
         flex: none;
@@ -225,9 +246,13 @@ export class HVItemEditor extends LitElement {
         gap: 12px;
         min-width: 0;
       }
+      /* Not bottom-aligned: the button carries no label, so lining its bottom
+         edge up with the dated field beside it put the dead air above it,
+         between the box's caption and its first control. The cell's own
+         align-content: start now lands it directly under the caption, level
+         with the label opposite, and the surplus falls below both. */
       .checkout-body {
         grid-template-columns: 1fr 1fr;
-        align-items: end;
       }
       /* Checking out is something you do, not a setting you hold — the same
          button the detail sheet has offered all along, in the same words. */
@@ -246,7 +271,7 @@ export class HVItemEditor extends LitElement {
         opacity: 0.85;
       }
       .group-hint {
-        font-size: 11.5px;
+        font-size: var(--hv-editor-note);
         line-height: 1.4;
         color: var(--hv-text-tertiary);
       }
@@ -365,7 +390,7 @@ export class HVItemEditor extends LitElement {
         border-color: var(--hv-error);
       }
       .field-error {
-        font-size: 12px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-error);
       }
       .tree-holder,
@@ -460,7 +485,7 @@ export class HVItemEditor extends LitElement {
       }
       .option-empty {
         padding: 8px 12px;
-        font-size: 12.5px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-text-tertiary);
       }
       .toggle {
@@ -578,8 +603,17 @@ export class HVItemEditor extends LitElement {
         padding: 8px 13px;
         font: 500 12.5px var(--hv-font);
       }
+      /* A note riding inside a label: it says something about the field rather
+         than naming it, so it steps out of the label's uppercase treatment
+         while keeping its line. */
+      .label-note {
+        text-transform: none;
+        letter-spacing: 0;
+        font-weight: 400;
+        color: var(--hv-text-tertiary);
+      }
       .key-hints {
-        font-size: 11.5px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-text-tertiary);
       }
       .key-hints button {
@@ -633,20 +667,30 @@ export class HVItemEditor extends LitElement {
         padding-top: 4px;
         flex-wrap: wrap;
       }
-      /* Save and Cancel sat at the bottom of a form inside a nested scroller,
-         so on a phone they were reliably below the fold — you had to scroll an
-         inner container to commit an edit you had already finished.
-         Sticky goes on the wrapping cell rather than on .actions itself: an
-         element only sticks within its containing block, and .actions' parent
-         is exactly as tall as .actions, so it would have had nowhere to move.
-         The cell's containing block is the form grid, which is tall. */
-      :host([mobile]) .actions-cell {
+      /* Save, Delete and Cancel sit at the bottom of a form inside a nested
+         scroller, so they land below the fold on any host tall enough to need
+         scrolling — a phone sheet, the card's list, and the expanded view,
+         which caps the form at 70dvh. The editor answers that itself rather
+         than each host growing a pinned footer of its own.
+         Sticky goes on the wrapping cell rather than on .actions: an element
+         only sticks within its containing block, and .actions' parent is
+         exactly as tall as .actions, so it would have had nowhere to move.
+         The cell's containing block is the form grid, which is tall.
+         The negative side margins and the matching padding bleed the opaque
+         bar out to the form's edges — .grid's 18px side padding would otherwise
+         leave the rows it covers showing in two strips either side of it. */
+      .actions-cell {
         position: sticky;
         bottom: -14px;
         z-index: 1;
         background: var(--hv-surface);
-        padding: 10px 0 14px;
+        margin: 0 -18px;
+        padding: 10px 18px 14px;
         border-top: 1px solid var(--hv-row-divider);
+      }
+      :host([mobile]) .actions-cell {
+        margin: 0 -16px;
+        padding: 10px 16px 14px;
       }
       /* The auto margin lives on a spacer of its own, not on the hint: the hint
          is gone on a phone (no keyboard to press Esc with), and with the margin
@@ -656,7 +700,7 @@ export class HVItemEditor extends LitElement {
         margin-left: auto;
       }
       .actions .hint {
-        font-size: 11.5px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-text-tertiary);
       }
       /* The property that drops the hint describes how wide the surface is,
@@ -692,13 +736,12 @@ export class HVItemEditor extends LitElement {
         border-radius: var(--hv-radius-input);
         background: var(--hv-error-bg);
         color: var(--hv-error-deep);
-        font-size: 12.5px;
+        font-size: var(--hv-editor-note);
       }
       .photos {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
-        margin-top: 4px;
       }
       .photos figure {
         position: relative;
@@ -804,7 +847,7 @@ export class HVItemEditor extends LitElement {
       }
       .documents {
         list-style: none;
-        margin: 4px 0 0;
+        margin: 0;
         padding: 0;
         display: grid;
         gap: 6px;
@@ -837,7 +880,7 @@ export class HVItemEditor extends LitElement {
       }
       .documents .doc-size {
         flex: none;
-        font-size: 11.5px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-text-secondary);
       }
       .documents .doc-open,
@@ -866,7 +909,7 @@ export class HVItemEditor extends LitElement {
         border: 1px dashed var(--hv-input-border);
         border-radius: var(--hv-radius-chip);
         color: var(--hv-text-secondary);
-        font-size: 12.5px;
+        font-size: var(--hv-editor-note);
         cursor: pointer;
       }
       .upload-list {
@@ -875,7 +918,7 @@ export class HVItemEditor extends LitElement {
         padding: 0;
         display: grid;
         gap: 5px;
-        font-size: 11.5px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-text-secondary);
       }
       .upload-list li {
@@ -910,7 +953,7 @@ export class HVItemEditor extends LitElement {
         background: none;
         padding: 0 4px;
         color: var(--hv-primary-dark);
-        font: 500 11.5px var(--hv-font);
+        font: 500 var(--hv-editor-note) var(--hv-font);
         cursor: pointer;
       }
       .upload-list li .dismiss {
@@ -958,7 +1001,7 @@ export class HVItemEditor extends LitElement {
          against an item id and there is none yet. Said once, where the photo
          grid will be, rather than left as an unexplained absence. */
       .attach-hint {
-        font-size: 12px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-text-tertiary);
       }
     `,
@@ -1581,8 +1624,8 @@ export class HVItemEditor extends LitElement {
     return html`<div class="cell span3">
       <div class="state">
         <div class="group" role="group" aria-labelledby="editor-checkout-caption">
-          <span class="group-caption" id="editor-checkout-caption" data-testid="editor-checkout-caption">
-            ${icon('account', 14)} Checkout
+          <span class="hv-label group-caption" id="editor-checkout-caption" data-testid="editor-checkout-caption">
+            ${icon('account', 14)} Check out
           </span>
           <div class="group-body checkout-body">
             <div class="cell">
@@ -1607,11 +1650,11 @@ export class HVItemEditor extends LitElement {
                 .value=${model.dueDate}
                 @input=${(e: Event) => this._patch({ dueDate: (e.target as HTMLInputElement).value })}
               />
+              ${model.checkedOut
+                ? null
+                : html`<span class="group-hint" data-testid="editor-due-hint">${DUE_DATE_HINT}</span>`}
             </div>
           </div>
-          ${model.checkedOut
-            ? null
-            : html`<span class="group-hint" data-testid="editor-due-hint">${DUE_DATE_HINT}</span>`}
           <hv-checkout-popover
             data-testid="editor-checkout"
             .item=${this.item}
@@ -1634,7 +1677,7 @@ export class HVItemEditor extends LitElement {
           ></hv-checkout-popover>
         </div>
         <div class="group">
-          <label class="group-caption" for="editor-inspection" data-testid="editor-inspection-caption">
+          <label class="hv-label group-caption" for="editor-inspection" data-testid="editor-inspection-caption">
             ${icon('calendar', 14)} Next inspection
           </label>
           <div class="group-body">
@@ -1749,9 +1792,7 @@ export class HVItemEditor extends LitElement {
       <div class="custom">
         <div class="custom-head">
           <span class="hv-label">Custom fields</span>
-          <span class="hv-tally" data-testid="editor-cf-tally">
-            ${used} of ${counted(this.customFieldKeys.length || used, 'key')} in use
-          </span>
+          <span class="hv-tally" data-testid="editor-cf-tally">${counted(used, 'field')} set</span>
         </div>
         ${rows.map((row) => {
           const error = this._errorFor(`custom:${row.id}`);
@@ -2503,7 +2544,9 @@ export class HVItemEditor extends LitElement {
           ${this._renderLocationField()} ${this._renderCategoryField()}
           ${this.mobile ? this._renderStatusField() : null}
           <div class="cell span3">
-            <span class="hv-label">Tags <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--hv-text-tertiary)">· stored lowercase</span></span>
+            <span class="hv-label"
+              >Tags <span class="label-note">· stored lowercase</span></span
+            >
             <hv-chip-input
               data-testid="editor-tags"
               .values=${model.tags}
