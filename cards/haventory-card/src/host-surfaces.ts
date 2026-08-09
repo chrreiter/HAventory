@@ -6,6 +6,7 @@ import { activeFilterCount, defaultFilters } from './store/store';
 import type { Store } from './store/store';
 import type { ImportPolicy, ImportPreview, ImportSummary } from './store/types';
 import { counted, plural } from './ui/plural';
+import { NARROW_QUERY } from './ui/responsive';
 import type { OrganizeTab } from './components/hv-organize-dialog';
 import type { OverflowMenuEntry } from './components/hv-overflow-menu';
 import './components/hv-column-picker';
@@ -30,8 +31,6 @@ interface ConfirmSpec {
 
 /** The ways a host differs; everything else in these surfaces is identical. */
 interface SurfaceHooks {
-  /** Phone layout for the dialogs that adapt. Defaults to desktop. */
-  isMobile?: () => boolean;
   /**
    * A confirmed delete has been sent. The host closes any editor or sheet still
    * pointing at the item, before the store broadcasts its disappearance.
@@ -72,6 +71,22 @@ export class HostSurfaces {
   private readonly host: SurfaceHost;
   private readonly getStore: () => Store | undefined;
   private readonly hooks: SurfaceHooks;
+  /**
+   * The phone predicate for every dialog here, measured against the viewport.
+   *
+   * Not the card's width: these are `position: fixed`, so they are laid out
+   * against the window whatever the card measures. The card side used to hand
+   * its own measurement in, which put the organize dialog in its full-bleed
+   * phone page whenever the card sat in a normal dashboard column — on a
+   * desktop monitor, from a card, from the expanded view and unchanged by
+   * expanding, because the measured element was still the card underneath.
+   */
+  private narrowQuery: MediaQueryList | null = null;
+  private narrow = false;
+  private readonly onNarrowChange = (e: MediaQueryListEvent) => {
+    this.narrow = e.matches;
+    this.host.requestUpdate();
+  };
   private pickerOpen = false;
   private confirmSpec: ConfirmSpec | null = null;
   private organizeOpen = false;
@@ -87,6 +102,27 @@ export class HostSurfaces {
     this.host = host;
     this.getStore = getStore;
     this.hooks = hooks;
+  }
+
+  /**
+   * Start watching the viewport. Hosts call this from `connectedCallback`, and
+   * `disconnect()` from the matching teardown — an instance is a plain object
+   * rather than a reactive controller, so it has no lifecycle of its own, and a
+   * listener left behind would keep waking a detached element.
+   *
+   * `matchMedia` is missing in jsdom unless a test provides one; without it the
+   * dialogs take their desktop form, which is the honest default for a host
+   * that cannot say how wide it is.
+   */
+  connect(): void {
+    this.narrowQuery ??= window.matchMedia?.(NARROW_QUERY) ?? null;
+    if (!this.narrowQuery) return;
+    this.narrow = this.narrowQuery.matches;
+    this.narrowQuery.addEventListener('change', this.onNarrowChange);
+  }
+
+  disconnect(): void {
+    this.narrowQuery?.removeEventListener('change', this.onNarrowChange);
   }
 
   /**
@@ -227,10 +263,12 @@ export class HostSurfaces {
   /** Every dialog these surfaces own. Render once, after the host's main UI. */
   renderSurfaces(): TemplateResult {
     const st = this.getStore()?.state.value ?? null;
-    const mobile = this.hooks.isMobile?.() ?? false;
+    const mobile = this.narrow;
     return html`
       <hv-column-picker
+        data-testid="host-columns"
         .open=${this.pickerOpen}
+        ?mobile=${mobile}
         .columns=${this.columns}
         heading="Full view columns"
         @change=${(e: CustomEvent) => this.setColumns((e.detail as { columns: ColumnKey[] }).columns)}
@@ -243,6 +281,7 @@ export class HostSurfaces {
       <hv-confirm
         data-testid="host-confirm"
         ?open=${this.confirmSpec !== null}
+        ?mobile=${mobile}
         .heading=${this.confirmSpec?.heading ?? ''}
         .message=${this.confirmSpec?.message ?? ''}
         .confirmLabel=${this.confirmSpec?.confirmLabel ?? 'Delete'}
@@ -274,6 +313,7 @@ export class HostSurfaces {
       <hv-import-sheet
         data-testid="host-import"
         ?open=${this.importOpen}
+        ?mobile=${mobile}
         .preview=${this.importPreview}
         .summary=${this.importSummary}
         .busy=${this.importBusy}
@@ -298,6 +338,7 @@ export class HostSurfaces {
       <hv-diagnostics-panel
         data-testid="host-diagnostics"
         ?open=${this.diagnosticsOpen}
+        ?mobile=${mobile}
         .health=${st?.healthCache ?? null}
         .counts=${st?.statsCounts ?? null}
         .version=${st?.versionInfo ?? null}

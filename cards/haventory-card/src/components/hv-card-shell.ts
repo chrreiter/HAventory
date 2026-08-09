@@ -380,7 +380,6 @@ export class HVCardShell extends LitElement {
 
   /** The dialogs both hosts share — confirm, organize, import, diagnostics. */
   readonly surfaces = new HostSurfaces(this, () => this.store, {
-    isMobile: () => this.mobile,
     onItemDeleted: (itemId) => {
       if (this._editing === itemId) this._editing = null;
       if (this._detailItemId === itemId) this._detailItemId = null;
@@ -440,6 +439,7 @@ export class HVCardShell extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+    this.surfaces.connect();
     this._filterPanelOpen = readPanelPref();
     if (this.store && !this._storeUnsub) {
       // The parent passes a stable `store` object, so a property binding would
@@ -450,6 +450,7 @@ export class HVCardShell extends LitElement {
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.surfaces.disconnect();
     this._storeUnsub?.();
     this._storeUnsub = undefined;
   }

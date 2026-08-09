@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { dialogSheet } from '../ui/dialog-sheet';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
@@ -206,9 +207,12 @@ export class HVDiagnosticsPanel extends LitElement {
         font: 500 13.5px var(--hv-font);
       }
     `,
+    dialogSheet,
   ];
 
   @property({ type: Boolean, reflect: true }) open = false;
+  /** Phone viewport: rise from the bottom edge instead of centring. */
+  @property({ type: Boolean, reflect: true }) mobile = false;
   @property({ attribute: false }) health: HealthResult | null = null;
   @property({ attribute: false }) counts: StatsCounts | null = null;
   @property({ attribute: false }) version: VersionInfo | null = null;

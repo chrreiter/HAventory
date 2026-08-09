@@ -139,12 +139,17 @@ export class HVOverflowMenu extends LitElement {
          position: fixed it is placed against the viewport, so the viewport is
          what decides whether there is room — and it keeps the component free
          of a mobile property that all three of its callers would have to
-         thread through. */
+         thread through.
+
+         The width is NARROW_QUERY from ui/responsive.ts, which CSS cannot
+         read; a test pins the two spellings together. Every overlay the card
+         hosts flips at that one width, so a viewport never shows a sheet menu
+         over a centred dialog. */
       /* The dropdown form needs no scrim; only the sheet dims the page. */
       .scrim {
         display: none;
       }
-      @media (max-width: 600px) {
+      @media (max-width: 700px) {
         .menu {
           position: fixed;
           inset: auto 0 0 0;
@@ -167,9 +172,9 @@ export class HVOverflowMenu extends LitElement {
          * as a menu with no surface of its own. A sibling with its own z-index
          * paints where a backdrop belongs.
          *
-         * pointer-events: none is load-bearing: the menu closes on any outside
-         * pointerdown, and that check asks whether the event's composed path
-         * includes this element — a scrim that swallowed the tap would be
+         * pointer-events: none is what keeps the menu closable: it closes on any
+         * outside pointerdown, and that check asks whether the event's composed
+         * path includes this element — a scrim that swallowed the tap would be
          * inside the path and would stop the menu closing when you tapped away
          * from it.
          */

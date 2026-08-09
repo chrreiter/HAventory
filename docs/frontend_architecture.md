@@ -57,7 +57,10 @@ Both hosts hold a `HostSurfaces` instance (`src/host-surfaces.ts`): every surfac
 the delete/discard confirmation, the organize dialog, the import sheet, the diagnostics
 panel with its refresh state, and the shared ⋮ menu-entry builder. On the card side the
 instance lives in `hv-card-shell`; on the panel it lives in the panel element directly.
-Host differences enter as constructor hooks (`isMobile`, `onItemDeleted`, `onBrowse`).
+Host differences enter as constructor hooks (`onItemDeleted`, `onBrowse`). The phone form of
+those dialogs is not one of them: the instance watches the viewport itself (`NARROW_QUERY`,
+started and stopped from each host's connected/disconnected callbacks) and hands the same
+answer to all five, so the card and the panel cannot disagree about what a phone is.
 
 ---
 
@@ -115,18 +118,33 @@ open `hv-organize-dialog` on the matching tab (`menu-action` with `{ id: 'organi
 
 ### Two different "is this a phone?" signals
 
-Most components take a `mobile` **property** fed by `hv-card-shell`'s *measured width* — a
-card in a narrow dashboard column is a phone layout regardless of the viewport. `hv-full-view`
-is the exception: it is fixed to the viewport, so it switches on a `@media (max-width: 700px)`
-query instead.
+Two questions, two answers, and they are not interchangeable:
 
-That split bit once. `hv-item-editor` and `hv-filter-panel` are property-driven but are also
+- **How wide is the card?** `MOBILE_BREAKPOINT` (600px), measured on the element by
+  `ResponsiveController` and handed down as a `mobile` **property**. Everything drawn inside
+  the card's own box reads this — the list, the steppers, the in-card sheets — because a card
+  in a narrow dashboard column is a phone layout however wide the window is.
+- **How wide is the window?** `NARROW_QUERY` (`(max-width: 700px)`, `ui/responsive.ts`), read
+  with `matchMedia` and as a CSS `@media` block. Everything `position: fixed` reads this:
+  `hv-full-view`, `hv-overflow-menu`, and the five dialogs `HostSurfaces` owns. A fixed
+  overlay is laid out against the window, so the card's width says nothing about the room it
+  has.
+
+Each split bit once. `hv-item-editor` and `hv-filter-panel` are property-driven but are also
 children of `hv-full-view`, which never set the property — so at 375px the expanded view drew
-the editor's three-column desktop grid in 156px + 78px + 78px. `hv-full-view` now reads the
-same breakpoint with `matchMedia` (`NARROW_QUERY`, kept in step with the media query) and
-hands it down. Note what came with it: `hv-filter-panel` in `mobile` mode *stages* its edits
-and drops its own footer, expecting the host to provide one, so the expanded view also grew
-the Clear all / Cancel / "Show N items" row the card's filter sheet has.
+the editor's three-column desktop grid in 156px + 78px + 78px; `hv-full-view` now reads the
+viewport query and hands the property down. Note what came with it: `hv-filter-panel` in
+`mobile` mode *stages* its edits and drops its own footer, expecting the host to provide one,
+so the expanded view also grew the Clear all / Cancel / "Show N items" row the card's filter
+sheet has. In the other direction, `HostSurfaces` was fed the card's measurement, so the
+organize dialog took its full-bleed phone page on a desktop monitor whenever the card sat in
+a normal column — and expanding the card changed nothing, because the measured element was
+still the card underneath.
+
+On a phone viewport the four smaller dialogs — column picker, confirm, import, diagnostics —
+rise from the bottom edge like every other phone surface, through the shared
+`ui/dialog-sheet.ts` block rather than four private ones. The organize dialog keeps its
+full-bleed page, which is what a four-tab management surface needs at that width.
 
 ### Shared wording
 
@@ -285,7 +303,8 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 | `tokens.ts` | Every design token as a `--hv-*` custom property, bound to the HA theme variable first with the mock hex as fallback, plus dark-mode and reduced-motion overrides. `base` adds the pill/icon-button/chip/input primitives. Composed as `static styles = [tokens, base, css\`…\`]`. |
 | `icons.ts` | ~30 MDI glyphs as inline path data, rendered as `<svg fill="currentColor">`. See the deviation note below. |
 | `brand-icon.ts` | The HAventory mark as one path, published to HA's icon registry (`window.customIcons`) under the `haventory:` prefix so the sidebar entry can name it. The backend's `PANEL_ICON` is the matching string. |
-| `responsive.ts` | `ResponsiveController` — a Lit reactive controller that drives mobile mode from the card's own measured width (≤600px). |
+| `responsive.ts` | The two phone predicates: `ResponsiveController` (a Lit reactive controller driving mobile mode from the card's own measured width, ≤600px) and `NARROW_QUERY`, the viewport query every fixed overlay switches on. |
+| `dialog-sheet.ts` | The bottom-sheet presentation the host dialogs share under `mobile`, as one `css` block added to each of their `static styles`. |
 | `relative-time.ts` | "2 h ago" / "Jul 31" formatting, overdue checks, and the `+N days` arithmetic the check-out chips use. |
 | `item-form.ts` | Form model and payload building for the edit surfaces: validation per field, typed custom fields, tag normalization, and the `custom_fields_set` / `custom_fields_unset` diff. |
 | `value-rewrite.ts` | Tag/category rename, merge and removal as batches of item updates. |

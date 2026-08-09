@@ -180,11 +180,15 @@ describe('hv-column-picker', () => {
     const el = await mount({ columns: [] });
     const styles = (customElements.get('hv-column-picker') as typeof HVColumnPicker).styles;
     const sheets = Array.isArray(styles) ? styles : [styles];
-    // The component's own block is last; the tokens sheet ahead of it is where
-    // HA's variables are legitimately read.
-    const own = String(sheets[sheets.length - 1].cssText).replace(/\s+/g, ' ');
+    // The component's own block — the tokens sheet ahead of it is where HA's
+    // variables are legitimately read, and the shared phone-sheet block after
+    // it declares no colours at all.
+    const own = sheets
+      .map((s) => String(s.cssText).replace(/\s+/g, ' '))
+      .find((c) => c.includes('.option {')) as string;
 
     expect(sheets.length).toBeGreaterThan(1);
+    expect(own, 'the component block').toBeTruthy();
     expect(own).toMatch(/\.panel \{[^}]*border-radius: var\(--hv-radius-dialog\)/);
     expect(own).toMatch(/\.option \{[^}]*min-height: var\(--hv-tap-min, 34px\)/);
     // Nothing reaches past the tokens to HA's own variables any more.

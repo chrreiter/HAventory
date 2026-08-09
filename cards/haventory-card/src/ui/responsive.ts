@@ -7,6 +7,24 @@ import type { ReactiveController, ReactiveControllerHost } from 'lit';
 export const MOBILE_BREAKPOINT = 600;
 
 /**
+ * Viewport width at or below which a surface that covers the screen takes its
+ * phone form.
+ *
+ * Two breakpoints live here because they answer two different questions.
+ * `MOBILE_BREAKPOINT` measures the card *element*, which is what in-card layout
+ * depends on: a card in a dashboard column is 300–500px wide inside a 1920px
+ * window, and its list, steppers and in-card sheets have to lay out for that
+ * width. An overlay is placed against the viewport instead — `position: fixed`
+ * ignores the card entirely — so the card's width says nothing about the room
+ * an overlay has. Dialogs, menus and sheets use this query; everything drawn
+ * inside the card's own box keeps the element measurement.
+ *
+ * `hv-full-view` and `hv-overflow-menu` spell the same width as a CSS `@media`
+ * block, which cannot read a constant. Tests pin the two spellings together.
+ */
+export const NARROW_QUERY = '(max-width: 700px)';
+
+/**
  * Drives the card's mobile/desktop mode from its own rendered width.
  *
  * Media queries are unreliable inside HA dashboards — a card can be narrow in a

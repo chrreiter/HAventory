@@ -1,5 +1,6 @@
 import './hv-overflow-menu';
 import type { HVOverflowMenu } from './hv-overflow-menu';
+import { NARROW_QUERY } from '../ui/responsive';
 
 async function mount(entries: HVOverflowMenu['entries']) {
   const el = document.createElement('hv-overflow-menu') as HVOverflowMenu;
@@ -71,10 +72,20 @@ describe('hv-overflow-menu: narrow screens', () => {
       .map((s) => String(s.cssText))
       .join('\n')
       .replace(/\s+/g, ' ');
-    const start = css.indexOf('@media (max-width: 600px)');
+    const start = css.indexOf(`@media ${NARROW_QUERY}`);
     expect(start, 'no narrow-viewport block').toBeGreaterThan(-1);
     return css.slice(start);
   };
+
+  // The card once carried three phone breakpoints — this menu at 600px, the
+  // card element at 600px and the full view's viewport at 700px — so a window
+  // between them showed a sheet menu over centred dialogs. Every overlay now
+  // flips at the one viewport width; CSS cannot read the constant, so the two
+  // spellings are pinned to each other here.
+  it('rises at the same viewport width as every other overlay', () => {
+    expect(NARROW_QUERY).toBe('(max-width: 700px)');
+    expect(narrow()).toContain('@media (max-width: 700px)');
+  });
 
   // A 250px anchored dropdown covered most of the list it was acting on, and
   // "Export current view" wrapped onto two lines inside it.

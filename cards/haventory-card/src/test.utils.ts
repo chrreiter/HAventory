@@ -922,3 +922,29 @@ export function makeMediaBindings(
     },
   };
 }
+
+/**
+ * Pin `window.matchMedia` to one answer for the length of a test, and hand back
+ * the restore.
+ *
+ * jsdom performs no layout, so every media query it is asked about reports
+ * `false` — which reads as "desktop viewport" to the overlays that switch on
+ * one, and leaves their phone form untestable. Call the restore in a `finally`
+ * so the next test starts from the real implementation.
+ */
+export function stubViewport(matches: boolean): () => void {
+  const original = window.matchMedia;
+  window.matchMedia = ((media: string) => ({
+    matches,
+    media,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+  return () => {
+    window.matchMedia = original;
+  };
+}

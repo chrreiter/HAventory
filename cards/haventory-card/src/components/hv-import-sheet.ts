@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { dialogSheet } from '../ui/dialog-sheet';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
@@ -301,9 +302,12 @@ export class HVImportSheet extends LitElement {
         gap: 10px;
       }
     `,
+    dialogSheet,
   ];
 
   @property({ type: Boolean, reflect: true }) open = false;
+  /** Phone viewport: rise from the bottom edge instead of centring. */
+  @property({ type: Boolean, reflect: true }) mobile = false;
   @property({ attribute: false }) preview: ImportPreview | null = null;
   @property({ attribute: false }) summary: ImportSummary | null = null;
   @property({ type: Boolean }) busy = false;
