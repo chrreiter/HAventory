@@ -15,6 +15,8 @@ import { deepFocusables } from '../ui/dialog-focus';
 import { areaNameById, effectiveAreaIdForLocation } from '../ui/area';
 import { renderAreaChip } from '../ui/location-path';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
+import { quickFilterAllowed } from '../ui/quick-filters';
+import type { QuickFilterKey } from '../ui/quick-filters';
 import { editorErrorText } from '../ui/editor-error';
 import { statusCount, statusLabel, statusList } from '../ui/status';
 import type { EmptyOffer } from '../ui/empty-state';
@@ -748,6 +750,12 @@ export class HVFullView extends LitElement {
   @property({ type: Boolean, reflect: true }) open = false;
   @property({ type: String }) heading = DEFAULT_CARD_TITLE;
   @property({ attribute: false }) columns: ColumnKey[] = [];
+  /**
+   * Which quick-filter pills this dashboard offers, or `null` for all of them.
+   * The card passes its own config down; the sidebar panel has no YAML to
+   * configure, so it takes the default.
+   */
+  @property({ attribute: false }) quickFilters: QuickFilterKey[] | null = null;
   /** Extra entries the host adds to the app bar's ⋮ menu. */
   @property({ attribute: false }) menuEntries: OverflowMenuEntry[] = [];
   /** Open straight into selection mode (the card's "Select items…" entry). */
@@ -1679,6 +1687,9 @@ export class HVFullView extends LitElement {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
     const counts = st?.statsCounts;
+    // The dashboard decides what is on offer; the count still decides whether
+    // there is anything to say. Same vocabulary the card's badges read.
+    const allowsPill = (key: QuickFilterKey) => quickFilterAllowed(this.quickFilters, key);
     return html`
         <div class="appbar">
           ${this.embedded
@@ -1702,7 +1713,7 @@ export class HVFullView extends LitElement {
             />
           </label>
           <span class="spacer"></span>
-          ${counts && counts.low_stock_count > 0
+          ${allowsPill('low_stock') && counts && counts.low_stock_count > 0
             ? html`<button
                 class="hv-chip pill warning ${filters.lowStockOnly ? 'on' : ''}"
                 data-testid="full-badge-low"
@@ -1713,7 +1724,7 @@ export class HVFullView extends LitElement {
                 ${counts.low_stock_count} low
               </button>`
             : null}
-          ${counts && (counts.overdue_count ?? 0) > 0
+          ${allowsPill('overdue') && counts && (counts.overdue_count ?? 0) > 0
             ? html`<button
                 class="hv-chip pill error ${filters.overdueOnly ? 'on' : ''}"
                 data-testid="full-badge-overdue"
@@ -1724,7 +1735,7 @@ export class HVFullView extends LitElement {
                 ${counts.overdue_count} overdue
               </button>`
             : null}
-          ${counts && (counts.inspection_overdue_count ?? 0) > 0
+          ${allowsPill('inspection_due') && counts && (counts.inspection_overdue_count ?? 0) > 0
             ? html`<button
                 class="hv-chip pill warning ${filters.inspectionDueOnly ? 'on' : ''}"
                 data-testid="full-badge-inspection"
@@ -1735,7 +1746,7 @@ export class HVFullView extends LitElement {
                 ${counts.inspection_overdue_count} to inspect
               </button>`
             : null}
-          ${counts && counts.checked_out_count > 0
+          ${allowsPill('checked_out') && counts && counts.checked_out_count > 0
             ? html`<button
                 class="hv-chip pill ${filters.checkedOutOnly ? 'on' : ''}"
                 data-testid="full-badge-out"

@@ -596,16 +596,32 @@ throughout.
 ```yaml
 type: custom:haventory-card
 title: Pantry   # optional; overrides the integration-wide card title
+quick_filters:  # optional; which quick-filter pills this card offers
+  - low_stock
+  - checked_out
 ```
 
-`title` is the only option the card reads. Any other key is ignored rather than rejected,
-so a stale dashboard config never breaks the card.
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `title` | string | the integration-wide card title | Names this card, for this dashboard only. |
+| `quick_filters` | list | every pill | Which quick-filter pills the card and its full view offer: `total`, `low_stock`, `overdue`, `inspection_due`, `checked_out`. |
 
-Without it, the card uses the name set under Settings → Devices & services → HAventory →
-**Configure** (asked for at setup too, and defaulting to "HAventory"), so one setting
-renames every card. Per-dashboard `title:` wins over it — use that when two dashboards
-should name the same inventory differently. An open dashboard picks up a changed name on
-its next refresh or reload; the change is not pushed live.
+Those two are the only options the card reads. Any other key is ignored rather than
+rejected, so a stale dashboard config never breaks the card — and the same holds inside
+`quick_filters`: an unknown pill name is dropped, and a value that is not a list reads as
+the key being absent.
+
+Without `title`, the card uses the name set under Settings → Devices & services →
+HAventory → **Configure** (asked for at setup too, and defaulting to "HAventory"), so one
+setting renames every card. Per-dashboard `title:` wins over it — use that when two
+dashboards should name the same inventory differently. An open dashboard picks up a
+changed name on its next refresh or reload; the change is not pushed live.
+
+`quick_filters` says which pills are *allowed*; a pill still only shows when it has
+something to count, so `low_stock` draws nothing while nothing is low. Omitting the key
+offers all of them, which is what every dashboard written before this option gets. An
+explicit empty list is a choice and offers none. The sidebar panel has no dashboard config
+of its own, so it always offers all of them.
 
 ### CI/CD & Ops
 

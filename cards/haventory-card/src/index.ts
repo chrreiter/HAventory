@@ -3,6 +3,8 @@ import type { HassLike } from './store/types';
 import { Store } from './store/store';
 import { resolveColorScheme } from './ui/theme';
 import { DEFAULT_CARD_TITLE } from './ui/card-title';
+import { normalizeQuickFilters } from './ui/quick-filters';
+import type { QuickFilterKey } from './ui/quick-filters';
 import { registerBrandIcon } from './ui/brand-icon';
 import { defineCardElement } from './register';
 import './components/hv-card-shell';
@@ -20,7 +22,7 @@ export class HAventoryCard extends LitElement {
     }
   `;
 
-  private config?: { title?: string };
+  private config?: { title?: string; quickFilters?: QuickFilterKey[] | null };
 
   private store?: Store;
   private _storeUnsub?: () => void;
@@ -31,12 +33,15 @@ export class HAventoryCard extends LitElement {
     if (cfg !== null && typeof cfg !== 'object') {
       throw new Error('Invalid config');
     }
-    const obj = (cfg || {}) as { title?: unknown };
-    // Only `title` means anything here. Anything else in the YAML — a key from
-    // a future version, or a stale one — is ignored rather than rejected, so a
-    // dashboard never breaks on a config the card simply does not read.
+    const obj = (cfg || {}) as { title?: unknown; quick_filters?: unknown };
+    // Only `title` and `quick_filters` mean anything here. Anything else in the
+    // YAML — a key from a future version, or a stale one — is ignored rather
+    // than rejected, so a dashboard never breaks on a config the card simply
+    // does not read. The same holds inside `quick_filters`: an unknown pill name
+    // is dropped, and a value that is not a list reads as the key being absent.
     this.config = {
       title: typeof obj.title === 'string' ? obj.title : undefined,
+      quickFilters: normalizeQuickFilters(obj.quick_filters),
     };
     this.requestUpdate();
   }
@@ -113,6 +118,7 @@ export class HAventoryCard extends LitElement {
         data-testid="card-shell"
         .store=${this.store}
         .heading=${this._heading()}
+        .quickFilters=${this.config?.quickFilters ?? null}
       ></hv-card-shell>
     `;
   }
