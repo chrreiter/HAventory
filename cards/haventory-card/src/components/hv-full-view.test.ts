@@ -1096,6 +1096,102 @@ describe('hv-full-view: editing', () => {
     );
   });
 
+  // This surface fills the screen, so the card's banner list is not behind it:
+  // without a sentence inside the form the user is left with a form that did not
+  // close and no account of why.
+  describe('a rejected save', () => {
+    const openEditor = async (el: HVFullView, sr: ShadowRoot) => {
+      const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+      (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+      await settle(el);
+      return q(sr, '[data-testid="full-editor"]') as HTMLElement & { busy: boolean };
+    };
+    const save = async (el: HVFullView, sr: ShadowRoot) => {
+      const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement;
+      const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+      name.value = 'New';
+      name.dispatchEvent(new Event('input'));
+      (editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+      await settle(el);
+      await settle(el);
+    };
+    const errorText = (sr: ShadowRoot) =>
+      (q(sr, '[data-testid="full-editor"]') as HTMLElement | null)?.shadowRoot?.querySelector(
+        '[data-testid="editor-error"]',
+      )?.textContent;
+
+    it('names itself inside the open form and clears the busy state', async () => {
+      const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Old' })] });
+      store['ws'].updateItem = async () => {
+        throw { code: 'storage_error', message: 'the store is read-only' };
+      };
+
+      const editor = await openEditor(el, sr);
+      await save(el, sr);
+
+      expect(errorText(sr)).toContain('the store is read-only');
+      expect(editor.busy).toBe(false);
+      expect(
+        (editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).textContent?.trim(),
+      ).toBe('Save');
+    });
+
+    // Version numbers say nothing to someone looking at a form, and the two
+    // hosts of the editor share the sentence rather than each writing one.
+    it('says a conflict in the same words the card does', async () => {
+      const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Old' })] });
+      store['ws'].updateItem = async () => {
+        throw { code: 'conflict', message: 'version conflict: expected 1, actual 2' };
+      };
+
+      await openEditor(el, sr);
+      await save(el, sr);
+
+      expect(errorText(sr)).toContain('Someone else changed this item');
+    });
+
+    it('clears once the save lands', async () => {
+      const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Old' })] });
+      const reject = async () => {
+        throw { code: 'storage_error', message: 'the store is read-only' };
+      };
+      store['ws'].updateItem = reject;
+
+      await openEditor(el, sr);
+      await save(el, sr);
+      expect(errorText(sr)).toContain('the store is read-only');
+
+      store['ws'].updateItem = async (id: string) => ({ ...makeItem({ id, name: 'New' }), version: 2 });
+      await save(el, sr);
+
+      expect(q(sr, '[data-testid="full-editor"]')).toBe(null);
+    });
+
+    it('drops the error again when the next edit opens', async () => {
+      const { el, store, sr } = await mount({
+        items: [makeItem({ id: '1', name: 'Old' }), makeItem({ id: '2', name: 'Other' })],
+      });
+      store['ws'].updateItem = async () => {
+        throw { code: 'storage_error', message: 'the store is read-only' };
+      };
+
+      await openEditor(el, sr);
+      await save(el, sr);
+      expect(errorText(sr)).toContain('the store is read-only');
+
+      const rows = [
+        ...((q(sr, '[data-testid="full-table"]') as HTMLElement).shadowRoot?.querySelectorAll(
+          '[data-testid="table-edit"]',
+        ) ?? []),
+      ] as HTMLButtonElement[];
+      rows[rows.length - 1].click();
+      await settle(el);
+
+      expect(q(sr, '[data-testid="full-editor"]')?.shadowRoot?.textContent).toContain('Other — editing');
+      expect(errorText(sr)).toBeUndefined();
+    });
+  });
+
   it('releases the pin when the editor is cancelled', async () => {
     const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
     const table = q(sr, '[data-testid="full-table"]') as HTMLElement;

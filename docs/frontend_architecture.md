@@ -385,8 +385,11 @@ backend can actually sort by it — a `sortField`. Category, location and tags h
 their headers are not clickable: a header that looks interactive but does nothing is worse
 than a plain one.
 
-`DEFAULT_COLUMNS` is every key: a browser that has made no choice sees the whole record,
-and the picker is what thins it. The full set is wider than a phone and wider than many
+`DEFAULT_COLUMNS` is every key, in the canonical order: a browser that has made no choice
+sees the whole record, and the picker is what thins it and reorders it. The stored array
+*is* the order — `normalizeColumns` validates and dedupes without re-sorting, so a
+selection written before ordering existed (always canonical) loads as the same table it
+described, and `canonicalOrder` is what "Reset order" restores. The full set is wider than a phone and wider than many
 desktops, which `hv-data-table` answers by scrolling sideways rather than dropping columns.
 The name track (`NAME_COLUMN_SIZE`) outweighs every flexible column beside it in both
 halves of its `minmax`, because the row's identity is the one column that cannot be

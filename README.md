@@ -513,7 +513,10 @@ throughout.
   a sortable table. Only columns the backend can sort by get a clickable header. A browser
   that has made no choice yet shows every optional column — quantity, status, category,
   location, tags, due, next inspection, updated — and the ⋮ → **Columns** picker is where
-  you thin that down; the table scrolls sideways rather than dropping a column you kept.
+  you thin that down and put the ones you keep in the order you want them, with the up/down
+  buttons beside each shown column and a **Reset order** back to the canonical one. The
+  order and the selection are one per-browser preference; the table scrolls sideways rather
+  than dropping a column you kept.
   The Status column names every row, OK included, and the name's amber status chip stands
   down while it is shown so no row says the same word twice. The
   sidebar leads with the location tree carrying the backend's own per-location counts and
@@ -658,9 +661,9 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
   counts and drills down to the items filed under each.
 - Dedicated **tag browser** (header → "Tags"): lists used tags with item counts and drills
   down to the items carrying each.
-- **Column selection** (header → "Columns"): choose which optional columns (quantity,
-  category, location, tags, due date) show in the standard vs expanded view; the choice is
-  persisted in `localStorage` (`haventory:columns:v1`, per browser).
+- **Column selection and order** (header → "Columns"): choose which optional columns
+  (quantity, category, location, tags, due date) show in the expanded view, and in which
+  order; the choice is persisted in `localStorage` (`haventory:columns:v1`, per browser).
 - **Custom fields UI** in the item dialog: define/edit/remove typed fields
   (string/number/boolean/date) with type-appropriate inputs; existing field keys across the
   dataset are offered as suggestions.

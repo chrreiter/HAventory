@@ -6,14 +6,19 @@ import { icon } from '../ui/icons';
 import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
 import type { ColumnKey } from '../store/columns';
-import { COLUMN_DEFS, normalizeColumns } from '../store/columns';
+import { COLUMN_DEFS, canonicalOrder, moveColumn, normalizeColumns } from '../store/columns';
 
 /**
- * Small modal to choose which optional columns show in a given view.
+ * Small modal to choose which optional columns show in a given view, and in
+ * which order.
  *
- * Presentational: it reflects `columns` (the current selection) and emits a
- * `change` event with the new selection whenever a column is toggled. The
- * container owns persistence.
+ * Presentational: it reflects `columns` (the current selection, in the order it
+ * is drawn) and emits a `change` event with the new selection whenever a column
+ * is toggled or moved. The container owns persistence.
+ *
+ * Up/down buttons rather than a drag handle, matching the organize dialog's
+ * status rows and the editor's photo strip: they work from the keyboard without
+ * a second implementation beside the pointer one.
  *
  * This was the one surface that never adopted the card's design tokens: it
  * styled itself straight from HA's variables, with its own 8px radius, native
@@ -66,6 +71,9 @@ export class HVColumnPicker extends LitElement {
       }
       li {
         margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 2px;
       }
       /* The same control the filter panel's checkboxes use, so a tick means the
          same thing — and picks up --hv-tap-min on a phone. */
@@ -73,7 +81,8 @@ export class HVColumnPicker extends LitElement {
         display: flex;
         align-items: center;
         gap: 10px;
-        width: 100%;
+        flex: 1;
+        min-width: 0;
         box-sizing: border-box;
         min-height: var(--hv-tap-min, 34px);
         border: none;
@@ -86,6 +95,33 @@ export class HVColumnPicker extends LitElement {
       }
       .option:hover {
         background: var(--hv-hover-overlay);
+      }
+      .move {
+        display: flex;
+        flex: none;
+        gap: 2px;
+      }
+      /* WCAG 2.2 asks 24px of every pointer target; the token is what a host
+         declares when the card is narrow, and the fallback covers the panel,
+         which declares none. */
+      .move button {
+        display: inline-grid;
+        place-items: center;
+        width: var(--hv-tap-min, 28px);
+        height: var(--hv-tap-min, 28px);
+        border: none;
+        background: none;
+        color: var(--hv-text-tertiary);
+        cursor: pointer;
+        padding: 0;
+        line-height: 0;
+      }
+      .move button:hover:not([disabled]) {
+        color: var(--hv-text);
+      }
+      .move button[disabled] {
+        opacity: 0.3;
+        cursor: default;
       }
       .box {
         display: inline-grid;
@@ -107,6 +143,11 @@ export class HVColumnPicker extends LitElement {
         align-items: center;
         gap: 8px;
         padding-top: 8px;
+      }
+      /* Left of the confirming button, because it undoes work inside the dialog
+         rather than closing it. */
+      .actions .reset {
+        margin-right: auto;
       }
     `,
   ];
@@ -138,17 +179,51 @@ export class HVColumnPicker extends LitElement {
     this.open = false;
   };
 
+  private _emit(columns: ColumnKey[]): void {
+    this.dispatchEvent(new CustomEvent('change', { detail: { columns }, bubbles: true, composed: true }));
+  }
+
+  /**
+   * A column switched on joins the list at the end rather than at its canonical
+   * index: the order on screen is the user's, and dropping a re-enabled column
+   * back into the middle of it would move a column they never touched.
+   */
   private _toggle(key: ColumnKey, checked: boolean): void {
-    const current = new Set(normalizeColumns(this.columns));
-    if (checked) current.add(key);
-    else current.delete(key);
-    const next = normalizeColumns([...current]);
-    this.dispatchEvent(new CustomEvent('change', { detail: { columns: next }, bubbles: true, composed: true }));
+    const current = normalizeColumns(this.columns);
+    this._emit(checked ? [...current, key] : current.filter((k) => k !== key));
+  }
+
+  private _move(key: ColumnKey, delta: -1 | 1): void {
+    this._emit(moveColumn(this.columns, key, delta));
+  }
+
+  /**
+   * The rows to draw: the chosen columns in their chosen order, then the ones
+   * that are off, in canonical order.
+   *
+   * Only a shown column has a position, so only those carry move buttons —
+   * ordering an invisible column is a promise about where it would land that
+   * the toggle then does not keep.
+   */
+  private _rows(): { key: ColumnKey; label: string; on: boolean }[] {
+    const selected = normalizeColumns(this.columns);
+    const labelOf = (key: ColumnKey) => COLUMN_DEFS.find((c) => c.key === key)!.label;
+    return [
+      ...selected.map((key) => ({ key, label: labelOf(key), on: true })),
+      ...COLUMN_DEFS.filter((c) => !selected.includes(c.key)).map((c) => ({
+        key: c.key,
+        label: c.label,
+        on: false,
+      })),
+    ];
   }
 
   render() {
     if (!this.open) return null;
-    const selected = new Set(normalizeColumns(this.columns));
+    const rows = this._rows();
+    const shown = rows.filter((r) => r.on).length;
+    const ordered = normalizeColumns(this.columns);
+    const isCanonical = ordered.join() === canonicalOrder(ordered).join();
     return html`
       <div class="backdrop" role="presentation" style="z-index: ${this._zBase ?? 9998};" @click=${this._close}></div>
       <div class="panel-wrap" role="none" style="z-index: ${(this._zBase ?? 9998) + 1};">
@@ -156,26 +231,57 @@ export class HVColumnPicker extends LitElement {
           @keydown=${onEscape(() => this._close())}>
           <h2>${this.heading}</h2>
           <ul data-testid="column-options">
-            ${COLUMN_DEFS.map((c) => {
-              const on = selected.has(c.key);
-              return html`
+            ${rows.map(
+              (r, index) => html`
                 <li>
                   <button
                     class="option"
                     role="checkbox"
-                    aria-checked=${String(on)}
+                    aria-checked=${String(r.on)}
                     data-testid="column-option"
-                    data-key=${c.key}
-                    @click=${() => this._toggle(c.key, !on)}
+                    data-key=${r.key}
+                    @click=${() => this._toggle(r.key, !r.on)}
                   >
-                    <span class="box ${on ? 'on' : ''}">${on ? icon('check', 12) : null}</span>
-                    <span>${c.label}</span>
+                    <span class="box ${r.on ? 'on' : ''}">${r.on ? icon('check', 12) : null}</span>
+                    <span>${r.label}</span>
                   </button>
+                  ${r.on
+                    ? html`<span class="move">
+                        <button
+                          data-testid="column-up"
+                          data-key=${r.key}
+                          aria-label=${`Move ${r.label} left`}
+                          title="Move left"
+                          ?disabled=${index === 0}
+                          @click=${() => this._move(r.key, -1)}
+                        >
+                          ${icon('chevronUp', 15)}
+                        </button>
+                        <button
+                          data-testid="column-down"
+                          data-key=${r.key}
+                          aria-label=${`Move ${r.label} right`}
+                          title="Move right"
+                          ?disabled=${index === shown - 1}
+                          @click=${() => this._move(r.key, 1)}
+                        >
+                          ${icon('chevronDown', 15)}
+                        </button>
+                      </span>`
+                    : null}
                 </li>
-              `;
-            })}
+              `,
+            )}
           </ul>
           <div class="actions">
+            <button
+              class="hv-text-button reset"
+              data-testid="column-picker-reset-order"
+              ?disabled=${isCanonical}
+              @click=${() => this._emit(canonicalOrder(ordered))}
+            >
+              Reset order
+            </button>
             <button class="hv-pill" data-testid="column-picker-done" @click=${this._close}>Done</button>
           </div>
         </div>

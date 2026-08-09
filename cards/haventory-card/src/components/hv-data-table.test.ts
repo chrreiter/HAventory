@@ -193,6 +193,40 @@ describe('hv-data-table: columns', () => {
     expect(q(el, '[data-testid="cell-category"]')).toBe(null);
   });
 
+  // The order is the user's, set in the column picker and stored per browser.
+  it('draws the columns in the order it is given', async () => {
+    const el = await mount([{ id: '1', quantity: 3, category: 'Hardware' }], {
+      columns: ['category', 'quantity'],
+    });
+    const headers = all(el, '[role="columnheader"]').map((h) => h.textContent?.trim());
+    // Name leads, the trailing actions header is empty.
+    expect(headers.slice(0, 3)).toEqual(['Name', 'Category', 'Qty']);
+
+    const cells = all(el, '[data-testid^="cell-"]').map((c) => c.dataset.testid);
+    expect(cells).toEqual(['cell-category', 'cell-quantity']);
+  });
+
+  // Sort bindings hang off the column definition, not off a position, so a
+  // permutation must not hand a header the neighbour's field.
+  it("keeps each header's sort field across a permutation", async () => {
+    const el = await mount([{ id: '1' }], { columns: ['updated_at', 'due_date', 'quantity'] });
+    const fields = all(el, '[data-testid="table-sort"]').map((h) => h.dataset.field);
+    expect(fields).toEqual(['name', 'updated_at', 'due_date', 'quantity']);
+  });
+
+  // The name is the row's identity and the trailing actions are where the hand
+  // goes; neither is in the optional set, so neither can be moved.
+  it('keeps the name column first and the actions last whatever the order', async () => {
+    const el = await mount([{ id: '1', name: 'Sander' }], { columns: ['tags', 'quantity'] });
+    const headers = all(el, '[role="columnheader"]');
+    expect(headers[0].textContent?.trim()).toBe('Name');
+    expect(headers[headers.length - 1].textContent?.trim()).toBe('');
+
+    const row = q(el, '[data-testid="table-row"]') as HTMLElement;
+    expect((row.firstElementChild as HTMLElement).classList.contains('name-cell')).toBe(true);
+    expect((row.lastElementChild as HTMLElement).classList.contains('actions')).toBe(true);
+  });
+
   it('dashes an empty cell rather than leaving a gap', async () => {
     const el = await mount([{ id: '1', category: null, tags: [], due_date: null }]);
     expect(q(el, '[data-testid="cell-category"]')?.textContent).toBe('—');
