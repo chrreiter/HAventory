@@ -390,6 +390,16 @@ export class HVCardShell extends LitElement {
   private _media: MediaBindings | null = null;
   /** Identities `_editorEpoch` was last bumped for; see `_syncEditorEpoch`. */
   private _editorInputs: unknown[] = [];
+  /**
+   * The last copy of the row being edited, kept for as long as the form is open.
+   *
+   * A filter change refetches, and the edited row can drop out of the result.
+   * The editor rebuilds its model whenever the item id it was handed changes,
+   * so handing it `null` there would wipe the typed edits just as surely as
+   * unmounting it. `_syncPinnedItem` keeps this at the freshest copy the store
+   * has listed.
+   */
+  private _pinnedItem: Item | null = null;
 
   /**
    * Picture access for every surface below, built once per store.
@@ -446,7 +456,31 @@ export class HVCardShell extends LitElement {
     if (changed.has('forceMobile')) this.responsive.setForced(this.forceMobile);
     // Reflect the mode so child selectors and :host([mobile]) rules apply.
     this.toggleAttribute('mobile', this.mobile);
+    this._syncPinnedItem();
     this._syncEditorEpoch();
+  }
+
+  /**
+   * Hold on to the row being edited, and close the form when it is really gone.
+   *
+   * Falling off the current page and being deleted look identical from the item
+   * list alone; the store is the only place that knows which happened, so it is
+   * asked rather than guessed at.
+   */
+  private _syncPinnedItem() {
+    const editing = this._editing;
+    if (editing === null || editing === 'new') {
+      this._pinnedItem = null;
+      return;
+    }
+    if (this.store?.wasRemoved(editing)) {
+      this._pinnedItem = null;
+      this._editing = null;
+      this._editorError = null;
+      return;
+    }
+    const listed = this.st?.items.find((i) => i.id === editing);
+    if (listed) this._pinnedItem = listed;
   }
 
   /**
@@ -525,6 +559,12 @@ export class HVCardShell extends LitElement {
 
   private _itemById(itemId: string): Item | undefined {
     return this.st?.items.find((i) => i.id === itemId);
+  }
+
+  /** The item an open editor edits — the listed row, or the pinned copy of it. */
+  private _editorItem(itemId: string | null): Item | null {
+    if (itemId === null) return null;
+    return this._itemById(itemId) ?? (this._pinnedItem?.id === itemId ? this._pinnedItem : null);
   }
 
   private _onRowAction(item: Item, detail: { action?: string; anchor?: DOMRect }) {
@@ -627,7 +667,9 @@ export class HVCardShell extends LitElement {
 
   private _onEditorDelete = (e: CustomEvent) => {
     const { itemId } = e.detail as { itemId: string };
-    const item = this._itemById(itemId);
+    // The pinned copy counts: a row filtered off the page is still deletable
+    // from the form that is still open on it.
+    const item = this._editorItem(itemId);
     if (!item) return;
     this._requestDelete(item);
   };
@@ -646,7 +688,7 @@ export class HVCardShell extends LitElement {
       .media=${this.media}
       .mediaConfig=${st?.mediaConfig ?? null}
       ?noHeader=${opts.noHeader ?? false}
-      .item=${itemId ? (this._itemById(itemId) ?? null) : null}
+      .item=${this._editorItem(itemId)}
       .locations=${st?.locationsFlatCache ?? null}
       .locationTree=${st?.locationTreeCache ?? []}
       .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
@@ -1100,6 +1142,7 @@ export class HVCardShell extends LitElement {
         .editorTemplate=${this._renderEditor}
         .editorEpoch=${this._editorEpoch}
         .editingItemId=${this._editing === 'new' ? null : this._editing}
+        .pinnedItem=${this._pinnedItem}
         .addingNew=${!mobile && this._editing === 'new'}
         .emptyKind=${emptyKindFor(this.st)}
         .emptyLocationName=${(st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId)?.name ??

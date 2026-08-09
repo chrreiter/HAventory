@@ -184,7 +184,7 @@ describe('Store', () => {
     expect(moved?.location_id).toBe('loc2');
   });
 
-  it('handles filter changes and resets list', async () => {
+  it('handles filter changes and restarts paging', async () => {
     const items = Array.from({ length: 30 }, (_, i) => makeItem({ id: `${i}`, name: `Item ${i}` }));
     const hass = makeMockHass({ items });
     const store = new Store(hass);
@@ -194,9 +194,79 @@ describe('Store', () => {
     expect(initialCount).toBe(30);
 
     store.setFilters({ q: 'search term' });
-    // Should reset items and cursor
     expect(store.state.value.filters.q).toBe('search term');
     expect(store.state.value.cursor).toBe(null);
+  });
+
+  // Blanking the list here is what tore the card's scroller down mid-edit and
+  // took the open editor with it. The refetch replaces the rows when it lands.
+  it('keeps the loaded rows and the total while a filter refetch is in flight', async () => {
+    const items = Array.from({ length: 3 }, (_, i) => makeItem({ id: `${i}`, name: `Item ${i}` }));
+    const hass = makeMockHass({ items });
+    const store = new Store(hass);
+    await store.init();
+    const before = store.state.value.items;
+    const total = store.state.value.total;
+    expect(total).toBe(3);
+
+    store.setFilters({ q: 'Item 1' });
+    expect(store.state.value.items).toBe(before);
+    expect(store.state.value.total).toBe(total);
+    expect(store.state.value.loading).toBe(true);
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(store.state.value.loading).toBe(false);
+    expect(store.state.value.items.map((i) => i.name)).toEqual(['Item 1']);
+  });
+
+  it('still clears the selection on a filter change', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: 'a' }), makeItem({ id: 'b' })] });
+    const store = new Store(hass);
+    await store.init();
+    store.setSelected(['a', 'b']);
+    expect(store.state.value.selection.size).toBe(2);
+
+    store.setFilters({ q: 'a' });
+    expect(store.state.value.selection.size).toBe(0);
+  });
+
+  // Two disappearances look identical from the item list: a row that fell off
+  // the filtered page, and one that is gone. Only the second closes an editor.
+  describe('wasRemoved', () => {
+    it('reports nothing removed for a row that is merely filtered out', async () => {
+      const hass = makeMockHass({ items: [makeItem({ id: 'a', name: 'Alpha' }), makeItem({ id: 'b', name: 'Beta' })] });
+      const store = new Store(hass);
+      await store.init();
+
+      store.setFilters({ q: 'Alpha' });
+      await new Promise((r) => setTimeout(r, 10));
+      expect(store.state.value.items.map((i) => i.id)).toEqual(['a']);
+      expect(store.wasRemoved('b')).toBe(false);
+    });
+
+    it('reports a deleted row as removed', async () => {
+      const hass = makeMockHass({ items: [makeItem({ id: 'a' })] });
+      const store = new Store(hass);
+      await store.init();
+
+      await store.deleteItem('a', 1);
+      expect(store.wasRemoved('a')).toBe(true);
+    });
+
+    it('forgets a delete that was rolled back', async () => {
+      const hass = makeMockHass({ items: [makeItem({ id: 'a' })] });
+      const store = new Store(hass, { retryBaseMs: 0 });
+      await store.init();
+      const passthrough = hass.callWS.bind(hass);
+      hass.callWS = async <T,>(msg: Record<string, unknown>): Promise<T> => {
+        if (msg.type === 'haventory/item/delete') throw new Error('nope');
+        return passthrough<T>(msg);
+      };
+
+      await store.deleteItem('a', 1);
+      expect(store.state.value.items.map((i) => i.id)).toEqual(['a']);
+      expect(store.wasRemoved('a')).toBe(false);
+    });
   });
 
   it('dismisses errors from error queue', async () => {

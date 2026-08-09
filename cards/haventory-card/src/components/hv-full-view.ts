@@ -695,6 +695,17 @@ export class HVFullView extends LitElement {
         max-height: min(70dvh, calc(100% - 116px));
         overflow-y: auto;
       }
+      /*
+       * The row being edited can stop matching the filter the user just changed.
+       * The form stays open on it so the typed edits survive; the hint is what
+       * stops that from reading as a table that failed to filter.
+       */
+      .pinned-hint {
+        margin: 0;
+        padding: 6px 16px;
+        font-size: 12px;
+        color: var(--hv-text-secondary);
+      }
       .new-location {
         display: flex;
         gap: 6px;
@@ -764,6 +775,15 @@ export class HVFullView extends LitElement {
   @state() private _searchDraft = '';
   @state() private _editing: string | 'new' | null = null;
   @state() private _editorBusy = false;
+  /**
+   * The last copy of the row being edited, kept for as long as the form is open.
+   *
+   * Same reason the card's shell keeps one: a filter change refetches, the
+   * edited row can drop out of the result, and the editor rebuilds its model
+   * from whatever item it is handed — so handing it `null` there discards the
+   * typed edits.
+   */
+  @state() private _pinnedItem: Item | null = null;
   @state() private _creatingLocation = false;
   @state() private _locationError: string | null = null;
   /**
@@ -837,20 +857,7 @@ export class HVFullView extends LitElement {
       this._storeUnsub?.();
       this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
-    // An editor whose item has left the store — deleted here, by another
-    // client, or filtered out of the list — would otherwise render `.item` as
-    // null, which is the create form. Gated on `loading`: a filter change
-    // empties the list while the next page is fetched, and that absence says
-    // nothing yet.
-    if (
-      this._editing !== null &&
-      this._editing !== 'new' &&
-      this.st !== null &&
-      !this.st.loading &&
-      !this.st.items.some((i) => i.id === this._editing)
-    ) {
-      this._editing = null;
-    }
+    this._syncPinnedItem();
     if (changed.has('open')) {
       if (this.open) {
         this._zBase = nextZBase();
@@ -923,6 +930,35 @@ export class HVFullView extends LitElement {
 
   private _setFilters(patch: Partial<StoreFilters>) {
     this.store?.setFilters(patch);
+  }
+
+  /**
+   * Hold on to the row being edited, and close the form when it is really gone.
+   *
+   * Falling off the current page and being deleted look identical from the item
+   * list alone; the store is the only place that knows which happened, so it is
+   * asked rather than guessed at.
+   */
+  private _syncPinnedItem() {
+    const editing = this._editing;
+    if (editing === null || editing === 'new') {
+      this._pinnedItem = null;
+      return;
+    }
+    if (this.store?.wasRemoved(editing)) {
+      this._pinnedItem = null;
+      this._editing = null;
+      return;
+    }
+    const listed = this.st?.items.find((i) => i.id === editing);
+    if (listed) this._pinnedItem = listed;
+  }
+
+  /** The item the open editor edits — the listed row, or the pinned copy of it. */
+  private get _editorItem(): Item | null {
+    if (this._editing === null || this._editing === 'new') return null;
+    const id = this._editing;
+    return this.st?.items.find((i) => i.id === id) ?? (this._pinnedItem?.id === id ? this._pinnedItem : null);
   }
 
   private _onRowEvent(name: string, detail: { itemId?: string }) {
@@ -1759,15 +1795,18 @@ export class HVFullView extends LitElement {
             </div>
             ${this._editing !== null
               ? html`<div class="editor-holder">
+                  ${this._editing !== 'new' && !st?.items.some((i) => i.id === this._editing)
+                    ? html`<p class="pinned-hint" data-testid="pinned-editor-hint">
+                        No longer matches the current filters
+                      </p>`
+                    : null}
                   <hv-item-editor
                     .statuses=${this.st?.statuses ?? null}
                     data-testid="full-editor"
                     .areas=${st?.areasCache?.areas ?? []}
                     .media=${this.media}
                     .mediaConfig=${st?.mediaConfig ?? null}
-                    .item=${this._editing === 'new'
-                      ? null
-                      : (st?.items.find((i) => i.id === this._editing) ?? null)}
+                    .item=${this._editorItem}
                     .locations=${st?.locationsFlatCache ?? null}
                     .locationTree=${st?.locationTreeCache ?? []}
                     .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}

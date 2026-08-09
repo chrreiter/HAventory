@@ -1068,7 +1068,35 @@ describe('hv-full-view: editing', () => {
     expect(q(sr, '[data-testid="full-editor"]')).toBeTruthy();
   });
 
-  it('closes the editor when a filter change drops the item from the list', async () => {
+  // A row that stops matching is not a row that stopped existing: the typed
+  // edits are still worth saving, so the form is pinned and says why.
+  it('pins the editor when a filter change drops the item from the list', async () => {
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement & { item: { name: string } | null };
+    const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    name.value = 'Wood Glue EDITED';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle(el);
+
+    store.setFilters({ q: 'matches nothing at all' });
+    await settle(el);
+    await settle(el);
+
+    expect(q(sr, '[data-testid="full-editor"]')).toBe(editor);
+    expect(editor.item?.name).toBe('Wood Glue');
+    expect(
+      (editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement).value,
+    ).toBe('Wood Glue EDITED');
+    expect(q(sr, '[data-testid="pinned-editor-hint"]')?.textContent).toContain(
+      'No longer matches the current filters',
+    );
+  });
+
+  it('releases the pin when the editor is cancelled', async () => {
     const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
     const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
     (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
@@ -1077,8 +1105,15 @@ describe('hv-full-view: editing', () => {
     store.setFilters({ q: 'matches nothing at all' });
     await settle(el);
     await settle(el);
+    expect(q(sr, '[data-testid="pinned-editor-hint"]')).toBeTruthy();
+
+    q(sr, '[data-testid="full-editor"]')?.dispatchEvent(
+      new CustomEvent('cancel', { bubbles: true, composed: true }),
+    );
+    await settle(el);
 
     expect(q(sr, '[data-testid="full-editor"]')).toBe(null);
+    expect(q(sr, '[data-testid="pinned-editor-hint"]')).toBe(null);
   });
 
   // The form sits in a column flex beside a table that wants every pixel. An
