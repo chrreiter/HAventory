@@ -726,6 +726,20 @@ describe('hv-full-view: sidebar facets', () => {
     expect(q(sr, '[data-testid="sidebar-new-tags"]')?.getAttribute('title')).toBe('New tag…');
   });
 
+  // Status was the fourth facet and the only heading with nothing on it, so the
+  // one vocabulary a household actually defines was the one you could not reach
+  // from the sidebar that shows it.
+  it('offers the same create action on the Status heading', async () => {
+    const { el, sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
+    const seen: { id: string; tab?: string }[] = [];
+    el.addEventListener('menu-action', (e) => seen.push((e as CustomEvent).detail));
+
+    (q(sr, '[data-testid="sidebar-new-status"]') as HTMLButtonElement).click();
+
+    expect(seen).toEqual([{ id: 'organize', tab: 'statuses' }]);
+    expect(q(sr, '[data-testid="sidebar-new-status"]')?.getAttribute('title')).toBe('New status…');
+  });
+
   it('lines the three tallies up in one column', () => {
     // The Locations heading ends in a button and the other two in nothing, so
     // without a reserved slot its number sits an icon-button's width inboard.
@@ -932,6 +946,28 @@ describe('hv-full-view: context bar and table', () => {
 
     (q(sr, '[data-testid="columns-expanded"]') as HTMLButtonElement).click();
     expect(seen).toEqual(['columns']);
+  });
+
+  // Organizing was reachable only from inside the ⋮ menu, on the surface where
+  // there is room for a button — so the one place with space for it was the one
+  // place that hid it. The menu entry stays; the hosts' menu-order pins hold it.
+  it('opens Organize from a button on the app bar', async () => {
+    for (const embedded of [false, true]) {
+      const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
+      el.embedded = embedded;
+      await settle(el);
+      const seen: unknown[] = [];
+      el.addEventListener('menu-action', (e) => seen.push((e as CustomEvent).detail));
+
+      const button = q(sr, '[data-testid="full-organize"]') as HTMLButtonElement;
+      expect(button, embedded ? 'embedded' : 'modal').toBeTruthy();
+      expect(button.getAttribute('aria-label')).toBe('Organize');
+      button.click();
+
+      // No tab named: Organize opens where it always did, on Locations.
+      expect(seen).toEqual([{ id: 'organize' }]);
+      el.remove();
+    }
   });
 
   it('counts loaded rows against the filtered total', async () => {

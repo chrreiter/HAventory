@@ -534,8 +534,9 @@ throughout.
   row reads "4 / 37" — matches over total — so you can see where the matches are rather
   than a total that never moves. The counts ignore the *location* filter, since the sidebar
   is how you pick one. Each heading also offers a create action: Locations opens an inline
-  name field, while Categories and Tags open the organize dialog on their own tab — a
-  category exists through the items using it, so that is where making one is explained.
+  name field, while Categories, Tags and Status open the organize dialog on their own tab —
+  a category exists through the items using it, so that is where making one is explained.
+  The app bar carries an Organize button of its own, beside the ⋮ that also lists it.
   From the second selected tag on, the Tags heading carries the same any/all control the
   filter panel has, since that is the mode governing what the sidebar just selected. The
   app bar's stat pills are the card's: low in amber, overdue in red, to-inspect in amber,
@@ -554,7 +555,8 @@ throughout.
   determinate and cancellable, and the result is reported *per operation*: "39 of 42
   succeeded", every failure named with its reason and a retry scoped to just those.
   Select-all covers loaded rows only and says so, with an explicit "load the rest" path.
-- **Organize dialog** — Locations / Categories / Tags in one place, each tab stating its
+- **Organize dialog** — Locations / Categories / Tags / Statuses in one place, reached from
+  the full view's app bar as well as its ⋮ menu, each tab stating its
   total above the list and each row offering the same moves: an "N items" link that opens
   the filtered list in the full view, plus rename, merge and delete. Locations keep their collapsible tree and edit inline, with a guarded
   delete that explains what is in the way. Category and tag rename, merge and removal are
