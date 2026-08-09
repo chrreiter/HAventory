@@ -465,8 +465,10 @@ Things jsdom cannot do, and how the tests handle it:
   the reflected `mobile` attribute), never a computed style.
 - **No layout** — `ResponsiveController` is driven through `setWidth()` / `setForced()`
   rather than a real `ResizeObserver`.
-- **No drag and drop** — dragging items onto tree nodes (an optional item in the handoff)
-  is not implemented.
+- **No real drag and drop** — jsdom builds a `DragEvent` with no `DataTransfer` behind it,
+  so the editor's file-drop tests carry a plain-object `dataTransfer` and assert the
+  routing (which kind each dropped file becomes) rather than the browser's drag machinery.
+  Dragging items onto tree nodes (an optional item in the handoff) is not implemented.
 
 Run:
 
