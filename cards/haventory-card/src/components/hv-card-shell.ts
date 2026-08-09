@@ -9,9 +9,10 @@ import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { emptyKindFor } from '../ui/empty-state';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
+import { editorErrorText } from '../ui/editor-error';
 import { HostSurfaces } from '../host-surfaces';
 import type { Store } from '../store/store';
-import type { ErrorEntry, Item, Location, StoreFilters, StoreState } from '../store/types';
+import type { Item, Location, StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 import './hv-banner';
 import './hv-bottom-sheet';
@@ -1346,18 +1347,6 @@ export class HVCardShell extends LitElement {
   private get _filterPanel(): HVFilterPanel | null {
     return this.shadowRoot?.querySelector('hv-filter-panel') ?? null;
   }
-}
-
-/**
- * What an open editor says about a save that did not land.
- *
- * A conflict's own message names version numbers, which say nothing to someone
- * looking at a form; the card's banner already frames that case in words and
- * carries the ways out of it, so the form repeats that sentence rather than
- * giving a second, differently worded account of the same event.
- */
-function editorErrorText(entry: ErrorEntry): string {
-  return entry.kind === 'conflict' ? 'Someone else changed this item.' : entry.message;
 }
 
 function readPanelPref(): boolean {

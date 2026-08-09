@@ -15,6 +15,7 @@ import { deepFocusables } from '../ui/dialog-focus';
 import { areaNameById, effectiveAreaIdForLocation } from '../ui/area';
 import { renderAreaChip } from '../ui/location-path';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
+import { editorErrorText } from '../ui/editor-error';
 import { statusCount, statusLabel, statusList } from '../ui/status';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
@@ -776,6 +777,14 @@ export class HVFullView extends LitElement {
   @state() private _editing: string | 'new' | null = null;
   @state() private _editorBusy = false;
   /**
+   * What the open form says about a save the store refused.
+   *
+   * This surface fills the screen, so the card's banner list is not behind it —
+   * without this the user is left with a form that did not close and no account
+   * of why.
+   */
+  @state() private _editorError: string | null = null;
+  /**
    * The last copy of the row being edited, kept for as long as the form is open.
    *
    * Same reason the card's shell keeps one: a filter change refetches, the
@@ -867,6 +876,7 @@ export class HVFullView extends LitElement {
       } else {
         this._filtersOpen = false;
         this._editing = null;
+        this._editorError = null;
         this._creatingLocation = false;
         this._locationError = null;
         this._selecting = false;
@@ -948,6 +958,7 @@ export class HVFullView extends LitElement {
     if (this.store?.wasRemoved(editing)) {
       this._pinnedItem = null;
       this._editing = null;
+      this._editorError = null;
       return;
     }
     const listed = this.st?.items.find((i) => i.id === editing);
@@ -974,6 +985,7 @@ export class HVFullView extends LitElement {
       case 'edit':
       case 'open-item':
         this._editing = item.id;
+        this._editorError = null;
         break;
     }
   }
@@ -986,6 +998,7 @@ export class HVFullView extends LitElement {
       create?: Parameters<Store['createItem']>[0];
     };
     this._editorBusy = true;
+    this._editorError = null;
     const before = this.st?.errorQueue.length ?? 0;
     try {
       if (detail.itemId && detail.changes) {
@@ -996,7 +1009,13 @@ export class HVFullView extends LitElement {
     } finally {
       this._editorBusy = false;
     }
-    if ((this.st?.errorQueue.length ?? 0) === before) this._editing = null;
+    // The store reports failures through its error queue rather than throwing,
+    // so a new entry is how we know the save did not land. The form stays open
+    // on the user's edits and names the failure inside itself.
+    const queue = this.st?.errorQueue ?? [];
+    const failed = queue.length > before;
+    this._editorError = failed ? editorErrorText(queue[queue.length - 1]) : null;
+    if (!failed) this._editing = null;
   };
 
   // ---------- Bulk actions ----------
@@ -1467,7 +1486,10 @@ export class HVFullView extends LitElement {
       locationName: (st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId)?.name ?? null,
       onAction: (id: EmptyOffer['id']) => {
         if (id === 'clear-filters') this.store?.clearFilters();
-        else if (id === 'add-item') this._editing = 'new';
+        else if (id === 'add-item') {
+          this._editing = 'new';
+          this._editorError = null;
+        }
         else if (id === 'refresh') void this.store?.refreshAll();
         else
           this.dispatchEvent(
@@ -1729,6 +1751,7 @@ export class HVFullView extends LitElement {
             data-testid="full-add-item"
             @click=${() => {
               this._editing = 'new';
+              this._editorError = null;
             }}
           >
             ${icon('plus', 16)}Add item
@@ -1814,10 +1837,12 @@ export class HVFullView extends LitElement {
                     .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
                     .createLocation=${this._createLocationForEditor}
                     .busy=${this._editorBusy}
+                    .errorMessage=${this._editorError}
                     ?mobile=${this._narrow}
                     @save=${this._onEditorSave}
                     @cancel=${() => {
                       this._editing = null;
+                      this._editorError = null;
                     }}
                     @delete-item=${(e: CustomEvent) =>
                       this.dispatchEvent(

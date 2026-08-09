@@ -31,7 +31,7 @@ export interface ColumnDef {
   sortField?: 'quantity' | 'due_date' | 'inspection_date' | 'updated_at';
 }
 
-/** Canonical column order. Selections are normalized to this order. */
+/** Canonical column order — the default, and what "Reset order" restores. */
 export const COLUMN_DEFS: readonly ColumnDef[] = [
   { key: 'quantity', label: 'Qty', tableSize: '70px', sortField: 'quantity' },
   // Wide enough for the "Needs repair" chip on one line: a status that wrapped
@@ -68,11 +68,47 @@ export const DEFAULT_COLUMNS: readonly ColumnKey[] = COLUMN_DEFS.map((c) => c.ke
 
 export const COLUMN_PREFS_STORAGE_KEY = 'haventory:columns:v1';
 
-/** Filter to known keys, dedupe, and enforce the canonical order. */
+/**
+ * Filter to known keys and dedupe, **keeping the order given**.
+ *
+ * The order is the user's — the picker can move a column up or down and that
+ * choice is stored alongside which columns are on. Selections written before
+ * ordering existed were already in canonical order, so they load unchanged.
+ */
 export function normalizeColumns(keys: unknown): ColumnKey[] {
   if (!Array.isArray(keys)) return [];
-  const wanted = new Set(keys.filter((k): k is ColumnKey => COLUMN_ORDER.includes(k as ColumnKey)));
+  const seen = new Set<ColumnKey>();
+  const out: ColumnKey[] = [];
+  for (const k of keys) {
+    if (!COLUMN_ORDER.includes(k as ColumnKey)) continue;
+    const key = k as ColumnKey;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+
+/** The canonical order, restricted to the columns currently switched on. */
+export function canonicalOrder(keys: ColumnKey[]): ColumnKey[] {
+  const wanted = new Set(normalizeColumns(keys));
   return COLUMN_ORDER.filter((k) => wanted.has(k));
+}
+
+/**
+ * Move one column one place up or down within the selection.
+ *
+ * Returns the same array when the move is impossible, so a caller can tell "no
+ * change" without comparing element by element.
+ */
+export function moveColumn(keys: ColumnKey[], key: ColumnKey, delta: -1 | 1): ColumnKey[] {
+  const order = normalizeColumns(keys);
+  const from = order.indexOf(key);
+  const to = from + delta;
+  if (from < 0 || to < 0 || to >= order.length) return order;
+  const next = [...order];
+  next.splice(to, 0, ...next.splice(from, 1));
+  return next;
 }
 
 const COLUMN_TABLE_SIZE: Record<ColumnKey, string> = Object.fromEntries(

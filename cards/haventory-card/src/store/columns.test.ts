@@ -4,22 +4,53 @@ import {
   COLUMN_PREFS_STORAGE_KEY,
   DEFAULT_COLUMNS,
   SELECT_COLUMN_WIDTH,
+  canonicalOrder,
   loadColumnPrefs,
+  moveColumn,
   normalizeColumns,
   saveColumnPrefs,
   tableTemplateFor,
 } from './columns';
+import type { ColumnKey } from './columns';
 
 describe('columns model', () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('normalizes to canonical order, dedupes, and drops unknown keys', () => {
+  // The order is the user's: the picker moves a column and stores where it
+  // landed, so normalizing can only validate and dedupe, never re-sort.
+  it('keeps the given order, dedupes, and drops unknown keys', () => {
     expect(normalizeColumns(['location', 'quantity', 'quantity', 'bogus', 'tags']))
-      .toEqual(['quantity', 'location', 'tags']);
+      .toEqual(['location', 'quantity', 'tags']);
     expect(normalizeColumns('nope')).toEqual([]);
     expect(normalizeColumns(undefined)).toEqual([]);
+  });
+
+  it('restores the canonical order on request, keeping only the chosen columns', () => {
+    expect(canonicalOrder(['tags', 'quantity', 'location'])).toEqual(['quantity', 'location', 'tags']);
+    expect(canonicalOrder(['tags', 'bogus' as ColumnKey])).toEqual(['tags']);
+  });
+
+  describe('moveColumn', () => {
+    it('swaps a column with its neighbour', () => {
+      expect(moveColumn(['quantity', 'status', 'tags'], 'status', -1)).toEqual([
+        'status',
+        'quantity',
+        'tags',
+      ]);
+      expect(moveColumn(['quantity', 'status', 'tags'], 'status', 1)).toEqual([
+        'quantity',
+        'tags',
+        'status',
+      ]);
+    });
+
+    it('refuses to move past either end, or to move a column that is off', () => {
+      expect(moveColumn(['quantity', 'status'], 'quantity', -1)).toEqual(['quantity', 'status']);
+      expect(moveColumn(['quantity', 'status'], 'status', 1)).toEqual(['quantity', 'status']);
+      expect(moveColumn(['quantity', 'status'], 'tags', -1)).toEqual(['quantity', 'status']);
+    });
   });
 
   it('returns defaults when nothing is stored', () => {
@@ -31,9 +62,19 @@ describe('columns model', () => {
     expect(DEFAULT_COLUMNS).toEqual(COLUMN_DEFS.map((c) => c.key));
   });
 
-  it('round-trips a saved selection (normalized)', () => {
+  it('round-trips a saved order', () => {
     saveColumnPrefs(['tags', 'due_date', 'quantity']);
-    expect(loadColumnPrefs()).toEqual(['quantity', 'tags', 'due_date']);
+    expect(loadColumnPrefs()).toEqual(['tags', 'due_date', 'quantity']);
+  });
+
+  // Selections written before ordering existed were already canonical, so they
+  // load as the same table they described.
+  it('reads a selection stored before ordering existed unchanged', () => {
+    localStorage.setItem(
+      COLUMN_PREFS_STORAGE_KEY,
+      JSON.stringify({ expanded: ['quantity', 'category', 'updated_at'] }),
+    );
+    expect(loadColumnPrefs()).toEqual(['quantity', 'category', 'updated_at']);
   });
 
   it('falls back to defaults on corrupt stored JSON', () => {
