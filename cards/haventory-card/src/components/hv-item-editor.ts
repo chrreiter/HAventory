@@ -809,6 +809,17 @@ export class HVItemEditor extends LitElement {
         display: grid;
         gap: 6px;
       }
+      /* Desktop only: there is no drag on touch, so the over-state could only
+         ever fire by accident there — the mobile branch renders no target at
+         all. Outset so an empty section still has an edge to aim at, and drawn
+         with outline rather than border so nothing inside shifts as the drag
+         crosses in. */
+      .photos.dropping,
+      .documents.dropping {
+        outline: 2px dashed var(--hv-primary);
+        outline-offset: 4px;
+        border-radius: var(--hv-radius-input);
+      }
       .documents li {
         display: flex;
         align-items: center;
@@ -1024,6 +1035,8 @@ export class HVItemEditor extends LitElement {
   @state() private _uploaded: Item | null = null;
   /** The attachment awaiting a yes, and what kind it is. */
   @state() private _confirmRemove: { id: string; kind: AttachmentKind } | null = null;
+  /** Which attachment section a drag is currently over, for the over-state. */
+  @state() private _dropTarget: AttachmentKind | null = null;
   /** Escape on a dirty form asks before it throws the typing away. */
   @state() private _confirmDiscard = false;
   /** Why creating a first location from the picker failed. */
@@ -2059,9 +2072,16 @@ export class HVItemEditor extends LitElement {
     const shots = pictures(item.attachments);
     const accepted = this.mediaConfig?.picture_mime_types.join(',') ?? 'image/*';
 
+    const drop = this._dropBindings('picture');
     return html`<div class="cell span3">
       <span class="hv-label">Photos</span>
-      <div class="photos" data-testid="editor-photos">
+      <div
+        class="photos ${!this.mobile && this._dropTarget === 'picture' ? 'dropping' : ''}"
+        data-testid="editor-photos"
+        @dragover=${drop.over}
+        @dragleave=${drop.leave}
+        @drop=${drop.drop}
+      >
         ${shots.map((picture, index) => {
           const src = this._urls.get(item.id, picture.id, attachmentNameToken(picture));
           return html`<figure data-testid="editor-photo">
@@ -2137,6 +2157,80 @@ export class HVItemEditor extends LitElement {
   }
 
   /**
+   * Which section a dropped file belongs in, decided by the file and not by
+   * where it landed.
+   *
+   * A PDF dragged onto the photo strip is a manual — refusing it because of the
+   * cell it crossed would be arguing with something the user can see. Anything
+   * that is neither is left to `_preflight`, which is the one place that knows
+   * what the backend accepts and phrases the refusal.
+   */
+  private _kindFor(file: File): AttachmentKind {
+    return file.type.startsWith('image/') ? 'picture' : 'manual';
+  }
+
+  /**
+   * Attach dropped files, routing each by its own type.
+   *
+   * `_uploadFiles` runs a queue per call, and the two queues would interleave
+   * their version bumps, so a mixed drop is sent as pictures first and then
+   * manuals rather than as one call per file.
+   */
+  private async _onDrop(e: DragEvent) {
+    e.preventDefault();
+    this._dropTarget = null;
+    if (this.mobile) return;
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    if (!files.length) return;
+    const pictureFiles = files.filter((f) => this._kindFor(f) === 'picture');
+    const manualFiles = files.filter((f) => this._kindFor(f) === 'manual');
+    if (pictureFiles.length) await this._uploadFiles(pictureFiles, 'picture');
+    if (manualFiles.length) await this._uploadFiles(manualFiles, 'manual');
+  }
+
+  /**
+   * `dragover` must be cancelled or the browser treats the drop as navigation
+   * and replaces the page with the dropped file — taking the whole open form
+   * with it. Home Assistant's frontend does not block that, so the editor root
+   * cancels both events whatever the layout: `mobile` here is the card
+   * element's width, and a narrow card in a desktop window still has a mouse
+   * with a file on the end of it.
+   */
+  private _onRootDragOver(e: DragEvent) {
+    e.preventDefault();
+  }
+
+  private _onRootDrop(e: DragEvent) {
+    e.preventDefault();
+    this._dropTarget = null;
+  }
+
+  private _onDragOver(e: DragEvent, target: AttachmentKind) {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    this._dropTarget = target;
+  }
+
+  private _onDragLeave(target: AttachmentKind) {
+    if (this._dropTarget === target) this._dropTarget = null;
+  }
+
+  /**
+   * The drag-and-drop bindings a section's drop target needs, or none at all on
+   * a phone: there is no drag on touch, so an over-state could only ever fire by
+   * accident. Lit removes a listener bound to `undefined`, so the mobile branch
+   * really carries no target rather than a target that declines.
+   */
+  private _dropBindings(kind: AttachmentKind) {
+    if (this.mobile) return { over: undefined, leave: undefined, drop: undefined };
+    return {
+      over: (e: DragEvent) => this._onDragOver(e, kind),
+      leave: () => this._onDragLeave(kind),
+      drop: (e: DragEvent) => void this._onDrop(e),
+    };
+  }
+
+  /**
    * Rename one document.
    *
    * On `change`, not `input`: a keystroke-per-command would bump the item's
@@ -2176,9 +2270,16 @@ export class HVItemEditor extends LitElement {
     const docs = manuals(item.attachments);
     const accepted = this.mediaConfig?.manual_mime_types?.join(',') ?? 'application/pdf';
 
+    const drop = this._dropBindings('manual');
     return html`<div class="cell span3">
       <span class="hv-label">Documents</span>
-      <ul class="documents" data-testid="editor-documents">
+      <ul
+        class="documents ${!this.mobile && this._dropTarget === 'manual' ? 'dropping' : ''}"
+        data-testid="editor-documents"
+        @dragover=${drop.over}
+        @dragleave=${drop.leave}
+        @drop=${drop.drop}
+      >
         ${docs.map((doc) => {
           const src = this._urls.get(item.id, doc.id, attachmentNameToken(doc));
           const missing = this._urls.presence(item.id, doc.id) === 'missing';
@@ -2344,7 +2445,12 @@ export class HVItemEditor extends LitElement {
     const overdue = isOverdue(this.item?.due_date);
 
     return html`
-      <div data-testid="item-editor" @keydown=${this._onKeydown}>
+      <div
+        data-testid="item-editor"
+        @keydown=${this._onKeydown}
+        @dragover=${this._onRootDragOver}
+        @drop=${this._onRootDrop}
+      >
         ${this.noHeader
           ? null
           : html`<div class="head">

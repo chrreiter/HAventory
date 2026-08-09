@@ -2255,3 +2255,156 @@ describe('hv-item-editor: why attachments wait for the first save', () => {
     expect(q(el, '[data-testid="editor-attachment-hint"]')).toBe(null);
   });
 });
+
+// jsdom builds a `DragEvent` with no `DataTransfer` behind it, so the files ride
+// on a plain object. What is worth asserting here is the routing — which kind
+// each dropped file becomes, and that nothing new appears on the upload path.
+// The browser's own drag machinery is the handover's job.
+describe('hv-item-editor: dropping files onto the editor', () => {
+  const png = (name = 'photo.png') => new File(['x'], name, { type: 'image/png' });
+  const pdf = (name = 'manual.pdf') => new File(['x'], name, { type: 'application/pdf' });
+
+  function dragEvent(type: string, files: File[]) {
+    const e = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(e, 'dataTransfer', {
+      value: { files, dropEffect: 'none' },
+      configurable: true,
+    });
+    return e as DragEvent;
+  }
+
+  async function dropOn(el: HVItemEditor, testid: string, files: File[]) {
+    const target = q(el, `[data-testid="${testid}"]`) as HTMLElement;
+    target.dispatchEvent(dragEvent('drop', files));
+    // A macrotask, so the prepare-then-send chain drains first.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+  }
+
+  it('attaches an image dropped on the photo strip as a photo', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media });
+
+    await dropOn(el, 'editor-photos', [png()]);
+
+    expect(media.uploads.map((u) => [u.file.name, u.kind])).toEqual([['photo.png', 'picture']]);
+  });
+
+  it('attaches a document dropped on the document list as a manual', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media });
+
+    await dropOn(el, 'editor-documents', [pdf()]);
+
+    expect(media.uploads.map((u) => [u.file.name, u.kind])).toEqual([['manual.pdf', 'manual']]);
+  });
+
+  // The file decides, not the cell it crossed: refusing a PDF because it landed
+  // on the photo strip would be arguing with something the user can see.
+  it('attaches a document dropped on the photo strip as a manual', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media });
+
+    await dropOn(el, 'editor-photos', [pdf()]);
+
+    expect(media.uploads.map((u) => u.kind)).toEqual(['manual']);
+  });
+
+  it('attaches an image dropped on the document list as a photo', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media });
+
+    await dropOn(el, 'editor-documents', [png()]);
+
+    expect(media.uploads.map((u) => u.kind)).toEqual(['picture']);
+  });
+
+  it('routes a mixed multi-file drop file by file', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media });
+
+    await dropOn(el, 'editor-photos', [png('a.png'), pdf('b.pdf'), png('c.png')]);
+
+    expect(media.uploads.map((u) => [u.file.name, u.kind])).toEqual([
+      ['a.png', 'picture'],
+      ['c.png', 'picture'],
+      ['b.pdf', 'manual'],
+    ]);
+  });
+
+  // The existing preflight is the one place that knows what the backend takes,
+  // so a refused file is refused in the same words a picked one would be.
+  it('sends a dropped file through the same preflight a picked one gets', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), {
+      media,
+      mediaConfig: {
+        picture_mime_types: ['image/png'],
+        manual_mime_types: ['application/pdf'],
+        max_attachment_bytes: 16,
+      } as HVItemEditor['mediaConfig'],
+    });
+
+    await dropOn(el, 'editor-documents', [new File(['x'], 'notes.txt', { type: 'text/plain' })]);
+
+    expect(media.uploads).toHaveLength(0);
+    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain('not an accepted');
+  });
+
+  it('cancels dragover so the browser does not navigate to the file', async () => {
+    const el = await mount(makeItem({ id: 'i-1' }), { media: makeMediaBindings() });
+    const over = dragEvent('dragover', [png()]);
+
+    (q(el, '[data-testid="editor-photos"]') as HTMLElement).dispatchEvent(over);
+
+    expect(over.defaultPrevented).toBe(true);
+    expect(over.dataTransfer?.dropEffect).toBe('copy');
+  });
+
+  // A drop a few pixels wide of the target would otherwise replace the page with
+  // the file and take the whole open form with it.
+  it('swallows a drop that missed the targets', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media });
+    const root = q(el, '[data-testid="item-editor"]') as HTMLElement;
+
+    const over = dragEvent('dragover', [png()]);
+    root.dispatchEvent(over);
+    const drop = dragEvent('drop', [png()]);
+    root.dispatchEvent(drop);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(over.defaultPrevented).toBe(true);
+    expect(drop.defaultPrevented).toBe(true);
+    expect(media.uploads).toHaveLength(0);
+  });
+
+  it('marks the section a drag is over, and unmarks it on the way out', async () => {
+    const el = await mount(makeItem({ id: 'i-1' }), { media: makeMediaBindings() });
+    const photos = q(el, '[data-testid="editor-photos"]') as HTMLElement;
+
+    photos.dispatchEvent(dragEvent('dragover', [png()]));
+    await el.updateComplete;
+    expect(photos.classList.contains('dropping')).toBe(true);
+
+    photos.dispatchEvent(new Event('dragleave', { bubbles: true }));
+    await el.updateComplete;
+    expect(photos.classList.contains('dropping')).toBe(false);
+  });
+
+  // There is no drag on touch, so an over-state could only ever fire by accident
+  // — the phone layout carries no target at all rather than one that declines.
+  // The root guard stays: `mobile` is the card element's width, and a narrow
+  // card in a desktop window still has a mouse with a file on the end of it.
+  it('renders no drop target on a phone', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media, mobile: true });
+    const photos = q(el, '[data-testid="editor-photos"]') as HTMLElement;
+
+    photos.dispatchEvent(dragEvent('dragover', [png()]));
+    await dropOn(el, 'editor-photos', [png()]);
+
+    expect(photos.classList.contains('dropping')).toBe(false);
+    expect(media.uploads).toHaveLength(0);
+  });
+});

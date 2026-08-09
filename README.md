@@ -506,9 +506,12 @@ throughout.
   it, rather than pointing at a menu three steps away.
 - **Photos and manuals** attach from the same form, once the item exists — an upload is
   filed against an item id, and the create form says so instead of leaving the sections
-  unexplained. Each queue reports itself under the section that started it, with a moving
-  indicator while a file is in flight; a refused file keeps its error and Retry until you
-  dismiss them. Removing an attachment asks first, because the file goes with it.
+  unexplained. On a desktop you can also **drop files straight onto the Photos or Documents
+  section**; the file's own type decides which it becomes, so a PDF dropped on the photo
+  strip attaches as a manual. Each queue reports itself under the section that started it,
+  with a moving indicator while a file is in flight; a refused file keeps its error and
+  Retry until you dismiss them. Removing an attachment asks first, because the file goes
+  with it.
 - **Full view** — a fullscreen workspace with a coloured app bar, a **browse sidebar**, and
   a sortable table. Only columns the backend can sort by get a clickable header. A browser
   that has made no choice yet shows every optional column — quantity, status, category,
