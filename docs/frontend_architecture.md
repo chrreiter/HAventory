@@ -400,7 +400,8 @@ than declaring the outage at once; `ready` inside that window cancels it, and `r
 it takes the banner back down.
 
 A *rejected subscribe* kills live updates outright — no event will ever arrive to hint at
-it — so it is handled separately. The three topics are opened as one **round**, because the
+it — so it is handled separately. The four topics — items, stats, locations and statuses —
+are opened as one **round**, because the
 limiter bills each subscribe separately and can admit `items` while refusing `stats`; live
 updates only count as restored once every subscribe in the newest round is accepted, which
 `WSClient.subscribe`'s `onOpen` reports. A round refused with `rate_limited` is re-opened
