@@ -19,9 +19,12 @@ import {
 } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
 import { DialogFocus } from '../ui/dialog-focus';
+import { DISCARD_PROMPT } from '../ui/discard';
+import { ViewportNarrow } from '../ui/responsive';
 import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, ScalarValue, StatusDefinition } from '../store/types';
 import './hv-bottom-sheet';
 import './hv-checkout-popover';
+import './hv-confirm';
 import './hv-item-editor';
 import type { HVBottomSheet } from './hv-bottom-sheet';
 import type { HVItemEditor } from './hv-item-editor';
@@ -453,8 +456,16 @@ export class HVDetailSheet extends LitElement {
   @state() private _checkoutOpen = false;
   /** Index of the picture shown full-size, or null when the lightbox is closed. */
   @state() private _lightbox: number | null = null;
+  /**
+   * Where the sheet goes once a discard is confirmed, or null while nothing is
+   * being asked. The two answers differ: leaving the form lands on the read
+   * view, dismissing the sheet takes the whole surface down.
+   */
+  @state() private _pendingDiscard: 'read' | 'close' | null = null;
 
   private readonly _urls = new MediaUrls(this);
+  /** Window width, for the confirm this sheet raises over itself. */
+  private readonly _viewport = new ViewportNarrow(this);
   /** Returns focus to the thumbnail the lightbox was opened from. */
   private readonly _lightboxFocus = new DialogFocus();
   /**
@@ -480,6 +491,7 @@ export class HVDetailSheet extends LitElement {
       this._mode = 'read';
       this._checkoutOpen = false;
       this._lightbox = null;
+      this._pendingDiscard = null;
     }
     if (this._lightbox !== null) {
       // The lightbox survives a same-item refresh, and one of those refreshes
@@ -530,6 +542,23 @@ export class HVDetailSheet extends LitElement {
     this.open = false;
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
   };
+
+  /**
+   * Every way out of this sheet, with the form's typing accounted for.
+   *
+   * The sheet answers for the editor it hosts: a host outside cannot see into
+   * this shadow root, and the scrim, the swipe and Escape all arrive here
+   * first. `read` is the Back arrow and the form's own cancel — the sheet stays
+   * up on its read view; `close` is a dismissal and takes the sheet with it.
+   */
+  private _leaveEdit(to: 'read' | 'close') {
+    if (this.dirty) {
+      this._pendingDiscard = to;
+      return;
+    }
+    if (to === 'read') this._mode = 'read';
+    else this._close();
+  }
 
   private _renderCustomFact(key: string, value: ScalarValue) {
     const type = inferType(value);
@@ -728,7 +757,7 @@ export class HVDetailSheet extends LitElement {
 
     return html`
       <div class="bar">
-        <button class="tap" data-testid="sheet-close" aria-label="Close" @click=${this._close}>
+        <button class="tap" data-testid="sheet-close" aria-label="Close" @click=${() => this._leaveEdit('close')}>
           ${icon('close', 22)}
         </button>
         <span class="crumb hv-chip-line" data-testid="sheet-path" title=${pathTitle(parts)}
@@ -851,7 +880,11 @@ export class HVDetailSheet extends LitElement {
                 this._checkoutOpen = false;
                 this._emit('set-due-date', { dueDate: (e.detail as { dueDate: string | null }).dueDate });
               }}
-              @cancel=${() => {
+              @cancel=${(e: Event) => {
+                // Composed, like every cancel in the card: unstopped it reaches
+                // the host as "the sheet closed" and takes the item down with
+                // the date step the user was only backing out of.
+                e.stopPropagation();
                 this._checkoutOpen = false;
               }}
             ></hv-checkout-popover>
@@ -897,9 +930,7 @@ export class HVDetailSheet extends LitElement {
           class="tap"
           data-testid="sheet-back"
           aria-label="Back"
-          @click=${() => {
-            this._mode = 'read';
-          }}
+          @click=${() => this._leaveEdit('read')}
         >
           ${icon('arrowLeft', 21)}
         </button>
@@ -948,15 +979,45 @@ export class HVDetailSheet extends LitElement {
   render() {
     const item = this.item;
     return html`<hv-bottom-sheet
-      data-testid="detail-sheet"
-      ?open=${this.open && !!item}
-      ?noHandle=${this._mode === 'edit'}
-      label=${item?.name ?? 'Item'}
-      @cancel=${this._close}
-    >
-      ${item ? (this._mode === 'edit' ? this._renderEdit(item) : this._renderRead(item)) : null}
-      ${item ? this._renderLightbox(item) : null}
-    </hv-bottom-sheet>`;
+        data-testid="detail-sheet"
+        ?open=${this.open && !!item}
+        ?noHandle=${this._mode === 'edit'}
+        label=${item?.name ?? 'Item'}
+        @cancel=${(e: Event) => {
+          // The inner sheet's cancel is composed, so it would reach the host as
+          // "the detail sheet closed" — before this sheet has decided whether it
+          // is closing at all. The host hears only the one _close sends.
+          e.stopPropagation();
+          this._leaveEdit('close');
+        }}
+      >
+        ${item ? (this._mode === 'edit' ? this._renderEdit(item) : this._renderRead(item)) : null}
+        ${item ? this._renderLightbox(item) : null}
+      </hv-bottom-sheet>
+
+      <!-- Outside the sheet, and its events stopped here: the host listens for
+           a cancel event on this element to take the sheet down, and an answer
+           of "no, keep my typing" must not read as that. -->
+      <hv-confirm
+        data-testid="sheet-discard-confirm"
+        ?open=${this._pendingDiscard !== null}
+        ?mobile=${this._viewport.narrow}
+        .heading=${DISCARD_PROMPT.heading}
+        .message=${DISCARD_PROMPT.message}
+        .confirmLabel=${DISCARD_PROMPT.confirmLabel}
+        destructive
+        @confirm=${(e: Event) => {
+          e.stopPropagation();
+          const to = this._pendingDiscard;
+          this._pendingDiscard = null;
+          this._mode = 'read';
+          if (to === 'close') this._close();
+        }}
+        @cancel=${(e: Event) => {
+          e.stopPropagation();
+          this._pendingDiscard = null;
+        }}
+      ></hv-confirm>`;
   }
 }
 

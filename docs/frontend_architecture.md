@@ -450,8 +450,13 @@ Any other key in that record is ignored, so an older or newer payload never brea
   expanded view's 70dvh cap), so Save and Cancel land below the fold on all three. The
   editor solves that once; no host grows a pinned footer of its own. The bar bleeds past
   `.grid`'s side padding so its opaque background reaches the form's edges.
-- **Only one expander at a time.** Opening another while the current one is dirty asks
-  first.
+- **No path discards typed edits without asking.** Cancel, the ✕ and Escape are the form's
+  own, so `hv-item-editor` answers for them itself and hosts do not repeat the check; a host
+  with somewhere to go afterwards — another row, a sheet coming down, the expanded view
+  closing — calls `requestClose()` or asks its own copy. Either way the wording comes from
+  `ui/discard`, so the same decision never reads as two different questions. The phone sheets
+  are part of this: `hv-bottom-sheet` reports a scrim tap or a swipe-down and leaves the
+  closing to its host, which is what lets `hv-detail-sheet` answer for the form inside it.
 - **Optimistic writes** stay as they were; a rejected save keeps the expander open with the
   user's text in it, and conflicts render as a banner with *View latest* / *Re-apply*.
 - **Bulk work is chunked**, so progress is determinate and cancel stops cleanly after the

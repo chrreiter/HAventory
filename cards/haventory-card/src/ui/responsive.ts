@@ -25,6 +25,51 @@ export const MOBILE_BREAKPOINT = 600;
 export const NARROW_QUERY = '(max-width: 700px)';
 
 /**
+ * Follows `NARROW_QUERY` for a component that draws a `position: fixed` surface
+ * of its own.
+ *
+ * A component already handed a `mobile` property cannot answer this from it:
+ * that property is the card element's width on the card's side of the tree, and
+ * a fixed overlay is laid out against the window whatever the card measures.
+ * The property keeps governing in-flow layout; the overlay asks this.
+ *
+ * `matchMedia` is missing in jsdom unless a test provides one; without it the
+ * answer stays `false`, which is the desktop form — the honest default for a
+ * host that cannot say how wide the window is.
+ */
+export class ViewportNarrow implements ReactiveController {
+  private readonly host: ReactiveControllerHost;
+  private query: MediaQueryList | null = null;
+  private matches = false;
+
+  constructor(host: ReactiveControllerHost) {
+    this.host = host;
+    host.addController(this);
+  }
+
+  /** True on a phone-width viewport. */
+  get narrow(): boolean {
+    return this.matches;
+  }
+
+  hostConnected(): void {
+    this.query ??= window.matchMedia?.(NARROW_QUERY) ?? null;
+    if (!this.query) return;
+    this.matches = this.query.matches;
+    this.query.addEventListener('change', this.onChange);
+  }
+
+  hostDisconnected(): void {
+    this.query?.removeEventListener('change', this.onChange);
+  }
+
+  private readonly onChange = (e: MediaQueryListEvent) => {
+    this.matches = e.matches;
+    this.host.requestUpdate();
+  };
+}
+
+/**
  * Drives the card's mobile/desktop mode from its own rendered width.
  *
  * Media queries are unreliable inside HA dashboards — a card can be narrow in a

@@ -14,6 +14,8 @@ import {
 } from '../ui/relative-time';
 import { saveShortcutLabel } from '../ui/keyboard';
 import { counted } from '../ui/plural';
+import { DISCARD_PROMPT } from '../ui/discard';
+import { ViewportNarrow } from '../ui/responsive';
 import { nextZBase } from '../utils/zindex';
 import {
   customFieldsFrom,
@@ -1098,6 +1100,8 @@ export class HVItemEditor extends LitElement {
   @state() private _createdLocations: Location[] = [];
 
   private readonly _urls = new MediaUrls(this);
+  /** Window width, for the two dialogs this form raises over itself. */
+  private readonly _viewport = new ViewportNarrow(this);
   private _uploadSeq = 0;
   /**
    * The item id `_model` was built from. `undefined` until the first update,
@@ -1199,6 +1203,26 @@ export class HVItemEditor extends LitElement {
   };
 
   /**
+   * Ask the form to close, and say whether the caller may tear it down now.
+   *
+   * `false` means the form has raised the discard question itself: the caller
+   * does nothing further and waits for the `cancel` event a confirmed discard
+   * sends, which is the same event Cancel sends on a clean form. A host with
+   * somewhere else to go afterwards — another row, a whole surface closing —
+   * asks its own copy of the question instead, from `ui/discard`.
+   */
+  requestClose(): boolean {
+    if (!this.dirty) return true;
+    this._confirmDiscard = true;
+    return false;
+  }
+
+  /** Every close this form owns: Cancel, the ✕, and Escape with nothing over it. */
+  private _requestCancel = () => {
+    if (this.requestClose()) this._cancel();
+  };
+
+  /**
    * Escape takes back one thing at a time.
    *
    * Whatever the form has open on top of itself goes first — a dropdown is what
@@ -1217,10 +1241,8 @@ export class HVItemEditor extends LitElement {
         this._checkoutOpen = false;
       } else if (this._locationOpen) {
         this._closeLocation();
-      } else if (this.dirty) {
-        this._confirmDiscard = true;
       } else {
-        this._cancel();
+        this._requestCancel();
       }
     } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
@@ -2517,7 +2539,7 @@ export class HVItemEditor extends LitElement {
                 class="hv-icon-button"
                 data-testid="editor-close"
                 aria-label="Close editor"
-                @click=${this._cancel}
+                @click=${this._requestCancel}
               >
                 ${icon('close', 18)}
               </button>
@@ -2583,9 +2605,11 @@ export class HVItemEditor extends LitElement {
               ${this.mobile
                 ? null
                 : html`<span class="hint" data-testid="editor-key-hint">
-                    Esc discards · ${saveShortcutLabel()} saves
+                    Esc closes · ${saveShortcutLabel()} saves
                   </span>`}
-              <button class="hv-text-button" data-testid="editor-cancel" @click=${this._cancel}>Cancel</button>
+              <button class="hv-text-button" data-testid="editor-cancel" @click=${this._requestCancel}>
+                Cancel
+              </button>
               <button class="save" data-testid="editor-save" ?disabled=${this.busy} @click=${this._save}>
                 ${this.busy ? 'Saving…' : 'Save'}
               </button>
@@ -2597,10 +2621,15 @@ export class HVItemEditor extends LitElement {
       <!-- Outside the form's own keydown scope, and their events stopped here:
            a host listens for the cancel event on this editor to close it, and a
            dialog saying "no, keep the photo" must not read as "close the
-           form". -->
+           form".
+
+           The mobile flag below is the viewport, not this form's own mobile
+           property: both dialogs are fixed to the window, so the card's width
+           says nothing about the room they have. -->
       <hv-confirm
         data-testid="editor-remove-confirm"
         ?open=${this._confirmRemove !== null}
+        ?mobile=${this._viewport.narrow}
         .heading=${REMOVE_COPY[this._confirmRemove?.kind ?? 'picture'].heading}
         .message=${REMOVE_COPY[this._confirmRemove?.kind ?? 'picture'].message}
         confirmLabel="Remove"
@@ -2621,9 +2650,10 @@ export class HVItemEditor extends LitElement {
       <hv-confirm
         data-testid="editor-discard-confirm"
         ?open=${this._confirmDiscard}
-        heading="Discard your changes?"
-        message="What you have typed since the last save is lost."
-        confirmLabel="Discard"
+        ?mobile=${this._viewport.narrow}
+        .heading=${DISCARD_PROMPT.heading}
+        .message=${DISCARD_PROMPT.message}
+        .confirmLabel=${DISCARD_PROMPT.confirmLabel}
         destructive
         @confirm=${(e: Event) => {
           e.stopPropagation();

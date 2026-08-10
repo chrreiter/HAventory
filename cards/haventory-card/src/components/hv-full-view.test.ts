@@ -1,6 +1,7 @@
 import './hv-full-view';
 import { makeMockHass, makeItem, stubViewport } from '../test.utils';
 import { deepActiveElement } from '../ui/dialog-focus';
+import { DISCARD_PROMPT } from '../ui/discard';
 import { NARROW_QUERY } from '../ui/responsive';
 import { Store } from '../store/store';
 import type { HVFullView } from './hv-full-view';
@@ -1222,6 +1223,12 @@ describe('hv-full-view: editing', () => {
       ] as HTMLButtonElement[];
       rows[rows.length - 1].click();
       await settle(el);
+      // The refused save left the typed name in the form, so the switch asks
+      // before it takes it away.
+      const guard = q(sr, '[data-testid="full-discard-confirm"]') as HTMLElement & { open: boolean };
+      expect(guard.open).toBe(true);
+      (guard.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
+      await settle(el);
 
       expect(q(sr, '[data-testid="full-editor"]')?.shadowRoot?.textContent).toContain('Other — editing');
       expect(errorText(sr)).toBeUndefined();
@@ -1299,6 +1306,173 @@ describe('hv-full-view: editing', () => {
     const column = 400 - 64;
     expect(Math.min((Number(ceiling?.[1]) / 100) * 400, column - reserved)).toBeLessThanOrEqual(
       column - 68 - 41,
+    );
+  });
+});
+
+// Switching rows, the backdrop and Escape all wiped a form mid-sentence. The
+// card's row switch had asked since it shipped; this surface asked nowhere.
+describe('hv-full-view: leaving a dirty form always asks', () => {
+  /** Open the first row's editor and type into it. */
+  async function dirtyEditor(items: Item[]) {
+    const mounted = await mount({ items });
+    const { el, sr } = mounted;
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement;
+    const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    name.value = 'Typed but unsaved';
+    name.dispatchEvent(new Event('input'));
+    await settle(el);
+    return mounted;
+  }
+
+  const guard = (sr: ShadowRoot) =>
+    q(sr, '[data-testid="full-discard-confirm"]') as HTMLElement & { open: boolean };
+  const answer = (sr: ShadowRoot, which: 'confirm-accept' | 'confirm-cancel') =>
+    (guard(sr).shadowRoot?.querySelector(`[data-testid="${which}"]`) as HTMLButtonElement).click();
+  const editorName = (sr: ShadowRoot) =>
+    (
+      (q(sr, '[data-testid="full-editor"]') as HTMLElement | null)?.shadowRoot?.querySelector(
+        '[data-testid="editor-name"]',
+      ) as HTMLInputElement | null
+    )?.value;
+
+  const two = () => [makeItem({ id: '1', name: 'First' }), makeItem({ id: '2', name: 'Second' })];
+
+  /** Every way out of the open form on this surface. */
+  const leave = {
+    'row switch': (sr: ShadowRoot) => {
+      const rows = [
+        ...((q(sr, '[data-testid="full-table"]') as HTMLElement).shadowRoot?.querySelectorAll(
+          '[data-testid="table-edit"]',
+        ) ?? []),
+      ] as HTMLButtonElement[];
+      rows[rows.length - 1].click();
+    },
+    backdrop: (sr: ShadowRoot) => (q(sr, '.backdrop') as HTMLElement).click(),
+    escape: (sr: ShadowRoot) =>
+      (q(sr, '[data-testid="full-view"]') as HTMLElement).dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      ),
+    close: (sr: ShadowRoot) => (q(sr, '[data-testid="expand-toggle"]') as HTMLButtonElement).click(),
+  } as const;
+
+  it.each(Object.keys(leave) as (keyof typeof leave)[])(
+    '%s asks first and changes nothing until it is answered',
+    async (how) => {
+      const { el, sr } = await dirtyEditor(two());
+      let closes = 0;
+      el.addEventListener('close', () => {
+        closes += 1;
+      });
+
+      leave[how](sr);
+      await settle(el);
+
+      expect(guard(sr).open).toBe(true);
+      expect(closes).toBe(0);
+      expect(el.open).toBe(true);
+      expect(editorName(sr)).toBe('Typed but unsaved');
+    },
+  );
+
+  it.each(Object.keys(leave) as (keyof typeof leave)[])(
+    '%s keeps the typing when the question is declined',
+    async (how) => {
+      const { el, sr } = await dirtyEditor(two());
+
+      leave[how](sr);
+      await settle(el);
+      answer(sr, 'confirm-cancel');
+      await settle(el);
+
+      expect(guard(sr).open).toBe(false);
+      expect(el.open).toBe(true);
+      expect(editorName(sr)).toBe('Typed but unsaved');
+    },
+  );
+
+  it('opens the other row once the discard is confirmed', async () => {
+    const { el, sr } = await dirtyEditor(two());
+
+    leave['row switch'](sr);
+    await settle(el);
+    answer(sr, 'confirm-accept');
+    await settle(el);
+
+    expect(q(sr, '[data-testid="full-editor"]')?.shadowRoot?.textContent).toContain('Second — editing');
+    expect(editorName(sr)).toBe('Second');
+  });
+
+  it.each(['backdrop', 'escape', 'close'] as const)(
+    'closes the view once %s is confirmed',
+    async (how) => {
+      const { el, sr } = await dirtyEditor(two());
+      let closes = 0;
+      el.addEventListener('close', () => {
+        closes += 1;
+      });
+
+      leave[how](sr);
+      await settle(el);
+      answer(sr, 'confirm-accept');
+      await settle(el);
+
+      expect(closes).toBe(1);
+      expect(el.open).toBe(false);
+    },
+  );
+
+  it('leaves a clean form without a word', async () => {
+    const { el, sr } = await mount({ items: two() });
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    leave['row switch'](sr);
+    await settle(el);
+
+    expect(guard(sr).open).toBe(false);
+    expect(editorName(sr)).toBe('Second');
+  });
+
+  // The panel has no backdrop, no Escape and no close button, but it switches
+  // rows in the same table.
+  it('asks on a row switch in the embedded panel too', async () => {
+    const { el, sr } = await mount({ items: two(), embedded: true });
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const name = (q(sr, '[data-testid="full-editor"]') as HTMLElement).shadowRoot?.querySelector(
+      '[data-testid="editor-name"]',
+    ) as HTMLInputElement;
+    name.value = 'Typed but unsaved';
+    name.dispatchEvent(new Event('input'));
+    await settle(el);
+
+    leave['row switch'](sr);
+    await settle(el);
+
+    expect(guard(sr).open).toBe(true);
+    expect(editorName(sr)).toBe('Typed but unsaved');
+  });
+
+  it('asks the same question the form asks itself', async () => {
+    const { el, sr } = await dirtyEditor(two());
+    leave.backdrop(sr);
+    await settle(el);
+
+    const panel = guard(sr).shadowRoot as ShadowRoot;
+    expect(panel.querySelector('[data-testid="confirm-dialog"]')?.getAttribute('aria-label')).toBe(
+      DISCARD_PROMPT.heading,
+    );
+    expect(panel.querySelector('[data-testid="confirm-message"]')?.textContent).toContain(
+      DISCARD_PROMPT.message,
+    );
+    expect(panel.querySelector('[data-testid="confirm-accept"]')?.textContent).toContain(
+      DISCARD_PROMPT.confirmLabel,
     );
   });
 });
