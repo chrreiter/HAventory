@@ -382,9 +382,22 @@ what the list is showing. `include_subtree` is always sent explicitly, because t
 filter defaults it to `false` server-side while subscriptions default it to `true`.
 
 **Rate limiting and degraded state.** Every WS call goes through `run()`, which retries a
-`rate_limited` rejection with backoff before surfacing it, and classifies failures: a code
-from the backend's taxonomy means the socket is fine, anything else counts toward
-`degraded.connectionLost`.
+`rate_limited` rejection with backoff before surfacing it, and classifies failures: a
+*string* error code means a server answered and the command was refused — including the
+taxonomy's `unknown_error` catch-all, which is a server-side fault, not a transport one.
+Anything else (Home Assistant's numeric transport codes, a thrown `Error`, no code at all)
+never reached a server; those are reported under the card's own `connection_lost` code with
+wording that names the connection, and count toward `degraded.connectionLost`. An outage
+fails every call in flight, so the error queue holds at most one such entry at a time.
+
+`degraded.connectionLost` has two sources. Repeated transport failures are one, and they
+catch an outage that closes no socket — a server that accepts the connection and stops
+answering on it. The socket's own `disconnected` event is the other, and it is what an
+**idle** surface depends on: every other signal comes from a call the card made, so a list
+left open across a restart would otherwise go on showing pre-outage data with nothing to say
+so. Home Assistant reconnects by itself, so the event starts a short grace period rather
+than declaring the outage at once; `ready` inside that window cancels it, and `ready` after
+it takes the banner back down.
 
 A *rejected subscribe* kills live updates outright — no event will ever arrive to hint at
 it — so it is handled separately. The three topics are opened as one **round**, because the

@@ -600,7 +600,9 @@ throughout.
   payload-free reload an import broadcasts. Because subscription events carry no sequence
   number, a dropped one is undetectable — so the card says the list may be stale and
   offers an explicit Refresh. The banners are on **every** surface: the card, the expanded
-  view and the sidebar page, with the same wording and the same recovery actions.
+  view and the sidebar page, with the same wording and the same recovery actions. A view
+  left open when Home Assistant goes away says so on its own, without waiting for you to
+  try something first.
 - Deletes use an in-app confirmation, not `window.confirm`.
 - Card auto-registered as a Lovelace resource on integration setup.
 - **Note:** after first install, a browser refresh (F5 / Ctrl+Shift+R) is required for the

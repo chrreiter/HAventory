@@ -71,6 +71,10 @@ export interface MockHass extends HassLike {
    * simply gone. Subscribers stay registered; nothing is replayed.
    */
   __reconnect(): void;
+  /** Close the socket and leave it closed, the way a stopped server does. */
+  __disconnect(): void;
+  /** Report the socket back up, with the watches already re-issued. */
+  __connectionReady(): void;
 }
 
 export function makeMockHass(initial?: MockConfig): MockHass {
@@ -660,7 +664,13 @@ export function makeMockHass(initial?: MockConfig): MockHass {
     },
     __setAreas(next: AreaRef[]) { areas = [...next]; },
     __reconnect() {
+      hass.__disconnect();
+      hass.__connectionReady();
+    },
+    __disconnect() {
       (lifecycleListeners.disconnected || []).forEach((cb) => cb());
+    },
+    __connectionReady() {
       (lifecycleListeners.ready || []).forEach((cb) => cb());
     },
     __setConflict(on: boolean) { conflictOnUpdate = on; },

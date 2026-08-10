@@ -47,18 +47,34 @@ const PAGE_LIMIT = 50;
  */
 export const BULK_CHUNK_SIZE = 25;
 
-/** Error codes the backend's taxonomy defines; anything else looks like transport trouble. */
-const DOMAIN_ERROR_CODES = new Set([
-  'validation_error',
-  'not_found',
-  'conflict',
-  'storage_error',
-  'rate_limited',
-  'unknown_error',
-]);
+/**
+ * Code for a failure that never came back from the backend at all.
+ *
+ * Home Assistant rejects a command with the server's own `{code, message}`
+ * envelope when the socket carried it, and with a wrapper of its own — numeric
+ * code, no top-level message — when the socket did not. Only the first kind
+ * says anything about the request, so the second is named for what it is
+ * instead of borrowing the taxonomy's `unknown_error` catch-all and reading, to
+ * the person in front of it, as a fault in the thing they just did.
+ */
+const TRANSPORT_ERROR_CODE = 'connection_lost';
+
+/** What a transport failure says out loud; the rejection carries no usable text. */
+const TRANSPORT_ERROR_MESSAGE = 'Could not reach Home Assistant — the last action did not go through.';
 
 /** Consecutive transport failures before the card declares the connection lost. */
 const CONNECTION_LOST_THRESHOLD = 2;
+
+/**
+ * How long a closed socket may stay closed before the card says so.
+ *
+ * Home Assistant reconnects on its own, and a blip — a suspended tab waking, a
+ * proxy recycling — is over before anyone could act on it, so announcing it at
+ * once would flash a banner that answers nothing. Long enough to sit out an
+ * ordinary reconnect, short enough that a real outage shows up while the user
+ * is still looking at the surface that went stale.
+ */
+const CONNECTION_LOST_GRACE_MS = 2_000;
 
 /** Attempts (including the first) for a command rejected with `rate_limited`. */
 const RATE_LIMIT_ATTEMPTS = 4;
@@ -125,8 +141,16 @@ const NO_DEGRADATION: DegradedState = {
   nextLiveRetryAt: null,
 };
 
+/**
+ * The code a failure travelled home with.
+ *
+ * A string code means a server answered — the backend's taxonomy, or one of
+ * Home Assistant's own refusals. Anything else (a numeric transport code, a
+ * thrown `Error`, nothing at all) never reached one.
+ */
 function errorCode(err: unknown): string {
-  return String((err as { code?: unknown } | undefined)?.code ?? 'unknown_error');
+  const code = (err as { code?: unknown } | undefined)?.code;
+  return typeof code === 'string' && code ? code : TRANSPORT_ERROR_CODE;
 }
 
 function nonNegativeNumber(value: unknown): number | null {
@@ -309,8 +333,11 @@ export class Store {
   private areaRegistryRetryHandle: ReturnType<typeof setTimeout> | null = null;
   /** Identifies the newest area-registry watch, so a superseded one stops reporting. */
   private areaRegistryGeneration = 0;
-  /** Detaches the connection-lifecycle listener; null while none is attached. */
+  /** Detaches the connection-lifecycle listeners; null while none is attached. */
   private connectionReadyUnsub: Unsubscribe | null = null;
+  private connectionLostUnsub: Unsubscribe | null = null;
+  /** Counts down the grace period on a closed socket; null while it is open. */
+  private connectionLostHandle: ReturnType<typeof setTimeout> | null = null;
   /** Last untouched `distinct_values` result, so drafts can be re-merged. */
   private serverDistinct: DistinctValues | null = null;
   /** Values named in the organize dialog that no item carries yet. */
@@ -369,18 +396,43 @@ export class Store {
   }
 
   /**
-   * Re-read the areas whenever the connection comes back from a drop.
+   * Follow the socket itself, in both directions.
    *
-   * A dropped socket is the gap the registry watch cannot see: Home Assistant
+   * Coming back is the gap the registry watch cannot see: Home Assistant
    * re-issues the subscriptions it held before it reports `ready`, so the
    * subscribe neither fails nor re-opens and `watchAreaRegistry`'s catch-up
    * never runs — yet an area renamed while the socket was down fired its event
-   * into a closed connection. Only a refetch closes that, so it is driven off
-   * the connection's own lifecycle rather than off the watch.
+   * into a closed connection. Only a refetch closes that.
+   *
+   * Going down is what a surface nobody is touching has no other way to learn.
+   * Every other outage signal the card has comes from a call it made, so a list
+   * left open across a restart would go on showing pre-outage data, silently,
+   * until someone tried something.
    */
   private watchConnectionGaps() {
     this.connectionReadyUnsub?.();
-    this.connectionReadyUnsub = this.ws.onConnectionReady(() => this.scheduleAreasRefresh());
+    this.connectionLostUnsub?.();
+    this.connectionReadyUnsub = this.ws.onConnectionReady(() => {
+      this.cancelConnectionLostGrace();
+      this.noteSuccess();
+      this.scheduleAreasRefresh();
+    });
+    this.connectionLostUnsub = this.ws.onConnectionLost(() => this.startConnectionLostGrace());
+  }
+
+  /** Declare the connection lost unless it comes back inside the grace period. */
+  private startConnectionLostGrace() {
+    if (this.connectionLostHandle !== null) return;
+    this.connectionLostHandle = setTimeout(() => {
+      this.connectionLostHandle = null;
+      this.setDegraded({ connectionLost: true });
+    }, CONNECTION_LOST_GRACE_MS);
+  }
+
+  private cancelConnectionLostGrace() {
+    if (this.connectionLostHandle === null) return;
+    clearTimeout(this.connectionLostHandle);
+    this.connectionLostHandle = null;
   }
 
   /**
@@ -623,9 +675,12 @@ export class Store {
     // dashboard — a listener left behind would refetch for a disposed store on
     // every reconnect, for as long as the page is open.
     this.connectionReadyUnsub?.();
+    this.connectionLostUnsub?.();
+    this.cancelConnectionLostGrace();
     this.itemsUnsub = this.statsUnsub = this.locationsUnsub = this.statusesUnsub = null;
     this.areaRegistryUnsub = null;
     this.connectionReadyUnsub = null;
+    this.connectionLostUnsub = null;
     // Nothing is listening after this, so a queued re-subscribe must not fire.
     this.subscribeRound += 1;
     this.areaRegistryGeneration += 1;
@@ -1108,10 +1163,12 @@ export class Store {
   }
 
   /**
-   * Classify a failure. A code from the backend's taxonomy means the socket is
-   * fine and the command was refused; anything else is transport trouble, and a
-   * run of those is the only "connection lost" signal a card can observe — HA's
-   * WS client reconnects transparently and exposes no disconnect event.
+   * Classify a failure. A refusal that came back over the socket — including
+   * the taxonomy's `unknown_error` catch-all — proves the transport works and
+   * says only that the command was rejected. A run of failures that carry no
+   * such answer is the second "connection lost" signal, alongside the socket's
+   * own `disconnected` event: it catches the outages that close no socket, such
+   * as a server that accepts the connection and stops answering on it.
    */
   private noteFailure(err: unknown) {
     const code = errorCode(err);
@@ -1119,7 +1176,7 @@ export class Store {
       this.setDegraded({ rateLimited: true });
       return;
     }
-    if (DOMAIN_ERROR_CODES.has(code) && code !== 'unknown_error') {
+    if (code !== TRANSPORT_ERROR_CODE) {
       this.consecutiveTransportFailures = 0;
       return;
     }
@@ -1185,6 +1242,8 @@ export class Store {
    */
   async refreshAll(): Promise<void> {
     this.consecutiveTransportFailures = 0;
+    // The calls below re-answer the question the grace period was waiting on.
+    this.cancelConnectionLostGrace();
     this.setDegraded({ ...NO_DEGRADATION });
     await this.reloadAll();
     // Re-establish subscriptions in case one of them was refused earlier.
@@ -1526,8 +1585,15 @@ export class Store {
   private pushError(err: unknown, details?: { itemId?: string; changes?: ItemUpdate }) {
     // Home Assistant callWS returns an error envelope with {code, message, context}
     const anyErr = err as { code?: unknown; message?: unknown; context?: unknown; data?: unknown } | undefined;
-    const code = String(anyErr?.code ?? 'unknown_error');
-    const message = String(anyErr?.message ?? 'Unknown error');
+    const code = errorCode(err);
+    const transport = code === TRANSPORT_ERROR_CODE;
+    // An outage fails every call in flight and every one the user tries next,
+    // each of them with the same sentence. One entry stands for all of them —
+    // the degraded stack above is what tracks the connection itself.
+    if (transport && this.state.value.errorQueue.some((e) => e.code === TRANSPORT_ERROR_CODE)) return;
+    // A transport rejection carries either nothing or a socket-level string; in
+    // both cases the card's own wording is the only one worth showing.
+    const message = transport ? TRANSPORT_ERROR_MESSAGE : String(anyErr?.message ?? 'Unknown error');
     const context = (anyErr?.context ?? anyErr?.data ?? null) as Record<string, unknown> | null;
     const entry = {
       id: `${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,

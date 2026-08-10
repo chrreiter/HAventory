@@ -735,19 +735,63 @@ describe('subscribeRetryDelayMs', () => {
     expect(store.state.value.degraded.rateLimited).toBe(false);
   });
 
-  it('counts unknown_error toward an outage even though it is a taxonomy code', async () => {
-    // `unknown_error` is in DOMAIN_ERROR_CODES so it renders as a real message,
-    // but it is deliberately excluded from the "socket is fine" reset: it is the
-    // backend's catch-all and says nothing about the transport.
+  it('does not count the taxonomy catch-all toward an outage', async () => {
+    // `unknown_error` is the backend's own answer to a command it could not
+    // carry out. It travelled the socket to get here, so it proves the transport
+    // works — reporting it as an outage would blame the connection for a fault
+    // that is entirely server-side.
     const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
     const store = new Store(hass, fast);
     await store.init();
 
-    hass.__failNext(2, { code: 'unknown_error', message: 'boom' });
+    hass.__failNext(3, { code: 'unknown_error', message: 'boom' });
+    await store.adjustQuantity('1', 1);
     await store.adjustQuantity('1', 1);
     await store.adjustQuantity('1', 1);
 
+    expect(store.state.value.degraded.connectionLost).toBe(false);
+    expect(store.state.value.errorQueue.map((e) => e.message)).toEqual(['boom', 'boom', 'boom']);
+  });
+
+  it('names a transport failure rather than borrowing the catch-all', async () => {
+    // Home Assistant rejects a call the socket never carried with a wrapper of
+    // its own: no top-level code, no message a person could read. Reported
+    // verbatim it says "Unknown error", which reads as a fault in what the user
+    // just did rather than in the connection.
+    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    hass.__failNext(1, { type: 'result', success: false, error: { code: 3, message: 'Connection lost' } });
+    await store.adjustQuantity('1', 1);
+
+    expect(store.state.value.errorQueue).toHaveLength(1);
+    expect(store.state.value.errorQueue[0].code).toBe('connection_lost');
+    expect(store.state.value.errorQueue[0].message).toContain('Could not reach Home Assistant');
+  });
+
+  it('queues one entry for an outage however many calls fail', async () => {
+    // An outage fails everything in flight and everything tried next. Stacking
+    // one banner per call buries the rest of the queue under copies of a
+    // sentence the user has already read.
+    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    hass.__failNext(4, new Error('socket closed'));
+    await store.adjustQuantity('1', 1);
+    await store.adjustQuantity('1', 1);
+    await store.refreshStats().catch(() => undefined);
+    await store.refreshHealth().catch(() => undefined);
+
+    expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['connection_lost']);
     expect(store.state.value.degraded.connectionLost).toBe(true);
+
+    // Dismissing it is not a permanent silence: the next failure says so again.
+    store.dismissError(store.state.value.errorQueue[0].id);
+    hass.__failNext(1, new Error('socket closed'));
+    await store.adjustQuantity('1', 1);
+    expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['connection_lost']);
   });
 
   it('counts the queued retries and schedules the next one', async () => {
@@ -1090,6 +1134,91 @@ describe('Store: HA area registry watch', () => {
 
       expect(refusing.attempts()).toBe(1);
       expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('Store: an idle surface going offline', () => {
+  const backoff = { retryBaseMs: 10 };
+
+  it('says the connection is lost when the socket closes and stays closed', async () => {
+    // Nobody is touching this surface, so no call can report the outage. Without
+    // the socket's own event the list would sit there showing pre-outage data
+    // until someone tried something and got a failure.
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+      const store = new Store(hass, backoff);
+      await store.init();
+
+      hass.__disconnect();
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(store.state.value.degraded.connectionLost).toBe(true);
+      // The degraded stack carries this one; nothing was refused, so nothing
+      // belongs in the queue of refused operations.
+      expect(store.state.value.errorQueue).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sits out a reconnect that lands inside the grace period', async () => {
+    // Home Assistant reconnects by itself and a blip is over before anyone could
+    // act on it. Announcing it at once would flash a banner and withdraw it.
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+      const store = new Store(hass, backoff);
+      await store.init();
+
+      hass.__disconnect();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(store.state.value.degraded.connectionLost).toBe(false);
+
+      hass.__connectionReady();
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(store.state.value.degraded.connectionLost).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('takes the banner back down when the socket returns', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+      const store = new Store(hass, backoff);
+      await store.init();
+
+      hass.__disconnect();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(store.state.value.degraded.connectionLost).toBe(true);
+
+      hass.__connectionReady();
+      await vi.advanceTimersByTimeAsync(300);
+
+      expect(store.state.value.degraded.connectionLost).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops watching the socket once the store is disposed', async () => {
+    vi.useFakeTimers();
+    try {
+      const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+      const store = new Store(hass, backoff);
+      await store.init();
+
+      store.dispose();
+      hass.__disconnect();
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(store.state.value.degraded.connectionLost).toBe(false);
     } finally {
       vi.useRealTimers();
     }
