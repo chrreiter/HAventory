@@ -416,3 +416,20 @@ describe('haventory-panel: the ⋮ menu', () => {
     expect(entry()?.disabled).toBe(false);
   });
 });
+
+// The panel renders nothing but the embedded full view, so a failure that is
+// invisible there is invisible on the whole sidebar page.
+describe('haventory-panel: failures reach the page', () => {
+  it('shows a refused operation on the page itself', async () => {
+    const { el, view } = await mountPanel({ items: [makeItem({ id: '1' })] });
+    const store = view().store as { pushError: (e: { code: string; message: string }) => void };
+    store.pushError({ code: 'storage_error', message: 'disk full' });
+    await settle(el);
+
+    const entry = view().shadowRoot?.querySelector('[data-testid="banner-entry"]') as HTMLElement | null;
+    expect(entry?.shadowRoot?.textContent).toContain('disk full');
+    // What the banner's actions do is pinned in hv-full-view's own suite; what
+    // matters here is that the panel has them at all.
+    expect(view().shadowRoot?.querySelector('[data-testid="banner-dismiss"]')).toBeTruthy();
+  });
+});

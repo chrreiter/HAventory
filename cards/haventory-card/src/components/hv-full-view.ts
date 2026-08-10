@@ -19,6 +19,8 @@ import { quickFilterAllowed } from '../ui/quick-filters';
 import type { QuickFilterKey } from '../ui/quick-filters';
 import { editorErrorText } from '../ui/editor-error';
 import { DISCARD_PROMPT } from '../ui/discard';
+import { bannerStack, renderDegradedBanners, renderErrorBanners } from '../ui/banners';
+import type { BannerHooks } from '../ui/banners';
 import { NARROW_QUERY } from '../ui/responsive';
 import { statusCount, statusLabel, statusList } from '../ui/status';
 import type { EmptyOffer } from '../ui/empty-state';
@@ -30,6 +32,7 @@ import { makeBulkOp } from '../store/store';
 import type { BulkOperation, BulkOutcome } from '../store/types';
 import type { BulkProgress, BulkResultView, BulkRunDetail } from './hv-bulk-bar';
 import './hv-bulk-bar';
+import './hv-checkout-popover';
 import './hv-confirm';
 import './hv-data-table';
 import type { MediaBindings } from '../ui/media';
@@ -74,6 +77,7 @@ export class HVFullView extends LitElement {
     tokens,
     base,
     chip,
+    bannerStack,
     css`
       :host {
         display: contents;
@@ -821,6 +825,12 @@ export class HVFullView extends LitElement {
   @state() private _bulkProgress: BulkProgress | null = null;
   @state() private _bulkResult: BulkResultView | null = null;
   @state() private _pendingDelete = false;
+  /** The row whose check-out / due-date step is open, and where to anchor it. */
+  @state() private _checkout: {
+    itemId: string;
+    mode: 'check-out' | 'set-due-date';
+    anchor: DOMRect | null;
+  } | null = null;
   /**
    * Where the surface goes once a discard is confirmed, or null while nothing
    * is being asked: another row, the create form, or the view closing.
@@ -926,6 +936,23 @@ export class HVFullView extends LitElement {
   }
 
   /**
+   * What the shared banner stacks act through.
+   *
+   * Reconnect and Refresh go out as the menu action the host already answers —
+   * the dialogs and the re-read live in its `HostSurfaces`, not here, and both
+   * hosts serve the same entry.
+   */
+  private get _bannerHooks(): BannerHooks {
+    return {
+      store: this.store,
+      onRefresh: () =>
+        this.dispatchEvent(
+          new CustomEvent('menu-action', { detail: { id: 'refresh' }, bubbles: true, composed: true }),
+        ),
+    };
+  }
+
+  /**
    * Leave the open form — for another row, for the create form, or by closing
    * the whole surface — asking first if there is typing to lose.
    *
@@ -1027,6 +1054,40 @@ export class HVFullView extends LitElement {
       case 'edit':
       case 'open-item':
         this._leaveEditor(item.id);
+        break;
+    }
+  }
+
+  /**
+   * The table rows' ⋮, answered the way the card's shell answers its own rows'.
+   *
+   * Same ids, same meanings — the entries come from one list — so a household
+   * learns Check out / Check in / due date / Delete once. Delete leaves for the
+   * host, which owns the confirmation and the store call; the Delete key on a
+   * row already went the same way.
+   */
+  private _onRowAction(detail: { itemId?: string; action?: string; anchor?: DOMRect }) {
+    const item = this.st?.items.find((i) => i.id === detail.itemId);
+    if (!item) return;
+    switch (detail.action) {
+      case 'check-out':
+      case 'set-due-date':
+        this._checkout = { itemId: item.id, mode: detail.action, anchor: detail.anchor ?? null };
+        break;
+      case 'check-in':
+        void this.store?.markCheckedIn(item.id, item.version);
+        break;
+      case 'edit':
+        this._leaveEditor(item.id);
+        break;
+      case 'delete':
+        this.dispatchEvent(
+          new CustomEvent('request-delete', {
+            detail: { itemId: item.id, name: item.name },
+            bubbles: true,
+            composed: true,
+          }),
+        );
         break;
     }
   }
@@ -1864,6 +1925,12 @@ export class HVFullView extends LitElement {
           ${this._renderSidebar()}
           <div class="main">
             ${this._renderContextBar()}
+            <!-- The open form's own sentence is the save-failure surface: the
+                 user's text is in front of it and the account of what happened
+                 belongs beside it. Everything else — a lost connection, paused
+                 live updates, a refused operation with nowhere else to be said —
+                 is this queue's, on the same terms as the card's. -->
+            ${renderDegradedBanners(st, this._bannerHooks)} ${renderErrorBanners(st, this._bannerHooks)}
             <div class="panel-holder" id=${FILTER_PANEL_ID} ?hidden=${!this._filtersOpen}>
               ${this._filtersOpen
                 ? html`
@@ -1952,6 +2019,8 @@ export class HVFullView extends LitElement {
               @decrement=${(e: CustomEvent) => this._onRowEvent('decrement', e.detail)}
               @edit=${(e: CustomEvent) => this._onRowEvent('edit', e.detail)}
               @open-item=${(e: CustomEvent) => this._onRowEvent('open-item', e.detail)}
+              @row-action=${(e: CustomEvent) =>
+                this._onRowAction(e.detail as { itemId?: string; action?: string; anchor?: DOMRect })}
               @toggle-select=${(e: CustomEvent) =>
                 this.store?.toggleSelected((e.detail as { itemId: string }).itemId)}
               @select-all-loaded=${() => this.store?.selectAllLoaded()}
@@ -2015,6 +2084,31 @@ export class HVFullView extends LitElement {
             this._pendingDelete = false;
           }}
         ></hv-confirm>
+
+        <hv-checkout-popover
+          data-testid="full-checkout"
+          ?open=${this._checkout !== null}
+          ?mobile=${this._narrow}
+          .mode=${this._checkout?.mode ?? 'check-out'}
+          .anchor=${this._checkout?.anchor ?? null}
+          .item=${this._checkout ? (st?.items.find((i) => i.id === this._checkout!.itemId) ?? null) : null}
+          @check-out=${(e: CustomEvent) => {
+            const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
+            const item = st?.items.find((i) => i.id === itemId);
+            this._checkout = null;
+            if (item) void this.store?.checkOut(item.id, dueDate, item.version);
+          }}
+          @set-due-date=${(e: CustomEvent) => {
+            const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
+            const item = st?.items.find((i) => i.id === itemId);
+            this._checkout = null;
+            // A due date only exists while an item is out, so this is a plain update.
+            if (item) void this.store?.updateItem(item.id, { due_date: dueDate }, item.version);
+          }}
+          @cancel=${() => {
+            this._checkout = null;
+          }}
+        ></hv-checkout-popover>
 
         <hv-confirm
           data-testid="full-discard-confirm"

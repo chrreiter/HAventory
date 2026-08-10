@@ -548,7 +548,10 @@ throughout.
   the household's own word in the household's own colour, so the sidebar's Status section
   and the filter chips are where statuses are priced and picked.
   An empty table names the reason and offers a way out — the same
-  wording and the same offers as the card's list.
+  wording and the same offers as the card's list. Every row carries the same ⋮ the card's
+  rows do — Check out with a due date, Check in, Change due date, Delete — so the surface
+  built for working through the whole inventory is not the one with the fewest actions per
+  row.
 
   At phone width the sidebar folds away and the surface hands its own breakpoint down to
   the edit form and the filter panel, so both take their phone layouts: one field per row,
@@ -590,7 +593,8 @@ throughout.
   something is wrong, plus banners for connection loss, rate limiting and the
   payload-free reload an import broadcasts. Because subscription events carry no sequence
   number, a dropped one is undetectable — so the card says the list may be stale and
-  offers an explicit Refresh.
+  offers an explicit Refresh. The banners are on **every** surface: the card, the expanded
+  view and the sidebar page, with the same wording and the same recovery actions.
 - Deletes use an in-app confirmation, not `window.confirm`.
 - Card auto-registered as a Lovelace resource on integration setup.
 - **Note:** after first install, a browser refresh (F5 / Ctrl+Shift+R) is required for the

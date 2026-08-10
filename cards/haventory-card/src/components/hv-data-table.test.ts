@@ -1,6 +1,9 @@
 import './hv-data-table';
 import { makeItem } from '../test.utils';
+import { ACTIONS_COLUMN_WIDTH } from '../store/columns';
+import { rowMenuEntries } from './hv-list-row';
 import type { HVDataTable } from './hv-data-table';
+import type { OverflowMenuEntry } from './hv-overflow-menu';
 import type { Item, Sort } from '../store/types';
 
 async function mount(items: Partial<Item>[], props: Partial<HVDataTable> = {}) {
@@ -658,5 +661,98 @@ describe('hv-data-table: selection mode', () => {
     // Actions stay available; it is the row click that changes meaning.
     expect(q(el, '[data-testid="table-edit"]')).toBeTruthy();
     expect(q(el, '[data-testid="table-row-select"]')).toBeTruthy();
+  });
+});
+
+// Check out, Check in, a due date and Delete lived on the card's rows only, so
+// the surface built for working through the whole inventory offered the fewest
+// actions per row. Same component, same list, same events.
+describe('hv-data-table: row menu', () => {
+  const menu = (el: HVDataTable, index = 0) =>
+    all(el, '[data-testid="table-row-menu"]')[index] as HTMLElement & {
+      entries: OverflowMenuEntry[];
+      updateComplete: Promise<unknown>;
+    };
+
+  const labels = (el: HVDataTable, index = 0) =>
+    menu(el, index)
+      .entries.filter((e): e is Extract<OverflowMenuEntry, { id: string }> => 'id' in e)
+      .map((e) => e.id);
+
+  it('offers exactly what the card rows offer, for both check-out states', async () => {
+    const el = await mount([
+      { id: '1', name: 'In' },
+      { id: '2', name: 'Out', checked_out: true },
+    ]);
+
+    expect(labels(el, 0)).toEqual(['check-out', 'edit', 'delete']);
+    expect(labels(el, 1)).toEqual(['check-in', 'set-due-date', 'delete']);
+    // One list, so the two surfaces cannot drift.
+    expect(menu(el, 0).entries).toEqual(rowMenuEntries(makeItem({ id: '1', name: 'In' })));
+  });
+
+  it('reports the picked action, the row it came from, and where to anchor', async () => {
+    const el = await mount([{ id: '1', name: 'Drill' }]);
+    const seen: { itemId: string; action: string; anchor?: DOMRect }[] = [];
+    el.addEventListener('row-action', (e) => seen.push((e as CustomEvent).detail));
+
+    for (const id of ['check-out', 'edit', 'delete']) {
+      menu(el).dispatchEvent(new CustomEvent('select', { detail: { id }, bubbles: true, composed: true }));
+    }
+
+    expect(seen.map((d) => d.action)).toEqual(['check-out', 'edit', 'delete']);
+    expect(seen.every((d) => d.itemId === '1')).toBe(true);
+    expect(seen[0].anchor).toBeTruthy();
+  });
+
+  // The row's own click opens the item; a click on the menu is not that.
+  it('does not open the row behind the menu', async () => {
+    const el = await mount([{ id: '1' }]);
+    let opened = 0;
+    el.addEventListener('open-item', () => {
+      opened += 1;
+    });
+
+    menu(el).click();
+    expect(opened).toBe(0);
+  });
+
+  it('rides the same hover reveal as the rest of the actions cell', async () => {
+    const el = await mount([{ id: '1' }]);
+    expect(menu(el).closest('.actions')).toBeTruthy();
+    expect(tableCss()).toMatch(/\.actions \{[^}]*visibility: hidden/);
+    expect(tableCss()).toMatch(/\.row:hover \.actions, \.row:focus-within \.actions \{ visibility: visible/);
+  });
+
+  // 26px outlined here against 30px borderless on the card's rows: two answers
+  // to one control. The quantity pair keeps the outline, as the card's stepper
+  // does; Edit and the ⋮ are the plain pair on both surfaces.
+  it('draws Edit the way the card rows draw it', async () => {
+    const el = await mount([{ id: '1' }]);
+    expect(q(el, '[data-testid="table-edit"]')?.classList.contains('plain')).toBe(true);
+    expect(tableCss()).toMatch(/\.actions button\.plain \{[^}]*width: 30px/);
+    expect(tableCss()).toMatch(/\.actions button\.plain \{[^}]*border: none/);
+  });
+
+  // Fixed-width circles in a fixed track: too narrow and they come out as ovals.
+  it('reserves a track wide enough for all four controls', () => {
+    expect(Number(/^(\d+)px$/.exec(ACTIONS_COLUMN_WIDTH)?.[1])).toBeGreaterThanOrEqual(
+      26 + 26 + 30 + 34 + 3 * 2,
+    );
+  });
+
+  it('still deletes from the keyboard, with the menu offering the same thing', async () => {
+    const el = await mount([{ id: '1' }]);
+    const seen: string[] = [];
+    el.addEventListener('request-delete', () => seen.push('key'));
+    el.addEventListener('row-action', (e) => seen.push((e as CustomEvent).detail.action));
+
+    const row = q(el, '[data-testid="table-row"]') as HTMLElement;
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+    menu(el).dispatchEvent(
+      new CustomEvent('select', { detail: { id: 'delete' }, bubbles: true, composed: true }),
+    );
+
+    expect(seen).toEqual(['key', 'delete']);
   });
 });
