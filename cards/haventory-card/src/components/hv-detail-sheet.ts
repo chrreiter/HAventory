@@ -241,12 +241,16 @@ export class HVDetailSheet extends LitElement {
         grid-template-columns: 1fr 1fr;
         gap: 10px;
       }
+      /* The pair's other half. It shares the row with an .hv-pill.large, and a
+         stretch grid gives both the taller one's height — so a private height
+         here would silently override the modifier that exists to keep every
+         thumb-sized action the same size. */
       .actions .outline {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         gap: 8px;
-        min-height: 50px;
+        min-height: 48px;
         border: 1px solid var(--hv-input-border);
         background: none;
         color: var(--hv-text);

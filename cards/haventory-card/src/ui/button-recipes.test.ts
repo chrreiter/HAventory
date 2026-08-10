@@ -59,6 +59,14 @@ describe('shared button recipes', () => {
     expect(cssOf('hv-card-shell')).toContain('.sheet-footer .apply { flex: 1; }');
   });
 
+  // The detail sheet's two actions share a stretch grid, so the row takes the
+  // taller of them. A neighbour a couple of pixels above the modifier therefore
+  // sets the height of both and the modifier decides nothing — which is how the
+  // pair came to sit at 50px while the filter sheet's footer sat at 48px.
+  it('sizes the detail sheet action pair to the touch modifier, not past it', () => {
+    expect(cssOf('hv-detail-sheet')).toMatch(/\.actions \.outline \{[^}]*min-height: 48px/);
+  });
+
   it.each(CLEAR_ALL_HOSTS)('%s draws Clear all with the shared text button', (tag) => {
     const css = cssOf(tag);
     expect(css).not.toMatch(/\.clear-all \{/);
