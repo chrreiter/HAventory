@@ -382,12 +382,26 @@ what the list is showing. `include_subtree` is always sent explicitly, because t
 filter defaults it to `false` server-side while subscriptions default it to `true`.
 
 **Rate limiting and degraded state.** Every WS call goes through `run()`, which retries a
-`rate_limited` rejection with backoff before surfacing it, and classifies failures: a code
-from the backend's taxonomy means the socket is fine, anything else counts toward
-`degraded.connectionLost`.
+`rate_limited` rejection with backoff before surfacing it, and classifies failures: a
+*string* error code means a server answered and the command was refused — including the
+taxonomy's `unknown_error` catch-all, which is a server-side fault, not a transport one.
+Anything else (Home Assistant's numeric transport codes, a thrown `Error`, no code at all)
+never reached a server; those are reported under the card's own `connection_lost` code with
+wording that names the connection, and count toward `degraded.connectionLost`. An outage
+fails every call in flight, so the error queue holds at most one such entry at a time.
+
+`degraded.connectionLost` has two sources. Repeated transport failures are one, and they
+catch an outage that closes no socket — a server that accepts the connection and stops
+answering on it. The socket's own `disconnected` event is the other, and it is what an
+**idle** surface depends on: every other signal comes from a call the card made, so a list
+left open across a restart would otherwise go on showing pre-outage data with nothing to say
+so. Home Assistant reconnects by itself, so the event starts a short grace period rather
+than declaring the outage at once; `ready` inside that window cancels it, and `ready` after
+it takes the banner back down.
 
 A *rejected subscribe* kills live updates outright — no event will ever arrive to hint at
-it — so it is handled separately. The three topics are opened as one **round**, because the
+it — so it is handled separately. The four topics — items, stats, locations and statuses —
+are opened as one **round**, because the
 limiter bills each subscribe separately and can admit `items` while refusing `stats`; live
 updates only count as restored once every subscribe in the newest round is accepted, which
 `WSClient.subscribe`'s `onOpen` reports. A round refused with `rate_limited` is re-opened
@@ -396,9 +410,21 @@ automatically up to four times, waiting the envelope's retry-after hint when it 
 and clamped to 30 s) and otherwise backing off exponentially. `degraded.liveUpdates` tracks
 this as `'live' | 'retrying' | 'paused'`, with `degraded.nextLiveRetryAt` for the scheduled
 attempt; every surface renders it as a non-blocking banner that clears itself when a retry
-gets back in. Once the budget is spent the state goes `'paused'`, the refusal reaches the error
-queue once, and the banner's Refresh (i.e. `refreshAll()`) is the way back. Any other
-refusal is an outage: reported immediately, never retried.
+gets back in. A round refused with `storage_error` or `unknown_command` is re-opened on the
+same backoff but a larger budget, because both say the backend is not there *yet* rather
+than broken: the first is what a config entry mid-reload answers, the second is Home
+Assistant's answer for a command type nobody has registered, which is what a restarting
+instance serves until the integration finishes setting up. Landing one of those re-reads the
+inventory, since every event in the gap went to a subscription that no longer existed. Once
+the budget is spent the state goes `'paused'`, the refusal reaches the error queue once, and
+the banner's Refresh (i.e. `refreshAll()`) is the way back. Any other refusal is an outage:
+reported immediately, never retried.
+
+`Store.init()` opens the subscriptions and the watches in a `finally`, so a card whose first
+load was refused outright still has them. Home Assistant rebuilds the Lovelace view when its
+socket reconnects and does so before a restarting instance has set the integration up, so
+that card is the common case rather than the odd one — and without the watches it would keep
+its loading skeleton for as long as the page stayed open.
 
 **Why the card offers a manual Refresh.** Subscription events carry no sequence number or
 generation, and the rate limiter can drop them silently, so a client cannot detect a gap.
