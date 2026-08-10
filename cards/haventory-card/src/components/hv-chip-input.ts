@@ -38,15 +38,6 @@ export class HVChipInput extends LitElement {
       .field:focus-within {
         border-color: var(--hv-primary);
       }
-      /* A value already entered, not a fact about something else: it takes the
-         chip's shape and the state fill so it reads as one of the card's chips,
-         and owns the rest — a remove affordance, and enough height to be a
-         touch target, which no informational chip needs. */
-      .chip {
-        gap: 3px;
-        min-height: var(--hv-tap-min, auto);
-        padding: 3px 9px;
-      }
       .chip svg {
         opacity: 0.75;
       }
@@ -55,7 +46,13 @@ export class HVChipInput extends LitElement {
          well into the chip beside it and remove the wrong tag. 24px is the
          widest it can grow while still belonging to its own chip, which meets
          WCAG 2.5.8 even though it misses the 2.5.5 target the rest of the
-         mobile controls now hit. */
+         mobile controls now hit.
+
+         The pill around it is not a target at all, which is why it takes the
+         shared chip metrics untouched: the hit area below is set by this
+         ::after and a taller pill would not grow it by a pixel — it would only
+         make a tag in this field bigger than the same tag in the table. The
+         field still reaches a full tap height, from the input beside them. */
       .chip-remove {
         position: relative;
         width: 14px;

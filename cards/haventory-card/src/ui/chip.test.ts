@@ -109,9 +109,14 @@ describe('ui/chip: the shared fragment', () => {
     expect(ownCss('hv-location-tree')).toMatch(
       /\.area-name \.hv-area-chip, \.area-none \{ font-size: inherit/,
     );
-    // Every other surface takes the shared size untouched.
+    // Every other surface takes the shared size untouched — height and padding
+    // as well as type. Nothing inside an informational chip is a target that a
+    // touch height would grow, so one that sets its own only comes out bigger
+    // than the same value chipped a surface over.
     for (const tag of CHIPPED.filter((t) => t !== 'hv-filter-panel' && t !== 'hv-location-tree')) {
-      expect(ownCss(tag), tag).not.toMatch(/\.(hv-)?chip[^{]*\{[^}]*font-size/);
+      expect(ownCss(tag), tag).not.toMatch(
+        /\.(hv-)?chip(?![\w-])[^{]*\{[^}]*(font-size|min-height|padding:)/,
+      );
     }
   });
 
