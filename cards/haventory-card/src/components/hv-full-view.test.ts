@@ -572,6 +572,31 @@ describe('hv-full-view: sidebar facets', () => {
   const rows = (sr: ShadowRoot, section: string) =>
     [...sr.querySelectorAll(`[data-testid="sidebar-${section}-row"]`)] as HTMLElement[];
 
+  // A facet row and a location row are the same control in two shadow roots,
+  // one list under the other in the same column, and they had drifted apart on
+  // both height and label inset. The row that carries the shared class is what
+  // makes them one; the slot is what holds the inset, so it is reserved on a
+  // row with nothing to put in it rather than left out.
+  it('draws a facet row as the shared browse row, slot and all', async () => {
+    const { el, sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
+    const all = [...rows(sr, 'categories'), ...rows(sr, 'tags')];
+
+    for (const row of all) {
+      expect(row.classList, row.dataset.value).toContain('hv-browse-row');
+      const lead = row.querySelector('.hv-browse-row-lead');
+      expect(lead, row.dataset.value).toBeTruthy();
+      expect(lead?.classList.contains('placeholder'), row.dataset.value).toBe(true);
+      expect(row.querySelector('.hv-browse-row-label')?.textContent).toBe(row.dataset.value);
+    }
+
+    rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
+    await settle(el);
+    const picked = rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')!;
+    // Picked, the same slot holds the check — the label does not move sideways.
+    expect(picked.querySelector('.hv-browse-row-lead')?.classList.contains('placeholder')).toBe(false);
+    expect(picked.querySelector('.hv-browse-row-lead svg')).toBeTruthy();
+  });
+
   it('lists categories and tags with their counts, locations still first', async () => {
     const { sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
 
@@ -603,7 +628,9 @@ describe('hv-full-view: sidebar facets', () => {
     rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
     await settle(el);
     expect(store.state.value.filters.category).toBe('Tools');
-    expect(rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.classList).toContain('on');
+    expect(rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.classList).toContain(
+      'selected',
+    );
 
     rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
     await settle(el);
@@ -821,7 +848,7 @@ describe('hv-full-view: sidebar status', () => {
     missing()?.click();
     await settle(el);
     expect(store.state.value.filters.status).toBe('missing');
-    expect(missing()?.classList).toContain('on');
+    expect(missing()?.classList).toContain('selected');
 
     missing()?.click();
     await settle(el);
@@ -839,9 +866,11 @@ describe('hv-full-view: sidebar status', () => {
     await settle(el);
 
     expect(store.state.value.filters.status).toBe('needs_repair');
-    expect(rows(sr).filter((r) => r.classList.contains('on')).map((r) => r.dataset.value)).toEqual([
-      'needs_repair',
-    ]);
+    expect(
+      rows(sr)
+        .filter((r) => r.classList.contains('selected'))
+        .map((r) => r.dataset.value),
+    ).toEqual(['needs_repair']);
   });
 
   // A backend too old to send the map still prices the two flagged built-ins in

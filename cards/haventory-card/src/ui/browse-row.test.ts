@@ -1,0 +1,45 @@
+import { describe, expect, it } from 'vitest';
+import type { CSSResult } from 'lit';
+import { browseRow } from './browse-row';
+
+import '../components/hv-full-view';
+import '../components/hv-location-tree';
+
+/**
+ * The two shadow roots that draw a row you browse by. They render one under the
+ * other in the sidebar's single column, so the metrics have to come from the
+ * one fragment rather than being written out on each side — which is how they
+ * drifted 4px of height and 22px of label inset apart.
+ */
+const BROWSERS = ['hv-full-view', 'hv-location-tree'];
+
+function sheetsOf(tag: string): CSSResult[] {
+  const ctor = customElements.get(tag) as { styles?: CSSResult | CSSResult[] } | undefined;
+  if (!ctor?.styles) throw new Error(`${tag} has no styles`);
+  return Array.isArray(ctor.styles) ? ctor.styles : [ctor.styles];
+}
+
+/** A component's own block — the last fragment, after the shared ones. */
+function ownCss(tag: string): string {
+  const sheets = sheetsOf(tag);
+  return String(sheets[sheets.length - 1].cssText).replace(/\s+/g, ' ');
+}
+
+describe('ui/browse-row: one row in two shadow roots', () => {
+  it('reaches both roots that draw one', () => {
+    for (const tag of BROWSERS) expect(sheetsOf(tag), tag).toContain(browseRow);
+  });
+
+  it('leaves neither of them restating the shape it provides', () => {
+    for (const tag of BROWSERS) {
+      const css = ownCss(tag);
+      // The two rules that used to hold these, in the shapes that disagreed.
+      for (const selector of ['\\.value-row', '\\.row']) {
+        const rule = new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+        expect(rule, `${tag}: ${selector} { ${rule} }`).not.toMatch(
+          /padding|font:|min-height|border-radius|display: flex/,
+        );
+      }
+    }
+  });
+});
