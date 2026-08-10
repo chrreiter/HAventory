@@ -514,7 +514,9 @@ throughout.
   strip attaches as a manual. Each queue reports itself under the section that started it,
   with a moving indicator while a file is in flight; a refused file keeps its error and
   Retry until you dismiss them. Removing an attachment asks first, because the file goes
-  with it.
+  with it. A thumbnail is 72px of a photo, so **clicking one opens it full-size** — arrows
+  and a counter to walk the strip, Escape to come back — on every surface the form appears
+  on, and from the detail sheet's gallery just the same.
 - **Full view** — a fullscreen workspace with a coloured app bar, a **browse sidebar**, and
   a sortable table. Only columns the backend can sort by get a clickable header. A browser
   that has made no choice yet shows every optional column — quantity, status, category,
@@ -556,6 +558,10 @@ throughout.
   At phone width the sidebar folds away and the surface hands its own breakpoint down to
   the edit form and the filter panel, so both take their phone layouts: one field per row,
   and filters staged behind a "Show N items" commit row exactly as in the card's sheet.
+  Tapping a row there opens the same **detail sheet** the card opens — photos, documents,
+  facts and check-out, with Edit one tap deeper — rather than dropping you straight into a
+  form. On a screen wide enough for the table, the table is the read view and a row click
+  opens the form as before.
 - **Multi-select and bulk actions** — move, add/remove tags, set category, adjust
   quantity, check out/in and delete over a selection. Work is chunked so progress is
   determinate and cancellable, and the result is reported *per operation*: "39 of 42

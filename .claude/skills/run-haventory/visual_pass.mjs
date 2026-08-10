@@ -358,12 +358,20 @@ const PANEL_MOBILE_SURFACES = [
   },
   {
     id: "05-row-editor",
+    // At this width the table is off the side of the screen, so it cannot be
+    // the read view: opening a row lands on the detail sheet, and the form is
+    // one tap deeper inside it. The pencil goes the same way as the row itself,
+    // which is the point of the one method that decides.
     open: [
       ["hover", `${PANEL} [data-testid="table-row"]`],
       ["click", `${PANEL} [data-testid="table-edit"]`],
+      ["wait", 800],
+      ["click", `${PANEL} [data-testid="sheet-edit-details"]`],
       ["wait", 600],
     ],
-    expect: `${PANEL} [data-testid="item-editor"]`,
+    // The sheet's own back arrow, not its host element: `hv-bottom-sheet` draws
+    // its panel in its shadow root and the host itself has no box to wait for.
+    expect: [`${PANEL} [data-testid="sheet-back"]`, `${PANEL} [data-testid="item-editor"]`],
   },
   {
     id: "06-overflow",

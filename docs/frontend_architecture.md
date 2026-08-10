@@ -82,11 +82,13 @@ haventory-card                     Lovelace element; store owner
     │                              document pickers, cover/reorder controls,
     │                              per-document title field, per-file retry
     │       ├── hv-chip-input      tag chips with suggestions
+    │       ├── hv-lightbox        the photo strip opens full-size here too
     │       └── hv-location-tree
-    ├── hv-detail-sheet            mobile: read view + edit view in one sheet;
-    │   │                          photo gallery strip, a navigable full-size
-    │   │                          lightbox and the Documents list
+    ├── hv-detail-sheet            the narrow read view, on the card and the full
+    │   │                          view alike: read + edit in one sheet, photo
+    │   │                          gallery strip and the Documents list
     │   ├── hv-item-editor
+    │   ├── hv-lightbox            photos full-size, with arrows and a counter
     │   └── hv-checkout-popover    inline due-date step
     ├── hv-checkout-popover        desktop: anchored due-date step
     ├── hv-organize-dialog         Locations / Categories / Tags / Statuses
@@ -102,6 +104,8 @@ haventory-card                     Lovelace element; store owner
         ├── hv-item-editor         inline above the table (the same one edit form)
         ├── hv-data-table          sortable table + selection column; rows carry the
         │                          same ⋮ actions the card's rows do
+        ├── hv-detail-sheet        the read view at phone width, the same one the
+        │                          card opens
         ├── hv-checkout-popover    the row menu's due-date step
         └── hv-bulk-bar            bulk actions, progress, per-operation results
 ```

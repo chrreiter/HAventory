@@ -111,29 +111,40 @@ export class DialogFocus {
     panel: () => HTMLElement | null | undefined,
     onOpenerGone?: () => void,
   ): void {
-    if (open && !this._active) {
-      this._active = true;
-      this._returnTo = deepActiveElement();
+    if (open) {
+      if (this._active) return;
+      // Where focus came from is read the moment the host says "open", because
+      // focus has not moved yet — but the panel may need another update to
+      // exist. The lightbox signs its image URL over the connection and draws
+      // nothing until that resolves, so its first update has no panel to focus.
+      // Staying inactive is what makes the next update try again; treating the
+      // surface as focused before it is there leaves it deaf to the Escape
+      // bound to its panel, with nowhere to hand focus back to.
+      this._returnTo ??= deepActiveElement();
       const el = panel();
-      if (el) {
-        if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
-        el.focus({ preventScroll: true });
-      }
+      if (!el) return;
+      this._active = true;
+      if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+      el.focus({ preventScroll: true });
       return;
     }
-    if (!open && this._active) {
-      this._active = false;
-      const back = this._returnTo;
+    if (!this._active) {
+      // Closed before it ever drew: forget the opener rather than returning to
+      // a stale one the next time something opens.
       this._returnTo = null;
-      if (back?.isConnected) {
-        back.focus({ preventScroll: true });
-        return;
-      }
-      // Nothing to return to. Rescue focus only if it really was stranded:
-      // a close that happened while the user was already somewhere else must
-      // not have focus yanked out from under them.
-      const stranded = deepActiveElement();
-      if (!stranded || stranded === document.body || !stranded.isConnected) onOpenerGone?.();
+      return;
     }
+    this._active = false;
+    const back = this._returnTo;
+    this._returnTo = null;
+    if (back?.isConnected) {
+      back.focus({ preventScroll: true });
+      return;
+    }
+    // Nothing to return to. Rescue focus only if it really was stranded: a
+    // close that happened while the user was already somewhere else must not
+    // have focus yanked out from under them.
+    const stranded = deepActiveElement();
+    if (!stranded || stranded === document.body || !stranded.isConnected) onOpenerGone?.();
   }
 }

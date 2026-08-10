@@ -35,6 +35,7 @@ import './hv-bulk-bar';
 import './hv-checkout-popover';
 import './hv-confirm';
 import './hv-data-table';
+import './hv-detail-sheet';
 import type { MediaBindings } from '../ui/media';
 import './hv-filter-chips';
 import './hv-filter-panel';
@@ -774,6 +775,14 @@ export class HVFullView extends LitElement {
   @state() private _filtersOpen = false;
   @state() private _searchDraft = '';
   @state() private _editing: string | 'new' | null = null;
+  /**
+   * The item the read sheet is showing, on a narrow viewport.
+   *
+   * There is no read view at this width otherwise: the table is one, but it is
+   * off the side of a phone, and tapping a row landed straight in the edit form
+   * — a surface the card answers the same tap with a sheet on.
+   */
+  @state() private _detailItemId: string | null = null;
   @state() private _editorBusy = false;
   /**
    * What the open form says about a save the store refused.
@@ -895,6 +904,7 @@ export class HVFullView extends LitElement {
       } else {
         this._filtersOpen = false;
         this._editing = null;
+        this._detailItemId = null;
         this._editorError = null;
         this._pendingDiscard = null;
         this._creatingLocation = false;
@@ -1017,6 +1027,11 @@ export class HVFullView extends LitElement {
    * asked rather than guessed at.
    */
   private _syncPinnedItem() {
+    // The read sheet holds an id too, and a deleted item leaves it showing
+    // nothing at all rather than closing.
+    if (this._detailItemId !== null && this.store?.wasRemoved(this._detailItemId)) {
+      this._detailItemId = null;
+    }
     const editing = this._editing;
     if (editing === null || editing === 'new') {
       this._pinnedItem = null;
@@ -1053,9 +1068,26 @@ export class HVFullView extends LitElement {
         break;
       case 'edit':
       case 'open-item':
-        this._leaveEditor(item.id);
+        this._openItem(item.id);
         break;
     }
+  }
+
+  /**
+   * Show an item: the read sheet on a narrow viewport, the inline form on a
+   * wide one, with Edit one tap deeper inside the sheet.
+   *
+   * The desktop table is its own read surface — the row already says most of
+   * what the sheet would — so there the form is the right answer to a row
+   * click. A phone sees one column of that table and no hover, and the card
+   * answers the same tap with the same sheet.
+   */
+  private _openItem(id: string) {
+    if (this._narrow) {
+      this._detailItemId = id;
+      return;
+    }
+    this._leaveEditor(id);
   }
 
   /**
@@ -1078,7 +1110,7 @@ export class HVFullView extends LitElement {
         void this.store?.markCheckedIn(item.id, item.version);
         break;
       case 'edit':
-        this._leaveEditor(item.id);
+        this._openItem(item.id);
         break;
       case 'delete':
         this.dispatchEvent(
@@ -2084,6 +2116,49 @@ export class HVFullView extends LitElement {
             this._pendingDelete = false;
           }}
         ></hv-confirm>
+
+        ${this._narrow
+          ? html`<hv-detail-sheet
+              data-testid="full-detail-sheet"
+              .statuses=${st?.statuses ?? null}
+              .areas=${st?.areasCache?.areas ?? []}
+              .media=${this.media}
+              .mediaConfig=${st?.mediaConfig ?? null}
+              ?open=${this._detailItemId !== null}
+              .item=${this._detailItemId ? (st?.items.find((i) => i.id === this._detailItemId) ?? null) : null}
+              .locations=${st?.locationsFlatCache ?? null}
+              .locationTree=${st?.locationTreeCache ?? []}
+              .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
+              .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
+              .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
+              .createLocation=${this._createLocationForEditor}
+              .busy=${this._editorBusy}
+              .errorMessage=${this._editorError}
+              @cancel=${() => {
+                this._detailItemId = null;
+                this._editorError = null;
+              }}
+              @increment=${(e: CustomEvent) => this._onRowEvent('increment', e.detail)}
+              @decrement=${(e: CustomEvent) => this._onRowEvent('decrement', e.detail)}
+              @check-in=${(e: CustomEvent) =>
+                this._onRowAction({ itemId: (e.detail as { itemId: string }).itemId, action: 'check-in' })}
+              @check-out-confirmed=${(e: CustomEvent) => {
+                const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
+                const item = st?.items.find((i) => i.id === itemId);
+                if (item) void this.store?.checkOut(item.id, dueDate, item.version);
+              }}
+              @set-due-date=${(e: CustomEvent) => {
+                const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
+                const item = st?.items.find((i) => i.id === itemId);
+                if (item) void this.store?.updateItem(item.id, { due_date: dueDate }, item.version);
+              }}
+              @request-delete=${(e: CustomEvent) =>
+                this.dispatchEvent(
+                  new CustomEvent('request-delete', { detail: e.detail, bubbles: true, composed: true }),
+                )}
+              @save=${this._onEditorSave}
+            ></hv-detail-sheet>`
+          : null}
 
         <hv-checkout-popover
           data-testid="full-checkout"

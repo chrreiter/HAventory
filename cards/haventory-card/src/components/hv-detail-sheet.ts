@@ -18,7 +18,6 @@ import {
   pictures,
 } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
-import { DialogFocus } from '../ui/dialog-focus';
 import { DISCARD_PROMPT } from '../ui/discard';
 import { ViewportNarrow } from '../ui/responsive';
 import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, ScalarValue, StatusDefinition } from '../store/types';
@@ -26,15 +25,35 @@ import './hv-bottom-sheet';
 import './hv-checkout-popover';
 import './hv-confirm';
 import './hv-item-editor';
+import './hv-lightbox';
 import type { HVBottomSheet } from './hv-bottom-sheet';
 import type { HVItemEditor } from './hv-item-editor';
 
 /**
- * The mobile item surface: tap a row, get one sheet.
+ * The narrow item surface: tap a row, get one sheet.
  *
  * It lands on a read view — chips summarise state, the quantity hero is the
  * primary action — and swaps in place to the edit form. Nothing here opens a
  * second dialog; that is the whole point of the sheet.
+ *
+ * Both narrow surfaces host it — the card and the full view (and through it the
+ * sidebar panel) — so the contract is worth stating rather than reading off one
+ * host's bindings:
+ *
+ * - **In**: `item` and `open` say what to show; `locations`, `locationTree`,
+ *   `areas`, `statuses`, `categorySuggestions`, `tagSuggestions`,
+ *   `customFieldKeys`, `media` and `mediaConfig` are the store slices the read
+ *   view and the form it hosts read; `busy` and `errorMessage` are the host's
+ *   account of the save in flight, forwarded to the form.
+ * - **Out**: `save` (the editor's own detail, so a host's editor-save handler
+ *   takes it unchanged), `increment` / `decrement`, `check-in`,
+ *   `check-out-confirmed` and `set-due-date` with the picked date,
+ *   `request-delete` — every one carrying `itemId` — and `cancel` when the
+ *   sheet has finished closing.
+ * - The sheet answers for the form inside it: a dismissal with unsaved typing
+ *   raises the discard question here, and `cancel` follows only if it is
+ *   answered yes. A host must not try to guard the form from outside; it cannot
+ *   see into this shadow root.
  */
 @customElement('hv-detail-sheet')
 export class HVDetailSheet extends LitElement {
@@ -358,73 +377,6 @@ export class HVDetailSheet extends LitElement {
         color: var(--hv-text-secondary);
         text-decoration: line-through;
       }
-      .lightbox {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
-        /* Opaque rather than a scrim: a photo is what the surface is for, and
-           the sheet behind it competes at any transparency. */
-        background: #000;
-        z-index: 10;
-        /* Every control here floats on the photo, so its own backing is the
-           only contrast it is guaranteed. The worst case is a white frame,
-           where this resolves to #6B6B6B — 5.3:1 under the white ink, enough
-           for the counter, which is 13px text and therefore wants 4.5:1 rather
-           than the 3:1 the chevrons would settle for. One value for all three,
-           set by the strictest thing sitting on it. */
-        --hv-lightbox-scrim: rgba(0, 0, 0, 0.58);
-      }
-      .lightbox img {
-        max-width: 100vw;
-        max-height: 100vh;
-        object-fit: contain;
-      }
-      .lightbox .close {
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        min-width: 44px;
-        min-height: 44px;
-        display: inline-grid;
-        place-items: center;
-        border: none;
-        border-radius: 50%;
-        background: var(--hv-lightbox-scrim);
-        color: #fff;
-      }
-      /* Both controls sit on the photo, which is any colour at all — hence the
-         scrim behind them rather than bare white glyphs. */
-      .lightbox .nav {
-        position: absolute;
-        top: 50%;
-        transform: translateY(-50%);
-        min-width: 44px;
-        min-height: 44px;
-        display: inline-grid;
-        place-items: center;
-        border: none;
-        border-radius: 50%;
-        background: var(--hv-lightbox-scrim);
-        color: #fff;
-      }
-      .lightbox .nav.prev {
-        left: 8px;
-      }
-      .lightbox .nav.next {
-        right: 8px;
-      }
-      .lightbox .counter {
-        position: absolute;
-        bottom: 12px;
-        left: 50%;
-        transform: translateX(-50%);
-        padding: 4px 12px;
-        border-radius: var(--hv-radius-chip);
-        background: var(--hv-lightbox-scrim);
-        color: #fff;
-        font: 500 13px var(--hv-font);
-      }
     `,
   ];
 
@@ -454,7 +406,7 @@ export class HVDetailSheet extends LitElement {
   @state() private _mode: 'read' | 'edit' = 'read';
   /** The check-out date step, shown inline in the sheet rather than as a popup. */
   @state() private _checkoutOpen = false;
-  /** Index of the picture shown full-size, or null when the lightbox is closed. */
+  /** Which picture the lightbox was opened on, or null when it is closed. */
   @state() private _lightbox: number | null = null;
   /**
    * Where the sheet goes once a discard is confirmed, or null while nothing is
@@ -466,8 +418,6 @@ export class HVDetailSheet extends LitElement {
   private readonly _urls = new MediaUrls(this);
   /** Window width, for the confirm this sheet raises over itself. */
   private readonly _viewport = new ViewportNarrow(this);
-  /** Returns focus to the thumbnail the lightbox was opened from. */
-  private readonly _lightboxFocus = new DialogFocus();
   /**
    * The item id the sheet is showing. `undefined` until the first update, so
    * that pass settles the view the same way a move to another item does.
@@ -493,25 +443,6 @@ export class HVDetailSheet extends LitElement {
       this._lightbox = null;
       this._pendingDiscard = null;
     }
-    if (this._lightbox !== null) {
-      // The lightbox survives a same-item refresh, and one of those refreshes
-      // is a photo being removed from under it. An index past the end renders
-      // nothing while still counting as open, which strands focus on a panel
-      // that is no longer there.
-      const count = pictures(this.item?.attachments).length;
-      this._lightbox = count === 0 ? null : Math.min(this._lightbox, count - 1);
-    }
-  }
-
-  protected updated() {
-    this._lightboxFocus.sync(
-      this._lightbox !== null,
-      () => this.shadowRoot?.querySelector<HTMLElement>('[data-testid="sheet-lightbox"]'),
-      // The thumbnail the lightbox was opened from is gone exactly when the
-      // lightbox closed because that photo was removed. The sheet is still on
-      // screen, so focus belongs on its panel rather than on the document.
-      () => this._sheet?.focusPanel(),
-    );
   }
 
   /** True when the edit form is open with unsaved changes. */
@@ -673,79 +604,6 @@ export class HVDetailSheet extends LitElement {
    * no-op — and a control that disabled itself under the finger that pressed it
    * would drop focus to the document, taking Escape and the arrow keys with it.
    */
-  private _renderLightbox(item: Item) {
-    const shots = pictures(item.attachments);
-    const index = this._lightbox;
-    if (index === null || !shots[index]) return null;
-    const src = this._urls.get(item.id, shots[index].id, attachmentNameToken(shots[index]));
-    if (!src) return null;
-    const close = () => {
-      this._lightbox = null;
-    };
-    const step = (delta: number) => {
-      this._lightbox = (index + delta + shots.length) % shots.length;
-    };
-    const nav = (delta: number) => (e: Event) => {
-      // The backdrop closes on click and these sit on top of it.
-      e.stopPropagation();
-      step(delta);
-    };
-    const many = shots.length > 1;
-    return html`<div
-      class="lightbox"
-      role="dialog"
-      aria-modal="true"
-      aria-label=${pictureAlt(item.name, index, shots.length)}
-      data-testid="sheet-lightbox"
-      tabindex="-1"
-      @keydown=${(e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
-          // Stopped here, or the bottom sheet under it takes the same Escape
-          // and closes the whole item rather than the photo on top of it.
-          e.preventDefault();
-          e.stopPropagation();
-          close();
-          return;
-        }
-        if (!many) return;
-        if (e.key === 'ArrowLeft') step(-1);
-        else if (e.key === 'ArrowRight') step(1);
-        else return;
-        e.preventDefault();
-        e.stopPropagation();
-      }}
-      @click=${close}
-    >
-      <img src=${src} alt=${pictureAlt(item.name, index, shots.length)} />
-      <button class="close" data-testid="sheet-lightbox-close" aria-label="Close photo" @click=${close}>
-        ${icon('close', 22)}
-      </button>
-      ${many
-        ? html`<button
-              class="nav prev"
-              data-testid="sheet-lightbox-prev"
-              aria-label="Previous photo"
-              @click=${nav(-1)}
-            >
-              ${icon('chevronLeft', 26)}
-            </button>
-            <button
-              class="nav next"
-              data-testid="sheet-lightbox-next"
-              aria-label="Next photo"
-              @click=${nav(1)}
-            >
-              ${icon('chevronRight', 26)}
-            </button>
-            <!-- Announced rather than only drawn: the dialog's own label
-                 changes with the photo, and a changed label is not re-read. -->
-            <span class="counter" data-testid="sheet-lightbox-counter" aria-live="polite"
-              >${index + 1} of ${shots.length}</span
-            >`
-        : null}
-    </div>`;
-  }
-
   private _renderRead(item: Item) {
     const low = isLowStock(item);
     const overdue = isOverdue(item.due_date);
@@ -992,8 +850,19 @@ export class HVDetailSheet extends LitElement {
         }}
       >
         ${item ? (this._mode === 'edit' ? this._renderEdit(item) : this._renderRead(item)) : null}
-        ${item ? this._renderLightbox(item) : null}
       </hv-bottom-sheet>
+
+      <hv-lightbox
+        data-testid="sheet-lightbox-host"
+        .item=${item}
+        .media=${this.media}
+        .index=${this._lightbox}
+        .onOpenerGone=${() => this._sheet?.focusPanel()}
+        @close=${(e: Event) => {
+          e.stopPropagation();
+          this._lightbox = null;
+        }}
+      ></hv-lightbox>
 
       <!-- Outside the sheet, and its events stopped here: the host listens for
            a cancel event on this element to take the sheet down, and an answer
