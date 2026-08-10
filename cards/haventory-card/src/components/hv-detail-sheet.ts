@@ -253,18 +253,6 @@ export class HVDetailSheet extends LitElement {
         border-radius: var(--hv-radius-chip);
         font: 500 14.5px var(--hv-font);
       }
-      .actions .primary {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        min-height: 50px;
-        border: none;
-        background: var(--hv-primary);
-        color: var(--hv-text-on-primary);
-        border-radius: var(--hv-radius-chip);
-        font: 500 14.5px var(--hv-font);
-      }
       .actions .danger {
         min-height: 48px;
         border: none;
@@ -765,7 +753,7 @@ export class HVDetailSheet extends LitElement {
                 ${icon('account', 18)}Check out
               </button>`}
           <button
-            class="primary"
+            class="hv-pill large"
             data-testid="sheet-edit-details"
             @click=${() => {
               this._mode = 'edit';

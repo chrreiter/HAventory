@@ -78,6 +78,11 @@ export class HVLocationTree extends LitElement {
            and is unaffected. */
         padding: var(--hv-organize-row-pad, 7px) 12px;
         border-radius: var(--hv-radius-input);
+        /* The whole row picks the location it names. The All-items and
+           No-location rows below are real buttons and get this for free; a node
+           row cannot be one, because it holds the twisty and the manage actions
+           and a button may not contain a button. */
+        cursor: pointer;
       }
       .row:hover {
         background: var(--hv-hover-overlay);
@@ -119,6 +124,7 @@ export class HVLocationTree extends LitElement {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        text-align: left;
       }
       .count {
         flex: none;
@@ -274,19 +280,8 @@ export class HVLocationTree extends LitElement {
         font: 500 12.5px var(--hv-font);
         cursor: pointer;
       }
-      .create-submit {
+      .create-row .hv-pill {
         flex: none;
-        min-height: var(--hv-tap-min, 30px);
-        border: none;
-        border-radius: var(--hv-radius-chip);
-        background: var(--hv-primary);
-        color: var(--hv-text-on-primary);
-        padding: 0 14px;
-        font: 500 12.5px var(--hv-font);
-        cursor: pointer;
-      }
-      .create-submit[disabled] {
-        opacity: 0.5;
       }
       .divider {
         height: 1px;
@@ -420,6 +415,12 @@ export class HVLocationTree extends LitElement {
     return null;
   }
 
+  /** Pick a node — from anywhere on its row, which is one target. */
+  private _select(node: LocationTreeNode, excluded: boolean) {
+    if (excluded) return;
+    this._emit('select', { locationId: node.id, node });
+  }
+
   private _toggle(id: string) {
     const next = new Set(this._expanded);
     if (next.has(id)) next.delete(id);
@@ -494,11 +495,22 @@ export class HVLocationTree extends LitElement {
           aria-expanded=${ifDefined(hasChildren ? String(open) : undefined)}
           aria-controls=${ifDefined(hasChildren ? nodeChildrenId(node.id) : undefined)}
           aria-level=${depth + 1}
+          aria-disabled=${ifDefined(isExcluded ? 'true' : undefined)}
+          title=${node.path?.display_path ?? node.name}
+          tabindex=${isExcluded ? -1 : 0}
           data-testid="tree-row"
           data-id=${node.id}
           data-depth=${depth}
           ?disabled=${isExcluded}
           style="padding-left: ${12 + depth * 18}px"
+          @click=${() => this._select(node, isExcluded)}
+          @keydown=${(e: KeyboardEvent) => {
+            // The row answers Enter and Space itself now that it is the target;
+            // as a div it inherits neither from the browser.
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            this._select(node, isExcluded);
+          }}
         >
           ${hasChildren
             ? html`<button
@@ -513,20 +525,7 @@ export class HVLocationTree extends LitElement {
                 ${icon(open ? 'chevronDown' : 'chevronRight', 17)}
               </button>`
             : html`<span class="twisty placeholder">${icon('chevronRight', 17)}</span>`}
-          <button
-            class="name"
-            data-testid="tree-select"
-            data-id=${node.id}
-            title=${node.path?.display_path ?? node.name}
-            ?disabled=${isExcluded}
-            style="border:none;background:none;padding:0;font:inherit;color:inherit;text-align:left"
-            @click=${() => {
-              if (isExcluded) return;
-              this._emit('select', { locationId: node.id, node });
-            }}
-          >
-            ${node.name}
-          </button>
+          <span class="name">${node.name}</span>
           ${this.showCounts ? this._renderCount(node, isExcluded) : null}
           ${this.manage && this.mobile
             ? html`<span class="actions">
@@ -756,7 +755,7 @@ export class HVLocationTree extends LitElement {
           }}
         />
         <button
-          class="create-submit"
+          class="hv-pill"
           data-testid="tree-create-submit"
           ?disabled=${!name}
           @click=${() => this._submitCreate()}

@@ -133,6 +133,11 @@ export class HVDataTable extends LitElement {
         border-bottom: 1px solid var(--hv-row-divider);
         font-size: 13.5px;
         color: var(--hv-text);
+        /* Same as the card's list rows: the row is the target, but a role=row
+           div gets none of the hand the shared button rule gives every other
+           one. Body rows only — the header carries .head, and there it is the
+           sort buttons that are pressable, not the row. */
+        cursor: pointer;
       }
       .row:hover {
         background: var(--hv-row-hover);

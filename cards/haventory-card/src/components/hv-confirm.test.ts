@@ -40,7 +40,10 @@ describe('hv-confirm', () => {
 
     const accept = el.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement;
     expect(accept.textContent).toContain('Delete 42');
-    expect(accept.classList.contains('destructive')).toBe(true);
+    // The card's one committing shape, in its error fill — this dialog draws no
+    // primary of its own.
+    expect(accept.classList.contains('hv-pill')).toBe(true);
+    expect(accept.classList.contains('danger')).toBe(true);
     accept.click();
 
     expect(fired).toBe(1);

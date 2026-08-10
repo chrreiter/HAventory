@@ -81,18 +81,23 @@ describe('hv-bulk-bar: actions', () => {
     expect(q(el, '[data-testid="bulk-picker"]')?.textContent).toContain('Move 1 item to');
   });
 
-  it('runs the immediate actions straight away', async () => {
+  it('leaves for the host without an inline step', async () => {
     const el = await mount();
     const seen = runs(el);
     (q(el, '[data-action="check-in"]') as HTMLButtonElement).click();
     (q(el, '[data-action="check-out"]') as HTMLButtonElement).click();
     (q(el, '[data-action="delete"]') as HTMLButtonElement).click();
 
-    expect(seen).toEqual([
-      { action: 'check-in' },
-      { action: 'check-out', dueDate: null },
-      { action: 'delete' },
-    ]);
+    // Check-out carries no due date: the host asks for one, and tells that
+    // apart from a deliberate "no due date" by the key being absent.
+    expect(seen).toEqual([{ action: 'check-in' }, { action: 'check-out' }, { action: 'delete' }]);
+  });
+
+  it('names check-out as the step it is', async () => {
+    const el = await mount();
+    const labels = all(el, '[data-testid="bulk-action"]').map((b) => b.textContent?.trim());
+    expect(labels).toContain('Check out…');
+    expect(labels).toContain('Check in');
   });
 });
 
@@ -108,7 +113,7 @@ describe('hv-bulk-bar: inline pickers', () => {
 
     const treeEl = el.shadowRoot?.querySelector('hv-location-tree') as HTMLElement;
     (
-      treeEl.shadowRoot?.querySelector('[data-testid="tree-select"][data-id="workshop"]') as HTMLButtonElement
+      treeEl.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="workshop"]') as HTMLButtonElement
     ).click();
     expect(seen).toEqual([{ action: 'move', locationId: 'workshop' }]);
   });
@@ -280,5 +285,52 @@ describe('describeFailure', () => {
 
   it('passes an unknown code through with its message', () => {
     expect(describeFailure(failure('a', 'something_new', 'odd'))).toBe('odd');
+  });
+});
+
+// The bar was the one surface that ignored the tokens: a hardcoded blue-grey
+// band and a hardcoded red for Delete, neither of which moved with the HA
+// theme — and a running batch's Cancel that was a bare native button on top of
+// it, unstyled where every sibling control was a pill.
+describe('hv-bulk-bar: the band belongs to the theme', () => {
+  const barCss = () => {
+    const styles = (customElements.get('hv-bulk-bar') as typeof HVBulkBar).styles;
+    return (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+  };
+
+  it('takes its fill and its ink from tokens rather than from hex', () => {
+    const css = barCss();
+    expect(css).toMatch(/\.bar, \.progress \{[^}]*background: var\(--hv-selection-bar\)/);
+    expect(css).toMatch(/\.bar, \.progress \{[^}]*color: var\(--hv-on-selection-bar\)/);
+    expect(css).toMatch(/\.band-button\.danger \{[^}]*color: var\(--hv-on-selection-bar-danger\)/);
+    // The rules that draw the band carry no literal colour of their own.
+    const band = css.slice(css.indexOf('.bar, .progress {'), css.indexOf('.result {'));
+    expect(band).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(band).not.toMatch(/rgba?\(/);
+  });
+
+  it('draws the running batch a real button', async () => {
+    const el = await mount({ progress: { done: 1, total: 4, failed: 0, label: 'Moving' } });
+    expect(q(el, '[data-testid="bulk-cancel"]')?.className).toContain('band-button');
+    // And it no longer positions itself with an inline style per failure state.
+    expect(q(el, '[data-testid="bulk-cancel"]')?.getAttribute('style')).toBe(null);
+  });
+
+  it('keeps the failure count and Cancel together at the trailing edge', async () => {
+    const el = await mount({ progress: { done: 3, total: 4, failed: 1, label: 'Moving' } });
+    expect(q(el, '[data-testid="bulk-progress-failed"]')?.className).toBe('failed');
+    expect(barCss()).toMatch(/\.progress \.spacer \{ margin-left: auto; \}/);
+  });
+});
+
+describe('hv-bulk-bar: close verbs', () => {
+  // A result panel is read and dismissed; "Close" is what every other surface
+  // that only dismisses says.
+  it('closes the result rather than dismissing it', async () => {
+    const el = await mount({ result: { label: 'Move', succeeded: 2, failed: [] } });
+    expect(q(el, '[data-testid="bulk-result-dismiss"]')?.textContent?.trim()).toBe('Close');
   });
 });

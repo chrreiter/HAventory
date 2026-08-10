@@ -308,13 +308,6 @@ export class HVFilterPanel extends LitElement {
         font-size: 12px;
         color: var(--hv-text-secondary);
       }
-      .link {
-        border: none;
-        background: none;
-        font: 500 12.5px var(--hv-font);
-        color: var(--hv-primary-dark);
-        padding: 0;
-      }
       .tree-holder {
         border: 1px solid var(--hv-divider);
         border-radius: var(--hv-radius-input);
@@ -873,7 +866,7 @@ export class HVFilterPanel extends LitElement {
                   ? ` · ${this.total} of ${this.grandTotal} match`
                   : ''}
               </span>
-              <button class="link" data-testid="filter-clear-all" @click=${() => this.clearAll()}>
+              <button class="hv-text-button" data-testid="filter-clear-all" @click=${() => this.clearAll()}>
                 Clear all
               </button>
             </div>`}

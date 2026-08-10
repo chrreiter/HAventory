@@ -70,20 +70,6 @@ export class HVConfirm extends LitElement {
         gap: 8px;
         padding: 0 14px 14px;
       }
-      .confirm {
-        background: var(--hv-primary);
-        color: var(--hv-text-on-primary);
-        border: none;
-        border-radius: var(--hv-radius-chip);
-        padding: 8px 18px;
-        font: 500 13px var(--hv-font);
-      }
-      .confirm.destructive {
-        background: var(--hv-error);
-      }
-      .confirm:hover {
-        opacity: 0.9;
-      }
     `,
     dialogSheet,
   ];
@@ -151,7 +137,7 @@ export class HVConfirm extends LitElement {
               ${this.cancelLabel}
             </button>
             <button
-              class="confirm ${this.destructive ? 'destructive' : ''}"
+              class="hv-pill ${this.destructive ? 'danger' : ''}"
               data-testid="confirm-accept"
               @click=${this._confirm}
             >

@@ -118,6 +118,26 @@ export const tokens = css`
     --hv-tone-red-strong-bg: #c62828;
     --hv-tone-red-strong-fg: #fff;
 
+    /*
+     * The band the bulk bar draws while a selection is being acted on. It is a
+     * mode the card is in rather than another panel, so it stays a dark strip
+     * in both themes instead of following --hv-surface — and because the fill
+     * is one hue per theme rather than a surface a user theme repaints, the ink
+     * on it is fixed, the same constraint --hv-on-amber is written for. The
+     * dark half sits under the surfaces around it; the light half is the
+     * blue-grey the bar has always drawn.
+     *
+     * Everything else the band needs — the wash under its buttons, the progress
+     * track — is mixed from --hv-on-selection-bar where it is used, so one ink
+     * decision covers the whole strip.
+     */
+    --hv-selection-bar: light-dark(#263238, #1b2429);
+    --hv-on-selection-bar: #fff;
+    /* Delete, on the band. The deep half of --hv-error is ink for a light
+       surface and disappears here, so this is the light red that reads on both
+       halves of the fill above. */
+    --hv-on-selection-bar-danger: #ef9a9a;
+
     /* Inputs */
     --hv-input-bg: var(--input-fill-color, light-dark(#f5f5f5, #2b2b2b));
     --hv-input-border: light-dark(#cfd8dc, #4a4a4a);
@@ -233,6 +253,21 @@ export const base = css`
   .hv-pill.outline:hover {
     background: var(--hv-hover-overlay);
     opacity: 1;
+  }
+
+  /* The one thing that removes data wears the error fill, filled like any other
+     committing action so it still reads as the button that ends the dialog. */
+  .hv-pill.danger {
+    background: var(--hv-error);
+  }
+
+  /* The size a phone's committing action takes: the sheet footers and the
+     detail sheet's action pair are thumb targets, not pointer targets, and one
+     modifier keeps them from each inventing their own height. */
+  .hv-pill.large {
+    min-height: 48px;
+    padding: 0 20px;
+    font-size: 14.5px;
   }
 
   .hv-text-button {

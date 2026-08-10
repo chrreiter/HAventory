@@ -3,7 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
-import { counted, plural } from '../ui/plural';
+import { counted, plural, showingCount } from '../ui/plural';
 import { ResponsiveController } from '../ui/responsive';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
@@ -304,12 +304,6 @@ export class HVCardShell extends LitElement {
       }
       .sheet-footer .apply {
         flex: 1;
-        min-height: 46px;
-        border: none;
-        background: var(--hv-primary);
-        color: var(--hv-text-on-primary);
-        border-radius: var(--hv-radius-chip);
-        font: 500 14.5px var(--hv-font);
       }
       .sheet-head {
         display: flex;
@@ -323,6 +317,9 @@ export class HVCardShell extends LitElement {
         font-weight: 500;
         color: var(--hv-text);
       }
+      /* The footer's way into the expanded view. Sized to the footer it sits in
+         rather than to the card's other text buttons, which is why it is not
+         .hv-text-button: the line it shares with the item count is 12px. */
       .link {
         border: none;
         background: none;
@@ -332,12 +329,6 @@ export class HVCardShell extends LitElement {
         font: 500 12.5px var(--hv-font);
         color: var(--hv-primary-dark);
         padding: 0;
-      }
-      /* A text link in the filter sheet's header is still a control, so it gets
-         a tap-sized target. */
-      :host([mobile]) .link {
-        min-height: var(--hv-tap-min, auto);
-        padding: 0 6px;
       }
     `,
   ];
@@ -1016,11 +1007,7 @@ export class HVCardShell extends LitElement {
 
       ${loaded > 0
         ? html`<div class="footer">
-            <span data-testid="showing-count">
-              ${total !== null && total !== undefined
-                ? `Showing ${loaded} of ${total}${filterCount > 0 ? ' filtered' : ''}`
-                : `Showing ${loaded}`}
-            </span>
+            <span data-testid="showing-count">${showingCount(loaded, total, filterCount > 0)}</span>
             ${mobile
               ? null
               : html`<button
@@ -1068,7 +1055,7 @@ export class HVCardShell extends LitElement {
               <span class="heading">Filters</span>
               <span style="font-size:12.5px;color:var(--hv-text-secondary)">${stagedFilterCount} active</span>
               <button
-                class="link"
+                class="hv-text-button"
                 style="margin-left:auto"
                 data-testid="sheet-clear-all"
                 @click=${() => this._filterPanel?.clearAll()}
@@ -1090,7 +1077,7 @@ export class HVCardShell extends LitElement {
                 Cancel
               </button>
               <button
-                class="apply"
+                class="hv-pill large apply"
                 data-testid="sheet-apply"
                 @click=${() => this._filterPanel?.apply()}
               >

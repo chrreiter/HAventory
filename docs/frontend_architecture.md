@@ -106,7 +106,7 @@ haventory-card                     Lovelace element; store owner
         │                          same ⋮ actions the card's rows do
         ├── hv-detail-sheet        the read view at phone width, the same one the
         │                          card opens
-        ├── hv-checkout-popover    the row menu's due-date step
+        ├── hv-checkout-popover    due-date step for a row and for a selection
         └── hv-bulk-bar            bulk actions, progress, per-operation results
 ```
 
@@ -496,6 +496,13 @@ Any other key in that record is ignored, so an older or newer payload never brea
 - **Bulk work is chunked**, so progress is determinate and cancel stops cleanly after the
   in-flight chunk. Nothing is rolled back — the endpoint is not transactional, and the UI
   says so.
+- **A batch asks whatever the single row is asked.** The bar owns the steps that only
+  concern a selection (which location, which tags); the two questions a single row already
+  has a surface for — the delete confirmation and check-out's due date — belong to the
+  host, which opens the same `hv-confirm` and `hv-checkout-popover` once and applies the
+  one answer to every selected item. A `check-out` run detail carrying no `dueDate` key at
+  all is how the bar says "ask"; `dueDate: null` is a user who chose no due date. Check-in
+  stays immediate: there is nothing to ask.
 - **Per-operation results.** `haventory/items/bulk` returns a result per operation and
   partial failure is normal, so the result panel names every failed row, translates its
   error, and offers a retry scoped to those. Retries rebuild their operations rather than

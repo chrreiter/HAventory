@@ -586,7 +586,8 @@ throughout.
   something, always names a location.
 - **Check-out** invites an optional due date (+7 / +31 / +90 / +X day suggestions) rather
   than silently checking out with none — the date is what makes overdue highlighting mean
-  anything. "No due date" stays a first-class choice.
+  anything. "No due date" stays a first-class choice. Checking out a whole selection asks
+  the same question once and gives every item the answer.
 - **Mobile** — the card switches layout from its own width. Tapping a row opens one bottom
   sheet holding everything about the item; filters open as a staged sheet whose apply
   button shows the live matching count. Every surface honours the same 44px touch minimum

@@ -458,7 +458,7 @@ describe('hv-organize-dialog: locations', () => {
 
     it('moves the subtree when a different parent is picked', async () => {
       const { el, sr, calls } = await editShelfA();
-      await pickParent(el, sr, '[data-testid="tree-select"][data-id="attic"]');
+      await pickParent(el, sr, '[data-testid="tree-row"][data-id="attic"]');
 
       (q(sr, '[data-testid="location-save"]') as HTMLButtonElement).click();
       await settle(el);
@@ -621,7 +621,7 @@ describe('hv-organize-dialog: locations', () => {
   // the way into the items.
   it('opens the items behind a location from its name or its count', async () => {
     const items = [makeItem({ id: '1', location_id: 'shelf-a' })];
-    for (const testid of ['tree-select', 'tree-count']) {
+    for (const testid of ['tree-row', 'tree-count']) {
       const { el, store, sr } = await mount({ items, locations });
       const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
       let browsed = 0;
@@ -691,7 +691,7 @@ describe('hv-organize-dialog: locations', () => {
     await settle(el);
     expect(disabled()).toEqual(expect.arrayContaining(['garage', 'shelf-a']));
 
-    (picker.shadowRoot?.querySelector('[data-testid="tree-select"][data-id="workshop"]') as HTMLButtonElement).click();
+    (picker.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="workshop"]') as HTMLButtonElement).click();
     await settle(el);
     expect(q(sr, '[data-testid="merge-effect"]')?.textContent).toContain('2 items and 1 sub-location');
 
@@ -729,7 +729,7 @@ describe('hv-organize-dialog: locations', () => {
     (q(sr, '[data-testid="merge-target"]') as HTMLButtonElement).click();
     await settle(el);
     const picker = q(sr, '[data-testid="merge-target-tree"]') as HTMLElement;
-    (picker.shadowRoot?.querySelector('[data-testid="tree-select"][data-id="workshop"]') as HTMLButtonElement).click();
+    (picker.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="workshop"]') as HTMLButtonElement).click();
     await settle(el);
     (q(sr, '[data-testid="merge-apply"]') as HTMLButtonElement).click();
     for (let i = 0; i < 4; i += 1) await settle(el);
@@ -1443,7 +1443,7 @@ describe('hv-organize-dialog: statuses', () => {
     const css = dialogCss();
     expect(css).toMatch(/:host \{[^}]*--hv-organize-row-pad: 8px/);
     expect(css).toMatch(/\.value-row \{[^}]*padding: var\(--hv-organize-row-pad\) 8px/);
-    // Nothing re-declares it per tab, or the tabs could drift again.
+    // Nothing redeclares it per tab, or the tabs could drift again.
     expect(css.match(/--hv-organize-row-pad:/g)).toHaveLength(1);
   });
 

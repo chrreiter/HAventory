@@ -98,6 +98,11 @@ export class HVListRow extends LitElement {
         text-align: left;
         color: inherit;
         font: inherit;
+        /* A row opens the item it names, but it is a role=row div rather than a
+           button — it has to hold the chips and controls a button cannot
+           legally contain — so the hand that the shared button rule gives every
+           other target has to be asked for here. */
+        cursor: pointer;
       }
       :host([mobile]) .row {
         padding: 11px 14px;

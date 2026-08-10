@@ -756,3 +756,10 @@ describe('hv-data-table: row menu', () => {
     expect(seen).toEqual(['key', 'delete']);
   });
 });
+
+describe('hv-data-table: the row is a target', () => {
+  it('shows the hand on a body row and not on the header', () => {
+    expect(tableCss()).toMatch(/\.row \{[^}]*cursor: pointer/);
+    expect(tableCss()).not.toMatch(/\.head \{[^}]*cursor: pointer/);
+  });
+});

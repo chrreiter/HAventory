@@ -36,6 +36,14 @@ const POLICIES: { id: ImportPolicy; title: string; description: string }[] = [
 ];
 
 /**
+ * The name a policy was picked by. The preview quotes the choice back, and the
+ * wire value ("merge") is not what the user pressed ("Merge").
+ */
+function policyTitle(id: ImportPolicy): string {
+  return POLICIES.find((p) => p.id === id)?.title ?? id;
+}
+
+/**
  * Restore from a backup.
  *
  * The server-side dry run is mandatory and stays that way: nothing is written
@@ -97,6 +105,11 @@ export class HVImportSheet extends LitElement {
         font-size: 12.5px;
         color: var(--hv-text-secondary);
         margin-top: 3px;
+      }
+      /* The one thing in this line the user chose, lifted out of the secondary
+         ink the rest of it sits in. */
+      .head .sub .policy-name {
+        color: var(--hv-text);
       }
       .body {
         flex: 1;
@@ -279,17 +292,6 @@ export class HVImportSheet extends LitElement {
         color: var(--hv-text-tertiary);
         margin-right: auto;
       }
-      .primary {
-        border: none;
-        border-radius: var(--hv-radius-chip);
-        background: var(--hv-primary);
-        color: var(--hv-text-on-primary);
-        padding: 9px 20px;
-        font: 500 13.5px var(--hv-font);
-      }
-      .primary[disabled] {
-        opacity: 0.5;
-      }
       .reveal {
         position: absolute;
         width: 1px;
@@ -468,7 +470,7 @@ export class HVImportSheet extends LitElement {
         <span class="hint">Import applies for every connected client</span>
         <button class="hv-text-button" data-testid="import-cancel" @click=${this._close}>Cancel</button>
         <button
-          class="primary"
+          class="hv-pill"
           data-testid="import-preview"
           ?disabled=${!this._text.trim() || this.busy}
           @click=${() => this._emit('preview')}
@@ -525,7 +527,7 @@ export class HVImportSheet extends LitElement {
           ${this._copied ? 'Copied' : 'Copy errors'}
         </button>
         <button
-          class="primary"
+          class="hv-pill"
           data-testid="import-back"
           @click=${() =>
             this.dispatchEvent(new CustomEvent('invalidate-preview', { bubbles: true, composed: true }))}
@@ -547,7 +549,7 @@ export class HVImportSheet extends LitElement {
         <div class="row"><h2>Import backup · preview</h2></div>
         <div class="sub">
           Step 2 of 2 · validated on the server, nothing written yet · policy
-          <strong style="color:var(--hv-text)">${preview.policy}</strong>
+          <strong class="policy-name">${policyTitle(preview.policy)}</strong>
         </div>
       </div>
       <div class="body">
@@ -588,7 +590,7 @@ export class HVImportSheet extends LitElement {
         <span class="hint"></span>
         <button class="hv-text-button" data-testid="import-cancel" @click=${this._close}>Cancel</button>
         <button
-          class="primary"
+          class="hv-pill"
           data-testid="import-execute"
           ?disabled=${this.busy}
           @click=${() => this._emit('execute')}
@@ -629,7 +631,7 @@ export class HVImportSheet extends LitElement {
       </div>
       <div class="foot">
         <span class="hint"></span>
-        <button class="primary" data-testid="import-done" @click=${this._close}>Done</button>
+        <button class="hv-pill" data-testid="import-done" @click=${this._close}>Done</button>
       </div>
     `;
   }
