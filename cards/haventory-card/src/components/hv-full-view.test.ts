@@ -174,6 +174,14 @@ describe('hv-full-view: phone-width app bar', () => {
     // context bar are on this surface too and need the same sizing.
     expect(narrow()).toMatch(/\.shell \{[^}]*--hv-tap-min: 44px/);
     expect(narrow()).toMatch(/\.shell \{[^}]*--hv-input-font: 16px/);
+    // And outside the query, where the card's own idea of narrow used to reach
+    // in: an overlay renders inside hv-card-shell's tree, which declares both
+    // of these for a card measured at 600px or under — an ordinary dashboard
+    // column on a desktop. The guaranteed-invalid value rather than a number,
+    // so each consumer keeps the size it was written with.
+    const shell = /\.shell \{([^}]*)\}/.exec(fullCss())?.[1] ?? '';
+    expect(shell).toMatch(/--hv-tap-min: initial/);
+    expect(shell).toMatch(/--hv-input-font: initial/);
   });
 
   // Selection mode reuses the same bar. `.subcount` was the only shrinkable

@@ -95,6 +95,24 @@ export class HVFullView extends LitElement {
         grid-template-rows: auto 1fr;
         background: var(--hv-surface);
         color: var(--hv-text);
+        /*
+         * This surface covers the viewport, so how wide the card that opened it
+         * happens to be says nothing about it. As an overlay it renders inside
+         * the card's shadow tree, and hv-card-shell declares both of these on
+         * :host([mobile]) — a card measured at 600px or under, which an
+         * ordinary dashboard column is on a desktop. Every field and every
+         * pressable row in here took phone sizing from that.
+         *
+         * Set to the guaranteed-invalid value rather than to a number: each
+         * consumer then falls back to the size it was written with — 36px for
+         * an app-bar button, 34px for the tally slot, 13.5px for the search
+         * box — instead of one value flattening all of them. The media query
+         * below raises both to touch sizing on a narrow *viewport*, which is
+         * the only signal that means anything here, and it does so in the
+         * panel and in the overlay alike.
+         */
+        --hv-tap-min: initial;
+        --hv-input-font: initial;
         /* The app bar does not compress below 778px — close, the title, the
            search box's own minimum, three count pills, Add item and the ⋮ —
            and the grid column takes that minimum whatever the screen is. On a
@@ -314,10 +332,10 @@ export class HVFullView extends LitElement {
            with no horizontal scroll, which put Add item (532..636), the badges
            and the ⋮ (648..682) permanently off-screen — you could not add an
            item or open the menu at all. */
-        /* This surface fills the screen even when the card that opened it is
-           narrow, so it sets its own touch sizing rather than inheriting the
-           card's. Declared on the shell so the table, its sort headers and the
-           context bar are covered too, not just the app bar. */
+        /* Touch sizing on a narrow viewport, which is the one measurement that
+           describes this surface — the base rule above holds the card's own
+           idea of narrow off it. Declared on the shell so the table, its sort
+           headers and the context bar are covered too, not just the app bar. */
         .shell {
           --hv-tap-min: 44px;
           --hv-input-font: 16px;
