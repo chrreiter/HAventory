@@ -505,7 +505,7 @@ describe('hv-full-view: sidebar', () => {
     const { el, store, sr } = await mount({ items: [makeItem({ id: '1' })], locations });
     const tree = q(sr, '[data-testid="sidebar-tree"]') as HTMLElement;
 
-    (tree.shadowRoot?.querySelector('[data-testid="tree-select"][data-id="garage"]') as HTMLButtonElement).click();
+    (tree.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="garage"]') as HTMLButtonElement).click();
     await settle(el);
     expect(store.state.value.filters.locationId).toBe('garage');
 
@@ -975,11 +975,19 @@ describe('hv-full-view: context bar and table', () => {
     }
   });
 
-  it('counts loaded rows against the filtered total', async () => {
+  // The same sentence the card's footer prints — the two used to phrase one
+  // fact two ways, and neither named what it was counting.
+  it('counts loaded rows against the filtered total, in the words the card uses', async () => {
     const items = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}` }));
-    const { sr } = await mount({ items });
-    expect(q(sr, '[data-testid="full-footer"]')?.textContent).toContain('Showing 50 of 60');
-    expect(q(sr, '[data-testid="full-footer"]')?.textContent).toContain('scroll to load more');
+    const { el, store, sr } = await mount({ items });
+    expect(q(sr, '[data-testid="full-footer"]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Showing 50 of 60 items · scroll to load more',
+    );
+
+    store.setFilters({ q: 'i1' });
+    await settle(el);
+    await settle(el);
+    expect(q(sr, '[data-testid="full-footer"]')?.textContent).toContain('matching item');
   });
 });
 
@@ -1812,7 +1820,7 @@ describe('hv-full-view: selection and bulk actions', () => {
     (bar.shadowRoot?.querySelector('[data-testid="bulk-action"][data-action="move"]') as HTMLButtonElement).click();
     await settle(el);
     const tree = bar.shadowRoot?.querySelector('hv-location-tree') as HTMLElement;
-    (tree.shadowRoot?.querySelector('[data-testid="tree-select"][data-id="workshop"]') as HTMLButtonElement).click();
+    (tree.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="workshop"]') as HTMLButtonElement).click();
     await settle(el);
     await settle(el);
 
@@ -1856,6 +1864,88 @@ describe('hv-full-view: selection and bulk actions', () => {
     );
     expect(bar.shadowRoot?.querySelector('[data-testid="bulk-failure"]')?.textContent).toContain('Stubborn');
     expect([...store.state.value.selection]).toEqual(['2']);
+  });
+
+  // Bulk check-out used to fire on the press with no due date at all, so a
+  // batch could never go overdue while a single row was always asked.
+  describe('bulk check-out asks for a due date, once', () => {
+    async function selectTwoAndCheckOut() {
+      const items = [makeItem({ id: '1' }), makeItem({ id: '2' })];
+      const mounted = await mount({ items });
+      const { el, sr } = mounted;
+      el.menuEntries = withSelectEntry.entries;
+      await settle(el);
+      await enterSelection(el, sr);
+
+      (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
+      await settle(el);
+      (bulkBar(sr).shadowRoot?.querySelector('[data-action="check-out"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      const popover = q(sr, '[data-testid="full-bulk-checkout"]') as HTMLElement & { open: boolean };
+      return { ...mounted, popover };
+    }
+
+    it('opens one popover for the whole selection and applies the date to every row', async () => {
+      const { el, store, popover } = await selectTwoAndCheckOut();
+      expect(popover.open).toBe(true);
+      // One question, named for what it covers.
+      expect(popover.shadowRoot?.querySelector('[data-testid="checkout-title"]')?.textContent).toContain(
+        'Check out 2 items',
+      );
+      // Nothing has run yet.
+      expect(store.state.value.items.some((i) => i.checked_out)).toBe(false);
+
+      const date = popover.shadowRoot?.querySelector(
+        '[data-testid="checkout-date"] input',
+      ) as HTMLInputElement;
+      date.value = '2031-04-05';
+      date.dispatchEvent(new Event('input', { bubbles: true }));
+      await settle(el);
+      (popover.shadowRoot?.querySelector('[data-testid="checkout-confirm"]') as HTMLButtonElement).click();
+      await settle(el);
+      await settle(el);
+
+      expect(store.state.value.items.map((i) => [i.checked_out, i.due_date])).toEqual([
+        [true, '2031-04-05'],
+        [true, '2031-04-05'],
+      ]);
+    });
+
+    it('honours the explicit no-date choice', async () => {
+      const { el, store, popover } = await selectTwoAndCheckOut();
+      (popover.shadowRoot?.querySelector('[data-testid="checkout-no-date"]') as HTMLButtonElement).click();
+      await settle(el);
+      await settle(el);
+
+      expect(store.state.value.items.every((i) => i.checked_out && i.due_date === null)).toBe(true);
+    });
+
+    it('checks nothing out when the question is cancelled', async () => {
+      const { el, store, popover } = await selectTwoAndCheckOut();
+      (popover.shadowRoot?.querySelector('[data-testid="checkout-cancel"]') as HTMLButtonElement).click();
+      await settle(el);
+      await settle(el);
+
+      expect(store.state.value.items.some((i) => i.checked_out)).toBe(false);
+    });
+
+    // Nothing to ask about, so nothing is asked.
+    it('leaves bulk check-in immediate', async () => {
+      const items = [makeItem({ id: '1', checked_out: true }), makeItem({ id: '2', checked_out: true })];
+      const { el, store, sr } = await mount({ items });
+      el.menuEntries = withSelectEntry.entries;
+      await settle(el);
+      await enterSelection(el, sr);
+
+      (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
+      await settle(el);
+      (bulkBar(sr).shadowRoot?.querySelector('[data-action="check-in"]') as HTMLButtonElement).click();
+      await settle(el);
+      await settle(el);
+
+      expect(store.state.value.items.every((i) => !i.checked_out)).toBe(true);
+    });
   });
 
   it('confirms a bulk delete and warns about checked-out items', async () => {

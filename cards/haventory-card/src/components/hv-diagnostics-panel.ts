@@ -198,14 +198,6 @@ export class HVDiagnosticsPanel extends LitElement {
       .foot .spacer {
         margin-left: auto;
       }
-      .primary {
-        border: none;
-        border-radius: var(--hv-radius-chip);
-        background: var(--hv-primary);
-        color: var(--hv-text-on-primary);
-        padding: 9px 20px;
-        font: 500 13.5px var(--hv-font);
-      }
     `,
     dialogSheet,
   ];
@@ -398,7 +390,9 @@ export class HVDiagnosticsPanel extends LitElement {
             >
               ${this._copied ? 'Copied' : 'Copy report'}
             </button>
-            <button class="primary" data-testid="diagnostics-close" @click=${this._close}>Close</button>
+            <!-- This panel reports; it commits nothing. Its way out is drawn as
+                 an outline so the filled shape keeps meaning "this writes". -->
+            <button class="hv-pill outline" data-testid="diagnostics-close" @click=${this._close}>Close</button>
           </div>
         </div>
       </div>

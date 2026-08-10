@@ -170,6 +170,18 @@ describe('hv-import-sheet: preview', () => {
     expect(counts['locations-add']).toContain('+4');
   });
 
+  // The wire value is not what the user pressed, and the preview is quoting
+  // their choice back at them.
+  it('names the policy the way the card offered it', async () => {
+    const merge = await mount({ preview: preview() });
+    const sub = merge.shadowRoot?.querySelector('.head .sub')?.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(sub).toContain('policy Merge');
+    expect(sub).not.toContain('policy merge');
+
+    const skip = await mount({ preview: preview({ policy: 'skip' }) });
+    expect(skip.shadowRoot?.querySelector('.head .sub')?.textContent).toContain('Skip');
+  });
+
   it('explains what the chosen policy does with conflicts', async () => {
     const merge = await mount({ preview: preview({ items: { add: [], update: [], conflict: ['x'], unchanged: [] } }) });
     expect(q(merge, '[data-testid="import-conflicts"]')?.textContent).toContain("Merge keeps the file's values");

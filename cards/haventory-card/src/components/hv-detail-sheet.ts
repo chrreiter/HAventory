@@ -241,27 +241,19 @@ export class HVDetailSheet extends LitElement {
         grid-template-columns: 1fr 1fr;
         gap: 10px;
       }
+      /* The pair's other half. It shares the row with an .hv-pill.large, and a
+         stretch grid gives both the taller one's height — so a private height
+         here would silently override the modifier that exists to keep every
+         thumb-sized action the same size. */
       .actions .outline {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         gap: 8px;
-        min-height: 50px;
+        min-height: 48px;
         border: 1px solid var(--hv-input-border);
         background: none;
         color: var(--hv-text);
-        border-radius: var(--hv-radius-chip);
-        font: 500 14.5px var(--hv-font);
-      }
-      .actions .primary {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        min-height: 50px;
-        border: none;
-        background: var(--hv-primary);
-        color: var(--hv-text-on-primary);
         border-radius: var(--hv-radius-chip);
         font: 500 14.5px var(--hv-font);
       }
@@ -765,7 +757,7 @@ export class HVDetailSheet extends LitElement {
                 ${icon('account', 18)}Check out
               </button>`}
           <button
-            class="primary"
+            class="hv-pill large"
             data-testid="sheet-edit-details"
             @click=${() => {
               this._mode = 'edit';

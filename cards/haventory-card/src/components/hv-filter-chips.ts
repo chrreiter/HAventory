@@ -162,16 +162,6 @@ export class HVFilterChips extends LitElement {
       .chip svg {
         opacity: 0.8;
       }
-      .clear-all {
-        border: none;
-        background: none;
-        font: 500 12px var(--hv-font);
-        color: var(--hv-text-secondary);
-        padding: 4px 6px;
-      }
-      .clear-all:hover {
-        color: var(--hv-primary-dark);
-      }
     `,
   ];
 
@@ -213,7 +203,7 @@ export class HVFilterChips extends LitElement {
           </button>`,
         )}
         <button
-          class="clear-all"
+          class="hv-text-button"
           data-testid="filter-chips-clear"
           @click=${() =>
             this.dispatchEvent(new CustomEvent('clear-filters', { bubbles: true, composed: true }))}

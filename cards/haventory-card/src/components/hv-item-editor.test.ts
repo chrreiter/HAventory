@@ -550,7 +550,7 @@ describe('hv-item-editor: location and tags', () => {
 
     const treeEl = el.shadowRoot?.querySelector('hv-location-tree') as HTMLElement;
     (
-      treeEl.shadowRoot?.querySelector('[data-testid="tree-select"][data-id="garage"]') as HTMLButtonElement
+      treeEl.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="garage"]') as HTMLButtonElement
     ).click();
     await el.updateComplete;
 

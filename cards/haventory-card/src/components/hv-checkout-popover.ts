@@ -40,6 +40,14 @@ export class HVCheckoutPopover extends LitElement {
         position: fixed;
         inset: 0;
       }
+      /* Anchored, this layer exists only to catch the click that dismisses, and
+         a popover hanging off the control that opened it dims nothing. With no
+         anchor it is a centred dialog instead — asked by a bar that has no
+         control to hang from, about a whole selection — so it dims like the
+         confirm it stands beside, at the same strength. */
+      .scrim.dim {
+        background: rgba(0, 0, 0, 0.35);
+      }
       .card {
         position: fixed;
         width: 300px;
@@ -384,7 +392,12 @@ export class HVCheckoutPopover extends LitElement {
 
     if (this.mobile) return card;
     return html`
-      <div class="scrim" role="presentation" style="z-index:${z}" @click=${this._cancel}></div>
+      <div
+        class="scrim ${this.anchor ? '' : 'dim'}"
+        role="presentation"
+        style="z-index:${z}"
+        @click=${this._cancel}
+      ></div>
       ${card}
     `;
   }

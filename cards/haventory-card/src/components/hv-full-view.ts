@@ -5,7 +5,7 @@ import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
-import { counted, plural } from '../ui/plural';
+import { counted, plural, showingCount } from '../ui/plural';
 import { nextZBase } from '../utils/zindex';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
@@ -834,6 +834,8 @@ export class HVFullView extends LitElement {
   @state() private _bulkProgress: BulkProgress | null = null;
   @state() private _bulkResult: BulkResultView | null = null;
   @state() private _pendingDelete = false;
+  /** The whole selection's check-out is waiting on one due date. */
+  @state() private _pendingBulkCheckout = false;
   /** The row whose check-out / due-date step is open, and where to anchor it. */
   @state() private _checkout: {
     itemId: string;
@@ -1162,6 +1164,7 @@ export class HVFullView extends LitElement {
     this._selecting = false;
     this._bulkResult = null;
     this._lastOps = null;
+    this._pendingBulkCheckout = false;
     this.store?.clearSelection();
   }
 
@@ -1230,6 +1233,13 @@ export class HVFullView extends LitElement {
     if (detail.action === 'delete') {
       // Destructive actions get a confirmation step of their own.
       this._pendingDelete = true;
+      return;
+    }
+    if (detail.action === 'check-out' && detail.dueDate === undefined) {
+      // A check-out with no due date is a check-out nothing can ever call
+      // overdue, so the batch asks the question a single row is asked — once,
+      // and the answer covers the selection.
+      this._pendingBulkCheckout = true;
       return;
     }
     void this._execute(this._opsFor(detail, this._selectedItems));
@@ -2092,9 +2102,9 @@ export class HVFullView extends LitElement {
               : null}
 
             <div class="footer" data-testid="full-footer">
-              ${st?.total !== null && st?.total !== undefined
-                ? `Showing ${loaded} of ${st.total}${st.cursor ? ' · scroll to load more' : ''}`
-                : `Showing ${loaded}`}
+              ${showingCount(loaded, st?.total, activeFilterCount(filters) > 0)}${st?.cursor
+                ? ' · scroll to load more'
+                : ''}
             </div>
           </div>
         </div>
@@ -2182,6 +2192,25 @@ export class HVFullView extends LitElement {
           }}
           @cancel=${() => {
             this._checkout = null;
+          }}
+        ></hv-checkout-popover>
+
+        <!-- Centred at every width rather than following _narrow: the mobile
+             presentation is an inline step drawn inside the surface that opened
+             it, and this one is opened by a bar at the foot of the table with no
+             body of its own to sit in. It anchors to nothing, so it takes the
+             same scrimmed middle-of-the-screen position the bulk confirm does. -->
+        <hv-checkout-popover
+          data-testid="full-bulk-checkout"
+          ?open=${this._pendingBulkCheckout}
+          .itemName=${counted(selection.size, 'item')}
+          @check-out=${(e: CustomEvent) => {
+            const { dueDate } = e.detail as { dueDate: string | null };
+            this._pendingBulkCheckout = false;
+            void this._execute(this._opsFor({ action: 'check-out', dueDate }, this._selectedItems));
+          }}
+          @cancel=${() => {
+            this._pendingBulkCheckout = false;
           }}
         ></hv-checkout-popover>
 

@@ -200,4 +200,18 @@ describe('hv-checkout-popover: placement', () => {
     expect(q(el, '.scrim')).toBe(null);
     expect(q(el, '[data-testid="checkout-popover"]')?.getAttribute('style')).toBe('');
   });
+
+  // Anchored it is a popover, and its scrim is only there to catch the click
+  // that dismisses. With nothing to anchor to it is a centred dialog instead,
+  // and a dialog that does not dim reads as a card floating over a live surface.
+  it('dims the page only when it has no control to hang from', async () => {
+    const anchored = await mount({}, { anchor: { left: 120, bottom: 240 } as DOMRect });
+    expect(q(anchored, '.scrim')?.classList.contains('dim')).toBe(false);
+
+    const centred = await mount({}, { anchor: null });
+    expect(q(centred, '.scrim')?.classList.contains('dim')).toBe(true);
+    expect(
+      (q(centred, '[data-testid="checkout-popover"]') as HTMLElement).getAttribute('style'),
+    ).toContain('left: 50%');
+  });
 });

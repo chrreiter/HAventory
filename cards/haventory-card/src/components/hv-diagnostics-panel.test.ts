@@ -175,6 +175,15 @@ describe('hv-diagnostics-panel: actions', () => {
     expect(el.report).toContain('subscriptions: items=true');
   });
 
+  // This panel writes nothing, so its way out must not wear the shape that
+  // means "commit" on every other surface of the card.
+  it('draws its close as an outline, not as the filled primary', async () => {
+    const el = await mount();
+    const close = q(el, '[data-testid="diagnostics-close"]') as HTMLElement;
+    expect(close.textContent?.trim()).toBe('Close');
+    expect(close.className.split(/\s+/)).toEqual(['hv-pill', 'outline']);
+  });
+
   it('closes from the button, the backdrop and Escape', async () => {
     for (const trigger of ['button', 'backdrop', 'escape'] as const) {
       const el = await mount();

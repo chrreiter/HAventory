@@ -481,20 +481,26 @@ describe('hv-card-shell: list and footer', () => {
     expect(seen).toEqual([0.82]);
   });
 
-  it('counts loaded rows against the filtered total', async () => {
+  it('counts loaded rows against the filtered total, and names the noun', async () => {
     const items = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}` }));
     const { sr } = await mountShell({ items });
-    expect(sr.querySelector('[data-testid="showing-count"]')?.textContent).toContain('Showing 50 of 60');
+    expect(sr.querySelector('[data-testid="showing-count"]')?.textContent?.trim()).toBe(
+      'Showing 50 of 60 items',
+    );
   });
 
-  it('says "filtered" only when a filter is on', async () => {
+  it('says the total is the matching one only when a filter is on', async () => {
     const items = [makeItem({ id: '1', category: 'Tools' }), makeItem({ id: '2', category: 'Other' })];
     const { el, store, sr } = await mountShell({ items });
-    expect(sr.querySelector('[data-testid="showing-count"]')?.textContent).not.toContain('filtered');
+    expect(sr.querySelector('[data-testid="showing-count"]')?.textContent?.trim()).toBe(
+      'Showing 2 of 2 items',
+    );
 
     store.setFilters({ category: 'Tools' });
     await settle(el);
-    expect(sr.querySelector('[data-testid="showing-count"]')?.textContent).toContain('filtered');
+    expect(sr.querySelector('[data-testid="showing-count"]')?.textContent?.trim()).toBe(
+      'Showing 1 of 1 matching item',
+    );
   });
 
   it('adjusts quantity from the row stepper', async () => {
