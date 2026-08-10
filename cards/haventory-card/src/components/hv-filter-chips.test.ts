@@ -110,8 +110,23 @@ describe('chipsFor', () => {
   it('says which way multiple tags combine', () => {
     const any = { ...defaultFilters(), tags: ['a', 'b'], tagsMode: 'any' as const };
     const all = { ...defaultFilters(), tags: ['a', 'b'], tagsMode: 'all' as const };
-    expect(chipsFor(any)[0].label).toBe('any of: a, b');
-    expect(chipsFor(all)[0].label).toBe('all of: a, b');
+    expect(chipsFor(any)[0].label).toBe('any of: #a, #b');
+    expect(chipsFor(all)[0].label).toBe('all of: #a, #b');
+  });
+
+  // Nothing above this row says which filter a chip clears, so a bare value
+  // could be the category, the location or the search box. Every facet that
+  // would otherwise print one names itself.
+  it('names the facet on a chip that would otherwise be a bare value', () => {
+    const filters = { ...defaultFilters(), category: 'Hardware', tags: ['metric'] };
+    expect(chipsFor(filters).map((c) => c.label)).toEqual(['Category: Hardware', 'any of: #metric']);
+  });
+
+  // The mark is the same one the tag chips wear, so the two surfaces read as
+  // one vocabulary rather than two spellings of it.
+  it('marks a single tag the way a tag chip is marked', () => {
+    const filters = { ...defaultFilters(), tags: ['metric'] };
+    expect(chipsFor(filters)[0].label).toBe('any of: #metric');
   });
 
   it('keeps low-stock-only and low-stock-first as separate chips', () => {

@@ -1,7 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { chip } from '../ui/chip';
+import { TAG_MARK, chip } from '../ui/chip';
 import { locationPathParts, pathTitle } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate } from '../ui/relative-time';
@@ -72,9 +72,15 @@ export function chipsFor(
     const area = (ctx.areas ?? []).find((a) => a.id === filters.areaId);
     chips.push({ key: 'areaId', label: `Area: ${area?.name ?? filters.areaId}`, tone: 'primary' });
   }
-  if (filters.category) chips.push({ key: 'category', label: filters.category, tone: 'primary' });
+  // This row has no headings above it, so every chip on it has to name its own
+  // facet: a bare "Hardware" could be a category, a location or the search
+  // text. The facets that read as a bare value say so in words, the way Area
+  // and Status already do; tags carry the same mark they wear as chips, so the
+  // two vocabularies agree.
+  if (filters.category)
+    chips.push({ key: 'category', label: `Category: ${filters.category}`, tone: 'primary' });
   if (filters.tags.length) {
-    const joined = filters.tags.join(', ');
+    const joined = filters.tags.map((t) => `${TAG_MARK}${t}`).join(', ');
     chips.push({
       key: 'tags',
       label: filters.tagsMode === 'all' ? `all of: ${joined}` : `any of: ${joined}`,

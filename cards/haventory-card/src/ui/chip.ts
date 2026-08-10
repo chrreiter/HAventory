@@ -107,12 +107,11 @@ export const chip = css`
     border-color: transparent;
   }
   /* The mark that names the facet without colour, so the distinction survives
-     greyscale and a colourblind reader. Pulled back over the chip's own 4px
-     gap: it belongs to the word, not beside it. Hidden from the accessible
-     name, where it would be read out as part of the tag. */
+     greyscale and a colourblind reader. A shade back, because the value is
+     what is being read; not far enough back to stop carrying the distinction
+     on its own. */
   .hv-tag-mark {
-    margin-inline-end: -4px;
-    opacity: 0.65;
+    opacity: 0.75;
   }
   .hv-chip.warning {
     background: var(--hv-warn-bg);
@@ -280,9 +279,14 @@ export const TAG_MARK = '#';
 /**
  * A tag's name with its mark, for a chip that carries more than the name —
  * the editor's removable token, the filter panel's pressable chip.
+ *
+ * The two sit in one inline box because a chip is a flex row with a gap
+ * between its items, and the gap differs by surface: as separate items they
+ * would read "# spare" here and "#  spare" in the filter panel. The mark is
+ * out of the accessible name, where it would be read as part of the tag.
  */
 export function tagLabel(value: string): TemplateResult {
-  return html`<span class="hv-tag-mark" aria-hidden="true">${TAG_MARK}</span>${value}`;
+  return html`<span><span class="hv-tag-mark" aria-hidden="true">${TAG_MARK}</span>${value}</span>`;
 }
 
 /**
