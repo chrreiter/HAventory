@@ -1,7 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { chip } from '../ui/chip';
+import { chip, tagLabel } from '../ui/chip';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
@@ -1012,6 +1012,18 @@ export class HVOrganizeDialog extends LitElement {
     return this.tab === 'tags' ? 'tag' : 'category';
   }
 
+  /**
+   * One value of whichever facet the open tab manages, chipped the way the rest
+   * of the card chips it: a tag blue and marked, a category neutral.
+   */
+  private _valueChip(value: string, opts: { style?: string; testid?: string } = {}) {
+    const style = opts.style ?? '';
+    const testid = opts.testid ?? '';
+    return this.tab === 'tags'
+      ? html`<span class="hv-chip tag" style=${style} data-testid=${testid}>${tagLabel(value)}</span>`
+      : html`<span class="hv-chip" style=${style} data-testid=${testid}>${value}</span>`;
+  }
+
   /** True while the value exists only on the card, with no item carrying it. */
   private _isDraft(value: string): boolean {
     return this.store?.isDraftValue(this._kind, value) ?? false;
@@ -1546,7 +1558,7 @@ export class HVOrganizeDialog extends LitElement {
 
     return html`<div class="expander" data-testid="value-editor" data-mode=${editing.mode}>
       <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
-        <span class="hv-chip" style=${merging ? 'text-decoration: line-through' : ''}>${value}</span>
+        ${this._valueChip(value, { style: merging ? 'text-decoration: line-through' : undefined })}
         <span style="font-size:12.5px;color:var(--hv-text-secondary)">${counted(count, 'item')}</span>
         ${merging ? icon('arrowRight', 18) : null}
         <label style="display:flex;align-items:center;gap:8px;flex:1;min-width:180px">
@@ -2041,7 +2053,7 @@ export class HVOrganizeDialog extends LitElement {
           ? values.map(
               (v) => html`
                 <div class="value-row" data-testid="value-row" data-value=${v.value}>
-                  <span class="hv-chip">${v.value}</span>
+                  ${this._valueChip(v.value)}
                   ${this._isDraft(v.value)
                     ? html`<span class="draft-note" data-testid="value-draft">
                         new · not saved until an item uses it
@@ -2136,9 +2148,10 @@ export class HVOrganizeDialog extends LitElement {
         <button data-testid="sheet-merge" @click=${() => this._startValueEdit(value, 'merge')}>
           ${icon('callMerge', 20)}Merge into…
           ${suggestion
-            ? html`<span class="hv-chip" style="margin-left:auto" data-testid="sheet-merge-suggestion"
-                >${suggestion}</span
-              >`
+            ? this._valueChip(suggestion, {
+                style: 'margin-left:auto',
+                testid: 'sheet-merge-suggestion',
+              })
             : null}
         </button>
         <button

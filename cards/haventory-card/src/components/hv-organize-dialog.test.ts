@@ -759,6 +759,20 @@ describe('hv-organize-dialog: tags and categories', () => {
     expect(el.open).toBe(false);
   });
 
+  // Two tabs of the same shape, so the chip has to say which facet is on
+  // screen — the tab strip is at the top of the dialog, the rows are not.
+  it('chips a tag as a tag and a category as a category', async () => {
+    const tags = await mount({ items, tab: 'tags' });
+    const tagChip = q(tags.sr, '[data-testid="value-row"] .hv-chip')!;
+    expect(tagChip.classList.contains('tag')).toBe(true);
+    expect(tagChip.textContent?.trim()).toBe('#aa');
+
+    const categories = await mount({ items, tab: 'categories' });
+    const categoryChip = q(categories.sr, '[data-testid="value-row"] .hv-chip')!;
+    expect(categoryChip.classList.contains('tag')).toBe(false);
+    expect(categoryChip.textContent?.trim()).toBe('Consumables');
+  });
+
   async function create(el: HVOrganizeDialog, sr: ShadowRoot, name: string) {
     (q(sr, '[data-testid="organize-new-value"]') as HTMLButtonElement).click();
     await settle(el);

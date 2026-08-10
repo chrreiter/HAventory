@@ -1,7 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { chip } from '../ui/chip';
+import { chip, tagLabel } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { normalizeTags } from '../ui/item-form';
 
@@ -135,8 +135,8 @@ export class HVChipInput extends LitElement {
     return html`
       <div class="field" data-testid="chip-field">
         ${this.values.map(
-          (tag) => html`<span class="hv-chip state chip" data-testid="chip" data-value=${tag}>
-            ${tag}
+          (tag) => html`<span class="hv-chip tag chip" data-testid="chip" data-value=${tag}>
+            ${tagLabel(tag)}
             <button
               class="hv-icon-button chip-remove"
               data-testid="chip-remove"

@@ -95,9 +95,37 @@ describe('hv-detail-sheet: read view', () => {
     expect(q(el, '[data-testid="sheet-out"]')?.textContent).toContain('Checked out · due Jul 31');
     expect(q(el, '[data-testid="sheet-category"]')?.textContent).toContain('Tools');
     expect(all(el, '[data-testid="sheet-tag"]').map((t) => t.textContent?.trim())).toEqual([
-      'electric',
-      'meter',
+      '#electric',
+      '#meter',
     ]);
+  });
+
+  // Same row, same size, same shape: without a marker on the chip itself,
+  // "Tools" and "electric" are one control wearing one fill and only a
+  // household that already knows its own vocabulary can tell which is which.
+  it('tells a category chip from a tag chip without reading either label', async () => {
+    const el = await mount({ category: 'Tools', tags: ['electric'] });
+    const category = q(el, '[data-testid="sheet-category"]')!;
+    const tag = q(el, '[data-testid="sheet-tag"]')!;
+
+    expect(tag.classList.contains('tag')).toBe(true);
+    expect(category.classList.contains('tag')).toBe(false);
+    // The mark carries the distinction in greyscale; the hue is the second signal.
+    expect(tag.querySelector('.hv-tag-mark')?.textContent).toBe('#');
+    expect(category.querySelector('.hv-tag-mark')).toBe(null);
+    // Decoration, not part of the value: a reader is told "electric", not "hash electric".
+    expect(tag.querySelector('.hv-tag-mark')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  // The "Checked out" chip takes the same blue, so the two must not collapse
+  // into one another in the row they share.
+  it('keeps the checked-out chip out of the tag vocabulary', async () => {
+    const el = await mount({ checked_out: true, tags: ['electric'] });
+    const out = q(el, '[data-testid="sheet-out"]')!;
+
+    expect(out.classList.contains('state')).toBe(true);
+    expect(out.classList.contains('tag')).toBe(false);
+    expect(out.querySelector('.hv-tag-mark')).toBe(null);
   });
 
   it('marks an overdue check-out and low stock', async () => {
