@@ -73,8 +73,16 @@ const CONNECTION_LOST_THRESHOLD = 2;
  * once would flash a banner that answers nothing. Long enough to sit out an
  * ordinary reconnect, short enough that a real outage shows up while the user
  * is still looking at the surface that went stale.
+ *
+ * Home Assistant's client retries on a fixed ladder — immediately, then one
+ * second later, then three, then six — so a reconnect does not take an
+ * arbitrary amount of time, it lands on a rung. A socket that drops while the
+ * network is briefly away misses the first two rungs and comes back on the
+ * three-second one, which is an ordinary Wi-Fi roam and must stay silent. This
+ * sits between that rung and the six-second one: past six, the network has been
+ * gone long enough that the outage is worth saying out loud.
  */
-const CONNECTION_LOST_GRACE_MS = 2_000;
+const CONNECTION_LOST_GRACE_MS = 4_500;
 
 /** Attempts (including the first) for a command rejected with `rate_limited`. */
 const RATE_LIMIT_ATTEMPTS = 4;
@@ -378,21 +386,39 @@ export class Store {
   }
 
   // ---------- Initialization and subscriptions ----------
+  /**
+   * Load everything, then start watching for the ways it can go stale.
+   *
+   * The watches are wired in a `finally` because a card is not always built
+   * against a backend that can answer. Home Assistant rebuilds the Lovelace
+   * view when its socket reconnects, and it does so before a restarting
+   * instance has finished setting the integration up — so the first load of
+   * that fresh card is refused, wholesale. Wiring the watches only on the happy
+   * path left such a card with no subscriptions, no connection listeners and
+   * nothing but the loading skeleton, permanently: every route back into the
+   * data is opened here, so failing to reach them is failing for good. Opened
+   * anyway, the refused subscribe retries on its own backoff and re-reads the
+   * inventory once it lands, which is the same path a disabled config entry
+   * already recovers through.
+   */
   async init() {
-    await Promise.all([
-      this.refreshStats(),
-      this.refreshHealth(),
-      this.refreshAreas(),
-      this.refreshLocationTree(),
-      this.refreshLocationsFlat(),
-      this.refreshDistinctValues(),
-      this.refreshVersion(),
-      this.refreshConfig(),
-    ]);
-    await this.listItems(true);
-    this.subscribeTopics();
-    this.watchAreaRegistry();
-    this.watchConnectionGaps();
+    try {
+      await Promise.all([
+        this.refreshStats(),
+        this.refreshHealth(),
+        this.refreshAreas(),
+        this.refreshLocationTree(),
+        this.refreshLocationsFlat(),
+        this.refreshDistinctValues(),
+        this.refreshVersion(),
+        this.refreshConfig(),
+      ]);
+      await this.listItems(true);
+    } finally {
+      this.subscribeTopics();
+      this.watchAreaRegistry();
+      this.watchConnectionGaps();
+    }
   }
 
   /**
@@ -601,20 +627,29 @@ export class Store {
    * A refused subscribe means live updates are gone, silently — no event will
    * ever arrive to hint at it.
    *
-   * Two refusals are worth waiting out. `rate_limited` is the expected one and
+   * Three refusals are worth waiting out. `rate_limited` is the expected one and
    * the contract's guidance is to retry later; `storage_error` is what a backend
-   * with no config entry answers, which a reload clears on its own. Either way
-   * the card backs off and says it is retrying instead of dropping an error on a
-   * user who has done nothing wrong. Once the budget is spent it stops, reports
-   * the refusal and leaves the manual refresh as the way back. Any other refusal
-   * is an outage and is reported at once.
+   * with no config entry answers, which a reload clears on its own; and
+   * `unknown_command` is Home Assistant's own answer for a command type nobody
+   * has registered, which for `haventory/subscribe` means the integration has
+   * not been set up yet. A restarting instance serves the frontend — and the
+   * Lovelace view it rebuilds on reconnect — before it gets that far, so a card
+   * refused this way is early rather than broken. All three back off and say the
+   * card is retrying instead of dropping an error on a user who has done nothing
+   * wrong. Once the budget is spent it stops, reports the refusal and leaves the
+   * manual refresh as the way back. Any other refusal is an outage and is
+   * reported at once.
    */
   private onSubscribeRefused(err: unknown) {
     this.stateObs.set({ connected: { items: false, stats: false } });
 
     const code = errorCode(err);
     const reason: LiveUpdatePause | null =
-      code === 'rate_limited' ? 'rate_limited' : code === 'storage_error' ? 'unavailable' : null;
+      code === 'rate_limited'
+        ? 'rate_limited'
+        : code === 'storage_error' || code === 'unknown_command'
+          ? 'unavailable'
+          : null;
     if (reason === null) {
       this.setDegraded({
         connectionLost: true,
