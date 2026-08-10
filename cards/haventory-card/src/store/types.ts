@@ -507,10 +507,11 @@ export interface HassLike {
       cb: (event: AnyEventPayload) => void,
       msg: Record<string, unknown>,
     ): Unsubscribe | Promise<Unsubscribe>;
-    // Connection lifecycle. `ready` fires once the socket is back and Home
-    // Assistant has re-issued the subscriptions it was holding, so a listener
-    // runs with the watches already live again. Optional because the interface
-    // is structural: a caller may pass a connection that only sends messages.
+    // Connection lifecycle. `disconnected` fires when the socket closes, before
+    // Home Assistant starts reconnecting; `ready` fires once it is back and HA
+    // has re-issued the subscriptions it was holding, so a listener runs with
+    // the watches already live again. Optional because the interface is
+    // structural: a caller may pass a connection that only sends messages.
     addEventListener?(event: 'ready' | 'disconnected', cb: () => void): void;
     removeEventListener?(event: 'ready' | 'disconnected', cb: () => void): void;
   };
@@ -559,7 +560,7 @@ export interface StoreFilters {
 export interface DegradedState {
   /** A command or a subscribe came back `rate_limited`. */
   rateLimited: boolean;
-  /** Consecutive transport-level failures — best-effort, lags a real outage by one call. */
+  /** The socket closed and stayed closed, or calls keep failing before they reach a server. */
   connectionLost: boolean;
   /** Commands currently waiting on an automatic retry. */
   retrying: number;

@@ -41,14 +41,20 @@ export interface BulkResultView {
   failed: BulkFailure[];
 }
 
-const ACTIONS: { id: BulkAction; label: string; glyph?: IconName; immediate?: boolean }[] = [
-  { id: 'move', label: 'Move to…', glyph: 'mapMarker' },
-  { id: 'add-tags', label: 'Add tags…' },
-  { id: 'remove-tags', label: 'Remove tags…' },
-  { id: 'set-category', label: 'Set category…' },
-  { id: 'adjust-qty', label: 'Adjust qty…' },
-  { id: 'check-out', label: 'Check out', immediate: true },
-  { id: 'check-in', label: 'Check in', immediate: true },
+/**
+ * `picker` opens the bar's own inline step and the batch starts when it is
+ * applied. Without it the action leaves the bar the moment it is pressed — for
+ * check-in straight into the batch, for check-out into the host's date popover,
+ * which is why its label carries the same ellipsis the inline steps do.
+ */
+const ACTIONS: { id: BulkAction; label: string; glyph?: IconName; picker?: boolean }[] = [
+  { id: 'move', label: 'Move to…', glyph: 'mapMarker', picker: true },
+  { id: 'add-tags', label: 'Add tags…', picker: true },
+  { id: 'remove-tags', label: 'Remove tags…', picker: true },
+  { id: 'set-category', label: 'Set category…', picker: true },
+  { id: 'adjust-qty', label: 'Adjust qty…', picker: true },
+  { id: 'check-out', label: 'Check out…' },
+  { id: 'check-in', label: 'Check in' },
 ];
 
 /**
@@ -60,7 +66,11 @@ const ACTIONS: { id: BulkAction; label: string; glyph?: IconName; immediate?: bo
  * and it can retry just the failures.
  *
  * Pickers open inline above the bar rather than as dialogs, so the bulk flow
- * never stacks a second dialog over the one the user is already in.
+ * never stacks a second dialog over the one the user is already in. The two
+ * questions the bar does not ask itself belong to the host: the delete
+ * confirmation, and check-out's due date — both are one answer applied to the
+ * whole selection, and the host already owns the surfaces that ask them for a
+ * single row.
  */
 @customElement('hv-bulk-bar')
 export class HVBulkBar extends LitElement {
@@ -101,47 +111,51 @@ export class HVBulkBar extends LitElement {
         overflow: auto;
         padding: 4px 0;
       }
+      .bar,
+      .progress {
+        background: var(--hv-selection-bar);
+        color: var(--hv-on-selection-bar);
+      }
       .bar {
         display: flex;
         align-items: center;
         gap: 8px;
         flex-wrap: wrap;
         padding: 12px 16px;
-        background: #263238;
-        color: #fff;
       }
       .bar .lead {
         font: 500 13px var(--hv-font);
         margin-right: 4px;
       }
-      .bar button {
+      /* Every control drawn on the band, wherever the band appears — the actions
+         and the running batch's Cancel alike. Mixed from the band's own ink so
+         one colour decision carries the whole strip. */
+      .band-button {
         display: inline-flex;
         align-items: center;
         gap: 5px;
         border: none;
         border-radius: var(--hv-radius-chip);
-        background: rgba(255, 255, 255, 0.14);
-        color: #fff;
+        background: color-mix(in srgb, var(--hv-on-selection-bar) 14%, transparent);
+        color: var(--hv-on-selection-bar);
         padding: 7px 14px;
         font: 400 12.5px var(--hv-font);
       }
-      .bar button:hover {
-        background: rgba(255, 255, 255, 0.24);
+      .band-button:hover {
+        background: color-mix(in srgb, var(--hv-on-selection-bar) 24%, transparent);
       }
-      .bar button.active {
-        background: rgba(255, 255, 255, 0.32);
+      .band-button.active {
+        background: color-mix(in srgb, var(--hv-on-selection-bar) 32%, transparent);
       }
-      .bar button.danger {
+      .band-button.danger {
         margin-left: auto;
         background: none;
-        border: 1px solid rgba(239, 83, 80, 0.7);
-        color: #ef9a9a;
+        border: 1px solid color-mix(in srgb, var(--hv-on-selection-bar-danger) 70%, transparent);
+        color: var(--hv-on-selection-bar-danger);
         font-weight: 500;
       }
       .progress {
         padding: 12px 16px;
-        background: #263238;
-        color: #fff;
         display: grid;
         gap: 8px;
       }
@@ -151,10 +165,16 @@ export class HVBulkBar extends LitElement {
         gap: 8px;
         font: 400 12.5px var(--hv-font);
       }
+      .progress .spacer {
+        margin-left: auto;
+      }
+      .progress .failed {
+        opacity: 0.8;
+      }
       .track {
         height: 6px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.2);
+        background: color-mix(in srgb, var(--hv-on-selection-bar) 20%, transparent);
         overflow: hidden;
       }
       .fill {
@@ -353,13 +373,12 @@ export class HVBulkBar extends LitElement {
     return html`<div class="progress" data-testid="bulk-progress">
       <div class="line">
         <span data-testid="bulk-progress-label">${progress.label} ${progress.done} of ${progress.total}</span>
+        <span class="spacer"></span>
         ${progress.failed > 0
-          ? html`<span style="margin-left:auto;opacity:.8" data-testid="bulk-progress-failed"
-              >${progress.failed} failed</span
-            >`
+          ? html`<span class="failed" data-testid="bulk-progress-failed">${progress.failed} failed</span>`
           : null}
         <button
-          style="margin-left:${progress.failed > 0 ? '8px' : 'auto'}"
+          class="band-button"
           data-testid="bulk-cancel"
           @click=${() => this.dispatchEvent(new CustomEvent('cancel-run', { bubbles: true, composed: true }))}
         >
@@ -410,7 +429,7 @@ export class HVBulkBar extends LitElement {
           data-testid="bulk-result-dismiss"
           @click=${() => this.dispatchEvent(new CustomEvent('dismiss-result', { bubbles: true, composed: true }))}
         >
-          Dismiss
+          Close
         </button>
         ${failedCount
           ? html`<button
@@ -441,25 +460,31 @@ export class HVBulkBar extends LitElement {
         <span class="lead" data-testid="bulk-lead">Apply to ${counted(this.selectedCount, 'item')}</span>
         ${ACTIONS.map(
           (action) => html`<button
-            class=${this._active === action.id ? 'active' : ''}
+            class="band-button ${this._active === action.id ? 'active' : ''}"
             data-testid="bulk-action"
             data-action=${action.id}
             @click=${() => {
-              if (action.immediate) {
-                // Check-out sends no due date, which the API allows; the date
-                // step is offered by the check-out popover on single rows.
-                this._run(action.id === 'check-out' ? { action: 'check-out', dueDate: null } : { action: action.id });
-              } else {
+              if (action.picker) {
                 this._active = this._active === action.id ? null : action.id;
                 this._tags = [];
                 this._draft = '';
+              } else {
+                // No due date on the detail: check-out carries one only once the
+                // host's popover has asked for it, and the host tells the two
+                // apart by its absence.
+                this._run({ action: action.id });
               }
             }}
           >
             ${action.glyph ? icon(action.glyph, 15) : null}${action.label}
           </button>`,
         )}
-        <button class="danger" data-testid="bulk-action" data-action="delete" @click=${() => this._run({ action: 'delete' })}>
+        <button
+          class="band-button danger"
+          data-testid="bulk-action"
+          data-action="delete"
+          @click=${() => this._run({ action: 'delete' })}
+        >
           ${icon('del', 15)}Delete
         </button>
       </div>

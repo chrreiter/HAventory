@@ -406,7 +406,7 @@ describe('hv-filter-panel: dates and location', () => {
     await el.updateComplete;
 
     const treeEl = el.shadowRoot?.querySelector('hv-location-tree') as HTMLElement;
-    (treeEl.shadowRoot?.querySelector('[data-testid="tree-select"][data-id="garage"]') as HTMLButtonElement).click();
+    (treeEl.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="garage"]') as HTMLButtonElement).click();
     expect(seen[0]).toEqual({ locationId: 'garage' });
 
     await el.updateComplete;

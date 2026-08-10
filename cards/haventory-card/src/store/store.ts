@@ -47,18 +47,42 @@ const PAGE_LIMIT = 50;
  */
 export const BULK_CHUNK_SIZE = 25;
 
-/** Error codes the backend's taxonomy defines; anything else looks like transport trouble. */
-const DOMAIN_ERROR_CODES = new Set([
-  'validation_error',
-  'not_found',
-  'conflict',
-  'storage_error',
-  'rate_limited',
-  'unknown_error',
-]);
+/**
+ * Code for a failure that never came back from the backend at all.
+ *
+ * Home Assistant rejects a command with the server's own `{code, message}`
+ * envelope when the socket carried it, and with a wrapper of its own — numeric
+ * code, no top-level message — when the socket did not. Only the first kind
+ * says anything about the request, so the second is named for what it is
+ * instead of borrowing the taxonomy's `unknown_error` catch-all and reading, to
+ * the person in front of it, as a fault in the thing they just did.
+ */
+const TRANSPORT_ERROR_CODE = 'connection_lost';
+
+/** What a transport failure says out loud; the rejection carries no usable text. */
+const TRANSPORT_ERROR_MESSAGE = 'Could not reach Home Assistant — the last action did not go through.';
 
 /** Consecutive transport failures before the card declares the connection lost. */
 const CONNECTION_LOST_THRESHOLD = 2;
+
+/**
+ * How long a closed socket may stay closed before the card says so.
+ *
+ * Home Assistant reconnects on its own, and a blip — a suspended tab waking, a
+ * proxy recycling — is over before anyone could act on it, so announcing it at
+ * once would flash a banner that answers nothing. Long enough to sit out an
+ * ordinary reconnect, short enough that a real outage shows up while the user
+ * is still looking at the surface that went stale.
+ *
+ * Home Assistant's client retries on a fixed ladder — immediately, then one
+ * second later, then three, then six — so a reconnect does not take an
+ * arbitrary amount of time, it lands on a rung. A socket that drops while the
+ * network is briefly away misses the first two rungs and comes back on the
+ * three-second one, which is an ordinary Wi-Fi roam and must stay silent. This
+ * sits between that rung and the six-second one: past six, the network has been
+ * gone long enough that the outage is worth saying out loud.
+ */
+const CONNECTION_LOST_GRACE_MS = 4_500;
 
 /** Attempts (including the first) for a command rejected with `rate_limited`. */
 const RATE_LIMIT_ATTEMPTS = 4;
@@ -106,6 +130,14 @@ const AREA_REGISTRY_RETRY_ATTEMPTS = 3;
 /** Event action the backend sends every open subscription as its entry tears down. */
 const BACKEND_UNAVAILABLE_ACTION = 'unavailable';
 
+/**
+ * Removed item ids kept for `wasRemoved`.
+ *
+ * Only a host holding an open editor asks, and it asks about one id, so the
+ * memory has to outlive a bulk delete of the surrounding rows and nothing more.
+ */
+const REMOVED_ID_MEMORY = 200;
+
 const NO_DEGRADATION: DegradedState = {
   rateLimited: false,
   connectionLost: false,
@@ -117,8 +149,16 @@ const NO_DEGRADATION: DegradedState = {
   nextLiveRetryAt: null,
 };
 
+/**
+ * The code a failure travelled home with.
+ *
+ * A string code means a server answered — the backend's taxonomy, or one of
+ * Home Assistant's own refusals. Anything else (a numeric transport code, a
+ * thrown `Error`, nothing at all) never reached one.
+ */
 function errorCode(err: unknown): string {
-  return String((err as { code?: unknown } | undefined)?.code ?? 'unknown_error');
+  const code = (err as { code?: unknown } | undefined)?.code;
+  return typeof code === 'string' && code ? code : TRANSPORT_ERROR_CODE;
 }
 
 function nonNegativeNumber(value: unknown): number | null {
@@ -274,6 +314,10 @@ export class Store {
   private ws: WSClient;
   private stateObs: ReturnType<typeof createObservable<StoreState>>;
   private inflight: Map<string, Promise<unknown>> = new Map();
+  /** Ids removed since this store connected — see `noteRemoved`. */
+  private readonly removedIds = new Set<string>();
+  /** The same ids in removal order, so the oldest can be evicted. */
+  private readonly removedOrder: string[] = [];
   private itemsUnsub: Unsubscribe | null = null;
   private statsUnsub: Unsubscribe | null = null;
   private locationsUnsub: Unsubscribe | null = null;
@@ -297,8 +341,11 @@ export class Store {
   private areaRegistryRetryHandle: ReturnType<typeof setTimeout> | null = null;
   /** Identifies the newest area-registry watch, so a superseded one stops reporting. */
   private areaRegistryGeneration = 0;
-  /** Detaches the connection-lifecycle listener; null while none is attached. */
+  /** Detaches the connection-lifecycle listeners; null while none is attached. */
   private connectionReadyUnsub: Unsubscribe | null = null;
+  private connectionLostUnsub: Unsubscribe | null = null;
+  /** Counts down the grace period on a closed socket; null while it is open. */
+  private connectionLostHandle: ReturnType<typeof setTimeout> | null = null;
   /** Last untouched `distinct_values` result, so drafts can be re-merged. */
   private serverDistinct: DistinctValues | null = null;
   /** Values named in the organize dialog that no item carries yet. */
@@ -339,36 +386,79 @@ export class Store {
   }
 
   // ---------- Initialization and subscriptions ----------
+  /**
+   * Load everything, then start watching for the ways it can go stale.
+   *
+   * The watches are wired in a `finally` because a card is not always built
+   * against a backend that can answer. Home Assistant rebuilds the Lovelace
+   * view when its socket reconnects, and it does so before a restarting
+   * instance has finished setting the integration up — so the first load of
+   * that fresh card is refused, wholesale. Wiring the watches only on the happy
+   * path left such a card with no subscriptions, no connection listeners and
+   * nothing but the loading skeleton, permanently: every route back into the
+   * data is opened here, so failing to reach them is failing for good. Opened
+   * anyway, the refused subscribe retries on its own backoff and re-reads the
+   * inventory once it lands, which is the same path a disabled config entry
+   * already recovers through.
+   */
   async init() {
-    await Promise.all([
-      this.refreshStats(),
-      this.refreshHealth(),
-      this.refreshAreas(),
-      this.refreshLocationTree(),
-      this.refreshLocationsFlat(),
-      this.refreshDistinctValues(),
-      this.refreshVersion(),
-      this.refreshConfig(),
-    ]);
-    await this.listItems(true);
-    this.subscribeTopics();
-    this.watchAreaRegistry();
-    this.watchConnectionGaps();
+    try {
+      await Promise.all([
+        this.refreshStats(),
+        this.refreshHealth(),
+        this.refreshAreas(),
+        this.refreshLocationTree(),
+        this.refreshLocationsFlat(),
+        this.refreshDistinctValues(),
+        this.refreshVersion(),
+        this.refreshConfig(),
+      ]);
+      await this.listItems(true);
+    } finally {
+      this.subscribeTopics();
+      this.watchAreaRegistry();
+      this.watchConnectionGaps();
+    }
   }
 
   /**
-   * Re-read the areas whenever the connection comes back from a drop.
+   * Follow the socket itself, in both directions.
    *
-   * A dropped socket is the gap the registry watch cannot see: Home Assistant
+   * Coming back is the gap the registry watch cannot see: Home Assistant
    * re-issues the subscriptions it held before it reports `ready`, so the
    * subscribe neither fails nor re-opens and `watchAreaRegistry`'s catch-up
    * never runs — yet an area renamed while the socket was down fired its event
-   * into a closed connection. Only a refetch closes that, so it is driven off
-   * the connection's own lifecycle rather than off the watch.
+   * into a closed connection. Only a refetch closes that.
+   *
+   * Going down is what a surface nobody is touching has no other way to learn.
+   * Every other outage signal the card has comes from a call it made, so a list
+   * left open across a restart would go on showing pre-outage data, silently,
+   * until someone tried something.
    */
   private watchConnectionGaps() {
     this.connectionReadyUnsub?.();
-    this.connectionReadyUnsub = this.ws.onConnectionReady(() => this.scheduleAreasRefresh());
+    this.connectionLostUnsub?.();
+    this.connectionReadyUnsub = this.ws.onConnectionReady(() => {
+      this.cancelConnectionLostGrace();
+      this.noteSuccess();
+      this.scheduleAreasRefresh();
+    });
+    this.connectionLostUnsub = this.ws.onConnectionLost(() => this.startConnectionLostGrace());
+  }
+
+  /** Declare the connection lost unless it comes back inside the grace period. */
+  private startConnectionLostGrace() {
+    if (this.connectionLostHandle !== null) return;
+    this.connectionLostHandle = setTimeout(() => {
+      this.connectionLostHandle = null;
+      this.setDegraded({ connectionLost: true });
+    }, CONNECTION_LOST_GRACE_MS);
+  }
+
+  private cancelConnectionLostGrace() {
+    if (this.connectionLostHandle === null) return;
+    clearTimeout(this.connectionLostHandle);
+    this.connectionLostHandle = null;
   }
 
   /**
@@ -537,20 +627,29 @@ export class Store {
    * A refused subscribe means live updates are gone, silently — no event will
    * ever arrive to hint at it.
    *
-   * Two refusals are worth waiting out. `rate_limited` is the expected one and
+   * Three refusals are worth waiting out. `rate_limited` is the expected one and
    * the contract's guidance is to retry later; `storage_error` is what a backend
-   * with no config entry answers, which a reload clears on its own. Either way
-   * the card backs off and says it is retrying instead of dropping an error on a
-   * user who has done nothing wrong. Once the budget is spent it stops, reports
-   * the refusal and leaves the manual refresh as the way back. Any other refusal
-   * is an outage and is reported at once.
+   * with no config entry answers, which a reload clears on its own; and
+   * `unknown_command` is Home Assistant's own answer for a command type nobody
+   * has registered, which for `haventory/subscribe` means the integration has
+   * not been set up yet. A restarting instance serves the frontend — and the
+   * Lovelace view it rebuilds on reconnect — before it gets that far, so a card
+   * refused this way is early rather than broken. All three back off and say the
+   * card is retrying instead of dropping an error on a user who has done nothing
+   * wrong. Once the budget is spent it stops, reports the refusal and leaves the
+   * manual refresh as the way back. Any other refusal is an outage and is
+   * reported at once.
    */
   private onSubscribeRefused(err: unknown) {
     this.stateObs.set({ connected: { items: false, stats: false } });
 
     const code = errorCode(err);
     const reason: LiveUpdatePause | null =
-      code === 'rate_limited' ? 'rate_limited' : code === 'storage_error' ? 'unavailable' : null;
+      code === 'rate_limited'
+        ? 'rate_limited'
+        : code === 'storage_error' || code === 'unknown_command'
+          ? 'unavailable'
+          : null;
     if (reason === null) {
       this.setDegraded({
         connectionLost: true,
@@ -611,9 +710,12 @@ export class Store {
     // dashboard — a listener left behind would refetch for a disposed store on
     // every reconnect, for as long as the page is open.
     this.connectionReadyUnsub?.();
+    this.connectionLostUnsub?.();
+    this.cancelConnectionLostGrace();
     this.itemsUnsub = this.statsUnsub = this.locationsUnsub = this.statusesUnsub = null;
     this.areaRegistryUnsub = null;
     this.connectionReadyUnsub = null;
+    this.connectionLostUnsub = null;
     // Nothing is listening after this, so a queued re-subscribe must not fire.
     this.subscribeRound += 1;
     this.areaRegistryGeneration += 1;
@@ -657,10 +759,12 @@ export class Store {
       case 'checked_in':
       case 'quantity_changed': {
         if (idx >= 0) items[idx] = item; else items.unshift(item);
+        this.forgetRemoved(item.id);
         break;
       }
       case 'deleted': {
         if (idx >= 0) items.splice(idx, 1);
+        this.noteRemoved(item.id);
         break;
       }
     }
@@ -1007,11 +1111,13 @@ export class Store {
   setFilters(patch: Partial<StoreFilters>) {
     const next = { ...this.state.value.filters, ...patch };
     const locationChanged = next.locationId !== this.state.value.filters.locationId;
+    // The rows already loaded stay on screen until the refetch lands, marked as
+    // loading. Blanking them is what tore the scroller down mid-edit and took an
+    // open editor with it; `listItems(true)` replaces the array wholesale anyway,
+    // so nothing here has to clear it first.
     this.stateObs.set({
       filters: next,
       cursor: null,
-      items: [],
-      total: null,
       loading: true,
       // A row that is no longer listed cannot stay selected.
       selection: new Set<string>(),
@@ -1092,10 +1198,12 @@ export class Store {
   }
 
   /**
-   * Classify a failure. A code from the backend's taxonomy means the socket is
-   * fine and the command was refused; anything else is transport trouble, and a
-   * run of those is the only "connection lost" signal a card can observe — HA's
-   * WS client reconnects transparently and exposes no disconnect event.
+   * Classify a failure. A refusal that came back over the socket — including
+   * the taxonomy's `unknown_error` catch-all — proves the transport works and
+   * says only that the command was rejected. A run of failures that carry no
+   * such answer is the second "connection lost" signal, alongside the socket's
+   * own `disconnected` event: it catches the outages that close no socket, such
+   * as a server that accepts the connection and stops answering on it.
    */
   private noteFailure(err: unknown) {
     const code = errorCode(err);
@@ -1103,7 +1211,7 @@ export class Store {
       this.setDegraded({ rateLimited: true });
       return;
     }
-    if (DOMAIN_ERROR_CODES.has(code) && code !== 'unknown_error') {
+    if (code !== TRANSPORT_ERROR_CODE) {
       this.consecutiveTransportFailures = 0;
       return;
     }
@@ -1169,6 +1277,8 @@ export class Store {
    */
   async refreshAll(): Promise<void> {
     this.consecutiveTransportFailures = 0;
+    // The calls below re-answer the question the grace period was waiting on.
+    this.cancelConnectionLostGrace();
     this.setDegraded({ ...NO_DEGRADATION });
     await this.reloadAll();
     // Re-establish subscriptions in case one of them was refused earlier.
@@ -1510,8 +1620,15 @@ export class Store {
   private pushError(err: unknown, details?: { itemId?: string; changes?: ItemUpdate }) {
     // Home Assistant callWS returns an error envelope with {code, message, context}
     const anyErr = err as { code?: unknown; message?: unknown; context?: unknown; data?: unknown } | undefined;
-    const code = String(anyErr?.code ?? 'unknown_error');
-    const message = String(anyErr?.message ?? 'Unknown error');
+    const code = errorCode(err);
+    const transport = code === TRANSPORT_ERROR_CODE;
+    // An outage fails every call in flight and every one the user tries next,
+    // each of them with the same sentence. One entry stands for all of them —
+    // the degraded stack above is what tracks the connection itself.
+    if (transport && this.state.value.errorQueue.some((e) => e.code === TRANSPORT_ERROR_CODE)) return;
+    // A transport rejection carries either nothing or a socket-level string; in
+    // both cases the card's own wording is the only one worth showing.
+    const message = transport ? TRANSPORT_ERROR_MESSAGE : String(anyErr?.message ?? 'Unknown error');
     const context = (anyErr?.context ?? anyErr?.data ?? null) as Record<string, unknown> | null;
     const entry = {
       id: `${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
@@ -1545,12 +1662,45 @@ export class Store {
     const items = this.state.value.items.slice();
     const idx = items.findIndex((x) => x.id === item.id);
     if (idx >= 0) items[idx] = item; else items.unshift(item);
+    // A rolled-back delete puts the row back, so it is no longer gone.
+    this.forgetRemoved(item.id);
     this.stateObs.set({ items });
   }
 
   private removeById(itemId: string) {
     const items = this.state.value.items.filter((x) => x.id !== itemId);
+    this.noteRemoved(itemId);
     this.stateObs.set({ items });
+  }
+
+  /**
+   * Remember an id the backend no longer has, newest last and bounded.
+   *
+   * A host with an open editor has to tell two disappearances apart: the row
+   * fell out of the filtered page, where the typed edits are still worth
+   * keeping, or the item is gone, where the form has nothing left to save
+   * against. Only a real removal is recorded — a refetch that stops listing an
+   * id says nothing about whether it still exists.
+   */
+  private noteRemoved(itemId: string) {
+    if (this.removedIds.has(itemId)) return;
+    this.removedIds.add(itemId);
+    this.removedOrder.push(itemId);
+    while (this.removedOrder.length > REMOVED_ID_MEMORY) {
+      const evicted = this.removedOrder.shift();
+      if (evicted !== undefined) this.removedIds.delete(evicted);
+    }
+  }
+
+  private forgetRemoved(itemId: string) {
+    if (!this.removedIds.delete(itemId)) return;
+    const idx = this.removedOrder.indexOf(itemId);
+    if (idx >= 0) this.removedOrder.splice(idx, 1);
+  }
+
+  /** True when this id was removed rather than merely filtered off the page. */
+  wasRemoved(itemId: string): boolean {
+    return this.removedIds.has(itemId);
   }
 }
 

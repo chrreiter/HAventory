@@ -5,7 +5,7 @@ import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
-import { counted, plural } from '../ui/plural';
+import { counted, plural, showingCount } from '../ui/plural';
 import { nextZBase } from '../utils/zindex';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
@@ -15,6 +15,13 @@ import { deepFocusables } from '../ui/dialog-focus';
 import { areaNameById, effectiveAreaIdForLocation } from '../ui/area';
 import { renderAreaChip } from '../ui/location-path';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
+import { quickFilterAllowed } from '../ui/quick-filters';
+import type { QuickFilterKey } from '../ui/quick-filters';
+import { editorErrorText } from '../ui/editor-error';
+import { DISCARD_PROMPT } from '../ui/discard';
+import { bannerStack, renderDegradedBanners, renderErrorBanners } from '../ui/banners';
+import type { BannerHooks } from '../ui/banners';
+import { NARROW_QUERY } from '../ui/responsive';
 import { statusCount, statusLabel, statusList } from '../ui/status';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
@@ -25,34 +32,21 @@ import { makeBulkOp } from '../store/store';
 import type { BulkOperation, BulkOutcome } from '../store/types';
 import type { BulkProgress, BulkResultView, BulkRunDetail } from './hv-bulk-bar';
 import './hv-bulk-bar';
+import './hv-checkout-popover';
 import './hv-confirm';
 import './hv-data-table';
+import './hv-detail-sheet';
 import type { MediaBindings } from '../ui/media';
 import './hv-filter-chips';
 import './hv-filter-panel';
 import './hv-item-editor';
 import './hv-location-tree';
 import './hv-overflow-menu';
+import type { HVItemEditor } from './hv-item-editor';
 import type { HVLocationTree } from './hv-location-tree';
 import type { HVFilterPanel } from './hv-filter-panel';
 
 const SEARCH_DEBOUNCE_MS = 200;
-
-/**
- * The phone breakpoint, in JS.
- *
- * This surface fills the viewport rather than being sized by the card, so its
- * own layout switches on the `@media (max-width: 700px)` block below. Its two
- * biggest children take their layout from a `mobile` *property* instead, which
- * only the card ever set — so at 375px the expanded view drew the item editor's
- * three-column desktop grid in 156px + 78px + 78px, with "Low-stock at" wrapping
- * over its own field and Category too narrow to show a value. A media query
- * cannot set a property, so the same breakpoint is read here and handed down.
- *
- * Keep this string and the media query in agreement. Exported so the sidebar
- * panel can put the dialogs it hosts on the same breakpoint as this view.
- */
-export const NARROW_QUERY = '(max-width: 700px)';
 
 /** The sidebar's collapsible sections, in the order they appear. */
 type SidebarSection = 'locations' | 'status' | 'categories' | 'tags';
@@ -84,6 +78,7 @@ export class HVFullView extends LitElement {
     tokens,
     base,
     chip,
+    bannerStack,
     css`
       :host {
         display: contents;
@@ -695,6 +690,17 @@ export class HVFullView extends LitElement {
         max-height: min(70dvh, calc(100% - 116px));
         overflow-y: auto;
       }
+      /*
+       * The row being edited can stop matching the filter the user just changed.
+       * The form stays open on it so the typed edits survive; the hint is what
+       * stops that from reading as a table that failed to filter.
+       */
+      .pinned-hint {
+        margin: 0;
+        padding: 6px 16px;
+        font-size: 12px;
+        color: var(--hv-text-secondary);
+      }
       .new-location {
         display: flex;
         gap: 6px;
@@ -736,6 +742,12 @@ export class HVFullView extends LitElement {
   @property({ type: Boolean, reflect: true }) open = false;
   @property({ type: String }) heading = DEFAULT_CARD_TITLE;
   @property({ attribute: false }) columns: ColumnKey[] = [];
+  /**
+   * Which quick-filter pills this dashboard offers, or `null` for all of them.
+   * The card passes its own config down; the sidebar panel has no YAML to
+   * configure, so it takes the default.
+   */
+  @property({ attribute: false }) quickFilters: QuickFilterKey[] | null = null;
   /** Extra entries the host adds to the app bar's ⋮ menu. */
   @property({ attribute: false }) menuEntries: OverflowMenuEntry[] = [];
   /** Open straight into selection mode (the card's "Select items…" entry). */
@@ -763,7 +775,32 @@ export class HVFullView extends LitElement {
   @state() private _filtersOpen = false;
   @state() private _searchDraft = '';
   @state() private _editing: string | 'new' | null = null;
+  /**
+   * The item the read sheet is showing, on a narrow viewport.
+   *
+   * There is no read view at this width otherwise: the table is one, but it is
+   * off the side of a phone, and tapping a row landed straight in the edit form
+   * — a surface the card answers the same tap with a sheet on.
+   */
+  @state() private _detailItemId: string | null = null;
   @state() private _editorBusy = false;
+  /**
+   * What the open form says about a save the store refused.
+   *
+   * This surface fills the screen, so the card's banner list is not behind it —
+   * without this the user is left with a form that did not close and no account
+   * of why.
+   */
+  @state() private _editorError: string | null = null;
+  /**
+   * The last copy of the row being edited, kept for as long as the form is open.
+   *
+   * Same reason the card's shell keeps one: a filter change refetches, the
+   * edited row can drop out of the result, and the editor rebuilds its model
+   * from whatever item it is handed — so handing it `null` there discards the
+   * typed edits.
+   */
+  @state() private _pinnedItem: Item | null = null;
   @state() private _creatingLocation = false;
   @state() private _locationError: string | null = null;
   /**
@@ -777,7 +814,16 @@ export class HVFullView extends LitElement {
     categories: true,
     tags: true,
   };
-  /** True on a phone-width viewport — see NARROW_QUERY. */
+  /**
+   * True on a phone-width viewport (`NARROW_QUERY`).
+   *
+   * This surface switches its own layout on the matching `@media` block below,
+   * but its two biggest children take theirs from a `mobile` *property*, which
+   * only the card ever set — so at 375px the expanded view drew the item
+   * editor's three-column desktop grid in 156px + 78px + 78px, with "Low-stock
+   * at" wrapping over its own field. A media query cannot set a property, so
+   * the same breakpoint is read here and handed down.
+   */
   @state() private _narrow = false;
   /**
    * The staged filter set's match count, so the phone footer's button can say
@@ -788,6 +834,19 @@ export class HVFullView extends LitElement {
   @state() private _bulkProgress: BulkProgress | null = null;
   @state() private _bulkResult: BulkResultView | null = null;
   @state() private _pendingDelete = false;
+  /** The whole selection's check-out is waiting on one due date. */
+  @state() private _pendingBulkCheckout = false;
+  /** The row whose check-out / due-date step is open, and where to anchor it. */
+  @state() private _checkout: {
+    itemId: string;
+    mode: 'check-out' | 'set-due-date';
+    anchor: DOMRect | null;
+  } | null = null;
+  /**
+   * Where the surface goes once a discard is confirmed, or null while nothing
+   * is being asked: another row, the create form, or the view closing.
+   */
+  @state() private _pendingDiscard: string | 'new' | 'close' | null = null;
   @state() private _loadingAll = false;
   /** Set while a batch is running so Cancel can stop it between chunks. */
   private _bulkCancelled = false;
@@ -837,20 +896,7 @@ export class HVFullView extends LitElement {
       this._storeUnsub?.();
       this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
-    // An editor whose item has left the store — deleted here, by another
-    // client, or filtered out of the list — would otherwise render `.item` as
-    // null, which is the create form. Gated on `loading`: a filter change
-    // empties the list while the next page is fetched, and that absence says
-    // nothing yet.
-    if (
-      this._editing !== null &&
-      this._editing !== 'new' &&
-      this.st !== null &&
-      !this.st.loading &&
-      !this.st.items.some((i) => i.id === this._editing)
-    ) {
-      this._editing = null;
-    }
+    this._syncPinnedItem();
     if (changed.has('open')) {
       if (this.open) {
         this._zBase = nextZBase();
@@ -860,6 +906,9 @@ export class HVFullView extends LitElement {
       } else {
         this._filtersOpen = false;
         this._editing = null;
+        this._detailItemId = null;
+        this._editorError = null;
+        this._pendingDiscard = null;
         this._creatingLocation = false;
         this._locationError = null;
         this._selecting = false;
@@ -894,6 +943,53 @@ export class HVFullView extends LitElement {
     this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
   };
 
+  private get _editor(): HVItemEditor | null {
+    return this.shadowRoot?.querySelector('hv-item-editor') ?? null;
+  }
+
+  /**
+   * What the shared banner stacks act through.
+   *
+   * Reconnect and Refresh go out as the menu action the host already answers —
+   * the dialogs and the re-read live in its `HostSurfaces`, not here, and both
+   * hosts serve the same entry.
+   */
+  private get _bannerHooks(): BannerHooks {
+    return {
+      store: this.store,
+      onRefresh: () =>
+        this.dispatchEvent(
+          new CustomEvent('menu-action', { detail: { id: 'refresh' }, bubbles: true, composed: true }),
+        ),
+    };
+  }
+
+  /**
+   * Leave the open form — for another row, for the create form, or by closing
+   * the whole surface — asking first if there is typing to lose.
+   *
+   * The form asks for its own Cancel, ✕ and Escape, but only about closing.
+   * Everything here has somewhere else to be afterwards, so the question is
+   * raised on this side and the destination held until it is answered. Same
+   * wording either way: `ui/discard` owns it.
+   */
+  private _leaveEditor(to: string | 'new' | 'close') {
+    if (this._editing !== null && this._editor?.dirty) {
+      this._pendingDiscard = to;
+      return;
+    }
+    this._applyLeave(to);
+  }
+
+  private _applyLeave(to: string | 'new' | 'close') {
+    if (to === 'close') {
+      this._close();
+      return;
+    }
+    this._editing = to;
+    this._editorError = null;
+  }
+
   // ---------- Focus trap ----------
   /**
    * The trap's two sentinels bounce focus to the first and last of these, so the
@@ -925,6 +1021,43 @@ export class HVFullView extends LitElement {
     this.store?.setFilters(patch);
   }
 
+  /**
+   * Hold on to the row being edited, and close the form when it is really gone.
+   *
+   * Falling off the current page and being deleted look identical from the item
+   * list alone; the store is the only place that knows which happened, so it is
+   * asked rather than guessed at.
+   */
+  private _syncPinnedItem() {
+    // The read sheet holds an id too, and a deleted item leaves it showing
+    // nothing at all rather than closing.
+    if (this._detailItemId !== null && this.store?.wasRemoved(this._detailItemId)) {
+      this._detailItemId = null;
+    }
+    const editing = this._editing;
+    if (editing === null || editing === 'new') {
+      this._pinnedItem = null;
+      return;
+    }
+    if (this.store?.wasRemoved(editing)) {
+      this._pinnedItem = null;
+      this._editing = null;
+      this._editorError = null;
+      // Nothing left to discard, so the question — if one was up — is moot.
+      this._pendingDiscard = null;
+      return;
+    }
+    const listed = this.st?.items.find((i) => i.id === editing);
+    if (listed) this._pinnedItem = listed;
+  }
+
+  /** The item the open editor edits — the listed row, or the pinned copy of it. */
+  private get _editorItem(): Item | null {
+    if (this._editing === null || this._editing === 'new') return null;
+    const id = this._editing;
+    return this.st?.items.find((i) => i.id === id) ?? (this._pinnedItem?.id === id ? this._pinnedItem : null);
+  }
+
   private _onRowEvent(name: string, detail: { itemId?: string }) {
     const item = this.st?.items.find((i) => i.id === detail.itemId);
     if (!item) return;
@@ -937,7 +1070,58 @@ export class HVFullView extends LitElement {
         break;
       case 'edit':
       case 'open-item':
-        this._editing = item.id;
+        this._openItem(item.id);
+        break;
+    }
+  }
+
+  /**
+   * Show an item: the read sheet on a narrow viewport, the inline form on a
+   * wide one, with Edit one tap deeper inside the sheet.
+   *
+   * The desktop table is its own read surface — the row already says most of
+   * what the sheet would — so there the form is the right answer to a row
+   * click. A phone sees one column of that table and no hover, and the card
+   * answers the same tap with the same sheet.
+   */
+  private _openItem(id: string) {
+    if (this._narrow) {
+      this._detailItemId = id;
+      return;
+    }
+    this._leaveEditor(id);
+  }
+
+  /**
+   * The table rows' ⋮, answered the way the card's shell answers its own rows'.
+   *
+   * Same ids, same meanings — the entries come from one list — so a household
+   * learns Check out / Check in / due date / Delete once. Delete leaves for the
+   * host, which owns the confirmation and the store call; the Delete key on a
+   * row already went the same way.
+   */
+  private _onRowAction(detail: { itemId?: string; action?: string; anchor?: DOMRect }) {
+    const item = this.st?.items.find((i) => i.id === detail.itemId);
+    if (!item) return;
+    switch (detail.action) {
+      case 'check-out':
+      case 'set-due-date':
+        this._checkout = { itemId: item.id, mode: detail.action, anchor: detail.anchor ?? null };
+        break;
+      case 'check-in':
+        void this.store?.markCheckedIn(item.id, item.version);
+        break;
+      case 'edit':
+        this._openItem(item.id);
+        break;
+      case 'delete':
+        this.dispatchEvent(
+          new CustomEvent('request-delete', {
+            detail: { itemId: item.id, name: item.name },
+            bubbles: true,
+            composed: true,
+          }),
+        );
         break;
     }
   }
@@ -950,6 +1134,7 @@ export class HVFullView extends LitElement {
       create?: Parameters<Store['createItem']>[0];
     };
     this._editorBusy = true;
+    this._editorError = null;
     const before = this.st?.errorQueue.length ?? 0;
     try {
       if (detail.itemId && detail.changes) {
@@ -960,7 +1145,13 @@ export class HVFullView extends LitElement {
     } finally {
       this._editorBusy = false;
     }
-    if ((this.st?.errorQueue.length ?? 0) === before) this._editing = null;
+    // The store reports failures through its error queue rather than throwing,
+    // so a new entry is how we know the save did not land. The form stays open
+    // on the user's edits and names the failure inside itself.
+    const queue = this.st?.errorQueue ?? [];
+    const failed = queue.length > before;
+    this._editorError = failed ? editorErrorText(queue[queue.length - 1]) : null;
+    if (!failed) this._editing = null;
   };
 
   // ---------- Bulk actions ----------
@@ -973,6 +1164,7 @@ export class HVFullView extends LitElement {
     this._selecting = false;
     this._bulkResult = null;
     this._lastOps = null;
+    this._pendingBulkCheckout = false;
     this.store?.clearSelection();
   }
 
@@ -1041,6 +1233,13 @@ export class HVFullView extends LitElement {
     if (detail.action === 'delete') {
       // Destructive actions get a confirmation step of their own.
       this._pendingDelete = true;
+      return;
+    }
+    if (detail.action === 'check-out' && detail.dueDate === undefined) {
+      // A check-out with no due date is a check-out nothing can ever call
+      // overdue, so the batch asks the question a single row is asked — once,
+      // and the answer covers the selection.
+      this._pendingBulkCheckout = true;
       return;
     }
     void this._execute(this._opsFor(detail, this._selectedItems));
@@ -1171,6 +1370,24 @@ export class HVFullView extends LitElement {
         <!-- The other sections tally how many rows they hold. Here that number
              is the size of the household's vocabulary, which says nothing
              about the inventory the facet navigates. -->
+        <span class="head-action">
+          <button
+            class="hv-icon-button"
+            data-testid="sidebar-new-status"
+            aria-label="New status…"
+            title="New status…"
+            @click=${() =>
+              this.dispatchEvent(
+                new CustomEvent('menu-action', {
+                  detail: { id: 'organize', tab: 'statuses' },
+                  bubbles: true,
+                  composed: true,
+                }),
+              )}
+          >
+            ${icon('plus', 20)}
+          </button>
+        </span>
       </div>
       <div id=${sectionPanelId('status')} ?hidden=${!this._sections.status}>
         ${this._sections.status
@@ -1431,7 +1648,7 @@ export class HVFullView extends LitElement {
       locationName: (st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId)?.name ?? null,
       onAction: (id: EmptyOffer['id']) => {
         if (id === 'clear-filters') this.store?.clearFilters();
-        else if (id === 'add-item') this._editing = 'new';
+        else if (id === 'add-item') this._leaveEditor('new');
         else if (id === 'refresh') void this.store?.refreshAll();
         else
           this.dispatchEvent(
@@ -1522,7 +1739,12 @@ export class HVFullView extends LitElement {
 
     return html`
       ${modal
-        ? html`<div class="backdrop" role="presentation" style="z-index: ${z};" @click=${this._close}></div>`
+        ? html`<div
+            class="backdrop"
+            role="presentation"
+            style="z-index: ${z};"
+            @click=${() => this._leaveEditor('close')}
+          ></div>`
         : null}
       <div
         class="shell"
@@ -1531,7 +1753,7 @@ export class HVFullView extends LitElement {
         aria-label=${this.heading}
         data-testid="full-view"
         style=${modal ? `z-index: ${z + 1};` : ''}
-        @keydown=${modal ? onEscape(() => this._close()) : nothing}
+        @keydown=${modal ? onEscape(() => this._leaveEditor('close')) : nothing}
       >
         ${modal ? html`<span class="sentinel" tabindex="0" @focus=${() => this._focusLast()}></span>` : null}
         ${this._selecting ? this._renderSelectionBar() : this._renderAppBar()}
@@ -1621,11 +1843,19 @@ export class HVFullView extends LitElement {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
     const counts = st?.statsCounts;
+    // The dashboard decides what is on offer; the count still decides whether
+    // there is anything to say. Same vocabulary the card's badges read.
+    const allowsPill = (key: QuickFilterKey) => quickFilterAllowed(this.quickFilters, key);
     return html`
         <div class="appbar">
           ${this.embedded
             ? this._renderMenuButton()
-            : html`<button class="tap" data-testid="expand-toggle" aria-label="Close full view" @click=${this._close}>
+            : html`<button
+                class="tap"
+                data-testid="expand-toggle"
+                aria-label="Close full view"
+                @click=${() => this._leaveEditor('close')}
+              >
                 ${icon('close', 20)}
               </button>`}
           <h2>${this.heading}</h2>
@@ -1644,7 +1874,7 @@ export class HVFullView extends LitElement {
             />
           </label>
           <span class="spacer"></span>
-          ${counts && counts.low_stock_count > 0
+          ${allowsPill('low_stock') && counts && counts.low_stock_count > 0
             ? html`<button
                 class="hv-chip pill warning ${filters.lowStockOnly ? 'on' : ''}"
                 data-testid="full-badge-low"
@@ -1655,7 +1885,7 @@ export class HVFullView extends LitElement {
                 ${counts.low_stock_count} low
               </button>`
             : null}
-          ${counts && (counts.overdue_count ?? 0) > 0
+          ${allowsPill('overdue') && counts && (counts.overdue_count ?? 0) > 0
             ? html`<button
                 class="hv-chip pill error ${filters.overdueOnly ? 'on' : ''}"
                 data-testid="full-badge-overdue"
@@ -1666,7 +1896,7 @@ export class HVFullView extends LitElement {
                 ${counts.overdue_count} overdue
               </button>`
             : null}
-          ${counts && (counts.inspection_overdue_count ?? 0) > 0
+          ${allowsPill('inspection_due') && counts && (counts.inspection_overdue_count ?? 0) > 0
             ? html`<button
                 class="hv-chip pill warning ${filters.inspectionDueOnly ? 'on' : ''}"
                 data-testid="full-badge-inspection"
@@ -1677,7 +1907,7 @@ export class HVFullView extends LitElement {
                 ${counts.inspection_overdue_count} to inspect
               </button>`
             : null}
-          ${counts && counts.checked_out_count > 0
+          ${allowsPill('checked_out') && counts && counts.checked_out_count > 0
             ? html`<button
                 class="hv-chip pill ${filters.checkedOutOnly ? 'on' : ''}"
                 data-testid="full-badge-out"
@@ -1691,11 +1921,21 @@ export class HVFullView extends LitElement {
           <button
             class="add"
             data-testid="full-add-item"
-            @click=${() => {
-              this._editing = 'new';
-            }}
+            @click=${() => this._leaveEditor('new')}
           >
             ${icon('plus', 16)}Add item
+          </button>
+          <button
+            class="tap"
+            data-testid="full-organize"
+            aria-label="Organize"
+            title="Organize"
+            @click=${() =>
+              this.dispatchEvent(
+                new CustomEvent('menu-action', { detail: { id: 'organize' }, bubbles: true, composed: true }),
+              )}
+          >
+            ${icon('mapMarker', 20)}
           </button>
           <hv-overflow-menu
             onPrimary
@@ -1727,6 +1967,12 @@ export class HVFullView extends LitElement {
           ${this._renderSidebar()}
           <div class="main">
             ${this._renderContextBar()}
+            <!-- The open form's own sentence is the save-failure surface: the
+                 user's text is in front of it and the account of what happened
+                 belongs beside it. Everything else — a lost connection, paused
+                 live updates, a refused operation with nowhere else to be said —
+                 is this queue's, on the same terms as the card's. -->
+            ${renderDegradedBanners(st, this._bannerHooks)} ${renderErrorBanners(st, this._bannerHooks)}
             <div class="panel-holder" id=${FILTER_PANEL_ID} ?hidden=${!this._filtersOpen}>
               ${this._filtersOpen
                 ? html`
@@ -1759,15 +2005,18 @@ export class HVFullView extends LitElement {
             </div>
             ${this._editing !== null
               ? html`<div class="editor-holder">
+                  ${this._editing !== 'new' && !st?.items.some((i) => i.id === this._editing)
+                    ? html`<p class="pinned-hint" data-testid="pinned-editor-hint">
+                        No longer matches the current filters
+                      </p>`
+                    : null}
                   <hv-item-editor
                     .statuses=${this.st?.statuses ?? null}
                     data-testid="full-editor"
                     .areas=${st?.areasCache?.areas ?? []}
                     .media=${this.media}
                     .mediaConfig=${st?.mediaConfig ?? null}
-                    .item=${this._editing === 'new'
-                      ? null
-                      : (st?.items.find((i) => i.id === this._editing) ?? null)}
+                    .item=${this._editorItem}
                     .locations=${st?.locationsFlatCache ?? null}
                     .locationTree=${st?.locationTreeCache ?? []}
                     .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
@@ -1775,10 +2024,12 @@ export class HVFullView extends LitElement {
                     .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
                     .createLocation=${this._createLocationForEditor}
                     .busy=${this._editorBusy}
+                    .errorMessage=${this._editorError}
                     ?mobile=${this._narrow}
                     @save=${this._onEditorSave}
                     @cancel=${() => {
                       this._editing = null;
+                      this._editorError = null;
                     }}
                     @delete-item=${(e: CustomEvent) =>
                       this.dispatchEvent(
@@ -1810,6 +2061,8 @@ export class HVFullView extends LitElement {
               @decrement=${(e: CustomEvent) => this._onRowEvent('decrement', e.detail)}
               @edit=${(e: CustomEvent) => this._onRowEvent('edit', e.detail)}
               @open-item=${(e: CustomEvent) => this._onRowEvent('open-item', e.detail)}
+              @row-action=${(e: CustomEvent) =>
+                this._onRowAction(e.detail as { itemId?: string; action?: string; anchor?: DOMRect })}
               @toggle-select=${(e: CustomEvent) =>
                 this.store?.toggleSelected((e.detail as { itemId: string }).itemId)}
               @select-all-loaded=${() => this.store?.selectAllLoaded()}
@@ -1849,9 +2102,9 @@ export class HVFullView extends LitElement {
               : null}
 
             <div class="footer" data-testid="full-footer">
-              ${st?.total !== null && st?.total !== undefined
-                ? `Showing ${loaded} of ${st.total}${st.cursor ? ' · scroll to load more' : ''}`
-                : `Showing ${loaded}`}
+              ${showingCount(loaded, st?.total, activeFilterCount(filters) > 0)}${st?.cursor
+                ? ' · scroll to load more'
+                : ''}
             </div>
           </div>
         </div>
@@ -1859,6 +2112,7 @@ export class HVFullView extends LitElement {
         <hv-confirm
           data-testid="bulk-confirm"
           ?open=${this._pendingDelete}
+          ?mobile=${this._narrow}
           .heading=${`Delete ${counted(selection.size, 'item')}?`}
           message="This cannot be undone. Items are removed for every connected client. Locations and tags are not affected."
           .warning=${this._checkedOutWarning}
@@ -1870,6 +2124,111 @@ export class HVFullView extends LitElement {
           }}
           @cancel=${() => {
             this._pendingDelete = false;
+          }}
+        ></hv-confirm>
+
+        ${this._narrow
+          ? html`<hv-detail-sheet
+              data-testid="full-detail-sheet"
+              .statuses=${st?.statuses ?? null}
+              .areas=${st?.areasCache?.areas ?? []}
+              .media=${this.media}
+              .mediaConfig=${st?.mediaConfig ?? null}
+              ?open=${this._detailItemId !== null}
+              .item=${this._detailItemId ? (st?.items.find((i) => i.id === this._detailItemId) ?? null) : null}
+              .locations=${st?.locationsFlatCache ?? null}
+              .locationTree=${st?.locationTreeCache ?? []}
+              .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
+              .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
+              .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
+              .createLocation=${this._createLocationForEditor}
+              .busy=${this._editorBusy}
+              .errorMessage=${this._editorError}
+              @cancel=${() => {
+                this._detailItemId = null;
+                this._editorError = null;
+              }}
+              @increment=${(e: CustomEvent) => this._onRowEvent('increment', e.detail)}
+              @decrement=${(e: CustomEvent) => this._onRowEvent('decrement', e.detail)}
+              @check-in=${(e: CustomEvent) =>
+                this._onRowAction({ itemId: (e.detail as { itemId: string }).itemId, action: 'check-in' })}
+              @check-out-confirmed=${(e: CustomEvent) => {
+                const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
+                const item = st?.items.find((i) => i.id === itemId);
+                if (item) void this.store?.checkOut(item.id, dueDate, item.version);
+              }}
+              @set-due-date=${(e: CustomEvent) => {
+                const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
+                const item = st?.items.find((i) => i.id === itemId);
+                if (item) void this.store?.updateItem(item.id, { due_date: dueDate }, item.version);
+              }}
+              @request-delete=${(e: CustomEvent) =>
+                this.dispatchEvent(
+                  new CustomEvent('request-delete', { detail: e.detail, bubbles: true, composed: true }),
+                )}
+              @save=${this._onEditorSave}
+            ></hv-detail-sheet>`
+          : null}
+
+        <hv-checkout-popover
+          data-testid="full-checkout"
+          ?open=${this._checkout !== null}
+          ?mobile=${this._narrow}
+          .mode=${this._checkout?.mode ?? 'check-out'}
+          .anchor=${this._checkout?.anchor ?? null}
+          .item=${this._checkout ? (st?.items.find((i) => i.id === this._checkout!.itemId) ?? null) : null}
+          @check-out=${(e: CustomEvent) => {
+            const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
+            const item = st?.items.find((i) => i.id === itemId);
+            this._checkout = null;
+            if (item) void this.store?.checkOut(item.id, dueDate, item.version);
+          }}
+          @set-due-date=${(e: CustomEvent) => {
+            const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
+            const item = st?.items.find((i) => i.id === itemId);
+            this._checkout = null;
+            // A due date only exists while an item is out, so this is a plain update.
+            if (item) void this.store?.updateItem(item.id, { due_date: dueDate }, item.version);
+          }}
+          @cancel=${() => {
+            this._checkout = null;
+          }}
+        ></hv-checkout-popover>
+
+        <!-- Centred at every width rather than following _narrow: the mobile
+             presentation is an inline step drawn inside the surface that opened
+             it, and this one is opened by a bar at the foot of the table with no
+             body of its own to sit in. It anchors to nothing, so it takes the
+             same scrimmed middle-of-the-screen position the bulk confirm does. -->
+        <hv-checkout-popover
+          data-testid="full-bulk-checkout"
+          ?open=${this._pendingBulkCheckout}
+          .itemName=${counted(selection.size, 'item')}
+          @check-out=${(e: CustomEvent) => {
+            const { dueDate } = e.detail as { dueDate: string | null };
+            this._pendingBulkCheckout = false;
+            void this._execute(this._opsFor({ action: 'check-out', dueDate }, this._selectedItems));
+          }}
+          @cancel=${() => {
+            this._pendingBulkCheckout = false;
+          }}
+        ></hv-checkout-popover>
+
+        <hv-confirm
+          data-testid="full-discard-confirm"
+          ?open=${this._pendingDiscard !== null}
+          ?mobile=${this._narrow}
+          .heading=${DISCARD_PROMPT.heading}
+          .message=${DISCARD_PROMPT.message}
+          .confirmLabel=${DISCARD_PROMPT.confirmLabel}
+          destructive
+          @confirm=${() => {
+            const to = this._pendingDiscard;
+            this._pendingDiscard = null;
+            if (to !== null) this._applyLeave(to);
+          }}
+          @cancel=${() => {
+            this._pendingDiscard = null;
           }}
         ></hv-confirm>
     `;

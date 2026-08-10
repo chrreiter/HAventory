@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
+import { dialogSheet } from '../ui/dialog-sheet';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { nextZBase } from '../utils/zindex';
@@ -69,24 +70,13 @@ export class HVConfirm extends LitElement {
         gap: 8px;
         padding: 0 14px 14px;
       }
-      .confirm {
-        background: var(--hv-primary);
-        color: var(--hv-text-on-primary);
-        border: none;
-        border-radius: var(--hv-radius-chip);
-        padding: 8px 18px;
-        font: 500 13px var(--hv-font);
-      }
-      .confirm.destructive {
-        background: var(--hv-error);
-      }
-      .confirm:hover {
-        opacity: 0.9;
-      }
     `,
+    dialogSheet,
   ];
 
   @property({ type: Boolean, reflect: true }) open = false;
+  /** Phone viewport: rise from the bottom edge instead of centring. */
+  @property({ type: Boolean, reflect: true }) mobile = false;
   @property({ type: String }) heading = 'Are you sure?';
   @property({ type: String }) message = '';
   /** Optional warning strip rendered above the actions. */
@@ -147,7 +137,7 @@ export class HVConfirm extends LitElement {
               ${this.cancelLabel}
             </button>
             <button
-              class="confirm ${this.destructive ? 'destructive' : ''}"
+              class="hv-pill ${this.destructive ? 'danger' : ''}"
               data-testid="confirm-accept"
               @click=${this._confirm}
             >

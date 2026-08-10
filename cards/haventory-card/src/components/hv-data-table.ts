@@ -14,7 +14,8 @@ import {
 import { getDefaultOrderFor } from '../store/sort';
 import type { AreaRef, StatusDefinition } from '../store/types';
 import type { ColumnKey } from '../store/columns';
-import { isLowStock } from './hv-list-row';
+import { isLowStock, rowMenuEntries } from './hv-list-row';
+import './hv-overflow-menu';
 import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
 import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import type { Item, Sort, SortField } from '../store/types';
@@ -132,6 +133,11 @@ export class HVDataTable extends LitElement {
         border-bottom: 1px solid var(--hv-row-divider);
         font-size: 13.5px;
         color: var(--hv-text);
+        /* Same as the card's list rows: the row is the target, but a role=row
+           div gets none of the hand the shared button rule gives every other
+           one. Body rows only — the header carries .head, and there it is the
+           sort buttons that are pressable, not the row. */
+        cursor: pointer;
       }
       .row:hover {
         background: var(--hv-row-hover);
@@ -273,6 +279,7 @@ export class HVDataTable extends LitElement {
       .actions button {
         display: inline-grid;
         place-items: center;
+        flex: none;
         width: 26px;
         height: 26px;
         border: 1px solid var(--hv-divider);
@@ -286,6 +293,16 @@ export class HVDataTable extends LitElement {
       }
       .actions button[disabled] {
         opacity: 0.35;
+      }
+      /* Edit and the ⋮ are the plain pair, the quantity buttons the outlined
+         one — the same grammar the card's rows use, where the stepper carries
+         the border and the hover actions do not. Edit was a 26px outlined
+         circle here and a 30px borderless one there, which is two answers to
+         one control. */
+      .actions button.plain {
+        width: 30px;
+        height: 30px;
+        border: none;
       }
       .box {
         display: inline-grid;
@@ -606,6 +623,7 @@ export class HVDataTable extends LitElement {
                       ${icon('plus', 15)}
                     </button>
                     <button
+                      class="plain"
                       data-testid="table-edit"
                       aria-label=${`Edit ${item.name}`}
                       @click=${(e: Event) => {
@@ -613,8 +631,21 @@ export class HVDataTable extends LitElement {
                         this._emit('edit', { itemId: item.id });
                       }}
                     >
-                      ${icon('pencil', 15)}
+                      ${icon('pencil', 18)}
                     </button>
+                    <hv-overflow-menu
+                      data-testid="table-row-menu"
+                      label=${`Actions for ${item.name}`}
+                      .entries=${rowMenuEntries(item)}
+                      @click=${(e: Event) => e.stopPropagation()}
+                      @select=${(e: CustomEvent) => {
+                        e.stopPropagation();
+                        const { id } = e.detail as { id: string };
+                        // The check-out flow needs somewhere to anchor its popover.
+                        const anchor = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        this._emit('row-action', { itemId: item.id, action: id, anchor });
+                      }}
+                    ></hv-overflow-menu>
                   </span>
                 </div>
               `,

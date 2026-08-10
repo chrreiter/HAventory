@@ -1,5 +1,6 @@
 import './hv-item-editor';
-import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
+import { makeAttachment, makeItem, makeManual, makeMediaBindings, stubViewport } from '../test.utils';
+import { DISCARD_PROMPT } from '../ui/discard';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import { addDays } from '../ui/relative-time';
 import type { HVItemEditor } from './hv-item-editor';
@@ -470,7 +471,9 @@ describe('hv-item-editor: saving', () => {
   it('names the save chord for the keyboard it can actually detect', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
     const hint = q(el, '[data-testid="editor-key-hint"]')?.textContent ?? '';
-    expect(hint).toContain('Esc discards');
+    // Esc no longer discards: it asks whenever there is typing to lose, exactly
+    // as Cancel and the ✕ do, so the hint stops promising the old outcome.
+    expect(hint).toContain('Esc closes');
     expect(hint).toContain('Ctrl+Enter saves');
     expect(hint).not.toContain('⌘');
   });
@@ -547,7 +550,7 @@ describe('hv-item-editor: location and tags', () => {
 
     const treeEl = el.shadowRoot?.querySelector('hv-location-tree') as HTMLElement;
     (
-      treeEl.shadowRoot?.querySelector('[data-testid="tree-select"][data-id="garage"]') as HTMLButtonElement
+      treeEl.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="garage"]') as HTMLButtonElement
     ).click();
     await el.updateComplete;
 
@@ -823,25 +826,36 @@ describe('hv-item-editor: typed custom fields', () => {
     ]);
   });
 
-  it('keeps Save and Cancel in reach on a phone', async () => {
-    const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
-    const css = (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+  // The bar was pinned only when the card said "phone". Every host that can
+  // scroll the form puts it below the fold — the card's list, the phone sheet,
+  // and the expanded view, which caps the form at 70dvh — so the editor solves
+  // it once for all of them instead of each host growing a footer of its own.
+  it('keeps Save and Cancel in reach on every host', async () => {
+    const css = editorCss();
 
     // Sticky has to sit on the wrapping cell: an element sticks only within its
-    // containing block, and `.actions`' parent is exactly as tall as it is.
-    expect(css).toMatch(/:host\(\[mobile\]\) \.actions-cell \{[^}]*position: sticky/);
-    expect(css).toMatch(/:host\(\[mobile\]\) \.actions-cell \{[^}]*bottom: -14px/);
-    expect(css).not.toMatch(/:host\(\[mobile\]\) \.actions \{[^}]*position: sticky/);
+    // containing block, and the actions' parent is exactly as tall as they are.
+    expect(css).toMatch(/[^)] \.actions-cell \{[^}]*position: sticky/);
+    expect(css).toMatch(/[^)] \.actions-cell \{[^}]*bottom: -14px/);
+    expect(css).not.toMatch(/\.actions \{[^}]*position: sticky/);
+    // Not gated on the phone flag any more — that was the whole bug.
+    expect(css).not.toMatch(/:host\(\[mobile\]\) \.actions-cell \{[^}]*position: sticky/);
 
-    // ...and the markup has to carry the class the rule needs.
-    const el = await mount(makeItem({ id: '1' }), { mobile: true });
-    const cell = q(el, '.actions-cell');
-    expect(cell).toBeTruthy();
-    expect(cell?.querySelector('[data-testid="editor-save"]')).toBeTruthy();
-    expect(cell?.querySelector('[data-testid="editor-cancel"]')).toBeTruthy();
+    // The opaque bar bleeds past the form's side padding, or the rows it covers
+    // show through in a strip either side of it.
+    expect(css).toMatch(/[^)] \.actions-cell \{[^}]*margin: 0 -18px/);
+    expect(css).toMatch(/[^)] \.actions-cell \{[^}]*padding: 10px 18px 14px/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.actions-cell \{[^}]*margin: 0 -16px/);
+
+    // ...and the markup has to carry the class the rule needs, on both hosts.
+    for (const mobile of [false, true]) {
+      const el = await mount(makeItem({ id: '1' }), { mobile });
+      const cell = q(el, '.actions-cell');
+      expect(cell, `mobile=${mobile}`).toBeTruthy();
+      expect(cell?.querySelector('[data-testid="editor-save"]')).toBeTruthy();
+      expect(cell?.querySelector('[data-testid="editor-cancel"]')).toBeTruthy();
+      el.remove();
+    }
   });
 
   it('lays a row out from its own width, not from the card-wide mobile flag', () => {
@@ -1118,6 +1132,98 @@ describe('hv-item-editor: Escape takes back one thing at a time', () => {
     expect(cancels.count).toBe(1);
     expect((await dialog(el, 'editor-discard-confirm')).open).toBe(false);
   });
+});
+
+// Escape asked and the two buttons beside it did not, so the same decision had
+// a cheap way out and an expensive one depending on which control was nearest.
+describe('hv-item-editor: every close this form owns asks the same question', () => {
+  const paths = ['editor-cancel', 'editor-close'] as const;
+
+  it.each(paths)('%s asks before throwing typed edits away', async (testid) => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    let cancels = 0;
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
+    await type(el, 'editor-name', 'A longer name');
+
+    (q(el, `[data-testid="${testid}"]`) as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    const guard = await dialog(el, 'editor-discard-confirm');
+    expect(guard.open).toBe(true);
+    expect(guard.shadowRoot?.querySelector('[data-testid="confirm-message"]')?.textContent).toContain(
+      DISCARD_PROMPT.message,
+    );
+    expect(cancels).toBe(0);
+
+    (guard.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(cancels).toBe(1);
+  });
+
+  it.each(paths)('%s keeps the typing when the question is declined', async (testid) => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    let cancels = 0;
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
+    await type(el, 'editor-name', 'A longer name');
+
+    (q(el, `[data-testid="${testid}"]`) as HTMLButtonElement).click();
+    await el.updateComplete;
+    const guard = await dialog(el, 'editor-discard-confirm');
+    (guard.shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    expect(cancels).toBe(0);
+    expect((q(el, '[data-testid="editor-name"]') as HTMLInputElement).value).toBe('A longer name');
+  });
+
+  it.each(paths)('%s closes a clean form without asking', async (testid) => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    let cancels = 0;
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
+
+    (q(el, `[data-testid="${testid}"]`) as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    expect(cancels).toBe(1);
+    expect((await dialog(el, 'editor-discard-confirm')).open).toBe(false);
+  });
+
+  // A host with somewhere to go afterwards asks this instead of firing `cancel`
+  // blind: false means the form has taken the question on itself.
+  it('reports whether a host may tear the form down', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    expect(el.requestClose()).toBe(true);
+
+    await type(el, 'editor-name', 'A longer name');
+    expect(el.requestClose()).toBe(false);
+    await el.updateComplete;
+    expect((await dialog(el, 'editor-discard-confirm')).open).toBe(true);
+  });
+
+  // Both dialogs are fixed to the window, so they take their phone form from the
+  // viewport — the form's own `mobile` is the card element's width and would put
+  // a bottom sheet on a desktop monitor whenever the card sat in a narrow column.
+  it.each(['editor-discard-confirm', 'editor-remove-confirm'] as const)(
+    '%s takes its phone form from the viewport, not the card',
+    async (confirmId) => {
+      for (const narrow of [true, false]) {
+        const restore = stubViewport(narrow);
+        try {
+          const el = await mount(makeItem({ id: '1', name: 'A' }), { mobile: !narrow });
+          expect((await dialog(el, confirmId)).hasAttribute('mobile')).toBe(narrow);
+          el.remove();
+        } finally {
+          restore();
+        }
+      }
+    },
+  );
 });
 
 // The first minute of a fresh install: an item form whose most important field
@@ -2253,5 +2359,368 @@ describe('hv-item-editor: why attachments wait for the first save', () => {
     const el = await mount(null);
 
     expect(q(el, '[data-testid="editor-attachment-hint"]')).toBe(null);
+  });
+});
+
+// jsdom builds a `DragEvent` with no `DataTransfer` behind it, so the files ride
+// on a plain object. What is worth asserting here is the routing — which kind
+// each dropped file becomes, and that nothing new appears on the upload path.
+// The browser's own drag machinery is the handover's job.
+describe('hv-item-editor: dropping files onto the editor', () => {
+  const png = (name = 'photo.png') => new File(['x'], name, { type: 'image/png' });
+  const pdf = (name = 'manual.pdf') => new File(['x'], name, { type: 'application/pdf' });
+
+  function dragEvent(type: string, files: File[]) {
+    const e = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(e, 'dataTransfer', {
+      value: { files, dropEffect: 'none' },
+      configurable: true,
+    });
+    return e as DragEvent;
+  }
+
+  async function dropOn(el: HVItemEditor, testid: string, files: File[]) {
+    const target = q(el, `[data-testid="${testid}"]`) as HTMLElement;
+    target.dispatchEvent(dragEvent('drop', files));
+    // A macrotask, so the prepare-then-send chain drains first.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+  }
+
+  it('attaches an image dropped on the photo strip as a photo', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media });
+
+    await dropOn(el, 'editor-photos', [png()]);
+
+    expect(media.uploads.map((u) => [u.file.name, u.kind])).toEqual([['photo.png', 'picture']]);
+  });
+
+  it('attaches a document dropped on the document list as a manual', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media });
+
+    await dropOn(el, 'editor-documents', [pdf()]);
+
+    expect(media.uploads.map((u) => [u.file.name, u.kind])).toEqual([['manual.pdf', 'manual']]);
+  });
+
+  // The file decides, not the cell it crossed: refusing a PDF because it landed
+  // on the photo strip would be arguing with something the user can see.
+  it('attaches a document dropped on the photo strip as a manual', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media });
+
+    await dropOn(el, 'editor-photos', [pdf()]);
+
+    expect(media.uploads.map((u) => u.kind)).toEqual(['manual']);
+  });
+
+  it('attaches an image dropped on the document list as a photo', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media });
+
+    await dropOn(el, 'editor-documents', [png()]);
+
+    expect(media.uploads.map((u) => u.kind)).toEqual(['picture']);
+  });
+
+  it('routes a mixed multi-file drop file by file', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media });
+
+    await dropOn(el, 'editor-photos', [png('a.png'), pdf('b.pdf'), png('c.png')]);
+
+    expect(media.uploads.map((u) => [u.file.name, u.kind])).toEqual([
+      ['a.png', 'picture'],
+      ['c.png', 'picture'],
+      ['b.pdf', 'manual'],
+    ]);
+  });
+
+  // The existing preflight is the one place that knows what the backend takes,
+  // so a refused file is refused in the same words a picked one would be.
+  it('sends a dropped file through the same preflight a picked one gets', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), {
+      media,
+      mediaConfig: {
+        picture_mime_types: ['image/png'],
+        manual_mime_types: ['application/pdf'],
+        max_attachment_bytes: 16,
+      } as HVItemEditor['mediaConfig'],
+    });
+
+    await dropOn(el, 'editor-documents', [new File(['x'], 'notes.txt', { type: 'text/plain' })]);
+
+    expect(media.uploads).toHaveLength(0);
+    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain('not an accepted');
+  });
+
+  it('cancels dragover so the browser does not navigate to the file', async () => {
+    const el = await mount(makeItem({ id: 'i-1' }), { media: makeMediaBindings() });
+    const over = dragEvent('dragover', [png()]);
+
+    (q(el, '[data-testid="editor-photos"]') as HTMLElement).dispatchEvent(over);
+
+    expect(over.defaultPrevented).toBe(true);
+    expect(over.dataTransfer?.dropEffect).toBe('copy');
+  });
+
+  // A drop a few pixels wide of the target would otherwise replace the page with
+  // the file and take the whole open form with it.
+  it('swallows a drop that missed the targets', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media });
+    const root = q(el, '[data-testid="item-editor"]') as HTMLElement;
+
+    const over = dragEvent('dragover', [png()]);
+    root.dispatchEvent(over);
+    const drop = dragEvent('drop', [png()]);
+    root.dispatchEvent(drop);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(over.defaultPrevented).toBe(true);
+    expect(drop.defaultPrevented).toBe(true);
+    expect(media.uploads).toHaveLength(0);
+  });
+
+  it('marks the section a drag is over, and unmarks it on the way out', async () => {
+    const el = await mount(makeItem({ id: 'i-1' }), { media: makeMediaBindings() });
+    const photos = q(el, '[data-testid="editor-photos"]') as HTMLElement;
+
+    photos.dispatchEvent(dragEvent('dragover', [png()]));
+    await el.updateComplete;
+    expect(photos.classList.contains('dropping')).toBe(true);
+
+    photos.dispatchEvent(new Event('dragleave', { bubbles: true }));
+    await el.updateComplete;
+    expect(photos.classList.contains('dropping')).toBe(false);
+  });
+
+  // There is no drag on touch, so an over-state could only ever fire by accident
+  // — the phone layout carries no target at all rather than one that declines.
+  // The root guard stays: `mobile` is the card element's width, and a narrow
+  // card in a desktop window still has a mouse with a file on the end of it.
+  it('renders no drop target on a phone', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), { media, mobile: true });
+    const photos = q(el, '[data-testid="editor-photos"]') as HTMLElement;
+
+    photos.dispatchEvent(dragEvent('dragover', [png()]));
+    await dropOn(el, 'editor-photos', [png()]);
+
+    expect(photos.classList.contains('dropping')).toBe(false);
+    expect(media.uploads).toHaveLength(0);
+  });
+});
+
+// The form was authored for a 600–900px card and then given a 1080p surface to
+// fill. Everything below is a measurement that stopped being true there.
+describe('hv-item-editor: geometry and type', () => {
+  it('gives the two numbers a number-sized field', () => {
+    const css = editorCss();
+    // Name takes what is left; 2fr/1fr/1fr handed a two-digit quantity ~400px.
+    expect(css).toMatch(/[^)] \.grid \{[^}]*grid-template-columns: minmax\(0, 1fr\) 140px 160px/);
+    // The phone collapse is untouched — one field per row, as before.
+    expect(css).toMatch(/:host\(\[mobile\]\) \.grid \{[^}]*grid-template-columns: 1fr/);
+  });
+
+  // A stretched cell shared out the row's surplus between its label row and its
+  // control row, which is how the status select landed at exactly the midpoint
+  // between an input and the textarea beside it.
+  it('packs a cell to the top instead of splitting the row surplus', () => {
+    expect(editorCss()).toMatch(/[^)] \.cell \{[^}]*align-content: start/);
+  });
+
+  it('draws the two state boxes as siblings', () => {
+    const css = editorCss();
+    // Even halves: at 2fr/1fr the inspection offsets wrapped onto three rows.
+    expect(css).toMatch(/[^)] \.state \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\)/);
+    // No bottom-aligning a label-less button against a labelled field, which
+    // put the dead air between the caption and the first control.
+    expect(css).not.toMatch(/\.checkout-body \{[^}]*align-items: end/);
+  });
+
+  // Both boxes are caption + body and nothing else, so the hint belongs to the
+  // field it explains rather than hanging under the box.
+  it('puts the due-date hint inside the field it is about', async () => {
+    const el = await mount(makeItem({ id: '1', checked_out: false }));
+    const hint = q(el, '[data-testid="editor-due-hint"]');
+    expect(hint).toBeTruthy();
+    expect(hint?.closest('.cell')?.querySelector('[data-testid="editor-due-date"]')).toBeTruthy();
+  });
+
+  it('drops the hint once there is a check-out to be due', async () => {
+    const el = await mount(makeItem({ id: '1', checked_out: true }));
+    expect(q(el, '[data-testid="editor-due-hint"]')).toBe(null);
+  });
+});
+
+describe('hv-item-editor: one label recipe, one note size', () => {
+  it('gives every section label the shared recipe', async () => {
+    const css = editorCss();
+    // What is left of `.group-caption` is layout for its icon; the type comes
+    // from `.hv-label`, the same recipe TAGS, PHOTOS and DOCUMENTS use.
+    expect(css).not.toMatch(/\.group-caption \{[^}]*font-weight/);
+    expect(css).not.toMatch(/\.group-caption \{[^}]*text-transform/);
+
+    const el = await mount(makeItem({ id: '1' }));
+    for (const testid of ['editor-checkout-caption', 'editor-inspection-caption']) {
+      expect(q(el, `[data-testid="${testid}"]`)?.classList.contains('hv-label'), testid).toBe(true);
+    }
+  });
+
+  it('reads its small print at one size', () => {
+    const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
+    const sheets = Array.isArray(styles) ? styles : [styles];
+    // This component's own block; the shared sheets ahead of it answer for
+    // every surface and are not this form's to consolidate.
+    const own = String(sheets[sheets.length - 1].cssText).replace(/\s+/g, ' ');
+
+    expect(own).toMatch(/:host \{[^}]*--hv-editor-note: 12px/);
+    // One declaration, and nothing left of the 11.5/12.5px band around it.
+    expect(own.match(/--hv-editor-note:/g)).toHaveLength(1);
+    expect(own).not.toContain('font-size: 11.5px');
+    expect(own).not.toContain('font-size: 12.5px');
+  });
+
+  // A note riding inside a label needs to step out of the uppercase treatment;
+  // it did that with the file's only inline style attribute.
+  it('carries the tags note as a class, not an inline style', async () => {
+    const el = await mount(makeItem({ id: '1' }));
+    expect(el.shadowRoot?.innerHTML).not.toContain('style="text-transform');
+    const note = el.shadowRoot?.querySelector('.label-note');
+    expect(note?.textContent).toContain('stored lowercase');
+  });
+
+  // The tag field sat a point smaller than every input beside it.
+  it('sets the tag input at the same size as the other fields', () => {
+    const styles = (customElements.get('hv-chip-input') as unknown as { styles: { cssText: string }[] }).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+    expect(css).toContain('font: 400 var(--hv-input-font, 13.5px) var(--hv-font)');
+  });
+
+  // The label-to-content gap is the cell's, so a section that added its own
+  // margin sat further from its label than every field around it.
+  it('leaves the label gap to the cell', () => {
+    const css = editorCss();
+    expect(css).not.toMatch(/\.photos \{[^}]*margin-top/);
+    expect(css).not.toMatch(/\.documents \{[^}]*margin: 4px/);
+  });
+});
+
+// "0 of 2 keys in use" reads as a quota. There is none: the denominator was the
+// count of distinct keys anywhere in the inventory, and the fallback made it
+// the numerator whenever that lookup was empty, so it could only ever say
+// "N of N".
+describe('hv-item-editor: the custom-fields tally states a fact', () => {
+  it('counts the fields that are set, and nothing else', async () => {
+    const el = await mount(
+      makeItem({ id: '1', custom_fields: { serial: 'A1', warranty_until: '2030-01-01' } }),
+      { customFieldKeys: ['serial', 'warranty_until', 'voltage'] },
+    );
+    expect(q(el, '[data-testid="editor-cf-tally"]')?.textContent?.trim()).toBe('2 fields set');
+  });
+
+  it('says nothing about keys when the item has none', async () => {
+    const el = await mount(makeItem({ id: '1', custom_fields: {} }), {
+      customFieldKeys: ['serial', 'voltage'],
+    });
+    const tally = q(el, '[data-testid="editor-cf-tally"]')?.textContent?.trim();
+    expect(tally).toBe('0 fields set');
+    expect(tally).not.toContain('in use');
+  });
+
+  // The inventory-wide keys are still offered, framed as what they are.
+  it('still offers the keys other items use', async () => {
+    const el = await mount(makeItem({ id: '1', custom_fields: {} }), {
+      customFieldKeys: ['serial', 'voltage'],
+    });
+    expect(q(el, '.key-hints')?.textContent).toContain('Key suggestions');
+  });
+});
+
+// "Checkout" above a button reading "Check out…", in a card that says "Check
+// out" everywhere else.
+describe('hv-item-editor: one verb for checking out', () => {
+  it('heads the box with the verb its own button uses', async () => {
+    const el = await mount(makeItem({ id: '1' }));
+    expect(q(el, '[data-testid="editor-checkout-caption"]')?.textContent?.trim()).toBe('Check out');
+    expect(q(el, '[data-testid="editor-checked-out"]')?.textContent).toContain('Check out');
+  });
+});
+
+// The form's thumbnails were 72px squares of a photo and nothing more: the
+// lightbox existed on the phone's detail sheet and nowhere else, so on the card
+// and the expanded view there was no way to see a photo at a useful size.
+describe('hv-item-editor: photos open full-size', () => {
+  const shots = () => [makeAttachment({ id: 'att-1' }), makeAttachment({ id: 'att-2' })];
+
+  async function withPhotos() {
+    const el = await mount(makeItem({ id: 'i-1', name: 'Drill', attachments: shots() }), {
+      media: makeMediaBindings(),
+    });
+    await el.updateComplete;
+    await el.updateComplete;
+    return el;
+  }
+
+  const box = (el: HVItemEditor) =>
+    q(el, 'hv-lightbox')?.shadowRoot?.querySelector('[data-testid="lightbox"]') as HTMLElement | null;
+
+  const settleBox = async (el: HVItemEditor) => {
+    await el.updateComplete;
+    await (q(el, 'hv-lightbox') as (HTMLElement & { updateComplete?: Promise<unknown> }) | null)
+      ?.updateComplete;
+  };
+
+  it('opens the photo that was clicked', async () => {
+    const el = await withPhotos();
+
+    (all(el, '[data-testid="editor-photo-open"]')[1] as HTMLButtonElement).click();
+    await settleBox(el);
+    await settleBox(el);
+
+    expect(box(el)?.getAttribute('aria-label')).toBe('Drill — photo 2 of 2');
+  });
+
+  it('names each thumbnail for the photo it opens', async () => {
+    const el = await withPhotos();
+    expect(all(el, '[data-testid="editor-photo-open"]').map((b) => b.getAttribute('aria-label'))).toEqual([
+      'View Drill — photo 1 of 2',
+      'View Drill — photo 2 of 2',
+    ]);
+  });
+
+  it('closes again and leaves the form standing', async () => {
+    const el = await withPhotos();
+    let cancels = 0;
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
+
+    (all(el, '[data-testid="editor-photo-open"]')[0] as HTMLButtonElement).click();
+    await settleBox(el);
+    await settleBox(el);
+    (
+      q(el, 'hv-lightbox')?.shadowRoot?.querySelector('[data-testid="lightbox-close"]') as HTMLButtonElement
+    ).click();
+    await settleBox(el);
+
+    expect(box(el)).toBe(null);
+    // Escape inside the lightbox must not read as Escape on the form.
+    expect(cancels).toBe(0);
+    expect(q(el, '[data-testid="item-editor"]')).toBeTruthy();
+  });
+
+  // Without a signed URL there is no photo to open, only the camera placeholder.
+  it('offers nothing to open where the URL has not arrived', async () => {
+    const el = await mount(makeItem({ id: 'i-1', attachments: shots() }), { media: null });
+    await el.updateComplete;
+    expect(q(el, '[data-testid="editor-photo-open"]')).toBe(null);
   });
 });

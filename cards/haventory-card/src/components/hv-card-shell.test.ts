@@ -1,5 +1,6 @@
 import './hv-card-shell';
-import { makeMockHass, makeItem } from '../test.utils';
+import { makeMockHass, makeItem, stubViewport } from '../test.utils';
+import { DISCARD_PROMPT } from '../ui/discard';
 import { base, tokens } from '../ui/tokens';
 import { Store } from '../store/store';
 import type { HVCardShell } from './hv-card-shell';
@@ -61,6 +62,72 @@ describe('hv-card-shell: header', () => {
     // The total badge was one of nine strings with "items" hardcoded.
     const { sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Lonely Hammer' })] });
     expect(sr.querySelector('[data-testid="badge-total"]')?.textContent?.trim()).toBe('1 item');
+  });
+
+  // The pills are filter toggles, not decoration; a dashboard that never checks
+  // anything out has no use for the checked-out one. The config decides what is
+  // on offer, the count still decides whether there is anything to say.
+  describe('configurable quick-filter pills', () => {
+    const stocked = () => [
+      makeItem({ id: '1', name: 'AA Batteries', quantity: 2, low_stock_threshold: 8 }),
+      makeItem({ id: '2', name: 'Impact Driver', checked_out: true }),
+    ];
+
+    it('draws every pill by default', async () => {
+      const { sr } = await mountShell({ items: stocked() });
+      expect(sr.querySelector('[data-testid="badge-total"]')).toBeTruthy();
+      expect(sr.querySelector('[data-testid="badge-low"]')).toBeTruthy();
+      expect(sr.querySelector('[data-testid="badge-out"]')).toBeTruthy();
+    });
+
+    it('draws only the pills the config names', async () => {
+      const { el, sr } = await mountShell({ items: stocked() });
+      el.quickFilters = ['low_stock'];
+      await el.updateComplete;
+
+      expect(sr.querySelector('[data-testid="badge-low"]')).toBeTruthy();
+      expect(sr.querySelector('[data-testid="badge-total"]')).toBe(null);
+      expect(sr.querySelector('[data-testid="badge-out"]')).toBe(null);
+    });
+
+    // Allowed is not the same as shown: the count gate is unchanged.
+    it('still hides an allowed pill whose count is zero', async () => {
+      const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+      el.quickFilters = ['low_stock', 'checked_out'];
+      await el.updateComplete;
+
+      expect(sr.querySelector('[data-testid="badge-low"]')).toBe(null);
+      expect(sr.querySelector('[data-testid="badge-out"]')).toBe(null);
+    });
+
+    // On a phone the wrapper takes a row of its own, so a band with nothing
+    // allowed in it would be a blank strip under the title.
+    it('draws no badge row on a phone when the subset leaves nothing to show', async () => {
+      const { el, sr } = await mountShell({ items: stocked(), mobile: true });
+      el.quickFilters = ['overdue'];
+      await el.updateComplete;
+
+      expect(sr.querySelector('.badges')).toBe(null);
+    });
+
+    it('keeps the phone badge row when the subset still has something to show', async () => {
+      const { el, sr } = await mountShell({ items: stocked(), mobile: true });
+      el.quickFilters = ['low_stock'];
+      await el.updateComplete;
+
+      expect(sr.querySelector('[data-testid="badge-low"]')).toBeTruthy();
+    });
+
+    it('hands the same list to the full view, so both surfaces agree', async () => {
+      const { el, sr } = await mountShell({ items: stocked() });
+      el.quickFilters = ['low_stock'];
+      await el.updateComplete;
+
+      const full = sr.querySelector('[data-testid="card-full-view"]') as HTMLElement & {
+        quickFilters: string[] | null;
+      };
+      expect(full.quickFilters).toEqual(['low_stock']);
+    });
   });
 
   it('hides a stat badge that would read zero', async () => {
@@ -414,20 +481,26 @@ describe('hv-card-shell: list and footer', () => {
     expect(seen).toEqual([0.82]);
   });
 
-  it('counts loaded rows against the filtered total', async () => {
+  it('counts loaded rows against the filtered total, and names the noun', async () => {
     const items = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}` }));
     const { sr } = await mountShell({ items });
-    expect(sr.querySelector('[data-testid="showing-count"]')?.textContent).toContain('Showing 50 of 60');
+    expect(sr.querySelector('[data-testid="showing-count"]')?.textContent?.trim()).toBe(
+      'Showing 50 of 60 items',
+    );
   });
 
-  it('says "filtered" only when a filter is on', async () => {
+  it('says the total is the matching one only when a filter is on', async () => {
     const items = [makeItem({ id: '1', category: 'Tools' }), makeItem({ id: '2', category: 'Other' })];
     const { el, store, sr } = await mountShell({ items });
-    expect(sr.querySelector('[data-testid="showing-count"]')?.textContent).not.toContain('filtered');
+    expect(sr.querySelector('[data-testid="showing-count"]')?.textContent?.trim()).toBe(
+      'Showing 2 of 2 items',
+    );
 
     store.setFilters({ category: 'Tools' });
     await settle(el);
-    expect(sr.querySelector('[data-testid="showing-count"]')?.textContent).toContain('filtered');
+    expect(sr.querySelector('[data-testid="showing-count"]')?.textContent?.trim()).toBe(
+      'Showing 1 of 1 matching item',
+    );
   });
 
   it('adjusts quantity from the row stepper', async () => {
@@ -806,6 +879,90 @@ describe('hv-card-shell: adding an item on a phone', () => {
     const list = sr.querySelector('hv-list') as HTMLElement & { addingNew: boolean };
     expect(list.addingNew).toBe(true);
   });
+
+  // The sheet's scrim, its swipe and its ✕ all threw a half-typed new item away
+  // without a word, while switching rows on the same shell had always asked.
+  describe('a half-filled new item is asked about before it goes', () => {
+    async function dirtyAddSheet() {
+      const mounted = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+      const { el, sr } = mounted;
+      (sr.querySelector('[data-testid="add-item"]') as HTMLButtonElement).click();
+      await settle(el);
+      const form = sr.querySelector('hv-item-editor') as HTMLElement;
+      const name = form.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+      name.value = 'Half typed';
+      name.dispatchEvent(new Event('input'));
+      await settle(el);
+      return mounted;
+    }
+
+    const hostGuard = (sr: ShadowRoot) =>
+      sr.querySelector('[data-testid="host-confirm"]') as HTMLElement & { open: boolean };
+    const typed = (sr: ShadowRoot) =>
+      (
+        sr.querySelector('hv-item-editor')?.shadowRoot?.querySelector(
+          '[data-testid="editor-name"]',
+        ) as HTMLInputElement | null
+      )?.value;
+
+    const dismiss = {
+      'close button': (sr: ShadowRoot) =>
+        (sr.querySelector('[data-testid="add-sheet-close"]') as HTMLButtonElement).click(),
+      scrim: (sr: ShadowRoot) =>
+        (addSheet(sr)?.shadowRoot?.querySelector('.scrim') as HTMLElement).click(),
+    } as const;
+
+    it.each(Object.keys(dismiss) as (keyof typeof dismiss)[])(
+      '%s asks, and the sheet stays up with the typing in it',
+      async (how) => {
+        const { el, sr } = await dirtyAddSheet();
+
+        dismiss[how](sr);
+        await settle(el);
+
+        expect(hostGuard(sr).open).toBe(true);
+        expect(addSheet(sr)?.open).toBe(true);
+        expect(typed(sr)).toBe('Half typed');
+
+        (
+          hostGuard(sr).shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement
+        ).click();
+        await settle(el);
+        expect(addSheet(sr)?.open).toBe(false);
+      },
+    );
+
+    it('keeps the sheet and the typing when the question is declined', async () => {
+      const { el, sr } = await dirtyAddSheet();
+
+      dismiss.scrim(sr);
+      await settle(el);
+      (
+        hostGuard(sr).shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement
+      ).click();
+      await settle(el);
+
+      expect(addSheet(sr)?.open).toBe(true);
+      expect(typed(sr)).toBe('Half typed');
+    });
+
+    it('asks the same question every other surface asks', async () => {
+      const { el, sr } = await dirtyAddSheet();
+      dismiss.scrim(sr);
+      await settle(el);
+
+      const panel = hostGuard(sr).shadowRoot as ShadowRoot;
+      expect(panel.querySelector('[data-testid="confirm-dialog"]')?.getAttribute('aria-label')).toBe(
+        DISCARD_PROMPT.heading,
+      );
+      expect(panel.querySelector('[data-testid="confirm-message"]')?.textContent).toContain(
+        DISCARD_PROMPT.message,
+      );
+      expect(panel.querySelector('[data-testid="confirm-accept"]')?.textContent).toContain(
+        DISCARD_PROMPT.confirmLabel,
+      );
+    });
+  });
 });
 
 describe('hv-card-shell: mobile', () => {
@@ -1073,6 +1230,311 @@ describe('hv-card-shell: inline editing', () => {
   });
 });
 
+// Typing in the search box, toggling a filter and changing the sort all run
+// through `Store.setFilters`. It used to blank the item list, which sent
+// `hv-list` into its skeleton branch and replaced the scroller the open form
+// lives in — the element was rebuilt from the stored item and everything typed
+// into it was gone, while the form still looked open.
+describe('hv-card-shell: the open editor survives a refetch', () => {
+  const list = (sr: ShadowRoot) => sr.querySelector('hv-list') as HTMLElement;
+  const editor = (sr: ShadowRoot) =>
+    (list(sr).shadowRoot?.querySelector('hv-item-editor') as HTMLElement | null) ?? null;
+  const nameField = (sr: ShadowRoot) =>
+    editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+
+  const openAndType = async (el: HVCardShell, sr: ShadowRoot, id: string, typed: string) => {
+    const row = [...(list(sr).shadowRoot?.querySelectorAll('hv-list-row') ?? [])]
+      .map((r) => r as HTMLElement & { item: Item })
+      .find((r) => r.item.id === id)!;
+    (row.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const field = nameField(sr);
+    field.value = typed;
+    field.dispatchEvent(new Event('input'));
+    await settle(el);
+    return editor(sr)!;
+  };
+
+  const twoItems = () => [
+    makeItem({ id: '1', name: 'Target', quantity: 9, low_stock_threshold: 1 }),
+    makeItem({ id: '2', name: 'Decoy', quantity: 0, low_stock_threshold: 4 }),
+  ];
+
+  it('survives typing in the search box', async () => {
+    const { el, store, sr } = await mountShell({ items: twoItems() });
+    const before = await openAndType(el, sr, '1', 'Target EDITED');
+
+    store.setFilters({ q: 'Tar' });
+    await settle(el);
+    await settle(el);
+
+    expect(editor(sr)).toBe(before);
+    expect(nameField(sr).value).toBe('Target EDITED');
+  });
+
+  it('survives a filter toggle', async () => {
+    const { el, store, sr } = await mountShell({ items: twoItems() });
+    const before = await openAndType(el, sr, '1', 'Target EDITED');
+
+    store.setFilters({ lowStockOnly: true });
+    await settle(el);
+    await settle(el);
+
+    expect(editor(sr)).toBe(before);
+    expect(nameField(sr).value).toBe('Target EDITED');
+  });
+
+  // The sort patch is the one `setFilters` skips the tree refresh for, so it
+  // moves no editor-epoch input — which is how the issue proved this is not the
+  // epoch's doing.
+  it('survives a sort change', async () => {
+    const { el, store, sr } = await mountShell({ items: twoItems() });
+    const before = await openAndType(el, sr, '1', 'Target EDITED');
+
+    store.setFilters({ sort: { field: 'name', order: 'desc' } });
+    await settle(el);
+    await settle(el);
+
+    expect(editor(sr)).toBe(before);
+    expect(nameField(sr).value).toBe('Target EDITED');
+  });
+
+  it('pins the row, and says so, when the filter stops matching it', async () => {
+    const { el, store, sr } = await mountShell({ items: twoItems() });
+    const before = await openAndType(el, sr, '1', 'Target EDITED');
+
+    // Item 1 has stock to spare, so "low stock only" excludes exactly it.
+    store.setFilters({ lowStockOnly: true });
+    await settle(el);
+    await settle(el);
+
+    expect(store.state.value.items.map((i) => i.id)).toEqual(['2']);
+    expect(editor(sr)).toBe(before);
+    expect(nameField(sr).value).toBe('Target EDITED');
+    expect(
+      list(sr).shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')?.textContent,
+    ).toContain('No longer matches the current filters');
+  });
+
+  it('releases the pin on cancel', async () => {
+    const { el, store, sr } = await mountShell({ items: twoItems() });
+    await openAndType(el, sr, '1', 'Target EDITED');
+    store.setFilters({ lowStockOnly: true });
+    await settle(el);
+    await settle(el);
+
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+    // Typed edits are on the form, so Cancel asks; the pin survives the question
+    // and is released by the answer.
+    const guard = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-discard-confirm"]') as HTMLElement & {
+      open: boolean;
+    };
+    expect(guard.open).toBe(true);
+    (guard.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(editor(sr)).toBe(null);
+    expect(list(sr).shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')).toBe(null);
+  });
+
+  it('releases the pin on save', async () => {
+    const { el, store, sr } = await mountShell({ items: twoItems() });
+    await openAndType(el, sr, '1', 'Target EDITED');
+    store.setFilters({ lowStockOnly: true });
+    await settle(el);
+    await settle(el);
+
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    expect(store.state.value.items.find((i) => i.id === '1')?.name).toBe('Target EDITED');
+    expect(editor(sr)).toBe(null);
+    expect(list(sr).shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')).toBe(null);
+  });
+
+  // A pin is for a row that fell off the page, not for one that is gone.
+  it('closes rather than pins when the item is deleted', async () => {
+    const { el, store, sr } = await mountShell({ items: twoItems() });
+    await openAndType(el, sr, '1', 'Target EDITED');
+
+    await store.deleteItem('1', 1);
+    await settle(el);
+
+    expect(editor(sr)).toBe(null);
+    expect(list(sr).shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')).toBe(null);
+  });
+});
+
+// The inline expander is the one surface that renders the editor through
+// `hv-list`'s template callback rather than directly, so it is the only one
+// where shell state can reach the host and stop there. Everything below is
+// about state the list itself does not bind.
+describe('hv-card-shell: inline editor reactivity', () => {
+  type EditorProps = {
+    locations: Location[] | null;
+    locationTree: { id: string }[];
+    tagSuggestions: string[];
+    busy: boolean;
+    errorMessage: string | null;
+  };
+  const list = (sr: ShadowRoot) => sr.querySelector('hv-list') as HTMLElement & { editorEpoch: unknown };
+  const editor = (sr: ShadowRoot) =>
+    list(sr).shadowRoot?.querySelector('hv-item-editor') as (HTMLElement & EditorProps) | null;
+  const row = (sr: ShadowRoot, id: string) =>
+    [...(list(sr).shadowRoot?.querySelectorAll('hv-list-row') ?? [])]
+      .map((r) => r as HTMLElement & { item: Item })
+      .find((r) => r.item.id === id) ?? null;
+  const openEditor = async (el: HVCardShell, sr: ShadowRoot, id: string) => {
+    (row(sr, id)!.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+  };
+
+  it('delivers a location created elsewhere into the open expander', async () => {
+    const { el, hass, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Drill' })] });
+    await openEditor(el, sr, '1');
+    expect(editor(sr)?.locations ?? []).toHaveLength(0);
+
+    hass.__setLocations([loc('L1', 'Garage')]);
+    hass.__emit('locations', 'created', { location_id: 'L1' });
+    await settle(el);
+    await settle(el);
+
+    expect(editor(sr)?.locations?.map((l) => l.name)).toEqual(['Garage']);
+    expect(editor(sr)?.locationTree.map((n) => n.id)).toEqual(['L1']);
+  });
+
+  it('delivers a newly named tag into the open expander’s suggestions', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Drill' })] });
+    await openEditor(el, sr, '1');
+    expect(editor(sr)?.tagSuggestions).toEqual([]);
+
+    store.addDraftValue('tag', 'power-tools');
+    await settle(el);
+
+    expect(editor(sr)?.tagSuggestions).toEqual(['power-tools']);
+  });
+
+  it('carries the save busy state into the open expander', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Old' })] });
+    let land!: (item: Item) => void;
+    store['ws'].updateItem = () => new Promise<Item>((resolve) => (land = resolve));
+
+    await openEditor(el, sr, '1');
+    const nameInput = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    nameInput.value = 'New';
+    nameInput.dispatchEvent(new Event('input'));
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const save = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement;
+    expect(editor(sr)?.busy).toBe(true);
+    expect(save.textContent?.trim()).toBe('Saving…');
+    expect(save.disabled).toBe(true);
+
+    land(makeItem({ id: '1', name: 'New', version: 2 }));
+    await settle(el);
+  });
+
+  // The expander can be scrolled well past the card's banner list, so a save
+  // that did not land has to say so inside the form the user is still looking at.
+  it('shows a rejected save inside the open expander and clears the busy state', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Old' })] });
+    store['ws'].updateItem = async () => {
+      throw { code: 'storage_error', message: 'the store is read-only' };
+    };
+
+    await openEditor(el, sr, '1');
+    const nameInput = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    nameInput.value = 'New';
+    nameInput.dispatchEvent(new Event('input'));
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    const banner = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-error"]');
+    expect(banner?.textContent).toContain('the store is read-only');
+    expect(editor(sr)?.busy).toBe(false);
+    expect(
+      (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).textContent?.trim(),
+    ).toBe('Save');
+  });
+
+  it('says a conflict in the same words the card banner uses', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Old' })] });
+    store['ws'].updateItem = async () => {
+      throw { code: 'conflict', message: 'version conflict: expected 1, actual 2' };
+    };
+
+    await openEditor(el, sr, '1');
+    const nameInput = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    nameInput.value = 'New';
+    nameInput.dispatchEvent(new Event('input'));
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    // Version numbers mean nothing inside a form; the card's banner already
+    // frames this case in words and the two surfaces have to agree.
+    expect(editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-error"]')?.textContent).toContain(
+      'Someone else changed this item',
+    );
+  });
+
+  it('drops the error again when the next edit opens', async () => {
+    const items = [makeItem({ id: '1', name: 'Old' }), makeItem({ id: '2', name: 'Other' })];
+    const { el, store, sr } = await mountShell({ items });
+    store['ws'].updateItem = async () => {
+      throw { code: 'storage_error', message: 'the store is read-only' };
+    };
+
+    await openEditor(el, sr, '1');
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+    expect(editor(sr)?.errorMessage).toBe('the store is read-only');
+
+    (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+    await openEditor(el, sr, '2');
+    expect(editor(sr)?.errorMessage).toBe(null);
+  });
+
+  // The token is derived from what the editor reads, not stamped every render:
+  // a re-render for anything else must leave the list — and every row in it —
+  // exactly where it was.
+  it('leaves the list alone when the shell re-renders for something else', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Drill' })] });
+    await openEditor(el, sr, '1');
+    const before = list(sr).editorEpoch;
+
+    (sr.querySelector('[data-testid="filter-toggle"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(sr.querySelector('hv-filter-panel')).toBeTruthy();
+    expect(list(sr).editorEpoch).toBe(before);
+  });
+
+  // The other half of the same contract, and the one a reader is likelier to
+  // get backwards: the location tree is state the open form renders, so when it
+  // is replaced the list has to redraw. Changing a filter refetches that tree,
+  // which is why a filter chip moves the epoch rather than leaving it alone.
+  it('moves the epoch when the location tree the open form reads is replaced', async () => {
+    const { el, hass, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Drill' })] });
+    await openEditor(el, sr, '1');
+    const before = list(sr).editorEpoch;
+
+    hass.__setLocations([loc('L1', 'Garage')]);
+    hass.__emit('locations', 'created', { location_id: 'L1' });
+    await settle(el);
+    await settle(el);
+
+    expect(list(sr).editorEpoch).not.toBe(before);
+    expect(editor(sr)?.locationTree.map((n) => n.id)).toEqual(['L1']);
+  });
+});
+
 describe('hv-card-shell: mobile detail sheet', () => {
   const sheet = (sr: ShadowRoot) =>
     sr.querySelector('[data-testid="card-detail-sheet"]') as HTMLElement & { open: boolean; item: Item | null };
@@ -1281,6 +1743,27 @@ describe('hv-card-shell: full view', () => {
     expect(organize().tab).toBe('locations');
   });
 
+  // The button and the sidebar heading are new front doors onto the surface the
+  // ⋮ already reached; both have to arrive at the dialog, on the tab they name.
+  it('opens organize from the expanded view\'s app bar and Status heading', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const organize = () =>
+      sr.querySelector('[data-testid="host-organize"]') as HTMLElement & { open: boolean; tab: string };
+
+    (sr.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement).click();
+    await settle(el);
+    const view = fullView(sr);
+
+    (view.shadowRoot?.querySelector('[data-testid="full-organize"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(organize().open).toBe(true);
+    expect(organize().tab).toBe('locations');
+
+    (view.shadowRoot?.querySelector('[data-testid="sidebar-new-status"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(organize().tab).toBe('statuses');
+  });
+
   it('answers the full view menu inside the shell, letting nothing escape', async () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     const seen: string[] = [];
@@ -1297,6 +1780,61 @@ describe('hv-card-shell: full view', () => {
 
     expect((sr.querySelector('hv-column-picker') as HTMLElement & { open: boolean }).open).toBe(true);
     expect(seen).toEqual([]);
+  });
+});
+
+// A dialog is `position: fixed`, so it is laid out against the window and not
+// against the card that opened it. Feeding it the card's measured width put the
+// organize dialog in its full-bleed phone page on a desktop monitor, from every
+// surface — a card in a dashboard column is 300–500px wide, and expanding it
+// changed nothing because the measured element was still the card underneath.
+describe('hv-card-shell: host dialogs follow the viewport, not the card', () => {
+  const HOSTED = ['host-columns', 'host-confirm', 'host-organize', 'host-import', 'host-diagnostics'];
+
+  it('leaves them centred for a narrow card in a wide window', async () => {
+    const restore = stubViewport(false);
+    try {
+      const { sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+      for (const id of HOSTED) {
+        expect(sr.querySelector(`[data-testid="${id}"]`)?.hasAttribute('mobile'), id).toBe(false);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  it('gives every one of them the phone form on a phone viewport', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: false });
+      for (const id of HOSTED) {
+        expect(sr.querySelector(`[data-testid="${id}"]`)?.hasAttribute('mobile'), id).toBe(true);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  it('stops listening to the viewport once the card is gone', async () => {
+    const removed: string[] = [];
+    const original = window.matchMedia;
+    window.matchMedia = ((media: string) => ({
+      matches: true,
+      media,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: (type: string) => removed.push(type),
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    try {
+      const { el } = await mountShell({ items: [] });
+      el.remove();
+      expect(removed).toContain('change');
+    } finally {
+      window.matchMedia = original;
+    }
   });
 });
 

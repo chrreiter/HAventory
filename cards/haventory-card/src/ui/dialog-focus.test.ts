@@ -85,6 +85,47 @@ describe('DialogFocus', () => {
     expect(() => f.sync(false, () => null)).not.toThrow();
   });
 
+  // A surface whose content arrives over the connection draws nothing on the
+  // update that opened it — the lightbox has no image URL until the signature
+  // comes back. Focus has to land when the panel appears, not be given up on.
+  it('waits for a surface that appears an update later', () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const f = new DialogFocus();
+    let p: HTMLElement | null = null;
+    f.sync(true, () => p);
+    expect(document.activeElement).toBe(trigger);
+
+    p = panel();
+    f.sync(true, () => p);
+    expect(document.activeElement).toBe(p);
+
+    f.sync(false, () => p);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  // The opener is read on the first "open", so one that never drew must not
+  // leave it behind for whatever opens next.
+  it('forgets the opener of a surface that closed before it drew', () => {
+    const first = document.createElement('button');
+    const second = document.createElement('button');
+    document.body.append(first, second);
+
+    const f = new DialogFocus();
+    first.focus();
+    f.sync(true, () => null);
+    f.sync(false, () => null);
+
+    second.focus();
+    const p = panel();
+    f.sync(true, () => p);
+    expect(document.activeElement).toBe(p);
+    f.sync(false, () => p);
+    expect(document.activeElement).toBe(second);
+  });
+
   it('does nothing while the surface stays closed', () => {
     const btn = document.createElement('button');
     document.body.appendChild(btn);

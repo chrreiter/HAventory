@@ -14,6 +14,8 @@ import {
 } from '../ui/relative-time';
 import { saveShortcutLabel } from '../ui/keyboard';
 import { counted } from '../ui/plural';
+import { DISCARD_PROMPT } from '../ui/discard';
+import { ViewportNarrow } from '../ui/responsive';
 import { nextZBase } from '../utils/zindex';
 import {
   customFieldsFrom,
@@ -49,6 +51,7 @@ import type {
 } from '../store/types';
 import './hv-chip-input';
 import './hv-confirm';
+import './hv-lightbox';
 import './hv-location-tree';
 import './hv-checkout-popover';
 
@@ -133,6 +136,16 @@ export class HVItemEditor extends LitElement {
     css`
       :host {
         display: block;
+        /*
+         * The form's small print, at one size. Labels are 11px (the shared
+         * hv-label recipe and the photo picker's caption); everything this
+         * form declares as a note about a field — hints, sizes, errors, the
+         * upload queue — reads at this one instead of the 11.5/12/12.5px band
+         * they used to spread across. The custom-fields tally is the one piece
+         * of small print here that is not this form's to size: it is the same
+         * facet count the sidebar shows, priced once in the shared sheet.
+         */
+        --hv-editor-note: 12px;
         background: var(--hv-row-hover);
         border-left: 3px solid var(--hv-primary);
       }
@@ -156,13 +169,17 @@ export class HVItemEditor extends LitElement {
       }
       .head .meta {
         margin-left: auto;
-        font-size: 11.5px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-text-tertiary);
         white-space: nowrap;
       }
+      /* Name takes what is left; the two numbers take what a number needs.
+         The proportional tracks were authored for a 600–900px card, where 1fr
+         landed near 180px — in the expanded view at 1080p they handed a
+         three-digit quantity a field about 400px wide. */
       .grid {
         display: grid;
-        grid-template-columns: 2fr 1fr 1fr;
+        grid-template-columns: minmax(0, 1fr) 140px 160px;
         gap: 12px;
         padding: 8px 18px 14px;
       }
@@ -181,8 +198,16 @@ export class HVItemEditor extends LitElement {
       :host([mobile]) .cell.span3 {
         grid-column: span 1;
       }
+      /* Packed to the top rather than sharing out the row's surplus. A grid
+         item stretches by default, so a cell holding a label and a control grew
+         to whatever the tallest cell in the row needed — the Description
+         textarea — and its two auto rows split the difference between them.
+         That is why the status select came out taller than an input and shorter
+         than the textarea beside it: exactly the midpoint. The same hazard is
+         guarded one level down on the state row; this closes it at the top. */
       .cell {
         display: grid;
+        align-content: start;
         gap: 4px;
         min-width: 0;
       }
@@ -191,7 +216,10 @@ export class HVItemEditor extends LitElement {
          three fields are never read as three peer settings of the same kind. */
       .state {
         display: grid;
-        grid-template-columns: 2fr 1fr;
+        /* Even halves. At 2fr/1fr the inspection box was narrow enough that its
+           three offset chips wrapped onto three rows beside a check-out box
+           with room to spare. */
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         gap: 12px;
         align-items: start;
       }
@@ -206,15 +234,13 @@ export class HVItemEditor extends LitElement {
         border-radius: var(--hv-radius-input);
         padding: 9px 11px 11px;
       }
+      /* Layout only: the type is the shared hv-label recipe, which every
+         other label in this form already uses. Two recipes differing by one
+         weight step read as two kinds of label. */
       .group-caption {
         display: flex;
         align-items: center;
         gap: 5px;
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-        color: var(--hv-text-secondary);
       }
       .group-caption .hv-icon {
         flex: none;
@@ -225,9 +251,13 @@ export class HVItemEditor extends LitElement {
         gap: 12px;
         min-width: 0;
       }
+      /* Not bottom-aligned: the button carries no label, so lining its bottom
+         edge up with the dated field beside it put the dead air above it,
+         between the box's caption and its first control. The cell's own
+         align-content: start now lands it directly under the caption, level
+         with the label opposite, and the surplus falls below both. */
       .checkout-body {
         grid-template-columns: 1fr 1fr;
-        align-items: end;
       }
       /* Checking out is something you do, not a setting you hold — the same
          button the detail sheet has offered all along, in the same words. */
@@ -246,7 +276,7 @@ export class HVItemEditor extends LitElement {
         opacity: 0.85;
       }
       .group-hint {
-        font-size: 11.5px;
+        font-size: var(--hv-editor-note);
         line-height: 1.4;
         color: var(--hv-text-tertiary);
       }
@@ -365,7 +395,7 @@ export class HVItemEditor extends LitElement {
         border-color: var(--hv-error);
       }
       .field-error {
-        font-size: 12px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-error);
       }
       .tree-holder,
@@ -460,7 +490,7 @@ export class HVItemEditor extends LitElement {
       }
       .option-empty {
         padding: 8px 12px;
-        font-size: 12.5px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-text-tertiary);
       }
       .toggle {
@@ -578,8 +608,17 @@ export class HVItemEditor extends LitElement {
         padding: 8px 13px;
         font: 500 12.5px var(--hv-font);
       }
+      /* A note riding inside a label: it says something about the field rather
+         than naming it, so it steps out of the label's uppercase treatment
+         while keeping its line. */
+      .label-note {
+        text-transform: none;
+        letter-spacing: 0;
+        font-weight: 400;
+        color: var(--hv-text-tertiary);
+      }
       .key-hints {
-        font-size: 11.5px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-text-tertiary);
       }
       .key-hints button {
@@ -633,20 +672,30 @@ export class HVItemEditor extends LitElement {
         padding-top: 4px;
         flex-wrap: wrap;
       }
-      /* Save and Cancel sat at the bottom of a form inside a nested scroller,
-         so on a phone they were reliably below the fold — you had to scroll an
-         inner container to commit an edit you had already finished.
-         Sticky goes on the wrapping cell rather than on .actions itself: an
-         element only sticks within its containing block, and .actions' parent
-         is exactly as tall as .actions, so it would have had nowhere to move.
-         The cell's containing block is the form grid, which is tall. */
-      :host([mobile]) .actions-cell {
+      /* Save, Delete and Cancel sit at the bottom of a form inside a nested
+         scroller, so they land below the fold on any host tall enough to need
+         scrolling — a phone sheet, the card's list, and the expanded view,
+         which caps the form at 70dvh. The editor answers that itself rather
+         than each host growing a pinned footer of its own.
+         Sticky goes on the wrapping cell rather than on .actions: an element
+         only sticks within its containing block, and .actions' parent is
+         exactly as tall as .actions, so it would have had nowhere to move.
+         The cell's containing block is the form grid, which is tall.
+         The negative side margins and the matching padding bleed the opaque
+         bar out to the form's edges — .grid's 18px side padding would otherwise
+         leave the rows it covers showing in two strips either side of it. */
+      .actions-cell {
         position: sticky;
         bottom: -14px;
         z-index: 1;
         background: var(--hv-surface);
-        padding: 10px 0 14px;
+        margin: 0 -18px;
+        padding: 10px 18px 14px;
         border-top: 1px solid var(--hv-row-divider);
+      }
+      :host([mobile]) .actions-cell {
+        margin: 0 -16px;
+        padding: 10px 16px 14px;
       }
       /* The auto margin lives on a spacer of its own, not on the hint: the hint
          is gone on a phone (no keyboard to press Esc with), and with the margin
@@ -656,7 +705,7 @@ export class HVItemEditor extends LitElement {
         margin-left: auto;
       }
       .actions .hint {
-        font-size: 11.5px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-text-tertiary);
       }
       /* The property that drops the hint describes how wide the surface is,
@@ -692,13 +741,12 @@ export class HVItemEditor extends LitElement {
         border-radius: var(--hv-radius-input);
         background: var(--hv-error-bg);
         color: var(--hv-error-deep);
-        font-size: 12.5px;
+        font-size: var(--hv-editor-note);
       }
       .photos {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
-        margin-top: 4px;
       }
       .photos figure {
         position: relative;
@@ -707,6 +755,14 @@ export class HVItemEditor extends LitElement {
         border-radius: 8px;
         overflow: hidden;
         background: var(--hv-surface-raised);
+      }
+      /* A 72px square of photo is not a photo; every surface that shows one
+         opens it full-size, and the strip is the one that did not. */
+      .photos .open {
+        display: block;
+        padding: 0;
+        border: none;
+        background: none;
       }
       .photos img {
         width: 72px;
@@ -804,10 +860,21 @@ export class HVItemEditor extends LitElement {
       }
       .documents {
         list-style: none;
-        margin: 4px 0 0;
+        margin: 0;
         padding: 0;
         display: grid;
         gap: 6px;
+      }
+      /* Desktop only: there is no drag on touch, so the over-state could only
+         ever fire by accident there — the mobile branch renders no target at
+         all. Outset so an empty section still has an edge to aim at, and drawn
+         with outline rather than border so nothing inside shifts as the drag
+         crosses in. */
+      .photos.dropping,
+      .documents.dropping {
+        outline: 2px dashed var(--hv-primary);
+        outline-offset: 4px;
+        border-radius: var(--hv-radius-input);
       }
       .documents li {
         display: flex;
@@ -826,7 +893,7 @@ export class HVItemEditor extends LitElement {
       }
       .documents .doc-size {
         flex: none;
-        font-size: 11.5px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-text-secondary);
       }
       .documents .doc-open,
@@ -855,7 +922,7 @@ export class HVItemEditor extends LitElement {
         border: 1px dashed var(--hv-input-border);
         border-radius: var(--hv-radius-chip);
         color: var(--hv-text-secondary);
-        font-size: 12.5px;
+        font-size: var(--hv-editor-note);
         cursor: pointer;
       }
       .upload-list {
@@ -864,7 +931,7 @@ export class HVItemEditor extends LitElement {
         padding: 0;
         display: grid;
         gap: 5px;
-        font-size: 11.5px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-text-secondary);
       }
       .upload-list li {
@@ -899,7 +966,7 @@ export class HVItemEditor extends LitElement {
         background: none;
         padding: 0 4px;
         color: var(--hv-primary-dark);
-        font: 500 11.5px var(--hv-font);
+        font: 500 var(--hv-editor-note) var(--hv-font);
         cursor: pointer;
       }
       .upload-list li .dismiss {
@@ -947,7 +1014,7 @@ export class HVItemEditor extends LitElement {
          against an item id and there is none yet. Said once, where the photo
          grid will be, rather than left as an unexplained absence. */
       .attach-hint {
-        font-size: 12px;
+        font-size: var(--hv-editor-note);
         color: var(--hv-text-tertiary);
       }
     `,
@@ -1024,6 +1091,10 @@ export class HVItemEditor extends LitElement {
   @state() private _uploaded: Item | null = null;
   /** The attachment awaiting a yes, and what kind it is. */
   @state() private _confirmRemove: { id: string; kind: AttachmentKind } | null = null;
+  /** Which attachment section a drag is currently over, for the over-state. */
+  @state() private _dropTarget: AttachmentKind | null = null;
+  /** Which photo the lightbox was opened on, or null when it is closed. */
+  @state() private _lightbox: number | null = null;
   /** Escape on a dirty form asks before it throws the typing away. */
   @state() private _confirmDiscard = false;
   /** Why creating a first location from the picker failed. */
@@ -1031,17 +1102,17 @@ export class HVItemEditor extends LitElement {
   /**
    * Locations this form created, until the `locations` prop carries them.
    *
-   * The inline expander is handed to `hv-list` as a template callback, which it
-   * re-invokes only when one of its *own* properties changes. A location create
-   * changes neither the item list nor anything else that component binds, so
-   * the refreshed store state can reach the host without ever reaching this
-   * form — leaving the field it just filled reading "No location". The created
-   * `Location` is in hand regardless, so holding it is what makes the picker
-   * name what it created on every host.
+   * The picker fills the Location field the moment the create resolves, but the
+   * list it names from is a host property that reaches this form an update
+   * later at the earliest. The created `Location` is in hand regardless, so
+   * holding it is what keeps the field from reading "No location" in the gap —
+   * the same defence `_uploaded` gives the attachment list.
    */
   @state() private _createdLocations: Location[] = [];
 
   private readonly _urls = new MediaUrls(this);
+  /** Window width, for the two dialogs this form raises over itself. */
+  private readonly _viewport = new ViewportNarrow(this);
   private _uploadSeq = 0;
   /**
    * The item id `_model` was built from. `undefined` until the first update,
@@ -1091,6 +1162,7 @@ export class HVItemEditor extends LitElement {
       this._uploaded = null;
       this._confirmRemove = null;
       this._confirmDiscard = false;
+      this._lightbox = null;
       this._locationError = null;
       this._createdLocations = [];
       this._closeCategory();
@@ -1143,6 +1215,26 @@ export class HVItemEditor extends LitElement {
   };
 
   /**
+   * Ask the form to close, and say whether the caller may tear it down now.
+   *
+   * `false` means the form has raised the discard question itself: the caller
+   * does nothing further and waits for the `cancel` event a confirmed discard
+   * sends, which is the same event Cancel sends on a clean form. A host with
+   * somewhere else to go afterwards — another row, a whole surface closing —
+   * asks its own copy of the question instead, from `ui/discard`.
+   */
+  requestClose(): boolean {
+    if (!this.dirty) return true;
+    this._confirmDiscard = true;
+    return false;
+  }
+
+  /** Every close this form owns: Cancel, the ✕, and Escape with nothing over it. */
+  private _requestCancel = () => {
+    if (this.requestClose()) this._cancel();
+  };
+
+  /**
    * Escape takes back one thing at a time.
    *
    * Whatever the form has open on top of itself goes first — a dropdown is what
@@ -1161,10 +1253,8 @@ export class HVItemEditor extends LitElement {
         this._checkoutOpen = false;
       } else if (this._locationOpen) {
         this._closeLocation();
-      } else if (this.dirty) {
-        this._confirmDiscard = true;
       } else {
-        this._cancel();
+        this._requestCancel();
       }
     } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
@@ -1570,8 +1660,8 @@ export class HVItemEditor extends LitElement {
     return html`<div class="cell span3">
       <div class="state">
         <div class="group" role="group" aria-labelledby="editor-checkout-caption">
-          <span class="group-caption" id="editor-checkout-caption" data-testid="editor-checkout-caption">
-            ${icon('account', 14)} Checkout
+          <span class="hv-label group-caption" id="editor-checkout-caption" data-testid="editor-checkout-caption">
+            ${icon('account', 14)} Check out
           </span>
           <div class="group-body checkout-body">
             <div class="cell">
@@ -1596,11 +1686,11 @@ export class HVItemEditor extends LitElement {
                 .value=${model.dueDate}
                 @input=${(e: Event) => this._patch({ dueDate: (e.target as HTMLInputElement).value })}
               />
+              ${model.checkedOut
+                ? null
+                : html`<span class="group-hint" data-testid="editor-due-hint">${DUE_DATE_HINT}</span>`}
             </div>
           </div>
-          ${model.checkedOut
-            ? null
-            : html`<span class="group-hint" data-testid="editor-due-hint">${DUE_DATE_HINT}</span>`}
           <hv-checkout-popover
             data-testid="editor-checkout"
             .item=${this.item}
@@ -1623,7 +1713,7 @@ export class HVItemEditor extends LitElement {
           ></hv-checkout-popover>
         </div>
         <div class="group">
-          <label class="group-caption" for="editor-inspection" data-testid="editor-inspection-caption">
+          <label class="hv-label group-caption" for="editor-inspection" data-testid="editor-inspection-caption">
             ${icon('calendar', 14)} Next inspection
           </label>
           <div class="group-body">
@@ -1738,9 +1828,7 @@ export class HVItemEditor extends LitElement {
       <div class="custom">
         <div class="custom-head">
           <span class="hv-label">Custom fields</span>
-          <span class="hv-tally" data-testid="editor-cf-tally">
-            ${used} of ${counted(this.customFieldKeys.length || used, 'key')} in use
-          </span>
+          <span class="hv-tally" data-testid="editor-cf-tally">${counted(used, 'field')} set</span>
         </div>
         ${rows.map((row) => {
           const error = this._errorFor(`custom:${row.id}`);
@@ -2061,19 +2149,35 @@ export class HVItemEditor extends LitElement {
     const shots = pictures(item.attachments);
     const accepted = this.mediaConfig?.picture_mime_types.join(',') ?? 'image/*';
 
+    const drop = this._dropBindings('picture');
     return html`<div class="cell span3">
       <span class="hv-label">Photos</span>
-      <div class="photos" data-testid="editor-photos">
+      <div
+        class="photos ${!this.mobile && this._dropTarget === 'picture' ? 'dropping' : ''}"
+        data-testid="editor-photos"
+        @dragover=${drop.over}
+        @dragleave=${drop.leave}
+        @drop=${drop.drop}
+      >
         ${shots.map((picture, index) => {
           const src = this._urls.get(item.id, picture.id, attachmentNameToken(picture));
           return html`<figure data-testid="editor-photo">
             ${src
-              ? html`<img
-                  src=${src}
-                  alt=${pictureAlt(item.name, index, shots.length)}
-                  loading="lazy"
-                  decoding="async"
-                />`
+              ? html`<button
+                  class="open"
+                  data-testid="editor-photo-open"
+                  aria-label=${`View ${pictureAlt(item.name, index, shots.length)}`}
+                  @click=${() => {
+                    this._lightbox = index;
+                  }}
+                >
+                  <img
+                    src=${src}
+                    alt=${pictureAlt(item.name, index, shots.length)}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </button>`
               : html`<span class="placeholder" data-testid="editor-photo-placeholder"
                   >${icon('camera', 20)}</span
                 >`}
@@ -2139,6 +2243,80 @@ export class HVItemEditor extends LitElement {
   }
 
   /**
+   * Which section a dropped file belongs in, decided by the file and not by
+   * where it landed.
+   *
+   * A PDF dragged onto the photo strip is a manual — refusing it because of the
+   * cell it crossed would be arguing with something the user can see. Anything
+   * that is neither is left to `_preflight`, which is the one place that knows
+   * what the backend accepts and phrases the refusal.
+   */
+  private _kindFor(file: File): AttachmentKind {
+    return file.type.startsWith('image/') ? 'picture' : 'manual';
+  }
+
+  /**
+   * Attach dropped files, routing each by its own type.
+   *
+   * `_uploadFiles` runs a queue per call, and the two queues would interleave
+   * their version bumps, so a mixed drop is sent as pictures first and then
+   * manuals rather than as one call per file.
+   */
+  private async _onDrop(e: DragEvent) {
+    e.preventDefault();
+    this._dropTarget = null;
+    if (this.mobile) return;
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    if (!files.length) return;
+    const pictureFiles = files.filter((f) => this._kindFor(f) === 'picture');
+    const manualFiles = files.filter((f) => this._kindFor(f) === 'manual');
+    if (pictureFiles.length) await this._uploadFiles(pictureFiles, 'picture');
+    if (manualFiles.length) await this._uploadFiles(manualFiles, 'manual');
+  }
+
+  /**
+   * `dragover` must be cancelled or the browser treats the drop as navigation
+   * and replaces the page with the dropped file — taking the whole open form
+   * with it. Home Assistant's frontend does not block that, so the editor root
+   * cancels both events whatever the layout: `mobile` here is the card
+   * element's width, and a narrow card in a desktop window still has a mouse
+   * with a file on the end of it.
+   */
+  private _onRootDragOver(e: DragEvent) {
+    e.preventDefault();
+  }
+
+  private _onRootDrop(e: DragEvent) {
+    e.preventDefault();
+    this._dropTarget = null;
+  }
+
+  private _onDragOver(e: DragEvent, target: AttachmentKind) {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    this._dropTarget = target;
+  }
+
+  private _onDragLeave(target: AttachmentKind) {
+    if (this._dropTarget === target) this._dropTarget = null;
+  }
+
+  /**
+   * The drag-and-drop bindings a section's drop target needs, or none at all on
+   * a phone: there is no drag on touch, so an over-state could only ever fire by
+   * accident. Lit removes a listener bound to `undefined`, so the mobile branch
+   * really carries no target rather than a target that declines.
+   */
+  private _dropBindings(kind: AttachmentKind) {
+    if (this.mobile) return { over: undefined, leave: undefined, drop: undefined };
+    return {
+      over: (e: DragEvent) => this._onDragOver(e, kind),
+      leave: () => this._onDragLeave(kind),
+      drop: (e: DragEvent) => void this._onDrop(e),
+    };
+  }
+
+  /**
    * Rename one document.
    *
    * On `change`, not `input`: a keystroke-per-command would bump the item's
@@ -2178,9 +2356,16 @@ export class HVItemEditor extends LitElement {
     const docs = manuals(item.attachments);
     const accepted = this.mediaConfig?.manual_mime_types?.join(',') ?? 'application/pdf';
 
+    const drop = this._dropBindings('manual');
     return html`<div class="cell span3">
       <span class="hv-label">Documents</span>
-      <ul class="documents" data-testid="editor-documents">
+      <ul
+        class="documents ${!this.mobile && this._dropTarget === 'manual' ? 'dropping' : ''}"
+        data-testid="editor-documents"
+        @dragover=${drop.over}
+        @dragleave=${drop.leave}
+        @drop=${drop.drop}
+      >
         ${docs.map((doc) => {
           const src = this._urls.get(item.id, doc.id, attachmentNameToken(doc));
           const missing = this._urls.presence(item.id, doc.id) === 'missing';
@@ -2346,7 +2531,12 @@ export class HVItemEditor extends LitElement {
     const overdue = isOverdue(this.item?.due_date);
 
     return html`
-      <div data-testid="item-editor" @keydown=${this._onKeydown}>
+      <div
+        data-testid="item-editor"
+        @keydown=${this._onKeydown}
+        @dragover=${this._onRootDragOver}
+        @drop=${this._onRootDrop}
+      >
         ${this.noHeader
           ? null
           : html`<div class="head">
@@ -2370,7 +2560,7 @@ export class HVItemEditor extends LitElement {
                 class="hv-icon-button"
                 data-testid="editor-close"
                 aria-label="Close editor"
-                @click=${this._cancel}
+                @click=${this._requestCancel}
               >
                 ${icon('close', 18)}
               </button>
@@ -2399,7 +2589,9 @@ export class HVItemEditor extends LitElement {
           ${this._renderLocationField()} ${this._renderCategoryField()}
           ${this.mobile ? this._renderStatusField() : null}
           <div class="cell span3">
-            <span class="hv-label">Tags <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--hv-text-tertiary)">· stored lowercase</span></span>
+            <span class="hv-label"
+              >Tags <span class="label-note">· stored lowercase</span></span
+            >
             <hv-chip-input
               data-testid="editor-tags"
               .values=${model.tags}
@@ -2434,9 +2626,11 @@ export class HVItemEditor extends LitElement {
               ${this.mobile
                 ? null
                 : html`<span class="hint" data-testid="editor-key-hint">
-                    Esc discards · ${saveShortcutLabel()} saves
+                    Esc closes · ${saveShortcutLabel()} saves
                   </span>`}
-              <button class="hv-text-button" data-testid="editor-cancel" @click=${this._cancel}>Cancel</button>
+              <button class="hv-text-button" data-testid="editor-cancel" @click=${this._requestCancel}>
+                Cancel
+              </button>
               <button class="save" data-testid="editor-save" ?disabled=${this.busy} @click=${this._save}>
                 ${this.busy ? 'Saving…' : 'Save'}
               </button>
@@ -2445,13 +2639,30 @@ export class HVItemEditor extends LitElement {
         </div>
       </div>
 
+      <hv-lightbox
+        data-testid="editor-lightbox-host"
+        .item=${this._current}
+        .media=${this.media}
+        .index=${this._lightbox}
+        .onOpenerGone=${() => this._refocus()}
+        @close=${(e: Event) => {
+          e.stopPropagation();
+          this._lightbox = null;
+        }}
+      ></hv-lightbox>
+
       <!-- Outside the form's own keydown scope, and their events stopped here:
            a host listens for the cancel event on this editor to close it, and a
            dialog saying "no, keep the photo" must not read as "close the
-           form". -->
+           form".
+
+           The mobile flag below is the viewport, not this form's own mobile
+           property: both dialogs are fixed to the window, so the card's width
+           says nothing about the room they have. -->
       <hv-confirm
         data-testid="editor-remove-confirm"
         ?open=${this._confirmRemove !== null}
+        ?mobile=${this._viewport.narrow}
         .heading=${REMOVE_COPY[this._confirmRemove?.kind ?? 'picture'].heading}
         .message=${REMOVE_COPY[this._confirmRemove?.kind ?? 'picture'].message}
         confirmLabel="Remove"
@@ -2472,9 +2683,10 @@ export class HVItemEditor extends LitElement {
       <hv-confirm
         data-testid="editor-discard-confirm"
         ?open=${this._confirmDiscard}
-        heading="Discard your changes?"
-        message="What you have typed since the last save is lost."
-        confirmLabel="Discard"
+        ?mobile=${this._viewport.narrow}
+        .heading=${DISCARD_PROMPT.heading}
+        .message=${DISCARD_PROMPT.message}
+        .confirmLabel=${DISCARD_PROMPT.confirmLabel}
         destructive
         @confirm=${(e: Event) => {
           e.stopPropagation();

@@ -123,8 +123,17 @@ export class HVBottomSheet extends LitElement {
     }
   }
 
+  /**
+   * Report the dismissal and leave the closing to whoever opened the sheet.
+   *
+   * The host binds `open` from its own state, so a sheet that closed itself
+   * here would be out of step with that binding — Lit compares against the
+   * value it last committed, sees no change, and never sets the property back.
+   * A host with a question to ask first — a form with unsaved typing in it —
+   * could then only put the sheet back up by writing the property behind the
+   * binding's back.
+   */
   private _cancel = () => {
-    this.open = false;
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
   };
 

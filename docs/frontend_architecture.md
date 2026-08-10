@@ -23,9 +23,17 @@ the `Store` (created on the first `hass` assignment), the Lovelace interface
 substance:
 
 ```ts
-setConfig(cfg) → { title?: string }   // every other key is ignored, not rejected
+setConfig(cfg) → { title?: string; quickFilters?: QuickFilterKey[] | null }
+                                      // every other key is ignored, not rejected
 render()       → <hv-card-shell>
 ```
+
+`quick_filters` names the quick-filter pills the dashboard offers (`ui/quick-filters.ts`
+holds the vocabulary). `null` — the omitted key, or anything that is not a list — means
+all of them. The shell passes it to `hv-full-view` unchanged, so the card's badges and the
+full view's pills offer one vocabulary; the sidebar panel, which has no dashboard config,
+takes the default. It decides what is *allowed*: whether an allowed pill draws is still
+the count's call.
 
 It also publishes the active HA theme as `color-scheme` on the host, which every nested
 component inherits.
@@ -49,7 +57,10 @@ Both hosts hold a `HostSurfaces` instance (`src/host-surfaces.ts`): every surfac
 the delete/discard confirmation, the organize dialog, the import sheet, the diagnostics
 panel with its refresh state, and the shared ⋮ menu-entry builder. On the card side the
 instance lives in `hv-card-shell`; on the panel it lives in the panel element directly.
-Host differences enter as constructor hooks (`isMobile`, `onItemDeleted`, `onBrowse`).
+Host differences enter as constructor hooks (`onItemDeleted`, `onBrowse`). The phone form of
+those dialogs is not one of them: the instance watches the viewport itself (`NARROW_QUERY`,
+started and stopped from each host's connected/disconnected callbacks) and hands the same
+answer to all five, so the card and the panel cannot disagree about what a phone is.
 
 ---
 
@@ -71,23 +82,31 @@ haventory-card                     Lovelace element; store owner
     │                              document pickers, cover/reorder controls,
     │                              per-document title field, per-file retry
     │       ├── hv-chip-input      tag chips with suggestions
+    │       ├── hv-lightbox        the photo strip opens full-size here too
     │       └── hv-location-tree
-    ├── hv-detail-sheet            mobile: read view + edit view in one sheet;
-    │   │                          photo gallery strip, a navigable full-size
-    │   │                          lightbox and the Documents list
+    ├── hv-detail-sheet            the narrow read view, on the card and the full
+    │   │                          view alike: read + edit in one sheet, photo
+    │   │                          gallery strip and the Documents list
     │   ├── hv-item-editor
+    │   ├── hv-lightbox            photos full-size, with arrows and a counter
     │   └── hv-checkout-popover    inline due-date step
     ├── hv-checkout-popover        desktop: anchored due-date step
     ├── hv-organize-dialog         Locations / Categories / Tags / Statuses
     ├── hv-import-sheet            input → preview → summary (+ invalid-document state)
     ├── hv-diagnostics-panel       health, drop counters, subscriptions, copy report
     ├── hv-confirm                 in-app confirmation (replaces window.confirm)
-    ├── hv-banner                  the one alert treatment
+    ├── hv-banner                  the one alert treatment; the degraded and error
+    │                              stacks are built in ui/banners.ts and rendered
+    │                              by the card and the full view alike
     └── hv-full-view               fullscreen workspace
         ├── hv-location-tree       sidebar's Locations section, manage-capable
         ├── hv-filter-panel        same panel, staged behind a commit row on a phone
         ├── hv-item-editor         inline above the table (the same one edit form)
-        ├── hv-data-table          sortable table + selection column
+        ├── hv-data-table          sortable table + selection column; rows carry the
+        │                          same ⋮ actions the card's rows do
+        ├── hv-detail-sheet        the read view at phone width, the same one the
+        │                          card opens
+        ├── hv-checkout-popover    due-date step for a row and for a selection
         └── hv-bulk-bar            bulk actions, progress, per-operation results
 ```
 
@@ -96,29 +115,55 @@ than by a component of their own: they are flat lists of `distinct_values` entri
 rows only have to look like `hv-location-tree`'s — which, being in another shadow root,
 could not have shared the rule either way.
 
-Each of the three headings states how many of its thing there is, and offers a create
-action. Categories and tags come with their `distinct_values` length; locations are counted
-by `countLocations` in `store/location-tree.ts`, which walks every depth and takes the same
-optional filter needle `hv-location-tree` matches rows with, so the organize dialog's
-"N locations" can never disagree with the tree printed under it. Creating differs by facet
-because the backend does: a location is a real object and is created inline, while a
-category or tag exists only through the items using it, so those buttons ask the card to
-open `hv-organize-dialog` on the matching tab (`menu-action` with `{ id: 'organize', tab }`).
+Each of the four headings offers a create action, and the three that can be counted state
+how many of their thing there is — Status is the household's own vocabulary, whose size says
+nothing about the inventory the facet navigates. Categories and tags come with their
+`distinct_values` length; locations are counted by `countLocations` in
+`store/location-tree.ts`, which walks every depth and takes the same optional filter needle
+`hv-location-tree` matches rows with, so the organize dialog's "N locations" can never
+disagree with the tree printed under it. Creating differs by facet because the backend does:
+a location is a real object and is created inline, while a category, tag or status is made
+in the organize dialog, so those buttons ask the card to open `hv-organize-dialog` on the
+matching tab (`menu-action` with `{ id: 'organize', tab }`). The app bar carries an Organize
+button raising the same event with no tab, so the surface is one click from the view rather
+than two through the ⋮ — which keeps its entry, since the plain card's header has no room
+for a button.
 
 ### Two different "is this a phone?" signals
 
-Most components take a `mobile` **property** fed by `hv-card-shell`'s *measured width* — a
-card in a narrow dashboard column is a phone layout regardless of the viewport. `hv-full-view`
-is the exception: it is fixed to the viewport, so it switches on a `@media (max-width: 700px)`
-query instead.
+Two questions, two answers, and they are not interchangeable:
 
-That split bit once. `hv-item-editor` and `hv-filter-panel` are property-driven but are also
+- **How wide is the card?** `MOBILE_BREAKPOINT` (600px), measured on the element by
+  `ResponsiveController` and handed down as a `mobile` **property**. Everything drawn inside
+  the card's own box reads this — the list, the steppers, the in-card sheets — because a card
+  in a narrow dashboard column is a phone layout however wide the window is.
+- **How wide is the window?** `NARROW_QUERY` (`(max-width: 700px)`, `ui/responsive.ts`), read
+  with `matchMedia` and as a CSS `@media` block. Everything `position: fixed` reads this:
+  `hv-full-view`, `hv-overflow-menu`, and the five dialogs `HostSurfaces` owns. A fixed
+  overlay is laid out against the window, so the card's width says nothing about the room it
+  has.
+
+Each split bit once. `hv-item-editor` and `hv-filter-panel` are property-driven but are also
 children of `hv-full-view`, which never set the property — so at 375px the expanded view drew
-the editor's three-column desktop grid in 156px + 78px + 78px. `hv-full-view` now reads the
-same breakpoint with `matchMedia` (`NARROW_QUERY`, kept in step with the media query) and
-hands it down. Note what came with it: `hv-filter-panel` in `mobile` mode *stages* its edits
-and drops its own footer, expecting the host to provide one, so the expanded view also grew
-the Clear all / Cancel / "Show N items" row the card's filter sheet has.
+the editor's three-column desktop grid in 156px + 78px + 78px; `hv-full-view` now reads the
+viewport query and hands the property down. Note what came with it: `hv-filter-panel` in
+`mobile` mode *stages* its edits and drops its own footer, expecting the host to provide one,
+so the expanded view also grew the Clear all / Cancel / "Show N items" row the card's filter
+sheet has. In the other direction, `HostSurfaces` was fed the card's measurement, so the
+organize dialog took its full-bleed phone page on a desktop monitor whenever the card sat in
+a normal column — and expanding the card changed nothing, because the measured element was
+still the card underneath.
+
+On a phone viewport the four smaller dialogs — column picker, confirm, import, diagnostics —
+rise from the bottom edge like every other phone surface, through the shared
+`ui/dialog-sheet.ts` block rather than four private ones. The organize dialog keeps its
+full-bleed page, which is what a four-tab management surface needs at that width.
+
+Inside that dialog one declaration governs row height: `--hv-organize-row-pad` on its host,
+read by its own value rows and inherited through the shadow boundary into the
+`hv-location-tree` its Locations tab hosts, which reads the same property with its own
+fallback. That is what keeps the tightening scoped — no other host declares it, so the
+sidebar tree, the filter panel's picker and the editor's location field are untouched.
 
 ### Shared wording
 
@@ -277,7 +322,8 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 | `tokens.ts` | Every design token as a `--hv-*` custom property, bound to the HA theme variable first with the mock hex as fallback, plus dark-mode and reduced-motion overrides. `base` adds the pill/icon-button/chip/input primitives. Composed as `static styles = [tokens, base, css\`…\`]`. |
 | `icons.ts` | ~30 MDI glyphs as inline path data, rendered as `<svg fill="currentColor">`. See the deviation note below. |
 | `brand-icon.ts` | The HAventory mark as one path, published to HA's icon registry (`window.customIcons`) under the `haventory:` prefix so the sidebar entry can name it. The backend's `PANEL_ICON` is the matching string. |
-| `responsive.ts` | `ResponsiveController` — a Lit reactive controller that drives mobile mode from the card's own measured width (≤600px). |
+| `responsive.ts` | The two phone predicates: `ResponsiveController` (a Lit reactive controller driving mobile mode from the card's own measured width, ≤600px) and `NARROW_QUERY`, the viewport query every fixed overlay switches on. |
+| `dialog-sheet.ts` | The bottom-sheet presentation the host dialogs share under `mobile`, as one `css` block added to each of their `static styles`. |
 | `relative-time.ts` | "2 h ago" / "Jul 31" formatting, overdue checks, and the `+N days` arithmetic the check-out chips use. |
 | `item-form.ts` | Form model and payload building for the edit surfaces: validation per field, typed custom fields, tag normalization, and the `custom_fields_set` / `custom_fields_unset` diff. |
 | `value-rewrite.ts` | Tag/category rename, merge and removal as batches of item updates. |
@@ -336,12 +382,26 @@ what the list is showing. `include_subtree` is always sent explicitly, because t
 filter defaults it to `false` server-side while subscriptions default it to `true`.
 
 **Rate limiting and degraded state.** Every WS call goes through `run()`, which retries a
-`rate_limited` rejection with backoff before surfacing it, and classifies failures: a code
-from the backend's taxonomy means the socket is fine, anything else counts toward
-`degraded.connectionLost`.
+`rate_limited` rejection with backoff before surfacing it, and classifies failures: a
+*string* error code means a server answered and the command was refused — including the
+taxonomy's `unknown_error` catch-all, which is a server-side fault, not a transport one.
+Anything else (Home Assistant's numeric transport codes, a thrown `Error`, no code at all)
+never reached a server; those are reported under the card's own `connection_lost` code with
+wording that names the connection, and count toward `degraded.connectionLost`. An outage
+fails every call in flight, so the error queue holds at most one such entry at a time.
+
+`degraded.connectionLost` has two sources. Repeated transport failures are one, and they
+catch an outage that closes no socket — a server that accepts the connection and stops
+answering on it. The socket's own `disconnected` event is the other, and it is what an
+**idle** surface depends on: every other signal comes from a call the card made, so a list
+left open across a restart would otherwise go on showing pre-outage data with nothing to say
+so. Home Assistant reconnects by itself, so the event starts a short grace period rather
+than declaring the outage at once; `ready` inside that window cancels it, and `ready` after
+it takes the banner back down.
 
 A *rejected subscribe* kills live updates outright — no event will ever arrive to hint at
-it — so it is handled separately. The three topics are opened as one **round**, because the
+it — so it is handled separately. The four topics — items, stats, locations and statuses —
+are opened as one **round**, because the
 limiter bills each subscribe separately and can admit `items` while refusing `stats`; live
 updates only count as restored once every subscribe in the newest round is accepted, which
 `WSClient.subscribe`'s `onOpen` reports. A round refused with `rate_limited` is re-opened
@@ -349,10 +409,22 @@ automatically up to four times, waiting the envelope's retry-after hint when it 
 (`retry_after_ms`, or `retry_after` in seconds, read from `data`, `context` or the top level
 and clamped to 30 s) and otherwise backing off exponentially. `degraded.liveUpdates` tracks
 this as `'live' | 'retrying' | 'paused'`, with `degraded.nextLiveRetryAt` for the scheduled
-attempt; the shell renders it as a non-blocking banner that clears itself when a retry gets
-back in. Once the budget is spent the state goes `'paused'`, the refusal reaches the error
-queue once, and the banner's Refresh (i.e. `refreshAll()`) is the way back. Any other
-refusal is an outage: reported immediately, never retried.
+attempt; every surface renders it as a non-blocking banner that clears itself when a retry
+gets back in. A round refused with `storage_error` or `unknown_command` is re-opened on the
+same backoff but a larger budget, because both say the backend is not there *yet* rather
+than broken: the first is what a config entry mid-reload answers, the second is Home
+Assistant's answer for a command type nobody has registered, which is what a restarting
+instance serves until the integration finishes setting up. Landing one of those re-reads the
+inventory, since every event in the gap went to a subscription that no longer existed. Once
+the budget is spent the state goes `'paused'`, the refusal reaches the error queue once, and
+the banner's Refresh (i.e. `refreshAll()`) is the way back. Any other refusal is an outage:
+reported immediately, never retried.
+
+`Store.init()` opens the subscriptions and the watches in a `finally`, so a card whose first
+load was refused outright still has them. Home Assistant rebuilds the Lovelace view when its
+socket reconnects and does so before a restarting instance has set the integration up, so
+that card is the common case rather than the odd one — and without the watches it would keep
+its loading skeleton for as long as the page stayed open.
 
 **Why the card offers a manual Refresh.** Subscription events carry no sequence number or
 generation, and the rate limiter can drop them silently, so a client cannot detect a gap.
@@ -385,8 +457,11 @@ backend can actually sort by it — a `sortField`. Category, location and tags h
 their headers are not clickable: a header that looks interactive but does nothing is worse
 than a plain one.
 
-`DEFAULT_COLUMNS` is every key: a browser that has made no choice sees the whole record,
-and the picker is what thins it. The full set is wider than a phone and wider than many
+`DEFAULT_COLUMNS` is every key, in the canonical order: a browser that has made no choice
+sees the whole record, and the picker is what thins it and reorders it. The stored array
+*is* the order — `normalizeColumns` validates and dedupes without re-sorting, so a
+selection written before ordering existed (always canonical) loads as the same table it
+described, and `canonicalOrder` is what "Reset order" restores. The full set is wider than a phone and wider than many
 desktops, which `hv-data-table` answers by scrolling sideways rather than dropping columns.
 The name track (`NAME_COLUMN_SIZE`) outweighs every flexible column beside it in both
 halves of its `minmax`, because the row's identity is the one column that cannot be
@@ -404,14 +479,30 @@ Any other key in that record is ignored, so an older or newer payload never brea
 
 - **One edit form.** `hv-item-editor` is used by the inline expander, the full view and the
   mobile sheet. On mobile it stacks and collapses description / dates / custom fields
-  behind a single "More fields" disclosure.
-- **Only one expander at a time.** Opening another while the current one is dirty asks
-  first.
+  behind a single "More fields" disclosure. Its action bar is sticky on **every** host, not
+  only the phone: each of them scrolls the form in a box (the card's list, the sheet, the
+  expanded view's 70dvh cap), so Save and Cancel land below the fold on all three. The
+  editor solves that once; no host grows a pinned footer of its own. The bar bleeds past
+  `.grid`'s side padding so its opaque background reaches the form's edges.
+- **No path discards typed edits without asking.** Cancel, the ✕ and Escape are the form's
+  own, so `hv-item-editor` answers for them itself and hosts do not repeat the check; a host
+  with somewhere to go afterwards — another row, a sheet coming down, the expanded view
+  closing — calls `requestClose()` or asks its own copy. Either way the wording comes from
+  `ui/discard`, so the same decision never reads as two different questions. The phone sheets
+  are part of this: `hv-bottom-sheet` reports a scrim tap or a swipe-down and leaves the
+  closing to its host, which is what lets `hv-detail-sheet` answer for the form inside it.
 - **Optimistic writes** stay as they were; a rejected save keeps the expander open with the
   user's text in it, and conflicts render as a banner with *View latest* / *Re-apply*.
 - **Bulk work is chunked**, so progress is determinate and cancel stops cleanly after the
   in-flight chunk. Nothing is rolled back — the endpoint is not transactional, and the UI
   says so.
+- **A batch asks whatever the single row is asked.** The bar owns the steps that only
+  concern a selection (which location, which tags); the two questions a single row already
+  has a surface for — the delete confirmation and check-out's due date — belong to the
+  host, which opens the same `hv-confirm` and `hv-checkout-popover` once and applies the
+  one answer to every selected item. A `check-out` run detail carrying no `dueDate` key at
+  all is how the bar says "ask"; `dueDate: null` is a user who chose no due date. Check-in
+  stays immediate: there is nothing to ask.
 - **Per-operation results.** `haventory/items/bulk` returns a result per operation and
   partial failure is normal, so the result panel names every failed row, translates its
   error, and offers a retry scoped to those. Retries rebuild their operations rather than
@@ -462,8 +553,10 @@ Things jsdom cannot do, and how the tests handle it:
   the reflected `mobile` attribute), never a computed style.
 - **No layout** — `ResponsiveController` is driven through `setWidth()` / `setForced()`
   rather than a real `ResizeObserver`.
-- **No drag and drop** — dragging items onto tree nodes (an optional item in the handoff)
-  is not implemented.
+- **No real drag and drop** — jsdom builds a `DragEvent` with no `DataTransfer` behind it,
+  so the editor's file-drop tests carry a plain-object `dataTransfer` and assert the
+  routing (which kind each dropped file becomes) rather than the browser's drag machinery.
+  Dragging items onto tree nodes (an optional item in the handoff) is not implemented.
 
 Run:
 

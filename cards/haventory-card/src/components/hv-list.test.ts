@@ -65,6 +65,31 @@ describe('hv-list: editing', () => {
     expect(el.hasAttribute('editing')).toBe(false);
   });
 
+  // The template is a stable callback, so Lit re-runs it only when one of this
+  // component's own properties changes. The token is how a host says its editor
+  // needs redrawing for a reason nothing here binds.
+  it('re-runs the editor template when the opaque token changes', async () => {
+    let runs = 0;
+    const el = await mount({
+      editingItemId: 'a',
+      editorTemplate: () => {
+        runs += 1;
+        return html`<div data-testid="stub-editor">${runs}</div>`;
+      },
+    });
+    expect(runs).toBe(1);
+
+    el.editorEpoch = 2;
+    await el.updateComplete;
+    expect(runs).toBe(2);
+    expect(el.shadowRoot?.querySelector('[data-testid="stub-editor"]')?.textContent).toBe('2');
+  });
+
+  it('does not treat the token as an editing signal', async () => {
+    const el = await mount({ editorEpoch: 7 });
+    expect(el.hasAttribute('editing')).toBe(false);
+  });
+
   it('gives the scroller more room while editing', () => {
     const css = (customElements.get('hv-list') as typeof HVList).styles;
     const text = (Array.isArray(css) ? css : [css]).map((s) => String(s.cssText)).join('\n');
@@ -91,6 +116,72 @@ describe('hv-list: which branch renders', () => {
     // `loading` alone is not enough — the skeletons only replace an empty list.
     const el = await mount({ loading: true });
     expect(el.shadowRoot?.querySelector('[data-testid="list-rows"]')).toBeTruthy();
+    expect(el.shadowRoot?.querySelector('[data-testid="list-skeleton"]')).toBe(null);
+  });
+
+  // The kept rows are the honest display only if they are labelled as stale.
+  it('marks the kept rows busy and shows the refresh signal', async () => {
+    const el = await mount({ loading: true });
+    const rows = el.shadowRoot?.querySelector('[data-testid="list-rows"]') as HTMLElement;
+    expect(rows.getAttribute('aria-busy')).toBe('true');
+    expect(el.shadowRoot?.querySelector('[data-testid="list-refreshing"]')).toBeTruthy();
+  });
+
+  it('drops the busy marks once the refresh lands', async () => {
+    const el = await mount({ loading: false });
+    const rows = el.shadowRoot?.querySelector('[data-testid="list-rows"]') as HTMLElement;
+    expect(rows.getAttribute('aria-busy')).toBe('false');
+    expect(el.shadowRoot?.querySelector('[data-testid="list-refreshing"]')).toBe(null);
+  });
+
+  // A filter can legitimately exclude the row being edited. Unmounting the form
+  // there discards whatever was typed into it, so the row is pinned instead.
+  it('pins the edited row when the list stops carrying it', async () => {
+    const pinned = makeItem({ id: 'a', name: 'A' });
+    const el = await mount({
+      editingItemId: 'a',
+      pinnedItem: pinned,
+      editorTemplate: (id) => html`<div data-testid="stub-editor">${id}</div>`,
+    });
+    el.items = [makeItem({ id: 'b', name: 'B' })];
+    await el.updateComplete;
+
+    expect(el.shadowRoot?.querySelector('[data-testid="stub-editor"]')?.textContent).toBe('a');
+    expect(el.shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')?.textContent).toContain(
+      'No longer matches the current filters',
+    );
+  });
+
+  it('draws no pin hint while the edited row is still listed', async () => {
+    const el = await mount({
+      editingItemId: 'a',
+      editorTemplate: (id) => html`<div data-testid="stub-editor">${id}</div>`,
+    });
+    expect(el.shadowRoot?.querySelector('[data-testid="stub-editor"]')).toBeTruthy();
+    expect(el.shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')).toBe(null);
+  });
+
+  it('keeps a pinned editor instead of falling back to the empty state', async () => {
+    const el = await mount({
+      items: [],
+      loading: false,
+      editingItemId: 'a',
+      pinnedItem: makeItem({ id: 'a', name: 'A' }),
+      editorTemplate: (id) => html`<div data-testid="stub-editor">${id}</div>`,
+    });
+    expect(el.shadowRoot?.querySelector('[data-testid="stub-editor"]')).toBeTruthy();
+    expect(el.shadowRoot?.querySelector('[data-testid="empty-state"]')).toBe(null);
+  });
+
+  it('keeps a pinned editor instead of falling back to the skeleton', async () => {
+    const el = await mount({
+      items: [],
+      loading: true,
+      editingItemId: 'a',
+      pinnedItem: makeItem({ id: 'a', name: 'A' }),
+      editorTemplate: (id) => html`<div data-testid="stub-editor">${id}</div>`,
+    });
+    expect(el.shadowRoot?.querySelector('[data-testid="stub-editor"]')).toBeTruthy();
     expect(el.shadowRoot?.querySelector('[data-testid="list-skeleton"]')).toBe(null);
   });
 

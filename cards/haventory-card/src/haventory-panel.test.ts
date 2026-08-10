@@ -1,5 +1,5 @@
 import './haventory-panel';
-import { makeMockHass, makeItem } from './test.utils';
+import { makeMockHass, makeItem, stubViewport } from './test.utils';
 import { COLUMN_PREFS_STORAGE_KEY, DEFAULT_COLUMNS } from './store/columns';
 import type { HAventoryPanel } from './haventory-panel';
 
@@ -347,6 +347,33 @@ describe('haventory-panel: the shared dialog surfaces', () => {
     await settle(el);
     expect(dialog(sr, 'host-diagnostics').open).toBe(true);
   });
+
+  // The panel used to hold its own `matchMedia` subscription and hand the answer
+  // to the dialogs; it now shares the one the surfaces keep, so the page and the
+  // card agree at a single width without either owning the query.
+  it('hands every dialog the phone form on a phone viewport', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { sr } = await mountPanel();
+      for (const id of ['host-columns', 'host-confirm', 'host-organize', 'host-import', 'host-diagnostics']) {
+        expect(dialog(sr, id).hasAttribute('mobile'), id).toBe(true);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  it('keeps them centred on a desktop viewport', async () => {
+    const restore = stubViewport(false);
+    try {
+      const { sr } = await mountPanel();
+      for (const id of ['host-columns', 'host-confirm', 'host-organize', 'host-import', 'host-diagnostics']) {
+        expect(dialog(sr, id).hasAttribute('mobile'), id).toBe(false);
+      }
+    } finally {
+      restore();
+    }
+  });
 });
 
 describe('haventory-panel: the ⋮ menu', () => {
@@ -387,5 +414,22 @@ describe('haventory-panel: the ⋮ menu', () => {
     await settle(el);
 
     expect(entry()?.disabled).toBe(false);
+  });
+});
+
+// The panel renders nothing but the embedded full view, so a failure that is
+// invisible there is invisible on the whole sidebar page.
+describe('haventory-panel: failures reach the page', () => {
+  it('shows a refused operation on the page itself', async () => {
+    const { el, view } = await mountPanel({ items: [makeItem({ id: '1' })] });
+    const store = view().store as { pushError: (e: { code: string; message: string }) => void };
+    store.pushError({ code: 'storage_error', message: 'disk full' });
+    await settle(el);
+
+    const entry = view().shadowRoot?.querySelector('[data-testid="banner-entry"]') as HTMLElement | null;
+    expect(entry?.shadowRoot?.textContent).toContain('disk full');
+    // What the banner's actions do is pinned in hv-full-view's own suite; what
+    // matters here is that the panel has them at all.
+    expect(view().shadowRoot?.querySelector('[data-testid="banner-dismiss"]')).toBeTruthy();
   });
 });

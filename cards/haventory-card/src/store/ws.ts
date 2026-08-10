@@ -502,19 +502,37 @@ export class WSClient {
    * `subscribeAreaRegistry` call — the watch simply resumes, and anything the
    * registry did meanwhile went to nobody. This event is the only notice the
    * card gets that such a gap happened at all.
+   */
+  onConnectionReady(cb: () => void): Unsubscribe {
+    return this.onConnectionEvent('ready', cb);
+  }
+
+  /**
+   * Call back when the socket closes, before Home Assistant reconnects.
+   *
+   * Without it a surface nobody is touching cannot tell that it went stale:
+   * every other signal the card has comes from a call it made, so an idle list
+   * would keep showing data from before the outage with nothing to say so.
+   */
+  onConnectionLost(cb: () => void): Unsubscribe {
+    return this.onConnectionEvent('disconnected', cb);
+  }
+
+  /**
+   * Attach one connection-lifecycle listener.
    *
    * Returns a no-op unsubscribe when the connection does not expose the
    * lifecycle, so a caller never has to branch on it.
    */
-  onConnectionReady(cb: () => void): Unsubscribe {
+  private onConnectionEvent(event: 'ready' | 'disconnected', cb: () => void): Unsubscribe {
     const connection = this.hass.connection;
     const { addEventListener, removeEventListener } = connection;
     if (typeof addEventListener !== 'function' || typeof removeEventListener !== 'function') {
       return () => undefined;
     }
     const handler = () => cb();
-    addEventListener.call(connection, 'ready', handler);
-    return () => removeEventListener.call(connection, 'ready', handler);
+    addEventListener.call(connection, event, handler);
+    return () => removeEventListener.call(connection, event, handler);
   }
 
   /**

@@ -71,6 +71,10 @@ export interface MockHass extends HassLike {
    * simply gone. Subscribers stay registered; nothing is replayed.
    */
   __reconnect(): void;
+  /** Close the socket and leave it closed, the way a stopped server does. */
+  __disconnect(): void;
+  /** Report the socket back up, with the watches already re-issued. */
+  __connectionReady(): void;
 }
 
 export function makeMockHass(initial?: MockConfig): MockHass {
@@ -660,7 +664,13 @@ export function makeMockHass(initial?: MockConfig): MockHass {
     },
     __setAreas(next: AreaRef[]) { areas = [...next]; },
     __reconnect() {
+      hass.__disconnect();
+      hass.__connectionReady();
+    },
+    __disconnect() {
       (lifecycleListeners.disconnected || []).forEach((cb) => cb());
+    },
+    __connectionReady() {
       (lifecycleListeners.ready || []).forEach((cb) => cb());
     },
     __setConflict(on: boolean) { conflictOnUpdate = on; },
@@ -704,6 +714,7 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     status?: string;
     checked_out?: boolean;
     orphaned_only?: boolean;
+    low_stock_only?: boolean;
     overdue_only?: boolean;
     inspection_overdue_only?: boolean;
     location_id?: string | null;
@@ -738,6 +749,14 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     if (filter.status && (it.status ?? 'ok') !== filter.status) return false;
     if (typeof filter.checked_out === 'boolean' && it.checked_out !== filter.checked_out) return false;
     if (filter.orphaned_only && it.location_id !== null) return false;
+    // Low stock needs a threshold to be below: an item without one is never low,
+    // which is also how the stats counts read it.
+    if (
+      filter.low_stock_only &&
+      !(typeof it.low_stock_threshold === 'number' && it.quantity <= it.low_stock_threshold)
+    ) {
+      return false;
+    }
     if (filter.overdue_only && !isMockOverdue(it)) return false;
     if (filter.inspection_overdue_only && !isMockInspectionDue(it)) return false;
     // Canonical 'Z' timestamps compare lexicographically; both bounds are exclusive.
@@ -911,5 +930,31 @@ export function makeMediaBindings(
       if (options.reorder) return options.reorder(itemId, kind, attachmentIds);
       return makeItem({ id: itemId });
     },
+  };
+}
+
+/**
+ * Pin `window.matchMedia` to one answer for the length of a test, and hand back
+ * the restore.
+ *
+ * jsdom performs no layout, so every media query it is asked about reports
+ * `false` — which reads as "desktop viewport" to the overlays that switch on
+ * one, and leaves their phone form untestable. Call the restore in a `finally`
+ * so the next test starts from the real implementation.
+ */
+export function stubViewport(matches: boolean): () => void {
+  const original = window.matchMedia;
+  window.matchMedia = ((media: string) => ({
+    matches,
+    media,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+  return () => {
+    window.matchMedia = original;
   };
 }

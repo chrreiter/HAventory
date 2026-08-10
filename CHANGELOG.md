@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.4.0](https://github.com/chrreiter/HAventory/compare/v0.3.3...v0.4.0) (2026-08-10)
+
+
+### Features
+
+* **backend:** serve attachments with Content-Disposition; land attachment verification probes ([#312](https://github.com/chrreiter/HAventory/issues/312)) ([6146a36](https://github.com/chrreiter/HAventory/commit/6146a361e367a72afa9b75e17b5c634fc676074e))
+* **card:** adjustable column order; surface rejected saves in the full view ([#337](https://github.com/chrreiter/HAventory/issues/337)) ([a2ce539](https://github.com/chrreiter/HAventory/commit/a2ce5394265b50339d1386870388381dbbd05ba5))
+* **card:** attach files by dropping them on the editor ([#338](https://github.com/chrreiter/HAventory/issues/338)) ([0a4d7c6](https://github.com/chrreiter/HAventory/commit/0a4d7c6b16ef93a305fd119f8dc92df445979013)), closes [#296](https://github.com/chrreiter/HAventory/issues/296)
+* **card:** banners and row actions reach the full view and panel ([#346](https://github.com/chrreiter/HAventory/issues/346)) ([39a9cc8](https://github.com/chrreiter/HAventory/commit/39a9cc805e03402f4f2eb7f0c92b0758ef91e0c9))
+* **card:** configurable quick-filter pills ([#339](https://github.com/chrreiter/HAventory/issues/339)) ([cc07185](https://github.com/chrreiter/HAventory/commit/cc07185b02fc63210384718ed6e1fbebe25aa285)), closes [#241](https://github.com/chrreiter/HAventory/issues/241)
+* **card:** guarded attachment removal, escape discipline, first-run location create, visible upload progress ([#319](https://github.com/chrreiter/HAventory/issues/319)) ([8ac7adf](https://github.com/chrreiter/HAventory/commit/8ac7adfe62a72ab9cbe356be5d7f9267666f4a61))
+* **card:** lightbox navigation; deduplicated document rows ([#324](https://github.com/chrreiter/HAventory/issues/324)) ([20b556c](https://github.com/chrreiter/HAventory/commit/20b556c0e7f9cebe5831ff819b18b0a795c6537c))
+* **card:** organize is one click away; dense status rows; one delete confirmation ([#342](https://github.com/chrreiter/HAventory/issues/342)) ([7b9b2b2](https://github.com/chrreiter/HAventory/commit/7b9b2b2ab549d40b16b24b52acc662ab8d47c082))
+* **card:** shared read view and lightbox on every surface ([#347](https://github.com/chrreiter/HAventory/issues/347)) ([5ab5750](https://github.com/chrreiter/HAventory/commit/5ab5750fbd5888f799a5ecf028f660ffc1bd41ef))
+* custom statuses, PDF manuals and the photo UX pass (UI halves of [#260](https://github.com/chrreiter/HAventory/issues/260)/[#261](https://github.com/chrreiter/HAventory/issues/261)) ([#299](https://github.com/chrreiter/HAventory/issues/299)) ([1798946](https://github.com/chrreiter/HAventory/commit/1798946c846ddf04f8a8759d1b51ebcb39e2e747))
+* item photos, attachment backend and status definitions (schema v6) ([#294](https://github.com/chrreiter/HAventory/issues/294)) ([87bd4d4](https://github.com/chrreiter/HAventory/commit/87bd4d462cb403756fa4d08cce9f75efb9185597))
+
+
+### Bug Fixes
+
+* **card:** a dirty editor always asks before discarding, on every close path ([#345](https://github.com/chrreiter/HAventory/issues/345)) ([8f3b57d](https://github.com/chrreiter/HAventory/commit/8f3b57de8047670b1b13bc635714360401e54e59))
+* **card:** AA state-chip ink, distinct blue tones, status-toned filter chips ([#311](https://github.com/chrreiter/HAventory/issues/311)) ([74c787b](https://github.com/chrreiter/HAventory/commit/74c787bb15a163e775b89867ab1b679f580e2634))
+* **card:** consistency sweep — cursors, buttons, copy, bulk check-out date ([#352](https://github.com/chrreiter/HAventory/issues/352)) ([9aaf2d0](https://github.com/chrreiter/HAventory/commit/9aaf2d0e2aa47230ec31028d7d7c6dd346457da9))
+* **card:** deliver shell state to the inline editor through hv-list ([#327](https://github.com/chrreiter/HAventory/issues/327)) ([51f9507](https://github.com/chrreiter/HAventory/commit/51f95077cf487cb1e659f051f70c78ea0c6cbe88))
+* **card:** editor geometry and type reconciliation; always-visible actions; honest custom-fields tally ([#343](https://github.com/chrreiter/HAventory/issues/343)) ([d0e15dc](https://github.com/chrreiter/HAventory/commit/d0e15dc8839c1f458ed4f7019896e44ddc63a261))
+* **card:** host dialogs switch on the viewport, not the card width ([#341](https://github.com/chrreiter/HAventory/issues/341)) ([d715864](https://github.com/chrreiter/HAventory/commit/d7158646727da6688c29b633bd44dddf24f6757a))
+* **card:** keep the open editor and its edits across filter, search and sort changes ([#336](https://github.com/chrreiter/HAventory/issues/336)) ([aa856d2](https://github.com/chrreiter/HAventory/commit/aa856d2d2cad4e7f76288830dfc3d6ed46ba664c)), closes [#332](https://github.com/chrreiter/HAventory/issues/332)
+* **card:** keep unsaved edits and upload errors across same-item refreshes ([#306](https://github.com/chrreiter/HAventory/issues/306)) ([8a06a76](https://github.com/chrreiter/HAventory/commit/8a06a7650f75be2422665ea6c82c3962d3b2b2a3))
+* **card:** make the Statuses tab usable on touch — stacking guard, real targets, legible swatches, editable default ([#317](https://github.com/chrreiter/HAventory/issues/317)) ([2113629](https://github.com/chrreiter/HAventory/commit/211362967cafe4e44e245b7fbbf05d8b39c948f4))
+* **card:** price statuses from status_counts and survive payload-less item events ([#308](https://github.com/chrreiter/HAventory/issues/308)) ([11a29b6](https://github.com/chrreiter/HAventory/commit/11a29b61625a6734b996c3adf5e85f9522ee63e3))
+* **card:** scroll organize-dialog disclosures into view; touch parity across all tabs ([#329](https://github.com/chrreiter/HAventory/issues/329)) ([072ff44](https://github.com/chrreiter/HAventory/commit/072ff44fe751a3865914df79cab7bfff304418a3))
+* **card:** sticky name column, name-first table layout, anchored document marker ([#313](https://github.com/chrreiter/HAventory/issues/313)) ([20ae037](https://github.com/chrreiter/HAventory/commit/20ae037a7d186a8156fdd8aaa239fe7a6878bf13))
+* **card:** tell the truth about a lost connection ([#351](https://github.com/chrreiter/HAventory/issues/351)) ([602bf71](https://github.com/chrreiter/HAventory/commit/602bf710b307653185f7a171548466c1ae93d727))
+* **ws:** run upload consume and teardown off the event loop ([#330](https://github.com/chrreiter/HAventory/issues/330)) ([1e6c7e4](https://github.com/chrreiter/HAventory/commit/1e6c7e43cb6164d6040a08303d8b1f6db002c092))
+
+
+### Documentation
+
+* add v0.4.0 follow-up remediation plan for three parallel work packages ([#325](https://github.com/chrreiter/HAventory/issues/325)) ([d131346](https://github.com/chrreiter/HAventory/commit/d13134656bb61f47c746fe9a2d2c6d2b83e26870))
+* **dev:** add v0.4.0 UI-audit remediation plan ([#305](https://github.com/chrreiter/HAventory/issues/305)) ([438c4cd](https://github.com/chrreiter/HAventory/commit/438c4cddd0920b5d13c105fa59d8d1489b334ecc))
+* UI/UX audit for v0.4.0 optimization pass ([#304](https://github.com/chrreiter/HAventory/issues/304)) ([9376ce2](https://github.com/chrreiter/HAventory/commit/9376ce2e847dda9a40b58383940abf545aec09fe))
+* v0.4.0 frontend completeness plan and campaign rules ([#335](https://github.com/chrreiter/HAventory/issues/335)) ([88fadb4](https://github.com/chrreiter/HAventory/commit/88fadb42af466620d127a67ecf00eecfe1ac32fe))
+
 ## [0.3.3](https://github.com/chrreiter/HAventory/compare/v0.3.2...v0.3.3) (2026-08-05)
 
 

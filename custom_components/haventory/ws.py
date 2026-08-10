@@ -6,10 +6,10 @@ Adheres to the envelope: input {id, type, ...payload}, output result_message/err
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import logging
 from collections.abc import Awaitable, Callable
-from contextlib import ExitStack
 from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 
@@ -1521,16 +1521,21 @@ async def ws_item_attachment_add(
         raise ConflictError(f"version conflict: expected {expected}, actual {current.version}")
 
     attachment_id = new_uuid4()
-    with ExitStack() as stack:
-        try:
-            # Entered through the stack so only *this* call is guarded: a
-            # `ValueError` from anywhere else must not be relabelled as a
-            # missing upload. `file_upload` raises it for an id it does not
-            # know — an expired handle, or one an earlier call consumed.
-            source = stack.enter_context(process_uploaded_file(hass, msg["file_id"]))
-        except ValueError as exc:
-            raise NotFoundError("uploaded file not found; upload it again") from exc
+    # `file_upload` hands back a synchronous context manager whose teardown
+    # walks the upload's temp directory and deletes it, so both halves are
+    # dispatched to the executor: run on the loop, that walk stalls every other
+    # connection for as long as it takes — longest for the multi-megabyte photo
+    # bursts this command exists to carry.
+    upload_handle = process_uploaded_file(hass, msg["file_id"])
+    try:
+        # Only *this* call is guarded: a `ValueError` from anywhere else must not
+        # be relabelled as a missing upload. `file_upload` raises it for an id it
+        # does not know — an expired handle, or one an earlier call consumed.
+        source = await hass.async_add_executor_job(upload_handle.__enter__)
+    except ValueError as exc:
+        raise NotFoundError("uploaded file not found; upload it again") from exc
 
+    try:
         mime, size = await media_mod.async_consume_upload(
             hass,
             source=source,
@@ -1538,6 +1543,12 @@ async def ws_item_attachment_add(
             item_id=str(current.id),
             attachment_id=str(attachment_id),
         )
+    finally:
+        # The temp directory must not outlive the command on any path — accepted
+        # bytes, refused ones, or a client that drops the connection mid-upload.
+        # Shielded so a cancelled command still tears its upload down: nothing
+        # else collects these files.
+        await asyncio.shield(hass.async_add_executor_job(upload_handle.__exit__, None, None, None))
 
     meta = AttachmentMeta(
         id=attachment_id,

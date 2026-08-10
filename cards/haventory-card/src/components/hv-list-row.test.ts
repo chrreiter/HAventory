@@ -552,3 +552,16 @@ describe('hv-list-row: document marker', () => {
     expect(css).toMatch(/\.name \{[^}]*min-width: 0[^}]*text-overflow: ellipsis/);
   });
 });
+
+describe('hv-list-row: the row is a target', () => {
+  it('shows the hand a button would', () => {
+    const styles = (customElements.get('hv-list-row') as typeof HVListRow).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+    // The shared `button { cursor: pointer }` cannot reach a role=row div, and
+    // every chip, pill and menu beside the row already shows the hand.
+    expect(css).toMatch(/\.row \{[^}]*cursor: pointer/);
+  });
+});

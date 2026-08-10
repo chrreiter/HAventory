@@ -3,17 +3,22 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
-import { counted, plural } from '../ui/plural';
+import { counted, plural, showingCount } from '../ui/plural';
 import { ResponsiveController } from '../ui/responsive';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { emptyKindFor } from '../ui/empty-state';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
+import { quickFilterAllowed } from '../ui/quick-filters';
+import type { QuickFilterKey } from '../ui/quick-filters';
+import { editorErrorText } from '../ui/editor-error';
+import { DISCARD_PROMPT } from '../ui/discard';
+import { bannerStack, renderDegradedBanners, renderErrorBanners } from '../ui/banners';
+import type { BannerHooks } from '../ui/banners';
 import { HostSurfaces } from '../host-surfaces';
 import type { Store } from '../store/store';
 import type { Item, Location, StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
-import './hv-banner';
 import './hv-bottom-sheet';
 import './hv-filter-chips';
 import './hv-filter-panel';
@@ -62,6 +67,7 @@ export class HVCardShell extends LitElement {
     tokens,
     base,
     chip,
+    bannerStack,
     css`
       :host {
         display: block;
@@ -271,11 +277,6 @@ export class HVCardShell extends LitElement {
       .panel-holder {
         margin: 0 16px 12px;
       }
-      .banners {
-        display: grid;
-        gap: 6px;
-        padding: 0 16px 10px;
-      }
       .footer {
         display: flex;
         align-items: center;
@@ -303,12 +304,6 @@ export class HVCardShell extends LitElement {
       }
       .sheet-footer .apply {
         flex: 1;
-        min-height: 46px;
-        border: none;
-        background: var(--hv-primary);
-        color: var(--hv-text-on-primary);
-        border-radius: var(--hv-radius-chip);
-        font: 500 14.5px var(--hv-font);
       }
       .sheet-head {
         display: flex;
@@ -322,6 +317,9 @@ export class HVCardShell extends LitElement {
         font-weight: 500;
         color: var(--hv-text);
       }
+      /* The footer's way into the expanded view. Sized to the footer it sits in
+         rather than to the card's other text buttons, which is why it is not
+         .hv-text-button: the line it shares with the item count is 12px. */
       .link {
         border: none;
         background: none;
@@ -332,12 +330,6 @@ export class HVCardShell extends LitElement {
         color: var(--hv-primary-dark);
         padding: 0;
       }
-      /* A text link in the filter sheet's header is still a control, so it gets
-         a tap-sized target. */
-      :host([mobile]) .link {
-        min-height: var(--hv-tap-min, auto);
-        padding: 0 6px;
-      }
     `,
   ];
 
@@ -346,6 +338,11 @@ export class HVCardShell extends LitElement {
   @property({ type: String }) heading = DEFAULT_CARD_TITLE;
   /** Force a layout instead of measuring; `null` measures. */
   @property({ attribute: false }) forceMobile: boolean | null = null;
+  /**
+   * Which quick-filter pills this dashboard offers, or `null` for all of them.
+   * Passed on to the full view unchanged — one vocabulary on both surfaces.
+   */
+  @property({ attribute: false }) quickFilters: QuickFilterKey[] | null = null;
 
   @state() private _filterPanelOpen = false;
   @state() private _filterSheetOpen = false;
@@ -357,6 +354,11 @@ export class HVCardShell extends LitElement {
   @state() private _editing: string | 'new' | null = null;
   @state() private _editorBusy = false;
   @state() private _editorError: string | null = null;
+  /**
+   * Changes whenever anything `_renderEditor` reads has changed identity — see
+   * `_syncEditorEpoch`, which is the list of what that is.
+   */
+  @state() private _editorEpoch = 0;
   /** Item shown in the mobile detail sheet. */
   @state() private _detailItemId: string | null = null;
   @state() private _fullViewOpen = false;
@@ -367,7 +369,6 @@ export class HVCardShell extends LitElement {
 
   /** The dialogs both hosts share — confirm, organize, import, diagnostics. */
   readonly surfaces = new HostSurfaces(this, () => this.store, {
-    isMobile: () => this.mobile,
     onItemDeleted: (itemId) => {
       if (this._editing === itemId) this._editing = null;
       if (this._detailItemId === itemId) this._detailItemId = null;
@@ -383,6 +384,18 @@ export class HVCardShell extends LitElement {
   private readonly responsive = new ResponsiveController(this);
   private _storeUnsub?: () => void;
   private _media: MediaBindings | null = null;
+  /** Identities `_editorEpoch` was last bumped for; see `_syncEditorEpoch`. */
+  private _editorInputs: unknown[] = [];
+  /**
+   * The last copy of the row being edited, kept for as long as the form is open.
+   *
+   * A filter change refetches, and the edited row can drop out of the result.
+   * The editor rebuilds its model whenever the item id it was handed changes,
+   * so handing it `null` there would wipe the typed edits just as surely as
+   * unmounting it. `_syncPinnedItem` keeps this at the freshest copy the store
+   * has listed.
+   */
+  private _pinnedItem: Item | null = null;
 
   /**
    * Picture access for every surface below, built once per store.
@@ -415,6 +428,7 @@ export class HVCardShell extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+    this.surfaces.connect();
     this._filterPanelOpen = readPanelPref();
     if (this.store && !this._storeUnsub) {
       // The parent passes a stable `store` object, so a property binding would
@@ -425,6 +439,7 @@ export class HVCardShell extends LitElement {
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.surfaces.disconnect();
     this._storeUnsub?.();
     this._storeUnsub = undefined;
   }
@@ -439,6 +454,67 @@ export class HVCardShell extends LitElement {
     if (changed.has('forceMobile')) this.responsive.setForced(this.forceMobile);
     // Reflect the mode so child selectors and :host([mobile]) rules apply.
     this.toggleAttribute('mobile', this.mobile);
+    this._syncPinnedItem();
+    this._syncEditorEpoch();
+  }
+
+  /**
+   * Hold on to the row being edited, and close the form when it is really gone.
+   *
+   * Falling off the current page and being deleted look identical from the item
+   * list alone; the store is the only place that knows which happened, so it is
+   * asked rather than guessed at.
+   */
+  private _syncPinnedItem() {
+    const editing = this._editing;
+    if (editing === null || editing === 'new') {
+      this._pinnedItem = null;
+      return;
+    }
+    if (this.store?.wasRemoved(editing)) {
+      this._pinnedItem = null;
+      this._editing = null;
+      this._editorError = null;
+      return;
+    }
+    const listed = this.st?.items.find((i) => i.id === editing);
+    if (listed) this._pinnedItem = listed;
+  }
+
+  /**
+   * Move `_editorEpoch` on when the inline editor's inputs have.
+   *
+   * On the desktop card the editor is not rendered here: `hv-list` gets it as a
+   * template callback and re-runs it only when one of *its* properties changes.
+   * Everything below is state `_renderEditor` reads that the list does not
+   * bind, so without a signal of its own a store change reaches this element
+   * and stops — leaving an open form showing what was true when it opened.
+   *
+   * Identity comparison is enough — the store replaces each of these wholesale
+   * rather than mutating it. Comparing at all, rather than bumping on every
+   * update, is what keeps a re-render that changed none of them — a dialog
+   * opening, the filter panel expanding, a row being selected — from redrawing
+   * the list and every row in it.
+   *
+   * Changing a filter is not one of those: `setFilters` refetches the location
+   * tree, which the open form reads, so it moves the epoch and should.
+   */
+  private _syncEditorEpoch() {
+    const st = this.st;
+    const next: unknown[] = [
+      st?.areasCache,
+      st?.mediaConfig,
+      st?.locationsFlatCache,
+      st?.locationTreeCache,
+      st?.distinctValuesCache,
+      this.media,
+      this._editorBusy,
+      this._editorError,
+    ];
+    if (next.some((value, i) => value !== this._editorInputs[i])) {
+      this._editorInputs = next;
+      this._editorEpoch += 1;
+    }
   }
 
   protected updated() {
@@ -481,6 +557,12 @@ export class HVCardShell extends LitElement {
 
   private _itemById(itemId: string): Item | undefined {
     return this.st?.items.find((i) => i.id === itemId);
+  }
+
+  /** The item an open editor edits — the listed row, or the pinned copy of it. */
+  private _editorItem(itemId: string | null): Item | null {
+    if (itemId === null) return null;
+    return this._itemById(itemId) ?? (this._pinnedItem?.id === itemId ? this._pinnedItem : null);
   }
 
   private _onRowAction(item: Item, detail: { action?: string; anchor?: DOMRect }) {
@@ -526,10 +608,7 @@ export class HVCardShell extends LitElement {
     if (this._editing === next) return;
     if (this._editing !== null && this._editor?.dirty) {
       this.surfaces.confirm({
-        heading: 'Discard your changes?',
-        message: 'The item you are editing has unsaved changes.',
-        confirmLabel: 'Discard',
-        destructive: true,
+        ...DISCARD_PROMPT,
         onConfirm: () => {
           this._editorError = null;
           this._editing = next;
@@ -572,14 +651,20 @@ export class HVCardShell extends LitElement {
     }
     // The store reports failures through its error queue rather than throwing,
     // so a new entry is how we know the save did not land. Keep the expander
-    // open in that case so the user's edits are still there to retry.
-    const failed = (this.st?.errorQueue.length ?? 0) > errorsBefore;
+    // open in that case so the user's edits are still there to retry — and say
+    // why inside it, because the card's banner list is above a form tall enough
+    // to have scrolled it off the screen.
+    const queue = this.st?.errorQueue ?? [];
+    const failed = queue.length > errorsBefore;
+    this._editorError = failed ? editorErrorText(queue[queue.length - 1]) : null;
     if (!failed) this._editing = null;
   };
 
   private _onEditorDelete = (e: CustomEvent) => {
     const { itemId } = e.detail as { itemId: string };
-    const item = this._itemById(itemId);
+    // The pinned copy counts: a row filtered off the page is still deletable
+    // from the form that is still open on it.
+    const item = this._editorItem(itemId);
     if (!item) return;
     this._requestDelete(item);
   };
@@ -598,7 +683,7 @@ export class HVCardShell extends LitElement {
       .media=${this.media}
       .mediaConfig=${st?.mediaConfig ?? null}
       ?noHeader=${opts.noHeader ?? false}
-      .item=${itemId ? (this._itemById(itemId) ?? null) : null}
+      .item=${this._editorItem(itemId)}
       .locations=${st?.locationsFlatCache ?? null}
       .locationTree=${st?.locationTreeCache ?? []}
       .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
@@ -692,21 +777,25 @@ export class HVCardShell extends LitElement {
     const counts = st?.statsCounts;
     if (!counts) return null;
     const f = st?.filters;
+    // A pill shows when the dashboard allows it *and* its count clears the gate
+    // it always had — the config decides what is on offer, the count decides
+    // whether there is anything to say.
+    const allows = (key: QuickFilterKey) => quickFilterAllowed(this.quickFilters, key);
+    const lowStock = allows('low_stock') && counts.low_stock_count > 0;
+    const overdue = allows('overdue') && (counts.overdue_count ?? 0) > 0;
+    const inspection = allows('inspection_due') && (counts.inspection_overdue_count ?? 0) > 0;
+    const checkedOut = allows('checked_out') && counts.checked_out_count > 0;
     // On mobile the wrapper takes a row of its own, so an empty one would leave
-    // a blank band under the title rather than nothing at all.
-    const anyBadge =
-      !this.mobile ||
-      counts.low_stock_count > 0 ||
-      (counts.overdue_count ?? 0) > 0 ||
-      (counts.inspection_overdue_count ?? 0) > 0 ||
-      counts.checked_out_count > 0;
+    // a blank band under the title rather than nothing at all. The total is not
+    // among them: it does not render on a phone at all.
+    const anyBadge = !this.mobile || lowStock || overdue || inspection || checkedOut;
     if (!anyBadge) return null;
     return html`
       <div class="badges">
-        ${this.mobile
+        ${this.mobile || !allows('total')
           ? null
           : html`<span class="hv-chip badge quiet" data-testid="badge-total">${counted(counts.items_total, 'item')}</span>`}
-        ${counts.low_stock_count > 0
+        ${lowStock
           ? html`<button
               class="hv-chip badge toggle warning ${f?.lowStockOnly ? 'on' : ''}"
               data-testid="badge-low"
@@ -717,7 +806,7 @@ export class HVCardShell extends LitElement {
               ${counts.low_stock_count} low
             </button>`
           : null}
-        ${(counts.overdue_count ?? 0) > 0
+        ${overdue
           ? html`<button
               class="hv-chip badge toggle error ${f?.overdueOnly ? 'on' : ''}"
               data-testid="badge-overdue"
@@ -728,7 +817,7 @@ export class HVCardShell extends LitElement {
               ${counts.overdue_count} overdue
             </button>`
           : null}
-        ${(counts.inspection_overdue_count ?? 0) > 0
+        ${inspection
           ? html`<button
               class="hv-chip badge toggle warning ${f?.inspectionDueOnly ? 'on' : ''}"
               data-testid="badge-inspection"
@@ -739,7 +828,7 @@ export class HVCardShell extends LitElement {
               ${counts.inspection_overdue_count} to inspect
             </button>`
           : null}
-        ${counts.checked_out_count > 0
+        ${checkedOut
           ? html`<button
               class="hv-chip badge toggle state ${f?.checkedOutOnly ? 'on' : ''}"
               data-testid="badge-out"
@@ -753,159 +842,6 @@ export class HVCardShell extends LitElement {
       </div>
     `;
   }
-
-  /**
-   * Conditions that make the card untrustworthy, said out loud.
-   *
-   * Rate limiting can drop subscription events silently and events carry no
-   * sequence number, so the card cannot detect a gap on its own — the honest
-   * move is to say it might be stale and offer the re-read.
-   */
-  private _renderDegradedBanners() {
-    const degraded = this.st?.degraded;
-    if (!degraded) return null;
-    const banners = [];
-
-    if (degraded.connectionLost) {
-      banners.push(html`<hv-banner
-        kind="error"
-        glyph="wifiOff"
-        heading="Connection lost"
-        message=" · showing the data already loaded. Changes may not save."
-        data-testid="degraded-offline"
-      >
-        <button
-          slot="actions"
-          class="hv-pill outline"
-          data-testid="degraded-reconnect"
-          @click=${() => void this.surfaces.refresh()}
-        >
-          Reconnect
-        </button>
-      </hv-banner>`);
-    } else if (degraded.liveUpdates !== 'live') {
-      // Ranked above the generic rate-limit warning below: that one says events
-      // *may* have been dropped, this one says there are no events at all.
-      const retrying = degraded.liveUpdates === 'retrying';
-      const cause =
-        degraded.liveUpdatesReason === 'unavailable'
-          ? 'HAventory is not available'
-          : 'rate limited';
-      banners.push(html`<hv-banner
-        kind="warning"
-        glyph="clock"
-        heading="Live updates paused"
-        message=${retrying
-          ? ` · ${cause}. Retrying automatically; this list may be out of date until then.`
-          : ` · ${cause}. This list may be out of date until you refresh.`}
-        data-testid="degraded-live-updates"
-      >
-        ${retrying
-          ? null
-          : html`<button
-              slot="actions"
-              class="hv-pill outline"
-              data-testid="degraded-live-refresh"
-              @click=${() => void this.surfaces.refresh()}
-            >
-              Refresh
-            </button>`}
-      </hv-banner>`);
-    } else if (degraded.retrying > 0) {
-      banners.push(html`<hv-banner
-        kind="warning"
-        glyph="clock"
-        heading="Busy — retrying"
-        message=${` · ${counted(degraded.retrying, 'change')} queued`}
-        data-testid="degraded-retrying"
-      ></hv-banner>`);
-    } else if (degraded.rateLimited) {
-      banners.push(html`<hv-banner
-        kind="warning"
-        glyph="clock"
-        heading="Rate limited"
-        message=" · some live updates may have been dropped, so this list can be out of date."
-        data-testid="degraded-rate-limited"
-      >
-        <button
-          slot="actions"
-          class="hv-pill outline"
-          data-testid="degraded-refresh"
-          @click=${() => void this.surfaces.refresh()}
-        >
-          Refresh
-        </button>
-      </hv-banner>`);
-    }
-
-    if (degraded.reloading) {
-      banners.push(html`<hv-banner
-        kind="info"
-        glyph="refresh"
-        heading="Inventory was replaced by an import"
-        message=" · reloading…"
-        data-testid="degraded-reloading"
-      ></hv-banner>`);
-    }
-
-    return banners.length ? html`<div class="banners" data-testid="degraded-banners">${banners}</div>` : null;
-  }
-
-  private _renderBanners() {
-    const errors = this.st?.errorQueue ?? [];
-    if (!errors.length) return null;
-    return html`
-      <div class="banners" data-testid="banners">
-        ${errors.map((e) => {
-          const conflict = e.kind === 'conflict' && e.itemId;
-          return html`<hv-banner
-            kind=${conflict ? 'warning' : 'error'}
-            .heading=${conflict ? 'Someone else changed this item.' : null}
-            .message=${e.message}
-            data-testid="banner-entry"
-            data-code=${e.code}
-          >
-            ${conflict
-              ? html`<span slot="below">
-                  <button
-                    class="hv-pill outline"
-                    data-testid="banner-view-latest"
-                    @click=${() => {
-                      void this.store?.refreshItem(e.itemId!);
-                      this.store?.dismissError(e.id);
-                    }}
-                  >
-                    View latest
-                  </button>
-                  ${e.changes
-                    ? html`<button
-                        class="hv-pill"
-                        data-testid="banner-reapply"
-                        @click=${() => {
-                          void this.store?.updateItem(e.itemId!, e.changes!);
-                          this.store?.dismissError(e.id);
-                        }}
-                      >
-                        Re-apply my change
-                      </button>`
-                    : null}
-                </span>`
-              : null}
-            <button
-              slot="actions"
-              class="hv-icon-button"
-              data-testid="banner-dismiss"
-              aria-label="Dismiss"
-              @click=${() => this.store?.dismissError(e.id)}
-            >
-              ${icon('close', 16)}
-            </button>
-          </hv-banner>`;
-        })}
-      </div>
-    `;
-  }
-
 
   private _onEmptyAction = (e: CustomEvent) => {
     const { id } = e.detail as { id: string };
@@ -1039,7 +975,7 @@ export class HVCardShell extends LitElement {
         : html`<div class="panel-holder" id=${FILTER_SURFACE_ID} ?hidden=${!this._filterPanelOpen}>
             ${this._filterPanelOpen ? this._renderFilterPanel(false) : null}
           </div>`}
-      ${this._renderDegradedBanners()} ${this._renderBanners()}
+      ${renderDegradedBanners(st, this._bannerHooks)} ${renderErrorBanners(st, this._bannerHooks)}
 
       <hv-list
         .statuses=${st?.statuses ?? null}
@@ -1050,7 +986,9 @@ export class HVCardShell extends LitElement {
         .loading=${st?.loading ?? true}
         .mobile=${mobile}
         .editorTemplate=${this._renderEditor}
+        .editorEpoch=${this._editorEpoch}
         .editingItemId=${this._editing === 'new' ? null : this._editing}
+        .pinnedItem=${this._pinnedItem}
         .addingNew=${!mobile && this._editing === 'new'}
         .emptyKind=${emptyKindFor(this.st)}
         .emptyLocationName=${(st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId)?.name ??
@@ -1069,11 +1007,7 @@ export class HVCardShell extends LitElement {
 
       ${loaded > 0
         ? html`<div class="footer">
-            <span data-testid="showing-count">
-              ${total !== null && total !== undefined
-                ? `Showing ${loaded} of ${total}${filterCount > 0 ? ' filtered' : ''}`
-                : `Showing ${loaded}`}
-            </span>
+            <span data-testid="showing-count">${showingCount(loaded, total, filterCount > 0)}</span>
             ${mobile
               ? null
               : html`<button
@@ -1095,6 +1029,7 @@ export class HVCardShell extends LitElement {
         .store=${this.store}
         .heading=${this.heading}
         .columns=${this.surfaces.columns}
+        .quickFilters=${this.quickFilters}
         .menuEntries=${this.surfaces.menuEntries()}
         ?startSelecting=${this._startSelecting}
         @close=${() => {
@@ -1120,7 +1055,7 @@ export class HVCardShell extends LitElement {
               <span class="heading">Filters</span>
               <span style="font-size:12.5px;color:var(--hv-text-secondary)">${stagedFilterCount} active</span>
               <button
-                class="link"
+                class="hv-text-button"
                 style="margin-left:auto"
                 data-testid="sheet-clear-all"
                 @click=${() => this._filterPanel?.clearAll()}
@@ -1142,7 +1077,7 @@ export class HVCardShell extends LitElement {
                 Cancel
               </button>
               <button
-                class="apply"
+                class="hv-pill large apply"
                 data-testid="sheet-apply"
                 @click=${() => this._filterPanel?.apply()}
               >
@@ -1159,10 +1094,7 @@ export class HVCardShell extends LitElement {
             label="New item"
             ?open=${this._editing === 'new'}
             data-testid="add-sheet"
-            @cancel=${() => {
-              this._editing = null;
-              this._editorError = null;
-            }}
+            @cancel=${() => this._startEdit(null)}
           >
             <div class="sheet-head">
               <span class="heading">New item</span>
@@ -1171,10 +1103,7 @@ export class HVCardShell extends LitElement {
                 style="margin-left:auto"
                 data-testid="add-sheet-close"
                 aria-label="Close"
-                @click=${() => {
-                  this._editing = null;
-                  this._editorError = null;
-                }}
+                @click=${() => this._startEdit(null)}
               >
                 ${icon('close', 18)}
               </button>
@@ -1249,6 +1178,11 @@ export class HVCardShell extends LitElement {
 
       ${this.surfaces.renderSurfaces()}
     `;
+  }
+
+  /** What the shared banner stacks act through; Reconnect and Refresh are ours. */
+  private get _bannerHooks(): BannerHooks {
+    return { store: this.store, onRefresh: () => void this.surfaces.refresh() };
   }
 
   private get _filterPanel(): HVFilterPanel | null {

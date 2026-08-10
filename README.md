@@ -499,20 +499,32 @@ throughout.
   (picked from a tree inside the form), checked-out with due date, next inspection (with the same
   +7 / +31 / +90 / +X quick offsets the check-out popover offers), and typed
   custom fields (text / number / yes-no / date). Saves send the item's expected version so
-  a concurrent edit surfaces as a conflict. Escape takes back one thing at a time: an open
-  picker first, then the form — and a form you have typed into asks before it discards.
+  a concurrent edit surfaces as a conflict; a save that does not land says so in the form
+  you are looking at and leaves your edits in it. Escape takes back one thing at a time: an open
+  picker first, then the form. **Nothing throws typed edits away without asking** — Cancel,
+  the ✕, Escape, tapping the scrim or swiping a phone sheet down, switching to another row,
+  and closing the expanded view all raise the same question, and answering "keep" leaves the
+  form exactly as it was.
   With no locations yet, the location picker creates the first one and files the item in
   it, rather than pointing at a menu three steps away.
 - **Photos and manuals** attach from the same form, once the item exists — an upload is
   filed against an item id, and the create form says so instead of leaving the sections
-  unexplained. Each queue reports itself under the section that started it, with a moving
-  indicator while a file is in flight; a refused file keeps its error and Retry until you
-  dismiss them. Removing an attachment asks first, because the file goes with it.
+  unexplained. On a desktop you can also **drop files straight onto the Photos or Documents
+  section**; the file's own type decides which it becomes, so a PDF dropped on the photo
+  strip attaches as a manual. Each queue reports itself under the section that started it,
+  with a moving indicator while a file is in flight; a refused file keeps its error and
+  Retry until you dismiss them. Removing an attachment asks first, because the file goes
+  with it. A thumbnail is 72px of a photo, so **clicking one opens it full-size** — arrows
+  and a counter to walk the strip, Escape to come back — on every surface the form appears
+  on, and from the detail sheet's gallery just the same.
 - **Full view** — a fullscreen workspace with a coloured app bar, a **browse sidebar**, and
   a sortable table. Only columns the backend can sort by get a clickable header. A browser
   that has made no choice yet shows every optional column — quantity, status, category,
   location, tags, due, next inspection, updated — and the ⋮ → **Columns** picker is where
-  you thin that down; the table scrolls sideways rather than dropping a column you kept.
+  you thin that down and put the ones you keep in the order you want them, with the up/down
+  buttons beside each shown column and a **Reset order** back to the canonical one. The
+  order and the selection are one per-browser preference; the table scrolls sideways rather
+  than dropping a column you kept.
   The Status column names every row, OK included, and the name's amber status chip stands
   down while it is shown so no row says the same word twice. The
   sidebar leads with the location tree carrying the backend's own per-location counts and
@@ -527,8 +539,9 @@ throughout.
   row reads "4 / 37" — matches over total — so you can see where the matches are rather
   than a total that never moves. The counts ignore the *location* filter, since the sidebar
   is how you pick one. Each heading also offers a create action: Locations opens an inline
-  name field, while Categories and Tags open the organize dialog on their own tab — a
-  category exists through the items using it, so that is where making one is explained.
+  name field, while Categories, Tags and Status open the organize dialog on their own tab —
+  a category exists through the items using it, so that is where making one is explained.
+  The app bar carries an Organize button of its own, beside the ⋮ that also lists it.
   From the second selected tag on, the Tags heading carries the same any/all control the
   filter panel has, since that is the mode governing what the sidebar just selected. The
   app bar's stat pills are the card's: low in amber, overdue in red, to-inspect in amber,
@@ -537,17 +550,25 @@ throughout.
   the household's own word in the household's own colour, so the sidebar's Status section
   and the filter chips are where statuses are priced and picked.
   An empty table names the reason and offers a way out — the same
-  wording and the same offers as the card's list.
+  wording and the same offers as the card's list. Every row carries the same ⋮ the card's
+  rows do — Check out with a due date, Check in, Change due date, Delete — so the surface
+  built for working through the whole inventory is not the one with the fewest actions per
+  row.
 
   At phone width the sidebar folds away and the surface hands its own breakpoint down to
   the edit form and the filter panel, so both take their phone layouts: one field per row,
   and filters staged behind a "Show N items" commit row exactly as in the card's sheet.
+  Tapping a row there opens the same **detail sheet** the card opens — photos, documents,
+  facts and check-out, with Edit one tap deeper — rather than dropping you straight into a
+  form. On a screen wide enough for the table, the table is the read view and a row click
+  opens the form as before.
 - **Multi-select and bulk actions** — move, add/remove tags, set category, adjust
   quantity, check out/in and delete over a selection. Work is chunked so progress is
   determinate and cancellable, and the result is reported *per operation*: "39 of 42
   succeeded", every failure named with its reason and a retry scoped to just those.
   Select-all covers loaded rows only and says so, with an explicit "load the rest" path.
-- **Organize dialog** — Locations / Categories / Tags in one place, each tab stating its
+- **Organize dialog** — Locations / Categories / Tags / Statuses in one place, reached from
+  the full view's app bar as well as its ⋮ menu, each tab stating its
   total above the list and each row offering the same moves: an "N items" link that opens
   the filtered list in the full view, plus rename, merge and delete. Locations keep their collapsible tree and edit inline, with a guarded
   delete that explains what is in the way. Category and tag rename, merge and removal are
@@ -565,7 +586,8 @@ throughout.
   something, always names a location.
 - **Check-out** invites an optional due date (+7 / +31 / +90 / +X day suggestions) rather
   than silently checking out with none — the date is what makes overdue highlighting mean
-  anything. "No due date" stays a first-class choice.
+  anything. "No due date" stays a first-class choice. Checking out a whole selection asks
+  the same question once and gives every item the answer.
 - **Mobile** — the card switches layout from its own width. Tapping a row opens one bottom
   sheet holding everything about the item; filters open as a staged sheet whose apply
   button shows the live matching count. Every surface honours the same 44px touch minimum
@@ -578,7 +600,10 @@ throughout.
   something is wrong, plus banners for connection loss, rate limiting and the
   payload-free reload an import broadcasts. Because subscription events carry no sequence
   number, a dropped one is undetectable — so the card says the list may be stale and
-  offers an explicit Refresh.
+  offers an explicit Refresh. The banners are on **every** surface: the card, the expanded
+  view and the sidebar page, with the same wording and the same recovery actions. A view
+  left open when Home Assistant goes away says so on its own, without waiting for you to
+  try something first.
 - Deletes use an in-app confirmation, not `window.confirm`.
 - Card auto-registered as a Lovelace resource on integration setup.
 - **Note:** after first install, a browser refresh (F5 / Ctrl+Shift+R) is required for the
@@ -589,16 +614,32 @@ throughout.
 ```yaml
 type: custom:haventory-card
 title: Pantry   # optional; overrides the integration-wide card title
+quick_filters:  # optional; which quick-filter pills this card offers
+  - low_stock
+  - checked_out
 ```
 
-`title` is the only option the card reads. Any other key is ignored rather than rejected,
-so a stale dashboard config never breaks the card.
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `title` | string | the integration-wide card title | Names this card, for this dashboard only. |
+| `quick_filters` | list | every pill | Which quick-filter pills the card and its full view offer: `total`, `low_stock`, `overdue`, `inspection_due`, `checked_out`. |
 
-Without it, the card uses the name set under Settings → Devices & services → HAventory →
-**Configure** (asked for at setup too, and defaulting to "HAventory"), so one setting
-renames every card. Per-dashboard `title:` wins over it — use that when two dashboards
-should name the same inventory differently. An open dashboard picks up a changed name on
-its next refresh or reload; the change is not pushed live.
+Those two are the only options the card reads. Any other key is ignored rather than
+rejected, so a stale dashboard config never breaks the card — and the same holds inside
+`quick_filters`: an unknown pill name is dropped, and a value that is not a list reads as
+the key being absent.
+
+Without `title`, the card uses the name set under Settings → Devices & services →
+HAventory → **Configure** (asked for at setup too, and defaulting to "HAventory"), so one
+setting renames every card. Per-dashboard `title:` wins over it — use that when two
+dashboards should name the same inventory differently. An open dashboard picks up a
+changed name on its next refresh or reload; the change is not pushed live.
+
+`quick_filters` says which pills are *allowed*; a pill still only shows when it has
+something to count, so `low_stock` draws nothing while nothing is low. Omitting the key
+offers all of them, which is what every dashboard written before this option gets. An
+explicit empty list is a choice and offers none. The sidebar panel has no dashboard config
+of its own, so it always offers all of them.
 
 ### CI/CD & Ops
 
@@ -657,9 +698,9 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
   counts and drills down to the items filed under each.
 - Dedicated **tag browser** (header → "Tags"): lists used tags with item counts and drills
   down to the items carrying each.
-- **Column selection** (header → "Columns"): choose which optional columns (quantity,
-  category, location, tags, due date) show in the standard vs expanded view; the choice is
-  persisted in `localStorage` (`haventory:columns:v1`, per browser).
+- **Column selection and order** (header → "Columns"): choose which optional columns
+  (quantity, category, location, tags, due date) show in the expanded view, and in which
+  order; the choice is persisted in `localStorage` (`haventory:columns:v1`, per browser).
 - **Custom fields UI** in the item dialog: define/edit/remove typed fields
   (string/number/boolean/date) with type-appropriate inputs; existing field keys across the
   dataset are offered as suggestions.

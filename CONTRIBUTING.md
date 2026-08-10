@@ -75,7 +75,7 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
   shipped integration needs; `dev/` is for the development process — the release
   testing plan, the release review, and per-task design documents. A new document
   goes in one of the two, and neither is a tracker: work lives in GitHub issues.
-- **Preserve load-bearing invariants**: case-insensitive search, denormalized
+- **Preserve the core invariants**: case-insensitive search, denormalized
   `location_path` on items, and optimistic concurrency via the item `version`.
 - **Deleting or renaming a file inside `custom_components/haventory/`?** Add its
   old path to `RETIRED_PATHS` in `custom_components/haventory/stale_files.py` in

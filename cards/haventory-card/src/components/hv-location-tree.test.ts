@@ -108,7 +108,7 @@ describe('hv-location-tree: counts and decorations', () => {
     const el = await mount();
     (q(el, '[data-testid="tree-twisty"]') as HTMLButtonElement).click();
     await el.updateComplete;
-    expect(q(el, '[data-testid="tree-select"][data-id="shelf-a"]')?.getAttribute('title')).toBe(
+    expect(q(el, '[data-testid="tree-row"][data-id="shelf-a"]')?.getAttribute('title')).toBe(
       'garage / Shelf A',
     );
   });
@@ -178,7 +178,7 @@ describe('hv-location-tree: selection', () => {
     el.addEventListener('select', (e) => {
       detail = (e as CustomEvent).detail;
     });
-    (q(el, '[data-testid="tree-select"][data-id="garage"]') as HTMLButtonElement).click();
+    (q(el, '[data-testid="tree-row"][data-id="garage"]') as HTMLButtonElement).click();
     expect(detail.locationId).toBe('garage');
   });
 
@@ -245,7 +245,7 @@ describe('hv-location-tree: filtering and cycle guard', () => {
     el.addEventListener('select', () => {
       fired += 1;
     });
-    (q(el, '[data-testid="tree-select"][data-id="garage"]') as HTMLButtonElement).click();
+    (q(el, '[data-testid="tree-row"][data-id="garage"]') as HTMLButtonElement).click();
     expect(fired).toBe(0);
   });
 });
@@ -594,6 +594,52 @@ describe('hv-location-tree: manage mode', () => {
     expect(seen).toEqual(['edit', 'delete']);
     expect(editId).toBe('garage');
   });
+
+  // The organize dialog sizes its own rows for a finger, but the Locations tab
+  // is this component and its stylesheet is out of that dialog's reach: DOM-
+  // measured at 390px, the count link came to 14px tall and the ⋮ to 26×26
+  // beside 44px controls on the other three tabs.
+  it('sizes the managed row for a finger, matching the dialog it renders in', () => {
+    const styles = (customElements.get('hv-location-tree') as typeof HVLocationTree).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+
+    // WCAG 2.2 asks 24px of any pointer, wherever the count is a link.
+    expect(css).toMatch(/\.count\.link \{[^}]*min-height: 24px/);
+    expect(css).toMatch(/\.row\.manage\.touch \.count\.link \{[^}]*min-height: var\(--hv-tap-min, 44px\)/);
+    expect(css).toMatch(
+      /\.row\.manage\.touch \.action \{[^}]*width: var\(--hv-tap-min, 44px\)[^}]*height: var\(--hv-tap-min, 44px\)/,
+    );
+    // Browsing is a list to read down; 44px counts would stretch it past what a
+    // phone shows at once, so the bump stops at the managing tree.
+    expect(css).not.toMatch(/:host\(\[mobile\]\) \.count/);
+  });
+
+  // The Locations tab is this component, so the dialog cannot reach its rows
+  // with a selector. It reaches them with an inherited custom property instead,
+  // which is what keeps the tightening scoped: the sidebar, the filter panel
+  // and the editor's location field declare nothing and take the fallback.
+  it('takes the organize dialog\'s row rhythm only when it is hosted there', () => {
+    const styles = (customElements.get('hv-location-tree') as typeof HVLocationTree).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+
+    expect(css).toMatch(/\.row \{[^}]*padding: var\(--hv-organize-row-pad, 7px\) 12px/);
+    // Nothing here declares it — a tree that declared its own would answer for
+    // every host at once.
+    expect(css).not.toContain('--hv-organize-row-pad:');
+  });
+
+  it('marks the row so the touch sizing has something to hang on', async () => {
+    const el = await mount({ manage: true, mobile: true });
+    expect(rows(el)[0].className).toContain('manage');
+    expect(rows(el)[0].className).toContain('touch');
+    expect(q(el, '[data-testid="tree-more"]')).toBeTruthy();
+  });
 });
 
 // A first run has no locations at all, and the picker is where the concept is
@@ -677,5 +723,64 @@ describe('hv-location-tree: the first location', () => {
 
     expect(q(el, '[data-testid="tree-empty"]')?.textContent).toContain('No locations match');
     expect(q(el, '[data-testid="tree-create"]')).toBe(null);
+  });
+});
+
+// The row highlights across its full width, so the part of it that answers a
+// click is the whole of it — the way the facet rows beside it and this tree's
+// own All-items and No-location rows already work.
+describe('hv-location-tree: the whole row is the target', () => {
+  const selections = (el: HVLocationTree) => {
+    const seen: (string | null)[] = [];
+    el.addEventListener('select', (e) => seen.push((e as CustomEvent).detail.locationId));
+    return seen;
+  };
+
+  it('picks the location from anywhere on the row, count included', async () => {
+    const el = await mount({ showCounts: true });
+    const seen = selections(el);
+
+    (q(el, '[data-testid="tree-row"][data-id="garage"]') as HTMLElement).click();
+    (q(el, '[data-testid="tree-row"][data-id="garage"] [data-testid="tree-count"]') as HTMLElement).click();
+
+    expect(seen).toEqual(['garage', 'garage']);
+  });
+
+  it('carries the name as plain text rather than a button inside the row', async () => {
+    const el = await mount();
+    const name = q(el, '[data-testid="tree-row"][data-id="garage"] .name');
+    expect(name?.localName).toBe('span');
+    expect(q(el, '[data-testid="tree-row"][data-id="garage"]')?.getAttribute('role')).toBe('treeitem');
+  });
+
+  it('answers Enter and Space, which a div gets from nothing', async () => {
+    const el = await mount();
+    const seen = selections(el);
+    const row = q(el, '[data-testid="tree-row"][data-id="kitchen"]') as HTMLElement;
+
+    for (const key of ['Enter', ' ']) {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      row.dispatchEvent(event);
+      expect(event.defaultPrevented, key).toBe(true);
+    }
+    expect(seen).toEqual(['kitchen', 'kitchen']);
+  });
+
+  it('leaves the expander its own control', async () => {
+    const el = await mount();
+    const seen = selections(el);
+    (q(el, '[data-testid="tree-twisty"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    expect(seen).toEqual([]);
+    expect(ids(el)).toContain('shelf-a');
+  });
+
+  it('keeps an excluded row out of the tab order', async () => {
+    const el = await mount({ excludeSubtreeOf: 'garage' });
+    const row = q(el, '[data-testid="tree-row"][data-id="garage"]') as HTMLElement;
+    expect(row.getAttribute('tabindex')).toBe('-1');
+    expect(row.getAttribute('aria-disabled')).toBe('true');
+    expect(q(el, '[data-testid="tree-row"][data-id="kitchen"]')?.getAttribute('tabindex')).toBe('0');
   });
 });
