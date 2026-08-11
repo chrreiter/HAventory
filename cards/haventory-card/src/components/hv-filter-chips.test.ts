@@ -94,6 +94,20 @@ describe('chipsFor', () => {
     expect(chipsFor(filters, { locations: nested(null), areas: [] })[0].label).toBe('Garage › Shelf A');
   });
 
+  // Browsing a root named after its own room wrote the room twice on one chip:
+  // "Area: Garage · Garage › Shelf A + sub". The area drops out when the path
+  // has already said it, the way the chip beside a path does.
+  it('drops the area from the chip when the path opens with that name', () => {
+    for (const [subtree, label] of [
+      [false, 'Garage › Shelf A'],
+      [true, 'Garage › Shelf A + sub'],
+    ] as const) {
+      const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: subtree };
+      const [chip] = chipsFor(filters, { locations: nested('a1'), areas: [{ id: 'a1', name: 'Garage' }] });
+      expect(chip.label, `subtree=${subtree}`).toBe(label);
+    }
+  });
+
   it('names an area the registry has dropped by its id, so the chip never reads as arealess', () => {
     const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: false };
     expect(chipsFor(filters, { locations: nested('a-gone'), areas: [] })[0].label).toBe(

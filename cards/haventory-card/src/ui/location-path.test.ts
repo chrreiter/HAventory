@@ -4,6 +4,7 @@ import {
   itemPathParts,
   locationLabel,
   locationPathParts,
+  pathLabel,
   pathTitle,
   prettyPath,
   renderAreaChip,
@@ -112,6 +113,26 @@ describe('pathTitle', () => {
 
   it('is empty when there is neither', () => {
     expect(pathTitle({ areaName: null, path: '' })).toBe('');
+  });
+});
+
+// The pair a surface picks between: the title keeps the pairing whole because
+// it is the fallback for everything the label elides, and the label drops the
+// area once the path has opened with it.
+describe('pathLabel', () => {
+  it('drops an area the path opens with, where the title keeps it', () => {
+    const parts = { areaName: 'Kitchen', path: 'Kitchen › Pantry' };
+    expect(pathLabel(parts)).toBe('Kitchen › Pantry');
+    expect(pathTitle(parts)).toBe('Area: Kitchen · Kitchen › Pantry');
+  });
+
+  it('reads exactly as the title when the two names differ', () => {
+    const parts = { areaName: 'Kitchen', path: 'Fridge › Top Shelf' };
+    expect(pathLabel(parts)).toBe(pathTitle(parts));
+  });
+
+  it('is just the path when there is no area', () => {
+    expect(pathLabel({ areaName: null, path: 'Fridge' })).toBe('Fridge');
   });
 });
 
