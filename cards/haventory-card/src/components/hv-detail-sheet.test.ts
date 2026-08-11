@@ -1000,6 +1000,31 @@ describe('hv-detail-sheet: documents', () => {
     expect(all(el, '[data-testid="sheet-document-open"]')).toHaveLength(2);
   });
 
+  // jsdom computes no layout, so the widths these two rules produce are only
+  // observable on a real phone. What is pinned here is the pair of declarations
+  // that keeps a row inside the list: without them the single track sizes itself
+  // to the widest row, whose tail (the Open link, the "File missing" chip) does
+  // not shrink, and `overflow: hidden` clips exactly those two away.
+  it('sizes the documents track off the list rather than off its widest row', () => {
+    const css = sheetCss();
+    const rule = (selector: string) =>
+      new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+
+    expect(rule('\\.documents ul')).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(rule('\\.documents li')).toContain('min-width: 0');
+  });
+
+  // The row shrinking into its track is only worth anything if the two elements
+  // it was cutting off are the ones that keep their size.
+  it('leaves the Open link and the missing-file chip unshrinkable', () => {
+    const css = sheetCss();
+    const rule = (selector: string) =>
+      new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+
+    expect(rule('\\.documents \\.doc-open')).toContain('flex: none');
+    expect(rule('\\.documents \\.doc-text')).toContain('min-width: 0');
+  });
+
   it('shows the documents in stored order, not the order they were uploaded', async () => {
     serve(206);
     const el = await mount(

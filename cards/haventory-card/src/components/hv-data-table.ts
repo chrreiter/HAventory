@@ -520,6 +520,12 @@ export class HVDataTable extends LitElement {
     // Status column. With the column shown it would put the same word twice on
     // one row, so the column takes over and the chip stands down.
     const statusColumn = columns.includes('status');
+    // Low stands down for Checked out in the same cell, the way a phone row's
+    // one line already picks the most interrupting thing it has to say: both
+    // chips are unshrinkable, and together they take 138px of a 220px track,
+    // which leaves the name too short to tell two items apart. Who has the item
+    // outranks how many are left, and the Qty column still draws a low count in
+    // amber.
     const template = tableTemplateFor(columns, { selectable: this.selectable });
     const loadedIds = this.items.map((i) => i.id);
     const selectedCount = loadedIds.filter((id) => this.selection.has(id)).length;
@@ -588,8 +594,13 @@ export class HVDataTable extends LitElement {
                     : null}
                   <span class="name-cell" role="cell">
                     <span class="name" data-testid="table-name" title=${item.name}>${item.name}</span>
-                    ${isLowStock(item)
-                      ? html`<span class="hv-chip warning" aria-label="Low stock">Low</span>`
+                    ${isLowStock(item) && !item.checked_out
+                      ? html`<span
+                          class="hv-chip warning"
+                          data-testid="table-low"
+                          aria-label="Low stock"
+                          >Low</span
+                        >`
                       : null}
                     ${!statusColumn && itemStatus(item) !== DEFAULT_STATUS
                       ? renderStatusChip(itemStatus(item), this.statuses, {
