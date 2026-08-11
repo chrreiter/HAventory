@@ -57,8 +57,96 @@ describe('hv-data-table: area', () => {
   });
 });
 
+describe('hv-data-table: a path too long for its column', () => {
+  const AREAS = [{ id: 'area-kitchen', name: 'Küche' }];
+  const DEEP = 'Küche / Hochschrank / Oberstes Fach / Vorratsbox / Backzutaten';
+  const deep = (display_path: string) => ({ id_path: [], name_path: [], display_path, sort_key: '' });
+
+  const mountPath = (display_path: string) =>
+    mount([{ id: '1', effective_area_id: 'area-kitchen', location_path: deep(display_path) }], {
+      columns: ['location'],
+      areas: AREAS,
+    });
+
+  const segments = (el: HVDataTable) =>
+    [...q(el, '[data-testid="cell-location"]')!.querySelectorAll('.hv-path-seg')].map(
+      (s) => s.textContent ?? '',
+    );
+
+  // Elided as one run of text the cell showed the area mark and "Küc…" — three
+  // letters of a five-segment path, naming nothing, with the leaf the reader is
+  // after nowhere on the row.
+  it('keeps every segment of a deep path whole', async () => {
+    const el = await mountPath(DEEP);
+    const names = segments(el).map((s) => s.replace(' › ', ''));
+
+    expect(names).toEqual([
+      'Küche',
+      'Hochschrank',
+      'Oberstes Fach',
+      'Vorratsbox',
+      'Backzutaten',
+    ]);
+  });
+
+  // The separator rides inside the segment ahead of it, so a wrap can never
+  // open a line with a lone "›" — and the path still reads as one string when
+  // it is copied or announced.
+  it('never leaves a separator to start a line on its own', async () => {
+    const el = await mountPath(DEEP);
+    const parts = segments(el);
+
+    for (const part of parts) expect(part.startsWith('›')).toBe(false);
+    expect(parts.slice(0, -1).every((p) => p.endsWith(' › '))).toBe(true);
+    expect(parts[parts.length - 1]).toBe('Backzutaten');
+    expect(q(el, '[data-testid="cell-location"]')?.textContent).toContain(
+      'Küche › Hochschrank › Oberstes Fach › Vorratsbox › Backzutaten',
+    );
+  });
+
+  // The reported cell was "🏠 Living Room (" — the mark, an opening bracket and
+  // nothing after it. Punctuation inside a location name travels with the word
+  // it belongs to and cannot be left holding a cell on its own.
+  it('never strands the punctuation inside a location name', async () => {
+    const el = await mountPath('Wohnzimmer (Nord) / Regal');
+    const parts = segments(el);
+
+    expect(parts.map((p) => p.replace(' › ', ''))).toEqual(['Wohnzimmer (Nord)', 'Regal']);
+    for (const part of parts) expect(/^[(){}[\]·,;:]+$/.test(part.trim())).toBe(false);
+  });
+
+  it('carries the whole path in the cell title, wrapped or not', async () => {
+    const el = await mountPath(DEEP);
+    expect(q(el, '[data-testid="cell-location"]')?.getAttribute('title')).toBe(
+      'Area: Küche · Küche › Hochschrank › Oberstes Fach › Vorratsbox › Backzutaten',
+    );
+  });
+
+  // jsdom computes no layout, so what is assertable is the contract the wrap
+  // rests on: the segments are the flex items of a wrapping box, each holds its
+  // own line, and the separator's spaces are protected — at the end of a flex
+  // item's only line, normal white-space processing drops them and the two
+  // segments either side run together.
+  it('wraps between segments rather than clipping at the cell edge', () => {
+    const css = tableCss();
+    expect(css).toMatch(/\.cell\.path \{[^}]*flex-wrap: wrap/);
+    expect(css).toMatch(/\.cell\.path > \.hv-chip-line-text \{[^}]*display: flex/);
+    expect(css).toMatch(/\.cell\.path > \.hv-chip-line-text \{[^}]*flex-wrap: wrap/);
+    expect(css).toMatch(/\.hv-path-seg \{[^}]*white-space: nowrap/);
+    expect(css).toMatch(/\.hv-path-sep \{ white-space: pre; \}/);
+  });
+
+  // The last resort, for one segment wider than the whole column: an ellipsis
+  // on the segment, never a hard cut — and the title above still has the truth.
+  it('elides a single segment only once there is no break left to take', () => {
+    expect(tableCss()).toMatch(
+      /\.hv-path-seg \{[^}]*min-width: 0;[^}]*overflow: hidden;[^}]*text-overflow: ellipsis/,
+    );
+  });
+});
+
 describe('hv-data-table: narrow screens', () => {
-  // The template has a hard ~786px minimum, and a grid whose tracks do not fit
+  // The template has a hard ~1354px minimum, and a grid whose tracks do not fit
   // overflows its box rather than shrinking. With overflow visible the spill
   // was clipped by the shell: rows measured clientWidth 634 / scrollWidth 854
   // at 375px, and three columns could not be reached by any gesture.
@@ -200,6 +288,23 @@ describe('hv-data-table: columns', () => {
     expect(tags.every((t) => t.classList.contains('tag'))).toBe(true);
     // The category cell is plain text in this column, not a chip at all.
     expect(q(el, '[data-testid="cell-category"]')?.querySelector('.hv-chip')).toBe(null);
+  });
+
+  // Cut at the cell's edge the column showed one chip of six and half of the
+  // next — "#re…", sometimes a bare "#" — with no count to say the rest
+  // existed. jsdom lays nothing out, so what is assertable is that nothing
+  // clips and the chips have somewhere to go.
+  it('wraps a long tag set onto more lines instead of cutting a chip', async () => {
+    const tags = ['essen', 'vorrat', 'trocken', 'reserve', 'küche', 'bio'];
+    const el = await mount([{ id: '1', tags }], { columns: ['tags'] });
+    const chips = [...q(el, '[data-testid="cell-tags"]')!.querySelectorAll('.hv-chip')];
+
+    // Every tag, whole: no cut-off set and no "+N" standing in for one.
+    expect(chips.map((c) => c.textContent?.trim())).toEqual(tags.map((t) => `#${t}`));
+
+    const css = tableCss();
+    expect(css).toMatch(/\.tags \{[^}]*flex-wrap: wrap/);
+    expect(css).not.toMatch(/\.tags \{[^}]*overflow: hidden/);
   });
 
   it('says so when an item carries no tags', async () => {

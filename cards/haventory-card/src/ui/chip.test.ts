@@ -138,11 +138,21 @@ describe('ui/chip: the shared fragment', () => {
   // text-overflow does nothing on a flex container, so a path left on the row
   // itself would hard-cut mid-character with no ellipsis to say so.
   it('moves the elision onto the text when the row becomes a flex box', () => {
-    for (const tag of ['hv-data-table', 'hv-detail-sheet', 'hv-list-row']) {
+    for (const tag of ['hv-detail-sheet', 'hv-list-row']) {
       expect(ownCss(tag), tag).toMatch(
         /\.hv-chip-line-text \{[^}]*text-overflow: ellipsis[^}]*\}/,
       );
     }
+  });
+
+  // The table is the surface that does not elide: its rows grow, so the path
+  // takes a second line instead of an ellipsis. It still keeps the chip on the
+  // row — that part is the same everywhere — and the text beside it is a flex
+  // box of its own, one item per segment, which is what it wraps between.
+  it('lets the one surface with room to grow wrap the text instead', () => {
+    const css = ownCss('hv-data-table');
+    expect(css).toMatch(/\.hv-chip-line-text \{[^}]*flex-wrap: wrap/);
+    expect(css).not.toMatch(/\.hv-chip-line-text \{[^}]*text-overflow/);
   });
 
   // An area is marked one way wherever the card marks one, and that mark is not
