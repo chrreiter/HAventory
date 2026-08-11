@@ -4,6 +4,7 @@ import { tokens, base } from '../ui/tokens';
 import { chip, renderTagChip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
+import { customFieldLabel } from '../ui/field-label';
 import { inferType } from '../ui/item-form';
 import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
 import { isLowStock } from './hv-list-row';
@@ -492,19 +493,27 @@ export class HVDetailSheet extends LitElement {
     else this._close();
   }
 
+  /**
+   * One custom field, as a fact rather than as a stored pair.
+   *
+   * The label is written for reading; `data-key` still carries the key itself,
+   * which is what the editor shows and what an export document and an
+   * automation name.
+   */
   private _renderCustomFact(key: string, value: ScalarValue) {
     const type = inferType(value);
+    const label = customFieldLabel(key);
     if (type === 'boolean') {
       const on = value === true;
       return html`<div class="fact" data-testid="sheet-fact" data-key=${key}>
-        <span>${key}</span>
+        <span>${label}</span>
         <span class="value ${on ? 'yes' : 'unset'}">
           ${on ? html`${icon('check', 15)} Yes` : 'No'}
         </span>
       </div>`;
     }
     return html`<div class="fact" data-testid="sheet-fact" data-key=${key}>
-      <span>${key}</span>
+      <span>${label}</span>
       <span class="value">${type === 'date' ? formatDate(String(value)) : String(value)}</span>
     </div>`;
   }
