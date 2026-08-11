@@ -556,7 +556,9 @@ Things jsdom cannot do, and how the tests handle it:
 - **No real drag and drop** — jsdom builds a `DragEvent` with no `DataTransfer` behind it,
   so the editor's file-drop tests carry a plain-object `dataTransfer` and assert the
   routing (which kind each dropped file becomes) rather than the browser's drag machinery.
-  Dragging items onto tree nodes (an optional item in the handoff) is not implemented.
+  Dropping a file onto the editor is the only drag the card handles: an item's location
+  changes through the item editor or the bulk bar's Move action, never by dragging the row
+  onto a node of the sidebar tree.
 
 Run:
 
@@ -585,11 +587,22 @@ round trip is not free; the UI stays responsive and rolls back on failure.
 themes keep working. Accents with no HA equivalent (tints, hover washes, warning surfaces)
 track `prefers-color-scheme`.
 
+**Buttons are the card's reordering idiom** — the organize dialog's status rows and the item
+editor's photo strip both move an entry with a pair of arrow buttons, and both send the whole
+new order to the backend. Pointer drag has no keyboard equivalent, so it could only ever
+arrive *beside* the buttons and never in place of them; and whichever list grew it first
+would settle the gesture for the others, the unbuilt column order among them. It is not
+built. The buttons already carry the capability on every ordered list the card has, so
+nothing waits on it, and whether the gesture is worth implementing across three surfaces at
+once is a question about how the card gets used — which takes people using it to answer.
+
 ---
 
 ## Known gaps
 
-- Drag-and-drop of items onto sidebar tree nodes (optional in the handoff) is not built.
+- Nothing in the card moves by pointer drag. An item cannot be dragged onto a location in
+  the sidebar tree — its location changes through the item editor or the bulk bar's Move
+  action — and the ordered lists reorder with buttons, per the decision above.
 - Large lists rely on paging; no row virtualization.
 - The backend cannot sort by category, location or tags, filter by due date, or bulk-create
   items — the UI is shaped around those limits rather than hiding them.
