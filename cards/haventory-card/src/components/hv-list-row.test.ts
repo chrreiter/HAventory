@@ -1,7 +1,7 @@
 import './hv-list-row';
 import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
-import { elideMobilePath, elidePath, isLowStock } from './hv-list-row';
+import { areaMarkName, elideMobilePath, elidePath, isLowStock, rowMenuEntries } from './hv-list-row';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVListRow } from './hv-list-row';
 import type { Item } from '../store/types';
@@ -31,6 +31,27 @@ describe('isLowStock', () => {
   it('is low at or below the threshold', () => {
     expect(isLowStock(makeItem({ quantity: 3, low_stock_threshold: 3 }))).toBe(true);
     expect(isLowStock(makeItem({ quantity: 4, low_stock_threshold: 3 }))).toBe(false);
+  });
+});
+
+describe('areaMarkName', () => {
+  it('keeps an area the path does not already name', () => {
+    expect(areaMarkName('Garage', 'Workshop › Drawer A')).toBe('Garage');
+  });
+
+  it('drops an area the path opens with', () => {
+    expect(areaMarkName('Küche', 'Küche')).toBe(null);
+    expect(areaMarkName('Küche', 'Küche › Oberstes Fach')).toBe(null);
+  });
+
+  // Only the first segment counts: a deeper segment of the same name is a
+  // different place inside the area, and the mark still says which area.
+  it('only compares the first segment', () => {
+    expect(areaMarkName('Küche', 'Keller › Küche')).toBe('Küche');
+  });
+
+  it('has nothing to drop when there is no area', () => {
+    expect(areaMarkName(null, 'Küche')).toBe(null);
   });
 });
 
@@ -117,11 +138,46 @@ describe('hv-list-row: content', () => {
     expect(q(el, '[data-testid="row-qty"]')?.classList.contains('low')).toBe(true);
   });
 
-  it('marks a checked-out item and disables its stepper', async () => {
-    const el = await mount({ checked_out: true });
+  // The stepper used to sit there greyed and check-in was reachable only through
+  // the ⋮ menu, which a wide row hides until the row is hovered.
+  it('gives a checked-out row the check-in button in the stepper place, at any width', async () => {
+    for (const mobile of [false, true]) {
+      const el = await mount({ checked_out: true }, { mobile });
+      const where = `mobile=${mobile}`;
+
+      expect(q(el, '[data-testid="row-stepper"]'), where).toBe(null);
+      const button = q(el, '[data-testid="row-check-in"]');
+      expect(button?.textContent?.trim(), where).toBe('Check in');
+
+      const emitted: string[] = [];
+      el.addEventListener('check-in', () => emitted.push('check-in'));
+      (button as HTMLButtonElement).click();
+      expect(emitted, where).toEqual(['check-in']);
+
+      el.remove();
+    }
+
+    // Still a secondary path, so a user who reaches for the menu keeps it.
+    expect(
+      rowMenuEntries(makeItem({ checked_out: true })).some((e) => 'id' in e && e.id === 'check-in'),
+    ).toBe(true);
+  });
+
+  it('marks a checked-out item on the wide row and keeps its location beside it', async () => {
+    const el = await mount({
+      checked_out: true,
+      category: 'Tools',
+      location_path: {
+        id_path: [],
+        name_path: [],
+        display_path: 'Workshop / Drawer A',
+        sort_key: '',
+      },
+    });
     expect(q(el, '[data-testid="row-checked-out"]')?.textContent).toContain('Checked out');
-    expect((q(el, '[data-testid="row-increment"]') as HTMLButtonElement).disabled).toBe(true);
-    expect((q(el, '[data-testid="row-decrement"]') as HTMLButtonElement).disabled).toBe(true);
+    const secondary = q(el, '[data-testid="row-secondary"]')?.textContent;
+    expect(secondary).toContain('Drawer A');
+    expect(secondary).toContain('Tools');
   });
 
   it('calls out an overdue check-out in error colour', async () => {
@@ -332,28 +388,54 @@ describe('hv-list-row: mobile affordances', () => {
   });
 
   it('spends the phone row on the room, and marks it as a room', async () => {
-    // No chip fits this line, so the area goes in as the leading segment — the
-    // half elidePath keeps — with the home mark saying it is Home Assistant's
-    // area rather than the top of our own tree.
+    // The area travels through the elision as the leading segment — the half
+    // elidePath keeps — and comes back out of it as the pill the wide row hangs
+    // beside a path. As plain text it was only a space away from the path.
     const el = await mount(
       { category: null, effective_area_id: 'area-workshop', location_path: deepPath },
       { mobile: true, areas: [{ id: 'area-workshop', name: 'Garage' }] },
     );
     const secondary = q(el, '[data-testid="row-secondary"]');
-    const mark = secondary?.querySelector('[data-testid="row-area-mark"]');
+    const mark = secondary?.querySelector('[data-testid="area-chip"]');
+    expect(mark?.classList.contains('hv-area-chip')).toBe(true);
     expect(mark?.textContent).toContain('Garage');
     expect(mark?.querySelector('svg')).toBeTruthy();
     expect(secondary?.textContent).toContain('… › Small Bin');
-    // The mark is the separator now.
+    // The pill is the separator now.
     expect(secondary?.textContent).not.toContain('Garage › ');
-    // Still the phone line, not the chip the desktop row gets.
-    expect(secondary?.querySelector('.hv-area-chip')).toBe(null);
+  });
+
+  // An area "Küche" over a root location "Küche" — the way a household names
+  // both — printed "Küche Küche", two identical words a single space apart.
+  it('drops the area mark when the path already opens with that name', async () => {
+    const kitchen = {
+      id_path: [],
+      name_path: [],
+      display_path: 'Küche / Oberstes Fach',
+      sort_key: '',
+    };
+    for (const mobile of [false, true]) {
+      const el = await mount(
+        { category: null, effective_area_id: 'area-kitchen', location_path: kitchen },
+        { mobile, areas: [{ id: 'area-kitchen', name: 'Küche' }] },
+      );
+      const secondary = q(el, '[data-testid="row-secondary"]');
+      const where = `mobile=${mobile}`;
+
+      expect(secondary?.querySelector('[data-testid="area-chip"]'), where).toBe(null);
+      expect(secondary?.textContent?.replace(/\s+/g, ' ').trim(), where).toBe(
+        'Küche › Oberstes Fach',
+      );
+      // The pairing is still readable in full where the row keeps it.
+      expect(secondary?.getAttribute('title'), where).toBe('Area: Küche · Küche › Oberstes Fach');
+      el.remove();
+    }
   });
 
   it('renders no mark at all on a phone row with no area', async () => {
     const el = await mount({ category: null, location_path: deepPath }, { mobile: true });
     const secondary = q(el, '[data-testid="row-secondary"]');
-    expect(secondary?.querySelector('[data-testid="row-area-mark"]')).toBe(null);
+    expect(secondary?.querySelector('[data-testid="area-chip"]')).toBe(null);
     expect(secondary?.textContent?.trim()).toBe('Workshop › … › Small Bin');
   });
 
@@ -369,9 +451,7 @@ describe('hv-list-row: mobile affordances', () => {
     );
     const secondary = q(el, '[data-testid="row-secondary"]');
     expect(secondary?.textContent).toContain('Needs repair');
-    expect(secondary?.querySelector('[data-testid="row-area-mark"]')?.textContent).toContain(
-      'Garage',
-    );
+    expect(secondary?.querySelector('[data-testid="area-chip"]')?.textContent).toContain('Garage');
     expect(secondary?.textContent).toContain('… › Small Bin');
   });
 
@@ -389,22 +469,28 @@ describe('hv-list-row: mobile affordances', () => {
       { mobile: true, areas: [{ id: 'area-workshop', name: 'Garage' }] },
     );
     const secondary = q(el, '[data-testid="row-secondary"]');
-    expect(
-      secondary?.querySelector('[data-testid="row-area-mark"] .hv-sr-only')?.textContent,
-    ).toBe('Area: ');
+    expect(secondary?.querySelector('[data-testid="area-chip"] .hv-sr-only')?.textContent).toBe(
+      'Area: ',
+    );
     expect(secondary?.getAttribute('title')).toBe(
       'Area: Garage · Workshop › Parts Cabinet › Drawer A › Small Bin',
     );
   });
 
-  it('leaves a checked-out phone row saying what it always said', async () => {
+  // Being out used to take the line rather than lead it, so the one row you most
+  // want the shelf of — the borrowed one — was the row that stopped naming it.
+  it('leads a checked-out phone row with the checkout and keeps the location behind it', async () => {
     const el = await mount(
       { checked_out: true, due_date: '2099-07-31', effective_area_id: 'area-workshop', location_path: deepPath },
       { mobile: true, areas: [{ id: 'area-workshop', name: 'Garage' }] },
     );
     const secondary = q(el, '[data-testid="row-secondary"]');
-    expect(secondary?.textContent).toContain('Checked out');
-    expect(secondary?.textContent).not.toContain('Garage');
+    const text = secondary?.textContent?.replace(/\s+/g, ' ') ?? '';
+
+    expect(text).toContain('Checked out · due');
+    expect(secondary?.querySelector('[data-testid="area-chip"]')?.textContent).toContain('Garage');
+    expect(text).toContain('… › Small Bin');
+    expect(text.indexOf('Checked out')).toBeLessThan(text.indexOf('Small Bin'));
   });
 
   // Both lines clip with an ellipsis, and the phone row drops the middle of the

@@ -68,6 +68,21 @@ export function elidePath(path: string, maxSegments = 2): string {
 }
 
 /**
+ * The area worth marking beside a path, or nothing.
+ *
+ * Naming a root location after the area it stands in is the most natural thing
+ * a household does — an area "Kitchen" holding a location "Kitchen" — and the
+ * row then prints the same word twice in a row with only a separator between
+ * them. When the path's first segment already is the area, the path has said
+ * it, and the mark is dropped. The full pairing survives in the row's `title`,
+ * which is where the unelided truth lives either way.
+ */
+export function areaMarkName(areaName: string | null, path: string): string | null {
+  if (!areaName) return null;
+  return path.split(' › ')[0].trim() === areaName.trim() ? null : areaName;
+}
+
+/**
  * The phone row's location line, with the area separated back out of the front
  * of it.
  *
@@ -216,23 +231,17 @@ export class HVListRow extends LitElement {
       .secondary.hv-chip-line {
         display: flex;
       }
-      /* The same home mark the area chip carries, marking the leading segment
-         of a phone row's path as Home Assistant's area rather than the top of
-         our own tree. Not a chip: this line has room for neither the fill nor
-         the spelled-out word, which is why the area is a text segment here at
-         all. Colour and weight stay inherited, so the mark travels with
-         whichever state variant the line is in. */
-      .area-lead {
-        display: inline-flex;
-        align-items: center;
-        /* Tighter than the chip's own 4px: this sits inside a text run with no
-           fill around it, and every pixel here comes off the elided tail. */
-        gap: 2px;
-        margin-right: 4px;
-        /* An inline-flex box whose first child is an svg has no baseline of its
-           own and would otherwise sit a couple of pixels low against the path
-           beside it. */
-        vertical-align: middle;
+      /* The wide row's area pill, inside a line that is a text run rather than a
+         row of chips. The fill is what separates the area from the path after
+         it: as plain text in the same colour and weight, a root location named
+         after its own area printed the word twice with a single space between
+         them and nothing to say which was which.
+
+         The margin is the gap the wide line gets from its flex layout. The line
+         itself stays a block with inline content, because text-overflow does not
+         apply to a flex container and the path tail has to keep its ellipsis. */
+      :host([mobile]) .secondary .hv-area-chip {
+        margin-right: 6px;
       }
       /* The path elides; the chip ahead of it does not. */
       .secondary.hv-chip-line > .hv-chip-line-text {
@@ -299,9 +308,6 @@ export class HVListRow extends LitElement {
         border: 1px solid var(--hv-divider);
         border-radius: var(--hv-radius-chip);
       }
-      .stepper.disabled {
-        opacity: 0.45;
-      }
       .stepper button {
         display: inline-grid;
         place-items: center;
@@ -331,15 +337,27 @@ export class HVListRow extends LitElement {
       .qty.low {
         color: var(--hv-warn);
       }
+      /* Takes the stepper's place at both widths, so it is sized against the
+         stepper it replaces — 30px is that control's height with its border. */
       .check-in {
         flex: none;
         border: 1px solid var(--hv-primary-tint-border);
         background: none;
         color: var(--hv-primary-darker);
         border-radius: var(--hv-radius-chip);
+        min-height: 30px;
+        padding: 0 12px;
+        font: 500 13px var(--hv-font);
+      }
+      .check-in:hover {
+        background: var(--hv-hover-overlay);
+      }
+      /* A finger needs the platform minimum, and the phone row has the width for
+         the padding to go with it. */
+      :host([mobile]) .check-in {
         min-height: var(--hv-tap-min, 40px);
         padding: 0 18px;
-        font: 500 13.5px var(--hv-font);
+        font-size: 13.5px;
       }
       .box {
         flex: none;
@@ -444,12 +462,20 @@ export class HVListRow extends LitElement {
     }
   };
 
+  /**
+   * The row's trailing control: the quantity stepper, or the way to take the
+   * item back.
+   *
+   * A checked-out item's quantity is not the thing to adjust, and that holds at
+   * any width — so the stepper gives its place to "Check in" rather than sitting
+   * there greyed. The ⋮ menu still offers the same action, and on a wide row it
+   * only appears on hover: a user who never hovers had no visible way to check
+   * anything in from the list at all.
+   */
   private _renderStepper() {
     const item = this.item;
     const low = isLowStock(item);
-    // A checked-out item's quantity is not the thing to adjust.
-    const disabled = item.checked_out;
-    if (this.mobile && item.checked_out) {
+    if (item.checked_out) {
       return html`<button
         class="check-in"
         data-testid="row-check-in"
@@ -462,11 +488,10 @@ export class HVListRow extends LitElement {
       </button>`;
     }
     return html`
-      <span class="stepper ${disabled ? 'disabled' : ''}" data-testid="row-stepper">
+      <span class="stepper" data-testid="row-stepper">
         <button
           data-testid="row-decrement"
           aria-label="Decrease quantity"
-          ?disabled=${disabled}
           @click=${(e: Event) => {
             e.stopPropagation();
             this._emit('decrement');
@@ -478,7 +503,6 @@ export class HVListRow extends LitElement {
         <button
           data-testid="row-increment"
           aria-label="Increase quantity"
-          ?disabled=${disabled}
           @click=${(e: Event) => {
             e.stopPropagation();
             this._emit('increment');
@@ -499,29 +523,28 @@ export class HVListRow extends LitElement {
     // already behind us means it is waiting to be done.
     const inspectionDue = isOverdue(item.inspection_date);
     const parts = itemPathParts(item, this.areas);
+    const areaMark = areaMarkName(parts.areaName, parts.path);
     // The desktop row has room for the whole path and the area chip beside it.
     const secondary = [parts.path, item.category].filter(Boolean).join(' · ');
-    // A phone line fits neither, so the area goes in as the leading segment —
-    // the half elidePath keeps — and the room survives a path deep enough to
-    // lose its middle. The home mark is what says the segment is an area and
-    // not the top of our own tree; it replaces the separator after it, so it
-    // costs the line about what that separator cost.
-    const mobileLead = elideMobilePath(parts.areaName, parts.path);
+    // A phone line has no room for the whole path, so the area travels through
+    // the elision as the leading segment — the half elidePath keeps — and comes
+    // back out of it as the same pill the wide row hangs beside a path. The
+    // pill's fill is what marks the boundary: as plain text in the path's own
+    // colour and weight, a root named after its area read as one word twice.
+    const mobileLead = elideMobilePath(areaMark, parts.path);
     const mobileTail = [mobileLead.rest, item.category].filter(Boolean).join(' · ');
     const hasMobileSecondary = Boolean(mobileLead.area || mobileTail);
-    const mobileSecondary = html`${mobileLead.area
-      ? html`<span class="area-lead" data-testid="row-area-mark"
-          >${icon('home', 11)}<span class="hv-sr-only">Area: </span>${mobileLead.area}</span
-        >`
-      : null}${mobileTail}`;
+    const mobileSecondary = html`${renderAreaChip(mobileLead.area)}${mobileTail}`;
     // The tooltip carries the *unelided* path: on a phone the middle of it is
     // dropped on purpose, and this is where the whole thing can still be read.
     const secondaryFull = [pathTitle(parts), item.category].filter(Boolean).join(' · ');
     // A phone row has one line for all of this and no room for the chips the
-    // wide row hangs on the right, so the line says the most interrupting
+    // wide row hangs on the right, so the line leads with the most interrupting
     // thing it has: who has the item, then what state it is flagged with, then
-    // what it is waiting for, then where it lives. The path is a tap away in
-    // the detail sheet either way.
+    // what it is waiting for. Being out and being flagged put the location
+    // behind them rather than in place of them — the wide row shows both, and a
+    // borrowed item is exactly the one whose shelf you want to read. What runs
+    // past the edge elides, so the width decides how much of it survives.
     const status = itemStatus(item);
     const flagged = status !== 'ok';
     const mobileState = item.checked_out ? 'out' : flagged || inspectionDue ? 'inspect' : '';
@@ -583,7 +606,7 @@ export class HVListRow extends LitElement {
             ${this.mobile && item.checked_out
               ? html`${overdue ? 'Overdue' : 'Checked out'}${item.due_date
                   ? ` · due ${formatDate(item.due_date)}`
-                  : ''}`
+                  : ''}${hasMobileSecondary ? html` · ${mobileSecondary}` : ''}`
               : this.mobile && flagged
                 ? html`<span data-testid="row-status">${statusLabel(status, this.statuses)}</span>${hasMobileSecondary
                     ? html` · ${mobileSecondary}`
@@ -594,7 +617,7 @@ export class HVListRow extends LitElement {
                     ? hasMobileSecondary
                       ? mobileSecondary
                       : 'No location'
-                    : html`${renderAreaChip(parts.areaName)}<span class="hv-chip-line-text"
+                    : html`${renderAreaChip(areaMark)}<span class="hv-chip-line-text"
                         >${secondary || 'No location'}</span
                       >`}
           </span>
