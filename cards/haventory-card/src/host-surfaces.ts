@@ -217,7 +217,7 @@ export class HostSurfaces {
       { id: 'organize', label: 'Organize…', glyph: 'mapMarker', meta: 'Locations · Tags · Categories · Statuses' },
       { id: 'columns', label: 'Columns…', glyph: 'viewColumn' },
       { divider: true },
-      { id: 'refresh', label: 'Refresh data', glyph: 'refresh', meta: 'Items · locations · stats' },
+      { id: 'refresh', label: 'Refresh data', glyph: 'refresh', meta: 'Items · Locations · Stats' },
       {
         id: 'diagnostics',
         label: 'Diagnostics',

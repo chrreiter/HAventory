@@ -300,14 +300,17 @@ describe('hv-item-editor: field parity', () => {
     const el = await mount(makeItem({ id: '1', inspection_date: null }));
     expect(all(el, '[data-testid="editor-inspection-offset"]').map((b) => b.dataset.days)).toEqual([
       '7',
-      '31',
+      '30',
       '90',
     ]);
+    expect(all(el, '[data-testid="editor-inspection-offset"]').map((b) => b.textContent?.trim())).toEqual(
+      ['+7 days', '+30 days', '+90 days'],
+    );
 
     const dateInput = () => q(el, '[data-testid="editor-inspection-date"]') as HTMLInputElement;
     (all(el, '[data-testid="editor-inspection-offset"]')[1] as HTMLButtonElement).click();
     await el.updateComplete;
-    expect(dateInput().value).toBe(addDays(31));
+    expect(dateInput().value).toBe(addDays(30));
     expect(all(el, '[data-testid="editor-inspection-offset"]')[1].classList.contains('on')).toBe(true);
   });
 
@@ -2632,7 +2635,7 @@ describe('hv-item-editor: one label recipe, one note size', () => {
     const el = await mount(makeItem({ id: '1' }));
     expect(el.shadowRoot?.innerHTML).not.toContain('style="text-transform');
     const note = el.shadowRoot?.querySelector('.label-note');
-    expect(note?.textContent).toContain('stored lowercase');
+    expect(note?.textContent).toContain('always lowercase');
   });
 
   // The tag field sat a point smaller than every input beside it.

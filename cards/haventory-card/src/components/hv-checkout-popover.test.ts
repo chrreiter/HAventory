@@ -40,11 +40,16 @@ describe('hv-checkout-popover: check-out', () => {
     expect(q(el, '[data-testid="checkout-date-label"]')?.textContent).toBe(formatDate(addDays(7)));
   });
 
-  // A week, a month, a quarter. +1 day was shorter than most borrowings ever
-  // are, and +30 was a month that isn't one.
+  // A week, a month, a quarter — the round spans a household names, with +1 day
+  // left out as shorter than most borrowings ever are.
   it('offers the other offsets and switches between them', async () => {
     const el = await mount();
-    expect(all(el, '[data-testid="checkout-offset"]').map((b) => b.dataset.days)).toEqual(['7', '31', '90']);
+    expect(all(el, '[data-testid="checkout-offset"]').map((b) => b.dataset.days)).toEqual(['7', '30', '90']);
+    expect(all(el, '[data-testid="checkout-offset"]').map((b) => b.textContent?.trim())).toEqual([
+      '+7 days',
+      '+30 days',
+      '+90 days',
+    ]);
 
     (all(el, '[data-testid="checkout-offset"]')[2] as HTMLButtonElement).click();
     await el.updateComplete;

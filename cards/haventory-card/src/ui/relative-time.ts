@@ -76,16 +76,16 @@ export function addDays(days: number, from: number = Date.now()): string {
 
 /**
  * The quick offsets every forward-dating control offers: a week, a month, a
- * quarter. +31 rather than +30 so "a month" lands a month later, and nothing
- * shorter than a week — a single day is less than most borrowings ever run,
- * and less than any inspection interval worth recording.
+ * quarter — the round numbers a household names a span by. Nothing shorter
+ * than a week: a single day is less than most borrowings ever run, and less
+ * than any inspection interval worth recording.
  *
  * Shared so the check-out popover and the editor's inspection field cannot
  * drift into offering different jumps for the same gesture.
  */
 export const QUICK_DAY_OFFSETS: readonly { days: number; label: string }[] = [
   { days: 7, label: '+7 days' },
-  { days: 31, label: '+31 days' },
+  { days: 30, label: '+30 days' },
   { days: 90, label: '+90 days' },
 ];
 
