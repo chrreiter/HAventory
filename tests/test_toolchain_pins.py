@@ -1,0 +1,368 @@
+"""The Python floor, the Node floor and the ruff pin must agree everywhere.
+
+Each of the three is declared in exactly one place — ``requires-python`` in
+``pyproject.toml``, ``engines.node`` in the card's ``package.json``, and the
+``ruff==`` entry in the ``dev`` dependency group — and each is then copied into
+files that read nothing back. A copy that goes stale stays stale: the CodeQL
+workflow analysed Python on 3.12 for as long as nothing looked at it.
+
+The Python side works in two passes. Registered files are checked by count and
+by value, so changing a copy without changing the declaration fails; the whole
+tree is then swept for the same spellings, so a copy in an unregistered file
+fails too. Adding a copy means registering it here or not writing it.
+
+Two Python copies are shaped so no interpreter-version pattern can see them, and
+neither is unguarded: ``.github/rulesets/main.json`` names the required check
+``backend (3.14)``, which ``tests/test_repo_hardening_offline.py`` ties to the
+job the ``ci.yml`` matrix actually produces, and ``hacs.json``'s Home Assistant
+floor implies the interpreter, which ``tests/test_min_ha_version.py`` holds to
+the 2026.3 split where HA itself moved to 3.14.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import tomllib
+from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+PYPROJECT = REPO_ROOT / "pyproject.toml"
+CARD_PACKAGE_JSON = REPO_ROOT / "cards" / "haventory-card" / "package.json"
+PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
+CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+
+
+def read_toml(path: Path) -> dict[str, Any]:
+    return tomllib.loads(path.read_text(encoding="utf-8"))
+
+
+def collapse(text: str) -> str:
+    """Text with wrapping, comment leaders and Markdown emphasis flattened away.
+
+    ``Python **3.14**`` split across two lines of prose is the same copy as
+    ``python3.14`` in a shell script, and a version that wrapped onto the next
+    line of a ``#`` comment block is the same copy again. One pattern has to see
+    all three, so the shapes that only separate them are removed first.
+    """
+    return re.sub(r"\s+", " ", re.sub(r"(?m)^[ \t]*#+[ \t]?", "", text.replace("**", "")))
+
+
+# --------------------------------------------------------------------------
+# The Python floor
+# --------------------------------------------------------------------------
+
+_PY = r"3\.\d+"
+
+# Every spelling of an interpreter version this repository uses. Anchored on
+# "python" or on the "3.14-only" phrase so that release versions which merely
+# look alike (``aiohttp==3.14.2``) are not mistaken for the floor.
+PYTHON_VERSION_FORMS = re.compile(
+    "|".join(
+        (
+            rf"--python[ =]({_PY})",  # uv: `uv venv --python 3.14`
+            rf"python install ({_PY})",  # uv: `uv python install 3.14`
+            rf"PYTHON:-({_PY})",  # shell default: `${HA_PYTHON:-3.14}`
+            rf"python[-_]version[\"']? *[:=] *\[? *[\"']?({_PY})",  # setup-python, mypy
+            rf"requires-python *= *\">=({_PY})\"",  # the declaration
+            rf"[Cc]?[Pp]ython[ :]?({_PY})",  # prose, `python3.14`, image tags
+            rf"({_PY})-only",  # "the source is 3.14-only"
+        )
+    )
+)
+
+# ruff spells the same number without the dot.
+RUFF_TARGET_VERSION = re.compile(r"target-version *= *\"py3(\d\d)\"")
+
+# (path relative to the repository root, number of copies in it).
+PYTHON_FLOOR_SITES: tuple[tuple[str, int], ...] = (
+    ("pyproject.toml", 8),
+    (".github/workflows/ci.yml", 5),
+    (".github/workflows/codeql.yml", 1),
+    ("README.md", 10),
+    ("CONTRIBUTING.md", 1),
+    ("docs/backend_api_contract.md", 1),
+    ("requirements-integration.txt", 2),
+    ("scripts/test_integration.sh", 4),
+    (".devcontainer/Dockerfile", 1),
+    (".devcontainer/develop.sh", 2),
+    (".devcontainer/post-create.sh", 1),
+    (".claude/hooks/session-start.sh", 8),
+    (".claude/skills/run-haventory/SKILL.md", 2),
+    (".claude/skills/test-haventory/SKILL.md", 7),
+)
+
+# Directories the sweep does not enter. `dev/` holds design documents that quote
+# configuration verbatim to describe it — snapshots, not copies anyone keeps
+# true, and they are deleted with the work they plan.
+SWEPT_SKIP_DIRS = frozenset(
+    {
+        ".git",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".venv",
+        ".venv-integration",
+        "__pycache__",
+        "dev",
+        "node_modules",
+    }
+)
+
+# Generated or vendored trees that carry versions nobody here writes.
+SWEPT_SKIP_PATHS = frozenset(
+    {
+        "cards/haventory-card/coverage",
+        "cards/haventory-card/dist",
+        "custom_components/haventory/www",
+        "cards/haventory-card/package-lock.json",
+        "uv.lock",
+        # This file names the spellings it looks for; it is the register, not a copy.
+        "tests/test_toolchain_pins.py",
+    }
+)
+
+SWEPT_SUFFIXES = frozenset(
+    {
+        ".cfg",
+        ".ini",
+        ".js",
+        ".json",
+        ".md",
+        ".mjs",
+        ".py",
+        ".pyi",
+        ".sh",
+        ".toml",
+        ".ts",
+        ".txt",
+        ".yaml",
+        ".yml",
+    }
+)
+
+SWEPT_NAMES = frozenset({"Dockerfile"})
+
+
+def declared_python_floor() -> str:
+    """The interpreter version ``requires-python`` demands."""
+    return read_toml(PYPROJECT)["project"]["requires-python"].removeprefix(">=")
+
+
+def python_versions_in(text: str) -> list[str]:
+    """Every interpreter version a file states, in both spellings."""
+    collapsed = collapse(text)
+    dotted = [
+        next(group for group in match.groups() if group is not None)
+        for match in PYTHON_VERSION_FORMS.finditer(collapsed)
+    ]
+    compact = [f"3.{match.group(1)}" for match in RUFF_TARGET_VERSION.finditer(collapsed)]
+    return dotted + compact
+
+
+def swept_files() -> list[Path]:
+    """Every committed text file that could carry a copy of a version."""
+    found: list[Path] = []
+    stack = [REPO_ROOT]
+    while stack:
+        for entry in sorted(stack.pop().iterdir()):
+            relative = entry.relative_to(REPO_ROOT).as_posix()
+            if relative in SWEPT_SKIP_PATHS:
+                continue
+            if entry.is_dir():
+                if entry.name not in SWEPT_SKIP_DIRS:
+                    stack.append(entry)
+            elif entry.suffix in SWEPT_SUFFIXES or entry.name in SWEPT_NAMES:
+                found.append(entry)
+    return found
+
+
+def test_the_floor_cannot_drop_below_the_syntax_the_source_uses() -> None:
+    """3.14 is a hard bottom, not a preference.
+
+    The integration uses PEP 758 unparenthesized ``except A, B:``, which no
+    older interpreter parses — an environment below the floor cannot import the
+    package at all, so lowering the declaration would not merely widen support.
+    """
+    major, minor = (int(part) for part in declared_python_floor().split("."))
+    assert (major, minor) >= (3, 14)
+
+
+@pytest.mark.parametrize(("relative_path", "occurrences"), PYTHON_FLOOR_SITES)
+def test_python_floor_sites_match_pyproject(relative_path: str, occurrences: int) -> None:
+    """Every registered copy of the floor agrees with ``requires-python``."""
+    found = python_versions_in((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
+
+    assert len(found) == occurrences, (
+        f"{relative_path}: expected {occurrences} interpreter version(s), found {len(found)} "
+        f"({found}) — register the new copy here or drop it"
+    )
+    assert set(found) == {declared_python_floor()}, (
+        f"{relative_path} states {sorted(set(found))}, "
+        f"pyproject.toml declares {declared_python_floor()!r}"
+    )
+
+
+def test_no_unregistered_file_states_an_interpreter_version() -> None:
+    """A copy in a file this test does not know about fails the same way."""
+    registered = {path for path, _ in PYTHON_FLOOR_SITES}
+    carrying = {
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in swept_files()
+        if python_versions_in(path.read_text(encoding="utf-8", errors="replace"))
+    }
+
+    assert carrying == registered, (
+        f"unregistered: {sorted(carrying - registered)}; "
+        f"registered but no longer carrying one: {sorted(registered - carrying)}"
+    )
+
+
+def test_version_numbers_that_are_not_the_interpreter_are_left_alone() -> None:
+    """Release pins that look like an interpreter version are not copies of it."""
+    assert python_versions_in("aiohttp==3.14.2\nhomeassistant==2026.6.0\nidna==3.18\n") == []
+    assert python_versions_in("does not parse on 3.13") == []
+
+
+def test_both_spellings_of_a_version_are_found() -> None:
+    """ruff's dotless target and a line-wrapped prose mention read the same."""
+    assert python_versions_in('target-version = "py315"') == ["3.15"]
+    assert python_versions_in("needs Python\n**3.15** to run") == ["3.15"]
+    assert python_versions_in("uv venv --python 3.15 .venv") == ["3.15"]
+
+
+# --------------------------------------------------------------------------
+# The Node floor
+# --------------------------------------------------------------------------
+
+# Prose states the floor as a major, or as the major and minor `engines` names.
+NODE_PROSE = re.compile(r"Node ?(\d+)(?:\.(\d+))?")
+
+NODE_PROSE_SITES: tuple[str, ...] = (
+    "README.md",
+    "CONTRIBUTING.md",
+    "scripts/setup.sh",
+    "scripts/test_frontend.sh",
+    ".claude/skills/run-haventory/SKILL.md",
+    ".claude/skills/test-haventory/SKILL.md",
+)
+
+
+def declared_node_range() -> str:
+    """The Node range the card's ``engines`` field demands."""
+    return json.loads(CARD_PACKAGE_JSON.read_text(encoding="utf-8"))["engines"]["node"]
+
+
+def node_majors() -> set[str]:
+    """The majors ``engines`` names — one per comparator in the range."""
+    named = re.findall(r"\d+(?:\.\d+)*", declared_node_range())
+    return {version.split(".")[0] for version in named}
+
+
+def node_floor() -> tuple[str, str]:
+    """The oldest supported major and minor, as ``engines`` states them."""
+    with_minor = re.findall(r"\d+\.\d+", declared_node_range())
+    major, minor = min(with_minor, key=lambda v: tuple(map(int, v.split(".")))).split(".")
+    return major, minor
+
+
+def workflows() -> dict[str, dict[str, Any]]:
+    return {
+        path.name: yaml.safe_load(path.read_text(encoding="utf-8"))
+        for path in sorted(WORKFLOWS_DIR.glob("*.yml"))
+    }
+
+
+def values_for_key(node: Any, key: str) -> list[Any]:
+    """Every value stored under ``key`` anywhere in a parsed workflow."""
+    if isinstance(node, dict):
+        return [
+            *(node[key] if key in node and isinstance(node[key], list) else []),
+            *([node[key]] if key in node and not isinstance(node[key], list) else []),
+            *(value for child in node.values() for value in values_for_key(child, key)),
+        ]
+    if isinstance(node, list):
+        return [value for child in node for value in values_for_key(child, key)]
+    return []
+
+
+def test_ci_frontend_matrix_is_exactly_the_majors_engines_names() -> None:
+    """The matrix tests every supported major and nothing `engines` rejects.
+
+    Dropping a major from ``engines`` while CI keeps testing it — or the
+    reverse — is the failure this catches; nothing else reads the two together.
+    """
+    matrix = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["frontend"]
+    tested = {str(version) for version in matrix["strategy"]["matrix"]["node-version"]}
+
+    assert tested == node_majors()
+
+
+def test_every_workflow_node_pin_is_a_supported_major() -> None:
+    """A job pinned to an unsupported major builds the card on it anyway."""
+    for name, workflow in workflows().items():
+        # A matrix reference is checked where the matrix is declared, not here.
+        pins = (str(value) for value in values_for_key(workflow, "node-version"))
+        pinned = {value for value in pins if "${{" not in value}
+        assert pinned <= node_majors(), f"{name} pins Node {sorted(pinned - node_majors())}"
+
+
+def test_prose_node_versions_agree_with_engines() -> None:
+    """Documented majors are supported, and a stated minor is the floor's."""
+    major, minor = node_floor()
+    for relative_path in NODE_PROSE_SITES:
+        text = collapse((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
+        for stated_major, stated_minor in NODE_PROSE.findall(text):
+            assert stated_major in node_majors(), f"{relative_path} names Node {stated_major}"
+            if stated_minor:
+                assert (stated_major, stated_minor) == (major, minor), (
+                    f"{relative_path} states Node {stated_major}.{stated_minor}, "
+                    f"engines declares {declared_node_range()!r}"
+                )
+
+
+# --------------------------------------------------------------------------
+# Tool pins written twice
+# --------------------------------------------------------------------------
+
+
+def dev_dependency_pin(name: str) -> str:
+    """The version the ``dev`` dependency group pins a tool to."""
+    group = read_toml(PYPROJECT)["dependency-groups"]["dev"]
+    return next(entry for entry in group if entry.startswith(f"{name}==")).removeprefix(f"{name}==")
+
+
+def pre_commit_rev(repo_url: str) -> str:
+    """The revision ``.pre-commit-config.yaml`` checks a hook repository out at."""
+    config = yaml.safe_load(PRE_COMMIT_CONFIG.read_text(encoding="utf-8"))
+    rev = next(repo["rev"] for repo in config["repos"] if repo["repo"] == repo_url)
+    return str(rev).removeprefix("v")
+
+
+def test_pre_commit_runs_the_pinned_ruff() -> None:
+    """A pre-commit hook on another ruff reformats what CI then rejects."""
+    hook = pre_commit_rev("https://github.com/astral-sh/ruff-pre-commit")
+    assert hook == dev_dependency_pin("ruff")
+
+
+def test_the_documented_ruff_command_runs_the_pinned_ruff() -> None:
+    """The skill's lint command names its own ruff, so it can disagree with CI."""
+    text = (REPO_ROOT / ".claude/skills/test-haventory/SKILL.md").read_text(encoding="utf-8")
+    documented = set(re.findall(r"ruff==(\S+)", text))
+
+    assert documented == {dev_dependency_pin("ruff")}
+
+
+def test_pre_commit_runs_the_actionlint_ci_runs() -> None:
+    """Same split as ruff: the hook and the CI job are pinned independently."""
+    ci_image = re.search(
+        r"docker://rhysd/actionlint:(\S+)", CI_WORKFLOW.read_text(encoding="utf-8")
+    )
+    assert ci_image is not None
+    assert pre_commit_rev("https://github.com/rhysd/actionlint") == ci_image.group(1)

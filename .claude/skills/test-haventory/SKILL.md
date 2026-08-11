@@ -105,7 +105,7 @@ export PYTHONIOENCODING=utf-8   # [Windows/Git Bash] only; a Linux terminal is U
 S=".claude/skills/test-haventory/stress.py"
 RUN="uv run --no-project --with aiohttp python $S"
 
-$RUN baseline      # health + version — proves the deployed code imported (PEP 758 needs 3.14)
+$RUN baseline      # health + version — proves the deployed code imported (needs Python 3.14)
 $RUN fuzz          # malformed single-mutation inputs; asserts dataset untouched
 $RUN bulkfuzz      # adversarial haventory/items/bulk
 $RUN subteardown   # HA-core unsubscribe_events teardown (the card's path)
