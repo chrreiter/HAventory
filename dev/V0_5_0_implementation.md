@@ -28,7 +28,7 @@ pending work.
 | [#194](https://github.com/chrreiter/HAventory/issues/194) | Area filter on `haventory/subscribe` | backend + card | S–M | **S3** |
 | [#193](https://github.com/chrreiter/HAventory/issues/193) | Category and tag facet tallies ignore the active filter | backend + card | M | **S3** |
 | [#192](https://github.com/chrreiter/HAventory/issues/192) | Multi-select for categories and locations in filters | backend + card | M–L | **S3** |
-| [#204](https://github.com/chrreiter/HAventory/issues/204) | Design: should items be sortable by area? | design | S (answer) | **S3** |
+| [#204](https://github.com/chrreiter/HAventory/issues/204) | Design: should items be sortable by area? | backend + card | S | **S3** |
 | [#365](https://github.com/chrreiter/HAventory/issues/365) | Quick-filter pills: integration-wide default in the options flow | backend + card | M | **S4** |
 | [#298](https://github.com/chrreiter/HAventory/issues/298) | Free hex colours for custom statuses | backend + card | M | **S4** |
 | [#357](https://github.com/chrreiter/HAventory/issues/357) | Offline WS tests: 22 private `_send()` helpers | tests | M | **S5** |
@@ -40,10 +40,10 @@ Seven of them carry **Implementation notes** written into the issue on 2026-08-0
 notes are the design; this plan sequences them and does not restate them. Read the issue
 before writing code.
 
-### Line numbers in the issues have already drifted
+### The issue bodies are a starting point, not a specification
 
-Every file reference in the issue bodies was taken between 2026-08-05 and 2026-08-10 and
-several no longer point where they say. Two confirmed:
+Every file reference in them was taken between 2026-08-05 and 2026-08-10, and several no
+longer point where they say. Two confirmed:
 
 - #293's `ws.py:1890` (the `filter must be an object` guard) is now **`ws.py:2256`**, inside
   `ws_export`.
@@ -53,103 +53,120 @@ several no longer point where they say. Two confirmed:
 Grep for the symbol or the message string, never for the line. The same applies to #365's
 `index.ts:32-47` / `haventory-panel.ts:127-139` and #197's `repository.py:1773`.
 
-### One premise that does not survive a re-check
-
-**#204 describes behaviour the code does not have.** The issue says "the full view's
-Location column still orders on the backend's `location_path.sort_key`". As of 0.4.2:
-
-- `sort_items` (`models.py:1200`) allows exactly `updated_at, created_at, name, quantity,
-  due_date, inspection_date`. There is no `location` field and no `area` field.
-- `location_path.sort_key` is read in exactly one place in the card —
-  `store.ts:1027`, sorting the **location list**, not items.
-- `store/columns.ts:31` types `sortField` as `'quantity' | 'due_date' | 'inspection_date' |
-  'updated_at'`, and the Location column carries no `sortField` at all, so its header is
-  not a sort control.
-
-So items cannot be ordered by location today, let alone by area. #204 is therefore a
-feature question ("should `location` and `area` join the sort vocabulary?"), not a
-correction of a wrong ordering. S3 corrects the premise in the issue before answering it —
-see §6.3.
+The same goes for the prose. Where an issue's description of the code has gone stale, **the
+session decides against the code and records the decision in its PR body** — it does not
+stop to rewrite the issue. #204 is the clearest case (§6.3): its premise describes a
+behaviour the tree does not have, and the answer follows from what is actually there.
 
 ---
 
-## 2. Scope calls the owner should make before S4 and S5 start
+## 2. Scope
 
-Four of the fifteen are staged **Post-release, explicitly not gating** by
-[#236](https://github.com/chrreiter/HAventory/issues/236) while also carrying the V0.5.0
-milestone. The milestone and the tracker disagree, and #236 is the authority on staging:
+All fifteen are in scope, and none of them needs a decision before work starts.
 
-| # | #236 says | This plan does |
-|---|---|---|
-| #298 | post-release; its own triage comment recommends the **unmilestoned backlog** | plans it in S4, marked *strike-first* |
-| #200 | post-release ("persistence scaling") | plans it in S5, last work package |
-| #204 | post-release (design questions) | plans the **answer** in S3; implementation only on a yes |
-| #192 | post-release | plans it in S3 |
-
-The instruction for this plan was to close everything in the milestone, so all four are
-planned. If the owner would rather honour #236, the cheapest cut is: **de-milestone #298
-and #200**, keep #192 (it is user-facing and #193 lands next to it anyway), keep #204's
-answer. That removes roughly a third of the remaining work and leaves the dependency graph
-untouched — nothing else waits on either.
-
-#298's own triage comment is worth quoting because it pre-answers this: *"Moved to V0.5.0
-only because the tooling here cannot clear a milestone — recommended placement is the
-unmilestoned backlog until a user request makes it concrete."*
-
-**Decide before S4 opens its first PR.** Everything through S3 is unaffected either way.
+[#236](https://github.com/chrreiter/HAventory/issues/236)'s "Post-release (explicitly not
+gating)" line still names #192, #200, #204 and #298. **That staging is obsolete** (owner,
+2026-08-11) — the milestone is the assignment, and a comment on #236 records it. Ignore any
+post-release framing those four still carry, in the tracker or in their own triage comments;
+#298's "recommended placement is the unmilestoned backlog" is superseded by the same
+decision.
 
 ---
 
-## 3. Sessions and their order
+## 3. Sessions, order, and what can run at the same time
 
-Five cloud sessions. The split is by **conflict domain**, not by issue count: each session
-owns a set of files, and two sessions never edit the same function.
+Five cloud sessions, split by **conflict domain** rather than by issue count. Two sessions
+never edit the same function; where they share a file, §3.3 names the region and says who
+rebases onto whom.
+
+### 3.1 The waves
+
+Dependencies are between **PRs**, not between sessions, and that is what makes real
+parallelism possible. Four waves:
 
 ```
-S1  toolchain & CI floors          .github/, pyproject.toml, .pre-commit-config.yaml
- │                                  #358 → #356 → #355
- ▼
-S2  input validation               models.py (validators), ws.py (command schemas),
- │                                  import_export.py
- │                                  #197 + #293 → #195
- ├──────────────────────────────┐
- ▼                              ▼
-S3  filtering & subscriptions   S4  configuration & presentation
- │   ItemFilter, repository       const.py, config_flow.py, ws_config,
- │   filter/facet paths,          card chrome
- │   ws subscribe/distinct        #365 → #298
- │   #194 → #193 → #192 → #204
- └──────────────┬───────────────┘
-                ▼
-S5  test harness, then persistence
-     #357 → #307 → #200
+wave 0   S1  #358 → #356 → #355                       everything waits
+─────────────────────────────────────────────────────────────────────────────
+wave 1   S2  #197 + #293  ─┐                          three tracks, concurrent
+         S3  #194         ─┼─ all three need only S1
+         S4  #365 → #298  ─┘
+─────────────────────────────────────────────────────────────────────────────
+wave 2   S2  #195                                     unblocked by S2's own PR A
+         S3  #193 → #192 → #204                       need S2 PR A merged
+         S4  (continues)
+─────────────────────────────────────────────────────────────────────────────
+wave 3   S5  #357 → #307 → #200                       needs S2, S3, S4 merged
 ```
 
-### Why the edges are there
+**So yes — S3 and S4 run in parallel, and both can start in wave 1 alongside S2.** S3 is
+partly gated inside itself: its first PR (#194) needs nothing from S2, its remaining three
+need S2's PR A on `main`.
+
+Critical path: **S1 → S2 PR A → S3 PR C (#192) → S5**. Everything else has slack.
+
+### 3.2 Why each edge exists
 
 - **S1 first, alone.** #358 merges the python-dev Dependabot group, which moves ruff
   0.15.22 → 0.16.1. Ruff 0.16.1 raises five findings the current tree does not have
-  (`RUF036` ×4 in `repository.py`, `PLR0917` in `tests/conftest.py`). If that lands
-  mid-stream, every other session's branch turns red on lint through no fault of its own.
+  (`RUF036` ×4 in `repository.py`, `PLR0917` in `tests/conftest.py`). Landing that
+  mid-stream turns every other session's branch red on lint through no fault of its own.
   S1 is ≲ a day; make everyone wait for it.
-- **S2 before S3.** #197 introduces `validate_item_filter` in `models.py`, keyed off
-  `ItemFilter.__annotations__`, and starts rejecting unknown filter keys. #192 adds
-  `categories` / `location_ids` to `ItemFilter`. In that order the validator picks up the
-  new keys for free; in the other order #192 ships keys that #197 then has to be taught
-  about, and there is a window where the card sends a key the server refuses.
-- **S3 and S4 in parallel.** S4's only backend reach into `ws.py` is `ws_config`
-  (`ws.py:835`), which S3 never touches. They share `store/types.ts` and `store.ts` on the
-  card side — different state slices, and git resolves it. Rebase, do not merge across.
-- **S5 last.** #357 rewrites the `_send` helper in 22 offline test files and #307 rewrites
-  `mount`/`q`/`all`/`ownCss` in 22 card test files. S2, S3 and S4 all add tests to those
-  files. Running the consolidation first guarantees conflicts; running it last means every
-  new test written in this milestone is migrated in the same pass. #200 rides at the end of
-  S5 so its stress numbers describe the finished milestone rather than a midpoint.
+- **S2 PR A before S3 PRs B–D.** #197 introduces `validate_item_filter` in `models.py`,
+  keyed off `ItemFilter.__annotations__`, and starts rejecting unknown filter keys. #192
+  adds `categories` / `location_ids` to `ItemFilter`; #193 adds a filter argument to
+  `distinct_values` that should route through the same validator; #204 adds a sort field
+  that `validate_sort` then has to accept. In that order all three are free; in the other
+  order each of them ships something #197 must be taught about, and there is a window where
+  the card sends a key the server refuses.
+- **S3 PR A (#194) needs nothing.** It edits the subscribe schema (`ws.py:1064`) and
+  `_item_matches_filter` (`ws.py:621`). It touches no filter validator and no `ItemFilter`
+  key, so it is wave 1 whatever S2 is doing.
+- **S4 needs nothing but S1.** Its backend reach is `ws_config` (`ws.py:835`), `const.py`,
+  `config_flow.py`, the two string files and `validate_status_definition`
+  (`models.py:440`). S2 touches none of those.
+- **S5 last.** #357 rewrites the `_send` helper in 22 offline test files; #307 rewrites
+  `mount` / `q` / `all` / the cssText reader in 22 card test files. S2, S3 and S4 all add
+  tests to those files. Running the consolidation first guarantees conflicts; running it
+  last migrates every test written in this milestone in the same pass.
 
-### If parallelism matters more than tidiness
+### 3.3 Verified overlap between the concurrent tracks
 
-S4 can start the moment S1 merges — it does not need S2. S3 needs only #197's PR merged,
-not all of S2. The critical path is **S1 → S2/PR-A → S3 → S5**.
+Checked file by file against the tree at `17dc662`. Sharing a file is not a conflict —
+sharing a *region* is.
+
+| File | S2 | S3 | S4 | Risk |
+|---|---|---|---|---|
+| `ws.py` | schemas of `item/list`, `location/tree`, `export`, `items/bulk`; `_validate_bulk_ops` (258) | `ws_distinct_values` (875), `subscribe` (1064), `_item_matches_filter` (621) | `ws_config` (835) | **watch**: 835 and 875 are 40 lines apart |
+| `models.py` | caps near `NAME_MAX_LENGTH` (74), `validate_custom_fields` (364), `_validate_optional_text` (649) | `ItemFilter` (202), `filter_items` (1040), `sort_items` (1179) | `validate_status_definition` (440) | low — three separate regions |
+| `repository.py` | `_paginate` (2048), `_decode_cursor` (2004) | `_get_filtered_candidates` (1462), `count_matching_by_location` (1698), `get_distinct_field_values` (1732), `_primary_sort_value` (2014) | — | **watch**: 2014 and 2048 are adjacent |
+| `store/types.ts` | — | `DistinctValue`, `StoreFilters` | `IntegrationConfig` (285-292), state slice (~618-630) | **watch**: both extend the state-slice interface |
+| `store/store.ts` | — | `openSubscriptions` (542), `refreshDistinctValues` (835), `locationCountFilters` (1003), `setFilters` (1111) | `refreshConfig` (922) | low — ~90 lines clear at the closest |
+| `hv-filter-panel.ts`, `hv-filter-chips.ts` | — | #192 rewrites category/location selection | #298 changes `statusToneClass`'s contract; both files call it (`chips:105`, `panel:725`) | **the real collision** — see below |
+| `src/test.utils.ts` | mock caps | `distinct_values` mock honours `filter` | mock config carries the pill list | low; S5 rewrites it afterwards anyway |
+| `docs/*.md`, `README.md` | contract + caps | contract + facets + subscribe | README quick-filters | prose; resolve by hand |
+
+**The one collision worth a rule.** #298 turns `statusToneClass()` from "returns a class"
+into "returns a class *or* sets an inline custom property", and its two call sites live in
+the same two files #192 is rewriting. **S4's #298 PR rebases onto #192, not the reverse** —
+#192's diff in those files is far larger, and re-resolving it is the expensive direction. If
+#298 would otherwise be ready first, it may land first; then #192 rebases and adopts the new
+call shape, which is a handful of lines.
+
+For the three **watch** rows: rebase on `origin/main` before every push, and keep new code
+inside the named function rather than at the top of the file, where two sessions' additions
+stack.
+
+### 3.4 If more parallelism is wanted
+
+**#200 can be pulled out of S5 into its own session, starting in wave 2.** It is the only
+package touching `storage.py` and `__init__.py`'s persistence helpers, and it shares no
+region with anything else; its only real dependency is that #197's caps are on `main` so
+the measurement can attribute the improvement. The cost of pulling it forward is that its
+before/after numbers describe a midpoint of the milestone rather than the finished set —
+which is a reporting loss, not a correctness one.
+
+**#357 and #307 cannot be pulled forward**, in any arrangement. They rewrite the files every
+other package adds tests to.
 
 ---
 
@@ -177,6 +194,15 @@ not all of S2. The critical path is **S1 → S2/PR-A → S3 → S5**.
 
 If CI is red, fix it and push again — that is still the session's work. If CI is red for a
 reason that reproduces on `main`, say so in the PR thread once and carry on.
+
+**Issues are read, not rewritten**
+
+A session does not edit an issue body to correct a stale line number, a drifted symbol name
+or a description that no longer matches the code. It decides against the code and records
+the decision in the PR body. A short issue comment is worth writing only when the decision
+changes *what the issue asked for* — a different mechanism, or a smaller scope than the
+issue describes. Everything else belongs in the PR, where a reviewer is already reading the
+diff it explains.
 
 **The gate, before every commit**
 
@@ -267,7 +293,7 @@ session can be booked once rather than nine times:
 | H6 | #365 | S4 | How HA renders a multi-pick selector inside an options flow, and that the sidebar panel honours the stored value. |
 | H7 | #298 | S4 | Chip legibility at a user-chosen hex in light and dark, against a non-default HA theme. |
 | H8 | #200 | S5 | Before/after `stress.py` numbers at 250 / 500 / 1000 items — the only measurement that answers whether the fix worked. |
-| H9 | #204 | S3 | Only if the answer is "yes, implement": that a location- or area-ordered list paginates correctly past the first page. |
+| H9 | #204 | S3 | That a location-ordered list paginates correctly past the first page against a real store. |
 
 H8 is the one that gates its own issue: #200 without a measured before/after is a change
 nobody can evaluate. The rest are confirmations, and their PRs can be reviewed without them.
@@ -516,36 +542,67 @@ case ("include children of this location but not that one") nobody has asked for
 be added later without breaking the single-flag form. State the choice in
 `docs/backend_api_contract.md` so it is a decision rather than an omission.
 
-**PR D — #204, the answer**
+**PR D — `feat(ws): order items by their location path` (#204)**
 
-Not code, unless the answer is yes. First, **correct the premise in the issue** with the
-finding in §1: items have no location or area sort field, `location_path.sort_key` orders
-only the location list, and the Location column carries no `sortField`. Then answer the
-question that is actually left.
+Solve it the cheapest way the current code allows, and ignore the issue's premise — it
+describes an ordering the tree does not have (§1). What the code says:
 
-Recommendation: **yes, but as an explicit `area` sort field, not by folding area into any
-existing key.** Folding would silently re-order every list that already sorts by something
-else and would invalidate cursors minted under the old key — and S2 just made a
-sort-incompatible cursor an error, so users would see it. An explicit field costs: one entry
-in `sort_items`' `allowed_fields`, one branch in `_primary_sort_value` (`repository.py:2014`)
-returning the resolved area name (not the id — ids sort as random text), a decision that
-arealess items sort last in both orders (the rule `due_date` already uses), one `SortField`
-member in `store/types.ts:172`, and one `sortField` on the Location column in
-`store/columns.ts`. That is S–M, and it is a feature, not a fix.
+- `repository.list_items` (`:1596`) delegates ordering entirely to `models.sort_items`
+  (`models.py:1179`), which receives **`Item` objects and nothing else**. Any sort key has to
+  be derivable from an `Item` alone.
+- `Item.location_path` (`models.py:161`) is a denormalized `LocationPath` carrying a
+  ready-made `sort_key` (`models.py:68`), rebuilt by the backend whenever the tree changes.
+  It is right there on the item.
+- `effective_area_id` is **not** on the item. It is resolved by walking the tree —
+  `Repository._resolve_effective_area_id_for_location` (`:479`), reached from `ws.py`'s
+  `_effective_area_id_for_item` (`:2047`). `models.py` cannot see it.
+- Area *names* are further away still: they live in Home Assistant's area registry, read
+  through `areas.py` from `ws.py` only (`ws_areas_list`, `:2230`). Neither `models.py` nor
+  `repository.py` can reach a name.
 
-If the owner would rather not spend it: close #204 as not-planned with the corrected premise
-recorded. That is a legitimate outcome and the issue has no user asking for it.
+So a true area sort costs either a resolver threaded into `sort_items` — changing a pure
+function's contract — or a new denormalized field on `Item`, which is a schema change. And
+even then it would order by `area_id`, since the name is unreachable: HA generates that id
+from the name at creation and never changes it on rename, so a renamed area sorts under its
+old name. That is a wrong-looking list produced by expensive code.
+
+**Do this instead: add `location` to the sort vocabulary, keyed on
+`item.location_path.sort_key`.** It needs no new data, no plumbing and no schema change, and
+it is the ordering the Location column implies. Because an item's area is inherited from its
+location tree's root, a path-ordered list groups by root — which is where the area is
+anchored — so it answers most of what #204 was reaching for.
+
+The whole change:
+
+- `models.py:1200` — `location` joins `allowed_fields`; one branch in `sort_items` reading
+  `x.location_path.sort_key`. Items with no location have `sort_key == ""` and must sort
+  **last in both orders**, the rule `date_sort_key` already applies to undated items — a
+  plain empty string would float them to the top of an ascending list.
+- `repository.py:2014` — one branch in `_primary_sort_value` returning the same value, so
+  the cursor round-trips. S2 has already made a cursor minted under a different sort an
+  error, so nothing silently re-paginates.
+- `store/types.ts:172` — `location` joins `SortField`.
+- `store/columns.ts:31` — `sortField` union gains `'location'`; the Location column gets it,
+  which is what makes its header a sort control.
+- `hv-filter-panel.ts:14` — one entry in `SORT_FIELDS`.
+- Both contract docs: `location` in the sort vocabulary, and the unlocated-last rule.
+
+Record in the PR body what this deliberately does not do — sort by area — and why, so the
+next reader does not re-derive the area-registry problem from scratch. H9 covers the one
+thing offline tests cannot show: that a location-ordered list paginates correctly past the
+first page against a real store.
 
 **Exit**: an area-filtered subscription delivers only that area's items and never an
 orphan; category and tag rows read `matches / total` the way location rows do; categories
 and locations multi-select and the sidebar and filter panel agree; both contract docs match;
-#204 answered with its premise corrected; H3–H5 (and H9 if implemented) written.
+items order by location path with unlocated last; H3–H5 and H9 written.
 
 ---
 
 ### 6.4 S4 — Configuration surface & status colours
 
-**Issues**: #365, #298. **Depends on**: S1 (and the §2 scope call). **Blocks**: S5.
+**Issues**: #365, #298. **Depends on**: S1 only — this session starts in wave 1.
+**Blocks**: S5.
 **Handovers**: H6 (#365), H7 (#298).
 
 Independent of S2 and S3 — the only shared backend file is `ws.py`, and only `ws_config`
@@ -591,8 +648,7 @@ The options-flow value lands in the existing `normalizeQuickFilters`
 (`ui/quick-filters.ts:33-42`) rather than growing a second set of rules: the backend's job is
 to hand over a list, not to re-decide what is valid.
 
-**PR B — `feat(status): accept a hex colour beside the ten tokens` (#298)** *(skip if
-de-milestoned per §2)*
+**PR B — `feat(status): accept a hex colour beside the ten tokens` (#298)**
 
 The schema part is one line — `STATUS_COLORS` membership in `validate_status_definition`
 becomes "a token **or** a `#rrggbb` literal", and `haventory/config` keeps reporting the
@@ -679,8 +735,7 @@ statuses and areas included; per-file `mount`s become thin options wrappers.
 Both PRs: **no assertion deleted without a replacement**, and both gates green. Mechanical
 churn belongs in its own PR precisely so a reviewer can read it as churn.
 
-**PR C — `perf(storage): stop rewriting the whole store on every mutation` (#200)** *(skip
-if de-milestoned per §2)*
+**PR C — `perf(storage): stop rewriting the whole store on every mutation` (#200)**
 
 Every mutation serializes the whole dataset and rewrites the blob, serialized by the write
 lock. Measured per-create p50: 70 ms @250 → 114 ms @500 → 200 ms @1000 items, trending
@@ -723,7 +778,7 @@ that made it unnecessary; H8 written and answered.
 V0.5.0 closes when:
 
 - All 15 issues are closed — implemented, or closed as not-planned with the reason recorded
-  in the issue (§2 names the four candidates).
+  in the issue.
 - No Dependabot PR is open against `main`, and the frontend/HA pins carry an ignore rule.
 - `docs/backend_api_contract.md` and `docs/data_shapes.md` describe `ws.py` as it stands:
   input caps, cursor refusals, unknown-key rejection, duplicate `op_id`, `subscribe`'s
