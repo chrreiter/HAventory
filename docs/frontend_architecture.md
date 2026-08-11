@@ -38,8 +38,8 @@ the count's call.
 `getStubConfig` and `getConfigElement` are **statics on the class**, not module exports:
 Home Assistant reads them off `customElements.get(type)` and never imports from the bundle,
 so an export is a spelling nothing looks at. `getGridOptions` sizes the card in a sections
-view — full section width, and tall enough that `hv-card-shell`'s reserved 470px for the
-open ⋮ menu is not squeezed — while `getCardSize` still answers the masonry view, which
+view — full section width, and enough default rows that the list opens with room for
+content — while `getCardSize` still answers the masonry view, which
 knows nothing about columns.
 
 It also publishes the active HA theme as `color-scheme` on the host, which every nested
