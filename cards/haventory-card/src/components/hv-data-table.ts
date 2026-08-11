@@ -17,7 +17,7 @@ import type { ColumnKey } from '../store/columns';
 import { isLowStock, rowMenuEntries } from './hv-list-row';
 import './hv-overflow-menu';
 import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
-import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
+import { itemPathParts, pathTitle, renderAreaChip, renderPathSegments } from '../ui/location-path';
 import type { Item, Sort, SortField } from '../store/types';
 
 /**
@@ -48,7 +48,7 @@ export class HVDataTable extends LitElement {
         /* The one scroll container on this surface, in both axes.
 
            Sideways because the column template has a hard minimum — about
-           1260px for the default set, 1308px with the selection column — and a
+           1354px for the default set, 1402px with the selection column — and a
            grid whose tracks do not fit overflows its own box rather than
            shrinking. With overflow visible that spilled content was simply
            clipped by the shell: at 375px the rows measured clientWidth 634
@@ -162,8 +162,8 @@ export class HVDataTable extends LitElement {
         white-space: nowrap;
       }
       /*
-       * A phone shows about a third of this table — the template's floor is
-       * around 1260px — so the identity column holds while the rest scrolls
+       * A phone shows about a quarter of this table — the template's floor is
+       * around 1354px — so the identity column holds while the rest scrolls
        * under it, and the right edge says there is more to reach.
        *
        * The offsets are the row's own metrics, so nothing shifts as the swipe
@@ -234,11 +234,43 @@ export class HVDataTable extends LitElement {
         white-space: nowrap;
         color: var(--hv-text-secondary);
       }
-      /* The path elides; the chip ahead of it does not. */
+      /*
+       * The path wraps between its segments and the row grows to hold it.
+       *
+       * Elided as one run of text it broke wherever the pixels ran out, which
+       * left a stub of a location name — "Küc…" of a five-segment path, with
+       * the leaf the reader is actually after nowhere on the row. Every segment
+       * survives instead, on as many lines as the column needs, and the cell's
+       * title still carries the whole path for the one case below that cannot.
+       *
+       * The chip and the path are the two items of the outer row, so a path too
+       * long to sit beside the chip takes the lines under it rather than
+       * squeezing into what the chip leaves.
+       */
+      .cell.path {
+        flex-wrap: wrap;
+        row-gap: 2px;
+      }
       .cell.path > .hv-chip-line-text {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        row-gap: 2px;
+      }
+      /* A segment holds its line, and elides only when one segment on its own
+         is wider than the whole column — the point past which there is no break
+         left to take. */
+      .hv-path-seg {
+        white-space: nowrap;
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
-        white-space: nowrap;
+      }
+      /* The separator's spaces sit at the end of a flex item's only line, where
+         normal white-space processing drops them and the segments either side
+         would run together. */
+      .hv-path-sep {
+        white-space: pre;
       }
       .cell.qty {
         color: var(--hv-text);
@@ -261,10 +293,15 @@ export class HVDataTable extends LitElement {
         font-size: 12.5px;
         color: var(--hv-text-tertiary);
       }
+      /* Chips wrap onto as many lines as the set needs and the row grows to
+         hold them. Cut at the cell's edge instead, the column showed one chip
+         of six and half of the next, with no count to say the rest existed —
+         and a half-drawn chip reports nothing at all. */
       .tags {
         display: flex;
-        gap: 5px;
-        overflow: hidden;
+        flex-wrap: wrap;
+        gap: 4px 5px;
+        min-width: 0;
       }
       .actions {
         display: flex;
@@ -487,7 +524,7 @@ export class HVDataTable extends LitElement {
           data-testid="cell-location"
           title=${pathTitle(parts)}
           >${renderAreaChip(parts.areaName)}<span class="hv-chip-line-text"
-            >${parts.path || '—'}</span
+            >${parts.path ? renderPathSegments(parts.path) : '—'}</span
           ></span
         >`;
       }
