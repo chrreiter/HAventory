@@ -226,6 +226,20 @@ describe('hv-card-shell: overflow menu', () => {
     ]);
   });
 
+  // Two meta lines sit one above the other in the same menu, so a lower-cased
+  // one reads as a different kind of thing rather than the same kind of list.
+  it('capitalizes every word of a meta line', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const menu = sr.querySelector('[data-testid="card-overflow"]') as HTMLElement;
+    (menu.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const metaOf = (id: string) =>
+      menu.shadowRoot?.querySelector(`[data-id="${id}"] .meta`)?.textContent?.trim();
+    expect(metaOf('refresh')).toBe('Items · Locations · Stats');
+    expect(metaOf('organize')).toBe('Locations · Tags · Categories · Statuses');
+  });
+
   // Column choices only drive the full view's table — the card list draws a
   // fixed compact row — so the entry belongs where it does something.
   it('offers Columns in the full view but not on the card itself', async () => {
