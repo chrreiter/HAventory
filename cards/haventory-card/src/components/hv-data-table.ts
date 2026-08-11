@@ -695,9 +695,7 @@ export class HVDataTable extends LitElement {
                       @select=${(e: CustomEvent) => {
                         e.stopPropagation();
                         const { id } = e.detail as { id: string };
-                        // The check-out flow needs somewhere to anchor its popover.
-                        const anchor = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                        this._emit('row-action', { itemId: item.id, action: id, anchor });
+                        this._emit('row-action', { itemId: item.id, action: id });
                       }}
                     ></hv-overflow-menu>
                   </span>

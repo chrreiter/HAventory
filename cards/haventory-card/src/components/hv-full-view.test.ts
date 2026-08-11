@@ -2218,6 +2218,42 @@ describe('hv-full-view: table row actions', () => {
     expect(store.state.value.items.find((i) => i.id === '1')?.checked_out).toBe(true);
   });
 
+  // The popover's phone presentation is an inline step, a static card meant to
+  // sit inside the body of the surface that opened it — and this call site is a
+  // sibling at the end of the shell with no body around it, so the step landed
+  // stranded and unscrimmed at the foot of the page. The anchored presentation
+  // is no better here: the ⋮ it would hang from sits in a column the table
+  // scrolls sideways out of view. It presents the way the bulk popover does.
+  it('presents the single-row check-out centred and scrimmed at every width', async () => {
+    for (const narrow of [false, true]) {
+      const restore = stubViewport(narrow);
+      try {
+        const { el, sr } = await mount({ items: [makeItem({ id: '1', name: 'Drill' })] });
+        pick(sr, 'check-out');
+        await settle(el);
+
+        const popover = q(sr, '[data-testid="full-checkout"]') as HTMLElement & {
+          open: boolean;
+          mobile: boolean;
+          anchor: DOMRect | null;
+        };
+        const where = `narrow=${narrow}`;
+        expect(popover.open, where).toBe(true);
+        expect(popover.mobile, where).toBe(false);
+        expect(popover.anchor, where).toBe(null);
+
+        const scrim = popover.shadowRoot?.querySelector('.scrim');
+        expect(scrim?.classList.contains('dim'), where).toBe(true);
+        const card = popover.shadowRoot?.querySelector('[data-testid="checkout-popover"]');
+        expect(card?.getAttribute('style'), where).toContain('left: 50%');
+
+        el.remove();
+      } finally {
+        restore();
+      }
+    }
+  });
+
   it('sets a due date on an item already out', async () => {
     const { el, sr } = await mount({
       items: [makeItem({ id: '1', name: 'Drill', checked_out: true })],

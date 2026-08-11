@@ -897,9 +897,12 @@ describe('hv-data-table: row menu', () => {
     expect(menu(el, 0).entries).toEqual(rowMenuEntries(makeItem({ id: '1', name: 'In' })));
   });
 
-  it('reports the picked action, the row it came from, and where to anchor', async () => {
+  // No anchor travels with it: everything the menu opens on this surface is
+  // centred, because the ⋮ it would hang from sits in a column the table scrolls
+  // sideways out of view.
+  it('reports the picked action and the row it came from, and nothing else', async () => {
     const el = await mount([{ id: '1', name: 'Drill' }]);
-    const seen: { itemId: string; action: string; anchor?: DOMRect }[] = [];
+    const seen: Record<string, unknown>[] = [];
     el.addEventListener('row-action', (e) => seen.push((e as CustomEvent).detail));
 
     for (const id of ['check-out', 'edit', 'delete']) {
@@ -908,7 +911,11 @@ describe('hv-data-table: row menu', () => {
 
     expect(seen.map((d) => d.action)).toEqual(['check-out', 'edit', 'delete']);
     expect(seen.every((d) => d.itemId === '1')).toBe(true);
-    expect(seen[0].anchor).toBeTruthy();
+    expect(seen.map((d) => Object.keys(d).sort())).toEqual([
+      ['action', 'itemId'],
+      ['action', 'itemId'],
+      ['action', 'itemId'],
+    ]);
   });
 
   // The row's own click opens the item; a click on the menu is not that.

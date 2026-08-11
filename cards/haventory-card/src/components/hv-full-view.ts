@@ -824,11 +824,10 @@ export class HVFullView extends LitElement {
   @state() private _pendingDelete = false;
   /** The whole selection's check-out is waiting on one due date. */
   @state() private _pendingBulkCheckout = false;
-  /** The row whose check-out / due-date step is open, and where to anchor it. */
+  /** The row whose check-out / due-date step is open. */
   @state() private _checkout: {
     itemId: string;
     mode: 'check-out' | 'set-due-date';
-    anchor: DOMRect | null;
   } | null = null;
   /**
    * Where the surface goes once a discard is confirmed, or null while nothing
@@ -1088,13 +1087,13 @@ export class HVFullView extends LitElement {
    * host, which owns the confirmation and the store call; the Delete key on a
    * row already went the same way.
    */
-  private _onRowAction(detail: { itemId?: string; action?: string; anchor?: DOMRect }) {
+  private _onRowAction(detail: { itemId?: string; action?: string }) {
     const item = this.st?.items.find((i) => i.id === detail.itemId);
     if (!item) return;
     switch (detail.action) {
       case 'check-out':
       case 'set-due-date':
-        this._checkout = { itemId: item.id, mode: detail.action, anchor: detail.anchor ?? null };
+        this._checkout = { itemId: item.id, mode: detail.action };
         break;
       case 'check-in':
         void this.store?.markCheckedIn(item.id, item.version);
@@ -2059,7 +2058,7 @@ export class HVFullView extends LitElement {
               @edit=${(e: CustomEvent) => this._onRowEvent('edit', e.detail)}
               @open-item=${(e: CustomEvent) => this._onRowEvent('open-item', e.detail)}
               @row-action=${(e: CustomEvent) =>
-                this._onRowAction(e.detail as { itemId?: string; action?: string; anchor?: DOMRect })}
+                this._onRowAction(e.detail as { itemId?: string; action?: string })}
               @toggle-select=${(e: CustomEvent) =>
                 this.store?.toggleSelected((e.detail as { itemId: string }).itemId)}
               @select-all-loaded=${() => this.store?.selectAllLoaded()}
@@ -2167,12 +2166,16 @@ export class HVFullView extends LitElement {
             ></hv-detail-sheet>`
           : null}
 
+        <!-- Centred and scrimmed at every width, like the bulk popover below.
+             Neither of the other two presentations fits this call site: the
+             mobile one draws an inline step that has to sit inside the body of
+             the surface that opened it, and this is a sibling at the end of the
+             shell with no body around it; the anchored one hangs off the row ⋮,
+             which sits in a column the table scrolls sideways out of view. -->
         <hv-checkout-popover
           data-testid="full-checkout"
           ?open=${this._checkout !== null}
-          ?mobile=${this._narrow}
           .mode=${this._checkout?.mode ?? 'check-out'}
-          .anchor=${this._checkout?.anchor ?? null}
           .item=${this._checkout ? (st?.items.find((i) => i.id === this._checkout!.itemId) ?? null) : null}
           @check-out=${(e: CustomEvent) => {
             const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
