@@ -11,9 +11,9 @@ export interface OverflowMenuItem {
   id: string;
   label: string;
   glyph?: IconName;
-  /** Right-aligned muted text, e.g. "Locations · Tags · Categories". */
+  /** Muted hint line, e.g. "Locations · Tags · Categories". */
   meta?: string;
-  /** Second line under the label, e.g. "38 filtered items · keeps location paths". */
+  /** Second line under the label, e.g. "38 filtered items · Keeps location paths". */
   sub?: string;
   /** Right-aligned pill, e.g. "2 issues". Only shown when there is something to say. */
   badge?: string;

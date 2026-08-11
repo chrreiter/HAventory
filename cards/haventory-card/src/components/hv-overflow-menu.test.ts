@@ -35,7 +35,7 @@ describe('hv-overflow-menu', () => {
   it('stacks a long hint under its label instead of beside it', async () => {
     const el = await mount([
       { id: 'organize', label: 'Organize…', meta: 'Locations · Tags · Categories' },
-      { id: 'export', label: 'Export backup', sub: 'All 556 items · all locations' },
+      { id: 'export', label: 'Export backup', sub: 'All 556 items · All locations' },
     ]);
 
     const labels = item(el, 'organize').querySelector('.labels') as HTMLElement;
