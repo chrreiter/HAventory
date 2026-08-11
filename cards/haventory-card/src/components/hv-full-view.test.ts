@@ -1972,9 +1972,36 @@ describe('hv-full-view: selection and bulk actions', () => {
       (bulkBar(sr).shadowRoot?.querySelector('[data-action="check-out"]') as HTMLButtonElement).click();
       await settle(el);
 
-      const popover = q(sr, '[data-testid="full-bulk-checkout"]') as HTMLElement & { open: boolean };
+      const popover = q(sr, '[data-testid="full-bulk-checkout"]') as HTMLElement & {
+        open: boolean;
+        inline: boolean;
+        touch: boolean;
+      };
       return { ...mounted, popover };
     }
+
+    // Opened by a bar at the foot of the table, so it has no body to be a step
+    // inside of and stays a centred dialog. That says nothing about how big its
+    // controls should be: on the narrow branch a finger has to hit them.
+    it('takes finger-sized controls on the narrow branch and stays a centred dialog', async () => {
+      for (const narrow of [false, true]) {
+        const restore = stubViewport(narrow);
+        try {
+          const { el, popover } = await selectTwoAndCheckOut();
+          const where = `narrow=${narrow}`;
+          expect(popover.open, where).toBe(true);
+          expect(popover.inline, where).toBe(false);
+          expect(popover.touch, where).toBe(narrow);
+          expect(
+            popover.shadowRoot?.querySelector('.scrim')?.classList.contains('dim'),
+            where,
+          ).toBe(true);
+          el.remove();
+        } finally {
+          restore();
+        }
+      }
+    });
 
     it('opens one popover for the whole selection and applies the date to every row', async () => {
       const { el, store, popover } = await selectTwoAndCheckOut();
@@ -2252,12 +2279,13 @@ describe('hv-full-view: table row actions', () => {
     expect(store.state.value.items.find((i) => i.id === '1')?.checked_out).toBe(true);
   });
 
-  // The popover's phone presentation is an inline step, a static card meant to
-  // sit inside the body of the surface that opened it — and this call site is a
-  // sibling at the end of the shell with no body around it, so the step landed
-  // stranded and unscrimmed at the foot of the page. The anchored presentation
-  // is no better here: the ⋮ it would hang from sits in a column the table
-  // scrolls sideways out of view. It presents the way the bulk popover does.
+  // The popover's inline step is a static card meant to sit inside the body of
+  // the surface that opened it — and this call site is a sibling at the end of
+  // the shell with no body around it, so the step landed stranded and unscrimmed
+  // at the foot of the page. Anchoring is no better here: the ⋮ it would hang
+  // from sits in a column the table scrolls sideways out of view. It presents
+  // the way the bulk popover does. How big its controls are is a separate ask,
+  // which is why `touch` follows the narrow branch while the placement does not.
   it('presents the single-row check-out centred and scrimmed at every width', async () => {
     for (const narrow of [false, true]) {
       const restore = stubViewport(narrow);
@@ -2268,12 +2296,14 @@ describe('hv-full-view: table row actions', () => {
 
         const popover = q(sr, '[data-testid="full-checkout"]') as HTMLElement & {
           open: boolean;
-          mobile: boolean;
+          inline: boolean;
+          touch: boolean;
           anchor: DOMRect | null;
         };
         const where = `narrow=${narrow}`;
         expect(popover.open, where).toBe(true);
-        expect(popover.mobile, where).toBe(false);
+        expect(popover.inline, where).toBe(false);
+        expect(popover.touch, where).toBe(narrow);
         expect(popover.anchor, where).toBe(null);
 
         const scrim = popover.shadowRoot?.querySelector('.scrim');

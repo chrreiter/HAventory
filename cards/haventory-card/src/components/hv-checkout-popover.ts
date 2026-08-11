@@ -24,8 +24,16 @@ const DEFAULT_OFFSET = 7;
  * instead of demanding it, and keeps "No due date" as a first-class path rather
  * than a cancel.
  *
- * Desktop anchors to the control that opened it; mobile fills the width as an
- * inline step.
+ * Where it draws and how big its controls are are two separate questions, and a
+ * caller answers them independently. `inline` makes it a step inside the body of
+ * the surface that opened it — no scrim, no placement of its own — which only a
+ * surface that has a body to hold it can ask for. `touch` grows the controls to
+ * thumb size, which any caller on a narrow surface needs, including the ones
+ * that draw it as a centred dialog. Left as one flag, the second was only
+ * available to callers that could take the first.
+ *
+ * With neither, it anchors to the control that opened it; with `touch` alone it
+ * is a centred dialog with finger-sized controls.
  */
 @customElement('hv-checkout-popover')
 export class HVCheckoutPopover extends LitElement {
@@ -59,7 +67,7 @@ export class HVCheckoutPopover extends LitElement {
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
         overflow: hidden;
       }
-      :host([mobile]) .card {
+      :host([inline]) .card {
         position: static;
         width: auto;
         border: 1px solid var(--hv-primary);
@@ -97,7 +105,7 @@ export class HVCheckoutPopover extends LitElement {
         padding: 6px 13px;
         font: 400 12.5px var(--hv-font);
       }
-      :host([mobile]) .offset {
+      :host([touch]) .offset {
         min-height: 40px;
         padding: 0 15px;
         font-size: 13.5px;
@@ -128,7 +136,7 @@ export class HVCheckoutPopover extends LitElement {
         padding: 5px 8px;
         font: 400 13.5px var(--hv-font);
       }
-      :host([mobile]) .custom input {
+      :host([touch]) .custom input {
         min-height: 44px;
         width: 88px;
         font-size: var(--hv-input-font, 14.5px);
@@ -142,7 +150,7 @@ export class HVCheckoutPopover extends LitElement {
         border-radius: var(--hv-radius-input);
         font-size: 13.5px;
       }
-      :host([mobile]) .date {
+      :host([touch]) .date {
         min-height: 48px;
         font-size: var(--hv-input-font, 13.5px);
       }
@@ -173,10 +181,10 @@ export class HVCheckoutPopover extends LitElement {
       .actions .none-button {
         flex-basis: 100%;
       }
-      :host(:not([mobile])) .actions .none-button {
+      :host(:not([touch])) .actions .none-button {
         text-align: left;
       }
-      :host([mobile]) .actions {
+      :host([touch]) .actions {
         display: grid;
         gap: 9px;
         padding: 0 12px 14px;
@@ -192,11 +200,11 @@ export class HVCheckoutPopover extends LitElement {
         padding: 8px 16px;
         font: 500 13px var(--hv-font);
       }
-      :host([mobile]) .confirm {
+      :host([touch]) .confirm {
         min-height: 50px;
         font-size: 15px;
       }
-      :host([mobile]) .none-button {
+      :host([touch]) .none-button {
         min-height: 48px;
         border: 1px solid var(--hv-input-border);
         background: none;
@@ -209,8 +217,11 @@ export class HVCheckoutPopover extends LitElement {
 
   @property({ attribute: false }) item: Item | null = null;
   @property({ type: Boolean, reflect: true }) open = false;
-  @property({ type: Boolean, reflect: true }) mobile = false;
-  /** Rectangle of the control that opened it; desktop anchors to this. */
+  /** Draw as a step inside the caller's body instead of placing itself. */
+  @property({ type: Boolean, reflect: true }) inline = false;
+  /** Size the controls for a finger. */
+  @property({ type: Boolean, reflect: true }) touch = false;
+  /** Rectangle of the control that opened it; anchors to this when given one. */
   @property({ attribute: false }) anchor: DOMRect | null = null;
   /**
    * `check-out` starts a new check-out; `set-due-date` only changes the date on
@@ -266,7 +277,7 @@ export class HVCheckoutPopover extends LitElement {
   };
 
   private get _position(): string {
-    if (this.mobile || !this.anchor) return 'top: 20dvh; left: 50%; transform: translateX(-50%);';
+    if (!this.anchor) return 'top: 20dvh; left: 50%; transform: translateX(-50%);';
     const width = 300;
     const gap = 6;
     const viewportWidth = typeof window === 'undefined' ? width : window.innerWidth;
@@ -299,7 +310,7 @@ export class HVCheckoutPopover extends LitElement {
         aria-modal="true"
         aria-label=${settingOnly ? 'Set due date' : `Check out ${subject}`}
         data-testid="checkout-popover"
-        style=${this.mobile ? '' : `z-index:${z + 1}; ${this._position}`}
+        style=${this.inline ? '' : `z-index:${z + 1}; ${this._position}`}
         @keydown=${onEscape(() => this._cancel())}
       >
         <div class="head">
@@ -376,7 +387,7 @@ export class HVCheckoutPopover extends LitElement {
           >
             ${settingOnly ? 'Clear due date' : 'Check out with no due date'}
           </button>
-          ${this.mobile ? null : html`<span class="spacer"></span>`}
+          ${this.touch ? null : html`<span class="spacer"></span>`}
           <button class="hv-text-button" data-testid="checkout-cancel" @click=${this._cancel}>Cancel</button>
           <button
             class="confirm"
@@ -390,7 +401,7 @@ export class HVCheckoutPopover extends LitElement {
       </div>
     `;
 
-    if (this.mobile) return card;
+    if (this.inline) return card;
     return html`
       <div
         class="scrim ${this.anchor ? '' : 'dim'}"

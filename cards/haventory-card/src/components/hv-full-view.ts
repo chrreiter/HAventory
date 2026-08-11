@@ -2173,14 +2173,16 @@ export class HVFullView extends LitElement {
           : null}
 
         <!-- Centred and scrimmed at every width, like the bulk popover below.
-             Neither of the other two presentations fits this call site: the
-             mobile one draws an inline step that has to sit inside the body of
-             the surface that opened it, and this is a sibling at the end of the
-             shell with no body around it; the anchored one hangs off the row ⋮,
-             which sits in a column the table scrolls sideways out of view. -->
+             Neither of the other two placements fits this call site: an inline
+             step has to sit inside the body of the surface that opened it, and
+             this is a sibling at the end of the shell with no body around it;
+             an anchored one hangs off the row ⋮, which sits in a column the
+             table scrolls sideways out of view. Finger-sized controls are a
+             separate question and follow the narrow branch on their own. -->
         <hv-checkout-popover
           data-testid="full-checkout"
           ?open=${this._checkout !== null}
+          ?touch=${this._narrow}
           .mode=${this._checkout?.mode ?? 'check-out'}
           .item=${this._checkout ? (st?.items.find((i) => i.id === this._checkout!.itemId) ?? null) : null}
           @check-out=${(e: CustomEvent) => {
@@ -2201,14 +2203,14 @@ export class HVFullView extends LitElement {
           }}
         ></hv-checkout-popover>
 
-        <!-- Centred at every width rather than following _narrow: the mobile
-             presentation is an inline step drawn inside the surface that opened
-             it, and this one is opened by a bar at the foot of the table with no
-             body of its own to sit in. It anchors to nothing, so it takes the
-             same scrimmed middle-of-the-screen position the bulk confirm does. -->
+        <!-- Centred at every width for the same reason as the one above: it is
+             opened by a bar at the foot of the table with no body of its own to
+             sit in. It anchors to nothing, so it takes the same scrimmed
+             middle-of-the-screen position the bulk confirm does. -->
         <hv-checkout-popover
           data-testid="full-bulk-checkout"
           ?open=${this._pendingBulkCheckout}
+          ?touch=${this._narrow}
           .itemName=${counted(selection.size, 'item')}
           @check-out=${(e: CustomEvent) => {
             const { dueDate } = e.detail as { dueDate: string | null };

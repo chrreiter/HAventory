@@ -1132,10 +1132,14 @@ export class HVCardShell extends LitElement {
           ></hv-detail-sheet>`
         : null}
 
+      <!-- Never inline: that presentation is a step drawn inside the body of the
+           surface that opened it, and this is a sibling at the end of the shell
+           with no body around it. The narrow branch reaches its check-out
+           through the detail sheet, which mounts its own. -->
       <hv-checkout-popover
         data-testid="card-checkout"
         ?open=${this._checkout !== null}
-        ?mobile=${mobile}
+        ?touch=${mobile}
         .mode=${this._checkout?.mode ?? 'check-out'}
         .anchor=${this._checkout?.anchor ?? null}
         .item=${this._checkout ? (this._itemById(this._checkout.itemId) ?? null) : null}

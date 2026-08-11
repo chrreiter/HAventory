@@ -733,7 +733,8 @@ export class HVDetailSheet extends LitElement {
       ${this._checkoutOpen
         ? html`<div style="padding: 0 14px 14px">
             <hv-checkout-popover
-              mobile
+              inline
+              touch
               open
               data-testid="sheet-checkout"
               .item=${item}

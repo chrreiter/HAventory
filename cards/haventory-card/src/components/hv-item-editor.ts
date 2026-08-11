@@ -1751,7 +1751,8 @@ export class HVItemEditor extends LitElement {
             .item=${this.item}
             .itemName=${model.name.trim() || 'this item'}
             .anchor=${this._checkoutAnchor}
-            ?mobile=${this.mobile}
+            ?inline=${this.mobile}
+            ?touch=${this.mobile}
             ?open=${this._checkoutOpen}
             @check-out=${(e: CustomEvent) => {
               // Purely a form event: nothing outside this editor should act on
