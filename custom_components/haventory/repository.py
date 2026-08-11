@@ -703,7 +703,7 @@ class Repository:
     # -----------------------------
 
     def _parse_new_parent(
-        self, new_parent_id: str | uuid.UUID | None | object, current_parent: uuid.UUID | None
+        self, new_parent_id: str | uuid.UUID | object | None, current_parent: uuid.UUID | None
     ) -> tuple[bool, uuid.UUID | None]:
         """Parse a requested new parent and determine if it differs.
 
@@ -723,7 +723,7 @@ class Repository:
         raise ValidationError("new_parent_id must be a UUID v4 string or null")
 
     def _parse_area_change(
-        self, area_id: str | None | object, current_area: str | None
+        self, area_id: str | object | None, current_area: str | None
     ) -> tuple[str | None, bool]:
         """Parse the requested area change and return (target_area, area_changed).
 
@@ -1869,8 +1869,8 @@ class Repository:
         location_id: str | uuid.UUID,
         *,
         name: str | None = None,
-        new_parent_id: str | uuid.UUID | None | object = UNSET,
-        area_id: str | uuid.UUID | None | object = UNSET,
+        new_parent_id: str | uuid.UUID | object | None = UNSET,
+        area_id: str | uuid.UUID | object | None = UNSET,
     ) -> Location:
         """Update location name and/or move under a new parent.
 

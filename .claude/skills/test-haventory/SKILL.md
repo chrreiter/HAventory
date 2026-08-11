@@ -40,7 +40,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --no-project --python 3.14 \
   python -m pytest -q
 # → 540 passed, 22 skipped
 
-uv run --no-project --python 3.14 --with ruff==0.15.22 ruff check custom_components tests
+uv run --no-project --python 3.14 --with ruff==0.16.1 ruff check custom_components tests
 # → All checks passed!
 
 uv run --no-project --python 3.14 --with mypy --with voluptuous mypy

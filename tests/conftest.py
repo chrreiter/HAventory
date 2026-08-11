@@ -514,7 +514,9 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     # homeassistant.components.panel_custom
     ha_panel_custom = types.ModuleType("homeassistant.components.panel_custom")
 
-    async def async_register_panel(  # type: ignore[override]  # noqa: PLR0913 - mirrors HA's signature
+    # PLR0913 and PLR0917 are separate rules and both fire here: HA takes these
+    # positionally, so the stub cannot make them keyword-only without diverging.
+    async def async_register_panel(  # type: ignore[override]  # noqa: PLR0913, PLR0917
         hass: HomeAssistant,
         frontend_url_path: str,
         webcomponent_name: str,
