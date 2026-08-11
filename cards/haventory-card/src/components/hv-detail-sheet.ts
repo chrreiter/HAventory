@@ -1,7 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { chip } from '../ui/chip';
+import { chip, renderTagChip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import { inferType } from '../ui/item-form';
@@ -653,7 +653,7 @@ export class HVDetailSheet extends LitElement {
               </span>`
             : null}
           ${item.category ? html`<span class="hv-chip" data-testid="sheet-category">${item.category}</span>` : null}
-          ${item.tags.map((t) => html`<span class="hv-chip" data-testid="sheet-tag">${t}</span>`)}
+          ${item.tags.map((t) => renderTagChip(t, 'sheet-tag'))}
         </div>
       </div>
 

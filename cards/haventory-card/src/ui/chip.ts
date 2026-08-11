@@ -1,4 +1,5 @@
-import { css } from 'lit';
+import { css, html, type TemplateResult } from 'lit';
+import { ifDefined } from 'lit/directives/if-defined.js';
 
 /**
  * The card's chip vocabulary: the small pill that reports one fact beside the
@@ -15,7 +16,8 @@ import { css } from 'lit';
  * - `.hv-pill` in `tokens` is an action — a button shaped like a pill. A chip
  *   reports; a pill does something.
  * - `hv-chip-input`'s tokens are editable input values with a remove
- *   affordance. They take these metrics and own their own interaction.
+ *   affordance. They are tag chips like any other and take these metrics
+ *   unchanged; only the remove button is theirs.
  * - `.hv-area-chip` marks the HA area beside a location path. It shares the
  *   metrics so it sits level with the chips around it, and keeps its own glyph
  *   and spelled-out label, because an area is not one of the facts above.
@@ -74,11 +76,16 @@ export const chip = css`
     background: var(--hv-hover-overlay);
   }
 
-  /* What the hue means is fixed card-wide: blue for a state the item is in,
-     amber for a chore on something still on the shelf (low stock, an inspection
-     that has come due), red for an item that is out and late back. Keeping
-     amber and red apart is what lets both sit in one row without reading as a
-     single alarm.
+  /* What the hue means is fixed card-wide: blue for something the item itself
+     carries — the state it is in, the tags on it — amber for a chore on
+     something still on the shelf (low stock, an inspection that has come due),
+     red for an item that is out and late back. Keeping amber and red apart is
+     what lets both sit in one row without reading as a single alarm.
+
+     Blue covers two of those, so the fill is not what tells them apart: a tag
+     carries a leading # and a state chip carries none. Category is the third
+     thing that shares those rows and takes no hue at all, which is what a
+     neutral chip means here — a value with nothing to report about it.
 
      .hv-status-chip at the foot of this file is the one exception, taking its
      colour from the status definition instead. That is why it is a separate
@@ -88,6 +95,23 @@ export const chip = css`
     background: var(--hv-primary-tint);
     color: var(--hv-on-primary-tint);
     border-color: transparent;
+  }
+  /* A tag reads the same on every surface that prints one. Held off the
+     pressable variant because the filter panel offers tags as choices rather
+     than reporting them, and a group of them pre-filled blue would read as
+     already applied — there the # is the whole distinction from the category
+     chips beside it. */
+  .hv-chip.tag:not(.toggle) {
+    background: var(--hv-primary-tint);
+    color: var(--hv-on-primary-tint);
+    border-color: transparent;
+  }
+  /* The mark that names the facet without colour, so the distinction survives
+     greyscale and a colourblind reader. A shade back, because the value is
+     what is being read; not far enough back to stop carrying the distinction
+     on its own. */
+  .hv-tag-mark {
+    opacity: 0.75;
   }
   .hv-chip.warning {
     background: var(--hv-warn-bg);
@@ -245,3 +269,31 @@ export const chip = css`
     min-width: 0;
   }
 `;
+
+/**
+ * The glyph a tag is written with, here and in the applied-filters row, where
+ * a chip's label is a plain string and cannot carry the element below.
+ */
+export const TAG_MARK = '#';
+
+/**
+ * A tag's name with its mark, for a chip that carries more than the name —
+ * the editor's removable token, the filter panel's pressable chip.
+ *
+ * The two sit in one inline box because a chip is a flex row with a gap
+ * between its items, and the gap differs by surface: as separate items they
+ * would read "# spare" here and "#  spare" in the filter panel. The mark is
+ * out of the accessible name, where it would be read as part of the tag.
+ */
+export function tagLabel(value: string): TemplateResult {
+  return html`<span><span class="hv-tag-mark" aria-hidden="true">${TAG_MARK}</span>${value}</span>`;
+}
+
+/**
+ * A tag, reported. Every surface that prints one calls this, so a tag cannot
+ * come out grey on one of them and blue on the next — the same reason
+ * `renderAreaChip` and `renderStatusChip` exist.
+ */
+export function renderTagChip(value: string, testid?: string): TemplateResult {
+  return html`<span class="hv-chip tag" data-testid=${ifDefined(testid)}>${tagLabel(value)}</span>`;
+}

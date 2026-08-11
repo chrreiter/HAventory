@@ -190,6 +190,25 @@ describe('hv-data-table: columns', () => {
     expect(q(el, '[data-testid="cell-tags"]')?.textContent).toContain('m4');
   });
 
+  // The Tags column and the Category column sit side by side, so a tag has to
+  // read as one here the same way it does in the detail sheet.
+  it('chips a tag the way every other surface chips one', async () => {
+    const el = await mount([{ id: '1', category: 'Hardware', tags: ['m4', 'metric'] }]);
+    const tags = [...q(el, '[data-testid="cell-tags"]')!.querySelectorAll('.hv-chip')];
+
+    expect(tags.map((t) => t.textContent?.trim())).toEqual(['#m4', '#metric']);
+    expect(tags.every((t) => t.classList.contains('tag'))).toBe(true);
+    // The category cell is plain text in this column, not a chip at all.
+    expect(q(el, '[data-testid="cell-category"]')?.querySelector('.hv-chip')).toBe(null);
+  });
+
+  it('says so when an item carries no tags', async () => {
+    const el = await mount([{ id: '1', tags: [] }]);
+    const cell = q(el, '[data-testid="cell-tags"]')!;
+    expect(cell.textContent?.trim()).toBe('—');
+    expect(cell.querySelector('.hv-tag-mark')).toBe(null);
+  });
+
   it('follows the column selection', async () => {
     const el = await mount([{ id: '1' }], { columns: ['quantity'] });
     expect(q(el, '[data-testid="cell-quantity"]')).toBeTruthy();

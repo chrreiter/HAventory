@@ -2,7 +2,7 @@ import { LitElement, css, html, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { tokens, base } from '../ui/tokens';
-import { chip } from '../ui/chip';
+import { chip, renderTagChip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import {
@@ -493,7 +493,7 @@ export class HVDataTable extends LitElement {
       }
       case 'tags':
         return html`<span class="tags" role="cell" data-testid="cell-tags">
-          ${item.tags.length ? item.tags.map((t) => html`<span class="hv-chip">${t}</span>`) : html`<span class="cell">—</span>`}
+          ${item.tags.length ? item.tags.map((t) => renderTagChip(t)) : html`<span class="cell">—</span>`}
         </span>`;
       case 'due_date':
         return html`<span

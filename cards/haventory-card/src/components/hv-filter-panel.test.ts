@@ -111,6 +111,37 @@ describe('hv-filter-panel: category', () => {
     expect(all(el, '[data-testid="filter-category"]')).toHaveLength(5);
   });
 
+  // The group headings are the only thing separating the two runs of chips, and
+  // a value used as both a category and a tag appears in each of them.
+  it('tells a category chip from a tag chip without the group heading', async () => {
+    const el = await mount();
+    const category = q(el, '[data-testid="filter-category"]');
+    const tag = q(el, '[data-testid="filter-tag"]');
+
+    expect(tag.classList.contains('tag')).toBe(true);
+    expect(category.classList.contains('tag')).toBe(false);
+    expect(tag.querySelector('.hv-tag-mark')?.textContent).toBe('#');
+    expect(category.querySelector('.hv-tag-mark')).toBe(null);
+    // Pressable chips read as an outline until they are applied, so the mark is
+    // the whole distinction here — the fill says "picked", not "tag".
+    expect(tag.classList.contains('toggle')).toBe(true);
+  });
+
+  // A chip carries both marks once it is applied, and the check has to stay the
+  // leading one: it reports the state, the # only names the facet.
+  it('keeps the applied check ahead of the tag mark', async () => {
+    const el = await mount();
+    el.filters = { ...el.filters, tags: ['metric'] };
+    await el.updateComplete;
+    const tag = q(el, '[data-testid="filter-tag"][data-value="metric"]');
+
+    expect(tag.getAttribute('aria-pressed')).toBe('true');
+    expect(tag.querySelector('svg')).toBeTruthy();
+    expect(tag.textContent?.replace(/\s+/g, ' ').trim()).toBe('#metric 61');
+    const marks = [...tag.querySelectorAll('svg, .hv-tag-mark')].map((n) => n.tagName.toLowerCase());
+    expect(marks[0]).toBe('svg');
+  });
+
   it('is single-select and toggles off when picked again', async () => {
     const el = await mount();
     const seen = changes(el);

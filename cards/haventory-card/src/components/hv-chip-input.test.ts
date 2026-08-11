@@ -34,6 +34,25 @@ describe('hv-chip-input', () => {
     expect(all(el, '[data-testid="chip-remove"]')).toHaveLength(2);
   });
 
+  // The editor's tokens are tags, so they wear the tag chip — the same one the
+  // table's Tags column and the detail sheet draw.
+  it('draws a value as the card draws a tag anywhere else', async () => {
+    const el = await mount({ values: ['battery'] });
+    const token = q(el, '[data-testid="chip"]')!;
+
+    expect([...token.classList].sort()).toEqual(['chip', 'hv-chip', 'tag']);
+    expect(token.querySelector('.hv-tag-mark')?.getAttribute('aria-hidden')).toBe('true');
+    // The remove button is named for the value, not for what is printed on the chip.
+    expect(q(el, '[data-testid="chip-remove"]')?.getAttribute('aria-label')).toBe('Remove battery');
+  });
+
+  // A tag someone writes with a # of their own would otherwise read as ##ok.
+  it('marks a value once, whatever the value looks like', async () => {
+    const el = await mount({ values: ['#ok'] });
+    expect(all(el, '.hv-tag-mark')).toHaveLength(1);
+    expect(q(el, '[data-testid="chip"]')?.textContent?.trim()).toBe('##ok');
+  });
+
   it('lowercases and trims on commit, matching how the backend stores tags', async () => {
     const el = await mount();
     const seen = changes(el);

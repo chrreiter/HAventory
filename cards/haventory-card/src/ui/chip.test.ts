@@ -58,9 +58,13 @@ describe('ui/chip: the shared fragment', () => {
     expect(String(tokens.cssText)).toMatch(/--hv-chip-padding: /);
   });
 
-  it('carries the four fills the card marks things with, and a pressable variant', () => {
+  it('carries the five fills the card marks things with, and a pressable variant', () => {
     const css = String(chip.cssText).replace(/\s+/g, ' ');
     expect(css).toMatch(/\.hv-chip\.state \{[^}]*var\(--hv-primary-tint\)/);
+    // A tag takes the same blue as a state, and the # is what tells them apart
+    // — held off the pressable variant, where a pre-filled group of tags would
+    // read as already applied.
+    expect(css).toMatch(/\.hv-chip\.tag:not\(\.toggle\) \{[^}]*var\(--hv-primary-tint\)/);
     expect(css).toMatch(/\.hv-chip\.warning \{[^}]*var\(--hv-warn-bg\)/);
     expect(css).toMatch(/\.hv-chip\.error \{[^}]*var\(--hv-error-bg\)/);
     // No fill of its own, so its label is read against the page — which is why
@@ -76,7 +80,11 @@ describe('ui/chip: the shared fragment', () => {
   // for it; tone-contrast.test.ts checks the ratio the token resolves to.
   it('inks every tint-backed fill with the ink minted for that tint', () => {
     const css = String(chip.cssText).replace(/\s+/g, ' ');
-    for (const selector of ['\\.hv-chip\\.state', '\\.hv-chip\\.toggle\\.on']) {
+    for (const selector of [
+      '\\.hv-chip\\.state',
+      '\\.hv-chip\\.tag:not\\(\\.toggle\\)',
+      '\\.hv-chip\\.toggle\\.on',
+    ]) {
       expect(css, selector).toMatch(
         new RegExp(`${selector} \\{[^}]*background: var\\(--hv-primary-tint\\)[^}]*color: var\\(--hv-on-primary-tint\\)`),
       );
@@ -101,9 +109,14 @@ describe('ui/chip: the shared fragment', () => {
     expect(ownCss('hv-location-tree')).toMatch(
       /\.area-name \.hv-area-chip, \.area-none \{ font-size: inherit/,
     );
-    // Every other surface takes the shared size untouched.
+    // Every other surface takes the shared size untouched — height and padding
+    // as well as type. Nothing inside an informational chip is a target that a
+    // touch height would grow, so one that sets its own only comes out bigger
+    // than the same value chipped a surface over.
     for (const tag of CHIPPED.filter((t) => t !== 'hv-filter-panel' && t !== 'hv-location-tree')) {
-      expect(ownCss(tag), tag).not.toMatch(/\.(hv-)?chip[^{]*\{[^}]*font-size/);
+      expect(ownCss(tag), tag).not.toMatch(
+        /\.(hv-)?chip(?![\w-])[^{]*\{[^}]*(font-size|min-height|padding:)/,
+      );
     }
   });
 
@@ -137,7 +150,7 @@ describe('ui/chip: the shared fragment', () => {
   it('shares the metrics with the area chip without folding it in', () => {
     const css = String(chip.cssText).replace(/\s+/g, ' ');
     expect(css).toMatch(/\.hv-chip, \.hv-area-chip, \.hv-status-chip \{/);
-    expect(css).not.toMatch(/\.hv-area-chip\.(state|warning|error)/);
+    expect(css).not.toMatch(/\.hv-area-chip\.(state|tag|warning|error)/);
   });
 
   // A status carries a colour the household picked, so it must not reach for the
@@ -145,7 +158,7 @@ describe('ui/chip: the shared fragment', () => {
   // "Low stock" would read as two points on one scale.
   it('keeps the status chip out of the semantic hue vocabulary', () => {
     const css = String(chip.cssText).replace(/\s+/g, ' ');
-    expect(css).not.toMatch(/\.hv-status-chip\.(state|warning|error|quiet)/);
+    expect(css).not.toMatch(/\.hv-status-chip\.(state|tag|warning|error|quiet)/);
     for (const hue of ['neutral', 'green', 'blue', 'amber', 'red']) {
       expect(css, hue).toMatch(new RegExp(`\\.hv-status-chip\\.tone-${hue} \\{`));
       expect(css, hue).toMatch(new RegExp(`\\.hv-status-chip\\.tone-${hue}-strong \\{`));
