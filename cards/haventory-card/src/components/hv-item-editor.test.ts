@@ -228,7 +228,7 @@ describe('hv-item-editor: field parity', () => {
   // `title` explaining it never reaches a phone.
   it('greys the due date out, and says why, while the item is not checked out', async () => {
     const el = await mount(makeItem({ id: '1', checked_out: false }));
-    expect(q(el, '[data-testid="editor-due-date"]')?.closest('.cell')?.classList).toContain('muted');
+    expect(q(el, '.due-label')?.classList).toContain('muted');
     expect(q(el, '[data-testid="editor-due-hint"]')?.textContent?.trim()).toBe(
       'A due date applies while the item is checked out.',
     );
@@ -237,7 +237,7 @@ describe('hv-item-editor: field parity', () => {
     );
 
     await checkOut(el);
-    expect(q(el, '[data-testid="editor-due-date"]')?.closest('.cell')?.classList).not.toContain('muted');
+    expect(q(el, '.due-label')?.classList).not.toContain('muted');
     expect(q(el, '[data-testid="editor-due-hint"]')).toBe(null);
 
     const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
@@ -362,6 +362,47 @@ describe('hv-item-editor: field parity', () => {
     expect(css).toMatch(/\.checkout-body \{[^}]*grid-template-columns: 1fr 1fr/);
     expect(css).toMatch(/:host\(\[mobile\]\) \.checkout-body \{[^}]*grid-template-columns: 1fr;/);
     expect(css).toMatch(/:host\(\[mobile\]\) \.state \{[^}]*grid-template-columns: 1fr;/);
+    // Stacked, the button leads and the label stays with its own field.
+    expect(css).toMatch(
+      /:host\(\[mobile\]\) \.checkout-body \{[^}]*grid-template-areas: 'action' 'label' 'field' 'hint'/,
+    );
+  });
+
+  /*
+   * The check-out box holds two controls side by side and one of them has no
+   * label, which is what put them on different lines: packed to the top of
+   * their own cells, the button landed level with the *label* opposite it and
+   * the date input a label's height lower, with dead air under the button.
+   *
+   * jsdom lays out nothing, so what can be pinned here is the structure the
+   * alignment rests on — one grid, four children, named rows — rather than the
+   * two edges lining up. The measurement is in the PR body.
+   */
+  it('puts the button and the due date in one grid rather than two stacks', async () => {
+    const el = await mount(makeItem({ id: '1', checked_out: false }));
+    const body = q(el, '.checkout-body') as HTMLElement;
+    const children = [...body.children].map((c) => c.className.split(' ').filter(Boolean));
+
+    expect(children).toEqual([
+      ['field-button', 'checkout-action'],
+      ['hv-label', 'due-label', 'muted'],
+      ['hv-input', 'due-input'],
+      ['group-hint'],
+    ]);
+    // No per-half wrapper left to pack its own contents to the top.
+    expect(body.querySelector('.cell')).toBe(null);
+  });
+
+  // Checked out, the note goes and the grid is three children — the hint area
+  // collapses rather than leaving a row behind.
+  it('drops the note once the item is checked out', async () => {
+    const el = await mount(makeItem({ id: '1', checked_out: true, due_date: '2099-01-01' }));
+    const body = q(el, '.checkout-body') as HTMLElement;
+    expect([...body.children].map((c) => c.getAttribute('data-testid'))).toEqual([
+      'editor-checked-out',
+      null,
+      'editor-due-date',
+    ]);
   });
 });
 
