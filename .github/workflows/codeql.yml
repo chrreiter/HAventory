@@ -30,9 +30,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The extractor resolves imports and the stdlib against whatever `python3`
+      # is on PATH — its log shows it skipping built-ins out of this
+      # interpreter's lib directory — so the pin decides which Python CodeQL
+      # models the source against.
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       - uses: actions/setup-node@v7
         with:

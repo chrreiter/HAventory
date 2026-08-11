@@ -1,5 +1,5 @@
 # Reproducible HAventory dev container: Debian base + uv (Python) + Node (via a
-# devcontainer feature). uv provisions the Python interpreter (the declared
+# devcontainer feature). uv provisions the interpreter (the declared Python
 # 3.14 HA runtime) from pyproject.toml / uv.lock.
 FROM mcr.microsoft.com/devcontainers/base:bookworm
 

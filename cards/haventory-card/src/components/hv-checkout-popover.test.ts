@@ -200,8 +200,8 @@ describe('hv-checkout-popover: placement', () => {
     expect(left).toBeGreaterThanOrEqual(8);
   });
 
-  it('drops the scrim and fills the width on mobile, where it is an inline step', async () => {
-    const el = await mount({}, { mobile: true });
+  it('drops the scrim and fills the width when it is an inline step', async () => {
+    const el = await mount({}, { inline: true });
     expect(q(el, '.scrim')).toBe(null);
     expect(q(el, '[data-testid="checkout-popover"]')?.getAttribute('style')).toBe('');
   });
@@ -218,5 +218,43 @@ describe('hv-checkout-popover: placement', () => {
     expect(
       (q(centred, '[data-testid="checkout-popover"]') as HTMLElement).getAttribute('style'),
     ).toContain('left: 50%');
+  });
+});
+
+describe('hv-checkout-popover: where it draws and how big it is are separate asks', () => {
+  /** jsdom lays out no shadow DOM, so the sizes are asserted on the stylesheet. */
+  const popoverCss = () => {
+    const styles = (customElements.get('hv-checkout-popover') as typeof HVCheckoutPopover).styles;
+    return (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+  };
+
+  // As one flag, a caller that could not draw the inline step could not ask for
+  // finger-sized controls either — and the surfaces that open this as a centred
+  // dialog on a phone are exactly that caller.
+  it('hangs every thumb size on touch, and only the step itself on inline', () => {
+    const css = popoverCss();
+    for (const sel of ['.offset', '.custom input', '.date', '.actions', '.confirm', '.none-button']) {
+      expect(css, sel).toContain(`:host([touch]) ${sel} {`);
+    }
+    expect(css).toMatch(/:host\(\[inline\]\) \.card \{[^}]*position: static/);
+    expect(css.match(/:host\(\[inline\]\)/g)?.length).toBe(1);
+  });
+
+  it('keeps the scrim and its own placement when only the sizes grow', async () => {
+    const el = await mount({}, { touch: true });
+    expect(q(el, '.scrim')?.classList.contains('dim')).toBe(true);
+    expect(q(el, '[data-testid="checkout-popover"]')?.getAttribute('style')).toContain('left: 50%');
+  });
+
+  // The row of actions becomes a stack of full-width buttons, so the spacer that
+  // pushes the pair right in the flex row has to go with it — left in, it is an
+  // empty grid row with a gap on both sides of it.
+  it('stacks the actions and drops the spacer with the sizes, not with the step', async () => {
+    const el = await mount({}, { touch: true });
+    expect(q(el, '.actions .spacer')).toBe(null);
+    expect(q(await mount({}, { inline: true }), '.actions .spacer')).not.toBe(null);
   });
 });

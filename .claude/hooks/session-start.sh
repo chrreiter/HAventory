@@ -34,10 +34,11 @@ esac
 # `uv sync` is the documented bootstrap (CLAUDE.md) and the only one that
 # reproduces the locked set: requirements-dev.txt carries its own header saying
 # it is a generated pip fallback for environments without uv, not a second source
-# of truth. The fallback searches 3.14 first because requires-python is >=3.14 and
-# the source uses PEP 758 unparenthesized `except A, B:`, which does not parse on
-# 3.13 — an older interpreter yields an environment that cannot import the
-# integration at all, which is worse than no environment.
+# of truth. The fallback searches for Python 3.14 first because that is the floor
+# `requires-python` declares, and the source uses PEP 758 unparenthesized
+# `except A, B:`, which does not parse on 3.13 — an older interpreter yields an
+# environment that cannot import the integration at all, which is worse than no
+# environment.
 if [ "$POSIX_VENV_HOST" -eq 0 ]; then
   log "Windows shell detected; skipping the Python bootstrap (develop through WSL2, see CLAUDE.md)"
 elif command -v uv >/dev/null 2>&1; then
@@ -84,8 +85,8 @@ fi
 # requirements-integration.txt). It uses a DEDICATED env (.venv-integration) so
 # the offline `.venv` above stays Home-Assistant-free.
 #
-# This is heavy and needs a 3.14 interpreter plus network for the HA core, so it
-# is strictly best-effort: it must NEVER fail session bootstrap (e.g. in
+# This is heavy and needs a Python 3.14 interpreter plus network for the HA core,
+# so it is strictly best-effort: it must NEVER fail session bootstrap (e.g. in
 # restricted-egress sandboxes that can't fetch Python 3.14). The offline suite is
 # unaffected either way. Run the suite with: scripts/test_integration.sh
 INT_VENV=".venv-integration"

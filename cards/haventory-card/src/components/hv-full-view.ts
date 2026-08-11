@@ -13,8 +13,13 @@ import { activeFilterCount, defaultFilters } from '../store/store';
 import { countLocations } from '../store/location-tree';
 import { emptyKindFor, renderEmptyState } from '../ui/empty-state';
 import { deepFocusables } from '../ui/dialog-focus';
-import { areaNameById, effectiveAreaIdForLocation } from '../ui/area';
-import { renderAreaChip } from '../ui/location-path';
+import {
+  PATH_SEPARATOR,
+  areaMarkName,
+  locationPathParts,
+  pathTitle,
+  renderAreaChip,
+} from '../ui/location-path';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import { quickFilterAllowed } from '../ui/quick-filters';
 import type { QuickFilterKey } from '../ui/quick-filters';
@@ -1651,19 +1656,20 @@ export class HVFullView extends LitElement {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
     const locations = st?.locationsFlatCache ?? [];
-    const loc = locations.find((l) => l.id === filters.locationId);
-    const segments = loc ? (loc.path?.display_path ?? loc.name).split('/').map((s) => s.trim()) : [];
-    // The crumb prints each path segment as its own span, so the area needs the
-    // chip to stay out of that sequence rather than reading as a first segment.
-    const areaName = loc
-      ? areaNameById(st?.areasCache?.areas ?? [], effectiveAreaIdForLocation(locations, loc.id))
-      : null;
+    // "Items with no location" is its own answer to where the table is pointed,
+    // so the crumb says that instead of a path and there is none to mark.
+    const loc = filters.orphansOnly ? undefined : locations.find((l) => l.id === filters.locationId);
+    const parts = locationPathParts(loc, locations, st?.areasCache?.areas ?? [], '');
+    const segments = parts.path ? parts.path.split(PATH_SEPARATOR) : [];
     const filterCount = activeFilterCount(filters);
 
     return html`
       <div class="context">
-        <span class="crumb hv-chip-line" data-testid="full-breadcrumb">
-          ${filters.orphansOnly || !segments.length ? null : renderAreaChip(areaName)}
+        <!-- The chip sits on the row rather than inside the text, because the
+             text below prints one span per path segment and an area folded into
+             that sequence would read as the path's first segment. -->
+        <span class="crumb hv-chip-line" data-testid="full-breadcrumb" title=${pathTitle(parts)}>
+          ${renderAreaChip(areaMarkName(parts.areaName, parts.path))}
           <span class="hv-chip-line-text">
             ${filters.orphansOnly
               ? html`<span class="current">No location</span>`
@@ -2167,14 +2173,16 @@ export class HVFullView extends LitElement {
           : null}
 
         <!-- Centred and scrimmed at every width, like the bulk popover below.
-             Neither of the other two presentations fits this call site: the
-             mobile one draws an inline step that has to sit inside the body of
-             the surface that opened it, and this is a sibling at the end of the
-             shell with no body around it; the anchored one hangs off the row ⋮,
-             which sits in a column the table scrolls sideways out of view. -->
+             Neither of the other two placements fits this call site: an inline
+             step has to sit inside the body of the surface that opened it, and
+             this is a sibling at the end of the shell with no body around it;
+             an anchored one hangs off the row ⋮, which sits in a column the
+             table scrolls sideways out of view. Finger-sized controls are a
+             separate question and follow the narrow branch on their own. -->
         <hv-checkout-popover
           data-testid="full-checkout"
           ?open=${this._checkout !== null}
+          ?touch=${this._narrow}
           .mode=${this._checkout?.mode ?? 'check-out'}
           .item=${this._checkout ? (st?.items.find((i) => i.id === this._checkout!.itemId) ?? null) : null}
           @check-out=${(e: CustomEvent) => {
@@ -2195,14 +2203,14 @@ export class HVFullView extends LitElement {
           }}
         ></hv-checkout-popover>
 
-        <!-- Centred at every width rather than following _narrow: the mobile
-             presentation is an inline step drawn inside the surface that opened
-             it, and this one is opened by a bar at the foot of the table with no
-             body of its own to sit in. It anchors to nothing, so it takes the
-             same scrimmed middle-of-the-screen position the bulk confirm does. -->
+        <!-- Centred at every width for the same reason as the one above: it is
+             opened by a bar at the foot of the table with no body of its own to
+             sit in. It anchors to nothing, so it takes the same scrimmed
+             middle-of-the-screen position the bulk confirm does. -->
         <hv-checkout-popover
           data-testid="full-bulk-checkout"
           ?open=${this._pendingBulkCheckout}
+          ?touch=${this._narrow}
           .itemName=${counted(selection.size, 'item')}
           @check-out=${(e: CustomEvent) => {
             const { dueDate } = e.detail as { dueDate: string | null };

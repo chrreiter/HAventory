@@ -35,7 +35,14 @@ Three floors constrain everything, none of them written down here:
   egress must preinstall it or allow the python-build-standalone download, otherwise the
   offline suite cannot run there.
 - **Node** — `engines` in `cards/haventory-card/package.json`; CI runs a matrix across the
-  supported majors.
+  supported majors, and every `node-version:` a workflow pins has to be one of them.
+
+`tests/test_toolchain_pins.py` holds the Python and Node floors the way
+`tests/test_min_ha_version.py` holds HA's: it enumerates the copies, fails when one drifts,
+and sweeps the tree so a copy in a file it does not list fails too. Add a new copy to that
+test or don't write it. It also ties the pins that are written twice — ruff and actionlint
+in `pyproject.toml`/`.github/workflows/ci.yml` against `.pre-commit-config.yaml` — so a
+hook can no longer run a different version than CI.
 
 When raising the HA floor, three constraints stack and the binding one is not always the
 same: the HA APIs the integration touches, the Python floor those releases carry, and
@@ -48,7 +55,7 @@ assuming the current floor is still the right one. `dependency-review` fails CI 
 Toolchain: **uv** (env + lockfile + dependency groups), ruff, mypy, ESLint (no separate
 formatter), TypeScript, Vite, Vitest. Pins live in `pyproject.toml` and
 `cards/haventory-card/package.json`; ruff's pin is duplicated in `.pre-commit-config.yaml`
-and the two must move together.
+and the two must move together, which `tests/test_toolchain_pins.py` now enforces.
 
 ## Architecture & key files
 
