@@ -1,6 +1,6 @@
 [project]
 name = "haventory"
-version = "0.4.2"
+version = "0.4.3"
 description = "Home Assistant custom integration for household inventory tracking"
 readme = "README.md"
 license = "Apache-2.0"

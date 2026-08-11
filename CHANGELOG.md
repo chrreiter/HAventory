@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.3](https://github.com/chrreiter/HAventory/compare/v0.4.2...v0.4.3) (2026-08-11)
+
+
+### Bug Fixes
+
+* **card:** the area mark and the check-out popover's thumb sizes ([#411](https://github.com/chrreiter/HAventory/issues/411)) ([c99ceeb](https://github.com/chrreiter/HAventory/commit/c99ceebdcb04e526f4addf9de90cfed8401f9afc))
+* **card:** the v0.4.3 residuals — the full view's row check-out popover and the sheet's path crumb ([#407](https://github.com/chrreiter/HAventory/issues/407)) ([5f5e926](https://github.com/chrreiter/HAventory/commit/5f5e926354d6a7751942649ac9bec6f07949a942)), closes [#403](https://github.com/chrreiter/HAventory/issues/403)
+
+
+### Documentation
+
+* **dev:** add the V0.5.0 implementation plan ([#404](https://github.com/chrreiter/HAventory/issues/404)) ([32ffa74](https://github.com/chrreiter/HAventory/commit/32ffa7445b09e4549e8c3aee87e484de18412a5a))
+
 ## [0.4.2](https://github.com/chrreiter/HAventory/compare/v0.4.1...v0.4.2) (2026-08-11)
 
 
