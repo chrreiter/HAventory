@@ -68,6 +68,33 @@ export function elidePath(path: string, maxSegments = 2): string {
 }
 
 /**
+ * The phone row's location line, with the area separated back out of the front
+ * of it.
+ *
+ * The area has to travel through `elidePath` as the leading segment — that is
+ * the half the elision keeps — but it is Home Assistant's, not one of our
+ * locations, and the `›` after it reads as though it were one. So the line is
+ * composed and elided exactly as it is shown, then the leading segment is taken
+ * back off for the caller to mark instead of punctuate.
+ *
+ * An area name that itself contains ` › ` lands as two segments and the elided
+ * string no longer starts with it. Then there is nothing safe to mark and the
+ * whole string comes back as `rest`, which renders as the line always did
+ * rather than putting the mark on the wrong words.
+ */
+export function elideMobilePath(
+  areaName: string | null,
+  path: string,
+): { area: string | null; rest: string } {
+  const composed = elidePath([areaName, path].filter(Boolean).join(' › '));
+  if (!areaName) return { area: null, rest: composed };
+  if (composed === areaName) return { area: areaName, rest: '' };
+  const prefix = `${areaName} › `;
+  if (!composed.startsWith(prefix)) return { area: null, rest: composed };
+  return { area: areaName, rest: composed.slice(prefix.length) };
+}
+
+/**
  * One row of the standard card list.
  *
  * Desktop reveals edit and row-menu actions on hover; touch has no hover, so the
@@ -188,6 +215,24 @@ export class HVListRow extends LitElement {
          shared fragment and would otherwise keep the row inline. */
       .secondary.hv-chip-line {
         display: flex;
+      }
+      /* The same home mark the area chip carries, marking the leading segment
+         of a phone row's path as Home Assistant's area rather than the top of
+         our own tree. Not a chip: this line has room for neither the fill nor
+         the spelled-out word, which is why the area is a text segment here at
+         all. Colour and weight stay inherited, so the mark travels with
+         whichever state variant the line is in. */
+      .area-lead {
+        display: inline-flex;
+        align-items: center;
+        /* Tighter than the chip's own 4px: this sits inside a text run with no
+           fill around it, and every pixel here comes off the elided tail. */
+        gap: 2px;
+        margin-right: 4px;
+        /* An inline-flex box whose first child is an svg has no baseline of its
+           own and would otherwise sit a couple of pixels low against the path
+           beside it. */
+        vertical-align: middle;
       }
       /* The path elides; the chip ahead of it does not. */
       .secondary.hv-chip-line > .hv-chip-line-text {
@@ -456,11 +501,19 @@ export class HVListRow extends LitElement {
     const parts = itemPathParts(item, this.areas);
     // The desktop row has room for the whole path and the area chip beside it.
     const secondary = [parts.path, item.category].filter(Boolean).join(' · ');
-    // A phone line fits neither, so the area goes in as the leading text
-    // segment — the half elidePath keeps — and the room survives a path deep
-    // enough to lose its middle.
-    const mobilePath = elidePath([parts.areaName, parts.path].filter(Boolean).join(' › '));
-    const mobileSecondary = [mobilePath, item.category].filter(Boolean).join(' · ');
+    // A phone line fits neither, so the area goes in as the leading segment —
+    // the half elidePath keeps — and the room survives a path deep enough to
+    // lose its middle. The home mark is what says the segment is an area and
+    // not the top of our own tree; it replaces the separator after it, so it
+    // costs the line about what that separator cost.
+    const mobileLead = elideMobilePath(parts.areaName, parts.path);
+    const mobileTail = [mobileLead.rest, item.category].filter(Boolean).join(' · ');
+    const hasMobileSecondary = Boolean(mobileLead.area || mobileTail);
+    const mobileSecondary = html`${mobileLead.area
+      ? html`<span class="area-lead" data-testid="row-area-mark"
+          >${icon('home', 11)}<span class="hv-sr-only">Area: </span>${mobileLead.area}</span
+        >`
+      : null}${mobileTail}`;
     // The tooltip carries the *unelided* path: on a phone the middle of it is
     // dropped on purpose, and this is where the whole thing can still be read.
     const secondaryFull = [pathTitle(parts), item.category].filter(Boolean).join(' · ');
@@ -532,13 +585,15 @@ export class HVListRow extends LitElement {
                   ? ` · due ${formatDate(item.due_date)}`
                   : ''}`
               : this.mobile && flagged
-                ? html`<span data-testid="row-status">${statusLabel(status, this.statuses)}</span>${mobileSecondary
-                    ? ` · ${mobileSecondary}`
+                ? html`<span data-testid="row-status">${statusLabel(status, this.statuses)}</span>${hasMobileSecondary
+                    ? html` · ${mobileSecondary}`
                     : ''}`
                 : this.mobile && inspectionDue
                   ? html`<span data-testid="row-inspection-due">Inspection due</span> · ${formatDate(item.inspection_date)}`
                   : this.mobile
-                    ? mobileSecondary || 'No location'
+                    ? hasMobileSecondary
+                      ? mobileSecondary
+                      : 'No location'
                     : html`${renderAreaChip(parts.areaName)}<span class="hv-chip-line-text"
                         >${secondary || 'No location'}</span
                       >`}
