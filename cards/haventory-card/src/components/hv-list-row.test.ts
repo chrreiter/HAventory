@@ -138,11 +138,46 @@ describe('hv-list-row: content', () => {
     expect(q(el, '[data-testid="row-qty"]')?.classList.contains('low')).toBe(true);
   });
 
-  it('marks a checked-out item and disables its stepper', async () => {
-    const el = await mount({ checked_out: true });
+  // The stepper used to sit there greyed and check-in was reachable only through
+  // the ⋮ menu, which a wide row hides until the row is hovered.
+  it('gives a checked-out row the check-in button in the stepper place, at any width', async () => {
+    for (const mobile of [false, true]) {
+      const el = await mount({ checked_out: true }, { mobile });
+      const where = `mobile=${mobile}`;
+
+      expect(q(el, '[data-testid="row-stepper"]'), where).toBe(null);
+      const button = q(el, '[data-testid="row-check-in"]');
+      expect(button?.textContent?.trim(), where).toBe('Check in');
+
+      const emitted: string[] = [];
+      el.addEventListener('check-in', () => emitted.push('check-in'));
+      (button as HTMLButtonElement).click();
+      expect(emitted, where).toEqual(['check-in']);
+
+      el.remove();
+    }
+
+    // Still a secondary path, so a user who reaches for the menu keeps it.
+    expect(
+      rowMenuEntries(makeItem({ checked_out: true })).some((e) => 'id' in e && e.id === 'check-in'),
+    ).toBe(true);
+  });
+
+  it('marks a checked-out item on the wide row and keeps its location beside it', async () => {
+    const el = await mount({
+      checked_out: true,
+      category: 'Tools',
+      location_path: {
+        id_path: [],
+        name_path: [],
+        display_path: 'Workshop / Drawer A',
+        sort_key: '',
+      },
+    });
     expect(q(el, '[data-testid="row-checked-out"]')?.textContent).toContain('Checked out');
-    expect((q(el, '[data-testid="row-increment"]') as HTMLButtonElement).disabled).toBe(true);
-    expect((q(el, '[data-testid="row-decrement"]') as HTMLButtonElement).disabled).toBe(true);
+    const secondary = q(el, '[data-testid="row-secondary"]')?.textContent;
+    expect(secondary).toContain('Drawer A');
+    expect(secondary).toContain('Tools');
   });
 
   it('calls out an overdue check-out in error colour', async () => {
@@ -442,14 +477,20 @@ describe('hv-list-row: mobile affordances', () => {
     );
   });
 
-  it('leaves a checked-out phone row saying what it always said', async () => {
+  // Being out used to take the line rather than lead it, so the one row you most
+  // want the shelf of — the borrowed one — was the row that stopped naming it.
+  it('leads a checked-out phone row with the checkout and keeps the location behind it', async () => {
     const el = await mount(
       { checked_out: true, due_date: '2099-07-31', effective_area_id: 'area-workshop', location_path: deepPath },
       { mobile: true, areas: [{ id: 'area-workshop', name: 'Garage' }] },
     );
     const secondary = q(el, '[data-testid="row-secondary"]');
-    expect(secondary?.textContent).toContain('Checked out');
-    expect(secondary?.textContent).not.toContain('Garage');
+    const text = secondary?.textContent?.replace(/\s+/g, ' ') ?? '';
+
+    expect(text).toContain('Checked out · due');
+    expect(secondary?.querySelector('[data-testid="area-chip"]')?.textContent).toContain('Garage');
+    expect(text).toContain('… › Small Bin');
+    expect(text.indexOf('Checked out')).toBeLessThan(text.indexOf('Small Bin'));
   });
 
   // Both lines clip with an ellipsis, and the phone row drops the middle of the

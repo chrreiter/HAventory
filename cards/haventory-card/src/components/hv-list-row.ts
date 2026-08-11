@@ -308,9 +308,6 @@ export class HVListRow extends LitElement {
         border: 1px solid var(--hv-divider);
         border-radius: var(--hv-radius-chip);
       }
-      .stepper.disabled {
-        opacity: 0.45;
-      }
       .stepper button {
         display: inline-grid;
         place-items: center;
@@ -340,15 +337,27 @@ export class HVListRow extends LitElement {
       .qty.low {
         color: var(--hv-warn);
       }
+      /* Takes the stepper's place at both widths, so it is sized against the
+         stepper it replaces — 30px is that control's height with its border. */
       .check-in {
         flex: none;
         border: 1px solid var(--hv-primary-tint-border);
         background: none;
         color: var(--hv-primary-darker);
         border-radius: var(--hv-radius-chip);
+        min-height: 30px;
+        padding: 0 12px;
+        font: 500 13px var(--hv-font);
+      }
+      .check-in:hover {
+        background: var(--hv-hover-overlay);
+      }
+      /* A finger needs the platform minimum, and the phone row has the width for
+         the padding to go with it. */
+      :host([mobile]) .check-in {
         min-height: var(--hv-tap-min, 40px);
         padding: 0 18px;
-        font: 500 13.5px var(--hv-font);
+        font-size: 13.5px;
       }
       .box {
         flex: none;
@@ -453,12 +462,20 @@ export class HVListRow extends LitElement {
     }
   };
 
+  /**
+   * The row's trailing control: the quantity stepper, or the way to take the
+   * item back.
+   *
+   * A checked-out item's quantity is not the thing to adjust, and that holds at
+   * any width — so the stepper gives its place to "Check in" rather than sitting
+   * there greyed. The ⋮ menu still offers the same action, and on a wide row it
+   * only appears on hover: a user who never hovers had no visible way to check
+   * anything in from the list at all.
+   */
   private _renderStepper() {
     const item = this.item;
     const low = isLowStock(item);
-    // A checked-out item's quantity is not the thing to adjust.
-    const disabled = item.checked_out;
-    if (this.mobile && item.checked_out) {
+    if (item.checked_out) {
       return html`<button
         class="check-in"
         data-testid="row-check-in"
@@ -471,11 +488,10 @@ export class HVListRow extends LitElement {
       </button>`;
     }
     return html`
-      <span class="stepper ${disabled ? 'disabled' : ''}" data-testid="row-stepper">
+      <span class="stepper" data-testid="row-stepper">
         <button
           data-testid="row-decrement"
           aria-label="Decrease quantity"
-          ?disabled=${disabled}
           @click=${(e: Event) => {
             e.stopPropagation();
             this._emit('decrement');
@@ -487,7 +503,6 @@ export class HVListRow extends LitElement {
         <button
           data-testid="row-increment"
           aria-label="Increase quantity"
-          ?disabled=${disabled}
           @click=${(e: Event) => {
             e.stopPropagation();
             this._emit('increment');
@@ -508,6 +523,7 @@ export class HVListRow extends LitElement {
     // already behind us means it is waiting to be done.
     const inspectionDue = isOverdue(item.inspection_date);
     const parts = itemPathParts(item, this.areas);
+    const areaMark = areaMarkName(parts.areaName, parts.path);
     // The desktop row has room for the whole path and the area chip beside it.
     const secondary = [parts.path, item.category].filter(Boolean).join(' · ');
     // A phone line has no room for the whole path, so the area travels through
@@ -519,15 +535,16 @@ export class HVListRow extends LitElement {
     const mobileTail = [mobileLead.rest, item.category].filter(Boolean).join(' · ');
     const hasMobileSecondary = Boolean(mobileLead.area || mobileTail);
     const mobileSecondary = html`${renderAreaChip(mobileLead.area)}${mobileTail}`;
-    const areaMark = areaMarkName(parts.areaName, parts.path);
     // The tooltip carries the *unelided* path: on a phone the middle of it is
     // dropped on purpose, and this is where the whole thing can still be read.
     const secondaryFull = [pathTitle(parts), item.category].filter(Boolean).join(' · ');
     // A phone row has one line for all of this and no room for the chips the
-    // wide row hangs on the right, so the line says the most interrupting
+    // wide row hangs on the right, so the line leads with the most interrupting
     // thing it has: who has the item, then what state it is flagged with, then
-    // what it is waiting for, then where it lives. The path is a tap away in
-    // the detail sheet either way.
+    // what it is waiting for. Being out and being flagged put the location
+    // behind them rather than in place of them — the wide row shows both, and a
+    // borrowed item is exactly the one whose shelf you want to read. What runs
+    // past the edge elides, so the width decides how much of it survives.
     const status = itemStatus(item);
     const flagged = status !== 'ok';
     const mobileState = item.checked_out ? 'out' : flagged || inspectionDue ? 'inspect' : '';
@@ -589,7 +606,7 @@ export class HVListRow extends LitElement {
             ${this.mobile && item.checked_out
               ? html`${overdue ? 'Overdue' : 'Checked out'}${item.due_date
                   ? ` · due ${formatDate(item.due_date)}`
-                  : ''}`
+                  : ''}${hasMobileSecondary ? html` · ${mobileSecondary}` : ''}`
               : this.mobile && flagged
                 ? html`<span data-testid="row-status">${statusLabel(status, this.statuses)}</span>${hasMobileSecondary
                     ? html` · ${mobileSecondary}`
