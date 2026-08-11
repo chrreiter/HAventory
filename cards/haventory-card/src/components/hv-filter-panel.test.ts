@@ -914,6 +914,25 @@ describe('hv-filter-panel: pressed state', () => {
     }
   });
 
+  // The sheet carried `warning` at rest, where `.hv-chip.warning` paints the
+  // amber fill on its own — so a phone showed "Filters — 0 active" above three
+  // chips that looked applied. The desktop chip beside it only pairs the hue
+  // with `on`.
+  it('tints a warning chip when it is selected, never at rest', async () => {
+    const el = await mount({}, { mobile: true });
+    const chipOf = (testid: string) => q(el, `[data-testid="${testid}"]`);
+
+    for (const testid of ['filter-low-stock-only', 'filter-overdue', 'filter-inspection-due']) {
+      expect(chipOf(testid).classList.contains('warning'), testid).toBe(false);
+    }
+
+    (chipOf('filter-low-stock-only') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(chipOf('filter-low-stock-only').classList.contains('warning')).toBe(true);
+    expect(chipOf('filter-low-stock-only').classList.contains('on')).toBe(true);
+    expect(chipOf('filter-overdue').classList.contains('warning')).toBe(false);
+  });
+
   // The row's on state has to be the shared chip's on state, not a second set
   // of colours that happens to look similar.
   it('takes its on state from the shared chip rule, warning variant included', () => {
