@@ -120,11 +120,13 @@ const COLUMN_TABLE_SIZE: Record<ColumnKey, string> = Object.fromEntries(
  * the name, the chosen columns, then room for the hover actions.
  *
  * The name track outweighs every flexible column beside it, in both halves of
- * its `minmax`: the name is the row's identity, and it also carries the inline
- * Low and Checked-out chips, which take their width before the name gets any.
- * With the full column set the flexible tracks all sit at their minimum
- * anyway — there the floor is the whole answer, and the growth factor decides
- * only what a wider window hands out.
+ * its `minmax`: the name is the row's identity, and it also carries an inline
+ * chip — Low, or Checked out, or the status when that column is off — which
+ * takes its width before the name gets any. At most one of Low and Checked out
+ * draws, so the floor holds a readable name rather than the tail of one; the
+ * table renders that choice. With the full column set the flexible tracks all
+ * sit at their minimum anyway — there the floor is the whole answer, and the
+ * growth factor decides only what a wider window hands out.
  */
 export const NAME_COLUMN_SIZE = 'minmax(220px, 3fr)';
 

@@ -261,8 +261,45 @@ describe('hv-data-table: columns', () => {
     ]);
     expect(q(el, '[data-testid="cell-quantity"]')?.classList.contains('low')).toBe(true);
     expect(q(el, '[data-testid="cell-due_date"]')?.classList.contains('overdue')).toBe(true);
-    expect(el.shadowRoot?.textContent).toContain('Low');
     expect(el.shadowRoot?.textContent).toContain('Checked out');
+  });
+});
+
+// Both chips are unshrinkable, so on a row carrying both they took 138px of the
+// 220px name track and left 82px of name — about eleven characters, measured on
+// a real instance at the table's floor width and again at 390px, where the same
+// cell is pinned. Dropping one is what buys the name back; which one to drop is
+// the choice the phone row already makes on its single line.
+describe('hv-data-table: the name cell picks one chip', () => {
+  const bothWays = { quantity: 1, low_stock_threshold: 5 };
+
+  it('marks a low row that nobody has taken', async () => {
+    const el = await mount([{ id: '1', ...bothWays }]);
+    expect(q(el, '[data-testid="table-low"]')?.textContent?.trim()).toBe('Low');
+  });
+
+  it('stands Low down for Checked out, which is the more interrupting of the two', async () => {
+    const el = await mount([{ id: '1', ...bothWays, checked_out: true }]);
+    expect(q(el, '[data-testid="table-low"]')).toBe(null);
+    expect(q(el, '.name-cell')?.textContent).toContain('Checked out');
+    // The fact is not lost with the chip: the quantity is still drawn as low.
+    expect(q(el, '[data-testid="cell-quantity"]')?.classList.contains('low')).toBe(true);
+  });
+
+  it('leaves the status chip alone — that one can shrink and elide its own label', async () => {
+    const el = await mount([{ id: '1', ...bothWays, checked_out: true, status: 'missing' }], {
+      columns: ['quantity'],
+    });
+    expect(q(el, '[data-testid="table-low"]')).toBe(null);
+    expect(q(el, '[data-testid="table-status"]')?.textContent?.trim()).toBe('Missing');
+    expect(q(el, '.name-cell')?.textContent).toContain('Checked out');
+  });
+
+  it('keeps the name itself the only part of the cell that gives way', () => {
+    const css = tableCss();
+    // The cell shares its shrink rule with the two other pinned cells.
+    expect(css).toMatch(/\.name-cell,[^{]*\{[^}]*min-width: 0/);
+    expect(/\.name \{([^}]*)\}/.exec(css)?.[1]).toContain('text-overflow: ellipsis');
   });
 });
 
