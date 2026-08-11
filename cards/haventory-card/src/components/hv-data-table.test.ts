@@ -55,6 +55,7 @@ describe('hv-data-table: area', () => {
     const el = await mount([{ id: '1' }], { columns: ['location'], areas: AREAS });
     expect(q(el, '[data-testid="cell-location"]')?.textContent?.trim()).toBe('—');
   });
+
 });
 
 describe('hv-data-table: a path too long for its column', () => {
@@ -146,7 +147,7 @@ describe('hv-data-table: a path too long for its column', () => {
 });
 
 describe('hv-data-table: narrow screens', () => {
-  // The template has a hard ~1354px minimum, and a grid whose tracks do not fit
+  // The template has a hard ~1366px minimum, and a grid whose tracks do not fit
   // overflows its box rather than shrinking. With overflow visible the spill
   // was clipped by the shell: rows measured clientWidth 634 / scrollWidth 854
   // at 375px, and three columns could not be reached by any gesture.
@@ -370,11 +371,11 @@ describe('hv-data-table: columns', () => {
   });
 });
 
-// Both chips are unshrinkable, so on a row carrying both they took 138px of the
-// 220px name track and left 82px of name — about eleven characters, measured on
-// a real instance at the table's floor width and again at 390px, where the same
-// cell is pinned. Dropping one is what buys the name back; which one to drop is
-// the choice the phone row already makes on its single line.
+// Both chips are unshrinkable, so on a row carrying both they take 138px of the
+// 250px name track and leave 112px of name — about sixteen characters, measured
+// on a real instance at the table's floor width and again at 390px, where the
+// same cell is pinned. Dropping one is what buys the name back; which one to
+// drop is the choice the phone row already makes on its single line.
 describe('hv-data-table: the name cell picks one chip', () => {
   const bothWays = { quantity: 1, low_stock_threshold: 5 };
 

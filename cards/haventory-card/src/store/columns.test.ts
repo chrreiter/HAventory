@@ -192,20 +192,41 @@ function widthOf(contentWidth: number, key: ColumnKey): number {
   return widths[1 + columns.indexOf(key)];
 }
 
+/** The resolved width of the name column of the default table. */
+function nameWidthOf(contentWidth: number): number {
+  return resolveTracks(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }), contentWidth)[0];
+}
+
+/**
+ * What the sidebar panel at 1920 leaves the table's grid, measured on a real
+ * instance: HA's docked sidebar takes 256px and the full view's locations rail
+ * another 264, which puts the table's box at 1400 and its content box — inside
+ * the row's own 20px padding either side — here.
+ */
+const PANEL_GRID_AT_1920 = 1360;
+
+/**
+ * An ordinary name, in pixels. Measured in the row's own 13.5px/500 text: a
+ * 32-character name draws 223px and a 28-character one 189px, so ~7px a
+ * character, and the ~35 characters an ordinary household item needs come to
+ * about this.
+ */
+const ORDINARY_NAME_WIDTH = 245;
+
 describe('table column widths', () => {
   // Pinned as a number so that adding a column, or widening one, shows up here
   // as a deliberate change rather than as another phone-width overflow.
   it('cannot lay the default table out narrower than a phone', () => {
-    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }))).toBe(1242);
-    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: true }))).toBe(1282);
+    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }))).toBe(1254);
+    expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: true }))).toBe(1294);
   });
 
   it('only fits a phone when almost every column is turned off', () => {
-    // Name (220) + Qty (70) + the actions gutter (140). That overflows a 375px
+    // Name (250) + Qty (70) + the actions gutter (140). That overflows a 375px
     // screen on its own — so trimming columns was never a reliable answer, and
     // it would have discarded a choice the user made. The table scrolls
     // sideways instead, and pins the name column while it does.
-    expect(minWidthOf(tableTemplateFor(['quantity'], { selectable: false }))).toBe(430);
+    expect(minWidthOf(tableTemplateFor(['quantity'], { selectable: false }))).toBe(460);
   });
 
   // With every column on, the flexible tracks all sit at their floor and the
@@ -252,6 +273,28 @@ describe('table column widths', () => {
     expect(widthOf(1560, 'tags')).toBeGreaterThan(widthOf(1560, 'category'));
   });
 
+  // The panel is where the full column set is actually read, and there the
+  // fixed columns take enough that every flexible track sits on its floor —
+  // the growth factors never get a say. So the name's floor is the whole
+  // answer to whether a name ends or elides: at 220 a 32-character one needed
+  // 223px and lost its last three characters to an ellipsis, beside a Due and
+  // an Updated column holding nothing but "—".
+  it('renders an ordinary name whole at the width the sidebar panel gets', () => {
+    expect(nameWidthOf(PANEL_GRID_AT_1920)).toBeGreaterThanOrEqual(ORDINARY_NAME_WIDTH);
+  });
+
+  // The name is fed from Category, the flexible column carrying one word, and
+  // not from the two whose content has no natural end: at the same width they
+  // stay above their floors, so a path still breaks between segments and a tag
+  // set still wraps whole chips.
+  it('leaves Location and Tags growing while the name takes its floor', () => {
+    expect(widthOf(PANEL_GRID_AT_1920, 'location')).toBeGreaterThan(150);
+    expect(widthOf(PANEL_GRID_AT_1920, 'tags')).toBeGreaterThan(150);
+    expect(widthOf(PANEL_GRID_AT_1920, 'category')).toBeLessThan(
+      widthOf(PANEL_GRID_AT_1920, 'location'),
+    );
+  });
+
   // Between the two the name is still served before either of them grows: it
   // reaches its floor while they are still on theirs.
   it('serves the name to its floor before the surplus moves on', () => {
@@ -271,7 +314,7 @@ describe('table column widths', () => {
   it('puts every track on its floor once the table is scrolling', () => {
     const template = tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false });
     const tracks = resolveTracks(template, 1016);
-    expect(tracks).toEqual([220, 70, 112, 110, 140, 130, 100, 124, 96, 140]);
+    expect(tracks).toEqual([250, 70, 112, 92, 140, 130, 100, 124, 96, 140]);
     expect(tracks.reduce((a, b) => a + b, 0)).toBe(minWidthOf(template));
   });
 

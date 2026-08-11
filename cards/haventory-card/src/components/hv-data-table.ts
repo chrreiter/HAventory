@@ -48,7 +48,7 @@ export class HVDataTable extends LitElement {
         /* The one scroll container on this surface, in both axes.
 
            Sideways because the column template has a hard minimum — about
-           1354px for the default set, 1402px with the selection column — and a
+           1366px for the default set, 1414px with the selection column — and a
            grid whose tracks do not fit overflows its own box rather than
            shrinking. With overflow visible that spilled content was simply
            clipped by the shell: at 375px the rows measured clientWidth 634
@@ -163,7 +163,7 @@ export class HVDataTable extends LitElement {
       }
       /*
        * A phone shows about a quarter of this table — the template's floor is
-       * around 1354px — so the identity column holds while the rest scrolls
+       * around 1366px — so the identity column holds while the rest scrolls
        * under it, and the right edge says there is more to reach.
        *
        * The offsets are the row's own metrics, so nothing shifts as the swipe
@@ -559,7 +559,7 @@ export class HVDataTable extends LitElement {
     const statusColumn = columns.includes('status');
     // Low stands down for Checked out in the same cell, the way a phone row's
     // one line already picks the most interrupting thing it has to say: both
-    // chips are unshrinkable, and together they take 138px of a 220px track,
+    // chips are unshrinkable, and together they take 138px of a 250px track,
     // which leaves the name too short to tell two items apart. Who has the item
     // outranks how many are left, and the Qty column still draws a low count in
     // amber.
