@@ -30,6 +30,17 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 3
+    ignore:
+      # Not dependencies to keep current. `requirements-integration.txt` pins the
+      # Home Assistant core to the floor `hacs.json` declares, so the in-process
+      # suite runs the integration *at* the minimum it claims to support rather
+      # than at whatever is newest, and the frontend wheel is whatever that
+      # release's own `frontend` manifest asks for. Two tests hold them there —
+      # tests/test_min_ha_version.py and tests/integration/test_frontend.py — so
+      # a bump arrives as a red pull request that reopens every week. Both move
+      # together, by hand, when the declared floor moves.
+      - dependency-name: "homeassistant"
+      - dependency-name: "home-assistant-frontend"
     groups:
       python-dev:
         patterns: ["*"]
