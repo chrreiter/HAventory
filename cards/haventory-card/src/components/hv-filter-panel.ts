@@ -439,8 +439,11 @@ export class HVFilterPanel extends LitElement {
     onToggle: () => void,
     opts: { warning?: boolean; tally?: number | null; testid?: string } = {},
   ) {
+    // The hue is the applied state, never the facet: a chip tinted at rest reads
+    // as already on, which is what the identical desktop chip avoids by pairing
+    // `warning` with `on`.
     return html`<button
-      class="hv-chip toggle chip check ${on ? 'on' : ''} ${opts.warning ? 'warning' : ''}"
+      class="hv-chip toggle chip check ${on ? 'on' : ''} ${on && opts.warning ? 'warning' : ''}"
       aria-pressed=${String(on)}
       data-testid=${opts.testid ?? 'filter-check'}
       @click=${onToggle}

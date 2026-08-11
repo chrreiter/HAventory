@@ -71,9 +71,6 @@ export class HVLocationTree extends LitElement {
            and a button may not contain a button. */
         cursor: pointer;
       }
-      .row.orphans {
-        color: var(--hv-warn);
-      }
       .row[disabled] {
         opacity: 0.4;
         cursor: default;
@@ -784,7 +781,7 @@ export class HVLocationTree extends LitElement {
                 @click=${() => this._emit('select-orphans', {})}
               >
                 <span class="twisty hv-browse-row-lead placeholder">${icon('chevronRight', 17)}</span>
-                ${icon('alert', 18)}
+                ${icon('mapMarkerOff', 18)}
                 <span class="name hv-browse-row-label">No location</span>
                 ${this.showCounts && this.orphanCount !== null
                   ? this._pairedCount(this.orphanCount, this._matchingOrphanCount)

@@ -1789,7 +1789,14 @@ export class HVFullView extends LitElement {
             </button>`
           : null}
         <span class="spacer"></span>
-        <button class="ghost plain" data-testid="selection-clear" @click=${() => this.store?.clearSelection()}>
+        <!-- Selection mode opens at zero, so the bar's one action starts with
+             nothing to act on; live rather than greyed it offers a no-op. -->
+        <button
+          class="ghost plain"
+          data-testid="selection-clear"
+          ?disabled=${selected === 0}
+          @click=${() => this.store?.clearSelection()}
+        >
           Clear selection
         </button>
       </div>
