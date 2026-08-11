@@ -313,7 +313,7 @@ offline stubs, so the two modes never collide; the offline run never collects
 Store persistence round-trip, and `haventory/areas/list` against the real area registry.
 
 > Restricted-egress environments (e.g. sandboxes that can't fetch Python 3.14 or the HA
-> core) can't run this mode — CI provisions 3.14 and runs it in its own job.
+> core) can't run this mode — CI provisions Python 3.14 and runs it in its own job.
 
 #### Online smoke tests (opt-in)
 
