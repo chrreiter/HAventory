@@ -1592,6 +1592,7 @@ export class HVItemEditor extends LitElement {
           data-testid="editor-category"
           role="combobox"
           autocomplete="off"
+          placeholder="No category"
           aria-autocomplete="list"
           aria-expanded=${String(this._categoryOpen)}
           aria-controls=${CATEGORY_LIST_ID}

@@ -584,6 +584,18 @@ describe('hv-item-editor: saving', () => {
 });
 
 describe('hv-item-editor: location and tags', () => {
+  // Location renders a pin and "No location" when nothing is set; Category beside
+  // it drew an empty box with a bare chevron, which reads as broken rendering
+  // rather than as nothing selected — loudest on the phone add-sheet.
+  it('names the empty category the way the location field names an empty location', async () => {
+    const el = await mount(makeItem({ id: '1', category: '' }));
+    const category = q(el, '[data-testid="editor-category"]') as HTMLInputElement;
+
+    expect(category.value).toBe('');
+    expect(category.placeholder).toBe('No category');
+    expect(q(el, '[data-testid="editor-location"]')?.textContent).toContain('No location');
+  });
+
   it('picks a location from a tree inside the form, never a second dialog', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
     const saves = onSave(el);
