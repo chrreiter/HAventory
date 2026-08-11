@@ -76,6 +76,46 @@ describe('hv-detail-sheet: area', () => {
     expect(crumb?.textContent?.trim()).toBe('No location');
     expect(crumb?.querySelector('.hv-area-chip')).toBe(null);
   });
+
+  // Naming a root location after the room it stands in is the ordinary thing to
+  // do, and it put "Kitchen Kitchen" on the crumb. The card's rows and the
+  // table's Location cell answer this the same way; the crumb is a clipped
+  // one-line chip like both of them, and the pairing it drops stays readable in
+  // full in its title.
+  const KITCHEN = [{ id: 'area-kitchen', name: 'Kitchen' }];
+  const rooted = (display_path: string) => ({
+    id_path: [],
+    name_path: [],
+    display_path,
+    sort_key: '',
+  });
+
+  it('drops the area mark when the path already opens with that name', async () => {
+    for (const path of ['Kitchen', 'Kitchen / Pantry']) {
+      const el = await mount(
+        { effective_area_id: 'area-kitchen', location_path: rooted(path) },
+        { areas: KITCHEN },
+      );
+      const crumb = q(el, '[data-testid="sheet-path"]');
+
+      expect(crumb?.querySelector('[data-testid="area-chip"]'), path).toBe(null);
+      expect(crumb?.textContent?.replace(/\s+/g, ' ').trim(), path).toBe(path.replace(' / ', ' › '));
+      expect(crumb?.getAttribute('title'), path).toBe(`Area: Kitchen · ${path.replace(' / ', ' › ')}`);
+      el.remove();
+    }
+  });
+
+  // A segment deeper down that happens to share the area's name is a different
+  // place inside it, so the mark still has something to say.
+  it('keeps the mark when the area only reappears further down the path', async () => {
+    const el = await mount(
+      { effective_area_id: 'area-kitchen', location_path: rooted('Cellar / Kitchen') },
+      { areas: KITCHEN },
+    );
+    const crumb = q(el, '[data-testid="sheet-path"]');
+    expect(crumb?.querySelector('.hv-area-chip')?.textContent).toContain('Kitchen');
+    expect(crumb?.textContent).toContain('Cellar › Kitchen');
+  });
 });
 
 describe('hv-detail-sheet: read view', () => {

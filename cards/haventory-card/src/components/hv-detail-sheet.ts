@@ -8,7 +8,7 @@ import { customFieldLabel } from '../ui/field-label';
 import { inferType } from '../ui/item-form';
 import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
 import { isLowStock } from './hv-list-row';
-import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
+import { areaMarkName, itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import {
   MediaUrls,
   attachmentNameToken,
@@ -629,7 +629,7 @@ export class HVDetailSheet extends LitElement {
           ${icon('close', 22)}
         </button>
         <span class="crumb hv-chip-line" data-testid="sheet-path" title=${pathTitle(parts)}
-          >${renderAreaChip(parts.areaName)}<span class="hv-chip-line-text"
+          >${renderAreaChip(areaMarkName(parts.areaName, parts.path))}<span class="hv-chip-line-text"
             >${parts.path || 'No location'}</span
           ></span
         >
