@@ -239,6 +239,36 @@ describe('hv-card-shell: overflow menu', () => {
     expect(metaOf('organize')).toBe('Locations · Tags · Categories · Statuses');
   });
 
+  // The segment lists above were capitalized while the Data entries stayed
+  // sentence-style — "All 31 items · all locations" under "Items · Locations ·
+  // Stats" — which is two conventions in the same menu. One rule now covers
+  // every hint line the menu draws, `meta` and `sub` alike.
+  it('opens every segment of every hint line with a capital', async () => {
+    const { el, store, sr } = await mountShell({
+      items: [makeItem({ id: '1', category: 'Tools' })],
+    });
+    // A filter is what brings "Export current view" out, so both Data lines
+    // are on screen to be checked together.
+    store.setFilters({ category: 'Tools' });
+    await settle(el);
+    const menu = sr.querySelector('[data-testid="card-overflow"]') as HTMLElement;
+    (menu.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const lines = [...(menu.shadowRoot?.querySelectorAll('.meta, .sub') ?? [])].map((n) =>
+      (n.textContent ?? '').trim(),
+    );
+    expect(lines).toContain('All 1 item · All locations');
+    expect(lines).toContain('1 filtered item · Keeps location paths');
+    for (const line of lines) {
+      for (const segment of line.split('·')) {
+        // A count opens a line as a numeral, which is the same sentence-free
+        // shape as a capital and reads as one beside it.
+        expect(segment.trim(), line).toMatch(/^[\p{Lu}\d]/u);
+      }
+    }
+  });
+
   // Column choices only drive the full view's table — the card list draws a
   // fixed compact row — so the entry belongs where it does something.
   it('offers Columns in the full view but not on the card itself', async () => {

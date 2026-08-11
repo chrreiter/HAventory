@@ -55,6 +55,51 @@ describe('hv-data-table: area', () => {
     const el = await mount([{ id: '1' }], { columns: ['location'], areas: AREAS });
     expect(q(el, '[data-testid="cell-location"]')?.textContent?.trim()).toBe('—');
   });
+
+  // An area "Kitchen" over a root location "Kitchen" — the way a household
+  // names both — put the same word twice in the cell, "Kitchen Kitchen", where
+  // the card's own rows had already stopped doing it. One rule, both surfaces.
+  it('drops the area mark when the path already opens with that name', async () => {
+    const rooted = (display_path: string) => ({
+      id_path: [],
+      name_path: [],
+      display_path,
+      sort_key: '',
+    });
+    for (const path of ['Kitchen', 'Kitchen / Pantry']) {
+      const el = await mount(
+        [{ id: '1', effective_area_id: 'area-kitchen', location_path: rooted(path) }],
+        { columns: ['location'], areas: AREAS },
+      );
+      const cell = q(el, '[data-testid="cell-location"]');
+
+      expect(cell?.querySelector('[data-testid="area-chip"]'), path).toBe(null);
+      expect(cell?.textContent?.replace(/\s+/g, ' ').trim(), path).toBe(path.replace(' / ', ' › '));
+      // The pairing is still readable in full where the cell keeps it.
+      expect(cell?.getAttribute('title'), path).toBe(
+        `Area: Kitchen · ${path.replace(' / ', ' › ')}`,
+      );
+      el.remove();
+    }
+  });
+
+  // A deeper segment of the same name is a different place inside the area, so
+  // the mark still has something to say.
+  it('keeps the mark when the area only reappears further down the path', async () => {
+    const el = await mount(
+      [
+        {
+          id: '1',
+          effective_area_id: 'area-kitchen',
+          location_path: { id_path: [], name_path: [], display_path: 'Cellar / Kitchen', sort_key: '' },
+        },
+      ],
+      { columns: ['location'], areas: AREAS },
+    );
+    expect(
+      q(el, '[data-testid="cell-location"]')?.querySelector('.hv-area-chip')?.textContent,
+    ).toContain('Kitchen');
+  });
 });
 
 describe('hv-data-table: a path too long for its column', () => {
@@ -146,7 +191,7 @@ describe('hv-data-table: a path too long for its column', () => {
 });
 
 describe('hv-data-table: narrow screens', () => {
-  // The template has a hard ~1354px minimum, and a grid whose tracks do not fit
+  // The template has a hard ~1366px minimum, and a grid whose tracks do not fit
   // overflows its box rather than shrinking. With overflow visible the spill
   // was clipped by the shell: rows measured clientWidth 634 / scrollWidth 854
   // at 375px, and three columns could not be reached by any gesture.
@@ -370,11 +415,11 @@ describe('hv-data-table: columns', () => {
   });
 });
 
-// Both chips are unshrinkable, so on a row carrying both they took 138px of the
-// 220px name track and left 82px of name — about eleven characters, measured on
-// a real instance at the table's floor width and again at 390px, where the same
-// cell is pinned. Dropping one is what buys the name back; which one to drop is
-// the choice the phone row already makes on its single line.
+// Both chips are unshrinkable, so on a row carrying both they take 138px of the
+// 250px name track and leave 112px of name — about sixteen characters, measured
+// on a real instance at the table's floor width and again at 390px, where the
+// same cell is pinned. Dropping one is what buys the name back; which one to
+// drop is the choice the phone row already makes on its single line.
 describe('hv-data-table: the name cell picks one chip', () => {
   const bothWays = { quantity: 1, low_stock_threshold: 5 };
 

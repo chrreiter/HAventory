@@ -206,6 +206,11 @@ export class HostSurfaces {
   /**
    * The full view's ⋮ menu. Both hosts serve this same list, so the card's
    * expanded view and the sidebar panel cannot drift apart on what it offers.
+   *
+   * Every hint line under an entry — `meta` and `sub` alike — is a list of
+   * `·`-separated segments, and each segment opens with a capital. A line that
+   * reads as a sentence beside one that reads as a list makes the two look like
+   * different kinds of thing when they are the same kind.
    */
   menuEntries(): OverflowMenuEntry[] {
     const st = this.getStore()?.state.value ?? null;
@@ -231,7 +236,7 @@ export class HostSurfaces {
         id: 'export-all',
         label: 'Export backup',
         glyph: 'download',
-        sub: total === null ? 'Everything' : `All ${counted(total, 'item')} · all locations`,
+        sub: total === null ? 'Everything' : `All ${counted(total, 'item')} · All locations`,
       },
       // Only while a filter is on. Unfiltered, "the current view" is the whole
       // inventory that Export backup above already offers, and the entry could
@@ -244,8 +249,8 @@ export class HostSurfaces {
               glyph: 'download' as const,
               sub:
                 filtered === null
-                  ? 'Active filter · keeps location paths'
-                  : `${filtered} filtered ${plural(filtered, 'item')} · keeps location paths`,
+                  ? 'Active filter · Keeps location paths'
+                  : `${filtered} filtered ${plural(filtered, 'item')} · Keeps location paths`,
             },
           ]
         : []),

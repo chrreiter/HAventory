@@ -1,5 +1,6 @@
 import { render } from 'lit';
 import {
+  areaMarkName,
   itemPathParts,
   locationLabel,
   locationPathParts,
@@ -111,6 +112,33 @@ describe('pathTitle', () => {
 
   it('is empty when there is neither', () => {
     expect(pathTitle({ areaName: null, path: '' })).toBe('');
+  });
+});
+
+describe('areaMarkName', () => {
+  it('keeps an area the path does not already name', () => {
+    expect(areaMarkName('Garage', 'Workshop › Drawer A')).toBe('Garage');
+  });
+
+  it('drops an area the path opens with', () => {
+    expect(areaMarkName('Küche', 'Küche')).toBe(null);
+    expect(areaMarkName('Küche', 'Küche › Oberstes Fach')).toBe(null);
+  });
+
+  // Only the first segment counts: a deeper segment of the same name is a
+  // different place inside the area, and the mark still says which area.
+  it('only compares the first segment', () => {
+    expect(areaMarkName('Küche', 'Keller › Küche')).toBe('Küche');
+  });
+
+  it('has nothing to drop when there is no area', () => {
+    expect(areaMarkName(null, 'Küche')).toBe(null);
+  });
+
+  // The rule reads the path as the surfaces write it, so it has to split on the
+  // separator `prettyPath` produces rather than on the stored one.
+  it('compares against the path as it is written for display', () => {
+    expect(areaMarkName('Küche', prettyPath('Küche / Oberstes Fach'))).toBe(null);
   });
 });
 

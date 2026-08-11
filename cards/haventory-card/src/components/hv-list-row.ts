@@ -2,7 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
-import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
+import { areaMarkName, itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue } from '../ui/relative-time';
 import { itemStatus, renderStatusChip, statusLabel } from '../ui/status';
@@ -65,21 +65,6 @@ export function elidePath(path: string, maxSegments = 2): string {
   const segments = path.split(' › ');
   if (segments.length <= maxSegments) return path;
   return `${segments[0]} › … › ${segments[segments.length - 1]}`;
-}
-
-/**
- * The area worth marking beside a path, or nothing.
- *
- * Naming a root location after the area it stands in is the most natural thing
- * a household does — an area "Kitchen" holding a location "Kitchen" — and the
- * row then prints the same word twice in a row with only a separator between
- * them. When the path's first segment already is the area, the path has said
- * it, and the mark is dropped. The full pairing survives in the row's `title`,
- * which is where the unelided truth lives either way.
- */
-export function areaMarkName(areaName: string | null, path: string): string | null {
-  if (!areaName) return null;
-  return path.split(' › ')[0].trim() === areaName.trim() ? null : areaName;
 }
 
 /**

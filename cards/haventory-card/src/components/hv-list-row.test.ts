@@ -1,7 +1,7 @@
 import './hv-list-row';
 import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
-import { areaMarkName, elideMobilePath, elidePath, isLowStock, rowMenuEntries } from './hv-list-row';
+import { elideMobilePath, elidePath, isLowStock, rowMenuEntries } from './hv-list-row';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVListRow } from './hv-list-row';
 import type { Item } from '../store/types';
@@ -31,27 +31,6 @@ describe('isLowStock', () => {
   it('is low at or below the threshold', () => {
     expect(isLowStock(makeItem({ quantity: 3, low_stock_threshold: 3 }))).toBe(true);
     expect(isLowStock(makeItem({ quantity: 4, low_stock_threshold: 3 }))).toBe(false);
-  });
-});
-
-describe('areaMarkName', () => {
-  it('keeps an area the path does not already name', () => {
-    expect(areaMarkName('Garage', 'Workshop › Drawer A')).toBe('Garage');
-  });
-
-  it('drops an area the path opens with', () => {
-    expect(areaMarkName('Küche', 'Küche')).toBe(null);
-    expect(areaMarkName('Küche', 'Küche › Oberstes Fach')).toBe(null);
-  });
-
-  // Only the first segment counts: a deeper segment of the same name is a
-  // different place inside the area, and the mark still says which area.
-  it('only compares the first segment', () => {
-    expect(areaMarkName('Küche', 'Keller › Küche')).toBe('Küche');
-  });
-
-  it('has nothing to drop when there is no area', () => {
-    expect(areaMarkName(null, 'Küche')).toBe(null);
   });
 });
 
