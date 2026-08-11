@@ -960,6 +960,40 @@ describe('hv-full-view: context bar and table', () => {
     expect(crumb?.textContent?.replace(/\s+/g, ' ')).toContain('garage › Shelf A');
   });
 
+  // Browsing into a root named after its own room used to write the room twice:
+  // "Kitchen  Kitchen › Pantry". The crumb elides like every other surface that
+  // marks an area, and the pairing stays in the title.
+  it('drops the area mark when the crumb already opens with the area name', async () => {
+    const kitchen = { ...loc('kitchen', 'Kitchen'), area_id: 'area-kitchen' };
+    const pantry: Location = {
+      ...loc('pantry', 'Pantry', 'kitchen'),
+      path: {
+        id_path: ['kitchen', 'pantry'],
+        name_path: ['Kitchen', 'Pantry'],
+        display_path: 'Kitchen / Pantry',
+        sort_key: '',
+      },
+    };
+    for (const [id, path] of [
+      ['kitchen', 'Kitchen'],
+      ['pantry', 'Kitchen › Pantry'],
+    ]) {
+      const { el, store, sr } = await mount({
+        items: [makeItem({ id: '1', location_id: id })],
+        locations: [kitchen, pantry],
+        areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
+      });
+      store.setFilters({ locationId: id });
+      await settle(el);
+
+      const crumb = q(sr, '[data-testid="full-breadcrumb"]');
+      expect(crumb?.querySelector('.hv-area-chip'), path).toBe(null);
+      expect(crumb?.textContent?.replace(/\s+/g, ' ').trim(), path).toContain(path);
+      expect(crumb?.getAttribute('title'), path).toBe(`Area: Kitchen · ${path}`);
+      el.remove();
+    }
+  });
+
   it('leaves the crumb of an arealess tree exactly as it was', async () => {
     const locations = [loc('garage', 'Garage'), loc('shelf-a', 'Shelf A', 'garage')];
     const { el, store, sr } = await mount({

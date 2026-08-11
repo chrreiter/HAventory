@@ -13,8 +13,13 @@ import { activeFilterCount, defaultFilters } from '../store/store';
 import { countLocations } from '../store/location-tree';
 import { emptyKindFor, renderEmptyState } from '../ui/empty-state';
 import { deepFocusables } from '../ui/dialog-focus';
-import { areaNameById, effectiveAreaIdForLocation } from '../ui/area';
-import { renderAreaChip } from '../ui/location-path';
+import {
+  PATH_SEPARATOR,
+  areaMarkName,
+  locationPathParts,
+  pathTitle,
+  renderAreaChip,
+} from '../ui/location-path';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import { quickFilterAllowed } from '../ui/quick-filters';
 import type { QuickFilterKey } from '../ui/quick-filters';
@@ -1651,19 +1656,20 @@ export class HVFullView extends LitElement {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
     const locations = st?.locationsFlatCache ?? [];
-    const loc = locations.find((l) => l.id === filters.locationId);
-    const segments = loc ? (loc.path?.display_path ?? loc.name).split('/').map((s) => s.trim()) : [];
-    // The crumb prints each path segment as its own span, so the area needs the
-    // chip to stay out of that sequence rather than reading as a first segment.
-    const areaName = loc
-      ? areaNameById(st?.areasCache?.areas ?? [], effectiveAreaIdForLocation(locations, loc.id))
-      : null;
+    // "Items with no location" is its own answer to where the table is pointed,
+    // so the crumb says that instead of a path and there is none to mark.
+    const loc = filters.orphansOnly ? undefined : locations.find((l) => l.id === filters.locationId);
+    const parts = locationPathParts(loc, locations, st?.areasCache?.areas ?? [], '');
+    const segments = parts.path ? parts.path.split(PATH_SEPARATOR) : [];
     const filterCount = activeFilterCount(filters);
 
     return html`
       <div class="context">
-        <span class="crumb hv-chip-line" data-testid="full-breadcrumb">
-          ${filters.orphansOnly || !segments.length ? null : renderAreaChip(areaName)}
+        <!-- The chip sits on the row rather than inside the text, because the
+             text below prints one span per path segment and an area folded into
+             that sequence would read as the path's first segment. -->
+        <span class="crumb hv-chip-line" data-testid="full-breadcrumb" title=${pathTitle(parts)}>
+          ${renderAreaChip(areaMarkName(parts.areaName, parts.path))}
           <span class="hv-chip-line-text">
             ${filters.orphansOnly
               ? html`<span class="current">No location</span>`

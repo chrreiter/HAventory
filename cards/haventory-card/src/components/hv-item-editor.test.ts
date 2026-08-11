@@ -677,6 +677,54 @@ describe('hv-item-editor: location and tags', () => {
     expect(field?.querySelector('.value')?.textContent).toBe('Garage');
   });
 
+  // Naming a root after the room it stands in is the ordinary thing a household
+  // does, and the field then printed the same word twice with a chip's edge
+  // between them. Same rule as the rows, the table cell and the sheet's crumb —
+  // the picker elides too, and the pairing survives in the button's title.
+  it('drops the area mark when the chosen path already opens with that name', async () => {
+    const kitchen = { id: 'kitchen', name: 'Kitchen', parent_id: null, area_id: 'area-kitchen' };
+    for (const path of ['Kitchen', 'Kitchen / Pantry']) {
+      const el = await mount(makeItem({ id: '1', name: 'A', location_id: 'kitchen' }), {
+        locations: [
+          {
+            ...kitchen,
+            path: { id_path: ['kitchen'], name_path: [], display_path: path, sort_key: '' },
+          },
+        ],
+        areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
+      });
+      const field = q(el, '[data-testid="editor-location"]');
+      const pretty = path.replace(' / ', ' › ');
+      expect(field?.querySelector('.hv-area-chip'), path).toBe(null);
+      expect(field?.querySelector('.value')?.textContent, path).toBe(pretty);
+      expect(field?.getAttribute('title'), path).toBe(`Area: Kitchen · ${pretty}`);
+      el.remove();
+    }
+  });
+
+  it('keeps the mark when the area only reappears further down the path', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A', location_id: 'kitchen' }), {
+      locations: [
+        {
+          id: 'kitchen',
+          name: 'Kitchen',
+          parent_id: null,
+          area_id: 'area-kitchen',
+          path: {
+            id_path: ['kitchen'],
+            name_path: [],
+            display_path: 'Cellar / Kitchen',
+            sort_key: '',
+          },
+        },
+      ],
+      areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
+    });
+    const field = q(el, '[data-testid="editor-location"]');
+    expect(field?.querySelector('.hv-area-chip')?.textContent).toContain('Kitchen');
+    expect(field?.querySelector('.value')?.textContent).toBe('Cellar › Kitchen');
+  });
+
   it('shows no area chip for a location in no area', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A', location_id: 'garage' }), {
       areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
