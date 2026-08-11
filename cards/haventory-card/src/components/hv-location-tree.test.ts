@@ -152,6 +152,23 @@ describe('hv-location-tree: counts and decorations', () => {
     expect(q(el, '[data-testid="tree-orphans"]')?.textContent).toContain('3');
   });
 
+  // An unfiled item is an ordinary state for a household inventory, not a fault
+  // to alert on — and the row sat in amber under a warning triangle.
+  it('marks No location with a crossed-out pin, in the ink every other row uses', async () => {
+    const el = await mount({ showAll: true, showOrphans: true, orphanCount: 3 });
+    const row = q(el, '[data-testid="tree-orphans"]') as HTMLElement;
+
+    expect(row.querySelector('svg[data-icon="mapMarkerOff"]')).toBeTruthy();
+    expect(row.querySelector('svg[data-icon="alert"]')).toBe(null);
+
+    const styles = (customElements.get('hv-location-tree') as typeof HVLocationTree).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+    expect(css).not.toMatch(/\.row\.orphans \{[^}]*hv-warn/);
+  });
+
   // The row clears the location either way, but a picker is assigning one, not
   // browsing: "All items" there read as a set of items and delivered an empty
   // location field.
