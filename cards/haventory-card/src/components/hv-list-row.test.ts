@@ -1,7 +1,7 @@
 import './hv-list-row';
 import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
-import { elidePath, isLowStock } from './hv-list-row';
+import { elideMobilePath, elidePath, isLowStock } from './hv-list-row';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVListRow } from './hv-list-row';
 import type { Item } from '../store/types';
@@ -58,6 +58,40 @@ describe('elidePath', () => {
 
   it('handles an item with no location at all', () => {
     expect(elidePath('')).toBe('');
+  });
+});
+
+describe('elideMobilePath', () => {
+  // The area still has to travel through the elision as the leading segment, or
+  // a deep path would drop it; what comes back is the same line with the area
+  // separated out for the row to mark instead of punctuate.
+  it('keeps the room and the bin, and hands the room back on its own', () => {
+    expect(elideMobilePath('Garage', 'Workshop › Parts Cabinet › Drawer A › Small Bin')).toEqual({
+      area: 'Garage',
+      rest: '… › Small Bin',
+    });
+  });
+
+  it('leaves a path that fits alone, area and all', () => {
+    expect(elideMobilePath('Garage', 'Shelf A')).toEqual({ area: 'Garage', rest: 'Shelf A' });
+  });
+
+  it('gives back exactly what elidePath does when there is no area', () => {
+    const path = 'Workshop › Parts Cabinet › Drawer A › Small Bin';
+    expect(elideMobilePath(null, path)).toEqual({ area: null, rest: elidePath(path) });
+  });
+
+  // An area name carrying the separator lands as two segments, so the elided
+  // string no longer starts with it and there is nothing safe to mark. The line
+  // then reads as it always did — the wrong words marked would be worse.
+  it('marks nothing when the area name is itself split by the separator', () => {
+    const result = elideMobilePath('Kitchen › Pantry', 'Shelf A › Box 2');
+    expect(result.area).toBe(null);
+    expect(result.rest).toBe(elidePath('Kitchen › Pantry › Shelf A › Box 2'));
+  });
+
+  it('marks an area that has no path under it', () => {
+    expect(elideMobilePath('Garage', '')).toEqual({ area: 'Garage', rest: '' });
   });
 });
 
@@ -297,16 +331,70 @@ describe('hv-list-row: mobile affordances', () => {
     );
   });
 
-  it('spends the phone row on the room, which the elision keeps', async () => {
+  it('spends the phone row on the room, and marks it as a room', async () => {
     // No chip fits this line, so the area goes in as the leading segment — the
-    // half elidePath keeps.
+    // half elidePath keeps — with the home mark saying it is Home Assistant's
+    // area rather than the top of our own tree.
     const el = await mount(
       { category: null, effective_area_id: 'area-workshop', location_path: deepPath },
       { mobile: true, areas: [{ id: 'area-workshop', name: 'Garage' }] },
     );
     const secondary = q(el, '[data-testid="row-secondary"]');
-    expect(secondary?.textContent).toContain('Garage › … › Small Bin');
+    const mark = secondary?.querySelector('[data-testid="row-area-mark"]');
+    expect(mark?.textContent).toContain('Garage');
+    expect(mark?.querySelector('svg')).toBeTruthy();
+    expect(secondary?.textContent).toContain('… › Small Bin');
+    // The mark is the separator now.
+    expect(secondary?.textContent).not.toContain('Garage › ');
+    // Still the phone line, not the chip the desktop row gets.
     expect(secondary?.querySelector('.hv-area-chip')).toBe(null);
+  });
+
+  it('renders no mark at all on a phone row with no area', async () => {
+    const el = await mount({ category: null, location_path: deepPath }, { mobile: true });
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(secondary?.querySelector('[data-testid="row-area-mark"]')).toBe(null);
+    expect(secondary?.textContent?.trim()).toBe('Workshop › … › Small Bin');
+  });
+
+  it('puts the mark after the status a flagged phone row leads with', async () => {
+    const el = await mount(
+      {
+        category: null,
+        status: 'needs_repair',
+        effective_area_id: 'area-workshop',
+        location_path: deepPath,
+      },
+      { mobile: true, areas: [{ id: 'area-workshop', name: 'Garage' }] },
+    );
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(secondary?.textContent).toContain('Needs repair');
+    expect(secondary?.querySelector('[data-testid="row-area-mark"]')?.textContent).toContain(
+      'Garage',
+    );
+    expect(secondary?.textContent).toContain('… › Small Bin');
+  });
+
+  it('still says "No location" when there is neither a path nor a category', async () => {
+    const el = await mount({ category: null, location_path: undefined }, { mobile: true });
+    expect(q(el, '[data-testid="row-secondary"]')?.textContent?.trim()).toBe('No location');
+  });
+
+  // The mark is decorative, so the word has to be there for a reader who cannot
+  // see it — and the row's own title already spells the area out, which is the
+  // one place it must not be doubled.
+  it('names the area for a screen reader without repeating it in the title', async () => {
+    const el = await mount(
+      { category: null, effective_area_id: 'area-workshop', location_path: deepPath },
+      { mobile: true, areas: [{ id: 'area-workshop', name: 'Garage' }] },
+    );
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(
+      secondary?.querySelector('[data-testid="row-area-mark"] .hv-sr-only')?.textContent,
+    ).toBe('Area: ');
+    expect(secondary?.getAttribute('title')).toBe(
+      'Area: Garage · Workshop › Parts Cabinet › Drawer A › Small Bin',
+    );
   });
 
   it('leaves a checked-out phone row saying what it always said', async () => {

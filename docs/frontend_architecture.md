@@ -233,8 +233,8 @@ on the wire; no command changed.
 `ui/location-path.ts` composes the result. `itemPathParts` and `locationPathParts` split
 "where" into `{ areaName, path }`, `pathTitle` writes both as one string
 (`Area: Kitchen · Garage › Shelf A`) for a `title` attribute, and `renderAreaChip` is the
-single visual treatment — a home glyph and the name, styled by `.hv-area-chip` in `tokens`'
-`base` so every shadow root draws it identically. That chip is how an area is told apart
+single visual treatment — a home glyph and the name, styled by `.hv-area-chip` in the `chip`
+fragment (`ui/chip.ts`) so every shadow root draws it identically. That chip is how an area is told apart
 from a path segment: an area is never printed as one. It renders nothing when there is no
 area, so callers embed it unguarded and a location outside every area reads exactly as it
 did before areas were shown at all.
@@ -244,7 +244,12 @@ Two surfaces spell the area out in words instead — `hv-filter-chips`' location
 within a chip is noise, so they print `pathTitle`'s text form, which is also the wording
 the area *filter*'s own chip has always used. `hv-list-row` does the same on a phone for a
 different reason: with no room for a chip the area goes in as the leading text segment,
-where `elidePath` keeps it.
+where `elidePath` keeps it. It is still marked as an area there — `elideMobilePath` composes
+and elides the line exactly as it is shown and then takes the leading segment back off, so
+the row can put the chip's own home glyph in front of it and drop the `›` that followed. The
+mark is the separator, and it costs the line about what that separator cost. An area name
+that itself contains ` › ` splits into two segments and comes back unmarked, which reads as
+the line always did rather than marking the wrong words.
 
 Threading is by property, outward from the two containers that hold `areasCache`.
 `hv-card-shell` and `hv-full-view` pass `.areas` to `hv-list` (which forwards to
