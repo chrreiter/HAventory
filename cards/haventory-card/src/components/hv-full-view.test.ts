@@ -221,6 +221,25 @@ describe('hv-full-view: phone-width app bar', () => {
     const loadAll = q(sr, '[data-testid="selection-load-all"]');
     expect(loadAll?.classList.contains('load-all')).toBe(true);
   });
+
+  // Selection mode opens at "0 selected", where the bar's one action had nothing
+  // to act on and still rendered live.
+  it('greys Clear selection out until something is selected', async () => {
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1' }), makeItem({ id: '2' })] });
+    el.startSelecting = true;
+    el.open = false;
+    await el.updateComplete;
+    el.open = true;
+    await settle(el);
+
+    const clear = () => q(sr, '[data-testid="selection-clear"]') as HTMLButtonElement;
+    expect(q(sr, '[data-testid="selection-count"]')?.textContent).toContain('0 selected');
+    expect(clear().disabled).toBe(true);
+
+    store.toggleSelected('1');
+    await settle(el);
+    expect(clear().disabled).toBe(false);
+  });
 });
 
 // The search is the only item on the bar that can shrink — every pill, the
