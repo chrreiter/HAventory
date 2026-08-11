@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.2](https://github.com/chrreiter/HAventory/compare/v0.4.1...v0.4.2) (2026-08-11)
+
+
+### Bug Fixes
+
+* **card:** the ⋮ menu is placed against the viewport, out of every scroller's clip ([#395](https://github.com/chrreiter/HAventory/issues/395)) ([f780127](https://github.com/chrreiter/HAventory/commit/f78012762bc91c0f9ab05ed104fa17e24f591975)), closes [#389](https://github.com/chrreiter/HAventory/issues/389)
+* **card:** v0.4.2 table and overflow-menu residuals from the v0.4.1 pass ([#400](https://github.com/chrreiter/HAventory/issues/400)) ([1e382d9](https://github.com/chrreiter/HAventory/commit/1e382d9dde14f1d12bd18f24b8e01fa20d815259)), closes [#399](https://github.com/chrreiter/HAventory/issues/399)
+
 ## [0.4.1](https://github.com/chrreiter/HAventory/compare/v0.4.0...v0.4.1) (2026-08-11)
 
 
