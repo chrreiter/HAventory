@@ -311,6 +311,12 @@ export class HVDetailSheet extends LitElement {
         margin: 0;
         padding: 0;
         display: grid;
+        /* One track the width of the list, not the width of its widest row. An
+           implicit track sizes itself from the rows, and a row's tail — the
+           Open link and the "File missing" chip — cannot shrink, so the track
+           runs past the list and the hidden overflow below cuts off exactly the
+           two elements the row exists to offer. */
+        grid-template-columns: minmax(0, 1fr);
         gap: 1px;
         background: var(--hv-row-divider);
         border-radius: 10px;
@@ -320,6 +326,9 @@ export class HVDetailSheet extends LitElement {
         display: flex;
         align-items: center;
         gap: 10px;
+        /* A grid item's automatic minimum is its own content, which would put
+           the row straight back outside the track above. */
+        min-width: 0;
         min-height: 52px;
         padding: 8px 12px;
         background: var(--hv-surface);
