@@ -75,11 +75,10 @@ export class HAventoryCard extends LitElement {
    * Sections-view sizing. `getCardSize` above still answers the masonry view,
    * which knows nothing about columns.
    *
-   * Full section width, and tall enough that the ⋮ menu opens inside the card:
-   * `hv-card-shell` reserves 470px for it above 601px, and a card shorter than
-   * that clips the menu's last entries. The minimums are what keep the card
-   * usable when a dashboard hand-shrinks it — below them the list has room for
-   * no rows at all.
+   * Full section width, and enough rows that the list opens with room for
+   * content rather than a sliver. The minimums are what keep the card usable
+   * when a dashboard hand-shrinks it — below them the list has room for no
+   * rows at all.
    */
   public getGridOptions(): {
     columns: number;
