@@ -2,7 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
-import { locationPathParts, renderAreaChip } from '../ui/location-path';
+import { areaMarkName, locationPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import {
   DEFAULT_CUSTOM_DAYS,
@@ -1404,13 +1404,16 @@ export class HVItemEditor extends LitElement {
       <button
         class="field-button ${this._model.locationId ? '' : 'empty'}"
         data-testid="editor-location"
+        title=${pathTitle(parts)}
         aria-expanded=${String(this._locationOpen)}
         aria-controls=${LOCATION_TREE_ID}
         @click=${() => {
           this._locationOpen = !this._locationOpen;
         }}
       >
-        ${icon('mapMarker', 15)}${renderAreaChip(parts.areaName)}<span class="value">${parts.path}</span
+        ${icon('mapMarker', 15)}${renderAreaChip(areaMarkName(parts.areaName, parts.path))}<span
+          class="value"
+          >${parts.path}</span
         >${icon('chevronDown', 15)}
       </button>
       <div class="tree-holder" id=${LOCATION_TREE_ID} ?hidden=${!this._locationOpen}>
@@ -1748,7 +1751,8 @@ export class HVItemEditor extends LitElement {
             .item=${this.item}
             .itemName=${model.name.trim() || 'this item'}
             .anchor=${this._checkoutAnchor}
-            ?mobile=${this.mobile}
+            ?inline=${this.mobile}
+            ?touch=${this.mobile}
             ?open=${this._checkoutOpen}
             @check-out=${(e: CustomEvent) => {
               // Purely a form event: nothing outside this editor should act on

@@ -79,6 +79,18 @@ export function pathTitle(parts: PathParts): string {
 }
 
 /**
+ * The same two parts for a label the reader sees, where the area is dropped once
+ * the path has already said it — the rule `areaMarkName` applies to the chip,
+ * applied to the surfaces that name the area in words instead of a chip.
+ *
+ * The two are a pair and differ in exactly that: a `title` is where the unelided
+ * pairing lives, so it never elides, and a label beside it does.
+ */
+export function pathLabel(parts: PathParts): string {
+  return pathTitle({ ...parts, areaName: areaMarkName(parts.areaName, parts.path) });
+}
+
+/**
  * A path as one element per segment, for a surface that gives it more than one
  * line rather than cutting it off at the edge of its box.
  *

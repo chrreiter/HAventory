@@ -505,8 +505,19 @@ describe('hv-filter-panel: dates and location', () => {
   });
 
   it('names the area the picked location inherits, matching the chip row wording', async () => {
+    const el = await mount(
+      { locationId: 'shelf-a' },
+      { locations: nestedLocations('area-kitchen'), areas: [{ id: 'area-kitchen', name: 'Kitchen' }] },
+    );
+    expect(label(el, 'filter-location')).toContain('Area: Kitchen · Garage › Shelf A');
+  });
+
+  // A root named after its own room made the field read "Area: Garage · Garage
+  // › Shelf A". The same elision the chip beside a path takes.
+  it('drops the area when the picked path opens with that name', async () => {
     const el = await mount({ locationId: 'shelf-a' }, { locations: nestedLocations('area-garage') });
-    expect(label(el, 'filter-location')).toContain('Area: Garage · Garage › Shelf A');
+    expect(label(el, 'filter-location')).toContain('Garage › Shelf A');
+    expect(label(el, 'filter-location')).not.toContain('Area:');
   });
 
   it('leaves a location in no area labelled exactly as before', async () => {
