@@ -1,7 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { chip } from '../ui/chip';
+import { chip, tagLabel } from '../ui/chip';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
@@ -274,8 +274,8 @@ export class HVOrganizeDialog extends LitElement {
         line-height: 0;
       }
       /* A phone keeps them stacked: a horizontal pair at the platform's 44px
-         is 88px of row, which does not fit beside the chip, the slug, the count
-         and two 44px actions. */
+         is 88px of row, which does not fit beside the chip, the count and two
+         44px actions. */
       :host([mobile]) .move {
         flex-direction: column;
         gap: 1px;
@@ -291,35 +291,23 @@ export class HVOrganizeDialog extends LitElement {
         opacity: 0.3;
         cursor: default;
       }
-      /* The identity items store. Shown because services.yaml and an export
-         document carry it, muted because a household never needs to type it.
-
-         In a list row it is the one part that may be cut: at phone width a long
-         slug otherwise pushes the delete button past the dialog edge, where it
-         cannot be tapped at all. Both places carry it as a title attribute too,
-         because either can end up eliding it. */
+      /* The identity items store, shown in the editor only: services.yaml and an
+         export document carry it, and it is muted there because a household
+         never needs to type it. It carries a title attribute too, because a
+         slug long enough to outrun its line still elides. */
       .status-slug {
         font: 400 12px var(--hv-font);
         color: var(--hv-text-tertiary);
         white-space: nowrap;
-        flex: 0 1 auto;
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      /* Giving up its width before the chip does is what "the one part that may
-         be cut" means, and a plain shrink factor of 1 does not say it: flexbox
-         would take from both in proportion to their widths, eliding a label the
-         household wrote while the slug it never types still holds 60px. */
-      .status-row .status-slug {
-        flex-shrink: 20;
-      }
       /* A label is a household's own words and can be long enough that the row
          overruns on its own — the fixed parts beside it (a 44px reorder column,
-         the count, two 44px actions) leave a phone row barely 130px for it. The
-         chip elides too, once the slug has nothing left to give; unshrinkable,
-         it pushes the delete button past the dialog edge where no finger
-         reaches it. */
+         the count, two 44px actions) leave a phone row barely 130px for it.
+         Unshrinkable, the chip pushes the delete button past the dialog edge
+         where no finger reaches it. */
       .status-row .hv-status-chip {
         flex: 0 1 auto;
         min-width: 0;
@@ -1012,6 +1000,18 @@ export class HVOrganizeDialog extends LitElement {
     return this.tab === 'tags' ? 'tag' : 'category';
   }
 
+  /**
+   * One value of whichever facet the open tab manages, chipped the way the rest
+   * of the card chips it: a tag blue and marked, a category neutral.
+   */
+  private _valueChip(value: string, opts: { style?: string; testid?: string } = {}) {
+    const style = opts.style ?? '';
+    const testid = opts.testid ?? '';
+    return this.tab === 'tags'
+      ? html`<span class="hv-chip tag" style=${style} data-testid=${testid}>${tagLabel(value)}</span>`
+      : html`<span class="hv-chip" style=${style} data-testid=${testid}>${value}</span>`;
+  }
+
   /** True while the value exists only on the card, with no item carrying it. */
   private _isDraft(value: string): boolean {
     return this.store?.isDraftValue(this._kind, value) ?? false;
@@ -1546,7 +1546,7 @@ export class HVOrganizeDialog extends LitElement {
 
     return html`<div class="expander" data-testid="value-editor" data-mode=${editing.mode}>
       <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
-        <span class="hv-chip" style=${merging ? 'text-decoration: line-through' : ''}>${value}</span>
+        ${this._valueChip(value, { style: merging ? 'text-decoration: line-through' : undefined })}
         <span style="font-size:12.5px;color:var(--hv-text-secondary)">${counted(count, 'item')}</span>
         ${merging ? icon('arrowRight', 18) : null}
         <label style="display:flex;align-items:center;gap:8px;flex:1;min-width:180px">
@@ -1808,7 +1808,6 @@ export class HVOrganizeDialog extends LitElement {
                 </button>
               </span>
               ${renderStatusChip(d.slug, defs, { testid: 'status-chip' })}
-              <span class="status-slug" data-testid="status-slug" title=${d.slug}>${d.slug}</span>
               <button class="count-link" data-testid="status-count" @click=${() =>
                 this._showStatus(d.slug)}>
                 ${counted(count, 'item')}
@@ -2041,7 +2040,7 @@ export class HVOrganizeDialog extends LitElement {
           ? values.map(
               (v) => html`
                 <div class="value-row" data-testid="value-row" data-value=${v.value}>
-                  <span class="hv-chip">${v.value}</span>
+                  ${this._valueChip(v.value)}
                   ${this._isDraft(v.value)
                     ? html`<span class="draft-note" data-testid="value-draft">
                         new · not saved until an item uses it
@@ -2136,9 +2135,10 @@ export class HVOrganizeDialog extends LitElement {
         <button data-testid="sheet-merge" @click=${() => this._startValueEdit(value, 'merge')}>
           ${icon('callMerge', 20)}Merge into…
           ${suggestion
-            ? html`<span class="hv-chip" style="margin-left:auto" data-testid="sheet-merge-suggestion"
-                >${suggestion}</span
-              >`
+            ? this._valueChip(suggestion, {
+                style: 'margin-left:auto',
+                testid: 'sheet-merge-suggestion',
+              })
             : null}
         </button>
         <button

@@ -3,6 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
+import { browseRow } from '../ui/browse-row';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted, plural, showingCount } from '../ui/plural';
@@ -78,6 +79,7 @@ export class HVFullView extends LitElement {
     tokens,
     base,
     chip,
+    browseRow,
     bannerStack,
     css`
       :host {
@@ -95,6 +97,24 @@ export class HVFullView extends LitElement {
         grid-template-rows: auto 1fr;
         background: var(--hv-surface);
         color: var(--hv-text);
+        /*
+         * This surface covers the viewport, so how wide the card that opened it
+         * happens to be says nothing about it. As an overlay it renders inside
+         * the card's shadow tree, and hv-card-shell declares both of these on
+         * :host([mobile]) — a card measured at 600px or under, which an
+         * ordinary dashboard column is on a desktop. Every field and every
+         * pressable row in here took phone sizing from that.
+         *
+         * Set to the guaranteed-invalid value rather than to a number: each
+         * consumer then falls back to the size it was written with — 36px for
+         * an app-bar button, 34px for the tally slot, 13.5px for the search
+         * box — instead of one value flattening all of them. The media query
+         * below raises both to touch sizing on a narrow *viewport*, which is
+         * the only signal that means anything here, and it does so in the
+         * panel and in the overlay alike.
+         */
+        --hv-tap-min: initial;
+        --hv-input-font: initial;
         /* The app bar does not compress below 778px — close, the title, the
            search box's own minimum, three count pills, Add item and the ⋮ —
            and the grid column takes that minimum whatever the screen is. On a
@@ -314,10 +334,10 @@ export class HVFullView extends LitElement {
            with no horizontal scroll, which put Add item (532..636), the badges
            and the ⋮ (648..682) permanently off-screen — you could not add an
            item or open the menu at all. */
-        /* This surface fills the screen even when the card that opened it is
-           narrow, so it sets its own touch sizing rather than inheriting the
-           card's. Declared on the shell so the table, its sort headers and the
-           context bar are covered too, not just the app bar. */
+        /* Touch sizing on a narrow viewport, which is the one measurement that
+           describes this surface — the base rule above holds the card's own
+           idea of narrow off it. Declared on the shell so the table, its sort
+           headers and the context bar are covered too, not just the app bar. */
         .shell {
           --hv-tap-min: 44px;
           --hv-input-font: 16px;
@@ -477,45 +497,13 @@ export class HVFullView extends LitElement {
         justify-content: flex-end;
         width: var(--hv-tap-min, 34px);
       }
-      /*
-       * A category or tag row. Deliberately the same shape as a location row in
-       * hv-location-tree — it is the same act, filtering the table down to one
-       * facet — but that tree is another shadow root, so the rule cannot be
-       * shared. Indented to where the tree's names start, past its twisty.
-       */
-      .value-row {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        width: 100%;
-        box-sizing: border-box;
-        min-height: var(--hv-tap-min, auto);
-        border: none;
-        background: none;
-        text-align: left;
-        font: 400 13.5px var(--hv-font);
-        color: var(--hv-text);
-        padding: 7px 12px 7px 34px;
-        border-radius: var(--hv-radius-input);
-      }
-      .value-row:hover {
-        background: var(--hv-hover-overlay);
-      }
-      .value-row.on {
-        background: var(--hv-primary-tint);
-        color: var(--hv-on-primary-tint);
-        font-weight: 500;
-        box-shadow: inset -3px 0 0 0 var(--hv-primary);
-      }
-      .value-row .label {
-        flex: 1;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
+      /* A status, category or tag row is the same control as a location row in
+         the tree under the heading above it, and the two lists are read as one
+         column — so both take their shape from ui/browse-row and neither
+         declares it. All that is left here is where the empty note sits, which
+         is under a row's name, past the slot the check occupies. */
       .section-empty {
-        padding: 2px 16px 8px 34px;
+        padding: 2px 16px 8px 38px;
         font-size: 12.5px;
         color: var(--hv-text-tertiary);
       }
@@ -836,11 +824,10 @@ export class HVFullView extends LitElement {
   @state() private _pendingDelete = false;
   /** The whole selection's check-out is waiting on one due date. */
   @state() private _pendingBulkCheckout = false;
-  /** The row whose check-out / due-date step is open, and where to anchor it. */
+  /** The row whose check-out / due-date step is open. */
   @state() private _checkout: {
     itemId: string;
     mode: 'check-out' | 'set-due-date';
-    anchor: DOMRect | null;
   } | null = null;
   /**
    * Where the surface goes once a discard is confirmed, or null while nothing
@@ -1100,13 +1087,13 @@ export class HVFullView extends LitElement {
    * host, which owns the confirmation and the store call; the Delete key on a
    * row already went the same way.
    */
-  private _onRowAction(detail: { itemId?: string; action?: string; anchor?: DOMRect }) {
+  private _onRowAction(detail: { itemId?: string; action?: string }) {
     const item = this.st?.items.find((i) => i.id === detail.itemId);
     if (!item) return;
     switch (detail.action) {
       case 'check-out':
       case 'set-due-date':
-        this._checkout = { itemId: item.id, mode: detail.action, anchor: detail.anchor ?? null };
+        this._checkout = { itemId: item.id, mode: detail.action };
         break;
       case 'check-in':
         void this.store?.markCheckedIn(item.id, item.version);
@@ -1395,14 +1382,14 @@ export class HVFullView extends LitElement {
               const on = filters.status === s;
               const tally = statusCount(counts, s);
               return html`<button
-                class="value-row ${on ? 'on' : ''}"
+                class="value-row hv-browse-row ${on ? 'selected' : ''}"
                 data-testid="sidebar-status-row"
                 data-value=${s}
                 aria-pressed=${String(on)}
                 @click=${() => this._setFilters({ status: on ? null : s })}
               >
-                ${on ? icon('check', 15) : null}
-                <span class="label">${statusLabel(s, this.st?.statuses)}</span>
+                <span class="hv-browse-row-lead ${on ? '' : 'placeholder'}">${icon('check', 15)}</span>
+                <span class="label hv-browse-row-label">${statusLabel(s, this.st?.statuses)}</span>
                 ${tally === null ? null : html`<span class="hv-tally">${tally}</span>`}
               </button>`;
             })
@@ -1463,17 +1450,19 @@ export class HVFullView extends LitElement {
           ? values.length
             ? values.map(
                 (v) => html`<button
-                  class="value-row ${isOn(v.value) ? 'on' : ''}"
+                  class="value-row hv-browse-row ${isOn(v.value) ? 'selected' : ''}"
                   data-testid=${`sidebar-${section}-row`}
                   data-value=${v.value}
                   aria-pressed=${String(isOn(v.value))}
                   @click=${() => onPick(v.value)}
                 >
-                  ${isOn(v.value) ? icon('check', 15) : null}
+                  <span class="hv-browse-row-lead ${isOn(v.value) ? '' : 'placeholder'}"
+                    >${icon('check', 15)}</span
+                  >
                   <!-- These clip with an ellipsis, and a clipped value the user
                        typed is otherwise unreadable — there is nowhere else in
                        the sidebar it appears in full. -->
-                  <span class="label" title=${v.value}>${v.value}</span>
+                  <span class="label hv-browse-row-label" title=${v.value}>${v.value}</span>
                   <span class="hv-tally">${v.count}</span>
                 </button>`,
               )
@@ -1799,7 +1788,14 @@ export class HVFullView extends LitElement {
             </button>`
           : null}
         <span class="spacer"></span>
-        <button class="ghost plain" data-testid="selection-clear" @click=${() => this.store?.clearSelection()}>
+        <!-- Selection mode opens at zero, so the bar's one action starts with
+             nothing to act on; live rather than greyed it offers a no-op. -->
+        <button
+          class="ghost plain"
+          data-testid="selection-clear"
+          ?disabled=${selected === 0}
+          @click=${() => this.store?.clearSelection()}
+        >
           Clear selection
         </button>
       </div>
@@ -2062,7 +2058,7 @@ export class HVFullView extends LitElement {
               @edit=${(e: CustomEvent) => this._onRowEvent('edit', e.detail)}
               @open-item=${(e: CustomEvent) => this._onRowEvent('open-item', e.detail)}
               @row-action=${(e: CustomEvent) =>
-                this._onRowAction(e.detail as { itemId?: string; action?: string; anchor?: DOMRect })}
+                this._onRowAction(e.detail as { itemId?: string; action?: string })}
               @toggle-select=${(e: CustomEvent) =>
                 this.store?.toggleSelected((e.detail as { itemId: string }).itemId)}
               @select-all-loaded=${() => this.store?.selectAllLoaded()}
@@ -2170,12 +2166,16 @@ export class HVFullView extends LitElement {
             ></hv-detail-sheet>`
           : null}
 
+        <!-- Centred and scrimmed at every width, like the bulk popover below.
+             Neither of the other two presentations fits this call site: the
+             mobile one draws an inline step that has to sit inside the body of
+             the surface that opened it, and this is a sibling at the end of the
+             shell with no body around it; the anchored one hangs off the row ⋮,
+             which sits in a column the table scrolls sideways out of view. -->
         <hv-checkout-popover
           data-testid="full-checkout"
           ?open=${this._checkout !== null}
-          ?mobile=${this._narrow}
           .mode=${this._checkout?.mode ?? 'check-out'}
-          .anchor=${this._checkout?.anchor ?? null}
           .item=${this._checkout ? (st?.items.find((i) => i.id === this._checkout!.itemId) ?? null) : null}
           @check-out=${(e: CustomEvent) => {
             const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };

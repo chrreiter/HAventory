@@ -221,9 +221,52 @@ describe('hv-card-shell: overflow menu', () => {
       'refresh',
       'diagnostics',
       'export-all',
-      'export-view',
       'import',
     ]);
+  });
+
+  // Two meta lines sit one above the other in the same menu, so a lower-cased
+  // one reads as a different kind of thing rather than the same kind of list.
+  it('capitalizes every word of a meta line', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    const menu = sr.querySelector('[data-testid="card-overflow"]') as HTMLElement;
+    (menu.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const metaOf = (id: string) =>
+      menu.shadowRoot?.querySelector(`[data-id="${id}"] .meta`)?.textContent?.trim();
+    expect(metaOf('refresh')).toBe('Items · Locations · Stats');
+    expect(metaOf('organize')).toBe('Locations · Tags · Categories · Statuses');
+  });
+
+  // The segment lists above were capitalized while the Data entries stayed
+  // sentence-style — "All 31 items · all locations" under "Items · Locations ·
+  // Stats" — which is two conventions in the same menu. One rule now covers
+  // every hint line the menu draws, `meta` and `sub` alike.
+  it('opens every segment of every hint line with a capital', async () => {
+    const { el, store, sr } = await mountShell({
+      items: [makeItem({ id: '1', category: 'Tools' })],
+    });
+    // A filter is what brings "Export current view" out, so both Data lines
+    // are on screen to be checked together.
+    store.setFilters({ category: 'Tools' });
+    await settle(el);
+    const menu = sr.querySelector('[data-testid="card-overflow"]') as HTMLElement;
+    (menu.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const lines = [...(menu.shadowRoot?.querySelectorAll('.meta, .sub') ?? [])].map((n) =>
+      (n.textContent ?? '').trim(),
+    );
+    expect(lines).toContain('All 1 item · All locations');
+    expect(lines).toContain('1 filtered item · Keeps location paths');
+    for (const line of lines) {
+      for (const segment of line.split('·')) {
+        // A count opens a line as a numeral, which is the same sentence-free
+        // shape as a capital and reads as one beside it.
+        expect(segment.trim(), line).toMatch(/^[\p{Lu}\d]/u);
+      }
+    }
   });
 
   // Column choices only drive the full view's table — the card list draws a
@@ -296,20 +339,22 @@ describe('hv-card-shell: overflow menu', () => {
     expect(actions).toEqual([]);
   });
 
-  it('disables "Export current view" until a filter is actually narrowing the list', async () => {
+  // Greyed out, it stood there claiming "30 filtered items" over an unfiltered
+  // list, with nothing on screen to say why it could not be pressed. Unfiltered,
+  // "the current view" is the whole inventory Export backup already offers.
+  it('offers "Export current view" only while a filter is narrowing the list', async () => {
     const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', category: 'Tools' })] });
     const menu = sr.querySelector('[data-testid="card-overflow"]') as HTMLElement;
     (menu.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
     await settle(el);
-    expect(
-      (menu.shadowRoot?.querySelector('[data-id="export-view"]') as HTMLButtonElement).disabled,
-    ).toBe(true);
+    expect(menu.shadowRoot?.querySelector('[data-id="export-view"]')).toBe(null);
+    expect(menu.shadowRoot?.querySelector('[data-id="export-all"]')).toBeTruthy();
 
     store.setFilters({ category: 'Tools' });
     await settle(el);
-    expect(
-      (menu.shadowRoot?.querySelector('[data-id="export-view"]') as HTMLButtonElement).disabled,
-    ).toBe(false);
+    const entry = menu.shadowRoot?.querySelector('[data-id="export-view"]') as HTMLButtonElement;
+    expect(entry).toBeTruthy();
+    expect(entry.disabled).toBe(false);
   });
 });
 
@@ -326,11 +371,18 @@ describe('hv-card-shell: search and filters', () => {
     expect(store.state.value.filters.q).toBe('glue');
   });
 
-  it('puts the filtered total in the search placeholder', async () => {
+  // The full view and the panel word it this way, and the card searches the same
+  // store they do — "matching" claimed a filter that need not be there at all.
+  it('offers the whole inventory in the search placeholder, in the full view wording', async () => {
     const items = Array.from({ length: 3 }, (_, i) => makeItem({ id: `${i}` }));
-    const { sr } = await mountShell({ items });
+    const { el, store, sr } = await mountShell({ items });
     const input = sr.querySelector('[data-testid="search-input"]') as HTMLInputElement;
-    expect(input.placeholder).toBe('Search 3 matching items…');
+    expect(input.placeholder).toBe('Search all 3 items…');
+
+    // A filter narrowing the result does not renumber the offer.
+    store.setFilters({ q: 'nothing matches this' });
+    await settle(el);
+    expect(input.placeholder).toBe('Search all 3 items…');
   });
 
   it('marks the filter button when any filter is on, and toggles the panel', async () => {

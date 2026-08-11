@@ -1,13 +1,14 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { chip } from '../ui/chip';
+import { chip, renderTagChip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
+import { customFieldLabel } from '../ui/field-label';
 import { inferType } from '../ui/item-form';
 import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
 import { isLowStock } from './hv-list-row';
-import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
+import { areaMarkName, itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import {
   MediaUrls,
   attachmentNameToken,
@@ -311,6 +312,12 @@ export class HVDetailSheet extends LitElement {
         margin: 0;
         padding: 0;
         display: grid;
+        /* One track the width of the list, not the width of its widest row. An
+           implicit track sizes itself from the rows, and a row's tail — the
+           Open link and the "File missing" chip — cannot shrink, so the track
+           runs past the list and the hidden overflow below cuts off exactly the
+           two elements the row exists to offer. */
+        grid-template-columns: minmax(0, 1fr);
         gap: 1px;
         background: var(--hv-row-divider);
         border-radius: 10px;
@@ -320,6 +327,9 @@ export class HVDetailSheet extends LitElement {
         display: flex;
         align-items: center;
         gap: 10px;
+        /* A grid item's automatic minimum is its own content, which would put
+           the row straight back outside the track above. */
+        min-width: 0;
         min-height: 52px;
         padding: 8px 12px;
         background: var(--hv-surface);
@@ -483,19 +493,27 @@ export class HVDetailSheet extends LitElement {
     else this._close();
   }
 
+  /**
+   * One custom field, as a fact rather than as a stored pair.
+   *
+   * The label is written for reading; `data-key` still carries the key itself,
+   * which is what the editor shows and what an export document and an
+   * automation name.
+   */
   private _renderCustomFact(key: string, value: ScalarValue) {
     const type = inferType(value);
+    const label = customFieldLabel(key);
     if (type === 'boolean') {
       const on = value === true;
       return html`<div class="fact" data-testid="sheet-fact" data-key=${key}>
-        <span>${key}</span>
+        <span>${label}</span>
         <span class="value ${on ? 'yes' : 'unset'}">
           ${on ? html`${icon('check', 15)} Yes` : 'No'}
         </span>
       </div>`;
     }
     return html`<div class="fact" data-testid="sheet-fact" data-key=${key}>
-      <span>${key}</span>
+      <span>${label}</span>
       <span class="value">${type === 'date' ? formatDate(String(value)) : String(value)}</span>
     </div>`;
   }
@@ -611,7 +629,7 @@ export class HVDetailSheet extends LitElement {
           ${icon('close', 22)}
         </button>
         <span class="crumb hv-chip-line" data-testid="sheet-path" title=${pathTitle(parts)}
-          >${renderAreaChip(parts.areaName)}<span class="hv-chip-line-text"
+          >${renderAreaChip(areaMarkName(parts.areaName, parts.path))}<span class="hv-chip-line-text"
             >${parts.path || 'No location'}</span
           ></span
         >
@@ -653,7 +671,7 @@ export class HVDetailSheet extends LitElement {
               </span>`
             : null}
           ${item.category ? html`<span class="hv-chip" data-testid="sheet-category">${item.category}</span>` : null}
-          ${item.tags.map((t) => html`<span class="hv-chip" data-testid="sheet-tag">${t}</span>`)}
+          ${item.tags.map((t) => renderTagChip(t, 'sheet-tag'))}
         </div>
       </div>
 

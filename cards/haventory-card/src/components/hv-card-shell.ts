@@ -3,7 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
-import { counted, plural, showingCount } from '../ui/plural';
+import { counted, showingCount } from '../ui/plural';
 import { ResponsiveController } from '../ui/responsive';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
@@ -76,27 +76,6 @@ export class HVCardShell extends LitElement {
         border: 1px solid var(--hv-divider);
         border-radius: var(--hv-radius-card);
         overflow: hidden;
-      }
-      /* The ⋮ menu is an absolutely positioned dropdown inside this box, so the
-         overflow rule above — which is what keeps the list's rows inside the
-         rounded corners — clips it. A card holding few enough items to be shorter
-         than the open menu cuts it off at the bottom edge, and the entries it
-         loses are the last ones: Export and Import. An empty card is the worst
-         case at 269px against a 381px menu.
-
-         Reserving the height the menu needs is what keeps every entry reachable.
-         Measured from the card's top edge: 56px of header above the trigger, a
-         6px gap, then the menu itself; the remainder covers a second line under
-         "Export current view", which the sub-label takes when the filtered count
-         is long.
-
-         Only above 600px, matching hv-overflow-menu's own breakpoint: below it
-         the menu is a fixed bottom sheet anchored to the viewport, which nothing
-         here clips and which would not justify a 470px card on a phone. */
-      @media (min-width: 601px) {
-        :host {
-          min-height: 470px;
-        }
       }
       /* Declared once here and inherited into every nested component's shadow
          DOM — the shared .hv-icon-button, the sheets, the row steppers and the
@@ -887,6 +866,10 @@ export class HVCardShell extends LitElement {
     const stagedFilterCount = activeFilterCount(this._stagedFilters ?? filters);
     const loaded = st?.items.length ?? 0;
     const total = st?.total;
+    // The placeholder counts the whole inventory, not the filtered result: it is
+    // the same sentence the full view and the panel show, so the search box does
+    // not describe the same store two ways depending on which surface opened it.
+    const searchTotal = st?.statsCounts?.items_total ?? null;
     const mobile = this.mobile;
     // The filter button reports the surface its own width uses. The desktop
     // panel's open state is remembered across sessions, so reading it on a
@@ -933,9 +916,7 @@ export class HVCardShell extends LitElement {
           <input
             type="search"
             data-testid="search-input"
-            placeholder=${total !== null && total !== undefined
-              ? `Search ${total} matching ${plural(total, 'item')}…`
-              : 'Search items…'}
+            placeholder=${searchTotal === null ? 'Search items…' : `Search all ${counted(searchTotal, 'item')}…`}
             .value=${this._searchDraft}
             @input=${(e: Event) => {
               this._searchDraft = (e.target as HTMLInputElement).value;

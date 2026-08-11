@@ -4,6 +4,7 @@ import { ifDefined } from 'lit/directives/if-defined.js';
 import type { TemplateResult } from 'lit';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
+import { browseRow } from '../ui/browse-row';
 import { icon } from '../ui/icons';
 import type { IconName } from '../ui/icons';
 import { groupRootsByArea, locationMatches } from '../store/location-tree';
@@ -56,56 +57,27 @@ export class HVLocationTree extends LitElement {
     tokens,
     base,
     chip,
+    browseRow,
     css`
       :host {
         display: block;
       }
+      /* Shape, spacing and the picked state come from ui/browse-row, shared with
+         the sidebar's facet rows so the two lists sit in one column. */
       .row {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        width: 100%;
-        box-sizing: border-box;
-        border: none;
-        background: none;
-        text-align: left;
-        font: 400 13.5px var(--hv-font);
-        color: var(--hv-text);
-        /* The organize dialog declares this property, so the tree it hosts
-           keeps the same vertical rhythm as the value rows on its other three
-           tabs. Nothing else declares it, so every other host — the sidebar,
-           the filter panel, the editor's location field — takes the fallback
-           and is unaffected. */
-        padding: var(--hv-organize-row-pad, 7px) 12px;
-        border-radius: var(--hv-radius-input);
         /* The whole row picks the location it names. The All-items and
            No-location rows below are real buttons and get this for free; a node
            row cannot be one, because it holds the twisty and the manage actions
            and a button may not contain a button. */
         cursor: pointer;
       }
-      .row:hover {
-        background: var(--hv-hover-overlay);
-      }
-      .row.selected {
-        background: var(--hv-primary-tint);
-        color: var(--hv-on-primary-tint);
-        font-weight: 500;
-        box-shadow: inset -3px 0 0 0 var(--hv-primary);
-      }
-      .row.orphans {
-        color: var(--hv-warn);
-      }
       .row[disabled] {
         opacity: 0.4;
         cursor: default;
       }
+      /* The row's leading slot, as a control: the box comes from the shared
+         hv-browse-row-lead, the round hover from here. */
       .twisty {
-        flex: none;
-        display: inline-grid;
-        place-items: center;
-        width: 20px;
-        height: 20px;
         border: none;
         background: none;
         border-radius: 50%;
@@ -114,17 +86,6 @@ export class HVLocationTree extends LitElement {
       }
       .twisty:hover {
         background: var(--hv-hover-overlay);
-      }
-      .twisty.placeholder {
-        visibility: hidden;
-      }
-      .name {
-        flex: 1;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        text-align: left;
       }
       .count {
         flex: none;
@@ -487,7 +448,7 @@ export class HVLocationTree extends LitElement {
     return html`
       <div>
         <div
-          class="row ${selected ? 'selected' : ''} ${this.manage ? 'manage' : ''} ${this.mobile
+          class="row hv-browse-row ${selected ? 'selected' : ''} ${this.manage ? 'manage' : ''} ${this.mobile
             ? 'touch'
             : ''}"
           role="treeitem"
@@ -514,7 +475,7 @@ export class HVLocationTree extends LitElement {
         >
           ${hasChildren
             ? html`<button
-                class="twisty"
+                class="twisty hv-browse-row-lead"
                 data-testid="tree-twisty"
                 aria-label=${open ? `Collapse ${node.name}` : `Expand ${node.name}`}
                 @click=${(e: Event) => {
@@ -524,8 +485,8 @@ export class HVLocationTree extends LitElement {
               >
                 ${icon(open ? 'chevronDown' : 'chevronRight', 17)}
               </button>`
-            : html`<span class="twisty placeholder">${icon('chevronRight', 17)}</span>`}
-          <span class="name">${node.name}</span>
+            : html`<span class="twisty hv-browse-row-lead placeholder">${icon('chevronRight', 17)}</span>`}
+          <span class="name hv-browse-row-label">${node.name}</span>
           ${this.showCounts ? this._renderCount(node, isExcluded) : null}
           ${this.manage && this.mobile
             ? html`<span class="actions">
@@ -638,7 +599,7 @@ export class HVLocationTree extends LitElement {
       : html`<span class="hv-area-chip quiet area-none">No area</span>`;
 
     return html`<div
-      class="row area-head ${selected ? 'selected' : ''} ${pickable ? 'selectable' : ''}"
+      class="row hv-browse-row area-head ${selected ? 'selected' : ''} ${pickable ? 'selectable' : ''}"
       role="treeitem"
       aria-selected=${String(selected)}
       aria-expanded=${ifDefined(empty ? undefined : String(open))}
@@ -648,9 +609,9 @@ export class HVLocationTree extends LitElement {
       data-area=${group?.id ?? NO_AREA_KEY}
     >
       ${empty
-        ? html`<span class="twisty placeholder">${icon('chevronRight', 17)}</span>`
+        ? html`<span class="twisty hv-browse-row-lead placeholder">${icon('chevronRight', 17)}</span>`
         : html`<button
-            class="twisty"
+            class="twisty hv-browse-row-lead"
             data-testid="tree-area-twisty"
             data-area=${group?.id ?? NO_AREA_KEY}
             aria-label=${open
@@ -791,13 +752,13 @@ export class HVLocationTree extends LitElement {
       <div role="tree" aria-label="Locations">
         ${this.showAll
           ? html`<button
-              class="row ${!this.orphansSelected && this.selectedId === null ? 'selected' : ''}"
+              class="row hv-browse-row ${!this.orphansSelected && this.selectedId === null ? 'selected' : ''}"
               data-testid="tree-all"
               @click=${() => this._emit('select', { locationId: null, node: null })}
             >
-              <span class="twisty placeholder">${icon('chevronRight', 17)}</span>
+              <span class="twisty hv-browse-row-lead placeholder">${icon('chevronRight', 17)}</span>
               ${icon(this.allIcon, 18)}
-              <span class="name">${this.allLabel}</span>
+              <span class="name hv-browse-row-label">${this.allLabel}</span>
               ${this.showCounts && this.totalCount !== null
                 ? this._pairedCount(this.totalCount, this.matchingTotalCount)
                 : null}
@@ -815,13 +776,13 @@ export class HVLocationTree extends LitElement {
           ? html`
               <div class="divider"></div>
               <button
-                class="row orphans ${this.orphansSelected ? 'selected' : ''}"
+                class="row hv-browse-row orphans ${this.orphansSelected ? 'selected' : ''}"
                 data-testid="tree-orphans"
                 @click=${() => this._emit('select-orphans', {})}
               >
-                <span class="twisty placeholder">${icon('chevronRight', 17)}</span>
-                ${icon('alert', 18)}
-                <span class="name">No location</span>
+                <span class="twisty hv-browse-row-lead placeholder">${icon('chevronRight', 17)}</span>
+                ${icon('mapMarkerOff', 18)}
+                <span class="name hv-browse-row-label">No location</span>
                 ${this.showCounts && this.orphanCount !== null
                   ? this._pairedCount(this.orphanCount, this._matchingOrphanCount)
                   : null}

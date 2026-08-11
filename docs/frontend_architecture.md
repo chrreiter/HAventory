@@ -19,8 +19,8 @@ It provides the full inventory UI, updating live over the HAventory WebSocket AP
 
 `src/index.ts` defines `haventory-card` — the element Home Assistant knows about. It owns
 the `Store` (created on the first `hass` assignment), the Lovelace interface
-(`setConfig`, `getCardSize`, `getStubConfig`, `window.customCards`), and nothing else of
-substance:
+(`setConfig`, `getCardSize`, `getGridOptions`, the statics `getStubConfig` and
+`getConfigElement`, and `window.customCards`), and nothing else of substance:
 
 ```ts
 setConfig(cfg) → { title?: string; quickFilters?: QuickFilterKey[] | null }
@@ -35,12 +35,30 @@ full view's pills offer one vocabulary; the sidebar panel, which has no dashboar
 takes the default. It decides what is *allowed*: whether an allowed pill draws is still
 the count's call.
 
+`getStubConfig` and `getConfigElement` are **statics on the class**, not module exports:
+Home Assistant reads them off `customElements.get(type)` and never imports from the bundle,
+so an export is a spelling nothing looks at. `getGridOptions` sizes the card in a sections
+view — full section width, and enough default rows that the list opens with room for
+content — while `getCardSize` still answers the masonry view, which
+knows nothing about columns.
+
 It also publishes the active HA theme as `color-scheme` on the host, which every nested
 component inherits.
 
 `src/haventory-panel.ts` defines `haventory-panel` — the same bundle's second element,
 which HA's custom-panel loader instantiates for the sidebar page. It mirrors the card's
 store lifecycle and renders `<hv-full-view embedded open>`.
+
+`src/haventory-card-editor.ts` defines `haventory-card-editor` — the bundle's third
+HA-facing element, which `getConfigElement` creates by tag. It renders one `ha-form` field
+for `title`, HA's own control rather than a local input, and turns the form's
+`value-changed` into a `config-changed` carrying `{ ...config, title }`. The spread is the
+point: the card ignores unknown keys instead of rejecting them, so `quick_filters` and
+anything a future version writes survive an edit untouched. An emptied title is dropped
+from the config rather than written as `""`, which hands the heading back to the
+integration-wide option. All three elements register through `defineCardElement`
+(`src/register.ts`), because HA creates each of them by tag after the frontend has swapped
+`window.customElements`.
 
 The integration registers that panel at `/haventory` through `panel_custom`, handing it
 the *same* module URL both card loaders get (`__init__.py`, `_async_apply_sidebar_panel`),
@@ -233,8 +251,8 @@ on the wire; no command changed.
 `ui/location-path.ts` composes the result. `itemPathParts` and `locationPathParts` split
 "where" into `{ areaName, path }`, `pathTitle` writes both as one string
 (`Area: Kitchen · Garage › Shelf A`) for a `title` attribute, and `renderAreaChip` is the
-single visual treatment — a home glyph and the name, styled by `.hv-area-chip` in `tokens`'
-`base` so every shadow root draws it identically. That chip is how an area is told apart
+single visual treatment — a home glyph and the name, styled by `.hv-area-chip` in the `chip`
+fragment (`ui/chip.ts`) so every shadow root draws it identically. That chip is how an area is told apart
 from a path segment: an area is never printed as one. It renders nothing when there is no
 area, so callers embed it unguarded and a location outside every area reads exactly as it
 did before areas were shown at all.
@@ -244,7 +262,12 @@ Two surfaces spell the area out in words instead — `hv-filter-chips`' location
 within a chip is noise, so they print `pathTitle`'s text form, which is also the wording
 the area *filter*'s own chip has always used. `hv-list-row` does the same on a phone for a
 different reason: with no room for a chip the area goes in as the leading text segment,
-where `elidePath` keeps it.
+where `elidePath` keeps it. It is still marked as an area there — `elideMobilePath` composes
+and elides the line exactly as it is shown and then takes the leading segment back off, so
+the row can put the chip's own home glyph in front of it and drop the `›` that followed. The
+mark is the separator, and it costs the line about what that separator cost. An area name
+that itself contains ` › ` splits into two segments and comes back unmarked, which reads as
+the line always did rather than marking the wrong words.
 
 Threading is by property, outward from the two containers that hold `areasCache`.
 `hv-card-shell` and `hv-full-view` pass `.areas` to `hv-list` (which forwards to
@@ -556,7 +579,9 @@ Things jsdom cannot do, and how the tests handle it:
 - **No real drag and drop** — jsdom builds a `DragEvent` with no `DataTransfer` behind it,
   so the editor's file-drop tests carry a plain-object `dataTransfer` and assert the
   routing (which kind each dropped file becomes) rather than the browser's drag machinery.
-  Dragging items onto tree nodes (an optional item in the handoff) is not implemented.
+  Dropping a file onto the editor is the only drag the card handles: an item's location
+  changes through the item editor or the bulk bar's Move action, never by dragging the row
+  onto a node of the sidebar tree.
 
 Run:
 
@@ -585,11 +610,22 @@ round trip is not free; the UI stays responsive and rolls back on failure.
 themes keep working. Accents with no HA equivalent (tints, hover washes, warning surfaces)
 track `prefers-color-scheme`.
 
+**Buttons are the card's reordering idiom** — the organize dialog's status rows and the item
+editor's photo strip both move an entry with a pair of arrow buttons, and both send the whole
+new order to the backend. Pointer drag has no keyboard equivalent, so it could only ever
+arrive *beside* the buttons and never in place of them; and whichever list grew it first
+would settle the gesture for the others, the unbuilt column order among them. It is not
+built. The buttons already carry the capability on every ordered list the card has, so
+nothing waits on it, and whether the gesture is worth implementing across three surfaces at
+once is a question about how the card gets used — which takes people using it to answer.
+
 ---
 
 ## Known gaps
 
-- Drag-and-drop of items onto sidebar tree nodes (optional in the handoff) is not built.
+- Nothing in the card moves by pointer drag. An item cannot be dragged onto a location in
+  the sidebar tree — its location changes through the item editor or the bulk bar's Move
+  action — and the ordered lists reorder with buttons, per the decision above.
 - Large lists rely on paging; no row virtualization.
 - The backend cannot sort by category, location or tags, filter by due date, or bulk-create
   items — the UI is shaped around those limits rather than hiding them.

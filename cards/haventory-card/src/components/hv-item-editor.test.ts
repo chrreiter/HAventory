@@ -228,7 +228,7 @@ describe('hv-item-editor: field parity', () => {
   // `title` explaining it never reaches a phone.
   it('greys the due date out, and says why, while the item is not checked out', async () => {
     const el = await mount(makeItem({ id: '1', checked_out: false }));
-    expect(q(el, '[data-testid="editor-due-date"]')?.closest('.cell')?.classList).toContain('muted');
+    expect(q(el, '.due-label')?.classList).toContain('muted');
     expect(q(el, '[data-testid="editor-due-hint"]')?.textContent?.trim()).toBe(
       'A due date applies while the item is checked out.',
     );
@@ -237,7 +237,7 @@ describe('hv-item-editor: field parity', () => {
     );
 
     await checkOut(el);
-    expect(q(el, '[data-testid="editor-due-date"]')?.closest('.cell')?.classList).not.toContain('muted');
+    expect(q(el, '.due-label')?.classList).not.toContain('muted');
     expect(q(el, '[data-testid="editor-due-hint"]')).toBe(null);
 
     const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
@@ -300,14 +300,17 @@ describe('hv-item-editor: field parity', () => {
     const el = await mount(makeItem({ id: '1', inspection_date: null }));
     expect(all(el, '[data-testid="editor-inspection-offset"]').map((b) => b.dataset.days)).toEqual([
       '7',
-      '31',
+      '30',
       '90',
     ]);
+    expect(all(el, '[data-testid="editor-inspection-offset"]').map((b) => b.textContent?.trim())).toEqual(
+      ['+7 days', '+30 days', '+90 days'],
+    );
 
     const dateInput = () => q(el, '[data-testid="editor-inspection-date"]') as HTMLInputElement;
     (all(el, '[data-testid="editor-inspection-offset"]')[1] as HTMLButtonElement).click();
     await el.updateComplete;
-    expect(dateInput().value).toBe(addDays(31));
+    expect(dateInput().value).toBe(addDays(30));
     expect(all(el, '[data-testid="editor-inspection-offset"]')[1].classList.contains('on')).toBe(true);
   });
 
@@ -362,6 +365,47 @@ describe('hv-item-editor: field parity', () => {
     expect(css).toMatch(/\.checkout-body \{[^}]*grid-template-columns: 1fr 1fr/);
     expect(css).toMatch(/:host\(\[mobile\]\) \.checkout-body \{[^}]*grid-template-columns: 1fr;/);
     expect(css).toMatch(/:host\(\[mobile\]\) \.state \{[^}]*grid-template-columns: 1fr;/);
+    // Stacked, the button leads and the label stays with its own field.
+    expect(css).toMatch(
+      /:host\(\[mobile\]\) \.checkout-body \{[^}]*grid-template-areas: 'action' 'label' 'field' 'hint'/,
+    );
+  });
+
+  /*
+   * The check-out box holds two controls side by side and one of them has no
+   * label, which is what put them on different lines: packed to the top of
+   * their own cells, the button landed level with the *label* opposite it and
+   * the date input a label's height lower, with dead air under the button.
+   *
+   * jsdom lays out nothing, so what can be pinned here is the structure the
+   * alignment rests on — one grid, four children, named rows — rather than the
+   * two edges lining up. The measurement is in the PR body.
+   */
+  it('puts the button and the due date in one grid rather than two stacks', async () => {
+    const el = await mount(makeItem({ id: '1', checked_out: false }));
+    const body = q(el, '.checkout-body') as HTMLElement;
+    const children = [...body.children].map((c) => c.className.split(' ').filter(Boolean));
+
+    expect(children).toEqual([
+      ['field-button', 'checkout-action'],
+      ['hv-label', 'due-label', 'muted'],
+      ['hv-input', 'due-input'],
+      ['group-hint'],
+    ]);
+    // No per-half wrapper left to pack its own contents to the top.
+    expect(body.querySelector('.cell')).toBe(null);
+  });
+
+  // Checked out, the note goes and the grid is three children — the hint area
+  // collapses rather than leaving a row behind.
+  it('drops the note once the item is checked out', async () => {
+    const el = await mount(makeItem({ id: '1', checked_out: true, due_date: '2099-01-01' }));
+    const body = q(el, '.checkout-body') as HTMLElement;
+    expect([...body.children].map((c) => c.getAttribute('data-testid'))).toEqual([
+      'editor-checked-out',
+      null,
+      'editor-due-date',
+    ]);
   });
 });
 
@@ -540,6 +584,18 @@ describe('hv-item-editor: saving', () => {
 });
 
 describe('hv-item-editor: location and tags', () => {
+  // Location renders a pin and "No location" when nothing is set; Category beside
+  // it drew an empty box with a bare chevron, which reads as broken rendering
+  // rather than as nothing selected — loudest on the phone add-sheet.
+  it('names the empty category the way the location field names an empty location', async () => {
+    const el = await mount(makeItem({ id: '1', category: '' }));
+    const category = q(el, '[data-testid="editor-category"]') as HTMLInputElement;
+
+    expect(category.value).toBe('');
+    expect(category.placeholder).toBe('No category');
+    expect(q(el, '[data-testid="editor-location"]')?.textContent).toContain('No location');
+  });
+
   it('picks a location from a tree inside the form, never a second dialog', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
     const saves = onSave(el);
@@ -2591,7 +2647,7 @@ describe('hv-item-editor: one label recipe, one note size', () => {
     const el = await mount(makeItem({ id: '1' }));
     expect(el.shadowRoot?.innerHTML).not.toContain('style="text-transform');
     const note = el.shadowRoot?.querySelector('.label-note');
-    expect(note?.textContent).toContain('stored lowercase');
+    expect(note?.textContent).toContain('always lowercase');
   });
 
   // The tag field sat a point smaller than every input beside it.

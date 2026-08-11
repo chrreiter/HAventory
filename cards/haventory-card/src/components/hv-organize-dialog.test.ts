@@ -759,6 +759,20 @@ describe('hv-organize-dialog: tags and categories', () => {
     expect(el.open).toBe(false);
   });
 
+  // Two tabs of the same shape, so the chip has to say which facet is on
+  // screen — the tab strip is at the top of the dialog, the rows are not.
+  it('chips a tag as a tag and a category as a category', async () => {
+    const tags = await mount({ items, tab: 'tags' });
+    const tagChip = q(tags.sr, '[data-testid="value-row"] .hv-chip')!;
+    expect(tagChip.classList.contains('tag')).toBe(true);
+    expect(tagChip.textContent?.trim()).toBe('#aa');
+
+    const categories = await mount({ items, tab: 'categories' });
+    const categoryChip = q(categories.sr, '[data-testid="value-row"] .hv-chip')!;
+    expect(categoryChip.classList.contains('tag')).toBe(false);
+    expect(categoryChip.textContent?.trim()).toBe('Consumables');
+  });
+
   async function create(el: HVOrganizeDialog, sr: ShadowRoot, name: string) {
     (q(sr, '[data-testid="organize-new-value"]') as HTMLButtonElement).click();
     await settle(el);
@@ -993,14 +1007,21 @@ describe('hv-organize-dialog: statuses', () => {
     expect(q(sr, '[data-testid="status-chip"]')?.classList.contains('tone-green')).toBe(true);
   });
 
-  it('shows the slug beside the label, because an automation has to name it', async () => {
-    const { sr } = await mount({ tab: 'statuses' });
+  // The chip already names each status in the household's own words; printing
+  // "needs_repair" beside "Needs repair" only said the same thing in code.
+  it('leaves the slug out of the list rows and keeps it in the editor', async () => {
+    const { el, sr } = await mount({ tab: 'statuses' });
 
-    expect(all(sr, '[data-testid="status-slug"]').map((s) => s.textContent?.trim())).toEqual([
-      'ok',
-      'missing',
-      'needs_repair',
-    ]);
+    expect(all(sr, '[data-testid="status-slug"]')).toEqual([]);
+
+    (
+      all(sr, '[data-testid="status-row"]')
+        .find((r) => r.dataset.value === 'needs_repair')
+        ?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement
+    ).click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="status-slug-preview"]')?.textContent?.trim()).toBe('needs_repair');
   });
 
   it('counts the items on each status', async () => {
@@ -1331,7 +1352,7 @@ describe('hv-organize-dialog: statuses', () => {
 
   // The preview exists for people writing automations, and it was eliding the
   // identifier it exists to show while the row still had free width.
-  it('shows the derived slug in full, and titles both places it appears', async () => {
+  it('shows the derived slug in full, and titles it', async () => {
     const { el, sr } = await mount({ tab: 'statuses' });
     (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
     await settle(el);
@@ -1344,11 +1365,6 @@ describe('hv-organize-dialog: statuses', () => {
     const preview = q(sr, '[data-testid="status-slug-preview"]');
     expect(preview?.textContent?.trim()).toBe('lent_out_to_the_neighbours');
     expect(preview?.getAttribute('title')).toBe('lent_out_to_the_neighbours');
-
-    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'needs_repair');
-    expect(row?.querySelector('[data-testid="status-slug"]')?.getAttribute('title')).toBe(
-      'needs_repair',
-    );
   });
 
   it('lets the slug wrap under the name field rather than eliding beside it', () => {
@@ -1356,9 +1372,8 @@ describe('hv-organize-dialog: statuses', () => {
     expect(css).toMatch(/\.status-name \{[^}]*flex-wrap: wrap/);
     // Not shrinkable, so it wraps to a line of its own instead of being cut…
     expect(css).toMatch(/\.status-name \.status-slug \{[^}]*flex: 0 0 auto/);
-    // …while the list row keeps the elision that stops a long slug pushing the
-    // delete button off the dialog.
-    expect(css).toMatch(/\.status-slug \{[^}]*flex: 0 1 auto[^}]*text-overflow: ellipsis/);
+    // …and elides only when the slug alone outruns that line.
+    expect(css).toMatch(/\.status-slug \{[^}]*text-overflow: ellipsis/);
   });
 
   // Measured in the sidebar panel at 390px: the row needed 404px of a 362px
@@ -1369,9 +1384,6 @@ describe('hv-organize-dialog: statuses', () => {
     // The chip is flex:none everywhere else; in a status row it has to give way.
     expect(css).toMatch(/\.status-row \.hv-status-chip \{[^}]*flex: 0 1 auto/);
     expect(css).toMatch(/\.status-row \.hv-status-chip \{[^}]*min-width: 0/);
-    // The slug still empties first — a shrink factor of 1 would take from both
-    // in proportion to their widths and cut the label while the slug held on.
-    expect(css).toMatch(/\.status-row \.status-slug \{[^}]*flex-shrink: 20/);
   });
 
   // Five children on one row left the select ~44px wide, showing "O⌄" — the one

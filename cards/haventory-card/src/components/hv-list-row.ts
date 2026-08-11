@@ -2,7 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
-import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
+import { areaMarkName, itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue } from '../ui/relative-time';
 import { itemStatus, renderStatusChip, statusLabel } from '../ui/status';
@@ -65,6 +65,33 @@ export function elidePath(path: string, maxSegments = 2): string {
   const segments = path.split(' › ');
   if (segments.length <= maxSegments) return path;
   return `${segments[0]} › … › ${segments[segments.length - 1]}`;
+}
+
+/**
+ * The phone row's location line, with the area separated back out of the front
+ * of it.
+ *
+ * The area has to travel through `elidePath` as the leading segment — that is
+ * the half the elision keeps — but it is Home Assistant's, not one of our
+ * locations, and the `›` after it reads as though it were one. So the line is
+ * composed and elided exactly as it is shown, then the leading segment is taken
+ * back off for the caller to mark instead of punctuate.
+ *
+ * An area name that itself contains ` › ` lands as two segments and the elided
+ * string no longer starts with it. Then there is nothing safe to mark and the
+ * whole string comes back as `rest`, which renders as the line always did
+ * rather than putting the mark on the wrong words.
+ */
+export function elideMobilePath(
+  areaName: string | null,
+  path: string,
+): { area: string | null; rest: string } {
+  const composed = elidePath([areaName, path].filter(Boolean).join(' › '));
+  if (!areaName) return { area: null, rest: composed };
+  if (composed === areaName) return { area: areaName, rest: '' };
+  const prefix = `${areaName} › `;
+  if (!composed.startsWith(prefix)) return { area: null, rest: composed };
+  return { area: areaName, rest: composed.slice(prefix.length) };
 }
 
 /**
@@ -189,6 +216,18 @@ export class HVListRow extends LitElement {
       .secondary.hv-chip-line {
         display: flex;
       }
+      /* The wide row's area pill, inside a line that is a text run rather than a
+         row of chips. The fill is what separates the area from the path after
+         it: as plain text in the same colour and weight, a root location named
+         after its own area printed the word twice with a single space between
+         them and nothing to say which was which.
+
+         The margin is the gap the wide line gets from its flex layout. The line
+         itself stays a block with inline content, because text-overflow does not
+         apply to a flex container and the path tail has to keep its ellipsis. */
+      :host([mobile]) .secondary .hv-area-chip {
+        margin-right: 6px;
+      }
       /* The path elides; the chip ahead of it does not. */
       .secondary.hv-chip-line > .hv-chip-line-text {
         overflow: hidden;
@@ -254,9 +293,6 @@ export class HVListRow extends LitElement {
         border: 1px solid var(--hv-divider);
         border-radius: var(--hv-radius-chip);
       }
-      .stepper.disabled {
-        opacity: 0.45;
-      }
       .stepper button {
         display: inline-grid;
         place-items: center;
@@ -286,15 +322,27 @@ export class HVListRow extends LitElement {
       .qty.low {
         color: var(--hv-warn);
       }
+      /* Takes the stepper's place at both widths, so it is sized against the
+         stepper it replaces — 30px is that control's height with its border. */
       .check-in {
         flex: none;
         border: 1px solid var(--hv-primary-tint-border);
         background: none;
         color: var(--hv-primary-darker);
         border-radius: var(--hv-radius-chip);
+        min-height: 30px;
+        padding: 0 12px;
+        font: 500 13px var(--hv-font);
+      }
+      .check-in:hover {
+        background: var(--hv-hover-overlay);
+      }
+      /* A finger needs the platform minimum, and the phone row has the width for
+         the padding to go with it. */
+      :host([mobile]) .check-in {
         min-height: var(--hv-tap-min, 40px);
         padding: 0 18px;
-        font: 500 13.5px var(--hv-font);
+        font-size: 13.5px;
       }
       .box {
         flex: none;
@@ -399,12 +447,20 @@ export class HVListRow extends LitElement {
     }
   };
 
+  /**
+   * The row's trailing control: the quantity stepper, or the way to take the
+   * item back.
+   *
+   * A checked-out item's quantity is not the thing to adjust, and that holds at
+   * any width — so the stepper gives its place to "Check in" rather than sitting
+   * there greyed. The ⋮ menu still offers the same action, and on a wide row it
+   * only appears on hover: a user who never hovers had no visible way to check
+   * anything in from the list at all.
+   */
   private _renderStepper() {
     const item = this.item;
     const low = isLowStock(item);
-    // A checked-out item's quantity is not the thing to adjust.
-    const disabled = item.checked_out;
-    if (this.mobile && item.checked_out) {
+    if (item.checked_out) {
       return html`<button
         class="check-in"
         data-testid="row-check-in"
@@ -417,11 +473,10 @@ export class HVListRow extends LitElement {
       </button>`;
     }
     return html`
-      <span class="stepper ${disabled ? 'disabled' : ''}" data-testid="row-stepper">
+      <span class="stepper" data-testid="row-stepper">
         <button
           data-testid="row-decrement"
           aria-label="Decrease quantity"
-          ?disabled=${disabled}
           @click=${(e: Event) => {
             e.stopPropagation();
             this._emit('decrement');
@@ -433,7 +488,6 @@ export class HVListRow extends LitElement {
         <button
           data-testid="row-increment"
           aria-label="Increase quantity"
-          ?disabled=${disabled}
           @click=${(e: Event) => {
             e.stopPropagation();
             this._emit('increment');
@@ -454,21 +508,28 @@ export class HVListRow extends LitElement {
     // already behind us means it is waiting to be done.
     const inspectionDue = isOverdue(item.inspection_date);
     const parts = itemPathParts(item, this.areas);
+    const areaMark = areaMarkName(parts.areaName, parts.path);
     // The desktop row has room for the whole path and the area chip beside it.
     const secondary = [parts.path, item.category].filter(Boolean).join(' · ');
-    // A phone line fits neither, so the area goes in as the leading text
-    // segment — the half elidePath keeps — and the room survives a path deep
-    // enough to lose its middle.
-    const mobilePath = elidePath([parts.areaName, parts.path].filter(Boolean).join(' › '));
-    const mobileSecondary = [mobilePath, item.category].filter(Boolean).join(' · ');
+    // A phone line has no room for the whole path, so the area travels through
+    // the elision as the leading segment — the half elidePath keeps — and comes
+    // back out of it as the same pill the wide row hangs beside a path. The
+    // pill's fill is what marks the boundary: as plain text in the path's own
+    // colour and weight, a root named after its area read as one word twice.
+    const mobileLead = elideMobilePath(areaMark, parts.path);
+    const mobileTail = [mobileLead.rest, item.category].filter(Boolean).join(' · ');
+    const hasMobileSecondary = Boolean(mobileLead.area || mobileTail);
+    const mobileSecondary = html`${renderAreaChip(mobileLead.area)}${mobileTail}`;
     // The tooltip carries the *unelided* path: on a phone the middle of it is
     // dropped on purpose, and this is where the whole thing can still be read.
     const secondaryFull = [pathTitle(parts), item.category].filter(Boolean).join(' · ');
     // A phone row has one line for all of this and no room for the chips the
-    // wide row hangs on the right, so the line says the most interrupting
+    // wide row hangs on the right, so the line leads with the most interrupting
     // thing it has: who has the item, then what state it is flagged with, then
-    // what it is waiting for, then where it lives. The path is a tap away in
-    // the detail sheet either way.
+    // what it is waiting for. Being out and being flagged put the location
+    // behind them rather than in place of them — the wide row shows both, and a
+    // borrowed item is exactly the one whose shelf you want to read. What runs
+    // past the edge elides, so the width decides how much of it survives.
     const status = itemStatus(item);
     const flagged = status !== 'ok';
     const mobileState = item.checked_out ? 'out' : flagged || inspectionDue ? 'inspect' : '';
@@ -530,16 +591,18 @@ export class HVListRow extends LitElement {
             ${this.mobile && item.checked_out
               ? html`${overdue ? 'Overdue' : 'Checked out'}${item.due_date
                   ? ` · due ${formatDate(item.due_date)}`
-                  : ''}`
+                  : ''}${hasMobileSecondary ? html` · ${mobileSecondary}` : ''}`
               : this.mobile && flagged
-                ? html`<span data-testid="row-status">${statusLabel(status, this.statuses)}</span>${mobileSecondary
-                    ? ` · ${mobileSecondary}`
+                ? html`<span data-testid="row-status">${statusLabel(status, this.statuses)}</span>${hasMobileSecondary
+                    ? html` · ${mobileSecondary}`
                     : ''}`
                 : this.mobile && inspectionDue
                   ? html`<span data-testid="row-inspection-due">Inspection due</span> · ${formatDate(item.inspection_date)}`
                   : this.mobile
-                    ? mobileSecondary || 'No location'
-                    : html`${renderAreaChip(parts.areaName)}<span class="hv-chip-line-text"
+                    ? hasMobileSecondary
+                      ? mobileSecondary
+                      : 'No location'
+                    : html`${renderAreaChip(areaMark)}<span class="hv-chip-line-text"
                         >${secondary || 'No location'}</span
                       >`}
           </span>

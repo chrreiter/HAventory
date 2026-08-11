@@ -204,7 +204,8 @@ export class HVItemEditor extends LitElement {
          textarea — and its two auto rows split the difference between them.
          That is why the status select came out taller than an input and shorter
          than the textarea beside it: exactly the midpoint. The same hazard is
-         guarded one level down on the state row; this closes it at the top. */
+         guarded inside the boxes on the state row, which are stretched on
+         purpose; this closes it at the top. */
       .cell {
         display: grid;
         align-content: start;
@@ -213,7 +214,12 @@ export class HVItemEditor extends LitElement {
       }
       /* Checked out and Due date are two halves of one fact; Next inspection is
          unrelated to both. The boxes below carry that split visually, so the
-         three fields are never read as three peer settings of the same kind. */
+         three fields are never read as three peer settings of the same kind.
+
+         Both boxes take the height of the taller one. Left to size themselves
+         they never agreed — one carries a note, the other three offset chips —
+         and a row of two boxes of different heights reads as four stacked
+         pieces rather than two. */
       .state {
         display: grid;
         /* Even halves. At 2fr/1fr the inspection box was narrow enough that its
@@ -221,13 +227,18 @@ export class HVItemEditor extends LitElement {
            with room to spare. */
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         gap: 12px;
-        align-items: start;
       }
       :host([mobile]) .state {
         grid-template-columns: 1fr;
       }
+      /* Packed to the top, because the row above stretches these boxes to the
+         taller of the two: auto rows in a stretched grid share the surplus out
+         between the caption and the controls instead of leaving it below them,
+         which would make the date field in the shorter box taller than the one
+         beside it. */
       .group {
         display: grid;
+        align-content: start;
         gap: 9px;
         min-width: 0;
         border: 1px solid var(--hv-divider);
@@ -251,13 +262,45 @@ export class HVItemEditor extends LitElement {
         gap: 12px;
         min-width: 0;
       }
-      /* Not bottom-aligned: the button carries no label, so lining its bottom
-         edge up with the dated field beside it put the dead air above it,
-         between the box's caption and its first control. The cell's own
-         align-content: start now lands it directly under the caption, level
-         with the label opposite, and the surplus falls below both. */
+      /* Shut, the popover renders nothing but still takes a row of the box and
+         the gap above it — nine invisible pixels that decided how tall the row
+         beside it had to stretch. */
+      hv-checkout-popover:not([open]) {
+        display: none;
+      }
+      /*
+       * The button and the due date share a row by construction, not by
+       * matching heights: three named rows, and column 1 of the label row is
+       * simply empty because the button carries no label of its own. Aligning
+       * the two halves by hand instead only moved the dead air — top-aligned
+       * put the button level with the *label* opposite it, bottom-aligned put
+       * the gap between the caption and the first control.
+       *
+       * The note spans the box: it says what state both controls are in, not
+       * just the field above it.
+       */
       .checkout-body {
         grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+          '. label'
+          'action field'
+          'hint hint';
+        gap: 4px 12px;
+      }
+      .checkout-action {
+        grid-area: action;
+      }
+      .due-label {
+        grid-area: label;
+      }
+      .due-input {
+        grid-area: field;
+      }
+      .checkout-body .group-hint {
+        grid-area: hint;
+      }
+      .hv-label.muted {
+        color: var(--hv-text-tertiary);
       }
       /* Checking out is something you do, not a setting you hold — the same
          button the detail sheet has offered all along, in the same words. */
@@ -333,9 +376,22 @@ export class HVItemEditor extends LitElement {
         font-size: var(--hv-input-font, 14.5px);
       }
       /* A native date input clips its own placeholder much below ~140px, and
-         half of a 375px screen minus the box padding is under that. */
+         half of a 375px screen minus the box padding is under that. Stacked,
+         the alignment question above does not arise: the areas are re-mapped
+         rather than dropped, so the order is written down here too. */
       :host([mobile]) .checkout-body {
         grid-template-columns: 1fr;
+        grid-template-areas:
+          'action'
+          'label'
+          'field'
+          'hint';
+      }
+      /* The row gap is the one between a label and its own control. Stacked,
+         the button is not a caption for the field below it, so it keeps the
+         distance the two halves have side by side. */
+      :host([mobile]) .checkout-action {
+        margin-bottom: 8px;
       }
       label.hv-label {
         display: block;
@@ -365,9 +421,6 @@ export class HVItemEditor extends LitElement {
         color: var(--hv-text-tertiary);
         -webkit-text-fill-color: var(--hv-text-tertiary);
         cursor: not-allowed;
-      }
-      .cell.muted .hv-label {
-        color: var(--hv-text-tertiary);
       }
       textarea.hv-input {
         min-height: 44px;
@@ -1539,6 +1592,7 @@ export class HVItemEditor extends LitElement {
           data-testid="editor-category"
           role="combobox"
           autocomplete="off"
+          placeholder="No category"
           aria-autocomplete="list"
           aria-expanded=${String(this._categoryOpen)}
           aria-controls=${CATEGORY_LIST_ID}
@@ -1664,32 +1718,30 @@ export class HVItemEditor extends LitElement {
             ${icon('account', 14)} Check out
           </span>
           <div class="group-body checkout-body">
-            <div class="cell">
-              <button
-                class="field-button checkout-action"
-                data-testid="editor-checked-out"
-                @click=${this._onCheckoutPressed}
-              >
-                ${icon(model.checkedOut ? 'check' : 'account', 16)}
-                <span>${model.checkedOut ? 'Check in' : 'Check out…'}</span>
-              </button>
-            </div>
-            <div class="cell ${model.checkedOut ? '' : 'muted'}">
-              <label class="hv-label" for="editor-due">Due date</label>
-              <input
-                id="editor-due"
-                class="hv-input"
-                type="date"
-                data-testid="editor-due-date"
-                ?disabled=${!model.checkedOut}
-                title=${model.checkedOut ? '' : DUE_DATE_HINT}
-                .value=${model.dueDate}
-                @input=${(e: Event) => this._patch({ dueDate: (e.target as HTMLInputElement).value })}
-              />
-              ${model.checkedOut
-                ? null
-                : html`<span class="group-hint" data-testid="editor-due-hint">${DUE_DATE_HINT}</span>`}
-            </div>
+            <button
+              class="field-button checkout-action"
+              data-testid="editor-checked-out"
+              @click=${this._onCheckoutPressed}
+            >
+              ${icon(model.checkedOut ? 'check' : 'account', 16)}
+              <span>${model.checkedOut ? 'Check in' : 'Check out…'}</span>
+            </button>
+            <label class="hv-label due-label ${model.checkedOut ? '' : 'muted'}" for="editor-due">
+              Due date
+            </label>
+            <input
+              id="editor-due"
+              class="hv-input due-input"
+              type="date"
+              data-testid="editor-due-date"
+              ?disabled=${!model.checkedOut}
+              title=${model.checkedOut ? '' : DUE_DATE_HINT}
+              .value=${model.dueDate}
+              @input=${(e: Event) => this._patch({ dueDate: (e.target as HTMLInputElement).value })}
+            />
+            ${model.checkedOut
+              ? null
+              : html`<span class="group-hint" data-testid="editor-due-hint">${DUE_DATE_HINT}</span>`}
           </div>
           <hv-checkout-popover
             data-testid="editor-checkout"
@@ -2590,7 +2642,7 @@ export class HVItemEditor extends LitElement {
           ${this.mobile ? this._renderStatusField() : null}
           <div class="cell span3">
             <span class="hv-label"
-              >Tags <span class="label-note">· stored lowercase</span></span
+              >Tags <span class="label-note">· always lowercase</span></span
             >
             <hv-chip-input
               data-testid="editor-tags"

@@ -2,7 +2,7 @@ import { LitElement, css, html, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { tokens, base } from '../ui/tokens';
-import { chip } from '../ui/chip';
+import { chip, renderTagChip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import {
@@ -17,7 +17,13 @@ import type { ColumnKey } from '../store/columns';
 import { isLowStock, rowMenuEntries } from './hv-list-row';
 import './hv-overflow-menu';
 import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
-import { itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
+import {
+  areaMarkName,
+  itemPathParts,
+  pathTitle,
+  renderAreaChip,
+  renderPathSegments,
+} from '../ui/location-path';
 import type { Item, Sort, SortField } from '../store/types';
 
 /**
@@ -48,7 +54,7 @@ export class HVDataTable extends LitElement {
         /* The one scroll container on this surface, in both axes.
 
            Sideways because the column template has a hard minimum — about
-           1260px for the default set, 1308px with the selection column — and a
+           1366px for the default set, 1414px with the selection column — and a
            grid whose tracks do not fit overflows its own box rather than
            shrinking. With overflow visible that spilled content was simply
            clipped by the shell: at 375px the rows measured clientWidth 634
@@ -162,8 +168,8 @@ export class HVDataTable extends LitElement {
         white-space: nowrap;
       }
       /*
-       * A phone shows about a third of this table — the template's floor is
-       * around 1260px — so the identity column holds while the rest scrolls
+       * A phone shows about a quarter of this table — the template's floor is
+       * around 1366px — so the identity column holds while the rest scrolls
        * under it, and the right edge says there is more to reach.
        *
        * The offsets are the row's own metrics, so nothing shifts as the swipe
@@ -234,11 +240,43 @@ export class HVDataTable extends LitElement {
         white-space: nowrap;
         color: var(--hv-text-secondary);
       }
-      /* The path elides; the chip ahead of it does not. */
+      /*
+       * The path wraps between its segments and the row grows to hold it.
+       *
+       * Elided as one run of text it broke wherever the pixels ran out, which
+       * left a stub of a location name — "Küc…" of a five-segment path, with
+       * the leaf the reader is actually after nowhere on the row. Every segment
+       * survives instead, on as many lines as the column needs, and the cell's
+       * title still carries the whole path for the one case below that cannot.
+       *
+       * The chip and the path are the two items of the outer row, so a path too
+       * long to sit beside the chip takes the lines under it rather than
+       * squeezing into what the chip leaves.
+       */
+      .cell.path {
+        flex-wrap: wrap;
+        row-gap: 2px;
+      }
       .cell.path > .hv-chip-line-text {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        row-gap: 2px;
+      }
+      /* A segment holds its line, and elides only when one segment on its own
+         is wider than the whole column — the point past which there is no break
+         left to take. */
+      .hv-path-seg {
+        white-space: nowrap;
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
-        white-space: nowrap;
+      }
+      /* The separator's spaces sit at the end of a flex item's only line, where
+         normal white-space processing drops them and the segments either side
+         would run together. */
+      .hv-path-sep {
+        white-space: pre;
       }
       .cell.qty {
         color: var(--hv-text);
@@ -261,10 +299,15 @@ export class HVDataTable extends LitElement {
         font-size: 12.5px;
         color: var(--hv-text-tertiary);
       }
+      /* Chips wrap onto as many lines as the set needs and the row grows to
+         hold them. Cut at the cell's edge instead, the column showed one chip
+         of six and half of the next, with no count to say the rest existed —
+         and a half-drawn chip reports nothing at all. */
       .tags {
         display: flex;
-        gap: 5px;
-        overflow: hidden;
+        flex-wrap: wrap;
+        gap: 4px 5px;
+        min-width: 0;
       }
       .actions {
         display: flex;
@@ -486,14 +529,14 @@ export class HVDataTable extends LitElement {
           role="cell"
           data-testid="cell-location"
           title=${pathTitle(parts)}
-          >${renderAreaChip(parts.areaName)}<span class="hv-chip-line-text"
-            >${parts.path || '—'}</span
+          >${renderAreaChip(areaMarkName(parts.areaName, parts.path))}<span class="hv-chip-line-text"
+            >${parts.path ? renderPathSegments(parts.path) : '—'}</span
           ></span
         >`;
       }
       case 'tags':
         return html`<span class="tags" role="cell" data-testid="cell-tags">
-          ${item.tags.length ? item.tags.map((t) => html`<span class="hv-chip">${t}</span>`) : html`<span class="cell">—</span>`}
+          ${item.tags.length ? item.tags.map((t) => renderTagChip(t)) : html`<span class="cell">—</span>`}
         </span>`;
       case 'due_date':
         return html`<span
@@ -520,6 +563,12 @@ export class HVDataTable extends LitElement {
     // Status column. With the column shown it would put the same word twice on
     // one row, so the column takes over and the chip stands down.
     const statusColumn = columns.includes('status');
+    // Low stands down for Checked out in the same cell, the way a phone row's
+    // one line already picks the most interrupting thing it has to say: both
+    // chips are unshrinkable, and together they take 138px of a 250px track,
+    // which leaves the name too short to tell two items apart. Who has the item
+    // outranks how many are left, and the Qty column still draws a low count in
+    // amber.
     const template = tableTemplateFor(columns, { selectable: this.selectable });
     const loadedIds = this.items.map((i) => i.id);
     const selectedCount = loadedIds.filter((id) => this.selection.has(id)).length;
@@ -588,8 +637,13 @@ export class HVDataTable extends LitElement {
                     : null}
                   <span class="name-cell" role="cell">
                     <span class="name" data-testid="table-name" title=${item.name}>${item.name}</span>
-                    ${isLowStock(item)
-                      ? html`<span class="hv-chip warning" aria-label="Low stock">Low</span>`
+                    ${isLowStock(item) && !item.checked_out
+                      ? html`<span
+                          class="hv-chip warning"
+                          data-testid="table-low"
+                          aria-label="Low stock"
+                          >Low</span
+                        >`
                       : null}
                     ${!statusColumn && itemStatus(item) !== DEFAULT_STATUS
                       ? renderStatusChip(itemStatus(item), this.statuses, {
@@ -641,9 +695,7 @@ export class HVDataTable extends LitElement {
                       @select=${(e: CustomEvent) => {
                         e.stopPropagation();
                         const { id } = e.detail as { id: string };
-                        // The check-out flow needs somewhere to anchor its popover.
-                        const anchor = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                        this._emit('row-action', { itemId: item.id, action: id, anchor });
+                        this._emit('row-action', { itemId: item.id, action: id });
                       }}
                     ></hv-overflow-menu>
                   </span>

@@ -1,6 +1,7 @@
 import './hv-location-tree';
 import type { HVLocationTree } from './hv-location-tree';
 import { chip } from '../ui/chip';
+import { browseRow } from '../ui/browse-row';
 import type { LocationTreeNode } from '../store/types';
 
 function node(
@@ -88,6 +89,36 @@ describe('hv-location-tree: hierarchy', () => {
   });
 });
 
+// The sidebar draws its status, category and tag rows from the same fragment,
+// one list under the other in the same column — so the shape has to come from
+// there rather than from a rule here that only looked like it.
+describe('hv-location-tree: the shared browse row', () => {
+  it('puts every row on it, with the twisty in the shared slot', async () => {
+    const el = await mount({ showAll: true, showOrphans: true });
+    const every = [
+      ...(el.shadowRoot?.querySelectorAll('[data-testid="tree-row"], [data-testid="tree-all"], [data-testid="tree-orphans"]') ?? []),
+    ] as HTMLElement[];
+
+    expect(every.length).toBeGreaterThan(2);
+    for (const row of every) {
+      expect(row.classList, row.textContent ?? '').toContain('hv-browse-row');
+      expect(row.querySelector('.hv-browse-row-lead'), row.textContent ?? '').toBeTruthy();
+      expect(row.querySelector('.hv-browse-row-label'), row.textContent ?? '').toBeTruthy();
+    }
+  });
+
+  // A leaf has nothing to expand, and the All-items and No-location rows have
+  // no twisty at all — but a name that started further left on those rows would
+  // put three insets in one column.
+  it('holds the slot open on a row with no twisty to put in it', async () => {
+    const el = await mount({ nodes: [{ ...tree[0], children: [] }], showAll: true });
+    const leadless = [...(el.shadowRoot?.querySelectorAll('.hv-browse-row') ?? [])].filter(
+      (r) => !r.querySelector('.hv-browse-row-lead.placeholder') && !r.querySelector('button.twisty'),
+    );
+    expect(leadless).toEqual([]);
+  });
+});
+
 describe('hv-location-tree: counts and decorations', () => {
   it('renders the backend subtree counts, not a client-side sum', async () => {
     const el = await mount({ showCounts: true });
@@ -119,6 +150,23 @@ describe('hv-location-tree: counts and decorations', () => {
     expect(q(el, '[data-testid="tree-all"]')?.textContent).toContain('250');
     expect(q(el, '[data-testid="tree-orphans"]')?.textContent).toContain('No location');
     expect(q(el, '[data-testid="tree-orphans"]')?.textContent).toContain('3');
+  });
+
+  // An unfiled item is an ordinary state for a household inventory, not a fault
+  // to alert on — and the row sat in amber under a warning triangle.
+  it('marks No location with a crossed-out pin, in the ink every other row uses', async () => {
+    const el = await mount({ showAll: true, showOrphans: true, orphanCount: 3 });
+    const row = q(el, '[data-testid="tree-orphans"]') as HTMLElement;
+
+    expect(row.querySelector('svg[data-icon="mapMarkerOff"]')).toBeTruthy();
+    expect(row.querySelector('svg[data-icon="alert"]')).toBe(null);
+
+    const styles = (customElements.get('hv-location-tree') as typeof HVLocationTree).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+    expect(css).not.toMatch(/\.row\.orphans \{[^}]*hv-warn/);
   });
 
   // The row clears the location either way, but a picker is assigning one, not
@@ -396,10 +444,12 @@ describe('hv-location-tree: area grouping', () => {
     const styles = (customElements.get('hv-location-tree') as typeof HVLocationTree).styles;
     const sheets = Array.isArray(styles) ? styles : [styles];
     const own = String(sheets[sheets.length - 1].cssText).replace(/\s+/g, ' ');
-    // Tracks whatever `.row` is set to rather than restating a number beside it,
-    // and both bands are named by one rule so neither can drift from the other.
+    // Tracks whatever a browse row is set to rather than restating a number
+    // beside it, and both bands are named by one rule so neither can drift.
     expect(own).toMatch(/\.area-name \.hv-area-chip, \.area-none \{ font-size: inherit/);
-    expect(own).toMatch(/\.row \{[^}]*font: 400 [\d.]+px/);
+    expect(String(browseRow.cssText).replace(/\s+/g, ' ')).toMatch(
+      /\.hv-browse-row \{[^}]*font: 400 [\d.]+px/,
+    );
     // The other surfaces put this chip beside a path it qualifies, where it is
     // an annotation and stays smaller than the line carrying it.
     expect(String(chip.cssText).replace(/\s+/g, ' ')).toMatch(
@@ -628,7 +678,7 @@ describe('hv-location-tree: manage mode', () => {
       .join('\n')
       .replace(/\s+/g, ' ');
 
-    expect(css).toMatch(/\.row \{[^}]*padding: var\(--hv-organize-row-pad, 7px\) 12px/);
+    expect(css).toMatch(/\.hv-browse-row \{[^}]*padding: var\(--hv-organize-row-pad, 7px\) 12px/);
     // Nothing here declares it — a tree that declared its own would answer for
     // every host at once.
     expect(css).not.toContain('--hv-organize-row-pad:');

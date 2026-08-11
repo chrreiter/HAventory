@@ -174,6 +174,14 @@ describe('hv-full-view: phone-width app bar', () => {
     // context bar are on this surface too and need the same sizing.
     expect(narrow()).toMatch(/\.shell \{[^}]*--hv-tap-min: 44px/);
     expect(narrow()).toMatch(/\.shell \{[^}]*--hv-input-font: 16px/);
+    // And outside the query, where the card's own idea of narrow used to reach
+    // in: an overlay renders inside hv-card-shell's tree, which declares both
+    // of these for a card measured at 600px or under — an ordinary dashboard
+    // column on a desktop. The guaranteed-invalid value rather than a number,
+    // so each consumer keeps the size it was written with.
+    const shell = /\.shell \{([^}]*)\}/.exec(fullCss())?.[1] ?? '';
+    expect(shell).toMatch(/--hv-tap-min: initial/);
+    expect(shell).toMatch(/--hv-input-font: initial/);
   });
 
   // Selection mode reuses the same bar. `.subcount` was the only shrinkable
@@ -212,6 +220,25 @@ describe('hv-full-view: phone-width app bar', () => {
 
     const loadAll = q(sr, '[data-testid="selection-load-all"]');
     expect(loadAll?.classList.contains('load-all')).toBe(true);
+  });
+
+  // Selection mode opens at "0 selected", where the bar's one action had nothing
+  // to act on and still rendered live.
+  it('greys Clear selection out until something is selected', async () => {
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1' }), makeItem({ id: '2' })] });
+    el.startSelecting = true;
+    el.open = false;
+    await el.updateComplete;
+    el.open = true;
+    await settle(el);
+
+    const clear = () => q(sr, '[data-testid="selection-clear"]') as HTMLButtonElement;
+    expect(q(sr, '[data-testid="selection-count"]')?.textContent).toContain('0 selected');
+    expect(clear().disabled).toBe(true);
+
+    store.toggleSelected('1');
+    await settle(el);
+    expect(clear().disabled).toBe(false);
   });
 });
 
@@ -564,6 +591,31 @@ describe('hv-full-view: sidebar facets', () => {
   const rows = (sr: ShadowRoot, section: string) =>
     [...sr.querySelectorAll(`[data-testid="sidebar-${section}-row"]`)] as HTMLElement[];
 
+  // A facet row and a location row are the same control in two shadow roots,
+  // one list under the other in the same column, and they had drifted apart on
+  // both height and label inset. The row that carries the shared class is what
+  // makes them one; the slot is what holds the inset, so it is reserved on a
+  // row with nothing to put in it rather than left out.
+  it('draws a facet row as the shared browse row, slot and all', async () => {
+    const { el, sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
+    const all = [...rows(sr, 'categories'), ...rows(sr, 'tags')];
+
+    for (const row of all) {
+      expect(row.classList, row.dataset.value).toContain('hv-browse-row');
+      const lead = row.querySelector('.hv-browse-row-lead');
+      expect(lead, row.dataset.value).toBeTruthy();
+      expect(lead?.classList.contains('placeholder'), row.dataset.value).toBe(true);
+      expect(row.querySelector('.hv-browse-row-label')?.textContent).toBe(row.dataset.value);
+    }
+
+    rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
+    await settle(el);
+    const picked = rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')!;
+    // Picked, the same slot holds the check — the label does not move sideways.
+    expect(picked.querySelector('.hv-browse-row-lead')?.classList.contains('placeholder')).toBe(false);
+    expect(picked.querySelector('.hv-browse-row-lead svg')).toBeTruthy();
+  });
+
   it('lists categories and tags with their counts, locations still first', async () => {
     const { sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
 
@@ -595,7 +647,9 @@ describe('hv-full-view: sidebar facets', () => {
     rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
     await settle(el);
     expect(store.state.value.filters.category).toBe('Tools');
-    expect(rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.classList).toContain('on');
+    expect(rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.classList).toContain(
+      'selected',
+    );
 
     rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
     await settle(el);
@@ -813,7 +867,7 @@ describe('hv-full-view: sidebar status', () => {
     missing()?.click();
     await settle(el);
     expect(store.state.value.filters.status).toBe('missing');
-    expect(missing()?.classList).toContain('on');
+    expect(missing()?.classList).toContain('selected');
 
     missing()?.click();
     await settle(el);
@@ -831,9 +885,11 @@ describe('hv-full-view: sidebar status', () => {
     await settle(el);
 
     expect(store.state.value.filters.status).toBe('needs_repair');
-    expect(rows(sr).filter((r) => r.classList.contains('on')).map((r) => r.dataset.value)).toEqual([
-      'needs_repair',
-    ]);
+    expect(
+      rows(sr)
+        .filter((r) => r.classList.contains('selected'))
+        .map((r) => r.dataset.value),
+    ).toEqual(['needs_repair']);
   });
 
   // A backend too old to send the map still prices the two flagged built-ins in
@@ -2160,6 +2216,42 @@ describe('hv-full-view: table row actions', () => {
 
     expect(popover.open).toBe(false);
     expect(store.state.value.items.find((i) => i.id === '1')?.checked_out).toBe(true);
+  });
+
+  // The popover's phone presentation is an inline step, a static card meant to
+  // sit inside the body of the surface that opened it — and this call site is a
+  // sibling at the end of the shell with no body around it, so the step landed
+  // stranded and unscrimmed at the foot of the page. The anchored presentation
+  // is no better here: the ⋮ it would hang from sits in a column the table
+  // scrolls sideways out of view. It presents the way the bulk popover does.
+  it('presents the single-row check-out centred and scrimmed at every width', async () => {
+    for (const narrow of [false, true]) {
+      const restore = stubViewport(narrow);
+      try {
+        const { el, sr } = await mount({ items: [makeItem({ id: '1', name: 'Drill' })] });
+        pick(sr, 'check-out');
+        await settle(el);
+
+        const popover = q(sr, '[data-testid="full-checkout"]') as HTMLElement & {
+          open: boolean;
+          mobile: boolean;
+          anchor: DOMRect | null;
+        };
+        const where = `narrow=${narrow}`;
+        expect(popover.open, where).toBe(true);
+        expect(popover.mobile, where).toBe(false);
+        expect(popover.anchor, where).toBe(null);
+
+        const scrim = popover.shadowRoot?.querySelector('.scrim');
+        expect(scrim?.classList.contains('dim'), where).toBe(true);
+        const card = popover.shadowRoot?.querySelector('[data-testid="checkout-popover"]');
+        expect(card?.getAttribute('style'), where).toContain('left: 50%');
+
+        el.remove();
+      } finally {
+        restore();
+      }
+    }
   });
 
   it('sets a due date on an item already out', async () => {

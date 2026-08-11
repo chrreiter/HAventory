@@ -37,12 +37,18 @@ export const COLUMN_DEFS: readonly ColumnDef[] = [
   // Wide enough for the "Needs repair" chip on one line: a status that wrapped
   // or clipped would be unreadable in exactly the rows that matter most.
   { key: 'status', label: 'Status', tableSize: '112px' },
-  { key: 'category', label: 'Category', tableSize: 'minmax(110px, 1fr)' },
-  { key: 'location', label: 'Location', tableSize: 'minmax(110px, 1fr)' },
-  // The narrowest of the flexible columns, and the only one that yields to the
-  // name: a row identified by its tags and not by its name cannot be scanned,
-  // and tags are the column a reader can most afford to see one of.
-  { key: 'tags', label: 'Tags', tableSize: 'minmax(96px, 1fr)' },
+  // One word, and the only flexible column that carries one: it takes the
+  // smallest floor and the smallest share of whatever is left over. The floor
+  // holds its own header and a one-word value and stops there — with the full
+  // column set every flexible track freezes on its floor, so what this one does
+  // not claim is what the name beside it gets to finish a word on.
+  { key: 'category', label: 'Category', tableSize: 'minmax(92px, 1fr)' },
+  // The two columns whose content has no natural end — a path grows a segment
+  // per nesting level, a tag set a chip per tag — so they are where surplus
+  // width does the most: their cells wrap, and every pixel they get is a
+  // segment or a chip that does not need a second line.
+  { key: 'location', label: 'Location', tableSize: 'minmax(140px, 2fr)' },
+  { key: 'tags', label: 'Tags', tableSize: 'minmax(130px, 2fr)' },
   { key: 'due_date', label: 'Due', tableSize: '100px', sortField: 'due_date' },
   {
     key: 'inspection_date',
@@ -119,14 +125,25 @@ const COLUMN_TABLE_SIZE: Record<ColumnKey, string> = Object.fromEntries(
  * grid-template-columns for the full-view table: an optional selection column,
  * the name, the chosen columns, then room for the hover actions.
  *
- * The name track outweighs every flexible column beside it, in both halves of
- * its `minmax`: the name is the row's identity, and it also carries the inline
- * Low and Checked-out chips, which take their width before the name gets any.
- * With the full column set the flexible tracks all sit at their minimum
- * anyway — there the floor is the whole answer, and the growth factor decides
- * only what a wider window hands out.
+ * The name's *floor* outranks every flexible column beside it: the name is the
+ * row's identity, and it also carries an inline chip — Low, or Checked out, or
+ * the status when that column is off — which takes its width before the name
+ * gets any. At most one of Low and Checked out draws, so the floor holds a
+ * readable name rather than the tail of one.
+ *
+ * That floor is what the name actually gets on the surface it is read on. With
+ * the full column set the fixed columns take enough that every flexible track
+ * freezes on its minimum, so the floor — not the growth factor — decides
+ * whether a name ends or elides: it holds an ordinary one of about 35
+ * characters, which is 245px at the row's 13.5px text.
+ *
+ * The growth factor does not outrank the others, and that is the point. A name
+ * is one line of text with an end to it; a path and a tag set are not. Past the
+ * floors every extra pixel goes to Location and Tags, whose cells wrap — which
+ * is where a wider window can still change what the row says. So the two ends
+ * of the range answer different questions rather than the same one twice.
  */
-export const NAME_COLUMN_SIZE = 'minmax(220px, 3fr)';
+export const NAME_COLUMN_SIZE = 'minmax(250px, 2fr)';
 
 /**
  * The selection column's track. Exported because the table pins the name cell

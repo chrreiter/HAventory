@@ -55,10 +55,143 @@ describe('hv-data-table: area', () => {
     const el = await mount([{ id: '1' }], { columns: ['location'], areas: AREAS });
     expect(q(el, '[data-testid="cell-location"]')?.textContent?.trim()).toBe('—');
   });
+
+  // An area "Kitchen" over a root location "Kitchen" — the way a household
+  // names both — put the same word twice in the cell, "Kitchen Kitchen", where
+  // the card's own rows had already stopped doing it. One rule, both surfaces.
+  it('drops the area mark when the path already opens with that name', async () => {
+    const rooted = (display_path: string) => ({
+      id_path: [],
+      name_path: [],
+      display_path,
+      sort_key: '',
+    });
+    for (const path of ['Kitchen', 'Kitchen / Pantry']) {
+      const el = await mount(
+        [{ id: '1', effective_area_id: 'area-kitchen', location_path: rooted(path) }],
+        { columns: ['location'], areas: AREAS },
+      );
+      const cell = q(el, '[data-testid="cell-location"]');
+
+      expect(cell?.querySelector('[data-testid="area-chip"]'), path).toBe(null);
+      expect(cell?.textContent?.replace(/\s+/g, ' ').trim(), path).toBe(path.replace(' / ', ' › '));
+      // The pairing is still readable in full where the cell keeps it.
+      expect(cell?.getAttribute('title'), path).toBe(
+        `Area: Kitchen · ${path.replace(' / ', ' › ')}`,
+      );
+      el.remove();
+    }
+  });
+
+  // A deeper segment of the same name is a different place inside the area, so
+  // the mark still has something to say.
+  it('keeps the mark when the area only reappears further down the path', async () => {
+    const el = await mount(
+      [
+        {
+          id: '1',
+          effective_area_id: 'area-kitchen',
+          location_path: { id_path: [], name_path: [], display_path: 'Cellar / Kitchen', sort_key: '' },
+        },
+      ],
+      { columns: ['location'], areas: AREAS },
+    );
+    expect(
+      q(el, '[data-testid="cell-location"]')?.querySelector('.hv-area-chip')?.textContent,
+    ).toContain('Kitchen');
+  });
+});
+
+describe('hv-data-table: a path too long for its column', () => {
+  const AREAS = [{ id: 'area-kitchen', name: 'Küche' }];
+  const DEEP = 'Küche / Hochschrank / Oberstes Fach / Vorratsbox / Backzutaten';
+  const deep = (display_path: string) => ({ id_path: [], name_path: [], display_path, sort_key: '' });
+
+  const mountPath = (display_path: string) =>
+    mount([{ id: '1', effective_area_id: 'area-kitchen', location_path: deep(display_path) }], {
+      columns: ['location'],
+      areas: AREAS,
+    });
+
+  const segments = (el: HVDataTable) =>
+    [...q(el, '[data-testid="cell-location"]')!.querySelectorAll('.hv-path-seg')].map(
+      (s) => s.textContent ?? '',
+    );
+
+  // Elided as one run of text the cell showed the area mark and "Küc…" — three
+  // letters of a five-segment path, naming nothing, with the leaf the reader is
+  // after nowhere on the row.
+  it('keeps every segment of a deep path whole', async () => {
+    const el = await mountPath(DEEP);
+    const names = segments(el).map((s) => s.replace(' › ', ''));
+
+    expect(names).toEqual([
+      'Küche',
+      'Hochschrank',
+      'Oberstes Fach',
+      'Vorratsbox',
+      'Backzutaten',
+    ]);
+  });
+
+  // The separator rides inside the segment ahead of it, so a wrap can never
+  // open a line with a lone "›" — and the path still reads as one string when
+  // it is copied or announced.
+  it('never leaves a separator to start a line on its own', async () => {
+    const el = await mountPath(DEEP);
+    const parts = segments(el);
+
+    for (const part of parts) expect(part.startsWith('›')).toBe(false);
+    expect(parts.slice(0, -1).every((p) => p.endsWith(' › '))).toBe(true);
+    expect(parts[parts.length - 1]).toBe('Backzutaten');
+    expect(q(el, '[data-testid="cell-location"]')?.textContent).toContain(
+      'Küche › Hochschrank › Oberstes Fach › Vorratsbox › Backzutaten',
+    );
+  });
+
+  // The reported cell was "🏠 Living Room (" — the mark, an opening bracket and
+  // nothing after it. Punctuation inside a location name travels with the word
+  // it belongs to and cannot be left holding a cell on its own.
+  it('never strands the punctuation inside a location name', async () => {
+    const el = await mountPath('Wohnzimmer (Nord) / Regal');
+    const parts = segments(el);
+
+    expect(parts.map((p) => p.replace(' › ', ''))).toEqual(['Wohnzimmer (Nord)', 'Regal']);
+    for (const part of parts) expect(/^[(){}[\]·,;:]+$/.test(part.trim())).toBe(false);
+  });
+
+  it('carries the whole path in the cell title, wrapped or not', async () => {
+    const el = await mountPath(DEEP);
+    expect(q(el, '[data-testid="cell-location"]')?.getAttribute('title')).toBe(
+      'Area: Küche · Küche › Hochschrank › Oberstes Fach › Vorratsbox › Backzutaten',
+    );
+  });
+
+  // jsdom computes no layout, so what is assertable is the contract the wrap
+  // rests on: the segments are the flex items of a wrapping box, each holds its
+  // own line, and the separator's spaces are protected — at the end of a flex
+  // item's only line, normal white-space processing drops them and the two
+  // segments either side run together.
+  it('wraps between segments rather than clipping at the cell edge', () => {
+    const css = tableCss();
+    expect(css).toMatch(/\.cell\.path \{[^}]*flex-wrap: wrap/);
+    expect(css).toMatch(/\.cell\.path > \.hv-chip-line-text \{[^}]*display: flex/);
+    expect(css).toMatch(/\.cell\.path > \.hv-chip-line-text \{[^}]*flex-wrap: wrap/);
+    expect(css).toMatch(/\.hv-path-seg \{[^}]*white-space: nowrap/);
+    expect(css).toMatch(/\.hv-path-sep \{ white-space: pre; \}/);
+  });
+
+  // The last resort, for one segment wider than the whole column: an ellipsis
+  // on the segment, never a hard cut — and the title above still has the truth.
+  it('elides a single segment only once there is no break left to take', () => {
+    expect(tableCss()).toMatch(
+      /\.hv-path-seg \{[^}]*min-width: 0;[^}]*overflow: hidden;[^}]*text-overflow: ellipsis/,
+    );
+  });
 });
 
 describe('hv-data-table: narrow screens', () => {
-  // The template has a hard ~786px minimum, and a grid whose tracks do not fit
+  // The template has a hard ~1366px minimum, and a grid whose tracks do not fit
   // overflows its box rather than shrinking. With overflow visible the spill
   // was clipped by the shell: rows measured clientWidth 634 / scrollWidth 854
   // at 375px, and three columns could not be reached by any gesture.
@@ -190,6 +323,42 @@ describe('hv-data-table: columns', () => {
     expect(q(el, '[data-testid="cell-tags"]')?.textContent).toContain('m4');
   });
 
+  // The Tags column and the Category column sit side by side, so a tag has to
+  // read as one here the same way it does in the detail sheet.
+  it('chips a tag the way every other surface chips one', async () => {
+    const el = await mount([{ id: '1', category: 'Hardware', tags: ['m4', 'metric'] }]);
+    const tags = [...q(el, '[data-testid="cell-tags"]')!.querySelectorAll('.hv-chip')];
+
+    expect(tags.map((t) => t.textContent?.trim())).toEqual(['#m4', '#metric']);
+    expect(tags.every((t) => t.classList.contains('tag'))).toBe(true);
+    // The category cell is plain text in this column, not a chip at all.
+    expect(q(el, '[data-testid="cell-category"]')?.querySelector('.hv-chip')).toBe(null);
+  });
+
+  // Cut at the cell's edge the column showed one chip of six and half of the
+  // next — "#re…", sometimes a bare "#" — with no count to say the rest
+  // existed. jsdom lays nothing out, so what is assertable is that nothing
+  // clips and the chips have somewhere to go.
+  it('wraps a long tag set onto more lines instead of cutting a chip', async () => {
+    const tags = ['essen', 'vorrat', 'trocken', 'reserve', 'küche', 'bio'];
+    const el = await mount([{ id: '1', tags }], { columns: ['tags'] });
+    const chips = [...q(el, '[data-testid="cell-tags"]')!.querySelectorAll('.hv-chip')];
+
+    // Every tag, whole: no cut-off set and no "+N" standing in for one.
+    expect(chips.map((c) => c.textContent?.trim())).toEqual(tags.map((t) => `#${t}`));
+
+    const css = tableCss();
+    expect(css).toMatch(/\.tags \{[^}]*flex-wrap: wrap/);
+    expect(css).not.toMatch(/\.tags \{[^}]*overflow: hidden/);
+  });
+
+  it('says so when an item carries no tags', async () => {
+    const el = await mount([{ id: '1', tags: [] }]);
+    const cell = q(el, '[data-testid="cell-tags"]')!;
+    expect(cell.textContent?.trim()).toBe('—');
+    expect(cell.querySelector('.hv-tag-mark')).toBe(null);
+  });
+
   it('follows the column selection', async () => {
     const el = await mount([{ id: '1' }], { columns: ['quantity'] });
     expect(q(el, '[data-testid="cell-quantity"]')).toBeTruthy();
@@ -242,8 +411,45 @@ describe('hv-data-table: columns', () => {
     ]);
     expect(q(el, '[data-testid="cell-quantity"]')?.classList.contains('low')).toBe(true);
     expect(q(el, '[data-testid="cell-due_date"]')?.classList.contains('overdue')).toBe(true);
-    expect(el.shadowRoot?.textContent).toContain('Low');
     expect(el.shadowRoot?.textContent).toContain('Checked out');
+  });
+});
+
+// Both chips are unshrinkable, so on a row carrying both they take 138px of the
+// 250px name track and leave 112px of name — about sixteen characters, measured
+// on a real instance at the table's floor width and again at 390px, where the
+// same cell is pinned. Dropping one is what buys the name back; which one to
+// drop is the choice the phone row already makes on its single line.
+describe('hv-data-table: the name cell picks one chip', () => {
+  const bothWays = { quantity: 1, low_stock_threshold: 5 };
+
+  it('marks a low row that nobody has taken', async () => {
+    const el = await mount([{ id: '1', ...bothWays }]);
+    expect(q(el, '[data-testid="table-low"]')?.textContent?.trim()).toBe('Low');
+  });
+
+  it('stands Low down for Checked out, which is the more interrupting of the two', async () => {
+    const el = await mount([{ id: '1', ...bothWays, checked_out: true }]);
+    expect(q(el, '[data-testid="table-low"]')).toBe(null);
+    expect(q(el, '.name-cell')?.textContent).toContain('Checked out');
+    // The fact is not lost with the chip: the quantity is still drawn as low.
+    expect(q(el, '[data-testid="cell-quantity"]')?.classList.contains('low')).toBe(true);
+  });
+
+  it('leaves the status chip alone — that one can shrink and elide its own label', async () => {
+    const el = await mount([{ id: '1', ...bothWays, checked_out: true, status: 'missing' }], {
+      columns: ['quantity'],
+    });
+    expect(q(el, '[data-testid="table-low"]')).toBe(null);
+    expect(q(el, '[data-testid="table-status"]')?.textContent?.trim()).toBe('Missing');
+    expect(q(el, '.name-cell')?.textContent).toContain('Checked out');
+  });
+
+  it('keeps the name itself the only part of the cell that gives way', () => {
+    const css = tableCss();
+    // The cell shares its shrink rule with the two other pinned cells.
+    expect(css).toMatch(/\.name-cell,[^{]*\{[^}]*min-width: 0/);
+    expect(/\.name \{([^}]*)\}/.exec(css)?.[1]).toContain('text-overflow: ellipsis');
   });
 });
 
@@ -691,9 +897,12 @@ describe('hv-data-table: row menu', () => {
     expect(menu(el, 0).entries).toEqual(rowMenuEntries(makeItem({ id: '1', name: 'In' })));
   });
 
-  it('reports the picked action, the row it came from, and where to anchor', async () => {
+  // No anchor travels with it: everything the menu opens on this surface is
+  // centred, because the ⋮ it would hang from sits in a column the table scrolls
+  // sideways out of view.
+  it('reports the picked action and the row it came from, and nothing else', async () => {
     const el = await mount([{ id: '1', name: 'Drill' }]);
-    const seen: { itemId: string; action: string; anchor?: DOMRect }[] = [];
+    const seen: Record<string, unknown>[] = [];
     el.addEventListener('row-action', (e) => seen.push((e as CustomEvent).detail));
 
     for (const id of ['check-out', 'edit', 'delete']) {
@@ -702,7 +911,11 @@ describe('hv-data-table: row menu', () => {
 
     expect(seen.map((d) => d.action)).toEqual(['check-out', 'edit', 'delete']);
     expect(seen.every((d) => d.itemId === '1')).toBe(true);
-    expect(seen[0].anchor).toBeTruthy();
+    expect(seen.map((d) => Object.keys(d).sort())).toEqual([
+      ['action', 'itemId'],
+      ['action', 'itemId'],
+      ['action', 'itemId'],
+    ]);
   });
 
   // The row's own click opens the item; a click on the menu is not that.

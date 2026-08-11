@@ -1,7 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { chip } from '../ui/chip';
+import { chip, tagLabel } from '../ui/chip';
 import { locationPathParts, pathTitle } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
@@ -439,8 +439,11 @@ export class HVFilterPanel extends LitElement {
     onToggle: () => void,
     opts: { warning?: boolean; tally?: number | null; testid?: string } = {},
   ) {
+    // The hue is the applied state, never the facet: a chip tinted at rest reads
+    // as already on, which is what the identical desktop chip avoids by pairing
+    // `warning` with `on`.
     return html`<button
-      class="hv-chip toggle chip check ${on ? 'on' : ''} ${opts.warning ? 'warning' : ''}"
+      class="hv-chip toggle chip check ${on ? 'on' : ''} ${on && opts.warning ? 'warning' : ''}"
       aria-pressed=${String(on)}
       data-testid=${opts.testid ?? 'filter-check'}
       @click=${onToggle}
@@ -550,7 +553,7 @@ export class HVFilterPanel extends LitElement {
               </button>`
             : null}
         </div>
-        <span class="hint">Single select · counts from distinct values</span>
+        <span class="hint">Pick one category</span>
       </div>
     `;
   }
@@ -589,25 +592,25 @@ export class HVFilterPanel extends LitElement {
         <div class="chips">
           ${all.map(
             (t) => html`<button
-              class="hv-chip toggle chip ${selected.has(t.value) ? 'on' : ''}"
+              class="hv-chip toggle tag chip ${selected.has(t.value) ? 'on' : ''}"
               data-testid="filter-tag"
               data-value=${t.value}
               aria-pressed=${String(selected.has(t.value))}
               @click=${() => this._toggleTag(t.value)}
             >
-              ${selected.has(t.value) ? icon('check', 12) : null}${t.value}
+              ${selected.has(t.value) ? icon('check', 12) : null}${tagLabel(t.value)}
               <span class="hv-tally">${t.count}</span>
             </button>`,
           )}
           ${extras.map(
             (t) => html`<button
-              class="hv-chip toggle chip on"
+              class="hv-chip toggle tag chip on"
               data-testid="filter-tag"
               data-value=${t}
               aria-pressed="true"
               @click=${() => this._toggleTag(t)}
             >
-              ${icon('check', 12)}${t}
+              ${icon('check', 12)}${tagLabel(t)}
             </button>`,
           )}
           <label class="field" data-testid="filter-tag-add">
@@ -630,7 +633,7 @@ export class HVFilterPanel extends LitElement {
             />
           </label>
         </div>
-        <span class="hint">Stored lowercase — input lowercases on commit</span>
+        <span class="hint">Tags are always lowercase</span>
       </div>
     `;
   }

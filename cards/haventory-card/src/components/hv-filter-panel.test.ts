@@ -111,6 +111,37 @@ describe('hv-filter-panel: category', () => {
     expect(all(el, '[data-testid="filter-category"]')).toHaveLength(5);
   });
 
+  // The group headings are the only thing separating the two runs of chips, and
+  // a value used as both a category and a tag appears in each of them.
+  it('tells a category chip from a tag chip without the group heading', async () => {
+    const el = await mount();
+    const category = q(el, '[data-testid="filter-category"]');
+    const tag = q(el, '[data-testid="filter-tag"]');
+
+    expect(tag.classList.contains('tag')).toBe(true);
+    expect(category.classList.contains('tag')).toBe(false);
+    expect(tag.querySelector('.hv-tag-mark')?.textContent).toBe('#');
+    expect(category.querySelector('.hv-tag-mark')).toBe(null);
+    // Pressable chips read as an outline until they are applied, so the mark is
+    // the whole distinction here — the fill says "picked", not "tag".
+    expect(tag.classList.contains('toggle')).toBe(true);
+  });
+
+  // A chip carries both marks once it is applied, and the check has to stay the
+  // leading one: it reports the state, the # only names the facet.
+  it('keeps the applied check ahead of the tag mark', async () => {
+    const el = await mount();
+    el.filters = { ...el.filters, tags: ['metric'] };
+    await el.updateComplete;
+    const tag = q(el, '[data-testid="filter-tag"][data-value="metric"]');
+
+    expect(tag.getAttribute('aria-pressed')).toBe('true');
+    expect(tag.querySelector('svg')).toBeTruthy();
+    expect(tag.textContent?.replace(/\s+/g, ' ').trim()).toBe('#metric 61');
+    const marks = [...tag.querySelectorAll('svg, .hv-tag-mark')].map((n) => n.tagName.toLowerCase());
+    expect(marks[0]).toBe('svg');
+  });
+
   it('is single-select and toggles off when picked again', async () => {
     const el = await mount();
     const seen = changes(el);
@@ -209,6 +240,19 @@ describe('hv-filter-panel: status', () => {
     expect(
       q(el, '[data-testid="filter-status"][data-value="ok"]').classList.contains('tone-green'),
     ).toBe(false);
+  });
+});
+
+// The panel is a household surface: a hint that names how the backend stores a
+// value, or where a count came from, tells a user nothing they can act on.
+describe('hv-filter-panel: hints', () => {
+  it('says what the control does, in words a household uses', async () => {
+    const el = await mount();
+    const hints = all(el, '.hint').map((h) => h.textContent?.trim());
+
+    expect(hints).toContain('Pick one category');
+    expect(hints).toContain('Tags are always lowercase');
+    expect(hints.join(' ')).not.toMatch(/distinct values|on commit|Stored lowercase/);
   });
 });
 
@@ -868,6 +912,25 @@ describe('hv-filter-panel: pressed state', () => {
       }
       el.remove();
     }
+  });
+
+  // The sheet carried `warning` at rest, where `.hv-chip.warning` paints the
+  // amber fill on its own — so a phone showed "Filters — 0 active" above three
+  // chips that looked applied. The desktop chip beside it only pairs the hue
+  // with `on`.
+  it('tints a warning chip when it is selected, never at rest', async () => {
+    const el = await mount({}, { mobile: true });
+    const chipOf = (testid: string) => q(el, `[data-testid="${testid}"]`);
+
+    for (const testid of ['filter-low-stock-only', 'filter-overdue', 'filter-inspection-due']) {
+      expect(chipOf(testid).classList.contains('warning'), testid).toBe(false);
+    }
+
+    (chipOf('filter-low-stock-only') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(chipOf('filter-low-stock-only').classList.contains('warning')).toBe(true);
+    expect(chipOf('filter-low-stock-only').classList.contains('on')).toBe(true);
+    expect(chipOf('filter-overdue').classList.contains('warning')).toBe(false);
   });
 
   // The row's on state has to be the shared chip's on state, not a second set

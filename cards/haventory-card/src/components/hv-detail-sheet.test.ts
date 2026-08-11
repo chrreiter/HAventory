@@ -76,6 +76,46 @@ describe('hv-detail-sheet: area', () => {
     expect(crumb?.textContent?.trim()).toBe('No location');
     expect(crumb?.querySelector('.hv-area-chip')).toBe(null);
   });
+
+  // Naming a root location after the room it stands in is the ordinary thing to
+  // do, and it put "Kitchen Kitchen" on the crumb. The card's rows and the
+  // table's Location cell answer this the same way; the crumb is a clipped
+  // one-line chip like both of them, and the pairing it drops stays readable in
+  // full in its title.
+  const KITCHEN = [{ id: 'area-kitchen', name: 'Kitchen' }];
+  const rooted = (display_path: string) => ({
+    id_path: [],
+    name_path: [],
+    display_path,
+    sort_key: '',
+  });
+
+  it('drops the area mark when the path already opens with that name', async () => {
+    for (const path of ['Kitchen', 'Kitchen / Pantry']) {
+      const el = await mount(
+        { effective_area_id: 'area-kitchen', location_path: rooted(path) },
+        { areas: KITCHEN },
+      );
+      const crumb = q(el, '[data-testid="sheet-path"]');
+
+      expect(crumb?.querySelector('[data-testid="area-chip"]'), path).toBe(null);
+      expect(crumb?.textContent?.replace(/\s+/g, ' ').trim(), path).toBe(path.replace(' / ', ' › '));
+      expect(crumb?.getAttribute('title'), path).toBe(`Area: Kitchen · ${path.replace(' / ', ' › ')}`);
+      el.remove();
+    }
+  });
+
+  // A segment deeper down that happens to share the area's name is a different
+  // place inside it, so the mark still has something to say.
+  it('keeps the mark when the area only reappears further down the path', async () => {
+    const el = await mount(
+      { effective_area_id: 'area-kitchen', location_path: rooted('Cellar / Kitchen') },
+      { areas: KITCHEN },
+    );
+    const crumb = q(el, '[data-testid="sheet-path"]');
+    expect(crumb?.querySelector('.hv-area-chip')?.textContent).toContain('Kitchen');
+    expect(crumb?.textContent).toContain('Cellar › Kitchen');
+  });
 });
 
 describe('hv-detail-sheet: read view', () => {
@@ -95,9 +135,37 @@ describe('hv-detail-sheet: read view', () => {
     expect(q(el, '[data-testid="sheet-out"]')?.textContent).toContain('Checked out · due Jul 31');
     expect(q(el, '[data-testid="sheet-category"]')?.textContent).toContain('Tools');
     expect(all(el, '[data-testid="sheet-tag"]').map((t) => t.textContent?.trim())).toEqual([
-      'electric',
-      'meter',
+      '#electric',
+      '#meter',
     ]);
+  });
+
+  // Same row, same size, same shape: without a marker on the chip itself,
+  // "Tools" and "electric" are one control wearing one fill and only a
+  // household that already knows its own vocabulary can tell which is which.
+  it('tells a category chip from a tag chip without reading either label', async () => {
+    const el = await mount({ category: 'Tools', tags: ['electric'] });
+    const category = q(el, '[data-testid="sheet-category"]')!;
+    const tag = q(el, '[data-testid="sheet-tag"]')!;
+
+    expect(tag.classList.contains('tag')).toBe(true);
+    expect(category.classList.contains('tag')).toBe(false);
+    // The mark carries the distinction in greyscale; the hue is the second signal.
+    expect(tag.querySelector('.hv-tag-mark')?.textContent).toBe('#');
+    expect(category.querySelector('.hv-tag-mark')).toBe(null);
+    // Decoration, not part of the value: a reader is told "electric", not "hash electric".
+    expect(tag.querySelector('.hv-tag-mark')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  // The "Checked out" chip takes the same blue, so the two must not collapse
+  // into one another in the row they share.
+  it('keeps the checked-out chip out of the tag vocabulary', async () => {
+    const el = await mount({ checked_out: true, tags: ['electric'] });
+    const out = q(el, '[data-testid="sheet-out"]')!;
+
+    expect(out.classList.contains('state')).toBe(true);
+    expect(out.classList.contains('tag')).toBe(false);
+    expect(out.querySelector('.hv-tag-mark')).toBe(null);
   });
 
   it('marks an overdue check-out and low stock', async () => {
@@ -163,6 +231,43 @@ describe('hv-detail-sheet: read view', () => {
     expect(facts.calibrated).toContain('Yes');
     // Dates render through the same formatter as the rest of the card.
     expect(facts.checked).toContain('Feb 1, 2019');
+  });
+
+  // The facts list mixes these with "Due" and "Next inspection", where a raw
+  // "purchase_price" read as debug output rather than as a fact about the item.
+  it('writes a custom field key for reading and keeps the key on the row', async () => {
+    const el = await mount({ custom_fields: { purchase_price: 64.57, serial_number: 'SN-363905' } });
+    const fact = (key: string) =>
+      all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === key);
+
+    expect(fact('purchase_price')?.textContent?.replace(/\s+/g, ' ')).toContain('Purchase price');
+    expect(fact('purchase_price')?.textContent).not.toContain('purchase_price');
+    expect(fact('serial_number')?.textContent?.replace(/\s+/g, ' ')).toContain('Serial number');
+
+    // The key is the stored identity, so it stays addressable on the row.
+    expect(fact('purchase_price')).toBeTruthy();
+    expect(fact('serial_number')).toBeTruthy();
+  });
+
+  // Display formatting is the read surface's business alone: the editor writes
+  // the key back, so a label there would rename the field on save.
+  it('leaves the editor showing the key exactly as it is stored', async () => {
+    const el = await mount({ custom_fields: { purchase_price: 64.57 } });
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const editor = el.shadowRoot?.querySelector('hv-item-editor') as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    // On a phone the custom fields sit behind the editor's "More" disclosure.
+    (editor.shadowRoot?.querySelector('[data-testid="editor-more-toggle"]') as HTMLButtonElement).click();
+    await editor.updateComplete;
+
+    const keys = [...(editor.shadowRoot?.querySelectorAll('[data-testid="editor-cf-key"]') ?? [])].map(
+      (i) => (i as HTMLInputElement).value,
+    );
+    expect(keys).toContain('purchase_price');
+    expect(keys).not.toContain('Purchase price');
   });
 
   it('says "Not set" rather than hiding an empty date', async () => {
@@ -970,6 +1075,31 @@ describe('hv-detail-sheet: documents', () => {
 
     expect(q(el, '[data-testid="sheet-document-missing"]')).toBeNull();
     expect(all(el, '[data-testid="sheet-document-open"]')).toHaveLength(2);
+  });
+
+  // jsdom computes no layout, so the widths these two rules produce are only
+  // observable on a real phone. What is pinned here is the pair of declarations
+  // that keeps a row inside the list: without them the single track sizes itself
+  // to the widest row, whose tail (the Open link, the "File missing" chip) does
+  // not shrink, and `overflow: hidden` clips exactly those two away.
+  it('sizes the documents track off the list rather than off its widest row', () => {
+    const css = sheetCss();
+    const rule = (selector: string) =>
+      new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+
+    expect(rule('\\.documents ul')).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(rule('\\.documents li')).toContain('min-width: 0');
+  });
+
+  // The row shrinking into its track is only worth anything if the two elements
+  // it was cutting off are the ones that keep their size.
+  it('leaves the Open link and the missing-file chip unshrinkable', () => {
+    const css = sheetCss();
+    const rule = (selector: string) =>
+      new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+
+    expect(rule('\\.documents \\.doc-open')).toContain('flex: none');
+    expect(rule('\\.documents \\.doc-text')).toContain('min-width: 0');
   });
 
   it('shows the documents in stored order, not the order they were uploaded', async () => {

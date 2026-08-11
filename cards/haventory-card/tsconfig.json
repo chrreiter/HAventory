@@ -9,7 +9,7 @@
     "useDefineForClassFields": false,
     "jsx": "react-jsx",
     "skipLibCheck": true,
-    "outDir": "dist",
+    "noEmit": true,
     "types": ["vitest/globals"]
   },
   "include": ["src"]

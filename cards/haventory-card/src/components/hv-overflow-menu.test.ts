@@ -1,4 +1,5 @@
 import './hv-overflow-menu';
+import { placeMenu } from './hv-overflow-menu';
 import type { HVOverflowMenu } from './hv-overflow-menu';
 import { NARROW_QUERY } from '../ui/responsive';
 
@@ -34,7 +35,7 @@ describe('hv-overflow-menu', () => {
   it('stacks a long hint under its label instead of beside it', async () => {
     const el = await mount([
       { id: 'organize', label: 'Organize…', meta: 'Locations · Tags · Categories' },
-      { id: 'export', label: 'Export backup', sub: 'All 556 items · all locations' },
+      { id: 'export', label: 'Export backup', sub: 'All 556 items · All locations' },
     ]);
 
     const labels = item(el, 'organize').querySelector('.labels') as HTMLElement;
@@ -87,11 +88,12 @@ describe('hv-overflow-menu: narrow screens', () => {
     expect(narrow()).toContain('@media (max-width: 700px)');
   });
 
-  // A 250px anchored dropdown covered most of the list it was acting on, and
-  // "Export current view" wrapped onto two lines inside it.
+  // A 250px trigger-anchored dropdown covered most of the list it was acting
+  // on, and "Export current view" wrapped onto two lines inside it. The base
+  // rule already carries position: fixed; the sheet is the inset overriding
+  // the measured coordinates.
   it('becomes a bottom sheet instead of an anchored dropdown', () => {
     const css = narrow();
-    expect(css).toMatch(/\.menu \{[^}]*position: fixed/);
     expect(css).toMatch(/\.menu \{[^}]*inset: auto 0 0 0/);
     expect(css).toMatch(/\.menu \{[^}]*max-width: none/);
   });
@@ -178,5 +180,88 @@ describe('hv-overflow-menu: narrow screens', () => {
     await el.updateComplete;
 
     expect(el.shadowRoot?.activeElement).toBe(trigger);
+  });
+});
+
+// A list filtered down to a single row leaves hv-list's scroller shorter than
+// the open menu (#389). Anchoring the popup inside the row put it inside that
+// scroller's clip, where neither opening direction could fit — opening down and
+// flipping up both left a ~6px sliver. The menu is viewport-fixed instead, so
+// no ancestor's overflow can cut it.
+describe('hv-overflow-menu: escaping ancestor clips', () => {
+  // The first .menu block is the base rule; the sheet's overrides live in the
+  // narrow @media block after it.
+  const baseMenuRule = () => {
+    const styles = (customElements.get('hv-overflow-menu') as typeof HVOverflowMenu).styles;
+    const css = (Array.isArray(styles) ? styles : [styles])
+      .map((s) => String(s.cssText))
+      .join('\n')
+      .replace(/\s+/g, ' ');
+    return /\.menu \{[^}]*\}/.exec(css)?.[0] ?? '';
+  };
+
+  it('draws the dropdown viewport-fixed, from measured coordinates', () => {
+    expect(baseMenuRule()).toContain('position: fixed');
+    expect(baseMenuRule()).toContain('top: var(--hv-menu-top');
+    expect(baseMenuRule()).toContain('left: var(--hv-menu-left');
+  });
+
+  it('carries live placement coordinates while open', async () => {
+    const el = await mount([{ id: 'refresh', label: 'Refresh data' }]);
+    // jsdom has no layout — every rect is zero — so both axes clamp to the
+    // 8px viewport margin; what matters is that the coordinates are set.
+    expect(el.style.getPropertyValue('--hv-menu-top')).toBe('8px');
+    expect(el.style.getPropertyValue('--hv-menu-left')).toBe('8px');
+  });
+
+  it('follows the trigger when a composed ancestor scrolls', async () => {
+    const el = await mount([{ id: 'refresh', label: 'Refresh data' }]);
+    const trigger = el.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLElement;
+    trigger.getBoundingClientRect = () => ({ top: 100, right: 600, bottom: 124 }) as DOMRect;
+
+    document.body.dispatchEvent(new Event('scroll'));
+
+    expect(el.style.getPropertyValue('--hv-menu-top')).toBe('130px');
+    expect(el.style.getPropertyValue('--hv-menu-left')).toBe('600px');
+  });
+
+  it('releases its reflow listeners when it closes', async () => {
+    const el = await mount([{ id: 'refresh', label: 'Refresh data' }]);
+    // The body is one of the composed ancestors the open menu listens on.
+    const removed = vi.spyOn(document.body, 'removeEventListener');
+    el.close();
+    expect(removed.mock.calls.some(([type]) => type === 'scroll')).toBe(true);
+  });
+});
+
+describe('placeMenu', () => {
+  const menu = { width: 250, height: 137 };
+  const viewport = { width: 1280, height: 900 };
+
+  it('hangs just under the trigger, right edges aligned, when there is room below', () => {
+    expect(placeMenu({ top: 210, right: 1200, bottom: 244 }, menu, viewport)).toEqual({
+      top: 250,
+      left: 950,
+    });
+  });
+
+  it('flips above the trigger when the room below runs out', () => {
+    expect(placeMenu({ top: 800, right: 1200, bottom: 834 }, menu, viewport)).toEqual({
+      top: 657,
+      left: 950,
+    });
+  });
+
+  it('pins to the viewport margin when neither side could hold it whole', () => {
+    // 120px of viewport against a 137px menu: below overflows, above is
+    // negative — the clamp keeps the top edge and the first entries on-screen.
+    expect(placeMenu({ top: 60, right: 400, bottom: 84 }, menu, { width: 1280, height: 120 })).toEqual({
+      top: 8,
+      left: 150,
+    });
+  });
+
+  it('keeps the menu inside the left viewport edge', () => {
+    expect(placeMenu({ top: 210, right: 200, bottom: 244 }, menu, viewport).left).toBe(8);
   });
 });

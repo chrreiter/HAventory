@@ -11,9 +11,9 @@ export interface OverflowMenuItem {
   id: string;
   label: string;
   glyph?: IconName;
-  /** Right-aligned muted text, e.g. "Locations · Tags · Categories". */
+  /** Muted hint line, e.g. "Locations · Tags · Categories". */
   meta?: string;
-  /** Second line under the label, e.g. "38 filtered items · keeps location paths". */
+  /** Second line under the label, e.g. "38 filtered items · Keeps location paths". */
   sub?: string;
   /** Right-aligned pill, e.g. "2 issues". Only shown when there is something to say. */
   badge?: string;
@@ -29,10 +29,42 @@ function isItem(entry: OverflowMenuEntry): entry is OverflowMenuItem {
   return 'id' in entry;
 }
 
+/** The sides of the trigger's rect that the placement reads. */
+export interface MenuAnchorRect {
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/**
+ * Viewport coordinates for the dropdown: right edge on the trigger's right
+ * edge, top just below the trigger — flipped to just above it when the room
+ * below the trigger runs out and the room above suffices. Both axes then
+ * clamp to an 8px viewport margin, so even when neither side could hold the
+ * menu whole its top entries stay on-screen and reachable.
+ */
+export function placeMenu(
+  trigger: MenuAnchorRect,
+  menu: { width: number; height: number },
+  viewport: { width: number; height: number },
+): { top: number; left: number } {
+  const gap = 6;
+  const margin = 8;
+  let top = trigger.bottom + gap;
+  if (top + menu.height > viewport.height - margin && trigger.top - gap - menu.height >= margin) {
+    top = trigger.top - gap - menu.height;
+  }
+  top = Math.max(margin, Math.min(top, viewport.height - margin - menu.height));
+  let left = trigger.right - menu.width;
+  left = Math.max(margin, Math.min(left, viewport.width - margin - menu.width));
+  return { top, left };
+}
+
 /**
  * The ⋮ menu for the card and full-view headers, and for each list row.
  *
- * Self-contained: it renders its own trigger and an anchored popover. HA's
+ * Self-contained: it renders its own trigger and a popover placed from the
+ * trigger's rect. HA's
  * `ha-button-menu`/`mwc-list-item` are not used because they only exist inside
  * the HA frontend — see the note in ui/icons.ts.
  */
@@ -44,7 +76,6 @@ export class HVOverflowMenu extends LitElement {
     css`
       :host {
         display: inline-block;
-        position: relative;
       }
       .trigger.on-primary {
         color: #fff;
@@ -56,10 +87,17 @@ export class HVOverflowMenu extends LitElement {
         background: var(--hv-primary-tint);
         color: var(--hv-on-primary-tint);
       }
+      /* Placed against the viewport, not the trigger's box: a popup anchored
+         inside the row is clipped by the nearest scrolling ancestor, and the
+         list's row scroller shrinks below this menu's height whenever few rows
+         match — with one row, neither opening direction can fit inside it.
+         Fixed positioning is outside every ancestor's clip; placeMenu()
+         supplies the coordinates from the trigger's rect, and they follow the
+         trigger while an ancestor scrolls or the window resizes. */
       .menu {
-        position: absolute;
-        top: calc(100% + 6px);
-        right: 0;
+        position: fixed;
+        top: var(--hv-menu-top, 0);
+        left: var(--hv-menu-left, 0);
         width: 250px;
         max-width: 80vw;
         background: var(--hv-surface);
@@ -130,16 +168,17 @@ export class HVOverflowMenu extends LitElement {
         color: var(--hv-text-tertiary);
       }
 
-      /* An anchored 250px dropdown is a desktop shape. At 375px it covered most
-         of the list it was supposed to be acting on and "Export current view"
-         wrapped onto two lines, while the rest of the card answers exactly this
-         need with a bottom sheet. The menu becomes one here.
+      /* A trigger-anchored 250px dropdown is a desktop shape. At 375px it
+         covered most of the list it was supposed to be acting on and "Export
+         current view" wrapped onto two lines, while the rest of the card
+         answers exactly this need with a bottom sheet. The menu becomes one
+         here — the inset overrides the measured coordinates.
 
-         A media query rather than the card's mobile flag: once the panel is
-         position: fixed it is placed against the viewport, so the viewport is
-         what decides whether there is room — and it keeps the component free
-         of a mobile property that all three of its callers would have to
-         thread through.
+         A media query rather than the card's mobile flag: the panel is
+         position: fixed, so it is placed against the viewport and the
+         viewport is what decides whether there is room — and it keeps the
+         component free of a mobile property that all three of its callers
+         would have to thread through.
 
          The width is NARROW_QUERY from ui/responsive.ts, which CSS cannot
          read; a test pins the two spellings together. Every overlay the card
@@ -151,7 +190,6 @@ export class HVOverflowMenu extends LitElement {
       }
       @media (max-width: 700px) {
         .menu {
-          position: fixed;
           inset: auto 0 0 0;
           width: auto;
           max-width: none;
@@ -224,7 +262,60 @@ export class HVOverflowMenu extends LitElement {
     this.close();
   };
 
+  /**
+   * Ancestors holding a scroll listener while the menu is open. A scroll moves
+   * the trigger while a fixed menu stays where it was painted, and scroll
+   * events are composed: false — a scroller inside another component's shadow
+   * root never reaches a window listener. Only an ancestor's scrolling can
+   * move the trigger, so listening on each composed ancestor directly covers
+   * every scroller that matters; ancestors that never scroll never fire.
+   */
+  private _reflowTargets: EventTarget[] = [];
+
+  private readonly _onReflow = () => this._place();
+
+  private _watchReflow() {
+    let node: Node | null = this.parentNode;
+    while (node) {
+      if (node instanceof ShadowRoot) {
+        node = node.host;
+        continue;
+      }
+      this._reflowTargets.push(node);
+      node = node.parentNode;
+    }
+    this._reflowTargets.push(window);
+    for (const target of this._reflowTargets) {
+      target.addEventListener('scroll', this._onReflow, { passive: true });
+    }
+    window.addEventListener('resize', this._onReflow, { passive: true });
+  }
+
+  private _unwatchReflow() {
+    for (const target of this._reflowTargets) {
+      target.removeEventListener('scroll', this._onReflow);
+    }
+    window.removeEventListener('resize', this._onReflow);
+    this._reflowTargets = [];
+  }
+
+  private _place() {
+    const trigger = this.renderRoot.querySelector<HTMLElement>('[data-testid="overflow-trigger"]');
+    const menu = this.renderRoot.querySelector<HTMLElement>('[data-testid="overflow-menu"]');
+    if (!trigger || !menu) return;
+    const { top, left } = placeMenu(
+      trigger.getBoundingClientRect(),
+      { width: menu.offsetWidth, height: menu.offsetHeight },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    this.style.setProperty('--hv-menu-top', `${top}px`);
+    this.style.setProperty('--hv-menu-left', `${left}px`);
+  }
+
   protected updated() {
+    // Placement first: focusing an unplaced menu would let the browser scroll
+    // a (0, 0) box into view before the coordinates land.
+    if (this._open) this._place();
     this._dialogFocus.sync(this._open, () =>
       this.renderRoot.querySelector<HTMLElement>('[data-testid="overflow-menu"]'),
     );
@@ -233,12 +324,14 @@ export class HVOverflowMenu extends LitElement {
   disconnectedCallback(): void {
     super.disconnectedCallback();
     document.removeEventListener('pointerdown', this._onDocPointerDown, true);
+    this._unwatchReflow();
   }
 
   close() {
     if (!this._open) return;
     this._open = false;
     document.removeEventListener('pointerdown', this._onDocPointerDown, true);
+    this._unwatchReflow();
   }
 
   private _toggle = () => {
@@ -249,6 +342,7 @@ export class HVOverflowMenu extends LitElement {
     this._zBase = nextZBase();
     this._open = true;
     document.addEventListener('pointerdown', this._onDocPointerDown, true);
+    this._watchReflow();
   };
 
   private _choose(item: OverflowMenuItem) {
