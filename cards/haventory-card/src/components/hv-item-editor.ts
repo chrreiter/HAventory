@@ -2641,7 +2641,7 @@ export class HVItemEditor extends LitElement {
           ${this.mobile ? this._renderStatusField() : null}
           <div class="cell span3">
             <span class="hv-label"
-              >Tags <span class="label-note">· stored lowercase</span></span
+              >Tags <span class="label-note">· always lowercase</span></span
             >
             <hv-chip-input
               data-testid="editor-tags"

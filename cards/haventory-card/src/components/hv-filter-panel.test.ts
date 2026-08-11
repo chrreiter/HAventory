@@ -243,6 +243,19 @@ describe('hv-filter-panel: status', () => {
   });
 });
 
+// The panel is a household surface: a hint that names how the backend stores a
+// value, or where a count came from, tells a user nothing they can act on.
+describe('hv-filter-panel: hints', () => {
+  it('says what the control does, in words a household uses', async () => {
+    const el = await mount();
+    const hints = all(el, '.hint').map((h) => h.textContent?.trim());
+
+    expect(hints).toContain('Pick one category');
+    expect(hints).toContain('Tags are always lowercase');
+    expect(hints.join(' ')).not.toMatch(/distinct values|on commit|Stored lowercase/);
+  });
+});
+
 describe('hv-filter-panel: tags', () => {
   it('multi-selects tags and switches between any and all', async () => {
     const el = await mount();

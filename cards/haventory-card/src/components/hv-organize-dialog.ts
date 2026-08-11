@@ -274,8 +274,8 @@ export class HVOrganizeDialog extends LitElement {
         line-height: 0;
       }
       /* A phone keeps them stacked: a horizontal pair at the platform's 44px
-         is 88px of row, which does not fit beside the chip, the slug, the count
-         and two 44px actions. */
+         is 88px of row, which does not fit beside the chip, the count and two
+         44px actions. */
       :host([mobile]) .move {
         flex-direction: column;
         gap: 1px;
@@ -291,35 +291,23 @@ export class HVOrganizeDialog extends LitElement {
         opacity: 0.3;
         cursor: default;
       }
-      /* The identity items store. Shown because services.yaml and an export
-         document carry it, muted because a household never needs to type it.
-
-         In a list row it is the one part that may be cut: at phone width a long
-         slug otherwise pushes the delete button past the dialog edge, where it
-         cannot be tapped at all. Both places carry it as a title attribute too,
-         because either can end up eliding it. */
+      /* The identity items store, shown in the editor only: services.yaml and an
+         export document carry it, and it is muted there because a household
+         never needs to type it. It carries a title attribute too, because a
+         slug long enough to outrun its line still elides. */
       .status-slug {
         font: 400 12px var(--hv-font);
         color: var(--hv-text-tertiary);
         white-space: nowrap;
-        flex: 0 1 auto;
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      /* Giving up its width before the chip does is what "the one part that may
-         be cut" means, and a plain shrink factor of 1 does not say it: flexbox
-         would take from both in proportion to their widths, eliding a label the
-         household wrote while the slug it never types still holds 60px. */
-      .status-row .status-slug {
-        flex-shrink: 20;
-      }
       /* A label is a household's own words and can be long enough that the row
          overruns on its own — the fixed parts beside it (a 44px reorder column,
-         the count, two 44px actions) leave a phone row barely 130px for it. The
-         chip elides too, once the slug has nothing left to give; unshrinkable,
-         it pushes the delete button past the dialog edge where no finger
-         reaches it. */
+         the count, two 44px actions) leave a phone row barely 130px for it.
+         Unshrinkable, the chip pushes the delete button past the dialog edge
+         where no finger reaches it. */
       .status-row .hv-status-chip {
         flex: 0 1 auto;
         min-width: 0;
@@ -1820,7 +1808,6 @@ export class HVOrganizeDialog extends LitElement {
                 </button>
               </span>
               ${renderStatusChip(d.slug, defs, { testid: 'status-chip' })}
-              <span class="status-slug" data-testid="status-slug" title=${d.slug}>${d.slug}</span>
               <button class="count-link" data-testid="status-count" @click=${() =>
                 this._showStatus(d.slug)}>
                 ${counted(count, 'item')}

@@ -550,7 +550,7 @@ export class HVFilterPanel extends LitElement {
               </button>`
             : null}
         </div>
-        <span class="hint">Single select · counts from distinct values</span>
+        <span class="hint">Pick one category</span>
       </div>
     `;
   }
@@ -630,7 +630,7 @@ export class HVFilterPanel extends LitElement {
             />
           </label>
         </div>
-        <span class="hint">Stored lowercase — input lowercases on commit</span>
+        <span class="hint">Tags are always lowercase</span>
       </div>
     `;
   }

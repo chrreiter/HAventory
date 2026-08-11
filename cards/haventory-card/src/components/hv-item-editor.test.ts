@@ -2635,7 +2635,7 @@ describe('hv-item-editor: one label recipe, one note size', () => {
     const el = await mount(makeItem({ id: '1' }));
     expect(el.shadowRoot?.innerHTML).not.toContain('style="text-transform');
     const note = el.shadowRoot?.querySelector('.label-note');
-    expect(note?.textContent).toContain('stored lowercase');
+    expect(note?.textContent).toContain('always lowercase');
   });
 
   // The tag field sat a point smaller than every input beside it.
