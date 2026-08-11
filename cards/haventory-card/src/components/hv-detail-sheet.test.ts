@@ -193,6 +193,43 @@ describe('hv-detail-sheet: read view', () => {
     expect(facts.checked).toContain('Feb 1, 2019');
   });
 
+  // The facts list mixes these with "Due" and "Next inspection", where a raw
+  // "purchase_price" read as debug output rather than as a fact about the item.
+  it('writes a custom field key for reading and keeps the key on the row', async () => {
+    const el = await mount({ custom_fields: { purchase_price: 64.57, serial_number: 'SN-363905' } });
+    const fact = (key: string) =>
+      all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === key);
+
+    expect(fact('purchase_price')?.textContent?.replace(/\s+/g, ' ')).toContain('Purchase price');
+    expect(fact('purchase_price')?.textContent).not.toContain('purchase_price');
+    expect(fact('serial_number')?.textContent?.replace(/\s+/g, ' ')).toContain('Serial number');
+
+    // The key is the stored identity, so it stays addressable on the row.
+    expect(fact('purchase_price')).toBeTruthy();
+    expect(fact('serial_number')).toBeTruthy();
+  });
+
+  // Display formatting is the read surface's business alone: the editor writes
+  // the key back, so a label there would rename the field on save.
+  it('leaves the editor showing the key exactly as it is stored', async () => {
+    const el = await mount({ custom_fields: { purchase_price: 64.57 } });
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const editor = el.shadowRoot?.querySelector('hv-item-editor') as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    // On a phone the custom fields sit behind the editor's "More" disclosure.
+    (editor.shadowRoot?.querySelector('[data-testid="editor-more-toggle"]') as HTMLButtonElement).click();
+    await editor.updateComplete;
+
+    const keys = [...(editor.shadowRoot?.querySelectorAll('[data-testid="editor-cf-key"]') ?? [])].map(
+      (i) => (i as HTMLInputElement).value,
+    );
+    expect(keys).toContain('purchase_price');
+    expect(keys).not.toContain('Purchase price');
+  });
+
   it('says "Not set" rather than hiding an empty date', async () => {
     const el = await mount({ due_date: null, inspection_date: null });
     const facts = all(el, '[data-testid="sheet-fact"]');
