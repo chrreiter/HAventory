@@ -1,5 +1,4 @@
 import './index';
-import { getStubConfig } from './index';
 import { makeMockHass, makeItem } from './test.utils';
 import { COLUMN_PREFS_STORAGE_KEY, DEFAULT_COLUMNS } from './store/columns';
 import type { HAventoryCard } from './index';
@@ -136,13 +135,48 @@ describe('haventory-card: the Lovelace element', () => {
     expect(el.getCardSize()).toBeGreaterThan(0);
   });
 
-  it('offers a stub config and registers itself with the card picker', async () => {
-    expect(getStubConfig().type).toBe('custom:haventory-card');
+  // Home Assistant reads these off `customElements.get(type)` and never imports
+  // from the bundle, so the class is the only surface worth asserting: a module
+  // export can be perfectly correct and still never be looked at.
+  describe('the picker statics, on the surface HA reads', () => {
+    type CardClass = CustomElementConstructor & {
+      getStubConfig?: () => { type: string; title: string };
+      getConfigElement?: () => HTMLElement;
+    };
+    const registered = () => customElements.get('haventory-card') as CardClass;
 
-    const before = window.customCards ? [...window.customCards] : [];
-    await import('./index');
-    expect((window.customCards ?? []).some((c) => c?.type === 'haventory-card')).toBe(true);
-    window.customCards = before;
+    it('offers a stub config', () => {
+      expect(registered().getStubConfig?.().type).toBe('custom:haventory-card');
+    });
+
+    it('answers with the visual editor rather than leaving HA on the YAML fallback', () => {
+      expect(registered().getConfigElement?.().tagName).toBe('HAVENTORY-CARD-EDITOR');
+    });
+
+    it('feeds its own stub config back in without complaint', async () => {
+      const stub = registered().getStubConfig!();
+      const { sr } = await mountCard(stub);
+      const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { heading: string };
+      expect(shell.heading).toBe('HAventory');
+    });
+
+    it('sizes itself for a sections view, with minimums under the defaults', async () => {
+      const { el } = await mountCard();
+      const grid = (el as unknown as { getGridOptions(): Record<string, number> }).getGridOptions();
+      expect(grid.columns).toBeGreaterThan(0);
+      expect(grid.rows).toBeGreaterThan(0);
+      expect(grid.min_columns).toBeLessThan(grid.columns);
+      expect(grid.min_rows).toBeLessThan(grid.rows);
+    });
+
+    it('registers with the card picker, documentation link and all', async () => {
+      const before = window.customCards ? [...window.customCards] : [];
+      await import('./index');
+      const entry = (window.customCards ?? []).find((c) => c?.type === 'haventory-card');
+      expect(entry).toBeTruthy();
+      expect(entry?.documentationURL).toMatch(/^https:\/\//);
+      window.customCards = before;
+    });
   });
 });
 

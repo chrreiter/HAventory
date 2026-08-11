@@ -8,9 +8,10 @@ import type { QuickFilterKey } from './ui/quick-filters';
 import { registerBrandIcon } from './ui/brand-icon';
 import { defineCardElement } from './register';
 import './components/hv-card-shell';
-// The sidebar panel is a second element out of this one bundle, so importing it
-// here is what puts it in the build.
+// The sidebar panel and the config editor are the bundle's other two HA-facing
+// elements, so importing them here is what puts them in the build.
 import './haventory-panel';
+import './haventory-card-editor';
 
 export class HAventoryCard extends LitElement {
   static styles = css`
@@ -27,6 +28,24 @@ export class HAventoryCard extends LitElement {
   private store?: Store;
   private _storeUnsub?: () => void;
   private _hass?: HassLike;
+
+  /**
+   * What the card picker writes into a new dashboard entry.
+   *
+   * A static on the class, not a module export: Home Assistant reads these off
+   * `customElements.get(type)`, and never imports from the bundle.
+   */
+  public static getStubConfig(): { type: string; title: string } {
+    return {
+      type: 'custom:haventory-card',
+      title: 'HAventory',
+    };
+  }
+
+  /** The visual editor the picker opens, created by tag so HA owns its lifecycle. */
+  public static getConfigElement(): HTMLElement {
+    return document.createElement('haventory-card-editor');
+  }
 
   // Lovelace interface: called by HA when the card is created/configured
   public setConfig(cfg: unknown): void {
@@ -50,6 +69,25 @@ export class HAventoryCard extends LitElement {
   public getCardSize(): number {
     // Approximate: header + search + list viewport
     return 6;
+  }
+
+  /**
+   * Sections-view sizing. `getCardSize` above still answers the masonry view,
+   * which knows nothing about columns.
+   *
+   * Full section width, and tall enough that the ⋮ menu opens inside the card:
+   * `hv-card-shell` reserves 470px for it above 601px, and a card shorter than
+   * that clips the menu's last entries. The minimums are what keep the card
+   * usable when a dashboard hand-shrinks it — below them the list has room for
+   * no rows at all.
+   */
+  public getGridOptions(): {
+    columns: number;
+    rows: number;
+    min_columns: number;
+    min_rows: number;
+  } {
+    return { columns: 12, rows: 8, min_columns: 6, min_rows: 4 };
   }
 
   get hass(): HassLike | undefined {
@@ -139,20 +177,14 @@ defineCardElement('haventory-card', HAventoryCard);
 // page — including the ones no card is on.
 registerBrandIcon();
 
-// Lovelace card picker metadata
-export function getStubConfig() {
-  return {
-    type: 'custom:haventory-card',
-    title: 'HAventory',
-  };
-}
-
 // Auto-register with Lovelace card picker when loaded via /local
 interface CustomCardMeta {
   type: string;
   name: string;
   description: string;
   preview?: boolean;
+  /** The picker entry's "documentation" link. */
+  documentationURL?: string;
 }
 
 declare global {
@@ -170,6 +202,7 @@ if (typeof window !== 'undefined') {
       name: 'HAventory',
       description: 'HAventory inventory card',
       preview: true,
+      documentationURL: 'https://github.com/chrreiter/HAventory#readme',
     });
   }
 }

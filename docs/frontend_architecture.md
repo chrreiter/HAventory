@@ -19,8 +19,8 @@ It provides the full inventory UI, updating live over the HAventory WebSocket AP
 
 `src/index.ts` defines `haventory-card` — the element Home Assistant knows about. It owns
 the `Store` (created on the first `hass` assignment), the Lovelace interface
-(`setConfig`, `getCardSize`, `getStubConfig`, `window.customCards`), and nothing else of
-substance:
+(`setConfig`, `getCardSize`, `getGridOptions`, the statics `getStubConfig` and
+`getConfigElement`, and `window.customCards`), and nothing else of substance:
 
 ```ts
 setConfig(cfg) → { title?: string; quickFilters?: QuickFilterKey[] | null }
@@ -35,12 +35,30 @@ full view's pills offer one vocabulary; the sidebar panel, which has no dashboar
 takes the default. It decides what is *allowed*: whether an allowed pill draws is still
 the count's call.
 
+`getStubConfig` and `getConfigElement` are **statics on the class**, not module exports:
+Home Assistant reads them off `customElements.get(type)` and never imports from the bundle,
+so an export is a spelling nothing looks at. `getGridOptions` sizes the card in a sections
+view — full section width, and tall enough that `hv-card-shell`'s reserved 470px for the
+open ⋮ menu is not squeezed — while `getCardSize` still answers the masonry view, which
+knows nothing about columns.
+
 It also publishes the active HA theme as `color-scheme` on the host, which every nested
 component inherits.
 
 `src/haventory-panel.ts` defines `haventory-panel` — the same bundle's second element,
 which HA's custom-panel loader instantiates for the sidebar page. It mirrors the card's
 store lifecycle and renders `<hv-full-view embedded open>`.
+
+`src/haventory-card-editor.ts` defines `haventory-card-editor` — the bundle's third
+HA-facing element, which `getConfigElement` creates by tag. It renders one `ha-form` field
+for `title`, HA's own control rather than a local input, and turns the form's
+`value-changed` into a `config-changed` carrying `{ ...config, title }`. The spread is the
+point: the card ignores unknown keys instead of rejecting them, so `quick_filters` and
+anything a future version writes survive an edit untouched. An emptied title is dropped
+from the config rather than written as `""`, which hands the heading back to the
+integration-wide option. All three elements register through `defineCardElement`
+(`src/register.ts`), because HA creates each of them by tag after the frontend has swapped
+`window.customElements`.
 
 The integration registers that panel at `/haventory` through `panel_custom`, handing it
 the *same* module URL both card loaders get (`__init__.py`, `_async_apply_sidebar_panel`),

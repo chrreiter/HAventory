@@ -19,7 +19,9 @@ repos:
           # hook `afterAll`, which the tracker names. "socio-economic" is the
           # Contributor Covenant's spelling, and CODE_OF_CONDUCT.md quotes that
           # document verbatim so it stays checkable against the original.
-          - --ignore-words-list=hass,batery,afterall,socio-economic
+          # "statics" is the plural of a class's `static` members, which is what
+          # Home Assistant reads a card's picker interface off.
+          - --ignore-words-list=hass,batery,afterall,socio-economic,statics
         exclude: |
           (?x)^(
             custom_components/haventory/www/|

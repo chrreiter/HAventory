@@ -629,6 +629,13 @@ rejected, so a stale dashboard config never breaks the card — and the same hol
 `quick_filters`: an unknown pill name is dropped, and a value that is not a list reads as
 the key being absent.
 
+Adding the card from the card picker opens a **visual editor** for `title`; the YAML above
+stays equivalent, and switching to it shows the same config. The editor covers `title`
+only — `quick_filters` is set in YAML, because the pill choice that reaches every surface
+(the sidebar panel included) belongs to the integration's options, not to one dashboard's
+card. Editing a card that carries `quick_filters` through the visual editor leaves that key
+exactly as it was.
+
 Without `title`, the card uses the name set under Settings → Devices & services →
 HAventory → **Configure** (asked for at setup too, and defaulting to "HAventory"), so one
 setting renames every card. Per-dashboard `title:` wins over it — use that when two
