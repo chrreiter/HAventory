@@ -4,7 +4,7 @@
 # Kept as a pip-compatible fallback for environments without uv.
 aiohappyeyeballs==2.7.1
     # via aiohttp
-aiohttp==3.14.2
+aiohttp==3.14.3
 aiosignal==1.4.0
     # via aiohttp
 ast-serialize==0.6.0
