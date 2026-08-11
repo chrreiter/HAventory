@@ -3,7 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
-import { counted, plural, showingCount } from '../ui/plural';
+import { counted, showingCount } from '../ui/plural';
 import { ResponsiveController } from '../ui/responsive';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters } from '../store/store';
@@ -887,6 +887,10 @@ export class HVCardShell extends LitElement {
     const stagedFilterCount = activeFilterCount(this._stagedFilters ?? filters);
     const loaded = st?.items.length ?? 0;
     const total = st?.total;
+    // The placeholder counts the whole inventory, not the filtered result: it is
+    // the same sentence the full view and the panel show, so the search box does
+    // not describe the same store two ways depending on which surface opened it.
+    const searchTotal = st?.statsCounts?.items_total ?? null;
     const mobile = this.mobile;
     // The filter button reports the surface its own width uses. The desktop
     // panel's open state is remembered across sessions, so reading it on a
@@ -933,9 +937,7 @@ export class HVCardShell extends LitElement {
           <input
             type="search"
             data-testid="search-input"
-            placeholder=${total !== null && total !== undefined
-              ? `Search ${total} matching ${plural(total, 'item')}…`
-              : 'Search items…'}
+            placeholder=${searchTotal === null ? 'Search items…' : `Search all ${counted(searchTotal, 'item')}…`}
             .value=${this._searchDraft}
             @input=${(e: Event) => {
               this._searchDraft = (e.target as HTMLInputElement).value;
