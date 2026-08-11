@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.1](https://github.com/chrreiter/HAventory/compare/v0.4.0...v0.4.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **card:** Home Assistant reads the card's picker statics off the class ([#374](https://github.com/chrreiter/HAventory/issues/374)) ([de3fca5](https://github.com/chrreiter/HAventory/commit/de3fca5fc5826422fa4f1d3ba5f8efdf712e931b)), closes [#222](https://github.com/chrreiter/HAventory/issues/222)
+* **card:** line the editor's check-out box up with the field beside it ([#368](https://github.com/chrreiter/HAventory/issues/368)) ([72fbc51](https://github.com/chrreiter/HAventory/commit/72fbc5156ea9bb7c5104913a28b3d894ae9ff6bf)), closes [#359](https://github.com/chrreiter/HAventory/issues/359)
+* **card:** mark the area on a phone row instead of spelling it as a path ([#373](https://github.com/chrreiter/HAventory/issues/373)) ([52855d1](https://github.com/chrreiter/HAventory/commit/52855d1371e2982ba022d21bfca760cb3cbc41f2)), closes [#203](https://github.com/chrreiter/HAventory/issues/203)
+* **card:** one chip vocabulary — tags blue everywhere, tag chips at chip size ([#367](https://github.com/chrreiter/HAventory/issues/367)) ([2a2185f](https://github.com/chrreiter/HAventory/commit/2a2185ff424d576ed103cf4bf00585113d997b04))
+* **card:** rows stop being sized by the parts that cannot shrink ([#372](https://github.com/chrreiter/HAventory/issues/372)) ([57a012a](https://github.com/chrreiter/HAventory/commit/57a012aed7070e04e49705e86d82b3b7c86a1d34))
+* **card:** the detail sheet writes custom-field keys for reading ([#393](https://github.com/chrreiter/HAventory/issues/393)) ([63ff14a](https://github.com/chrreiter/HAventory/commit/63ff14afa0bf41c7c69a8edba5c0fd77bd7be6d2)), closes [#383](https://github.com/chrreiter/HAventory/issues/383)
+* **card:** the expanded view stops taking the card's touch sizing; sidebar rows match ([#369](https://github.com/chrreiter/HAventory/issues/369)) ([05537fe](https://github.com/chrreiter/HAventory/commit/05537fe4bfbc19362703565424452d15f8bd0c14))
+* **card:** the full view's table stops cutting Location and Tags mid-content ([#394](https://github.com/chrreiter/HAventory/issues/394)) ([c0b4a26](https://github.com/chrreiter/HAventory/commit/c0b4a26ba13eea7bbd38096e3f9df9d129b00cda)), closes [#378](https://github.com/chrreiter/HAventory/issues/378)
+* **card:** v0.4.1 copy fixes across the card's surfaces ([#390](https://github.com/chrreiter/HAventory/issues/390)) ([a0eeba3](https://github.com/chrreiter/HAventory/commit/a0eeba3ffd27216e3fdec022b715542ecd6681c5)), closes [#382](https://github.com/chrreiter/HAventory/issues/382)
+* **card:** v0.4.1 list-row fixes for areas and checked-out items ([#392](https://github.com/chrreiter/HAventory/issues/392)) ([df9edab](https://github.com/chrreiter/HAventory/commit/df9edab485a8ef29b522ffa3a241592ed97a3a41)), closes [#379](https://github.com/chrreiter/HAventory/issues/379)
+* **card:** v0.4.1 state and mark fixes across the card's surfaces ([#391](https://github.com/chrreiter/HAventory/issues/391)) ([3a3e489](https://github.com/chrreiter/HAventory/commit/3a3e489691f56c152feeb4558faf473e91175631)), closes [#388](https://github.com/chrreiter/HAventory/issues/388)
+
+
+### Documentation
+
+* record buttons as the card's reordering idiom ([#371](https://github.com/chrreiter/HAventory/issues/371)) ([5b951db](https://github.com/chrreiter/HAventory/commit/5b951db428c90edfaa677a818c3d5176c77cb7d5))
+
 ## [0.4.0](https://github.com/chrreiter/HAventory/compare/v0.3.3...v0.4.0) (2026-08-10)
 
 
