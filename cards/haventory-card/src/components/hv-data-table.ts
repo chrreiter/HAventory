@@ -17,7 +17,13 @@ import type { ColumnKey } from '../store/columns';
 import { isLowStock, rowMenuEntries } from './hv-list-row';
 import './hv-overflow-menu';
 import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
-import { itemPathParts, pathTitle, renderAreaChip, renderPathSegments } from '../ui/location-path';
+import {
+  areaMarkName,
+  itemPathParts,
+  pathTitle,
+  renderAreaChip,
+  renderPathSegments,
+} from '../ui/location-path';
 import type { Item, Sort, SortField } from '../store/types';
 
 /**
@@ -523,7 +529,7 @@ export class HVDataTable extends LitElement {
           role="cell"
           data-testid="cell-location"
           title=${pathTitle(parts)}
-          >${renderAreaChip(parts.areaName)}<span class="hv-chip-line-text"
+          >${renderAreaChip(areaMarkName(parts.areaName, parts.path))}<span class="hv-chip-line-text"
             >${parts.path ? renderPathSegments(parts.path) : '—'}</span
           ></span
         >`;

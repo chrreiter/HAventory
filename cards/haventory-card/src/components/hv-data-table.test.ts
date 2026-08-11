@@ -56,6 +56,50 @@ describe('hv-data-table: area', () => {
     expect(q(el, '[data-testid="cell-location"]')?.textContent?.trim()).toBe('—');
   });
 
+  // An area "Kitchen" over a root location "Kitchen" — the way a household
+  // names both — put the same word twice in the cell, "Kitchen Kitchen", where
+  // the card's own rows had already stopped doing it. One rule, both surfaces.
+  it('drops the area mark when the path already opens with that name', async () => {
+    const rooted = (display_path: string) => ({
+      id_path: [],
+      name_path: [],
+      display_path,
+      sort_key: '',
+    });
+    for (const path of ['Kitchen', 'Kitchen / Pantry']) {
+      const el = await mount(
+        [{ id: '1', effective_area_id: 'area-kitchen', location_path: rooted(path) }],
+        { columns: ['location'], areas: AREAS },
+      );
+      const cell = q(el, '[data-testid="cell-location"]');
+
+      expect(cell?.querySelector('[data-testid="area-chip"]'), path).toBe(null);
+      expect(cell?.textContent?.replace(/\s+/g, ' ').trim(), path).toBe(path.replace(' / ', ' › '));
+      // The pairing is still readable in full where the cell keeps it.
+      expect(cell?.getAttribute('title'), path).toBe(
+        `Area: Kitchen · ${path.replace(' / ', ' › ')}`,
+      );
+      el.remove();
+    }
+  });
+
+  // A deeper segment of the same name is a different place inside the area, so
+  // the mark still has something to say.
+  it('keeps the mark when the area only reappears further down the path', async () => {
+    const el = await mount(
+      [
+        {
+          id: '1',
+          effective_area_id: 'area-kitchen',
+          location_path: { id_path: [], name_path: [], display_path: 'Cellar / Kitchen', sort_key: '' },
+        },
+      ],
+      { columns: ['location'], areas: AREAS },
+    );
+    expect(
+      q(el, '[data-testid="cell-location"]')?.querySelector('.hv-area-chip')?.textContent,
+    ).toContain('Kitchen');
+  });
 });
 
 describe('hv-data-table: a path too long for its column', () => {

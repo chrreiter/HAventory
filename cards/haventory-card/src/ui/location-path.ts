@@ -105,6 +105,24 @@ export function renderPathSegments(path: string): TemplateResult[] {
 }
 
 /**
+ * The area worth marking beside a path, or nothing.
+ *
+ * Naming a root location after the area it stands in is the most natural thing
+ * a household does — an area "Kitchen" holding a location "Kitchen" — and the
+ * surface then prints the same word twice with only a chip's edge between them.
+ * When the path's first segment already is the area, the path has said it, and
+ * the mark is dropped. The full pairing survives in the `title`, which is where
+ * the unelided truth lives either way.
+ *
+ * Every surface that hangs an area chip beside a path goes through this, so the
+ * mark says the same thing on a card row as in the full view's table.
+ */
+export function areaMarkName(areaName: string | null, path: string): string | null {
+  if (!areaName) return null;
+  return path.split(PATH_SEPARATOR)[0].trim() === areaName.trim() ? null : areaName;
+}
+
+/**
  * The area beside a path, rendered so it cannot be mistaken for one of the
  * path's own segments. Renders nothing when there is no area, so a caller can
  * embed it unguarded.
