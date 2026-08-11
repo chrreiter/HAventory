@@ -233,16 +233,22 @@ export class HostSurfaces {
         glyph: 'download',
         sub: total === null ? 'Everything' : `All ${counted(total, 'item')} · all locations`,
       },
-      {
-        id: 'export-view',
-        label: 'Export current view',
-        glyph: 'download',
-        sub:
-          filtered === null
-            ? 'Active filter · keeps location paths'
-            : `${filtered} filtered ${plural(filtered, 'item')} · keeps location paths`,
-        disabled: !filtersOn,
-      },
+      // Only while a filter is on. Unfiltered, "the current view" is the whole
+      // inventory that Export backup above already offers, and the entry could
+      // only say so by claiming a filter that is not there.
+      ...(filtersOn
+        ? [
+            {
+              id: 'export-view',
+              label: 'Export current view',
+              glyph: 'download' as const,
+              sub:
+                filtered === null
+                  ? 'Active filter · keeps location paths'
+                  : `${filtered} filtered ${plural(filtered, 'item')} · keeps location paths`,
+            },
+          ]
+        : []),
       { id: 'import', label: 'Import backup…', glyph: 'upload' },
     ];
   }

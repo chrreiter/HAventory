@@ -393,27 +393,27 @@ describe('haventory-panel: the ⋮ menu', () => {
       'refresh',
       'diagnostics',
       'export-all',
-      'export-view',
       'import',
     ]);
   });
 
-  // The filtered export would be the whole inventory again, so it stays out of
-  // reach until a filter is on — same rule the card's menu follows.
-  it('disables the filtered export until something is filtered', async () => {
+  // The filtered export would be the whole inventory again, so it is not offered
+  // until a filter is on — same rule the card's menu follows.
+  it('offers the filtered export only once something is filtered', async () => {
     const { el, view } = await mountPanel({ items: [makeItem({ id: '1', name: 'Hammer' })] });
     await settle(el);
     const entry = () =>
       (view() as unknown as { menuEntries: { id?: string; disabled?: boolean }[] }).menuEntries.find(
         (e) => e.id === 'export-view',
       );
-    expect(entry()?.disabled).toBe(true);
+    expect(entry()).toBeUndefined();
 
     const store = (el as unknown as { store: { setFilters: (p: unknown) => void } }).store;
     store.setFilters({ q: 'hammer' });
     await settle(el);
 
-    expect(entry()?.disabled).toBe(false);
+    expect(entry()).toBeTruthy();
+    expect(entry()?.disabled).toBeUndefined();
   });
 });
 

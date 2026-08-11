@@ -221,7 +221,6 @@ describe('hv-card-shell: overflow menu', () => {
       'refresh',
       'diagnostics',
       'export-all',
-      'export-view',
       'import',
     ]);
   });
@@ -310,20 +309,22 @@ describe('hv-card-shell: overflow menu', () => {
     expect(actions).toEqual([]);
   });
 
-  it('disables "Export current view" until a filter is actually narrowing the list', async () => {
+  // Greyed out, it stood there claiming "30 filtered items" over an unfiltered
+  // list, with nothing on screen to say why it could not be pressed. Unfiltered,
+  // "the current view" is the whole inventory Export backup already offers.
+  it('offers "Export current view" only while a filter is narrowing the list', async () => {
     const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', category: 'Tools' })] });
     const menu = sr.querySelector('[data-testid="card-overflow"]') as HTMLElement;
     (menu.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
     await settle(el);
-    expect(
-      (menu.shadowRoot?.querySelector('[data-id="export-view"]') as HTMLButtonElement).disabled,
-    ).toBe(true);
+    expect(menu.shadowRoot?.querySelector('[data-id="export-view"]')).toBe(null);
+    expect(menu.shadowRoot?.querySelector('[data-id="export-all"]')).toBeTruthy();
 
     store.setFilters({ category: 'Tools' });
     await settle(el);
-    expect(
-      (menu.shadowRoot?.querySelector('[data-id="export-view"]') as HTMLButtonElement).disabled,
-    ).toBe(false);
+    const entry = menu.shadowRoot?.querySelector('[data-id="export-view"]') as HTMLButtonElement;
+    expect(entry).toBeTruthy();
+    expect(entry.disabled).toBe(false);
   });
 });
 
