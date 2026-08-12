@@ -75,6 +75,7 @@ from .models import (
     is_canonical_utc_timestamp,
     iso_utc_now,
     normalize_tags,
+    normalize_text_for_sort,
     parse_uuid4,
     seed_status_definitions,
     serialize_attachment_meta,
@@ -234,6 +235,17 @@ def _sorted_index_by_id(items: list[Item]) -> list[int]:
 
 def _err(path: str, message: str) -> dict[str, str]:
     return {"path": path, "message": message}
+
+
+def _warn(code: str, path: str, message: str, **fields: Any) -> dict[str, Any]:
+    """One non-blocking finding about an otherwise valid document.
+
+    Unlike an error, a warning carries a ``code``: every error means "this
+    document is unusable" and needs no discriminator, while warnings accumulate
+    kinds, and the code is what keeps a second kind from needing a second list.
+    """
+
+    return {"code": code, "path": path, "message": message, **fields}
 
 
 def _coerce_entity_list(value: Any) -> list[dict[str, Any]] | None:
@@ -676,6 +688,175 @@ def _recompute_paths(
     return {"items": out_items, "locations": out_locations}
 
 
+#: How many colliding stored entries a warning quotes by name before it counts
+#: the rest. The message renders as one line in the import sheet, and a repeated
+#: leaf name ("Drawer 1") can collide with a dozen stored entries at once.
+COLLISION_LABELS_SHOWN = 3
+
+
+def _quoted_path(entry: dict[str, Any], key: str) -> str:
+    """The display path an entity carries under ``key``, or "" when it has none."""
+
+    path = entry.get(key)
+    display = path.get("display_path") if isinstance(path, dict) else None
+    return display if isinstance(display, str) and display else ""
+
+
+def _join_phrases(phrases: list[str]) -> str:
+    if len(phrases) == 1:
+        return phrases[0]
+    return f"{', '.join(phrases[:-1])} and {phrases[-1]}"
+
+
+def _describe_incoming_item(doc: dict[str, Any], name: str) -> str:
+    """Name the incoming item, and where the document puts it.
+
+    Two incoming items of one name would otherwise render as two identical
+    lines, and the location is what separates them — the same job the stored
+    side's path does.
+    """
+
+    where = _quoted_path(doc, "location_path")
+    return f'"{name}" in "{where}"' if where else f'"{name}"'
+
+
+def _describe_incoming_location(doc: dict[str, Any], name: str) -> str:
+    return f'"{_quoted_path(doc, "path") or name}"'
+
+
+def _describe_stored_item(_stored: dict[str, Any]) -> str:
+    """An item has no path of its own — the count and the ids are the handle."""
+
+    return ""
+
+
+def _describe_stored_location(stored: dict[str, Any]) -> str:
+    """Name the stored location by its path.
+
+    Two legitimate "Shelf A"s under different parents are common, and the path
+    is what lets an operator tell one from the rebuilt duplicate at a glance.
+    The check itself deliberately does not scope by parent: an incoming
+    location's parent may itself be incoming, so resolving it would mean
+    planning the tree twice to answer what the path already answers.
+    """
+
+    return f'"{_quoted_path(stored, "path")}"' if _quoted_path(stored, "path") else ""
+
+
+def _collision_message(*, subject: str, kind: str, stored_labels: list[str]) -> str:
+    """One self-contained sentence naming both sides of a name collision.
+
+    Held to a single sentence on purpose: the import sheet renders one of these
+    per clash under a lead that already explains what a clash is, so a line that
+    repeats the explanation puts the same claim on screen six times.
+
+    ``stored_labels`` is one entry per colliding stored entity, empty-stringed
+    for a kind that has no path to quote. Every entity is counted; only the
+    quotable ones are named, and only the first few of those.
+    """
+
+    total = len(stored_labels)
+    plural = total > 1
+    ids_phrase = "under different ids" if plural else "under a different id"
+
+    quotable = [label for label in stored_labels if label]
+    if quotable:
+        shown = quotable[:COLLISION_LABELS_SHOWN]
+        rest = total - len(shown)
+        more = f", and {rest} more" if rest > 0 else ""
+        verb = "are" if plural else "is"
+        already = f"{_join_phrases(shown)}{more} {verb} already here"
+    else:
+        article = "an" if kind[0] in "aeiou" else "a"
+        counted_kind = f"{total} {kind}s" if plural else f"{article} {kind}"
+        verb = "go" if plural else "goes"
+        already = f"{counted_kind} here already {verb} by that name"
+
+    return f"{subject} would be added while {already}, {ids_phrase}."
+
+
+def _name_collision_warnings(  # noqa: PLR0913 - one document side, one stored side
+    *,
+    label: str,
+    kind: str,
+    added_ids: list[str],
+    incoming: list[dict[str, Any]],
+    ids: list[str],
+    existing: dict[str, Any],
+    describe_stored,
+    describe_incoming,
+) -> list[dict[str, Any]]:
+    """Flag each incoming entity about to be created under a taken name.
+
+    The hazard this catches is the one the contract already names: a document
+    imported onto entities that were deleted and rebuilt by hand duplicates
+    them rather than merging, because identity is the id and the rebuilt entity
+    has a new one. That is precisely an incoming entity about to be *created*
+    while a stored entity of a different id already answers to its name.
+
+    Restricted to the ``add`` bucket for the same reason. ``update`` and
+    ``unchanged`` are the same entity by id, so a name they share with some
+    third entity is an ordinary namesake — warning on it would fire on healthy
+    documents, and a check that fires on the normal case is worse than none.
+
+    Incoming-vs-incoming matches are out of scope: duplicate ids inside one
+    document are already an error, and two same-named entities in one document
+    are the exporting inventory's business, not a collision with this one.
+
+    Names are compared under ``normalize_text_for_sort`` — case-insensitive,
+    accent-folded, whitespace-collapsed — which is how the repository itself
+    compares names.
+
+    **Every** stored entity of a colliding name is reported, not the first one
+    found. Repeated leaf names are how location trees are shaped, so a
+    hand-rebuilt tree collides several deep on "Shelf A" or "Drawer 1" at once;
+    naming one arbitrary stored entity there would point the path quote at the
+    wrong counterpart, which is the one job that quote exists to do.
+    """
+
+    if not added_ids:
+        return []
+
+    stored_by_name: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+    for stored_id, stored in existing.items():
+        name = stored.get("name")
+        if isinstance(name, str) and name.strip():
+            stored_by_name.setdefault(normalize_text_for_sort(name), []).append(
+                (str(stored_id), stored)
+            )
+
+    index_by_id = {eid: idx for idx, eid in enumerate(ids) if eid}
+    warnings: list[dict[str, Any]] = []
+    for eid in added_ids:
+        idx = index_by_id.get(eid)
+        if idx is None:  # pragma: no cover - every added id came from `ids`
+            continue
+        doc = incoming[idx]
+        name = doc.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        matches = stored_by_name.get(normalize_text_for_sort(name))
+        if not matches:
+            continue
+        # Ordered by what the message shows, so the same document reports the
+        # same thing whatever order the repository happens to hold its entities.
+        ordered = sorted(matches, key=lambda match: (describe_stored(match[1]), match[0]))
+        warnings.append(
+            _warn(
+                "name_collision",
+                f"{label}[{idx}]",
+                _collision_message(
+                    subject=describe_incoming(doc, name.strip()),
+                    kind=kind,
+                    stored_labels=[describe_stored(stored) for _, stored in ordered],
+                ),
+                name=name.strip(),
+                existing_ids=[stored_id for stored_id, _ in ordered],
+            )
+        )
+    return warnings
+
+
 def _empty_bucket() -> dict[str, list[str]]:
     return {"add": [], "update": [], "conflict": [], "unchanged": []}
 
@@ -717,6 +898,7 @@ def plan_import(
     if policy not in POLICIES:
         raise ValidationError(f"policy must be one of: {', '.join(POLICIES)}")
 
+    warnings: list[dict[str, Any]] = []
     items_in, locations_in, errors = _parse_envelope(
         doc, current_schema_version=current_schema_version
     )
@@ -724,6 +906,9 @@ def plan_import(
     report: dict[str, Any] = {
         "valid": False,
         "errors": errors,
+        # Present from construction, so an invalid document returns the same
+        # shape as a valid one and the card has one thing to render.
+        "warnings": warnings,
         "policy": policy,
         "document": _document_meta(doc if isinstance(doc, dict) else {}),
         "items": _empty_bucket(),
@@ -778,6 +963,35 @@ def plan_import(
         policy=policy,
         canonical=_canonical_item,
         merge=_merge_item,
+    )
+
+    # After planning, because only planning says which entities land in `add` —
+    # and before path recomputation, because the stored paths a location warning
+    # quotes are the ones this inventory has now, not the ones the import would
+    # produce.
+    warnings.extend(
+        _name_collision_warnings(
+            label="locations",
+            kind="location",
+            added_ids=report["locations"]["add"],
+            incoming=locations_in,
+            ids=loc_ids,
+            existing=existing_locations,
+            describe_stored=_describe_stored_location,
+            describe_incoming=_describe_incoming_location,
+        )
+    )
+    warnings.extend(
+        _name_collision_warnings(
+            label="items",
+            kind="item",
+            added_ids=report["items"]["add"],
+            incoming=items_in,
+            ids=item_ids,
+            existing=existing_items,
+            describe_stored=_describe_stored_item,
+            describe_incoming=_describe_incoming_item,
+        )
     )
 
     payload = _recompute_paths(target_items, target_locations, errors)

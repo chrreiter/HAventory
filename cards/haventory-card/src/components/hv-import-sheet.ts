@@ -17,6 +17,13 @@ import type { ImportBucketCounts, ImportPolicy, ImportPreview, ImportSummary } f
 // deletes anything — an item absent from the file is always left alone — so each
 // description says so too, because "Replace" on its own reads like a
 // whole-inventory swap.
+/**
+ * How many name clashes are listed individually before the block switches to a
+ * count. A restore onto a hand-rebuilt inventory can clash on hundreds of
+ * entries, and a list that long would push the import button off the sheet.
+ */
+const WARNING_LIST_LIMIT = 5;
+
 const POLICIES: { id: ImportPolicy; title: string; description: string }[] = [
   {
     id: 'merge',
@@ -254,6 +261,11 @@ export class HVImportSheet extends LitElement {
       .alert.ok {
         background: var(--hv-primary-tint);
         color: var(--hv-success);
+      }
+      .warn-list {
+        margin: 6px 0 0;
+        /* Room for the marker, which sits outside the text box by default. */
+        padding-inline-start: 18px;
       }
       .fine {
         font-size: 12px;
@@ -543,6 +555,8 @@ export class HVImportSheet extends LitElement {
     const locations = preview.counts.locations;
     const conflicts = preview.items.conflict.length + preview.locations.conflict.length;
     const willWrite = (items?.add ?? 0) + (items?.update ?? 0);
+    // Absent on a preview from a backend that predates warnings.
+    const warnings = preview.warnings ?? [];
 
     return html`
       <div class="head">
@@ -565,6 +579,24 @@ export class HVImportSheet extends LitElement {
                   : preview.policy === 'skip'
                     ? 'Skip leaves them as they are.'
                     : 'Replace overwrites them.'}
+              </span>
+            </div>`
+          : null}
+        ${warnings.length
+          ? html`<div class="alert warn" data-testid="import-warnings">
+              <span class="glyph">${icon('alert', 18)}</span>
+              <span>
+                ${counted(warnings.length, 'name clash', 'name clashes')} — the file would add
+                ${warnings.length === 1 ? 'an entry' : 'entries'} under a name something here already uses,
+                under a different id. Import matches on the id alone, so
+                ${warnings.length === 1 ? 'this becomes a duplicate' : 'these become duplicates'} rather than
+                an update.
+                <ul class="warn-list">
+                  ${warnings.slice(0, WARNING_LIST_LIMIT).map((w) => html`<li>${w.message}</li>`)}
+                </ul>
+                ${warnings.length > WARNING_LIST_LIMIT
+                  ? html`<span class="hint">…and ${warnings.length - WARNING_LIST_LIMIT} more.</span>`
+                  : null}
               </span>
             </div>`
           : null}

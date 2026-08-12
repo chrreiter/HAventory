@@ -182,7 +182,11 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   all classify an incoming item or location by its id. Restoring a backup onto entities
   you rebuilt by hand — which carry fresh uuids — therefore duplicates them instead of
   merging, and the backup's items follow their stored `location_id` onto the duplicate.
-  Restore into an empty inventory, or onto one whose ids are still intact.
+  Restore into an empty inventory, or onto one whose ids are still intact. **The import
+  preview flags this before you write anything**: every incoming entry about to be added
+  under a name something here already answers to — under a different id — is listed as a
+  name clash in the preview sheet. It warns rather than gates, because resolving it would
+  mean matching by name, which is exactly what identity-by-id exists to avoid.
 - **A JSON export carries attachment *metadata*, not the files.** The export is one
   WebSocket result the card writes to a file, so it cannot carry binaries; photos and
   manuals live on disk under `<config>/haventory/attachments/`. Importing a document onto

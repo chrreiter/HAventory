@@ -809,3 +809,336 @@ def test_a_clean_round_trip_still_imports() -> None:
 
     assert report["valid"] is True, report["errors"]
     assert target is not None
+
+
+# -----------------------------
+# Name-collision warnings
+# -----------------------------
+
+
+def _rebuilt_item_doc(name: str, item_id: str = "44444444-4444-4444-8444-444444444444") -> dict:
+    """An item doc whose id is absent here, standing for a hand-rebuilt entity."""
+
+    return _item_doc(id=item_id, name=name)
+
+
+def test_an_incoming_name_taken_by_another_id_is_warned_about() -> None:
+    """The hazard the docs describe: rebuilt ids duplicate rather than merge."""
+
+    repo = Repository()
+    stored = repo.create_item({"name": "Hammer"})
+
+    report, target = ie.plan_import(
+        repo, _envelope(_rebuilt_item_doc("Hammer")), current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    # A warning tells; the id still decides.
+    assert report["valid"] is True, report["errors"]
+    assert target is not None
+    assert len(report["warnings"]) == 1
+    warning = report["warnings"][0]
+    assert warning["code"] == "name_collision"
+    assert warning["path"] == "items[0]"
+    assert warning["name"] == "Hammer"
+    assert warning["existing_ids"] == [str(stored.id)]
+    # Classification is untouched: the entity is still an add.
+    assert report["items"]["add"] == ["44444444-4444-4444-8444-444444444444"]
+
+
+def test_a_location_collision_names_the_stored_path() -> None:
+    """Two legitimate "Shelf A"s under different parents are common."""
+
+    repo = Repository()
+    garage = repo.create_location(name="Garage")
+    shelf = repo.create_location(name="Shelf A", parent_id=str(garage.id))
+
+    doc = {
+        "haventory_export_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "items": [],
+        "locations": [
+            {"id": "55555555-5555-4555-8555-555555555555", "name": "Shelf A", "parent_id": None}
+        ],
+    }
+    report, target = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert report["valid"] is True, report["errors"]
+    assert target is not None
+    warning = report["warnings"][0]
+    assert warning["code"] == "name_collision"
+    assert warning["path"] == "locations[0]"
+    assert warning["existing_ids"] == [str(shelf.id)]
+    assert "Garage / Shelf A" in warning["message"]
+
+
+@pytest.mark.parametrize("policy", ["merge", "replace", "skip"])
+def test_a_clean_round_trip_warns_about_nothing(policy: str) -> None:
+    """The regression that matters most.
+
+    Every entity of a re-imported export classifies `unchanged` or `update`, so
+    a check that fired here would fire on every healthy document — which is
+    worse than no check at all.
+    """
+
+    repo = Repository()
+    _seed(repo)
+    # Two entities deliberately sharing a name with a third, to prove a
+    # legitimate namesake is not what this warns about.
+    repo.create_item({"name": "Hammer"})
+    repo.create_location(name="Hammer")
+
+    report, target = ie.plan_import(
+        repo, _doc_from(repo), policy=policy, current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert report["valid"] is True, report["errors"]
+    assert target is not None
+    assert report["warnings"] == []
+
+
+@pytest.mark.parametrize("policy", ["merge", "replace", "skip"])
+def test_a_round_trip_onto_a_changed_inventory_still_warns_about_nothing(policy: str) -> None:
+    """`update` and `conflict` are the same entity by id — not a collision."""
+
+    repo = Repository()
+    ids = _seed(repo)
+    doc = _doc_from(repo)
+    # Change one stored item so the document classifies it update/conflict
+    # rather than unchanged, depending on the policy.
+    repo.update_item(ids["hammer"], {"quantity": 99})
+
+    report, _ = ie.plan_import(
+        repo, doc, policy=policy, current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert report["warnings"] == []
+
+
+@pytest.mark.parametrize("incoming_name", ["hammer", "HAMMER", "  Hammer  ", "Hämmer"])
+def test_names_differing_only_by_case_spacing_or_accent_still_collide(incoming_name: str) -> None:
+    """Compared the way the repository compares names, not byte for byte."""
+
+    repo = Repository()
+    repo.create_item({"name": "Hammer"})
+
+    report, _ = ie.plan_import(
+        repo,
+        _envelope(_rebuilt_item_doc(incoming_name)),
+        current_schema_version=CURRENT_SCHEMA_VERSION,
+    )
+
+    assert [w["code"] for w in report["warnings"]] == ["name_collision"]
+
+
+def test_no_warning_when_the_colliding_stored_entity_is_the_same_id() -> None:
+    """Same id means the same entity — an update, not a duplicate."""
+
+    repo = Repository()
+    stored = repo.create_item({"name": "Hammer"})
+
+    report, _ = ie.plan_import(
+        repo,
+        _envelope(_item_doc(id=str(stored.id), name="Hammer", quantity=7)),
+        current_schema_version=CURRENT_SCHEMA_VERSION,
+    )
+
+    assert report["items"]["update"] == [str(stored.id)]
+    assert report["warnings"] == []
+
+
+def test_an_invalid_document_returns_warnings_as_an_empty_list() -> None:
+    """One shape for the card to render, valid or not — never a missing key."""
+
+    repo = Repository()
+    bad = {"haventory_export_version": 1, "schema_version": CURRENT_SCHEMA_VERSION, "items": 3}
+
+    report, target = ie.plan_import(repo, bad, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert report["valid"] is False
+    assert target is None
+    assert report["warnings"] == []
+
+
+def test_warnings_do_not_reach_import_execute() -> None:
+    """The preview tells; the id still decides. Execute is unchanged."""
+
+    repo = Repository()
+    repo.create_item({"name": "Hammer"})
+
+    report, target = ie.plan_import(
+        repo, _envelope(_rebuilt_item_doc("Hammer")), current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+    assert report["warnings"]
+    assert target is not None
+
+    repo.load_state(target)
+    # Both survive: the warning flagged the duplicate, it did not prevent it.
+    names = sorted(item.name for item in repo._items_by_id.values())
+    assert names == ["Hammer", "Hammer"]
+
+
+@pytest.mark.asyncio
+async def test_ws_import_preview_carries_the_warnings() -> None:
+    hass = _new_hass()
+    hass.data[DOMAIN]["repository"].create_item({"name": "Hammer"})
+
+    res = await _send(
+        hass, 1, "haventory/import/preview", document=_envelope(_rebuilt_item_doc("Hammer"))
+    )
+
+    assert res["success"] is True, res
+    assert res["result"]["valid"] is True
+    assert [w["code"] for w in res["result"]["warnings"]] == ["name_collision"]
+
+
+def test_every_stored_entity_of_a_colliding_name_is_reported() -> None:
+    """Repeated leaf names are how location trees are shaped.
+
+    A hand-rebuilt tree collides several deep on "Shelf A" at once, and naming
+    one arbitrary stored location would point the path quote at the wrong
+    counterpart — the one job that quote exists to do.
+    """
+
+    repo = Repository()
+    garage = repo.create_location(name="Garage")
+    cellar = repo.create_location(name="Cellar")
+    garage_shelf = repo.create_location(name="Shelf A", parent_id=str(garage.id))
+    cellar_shelf = repo.create_location(name="Shelf A", parent_id=str(cellar.id))
+
+    doc = {
+        "haventory_export_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "items": [],
+        "locations": [
+            {
+                "id": "55555555-5555-4555-8555-555555555555",
+                "name": "Shelf A",
+                "parent_id": None,
+                "path": {"display_path": "Garage / Shelf A"},
+            }
+        ],
+    }
+    report, _ = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert report["valid"] is True, report["errors"]
+    warning = report["warnings"][0]
+    assert sorted(warning["existing_ids"]) == sorted([str(garage_shelf.id), str(cellar_shelf.id)])
+    # Both stored paths are named, so neither line claims a counterpart it does
+    # not have.
+    assert '"Cellar / Shelf A"' in warning["message"]
+    assert '"Garage / Shelf A"' in warning["message"]
+
+
+def test_two_incoming_entries_of_one_name_do_not_render_identically() -> None:
+    """Each line has to say which incoming entry it is about.
+
+    Naming the subject by bare name alone leaves two hand-rebuilt "Shelf A"s as
+    two byte-identical bullets in the import sheet.
+    """
+
+    repo = Repository()
+    repo.create_location(name="Shelf A")
+
+    doc = {
+        "haventory_export_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "items": [],
+        "locations": [
+            {
+                "id": "55555555-5555-4555-8555-555555555555",
+                "name": "Shelf A",
+                "parent_id": None,
+                "path": {"display_path": "Garage / Shelf A"},
+            },
+            {
+                "id": "66666666-6666-4666-8666-666666666666",
+                "name": "Shelf A",
+                "parent_id": None,
+                "path": {"display_path": "Cellar / Shelf A"},
+            },
+        ],
+    }
+    report, _ = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    incoming_entries = 2
+    messages = [w["message"] for w in report["warnings"]]
+    assert len(messages) == incoming_entries
+    assert len(set(messages)) == incoming_entries
+    assert any('"Garage / Shelf A" would be added' in m for m in messages)
+    assert any('"Cellar / Shelf A" would be added' in m for m in messages)
+
+
+def test_an_item_collision_counts_the_stored_namesakes_and_places_the_incoming() -> None:
+    """An item has no path of its own, so the count and its location carry it."""
+
+    repo = Repository()
+    first = repo.create_item({"name": "Hammer"})
+    second = repo.create_item({"name": "hammer"})
+
+    report, _ = ie.plan_import(
+        repo,
+        _envelope(
+            _item_doc(
+                id="44444444-4444-4444-8444-444444444444",
+                name="Hammer",
+                location_path={"display_path": "Garage / Shelf A"},
+            )
+        ),
+        current_schema_version=CURRENT_SCHEMA_VERSION,
+    )
+
+    warning = report["warnings"][0]
+    assert sorted(warning["existing_ids"]) == sorted([str(first.id), str(second.id)])
+    assert '"Hammer" in "Garage / Shelf A" would be added' in warning["message"]
+    assert "2 items here already go by that name" in warning["message"]
+
+
+def test_a_collision_message_stays_one_line_however_many_entries_collide() -> None:
+    """A repeated leaf name can collide a dozen deep; the message still fits."""
+
+    colliding = 12
+    repo = Repository()
+    for i in range(colliding):
+        parent = repo.create_location(name=f"Room {i}")
+        repo.create_location(name="Drawer 1", parent_id=str(parent.id))
+
+    doc = {
+        "haventory_export_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "items": [],
+        "locations": [
+            {
+                "id": "55555555-5555-4555-8555-555555555555",
+                "name": "Drawer 1",
+                "parent_id": None,
+                "path": {"display_path": "Room 0 / Drawer 1"},
+            }
+        ],
+    }
+    report, _ = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    warning = report["warnings"][0]
+    # Every colliding id is reported; only the first few are named.
+    assert len(warning["existing_ids"]) == colliding
+    # The subject plus the quoted stored paths, and no more.
+    assert warning["message"].count("Drawer 1") == ie.COLLISION_LABELS_SHOWN + 1
+    assert f"and {colliding - ie.COLLISION_LABELS_SHOWN} more" in warning["message"]
+
+
+def test_a_collision_message_does_not_repeat_the_sheet_lead() -> None:
+    """The sheet renders one of these per clash under a lead that explains it.
+
+    A line that restates the explanation puts the same claim on screen once per
+    entry, which is what turns the block into a wall.
+    """
+
+    repo = Repository()
+    repo.create_item({"name": "Hammer"})
+
+    report, _ = ie.plan_import(
+        repo, _envelope(_rebuilt_item_doc("Hammer")), current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    message = report["warnings"][0]["message"]
+    assert "Import matches on the id alone" not in message
+    assert message.count(".") == 1

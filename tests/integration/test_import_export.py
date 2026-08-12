@@ -120,3 +120,59 @@ async def test_import_preview_reports_errors_without_mutating(
     await client.send_json({"id": 3, "type": "haventory/stats"})
     stats = await client.receive_json()
     assert stats["result"]["items_total"] == 0
+
+
+async def test_import_preview_name_collision_survives_the_wire(
+    hass: HomeAssistant, hass_ws_client
+) -> None:
+    """The warning entry serializes through the real result envelope.
+
+    ``ws_import_preview`` passes the report to ``websocket_api.result_message``
+    unmodified, so only the real command layer proves the payload survives it.
+    """
+
+    await _setup(hass)
+    client = await hass_ws_client(hass)
+
+    await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Hammer"})
+    created = await client.receive_json()
+    stored_id = created["result"]["id"]
+
+    document = {
+        "haventory_export_version": 1,
+        "schema_version": 4,
+        # A hand-rebuilt "Hammer": the same name under an id this install has
+        # never seen, which import adds rather than merges.
+        "items": [
+            {
+                "id": "44444444-4444-4444-8444-444444444444",
+                "name": "Hammer",
+                "quantity": 1,
+                "tags": [],
+                "custom_fields": {},
+            }
+        ],
+        "locations": [],
+    }
+
+    await client.send_json({"id": 2, "type": "haventory/import/preview", "document": document})
+    preview = await client.receive_json()
+
+    assert preview["success"] is True, preview
+    # A warning tells; it does not gate.
+    assert preview["result"]["valid"] is True
+    warnings = preview["result"]["warnings"]
+    assert [w["code"] for w in warnings] == ["name_collision"]
+    assert warnings[0]["existing_ids"] == [stored_id]
+    assert warnings[0]["name"] == "Hammer"
+
+    # And a document with nothing to flag reports the key as an empty list.
+    await client.send_json(
+        {
+            "id": 3,
+            "type": "haventory/import/preview",
+            "document": {**document, "items": []},
+        }
+    )
+    clean = await client.receive_json()
+    assert clean["result"]["warnings"] == []

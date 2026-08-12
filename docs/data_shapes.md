@@ -333,6 +333,7 @@ Result of `distinct_values`, used by category/tag autocomplete, the browser view
 {
   "valid": true,
   "errors": [ { "path": "items[2].id", "message": "must be a UUID v4 string" } ],
+  "warnings": [ <ImportWarning>, ... ],
   "policy": "merge",
   "document": {
     "haventory_export_version": 1, "schema_version": 4,
@@ -355,6 +356,45 @@ Result of `distinct_values`, used by category/tag autocomplete, the browser view
   empty. Envelope problems (bad/missing versions, malformed `items`/`locations`, a
   `schema_version` newer than supported), invalid entities, duplicate ids, and broken
   references (e.g. an item's `location_id` with no matching location) all surface here.
+  Every import-side rule the WebSocket API enforces on a write is enforced here too — the
+  input caps, the 120-character name limit and the `due_date` ⇔ `checked_out` invariant — so
+  a document cannot introduce an entity the API would refuse.
+- `warnings` is present on every preview, empty or not, valid or not: one shape to render.
+
+`ImportWarning` — a non-blocking finding about an otherwise usable document:
+```json
+{
+  "code": "name_collision",
+  "path": "locations[3]",
+  "message": "\"Garage / Shelf A\" would be added while \"Cellar / Shelf A\" is already here, under a different id.",
+  "name": "Shelf A",
+  "existing_ids": [ "uuid-v4", ... ]
+}
+```
+
+- A warning **never** affects `valid` and **never** reaches `import/execute`. The preview
+  tells; the id still decides.
+- `code` discriminates the kind — `errors` needs none, because every error means "this
+  document is unusable", while warnings accumulate kinds.
+- `name_collision` is raised for an incoming entity classified `add` whose name matches that
+  of a stored entity **of the same kind carrying a different id**. Names are compared
+  case-insensitively, accent-folded and whitespace-collapsed — the same comparison the
+  repository uses for names.
+- `existing_ids` lists **every** stored entity of that name, not one of them. Location trees
+  repeat leaf names ("Shelf A", "Drawer 1"), so a hand-rebuilt tree collides several deep on
+  one name at once, and naming a single arbitrary stored entity would point the path quote at
+  the wrong counterpart.
+- `message` is one self-contained sentence, because a client renders one per clash under a
+  lead that already explains what a clash is. It names the incoming entity by its own
+  `display_path` where it has one — two incoming "Shelf A"s are otherwise indistinguishable
+  on screen — then quotes the colliding stored locations' paths, or counts the colliding
+  stored items, which have no path of their own. At most three stored paths are quoted and
+  the rest are counted; `existing_ids` stays complete either way.
+- Only the `add` bucket is checked. `update` and `unchanged` are the same entity by id, so a
+  shared name there is an ordinary namesake, and a clean round trip produces **zero**
+  warnings under every policy. Incoming-vs-incoming name matches are out of scope: duplicate
+  ids inside one document are already an error, and two same-named entities in one document
+  are the exporting inventory's business.
 
 `ImportSummary` — result of a successful `haventory/import/execute`:
 ```json
