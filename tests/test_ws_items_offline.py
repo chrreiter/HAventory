@@ -855,3 +855,104 @@ async def test_attachment_reorder_refuses_a_partial_list(upload) -> None:
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
+
+
+# -----------------------------
+# item/list input hardening
+# -----------------------------
+
+
+def _hass_with_items(count: int = 3) -> HomeAssistant:
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+    repo = _repo_of(hass)
+    for i in range(count):
+        repo.create_item({"name": f"Item {i}"})
+    return hass
+
+
+@pytest.mark.asyncio
+async def test_item_list_refuses_an_unknown_filter_key_by_name() -> None:
+    """A typo'd key used to be dropped, and the reply was the whole inventory."""
+
+    hass = _hass_with_items()
+
+    res = await _send(hass, 1, "haventory/item/list", filter={"query": "Item 0"})
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+    assert "query" in res["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_item_list_refuses_an_unknown_sort_field() -> None:
+    hass = _hass_with_items()
+
+    res = await _send(hass, 1, "haventory/item/list", sort={"field": "colour", "order": "asc"})
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+async def test_item_list_refuses_an_empty_cursor() -> None:
+    """Omitting the key is how a caller asks for page one; "" is a client bug."""
+
+    hass = _hass_with_items()
+
+    res = await _send(hass, 1, "haventory/item/list", limit=2, cursor="")
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+async def test_item_list_refuses_an_undecodable_cursor() -> None:
+    hass = _hass_with_items()
+
+    res = await _send(hass, 1, "haventory/item/list", limit=2, cursor="garbage")
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+async def test_item_list_refuses_a_non_integer_limit() -> None:
+    hass = _hass_with_items()
+
+    res = await _send(hass, 1, "haventory/item/list", limit="two")
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+async def test_item_list_still_serves_a_full_known_filter_and_pages() -> None:
+    """The regression that matters: nothing legitimate got refused."""
+
+    hass = _hass_with_items()
+
+    listed = await _send(
+        hass,
+        1,
+        "haventory/item/list",
+        filter={"q": "Item", "include_subtree": True, "low_stock_first": False},
+        sort={"field": "name", "order": "asc"},
+        limit=2,
+    )
+    assert listed["success"] is True, listed
+    assert [i["name"] for i in listed["result"]["items"]] == ["Item 0", "Item 1"]
+
+    page2 = await _send(
+        hass,
+        2,
+        "haventory/item/list",
+        filter={"q": "Item", "include_subtree": True, "low_stock_first": False},
+        sort={"field": "name", "order": "asc"},
+        limit=2,
+        cursor=listed["result"]["next_cursor"],
+    )
+    assert page2["success"] is True, page2
+    assert [i["name"] for i in page2["result"]["items"]] == ["Item 2"]

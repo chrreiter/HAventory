@@ -15,7 +15,17 @@ from typing import Any
 import pytest
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import ValidationError
-from custom_components.haventory.models import ItemCreate, ItemUpdate
+from custom_components.haventory.models import (
+    CATEGORY_MAX_LENGTH,
+    CUSTOM_FIELD_KEY_MAX_LENGTH,
+    CUSTOM_FIELD_VALUE_MAX_LENGTH,
+    CUSTOM_FIELDS_MAX_KEYS,
+    DESCRIPTION_MAX_LENGTH,
+    TAG_MAX_LENGTH,
+    TAGS_MAX_COUNT,
+    ItemCreate,
+    ItemUpdate,
+)
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
@@ -143,3 +153,115 @@ async def test_ws_set_quantity_bool_is_validation_error() -> None:
     got = await _send(hass, 4, "haventory/item/get", item_id=item_id)
     assert got["result"]["quantity"] == 1
     assert got["result"]["quantity"] is not True
+
+
+# -----------------------------
+# Size caps (one case at each boundary, one over)
+# -----------------------------
+
+
+@pytest.mark.parametrize(
+    ("field", "at_cap", "over_cap"),
+    [
+        (
+            "description",
+            {"description": "d" * DESCRIPTION_MAX_LENGTH},
+            {"description": "d" * (DESCRIPTION_MAX_LENGTH + 1)},
+        ),
+        (
+            "category",
+            {"category": "c" * CATEGORY_MAX_LENGTH},
+            {"category": "c" * (CATEGORY_MAX_LENGTH + 1)},
+        ),
+        (
+            "tag length",
+            {"tags": ["t" * TAG_MAX_LENGTH]},
+            {"tags": ["t" * (TAG_MAX_LENGTH + 1)]},
+        ),
+        (
+            "tag count",
+            {"tags": [f"t{i}" for i in range(TAGS_MAX_COUNT)]},
+            {"tags": [f"t{i}" for i in range(TAGS_MAX_COUNT + 1)]},
+        ),
+        (
+            "custom field count",
+            {"custom_fields": {f"k{i}": i for i in range(CUSTOM_FIELDS_MAX_KEYS)}},
+            {"custom_fields": {f"k{i}": i for i in range(CUSTOM_FIELDS_MAX_KEYS + 1)}},
+        ),
+        (
+            "custom field key length",
+            {"custom_fields": {"k" * CUSTOM_FIELD_KEY_MAX_LENGTH: 1}},
+            {"custom_fields": {"k" * (CUSTOM_FIELD_KEY_MAX_LENGTH + 1): 1}},
+        ),
+        (
+            "custom field value length",
+            {"custom_fields": {"k": "v" * CUSTOM_FIELD_VALUE_MAX_LENGTH}},
+            {"custom_fields": {"k": "v" * (CUSTOM_FIELD_VALUE_MAX_LENGTH + 1)}},
+        ),
+    ],
+)
+def test_create_accepts_at_the_cap_and_refuses_over_it(
+    field: str, at_cap: dict[str, Any], over_cap: dict[str, Any]
+) -> None:
+    repo = Repository()
+    repo.create_item(ItemCreate(name="Widget", **at_cap))  # type: ignore[typeddict-item]
+    assert repo.get_counts()["items_total"] == 1, field
+
+    with pytest.raises(ValidationError):
+        repo.create_item(ItemCreate(name="Widget", **over_cap))  # type: ignore[typeddict-item]
+    # No phantom left behind: the item at the cap is still the only one.
+    assert repo.get_counts()["items_total"] == 1, field
+
+
+@pytest.mark.asyncio
+async def test_ws_create_over_a_cap_is_validation_error_no_phantom() -> None:
+    hass = _make_hass()
+    res = await _send(
+        hass,
+        1,
+        "haventory/item/create",
+        name="Widget",
+        description="d" * (DESCRIPTION_MAX_LENGTH + 1),
+    )
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+    listed = await _send(hass, 2, "haventory/item/list")
+    assert listed["result"]["items"] == []
+
+
+def test_an_item_over_a_cap_can_still_be_edited_down() -> None:
+    """The caps refuse growth, not every edit on an item that predates them.
+
+    An item written before the caps existed reaches the repository through
+    ``load_state``, which does not re-validate. The edit that removes the excess
+    must not be refused along with the edit that would add to it.
+    """
+
+    repo = Repository()
+    item = repo.create_item(ItemCreate(name="Widget"))
+    # Reach past the write path the way a pre-cap store would have.
+    stored = repo._items_by_id[str(item.id)]
+    stored.tags = [f"t{i}" for i in range(TAGS_MAX_COUNT + 10)]
+    stored.custom_fields = {f"k{i}": i for i in range(CUSTOM_FIELDS_MAX_KEYS + 10)}
+
+    kept_tags = 5
+    unset_keys = 20
+
+    trimmed = repo.update_item(item.id, ItemUpdate(tags=stored.tags[:kept_tags]))
+    assert len(trimmed.tags) == kept_tags
+
+    unset = repo.update_item(
+        item.id, ItemUpdate(custom_fields_unset=[f"k{i}" for i in range(unset_keys)])
+    )
+    assert len(unset.custom_fields) == CUSTOM_FIELDS_MAX_KEYS + 10 - unset_keys
+
+
+def test_an_item_over_the_custom_field_cap_may_not_grow_further() -> None:
+    repo = Repository()
+    item = repo.create_item(ItemCreate(name="Widget"))
+    repo._items_by_id[str(item.id)].custom_fields = {
+        f"k{i}": i for i in range(CUSTOM_FIELDS_MAX_KEYS + 1)
+    }
+
+    with pytest.raises(ValidationError):
+        repo.update_item(item.id, ItemUpdate(custom_fields_set={"one_more": 1}))

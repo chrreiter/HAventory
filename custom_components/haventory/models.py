@@ -84,6 +84,18 @@ LOCATION_GUARD_MAX_STEPS = 10_000
 # model SMS4HVI31E)".
 ATTACHMENT_TITLE_MAX_LENGTH = 200
 
+# Input bounds for the free-text and collection fields, anchored on the 120-char
+# name cap above. The store is one JSON document rewritten in full on every
+# mutation, so an unbounded field is a cost every later write pays; these are set
+# where a household's real entry still fits comfortably.
+DESCRIPTION_MAX_LENGTH = 4_000
+CATEGORY_MAX_LENGTH = 120
+TAG_MAX_LENGTH = 64
+TAGS_MAX_COUNT = 50
+CUSTOM_FIELDS_MAX_KEYS = 50
+CUSTOM_FIELD_KEY_MAX_LENGTH = 64
+CUSTOM_FIELD_VALUE_MAX_LENGTH = 1_000
+
 
 @dataclass
 class Location:
@@ -374,13 +386,99 @@ def validate_custom_fields(values: dict[str, ScalarValue]) -> None:
 
     if not isinstance(values, dict):
         raise ValidationError("custom_fields must be a mapping of string keys to scalars")
+    if len(values) > CUSTOM_FIELDS_MAX_KEYS:
+        raise ValidationError(f"custom_fields must have at most {CUSTOM_FIELDS_MAX_KEYS} keys")
     for key, value in values.items():
         if not isinstance(key, str) or not key:
             raise ValidationError("custom_fields keys must be non-empty strings")
+        if len(key) > CUSTOM_FIELD_KEY_MAX_LENGTH:
+            raise ValidationError(
+                f"custom_fields keys must be at most {CUSTOM_FIELD_KEY_MAX_LENGTH} characters"
+            )
         if not isinstance(value, str | int | float | bool):
             raise ValidationError(
                 "custom_fields values must be scalar (string, number, or boolean)"
             )
+        if isinstance(value, str) and len(value) > CUSTOM_FIELD_VALUE_MAX_LENGTH:
+            raise ValidationError(
+                f"custom_fields values must be at most {CUSTOM_FIELD_VALUE_MAX_LENGTH} characters"
+            )
+
+
+def validate_tags(tags: list[str] | None, *, previous: Collection[str] = ()) -> list[str]:
+    """Normalize an *item's* tag list and enforce the item-side tag caps.
+
+    Separate from :func:`normalize_tags`, which also normalizes *filter* values:
+    a filter naming sixty tags is a query, not an item, and is not over any
+    limit.
+
+    ``previous`` is the item's current tag list, and the caps are enforced
+    against what the edit *adds*. An item that predates the caps can therefore
+    still be edited — including by the edit that removes the excess, which an
+    absolute check would refuse along with everything else.
+    """
+
+    normalized = normalize_tags(tags)
+    previous_tags = set(previous)
+    for tag in normalized:
+        if tag not in previous_tags and len(tag) > TAG_MAX_LENGTH:
+            raise ValidationError(f"each tag must be at most {TAG_MAX_LENGTH} characters")
+    if len(normalized) > TAGS_MAX_COUNT and len(normalized) > len(previous_tags):
+        raise ValidationError(f"tags must have at most {TAGS_MAX_COUNT} entries")
+    return normalized
+
+
+#: Every key an :class:`ItemFilter` accepts. Derived from the TypedDict so a new
+#: filter key is accepted the moment it is declared there, with no second list
+#: to keep in step.
+ITEM_FILTER_KEYS: Final[frozenset[str]] = frozenset(ItemFilter.__annotations__)
+
+#: The fields :func:`sort_items` can order by, and the two orders it accepts.
+SORT_FIELDS: Final[frozenset[str]] = frozenset(
+    {"updated_at", "created_at", "name", "quantity", "due_date", "inspection_date"}
+)
+SORT_ORDERS: Final[frozenset[str]] = frozenset({"asc", "desc"})
+#: The keys a sort object carries. Anything else is a client typo.
+SORT_KEYS: Final[frozenset[str]] = frozenset({"field", "order"})
+
+
+def validate_item_filter(flt: object) -> None:
+    """Reject a filter object carrying keys no filter understands.
+
+    An unknown key is silently dropped by :func:`filter_items`, so a typo'd
+    ``search`` or ``query`` in place of ``q`` returns the *whole* inventory
+    labelled as a filtered result. Naming the offending key is the only way a
+    caller finds that out.
+    """
+
+    if flt is None:
+        return
+    if not isinstance(flt, dict):
+        raise ValidationError("filter must be an object")
+    unknown = sorted(str(key) for key in flt if key not in ITEM_FILTER_KEYS)
+    if unknown:
+        raise ValidationError(f"unknown filter key(s): {', '.join(unknown)}")
+
+
+def validate_sort(sort: object) -> None:
+    """Reject a sort object carrying unknown keys, fields or orders.
+
+    Same footgun as :func:`validate_item_filter`: an unknown key leaves the
+    ordering at its default, which reads as "the sort did nothing".
+    """
+
+    if sort is None:
+        return
+    if not isinstance(sort, dict):
+        raise ValidationError("sort must be an object")
+    unknown = sorted(str(key) for key in sort if key not in SORT_KEYS)
+    if unknown:
+        raise ValidationError(f"unknown sort key(s): {', '.join(unknown)}")
+    field_value = sort.get("field")
+    if field_value not in SORT_FIELDS:
+        raise ValidationError(f"sort.field must be one of: {', '.join(sorted(SORT_FIELDS))}")
+    if sort.get("order") not in SORT_ORDERS:
+        raise ValidationError("sort.order must be 'asc' or 'desc'")
 
 
 def validate_due_date_rules(*, checked_out: bool, due_date: str | None) -> str | None:
@@ -674,14 +772,20 @@ def _is_int_not_bool(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _validate_optional_text(value: object, field_name: str) -> None:
-    """Ensure an optional free-text field is a string or None.
+def _validate_optional_text(
+    value: object, field_name: str, *, max_length: int | None = None
+) -> None:
+    """Ensure an optional free-text field is a string or None, within its cap.
 
     Non-text values (list/dict/number) would otherwise reach the search-index
     build and crash mid-way, leaving a partially-indexed item.
     """
-    if value is not None and not isinstance(value, str):
+    if value is None:
+        return
+    if not isinstance(value, str):
         raise ValidationError(f"{field_name} must be a string or null")
+    if max_length is not None and len(value) > max_length:
+        raise ValidationError(f"{field_name} must be at most {max_length} characters")
 
 
 def _validate_item_core_fields(name: str, quantity: int, low_stock_threshold: int | None) -> None:
@@ -715,14 +819,23 @@ def create_item_from_create(
         A fully-populated Item instance with defaults applied.
     """
 
-    name = payload.get("name")
-    if name is None:
+    raw_name = payload.get("name")
+    if raw_name is None:
         raise ValidationError("name is required")
+    # Type before shape: the command schema types `name` as `object` so a wrong
+    # type answers `validation_error` rather than an HA-core schema rejection,
+    # and `.strip()` on a non-string would reach that route as `unknown_error`.
+    if not isinstance(raw_name, str):
+        raise ValidationError("name is required and must be a non-empty string")
     # Trim whitespace before validation and persistence
-    name = name.strip()
+    name = raw_name.strip()
     description = payload.get("description")
+    # Type before conversion, for the same reason `name` is checked before
+    # `.strip()`: the command schema types `quantity` as `object`, and `int()`
+    # over a non-numeric string raises `ValueError`, which routes to
+    # `unknown_error` instead of naming the field.
     raw_quantity = payload.get("quantity", 1)
-    if isinstance(raw_quantity, bool):
+    if not _is_int_not_bool(raw_quantity):
         raise ValidationError("quantity must be an integer >= 0")
     quantity = int(raw_quantity)
     status = validate_item_status(
@@ -732,13 +845,13 @@ def create_item_from_create(
     due_date = payload.get("due_date")
     inspection_date = payload.get("inspection_date")
     location_id_raw = payload.get("location_id")
-    tags = normalize_tags(payload.get("tags"))
+    tags = validate_tags(payload.get("tags"))
     category = payload.get("category")
     low_stock_threshold = payload.get("low_stock_threshold")
     custom_fields = payload.get("custom_fields", {})
 
-    _validate_optional_text(description, "description")
-    _validate_optional_text(category, "category")
+    _validate_optional_text(description, "description", max_length=DESCRIPTION_MAX_LENGTH)
+    _validate_optional_text(category, "category", max_length=CATEGORY_MAX_LENGTH)
     _validate_item_core_fields(name, quantity, low_stock_threshold)
     validate_custom_fields(custom_fields)
     normalized_due_date = validate_due_date_rules(checked_out=checked_out, due_date=due_date)
@@ -790,7 +903,9 @@ def _update_name_and_description(new_item: Item, update: ItemUpdate) -> None:
             raise ValidationError("name must be at most 120 characters")
         new_item.name = trimmed
     if "description" in update:
-        _validate_optional_text(update["description"], "description")
+        _validate_optional_text(
+            update["description"], "description", max_length=DESCRIPTION_MAX_LENGTH
+        )
         new_item.description = update["description"]
 
 
@@ -847,9 +962,9 @@ def _update_location_and_path(
 
 def _update_tags_category_threshold(new_item: Item, update: ItemUpdate) -> None:
     if "tags" in update:
-        new_item.tags = normalize_tags(update.get("tags") or [])
+        new_item.tags = validate_tags(update.get("tags") or [], previous=new_item.tags)
     if "category" in update:
-        _validate_optional_text(update["category"], "category")
+        _validate_optional_text(update["category"], "category", max_length=CATEGORY_MAX_LENGTH)
         new_item.category = update["category"]
     if "low_stock_threshold" in update:
         thr = update["low_stock_threshold"]
@@ -861,6 +976,7 @@ def _update_tags_category_threshold(new_item: Item, update: ItemUpdate) -> None:
 def _update_custom_fields(new_item: Item, update: ItemUpdate) -> None:
     to_set = update.get("custom_fields_set", {})
     to_unset = update.get("custom_fields_unset", [])
+    before = len(new_item.custom_fields)
     if to_set:
         validate_custom_fields(to_set)
         new_item.custom_fields = {**new_item.custom_fields, **to_set}
@@ -868,6 +984,13 @@ def _update_custom_fields(new_item: Item, update: ItemUpdate) -> None:
         new_item.custom_fields = {
             k: v for k, v in new_item.custom_fields.items() if k not in set(to_unset)
         }
+    # The key cap bounds the item, not the patch: a two-key patch onto an item
+    # already at the limit is what would otherwise walk past it. Judged on the
+    # result of the whole call, and only when the call grew the map — so an item
+    # that predates the cap can still be edited down.
+    after = len(new_item.custom_fields)
+    if after > CUSTOM_FIELDS_MAX_KEYS and after > before:
+        raise ValidationError(f"custom_fields must have at most {CUSTOM_FIELDS_MAX_KEYS} keys")
 
 
 def apply_item_update(
@@ -1225,13 +1348,9 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
 
     field = sort.get("field")
     order = sort.get("order")
-    allowed_fields = {"updated_at", "created_at", "name", "quantity", "due_date", "inspection_date"}
-    if field not in allowed_fields:
-        raise ValidationError(
-            "sort.field must be one of: updated_at, created_at, name, quantity, "
-            "due_date, inspection_date"
-        )
-    if order not in {"asc", "desc"}:
+    if field not in SORT_FIELDS:
+        raise ValidationError(f"sort.field must be one of: {', '.join(sorted(SORT_FIELDS))}")
+    if order not in SORT_ORDERS:
         raise ValidationError("sort.order must be 'asc' or 'desc'")
 
     reverse = order == "desc"

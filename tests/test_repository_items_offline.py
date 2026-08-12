@@ -6,13 +6,14 @@ and derived counts (checked_out and low_stock).
 
 from __future__ import annotations
 
+import base64
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from custom_components.haventory.exceptions import ConflictError, NotFoundError
+from custom_components.haventory.exceptions import ConflictError, NotFoundError, ValidationError
 from custom_components.haventory.models import ItemCreate, ItemFilter, ItemUpdate, Sort
-from custom_components.haventory.repository import Repository
+from custom_components.haventory.repository import CURSOR_MAX_LENGTH, Repository
 
 TOTAL_ITEMS = 3
 INITIAL_LOW_STOCK_COUNT = 1
@@ -503,3 +504,68 @@ async def test_list_items_total_counts_all_matches() -> None:
     none = repo.list_items(flt=ItemFilter(q="zzz-not-there"))
     assert none["total"] == 0
     assert none["items"] == []
+
+
+# -----------------------------
+# Malformed cursors
+# -----------------------------
+
+
+@pytest.mark.parametrize(
+    "bad_cursor",
+    [
+        "garbage",
+        base64.urlsafe_b64encode(b"not json at all").decode("ascii"),
+        base64.urlsafe_b64encode(b'["a list", "not an object"]').decode("ascii"),
+        base64.urlsafe_b64encode(b'{"sort": {"field": "name", "order": "asc"}}').decode("ascii"),
+        "A" * (CURSOR_MAX_LENGTH + 1),
+    ],
+)
+def test_a_malformed_cursor_raises_rather_than_returning_page_one(bad_cursor: str) -> None:
+    """The footgun this closes: an unreadable cursor answered with a full page.
+
+    A caller paging through the inventory would loop over page one forever and
+    never be told the cursor stopped being understood.
+    """
+
+    repo = Repository()
+    for i in range(5):
+        repo.create_item(ItemCreate(name=f"Item {i}"))
+
+    with pytest.raises(ValidationError):
+        repo.list_items(limit=2, cursor=bad_cursor)
+
+
+def test_a_cursor_minted_under_another_sort_raises() -> None:
+    repo = Repository()
+    for i in range(5):
+        repo.create_item(ItemCreate(name=f"Item {i}"))
+
+    page1 = repo.list_items(sort=Sort(field="name", order="asc"), limit=2)
+    assert isinstance(page1["next_cursor"], str)
+
+    with pytest.raises(ValidationError):
+        repo.list_items(
+            sort=Sort(field="quantity", order="asc"), limit=2, cursor=page1["next_cursor"]
+        )
+
+
+def test_a_valid_cursor_still_pages_to_the_end() -> None:
+    """The regression that matters: hardening did not break the round trip."""
+
+    repo = Repository()
+    for i in range(5):
+        repo.create_item(ItemCreate(name=f"Item {i}"))
+
+    sort = Sort(field="name", order="asc")
+    seen: list[str] = []
+    cursor: str | None = None
+    for _ in range(5):
+        page = repo.list_items(sort=sort, limit=2, cursor=cursor)
+        seen.extend(it.name for it in page["items"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+
+    assert seen == [f"Item {i}" for i in range(5)]
+    assert cursor is None

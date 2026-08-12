@@ -38,6 +38,8 @@ Guarantees (every `haventory/*` command is wrapped by the same guard):
 
 Transport-level errors produced by Home Assistant itself (before a handler runs) are outside this taxonomy and can also be observed by clients: `invalid_format` (request failed the command's voluptuous schema) and `unknown_command` (integration not loaded or unknown `type`).
 
+Several fields are deliberately typed `object` in their command schema rather than concretely, so that a wrong type is answered by the handler as `validation_error` instead of by Home Assistant as `invalid_format`. The difference matters to an operator: core refuses the frame before the guard runs and logs the client's payload at ERROR, while the guard names the field at WARNING with no traceback. The fields treated this way are the ones a client most plausibly gets wrong: `name` (`item/create`, `location/create`, `location/update`), `quantity` (`item/create`, `item/update`, `item/set_quantity`), `delta` (`item/adjust_quantity`), `operations` (`items/bulk`), and `filter` / `sort` / `limit` / `cursor` (`item/list`, `location/tree`, `export`). Every other field keeps its concrete schema type, and a wrong type there is still `invalid_format`.
+
 ### Logging
 
 Every rejection the API boundary answers is also logged once, with the same structured context the envelope carries. The level says who is expected to act on it, not how unusual it is:
@@ -112,8 +114,9 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 ### Subscriptions and events
 
 - Subscribe
-  - `haventory/subscribe` request: `{id, type, topic: "items"|"locations"|"stats"|"statuses", location_id?: string|null, include_subtree?: boolean, inspection_overdue_only?: boolean}`
+  - `haventory/subscribe` request: `{id, type, topic: "items"|"locations"|"stats"|"statuses", location_id?: string|null, area_id?: string|null, include_subtree?: boolean, inspection_overdue_only?: boolean}`
   - Result: `null` (result envelope with `result: null`)
+  - `area_id` narrows the `items` topic to items whose `effective_area_id` equals it — the same area `item/list`'s `area_id` filter selects by, read off the event's own item payload. A `null` (or an omitted key) means no area filter, not "items with no area"; an item with no location has `effective_area_id: null` and therefore reaches no area-filtered subscription. An `area_id` naming an area nothing resolves to is accepted and simply delivers nothing. Filters combine with AND: a subscription carrying both `area_id` and `location_id` requires both to match. The `locations` topic ignores `area_id`.
   - `inspection_overdue_only` narrows the `items` topic to items past their `inspection_date`, using the same rule as the `item/list` filter of that name. Like every subscription filter it is applied to the event's item payload as it stands *after* the mutation, so an item that leaves the filtered set (its inspection date rescheduled or cleared) produces no event for that subscription — a client that tracks a filtered set re-lists rather than relying on a departure event.
   - Subsequent events delivered as HA WS events to the same connection using this `id` as the subscription id.
 
@@ -137,6 +140,7 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - When `location_id` filter is provided on subscription:
     - Items: if `include_subtree` (default true) match any item whose `location_path.id_path` contains the filter id; otherwise only direct `location_id` matches.
     - Locations: if `include_subtree` match the location itself or descendants; otherwise only the exact location.
+  - Re-anchoring a location under a different root rewrites `effective_area_id` for its whole subtree and emits a single `locations` `moved` event; reassigning a location's own `area_id` through `location/update` emits no `locations` event at all. Neither emits item events, so an area-filtered items subscription sees no departure for the items that just left its area, and no arrival for those that joined it. A client tracking a filtered set re-lists on a `locations` event rather than waiting for one — the same rule `inspection_overdue_only` carries, and the reason there is no synthetic per-item event here.
 
 - **An event implies a durable write.** Every mutation command persists the change *before* it broadcasts and before it replies, so any event on any topic says the write behind it reached storage. When the write fails the caller receives `storage_error` and **no event is emitted at all** — subscribers are told nothing rather than told about a change that is not on disk. A client may therefore treat a received event as committed and never has to reconcile it against a `storage_error` another client saw for the same change.
   - The guarantee is about the wire, not about the running repository: a failed write leaves the mutation applied in memory (`import/execute` is the exception — it rolls the dataset back, because a wholesale swap has more to undo than one entity does). Nothing announces that divergence, and it ends at the next restart, which reads back whatever last reached disk.
@@ -244,11 +248,14 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - Supported `kind` values: `item_update`, `item_delete`, `item_move`, `item_adjust_quantity`, `item_set_quantity`, `item_check_out`, `item_check_in`, `item_add_tags`, `item_remove_tags`, `item_update_custom_fields`, `item_set_low_stock_threshold`.
   - Result: `{results: { [op_id: string]: {success: true, result: <Item>} | {success: false, error: {code, message, context}} }}`; if any success, a single `stats/counts` event is emitted.
   - A failed op fails only itself; the batch continues and reports it under its `op_id`. A failed *write*, by contrast, fails the whole command with `storage_error` and returns no `results` map at all — the batch is one write.
+  - **`op_id`s must be unique within one batch**, and are compared as strings — `1` and `"1"` are the same id. A repeat rejects the whole command with `validation_error` and runs nothing, because the results map is keyed by `op_id` and could only report one verdict for the two operations.
 
 - `haventory/item/list`
   - Payload: `{filter?: <ItemFilter>, sort?: <Sort>, limit?: number, cursor?: string}`
   - Result: `{items: <Item[]>, next_cursor: string|null, total: number}`
   - `total` is the number of items matching the filter across **all** pages (not the page size), recomputed per request — so "Showing N of `total`" is renderable on every page.
+  - **Unknown `filter` and `sort` keys are refused** with `validation_error` naming the offending key, rather than dropped. A dropped key returns the whole inventory labelled as a filtered result, which no caller can tell from a filter that legitimately matched everything. The accepted key set is exactly `<ItemFilter>`'s; `sort` accepts `field` and `order` only.
+  - **A `cursor` that cannot be honoured is an error, never a silent restart.** `validation_error` is answered for a cursor that is empty, undecodable, longer than 2048 characters, missing its `last_id` / `last_sort_key`, or minted under a different `sort` than the request carries. Answering any of those with page one makes a caller paging through the inventory loop over the first page indefinitely without being told. To restart pagination, omit `cursor` — do not send `""`.
 
 ### Locations
 
@@ -322,7 +329,7 @@ except `status/delete` with a reassign target.
   - Result: `<Location[]>` (flat list)
 
 - `haventory/location/tree`
-  - Payload: `{filter?: <ItemFilter>}`
+  - Payload: `{filter?: <ItemFilter>}` (a non-object `filter`, or one carrying an unknown key, → `validation_error`).
   - Result: Array of tree nodes: `{id, name, parent_id, path: <LocationPath>, direct_item_count, subtree_item_count, children: <Node[]>}`
   - `direct_item_count` counts items whose `location_id` is exactly that node; `subtree_item_count` counts items in the node or any descendant (`subtree_item_count >= direct_item_count`). Counts change on item create/delete/move — clients showing them should refresh the tree on item events (or on `stats/counts`), not only on location events.
   - With a `filter`, each node additionally carries `matching_direct_count` and `matching_subtree_count` — the same two counts restricted to items the filter keeps — so a location sidebar can show "4 / 37" rather than a total that ignores the active filter. The unfiltered counts are still returned unchanged. Both keys are absent when no `filter` is sent. A filter that names `location_id` is honoured like any other, so a sidebar wanting per-location counts should leave the location dimension out of the filter it sends.
@@ -343,7 +350,7 @@ and locations; a round-trip (export → import into an empty instance) reproduce
 data. See `data_shapes.md` for the full document, preview, and summary shapes.
 
 - `haventory/export`
-  - Payload: `{filter?: <ItemFilter>}` (a non-object `filter` → `validation_error`).
+  - Payload: `{filter?: <ItemFilter>}` (a non-object `filter`, or one carrying an unknown key, → `validation_error`).
   - Result: `<ExportDocument>`. With no filter this is a full backup; with a filter,
     only matching items are exported together with the locations on each item's
     ancestry (so the document stays referentially self-consistent).

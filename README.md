@@ -412,6 +412,11 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
 - Services via `hass.services.async_register` with `voluptuous` schemas; handlers re-raise
   validation/repository/storage errors so HA surfaces them.
 - Areas via `homeassistant.helpers.area_registry.async_get(hass)`; never auto-create areas.
+- Every free-text and collection field is capped on the way in — 4000 characters of
+  description, 50 tags, 50 custom fields, and so on beside the 120-character name limit —
+  because the store is one JSON document rewritten in full on every mutation. The same caps
+  apply to an imported document, so a restore cannot introduce an entity the API would refuse.
+  The full table is in [`docs/data_shapes.md`](docs/data_shapes.md) → "Input caps".
 - Case-insensitive search; denormalized `location_path` on items; item `version` for optimistic
   concurrency. `version` counts *item* mutations only — renaming or moving a location rewrites
   the derived `location_path` across its whole subtree without bumping `version` or restamping

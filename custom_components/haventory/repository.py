@@ -109,6 +109,11 @@ UNSET: object = object()
 TRIGRAM_MIN_LEN = 3
 PREFIX_MIN_LEN = 2
 
+#: Longest pagination cursor this build will even attempt to decode. A cursor is
+#: base64 of a small JSON object this repository minted itself, so anything
+#: appreciably longer did not come from here.
+CURSOR_MAX_LENGTH = 2_048
+
 #: Rows of one kind logged individually before ``load_state`` switches to a total.
 #:
 #: A drop is per-row, so a wholesale corruption would otherwise emit one ERROR
@@ -2002,13 +2007,17 @@ class Repository:
         return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
 
     def _decode_cursor(self, cursor: str) -> dict[str, Any] | None:
+        # Bounded before decoding: base64 expands to bytes this method then
+        # parses as JSON, so an unbounded cursor is unbounded work per frame.
+        if len(cursor) > CURSOR_MAX_LENGTH:
+            return None
         try:
             raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
             obj = json.loads(raw)
             if not isinstance(obj, dict):
                 return None
             return obj
-        except ValueError, binascii.Error:  # pragma: no cover - defensive
+        except ValueError, binascii.Error:
             return None
 
     def _primary_sort_value(self, item: Item, sort: Sort) -> str | int:
@@ -2050,31 +2059,45 @@ class Repository:
     ) -> tuple[list[Item], str | None]:
         start_index = 0
         order = sort.get("order", "desc")
-        cursor_info = self._decode_cursor(cursor) if cursor else None
 
-        if cursor_info is not None:
+        if cursor:
+            # Every way a cursor can be wrong is an error, never a silent
+            # restart: answering an unreadable cursor with page one returns the
+            # whole first page dressed as "the next page", and a caller paging
+            # through an inventory would loop over it forever without ever
+            # being told.
+            cursor_info = self._decode_cursor(cursor)
+            if cursor_info is None:
+                raise ValidationError("cursor is not a valid pagination cursor")
             cur_sort = (
                 cursor_info.get("sort") if isinstance(cursor_info.get("sort"), dict) else None
             )
-            # If sort differs, ignore the cursor to avoid inconsistency
             if (
-                cur_sort
-                and cur_sort.get("field") == sort.get("field")
-                and cur_sort.get("order") == sort.get("order")
+                not cur_sort
+                or cur_sort.get("field") != sort.get("field")
+                or cur_sort.get("order") != sort.get("order")
             ):
-                last_key = cursor_info.get("last_sort_key")
-                last_id = cursor_info.get("last_id")
-                if isinstance(last_id, str) and isinstance(last_key, str | int):
-                    # Find first item strictly after the cursor tuple. When
-                    # nothing compares after it (e.g. the tail was deleted
-                    # between pages), the page is empty — not page one again.
-                    needle: tuple[str | int, str] = (last_key, last_id)
-                    start_index = len(items_sorted)
-                    for idx, it in enumerate(items_sorted):
-                        tup = (self._primary_sort_value(it, sort), str(it.id))
-                        if self._tuple_cmp(tup, needle, order) > 0:
-                            start_index = idx
-                            break
+                raise ValidationError(
+                    "cursor was issued for a different sort; restart pagination without it"
+                )
+            last_key = cursor_info.get("last_sort_key")
+            last_id = cursor_info.get("last_id")
+            if (
+                not isinstance(last_id, str)
+                or isinstance(last_key, bool)
+                or not isinstance(last_key, str | int)
+            ):
+                raise ValidationError("cursor is not a valid pagination cursor")
+            # Find first item strictly after the cursor tuple. When nothing
+            # compares after it (e.g. the tail was deleted between pages), the
+            # page is empty — not page one again.
+            needle: tuple[str | int, str] = (last_key, last_id)
+            start_index = len(items_sorted)
+            for idx, it in enumerate(items_sorted):
+                tup = (self._primary_sort_value(it, sort), str(it.id))
+                if self._tuple_cmp(tup, needle, order) > 0:
+                    start_index = idx
+                    break
 
         end_index = min(len(items_sorted), start_index + max(0, limit))
         page = items_sorted[start_index:end_index]

@@ -62,6 +62,8 @@ export interface MockHass extends HassLike {
   __messages: Record<string, unknown>[];
   /** Every subscribed topic seen so far, in order — refused attempts included. */
   __subscribeCalls: string[];
+  /** Every `haventory/subscribe` message in full, for assertions about its filters. */
+  __subscribeMessages: Record<string, unknown>[];
   /** Deliver a Home Assistant core event to whoever subscribed to it. */
   __emitHaEvent(eventType: string, data?: Record<string, unknown>): void;
   /** Open core-event subscriptions for `eventType` — 0 once a store disposes. */
@@ -111,6 +113,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
   const calls: string[] = [];
   const messages: Record<string, unknown>[] = [];
   const subscribeCalls: string[] = [];
+  const subscribeMessages: Record<string, unknown>[] = [];
 
   const findItem = (msg: Record<string, unknown>): Item => {
     const itemId = String((msg as any).item_id);
@@ -129,6 +132,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
     __calls: calls,
     __messages: messages,
     __subscribeCalls: subscribeCalls,
+    __subscribeMessages: subscribeMessages,
     async callWS<T>(msg: Record<string, unknown>): Promise<T> {
       const type = String(msg.type || '');
       calls.push(type);
@@ -640,6 +644,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         }
         const topic = String((msg as any).topic || '');
         subscribeCalls.push(topic);
+        subscribeMessages.push({ ...msg });
         if (subscribeFailRemaining > 0) {
           // Real HA rejects the subscribe promise; the client must not treat the
           // topic as live.
