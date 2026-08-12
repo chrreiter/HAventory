@@ -560,6 +560,7 @@ export class Store {
     if (this.itemsUnsub) this.itemsUnsub();
     this.itemsUnsub = this.ws.subscribe('items', onEvent((evt) => this.onItemsEvent(evt)), {
       location_id: this.state.value.filters.locationId ?? undefined,
+      area_id: this.state.value.filters.areaId ?? undefined,
       include_subtree: true, // Always include sublocations
       onError,
       onOpen,
@@ -1120,7 +1121,9 @@ export class Store {
   // ---------- Filters ----------
   setFilters(patch: Partial<StoreFilters>) {
     const next = { ...this.state.value.filters, ...patch };
-    const locationChanged = next.locationId !== this.state.value.filters.locationId;
+    const scopeChanged =
+      next.locationId !== this.state.value.filters.locationId ||
+      next.areaId !== this.state.value.filters.areaId;
     // The rows already loaded stay on screen until the refetch lands, marked as
     // loading. Blanking them is what tore the scroller down mid-edit and took an
     // open editor with it; `listItems(true)` replaces the array wholesale anyway,
@@ -1132,9 +1135,9 @@ export class Store {
       // A row that is no longer listed cannot stay selected.
       selection: new Set<string>(),
     });
-    // The items subscription is scoped by location, so only a location change
-    // needs the sockets torn down and rebuilt.
-    if (locationChanged) this.subscribeTopics();
+    // The items subscription is scoped by location and area, so those two are
+    // the only filters that need the sockets torn down and rebuilt.
+    if (scopeChanged) this.subscribeTopics();
     void this.listItems(true);
     // Per-location counts are measured against the filter, so they move with it.
     // Coalesced: a filter panel can patch several keys in a row. Re-ordering

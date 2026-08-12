@@ -22,7 +22,17 @@ from custom_components.haventory import import_export as ie
 from custom_components.haventory import media
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import StorageError, ValidationError
-from custom_components.haventory.models import validate_attachment_meta
+from custom_components.haventory.models import (
+    CATEGORY_MAX_LENGTH,
+    CUSTOM_FIELD_KEY_MAX_LENGTH,
+    CUSTOM_FIELD_VALUE_MAX_LENGTH,
+    CUSTOM_FIELDS_MAX_KEYS,
+    DESCRIPTION_MAX_LENGTH,
+    NAME_MAX_LENGTH,
+    TAG_MAX_LENGTH,
+    TAGS_MAX_COUNT,
+    validate_attachment_meta,
+)
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
 from custom_components.haventory.ws import setup as ws_setup
@@ -125,17 +135,29 @@ async def test_ws_export_returns_document() -> None:
 
 @pytest.mark.asyncio
 async def test_ws_export_invalid_filter_field() -> None:
-    """Invalid-field case: a non-object filter never reaches the handler.
+    """Invalid-field case: a non-object filter is the handler's to refuse.
 
-    ``haventory/export`` declares ``filter`` as a dict, so Home Assistant
-    refuses the frame with the transport-level ``invalid_format`` before
-    dispatch — not with the handler's own ``validation_error``.
+    ``haventory/export`` declares ``filter`` as ``object`` so the frame reaches
+    the handler and answers ``validation_error``, rather than being refused by
+    Home Assistant with a transport-level ``invalid_format`` that never passes
+    through the guard.
     """
 
     hass = _new_hass()
     res = await _send(hass, 1, "haventory/export", filter="not-an-object")
     assert res["success"] is False, res
-    assert res["error"]["code"] == "invalid_format"
+    assert res["error"]["code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+async def test_ws_export_unknown_filter_key_is_named() -> None:
+    """A typo'd filter key is refused rather than dropped, and named."""
+
+    hass = _new_hass()
+    res = await _send(hass, 1, "haventory/export", filter={"search": "hammer"})
+    assert res["success"] is False, res
+    assert res["error"]["code"] == "validation_error"
+    assert "search" in res["error"]["message"]
 
 
 # -----------------------------
@@ -641,3 +663,149 @@ async def test_import_merge_keeps_a_file_the_document_does_not_mention() -> None
     assert res["success"] is True, res
     assert [str(a.id) for a in repo.get_item(item.id).attachments] == [str(meta.id)]
     assert path.is_file()
+
+
+# -----------------------------
+# Import-side parity with the write path
+# -----------------------------
+
+
+def _item_doc(**overrides: object) -> dict:
+    doc = {
+        "id": "22222222-2222-4222-8222-222222222222",
+        "name": "Ghost",
+        "quantity": 1,
+        "tags": [],
+        "custom_fields": {},
+    }
+    doc.update(overrides)
+    return doc
+
+
+def _envelope(item: dict) -> dict:
+    return {
+        "haventory_export_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "items": [item],
+        "locations": [],
+    }
+
+
+@pytest.mark.parametrize(
+    ("overrides", "path"),
+    [
+        ({"name": "n" * (NAME_MAX_LENGTH + 1)}, "items[0].name"),
+        ({"description": "d" * (DESCRIPTION_MAX_LENGTH + 1)}, "items[0].description"),
+        ({"category": "c" * (CATEGORY_MAX_LENGTH + 1)}, "items[0].category"),
+        ({"tags": ["t" * (TAG_MAX_LENGTH + 1)]}, "items[0].tags"),
+        ({"tags": [f"t{i}" for i in range(TAGS_MAX_COUNT + 1)]}, "items[0].tags"),
+        (
+            {"custom_fields": {f"k{i}": i for i in range(CUSTOM_FIELDS_MAX_KEYS + 1)}},
+            "items[0].custom_fields",
+        ),
+        ({"custom_fields": {"k" * (CUSTOM_FIELD_KEY_MAX_LENGTH + 1): 1}}, "items[0].custom_fields"),
+        (
+            {"custom_fields": {"k": "v" * (CUSTOM_FIELD_VALUE_MAX_LENGTH + 1)}},
+            "items[0].custom_fields.k",
+        ),
+        ({"due_date": "2026-01-01"}, "items[0].due_date"),
+    ],
+)
+def test_preview_holds_an_imported_item_to_the_write_path_rules(overrides: dict, path: str) -> None:
+    """A document is the one way an entity the WS API would refuse could arrive.
+
+    Reported per field rather than dropped, because ``plan_import`` reports to
+    the caller — a refused import, not lost rows.
+    """
+
+    repo = Repository()
+    report, target = ie.plan_import(
+        repo, _envelope(_item_doc(**overrides)), current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert report["valid"] is False
+    assert target is None
+    assert path in {e["path"] for e in report["errors"]}
+
+
+def test_preview_reports_a_long_location_name() -> None:
+    repo = Repository()
+    doc = {
+        "haventory_export_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "items": [],
+        "locations": [
+            {
+                "id": "33333333-3333-4333-8333-333333333333",
+                "name": "l" * (NAME_MAX_LENGTH + 1),
+                "parent_id": None,
+            }
+        ],
+    }
+    report, target = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert report["valid"] is False
+    assert target is None
+    assert "locations[0].name" in {e["path"] for e in report["errors"]}
+
+
+def test_preview_accepts_a_due_date_on_a_checked_out_item() -> None:
+    """The invariant is due_date ⇔ checked_out, not "no due dates"."""
+
+    repo = Repository()
+    report, target = ie.plan_import(
+        repo,
+        _envelope(_item_doc(due_date="2026-01-01", checked_out=True)),
+        current_schema_version=CURRENT_SCHEMA_VERSION,
+    )
+
+    assert report["valid"] is True, report["errors"]
+    assert target is not None
+
+
+def test_preview_accepts_an_item_at_every_cap() -> None:
+    """The regression that matters: nothing legitimate got refused."""
+
+    repo = Repository()
+    report, target = ie.plan_import(
+        repo,
+        _envelope(
+            _item_doc(
+                name="n" * NAME_MAX_LENGTH,
+                description="d" * DESCRIPTION_MAX_LENGTH,
+                category="c" * CATEGORY_MAX_LENGTH,
+                tags=["t" * TAG_MAX_LENGTH],
+                custom_fields={
+                    "k" * CUSTOM_FIELD_KEY_MAX_LENGTH: "v" * CUSTOM_FIELD_VALUE_MAX_LENGTH
+                },
+            )
+        ),
+        current_schema_version=CURRENT_SCHEMA_VERSION,
+    )
+
+    assert report["valid"] is True, report["errors"]
+    assert target is not None
+
+
+def test_a_clean_round_trip_still_imports() -> None:
+    """An export of a real inventory passes every new import-side check."""
+
+    repo = Repository()
+    loc = repo.create_location(name="Garage")
+    repo.create_item(
+        {
+            "name": "Hammer",
+            "description": "Claw hammer",
+            "category": "tools",
+            "tags": ["heavy", "metal"],
+            "custom_fields": {"weight": "1.2kg"},
+            "location_id": str(loc.id),
+        }
+    )
+
+    report, target = ie.plan_import(
+        repo, _doc_from(repo), current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert report["valid"] is True, report["errors"]
+    assert target is not None

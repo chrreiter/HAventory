@@ -43,6 +43,21 @@ export interface FieldError {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * The backend's input caps, mirrored so the editor refuses before the round
+ * trip rather than showing a server error on save. These are the values in
+ * `models.py`; a value the editor accepts and the backend refuses is the
+ * failure mode to avoid, so they only ever move together.
+ */
+const NAME_MAX_LENGTH = 120;
+const DESCRIPTION_MAX_LENGTH = 4000;
+const CATEGORY_MAX_LENGTH = 120;
+const TAG_MAX_LENGTH = 64;
+const TAGS_MAX_COUNT = 50;
+const CUSTOM_FIELDS_MAX_KEYS = 50;
+const CUSTOM_FIELD_KEY_MAX_LENGTH = 64;
+const CUSTOM_FIELD_VALUE_MAX_LENGTH = 1000;
+
 let rowSeq = 0;
 
 export function newCustomFieldRow(partial: Partial<CustomFieldRow> = {}): CustomFieldRow {
@@ -88,14 +103,41 @@ export function validateForm(model: ItemFormModel): FieldError[] {
   const errors: FieldError[] = [];
   if (!model.name.trim()) {
     errors.push({ field: 'name', message: 'Name is required.' });
-  } else if (model.name.trim().length > 120) {
-    errors.push({ field: 'name', message: 'Name is limited to 120 characters.' });
+  } else if (model.name.trim().length > NAME_MAX_LENGTH) {
+    errors.push({
+      field: 'name',
+      message: `Name is limited to ${NAME_MAX_LENGTH} characters.`,
+    });
+  }
+  if (model.description.length > DESCRIPTION_MAX_LENGTH) {
+    errors.push({
+      field: 'description',
+      message: `Description is limited to ${DESCRIPTION_MAX_LENGTH} characters.`,
+    });
+  }
+  if (model.category.trim().length > CATEGORY_MAX_LENGTH) {
+    errors.push({
+      field: 'category',
+      message: `Category is limited to ${CATEGORY_MAX_LENGTH} characters.`,
+    });
   }
   if (!Number.isFinite(model.quantity) || !Number.isInteger(model.quantity) || model.quantity < 0) {
     errors.push({ field: 'quantity', message: "Quantity can't be negative." });
   }
   if (model.lowStock !== null && (!Number.isFinite(model.lowStock) || model.lowStock < 0)) {
     errors.push({ field: 'lowStock', message: 'Low-stock threshold must be 0 or more, or empty.' });
+  }
+  // Counted after normalization, the way the backend counts it: two casings of
+  // one tag are one tag on both sides.
+  const tags = normalizeTags(model.tags);
+  if (tags.length > TAGS_MAX_COUNT) {
+    errors.push({ field: 'tags', message: `An item can carry at most ${TAGS_MAX_COUNT} tags.` });
+  }
+  if (tags.some((tag) => tag.length > TAG_MAX_LENGTH)) {
+    errors.push({
+      field: 'tags',
+      message: `Each tag is limited to ${TAG_MAX_LENGTH} characters.`,
+    });
   }
   const seen = new Set<string>();
   for (const row of model.customFields) {
@@ -106,12 +148,30 @@ export function validateForm(model: ItemFormModel): FieldError[] {
       continue;
     }
     seen.add(key);
+    if (key.length > CUSTOM_FIELD_KEY_MAX_LENGTH) {
+      errors.push({
+        field: `custom:${row.id}`,
+        message: `Field names are limited to ${CUSTOM_FIELD_KEY_MAX_LENGTH} characters.`,
+      });
+    }
     if (row.type === 'number' && (row.value.trim() === '' || !Number.isFinite(Number(row.value)))) {
       errors.push({ field: `custom:${row.id}`, message: `"${key}" must be a number.` });
     }
     if (row.type === 'date' && row.value.trim() !== '' && !DATE_RE.test(row.value.trim())) {
       errors.push({ field: `custom:${row.id}`, message: `"${key}" must be a date.` });
     }
+    if (row.type === 'string' && row.value.length > CUSTOM_FIELD_VALUE_MAX_LENGTH) {
+      errors.push({
+        field: `custom:${row.id}`,
+        message: `"${key}" is limited to ${CUSTOM_FIELD_VALUE_MAX_LENGTH} characters.`,
+      });
+    }
+  }
+  if (seen.size > CUSTOM_FIELDS_MAX_KEYS) {
+    errors.push({
+      field: 'customFields',
+      message: `An item can carry at most ${CUSTOM_FIELDS_MAX_KEYS} custom fields.`,
+    });
   }
   return errors;
 }

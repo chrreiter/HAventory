@@ -58,9 +58,17 @@ from typing import Any, Literal
 from .const import INTEGRATION_VERSION
 from .exceptions import ValidationError
 from .models import (
+    CATEGORY_MAX_LENGTH,
+    CUSTOM_FIELD_KEY_MAX_LENGTH,
+    CUSTOM_FIELD_VALUE_MAX_LENGTH,
+    CUSTOM_FIELDS_MAX_KEYS,
     DEFAULT_ITEM_STATUS,
+    DESCRIPTION_MAX_LENGTH,
     EMPTY_LOCATION_PATH,
     ITEM_STATUSES,
+    NAME_MAX_LENGTH,
+    TAG_MAX_LENGTH,
+    TAGS_MAX_COUNT,
     Item,
     Location,
     build_location_path_from_map,
@@ -72,6 +80,7 @@ from .models import (
     serialize_attachment_meta,
     serialize_status_definition,
     validate_attachment_meta,
+    validate_due_date_rules,
     validate_status_definition,
 )
 from .repository import Repository
@@ -335,6 +344,26 @@ def _validate_uuid4(value: Any, path: str, errors: list[dict[str, str]]) -> str 
     return value
 
 
+def _validate_capped_text(
+    value: Any, path: str, max_length: int, errors: list[dict[str, str]]
+) -> None:
+    """Report an optional free-text field that is not a string, or is too long.
+
+    Absence and an explicit null are both fine; every item field this guards is
+    nullable.
+    """
+
+    if value is None:
+        return
+    if not isinstance(value, str):
+        errors.append(_err(path, f"{path.rsplit('.', 1)[-1]} must be a string or null"))
+        return
+    if len(value) > max_length:
+        errors.append(
+            _err(path, f"{path.rsplit('.', 1)[-1]} must be at most {max_length} characters")
+        )
+
+
 def _validate_location_doc(
     idx: int, doc: dict[str, Any], errors: list[dict[str, str]]
 ) -> str | None:
@@ -343,6 +372,8 @@ def _validate_location_doc(
     name = doc.get("name")
     if not isinstance(name, str) or not name.strip():
         errors.append(_err(f"{base}.name", "name is required and must be a non-empty string"))
+    elif len(name.strip()) > NAME_MAX_LENGTH:
+        errors.append(_err(f"{base}.name", f"name must be at most {NAME_MAX_LENGTH} characters"))
     parent_id = doc.get("parent_id")
     if parent_id is not None:
         _validate_uuid4(parent_id, f"{base}.parent_id", errors)
@@ -385,6 +416,63 @@ def _validate_attachments_doc(base: str, doc: dict[str, Any], errors: list[dict[
             errors.append(_err(f"{base}.attachments[{idx}]", str(exc)))
 
 
+def _validate_tags_doc(base: str, doc: dict[str, Any], errors: list[dict[str, str]]) -> None:
+    """Hold an imported tag list to the caps a written one is held to.
+
+    The count is measured on the normalized list, the way the write path
+    measures it: a document repeating a tag under two casings carries one tag.
+    """
+
+    tags = doc.get("tags", [])
+    if not isinstance(tags, list) or any(not isinstance(t, str) for t in tags):
+        errors.append(_err(f"{base}.tags", "tags must be an array of strings"))
+        return
+    if len(normalize_tags(tags)) > TAGS_MAX_COUNT:
+        errors.append(_err(f"{base}.tags", f"tags must have at most {TAGS_MAX_COUNT} entries"))
+    if any(len(t) > TAG_MAX_LENGTH for t in tags):
+        errors.append(_err(f"{base}.tags", f"each tag must be at most {TAG_MAX_LENGTH} characters"))
+
+
+def _validate_custom_fields_doc(
+    base: str, doc: dict[str, Any], errors: list[dict[str, str]]
+) -> None:
+    """Hold an imported custom-field map to the caps a written one is held to."""
+
+    cf = doc.get("custom_fields", {})
+    if not isinstance(cf, dict):
+        errors.append(_err(f"{base}.custom_fields", "custom_fields must be an object"))
+        return
+    if len(cf) > CUSTOM_FIELDS_MAX_KEYS:
+        errors.append(
+            _err(
+                f"{base}.custom_fields",
+                f"custom_fields must have at most {CUSTOM_FIELDS_MAX_KEYS} keys",
+            )
+        )
+    for k, v in cf.items():
+        if not isinstance(k, str) or not k:
+            errors.append(
+                _err(f"{base}.custom_fields", "custom_fields keys must be non-empty strings")
+            )
+        elif len(k) > CUSTOM_FIELD_KEY_MAX_LENGTH:
+            errors.append(
+                _err(
+                    f"{base}.custom_fields",
+                    f"custom_fields keys must be at most {CUSTOM_FIELD_KEY_MAX_LENGTH} characters",
+                )
+            )
+        elif not isinstance(v, str | int | float | bool):
+            errors.append(_err(f"{base}.custom_fields.{k}", "custom_fields values must be scalar"))
+        elif isinstance(v, str) and len(v) > CUSTOM_FIELD_VALUE_MAX_LENGTH:
+            errors.append(
+                _err(
+                    f"{base}.custom_fields.{k}",
+                    "custom_fields values must be at most "
+                    f"{CUSTOM_FIELD_VALUE_MAX_LENGTH} characters",
+                )
+            )
+
+
 def _validate_item_doc(
     idx: int, doc: dict[str, Any], errors: list[dict[str, str]], known_statuses: Collection[str]
 ) -> str | None:
@@ -393,6 +481,12 @@ def _validate_item_doc(
     name = doc.get("name")
     if not isinstance(name, str) or not name.strip():
         errors.append(_err(f"{base}.name", "name is required and must be a non-empty string"))
+    elif len(name.strip()) > NAME_MAX_LENGTH:
+        errors.append(_err(f"{base}.name", f"name must be at most {NAME_MAX_LENGTH} characters"))
+    _validate_capped_text(
+        doc.get("description"), f"{base}.description", DESCRIPTION_MAX_LENGTH, errors
+    )
+    _validate_capped_text(doc.get("category"), f"{base}.category", CATEGORY_MAX_LENGTH, errors)
     qty = doc.get("quantity", 1)
     if not isinstance(qty, int) or isinstance(qty, bool) or qty < 0:
         errors.append(_err(f"{base}.quantity", "quantity must be an integer >= 0"))
@@ -409,24 +503,10 @@ def _validate_item_doc(
     loc_id = doc.get("location_id")
     if loc_id is not None:
         _validate_uuid4(loc_id, f"{base}.location_id", errors)
-    tags = doc.get("tags", [])
-    if not isinstance(tags, list) or any(not isinstance(t, str) for t in tags):
-        errors.append(_err(f"{base}.tags", "tags must be an array of strings"))
-    cf = doc.get("custom_fields", {})
-    if not isinstance(cf, dict):
-        errors.append(_err(f"{base}.custom_fields", "custom_fields must be an object"))
-    else:
-        for k, v in cf.items():
-            if not isinstance(k, str) or not k:
-                errors.append(
-                    _err(f"{base}.custom_fields", "custom_fields keys must be non-empty strings")
-                )
-            elif not isinstance(v, str | int | float | bool):
-                errors.append(
-                    _err(f"{base}.custom_fields.{k}", "custom_fields values must be scalar")
-                )
-    # Canonical fixed-width timestamps are a load-bearing invariant: sorting
-    # and range filters compare them lexicographically. A field that is PRESENT
+    _validate_tags_doc(base, doc, errors)
+    _validate_custom_fields_doc(base, doc, errors)
+    # Canonical fixed-width timestamps are an invariant sorting and range
+    # filters depend on: they compare lexicographically. A field that is PRESENT
     # must be canonical (an explicit null / non-canonical string is rejected so
     # it cannot be stored as "None"/garbage); an omitted field is allowed and
     # backfilled with a canonical value on load.
@@ -438,7 +518,25 @@ def _validate_item_doc(
                     f"{ts_field} must be an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ)",
                 )
             )
+    _validate_due_date_doc(base, doc, errors)
     return iid
+
+
+def _validate_due_date_doc(base: str, doc: dict[str, Any], errors: list[dict[str, str]]) -> None:
+    """Hold an imported item to the same due-date invariant a write is held to.
+
+    A due date only exists while an item is checked out, and every WS and
+    service path enforces that. A document is the one way an item could arrive
+    carrying a date nothing will ever clear.
+    """
+
+    due_date = doc.get("due_date")
+    if due_date is None:
+        return
+    try:
+        validate_due_date_rules(checked_out=bool(doc.get("checked_out", False)), due_date=due_date)
+    except ValidationError as exc:
+        errors.append(_err(f"{base}.due_date", str(exc)))
 
 
 def _canonical_item(doc: dict[str, Any]) -> dict[str, Any]:

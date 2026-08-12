@@ -243,15 +243,46 @@ async def test_a_refusal_is_answered_on_the_connection() -> None:
 
 @pytest.mark.asyncio
 async def test_a_real_command_refuses_a_wrong_typed_field_and_mutates_nothing() -> None:
-    """The same guard over a shipped command, end to end."""
+    """The same guard over a shipped command, end to end.
+
+    ``tags`` is one of the fields ``item/create`` still types concretely. The
+    fields whose wrong type is a plausible client bug — ``name``, ``quantity``
+    — are typed ``object`` on purpose so they answer ``validation_error``
+    through the guard instead; the test below covers those.
+    """
 
     hass = _fresh_hass()
     repo = hass.data[DOMAIN]["repository"]
 
-    res = await _send(hass, 1, "haventory/item/create", name="Hammer", quantity="many")
+    res = await _send(hass, 1, "haventory/item/create", name="Hammer", tags="chisel")
 
     assert res["success"] is False
     assert res["error"]["code"] == INVALID_FORMAT
+    assert repo.get_counts()["items_total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_the_widened_fields_answer_validation_error_and_mutate_nothing() -> None:
+    """A field typed ``object`` is refused by the handler, through the guard.
+
+    Home Assistant refuses a schema mismatch before ``ws_guard`` runs and logs
+    the client's payload at ERROR while doing it. The fields a client most
+    plausibly gets wrong are typed ``object`` so the answer comes from the model
+    layer instead, naming the field at WARNING.
+    """
+
+    hass = _fresh_hass()
+    repo = hass.data[DOMAIN]["repository"]
+
+    for payload in (
+        {"name": "Hammer", "quantity": "many"},
+        {"name": 42},
+        {"name": "Hammer", "quantity": 1.5},
+    ):
+        res = await _send(hass, 1, "haventory/item/create", **payload)
+        assert res["success"] is False, payload
+        assert res["error"]["code"] == "validation_error", payload
+
     assert repo.get_counts()["items_total"] == 0
 
 

@@ -231,11 +231,25 @@ counts items at the node or any descendant (so it is always >= the direct count)
   - `{ field: "updated_at"|"created_at"|"name"|"quantity"|"due_date"|"inspection_date", order: "asc"|"desc" }`
   - `due_date` / `inspection_date`: items without a date sort last in both orders; ties break by id asc.
 
+**Unknown keys are rejected**, in a filter and in a sort alike: the reply is `validation_error`
+naming the offending key. A dropped key is worse than a refused one — a filter that lost its
+only predicate returns the whole inventory, and nothing in the reply says the filter did not
+apply. `sort` accepts `field` and `order` and nothing else. The accepted filter key set is
+exactly the list above, and it is read off the filter type itself, so a filter key added later
+is accepted the moment it is declared.
+
 ### Pagination
 
 - `item/list` returns `{items: <Item[]>, next_cursor: string|null, total: number}`.
 - `total` is the count of items matching the filter across all pages, independent of `limit`/`cursor`.
 - `cursor` is an opaque base64url-encoded JSON with last tuple and sort metadata; pass it back unchanged.
+- A cursor that cannot be honoured is `validation_error`, never a silent restart at page one:
+  empty, undecodable, longer than 2048 characters, missing `last_id` / `last_sort_key`, or
+  minted under a different `sort` than the request carries. Restart pagination by omitting
+  `cursor` — sending `""` is refused, because a caller who meant page one had no reason to
+  send the key at all.
+- Changing the sort means dropping the cursor. A cursor addresses a position in one specific
+  ordering, and honouring it against another would silently return a page from neither.
 
 ### Stats
 
@@ -362,9 +376,44 @@ Common envelope inside HA WS event wrapper:
 - Stats: `counts` with `{counts: <Counts>}`.
 - Every topic: `unavailable` (common fields only), sent once per open subscription when the config entry serving it tears down. The subscription is over at that point; see the API contract's "While no entry is loaded".
 
+Subscription filters (`haventory/subscribe`) are matched against the payload above, not
+against the repository:
+
+- `location_id` / `include_subtree` read the item's `location_path.id_path` (or the location's own `path.id_path`).
+- `area_id` reads the item's `effective_area_id`, so it selects the same area `ItemFilter.area_id` does. An item with no location carries `effective_area_id: null` and matches no area filter; a `null` or omitted `area_id` on the subscription means no area filter at all. `area_id` applies to the `items` topic only.
+- Filters combine with AND, and every one of them is applied to the payload as it stands *after* the mutation. An item that leaves a filtered set produces no event for that subscription, so a client tracking one re-lists rather than waiting for a departure event — including after a `locations` `moved` event, which is the only signal that a subtree's `effective_area_id` was rewritten.
+
 ### Validation notes
 
 - UUIDs must be version 4.
 - Dates use `YYYY-MM-DD` and are validated for real calendar dates.
 - `name` trimmed; max length 120 for items and locations.
 - `custom_fields` keys must be non-empty strings; values must be scalars.
+
+#### Input caps
+
+Every free-text and collection field is bounded. The store is one JSON document rewritten in
+full on every mutation, so an unbounded field is a cost every later write keeps paying. Over
+a cap is `validation_error`, at a cap is accepted:
+
+| Field | Cap |
+|---|---|
+| `name` (item and location) | 120 characters |
+| `description` | 4000 characters |
+| `category` | 120 characters |
+| each entry of `tags` | 64 characters |
+| `tags` | 50 entries, counted after normalization |
+| `custom_fields` | 50 keys |
+| each `custom_fields` key | 64 characters |
+| each string `custom_fields` value | 1000 characters |
+
+The caps refuse *growth*, not every edit: an item that predates them — one loaded from a
+store written by an earlier release — can still be edited, including by the edit that removes
+the excess. What it cannot do is add to a collection already over its cap.
+
+The same caps, the 120-character name limit and the `due_date` ⇔ `checked_out` invariant are
+applied to `import/preview` as well, so a document cannot introduce an entity the WebSocket
+API would refuse. They are reported per field in `report.errors`, as a refused import rather
+than as dropped rows. `Repository.load_state` deliberately does **not** re-validate: a store
+written before the caps existed is legal data this integration itself wrote, and refusing it
+would turn an upgrade into a backend that will not start.

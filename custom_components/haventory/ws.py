@@ -61,6 +61,8 @@ from .models import (
     serialize_status_definition,
     today_utc_date,
     validate_attachment_meta,
+    validate_item_filter,
+    validate_sort,
 )
 from .rate_limit import RateLimiter
 from .repository import UNSET, InternalIndexes, Repository
@@ -254,9 +256,13 @@ def ws_guard(
 
 
 def _validate_bulk_ops(operations: Any) -> list[dict[str, Any]]:
+    # The command schema types `operations` as `object` so a wrong type answers
+    # `validation_error` here instead of an HA-core schema rejection that never
+    # reaches `ws_guard` — which makes this check the only one there is.
     if not isinstance(operations, list):
         raise ValidationError("operations must be a list")
     validated: list[dict[str, Any]] = []
+    seen_op_ids: set[str] = set()
     for _idx, op in enumerate(operations):
         if not isinstance(op, dict):
             raise ValidationError("each operation must be an object")
@@ -265,6 +271,14 @@ def _validate_bulk_ops(operations: Any) -> list[dict[str, Any]]:
         op_id = op.get("op_id")
         if not isinstance(op_id, str | int):
             raise ValidationError("op_id must be a string or integer")
+        # Results are keyed by op_id, so a repeat would leave the caller holding
+        # one verdict for two operations with no way to tell which it belongs
+        # to. Compared after `str()`, the same normalization the result map uses
+        # — so `1` and `"1"` are one id, not two.
+        normalized_op_id = str(op_id)
+        if normalized_op_id in seen_op_ids:
+            raise ValidationError(f"duplicate op_id in operations: {normalized_op_id}")
+        seen_op_ids.add(normalized_op_id)
         kind = op.get("kind")
         # Do not reject unknown kinds at schema-level; allow mixed results.
         if not isinstance(kind, str):
@@ -274,7 +288,7 @@ def _validate_bulk_ops(operations: Any) -> list[dict[str, Any]]:
             payload = {}
         if not isinstance(payload, dict):
             raise ValidationError("operation.payload must be an object")
-        validated.append({"op_id": str(op_id), "kind": str(kind), "payload": payload})
+        validated.append({"op_id": normalized_op_id, "kind": str(kind), "payload": payload})
     return validated
 
 
@@ -454,6 +468,7 @@ def _execute_item_op(
 class _Subscription(TypedDict, total=False):
     topic: str
     location_id: str | None
+    area_id: str | None
     include_subtree: bool
     inspection_overdue_only: bool
 
@@ -620,6 +635,13 @@ def _payload_inspection_is_overdue(item: dict[str, Any]) -> bool:
 
 def _item_matches_filter(item: dict[str, Any], sub: _Subscription) -> bool:
     if sub.get("inspection_overdue_only") and not _payload_inspection_is_overdue(item):
+        return False
+    # Read the area off the payload rather than resolving it from the repository:
+    # the matcher runs once per subscription per event, and `_serialize_item` has
+    # already walked the location ancestry to compute the same value. An item with
+    # no location carries `effective_area_id: None`, which matches no area filter.
+    area_filter = sub.get("area_id")
+    if area_filter and item.get("effective_area_id") != area_filter:
         return False
     loc_filter = sub.get("location_id")
     if not loc_filter:
@@ -1070,6 +1092,9 @@ async def ws_health(
         vol.Required("type"): "haventory/subscribe",
         vol.Required("topic"): str,
         vol.Optional("location_id"): object,
+        # `object` rather than `str`, matching `location_id`: an explicit null
+        # clears the filter instead of being refused by HA core's schema.
+        vol.Optional("area_id"): object,
         vol.Optional("include_subtree"): bool,
         vol.Optional("inspection_overdue_only"): bool,
     }
@@ -1087,6 +1112,8 @@ async def ws_subscribe(
     }
     if "location_id" in msg:
         sub["location_id"] = msg.get("location_id")
+    if "area_id" in msg:
+        sub["area_id"] = msg.get("area_id")
     if "include_subtree" in msg:
         sub["include_subtree"] = bool(msg.get("include_subtree"))
     if "inspection_overdue_only" in msg:
@@ -1156,9 +1183,9 @@ async def ws_unsubscribe(
     {
         vol.Required("type"): "haventory/item/create",
         # ItemCreate fields (name required; others optional)
-        vol.Required("name"): str,
+        vol.Required("name"): object,
         vol.Optional("description"): object,
-        vol.Optional("quantity"): int,
+        vol.Optional("quantity"): object,
         # Widened to object so the model layer rejects bad values as a typed
         # validation_error instead of HA core logging a schema ERROR.
         vol.Optional("status"): object,
@@ -1206,7 +1233,7 @@ async def ws_item_get(
         # ItemUpdate fields (all optional)
         vol.Optional("name"): object,
         vol.Optional("description"): object,
-        vol.Optional("quantity"): int,
+        vol.Optional("quantity"): object,
         vol.Optional("status"): object,
         vol.Optional("checked_out"): bool,
         vol.Optional("due_date"): vol.Any(str, None),
@@ -1277,7 +1304,7 @@ async def ws_item_delete(
     {
         vol.Required("type"): "haventory/item/adjust_quantity",
         vol.Required("item_id"): object,
-        vol.Required("delta"): int,
+        vol.Required("delta"): object,
         vol.Optional("expected_version"): int,
     }
 )
@@ -1286,8 +1313,10 @@ async def ws_item_delete(
 async def ws_item_adjust_quantity(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
+    # The schema types `delta` as `object`, so the integer check lives here and
+    # answers `validation_error` rather than an HA-core schema rejection.
     item = _repo(hass).adjust_quantity(
-        msg["item_id"], msg["delta"], expected_version=msg.get("expected_version")
+        msg["item_id"], _payload_int(msg, "delta"), expected_version=msg.get("expected_version")
     )
     serialized = _serialize_item(hass, item)
     await _persist_repo(hass)
@@ -1300,7 +1329,7 @@ async def ws_item_adjust_quantity(
     {
         vol.Required("type"): "haventory/item/set_quantity",
         vol.Required("item_id"): object,
-        vol.Required("quantity"): int,
+        vol.Required("quantity"): object,
         vol.Optional("expected_version"): int,
     }
 )
@@ -1309,9 +1338,12 @@ async def ws_item_adjust_quantity(
 async def ws_item_set_quantity(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    qty = msg.get("quantity")
-    # Validate upfront so schema errors surface as validation_error even when id is bad
-    if not isinstance(qty, int) or qty < 0:
+    # Validated here, not in the schema: `quantity` is typed `object` so a wrong
+    # type answers `validation_error` instead of an HA-core schema rejection,
+    # and validating upfront keeps the answer about the quantity even when the
+    # item id is also bad.
+    qty = _payload_int(msg, "quantity")
+    if qty < 0:
         raise ValidationError("quantity must be an integer >= 0")
     item = _repo(hass).set_quantity(
         msg["item_id"], qty, expected_version=msg.get("expected_version")
@@ -1704,7 +1736,7 @@ async def ws_item_move(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "haventory/items/bulk", vol.Required("operations"): list}
+    {vol.Required("type"): "haventory/items/bulk", vol.Required("operations"): object}
 )
 @websocket_api.async_response
 @ws_guard("items_bulk", ())
@@ -1823,10 +1855,10 @@ async def ws_items_bulk(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "haventory/item/list",
-        vol.Optional("filter"): dict,
-        vol.Optional("sort"): dict,
-        vol.Optional("limit"): int,
-        vol.Optional("cursor"): str,
+        vol.Optional("filter"): object,
+        vol.Optional("sort"): object,
+        vol.Optional("limit"): object,
+        vol.Optional("cursor"): object,
     }
 )
 @websocket_api.async_response
@@ -1834,11 +1866,18 @@ async def ws_items_bulk(
 async def ws_item_list(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    # Accept filter/sort/limit/cursor passthrough
     flt = msg.get("filter")
     sort = msg.get("sort")
     limit = msg.get("limit")
     cursor = msg.get("cursor")
+    validate_item_filter(flt)
+    validate_sort(sort)
+    if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int)):
+        raise ValidationError("limit must be an integer")
+    if cursor is not None and (not isinstance(cursor, str) or not cursor):
+        # An empty cursor is a client bug rather than "start from the
+        # beginning" — omitting the key is how a caller asks for page one.
+        raise ValidationError("cursor must be a non-empty string")
     page = _repo(hass).list_items(flt=flt, sort=sort, limit=limit, cursor=cursor)
     result = {
         "items": [_serialize_item(hass, it) for it in page["items"]],
@@ -1856,7 +1895,7 @@ async def ws_item_list(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "haventory/location/create",
-        vol.Required("name"): str,
+        vol.Required("name"): object,
         vol.Optional("parent_id"): object,
         vol.Optional("area_id"): object,
     }
@@ -1899,7 +1938,7 @@ async def ws_location_get(
         vol.Required("type"): "haventory/location/update",
         vol.Required("location_id"): object,
         vol.Optional("new_parent_id"): object,
-        vol.Optional("name"): str,
+        vol.Optional("name"): object,
         vol.Optional("area_id"): object,
     }
 )
@@ -1971,7 +2010,7 @@ async def ws_location_list(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "haventory/location/tree", vol.Optional("filter"): dict}
+    {vol.Required("type"): "haventory/location/tree", vol.Optional("filter"): object}
 )
 @websocket_api.async_response
 @ws_guard("location_tree", ())
@@ -1988,6 +2027,7 @@ async def ws_location_tree(
     # a sidebar can read "4 / 37" instead of a total that never moves. Counted
     # once here and rolled up, rather than one query per location.
     item_filter = msg.get("filter")
+    validate_item_filter(item_filter)
     matching_direct = (
         repo.count_matching_by_location(item_filter) if item_filter is not None else None
     )
@@ -2251,16 +2291,15 @@ async def ws_areas_list(
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "haventory/export", vol.Optional("filter"): dict}
+    {vol.Required("type"): "haventory/export", vol.Optional("filter"): object}
 )
 @websocket_api.async_response
 @ws_guard("export", ())
 async def ws_export(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    if "filter" in msg and not isinstance(msg.get("filter"), dict):
-        raise ValidationError("filter must be an object")
     item_filter = msg.get("filter") if "filter" in msg else None
+    validate_item_filter(item_filter)
     document = import_export.build_export_document(
         _repo(hass),
         item_filter=item_filter,
