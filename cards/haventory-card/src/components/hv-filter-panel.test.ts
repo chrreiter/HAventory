@@ -142,7 +142,7 @@ describe('hv-filter-panel: category', () => {
     expect(marks[0]).toBe('svg');
   });
 
-  it('is single-select and toggles off when picked again', async () => {
+  it('accumulates categories and takes one back out when picked again', async () => {
     const el = await mount();
     const seen = changes(el);
     (q(el, '[data-value="Hardware"]') as HTMLButtonElement).click();
