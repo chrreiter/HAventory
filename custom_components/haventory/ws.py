@@ -1989,16 +1989,34 @@ async def ws_location_update(
         reg = await async_get_area_registry(hass)
         if reg.async_get_area(area_id) is None:
             raise ValidationError("unknown area_id")
-    loc = _repo(hass).update_location(
+    repo = _repo(hass)
+    before = repo.get_location(msg["location_id"])
+    location_key = str(before.id)
+    # The area a location sits in is resolved through its tree, not read off the
+    # row: a tree's area lives on its root, so an area set on a nested location
+    # moves the root's `area_id` and leaves the edited row's at None. Comparing
+    # the resolved value catches both, and it is the value the items under the
+    # location report as `effective_area_id`.
+    was_anchored_at = (before.parent_id, repo.effective_area_id(location_key))
+    was_named = before.name
+    loc = repo.update_location(
         msg["location_id"], name=msg.get("name"), new_parent_id=new_parent, area_id=area_id
     )
     serialized = _serialize_location(loc)
     await _persist_repo(hass)
-    # If parent changed emit moved; if name changed emit renamed
-    # (move takes precedence when both)
-    if "new_parent_id" in msg:
+    # One event per call, decided by what changed rather than by which keys the
+    # request carried: an editor that sends every field on every save would
+    # otherwise announce a move on a plain rename, and one carrying both a new
+    # parent and a new area would announce two.
+    #
+    # An area reassignment is a move: it re-anchors the whole subtree, so every
+    # item under it gets a new effective_area_id, which is exactly what a client
+    # filtered by area re-lists on. No item events accompany it — the items
+    # themselves did not change.
+    is_anchored_at = (loc.parent_id, repo.effective_area_id(location_key))
+    if is_anchored_at != was_anchored_at:
         _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
-    if "name" in msg:
+    elif loc.name != was_named:
         _broadcast_event(
             hass, topic="locations", action="renamed", payload={"location": serialized}
         )
@@ -2132,7 +2150,7 @@ def _effective_area_id_for_item(hass: HomeAssistant, item: Item) -> str | None:
         if getattr(item, "location_id", None) is None:
             return None
         repo = _repo(hass)
-        return repo._resolve_effective_area_id_for_location(str(item.location_id))
+        return repo.effective_area_id(str(item.location_id))
     except Exception:
         return None
 

@@ -423,7 +423,7 @@ class Repository:
             self._add_to_bucket(self._items_by_location_id, str(item.location_id), item_key)
 
             # area membership (effective area resolved via location ancestry)
-            eff_area_id = self._resolve_effective_area_id_for_location(str(item.location_id))
+            eff_area_id = self.effective_area_id(str(item.location_id))
             if eff_area_id is not None:
                 self._add_to_bucket(self._items_by_area_id, eff_area_id, item_key)
 
@@ -484,11 +484,16 @@ class Repository:
             if not s:
                 self._items_by_area_id.pop(area_key, None)
 
-    def _resolve_effective_area_id_for_location(self, location_key: str) -> str | None:
-        """Return the effective area id (string) for a location by walking ancestors.
+    def effective_area_id(self, location_key: str) -> str | None:
+        """Return the area a location sits in, walking ancestors to find it.
 
-        The first non-null ``area_id`` encountered from the node upwards is used.
-        Returns ``None`` if no ancestor defines an area.
+        The first non-null ``area_id`` from the node upwards wins; ``None`` when
+        no ancestor defines one. Public because it answers a question callers
+        outside the repository legitimately have — it is what an item reports as
+        ``effective_area_id`` and what an area-filtered client matches on — and
+        because a caller must never re-derive it from a location's own
+        ``area_id``: a tree keeps its area on the root, so every other node in it
+        stores ``None``.
         """
 
         cursor: str | None = location_key
@@ -769,7 +774,7 @@ class Repository:
         """Set area on root of tree and clear from all other locations in tree.
 
         When assigning an area to any location, it propagates to the root.
-        All descendants inherit from root via _resolve_effective_area_id_for_location.
+        All descendants inherit from the root via ``effective_area_id``.
 
         Returns set of modified location ids.
         """
@@ -1157,7 +1162,7 @@ class Repository:
             old_area = next(
                 (area for area, ids in self._items_by_area_id.items() if probe in ids), None
             )
-            new_area = self._resolve_effective_area_id_for_location(loc_id)
+            new_area = self.effective_area_id(loc_id)
             area_changed = old_area != new_area
 
             for item_id in item_id_list:
@@ -2022,7 +2027,7 @@ class Repository:
             item = self._items_by_id.get(item_id)
             if item is None or item.location_id is None:
                 continue
-            eff_area = self._resolve_effective_area_id_for_location(str(item.location_id))
+            eff_area = self.effective_area_id(str(item.location_id))
             if eff_area is not None:
                 self._add_to_bucket(self._items_by_area_id, eff_area, item_id)
 

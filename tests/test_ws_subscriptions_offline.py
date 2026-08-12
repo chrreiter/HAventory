@@ -18,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from custom_components.haventory.areas import async_get_area_registry
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
@@ -551,6 +552,205 @@ async def test_location_area_change_emits_no_item_events() -> None:
     listed = await ws_send(hass, 3, "haventory/item/list", conn=conn, filter={"area_id": "garage"})
     assert [it["name"] for it in listed["result"]["items"]] == ["Whisk"]
     assert conn.events(topic="items") == []
+
+
+@pytest.mark.asyncio
+async def test_reassigning_a_locations_own_area_announces_one_moved_event() -> None:
+    """A location's own ``area_id`` change is announced like a re-parent.
+
+    It re-anchors the whole subtree — every item under it gets a new
+    ``effective_area_id`` — so a second viewer filtered to the area the subtree
+    just left has to re-list, and a `locations` event is the only signal that
+    tells it to. Still no item events: the items themselves did not change.
+    """
+
+    hass = HomeAssistant()
+    repo = Repository()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    reg = await async_get_area_registry(hass)
+    reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
+    reg._add("garage", "Garage")  # type: ignore[attr-defined]
+
+    conn = _ConnStub()
+    kitchen = repo.create_location(name="Kitchen", area_id="kitchen")
+    drawer = repo.create_location(name="Drawer", parent_id=kitchen.id)
+    await ws_send(
+        hass, 1, "haventory/item/create", conn=conn, name="Whisk", location_id=str(drawer.id)
+    )
+    await ws_send(hass, 700, "haventory/subscribe", conn=conn, topic="locations")
+    await ws_send(hass, 701, "haventory/subscribe", conn=conn, topic="items", area_id="kitchen")
+
+    conn.messages.clear()
+    res = await ws_send(
+        hass,
+        2,
+        "haventory/location/update",
+        conn=conn,
+        location_id=str(kitchen.id),
+        area_id="garage",
+    )
+    assert res["success"] is True
+
+    assert [ev.get("action") for ev in conn.events(topic="locations")] == ["moved"]
+    assert conn.events(topic="items") == []
+
+
+@pytest.mark.asyncio
+async def test_an_area_set_on_a_nested_location_is_announced_too() -> None:
+    """The card offers this, and the row it edits is not where the area lands.
+
+    A tree's area is stored on its root, so setting one on a location further
+    down leaves that location's own ``area_id`` at None and moves the root's.
+    Every item in the tree still gets a new ``effective_area_id``, so a viewer
+    filtered to the area the tree just left has to hear about it.
+    """
+
+    hass = HomeAssistant()
+    repo = Repository()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    reg = await async_get_area_registry(hass)
+    reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
+    reg._add("bedroom", "Bedroom")  # type: ignore[attr-defined]
+
+    conn = _ConnStub()
+    root = repo.create_location(name="Home", area_id="kitchen")
+    shelf = repo.create_location(name="Shelf", parent_id=root.id)
+    created = await ws_send(
+        hass, 1, "haventory/item/create", conn=conn, name="Whisk", location_id=str(shelf.id)
+    )
+    assert created["result"]["effective_area_id"] == "kitchen"
+    await ws_send(hass, 700, "haventory/subscribe", conn=conn, topic="locations")
+
+    conn.messages.clear()
+    res = await ws_send(
+        hass,
+        2,
+        "haventory/location/update",
+        conn=conn,
+        location_id=str(shelf.id),
+        area_id="bedroom",
+    )
+    # The edited row keeps no area of its own — the root took it.
+    assert res["success"] is True and res["result"]["area_id"] is None
+    assert repo.get_location(str(root.id)).area_id == "bedroom"
+
+    assert [ev.get("action") for ev in conn.events(topic="locations")] == ["moved"]
+    assert conn.events(topic="items") == []
+
+    listed = await ws_send(hass, 3, "haventory/item/list", conn=conn, filter={"area_id": "bedroom"})
+    assert [it["name"] for it in listed["result"]["items"]] == ["Whisk"]
+
+
+@pytest.mark.asyncio
+async def test_an_area_a_nested_location_already_resolves_to_is_silent() -> None:
+    """Sending the area that is already in force moves nothing, so it says nothing.
+
+    The repository reports an area change as requested whenever the value differs
+    from the edited row's own field, and below a root that field is always None —
+    so every such call looks like a change from there. What decides the broadcast
+    is whether the tree ended up somewhere else, and here it did not.
+    """
+
+    hass = HomeAssistant()
+    repo = Repository()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    reg = await async_get_area_registry(hass)
+    reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
+
+    conn = _ConnStub()
+    root = repo.create_location(name="Home", area_id="kitchen")
+    shelf = repo.create_location(name="Shelf", parent_id=root.id)
+    await ws_send(hass, 700, "haventory/subscribe", conn=conn, topic="locations")
+
+    # Every field on every save, the way the card's location editor submits, with
+    # the area the tree already resolves to.
+    conn.messages.clear()
+    res = await ws_send(
+        hass,
+        1,
+        "haventory/location/update",
+        conn=conn,
+        location_id=str(shelf.id),
+        name="Shelf",
+        area_id="kitchen",
+    )
+    assert res["success"] is True
+    assert repo.get_location(str(root.id)).area_id == "kitchen"
+    assert conn.events(topic="locations") == []
+
+
+@pytest.mark.asyncio
+async def test_location_update_announces_what_changed_once() -> None:
+    """One event per call, keyed on the change rather than on the keys sent.
+
+    The card's location editor submits every field it holds on every save, so a
+    request carrying an unchanged ``new_parent_id`` beside a new name is a plain
+    rename and must say so. A request that changes two anchors at once is still
+    one move, and a request that changes nothing announces nothing.
+    """
+
+    hass = HomeAssistant()
+    repo = Repository()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    reg = await async_get_area_registry(hass)
+    reg._add("garage", "Garage")  # type: ignore[attr-defined]
+
+    conn = _ConnStub()
+    root = repo.create_location(name="Root")
+    other_root = repo.create_location(name="Other")
+    shelf = repo.create_location(name="Shelf", parent_id=root.id)
+    await ws_send(hass, 700, "haventory/subscribe", conn=conn, topic="locations")
+
+    conn.messages.clear()
+    renamed = await ws_send(
+        hass,
+        1,
+        "haventory/location/update",
+        conn=conn,
+        location_id=str(shelf.id),
+        name="Shelf A",
+        new_parent_id=str(root.id),
+    )
+    assert renamed["success"] is True
+    assert [ev.get("action") for ev in conn.events(topic="locations")] == ["renamed"]
+
+    conn.messages.clear()
+    moved = await ws_send(
+        hass,
+        2,
+        "haventory/location/update",
+        conn=conn,
+        location_id=str(shelf.id),
+        new_parent_id=str(other_root.id),
+        area_id="garage",
+    )
+    assert moved["success"] is True
+    assert [ev.get("action") for ev in conn.events(topic="locations")] == ["moved"]
+
+    conn.messages.clear()
+    unchanged = await ws_send(
+        hass,
+        3,
+        "haventory/location/update",
+        conn=conn,
+        location_id=str(shelf.id),
+        name="Shelf A",
+        new_parent_id=str(other_root.id),
+    )
+    assert unchanged["success"] is True
+    assert conn.events(topic="locations") == []
 
 
 @pytest.mark.asyncio
