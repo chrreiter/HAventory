@@ -48,6 +48,7 @@ from .models import (
     item_is_low_stock,
     item_is_overdue,
     load_attachments,
+    location_sort_key,
     monotonic_timestamp_after,
     new_uuid4,
     normalize_search_text,
@@ -2068,6 +2069,7 @@ class Repository:
 
     def _primary_sort_value(self, item: Item, sort: Sort) -> str | int:
         field = sort.get("field")
+        order = sort.get("order", "desc")
         if field == "name":
             return self._name_sort_key_by_item_id.get(str(item.id)) or normalize_text_for_sort(
                 item.name
@@ -2075,13 +2077,14 @@ class Repository:
         if field == "quantity":
             return int(item.quantity)
         if field == "due_date":
-            return date_sort_key(item.due_date, sort.get("order", "desc"))
+            return date_sort_key(item.due_date, order)
         if field == "inspection_date":
-            return date_sort_key(item.inspection_date, sort.get("order", "desc"))
-        if field == "created_at":
-            return item.created_at
-        # default / updated_at
-        return item.updated_at
+            return date_sort_key(item.inspection_date, order)
+        if field == "location":
+            return location_sort_key(item.location_path, order)
+        # created_at, or the updated_at default. Canonical fixed-width 'Z'
+        # timestamps sort lexicographically, so the stored string is the key.
+        return item.created_at if field == "created_at" else item.updated_at
 
     def _tuple_cmp(self, a: tuple[str | int, str], b: tuple[str | int, str], order: str) -> int:
         asc = order == "asc"

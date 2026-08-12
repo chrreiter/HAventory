@@ -19,6 +19,7 @@ const SORT_FIELDS: { field: SortField; label: string }[] = [
   { field: 'quantity', label: 'Quantity' },
   { field: 'due_date', label: 'Due date' },
   { field: 'inspection_date', label: 'Next inspection' },
+  { field: 'location', label: 'Location' },
 ];
 
 /** How many category chips to show before collapsing the rest behind "More…". */

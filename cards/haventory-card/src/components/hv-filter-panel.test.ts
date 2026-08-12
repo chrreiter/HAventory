@@ -424,6 +424,7 @@ describe('hv-filter-panel: show only vs sort', () => {
       'quantity',
       'due_date',
       'inspection_date',
+      'location',
     ]);
   });
 

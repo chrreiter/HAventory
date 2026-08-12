@@ -24,11 +24,10 @@ export interface ColumnDef {
   tableSize: string;
   /**
    * The backend sort field this column maps to, when it has one. Status,
-   * category, location and tags are deliberately absent: the API cannot sort by
-   * them, and a header that looks clickable but does nothing is worse than a
-   * plain one.
+   * category and tags are deliberately absent: the API cannot sort by them, and
+   * a header that looks clickable but does nothing is worse than a plain one.
    */
-  sortField?: 'quantity' | 'due_date' | 'inspection_date' | 'updated_at';
+  sortField?: 'quantity' | 'due_date' | 'inspection_date' | 'updated_at' | 'location';
 }
 
 /** Canonical column order — the default, and what "Reset order" restores. */
@@ -47,7 +46,7 @@ export const COLUMN_DEFS: readonly ColumnDef[] = [
   // per nesting level, a tag set a chip per tag — so they are where surplus
   // width does the most: their cells wrap, and every pixel they get is a
   // segment or a chip that does not need a second line.
-  { key: 'location', label: 'Location', tableSize: 'minmax(140px, 2fr)' },
+  { key: 'location', label: 'Location', tableSize: 'minmax(140px, 2fr)', sortField: 'location' },
   { key: 'tags', label: 'Tags', tableSize: 'minmax(130px, 2fr)' },
   { key: 'due_date', label: 'Due', tableSize: '100px', sortField: 'due_date' },
   {

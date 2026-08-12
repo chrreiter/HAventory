@@ -416,3 +416,66 @@ Seed a tree at least three deep with items spread across it, and several categor
 - The chip row with several categories and several locations selected.
 - The devtools WS frames for tab A's `haventory/subscribe` in step 8, showing `location_ids`.
 - Paste the result as a comment on #192 and reply on the PR thread.
+
+---
+
+## H9 — #204 a location-ordered list paginates past its first page
+
+**Branch / PR**: `claude/v0-5-0-w2-location-sort` / #424
+**Why this needs a real HA**: the offline suite pages a repository built in memory, where
+every item was created in one pass and the tree never moved. What it cannot show is the
+cursor holding across a real store — a page boundary minted on a path key, read back after
+a scroll, against an inventory whose locations were created at different times and whose
+paths were rewritten by a rename or a move. The failure this is looking for is silent: an
+item repeated between two pages, or one that never appears at all.
+
+### Setup
+
+    set -a; . ./.env; set +a
+    bash scripts/reload_addon.sh --container home-assistant --sleep 30 --tail-logs
+
+The sort only says anything with more items than fit one page (50), spread across a tree
+several levels deep, and with some items filed nowhere:
+
+    uv run python scripts/create_test_items.py --count 200
+
+Then, by hand or via `scripts/ws_probe.py`, make sure of three things: at least one branch
+three levels deep, at least one location whose name starts with an accented or non-Latin
+letter (e.g. "Éclairage" or "Übriges"), and a handful of items with **no** location.
+
+### Steps
+
+1. Full view. Click the **Location** column header.
+2. Scroll to the very bottom of the list, letting it page in — 200 items is four pages.
+3. Click the header again to reverse it, and scroll to the bottom once more.
+4. Sort by Location, then click **Name**, then click **Location** again.
+5. With the list sorted by Location, rename a location that has items under it, and move
+   another location to a different parent.
+6. Filter to one category while sorted by Location, and page to the end again.
+
+### What "pass" looks like
+
+- Step 1: the header is clickable and opens **ascending** with a chevron on it. Rows are
+  grouped by path in the order the Location column reads.
+- Steps 2–3: **no item appears twice and none is missing.** The surest check is the count:
+  the "Showing N of M" figure at the bottom must reach M exactly, with M matching
+  `haventory/stats`' `items_total`. Do this in both directions.
+- Items with **no location land at the very end in both directions** — not at the top of
+  the ascending list, which is what an unguarded empty key would do.
+- The accented location sorts among the paths where its name puts it, and **not** after the
+  unlocated items. That is the case a printable sentinel would have got wrong.
+- Step 4: switching to Name and back re-lists cleanly. No `validation_error` about a
+  cursor — the card starts a fresh page rather than reusing one minted under the other sort.
+- Step 5: the list re-lists on the rename and the move, and the renamed rows sit in their
+  new alphabetical place.
+- Step 6: the filtered, location-ordered list pages to its end with the same count check.
+- Nothing in the HA log at WARNING or above from `haventory` throughout — a `validation_error`
+  naming `cursor` is the specific thing to watch for.
+
+### What to send back
+
+- The bottom of the list in both directions, showing the final count and the unlocated
+  items at the end.
+- One screenshot showing the accented location's rows in place among the paths.
+- Any cursor-related log line, or an explicit "none" — that is the whole answer here.
+- Paste the result as a comment on #204 and reply on the PR thread.

@@ -823,12 +823,17 @@ function applyMockSort(list: Item[], rawSort: unknown): Item[] {
   const order = sort.order === 'desc' ? 'desc' : 'asc';
   const dir = order === 'desc' ? -1 : 1;
   const dateKey = (v: string | null) => v ?? (order === 'asc' ? '~' : '');
+  // Unlocated items sort last in both orders. The ascending sentinel is the
+  // highest code point rather than a printable one, because a path key is built
+  // from location names and any accented name would outrank "~".
+  const pathKey = (v: string) => v || (order === 'asc' ? '\u{10FFFF}' : '');
   const key = (it: Item): string | number => {
     switch (sort.field) {
       case 'name': return it.name.toLowerCase();
       case 'quantity': return it.quantity;
       case 'due_date': return dateKey(it.due_date);
       case 'inspection_date': return dateKey(it.inspection_date);
+      case 'location': return pathKey(it.location_path?.sort_key ?? '');
       case 'created_at': return it.created_at;
       default: return it.updated_at;
     }

@@ -667,3 +667,53 @@ def test_matching_by_location_counts_a_multi_select_the_same_way() -> None:
 
     narrowed = repo.count_matching_by_location(ItemFilter(categories=["Tools"]))
     assert narrowed == {str(kitchen.id): 1}
+
+
+def test_location_sort_paginates_on_a_cursor_that_round_trips() -> None:
+    """The cursor's key comes from the same helper the sort does.
+
+    A page boundary minted under one rule and read under another is what makes
+    an item repeat or go missing between pages.
+    """
+
+    repo = Repository()
+    garage = repo.create_location(name="Garage")
+    shelf = repo.create_location(name="Shelf A", parent_id=garage.id)
+    cellar = repo.create_location(name="Cellar")
+    repo.create_item(ItemCreate(name="Deep", location_id=shelf.id))
+    repo.create_item(ItemCreate(name="Shallow", location_id=garage.id))
+    repo.create_item(ItemCreate(name="Elsewhere", location_id=cellar.id))
+    repo.create_item(ItemCreate(name="Loose"))
+
+    sort = Sort(field="location", order="asc")
+    seen: list[str] = []
+    cursor: str | None = None
+    for _ in range(4):
+        page = repo.list_items(sort=sort, limit=2, cursor=cursor)
+        seen.extend(it.name for it in page["items"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+
+    # Cellar, then Garage, then Garage / Shelf A — and the unlocated item last.
+    assert seen == ["Elsewhere", "Shallow", "Deep", "Loose"]
+    assert cursor is None
+
+    # Descending reverses the located ones and still ends on the unlocated one.
+    desc = repo.list_items(sort=Sort(field="location", order="desc"))
+    assert [it.name for it in desc["items"]] == ["Deep", "Shallow", "Elsewhere", "Loose"]
+
+
+def test_a_cursor_minted_under_the_location_sort_is_refused_by_another() -> None:
+    """#197's rule holds for the new field too: no silent re-pagination."""
+
+    repo = Repository()
+    garage = repo.create_location(name="Garage")
+    for i in range(4):
+        repo.create_item(ItemCreate(name=f"Item {i}", location_id=garage.id))
+
+    page = repo.list_items(sort=Sort(field="location", order="asc"), limit=2)
+    assert isinstance(page["next_cursor"], str)
+
+    with pytest.raises(ValidationError):
+        repo.list_items(sort=Sort(field="name", order="asc"), limit=2, cursor=page["next_cursor"])

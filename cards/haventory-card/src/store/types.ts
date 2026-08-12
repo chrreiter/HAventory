@@ -190,7 +190,15 @@ export interface ItemFilter {
   created_before?: string;
 }
 
-export type SortField = 'updated_at' | 'created_at' | 'name' | 'quantity' | 'due_date' | 'inspection_date';
+export type SortField =
+  | 'updated_at'
+  | 'created_at'
+  | 'name'
+  | 'quantity'
+  | 'due_date'
+  | 'inspection_date'
+  /** The item's denormalized location path. Not an area sort — see the contract. */
+  | 'location';
 export type SortOrder = 'asc' | 'desc';
 
 export interface Sort {
