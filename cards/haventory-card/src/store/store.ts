@@ -870,7 +870,13 @@ export class Store {
   /** Refresh distinct categories/tags with counts (source for autocomplete). */
   async refreshDistinctValues() {
     const counting = this.facetCountFilters();
-    const filtered = activeFilterCount(counting) > 0;
+    // Priced whenever *anything* is narrowing the list, including a filter this
+    // measurement then drops. Gating on what survives the drop is what left a
+    // lone category filter reading "8 / 37" on the location rows beside a bare
+    // "43" on the category rows — the mixed column, one dimension narrower.
+    // With nothing else active every row prices at n / n, which is true and
+    // keeps one meaning for the number.
+    const filtered = activeFilterCount(this.state.value.filters) > 0;
     const distinct = (await this.run(() =>
       this.ws.distinctValues(filtered ? toWireFilter(counting) : undefined),
     )) as DistinctValues;
@@ -1065,7 +1071,10 @@ export class Store {
 
   async refreshLocationTree() {
     const counting = this.locationCountFilters();
-    const filtered = activeFilterCount(counting) > 0;
+    // Same rule as the facet tallies, and the same reason: a lone location
+    // filter would otherwise leave this list bare while the two beside it read
+    // a pair.
+    const filtered = activeFilterCount(this.state.value.filters) > 0;
     const tree = await this.run(() => this.ws.getLocationTree(filtered ? toWireFilter(counting) : undefined));
     // Sorted once here so every consumer — sidebar, pickers, organize dialog —
     // sees the same order; the API returns nodes in insertion order.

@@ -548,9 +548,12 @@ throughout.
   inventory. Category and status each pick one value and
   tags accumulate, matching how the backend treats them. With a filter on, each location,
   category and tag row reads "4 / 37" — matches over total — so you can see where the
-  matches are rather than a total that never moves. Each list drops its own dimension from
-  what it measures against, since that list is how you pick one: the location counts ignore
-  the location filter, and the category and tag counts ignore the chosen category and tags.
+  matches are rather than a total that never moves. All three switch to the pair together,
+  as soon as anything is filtering. Each list drops its own dimension from what it measures
+  against, since that list is how you pick one: the location counts ignore the location
+  filter, and the category and tag counts ignore the chosen category and tags — so with a
+  category as the only filter its own list reads "43 / 43" while the locations beside it
+  narrow, rather than one column carrying two kinds of number.
   No row disappears for matching nothing — the same list is what the item editor offers as
   autocomplete. Each heading also offers a create action: Locations opens an inline
   name field, while Categories, Tags and Status open the organize dialog on their own tab —

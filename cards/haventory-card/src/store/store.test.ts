@@ -678,6 +678,59 @@ describe('Store', () => {
     ]);
   });
 
+  // The commonest filter of all is a category or a tag on its own. Gating the
+  // pair on what survives `facetCountFilters` left exactly that case mixed:
+  // location rows reading "8 / 37" beside category rows reading "43".
+  it('prices every list when the only filter is one the facets drop', async () => {
+    const items = [
+      makeItem({ id: '1', category: 'Tools', tags: ['red'] }),
+      makeItem({ id: '2', category: 'Books', tags: ['blue'] }),
+    ];
+    const hass = makeMockHass({ items });
+    const store = new Store(hass);
+    await store.init();
+
+    store.setFilters({ category: 'Tools' });
+    await vi.waitUntil(
+      () => store.state.value.distinctValuesCache?.categories[0]?.matching_count !== undefined,
+    );
+
+    // Nothing else is narrowing, so every row prices at n / n — true, and the
+    // same shape the location rows are showing at that moment.
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([
+      { value: 'Books', count: 1, matching_count: 1 },
+      { value: 'Tools', count: 1, matching_count: 1 },
+    ]);
+
+    const sent = hass.__messages.filter((m) => m.type === 'haventory/distinct_values');
+    expect(sent[sent.length - 1].filter).toBeDefined();
+  });
+
+  // The same asymmetry the other way round: a lone location filter used to
+  // leave the tree bare while the facet lists beside it carried a pair.
+  it('prices the tree when the only filter is the one it drops', async () => {
+    const hass = makeMockHass({
+      items: [makeItem({ id: '1', location_id: 'garage' })],
+      locations: [
+        {
+          id: 'garage',
+          name: 'Garage',
+          parent_id: null,
+          area_id: null,
+          path: { id_path: ['garage'], name_path: ['Garage'], display_path: 'Garage', sort_key: 'garage' },
+        },
+      ],
+    });
+    const store = new Store(hass);
+    await store.init();
+
+    store.setFilters({ locationId: 'garage' });
+    await vi.waitUntil(() => store.state.value.locationTreeCache?.[0]?.matching_subtree_count !== undefined);
+
+    expect(store.state.value.locationTreeCache?.[0].matching_subtree_count).toBe(1);
+    expect(store.state.value.locationMatchTotal).toBe(1);
+  });
+
   it('coalesces the facet refetch across a burst of filter patches', async () => {
     const hass = makeMockHass({ items: [makeItem({ id: '1', category: 'Tools' })] });
     const store = new Store(hass);
