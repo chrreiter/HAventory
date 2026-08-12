@@ -1,7 +1,8 @@
 import './hv-organize-dialog';
 import { makeMockHass, makeItem } from '../test.utils';
 import { Store } from '../store/store';
-import type { HVOrganizeDialog, OrganizeTab } from './hv-organize-dialog';
+import { HVOrganizeDialog } from './hv-organize-dialog';
+import type { OrganizeTab } from './hv-organize-dialog';
 import type { AreaRef, Item, Location, StatusDefinition } from '../store/types';
 
 function loc(id: string, name: string, parentId: string | null = null, areaId: string | null = null): Location {
@@ -1279,6 +1280,100 @@ describe('hv-organize-dialog: statuses', () => {
 
     for (const s of all(sr, '[data-testid="status-color"]')) {
       expect(s.querySelector('svg')?.getAttribute('data-icon')).toBe('truck');
+    }
+  });
+
+  // The eleventh swatch is the household's own colour. It is the only control
+  // on the card that produces a value the ten tokens cannot express, so what
+  // matters is that the value reaches the backend as typed.
+  it('sends a colour picked outside the ten as the literal it is', async () => {
+    const { el, sr, hass } = await mount({ tab: 'statuses' });
+
+    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
+    await settle(el);
+    const label = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
+    label.value = 'Lent out';
+    label.dispatchEvent(new Event('input'));
+    const picker = q(sr, '[data-testid="status-color-hex"]') as HTMLInputElement;
+    picker.value = '#2F6F4F';
+    picker.dispatchEvent(new Event('input'));
+    await settle(el);
+
+    // Folded to one spelling, so the stored colour can be compared and not
+    // only rendered.
+    const swatch = q(sr, '[data-testid="status-color-custom"]') as HTMLElement;
+    expect(swatch.classList.contains('on')).toBe(true);
+    (q(sr, '[data-testid="status-save"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(hass.__messages.find((m) => m.type === 'haventory/status/create')).toMatchObject({
+      color: '#2f6f4f',
+    });
+  });
+
+  it('paints the custom swatch in the chosen colour, with the ink derived from it', async () => {
+    const { el, sr } = await mount({
+      tab: 'statuses',
+      statuses: [{ slug: 'sold', label: 'Sold', order: 0, color: '#ffe082', icon: 'check' }],
+    });
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'sold');
+    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const custom = q(sr, '[data-testid="status-color-custom"]') as HTMLElement;
+    expect(custom.style.getPropertyValue('--hv-status-bg')).toBe('#ffe082');
+    expect(custom.style.getPropertyValue('--hv-status-fg')).toBe('#000000');
+    // None of the ten reads as chosen while a literal colour is in force.
+    expect(all(sr, '[data-testid="status-color"]').some((b) => b.classList.contains('on'))).toBe(
+      false,
+    );
+  });
+
+  // The one element on the card that ignores the Home Assistant theme, so the
+  // editor says so rather than letting a household find out on a theme switch.
+  it('says a literal colour ignores the theme, and only while one is chosen', async () => {
+    const { el, sr } = await mount({ tab: 'statuses' });
+    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="status-color-custom-hint"]')).toBe(null);
+
+    const picker = q(sr, '[data-testid="status-color-hex"]') as HTMLInputElement;
+    picker.value = '#2f6f4f';
+    picker.dispatchEvent(new Event('input'));
+    await settle(el);
+
+    expect((q(sr, '[data-testid="status-color-custom-hint"]') as HTMLElement).textContent).toMatch(
+      /same in every Home\s+Assistant theme/,
+    );
+
+    (
+      all(sr, '[data-testid="status-color"]').find((b) => b.dataset.value === 'red') as HTMLButtonElement
+    ).click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="status-color-custom-hint"]')).toBe(null);
+  });
+
+  // The bug this guards against paints nothing and throws nothing: the swatch
+  // still reads as selected, so only a screenshot catches it.
+  it('leaves the chip fill to the pair the chip reads, on every swatch rule', () => {
+    const css = HVOrganizeDialog.styles
+      .map((sheet) => (sheet as { cssText?: string }).cssText ?? '')
+      .join('\n')
+      // Comments quote property names freely.
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+
+    for (const block of css.matchAll(/([^{}]*\.swatch[^{}]*)\{([^}]*)\}/g)) {
+      const [selector, body] = [block[1].trim(), block[2]];
+      // A swatch is a status chip, and `.hv-status-chip` resolves its fill
+      // through --hv-status-bg / --hv-status-fg. A `background` or `color`
+      // longhand on a selector of this specificity outranks that rule, so the
+      // inline pair a chosen colour arrives as would never paint — and the
+      // swatch would sit there grey while reading as selected.
+      expect(body, `${selector} sets a fill longhand`).not.toMatch(
+        /(^|;)\s*(background|background-color|color)\s*:/,
+      );
     }
   });
 

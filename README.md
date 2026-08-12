@@ -590,7 +590,11 @@ throughout.
   subtree out to the top level *and* into that area, which is how a tree changes rooms.
   The merge target picker offers locations only — an area heads the tree without being part
   of it and holds no items itself, so a merge, which has to hand this location's items to
-  something, always names a location.
+  something, always names a location. The Statuses tab also sets each status's colour and
+  glyph: ten tones that follow your Home Assistant theme, plus an eleventh swatch that
+  opens the browser's colour picker for a colour of your own. A colour picked that way is
+  used exactly as entered — it is the one mark on the card that does not follow the theme —
+  and the chip's text is black or white, whichever reads better on it.
 - **Check-out** invites an optional due date (+7 / +31 / +90 / +X day suggestions) rather
   than silently checking out with none — the date is what makes overdue highlighting mean
   anything. "No due date" stays a first-class choice. Checking out a whole selection asks

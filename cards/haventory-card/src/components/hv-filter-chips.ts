@@ -1,11 +1,12 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
+import { ifDefined } from 'lit/directives/if-defined.js';
 import { tokens, base } from '../ui/tokens';
 import { TAG_MARK, chip } from '../ui/chip';
 import { locationPathParts, pathLabel } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { formatDate } from '../ui/relative-time';
-import { statusLabel, statusToneClass } from '../ui/status';
+import { statusLabel, statusTone } from '../ui/status';
 import type { Location, StatusDefinition, StoreFilters } from '../store/types';
 
 /** Which filter a chip clears. Matches the keys of `StoreFilters`. */
@@ -32,12 +33,15 @@ export interface FilterChip {
   label: string;
   tone: 'primary' | 'warning';
   /**
-   * A `tone-*` class from the status vocabulary, for the one chip whose colour
-   * a household picks rather than the card. Set, it replaces `tone` entirely:
-   * the two palettes are deliberately disjoint (see `ui/chip.ts`), so a chip
-   * cannot carry one of each.
+   * How the one chip whose colour a household picks rather than the card is
+   * painted: a `tone-*` class, an inline declaration for a literal colour, or
+   * both fields empty for every other chip. Either half present replaces
+   * `tone` entirely — the two palettes are deliberately disjoint (see
+   * `ui/chip.ts`), so a chip cannot carry one of each.
    */
   toneClass?: string;
+  /** Inline custom properties for a status painted in a literal colour. */
+  toneStyle?: string;
 }
 
 /**
@@ -95,16 +99,19 @@ export function chipsFor(
   if (filters.overdueOnly) chips.push({ key: 'overdueOnly', label: 'Overdue', tone: 'warning' });
   if (filters.inspectionDueOnly)
     chips.push({ key: 'inspectionDueOnly', label: 'Inspection due', tone: 'warning' });
-  if (filters.status)
+  if (filters.status) {
+    const tone = statusTone(filters.status, ctx.statuses);
     chips.push({
       key: 'status',
       label: `Status: ${statusLabel(filters.status, ctx.statuses)}`,
       // The status the household chose, in the colour the household gave it —
       // the same chip the rows below this one carry. `tone` is the fallback for
-      // a consumer that ignores `toneClass`.
+      // a consumer that reads neither of the two below.
       tone: 'primary',
-      toneClass: statusToneClass(filters.status, ctx.statuses),
+      toneClass: tone.toneClass,
+      toneStyle: tone.toneStyle,
     });
+  }
   if (filters.orphansOnly) chips.push({ key: 'orphansOnly', label: 'No location', tone: 'primary' });
   // One chip per bound rather than one per field: each is separately clearable,
   // so a range narrowed too far can be half-undone.
@@ -191,9 +198,10 @@ export class HVFilterChips extends LitElement {
       <div class="row" data-testid="filter-chips">
         ${chips.map(
           (entry) => html`<button
-            class=${entry.toneClass
+            class=${entry.toneClass !== undefined
               ? `hv-status-chip chip ${entry.toneClass}`
               : `hv-chip chip ${entry.tone === 'warning' ? 'warning' : 'state'}`}
+            style=${ifDefined(entry.toneStyle)}
             data-testid="filter-chip"
             data-key=${entry.key}
             aria-label=${`Clear filter ${entry.label}`}

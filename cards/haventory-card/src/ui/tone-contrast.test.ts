@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { tokens } from './tokens';
-import { STATUS_COLORS } from './status';
+import { STATUS_COLORS, hexToneStyle, inkOn } from './status';
 
 /**
  * Every status tone has to stay readable, in both themes.
@@ -237,4 +237,55 @@ describe('chip variant contrast', () => {
       });
     }
   }
+});
+
+/**
+ * The ink under a colour the household typed rather than picked.
+ *
+ * The ten tones above each carry a foreground chosen by hand; a literal `#rrggbb`
+ * has nobody to choose one, so `inkOn` derives it. What has to hold is a claim
+ * about the whole space rather than about a handful of samples: no colour a
+ * picker can return may produce an unreadable chip, because the backend accepts
+ * every one of them and the card has no way to refuse one afterwards.
+ */
+describe('derived ink for a literal colour', () => {
+  const ink = (hex: string): Rgb => parseColor(inkOn(hex)).slice(0, 3) as Rgb;
+  const fill = (hex: string): Rgb => parseColor(hex).slice(0, 3) as Rgb;
+
+  it('clears WCAG AA everywhere in the colour cube', () => {
+    let worst = { hex: '', ratio: Number.POSITIVE_INFINITY };
+    for (let r = 0; r < 256; r += 15) {
+      for (let g = 0; g < 256; g += 15) {
+        for (let b = 0; b < 256; b += 15) {
+          const hex = `#${[r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+          const ratio = contrast(fill(hex), ink(hex));
+          if (ratio < worst.ratio) worst = { hex, ratio };
+        }
+      }
+    }
+    // The floor is the fill where black and white are equally readable — 4.58:1,
+    // which is why no colour has to be refused.
+    expect(
+      worst.ratio,
+      `${worst.hex} is the worst fill in the sweep at ${worst.ratio.toFixed(2)}:1`,
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('lays black on a pale fill and white on a deep one', () => {
+    expect(inkOn('#ffffff')).toBe('#000000');
+    expect(inkOn('#ffe082')).toBe('#000000');
+    expect(inkOn('#000000')).toBe('#ffffff');
+    expect(inkOn('#4a148c')).toBe('#ffffff');
+  });
+
+  it('reads the fill per channel rather than by brightness alone', () => {
+    // Green carries most of the luminance and blue almost none, so two fills
+    // with the same channel sum can want opposite ink.
+    expect(inkOn('#00ff00')).toBe('#000000');
+    expect(inkOn('#0000ff')).toBe('#ffffff');
+  });
+
+  it('composes the declaration the chip reads, fill and ink together', () => {
+    expect(hexToneStyle('#ffe082')).toBe('--hv-status-bg:#ffe082;--hv-status-fg:#000000');
+  });
 });

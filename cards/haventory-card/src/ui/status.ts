@@ -128,18 +128,84 @@ export function statusCount(
   return null;
 }
 
+/** A stored colour that is a literal rather than one of the tone tokens. */
+const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
+
+/** Whether a stored colour is a `#rrggbb` literal, the form the backend allows. */
+export function isHexColor(value: string | null | undefined): boolean {
+  return typeof value === 'string' && HEX_COLOR_RE.test(value);
+}
+
+/** One channel of a hex colour, linearized as WCAG defines it. */
+function channelLuminance(byte: number): number {
+  const c = byte / 255;
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+}
+
 /**
- * The chip modifier for a slug's colour, e.g. `tone-amber-strong`.
+ * The ink that reads on an arbitrary fill: whichever of black and white has the
+ * greater WCAG contrast against it.
  *
- * Stored as `amber_strong`; the class is the same token in kebab case, because
- * that is how `chip.ts` spells its selectors.
+ * The only colour maths in the card, and deliberately the only place any of it
+ * happens — every other foreground is a token paired with its fill by hand. A
+ * pair, not a spectrum: the fill is a household's free choice, so the ink has
+ * to be derived from the fill alone, and the two extremes are what a derivation
+ * can reach for.
+ *
+ * No colour needs refusing because of it. The worst possible fill is the one
+ * where both ratios meet, at 4.58:1 — above the 4.5:1 the ten tokens were
+ * picked to clear — so every hex a household can enter is legible.
  */
-export function statusToneClass(
+export function inkOn(hex: string): string {
+  const value = Number.parseInt(hex.slice(1), 16);
+  const luminance =
+    0.2126 * channelLuminance((value >> 16) & 0xff) +
+    0.7152 * channelLuminance((value >> 8) & 0xff) +
+    0.0722 * channelLuminance(value & 0xff);
+  const onBlack = (luminance + 0.05) / 0.05;
+  const onWhite = 1.05 / (luminance + 0.05);
+  return onBlack >= onWhite ? '#000000' : '#ffffff';
+}
+
+/**
+ * The inline declaration that paints a chip in a literal colour.
+ *
+ * Custom properties rather than `background`/`color` directly, because that is
+ * what `.hv-status-chip` reads: a tone class sets the same two, so a token and
+ * a literal arrive by one route and a hover or a border mixed from them keeps
+ * working either way.
+ */
+export function hexToneStyle(hex: string): string {
+  return `--hv-status-bg:${hex};--hv-status-fg:${inkOn(hex)}`;
+}
+
+/** How a status chip is painted: a class for a token, inline properties for a hex. */
+export interface StatusTone {
+  /** A `tone-*` class for `chip.ts` to match, or `''` when the colour is a literal. */
+  toneClass: string;
+  /** Inline custom properties for a literal colour, or `undefined` for a token. */
+  toneStyle: string | undefined;
+}
+
+/**
+ * How to paint a slug: exactly one of a tone class and an inline declaration.
+ *
+ * A token becomes `tone-amber-strong` — stored as `amber_strong`, kebab-cased
+ * because that is how `chip.ts` spells its selectors — and resolves against the
+ * active Home Assistant theme. A `#rrggbb` literal cannot resolve against
+ * anything, so it arrives as the fill itself plus the ink derived from it, and
+ * that one chip looks the same in every theme.
+ *
+ * Both halves have to reach the element: a caller that keeps the class and
+ * drops the style paints a literal-coloured status as a plain neutral chip.
+ */
+export function statusTone(
   slug: string,
   defs: readonly StatusDefinition[] | null | undefined,
-): string {
+): StatusTone {
   const color = definitionOf(slug, defs)?.color ?? 'neutral';
-  return `tone-${color.replace(/_/g, '-')}`;
+  if (isHexColor(color)) return { toneClass: '', toneStyle: hexToneStyle(color) };
+  return { toneClass: `tone-${color.replace(/_/g, '-')}`, toneStyle: undefined };
 }
 
 /**
@@ -221,8 +287,10 @@ export function renderStatusChip(
   options: { testid?: string } = {},
 ): TemplateResult {
   const glyph = statusIconName(slug, defs);
+  const tone = statusTone(slug, defs);
   return html`<span
-    class="hv-status-chip ${statusToneClass(slug, defs)}"
+    class="hv-status-chip ${tone.toneClass}"
+    style=${ifDefined(tone.toneStyle)}
     data-testid=${ifDefined(options.testid)}
     >${glyph ? icon(glyph, 12) : null}<span class="hv-chip-text"
       >${statusLabel(slug, defs)}</span

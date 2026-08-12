@@ -44,6 +44,12 @@ DEFAULT_ITEM_STATUS: Final[ItemStatus] = "ok"
 # and underscores.
 STATUS_SLUG_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 
+# A status colour a household typed rather than picked out of the ten tokens.
+# `#rrggbb` only: it is what `<input type="color">` produces, what every browser
+# normalizes to, and the one form the card can read three channels out of
+# without a second parser.
+STATUS_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
 # What an item can carry as an attachment. "picture" is the kind the card
 # renders; "manual" exists on the backend so a document does not have to be
 # migrated onto the shape later.
@@ -114,9 +120,11 @@ class StatusDefinition:
     slug: str
     label: str
     order: int = 0
-    # Appearance. Both are tokens the card resolves, not literal CSS or an icon
-    # path: the card paints them against whatever Home Assistant theme is
-    # active, which a stored colour could not survive.
+    # Appearance. The icon is always a token naming a glyph the card bundle
+    # carries, never a path. The colour is a token too by default — the card
+    # paints those against whatever Home Assistant theme is active — but it may
+    # also be a literal `#rrggbb`, which is a household choosing one exact
+    # colour and giving up the theme for that one chip.
     color: str = DEFAULT_STATUS_COLOR
     icon: str = DEFAULT_STATUS_ICON
 
@@ -535,6 +543,28 @@ def validate_status_slug(value: object) -> str:
     return value
 
 
+def validate_status_color(value: object) -> str:
+    """Validate a status colour: one of the ten tone tokens, or a `#rrggbb` literal.
+
+    A token is resolved by the card against the active Home Assistant theme; a
+    literal is not, and cannot be — it is the household saying "this exact
+    colour, whatever the theme". The card computes the ink for it from the
+    fill's own luminance, so no colour is illegible and none has to be refused.
+
+    Case is folded so one colour has one spelling in the store, which is what
+    lets a chip's colour be compared rather than only rendered.
+    """
+
+    if isinstance(value, str):
+        if value in STATUS_COLORS:
+            return value
+        if STATUS_HEX_COLOR_RE.match(value):
+            return value.lower()
+    raise ValidationError(
+        f"status color must be a #rrggbb hex colour or one of: {', '.join(STATUS_COLORS)}"
+    )
+
+
 def validate_status_definition(value: object) -> StatusDefinition:
     """Build a :class:`StatusDefinition` from a stored/incoming mapping."""
 
@@ -549,9 +579,7 @@ def validate_status_definition(value: object) -> StatusDefinition:
     order = value.get("order", 0)
     if not _is_int_not_bool(order):
         raise ValidationError("status order must be an integer")
-    color = value.get("color", DEFAULT_STATUS_COLOR)
-    if color not in STATUS_COLORS:
-        raise ValidationError(f"status color must be one of: {', '.join(STATUS_COLORS)}")
+    color = validate_status_color(value.get("color", DEFAULT_STATUS_COLOR))
     icon = value.get("icon", DEFAULT_STATUS_ICON)
     if icon not in STATUS_ICONS:
         raise ValidationError(f"status icon must be one of: {', '.join(STATUS_ICONS)}")
@@ -559,7 +587,7 @@ def validate_status_definition(value: object) -> StatusDefinition:
         slug=slug,
         label=label.strip(),
         order=int(order),
-        color=str(color),
+        color=color,
         icon=str(icon),
     )
 

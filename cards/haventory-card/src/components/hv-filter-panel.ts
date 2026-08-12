@@ -1,12 +1,13 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { ifDefined } from 'lit/directives/if-defined.js';
 import { tokens, base } from '../ui/tokens';
 import { chip, tagLabel } from '../ui/chip';
 import { locationPathParts, pathLabel } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { activeFilterCount, defaultFilters } from '../store/store';
-import { DEFAULT_STATUS, statusCount, statusLabel, statusList, statusToneClass } from '../ui/status';
+import { DEFAULT_STATUS, statusCount, statusLabel, statusList, statusTone } from '../ui/status';
 import type { DistinctValues, Location, LocationTreeNode, SortField, StatsCounts, StatusDefinition, StoreFilters } from '../store/types';
 import './hv-location-tree';
 
@@ -722,10 +723,11 @@ export class HVFilterPanel extends LitElement {
             const on = f.status === s;
             // A chosen status shows its own colour; the rest stay outlines, so
             // the row reads as choices rather than as facts.
-            const tone = on && s !== DEFAULT_STATUS ? statusToneClass(s, this.statuses) : '';
+            const tone = on && s !== DEFAULT_STATUS ? statusTone(s, this.statuses) : null;
             const tally = statusCount(c, s);
             return html`<button
-              class="hv-chip toggle chip hv-status-chip ${on ? 'on' : ''} ${tone}"
+              class="hv-chip toggle chip hv-status-chip ${on ? 'on' : ''} ${tone?.toneClass ?? ''}"
+              style=${ifDefined(tone?.toneStyle)}
               data-testid="filter-status"
               data-value=${s}
               aria-pressed=${String(on)}

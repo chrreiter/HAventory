@@ -112,10 +112,13 @@ export document:
   semantics.
 - `order` is display order alone; ties break by slug.
 - `color` is one of ten tone tokens — `neutral`, `green`, `blue`, `amber`, `red`, each also in
-  a `_strong` form. Tokens rather than CSS: the card resolves them against the active Home
-  Assistant theme, which a stored colour could not survive. A light form is a tint carrying
-  deep ink; a strong form is a saturated fill, so an urgent status can carry further than a
-  routine one. Defaults to `neutral`.
+  a `_strong` form — **or** a `#rrggbb` literal. A token is resolved by the card against the
+  active Home Assistant theme; a light form is a tint carrying deep ink, a strong form is a
+  saturated fill, so an urgent status can carry further than a routine one. A literal
+  resolves against nothing, which is the trade a household makes for its own exact colour:
+  that one chip looks the same in every theme, and the card derives its text colour from the
+  fill's own luminance rather than from a paired token. The ten remain the offered palette;
+  the literal is the escape hatch beside it. Defaults to `neutral`.
 - `icon` is one of ten glyph names the card bundle carries — `check`, `alert`, `wrench`,
   `hand`, `box`, `truck`, `clock`, `cancel`, `star`, `help`. A name the bundle does not have
   renders no glyph rather than failing; the chip keeps its label and colour. Defaults to
