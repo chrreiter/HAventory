@@ -1255,23 +1255,35 @@ def item_inspection_is_overdue(item: Item, *, today: str = "") -> bool:
     return item.inspection_date < (today or today_utc_date())
 
 
-def _item_matches_locations(item: Item, location_ids: Sequence[str], include_subtree: bool) -> bool:
-    """True when the item sits in — or under — any of the selected locations.
+def _parse_location_selection(location_ids: Sequence[str]) -> list[uuid.UUID]:
+    """The selected location ids as UUIDs, dropping any that will not parse.
 
     An unparseable id contributes nothing rather than raising, so a selection
-    of only bad ids matches nothing, which is what a single bad id has always
-    done.
+    of only bad ids matches nothing — which is what a single bad id has always
+    done. The parse belongs here rather than in the per-item predicate: the
+    selection is constant for a whole query, and rebuilding the same UUID once
+    per candidate is measurable on an inventory of any size.
     """
 
-    if not location_ids:
+    parsed: list[uuid.UUID] = []
+    for raw in location_ids:
+        try:
+            parsed.append(parse_uuid4(raw, field_name="filter.location_id"))
+        except ValidationError:
+            continue
+    return parsed
+
+
+def _item_matches_locations(
+    item: Item, needles: Sequence[uuid.UUID], include_subtree: bool
+) -> bool:
+    """True when the item sits in — or under — any of the selected locations."""
+
+    if not needles:
         return True
     if not item.location_id:
         return False
-    for raw in location_ids:
-        try:
-            needle = parse_uuid4(raw, field_name="filter.location_id")
-        except ValidationError:
-            continue
+    for needle in needles:
         if item.location_id == needle:
             return True
         if include_subtree and item.location_path.id_path and needle in item.location_path.id_path:
@@ -1338,6 +1350,12 @@ def filter_items(
     ):
         if bound:
             _parse_iso8601_utc(bound, field_name=name)
+    # Parsed once for the whole query, beside the bounds, rather than once per
+    # candidate item. A selection that parses to nothing keeps its old meaning:
+    # it selects nothing, rather than falling through to "no location filter".
+    location_needles = _parse_location_selection(location_ids)
+    if location_ids and not location_needles:
+        return []
     today = today_utc_date() if (overdue_only or inspection_overdue_only) else ""
 
     predicates_active = (
@@ -1377,7 +1395,7 @@ def filter_items(
         matches_inspection = (not inspection_overdue_only) or item_inspection_is_overdue(
             it, today=today
         )
-        matches_location = _item_matches_locations(it, location_ids, include_subtree)
+        matches_location = _item_matches_locations(it, location_needles, include_subtree)
         # Canonical fixed-width 'Z' timestamps compare lexicographically, so no
         # per-item parsing is needed (the filter bound was validated above).
         matches_updated = ((updated_after is None) or (it.updated_at > updated_after)) and (

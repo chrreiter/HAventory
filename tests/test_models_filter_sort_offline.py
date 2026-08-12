@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from custom_components.haventory import models
 from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.models import (
     EMPTY_LOCATION_PATH,
@@ -632,6 +633,38 @@ async def test_a_selection_of_only_unparseable_location_ids_matches_nothing() ->
     # One good id beside a bad one still selects on the good one.
     kept = filter_items([filed], ItemFilter(location_ids=["not-a-uuid", str(root.id)]))
     assert [x.name for x in kept] == ["Filed"]
+
+
+def test_the_location_selection_is_parsed_once_per_query(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Not once per candidate item.
+
+    The selection is constant for the whole query, so the cost of parsing it
+    must not grow with the inventory. Pinned by counting, because the only
+    other evidence is a benchmark nobody re-runs.
+    """
+
+    by_id, root, mid, _leaf = _build_locations()
+    items = [
+        create_item_from_create(
+            {"name": f"Item {n}", "location_id": root.id}, locations_by_id=by_id
+        )
+        for n in range(50)
+    ]
+
+    calls = 0
+    real = models.parse_uuid4
+
+    def counting(value, *, field_name="id"):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        if field_name == "filter.location_id":
+            calls += 1
+        return real(value, field_name=field_name)
+
+    monkeypatch.setattr(models, "parse_uuid4", counting)
+
+    kept = filter_items(items, ItemFilter(location_ids=[str(root.id), str(mid.id)]))
+    assert len(kept) == len(items)
+    assert calls == 2  # noqa: PLR2004 — one per selected id, whatever the item count
 
 
 @pytest.mark.parametrize("key", ["categories", "location_ids"])
