@@ -79,7 +79,7 @@ async def test_bulk_mixed_results_and_single_persist(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_bulk_empty_and_invalid_operations_and_duplicate_ids(monkeypatch) -> None:
-    """Bulk: empty returns empty results; invalid type rejected; dup op_id last wins."""
+    """Bulk: empty returns empty results; invalid type rejected; dup op_id rejects."""
 
     hass = HomeAssistant()
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
@@ -99,20 +99,20 @@ async def test_bulk_empty_and_invalid_operations_and_duplicate_ids(monkeypatch) 
     assert res["success"] is True and res["result"]["results"] == {}
     assert calls["count"] == 0  # nothing to persist
 
-    # Invalid operations type: the command declares `operations` as a list, so
-    # Home Assistant refuses the frame before the handler runs.
+    # Invalid operations type: the command declares `operations` as `object`, so
+    # the frame reaches the handler and is answered through the guard.
     res = await _send(hass, 2, "haventory/items/bulk", operations="oops")
-    assert res["success"] is False and res["error"]["code"] == "invalid_format"
+    assert res["success"] is False and res["error"]["code"] == "validation_error"
 
-    # The shape of each entry is the handler's to check — the schema only knows
-    # `operations` is a list.
+    # The shape of each entry is the handler's to check too.
     res = await _send(hass, 3, "haventory/items/bulk", operations=["oops"])
     assert res["success"] is False and res["error"]["code"] == "validation_error"
 
-    # Duplicate op_id: last result should be in the map
+    # Duplicate op_id: the batch is refused whole, because results are keyed by
+    # op_id and a repeat would leave the caller one verdict for two operations.
     created = await _send(hass, 4, "haventory/item/create", name="X", quantity=1)
     iid = created["result"]["id"]
-    FINAL_QTY = 3
+    START_QTY = 1
     ops = [
         {
             "op_id": "dup",
@@ -122,10 +122,30 @@ async def test_bulk_empty_and_invalid_operations_and_duplicate_ids(monkeypatch) 
         {
             "op_id": "dup",
             "kind": "item_set_quantity",
-            "payload": {"item_id": iid, "quantity": FINAL_QTY},
+            "payload": {"item_id": iid, "quantity": 3},
         },
     ]
     res = await _send(hass, 5, "haventory/items/bulk", operations=ops)
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+    assert "dup" in res["error"]["message"]
+    # Nothing ran: the quantity is still what item/create left it at.
+    got = await _send(hass, 6, "haventory/item/get", item_id=iid)
+    assert got["result"]["quantity"] == START_QTY
+
+    # `1` and `"1"` are one id, not two — the result map normalizes with str().
+    ops_mixed = [
+        {"op_id": 1, "kind": "item_set_quantity", "payload": {"item_id": iid, "quantity": 2}},
+        {"op_id": "1", "kind": "item_set_quantity", "payload": {"item_id": iid, "quantity": 3}},
+    ]
+    res = await _send(hass, 7, "haventory/items/bulk", operations=ops_mixed)
+    assert res["success"] is False and res["error"]["code"] == "validation_error"
+
+    # Distinct ids still return one result each.
+    ops_ok = [
+        {"op_id": "a", "kind": "item_set_quantity", "payload": {"item_id": iid, "quantity": 2}},
+        {"op_id": "b", "kind": "item_set_quantity", "payload": {"item_id": iid, "quantity": 3}},
+    ]
+    res = await _send(hass, 8, "haventory/items/bulk", operations=ops_ok)
     assert res["success"] is True
-    assert res["result"]["results"]["dup"]["success"] is True
-    assert res["result"]["results"]["dup"]["result"]["quantity"] == FINAL_QTY
+    assert set(res["result"]["results"]) == {"a", "b"}
