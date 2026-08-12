@@ -479,3 +479,91 @@ letter (e.g. "Éclairage" or "Übriges"), and a handful of items with **no** loc
 - One screenshot showing the accented location's rows in place among the paths.
 - Any cursor-related log line, or an explicit "none" — that is the whole answer here.
 - Paste the result as a comment on #204 and reply on the PR thread.
+
+---
+
+## H8 — #200 where the per-mutation time at 250 / 500 / 1000 items actually goes
+
+**Branch / PR**: `claude/v0-5-0-w3-storage-scaling` / #NNN
+**Why this needs a real HA**: #200's numbers — per-create p50 of 70 ms @250, 114 ms @500,
+200 ms @1000 — were measured over a real WebSocket against a real store on disk. The
+offline suite can measure everything HAventory itself does for one save, and it now does
+(`tests/test_repository_benchmarks_offline.py::test_benchmark_persist_payload_by_inventory_size`),
+but it cannot see Home Assistant's own `Store` write: the JSON encode, the temp-file write
+and the rename. That write is the part this issue's premise is about, and it is the part
+only a real instance shows.
+
+The offline half already answered one question. Building the payload and handing it to the
+store cost 3.7 / 8.5 / 17.9 ms at 250 / 500 / 1000 items, of which a full deep copy of the
+whole dataset was two thirds; the PR removes the copy and the same measurement is now
+1.0 / 2.2 / 6.3 ms. So **at most ~18 ms of the measured 200 ms was ever HAventory's own
+serialization**, and after the PR it is ~6 ms. The remaining ~180 ms is somewhere this
+handover has to find before anyone builds a delta-persistence path for it.
+
+### Setup
+
+    set -a; . ./.env; set +a
+    bash scripts/reload_addon.sh --container home-assistant --sleep 30 --tail-logs
+
+Start from an inventory that is **empty of stress fixtures** — `stress.py` cleans up after
+itself, but confirm `haventory/stats`' `items_total` before starting, and record it. The
+curve is about how the cost grows with what is already stored, so a store that starts at
+3 000 items measures a different question.
+
+### Steps
+
+1. Record the baseline: `uv run python .claude/skills/test-haventory/stress.py baseline`,
+   and note `items_total` and the store file's size on disk:
+
+       docker exec home-assistant sh -c 'ls -l /config/.storage/haventory_store'
+
+2. Run the curve: `uv run python .claude/skills/test-haventory/stress.py bulk 1000`.
+   It creates in checkpoints of 250 → 500 → 1000 and prints p50/p95/p99 per checkpoint.
+   Record all three checkpoints, and the store file's size again at the end.
+3. Run it a **second time** without cleaning up in between, so the second run's 250-item
+   checkpoint lands on a store that already holds 1 000 items. That is the pair the issue's
+   own follow-up comment asks for — p50 at the start versus at the end of a run at a known
+   item count — and it separates "cost grows with the store" from "cost grows within a run".
+4. While the 1000-item checkpoint is running, capture where the time goes. With
+   `logger` set to `debug` for `custom_components.haventory.storage`, each save logs
+   `persist_complete` with `elapsed_ms` — that figure covers `export_state` **plus** Home
+   Assistant's write. Compare its median against the ~6 ms the offline benchmark reports
+   for the same item count: the difference is HA's `Store`, and that difference is the whole
+   question.
+
+       # in configuration.yaml, then restart
+       logger:
+         default: warning
+         logs:
+           custom_components.haventory.storage: debug
+
+5. Note whether the container's `/config` sits on the same disk as everything else and
+   whether it is a network mount — a 780 KB write plus an fsync behaves very differently on
+   an SSD and on a NAS share, and a number measured on one says nothing about the other.
+
+### What "pass" looks like
+
+There is no pass here; there is an answer, and either answer is a good outcome:
+
+- **If `persist_complete`'s `elapsed_ms` is a small fraction of the per-create p50** — say
+  under 20 ms at 1 000 items while p50 is 200 ms — then persistence is not what makes a
+  create slow, the premise of #200 does not hold at this scale, and the issue should be
+  **closed as not-planned with these numbers in the comment**. The next question would be a
+  different issue about where the other 180 ms goes (WS round trip, event fan-out,
+  broadcast).
+- **If `elapsed_ms` is most of the per-create p50 and grows linearly with the store**, the
+  issue stands and the numbers size the fix: a delta or sharded persistence path, which
+  takes `CURRENT_SCHEMA_VERSION` up with a migration, and which the PR deliberately did not
+  build without this measurement.
+- Either way, the second run's 250-checkpoint p50 against the first run's tells you whether
+  the growth is in the store size or in the run.
+
+### What to send back
+
+- The two `stress.py bulk 1000` outputs in full — six checkpoint lines, both runs.
+- The median and max of `persist_complete`'s `elapsed_ms` at the 1000-item checkpoint:
+
+      docker logs home-assistant 2>&1 | grep persist_complete | tail -400
+
+- The store file's size at the start and at the end, and whether `/config` is a local disk.
+- Paste the result as a comment on #200 and reply on the PR thread.

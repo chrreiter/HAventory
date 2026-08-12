@@ -154,10 +154,13 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
 - **Scale: a few thousand items.** Every mutation re-serializes the entire inventory and
   rewrites the store blob, so write latency grows with the total item count. Measured p50
   per create: ~70 ms at 250 items, ~114 ms at 500, ~200 ms at 1000; on that curve a single
-  create trends toward ~1 s at a few thousand items. Reads don't share the problem (query
-  paths are benchmarked at 10 000 items), correctness is unaffected at any size, and no
-  limit is enforced — writes simply get slower. Treat a few thousand items as the
-  comfortable ceiling.
+  create trends toward ~1 s at a few thousand items. Those figures predate the save
+  dropping a redundant copy of the whole dataset, which took HAventory's own share of one
+  save from ~18 ms to ~6 ms at 1 000 items — a share the offline benchmarks now record, and
+  a small part of the total above, most of which is the store write itself. Reads don't
+  share the problem (query paths are benchmarked at 10 000 items), correctness is unaffected
+  at any size, and no limit is enforced — writes simply get slower. Treat a few thousand
+  items as the comfortable ceiling.
 - **No automation triggers.** The integration creates no entities and fires no events on
   the Home Assistant bus. Automations and scripts can *call* the `haventory.*` services,
   but nothing can trigger *on* an inventory change — there is no state object to watch and
@@ -284,8 +287,10 @@ Every feature/fix ships with tests — happy path plus at least one edge/error c
 Performance benchmarks live in `tests/test_repository_benchmarks_offline.py`,
 including the WP4 percentile scenarios (item list: 50-item page p50 ≤ 30 ms /
 p95 ≤ 75 ms; `move_subtree` p50 ≤ 80 ms / p95 ≤ 150 ms on the 2k-items /
-60-locations typical dataset). They print results always and fail on budget
-misses only with `ASSERT_BUDGETS=1`:
+60-locations typical dataset) and the persistence curve at 250 / 500 / 1 000
+items, which is what a save costs the event loop before Home Assistant's own
+write. They print results always and fail on budget misses only with
+`ASSERT_BUDGETS=1`:
 
 ```bash
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ASSERT_BUDGETS=1 uv run pytest -q tests/test_repository_benchmarks_offline.py -s
