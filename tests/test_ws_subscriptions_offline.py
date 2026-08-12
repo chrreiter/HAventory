@@ -599,6 +599,55 @@ async def test_reassigning_a_locations_own_area_announces_one_moved_event() -> N
 
 
 @pytest.mark.asyncio
+async def test_an_area_set_on_a_nested_location_is_announced_too() -> None:
+    """The card offers this, and the row it edits is not where the area lands.
+
+    A tree's area is stored on its root, so setting one on a location further
+    down leaves that location's own ``area_id`` at None and moves the root's.
+    Every item in the tree still gets a new ``effective_area_id``, so a viewer
+    filtered to the area the tree just left has to hear about it.
+    """
+
+    hass = HomeAssistant()
+    repo = Repository()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    reg = await async_get_area_registry(hass)
+    reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
+    reg._add("bedroom", "Bedroom")  # type: ignore[attr-defined]
+
+    conn = _ConnStub()
+    root = repo.create_location(name="Home", area_id="kitchen")
+    shelf = repo.create_location(name="Shelf", parent_id=root.id)
+    created = await ws_send(
+        hass, 1, "haventory/item/create", conn=conn, name="Whisk", location_id=str(shelf.id)
+    )
+    assert created["result"]["effective_area_id"] == "kitchen"
+    await ws_send(hass, 700, "haventory/subscribe", conn=conn, topic="locations")
+
+    conn.messages.clear()
+    res = await ws_send(
+        hass,
+        2,
+        "haventory/location/update",
+        conn=conn,
+        location_id=str(shelf.id),
+        area_id="bedroom",
+    )
+    # The edited row keeps no area of its own — the root took it.
+    assert res["success"] is True and res["result"]["area_id"] is None
+    assert repo.get_location(str(root.id)).area_id == "bedroom"
+
+    assert [ev.get("action") for ev in conn.events(topic="locations")] == ["moved"]
+    assert conn.events(topic="items") == []
+
+    listed = await ws_send(hass, 3, "haventory/item/list", conn=conn, filter={"area_id": "bedroom"})
+    assert [it["name"] for it in listed["result"]["items"]] == ["Whisk"]
+
+
+@pytest.mark.asyncio
 async def test_location_update_announces_what_changed_once() -> None:
     """One event per call, keyed on the change rather than on the keys sent.
 

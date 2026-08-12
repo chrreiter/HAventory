@@ -275,7 +275,7 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 
 - `haventory/location/update`
   - Payload: `{location_id: string, name?: string, new_parent_id?: string|null, area_id?: string|null}`
-  - Result: `<Location>`; emits **at most one** `locations` event, chosen by what the call actually changed rather than by which keys it carried: `moved` when the parent or the `area_id` changed (either re-anchors the subtree), otherwise `renamed` when the name changed, otherwise nothing. A client that submits every field on every save therefore announces a rename as a rename. Also emits `stats/counts`.
+  - Result: `<Location>`; emits **at most one** `locations` event, chosen by what the call actually changed rather than by which keys it carried: `moved` when the parent changed, or when the area the location resolves to changed (either re-anchors the subtree), otherwise `renamed` when the name changed, otherwise nothing. The area comparison is on the resolved value, not on the row's own `area_id`: an `area_id` sent for a location below the root is stored on the root, so the edited row's own field does not move. A client that submits every field on every save therefore announces a rename as a rename. Also emits `stats/counts`.
 
 - `haventory/location/delete`
   - Payload: `{location_id: string}`

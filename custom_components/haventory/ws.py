@@ -1991,7 +1991,16 @@ async def ws_location_update(
             raise ValidationError("unknown area_id")
     repo = _repo(hass)
     before = repo.get_location(msg["location_id"])
-    was_anchored_at = (before.parent_id, before.area_id)
+    location_key = str(before.id)
+    # The area a location sits in is resolved through its tree, not read off the
+    # row: a tree's area lives on its root, so an area set on a nested location
+    # moves the root's `area_id` and leaves the edited row's at None. Comparing
+    # the resolved value catches both, and it is the value the items under the
+    # location report as `effective_area_id`.
+    was_anchored_at = (
+        before.parent_id,
+        repo._resolve_effective_area_id_for_location(location_key),
+    )
     was_named = before.name
     loc = repo.update_location(
         msg["location_id"], name=msg.get("name"), new_parent_id=new_parent, area_id=area_id
@@ -2007,7 +2016,8 @@ async def ws_location_update(
     # item under it gets a new effective_area_id, which is exactly what a client
     # filtered by area re-lists on. No item events accompany it — the items
     # themselves did not change.
-    if (loc.parent_id, loc.area_id) != was_anchored_at:
+    is_anchored_at = (loc.parent_id, repo._resolve_effective_area_id_for_location(location_key))
+    if is_anchored_at != was_anchored_at:
         _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
     elif loc.name != was_named:
         _broadcast_event(
