@@ -11,7 +11,7 @@ when the milestone closes.
 
 ## H1 — #197 the widened frames stop HA core logging the client payload at ERROR
 
-**Branch / PR**: `claude/v0-5-0-w1a-input-hardening` / #TBD
+**Branch / PR**: `claude/v0-5-0-w1a-input-hardening` / #415
 **Why this needs a real HA**: the log line comes from Home Assistant core, not from this
 integration. `homeassistant.components.websocket_api.http.connection` logs a schema
 rejection at ERROR *with the client's payload in the message* — the whole point of typing
