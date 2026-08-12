@@ -66,6 +66,10 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
   `tests/conftest.py`); async tests use `@pytest.mark.asyncio`. The WebSocket
   stub applies each command's schema before dispatch, so an offline test sends
   frames a real client could send and gets `invalid_format` for the rest.
+  Dispatch a command with `ws_send` from `tests/ws_helpers.py` — never a private
+  copy: it returns the full result envelope and takes an optional `conn=`, so a
+  test can assert on the answer, on what the handler pushed on the connection,
+  or on both.
 - **Conventional Commits** for commit messages *and PR titles* (a CI check
   enforces the PR title). Examples: `feat: add low-stock filter`,
   `fix: preserve location_path on move`, `docs: …`, `chore: …`.

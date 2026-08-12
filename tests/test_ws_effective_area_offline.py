@@ -17,17 +17,7 @@ from custom_components.haventory.ws import _item_matches_filter
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-
-async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
-    handlers = hass.data.get("__ws_commands__", [])
-    for h in handlers:
-        if not callable(h) or getattr(h, "_ws_command", None) != type_:
-            continue
-        req = {"id": _id, "type": type_}
-        req.update(payload)
-        resp = await h(hass, None, req)
-        return resp
-    raise AssertionError("No handler responded for type " + type_)
+from ws_helpers import ws_send
 
 
 @pytest.mark.asyncio
@@ -45,7 +35,7 @@ async def test_effective_area_id_present_from_ancestor() -> None:
     shelf = repo.create_location(name="Shelf A", parent_id=garage.id)
     bin1 = repo.create_location(name="Bin 1", parent_id=shelf.id)
 
-    created = await _send(
+    created = await ws_send(
         hass,
         1,
         "haventory/item/create",
@@ -56,11 +46,11 @@ async def test_effective_area_id_present_from_ancestor() -> None:
     )
     iid = created["result"]["id"]
 
-    got = await _send(hass, 2, "haventory/item/get", item_id=iid)
+    got = await ws_send(hass, 2, "haventory/item/get", item_id=iid)
     assert got["success"] is True
     assert got["result"].get("effective_area_id") == "wohnzimmer"
 
-    listed = await _send(hass, 3, "haventory/item/list")
+    listed = await ws_send(hass, 3, "haventory/item/list")
     assert any(
         it.get("id") == iid and it.get("effective_area_id") == "wohnzimmer"
         for it in listed["result"]["items"]
@@ -80,11 +70,11 @@ async def test_effective_area_id_none_when_no_area() -> None:
     root = repo.create_location(name="Root")  # no area
     child = repo.create_location(name="Child", parent_id=root.id)  # no area
 
-    created = await _send(
+    created = await ws_send(
         hass, 1, "haventory/item/create", name="NoArea", location_id=str(child.id)
     )
     iid = created["result"]["id"]
-    got = await _send(hass, 2, "haventory/item/get", item_id=iid)
+    got = await ws_send(hass, 2, "haventory/item/get", item_id=iid)
     assert got["success"] is True
     assert got["result"].get("effective_area_id") in (None,)
 
@@ -102,17 +92,17 @@ async def test_effective_area_id_updates_on_area_change_without_version_bump() -
     # Root without area -> effective_area_id None
     root = repo.create_location(name="Root")
     leaf = repo.create_location(name="Leaf", parent_id=root.id)
-    created = await _send(hass, 1, "haventory/item/create", name="A", location_id=str(leaf.id))
+    created = await ws_send(hass, 1, "haventory/item/create", name="A", location_id=str(leaf.id))
     iid = created["result"]["id"]
 
-    before = await _send(hass, 2, "haventory/item/get", item_id=iid)
+    before = await ws_send(hass, 2, "haventory/item/get", item_id=iid)
     ver_before = before["result"]["version"]
     assert before["result"].get("effective_area_id") is None
 
     # Assign area to ancestor; effective_area_id should change, version should not
     repo.update_location(root.id, area_id="kitchen")
 
-    after = await _send(hass, 3, "haventory/item/get", item_id=iid)
+    after = await ws_send(hass, 3, "haventory/item/get", item_id=iid)
     ver_after = after["result"]["version"]
     assert after["result"].get("effective_area_id") == "kitchen"
     assert ver_after == ver_before
@@ -137,7 +127,7 @@ async def test_subscription_matcher_agrees_with_item_list_on_area() -> None:
     garage = repo.create_location(name="Garage", area_id="garage")
 
     for name, loc in (("Whisk", drawer), ("Spanner", garage), ("Loose screw", None)):
-        await _send(
+        await ws_send(
             hass,
             1,
             "haventory/item/create",
@@ -145,10 +135,10 @@ async def test_subscription_matcher_agrees_with_item_list_on_area() -> None:
             location_id=str(loc.id) if loc is not None else None,
         )
 
-    listed = await _send(hass, 2, "haventory/item/list", filter={"area_id": "kitchen"})
+    listed = await ws_send(hass, 2, "haventory/item/list", filter={"area_id": "kitchen"})
     by_list = {it["name"] for it in listed["result"]["items"]}
 
-    everything = await _send(hass, 3, "haventory/item/list")
+    everything = await ws_send(hass, 3, "haventory/item/list")
     by_matcher = {
         it["name"]
         for it in everything["result"]["items"]

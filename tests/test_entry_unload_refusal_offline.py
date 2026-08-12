@@ -36,38 +36,7 @@ from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-
-class _StubConn:
-    """Connection stub that keeps every message sent to it."""
-
-    def __init__(self) -> None:
-        self.messages: list[dict] = []
-
-    def send_message(self, msg: dict) -> None:
-        self.messages.append(msg)
-
-
-def _handler(hass: HomeAssistant, type_: str):
-    """The registered handler for one command type, as HA would dispatch to it."""
-
-    for handler in hass.data.get("__ws_commands__", []):
-        if callable(handler) and getattr(handler, "_ws_command", None) == type_:
-            return handler
-    raise AssertionError(f"No handler registered for type {type_}")
-
-
-async def _call(handler, hass: HomeAssistant, _id: int, type_: str, conn=None, **payload):
-    """Send one command straight to a handler, bypassing the stub registry."""
-
-    req = {"id": _id, "type": type_}
-    req.update(payload)
-    target = conn if conn is not None else _StubConn()
-    res = await handler(hass, target, req)
-    return res if res is not None else target.messages[-1]
-
-
-async def _send(hass: HomeAssistant, _id: int, type_: str, conn=None, **payload):
-    return await _call(_handler(hass, type_), hass, _id, type_, conn=conn, **payload)
+from ws_helpers import RecordingConn, ws_call, ws_handler, ws_send
 
 
 async def _setup_entry(hass: HomeAssistant) -> ConfigEntry:
@@ -109,12 +78,12 @@ async def test_command_refuses_while_unloaded(command: str, payload: dict) -> No
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
-    handler = _handler(hass, command)
-    assert (await _call(handler, hass, 1, command, **payload))["success"] is True
+    handler = ws_handler(hass, command)
+    assert (await ws_call(handler, hass, 1, command, **payload))["success"] is True
 
     await async_unload_entry(hass, entry)
 
-    res = await _call(handler, hass, 2, command, **payload)
+    res = await ws_call(handler, hass, 2, command, **payload)
     assert res["success"] is False, res
     assert res["error"]["code"] == "storage_error"
 
@@ -213,9 +182,11 @@ async def test_unload_tells_open_subscribers_their_topic_stopped() -> None:
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
-    conn = _StubConn()
+    conn = RecordingConn()
     for sub_id, topic in ((11, "items"), (12, "locations"), (13, "stats")):
-        assert (await _send(hass, sub_id, "haventory/subscribe", conn=conn, topic=topic))["success"]
+        assert (await ws_send(hass, sub_id, "haventory/subscribe", conn=conn, topic=topic))[
+            "success"
+        ]
     conn.messages.clear()
 
     await async_unload_entry(hass, entry)
@@ -235,8 +206,8 @@ async def test_unload_drops_live_subscriptions() -> None:
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
-    conn = _StubConn()
-    assert (await _send(hass, 7, "haventory/subscribe", conn=conn, topic="items"))["success"]
+    conn = RecordingConn()
+    assert (await ws_send(hass, 7, "haventory/subscribe", conn=conn, topic="items"))["success"]
 
     await async_unload_entry(hass, entry)
     conn.messages.clear()
@@ -268,8 +239,8 @@ async def test_teardown_signal_outranks_the_event_budget() -> None:
         )
     )
     hass.data[DOMAIN]["rate_limiter"] = limiter
-    conn = _StubConn()
-    assert (await _send(hass, 5, "haventory/subscribe", conn=conn, topic="items"))["success"]
+    conn = RecordingConn()
+    assert (await ws_send(hass, 5, "haventory/subscribe", conn=conn, topic="items"))["success"]
 
     # Drain the global budget, then prove an ordinary broadcast is now dropped.
     assert limiter.allow_event_broadcast() is True
@@ -293,16 +264,16 @@ async def test_setup_after_unload_serves_again() -> None:
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
-    created = await _send(hass, 1, "haventory/item/create", name="Screwdriver")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Screwdriver")
     assert created["success"] is True
-    handler = _handler(hass, "haventory/item/list")
+    handler = ws_handler(hass, "haventory/item/list")
 
     await async_unload_entry(hass, entry)
-    assert (await _call(handler, hass, 2, "haventory/item/list"))["success"] is False
+    assert (await ws_call(handler, hass, 2, "haventory/item/list"))["success"] is False
 
     assert await async_setup_entry(hass, ConfigEntry()) is True
 
-    listed = await _call(handler, hass, 3, "haventory/item/list")
+    listed = await ws_call(handler, hass, 3, "haventory/item/list")
     assert listed["success"] is True, listed
     assert [item["name"] for item in listed["result"]["items"]] == ["Screwdriver"]
 
@@ -320,18 +291,18 @@ async def test_a_reload_writes_nothing_while_it_is_refusing(monkeypatch) -> None
         saved.append(payload)
 
     monkeypatch.setattr(store, "async_save", _record)
-    handler = _handler(hass, "haventory/item/create")
+    handler = ws_handler(hass, "haventory/item/create")
 
     await async_unload_entry(hass, entry)
     saved.clear()  # unload's own flush is test_unload_flushes_before_dropping's business
 
-    res = await _call(handler, hass, 1, "haventory/item/create", name="Ghost")
+    res = await ws_call(handler, hass, 1, "haventory/item/create", name="Ghost")
 
     assert res["success"] is False
     assert saved == []
 
     assert await async_setup_entry(hass, ConfigEntry()) is True
-    listed = await _send(hass, 2, "haventory/item/list")
+    listed = await ws_send(hass, 2, "haventory/item/list")
     assert [item["name"] for item in listed["result"]["items"]] == []
 
 
@@ -341,11 +312,11 @@ async def test_refusal_is_mapped_not_an_unhandled_crash(caplog) -> None:
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
-    handler = _handler(hass, "haventory/item/create")
+    handler = ws_handler(hass, "haventory/item/create")
     await async_unload_entry(hass, entry)
 
     caplog.set_level(logging.DEBUG, logger="custom_components.haventory.ws")
-    res = await _call(handler, hass, 1, "haventory/item/create", name="Nope")
+    res = await ws_call(handler, hass, 1, "haventory/item/create", name="Nope")
 
     assert res["error"]["code"] == "storage_error"
     assert res["error"]["data"]["op"] == "item_create"

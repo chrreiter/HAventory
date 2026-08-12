@@ -14,17 +14,7 @@ from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-
-async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
-    handlers = hass.data.get("__ws_commands__", [])
-    for h in handlers:
-        if not callable(h) or getattr(h, "_ws_command", None) != type_:
-            continue
-        req = {"id": _id, "type": type_}
-        req.update(payload)
-        resp = await h(hass, None, req)
-        return resp
-    raise AssertionError("No handler responded for type " + type_)
+from ws_helpers import ws_send
 
 
 @pytest.mark.asyncio
@@ -41,7 +31,7 @@ async def test_ws_areas_list_returns_registry_entries() -> None:
     reg._add("a1", "Garage")  # type: ignore[attr-defined]
     reg._add("a2", "Office")  # type: ignore[attr-defined]
 
-    res = await _send(hass, 1, "haventory/areas/list")
+    res = await ws_send(hass, 1, "haventory/areas/list")
     assert res["success"] is True and isinstance(res["result"].get("areas"), list)
     ids = {a["id"] for a in res["result"]["areas"]}
     assert ids == {"a1", "a2"}
