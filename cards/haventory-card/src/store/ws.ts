@@ -426,6 +426,7 @@ export class WSClient {
     cb: (payload: AnyEventPayload) => void,
     opts?: {
       location_id?: string | null;
+      area_id?: string | null;
       include_subtree?: boolean;
       /**
        * Called when the backend rejects the subscribe — most importantly with
@@ -447,6 +448,7 @@ export class WSClient {
       topic,
     };
     if (opts && 'location_id' in opts) msg.location_id = opts.location_id ?? null;
+    if (opts && 'area_id' in opts) msg.area_id = opts.area_id ?? null;
     if (opts && 'include_subtree' in opts) msg.include_subtree = !!opts.include_subtree;
 
     const unsubOrPromise = this.hass.connection.subscribeMessage((event) => {

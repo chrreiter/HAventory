@@ -126,6 +126,38 @@ async def test_ws_rename_keeps_item_versions_valid(hass: HomeAssistant, hass_ws_
     assert updated["result"]["version"] == held_version + 1
 
 
+async def test_ws_subscribe_accepts_area_id_and_refuses_unknown_keys(
+    hass: HomeAssistant, hass_ws_client
+) -> None:
+    """Real HA applies the subscribe schema; the offline stub stores it unapplied.
+
+    So the two halves of the schema change — ``area_id`` accepted, including as an
+    explicit null, and anything else still refused — are only genuinely asserted
+    against a real connection.
+    """
+
+    await _setup(hass)
+    client = await hass_ws_client(hass)
+
+    await client.send_json(
+        {"id": 1, "type": "haventory/subscribe", "topic": "items", "area_id": "kitchen"}
+    )
+    accepted = await client.receive_json()
+    assert accepted["success"] is True, accepted
+
+    await client.send_json(
+        {"id": 2, "type": "haventory/subscribe", "topic": "items", "area_id": None}
+    )
+    cleared = await client.receive_json()
+    assert cleared["success"] is True, cleared
+
+    await client.send_json(
+        {"id": 3, "type": "haventory/subscribe", "topic": "items", "area": "kitchen"}
+    )
+    refused = await client.receive_json()
+    assert refused["success"] is False, refused
+
+
 async def test_ws_item_get_unknown_returns_error(hass: HomeAssistant, hass_ws_client) -> None:
     """Fetching a missing item surfaces a structured error, not a crash."""
 

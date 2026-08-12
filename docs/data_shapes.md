@@ -362,6 +362,13 @@ Common envelope inside HA WS event wrapper:
 - Stats: `counts` with `{counts: <Counts>}`.
 - Every topic: `unavailable` (common fields only), sent once per open subscription when the config entry serving it tears down. The subscription is over at that point; see the API contract's "While no entry is loaded".
 
+Subscription filters (`haventory/subscribe`) are matched against the payload above, not
+against the repository:
+
+- `location_id` / `include_subtree` read the item's `location_path.id_path` (or the location's own `path.id_path`).
+- `area_id` reads the item's `effective_area_id`, so it selects the same area `ItemFilter.area_id` does. An item with no location carries `effective_area_id: null` and matches no area filter; a `null` or omitted `area_id` on the subscription means no area filter at all. `area_id` applies to the `items` topic only.
+- Filters combine with AND, and every one of them is applied to the payload as it stands *after* the mutation. An item that leaves a filtered set produces no event for that subscription, so a client tracking one re-lists rather than waiting for a departure event — including after a `locations` `moved` event, which is the only signal that a subtree's `effective_area_id` was rewritten.
+
 ### Validation notes
 
 - UUIDs must be version 4.
