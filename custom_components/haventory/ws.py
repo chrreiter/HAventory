@@ -1997,10 +1997,7 @@ async def ws_location_update(
     # moves the root's `area_id` and leaves the edited row's at None. Comparing
     # the resolved value catches both, and it is the value the items under the
     # location report as `effective_area_id`.
-    was_anchored_at = (
-        before.parent_id,
-        repo._resolve_effective_area_id_for_location(location_key),
-    )
+    was_anchored_at = (before.parent_id, repo.effective_area_id(location_key))
     was_named = before.name
     loc = repo.update_location(
         msg["location_id"], name=msg.get("name"), new_parent_id=new_parent, area_id=area_id
@@ -2016,7 +2013,7 @@ async def ws_location_update(
     # item under it gets a new effective_area_id, which is exactly what a client
     # filtered by area re-lists on. No item events accompany it — the items
     # themselves did not change.
-    is_anchored_at = (loc.parent_id, repo._resolve_effective_area_id_for_location(location_key))
+    is_anchored_at = (loc.parent_id, repo.effective_area_id(location_key))
     if is_anchored_at != was_anchored_at:
         _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
     elif loc.name != was_named:
@@ -2153,7 +2150,7 @@ def _effective_area_id_for_item(hass: HomeAssistant, item: Item) -> str | None:
         if getattr(item, "location_id", None) is None:
             return None
         repo = _repo(hass)
-        return repo._resolve_effective_area_id_for_location(str(item.location_id))
+        return repo.effective_area_id(str(item.location_id))
     except Exception:
         return None
 
