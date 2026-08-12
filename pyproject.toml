@@ -22,7 +22,7 @@ dev = [
   "pytest",
   "pytest-asyncio",
   "pytest-cov",
-  "ruff==0.15.22",
+  "ruff==0.16.2",
   "mypy",
   "pre-commit",
   "voluptuous",
