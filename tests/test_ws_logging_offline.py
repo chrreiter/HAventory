@@ -10,9 +10,9 @@ One policy governs every error the API boundary logs:
   rather than a failure.
 - ``exc_info`` only where a traceback says something the message does not.
 
-The conflict and not-found cases are load-bearing: ``release_testing_plan.md``
-exit criterion 4 forbids any traceback from ``custom_components.haventory`` in
-the HA log, and the release run deliberately provokes both.
+The conflict and not-found cases are what the release run checks:
+``release_testing_plan.md`` exit criterion 4 forbids any traceback from
+``custom_components.haventory`` in the HA log, and the run provokes both.
 """
 
 from __future__ import annotations
@@ -31,30 +31,11 @@ from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from ws_helpers import RecordingConn, ws_send
+
 WS_LOGGER = "custom_components.haventory.ws"
 SERVICES_LOGGER = "custom_components.haventory.services"
 RATE_LIMIT_LOGGER = "custom_components.haventory.rate_limit"
-
-
-async def _send(hass: HomeAssistant, _id: int, type_: str, conn: object = None, **payload):
-    handlers = hass.data.get("__ws_commands__", [])
-    for h in handlers:
-        if not callable(h) or getattr(h, "_ws_command", None) != type_:
-            continue
-        req = {"id": _id, "type": type_}
-        req.update(payload)
-        return await h(hass, conn, req)
-    raise AssertionError("No handler responded for type " + type_)
-
-
-class _ConnStub:
-    """A stable connection identity, so the limiter keys one bucket for it."""
-
-    def __init__(self) -> None:
-        self.messages: list[dict[str, Any]] = []
-
-    def send_message(self, msg: dict[str, Any]) -> None:
-        self.messages.append(msg)
 
 
 def _make_hass(limiter: RateLimiter | None = None) -> HomeAssistant:
@@ -88,7 +69,7 @@ async def test_validation_error_logs_warning_without_traceback(caplog) -> None:
     hass = _make_hass()
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
-    res = await _send(hass, 1, "haventory/item/set_quantity", item_id="any", quantity=-1)
+    res = await ws_send(hass, 1, "haventory/item/set_quantity", item_id="any", quantity=-1)
     assert res["success"] is False and res["error"]["code"] == "validation_error"
 
     record = _only(caplog)
@@ -102,7 +83,9 @@ async def test_not_found_logs_warning_without_traceback(caplog) -> None:
     hass = _make_hass()
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
-    res = await _send(hass, 2, "haventory/item/get", item_id="00000000-0000-4000-8000-000000000000")
+    res = await ws_send(
+        hass, 2, "haventory/item/get", item_id="00000000-0000-4000-8000-000000000000"
+    )
     assert res["success"] is False and res["error"]["code"] == "not_found"
 
     record = _only(caplog)
@@ -116,13 +99,13 @@ async def test_conflict_logs_warning_without_traceback(caplog) -> None:
     """A stale ``expected_version`` is an HTTP-409 equivalent, not a crash."""
 
     hass = _make_hass()
-    created = await _send(hass, 1, "haventory/item/create", name="Widget")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Widget")
     item_id = created["result"]["id"]
 
     caplog.clear()
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
-    res = await _send(
+    res = await ws_send(
         hass, 3, "haventory/item/update", item_id=item_id, expected_version=999, name="X"
     )
     assert res["success"] is False and res["error"]["code"] == "conflict"
@@ -149,11 +132,13 @@ async def test_rate_limited_logs_warning_without_traceback(caplog) -> None:
         )
     )
     hass = _make_hass(limiter)
-    conn = _ConnStub()
+    # One connection object across both sends: the limiter keys a bucket per
+    # connection identity, so a second object would get a fresh budget.
+    conn = RecordingConn()
     caplog.set_level(logging.DEBUG)
 
-    assert (await _send(hass, 1, "haventory/ping", conn=conn))["success"] is True
-    res = await _send(hass, 2, "haventory/ping", conn=conn)
+    assert (await ws_send(hass, 1, "haventory/ping", conn=conn))["success"] is True
+    res = await ws_send(hass, 2, "haventory/ping", conn=conn)
     assert res["success"] is False and res["error"]["code"] == "rate_limited"
 
     # The rejection never reaches the WS error boundary; the limiter owns the
@@ -181,7 +166,7 @@ async def test_storage_error_logs_error_with_traceback(caplog, monkeypatch) -> N
     monkeypatch.setattr(hass.data[DOMAIN]["store"], "async_save", _raise)
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
-    res = await _send(hass, 1, "haventory/item/create", name="X")
+    res = await ws_send(hass, 1, "haventory/item/create", name="X")
     assert res["success"] is False and res["error"]["code"] == "storage_error"
 
     record = _only(caplog)
@@ -202,7 +187,7 @@ async def test_unknown_error_logs_error_with_traceback(caplog, monkeypatch) -> N
     monkeypatch.setattr(hass.data[DOMAIN]["repository"], "create_item", _boom)
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
-    res = await _send(hass, 1, "haventory/item/create", name="X")
+    res = await ws_send(hass, 1, "haventory/item/create", name="X")
     assert res["success"] is False and res["error"]["code"] == "unknown_error"
 
     record = _only(caplog)
@@ -235,7 +220,7 @@ async def test_not_loaded_refusal_logs_warning_without_traceback(caplog) -> None
     hass = _make_unloaded_hass()
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
-    res = await _send(hass, 1, "haventory/item/create", name="X")
+    res = await ws_send(hass, 1, "haventory/item/create", name="X")
     assert res["success"] is False and res["error"]["code"] == "storage_error"
 
     record = _only(caplog)
@@ -253,9 +238,9 @@ async def test_not_loaded_refusal_keeps_the_storage_error_envelope() -> None:
     """
 
     hass = _make_unloaded_hass()
-    conn = _ConnStub()
+    conn = RecordingConn()
 
-    res = await _send(hass, 1, "haventory/item/list", conn=conn)
+    res = await ws_send(hass, 1, "haventory/item/list", conn=conn)
 
     assert res["error"]["code"] == "storage_error"
     assert res["error"]["data"]["op"] == "item_list"
@@ -279,7 +264,7 @@ async def test_a_retrying_client_leaves_no_tracebacks(caplog) -> None:
     # Frame ids start at 1: Home Assistant refuses a non-positive id outright,
     # so a 0 would never reach the handler whose logging is under test.
     for i in range(1, retries + 1):
-        assert (await _send(hass, i, "haventory/stats"))["error"]["code"] == "storage_error"
+        assert (await ws_send(hass, i, "haventory/stats"))["error"]["code"] == "storage_error"
 
     records = _records(caplog)
     assert len(records) == retries
@@ -299,7 +284,7 @@ async def test_a_real_storage_failure_still_logs_error_with_traceback(caplog, mo
     monkeypatch.setattr(hass.data[DOMAIN]["store"], "async_save", _raise)
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
-    res = await _send(hass, 1, "haventory/item/create", name="X")
+    res = await ws_send(hass, 1, "haventory/item/create", name="X")
     assert res["success"] is False and res["error"]["code"] == "storage_error"
 
     record = _only(caplog)
@@ -331,13 +316,13 @@ async def test_service_not_loaded_refusal_logs_warning_without_traceback(caplog)
 @pytest.mark.asyncio
 async def test_bulk_conflict_logs_warning_without_traceback(caplog) -> None:
     hass = _make_hass()
-    created = await _send(hass, 1, "haventory/item/create", name="Widget")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Widget")
     item_id = created["result"]["id"]
 
     caplog.clear()
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
-    res = await _send(
+    res = await ws_send(
         hass,
         2,
         "haventory/items/bulk",
@@ -360,7 +345,7 @@ async def test_bulk_conflict_logs_warning_without_traceback(caplog) -> None:
 @pytest.mark.asyncio
 async def test_bulk_unexpected_error_logs_error_with_traceback(caplog, monkeypatch) -> None:
     hass = _make_hass()
-    created = await _send(hass, 1, "haventory/item/create", name="Widget")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Widget")
     item_id = created["result"]["id"]
 
     def _boom(*_args: Any, **_kwargs: Any) -> None:
@@ -370,7 +355,7 @@ async def test_bulk_unexpected_error_logs_error_with_traceback(caplog, monkeypat
     caplog.clear()
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
-    res = await _send(
+    res = await ws_send(
         hass,
         2,
         "haventory/items/bulk",
@@ -399,7 +384,7 @@ async def test_all_failed_bulk_logs_only_its_per_op_lines(caplog) -> None:
     caplog.clear()
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
-    res = await _send(
+    res = await ws_send(
         hass,
         1,
         "haventory/items/bulk",
@@ -421,13 +406,13 @@ async def test_partly_successful_bulk_still_logs_its_summary(caplog) -> None:
     """The summary survives where it still says something: a batch that changed state."""
 
     hass = _make_hass()
-    created = await _send(hass, 1, "haventory/item/create", name="Widget")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Widget")
     item_id = created["result"]["id"]
 
     caplog.clear()
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
-    await _send(
+    await ws_send(
         hass,
         2,
         "haventory/items/bulk",

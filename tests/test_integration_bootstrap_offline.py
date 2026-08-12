@@ -13,6 +13,8 @@ from custom_components.haventory.storage import DomainStore
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from ws_helpers import ws_send
+
 
 @pytest.mark.asyncio
 async def test_async_setup_initializes_domain_bucket() -> None:
@@ -76,16 +78,5 @@ async def test_async_setup_entry_loads_repository_from_store_and_ws_reads() -> N
     assert repo.get_item(item.id).name == "SeedItem"
 
     # And WS commands are registered and can read the same item
-    handlers = hass.data.get("__ws_commands__", [])
-
-    async def _send(_id: int, type_: str, **payload):
-        for h in handlers:
-            if not callable(h) or getattr(h, "_ws_command", None) != type_:
-                continue
-            req = {"id": _id, "type": type_}
-            req.update(payload)
-            return await h(hass, None, req)
-        raise AssertionError("No handler responded for type " + type_)
-
-    res = await _send(1, "haventory/item/get", item_id=item.id)
+    res = await ws_send(hass, 1, "haventory/item/get", item_id=item.id)
     assert res["success"] is True and res["result"]["id"] == str(item.id)

@@ -9,7 +9,6 @@ Regression coverage for the PR #91 review:
 
 from __future__ import annotations
 
-from collections.abc import Callable, Coroutine
 from typing import Any
 
 import pytest
@@ -30,6 +29,8 @@ from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
+
+from ws_helpers import ws_send
 
 # -----------------------------
 # Repository / model boundary
@@ -100,19 +101,6 @@ def test_low_stock_threshold_rejects_bool() -> None:
 # -----------------------------
 
 
-def _get_handler(
-    hass: HomeAssistant, type_: str
-) -> Callable[[HomeAssistant, object, dict], Coroutine[Any, Any, dict]]:
-    for h in hass.data.get("__ws_commands__", []):
-        if callable(h) and getattr(h, "_ws_command", None) == type_:
-            return h
-    raise AssertionError("No handler for " + type_)
-
-
-async def _send(hass: HomeAssistant, _id: int, type_: str, **payload: Any) -> dict:
-    return await _get_handler(hass, type_)(hass, None, {"id": _id, "type": type_, **payload})
-
-
 def _make_hass() -> HomeAssistant:
     hass = HomeAssistant()
     bucket = hass.data.setdefault(DOMAIN, {})
@@ -125,32 +113,32 @@ def _make_hass() -> HomeAssistant:
 @pytest.mark.asyncio
 async def test_ws_create_non_text_category_is_validation_error_no_phantom() -> None:
     hass = _make_hass()
-    res = await _send(hass, 1, "haventory/item/create", name="Widget", category=["oops"])
+    res = await ws_send(hass, 1, "haventory/item/create", name="Widget", category=["oops"])
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
     # Nothing was indexed or counted.
-    stats = await _send(hass, 2, "haventory/stats")
+    stats = await ws_send(hass, 2, "haventory/stats")
     assert stats["result"]["items_total"] == 0
-    listed = await _send(hass, 3, "haventory/item/list")
+    listed = await ws_send(hass, 3, "haventory/item/list")
     assert listed["result"]["items"] == []
 
 
 @pytest.mark.asyncio
 async def test_ws_set_quantity_bool_is_validation_error() -> None:
     hass = _make_hass()
-    created = await _send(hass, 1, "haventory/item/create", name="Widget", quantity=1)
+    created = await ws_send(hass, 1, "haventory/item/create", name="Widget", quantity=1)
     item_id = created["result"]["id"]
 
-    res = await _send(hass, 2, "haventory/item/set_quantity", item_id=item_id, quantity=True)
+    res = await ws_send(hass, 2, "haventory/item/set_quantity", item_id=item_id, quantity=True)
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
 
-    res = await _send(hass, 3, "haventory/item/adjust_quantity", item_id=item_id, delta=True)
+    res = await ws_send(hass, 3, "haventory/item/adjust_quantity", item_id=item_id, delta=True)
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
 
     # Quantity is still the int we created with.
-    got = await _send(hass, 4, "haventory/item/get", item_id=item_id)
+    got = await ws_send(hass, 4, "haventory/item/get", item_id=item_id)
     assert got["result"]["quantity"] == 1
     assert got["result"]["quantity"] is not True
 
@@ -216,7 +204,7 @@ def test_create_accepts_at_the_cap_and_refuses_over_it(
 @pytest.mark.asyncio
 async def test_ws_create_over_a_cap_is_validation_error_no_phantom() -> None:
     hass = _make_hass()
-    res = await _send(
+    res = await ws_send(
         hass,
         1,
         "haventory/item/create",
@@ -225,7 +213,7 @@ async def test_ws_create_over_a_cap_is_validation_error_no_phantom() -> None:
     )
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
-    listed = await _send(hass, 2, "haventory/item/list")
+    listed = await ws_send(hass, 2, "haventory/item/list")
     assert listed["result"]["items"] == []
 
 

@@ -71,6 +71,10 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
   `settle` / `componentCss` / `ownCss` from the same place — never a per-file
   copy, which is how the mount helpers drifted into dropping half the mock
   config.
+  Dispatch a command with `ws_send` from `tests/ws_helpers.py` — never a private
+  copy: it returns the full result envelope and takes an optional `conn=`, so a
+  test can assert on the answer, on what the handler pushed on the connection,
+  or on both.
 - **Conventional Commits** for commit messages *and PR titles* (a CI check
   enforces the PR title). Examples: `feat: add low-stock filter`,
   `fix: preserve location_path on move`, `docs: …`, `chore: …`.

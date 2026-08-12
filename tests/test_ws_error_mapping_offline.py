@@ -16,7 +16,6 @@ Scenarios:
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Coroutine
 from typing import Any
 
 import pytest
@@ -28,29 +27,7 @@ from custom_components.haventory.ws import UNEXPECTED_ERROR_MESSAGE
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-
-def _get_handler(
-    hass: HomeAssistant, type_: str
-) -> Callable[[HomeAssistant, object, dict], Coroutine[Any, Any, dict]]:
-    handlers = hass.data.get("__ws_commands__", [])
-    for h in handlers:
-        if callable(h) and getattr(h, "_ws_command", None) == type_:
-            return h
-    raise AssertionError("No handler found for type " + type_)
-
-
-async def _send(hass: HomeAssistant, conn: object, _id: int, type_: str, **payload: Any) -> dict:
-    handler = _get_handler(hass, type_)
-    req = {"id": _id, "type": type_, **payload}
-    return await handler(hass, conn, req)
-
-
-class _ConnCollect:
-    def __init__(self) -> None:
-        self.messages: list[dict[str, Any]] = []
-
-    def send_message(self, msg: dict[str, Any]) -> None:
-        self.messages.append(msg)
+from ws_helpers import RecordingConn, ws_send
 
 
 def _make_hass(*, with_repo: bool = True) -> HomeAssistant:
@@ -88,8 +65,8 @@ async def test_unexpected_exception_maps_to_unknown_error_without_leaking(monkey
         raise RuntimeError("SECRET-INTERNAL-DETAIL")
 
     monkeypatch.setattr(ws_module, "_serialize_item", _boom)
-    conn = _ConnCollect()
-    res = await _send(hass, conn, 5, "haventory/item/create", name="Widget")
+    conn = RecordingConn()
+    res = await ws_send(hass, 5, "haventory/item/create", conn=conn, name="Widget")
 
     assert res["success"] is False
     assert res["error"]["code"] == "unknown_error"
@@ -118,7 +95,7 @@ async def test_repo_dependent_commands_map_missing_repo_to_storage_error(type_: 
     """Missing repository surfaces as storage_error, not an escaped exception."""
 
     hass = _make_hass(with_repo=False)
-    res = await _send(hass, _ConnCollect(), 6, type_)
+    res = await ws_send(hass, 6, type_)
 
     assert res["success"] is False
     assert res["error"]["code"] == "storage_error"
@@ -127,7 +104,7 @@ async def test_repo_dependent_commands_map_missing_repo_to_storage_error(type_: 
 @pytest.mark.asyncio
 async def test_subscribe_bad_topic_maps_to_validation_error() -> None:
     hass = _make_hass()
-    res = await _send(hass, _ConnCollect(), 7, "haventory/subscribe", topic="nope")
+    res = await ws_send(hass, 7, "haventory/subscribe", topic="nope")
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
@@ -138,16 +115,16 @@ async def test_subscribe_bad_topic_maps_to_validation_error() -> None:
 async def test_unsubscribe_validates_subscription_id() -> None:
     hass = _make_hass()
 
-    res = await _send(hass, _ConnCollect(), 8, "haventory/unsubscribe", subscription="abc")
+    res = await ws_send(hass, 8, "haventory/unsubscribe", subscription="abc")
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
 
-    res = await _send(hass, _ConnCollect(), 9, "haventory/unsubscribe", subscription={"x": 1})
+    res = await ws_send(hass, 9, "haventory/unsubscribe", subscription={"x": 1})
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
 
     # Numeric strings remain accepted.
-    res = await _send(hass, _ConnCollect(), 10, "haventory/unsubscribe", subscription="42")
+    res = await ws_send(hass, 10, "haventory/unsubscribe", subscription="42")
     assert res["success"] is True
 
 
@@ -159,12 +136,12 @@ async def test_bulk_malformed_custom_fields_payload_fails_only_that_op() -> None
     repo = hass.data[DOMAIN]["repository"]
     item = repo.create_item({"name": "Widget", "quantity": 1})
 
-    conn = _ConnCollect()
-    res = await _send(
+    conn = RecordingConn()
+    res = await ws_send(
         hass,
-        conn,
         11,
         "haventory/items/bulk",
+        conn=conn,
         operations=[
             {
                 "op_id": "bad-set",
@@ -203,9 +180,8 @@ async def test_bulk_payload_field_validation_errors() -> None:
     repo = hass.data[DOMAIN]["repository"]
     item = repo.create_item({"name": "Widget", "quantity": 1})
 
-    res = await _send(
+    res = await ws_send(
         hass,
-        _ConnCollect(),
         13,
         "haventory/items/bulk",
         operations=[
@@ -252,9 +228,8 @@ async def test_bulk_unexpected_per_op_error_is_contained(monkeypatch) -> None:
 
     monkeypatch.setattr(ws_module, "_op_item_update", _boom)
 
-    res = await _send(
+    res = await ws_send(
         hass,
-        _ConnCollect(),
         12,
         "haventory/items/bulk",
         operations=[
@@ -285,8 +260,8 @@ async def test_broadcast_failure_does_not_fail_the_command(monkeypatch) -> None:
     """A raising event sender must not turn a successful mutation into an error."""
 
     hass = _make_hass()
-    conn = _ConnCollect()
-    sub = await _send(hass, conn, 100, "haventory/subscribe", topic="items")
+    conn = RecordingConn()
+    sub = await ws_send(hass, 100, "haventory/subscribe", conn=conn, topic="items")
     assert sub["success"] is True
 
     def _boom(*_args: Any, **_kwargs: Any) -> None:
@@ -294,7 +269,7 @@ async def test_broadcast_failure_does_not_fail_the_command(monkeypatch) -> None:
 
     monkeypatch.setattr(ws_module, "_send_event_message", _boom)
 
-    res = await _send(hass, conn, 101, "haventory/item/create", name="Widget")
+    res = await ws_send(hass, 101, "haventory/item/create", conn=conn, name="Widget")
     assert res["success"] is True
     repo = hass.data[DOMAIN]["repository"]
     assert repo.get_counts()["items_total"] == 1
