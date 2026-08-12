@@ -421,7 +421,7 @@ Seed a tree at least three deep with items spread across it, and several categor
 
 ## H9 — #204 a location-ordered list paginates past its first page
 
-**Branch / PR**: `claude/v0-5-0-w2-location-sort` / #TBD
+**Branch / PR**: `claude/v0-5-0-w2-location-sort` / #424
 **Why this needs a real HA**: the offline suite pages a repository built in memory, where
 every item was created in one pass and the tree never moved. What it cannot show is the
 cursor holding across a real store — a page boundary minted on a path key, read back after
