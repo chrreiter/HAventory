@@ -690,7 +690,7 @@ describe('Store', () => {
     const store = new Store(hass);
     await store.init();
 
-    store.setFilters({ category: 'Tools' });
+    store.setFilters({ categories: ['Tools'] });
     await vi.waitUntil(
       () => store.state.value.distinctValuesCache?.categories[0]?.matching_count !== undefined,
     );
@@ -724,7 +724,7 @@ describe('Store', () => {
     const store = new Store(hass);
     await store.init();
 
-    store.setFilters({ locationId: 'garage' });
+    store.setFilters({ locationIds: ['garage'] });
     await vi.waitUntil(() => store.state.value.locationTreeCache?.[0]?.matching_subtree_count !== undefined);
 
     expect(store.state.value.locationTreeCache?.[0].matching_subtree_count).toBe(1);

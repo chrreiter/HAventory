@@ -268,7 +268,9 @@ describe('hv-filter-panel: hints', () => {
     const el = await mount();
     const hints = all(el, '.hint').map((h) => h.textContent?.trim());
 
-    expect(hints).toContain('Pick one category');
+    // Several picked categories can only mean OR — an item carries one — so
+    // the hint says which reading applies, where tags offer the choice.
+    expect(hints).toContain('Any of the picked categories');
     expect(hints).toContain('Tags are always lowercase');
     expect(hints.join(' ')).not.toMatch(/distinct values|on commit|Stored lowercase/);
   });

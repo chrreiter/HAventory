@@ -599,7 +599,10 @@ export class HVFilterPanel extends LitElement {
               </button>`
             : null}
         </div>
-        <span class="hint">Pick one category</span>
+        <!-- The tag group below carries an any/all control and this one does
+             not, so the rule has to be said rather than inferred from its
+             absence. -->
+        <span class="hint">Any of the picked categories</span>
       </div>
     `;
   }
