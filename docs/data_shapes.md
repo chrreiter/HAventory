@@ -458,7 +458,7 @@ Common envelope inside HA WS event wrapper:
 ```
 
 - Items: `created`, `updated`, `moved`, `deleted`, `checked_out`, `checked_in`, `quantity_changed` with `{item: <Item>}`. `item` may be **absent** on any items event, and its absence means "refetch" rather than "patch this item": `reloaded` after an import replaces the dataset, and `updated` after `status/delete` with `reassign_to` rewrites every item carrying the slug at once.
-- Locations: `created`, `renamed`, `moved`, `deleted` with `{location: <Location>}`; plus `reloaded` (no `location`) after an import.
+- Locations: `created`, `renamed`, `moved`, `deleted` with `{location: <Location>}`; plus `reloaded` (no `location`) after an import. `moved` covers both ways a location is re-anchored — a new parent and a new `area_id` — because each rewrites `effective_area_id` for everything under it.
 - Stats: `counts` with `{counts: <Counts>}`.
 - Every topic: `unavailable` (common fields only), sent once per open subscription when the config entry serving it tears down. The subscription is over at that point; see the API contract's "While no entry is loaded".
 

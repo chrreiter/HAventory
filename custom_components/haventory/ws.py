@@ -1989,16 +1989,27 @@ async def ws_location_update(
         reg = await async_get_area_registry(hass)
         if reg.async_get_area(area_id) is None:
             raise ValidationError("unknown area_id")
-    loc = _repo(hass).update_location(
+    repo = _repo(hass)
+    before = repo.get_location(msg["location_id"])
+    was_anchored_at = (before.parent_id, before.area_id)
+    was_named = before.name
+    loc = repo.update_location(
         msg["location_id"], name=msg.get("name"), new_parent_id=new_parent, area_id=area_id
     )
     serialized = _serialize_location(loc)
     await _persist_repo(hass)
-    # If parent changed emit moved; if name changed emit renamed
-    # (move takes precedence when both)
-    if "new_parent_id" in msg:
+    # One event per call, decided by what changed rather than by which keys the
+    # request carried: an editor that sends every field on every save would
+    # otherwise announce a move on a plain rename, and one carrying both a new
+    # parent and a new area would announce two.
+    #
+    # An area reassignment is a move: it re-anchors the whole subtree, so every
+    # item under it gets a new effective_area_id, which is exactly what a client
+    # filtered by area re-lists on. No item events accompany it — the items
+    # themselves did not change.
+    if (loc.parent_id, loc.area_id) != was_anchored_at:
         _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
-    if "name" in msg:
+    elif loc.name != was_named:
         _broadcast_event(
             hass, topic="locations", action="renamed", payload={"location": serialized}
         )
