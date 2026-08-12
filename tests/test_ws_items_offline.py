@@ -32,21 +32,11 @@ from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from ws_helpers import ws_send
+
 
 def _repo_of(hass: HomeAssistant) -> Repository:
     return hass.data[DOMAIN]["repository"]
-
-
-async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
-    handlers = hass.data.get("__ws_commands__", [])
-    for h in handlers:
-        if not callable(h) or getattr(h, "_ws_command", None) != type_:
-            continue
-        req = {"id": _id, "type": type_}
-        req.update(payload)
-        resp = await h(hass, None, req)
-        return resp
-    raise AssertionError("No handler responded for type " + type_)
 
 
 @pytest.mark.asyncio
@@ -59,21 +49,21 @@ async def test_item_create_get_update_delete_success() -> None:
     ws_setup(hass)
 
     # Create
-    res = await _send(hass, 1, "haventory/item/create", name="Hammer", quantity=2)
+    res = await ws_send(hass, 1, "haventory/item/create", name="Hammer", quantity=2)
     assert res["id"] == 1 and res["type"] == "result" and res["success"] is True
     assert isinstance(res.get("result"), dict) and "id" in res["result"]
     item_id = res["result"]["id"]
 
     # Get
-    res = await _send(hass, 2, "haventory/item/get", item_id=item_id)
+    res = await ws_send(hass, 2, "haventory/item/get", item_id=item_id)
     assert res["success"] is True and res["result"]["id"] == item_id
 
     # Update
-    res = await _send(hass, 3, "haventory/item/update", item_id=item_id, name="Hammer Pro")
+    res = await ws_send(hass, 3, "haventory/item/update", item_id=item_id, name="Hammer Pro")
     assert res["success"] is True and res["result"]["name"] == "Hammer Pro"
 
     # Delete
-    res = await _send(hass, 4, "haventory/item/delete", item_id=item_id)
+    res = await ws_send(hass, 4, "haventory/item/delete", item_id=item_id)
     assert res["success"] is True and res["result"] is None
 
 
@@ -93,10 +83,10 @@ async def test_item_update_normalizes_a_tag_list_carrying_a_null() -> None:
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Battery")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Battery")
     item_id = created["result"]["id"]
 
-    res = await _send(
+    res = await ws_send(
         hass, 2, "haventory/item/update", item_id=item_id, tags=["Li-Ion", None, " spare "]
     )
 
@@ -104,7 +94,7 @@ async def test_item_update_normalizes_a_tag_list_carrying_a_null() -> None:
     assert res["result"]["tags"] == ["li-ion", "spare"]
 
     # The narrow schemas hold the line for the commands that declare `[str]`.
-    refused = await _send(hass, 3, "haventory/item/add_tags", item_id=item_id, tags=["x", None])
+    refused = await ws_send(hass, 3, "haventory/item/add_tags", item_id=item_id, tags=["x", None])
     assert refused["success"] is False
     assert refused["error"]["code"] == "invalid_format"
 
@@ -119,26 +109,26 @@ async def test_item_quantity_and_checkout_helpers() -> None:
     ws_setup(hass)
 
     initial_quantity = 1
-    created = await _send(hass, 1, "haventory/item/create", name="Box", quantity=initial_quantity)
+    created = await ws_send(hass, 1, "haventory/item/create", name="Box", quantity=initial_quantity)
     item_id = created["result"]["id"]
 
     delta_quantity = 2
     expected_after_adjust = initial_quantity + delta_quantity
-    res = await _send(
+    res = await ws_send(
         hass, 2, "haventory/item/adjust_quantity", item_id=item_id, delta=delta_quantity
     )
     assert res["result"]["quantity"] == expected_after_adjust
 
     target_quantity = 5
-    res = await _send(
+    res = await ws_send(
         hass, 3, "haventory/item/set_quantity", item_id=item_id, quantity=target_quantity
     )
     assert res["result"]["quantity"] == target_quantity
 
-    res = await _send(hass, 4, "haventory/item/check_out", item_id=item_id, due_date="2030-01-01")
+    res = await ws_send(hass, 4, "haventory/item/check_out", item_id=item_id, due_date="2030-01-01")
     assert res["result"]["checked_out"] is True
 
-    res = await _send(hass, 5, "haventory/item/check_in", item_id=item_id)
+    res = await ws_send(hass, 5, "haventory/item/check_in", item_id=item_id)
     assert res["result"]["checked_out"] is False
 
 
@@ -156,19 +146,19 @@ async def test_item_check_out_due_date_is_optional() -> None:
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
     item_id = created["result"]["id"]
 
     # Omitted entirely
-    res = await _send(hass, 2, "haventory/item/check_out", item_id=item_id)
+    res = await ws_send(hass, 2, "haventory/item/check_out", item_id=item_id)
     assert res["success"] is True
     assert res["result"]["checked_out"] is True
     assert res["result"]["due_date"] is None
 
-    await _send(hass, 3, "haventory/item/check_in", item_id=item_id)
+    await ws_send(hass, 3, "haventory/item/check_in", item_id=item_id)
 
     # Explicit null
-    res = await _send(hass, 4, "haventory/item/check_out", item_id=item_id, due_date=None)
+    res = await ws_send(hass, 4, "haventory/item/check_out", item_id=item_id, due_date=None)
     assert res["success"] is True
     assert res["result"]["checked_out"] is True
     assert res["result"]["due_date"] is None
@@ -184,16 +174,16 @@ async def test_item_list_pagination_cursor_passthrough() -> None:
     ws_setup(hass)
 
     # Seed a couple items
-    await _send(hass, 1, "haventory/item/create", name="A")
-    await _send(hass, 2, "haventory/item/create", name="B")
+    await ws_send(hass, 1, "haventory/item/create", name="A")
+    await ws_send(hass, 2, "haventory/item/create", name="B")
 
-    res = await _send(hass, 3, "haventory/item/list", limit=1)
+    res = await ws_send(hass, 3, "haventory/item/list", limit=1)
     assert res["success"] is True
     assert isinstance(res["result"].get("items"), list)
     cursor = res["result"].get("next_cursor")
 
     if cursor:
-        res2 = await _send(hass, 4, "haventory/item/list", limit=1, cursor=cursor)
+        res2 = await ws_send(hass, 4, "haventory/item/list", limit=1, cursor=cursor)
         assert res2["success"] is True
 
 
@@ -207,20 +197,20 @@ async def test_error_mapping_validation_and_not_found_and_conflict() -> None:
     ws_setup(hass)
 
     # validation_error: negative quantity
-    v = await _send(hass, 1, "haventory/item/set_quantity", item_id="x", quantity=-1)
+    v = await ws_send(hass, 1, "haventory/item/set_quantity", item_id="x", quantity=-1)
     assert v["success"] is False and v["error"]["code"] == "validation_error"
     # Context includes op and input fields
     assert v["error"].get("context", v["error"].get("data", {})).get("op") == "item_set_quantity"
 
     # not_found: get by unknown id
-    n = await _send(hass, 2, "haventory/item/get", item_id="00000000-0000-4000-8000-000000000000")
+    n = await ws_send(hass, 2, "haventory/item/get", item_id="00000000-0000-4000-8000-000000000000")
     assert n["success"] is False and n["error"]["code"] == "not_found"
     assert n["error"].get("context", n["error"].get("data", {})).get("op") == "item_get"
 
     # conflict: create then update with stale expected_version
-    c = await _send(hass, 3, "haventory/item/create", name="Widget")
+    c = await ws_send(hass, 3, "haventory/item/create", name="Widget")
     iid = c["result"]["id"]
-    stale = await _send(
+    stale = await ws_send(
         hass, 4, "haventory/item/update", item_id=iid, expected_version=999, name="X"
     )
     assert stale["success"] is False and stale["error"]["code"] == "conflict"
@@ -249,30 +239,32 @@ async def test_ws_mutations_persist_to_store(monkeypatch) -> None:
     monkeypatch.setattr(store, "async_save", _spy_save)
 
     # Create triggers persist
-    created = await _send(hass, 1, "haventory/item/create", name="Hammer")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Hammer")
     assert calls["count"] >= 1
     item_id = created["result"]["id"]
     # Update triggers persist
-    await _send(hass, 2, "haventory/item/update", item_id=item_id, name="HammerX")
+    await ws_send(hass, 2, "haventory/item/update", item_id=item_id, name="HammerX")
     # Adjust quantity triggers persist
-    await _send(hass, 3, "haventory/item/adjust_quantity", item_id=item_id, delta=1)
+    await ws_send(hass, 3, "haventory/item/adjust_quantity", item_id=item_id, delta=1)
     # Delete triggers persist
-    await _send(hass, 4, "haventory/item/delete", item_id=item_id)
+    await ws_send(hass, 4, "haventory/item/delete", item_id=item_id)
     MIN_PERSISTS_TOTAL = 4
     assert calls["count"] >= MIN_PERSISTS_TOTAL
 
     # Validation: set_quantity negative
-    res = await _send(hass, 1, "haventory/item/set_quantity", item_id="x", quantity=-1)
+    res = await ws_send(hass, 1, "haventory/item/set_quantity", item_id="x", quantity=-1)
     assert res["success"] is False and res["error"]["code"] == "validation_error"
 
     # Not found
-    res = await _send(hass, 2, "haventory/item/get", item_id="00000000-0000-4000-8000-000000000000")
+    res = await ws_send(
+        hass, 2, "haventory/item/get", item_id="00000000-0000-4000-8000-000000000000"
+    )
     assert res["success"] is False and res["error"]["code"] == "not_found"
 
     # Conflict: create, then update with stale version
-    created = await _send(hass, 3, "haventory/item/create", name="Widget")
+    created = await ws_send(hass, 3, "haventory/item/create", name="Widget")
     item_id = created["result"]["id"]
-    stale = await _send(
+    stale = await ws_send(
         hass, 4, "haventory/item/update", item_id=item_id, expected_version=999, name="X"
     )
     assert stale["success"] is False and stale["error"]["code"] == "conflict"
@@ -288,7 +280,7 @@ async def test_inspection_date_in_create_update_get() -> None:
     ws_setup(hass)
 
     # Create item with inspection_date
-    res = await _send(
+    res = await ws_send(
         hass, 1, "haventory/item/create", name="Calibration Tool", inspection_date="2024-03-15"
     )
     assert res["success"] is True
@@ -296,19 +288,19 @@ async def test_inspection_date_in_create_update_get() -> None:
     item_id = res["result"]["id"]
 
     # Get item and verify inspection_date is returned
-    res = await _send(hass, 2, "haventory/item/get", item_id=item_id)
+    res = await ws_send(hass, 2, "haventory/item/get", item_id=item_id)
     assert res["success"] is True
     assert res["result"]["inspection_date"] == "2024-03-15"
 
     # Update inspection_date
-    res = await _send(
+    res = await ws_send(
         hass, 3, "haventory/item/update", item_id=item_id, inspection_date="2024-09-30"
     )
     assert res["success"] is True
     assert res["result"]["inspection_date"] == "2024-09-30"
 
     # Clear inspection_date
-    res = await _send(hass, 4, "haventory/item/update", item_id=item_id, inspection_date=None)
+    res = await ws_send(hass, 4, "haventory/item/update", item_id=item_id, inspection_date=None)
     assert res["success"] is True
     assert res["result"]["inspection_date"] is None
 
@@ -322,28 +314,28 @@ async def test_item_list_reports_filtered_total() -> None:
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    await _send(hass, 1, "haventory/item/create", name="Hammer", category="tools")
-    await _send(hass, 2, "haventory/item/create", name="Wrench", category="tools")
-    await _send(hass, 3, "haventory/item/create", name="Glue", category="misc")
+    await ws_send(hass, 1, "haventory/item/create", name="Hammer", category="tools")
+    await ws_send(hass, 2, "haventory/item/create", name="Wrench", category="tools")
+    await ws_send(hass, 3, "haventory/item/create", name="Glue", category="misc")
 
     seeded = 3
-    res = await _send(hass, 4, "haventory/item/list", limit=1)
+    res = await ws_send(hass, 4, "haventory/item/list", limit=1)
     assert res["success"] is True
     assert res["result"]["total"] == seeded
     assert len(res["result"]["items"]) == 1
 
     # A later page still reports the full total
-    res_page2 = await _send(
+    res_page2 = await ws_send(
         hass, 5, "haventory/item/list", limit=1, cursor=res["result"]["next_cursor"]
     )
     assert res_page2["result"]["total"] == seeded
 
     tools = 2
-    filtered = await _send(hass, 6, "haventory/item/list", filter={"category": "tools"}, limit=1)
+    filtered = await ws_send(hass, 6, "haventory/item/list", filter={"category": "tools"}, limit=1)
     assert filtered["result"]["total"] == tools
     assert len(filtered["result"]["items"]) == 1
 
-    empty = await _send(hass, 7, "haventory/item/list", filter={"q": "zzz-not-there"})
+    empty = await ws_send(hass, 7, "haventory/item/list", filter={"q": "zzz-not-there"})
     assert empty["result"]["total"] == 0
     assert empty["result"]["items"] == []
 
@@ -417,12 +409,12 @@ async def test_attachment_add_and_remove_bump_the_version(upload) -> None:
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
     item_id = created["result"]["id"]
     assert created["result"]["attachments"] == []
 
     upload("upload-1")
-    added = await _send(
+    added = await ws_send(
         hass,
         2,
         "haventory/item/attachment/add",
@@ -440,7 +432,7 @@ async def test_attachment_add_and_remove_bump_the_version(upload) -> None:
     assert attachments[0]["filename"] == "drill.png"
     assert added["result"]["version"] == created["result"]["version"] + 1
 
-    removed = await _send(
+    removed = await ws_send(
         hass,
         3,
         "haventory/item/attachment/remove",
@@ -462,7 +454,7 @@ async def test_attachment_add_announces_the_item_as_updated(upload, monkeypatch)
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
     broadcasts: list[tuple[str, str]] = []
     monkeypatch.setattr(
         ws_mod,
@@ -471,7 +463,7 @@ async def test_attachment_add_announces_the_item_as_updated(upload, monkeypatch)
     )
 
     upload("upload-1")
-    await _send(
+    await ws_send(
         hass,
         2,
         "haventory/item/attachment/add",
@@ -489,11 +481,11 @@ async def test_attachment_add_refuses_a_stale_expected_version(upload) -> None:
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
     item_id = created["result"]["id"]
 
     upload("upload-1")
-    res = await _send(
+    res = await ws_send(
         hass,
         2,
         "haventory/item/attachment/add",
@@ -517,7 +509,7 @@ async def test_attachment_add_on_an_unknown_item_is_not_found(upload) -> None:
     ws_setup(hass)
 
     upload("upload-1")
-    res = await _send(
+    res = await ws_send(
         hass,
         1,
         "haventory/item/attachment/add",
@@ -538,9 +530,9 @@ async def test_attachment_add_reports_an_unknown_file_id_as_not_found(upload) ->
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
 
-    res = await _send(
+    res = await ws_send(
         hass,
         2,
         "haventory/item/attachment/add",
@@ -559,10 +551,10 @@ async def test_attachment_add_refuses_a_file_whose_bytes_are_not_an_image(upload
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
     upload("upload-1", b'<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>')
 
-    res = await _send(
+    res = await ws_send(
         hass,
         2,
         "haventory/item/attachment/add",
@@ -590,11 +582,11 @@ async def test_attachment_add_consumes_the_upload_handle_off_the_event_loop(uplo
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
     directory = upload("upload-1")
     loop_thread = threading.get_ident()
 
-    added = await _send(
+    added = await ws_send(
         hass,
         2,
         "haventory/item/attachment/add",
@@ -619,11 +611,11 @@ async def test_attachment_add_tears_the_upload_down_off_the_loop_when_it_is_refu
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
     directory = upload("upload-1", b'<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>')
     loop_thread = threading.get_ident()
 
-    refused = await _send(
+    refused = await ws_send(
         hass,
         2,
         "haventory/item/attachment/add",
@@ -652,7 +644,7 @@ async def test_attachment_add_tears_the_upload_down_when_the_command_is_cancelle
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
     directory = upload("upload-1")
 
     consuming = asyncio.Event()
@@ -664,7 +656,7 @@ async def test_attachment_add_tears_the_upload_down_when_the_command_is_cancelle
     monkeypatch.setattr(media_mod, "async_consume_upload", _hang)
 
     task = asyncio.create_task(
-        _send(
+        ws_send(
             hass,
             2,
             "haventory/item/attachment/add",
@@ -687,17 +679,17 @@ async def test_attachment_remove_deletes_the_file_and_the_item_delete_cascades(u
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
     item_id = created["result"]["id"]
     upload("upload-1")
-    added = await _send(
+    added = await ws_send(
         hass, 2, "haventory/item/attachment/add", item_id=item_id, file_id="upload-1"
     )
     meta = _repo_of(hass).get_item(item_id).attachments[0]
     path = media_mod.attachment_path(media_mod.media_root(hass), item_id, str(meta.id), meta.mime)
     assert path.is_file()
 
-    await _send(
+    await ws_send(
         hass,
         3,
         "haventory/item/attachment/remove",
@@ -708,14 +700,14 @@ async def test_attachment_remove_deletes_the_file_and_the_item_delete_cascades(u
 
     # And deleting the item takes its remaining files with it.
     upload("upload-2")
-    await _send(hass, 4, "haventory/item/attachment/add", item_id=item_id, file_id="upload-2")
+    await ws_send(hass, 4, "haventory/item/attachment/add", item_id=item_id, file_id="upload-2")
     second = _repo_of(hass).get_item(item_id).attachments[0]
     second_path = media_mod.attachment_path(
         media_mod.media_root(hass), item_id, str(second.id), second.mime
     )
     assert second_path.is_file()
 
-    await _send(hass, 5, "haventory/item/delete", item_id=item_id)
+    await ws_send(hass, 5, "haventory/item/delete", item_id=item_id)
     assert not second_path.exists()
 
 
@@ -726,9 +718,9 @@ async def test_attachment_remove_of_an_unknown_id_is_not_found() -> None:
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
 
-    res = await _send(
+    res = await ws_send(
         hass,
         2,
         "haventory/item/attachment/remove",
@@ -749,15 +741,15 @@ async def test_attachment_update_retitles_and_bumps_the_version(upload) -> None:
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Dishwasher")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Dishwasher")
     item_id = created["result"]["id"]
     upload("upload-1")
-    added = await _send(
+    added = await ws_send(
         hass, 2, "haventory/item/attachment/add", item_id=item_id, file_id="upload-1"
     )
     attachment_id = added["result"]["attachments"][0]["id"]
 
-    res = await _send(
+    res = await ws_send(
         hass,
         3,
         "haventory/item/attachment/update",
@@ -778,14 +770,14 @@ async def test_attachment_update_reports_a_stale_version_as_conflict(upload) -> 
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Dishwasher")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Dishwasher")
     item_id = created["result"]["id"]
     upload("upload-1")
-    added = await _send(
+    added = await ws_send(
         hass, 2, "haventory/item/attachment/add", item_id=item_id, file_id="upload-1"
     )
 
-    res = await _send(
+    res = await ws_send(
         hass,
         3,
         "haventory/item/attachment/update",
@@ -806,15 +798,17 @@ async def test_attachment_reorder_makes_the_named_first_one_the_cover(upload) ->
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
     item_id = created["result"]["id"]
     upload("upload-1")
-    await _send(hass, 2, "haventory/item/attachment/add", item_id=item_id, file_id="upload-1")
+    await ws_send(hass, 2, "haventory/item/attachment/add", item_id=item_id, file_id="upload-1")
     _stage_upload("upload-2")
-    two = await _send(hass, 3, "haventory/item/attachment/add", item_id=item_id, file_id="upload-2")
+    two = await ws_send(
+        hass, 3, "haventory/item/attachment/add", item_id=item_id, file_id="upload-2"
+    )
     first, second = (a["id"] for a in two["result"]["attachments"])
 
-    res = await _send(
+    res = await ws_send(
         hass,
         4,
         "haventory/item/attachment/reorder",
@@ -837,14 +831,16 @@ async def test_attachment_reorder_refuses_a_partial_list(upload) -> None:
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Drill")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
     item_id = created["result"]["id"]
     upload("upload-1")
-    await _send(hass, 2, "haventory/item/attachment/add", item_id=item_id, file_id="upload-1")
+    await ws_send(hass, 2, "haventory/item/attachment/add", item_id=item_id, file_id="upload-1")
     _stage_upload("upload-2")
-    two = await _send(hass, 3, "haventory/item/attachment/add", item_id=item_id, file_id="upload-2")
+    two = await ws_send(
+        hass, 3, "haventory/item/attachment/add", item_id=item_id, file_id="upload-2"
+    )
 
-    res = await _send(
+    res = await ws_send(
         hass,
         4,
         "haventory/item/attachment/reorder",
@@ -879,7 +875,7 @@ async def test_item_list_refuses_an_unknown_filter_key_by_name() -> None:
 
     hass = _hass_with_items()
 
-    res = await _send(hass, 1, "haventory/item/list", filter={"query": "Item 0"})
+    res = await ws_send(hass, 1, "haventory/item/list", filter={"query": "Item 0"})
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
@@ -890,7 +886,7 @@ async def test_item_list_refuses_an_unknown_filter_key_by_name() -> None:
 async def test_item_list_refuses_an_unknown_sort_field() -> None:
     hass = _hass_with_items()
 
-    res = await _send(hass, 1, "haventory/item/list", sort={"field": "colour", "order": "asc"})
+    res = await ws_send(hass, 1, "haventory/item/list", sort={"field": "colour", "order": "asc"})
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
@@ -902,7 +898,7 @@ async def test_item_list_refuses_an_empty_cursor() -> None:
 
     hass = _hass_with_items()
 
-    res = await _send(hass, 1, "haventory/item/list", limit=2, cursor="")
+    res = await ws_send(hass, 1, "haventory/item/list", limit=2, cursor="")
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
@@ -912,7 +908,7 @@ async def test_item_list_refuses_an_empty_cursor() -> None:
 async def test_item_list_refuses_an_undecodable_cursor() -> None:
     hass = _hass_with_items()
 
-    res = await _send(hass, 1, "haventory/item/list", limit=2, cursor="garbage")
+    res = await ws_send(hass, 1, "haventory/item/list", limit=2, cursor="garbage")
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
@@ -922,7 +918,7 @@ async def test_item_list_refuses_an_undecodable_cursor() -> None:
 async def test_item_list_refuses_a_non_integer_limit() -> None:
     hass = _hass_with_items()
 
-    res = await _send(hass, 1, "haventory/item/list", limit="two")
+    res = await ws_send(hass, 1, "haventory/item/list", limit="two")
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
@@ -934,7 +930,7 @@ async def test_item_list_still_serves_a_full_known_filter_and_pages() -> None:
 
     hass = _hass_with_items()
 
-    listed = await _send(
+    listed = await ws_send(
         hass,
         1,
         "haventory/item/list",
@@ -945,7 +941,7 @@ async def test_item_list_still_serves_a_full_known_filter_and_pages() -> None:
     assert listed["success"] is True, listed
     assert [i["name"] for i in listed["result"]["items"]] == ["Item 0", "Item 1"]
 
-    page2 = await _send(
+    page2 = await ws_send(
         hass,
         2,
         "haventory/item/list",

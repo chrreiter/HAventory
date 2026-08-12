@@ -32,18 +32,10 @@ from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
+from ws_helpers import RecordingConn, ws_send
+
 INVALID_FORMAT = "invalid_format"
 PROBE_DEFAULT_LIMIT = 25
-
-
-class _ConnCollect:
-    """Capture stub standing in for HA's ActiveConnection."""
-
-    def __init__(self) -> None:
-        self.messages: list[dict[str, Any]] = []
-
-    def send_message(self, msg: dict[str, Any]) -> None:
-        self.messages.append(msg)
 
 
 class _Probe:
@@ -72,16 +64,8 @@ class _Probe:
 
         for handler in self._hass.data.get("__ws_commands__", []):
             if getattr(handler, "_ws_command", None) == self.command:
-                return await handler(self._hass, _ConnCollect(), frame)
+                return await handler(self._hass, RecordingConn(), frame)
         raise AssertionError("probe command was not registered")
-
-
-async def _send(hass: HomeAssistant, _id: int, type_: str, **payload: Any) -> dict[str, Any]:
-    for h in hass.data.get("__ws_commands__", []):
-        if not callable(h) or getattr(h, "_ws_command", None) != type_:
-            continue
-        return await h(hass, None, {"id": _id, "type": type_, **payload})
-    raise AssertionError("No handler responded for type " + type_)
 
 
 def _fresh_hass() -> HomeAssistant:
@@ -230,7 +214,7 @@ async def test_a_refusal_is_answered_on_the_connection() -> None:
 
     hass = HomeAssistant()
     probe = _Probe(hass, {vol.Required("type"): "test/probe", vol.Required("name"): str})
-    conn = _ConnCollect()
+    conn = RecordingConn()
 
     for handler in hass.data["__ws_commands__"]:
         if getattr(handler, "_ws_command", None) == probe.command:
@@ -254,7 +238,7 @@ async def test_a_real_command_refuses_a_wrong_typed_field_and_mutates_nothing() 
     hass = _fresh_hass()
     repo = hass.data[DOMAIN]["repository"]
 
-    res = await _send(hass, 1, "haventory/item/create", name="Hammer", tags="chisel")
+    res = await ws_send(hass, 1, "haventory/item/create", name="Hammer", tags="chisel")
 
     assert res["success"] is False
     assert res["error"]["code"] == INVALID_FORMAT
@@ -279,7 +263,7 @@ async def test_the_widened_fields_answer_validation_error_and_mutate_nothing() -
         {"name": 42},
         {"name": "Hammer", "quantity": 1.5},
     ):
-        res = await _send(hass, 1, "haventory/item/create", **payload)
+        res = await ws_send(hass, 1, "haventory/item/create", **payload)
         assert res["success"] is False, payload
         assert res["error"]["code"] == "validation_error", payload
 

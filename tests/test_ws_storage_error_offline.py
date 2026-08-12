@@ -29,33 +29,14 @@ from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from ws_helpers import RecordingConn, ws_send
 
-class _ConnStub:
-    """Collects everything the backend sends, so tests can read the wire."""
 
-    def __init__(self) -> None:
-        self.messages: list[dict[str, Any]] = []
-
-    def send_message(self, msg: dict[str, Any]) -> None:
-        self.messages.append(msg)
+class _ConnStub(RecordingConn):
+    """Accepts a close callback and drops it: nothing here drives disconnect."""
 
     def on_close(self, callback: Callable[[], None]) -> None:
         pass
-
-
-async def _send(hass: HomeAssistant, _id: int, type_: str, conn: object = None, **payload):
-    handlers = hass.data.get("__ws_commands__", [])
-    for h in handlers:
-        if not callable(h) or getattr(h, "_ws_command", None) != type_:
-            continue
-        req = {"id": _id, "type": type_}
-        req.update(payload)
-        return await h(hass, conn, req)
-    raise AssertionError("No handler responded for type " + type_)
-
-
-def _events(conn: _ConnStub) -> list[dict[str, Any]]:
-    return [m["event"] for m in conn.messages if m.get("type") == "event"]
 
 
 def _make_hass() -> tuple[HomeAssistant, Repository, DomainStore]:
@@ -84,7 +65,7 @@ async def test_ws_maps_storage_error_and_logs(caplog, monkeypatch) -> None:
 
     caplog.set_level(logging.ERROR, logger="custom_components.haventory.ws")
 
-    res = await _send(hass, 1, "haventory/item/create", name="X")
+    res = await ws_send(hass, 1, "haventory/item/create", name="X")
     assert res["success"] is False
     assert res["error"]["code"] == "storage_error"
 
@@ -193,18 +174,18 @@ async def test_failed_persist_delivers_no_event(
 
     conn = _ConnStub()
     for sub_id, topic in ((901, "items"), (902, "locations"), (903, "stats")):
-        res = await _send(hass, sub_id, "haventory/subscribe", conn=conn, topic=topic)
+        res = await ws_send(hass, sub_id, "haventory/subscribe", conn=conn, topic=topic)
         assert res["success"] is True
     conn.messages.clear()
 
     _fail_next_save(monkeypatch, store)
     caplog.set_level(logging.ERROR)
 
-    res = await _send(hass, 1, command, conn=conn, **build(str(item.id), str(child.id)))
+    res = await ws_send(hass, 1, command, conn=conn, **build(str(item.id), str(child.id)))
 
     assert res["success"] is False, f"{shape} should have failed"
     assert res["error"]["code"] == "storage_error"
-    assert _events(conn) == [], f"{shape} leaked an event for a write that failed"
+    assert conn.events() == [], f"{shape} leaked an event for a write that failed"
 
 
 @pytest.mark.asyncio
@@ -220,13 +201,13 @@ async def test_failed_persist_in_bulk_discards_the_whole_batch(monkeypatch, capl
     second = repo.create_item({"name": "Two", "quantity": 1})
 
     conn = _ConnStub()
-    await _send(hass, 901, "haventory/subscribe", conn=conn, topic="items")
+    await ws_send(hass, 901, "haventory/subscribe", conn=conn, topic="items")
     conn.messages.clear()
 
     _fail_next_save(monkeypatch, store)
     caplog.set_level(logging.ERROR)
 
-    res = await _send(
+    res = await ws_send(
         hass,
         1,
         "haventory/items/bulk",
@@ -247,7 +228,7 @@ async def test_failed_persist_in_bulk_discards_the_whole_batch(monkeypatch, capl
 
     assert res["success"] is False
     assert res["error"]["code"] == "storage_error"
-    assert _events(conn) == []
+    assert conn.events() == []
 
 
 # -----------------------------------------------------------------------------
@@ -268,7 +249,7 @@ async def test_event_reaches_subscriber_only_after_the_write_resolves(monkeypatc
     hass, _repo, store = _make_hass()
 
     conn = _ConnStub()
-    await _send(hass, 901, "haventory/subscribe", conn=conn, topic="items")
+    await ws_send(hass, 901, "haventory/subscribe", conn=conn, topic="items")
     conn.messages.clear()
 
     write_entered = asyncio.Event()
@@ -276,24 +257,24 @@ async def test_event_reaches_subscriber_only_after_the_write_resolves(monkeypatc
     events_seen_during_write: list[dict[str, Any]] = []
 
     async def _slow_save(*_args, **_kwargs):
-        events_seen_during_write.extend(_events(conn))
+        events_seen_during_write.extend(conn.events())
         write_entered.set()
         await finish_write.wait()
 
     monkeypatch.setattr(store, "async_save", _slow_save)
 
-    task = asyncio.create_task(_send(hass, 1, "haventory/item/create", conn=conn, name="Anvil"))
+    task = asyncio.create_task(ws_send(hass, 1, "haventory/item/create", conn=conn, name="Anvil"))
     await asyncio.wait_for(write_entered.wait(), timeout=5)
 
     # The write is open. Nothing may have reached the subscriber yet.
     assert events_seen_during_write == []
-    assert _events(conn) == []
+    assert conn.events() == []
 
     finish_write.set()
     res = await asyncio.wait_for(task, timeout=5)
 
     assert res["success"] is True
-    actions = [ev.get("action") for ev in _events(conn)]
+    actions = [ev.get("action") for ev in conn.events()]
     assert actions == ["created"], "the created event must arrive once, after the write"
 
 
@@ -315,7 +296,7 @@ async def test_failed_create_stays_in_memory_until_restart(monkeypatch, caplog) 
     _fail_next_save(monkeypatch, store)
     caplog.set_level(logging.ERROR)
 
-    res = await _send(hass, 1, "haventory/item/create", name="Fragile Item")
+    res = await ws_send(hass, 1, "haventory/item/create", name="Fragile Item")
 
     assert res["success"] is False
     assert res["error"]["code"] == "storage_error"
@@ -339,7 +320,7 @@ async def test_failed_delete_stays_removed_in_memory_until_restart(monkeypatch, 
     _fail_next_save(monkeypatch, store)
     caplog.set_level(logging.ERROR)
 
-    res = await _send(hass, 1, "haventory/item/delete", item_id=str(item.id))
+    res = await ws_send(hass, 1, "haventory/item/delete", item_id=str(item.id))
 
     assert res["success"] is False
     assert res["error"]["code"] == "storage_error"
@@ -358,7 +339,7 @@ async def test_failed_update_keeps_the_new_value_in_memory(monkeypatch, caplog) 
     _fail_next_save(monkeypatch, store)
     caplog.set_level(logging.ERROR)
 
-    res = await _send(
+    res = await ws_send(
         hass,
         1,
         "haventory/item/update",

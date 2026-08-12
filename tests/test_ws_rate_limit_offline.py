@@ -12,7 +12,6 @@ Covers:
 
 from __future__ import annotations
 
-from collections.abc import Callable, Coroutine
 from typing import Any
 
 import custom_components.haventory as haven_init
@@ -46,6 +45,8 @@ from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from ws_helpers import RecordingConn, ws_send
+
 
 class _FakeClock:
     def __init__(self) -> None:
@@ -63,32 +64,6 @@ def clock(monkeypatch) -> _FakeClock:
     fake = _FakeClock()
     monkeypatch.setattr(rate_limit_module, "_monotonic", fake)
     return fake
-
-
-def _get_handler(
-    hass: HomeAssistant, type_: str
-) -> Callable[[HomeAssistant, object, dict], Coroutine[Any, Any, dict]]:
-    handlers = hass.data.get("__ws_commands__", [])
-    for h in handlers:
-        if callable(h) and getattr(h, "_ws_command", None) == type_:
-            return h
-    raise AssertionError("No handler found for type " + type_)
-
-
-async def _send(hass: HomeAssistant, conn: object, _id: int, type_: str, **payload: Any) -> dict:
-    handler = _get_handler(hass, type_)
-    return await handler(hass, conn, {"id": _id, "type": type_, **payload})
-
-
-class _ConnStub:
-    def __init__(self) -> None:
-        self.messages: list[dict[str, Any]] = []
-
-    def send_message(self, msg: dict[str, Any]) -> None:
-        self.messages.append(msg)
-
-    def events(self) -> list[dict[str, Any]]:
-        return [m for m in self.messages if m.get("type") == "event"]
 
 
 def _make_hass(limiter: RateLimiter | None = None) -> HomeAssistant:
@@ -150,9 +125,9 @@ def test_token_bucket_rejects_non_positive_parameters() -> None:
 @pytest.mark.asyncio
 async def test_no_limiter_means_unlimited() -> None:
     hass = _make_hass(limiter=None)
-    conn = _ConnStub()
+    conn = RecordingConn()
     for i in range(50):
-        res = await _send(hass, conn, i + 1, "haventory/ping")
+        res = await ws_send(hass, i + 1, "haventory/ping", conn=conn)
         assert res["success"] is True
 
 
@@ -160,9 +135,9 @@ async def test_no_limiter_means_unlimited() -> None:
 async def test_disabled_limiter_means_unlimited(clock: _FakeClock) -> None:
     limiter = RateLimiter(_config(enabled=False, commands_burst=1.0))
     hass = _make_hass(limiter)
-    conn = _ConnStub()
+    conn = RecordingConn()
     for i in range(50):
-        res = await _send(hass, conn, i + 1, "haventory/ping")
+        res = await ws_send(hass, i + 1, "haventory/ping", conn=conn)
         assert res["success"] is True
     assert limiter.dropped_commands == 0
 
@@ -181,12 +156,12 @@ def test_default_config_is_disabled() -> None:
 async def test_per_connection_command_limit(clock: _FakeClock) -> None:
     limiter = RateLimiter(_config(commands_per_second=1.0, commands_burst=2.0))
     hass = _make_hass(limiter)
-    conn_a = _ConnStub()
-    conn_b = _ConnStub()
+    conn_a = RecordingConn()
+    conn_b = RecordingConn()
 
-    assert (await _send(hass, conn_a, 1, "haventory/ping"))["success"] is True
-    assert (await _send(hass, conn_a, 2, "haventory/ping"))["success"] is True
-    res = await _send(hass, conn_a, 3, "haventory/ping")
+    assert (await ws_send(hass, 1, "haventory/ping", conn=conn_a))["success"] is True
+    assert (await ws_send(hass, 2, "haventory/ping", conn=conn_a))["success"] is True
+    res = await ws_send(hass, 3, "haventory/ping", conn=conn_a)
     assert res["success"] is False
     assert res["error"]["code"] == "rate_limited"
     assert res["error"]["message"] == RATE_LIMITED_MESSAGE
@@ -195,11 +170,11 @@ async def test_per_connection_command_limit(clock: _FakeClock) -> None:
     assert conn_a.messages[-1] == res
 
     # Another connection has its own budget.
-    assert (await _send(hass, conn_b, 4, "haventory/ping"))["success"] is True
+    assert (await ws_send(hass, 4, "haventory/ping", conn=conn_b))["success"] is True
 
     # Refill re-allows the first connection.
     clock.advance(1.0)
-    assert (await _send(hass, conn_a, 5, "haventory/ping"))["success"] is True
+    assert (await ws_send(hass, 5, "haventory/ping", conn=conn_a))["success"] is True
     assert limiter.dropped_commands == 1
 
 
@@ -208,10 +183,10 @@ async def test_global_command_limit(clock: _FakeClock) -> None:
     limiter = RateLimiter(_config(global_commands_per_second=1.0, global_commands_burst=3.0))
     hass = _make_hass(limiter)
 
-    conns = [_ConnStub() for _ in range(4)]
+    conns = [RecordingConn() for _ in range(4)]
     outcomes = []
     for i, conn in enumerate(conns):
-        res = await _send(hass, conn, i + 1, "haventory/ping")
+        res = await ws_send(hass, i + 1, "haventory/ping", conn=conn)
         outcomes.append(res["success"])
     # Fresh per-connection budgets, but the global bucket allows only 3.
     assert outcomes == [True, True, True, False]
@@ -222,11 +197,11 @@ async def test_global_command_limit(clock: _FakeClock) -> None:
 async def test_rate_limited_command_does_not_execute(clock: _FakeClock) -> None:
     limiter = RateLimiter(_config(commands_burst=1.0))
     hass = _make_hass(limiter)
-    conn = _ConnStub()
+    conn = RecordingConn()
 
-    res = await _send(hass, conn, 1, "haventory/item/create", name="First")
+    res = await ws_send(hass, 1, "haventory/item/create", conn=conn, name="First")
     assert res["success"] is True
-    res = await _send(hass, conn, 2, "haventory/item/create", name="Second")
+    res = await ws_send(hass, 2, "haventory/item/create", conn=conn, name="Second")
     assert res["success"] is False
     assert res["error"]["code"] == "rate_limited"
     repo = hass.data[DOMAIN]["repository"]
@@ -242,8 +217,8 @@ async def test_rate_limited_command_does_not_execute(clock: _FakeClock) -> None:
 async def test_per_connection_event_limit(clock: _FakeClock) -> None:
     limiter = RateLimiter(_config(events_per_second=1.0, events_burst=1.0))
     hass = _make_hass(limiter)
-    subscriber = _ConnStub()
-    sub = await _send(hass, subscriber, 100, "haventory/subscribe", topic="items")
+    subscriber = RecordingConn()
+    sub = await ws_send(hass, 100, "haventory/subscribe", conn=subscriber, topic="items")
     assert sub["success"] is True
 
     ws_module._broadcast_event(hass, topic="items", action="created", payload=None)
@@ -270,14 +245,18 @@ async def test_no_budget_consumed_without_matching_subscribers(clock: _FakeClock
     assert limiter.dropped_events == 0
 
     # A subscriber on another topic does not consume the budget either.
-    other = _ConnStub()
-    assert (await _send(hass, other, 99, "haventory/subscribe", topic="locations"))["success"]
+    other = RecordingConn()
+    assert (await ws_send(hass, 99, "haventory/subscribe", conn=other, topic="locations"))[
+        "success"
+    ]
     ws_module._broadcast_event(hass, topic="items", action="created", payload=None)
     assert limiter.dropped_events == 0
 
     # The budget is still intact for the first real delivery.
-    subscriber = _ConnStub()
-    assert (await _send(hass, subscriber, 100, "haventory/subscribe", topic="items"))["success"]
+    subscriber = RecordingConn()
+    assert (await ws_send(hass, 100, "haventory/subscribe", conn=subscriber, topic="items"))[
+        "success"
+    ]
     ws_module._broadcast_event(hass, topic="items", action="created", payload=None)
     assert len(subscriber.events()) == 1
 
@@ -290,13 +269,13 @@ async def test_one_event_consumes_one_token_across_multiple_subscriptions(
 
     limiter = RateLimiter(_config(events_per_second=1.0, events_burst=1.0))
     hass = _make_hass(limiter)
-    conn = _ConnStub()
-    assert (await _send(hass, conn, 301, "haventory/subscribe", topic="items"))["success"]
-    assert (await _send(hass, conn, 302, "haventory/subscribe", topic="items"))["success"]
+    conn = RecordingConn()
+    assert (await ws_send(hass, 301, "haventory/subscribe", conn=conn, topic="items"))["success"]
+    assert (await ws_send(hass, 302, "haventory/subscribe", conn=conn, topic="items"))["success"]
 
     ws_module._broadcast_event(hass, topic="items", action="created", payload=None)
     # Both subscriptions receive the event; only one token was spent.
-    assert {m.get("id") for m in conn.events()} == {301, 302}
+    assert {m["id"] for m in conn.messages if m["type"] == "event"} == {301, 302}
 
     ws_module._broadcast_event(hass, topic="items", action="created", payload=None)
     delivered_before_drop = 2  # both subscriptions got the FIRST event only
@@ -308,10 +287,10 @@ async def test_one_event_consumes_one_token_across_multiple_subscriptions(
 async def test_global_event_limit_drops_for_all_subscribers(clock: _FakeClock) -> None:
     limiter = RateLimiter(_config(global_events_per_second=1.0, global_events_burst=1.0))
     hass = _make_hass(limiter)
-    sub_a = _ConnStub()
-    sub_b = _ConnStub()
-    assert (await _send(hass, sub_a, 100, "haventory/subscribe", topic="items"))["success"]
-    assert (await _send(hass, sub_b, 101, "haventory/subscribe", topic="items"))["success"]
+    sub_a = RecordingConn()
+    sub_b = RecordingConn()
+    assert (await ws_send(hass, 100, "haventory/subscribe", conn=sub_a, topic="items"))["success"]
+    assert (await ws_send(hass, 101, "haventory/subscribe", conn=sub_b, topic="items"))["success"]
 
     ws_module._broadcast_event(hass, topic="items", action="created", payload=None)
     ws_module._broadcast_event(hass, topic="items", action="created", payload=None)
@@ -327,14 +306,18 @@ async def test_event_drop_does_not_fail_the_command(clock: _FakeClock) -> None:
         _config(global_events_per_second=1.0, global_events_burst=1.0, commands_burst=1000.0)
     )
     hass = _make_hass(limiter)
-    subscriber = _ConnStub()
-    actor = _ConnStub()
-    assert (await _send(hass, subscriber, 100, "haventory/subscribe", topic="items"))["success"]
-    assert (await _send(hass, subscriber, 101, "haventory/subscribe", topic="stats"))["success"]
+    subscriber = RecordingConn()
+    actor = RecordingConn()
+    assert (await ws_send(hass, 100, "haventory/subscribe", conn=subscriber, topic="items"))[
+        "success"
+    ]
+    assert (await ws_send(hass, 101, "haventory/subscribe", conn=subscriber, topic="stats"))[
+        "success"
+    ]
 
     # One create emits an item event + a counts event to this subscriber; the
     # budget of one means something gets dropped, but the command must succeed.
-    res = await _send(hass, actor, 1, "haventory/item/create", name="Widget")
+    res = await ws_send(hass, 1, "haventory/item/create", conn=actor, name="Widget")
     assert res["success"] is True
     assert limiter.dropped_events >= 1
 
@@ -348,12 +331,12 @@ async def test_event_drop_does_not_fail_the_command(clock: _FakeClock) -> None:
 async def test_health_exposes_rate_limit_counters(clock: _FakeClock) -> None:
     limiter = RateLimiter(_config(commands_burst=1.0))
     hass = _make_hass(limiter)
-    conn = _ConnStub()
-    assert (await _send(hass, conn, 1, "haventory/ping"))["success"] is True
-    assert (await _send(hass, conn, 2, "haventory/ping"))["success"] is False
+    conn = RecordingConn()
+    assert (await ws_send(hass, 1, "haventory/ping", conn=conn))["success"] is True
+    assert (await ws_send(hass, 2, "haventory/ping", conn=conn))["success"] is False
 
     clock.advance(10.0)
-    res = await _send(hass, conn, 3, "haventory/health")
+    res = await ws_send(hass, 3, "haventory/health", conn=conn)
     assert res["success"] is True
     rl = res["result"]["rate_limit"]
     assert rl == {"enabled": True, "dropped_commands": 1, "dropped_events": 0}
@@ -362,7 +345,7 @@ async def test_health_exposes_rate_limit_counters(clock: _FakeClock) -> None:
 @pytest.mark.asyncio
 async def test_health_reports_disabled_without_limiter() -> None:
     hass = _make_hass(limiter=None)
-    res = await _send(hass, _ConnStub(), 1, "haventory/health")
+    res = await ws_send(hass, 1, "haventory/health", conn=RecordingConn())
     assert res["success"] is True
     assert res["result"]["rate_limit"] == {
         "enabled": False,
@@ -561,7 +544,7 @@ async def test_setup_entry_wires_rate_limiter_from_entry_options(monkeypatch) ->
 # -----------------------------
 
 
-class _ConnWithSubscriptions(_ConnStub):
+class _ConnWithSubscriptions(RecordingConn):
     def __init__(self) -> None:
         super().__init__()
         self.subscriptions: dict[Any, Any] = {}
@@ -571,7 +554,7 @@ class _ConnWithSubscriptions(_ConnStub):
 async def test_close_cleanup_registers_in_conn_subscriptions() -> None:
     hass = _make_hass()
     conn = _ConnWithSubscriptions()
-    res = await _send(hass, conn, 200, "haventory/subscribe", topic="items")
+    res = await ws_send(hass, 200, "haventory/subscribe", conn=conn, topic="items")
     assert res["success"] is True
 
     # The cleanup callable is registered where real HA invokes it on close.
@@ -590,7 +573,7 @@ async def test_rate_limit_state_cleanup_via_conn_subscriptions(clock: _FakeClock
     limiter = RateLimiter(_config())
     hass = _make_hass(limiter)
     conn = _ConnWithSubscriptions()
-    assert (await _send(hass, conn, 1, "haventory/ping"))["success"] is True
+    assert (await ws_send(hass, 1, "haventory/ping", conn=conn))["success"] is True
     assert conn in limiter._conn_states
 
     cleanup = conn.subscriptions.get("haventory/rate_limit_cleanup")

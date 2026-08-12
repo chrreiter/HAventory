@@ -32,31 +32,9 @@ from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from ws_helpers import RecordingConn, ws_send
+
 WS_LOGGER = "custom_components.haventory.ws"
-
-
-class _StubConn:
-    """Connection stub that keeps every message sent to it."""
-
-    def __init__(self) -> None:
-        self.messages: list[dict] = []
-
-    def send_message(self, msg: dict) -> None:
-        self.messages.append(msg)
-
-
-async def _send(hass: HomeAssistant, _id: int, type_: str, conn=None, **payload):
-    """Dispatch one WS command through the stub registry, as a client would."""
-
-    for handler in hass.data.get("__ws_commands__", []):
-        if not callable(handler) or getattr(handler, "_ws_command", None) != type_:
-            continue
-        req = {"id": _id, "type": type_}
-        req.update(payload)
-        target = conn if conn is not None else _StubConn()
-        res = await handler(hass, target, req)
-        return res if res is not None else target.messages[-1]
-    raise AssertionError(f"No handler responded for type {type_}")
 
 
 async def _setup_entry(hass: HomeAssistant) -> ConfigEntry:
@@ -97,11 +75,11 @@ async def test_command_refuses_after_removal(command: str, payload: dict) -> Non
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
-    assert (await _send(hass, 1, command, **payload))["success"] is True
+    assert (await ws_send(hass, 1, command, **payload))["success"] is True
 
     await async_remove_entry(hass, entry)
 
-    res = await _send(hass, 2, command, **payload)
+    res = await ws_send(hass, 2, command, **payload)
     assert res["success"] is False, res
     assert res["error"]["code"] == "storage_error"
 
@@ -115,7 +93,7 @@ async def test_refusal_is_mapped_not_an_unhandled_crash(caplog) -> None:
     await async_remove_entry(hass, entry)
 
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
-    res = await _send(hass, 1, "haventory/item/create", name="Nope")
+    res = await ws_send(hass, 1, "haventory/item/create", name="Nope")
 
     assert res["error"]["code"] == "storage_error"
     assert res["error"]["data"]["op"] == "item_create"
@@ -140,7 +118,7 @@ async def test_removal_stops_persistence(monkeypatch) -> None:
     await async_remove_entry(hass, entry)
     saved.clear()  # removal's own flush is test_removal_flushes_before_dropping's business
 
-    res = await _send(hass, 1, "haventory/item/create", name="Ghost")
+    res = await ws_send(hass, 1, "haventory/item/create", name="Ghost")
 
     assert res["success"] is False
     assert saved == []
@@ -216,8 +194,8 @@ async def test_removal_drops_live_subscriptions() -> None:
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
-    conn = _StubConn()
-    assert (await _send(hass, 7, "haventory/subscribe", conn=conn, topic="items"))["success"]
+    conn = RecordingConn()
+    assert (await ws_send(hass, 7, "haventory/subscribe", conn=conn, topic="items"))["success"]
 
     await async_remove_entry(hass, entry)
     conn.messages.clear()
@@ -234,14 +212,14 @@ async def test_re_adding_the_entry_restores_service() -> None:
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
-    created = await _send(hass, 1, "haventory/item/create", name="Screwdriver")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Screwdriver")
     assert created["success"] is True
 
     await async_remove_entry(hass, entry)
-    assert (await _send(hass, 2, "haventory/item/list"))["success"] is False
+    assert (await ws_send(hass, 2, "haventory/item/list"))["success"] is False
 
     assert await async_setup_entry(hass, ConfigEntry()) is True
 
-    listed = await _send(hass, 3, "haventory/item/list")
+    listed = await ws_send(hass, 3, "haventory/item/list")
     assert listed["success"] is True, listed
     assert [item["name"] for item in listed["result"]["items"]] == ["Screwdriver"]
