@@ -1,12 +1,13 @@
 import './hv-bottom-sheet';
 import type { HVBottomSheet } from './hv-bottom-sheet';
+import { componentCss, mountComponent } from '../test.utils';
 
 async function mount(props: Partial<HVBottomSheet> = {}) {
-  const el = document.createElement('hv-bottom-sheet') as HVBottomSheet;
-  Object.assign(el, { open: true, ...props });
-  el.innerHTML = '<p>sheet body</p><div slot="footer">footer</div>';
-  document.body.appendChild(el);
-  await el.updateComplete;
+  const { el } = await mountComponent<HVBottomSheet>(
+    'hv-bottom-sheet',
+    { open: true, ...props },
+    { light: '<p>sheet body</p><div slot="footer">footer</div>' },
+  );
   return el;
 }
 
@@ -61,8 +62,7 @@ describe('hv-bottom-sheet', () => {
   });
 
   it('caps its width and centres itself so a wide screen does not stretch the content', () => {
-    const styles = (customElements.get('hv-bottom-sheet') as typeof HVBottomSheet).styles;
-    const css = (Array.isArray(styles) ? styles : [styles]).map((s) => String(s.cssText)).join('\n');
+    const css = componentCss('hv-bottom-sheet');
     const rule = css.slice(css.indexOf('.sheet {'), css.indexOf('@keyframes')).replace(/\s+/g, ' ');
 
     // min() keeps a phone full-bleed and stops a 2560px desktop from spreading
@@ -75,8 +75,7 @@ describe('hv-bottom-sheet', () => {
   // sheet at its cap could stand taller than the screen actually showing and
   // push its sticky footer under the URL bar.
   it('caps its height against the viewport that is really visible', () => {
-    const styles = (customElements.get('hv-bottom-sheet') as typeof HVBottomSheet).styles;
-    const css = (Array.isArray(styles) ? styles : [styles]).map((s) => String(s.cssText)).join('\n');
+    const css = componentCss('hv-bottom-sheet');
     expect(css).toMatch(/max-height: 92dvh/);
     expect(css).not.toMatch(/max-height: 92vh/);
   });

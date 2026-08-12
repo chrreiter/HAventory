@@ -1,14 +1,13 @@
 import { html } from 'lit';
 import './hv-list';
 import type { HVList } from './hv-list';
-import { makeItem } from '../test.utils';
+import { componentCss, makeItem, mountComponent } from '../test.utils';
 
 async function mount(props: Partial<HVList> = {}) {
-  const el = document.createElement('hv-list') as HVList;
-  el.items = [makeItem({ id: 'a', name: 'A' }), makeItem({ id: 'b', name: 'B' })];
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await el.updateComplete;
+  const { el } = await mountComponent<HVList>('hv-list', {
+    items: [makeItem({ id: 'a', name: 'A' }), makeItem({ id: 'b', name: 'B' })],
+    ...props,
+  });
   return el;
 }
 
@@ -91,8 +90,7 @@ describe('hv-list: editing', () => {
   });
 
   it('gives the scroller more room while editing', () => {
-    const css = (customElements.get('hv-list') as typeof HVList).styles;
-    const text = (Array.isArray(css) ? css : [css]).map((s) => String(s.cssText)).join('\n');
+    const text = componentCss('hv-list');
     // the compact cap still exists...
     expect(text).toContain('--hv-list-max-height');
     // ...and a taller one applies while an editor is open

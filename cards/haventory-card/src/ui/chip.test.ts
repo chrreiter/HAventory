@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import type { CSSResult } from 'lit';
 import { chip } from './chip';
 import { base, tokens } from './tokens';
 
@@ -14,6 +13,7 @@ import '../components/hv-item-editor';
 import '../components/hv-list-row';
 import '../components/hv-location-tree';
 import '../components/hv-organize-dialog';
+import { ownCss, sheetsOf } from '../test.utils';
 
 /** Every surface that marks something with a chip. */
 const CHIPPED = [
@@ -29,18 +29,6 @@ const CHIPPED = [
   'hv-location-tree',
   'hv-organize-dialog',
 ];
-
-function sheetsOf(tag: string): CSSResult[] {
-  const ctor = customElements.get(tag) as { styles?: CSSResult | CSSResult[] } | undefined;
-  if (!ctor?.styles) throw new Error(`${tag} has no styles`);
-  return Array.isArray(ctor.styles) ? ctor.styles : [ctor.styles];
-}
-
-/** A component's own block — the last fragment, after the shared ones. */
-function ownCss(tag: string): string {
-  const sheets = sheetsOf(tag);
-  return String(sheets[sheets.length - 1].cssText).replace(/\s+/g, ' ');
-}
 
 describe('ui/chip: the shared fragment', () => {
   it('reaches every surface that draws a chip', () => {

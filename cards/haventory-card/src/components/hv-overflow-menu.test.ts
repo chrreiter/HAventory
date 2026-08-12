@@ -2,13 +2,11 @@ import './hv-overflow-menu';
 import { placeMenu } from './hv-overflow-menu';
 import type { HVOverflowMenu } from './hv-overflow-menu';
 import { NARROW_QUERY } from '../ui/responsive';
+import { componentCss, mountComponent, q } from '../test.utils';
 
 async function mount(entries: HVOverflowMenu['entries']) {
-  const el = document.createElement('hv-overflow-menu') as HVOverflowMenu;
-  el.entries = entries;
-  document.body.appendChild(el);
-  await el.updateComplete;
-  (el.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
+  const { el } = await mountComponent<HVOverflowMenu>('hv-overflow-menu', { entries });
+  q<HTMLButtonElement>(el, '[data-testid="overflow-trigger"]')!.click();
   await el.updateComplete;
   return el;
 }
@@ -68,11 +66,7 @@ describe('hv-overflow-menu', () => {
 
 describe('hv-overflow-menu: narrow screens', () => {
   const narrow = () => {
-    const styles = (customElements.get('hv-overflow-menu') as typeof HVOverflowMenu).styles;
-    const css = (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = componentCss('hv-overflow-menu');
     const start = css.indexOf(`@media ${NARROW_QUERY}`);
     expect(start, 'no narrow-viewport block').toBeGreaterThan(-1);
     return css.slice(start);
@@ -163,12 +157,11 @@ describe('hv-overflow-menu: narrow screens', () => {
   it('hands focus back to whatever opened it', async () => {
     // A real pointer click focuses the trigger before the menu opens; jsdom's
     // programmatic click does not, so focus it explicitly to reproduce that.
-    const el = document.createElement('hv-overflow-menu') as HVOverflowMenu;
-    el.entries = [{ id: 'refresh', label: 'Refresh data' }];
-    document.body.appendChild(el);
-    await el.updateComplete;
+    const { el } = await mountComponent<HVOverflowMenu>('hv-overflow-menu', {
+      entries: [{ id: 'refresh', label: 'Refresh data' }],
+    });
 
-    const trigger = el.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement;
+    const trigger = q<HTMLButtonElement>(el, '[data-testid="overflow-trigger"]')!;
     trigger.focus();
     trigger.click();
     await el.updateComplete;
@@ -192,11 +185,7 @@ describe('hv-overflow-menu: escaping ancestor clips', () => {
   // The first .menu block is the base rule; the sheet's overrides live in the
   // narrow @media block after it.
   const baseMenuRule = () => {
-    const styles = (customElements.get('hv-overflow-menu') as typeof HVOverflowMenu).styles;
-    const css = (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = componentCss('hv-overflow-menu');
     return /\.menu \{[^}]*\}/.exec(css)?.[0] ?? '';
   };
 

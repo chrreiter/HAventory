@@ -1,22 +1,17 @@
 import './hv-checkout-popover';
-import { makeItem } from '../test.utils';
+import { all, componentCss, makeItem, mountComponent, q } from '../test.utils';
 import { addDays, formatDate } from '../ui/relative-time';
 import type { HVCheckoutPopover } from './hv-checkout-popover';
 import type { Item } from '../store/types';
 
 async function mount(item: Partial<Item> = {}, props: Partial<HVCheckoutPopover> = {}) {
-  const el = document.createElement('hv-checkout-popover') as HVCheckoutPopover;
-  el.item = makeItem(item);
-  el.open = true;
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await el.updateComplete;
+  const { el } = await mountComponent<HVCheckoutPopover>('hv-checkout-popover', {
+    item: makeItem(item),
+    open: true,
+    ...props,
+  });
   return el;
 }
-
-const q = (el: HVCheckoutPopover, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
-const all = (el: HVCheckoutPopover, sel: string) =>
-  [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
 
 describe('hv-checkout-popover: check-out', () => {
   it('renders nothing without an item or when closed', async () => {
@@ -223,19 +218,11 @@ describe('hv-checkout-popover: placement', () => {
 
 describe('hv-checkout-popover: where it draws and how big it is are separate asks', () => {
   /** jsdom lays out no shadow DOM, so the sizes are asserted on the stylesheet. */
-  const popoverCss = () => {
-    const styles = (customElements.get('hv-checkout-popover') as typeof HVCheckoutPopover).styles;
-    return (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
-  };
-
   // As one flag, a caller that could not draw the inline step could not ask for
   // finger-sized controls either — and the surfaces that open this as a centred
   // dialog on a phone are exactly that caller.
   it('hangs every thumb size on touch, and only the step itself on inline', () => {
-    const css = popoverCss();
+    const css = componentCss('hv-checkout-popover');
     for (const sel of ['.offset', '.custom input', '.date', '.actions', '.confirm', '.none-button']) {
       expect(css, sel).toContain(`:host([touch]) ${sel} {`);
     }

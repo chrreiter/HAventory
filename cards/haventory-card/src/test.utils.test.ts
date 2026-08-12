@@ -1,5 +1,17 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { makeItem, makeMockHass } from './test.utils';
+import './components/hv-banner';
+import {
+  all,
+  componentCss,
+  makeItem,
+  makeMockHass,
+  mountComponent,
+  mountStore,
+  ownCss,
+  q,
+  settle,
+} from './test.utils';
+import type { HVBanner } from './components/hv-banner';
 import type { Item } from './store/types';
 
 // Fixtures must not order themselves off the wall clock: the default sort is
@@ -50,5 +62,71 @@ describe('makeItem fixtures', () => {
     });
 
     expect(page.items.map((i) => i.id)).toEqual(['1', '2']);
+  });
+});
+
+// The harness decides what a component test is able to check, so the properties
+// the 22 component files lean on are pinned here rather than inferred from them.
+describe('component-test harness', () => {
+  it('assigns properties before connecting, so the first render sees them', async () => {
+    const { el, sr } = await mountComponent<HVBanner>('hv-banner', { kind: 'error' });
+
+    expect(el.isConnected).toBe(true);
+    expect(sr).toBeTruthy();
+    // A property applied after connection would have needed a second render.
+    expect(q(el, '.banner')?.classList.contains('error')).toBe(true);
+  });
+
+  it('places light-DOM content where a slot can pick it up', async () => {
+    const { el } = await mountComponent<HVBanner>(
+      'hv-banner',
+      {},
+      { light: '<span id="slotted">boom</span>' },
+    );
+
+    expect(el.querySelector('#slotted')?.textContent).toBe('boom');
+  });
+
+  it('reads a shadow root through the element or through the root itself', async () => {
+    const { el, sr } = await mountComponent<HVBanner>('hv-banner', {}, { light: '<b>a</b><b>b</b>' });
+
+    expect(q(el, '.banner')).toBe(q(sr, '.banner'));
+    expect(all(el, 'slot')).toHaveLength(all(sr, 'slot').length);
+    expect(q(el, '.no-such-thing')).toBe(null);
+    expect(all(el, '.no-such-thing')).toEqual([]);
+  });
+
+  it('forwards the whole MockConfig to the store it builds', async () => {
+    const { hass, store } = await mountStore({
+      items: [makeItem({ id: '1', name: 'Hammer' })],
+      areas: [{ id: 'area-garage', name: 'Garage' }],
+      statuses: [{ slug: 'lent_out', label: 'Lent out', order: 40, color: 'blue' }],
+    });
+
+    // Statuses and areas are the two a per-file mount used to drop.
+    expect(store.state.value.areasCache?.areas.map((a) => a.id)).toEqual(['area-garage']);
+    expect(store.state.value.statuses?.map((s) => s.slug)).toContain('lent_out');
+    expect(store.state.value.items.map((i) => i.name)).toEqual(['Hammer']);
+    expect(hass.callWS).toBeTypeOf('function');
+  });
+
+  it('tells a component block apart from the fragments ahead of it', () => {
+    const whole = componentCss('hv-banner');
+    const own = ownCss('hv-banner');
+
+    expect(whole).toContain(own);
+    expect(own.length).toBeLessThan(whole.length);
+    // Both are whitespace-normalized, so a rule reads as one line either way.
+    expect(whole).not.toMatch(/\n/);
+    expect(() => componentCss('hv-not-a-component')).toThrow(/no styles/);
+  });
+
+  it('settles a render that another render queued', async () => {
+    const { el } = await mountComponent<HVBanner>('hv-banner', { kind: 'info' });
+
+    el.kind = 'warning';
+    await settle(el);
+
+    expect(q(el, '.banner')?.classList.contains('warning')).toBe(true);
   });
 });

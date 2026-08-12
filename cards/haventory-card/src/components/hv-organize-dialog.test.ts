@@ -1,6 +1,5 @@
 import './hv-organize-dialog';
-import { makeMockHass, makeItem } from '../test.utils';
-import { Store } from '../store/store';
+import { all, componentCss, makeItem, mountComponent, mountStore, q, settle } from '../test.utils';
 import { HVOrganizeDialog } from './hv-organize-dialog';
 import type { OrganizeTab } from './hv-organize-dialog';
 import type { AreaRef, Item, Location, StatusDefinition } from '../store/types';
@@ -37,41 +36,23 @@ async function mount(
     mobile?: boolean;
   } = {},
 ) {
-  const hass = makeMockHass({
+  const { hass, store } = await mountStore({
     items: opts.items ?? [],
     locations: opts.locations ?? [],
     areas: opts.areas ?? AREAS,
     ...(opts.statuses ? { statuses: opts.statuses } : {}),
   });
-  const store = new Store(hass, { retryBaseMs: 0 });
-  await store.init();
-
-  const el = document.createElement('hv-organize-dialog') as HVOrganizeDialog;
-  el.store = store;
-  el.tab = opts.tab ?? 'locations';
-  el.mobile = opts.mobile ?? false;
-  el.open = true;
-  document.body.appendChild(el);
-  await el.updateComplete;
-  await el.updateComplete;
-  return { el, store, hass, sr: el.shadowRoot as ShadowRoot };
+  const { el, sr } = await mountComponent<HVOrganizeDialog>(
+    'hv-organize-dialog',
+    { store, tab: opts.tab ?? 'locations', mobile: opts.mobile ?? false, open: true },
+    { renders: 2 },
+  );
+  return { el, store, hass, sr };
 }
-
-const settle = async (el: HVOrganizeDialog) => {
-  await new Promise((r) => setTimeout(r, 0));
-  await el.updateComplete;
-};
-
-const q = (sr: ShadowRoot, sel: string) => sr.querySelector(sel) as HTMLElement | null;
-const all = (sr: ShadowRoot, sel: string) => [...sr.querySelectorAll(sel)] as HTMLElement[];
 
 /** jsdom lays out no shadow DOM, so geometry is asserted on the stylesheet. */
 const dialogCss = () => {
-  const styles = (customElements.get('hv-organize-dialog') as typeof HVOrganizeDialog).styles;
-  return (Array.isArray(styles) ? styles : [styles])
-    .map((s) => String(s.cssText))
-    .join('\n')
-    .replace(/\s+/g, ' ');
+  return componentCss('hv-organize-dialog');
 };
 
 describe('hv-organize-dialog: shell', () => {
@@ -1358,11 +1339,8 @@ describe('hv-organize-dialog: statuses', () => {
   // The bug this guards against paints nothing and throws nothing: the swatch
   // still reads as selected, so only a screenshot catches it.
   it('leaves the chip fill to the pair the chip reads, on every swatch rule', () => {
-    const css = HVOrganizeDialog.styles
-      .map((sheet) => (sheet as { cssText?: string }).cssText ?? '')
-      .join('\n')
-      // Comments quote property names freely.
-      .replace(/\/\*[\s\S]*?\*\//g, '');
+    // Comments quote property names freely.
+    const css = componentCss('hv-organize-dialog').replace(/\/\*[\s\S]*?\*\//g, '');
 
     for (const block of css.matchAll(/([^{}]*\.swatch[^{}]*)\{([^}]*)\}/g)) {
       const [selector, body] = [block[1].trim(), block[2]];

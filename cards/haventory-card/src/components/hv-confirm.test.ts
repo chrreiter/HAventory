@@ -1,11 +1,13 @@
 import './hv-confirm';
 import type { HVConfirm } from './hv-confirm';
+import { mountComponent } from '../test.utils';
 
 async function mount(props: Partial<HVConfirm> = {}) {
-  const el = document.createElement('hv-confirm') as HVConfirm;
-  Object.assign(el, { open: true, heading: 'Delete 42 items?', ...props });
-  document.body.appendChild(el);
-  await el.updateComplete;
+  const { el } = await mountComponent<HVConfirm>('hv-confirm', {
+    open: true,
+    heading: 'Delete 42 items?',
+    ...props,
+  });
   return el;
 }
 

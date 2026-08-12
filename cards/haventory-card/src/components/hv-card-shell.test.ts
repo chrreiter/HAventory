@@ -1,8 +1,17 @@
 import './hv-card-shell';
-import { makeMockHass, makeItem, stubViewport } from '../test.utils';
+import { Store } from '../store/store';
+import {
+  componentCss,
+  makeItem,
+  makeMockHass,
+  mountComponent,
+  mountStore,
+  q,
+  settle,
+  stubViewport,
+} from '../test.utils';
 import { DISCARD_PROMPT } from '../ui/discard';
 import { base, tokens } from '../ui/tokens';
-import { Store } from '../store/store';
 import type { HVCardShell } from './hv-card-shell';
 import type { Item, Location } from '../store/types';
 
@@ -23,22 +32,16 @@ function loc(id: string, name: string, parentId: string | null = null): Location
 }
 
 async function mountShell(opts: { items?: Item[]; locations?: Location[]; mobile?: boolean } = {}) {
-  const hass = makeMockHass({ items: opts.items ?? [], locations: opts.locations ?? [] });
-  const store = new Store(hass, { retryBaseMs: 0 });
-  await store.init();
-
-  const el = document.createElement('hv-card-shell') as HVCardShell;
-  el.store = store;
-  el.forceMobile = opts.mobile ?? false;
-  document.body.appendChild(el);
-  await el.updateComplete;
-  return { el, store, hass, sr: el.shadowRoot as ShadowRoot };
+  const { hass, store } = await mountStore({
+    items: opts.items ?? [],
+    locations: opts.locations ?? [],
+  });
+  const { el, sr } = await mountComponent<HVCardShell>('hv-card-shell', {
+    store,
+    forceMobile: opts.mobile ?? false,
+  });
+  return { el, store, hass, sr };
 }
-
-const settle = async (el: HVCardShell) => {
-  await new Promise((r) => setTimeout(r, 0));
-  await el.updateComplete;
-};
 
 describe('hv-card-shell: header', () => {
   it('shows the configured heading and the live stat badges', async () => {
@@ -504,15 +507,15 @@ describe('hv-card-shell: search and filters', () => {
 
 describe('hv-card-shell: list and footer', () => {
   it('shows skeleton rows before the first list resolves', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, { retryBaseMs: 0 });
-    const el = document.createElement('hv-card-shell') as HVCardShell;
-    el.store = store;
-    el.forceMobile = false;
-    document.body.appendChild(el);
-    await el.updateComplete;
+    // Deliberately not `mountStore`: the skeleton is what shows before the
+    // first list resolves, so this store must not be initialised.
+    const store = new Store(makeMockHass({ items: [] }), { retryBaseMs: 0 });
+    const { el } = await mountComponent<HVCardShell>('hv-card-shell', {
+      store,
+      forceMobile: false,
+    });
 
-    const list = el.shadowRoot?.querySelector('hv-list') as HTMLElement;
+    const list = q(el, 'hv-list')!;
     expect(list.shadowRoot?.querySelector('[data-testid="list-skeleton"]')).toBeTruthy();
   });
 
@@ -717,7 +720,7 @@ describe('hv-card-shell: banners', () => {
     // Re-apply deliberately calls updateItem with no expectedVersion: the whole
     // point is to land on top of whatever the other client wrote. Passing the
     // stale version here would make the retry fail exactly as the first attempt
-    // did, so the missing third argument is load-bearing.
+    // did, so the third argument has to stay absent.
     const { el, store, hass, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'A' })] });
     store['pushError'](
       { code: 'conflict', message: 'version conflict' },
@@ -762,27 +765,19 @@ describe('hv-card-shell: banners', () => {
 });
 
 describe('hv-card-shell: narrow header', () => {
-  const headerCss = () => {
-    const styles = (customElements.get('hv-card-shell') as typeof HVCardShell).styles;
-    return (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
-  };
-
   // The title is `flex: 1` among siblings that are all `flex: none`, so it
   // absorbed every pixel the badges and buttons needed: 40px for a 78px
   // heading at 375px, and 0px at 320px. jsdom cannot lay this out, so the
   // stylesheet is what gets asserted.
   it('wraps the badges onto their own row on a phone', () => {
-    const css = headerCss();
+    const css = componentCss('hv-card-shell');
     expect(css).toMatch(/:host\(\[mobile\]\) \.header \{ flex-wrap: wrap; \}/);
     expect(css).toMatch(/:host\(\[mobile\]\) \.badges \{[^}]*flex-basis: 100%/);
   });
 
   it('leaves the desktop header on one row', () => {
     // `.badges { margin-left: auto }` is what right-aligns them there.
-    expect(headerCss()).toMatch(/\.badges \{ display: flex; align-items: center; gap: 6px; margin-left: auto; \}/);
+    expect(componentCss('hv-card-shell')).toMatch(/\.badges \{ display: flex; align-items: center; gap: 6px; margin-left: auto; \}/);
   });
 
   it('renders no badge row at all when a phone has nothing to badge', async () => {
@@ -810,7 +805,7 @@ describe('hv-card-shell: narrow header', () => {
     expect(badge?.textContent?.trim()).toBe('1 checked out');
     // Three badges with large counts will not always make one line of a 320px
     // phone, and an unwrapped row pushes the last one off the side of the card.
-    expect(headerCss()).toMatch(/:host\(\[mobile\]\) \.badges \{[^}]*flex-wrap: wrap/);
+    expect(componentCss('hv-card-shell')).toMatch(/:host\(\[mobile\]\) \.badges \{[^}]*flex-wrap: wrap/);
   });
 
   it('counts a checked-out phone badge as reason enough to draw the row', async () => {
@@ -820,20 +815,12 @@ describe('hv-card-shell: narrow header', () => {
 });
 
 describe('hv-card-shell: touch targets', () => {
-  const shellCss = () => {
-    const styles = (customElements.get('hv-card-shell') as typeof HVCardShell).styles;
-    return (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
-  };
-
   // One declaration on the card host, inherited into every nested shadow root.
   // It only works because `--hv-tap-min` is absent from `tokens` — every
   // component redeclares those on its own `:host`, which would shadow an
   // inherited value at the first boundary.
   it('publishes a 44px target size to every nested component', () => {
-    expect(shellCss()).toMatch(/:host\(\[mobile\]\) \{[^}]*--hv-tap-min: 44px/);
+    expect(componentCss('hv-card-shell')).toMatch(/:host\(\[mobile\]\) \{[^}]*--hv-tap-min: 44px/);
   });
 
   it('does not declare the target size in the shared token block', () => {
@@ -846,26 +833,26 @@ describe('hv-card-shell: touch targets', () => {
   });
 
   it('sizes the header actions from it rather than hard-coding 36px', () => {
-    const css = shellCss();
+    const css = componentCss('hv-card-shell');
     expect(css).toMatch(/\.add\.round \{ width: var\(--hv-tap-min, 36px\)/);
     expect(css).toMatch(/\.header \.expand \{ width: var\(--hv-tap-min, 36px\)/);
     expect(css).toMatch(/:host\(\[mobile\]\) \.icon-toggle \{ width: var\(--hv-tap-min, 40px\)/);
   });
 
   it('gives the stat badges a tappable height on a phone', () => {
-    expect(shellCss()).toMatch(/:host\(\[mobile\]\) \.badge \{[^}]*min-height: var\(--hv-tap-min, auto\)/);
+    expect(componentCss('hv-card-shell')).toMatch(/:host\(\[mobile\]\) \.badge \{[^}]*min-height: var\(--hv-tap-min, auto\)/);
   });
 
   // iOS Safari zooms the page whenever a field under 16px takes focus, and does
   // not zoom back out. Every field on the card was 12.5–14.5px.
   it('publishes a 16px field size so iOS does not zoom on focus', () => {
-    expect(shellCss()).toMatch(/:host\(\[mobile\]\) \{[^}]*--hv-input-font: 16px/);
+    expect(componentCss('hv-card-shell')).toMatch(/:host\(\[mobile\]\) \{[^}]*--hv-input-font: 16px/);
     expect(String(tokens.cssText)).not.toMatch(/--hv-input-font/);
     expect(String(base.cssText)).toMatch(/\.hv-input \{[^}]*font: 400 var\(--hv-input-font, 13\.5px\)/);
   });
 
   it('keeps the card search field reading from it', () => {
-    expect(shellCss()).toMatch(/\.search input \{[^}]*font: 400 var\(--hv-input-font, 13\.5px\)/);
+    expect(componentCss('hv-card-shell')).toMatch(/\.search input \{[^}]*font: 400 var\(--hv-input-font, 13\.5px\)/);
   });
 });
 
@@ -1754,8 +1741,7 @@ describe('hv-card-shell: full view', () => {
     const expand = sr.querySelector('[data-testid="expand-toggle"]') as HTMLElement;
     expect(expand.classList.contains('expand')).toBe(true);
 
-    const styles = (customElements.get('hv-card-shell') as typeof HVCardShell).styles;
-    const cssText = (Array.isArray(styles) ? styles : [styles]).map((s) => String(s.cssText)).join('\n');
+    const cssText = componentCss('hv-card-shell');
     const rule = cssText.slice(cssText.indexOf('.header .expand'), cssText.indexOf('.search-row'));
     expect(rule).toMatch(/border:\s*1px solid/);
   });

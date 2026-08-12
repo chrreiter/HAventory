@@ -1,3 +1,6 @@
+import type { CSSResult } from 'lit';
+
+import { Store } from './store/store';
 import type {
   AnyEventPayload,
   AreaRef,
@@ -17,7 +20,7 @@ import type {
 // event payload, not the `{id, type:'event', event}` envelope.
 type SubCb = (event: AnyEventPayload) => void;
 
-interface MockConfig {
+export interface MockConfig {
   items?: Item[];
   locations?: Location[];
   conflictOnUpdate?: boolean;
@@ -1005,4 +1008,140 @@ export function stubViewport(matches: boolean): () => void {
   return () => {
     window.matchMedia = original;
   };
+}
+
+// ---------------------------------------------------------------------------
+// Component-test harness
+// ---------------------------------------------------------------------------
+
+/** What a mounted component hands back: the element and its shadow root. */
+export interface Mounted<T extends HTMLElement> {
+  el: T;
+  sr: ShadowRoot;
+}
+
+export interface MountOptions {
+  /** Light-DOM markup, set before the element is connected. */
+  light?: string;
+  /**
+   * Render passes to await after connecting. One is enough for a component that
+   * draws itself; a component that renders another Lit element and then reads
+   * it needs two, because the child's first update is queued by the parent's.
+   */
+  renders?: number;
+}
+
+/** A Lit element seen from a test: the render-settled promise is all we need. */
+type Renderable = HTMLElement & { updateComplete?: Promise<unknown> };
+
+/**
+ * Create a component, set its properties, connect it, and wait for it to draw.
+ *
+ * Every component test mounts through here, so the ordering is the same
+ * everywhere: properties are assigned *before* the element is connected, which
+ * is what a Lit component's first render sees, and the custom element is
+ * awaited as defined before the first `updateComplete` is read — an element
+ * that has not been upgraded yet has no such property.
+ */
+export async function mountComponent<T extends HTMLElement>(
+  tag: string,
+  props: Partial<T> = {},
+  options: MountOptions = {},
+): Promise<Mounted<T>> {
+  const el = document.createElement(tag) as T;
+  Object.assign(el, props);
+  if (options.light) el.innerHTML = options.light;
+  document.body.appendChild(el);
+  await customElements.whenDefined(tag);
+  for (let i = 0; i < (options.renders ?? 1); i++) {
+    await (el as Renderable).updateComplete;
+  }
+  return { el, sr: el.shadowRoot as ShadowRoot };
+}
+
+/**
+ * A mock hass and an initialised `Store` over it, for the components that take
+ * one. The whole `MockConfig` is forwarded — statuses and areas included — so a
+ * test that needs a household vocabulary does not have to build its own hass.
+ */
+export async function mountStore(config: MockConfig = {}): Promise<{
+  hass: MockHass;
+  store: Store;
+}> {
+  const hass = makeMockHass(config);
+  // No retry backoff: a test that provokes a failure would otherwise wait it out.
+  const store = new Store(hass, { retryBaseMs: 0 });
+  await store.init();
+  return { hass, store };
+}
+
+/** The first match for a selector, from an element's shadow root or from a root itself. */
+export function q<T extends Element = HTMLElement>(
+  root: Element | DocumentFragment,
+  selector: string,
+): T | null {
+  return queryRoot(root).querySelector(selector) as T | null;
+}
+
+/** Every match for a selector, in document order. */
+export function all<T extends Element = HTMLElement>(
+  root: Element | DocumentFragment,
+  selector: string,
+): T[] {
+  return [...queryRoot(root).querySelectorAll(selector)] as T[];
+}
+
+function queryRoot(root: Element | DocumentFragment): ParentNode {
+  return 'shadowRoot' in root && root.shadowRoot ? root.shadowRoot : root;
+}
+
+/**
+ * Wait for everything a click or a property write set in motion.
+ *
+ * The macrotask boundary is what separates this from awaiting `updateComplete`
+ * alone: it drains the microtask queue first, so a render that another render
+ * queued has already been scheduled by the time the element is awaited.
+ */
+export async function settle(el: HTMLElement): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await (el as Renderable).updateComplete;
+}
+
+/**
+ * Everything a component draws with: its own block plus every shared fragment,
+ * whitespace-normalized so a rule reads as one line.
+ *
+ * jsdom lays nothing out, so a layout or type-size rule is asserted against the
+ * stylesheet rather than against a measured box.
+ */
+export function componentCss(tag: string): string {
+  return sheetsOf(tag)
+    .map((sheet) => String(sheet.cssText))
+    .join('\n')
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * A component's *own* block — the last fragment, after the shared ones.
+ *
+ * The distinction decides what a `not.toMatch` proves: against
+ * {@link componentCss} it says "nothing draws this", which a shared fragment
+ * would falsify; against this it says "this component does not restate what the
+ * shared fragment already gives it".
+ */
+export function ownCss(tag: string): string {
+  const sheets = sheetsOf(tag);
+  return String(sheets[sheets.length - 1].cssText).replace(/\s+/g, ' ');
+}
+
+/**
+ * A component's style fragments, in the order it lists them.
+ *
+ * The fragments themselves rather than their text, so a test can assert that a
+ * shared sheet *is* one of them rather than that its rules appear somewhere.
+ */
+export function sheetsOf(tag: string): CSSResult[] {
+  const ctor = customElements.get(tag) as { styles?: CSSResult | CSSResult[] } | undefined;
+  if (!ctor?.styles) throw new Error(`${tag} has no styles`);
+  return Array.isArray(ctor.styles) ? ctor.styles : [ctor.styles];
 }
