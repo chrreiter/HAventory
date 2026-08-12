@@ -12,7 +12,7 @@ that plan when the milestone closes.
 
 ## H6 — #365 quick-filter pills in the options flow
 
-**Branch / PR**: `claude/v0-5-0-w1c-quick-filter-pills` / #NNN
+**Branch / PR**: `claude/v0-5-0-w1c-quick-filter-pills` / #416
 **Why this needs a real HA**: the offline suite validates the schema, never the form. What
 it cannot show is how Home Assistant *draws* a `SelectSelector(multiple=True,
 mode=LIST)` inside an options flow — whether the five pills come up as a checkbox list
