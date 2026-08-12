@@ -10,9 +10,9 @@ One policy governs every error the API boundary logs:
   rather than a failure.
 - ``exc_info`` only where a traceback says something the message does not.
 
-The conflict and not-found cases are load-bearing: ``release_testing_plan.md``
-exit criterion 4 forbids any traceback from ``custom_components.haventory`` in
-the HA log, and the release run deliberately provokes both.
+The conflict and not-found cases are what the release run checks:
+``release_testing_plan.md`` exit criterion 4 forbids any traceback from
+``custom_components.haventory`` in the HA log, and the run provokes both.
 """
 
 from __future__ import annotations
