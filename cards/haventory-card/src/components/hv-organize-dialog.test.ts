@@ -1,7 +1,8 @@
 import './hv-organize-dialog';
 import { makeMockHass, makeItem } from '../test.utils';
 import { Store } from '../store/store';
-import type { HVOrganizeDialog, OrganizeTab } from './hv-organize-dialog';
+import { HVOrganizeDialog } from './hv-organize-dialog';
+import type { OrganizeTab } from './hv-organize-dialog';
 import type { AreaRef, Item, Location, StatusDefinition } from '../store/types';
 
 function loc(id: string, name: string, parentId: string | null = null, areaId: string | null = null): Location {
@@ -1352,6 +1353,28 @@ describe('hv-organize-dialog: statuses', () => {
     await settle(el);
 
     expect(q(sr, '[data-testid="status-color-custom-hint"]')).toBe(null);
+  });
+
+  // The bug this guards against paints nothing and throws nothing: the swatch
+  // still reads as selected, so only a screenshot catches it.
+  it('leaves the chip fill to the pair the chip reads, on every swatch rule', () => {
+    const css = HVOrganizeDialog.styles
+      .map((sheet) => (sheet as { cssText?: string }).cssText ?? '')
+      .join('\n')
+      // Comments quote property names freely.
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+
+    for (const block of css.matchAll(/([^{}]*\.swatch[^{}]*)\{([^}]*)\}/g)) {
+      const [selector, body] = [block[1].trim(), block[2]];
+      // A swatch is a status chip, and `.hv-status-chip` resolves its fill
+      // through --hv-status-bg / --hv-status-fg. A `background` or `color`
+      // longhand on a selector of this specificity outranks that rule, so the
+      // inline pair a chosen colour arrives as would never paint — and the
+      // swatch would sit there grey while reading as selected.
+      expect(body, `${selector} sets a fill longhand`).not.toMatch(
+        /(^|;)\s*(background|background-color|color)\s*:/,
+      );
+    }
   });
 
   // An import can define a status naming a glyph this bundle has never carried.

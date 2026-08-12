@@ -395,10 +395,13 @@ export class HVOrganizeDialog extends LitElement {
       .swatch.custom {
         position: relative;
         overflow: hidden;
-        /* No stored colour yet: a chequer says "pick one" where the ten say
-           "this one", without borrowing a hue that means something. */
-        background: var(--hv-chip-bg);
-        color: var(--hv-text-secondary);
+        /* The unchosen state — a plain chip face, saying "pick one" where the
+           ten say "this one" without borrowing a hue that means something.
+           Written as the pair .hv-status-chip reads, never as background and
+           color: a longhand here outranks that rule, and the inline pair a
+           chosen colour arrives as would then never paint. */
+        --hv-status-bg: var(--hv-chip-bg);
+        --hv-status-fg: var(--hv-text-secondary);
       }
       .swatch.custom > input[type='color'] {
         position: absolute;
