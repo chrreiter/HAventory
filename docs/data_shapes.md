@@ -293,7 +293,17 @@ Result of `distinct_values`, used by category/tag autocomplete, the browser view
 }
 ```
 
-- `DistinctValue`: `{ value: string, count: number }` where `count` is the number of items using that value.
+With a filter on the request, each category and tag entry also carries `matching_count`:
+```json
+{
+  "categories": [ { "value": "Books", "count": 1, "matching_count": 0 }, { "value": "Tools", "count": 2, "matching_count": 1 } ],
+  "tags": [ { "value": "blue", "count": 2, "matching_count": 1 }, { "value": "red", "count": 2, "matching_count": 0 } ],
+  "custom_field_keys": [ "serial", "Voltage", "warranty_until" ]
+}
+```
+
+- `DistinctValue`: `{ value: string, count: number, matching_count?: number }` where `count` is the number of items using that value.
+- `matching_count` is how many of that value's items the request's filter keeps. Present on every `categories` and `tags` entry when the request carried a `filter`, absent from all of them when it did not — so `undefined` means "unpriced", never "nothing matches". No entry is dropped for matching nothing; `count` is unaffected by the filter, and `custom_field_keys` is never filtered.
 - Categories are grouped case-insensitively; `value` is a representative display label (most frequent original casing, ties broken alphabetically). Tags are already normalized (lowercase), so `value` is the tag itself.
 - Both value lists are sorted case-insensitively by `value`. Items with no category (or no tags) contribute nothing to the respective list.
 - `custom_field_keys` is the sorted, distinct set of keys used across all items' `custom_fields` (keys are case-sensitive; sorted case-insensitively). Empty when no item has custom fields.

@@ -32,7 +32,15 @@ import { statusCount, statusLabel, statusList } from '../ui/status';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
-import type { Item, Location, LocationTreeNode, Sort, StoreFilters, StoreState } from '../store/types';
+import type {
+  DistinctValue,
+  Item,
+  Location,
+  LocationTreeNode,
+  Sort,
+  StoreFilters,
+  StoreState,
+} from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 import { makeBulkOp } from '../store/store';
 import type { BulkOperation, BulkOutcome } from '../store/types';
@@ -1413,7 +1421,7 @@ export class HVFullView extends LitElement {
   private _renderFacetSection(
     section: 'categories' | 'tags',
     label: string,
-    values: { value: string; count: number }[],
+    values: DistinctValue[],
     isOn: (value: string) => boolean,
     onPick: (value: string) => void,
     head?: unknown,
@@ -1468,7 +1476,14 @@ export class HVFullView extends LitElement {
                        typed is otherwise unreadable — there is nowhere else in
                        the sidebar it appears in full. -->
                   <span class="label hv-browse-row-label" title=${v.value}>${v.value}</span>
-                  <span class="hv-tally">${v.count}</span>
+                  <!-- With a filter on, matches over total — the pair the
+                       location rows already read. A total that never moves says
+                       nothing about where the matches are. -->
+                  <span class="hv-tally"
+                    >${v.matching_count === undefined
+                      ? v.count
+                      : `${v.matching_count} / ${v.count}`}</span
+                  >
                 </button>`,
               )
             : html`<div class="section-empty" data-testid=${`sidebar-${section}-empty`}>

@@ -300,7 +300,16 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         }
         case 'haventory/distinct_values': {
           // Mirror the backend: distinct categories (case-insensitive) and tags,
-          // each with a usage count, sorted case-insensitively by value.
+          // each with a usage count, sorted case-insensitively by value. With a
+          // filter each entry also carries `matching_count`, and no entry is
+          // dropped — the list is autocomplete's vocabulary, not a result set.
+          const facetFilter = (msg as any).filter as unknown;
+          const facetMatched = facetFilter ? applyMockFilter(items, facetFilter) : null;
+          const matchedIds = facetMatched && new Set(facetMatched.map((i) => i.id));
+          const priced = <T extends { count: number }>(entry: T, ids: Set<string>) =>
+            matchedIds
+              ? { ...entry, matching_count: [...ids].filter((id) => matchedIds.has(id)).length }
+              : entry;
           const catGroups = new Map<string, { display: string; ids: Set<string> }>();
           for (const it of items) {
             const raw = (it.category ?? '').trim();
@@ -311,7 +320,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             catGroups.set(key, group);
           }
           const categories = Array.from(catGroups.values())
-            .map((g) => ({ value: g.display, count: g.ids.size }))
+            .map((g) => priced({ value: g.display, count: g.ids.size }, g.ids))
             .sort((a, b) => a.value.toLowerCase().localeCompare(b.value.toLowerCase()));
           const tagGroups = new Map<string, Set<string>>();
           for (const it of items) {
@@ -322,7 +331,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             }
           }
           const tags = Array.from(tagGroups.entries())
-            .map(([value, ids]) => ({ value, count: ids.size }))
+            .map(([value, ids]) => priced({ value, count: ids.size }, ids))
             .sort((a, b) => a.value.toLowerCase().localeCompare(b.value.toLowerCase()));
           const customKeys = new Set<string>();
           for (const it of items) {

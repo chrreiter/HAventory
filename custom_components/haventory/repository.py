@@ -1734,7 +1734,31 @@ class Repository:
             "subtree": len(self._items_in_subtree.get(key, set())),
         }
 
-    def get_distinct_field_values(self) -> dict[str, object]:
+    def _count_facets_matching(self, flt: ItemFilter) -> tuple[dict[str, int], dict[str, int]]:
+        """Tally categories and tags over the items a filter keeps.
+
+        One pass prices both facets — the shape ``count_matching_by_location``
+        uses for its own dimension. Category keys are the casefolded form
+        ``_index_item`` writes, so they line up with ``_category_to_item_ids``;
+        tags are normalized at ingress and de-duplicated per item, so each item
+        contributes at most one to any tag.
+        """
+
+        candidates = self._get_filtered_candidates(flt)
+        source: Iterable[Item] = (
+            candidates if candidates is not None else self._items_by_id.values()
+        )
+        by_category: dict[str, int] = {}
+        by_tag: dict[str, int] = {}
+        for item in filter_items(source, flt, known_statuses=self.status_slugs()):
+            key = (item.category or "").strip().casefold()
+            if key:
+                by_category[key] = by_category.get(key, 0) + 1
+            for tag in item.tags:
+                by_tag[tag] = by_tag.get(tag, 0) + 1
+        return by_category, by_tag
+
+    def get_distinct_field_values(self, flt: ItemFilter | None = None) -> dict[str, object]:
         """Return distinct categories, tags, and custom-field keys.
 
         Categories are grouped case-insensitively (matching the case-insensitive
@@ -1746,7 +1770,20 @@ class Repository:
         used across all items' ``custom_fields`` (keys are case-sensitive; sorted
         case-insensitively). The two value lists are sorted case-insensitively by
         value.
+
+        With ``flt``, every category and tag entry also carries ``matching_count``
+        — how many of that value's items the filter keeps. ``count`` stays a
+        whole-inventory figure and no entry is dropped: the same payload feeds
+        autocomplete and the organize dialog, which a list that shrank with the
+        filter would starve. Which dimensions to leave out of ``flt`` is the
+        caller's call, the way it is for :meth:`count_matching_by_location`.
+        ``custom_field_keys`` is unfiltered either way — it is a key picker, not
+        a tally, and hiding keys would hide ones the user is about to type.
         """
+
+        matching_categories, matching_tags = (
+            self._count_facets_matching(flt) if flt is not None else (None, None)
+        )
 
         categories: list[dict[str, object]] = []
         for key, item_ids in self._category_to_item_ids.items():
@@ -1759,13 +1796,18 @@ class Repository:
                 if raw:
                     originals[raw] = originals.get(raw, 0) + 1
             display = max(sorted(originals), key=lambda o: originals[o]) if originals else key
-            categories.append({"value": display, "count": len(item_ids)})
+            entry: dict[str, object] = {"value": display, "count": len(item_ids)}
+            if matching_categories is not None:
+                entry["matching_count"] = matching_categories.get(key, 0)
+            categories.append(entry)
         categories.sort(key=lambda c: str(c["value"]).casefold())
 
-        tags = [
-            {"value": tag, "count": len(item_ids)}
-            for tag, item_ids in self._tags_to_item_ids.items()
-        ]
+        tags: list[dict[str, object]] = []
+        for tag, item_ids in self._tags_to_item_ids.items():
+            tag_entry: dict[str, object] = {"value": tag, "count": len(item_ids)}
+            if matching_tags is not None:
+                tag_entry["matching_count"] = matching_tags.get(tag, 0)
+            tags.append(tag_entry)
         tags.sort(key=lambda t: str(t["value"]).casefold())
 
         custom_keys: set[str] = set()

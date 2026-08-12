@@ -900,13 +900,21 @@ async def ws_stats(
     conn.send_message(websocket_api.result_message(msg.get("id", 0), counts))
 
 
-@websocket_api.websocket_command({"type": "haventory/distinct_values"})
+@websocket_api.websocket_command(
+    {vol.Required("type"): "haventory/distinct_values", vol.Optional("filter"): object}
+)
 @websocket_api.async_response
 @ws_guard("distinct_values", ())
 async def ws_distinct_values(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    result = _repo(hass).get_distinct_field_values()
+    # With a filter, every value also reports how much of it the filter keeps, so
+    # a sidebar can read "4 / 37" the way the location tree already does. The
+    # list itself never shrinks — the same payload feeds autocomplete and the
+    # organize dialog.
+    item_filter = msg.get("filter")
+    validate_item_filter(item_filter)
+    result = _repo(hass).get_distinct_field_values(item_filter)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
 

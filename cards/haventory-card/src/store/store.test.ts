@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Store } from './store';
 import { makeMockHass, makeItem } from '../test.utils';
 
@@ -632,6 +632,88 @@ describe('Store', () => {
     store.removeDraftValue('tag', 'seasonal');
 
     expect(store.state.value.distinctValuesCache?.tags).toEqual([]);
+  });
+
+  it('asks for unpriced facets while nothing is filtering', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1', category: 'Tools', tags: ['red'] })] });
+    const store = new Store(hass);
+    await store.init();
+
+    const sent = hass.__messages.filter((m) => m.type === 'haventory/distinct_values');
+    expect(sent).toHaveLength(1);
+    expect(sent[0].filter).toBeUndefined();
+    // No key at all rather than a matching_count equal to count: the two say
+    // different things, and only one of them is a report.
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([
+      { value: 'Tools', count: 1 },
+    ]);
+  });
+
+  it('prices the facets against the active filter, minus category and tags', async () => {
+    const items = [
+      makeItem({ id: '1', category: 'Tools', tags: ['red'], checked_out: true }),
+      makeItem({ id: '2', category: 'Tools', tags: ['red'] }),
+      makeItem({ id: '3', category: 'Books', tags: ['blue'] }),
+    ];
+    const hass = makeMockHass({ items });
+    const store = new Store(hass);
+    await store.init();
+
+    // A category and a tag are picked alongside the narrowing filter; neither
+    // may reach the wire, or every other row would be priced at zero.
+    store.setFilters({ checkedOutOnly: true, category: 'Tools', tags: ['red'] });
+    await vi.waitUntil(
+      () => hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length > 1,
+    );
+
+    const sent = hass.__messages.filter((m) => m.type === 'haventory/distinct_values');
+    const filter = sent[sent.length - 1].filter as Record<string, unknown>;
+    expect(filter.checked_out).toBe(true);
+    expect(filter.category).toBeUndefined();
+    expect(filter.tags_any).toBeUndefined();
+
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([
+      { value: 'Books', count: 1, matching_count: 0 },
+      { value: 'Tools', count: 2, matching_count: 1 },
+    ]);
+  });
+
+  it('coalesces the facet refetch across a burst of filter patches', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1', category: 'Tools' })] });
+    const store = new Store(hass);
+    await store.init();
+    const before = hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length;
+
+    // What a filter panel does: several keys in a row, one answer wanted.
+    store.setFilters({ checkedOutOnly: true });
+    store.setFilters({ lowStockOnly: true });
+    store.setFilters({ q: 'drill' });
+    await vi.waitUntil(
+      () => hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length > before,
+    );
+    await new Promise((r) => setTimeout(r, 300));
+
+    const after = hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length;
+    expect(after).toBe(before + 1);
+  });
+
+  it('gives a draft the priced shape once the server priced the rest', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1', category: 'Tools', checked_out: true })] });
+    const store = new Store(hass);
+    await store.init();
+
+    store.setFilters({ checkedOutOnly: true });
+    await vi.waitUntil(
+      () => hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length > 1,
+    );
+    store.addDraftValue('category', 'Consumables');
+
+    // A draft has no items, so it matches nothing — said in the same shape the
+    // priced rows use, rather than reading as an unpriced row among them.
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([
+      { value: 'Consumables', count: 0, matching_count: 0 },
+      { value: 'Tools', count: 1, matching_count: 1 },
+    ]);
   });
 
   it('scopes the items subscription to the active area and re-opens it when the area changes', async () => {
