@@ -821,9 +821,11 @@ def test_every_status_icon_has_a_glyph_in_the_bundle() -> None:
 def test_the_card_offers_exactly_the_vocabularies_the_backend_accepts() -> None:
     """The management picker enumerates colours and glyphs from its own arrays.
 
-    The backend refuses anything outside `STATUS_COLORS` / `STATUS_ICONS`, so a
-    card offering one more choice hands the user a control that fails on save,
-    and one offering fewer hides a colour the store may already hold.
+    These are the *offered* palettes, and they have to match: a card offering
+    one token more hands the user a control that fails on save, and one
+    offering fewer hides a colour the store may already hold. Beside them the
+    backend also accepts a `#rrggbb` literal, which is not a vocabulary either
+    side enumerates — the card's own picker produces it.
     """
     source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "status.ts").read_text(
         encoding="utf-8"

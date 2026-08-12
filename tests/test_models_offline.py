@@ -365,7 +365,11 @@ def test_the_seed_carries_the_built_in_appearance() -> None:
         {"label": 3},
         {"order": "first"},
         {"color": "puce"},
-        {"color": "#ff0000"},
+        # Neither shorthand nor a named CSS colour: one spelling reaches the
+        # card, and anything else is a fill a browser silently drops.
+        {"color": "#f00"},
+        {"color": "#ff00zz"},
+        {"color": "rebeccapurple"},
         {"color": 3},
         {"icon": "mdi:hand-extended"},
         {"icon": ""},
@@ -376,6 +380,29 @@ def test_a_malformed_status_definition_is_rejected(overrides: dict) -> None:
 
     with pytest.raises(ValidationError):
         validate_status_definition(doc)
+
+
+def test_a_literal_colour_is_accepted_beside_the_tokens() -> None:
+    """A household wanting its own colour is not confined to the ten.
+
+    The ten stay the offered palette; a `#rrggbb` is the escape hatch beside
+    them, and the card derives the ink for it rather than looking one up.
+    """
+
+    doc = {"slug": "lent_out", "label": "Lent out", "order": 0, "color": "#2F6F4F"}
+
+    definition = validate_status_definition(doc)
+
+    # Case-folded, so one colour has one spelling in the store.
+    assert definition.color == "#2f6f4f"
+
+
+def test_a_document_written_under_the_narrow_rule_still_loads() -> None:
+    """Widening the rule is additive: every stored token stays valid."""
+
+    for token in STATUS_COLORS:
+        doc = {"slug": "s", "label": "S", "order": 0, "color": token}
+        assert validate_status_definition(doc).color == token
 
 
 def test_every_colour_has_a_light_and_a_strong_variant() -> None:

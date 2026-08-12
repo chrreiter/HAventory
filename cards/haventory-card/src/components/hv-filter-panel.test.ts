@@ -241,6 +241,24 @@ describe('hv-filter-panel: status', () => {
       q(el, '[data-testid="filter-status"][data-value="ok"]').classList.contains('tone-green'),
     ).toBe(false);
   });
+
+  // A household colour outside the ten has no class to carry it, so the chip
+  // takes it inline — and an unselected one still must not be painted.
+  it('fills a selected status in a literal colour, and only while selected', async () => {
+    const statuses: StatusDefinition[] = [
+      { slug: 'ok', label: 'OK', order: 0, color: 'green', icon: 'check' },
+      { slug: 'sold', label: 'Verkauft', order: 1, color: '#2f6f4f', icon: 'box' },
+    ];
+    const on = q(
+      await mount({ status: 'sold' }, { statuses }),
+      '[data-testid="filter-status"][data-value="sold"]',
+    );
+    expect(on.style.getPropertyValue('--hv-status-bg')).toBe('#2f6f4f');
+    expect(on.style.getPropertyValue('--hv-status-fg')).toBe('#ffffff');
+
+    const off = q(await mount({}, { statuses }), '[data-testid="filter-status"][data-value="sold"]');
+    expect(off.getAttribute('style')).toBeNull();
+  });
 });
 
 // The panel is a household surface: a hint that names how the backend stores a

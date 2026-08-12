@@ -4,6 +4,7 @@ import type { StatsCounts, StatusDefinition } from '../store/types';
 import {
   BUILT_IN_STATUSES,
   DEFAULT_STATUS,
+  isHexColor,
   itemStatus,
   knownIcon,
   renderStatusChip,
@@ -12,7 +13,7 @@ import {
   statusIconName,
   statusLabel,
   statusList,
-  statusToneClass,
+  statusTone,
 } from './status';
 
 const CUSTOM: StatusDefinition[] = [
@@ -51,12 +52,43 @@ describe('ui/status: rendering a slug', () => {
   });
 
   it('maps a stored colour onto the chip modifier, underscores and all', () => {
-    expect(statusToneClass('lent_out', CUSTOM)).toBe('tone-blue-strong');
-    expect(statusToneClass('ok', CUSTOM)).toBe('tone-green');
+    expect(statusTone('lent_out', CUSTOM)).toEqual({
+      toneClass: 'tone-blue-strong',
+      toneStyle: undefined,
+    });
+    expect(statusTone('ok', CUSTOM)).toEqual({ toneClass: 'tone-green', toneStyle: undefined });
   });
 
   it('paints an unknown slug neutral rather than leaving it unstyled', () => {
-    expect(statusToneClass('mystery', CUSTOM)).toBe('tone-neutral');
+    expect(statusTone('mystery', CUSTOM)).toEqual({
+      toneClass: 'tone-neutral',
+      toneStyle: undefined,
+    });
+  });
+
+  // A household's own colour has no token to name, so it arrives as the fill
+  // itself. The two paths are exclusive: a class would resolve against the
+  // theme, which is exactly what a literal colour is asking not to do.
+  it('hands a literal colour over as an inline declaration, not a class', () => {
+    const hex: StatusDefinition[] = [
+      { slug: 'lent_out', label: 'Lent out', order: 0, color: '#2f6f4f', icon: 'hand' },
+    ];
+    expect(statusTone('lent_out', hex)).toEqual({
+      toneClass: '',
+      toneStyle: '--hv-status-bg:#2f6f4f;--hv-status-fg:#ffffff',
+    });
+  });
+
+  it('knows a literal colour from a token', () => {
+    expect(isHexColor('#2f6f4f')).toBe(true);
+    expect(isHexColor('#2F6F4F')).toBe(true);
+    expect(isHexColor('amber_strong')).toBe(false);
+    // Neither shorthand nor a named CSS colour: the backend accepts one
+    // spelling, and anything else would be painted as a fill the browser
+    // silently drops.
+    expect(isHexColor('#fff')).toBe(false);
+    expect(isHexColor('rebeccapurple')).toBe(false);
+    expect(isHexColor(null)).toBe(false);
   });
 
   it('resolves a glyph the bundle carries', () => {
@@ -175,8 +207,21 @@ describe('renderStatusChip', () => {
   it('paints the tone from the definition and names the status', () => {
     const chip = chipOf('lent_out');
     expect(chip?.classList.contains('tone-blue-strong')).toBe(true);
+    expect(chip?.getAttribute('style')).toBeNull();
     expect(chip?.textContent?.trim()).toBe('Lent out');
     expect(chip?.querySelector('svg')?.getAttribute('data-icon')).toBe('hand');
+  });
+
+  it('paints a literal colour inline, with the ink derived from it', () => {
+    const chip = chipOf('lent_out', [
+      { slug: 'lent_out', label: 'Lent out', order: 0, color: '#ffe082', icon: 'hand' },
+    ]);
+    const style = chip as HTMLElement | null;
+    expect(style?.style.getPropertyValue('--hv-status-bg')).toBe('#ffe082');
+    expect(style?.style.getPropertyValue('--hv-status-fg')).toBe('#000000');
+    // No tone class to fight the inline declaration for the same two
+    // properties.
+    expect([...(chip?.classList ?? [])].filter((c) => c.startsWith('tone-'))).toEqual([]);
   });
 
   // A cell's own text-overflow cannot reach inside an inline-flex chip, so a

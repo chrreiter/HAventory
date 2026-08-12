@@ -282,8 +282,9 @@ except `status/delete` with a reassign target.
 - `haventory/status/create`
   - Payload: `{slug: string, label: string, color?: string, icon?: string, order?: number}`
   - Result: `<StatusDefinition>`; emits `statuses/created`.
-  - Absent `order` places it last. `color` must be one of the ten tone tokens and `icon` one
-    of the ten glyph names (see data shapes); both default when omitted.
+  - Absent `order` places it last. `color` must be one of the ten tone tokens or a `#rrggbb`
+    literal (folded to lowercase), and `icon` one of the ten glyph names (see data shapes);
+    both default when omitted.
   - Refusals: `validation_error` for a malformed or duplicate slug, or a colour or icon
     outside its vocabulary.
 

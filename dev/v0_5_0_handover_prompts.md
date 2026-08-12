@@ -59,3 +59,56 @@ panel, which has no Lovelace config at all, picks the stored choice up.
 - A screenshot of the options form (step 1) and one of the sidebar page at step 3.
 - The pill row from step 4's second card, showing the two cards disagreeing on purpose.
 - Paste the result as a comment on #365 and reply on the PR thread.
+
+---
+
+## H7 — #298 a hex colour beside the ten status tokens
+
+**Branch / PR**: `claude/v0-5-0-w1c-status-hex-colours` / #NNN
+**Why this needs a real HA**: legibility is the whole cost of this feature, and the offline
+suite can only prove the maths. What it cannot show is a chip at a household's own colour
+sitting on a *real* surface, in light and dark, under a non-default HA theme — the case the
+literal colour deliberately ignores. Nor can it show the browser's native colour picker,
+which is the control a household actually uses.
+
+### Setup
+
+    set -a; . ./.env; set +a
+    bash scripts/reload_addon.sh --container home-assistant --sleep 30 --tail-logs
+    # Any inventory with a handful of items will do; the statuses are created below.
+    # Install a non-default theme first — anything from HACS, or a themes/ YAML with a
+    # strong --card-background-color and --primary-text-color — and select it under
+    # Profile → Themes, so the theme half of this is actually exercised.
+
+### Steps
+
+1. Full view → Organize → **Statuses** → new status "Lent out". The colour row now ends in
+   an eleventh swatch: click it and pick something mid-toned, e.g. `#2f6f4f`. Save.
+2. Set that status on two or three items. Look at them in the table, in a row, and in the
+   detail sheet; then filter by the status so the filter panel's chip and the applied-filter
+   chip both show it.
+3. Repeat step 1 for a pale colour (`#ffe082`) and a near-black one (`#101820`) on two more
+   statuses, so both ink outcomes are on screen at once.
+4. Switch the frontend between light and dark (Profile → Themes → light/dark), and between
+   your non-default theme and the default.
+5. Reload the page. Then export a backup (⋮ → Export backup) and re-import it.
+
+### What "pass" looks like
+
+- Every hex chip is readable at a glance in both themes: pale fills carry black text, deep
+  fills carry white, and no chip has text you have to lean in for.
+- The hex chips look *identical* across the theme switch — that is the deliberate trade, not
+  a bug. The ten tone chips beside them do move with the theme.
+- The editor shows the "used exactly as entered / same in every theme" line while a custom
+  colour is chosen, and drops it the moment one of the ten is picked instead.
+- The eleventh swatch itself is painted in the chosen colour and reads as selected, while
+  none of the ten does.
+- Step 5: the colour survives a reload and an export/import round trip unchanged, lowercase.
+- Nothing in the HA log at WARNING or above from `haventory` throughout.
+
+### What to send back
+
+- Screenshots of the same table in light and dark, and once under the non-default theme,
+  with all three hex statuses visible.
+- A screenshot of the status editor with the custom swatch selected and the hint showing.
+- Paste the result as a comment on #298 and reply on the PR thread.

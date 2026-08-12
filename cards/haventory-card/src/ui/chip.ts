@@ -183,11 +183,16 @@ export const chip = css`
    *
    * Each tone comes in a light and a strong form. Strong exists so an urgent
    * status can carry further than a routine one in a dense row.
+   *
+   * The fill and its ink arrive as two custom properties, whatever set them: a
+   * tone class below, or an inline declaration when a household picked a
+   * literal colour instead of one of the tones. One route in, so a rule built
+   * on the pair holds for both.
    */
   .hv-status-chip {
     gap: 4px;
-    background: var(--hv-tone-neutral-bg);
-    color: var(--hv-tone-neutral-fg);
+    background: var(--hv-status-bg, var(--hv-tone-neutral-bg));
+    color: var(--hv-status-fg, var(--hv-tone-neutral-fg));
     /* A household names its own statuses, so a label can outrun the column it
        sits in. The chip must be allowed to shrink for the label to elide at
        all — the metrics above hold every chip at flex: none, which is right
@@ -204,44 +209,44 @@ export const chip = css`
     text-overflow: ellipsis;
   }
   .hv-status-chip.tone-neutral {
-    background: var(--hv-tone-neutral-bg);
-    color: var(--hv-tone-neutral-fg);
+    --hv-status-bg: var(--hv-tone-neutral-bg);
+    --hv-status-fg: var(--hv-tone-neutral-fg);
   }
   .hv-status-chip.tone-green {
-    background: var(--hv-tone-green-bg);
-    color: var(--hv-tone-green-fg);
+    --hv-status-bg: var(--hv-tone-green-bg);
+    --hv-status-fg: var(--hv-tone-green-fg);
   }
   .hv-status-chip.tone-blue {
-    background: var(--hv-tone-blue-bg);
-    color: var(--hv-tone-blue-fg);
+    --hv-status-bg: var(--hv-tone-blue-bg);
+    --hv-status-fg: var(--hv-tone-blue-fg);
   }
   .hv-status-chip.tone-amber {
-    background: var(--hv-tone-amber-bg);
-    color: var(--hv-tone-amber-fg);
+    --hv-status-bg: var(--hv-tone-amber-bg);
+    --hv-status-fg: var(--hv-tone-amber-fg);
   }
   .hv-status-chip.tone-red {
-    background: var(--hv-tone-red-bg);
-    color: var(--hv-tone-red-fg);
+    --hv-status-bg: var(--hv-tone-red-bg);
+    --hv-status-fg: var(--hv-tone-red-fg);
   }
   .hv-status-chip.tone-neutral-strong {
-    background: var(--hv-tone-neutral-strong-bg);
-    color: var(--hv-tone-neutral-strong-fg);
+    --hv-status-bg: var(--hv-tone-neutral-strong-bg);
+    --hv-status-fg: var(--hv-tone-neutral-strong-fg);
   }
   .hv-status-chip.tone-green-strong {
-    background: var(--hv-tone-green-strong-bg);
-    color: var(--hv-tone-green-strong-fg);
+    --hv-status-bg: var(--hv-tone-green-strong-bg);
+    --hv-status-fg: var(--hv-tone-green-strong-fg);
   }
   .hv-status-chip.tone-blue-strong {
-    background: var(--hv-tone-blue-strong-bg);
-    color: var(--hv-tone-blue-strong-fg);
+    --hv-status-bg: var(--hv-tone-blue-strong-bg);
+    --hv-status-fg: var(--hv-tone-blue-strong-fg);
   }
   .hv-status-chip.tone-amber-strong {
-    background: var(--hv-tone-amber-strong-bg);
-    color: var(--hv-tone-amber-strong-fg);
+    --hv-status-bg: var(--hv-tone-amber-strong-bg);
+    --hv-status-fg: var(--hv-tone-amber-strong-fg);
   }
   .hv-status-chip.tone-red-strong {
-    background: var(--hv-tone-red-strong-bg);
-    color: var(--hv-tone-red-strong-fg);
+    --hv-status-bg: var(--hv-tone-red-strong-bg);
+    --hv-status-fg: var(--hv-tone-red-strong-fg);
   }
 
   /*

@@ -24,7 +24,7 @@ import type {
   Location,
   LocationTreeNode,
   StatsCounts,
-  StatusColor,
+  StatusColorValue,
   StatusDefinition,
   StoreFilters,
   StoreState,
@@ -1458,7 +1458,7 @@ export class Store {
   async createStatus(status: {
     slug: string;
     label: string;
-    color?: StatusColor;
+    color?: StatusColorValue;
     icon?: string;
   }): Promise<StatusDefinition> {
     const created = await this.ws.createStatus(status);
@@ -1469,7 +1469,7 @@ export class Store {
   /** Edit presentation. No item moves, so nothing but the vocabulary refreshes. */
   async updateStatus(
     slug: string,
-    changes: { label?: string; color?: StatusColor; icon?: string },
+    changes: { label?: string; color?: StatusColorValue; icon?: string },
   ): Promise<StatusDefinition> {
     const updated = await this.ws.updateStatus(slug, changes);
     await this.refreshStatuses();

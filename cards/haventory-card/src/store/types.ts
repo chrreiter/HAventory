@@ -37,12 +37,21 @@ export type StatusColor =
   | 'red'
   | 'red_strong';
 
+/**
+ * What a status is painted in: one of the ten tones, or a `#rrggbb` literal a
+ * household entered. Widened to `string` rather than a template-literal type
+ * because the backend validates the spelling and the card must render whatever
+ * came back — including a token from a newer backend, which falls back to the
+ * neutral chip rather than failing to type-check a stored value.
+ */
+export type StatusColorValue = StatusColor | string;
+
 export interface StatusDefinition {
   slug: string;
   label: string;
   order: number;
   /** Optional: a backend older than the appearance fields does not send them. */
-  color?: StatusColor;
+  color?: StatusColorValue;
   /** One of the glyph names in `ui/icons.ts`. */
   icon?: string;
 }

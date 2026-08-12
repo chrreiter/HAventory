@@ -22,7 +22,7 @@ import type {
   ScalarValue,
   Sort,
   StatsCounts,
-  StatusColor,
+  StatusColorValue,
   StatusDefinition,
   Unsubscribe,
   VersionInfo,
@@ -381,7 +381,7 @@ export class WSClient {
   createStatus(status: {
     slug: string;
     label: string;
-    color?: StatusColor;
+    color?: StatusColorValue;
     icon?: string;
     order?: number;
   }) {
@@ -391,7 +391,7 @@ export class WSClient {
   /** Edit presentation only — the slug is what items store and cannot change. */
   updateStatus(
     slug: string,
-    changes: { label?: string; color?: StatusColor; icon?: string; order?: number },
+    changes: { label?: string; color?: StatusColorValue; icon?: string; order?: number },
   ) {
     return this.hass.callWS<StatusDefinition>({
       type: 'haventory/status/update',

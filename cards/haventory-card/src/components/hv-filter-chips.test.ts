@@ -171,10 +171,22 @@ describe('chipsFor', () => {
   // that the household never said.
   it('names the status filter and carries the status own tone, not the chore hue', () => {
     expect(chipsFor({ ...defaultFilters(), status: 'missing' })).toEqual([
-      { key: 'status', label: 'Status: Missing', tone: 'primary', toneClass: 'tone-amber' },
+      {
+        key: 'status',
+        label: 'Status: Missing',
+        tone: 'primary',
+        toneClass: 'tone-amber',
+        toneStyle: undefined,
+      },
     ]);
     expect(chipsFor({ ...defaultFilters(), status: 'ok' })).toEqual([
-      { key: 'status', label: 'Status: OK', tone: 'primary', toneClass: 'tone-green' },
+      {
+        key: 'status',
+        label: 'Status: OK',
+        tone: 'primary',
+        toneClass: 'tone-green',
+        toneStyle: undefined,
+      },
     ]);
   });
 
@@ -183,8 +195,26 @@ describe('chipsFor', () => {
       { slug: 'sold', label: 'Verkauft', order: 3, color: 'blue_strong', icon: 'box' },
     ];
     expect(chipsFor({ ...defaultFilters(), status: 'sold' }, { statuses })).toEqual([
-      { key: 'status', label: 'Status: Verkauft', tone: 'primary', toneClass: 'tone-blue-strong' },
+      {
+        key: 'status',
+        label: 'Status: Verkauft',
+        tone: 'primary',
+        toneClass: 'tone-blue-strong',
+        toneStyle: undefined,
+      },
     ]);
+  });
+
+  // A colour outside the ten reaches the chip as the fill itself; the class is
+  // empty, so nothing resolves against the theme for this one chip.
+  it('carries a literal colour as an inline declaration instead of a tone', () => {
+    const statuses: StatusDefinition[] = [
+      { slug: 'sold', label: 'Verkauft', order: 3, color: '#2f6f4f', icon: 'box' },
+    ];
+    expect(chipsFor({ ...defaultFilters(), status: 'sold' }, { statuses })[0]).toMatchObject({
+      toneClass: '',
+      toneStyle: '--hv-status-bg:#2f6f4f;--hv-status-fg:#ffffff',
+    });
   });
 
   // A slug this card has not been told about — an import defined it, or another
@@ -292,6 +322,22 @@ describe('hv-filter-chips', () => {
     expect([...status.classList]).toEqual(['hv-status-chip', 'chip', 'tone-green-strong']);
     expect(status.classList.contains('warning')).toBe(false);
     expect([...overdue.classList]).toEqual(['hv-chip', 'chip', 'warning']);
+  });
+
+  it('paints a status filter chip in a household literal colour', async () => {
+    const el = await mount({
+      filters: { ...defaultFilters(), status: 'sold' },
+      statuses: [{ slug: 'sold', label: 'Verkauft', order: 3, color: '#2f6f4f', icon: 'box' }],
+    });
+    const status = el.shadowRoot?.querySelector(
+      '[data-testid="filter-chip"][data-key="status"]',
+    ) as HTMLElement;
+
+    // Still the status chip rather than the fixed vocabulary — the colour just
+    // arrives by the other route.
+    expect(status.classList.contains('hv-status-chip')).toBe(true);
+    expect(status.style.getPropertyValue('--hv-status-bg')).toBe('#2f6f4f');
+    expect(status.style.getPropertyValue('--hv-status-fg')).toBe('#ffffff');
   });
 
   it('still hands the host the patch that clears a status chip', async () => {

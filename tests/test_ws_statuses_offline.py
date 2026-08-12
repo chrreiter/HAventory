@@ -117,7 +117,7 @@ async def test_create_refuses_a_duplicate_slug() -> None:
 
 @pytest.mark.asyncio
 async def test_create_refuses_a_colour_outside_the_palette() -> None:
-    """The card can only paint the tokens it has rules for."""
+    """The card can only paint a token it has a rule for, or a literal it can read."""
 
     hass = _new_hass()
 
@@ -127,6 +127,20 @@ async def test_create_refuses_a_colour_outside_the_palette() -> None:
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+async def test_create_accepts_a_literal_colour() -> None:
+    """A household colour outside the ten reaches the store as it was entered."""
+
+    hass = _new_hass()
+
+    res = await _send(
+        hass, 1, "haventory/status/create", slug="lent_out", label="Lent out", color="#2F6F4F"
+    )
+
+    assert res["success"] is True, res
+    assert res["result"]["color"] == "#2f6f4f"
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,6 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { ifDefined } from 'lit/directives/if-defined.js';
 import { tokens, base } from '../ui/tokens';
 import { chip, tagLabel } from '../ui/chip';
 import { onEscape } from '../ui/keyboard';
@@ -9,6 +10,8 @@ import {
   DEFAULT_STATUS,
   STATUS_COLORS,
   STATUS_ICONS,
+  hexToneStyle,
+  isHexColor,
   knownIcon,
   renderStatusChip,
   slugFromLabel,
@@ -34,7 +37,7 @@ import type {
   DistinctValue,
   Item,
   LocationTreeNode,
-  StatusColor,
+  StatusColorValue,
   StatusDefinition,
   StoreState,
 } from '../store/types';
@@ -42,6 +45,15 @@ import './hv-confirm';
 import './hv-location-tree';
 
 export type OrganizeTab = 'locations' | 'categories' | 'tags' | 'statuses';
+
+/**
+ * What the colour input opens on before a household has chosen a colour of its
+ * own. A native colour input has no empty state — it always shows something —
+ * so this is a starting point, not a value: it is stored only once the picker
+ * reports a choice. Held off the ten tones so an accidental accept is visibly
+ * a custom colour rather than a token's near-twin.
+ */
+const CUSTOM_COLOR_SEED = '#7b5ea7';
 
 /**
  * The trees the two location pickers open, named so `aria-controls` can point at
@@ -374,6 +386,34 @@ export class HVOrganizeDialog extends LitElement {
         width: var(--hv-tap-min, 44px);
         height: var(--hv-tap-min, 44px);
       }
+      /* The eleventh swatch: a household's own colour, opening the browser's
+         colour picker. The native control is the whole target rather than a
+         thing beside it, so it is stretched over the swatch and made
+         invisible — Chrome and Firefox each draw their own box, neither of
+         which can be styled to match the ten. Focus still lands on it, so the
+         ring below is drawn from the swatch around it. */
+      .swatch.custom {
+        position: relative;
+        overflow: hidden;
+        /* No stored colour yet: a chequer says "pick one" where the ten say
+           "this one", without borrowing a hue that means something. */
+        background: var(--hv-chip-bg);
+        color: var(--hv-text-secondary);
+      }
+      .swatch.custom > input[type='color'] {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        padding: 0;
+        border: none;
+        cursor: pointer;
+      }
+      .swatch.custom:focus-within {
+        outline: 2px solid var(--hv-primary);
+        outline-offset: 1px;
+      }
       .swatch.on,
       .glyph.on {
         outline: 2px solid var(--hv-primary);
@@ -676,7 +716,7 @@ export class HVOrganizeDialog extends LitElement {
   /** The "New category"/"New tag" row, open with the name being typed. */
   @state() private _editingStatus: string | 'new' | null = null;
   @state() private _statusLabel = '';
-  @state() private _statusColor: StatusColor = 'neutral';
+  @state() private _statusColor: StatusColorValue = 'neutral';
   @state() private _statusIcon = 'check';
   @state() private _statusError: string | null = null;
   /** A delete refused because items still carry the slug, and how many. */
@@ -1863,6 +1903,7 @@ export class HVOrganizeDialog extends LitElement {
     const derived = creating ? slugFromLabel(this._statusLabel, this.st?.statuses) : slug;
     const duplicate = this._duplicateLabel;
     const glyph = knownIcon(this._statusIcon);
+    const custom = isHexColor(this._statusColor) ? this._statusColor : null;
     return html`<div class="expander" data-testid="status-editor">
       <label class="status-name">
         <span class="hv-sr-only">Status name</span>
@@ -1907,7 +1948,30 @@ export class HVOrganizeDialog extends LitElement {
             ${glyph ? icon(glyph, 15) : html`<span class="letters">Aa</span>`}
           </button>`,
         )}
+        <label
+          class="swatch custom hv-status-chip ${custom ? 'on' : ''}"
+          style=${ifDefined(custom ? hexToneStyle(custom) : undefined)}
+          data-testid="status-color-custom"
+        >
+          <input
+            type="color"
+            data-testid="status-color-hex"
+            aria-label="Custom colour"
+            .value=${custom ?? CUSTOM_COLOR_SEED}
+            @input=${(e: Event) => {
+              this._statusColor = (e.target as HTMLInputElement).value.toLowerCase();
+            }}
+          />
+          ${glyph ? icon(glyph, 15) : html`<span class="letters">Aa</span>`}
+        </label>
       </div>
+      ${custom
+        ? html`<div class="hint" data-testid="status-color-custom-hint">
+            ${custom} is used exactly as entered, so this chip looks the same in every Home
+            Assistant theme — unlike the ten colours beside it, which follow the theme. The
+            text on it is black or white, whichever reads better.
+          </div>`
+        : null}
 
       <span class="hv-label">Icon</span>
       <div class="swatches" data-testid="status-icons">
