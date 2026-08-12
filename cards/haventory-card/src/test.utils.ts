@@ -23,6 +23,12 @@ interface MockConfig {
   conflictOnUpdate?: boolean;
   /** What `haventory/config` reports as the configured card heading. */
   cardTitle?: string;
+  /**
+   * What `haventory/config` reports as the integration-wide pill choice.
+   * Omitted means the key is absent from the response, as an older backend
+   * leaves it; `null` is a backend saying it has no opinion.
+   */
+  quickFilters?: string[] | null;
   /** What `haventory/areas/list` reports — the HA area registry, read-only. */
   areas?: AreaRef[];
   /** The status vocabulary; defaults to the built-in three the backend seeds. */
@@ -84,6 +90,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
   let locations: Location[] = initial?.locations ? [...initial.locations] : [];
   let conflictOnUpdate = !!initial?.conflictOnUpdate;
   const cardTitle = initial?.cardTitle ?? 'HAventory';
+  const quickFilters = initial?.quickFilters;
   let areas: AreaRef[] = initial?.areas ? [...initial.areas] : [];
   // The three the backend seeds, so a test that says nothing about statuses
   // still sees what a real install carries.
@@ -233,7 +240,11 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           return { integration_version: '0.0.1', schema_version: 4 } as unknown as T;
         }
         case 'haventory/config': {
-          return { card_title: cardTitle, statuses: [...statuses] } as unknown as T;
+          return {
+            card_title: cardTitle,
+            statuses: [...statuses],
+            ...(quickFilters === undefined ? {} : { quick_filters: quickFilters }),
+          } as unknown as T;
         }
         case 'haventory/areas/list': {
           return { areas } as unknown as T;

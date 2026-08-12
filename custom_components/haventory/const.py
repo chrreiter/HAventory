@@ -24,6 +24,34 @@ CONF_CARD_TITLE: str = "card_title"
 DEFAULT_CARD_TITLE: str = "HAventory"
 
 # -----------------------------
+# Quick-filter pills (config-entry option)
+# -----------------------------
+# Which quick-filter pills the card and the sidebar panel offer. A dashboard's
+# own `quick_filters:` still wins for that one card; the panel has no dashboard
+# config at all, so this option is the only thing that reaches it.
+#
+# The vocabulary is the card's — `QUICK_FILTER_KEYS` in
+# `cards/haventory-card/src/ui/quick-filters.ts` — and the two spellings have to
+# agree, because a name only this side knows drops a pill silently instead of
+# failing. tests/test_frontend_registration.py holds them to each other.
+
+CONF_QUICK_FILTERS: str = "quick_filters"
+QUICK_FILTER_KEYS: tuple[str, ...] = (
+    "total",
+    "low_stock",
+    "overdue",
+    "inspection_due",
+    "checked_out",
+)
+
+# What the options form prefills when nothing is stored — every pill, so that
+# saving the form without touching this field changes nothing. It is not what
+# an unset option *means*: an entry with no value for it reports `None` over
+# `haventory/config`, which leaves the choice to the dashboard, and an empty
+# list is the household's explicit "no pills".
+DEFAULT_QUICK_FILTERS: tuple[str, ...] = QUICK_FILTER_KEYS
+
+# -----------------------------
 # Sidebar panel (config-entry option)
 # -----------------------------
 # HAventory as a page of its own, registered with `panel_custom` and rendered by

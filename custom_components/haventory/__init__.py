@@ -53,6 +53,7 @@ from . import stale_files
 from . import ws as ws_mod
 from .const import (
     CONF_CARD_TITLE,
+    CONF_QUICK_FILTERS,
     CONF_SIDEBAR_PANEL_ENABLED,
     DEFAULT_CARD_TITLE,
     DEFAULT_SIDEBAR_PANEL_ENABLED,
@@ -60,6 +61,7 @@ from .const import (
     PANEL_ELEMENT_NAME,
     PANEL_ICON,
     PANEL_URL_PATH,
+    QUICK_FILTER_KEYS,
 )
 from .exceptions import CorruptSchemaVersionError, SchemaDowngradeError, StorageError
 from .rate_limit import RateLimitConfig, RateLimiter
@@ -207,8 +209,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _register_media_view(hass)
     await _async_sweep_orphaned_media(hass, repository)
 
-    # Heading served to the card by `haventory/config`.
+    # Heading and pill choice served to the card by `haventory/config`.
     hass.data[DOMAIN]["card_title"] = _resolve_card_title(entry)
+    hass.data[DOMAIN]["quick_filters"] = _resolve_quick_filters(entry)
 
     # WebSocket rate limiting (off by default; configured via the options flow)
     hass.data[DOMAIN]["rate_limiter"] = RateLimiter(
@@ -305,10 +308,29 @@ def _resolve_card_title(entry: ConfigEntry) -> str:
     return DEFAULT_CARD_TITLE
 
 
+def _resolve_quick_filters(entry: ConfigEntry) -> list[str] | None:
+    """Read the configured quick-filter pills, or `None` when none was chosen.
+
+    `None` and `[]` are different answers and stay that way: an entry that never
+    chose leaves the decision to the dashboard's own `quick_filters:`, and after
+    that to the card's "every pill" default, while an empty list is a household
+    saying it wants no pills anywhere. Names this build does not know are
+    dropped rather than passed on — the card would drop them too, and dropping
+    them here keeps the wire payload to the vocabulary both sides share.
+    """
+    options = getattr(entry, "options", None) or {}
+    chosen = options.get(CONF_QUICK_FILTERS)
+    if not isinstance(chosen, list):
+        return None
+    known = {entry_name for entry_name in chosen if isinstance(entry_name, str)}
+    return [key for key in QUICK_FILTER_KEYS if key in known]
+
+
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Apply changed options: card title, sidebar panel, rebuilt WS rate limiter."""
+    """Apply changed options: card title, pills, sidebar panel, WS rate limiter."""
     bucket = hass.data.setdefault(DOMAIN, {})
     bucket["card_title"] = _resolve_card_title(entry)
+    bucket["quick_filters"] = _resolve_quick_filters(entry)
     bucket["rate_limiter"] = RateLimiter(
         RateLimitConfig.from_options(getattr(entry, "options", None))
     )

@@ -4,6 +4,7 @@ import type { HassLike } from './store/types';
 import { Store } from './store/store';
 import { resolveColorScheme } from './ui/theme';
 import { DEFAULT_CARD_TITLE } from './ui/card-title';
+import type { QuickFilterKey } from './ui/quick-filters';
 import { defineCardElement } from './register';
 import { HostSurfaces } from './host-surfaces';
 import type { OrganizeTab } from './components/hv-organize-dialog';
@@ -131,6 +132,7 @@ export class HAventoryPanel extends LitElement {
         ?narrow=${this.narrow}
         .store=${this.store}
         .heading=${this._heading()}
+        .quickFilters=${this._quickFilters()}
         .columns=${this.surfaces.columns}
         .menuEntries=${this.surfaces.menuEntries()}
         @menu-action=${this._onMenuAction}
@@ -140,6 +142,17 @@ export class HAventoryPanel extends LitElement {
 
       ${this.surfaces.renderSurfaces()}
     `;
+  }
+
+  /**
+   * Which pills the panel offers.
+   *
+   * One source only: a panel has no Lovelace config to carry a per-dashboard
+   * `quick_filters:`, so the integration's options flow decides, and `null` —
+   * no choice made, or the store has not answered yet — means every pill.
+   */
+  private _quickFilters(): QuickFilterKey[] | null {
+    return this.store?.state.value.quickFilters ?? null;
   }
 
   /**

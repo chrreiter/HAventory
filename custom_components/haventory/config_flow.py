@@ -7,9 +7,15 @@ from typing import TYPE_CHECKING, Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import section
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .const import (
     CONF_CARD_TITLE,
+    CONF_QUICK_FILTERS,
     CONF_RATE_LIMIT_COMMANDS_BURST,
     CONF_RATE_LIMIT_COMMANDS_PER_SECOND,
     CONF_RATE_LIMIT_ENABLED,
@@ -21,6 +27,7 @@ from .const import (
     CONF_RATE_LIMIT_GLOBAL_EVENTS_PER_SECOND,
     CONF_SIDEBAR_PANEL_ENABLED,
     DEFAULT_CARD_TITLE,
+    DEFAULT_QUICK_FILTERS,
     DEFAULT_RATE_LIMIT_COMMANDS_BURST,
     DEFAULT_RATE_LIMIT_COMMANDS_PER_SECOND,
     DEFAULT_RATE_LIMIT_ENABLED,
@@ -32,6 +39,7 @@ from .const import (
     DEFAULT_RATE_LIMIT_GLOBAL_EVENTS_PER_SECOND,
     DEFAULT_SIDEBAR_PANEL_ENABLED,
     DOMAIN,
+    QUICK_FILTER_KEYS,
 )
 
 if TYPE_CHECKING:
@@ -71,6 +79,38 @@ def clean_card_title(value: Any) -> str:
     if not isinstance(value, str):
         return DEFAULT_CARD_TITLE
     return value.strip() or DEFAULT_CARD_TITLE
+
+
+def clean_quick_filters(value: Any) -> list[str]:
+    """Normalize a submitted pill list to the names this build knows.
+
+    Canonical order rather than click order, so the stored list reads the same
+    however it was assembled. An empty result is kept as it is: a household that
+    unticks everything is choosing no pills, which is not the same as never
+    having chosen. Anything that is not a list at all — which the selector
+    itself already refuses — reads as the form's prefill.
+    """
+    if not isinstance(value, list):
+        return list(DEFAULT_QUICK_FILTERS)
+    chosen = {entry for entry in value if isinstance(entry, str)}
+    return [key for key in QUICK_FILTER_KEYS if key in chosen]
+
+
+def _quick_filters_selector() -> SelectSelector:
+    """Build the pill picker: the five names, as a checkbox list.
+
+    `LIST` rather than a dropdown because the vocabulary is fixed and short, and
+    a household deciding which pills it wants should see all of them at once.
+    The labels come from the translation key, so the wire names never surface.
+    """
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=list(QUICK_FILTER_KEYS),
+            multiple=True,
+            mode=SelectSelectorMode.LIST,
+            translation_key=CONF_QUICK_FILTERS,
+        )
+    )
 
 
 def _user_schema() -> vol.Schema:
@@ -131,6 +171,17 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
                     current.get(CONF_SIDEBAR_PANEL_ENABLED, DEFAULT_SIDEBAR_PANEL_ENABLED)
                 ),
             ): bool,
+            # Prefilled with every pill when the entry has never chosen, so
+            # saving this form for one of the fields above cannot quietly mean
+            # "no pills". Once saved, the choice is explicit for good — the
+            # unset state is not reachable from the form, only from an entry
+            # that predates the option.
+            vol.Required(
+                CONF_QUICK_FILTERS,
+                default=clean_quick_filters(
+                    current.get(CONF_QUICK_FILTERS, list(DEFAULT_QUICK_FILTERS))
+                ),
+            ): _quick_filters_selector(),
             # Collapsed while the whole block is untouched, so the common case
             # is a form with one field; a customized limiter opens expanded
             # rather than hiding the values behind a header. No default on the
@@ -154,13 +205,18 @@ def _flatten_options(user_input: dict[str, Any]) -> dict[str, Any]:
 
 
 class HAventoryOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle HAventory options (card title, WebSocket rate limiting)."""
+    """Handle HAventory options (card title, sidebar, pills, WS rate limiting)."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage the options."""
         if user_input is not None:
             options = _flatten_options(user_input)
             options[CONF_CARD_TITLE] = clean_card_title(options.get(CONF_CARD_TITLE))
+            # Only when the form carried the field: writing it unconditionally
+            # would turn "never chose" into an explicit list on any submission
+            # that skipped it, and the two are different answers downstream.
+            if CONF_QUICK_FILTERS in options:
+                options[CONF_QUICK_FILTERS] = clean_quick_filters(options[CONF_QUICK_FILTERS])
             return self.async_create_entry(title="", data=options)
 
         current = dict(getattr(self.config_entry, "options", None) or {})

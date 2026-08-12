@@ -488,7 +488,9 @@ throughout.
 - **Standard card** — one Add button and a single ⋮ menu (Select items, Organize, Refresh,
   Diagnostics, Export backup / Export current view, Import); Columns is offered in the full
   view, which is the only surface it changes. Live stat badges — items, low stock, overdue,
-  due for inspection, checked out — are click-to-filter. Rows carry a quantity stepper, a
+  due for inspection, checked out — are click-to-filter, and which of them a household
+  offers is set under Settings → Devices & services → HAventory → **Configure**, or per
+  dashboard with the card's `quick_filters:`. Rows carry a quantity stepper, a
   LOW badge, an overdue check-out chip, an "Inspection due" chip, an amber status chip
   when an item is flagged Missing / Needs repair, and hover actions.
 - **Filters** — a collapsible panel exposing the whole backend filter object: location
@@ -627,7 +629,7 @@ quick_filters:  # optional; which quick-filter pills this card offers
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `title` | string | the integration-wide card title | Names this card, for this dashboard only. |
-| `quick_filters` | list | every pill | Which quick-filter pills the card and its full view offer: `total`, `low_stock`, `overdue`, `inspection_due`, `checked_out`. |
+| `quick_filters` | list | the integration-wide choice, or every pill | Which quick-filter pills the card and its full view offer: `total`, `low_stock`, `overdue`, `inspection_due`, `checked_out`. |
 
 Those two are the only options the card reads. Any other key is ignored rather than
 rejected, so a stale dashboard config never breaks the card — and the same holds inside
@@ -636,10 +638,10 @@ the key being absent.
 
 Adding the card from the card picker opens a **visual editor** for `title`; the YAML above
 stays equivalent, and switching to it shows the same config. The editor covers `title`
-only — `quick_filters` is set in YAML, because the pill choice that reaches every surface
-(the sidebar panel included) belongs to the integration's options, not to one dashboard's
-card. Editing a card that carries `quick_filters` through the visual editor leaves that key
-exactly as it was.
+only — the pill choice that reaches every surface (the sidebar panel included) belongs to
+the integration's options rather than one dashboard's card, and `quick_filters` above is
+the per-dashboard exception to it, set in YAML. Editing a card that carries
+`quick_filters` through the visual editor leaves that key exactly as it was.
 
 Without `title`, the card uses the name set under Settings → Devices & services →
 HAventory → **Configure** (asked for at setup too, and defaulting to "HAventory"), so one
@@ -648,10 +650,16 @@ dashboards should name the same inventory differently. An open dashboard picks u
 changed name on its next refresh or reload; the change is not pushed live.
 
 `quick_filters` says which pills are *allowed*; a pill still only shows when it has
-something to count, so `low_stock` draws nothing while nothing is low. Omitting the key
-offers all of them, which is what every dashboard written before this option gets. An
-explicit empty list is a choice and offers none. The sidebar panel has no dashboard config
-of its own, so it always offers all of them.
+something to count, so `low_stock` draws nothing while nothing is low. An explicit empty
+list is a choice and offers none. `total` is narrower than the other four: only the card
+draws it as a pill, and only at full width — the full view and the sidebar page print the
+total in their header instead, whichever way it is set.
+
+Omitting the key hands the decision to **Quick-filter pills** under Settings → Devices &
+services → HAventory → **Configure**, which is the one place that reaches every surface:
+the sidebar panel has no dashboard config of its own, so that setting is all it reads.
+Leave both unset — a fresh install, or any dashboard written before either option existed
+— and all five pills are offered.
 
 ### CI/CD & Ops
 

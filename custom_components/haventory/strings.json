@@ -22,14 +22,16 @@
     "step": {
       "init": {
         "title": "HAventory Options",
-        "description": "Set the heading the card carries and whether HAventory has its own sidebar entry.",
+        "description": "Set the heading the card carries, whether HAventory has its own sidebar entry, and which quick-filter pills it offers.",
         "data": {
           "card_title": "Card title",
-          "sidebar_panel_enabled": "Show HAventory in the sidebar"
+          "sidebar_panel_enabled": "Show HAventory in the sidebar",
+          "quick_filters": "Quick-filter pills"
         },
         "data_description": {
           "card_title": "Heading shown on the HAventory card. A dashboard card with its own title: option keeps that one. Reload the dashboard to see a change.",
-          "sidebar_panel_enabled": "Gives HAventory a page of its own, named after the card title above. This applies to everyone using this Home Assistant; each user can still hide the entry through the sidebar's own Edit sidebar mode. The entry appears and disappears as you save this form — no restart. On the Overview page, Edit then Add shortcut can also pin HAventory as a tile."
+          "sidebar_panel_enabled": "Gives HAventory a page of its own, named after the card title above. This applies to everyone using this Home Assistant; each user can still hide the entry through the sidebar's own Edit sidebar mode. The entry appears and disappears as you save this form — no restart. On the Overview page, Edit then Add shortcut can also pin HAventory as a tile.",
+          "quick_filters": "The one-tap filters shown above the item list, here and on the sidebar page. A pill still only appears when it has something to count, so a household that never checks anything out sees no checked-out pill either way. Item total is the exception in a second way: only the card draws it as a pill, and only at full width — the sidebar page and the full view print the total in their header instead, whether or not it is ticked here. A dashboard card with its own quick_filters: option keeps that one. Reload the dashboard to see a change."
         },
         "sections": {
           "rate_limit": {
@@ -59,6 +61,17 @@
             }
           }
         }
+      }
+    }
+  },
+  "selector": {
+    "quick_filters": {
+      "options": {
+        "total": "Item total",
+        "low_stock": "Low stock",
+        "overdue": "Overdue",
+        "inspection_due": "Due for inspection",
+        "checked_out": "Checked out"
       }
     }
   },

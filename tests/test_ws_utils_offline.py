@@ -107,6 +107,49 @@ async def test_config_falls_back_to_default_card_title() -> None:
 
 
 @pytest.mark.asyncio
+async def test_config_reports_the_configured_quick_filter_pills() -> None:
+    """haventory/config hands the card the pill choice made in the options flow."""
+
+    hass = HomeAssistant()
+    bucket = hass.data.setdefault(DOMAIN, {})
+    bucket["repository"] = Repository()
+    bucket["quick_filters"] = ["total", "low_stock"]
+    ws_setup(hass)
+
+    res = await _send(hass, 7, "haventory/config")
+    assert res["success"] is True
+    assert res["result"]["quick_filters"] == ["total", "low_stock"]
+
+
+@pytest.mark.asyncio
+async def test_config_reports_an_empty_pill_choice_as_empty() -> None:
+    """No pills is a choice, and has to arrive as one rather than as "unset"."""
+
+    hass = HomeAssistant()
+    bucket = hass.data.setdefault(DOMAIN, {})
+    bucket["repository"] = Repository()
+    bucket["quick_filters"] = []
+    ws_setup(hass)
+
+    res = await _send(hass, 8, "haventory/config")
+    assert res["success"] is True
+    assert res["result"]["quick_filters"] == []
+
+
+@pytest.mark.asyncio
+async def test_config_reports_no_pill_choice_as_null() -> None:
+    """An entry that never chose leaves the decision to the dashboard."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    ws_setup(hass)
+
+    res = await _send(hass, 9, "haventory/config")
+    assert res["success"] is True
+    assert res["result"]["quick_filters"] is None
+
+
+@pytest.mark.asyncio
 async def test_config_reports_the_status_vocabulary() -> None:
     """The card labels a stored slug from here, not from a constant of its own."""
 

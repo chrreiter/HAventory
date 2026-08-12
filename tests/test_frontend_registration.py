@@ -36,6 +36,7 @@ from custom_components.haventory.const import (
     PANEL_ELEMENT_NAME,
     PANEL_ICON,
     PANEL_URL_PATH,
+    QUICK_FILTER_KEYS,
     STATUS_COLORS,
     STATUS_ICONS,
 )
@@ -835,6 +836,38 @@ def test_the_card_offers_exactly_the_vocabularies_the_backend_accepts() -> None:
 
     assert declared("STATUS_COLORS") == list(STATUS_COLORS)
     assert declared("STATUS_ICONS") == list(STATUS_ICONS)
+
+
+def test_the_options_flow_offers_exactly_the_pills_the_card_draws() -> None:
+    """The pill vocabulary is spelled out in both languages and must agree.
+
+    Neither side can check the other: the options flow stores names the card
+    looks up, and a name only one of them knows is dropped in silence — the
+    household ticks a pill that never appears, or loses one it never untucked.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "quick-filters.ts").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r"export const QUICK_FILTER_KEYS = \[(.*?)\] as const;", source, re.S)
+    assert match is not None, "QUICK_FILTER_KEYS is no longer declared in quick-filters.ts"
+    declared = re.findall(r"'([^']+)'", match.group(1))
+
+    assert declared == list(QUICK_FILTER_KEYS)
+
+
+def test_every_pill_the_options_flow_offers_carries_a_label() -> None:
+    """A selector option with no translation renders its raw wire name.
+
+    Home Assistant looks the labels up under `selector.<key>.options.<value>`,
+    so a pill added on the Python side alone reaches the form as `low_stock`.
+    """
+    strings = json.loads(
+        (REPO_ROOT / "custom_components" / "haventory" / "strings.json").read_text(encoding="utf-8")
+    )
+    labels = strings["selector"]["quick_filters"]["options"]
+
+    assert sorted(labels) == sorted(QUICK_FILTER_KEYS)
+    assert all(isinstance(text, str) and text for text in labels.values())
 
 
 def test_every_status_colour_has_a_rule_in_the_chip_stylesheet() -> None:

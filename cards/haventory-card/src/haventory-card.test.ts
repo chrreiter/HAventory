@@ -7,13 +7,21 @@ type Card = HAventoryCard & { updateComplete: Promise<unknown>; hass?: unknown }
 
 async function mountCard(
   config: unknown = {},
-  opts: { items?: ReturnType<typeof makeItem>[]; cardTitle?: string } = {},
+  opts: {
+    items?: ReturnType<typeof makeItem>[];
+    cardTitle?: string;
+    quickFilters?: string[] | null;
+  } = {},
 ) {
   const el = document.createElement('haventory-card') as Card;
   document.body.appendChild(el);
   await customElements.whenDefined('haventory-card');
   el.setConfig(config);
-  el.hass = makeMockHass({ items: opts.items ?? [], cardTitle: opts.cardTitle });
+  el.hass = makeMockHass({
+    items: opts.items ?? [],
+    cardTitle: opts.cardTitle,
+    quickFilters: opts.quickFilters,
+  });
   await el.updateComplete;
   return { el, sr: el.shadowRoot as ShadowRoot };
 }
@@ -126,6 +134,38 @@ describe('haventory-card: the Lovelace element', () => {
 
     it('honours an explicit empty list', async () => {
       const { sr } = await mountCard({ quick_filters: [] });
+      expect(shellOf(sr).quickFilters).toEqual([]);
+    });
+
+    // Same precedence the heading has: this dashboard, then the integration,
+    // then the built-in default.
+    it('takes the pills from the integration when the dashboard names none', async () => {
+      const { el, sr } = await mountCard({}, { quickFilters: ['low_stock'] });
+      await settle(el);
+      expect(shellOf(sr).quickFilters).toEqual(['low_stock']);
+    });
+
+    it('lets this dashboard override the integration-wide choice', async () => {
+      const { el, sr } = await mountCard({ quick_filters: ['overdue'] }, { quickFilters: ['low_stock'] });
+      await settle(el);
+      expect(shellOf(sr).quickFilters).toEqual(['overdue']);
+    });
+
+    it('lets a dashboard that wants no pills say so over the integration', async () => {
+      const { el, sr } = await mountCard({ quick_filters: [] }, { quickFilters: ['low_stock'] });
+      await settle(el);
+      expect(shellOf(sr).quickFilters).toEqual([]);
+    });
+
+    it('offers every pill when the integration has no opinion either', async () => {
+      const { el, sr } = await mountCard({}, { quickFilters: null });
+      await settle(el);
+      expect(shellOf(sr).quickFilters).toBe(null);
+    });
+
+    it('honours an integration that wants no pills anywhere', async () => {
+      const { el, sr } = await mountCard({}, { quickFilters: [] });
+      await settle(el);
       expect(shellOf(sr).quickFilters).toEqual([]);
     });
   });

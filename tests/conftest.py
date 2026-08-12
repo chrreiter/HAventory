@@ -43,6 +43,7 @@ import os
 import sys
 import tempfile
 import types
+from enum import StrEnum
 from pathlib import Path
 
 import voluptuous as vol
@@ -274,6 +275,43 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     # below validates every frame's `id` with it.
     ha_helpers_cv.positive_int = vol.All(vol.Coerce(int), vol.Range(min=0))
     sys.modules["homeassistant.helpers.config_validation"] = ha_helpers_cv
+
+    # homeassistant.helpers.selector — only the select selector, which the
+    # options flow uses for the quick-filter pills. Validation mirrors HA's:
+    # nothing outside the offered options gets through, and a `multiple`
+    # selector takes and returns a list.
+    ha_helpers_selector = types.ModuleType("homeassistant.helpers.selector")
+
+    class SelectSelectorMode(StrEnum):  # type: ignore[override]
+        LIST = "list"
+        DROPDOWN = "dropdown"
+
+    # A TypedDict in HA, so it is called by name like a class.
+    def SelectSelectorConfig(**kwargs):  # type: ignore[override]
+        return dict(kwargs)
+
+    class SelectSelector:  # type: ignore[override]
+        def __init__(self, config) -> None:  # type: ignore[no-untyped-def]
+            self.config = dict(config)
+
+        def __call__(self, value):  # type: ignore[no-untyped-def]
+            offered = [
+                entry["value"] if isinstance(entry, dict) else entry
+                for entry in self.config.get("options") or ()
+            ]
+            values = value if self.config.get("multiple") else [value]
+            if not isinstance(values, list):
+                raise vol.Invalid("expected a list")
+            for entry in values:
+                if entry not in offered:
+                    raise vol.Invalid(f"{entry!r} is not one of {offered}")
+            return list(values) if self.config.get("multiple") else value
+
+    ha_helpers_selector.SelectSelector = SelectSelector
+    ha_helpers_selector.SelectSelectorConfig = SelectSelectorConfig
+    ha_helpers_selector.SelectSelectorMode = SelectSelectorMode
+    ha_helpers.selector = ha_helpers_selector
+    sys.modules["homeassistant.helpers.selector"] = ha_helpers_selector
 
     ha_helpers_storage = types.ModuleType("homeassistant.helpers.storage")
 
