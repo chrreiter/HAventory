@@ -64,7 +64,7 @@ panel, which has no Lovelace config at all, picks the stored choice up.
 
 ## H7 — #298 a hex colour beside the ten status tokens
 
-**Branch / PR**: `claude/v0-5-0-w1c-status-hex-colours` / #NNN
+**Branch / PR**: `claude/v0-5-0-w1c-status-hex-colours` / #418
 **Why this needs a real HA**: legibility is the whole cost of this feature, and the offline
 suite can only prove the maths. What it cannot show is a chip at a household's own colour
 sitting on a *real* surface, in light and dark, under a non-default HA theme — the case the
