@@ -308,10 +308,11 @@ The dependency chain the issues record, condensed:
    green gates alone do not merge it. If slice B slips, this slips to V0.7.0 with it;
    the release does not move (#236).
 
-Rules of the road are the same as the previous milestone
-(`dev/V0_5_0_implementation.md` §4, while it exists): the issue notes are the design;
-where their file references have gone stale, decide against the code and record the
-decision in the PR body — do not stop to rewrite the issue.
+Session assignments, the rules each session runs under, and the paste-ready prompts live
+in [`V0_6_0_implementation.md`](V0_6_0_implementation.md). The standing rule carries
+over: the issue notes are the design; where their file references have gone stale, decide
+against the code and record the decision in the PR body — do not stop to rewrite the
+issue.
 
 ## 6. What V0.6.0 deliberately does not do
 
