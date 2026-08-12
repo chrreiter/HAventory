@@ -424,7 +424,12 @@ export interface ImportWarning {
   path: string;
   message: string;
   name?: string;
-  existing_id?: string;
+  /**
+   * Every stored entity the name collides with, not just one. A location tree
+   * repeats leaf names ("Shelf A", "Drawer 1"), so a hand-rebuilt tree collides
+   * several deep on the same name at once.
+   */
+  existing_ids?: string[];
 }
 
 /** Per-type classification counts in an import preview. */

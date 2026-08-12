@@ -163,7 +163,7 @@ async def test_import_preview_name_collision_survives_the_wire(
     assert preview["result"]["valid"] is True
     warnings = preview["result"]["warnings"]
     assert [w["code"] for w in warnings] == ["name_collision"]
-    assert warnings[0]["existing_id"] == stored_id
+    assert warnings[0]["existing_ids"] == [stored_id]
     assert warnings[0]["name"] == "Hammer"
 
     # And a document with nothing to flag reports the key as an empty list.

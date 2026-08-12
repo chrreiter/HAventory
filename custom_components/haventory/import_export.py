@@ -237,7 +237,7 @@ def _err(path: str, message: str) -> dict[str, str]:
     return {"path": path, "message": message}
 
 
-def _warn(code: str, path: str, message: str, **fields: str) -> dict[str, str]:
+def _warn(code: str, path: str, message: str, **fields: Any) -> dict[str, Any]:
     """One non-blocking finding about an otherwise valid document.
 
     Unlike an error, a warning carries a ``code``: every error means "this
@@ -688,15 +688,104 @@ def _recompute_paths(
     return {"items": out_items, "locations": out_locations}
 
 
+#: How many colliding stored entries a warning quotes by name before it counts
+#: the rest. The message renders as one line in the import sheet, and a repeated
+#: leaf name ("Drawer 1") can collide with a dozen stored entries at once.
+COLLISION_LABELS_SHOWN = 3
+
+
+def _quoted_path(entry: dict[str, Any], key: str) -> str:
+    """The display path an entity carries under ``key``, or "" when it has none."""
+
+    path = entry.get(key)
+    display = path.get("display_path") if isinstance(path, dict) else None
+    return display if isinstance(display, str) and display else ""
+
+
+def _join_phrases(phrases: list[str]) -> str:
+    if len(phrases) == 1:
+        return phrases[0]
+    return f"{', '.join(phrases[:-1])} and {phrases[-1]}"
+
+
+def _describe_incoming_item(doc: dict[str, Any], name: str) -> str:
+    """Name the incoming item, and where the document puts it.
+
+    Two incoming items of one name would otherwise render as two identical
+    lines, and the location is what separates them — the same job the stored
+    side's path does.
+    """
+
+    where = _quoted_path(doc, "location_path")
+    return f'"{name}" in "{where}"' if where else f'"{name}"'
+
+
+def _describe_incoming_location(doc: dict[str, Any], name: str) -> str:
+    return f'"{_quoted_path(doc, "path") or name}"'
+
+
+def _describe_stored_item(_stored: dict[str, Any]) -> str:
+    """An item has no path of its own — the count and the ids are the handle."""
+
+    return ""
+
+
+def _describe_stored_location(stored: dict[str, Any]) -> str:
+    """Name the stored location by its path.
+
+    Two legitimate "Shelf A"s under different parents are common, and the path
+    is what lets an operator tell one from the rebuilt duplicate at a glance.
+    The check itself deliberately does not scope by parent: an incoming
+    location's parent may itself be incoming, so resolving it would mean
+    planning the tree twice to answer what the path already answers.
+    """
+
+    return f'"{_quoted_path(stored, "path")}"' if _quoted_path(stored, "path") else ""
+
+
+def _collision_message(*, subject: str, kind: str, stored_labels: list[str]) -> str:
+    """One self-contained sentence naming both sides of a name collision.
+
+    Held to a single sentence on purpose: the import sheet renders one of these
+    per clash under a lead that already explains what a clash is, so a line that
+    repeats the explanation puts the same claim on screen six times.
+
+    ``stored_labels`` is one entry per colliding stored entity, empty-stringed
+    for a kind that has no path to quote. Every entity is counted; only the
+    quotable ones are named, and only the first few of those.
+    """
+
+    total = len(stored_labels)
+    plural = total > 1
+    ids_phrase = "under different ids" if plural else "under a different id"
+
+    quotable = [label for label in stored_labels if label]
+    if quotable:
+        shown = quotable[:COLLISION_LABELS_SHOWN]
+        rest = total - len(shown)
+        more = f", and {rest} more" if rest > 0 else ""
+        verb = "are" if plural else "is"
+        already = f"{_join_phrases(shown)}{more} {verb} already here"
+    else:
+        article = "an" if kind[0] in "aeiou" else "a"
+        counted_kind = f"{total} {kind}s" if plural else f"{article} {kind}"
+        verb = "go" if plural else "goes"
+        already = f"{counted_kind} here already {verb} by that name"
+
+    return f"{subject} would be added while {already}, {ids_phrase}."
+
+
 def _name_collision_warnings(  # noqa: PLR0913 - one document side, one stored side
     *,
     label: str,
+    kind: str,
     added_ids: list[str],
     incoming: list[dict[str, Any]],
     ids: list[str],
     existing: dict[str, Any],
-    describe,
-) -> list[dict[str, str]]:
+    describe_stored,
+    describe_incoming,
+) -> list[dict[str, Any]]:
     """Flag each incoming entity about to be created under a taken name.
 
     The hazard this catches is the one the contract already names: a document
@@ -717,68 +806,55 @@ def _name_collision_warnings(  # noqa: PLR0913 - one document side, one stored s
     Names are compared under ``normalize_text_for_sort`` — case-insensitive,
     accent-folded, whitespace-collapsed — which is how the repository itself
     compares names.
+
+    **Every** stored entity of a colliding name is reported, not the first one
+    found. Repeated leaf names are how location trees are shaped, so a
+    hand-rebuilt tree collides several deep on "Shelf A" or "Drawer 1" at once;
+    naming one arbitrary stored entity there would point the path quote at the
+    wrong counterpart, which is the one job that quote exists to do.
     """
 
     if not added_ids:
         return []
 
-    stored_by_name: dict[str, tuple[str, dict[str, Any]]] = {}
+    stored_by_name: dict[str, list[tuple[str, dict[str, Any]]]] = {}
     for stored_id, stored in existing.items():
         name = stored.get("name")
         if isinstance(name, str) and name.strip():
-            stored_by_name.setdefault(normalize_text_for_sort(name), (str(stored_id), stored))
+            stored_by_name.setdefault(normalize_text_for_sort(name), []).append(
+                (str(stored_id), stored)
+            )
 
     index_by_id = {eid: idx for idx, eid in enumerate(ids) if eid}
-    warnings: list[dict[str, str]] = []
+    warnings: list[dict[str, Any]] = []
     for eid in added_ids:
         idx = index_by_id.get(eid)
         if idx is None:  # pragma: no cover - every added id came from `ids`
             continue
-        name = incoming[idx].get("name")
+        doc = incoming[idx]
+        name = doc.get("name")
         if not isinstance(name, str) or not name.strip():
             continue
-        match = stored_by_name.get(normalize_text_for_sort(name))
-        if match is None:
+        matches = stored_by_name.get(normalize_text_for_sort(name))
+        if not matches:
             continue
-        existing_id, stored = match
+        # Ordered by what the message shows, so the same document reports the
+        # same thing whatever order the repository happens to hold its entities.
+        ordered = sorted(matches, key=lambda match: (describe_stored(match[1]), match[0]))
         warnings.append(
             _warn(
                 "name_collision",
                 f"{label}[{idx}]",
-                (
-                    f'"{name.strip()}" will be added as a second entry: '
-                    f"{describe(stored)} already goes by that name under a different id. "
-                    "Import matches on the id alone, so this creates a duplicate rather "
-                    "than updating what is here."
+                _collision_message(
+                    subject=describe_incoming(doc, name.strip()),
+                    kind=kind,
+                    stored_labels=[describe_stored(stored) for _, stored in ordered],
                 ),
                 name=name.strip(),
-                existing_id=existing_id,
+                existing_ids=[stored_id for stored_id, _ in ordered],
             )
         )
     return warnings
-
-
-def _describe_stored_item(_stored: dict[str, Any]) -> str:
-    """An item has no path to quote — the id in the warning entry is the handle."""
-
-    return "an existing item"
-
-
-def _describe_stored_location(stored: dict[str, Any]) -> str:
-    """Name the stored location by its path.
-
-    Two legitimate "Shelf A"s under different parents are common, and the path
-    is what lets an operator tell one from the rebuilt duplicate at a glance.
-    The check itself deliberately does not scope by parent: an incoming
-    location's parent may itself be incoming, so resolving it would mean
-    planning the tree twice to answer what the path already answers.
-    """
-
-    path = stored.get("path")
-    display = path.get("display_path") if isinstance(path, dict) else None
-    if isinstance(display, str) and display:
-        return f'the location at "{display}"'
-    return "an existing location"
 
 
 def _empty_bucket() -> dict[str, list[str]]:
@@ -822,7 +898,7 @@ def plan_import(
     if policy not in POLICIES:
         raise ValidationError(f"policy must be one of: {', '.join(POLICIES)}")
 
-    warnings: list[dict[str, str]] = []
+    warnings: list[dict[str, Any]] = []
     items_in, locations_in, errors = _parse_envelope(
         doc, current_schema_version=current_schema_version
     )
@@ -896,21 +972,25 @@ def plan_import(
     warnings.extend(
         _name_collision_warnings(
             label="locations",
+            kind="location",
             added_ids=report["locations"]["add"],
             incoming=locations_in,
             ids=loc_ids,
             existing=existing_locations,
-            describe=_describe_stored_location,
+            describe_stored=_describe_stored_location,
+            describe_incoming=_describe_incoming_location,
         )
     )
     warnings.extend(
         _name_collision_warnings(
             label="items",
+            kind="item",
             added_ids=report["items"]["add"],
             incoming=items_in,
             ids=item_ids,
             existing=existing_items,
-            describe=_describe_stored_item,
+            describe_stored=_describe_stored_item,
+            describe_incoming=_describe_incoming_item,
         )
     )
 

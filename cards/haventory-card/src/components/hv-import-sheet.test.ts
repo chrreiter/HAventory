@@ -204,16 +204,17 @@ describe('hv-import-sheet: preview', () => {
           {
             code: 'name_collision',
             path: 'items[0]',
-            message: '"Hammer" will be added as a second entry: an existing item already goes by that name.',
+            message:
+              '"Hammer" would be added while an item here already goes by that name, under a different id.',
             name: 'Hammer',
-            existing_id: 'abc',
+            existing_ids: ['abc'],
           },
         ],
       }),
     });
     const block = q(el, '[data-testid="import-warnings"]');
     expect(block?.textContent).toContain('1 name clash');
-    expect(block?.textContent).toContain('"Hammer" will be added as a second entry');
+    expect(block?.textContent).toContain('"Hammer" would be added while an item here already goes by');
   });
 
   it('warns without gating: the import button stays enabled either way', async () => {

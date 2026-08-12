@@ -365,10 +365,10 @@ Result of `distinct_values`, used by category/tag autocomplete, the browser view
 ```json
 {
   "code": "name_collision",
-  "path": "items[3]",
-  "message": "\"Shelf A\" will be added as a second entry: …",
+  "path": "locations[3]",
+  "message": "\"Garage / Shelf A\" would be added while \"Cellar / Shelf A\" is already here, under a different id.",
   "name": "Shelf A",
-  "existing_id": "uuid-v4"
+  "existing_ids": [ "uuid-v4", ... ]
 }
 ```
 
@@ -379,9 +379,17 @@ Result of `distinct_values`, used by category/tag autocomplete, the browser view
 - `name_collision` is raised for an incoming entity classified `add` whose name matches that
   of a stored entity **of the same kind carrying a different id**. Names are compared
   case-insensitively, accent-folded and whitespace-collapsed — the same comparison the
-  repository uses for names. `existing_id` is the stored entity; for a location the message
-  also quotes its `display_path`, because two legitimate "Shelf A"s under different parents
-  are common and the path is what tells them apart.
+  repository uses for names.
+- `existing_ids` lists **every** stored entity of that name, not one of them. Location trees
+  repeat leaf names ("Shelf A", "Drawer 1"), so a hand-rebuilt tree collides several deep on
+  one name at once, and naming a single arbitrary stored entity would point the path quote at
+  the wrong counterpart.
+- `message` is one self-contained sentence, because a client renders one per clash under a
+  lead that already explains what a clash is. It names the incoming entity by its own
+  `display_path` where it has one — two incoming "Shelf A"s are otherwise indistinguishable
+  on screen — then quotes the colliding stored locations' paths, or counts the colliding
+  stored items, which have no path of their own. At most three stored paths are quoted and
+  the rest are counted; `existing_ids` stays complete either way.
 - Only the `add` bucket is checked. `update` and `unchanged` are the same entity by id, so a
   shared name there is an ordinary namesake, and a clean round trip produces **zero**
   warnings under every policy. Incoming-vs-incoming name matches are out of scope: duplicate

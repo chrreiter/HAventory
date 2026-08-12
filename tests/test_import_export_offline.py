@@ -840,7 +840,7 @@ def test_an_incoming_name_taken_by_another_id_is_warned_about() -> None:
     assert warning["code"] == "name_collision"
     assert warning["path"] == "items[0]"
     assert warning["name"] == "Hammer"
-    assert warning["existing_id"] == str(stored.id)
+    assert warning["existing_ids"] == [str(stored.id)]
     # Classification is untouched: the entity is still an add.
     assert report["items"]["add"] == ["44444444-4444-4444-8444-444444444444"]
 
@@ -867,7 +867,7 @@ def test_a_location_collision_names_the_stored_path() -> None:
     warning = report["warnings"][0]
     assert warning["code"] == "name_collision"
     assert warning["path"] == "locations[0]"
-    assert warning["existing_id"] == str(shelf.id)
+    assert warning["existing_ids"] == [str(shelf.id)]
     assert "Garage / Shelf A" in warning["message"]
 
 
@@ -989,3 +989,156 @@ async def test_ws_import_preview_carries_the_warnings() -> None:
     assert res["success"] is True, res
     assert res["result"]["valid"] is True
     assert [w["code"] for w in res["result"]["warnings"]] == ["name_collision"]
+
+
+def test_every_stored_entity_of_a_colliding_name_is_reported() -> None:
+    """Repeated leaf names are how location trees are shaped.
+
+    A hand-rebuilt tree collides several deep on "Shelf A" at once, and naming
+    one arbitrary stored location would point the path quote at the wrong
+    counterpart — the one job that quote exists to do.
+    """
+
+    repo = Repository()
+    garage = repo.create_location(name="Garage")
+    cellar = repo.create_location(name="Cellar")
+    garage_shelf = repo.create_location(name="Shelf A", parent_id=str(garage.id))
+    cellar_shelf = repo.create_location(name="Shelf A", parent_id=str(cellar.id))
+
+    doc = {
+        "haventory_export_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "items": [],
+        "locations": [
+            {
+                "id": "55555555-5555-4555-8555-555555555555",
+                "name": "Shelf A",
+                "parent_id": None,
+                "path": {"display_path": "Garage / Shelf A"},
+            }
+        ],
+    }
+    report, _ = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert report["valid"] is True, report["errors"]
+    warning = report["warnings"][0]
+    assert sorted(warning["existing_ids"]) == sorted([str(garage_shelf.id), str(cellar_shelf.id)])
+    # Both stored paths are named, so neither line claims a counterpart it does
+    # not have.
+    assert '"Cellar / Shelf A"' in warning["message"]
+    assert '"Garage / Shelf A"' in warning["message"]
+
+
+def test_two_incoming_entries_of_one_name_do_not_render_identically() -> None:
+    """Each line has to say which incoming entry it is about.
+
+    Naming the subject by bare name alone leaves two hand-rebuilt "Shelf A"s as
+    two byte-identical bullets in the import sheet.
+    """
+
+    repo = Repository()
+    repo.create_location(name="Shelf A")
+
+    doc = {
+        "haventory_export_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "items": [],
+        "locations": [
+            {
+                "id": "55555555-5555-4555-8555-555555555555",
+                "name": "Shelf A",
+                "parent_id": None,
+                "path": {"display_path": "Garage / Shelf A"},
+            },
+            {
+                "id": "66666666-6666-4666-8666-666666666666",
+                "name": "Shelf A",
+                "parent_id": None,
+                "path": {"display_path": "Cellar / Shelf A"},
+            },
+        ],
+    }
+    report, _ = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    incoming_entries = 2
+    messages = [w["message"] for w in report["warnings"]]
+    assert len(messages) == incoming_entries
+    assert len(set(messages)) == incoming_entries
+    assert any('"Garage / Shelf A" would be added' in m for m in messages)
+    assert any('"Cellar / Shelf A" would be added' in m for m in messages)
+
+
+def test_an_item_collision_counts_the_stored_namesakes_and_places_the_incoming() -> None:
+    """An item has no path of its own, so the count and its location carry it."""
+
+    repo = Repository()
+    first = repo.create_item({"name": "Hammer"})
+    second = repo.create_item({"name": "hammer"})
+
+    report, _ = ie.plan_import(
+        repo,
+        _envelope(
+            _item_doc(
+                id="44444444-4444-4444-8444-444444444444",
+                name="Hammer",
+                location_path={"display_path": "Garage / Shelf A"},
+            )
+        ),
+        current_schema_version=CURRENT_SCHEMA_VERSION,
+    )
+
+    warning = report["warnings"][0]
+    assert sorted(warning["existing_ids"]) == sorted([str(first.id), str(second.id)])
+    assert '"Hammer" in "Garage / Shelf A" would be added' in warning["message"]
+    assert "2 items here already go by that name" in warning["message"]
+
+
+def test_a_collision_message_stays_one_line_however_many_entries_collide() -> None:
+    """A repeated leaf name can collide a dozen deep; the message still fits."""
+
+    colliding = 12
+    repo = Repository()
+    for i in range(colliding):
+        parent = repo.create_location(name=f"Room {i}")
+        repo.create_location(name="Drawer 1", parent_id=str(parent.id))
+
+    doc = {
+        "haventory_export_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "items": [],
+        "locations": [
+            {
+                "id": "55555555-5555-4555-8555-555555555555",
+                "name": "Drawer 1",
+                "parent_id": None,
+                "path": {"display_path": "Room 0 / Drawer 1"},
+            }
+        ],
+    }
+    report, _ = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    warning = report["warnings"][0]
+    # Every colliding id is reported; only the first few are named.
+    assert len(warning["existing_ids"]) == colliding
+    # The subject plus the quoted stored paths, and no more.
+    assert warning["message"].count("Drawer 1") == ie.COLLISION_LABELS_SHOWN + 1
+    assert f"and {colliding - ie.COLLISION_LABELS_SHOWN} more" in warning["message"]
+
+
+def test_a_collision_message_does_not_repeat_the_sheet_lead() -> None:
+    """The sheet renders one of these per clash under a lead that explains it.
+
+    A line that restates the explanation puts the same claim on screen once per
+    entry, which is what turns the block into a wall.
+    """
+
+    repo = Repository()
+    repo.create_item({"name": "Hammer"})
+
+    report, _ = ie.plan_import(
+        repo, _envelope(_rebuilt_item_doc("Hammer")), current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    message = report["warnings"][0]["message"]
+    assert "Import matches on the id alone" not in message
+    assert message.count(".") == 1
