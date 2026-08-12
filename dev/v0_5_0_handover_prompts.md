@@ -348,7 +348,7 @@ low-stock pill has something to select.
 
 ## H5 — #192 multi-select categories and locations, and the two surfaces agreeing
 
-**Branch / PR**: `claude/v0-5-0-w2-multi-select` / #TBD
+**Branch / PR**: `claude/v0-5-0-w2-multi-select` / #423
 **Why this needs a real HA**: the component tests drive the sidebar and the filter panel in
 separate shadow roots and assert each on its own. What they cannot show is the two of them
 open at once over one store, which is the whole point of the change — the panel was
