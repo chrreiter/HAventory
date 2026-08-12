@@ -743,8 +743,10 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     overdue_only?: boolean;
     inspection_overdue_only?: boolean;
     location_id?: string | null;
+    location_ids?: string[];
     include_subtree?: boolean;
     category?: string;
+    categories?: string[];
     tags_any?: string[];
     updated_after?: string;
     updated_before?: string;
@@ -752,10 +754,22 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     created_before?: string;
   } | null;
   if (!filter) return list;
+  // The scalar and the list are one selection, unioned — an item has one
+  // category and one location, so requiring both keys would match nothing.
+  const categories = [
+    ...(typeof filter.category === 'string' ? [filter.category] : []),
+    ...(filter.categories ?? []),
+  ]
+    .map((c) => c.trim().toLowerCase())
+    .filter(Boolean);
+  const locationIds = [
+    ...(typeof filter.location_id === 'string' ? [filter.location_id] : []),
+    ...(filter.location_ids ?? []),
+  ].filter(Boolean);
   return list.filter((it) => {
     // Category equals + tags_any (case-insensitive), used by the browser views.
-    const cat = typeof filter.category === 'string' ? filter.category.trim().toLowerCase() : '';
-    if (cat && (it.category ?? '').trim().toLowerCase() !== cat) return false;
+    if (categories.length && !categories.includes((it.category ?? '').trim().toLowerCase()))
+      return false;
     if (Array.isArray(filter.tags_any) && filter.tags_any.length) {
       const wanted = filter.tags_any.map((t) => t.toLowerCase());
       if (!(it.tags ?? []).some((t) => wanted.includes(t.toLowerCase()))) return false;
@@ -789,10 +803,14 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     if (filter.updated_before && !(it.updated_at < filter.updated_before)) return false;
     if (filter.created_after && !(it.created_at > filter.created_after)) return false;
     if (filter.created_before && !(it.created_at < filter.created_before)) return false;
-    if (filter.location_id) {
-      const inSubtree = it.location_id === filter.location_id
-        || (it.location_path?.id_path ?? []).includes(filter.location_id);
-      if (filter.include_subtree ? !inSubtree : it.location_id !== filter.location_id) return false;
+    if (locationIds.length) {
+      // One include_subtree flag for the whole selection, as the backend has it.
+      const matches = locationIds.some((id) =>
+        filter.include_subtree
+          ? it.location_id === id || (it.location_path?.id_path ?? []).includes(id)
+          : it.location_id === id,
+      );
+      if (!matches) return false;
     }
     return true;
   });

@@ -1129,13 +1129,13 @@ export class HVOrganizeDialog extends LitElement {
   private _showValue(value: string) {
     // Filtering by a value is the list's job, so hand it back and get out of the way.
     if (this.tab === 'tags') this.store?.setFilters({ tags: [value], tagsMode: 'any' });
-    else this.store?.setFilters({ category: value });
+    else this.store?.setFilters({ categories: [value] });
     this._browse();
   }
 
   private _showLocation(locationId: string | null) {
     if (!locationId) return;
-    this.store?.setFilters({ locationId, orphansOnly: false });
+    this.store?.setFilters({ locationIds: [locationId], orphansOnly: false });
     this._browse();
   }
 

@@ -57,7 +57,7 @@ describe('emptyKindFor', () => {
   it('names the filter-derived reasons once the list has settled', () => {
     expect(emptyKindFor(state({}))).toBe('no-items');
     expect(emptyKindFor(state({ filters: { q: 'glue' } }))).toBe('no-matches');
-    expect(emptyKindFor(state({ filters: { locationId: 'loc-1' } }))).toBe('empty-location');
+    expect(emptyKindFor(state({ filters: { locationIds: ['loc-1'] } }))).toBe('empty-location');
   });
 
   it('says the rows are on their way rather than blaming the filters', () => {
@@ -65,7 +65,7 @@ describe('emptyKindFor', () => {
     // arrives. Naming the filters during that gap accuses one of matching
     // nothing before anything has been counted.
     expect(emptyKindFor(state({ loading: true, filters: { q: 'glue' } }))).toBe('loading');
-    expect(emptyKindFor(state({ loading: true, filters: { locationId: 'loc-1' } }))).toBe('loading');
+    expect(emptyKindFor(state({ loading: true, filters: { locationIds: ['loc-1'] } }))).toBe('loading');
     expect(emptyKindFor(state({ loading: true }))).toBe('loading');
   });
 

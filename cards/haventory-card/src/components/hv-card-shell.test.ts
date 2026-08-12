@@ -249,7 +249,7 @@ describe('hv-card-shell: overflow menu', () => {
     });
     // A filter is what brings "Export current view" out, so both Data lines
     // are on screen to be checked together.
-    store.setFilters({ category: 'Tools' });
+    store.setFilters({ categories: ['Tools'] });
     await settle(el);
     const menu = sr.querySelector('[data-testid="card-overflow"]') as HTMLElement;
     (menu.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
@@ -350,7 +350,7 @@ describe('hv-card-shell: overflow menu', () => {
     expect(menu.shadowRoot?.querySelector('[data-id="export-view"]')).toBe(null);
     expect(menu.shadowRoot?.querySelector('[data-id="export-all"]')).toBeTruthy();
 
-    store.setFilters({ category: 'Tools' });
+    store.setFilters({ categories: ['Tools'] });
     await settle(el);
     const entry = menu.shadowRoot?.querySelector('[data-id="export-view"]') as HTMLButtonElement;
     expect(entry).toBeTruthy();
@@ -482,18 +482,18 @@ describe('hv-card-shell: search and filters', () => {
 
   it('shows a removable chip per active filter and clears them', async () => {
     const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', category: 'Tools' })] });
-    store.setFilters({ category: 'Tools', checkedOutOnly: true });
+    store.setFilters({ categories: ['Tools'], checkedOutOnly: true });
     await settle(el);
 
     const chips = sr.querySelector('hv-filter-chips') as HTMLElement;
     const keys = [...(chips.shadowRoot?.querySelectorAll('[data-testid="filter-chip"]') ?? [])].map(
       (c) => (c as HTMLElement).dataset.key,
     );
-    expect(keys).toEqual(['category', 'checkedOutOnly']);
+    expect(keys).toEqual(['categories', 'checkedOutOnly']);
 
-    (chips.shadowRoot?.querySelector('[data-key="category"]') as HTMLButtonElement).click();
+    (chips.shadowRoot?.querySelector('[data-key="categories"]') as HTMLButtonElement).click();
     await settle(el);
-    expect(store.state.value.filters.category).toBe(null);
+    expect(store.state.value.filters.categories).toEqual([]);
     expect(store.state.value.filters.checkedOutOnly).toBe(true);
 
     (chips.shadowRoot?.querySelector('[data-testid="filter-chips-clear"]') as HTMLButtonElement).click();
@@ -548,7 +548,7 @@ describe('hv-card-shell: list and footer', () => {
       'Showing 2 of 2 items',
     );
 
-    store.setFilters({ category: 'Tools' });
+    store.setFilters({ categories: ['Tools'] });
     await settle(el);
     expect(sr.querySelector('[data-testid="showing-count"]')?.textContent?.trim()).toBe(
       'Showing 1 of 1 matching item',
@@ -616,7 +616,7 @@ describe('hv-card-shell: list and footer', () => {
     await settle(el);
     expect(kind()).toBe('no-matches');
 
-    store.setFilters({ ...store.state.value.filters, q: '', locationId: 'garage' });
+    store.setFilters({ ...store.state.value.filters, q: '', locationIds: ['garage'] });
     await settle(el);
     expect(kind()).toBe('empty-location');
   });
@@ -1051,7 +1051,7 @@ describe('hv-card-shell: mobile', () => {
     await settle(el);
 
     // Staged only — the list has not moved.
-    expect(store.state.value.filters.category).toBe(null);
+    expect(store.state.value.filters.categories).toEqual([]);
     expect(store.state.value.items).toHaveLength(3);
 
     // ...and the apply button reports what committing would do.
@@ -1062,7 +1062,7 @@ describe('hv-card-shell: mobile', () => {
 
     apply.click();
     await settle(el);
-    expect(store.state.value.filters.category).toBe('Hardware');
+    expect(store.state.value.filters.categories).toEqual(['Hardware']);
   });
 
   // "Clear all" went straight to the store: the list behind the sheet reloaded
@@ -1086,13 +1086,13 @@ describe('hv-card-shell: mobile', () => {
     expect(chip.classList.contains('on')).toBe(false);
     expect(sr.querySelector('.sheet-head')?.textContent).toContain('0 active');
     // Nothing applied yet, so the list behind the sheet has not moved.
-    expect(store.state.value.filters.category).toBe(null);
+    expect(store.state.value.filters.categories).toEqual([]);
 
     (panel.shadowRoot?.querySelector('[data-value="Tools"]') as HTMLButtonElement).click();
     await settle(el);
     (sr.querySelector('[data-testid="sheet-apply"]') as HTMLButtonElement).click();
     await settle(el);
-    expect(store.state.value.filters.category).toBe('Tools');
+    expect(store.state.value.filters.categories).toEqual(['Tools']);
   });
 
   it('drops staged edits on cancel', async () => {
@@ -1107,7 +1107,7 @@ describe('hv-card-shell: mobile', () => {
 
     (sr.querySelector('[data-testid="sheet-cancel"]') as HTMLButtonElement).click();
     await settle(el);
-    expect(store.state.value.filters.category).toBe(null);
+    expect(store.state.value.filters.categories).toEqual([]);
 
     // Reopening starts from the applied state, not the abandoned draft.
     (sr.querySelector('[data-testid="filter-toggle"]') as HTMLButtonElement).click();

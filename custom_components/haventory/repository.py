@@ -55,6 +55,8 @@ from .models import (
     normalize_text_for_sort,
     parse_uuid4,
     seed_status_definitions,
+    selected_categories,
+    selected_location_ids,
     serialize_attachment_meta,
     serialize_status_definition,
     sort_items,
@@ -1502,29 +1504,31 @@ class Repository:
             candidate_sets.append(text_matches)
 
         # 2. Location Index
-        if flt.get("location_id"):
+        # A multi-select unions its buckets, the way tags_any does below; the
+        # one include_subtree flag picks which index every entry reads from.
+        location_keys = [key for key in selected_location_ids(flt) if key]
+        if location_keys:
             has_indexed_filter = True
-            loc_key = str(flt["location_id"]).strip()
-            if loc_key:
-                if flt.get("include_subtree"):
-                    s = self._items_in_subtree.get(loc_key, set())
-                    if not s:
-                        return []
-                    candidate_sets.append(s)
-                else:
-                    s = self._items_by_location_id.get(loc_key, set())
-                    if not s:
-                        return []
-                    candidate_sets.append(s)
+            index = (
+                self._items_in_subtree if flt.get("include_subtree") else self._items_by_location_id
+            )
+            loc_items: set[str] = set()
+            for loc_key in location_keys:
+                loc_items.update(index.get(loc_key, set()))
+            if not loc_items:
+                return []
+            candidate_sets.append(loc_items)
 
         # 3. Category Index
-        cat = (flt.get("category") or "").strip().casefold()
-        if cat:
+        category_keys = selected_categories(flt)
+        if category_keys:
             has_indexed_filter = True
-            s = self._category_to_item_ids.get(cat, set())
-            if not s:
+            cat_items: set[str] = set()
+            for cat_key in category_keys:
+                cat_items.update(self._category_to_item_ids.get(cat_key, set()))
+            if not cat_items:
                 return []
-            candidate_sets.append(s)
+            candidate_sets.append(cat_items)
 
         # 3b. Status Index (only non-default known statuses are bucketed; "ok"
         # and unrecognized values fall through to the scan path, where

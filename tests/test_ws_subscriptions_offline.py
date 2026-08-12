@@ -674,3 +674,93 @@ async def test_subscribe_on_slotted_connection_never_stamps_attribute() -> None:
     # Sanity: the stub really is slotted like real HA (rejects arbitrary attrs).
     with pytest.raises(AttributeError):
         conn.some_unexpected_attr = 1  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_location_ids_scopes_a_subscription_to_several_locations() -> None:
+    """The multi-select filter's own delivery path, unioned like the query's."""
+
+    hass = HomeAssistant()
+    repo = Repository()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    conn = _ConnStub()
+
+    # Kitchen -> Drawer, plus Garage and Cellar as separate roots.
+    kitchen = repo.create_location(name="Kitchen")
+    drawer = repo.create_location(name="Drawer", parent_id=kitchen.id)
+    garage = repo.create_location(name="Garage")
+    cellar = repo.create_location(name="Cellar")
+
+    SUB_ID_TWO = 601
+    SUB_ID_DIRECT = 602
+    SUB_ID_UNION = 603
+    await _send(
+        hass,
+        conn,
+        SUB_ID_TWO,
+        "haventory/subscribe",
+        topic="items",
+        location_ids=[str(kitchen.id), str(garage.id)],
+    )
+    # One flag for the whole selection: without the subtree, only the two
+    # locations themselves count, not the drawer under the kitchen.
+    await _send(
+        hass,
+        conn,
+        SUB_ID_DIRECT,
+        "haventory/subscribe",
+        topic="items",
+        location_ids=[str(kitchen.id), str(garage.id)],
+        include_subtree=False,
+    )
+    # The scalar and the list are one selection, not two conditions.
+    await _send(
+        hass,
+        conn,
+        SUB_ID_UNION,
+        "haventory/subscribe",
+        topic="items",
+        location_id=str(cellar.id),
+        location_ids=[str(garage.id)],
+    )
+
+    def item_event_ids() -> set[object]:
+        return {
+            m.get("id")
+            for m in conn.messages
+            if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
+        }
+
+    conn.messages.clear()
+    await _send(hass, conn, 1, "haventory/item/create", name="Whisk", location_id=str(drawer.id))
+    assert item_event_ids() == {SUB_ID_TWO}
+
+    conn.messages.clear()
+    await _send(hass, conn, 2, "haventory/item/create", name="Spanner", location_id=str(garage.id))
+    assert item_event_ids() == {SUB_ID_TWO, SUB_ID_DIRECT, SUB_ID_UNION}
+
+    conn.messages.clear()
+    await _send(hass, conn, 3, "haventory/item/create", name="Jam", location_id=str(cellar.id))
+    assert item_event_ids() == {SUB_ID_UNION}
+
+    # An item with no location reaches no location-scoped subscription.
+    conn.messages.clear()
+    await _send(hass, conn, 4, "haventory/item/create", name="Loose screw")
+    assert item_event_ids() == set()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_refuses_location_ids_that_is_not_a_list() -> None:
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    res = await _send(
+        hass, _ConnStub(), 1, "haventory/subscribe", topic="items", location_ids="not-a-list"
+    )
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"

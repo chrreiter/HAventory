@@ -1,6 +1,6 @@
 import { html } from 'lit';
 import type { TemplateResult } from 'lit';
-import { activeFilterCount, defaultFilters } from '../store/store';
+import { activeFilterCount, defaultFilters, soleLocationId } from '../store/store';
 import type { StoreFilters } from '../store/types';
 
 /**
@@ -55,7 +55,7 @@ export function emptyKindFor(state: {
   if (state?.degraded.connectionLost) return 'connection-lost';
   if (state?.loading) return 'loading';
   const filters = state?.filters ?? defaultFilters();
-  if (filters.locationId && activeFilterCount(filters) === 1) return 'empty-location';
+  if (soleLocationId(filters) && activeFilterCount(filters) === 1) return 'empty-location';
   if (activeFilterCount(filters) > 0) return 'no-matches';
   return 'no-items';
 }

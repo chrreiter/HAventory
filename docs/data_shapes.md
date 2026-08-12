@@ -215,6 +215,7 @@ counts items at the node or any descendant (so it is always >= the direct count)
   - `tags_any?: string[]`
   - `tags_all?: string[]`
   - `category?: string`
+  - `categories?: string[]` (multi-select beside `category`; see the union rule below)
   - `status?: <status slug>` (exact match against the live status set; unknown values are `validation_error`)
   - `checked_out?: boolean`
   - `low_stock_only?: boolean`
@@ -222,13 +223,32 @@ counts items at the node or any descendant (so it is always >= the direct count)
   - `overdue_only?: boolean` (only items whose `due_date` is strictly before today, UTC)
   - `inspection_overdue_only?: boolean` (only items whose `inspection_date` is strictly before today, UTC; independent of check-out state)
   - `location_id?: uuid-v4|null`
+  - `location_ids?: uuid-v4[]` (multi-select beside `location_id`; see the union rule below)
   - `area_id?: string`
-  - `include_subtree?: boolean`
+  - `include_subtree?: boolean` (governs the whole `location_id` + `location_ids` selection, not one entry)
   - `low_stock_first?: boolean`
   - `updated_after?: ISO8601Z` (strictly greater-than)
   - `created_after?: ISO8601Z` (strictly greater-than)
   - `updated_before?: ISO8601Z` (strictly less-than; combine with `updated_after` for a range)
   - `created_before?: ISO8601Z` (strictly less-than; combine with `created_after` for a range)
+
+  **The multi-select rule.** `category`/`categories` and `location_id`/`location_ids` are
+  each *one* selection: the scalar and the list are unioned, and an item matches if it
+  carries any value in that union. They are never intersected — an item has exactly one
+  category and sits in exactly one location, so requiring both keys to hold would match
+  nothing whenever they name different values. Both keys are optional and either may be
+  sent alone; the card sends only the plural. An empty list does not narrow at all, the
+  same way an empty `tags_any` does not. Entries are trimmed and de-duplicated, categories
+  case-insensitively; a value that is not a list of strings is a `validation_error` naming
+  the key, because iterating a bare string would filter by its letters. A `location_ids`
+  entry that is not a valid UUID v4 contributes nothing, so a selection of only bad ids
+  matches nothing — what a single bad `location_id` has always done.
+
+  `include_subtree` is **one flag for the whole location selection**, not one per entry:
+  set, an item matches when it sits in, or under, any selected location. A per-entry form
+  (include this location's children but not that one's) is deliberately not offered; it
+  doubles the wire shape and the matcher's branches, and it can be added later without
+  breaking this form.
 
 - Sort:
   - `{ field: "updated_at"|"created_at"|"name"|"quantity"|"due_date"|"inspection_date", order: "asc"|"desc" }`
@@ -432,7 +452,7 @@ Common envelope inside HA WS event wrapper:
 Subscription filters (`haventory/subscribe`) are matched against the payload above, not
 against the repository:
 
-- `location_id` / `include_subtree` read the item's `location_path.id_path` (or the location's own `path.id_path`).
+- `location_id` / `location_ids` / `include_subtree` read the item's `location_path.id_path` (or the location's own `path.id_path`). The scalar and the list are unioned exactly as `ItemFilter` unions them, and `include_subtree` (defaulting to **true** here, unlike the list filter) applies to the whole selection.
 - `area_id` reads the item's `effective_area_id`, so it selects the same area `ItemFilter.area_id` does. An item with no location carries `effective_area_id: null` and matches no area filter; a `null` or omitted `area_id` on the subscription means no area filter at all. `area_id` applies to the `items` topic only.
 - Filters combine with AND, and every one of them is applied to the payload as it stands *after* the mutation. An item that leaves a filtered set produces no event for that subscription, so a client tracking one re-lists rather than waiting for a departure event — including after a `locations` `moved` event, which is the only signal that a subtree's `effective_area_id` was rewritten.
 

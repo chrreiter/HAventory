@@ -209,7 +209,9 @@ export function toWireFilter(filters: StoreFilters): ItemFilter {
   const filter: ItemFilter = {
     q: filters.q || undefined,
     area_id: filters.areaId || undefined,
-    location_id: filters.locationId ?? undefined,
+    // The plural key throughout: the scalar is the backend's older spelling and
+    // sending both would only invite the two to disagree.
+    location_ids: filters.locationIds.length ? [...filters.locationIds] : undefined,
     // Sent explicitly: the list filter defaults it to false server-side while
     // subscriptions default it to true.
     include_subtree: filters.includeSubtree,
@@ -221,7 +223,7 @@ export function toWireFilter(filters: StoreFilters): ItemFilter {
     overdue_only: filters.overdueOnly || undefined,
     inspection_overdue_only: filters.inspectionDueOnly || undefined,
     status: filters.status ?? undefined,
-    category: filters.category || undefined,
+    categories: filters.categories.length ? [...filters.categories] : undefined,
     updated_after: filters.updatedAfter || undefined,
     created_after: filters.createdAfter || undefined,
     updated_before: filters.updatedBefore || undefined,
@@ -239,7 +241,7 @@ export function defaultFilters(): StoreFilters {
   return {
     q: '',
     areaId: null,
-    locationId: null,
+    locationIds: [],
     includeSubtree: true,
     checkedOutOnly: false,
     lowStockFirst: false,
@@ -248,7 +250,7 @@ export function defaultFilters(): StoreFilters {
     overdueOnly: false,
     inspectionDueOnly: false,
     status: null,
-    category: null,
+    categories: [],
     tags: [],
     tagsMode: 'any',
     updatedAfter: null,
@@ -259,12 +261,30 @@ export function defaultFilters(): StoreFilters {
   };
 }
 
+/**
+ * The single location the view is pointed at, or null.
+ *
+ * Several surfaces speak about *a* location rather than a selection — the empty
+ * state naming where it found nothing, the crumb above the table, the parent a
+ * new location is created under. None of them has an honest reading of two, so
+ * they ask for one and get null when the answer is "several" or "none".
+ */
+export function soleLocationId(filters: StoreFilters): string | null {
+  return filters.locationIds.length === 1 ? filters.locationIds[0] : null;
+}
+
+/** Whether two selections name the same values, order included. */
+function sameStrings(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((value, i) => value === b[i]);
+}
+
 /** How many filters (ignoring sort) are narrowing the list right now. */
 export function activeFilterCount(filters: StoreFilters): number {
   let n = 0;
   if (filters.q) n += 1;
   if (filters.areaId) n += 1;
-  if (filters.locationId) n += 1;
+  // One narrowing, however many values it names — the chip row says the same.
+  if (filters.locationIds.length) n += 1;
   if (filters.checkedOutOnly) n += 1;
   if (filters.orphansOnly) n += 1;
   if (filters.lowStockOnly) n += 1;
@@ -272,7 +292,7 @@ export function activeFilterCount(filters: StoreFilters): number {
   if (filters.overdueOnly) n += 1;
   if (filters.inspectionDueOnly) n += 1;
   if (filters.status) n += 1;
-  if (filters.category) n += 1;
+  if (filters.categories.length) n += 1;
   if (filters.tags.length) n += 1;
   if (filters.updatedAfter) n += 1;
   if (filters.createdAfter) n += 1;
@@ -562,7 +582,9 @@ export class Store {
 
     if (this.itemsUnsub) this.itemsUnsub();
     this.itemsUnsub = this.ws.subscribe('items', onEvent((evt) => this.onItemsEvent(evt)), {
-      location_id: this.state.value.filters.locationId ?? undefined,
+      location_ids: this.state.value.filters.locationIds.length
+        ? [...this.state.value.filters.locationIds]
+        : undefined,
       area_id: this.state.value.filters.areaId ?? undefined,
       include_subtree: true, // Always include sublocations
       onError,
@@ -864,7 +886,7 @@ export class Store {
    * tree already makes for its own dimension.
    */
   private facetCountFilters(): StoreFilters {
-    return { ...this.state.value.filters, category: null, tags: [] };
+    return { ...this.state.value.filters, categories: [], tags: [] };
   }
 
   /** Refresh distinct categories/tags with counts (source for autocomplete). */
@@ -1063,7 +1085,7 @@ export class Store {
   private locationCountFilters(): StoreFilters {
     return {
       ...this.state.value.filters,
-      locationId: null,
+      locationIds: [],
       includeSubtree: true,
       orphansOnly: false,
     };
@@ -1173,9 +1195,9 @@ export class Store {
   // ---------- Filters ----------
   setFilters(patch: Partial<StoreFilters>) {
     const next = { ...this.state.value.filters, ...patch };
+    const previous = this.state.value.filters;
     const scopeChanged =
-      next.locationId !== this.state.value.filters.locationId ||
-      next.areaId !== this.state.value.filters.areaId;
+      !sameStrings(next.locationIds, previous.locationIds) || next.areaId !== previous.areaId;
     // The rows already loaded stay on screen until the refetch lands, marked as
     // loading. Blanking them is what tore the scroller down mid-edit and took an
     // open editor with it; `listItems(true)` replaces the array wholesale anyway,
