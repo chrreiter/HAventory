@@ -433,6 +433,8 @@ export class WSClient {
     cb: (payload: AnyEventPayload) => void,
     opts?: {
       location_id?: string | null;
+      /** Multi-select beside `location_id`, unioned with it by the backend. */
+      location_ids?: string[];
       area_id?: string | null;
       include_subtree?: boolean;
       /**
@@ -455,6 +457,7 @@ export class WSClient {
       topic,
     };
     if (opts && 'location_id' in opts) msg.location_id = opts.location_id ?? null;
+    if (opts && 'location_ids' in opts) msg.location_ids = opts.location_ids ?? [];
     if (opts && 'area_id' in opts) msg.area_id = opts.area_id ?? null;
     if (opts && 'include_subtree' in opts) msg.include_subtree = !!opts.include_subtree;
 

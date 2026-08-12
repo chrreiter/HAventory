@@ -6,7 +6,7 @@ import { icon } from '../ui/icons';
 import { counted, showingCount } from '../ui/plural';
 import { ResponsiveController } from '../ui/responsive';
 import { debounce } from '../utils/debounce';
-import { activeFilterCount, defaultFilters } from '../store/store';
+import { activeFilterCount, defaultFilters, soleLocationId } from '../store/store';
 import { emptyKindFor } from '../ui/empty-state';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import { quickFilterAllowed } from '../ui/quick-filters';
@@ -972,7 +972,7 @@ export class HVCardShell extends LitElement {
         .pinnedItem=${this._pinnedItem}
         .addingNew=${!mobile && this._editing === 'new'}
         .emptyKind=${emptyKindFor(this.st)}
-        .emptyLocationName=${(st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId)?.name ??
+        .emptyLocationName=${(st?.locationsFlatCache ?? []).find((l) => l.id === soleLocationId(filters))?.name ??
         null}
         @near-end=${(e: CustomEvent) =>
           void this.store?.prefetchIfNeeded((e.detail as { ratio: number }).ratio)}

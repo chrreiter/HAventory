@@ -534,17 +534,45 @@ describe('hv-full-view: sidebar', () => {
 
     (tree.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="garage"]') as HTMLButtonElement).click();
     await settle(el);
-    expect(store.state.value.filters.locationId).toBe('garage');
+    expect(store.state.value.filters.locationIds).toEqual(['garage']);
 
     (tree.shadowRoot?.querySelector('[data-testid="tree-orphans"]') as HTMLButtonElement).click();
     await settle(el);
     expect(store.state.value.filters.orphansOnly).toBe(true);
-    expect(store.state.value.filters.locationId).toBe(null);
+    expect(store.state.value.filters.locationIds).toEqual([]);
+  });
+
+  // The tree is the sidebar's own multi-select; a second pick has to add to the
+  // first, the way a category row does, or the two halves of one column
+  // disagree about what picking means.
+  it('accumulates locations in the tree and clears them from "All items"', async () => {
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1' })], locations });
+    const tree = q(sr, '[data-testid="sidebar-tree"]') as HTMLElement;
+    const row = (id: string) =>
+      tree.shadowRoot?.querySelector(`[data-testid="tree-row"][data-id="${id}"]`) as HTMLButtonElement;
+
+    row('garage').click();
+    await settle(el);
+    row('kitchen').click();
+    await settle(el);
+    expect(store.state.value.filters.locationIds).toEqual(['garage', 'kitchen']);
+    expect(row('garage').classList).toContain('selected');
+    expect(row('kitchen').classList).toContain('selected');
+
+    // Pressing a selected one takes it back out…
+    row('garage').click();
+    await settle(el);
+    expect(store.state.value.filters.locationIds).toEqual(['kitchen']);
+
+    // …and "All items" clears the selection in one press.
+    (tree.shadowRoot?.querySelector('[data-testid="tree-all"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(store.state.value.filters.locationIds).toEqual([]);
   });
 
   it('creates a location inline, under the current selection', async () => {
     const { el, store, sr } = await mount({ items: [], locations });
-    store.setFilters({ locationId: 'garage' });
+    store.setFilters({ locationIds: ['garage'] });
     await settle(el);
 
     (q(sr, '[data-testid="sidebar-new-location"]') as HTMLButtonElement).click();
@@ -677,18 +705,54 @@ describe('hv-full-view: sidebar facets', () => {
 
     rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
     await settle(el);
-    expect(store.state.value.filters.category).toBe('Tools');
+    expect(store.state.value.filters.categories).toEqual(['Tools']);
     expect(rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.classList).toContain(
       'selected',
     );
 
     rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
     await settle(el);
-    expect(store.state.value.filters.category).toBe(null);
+    expect(store.state.value.filters.categories).toEqual([]);
   });
 
-  // Category is one value and tags are a set, because that is what the backend
-  // does with them — so the rows behave differently on purpose.
+  // The sidebar and the filter panel are one control in two places, so a
+  // category row that replaced the selection while the panel's chip added to it
+  // would make "picked" mean two things.
+  it('accumulates categories rather than replacing the selection', async () => {
+    const { el, store, sr } = await mount({ items: faceted });
+
+    rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
+    await settle(el);
+    rows(sr, 'categories').find((r) => r.dataset.value === 'Cleaning')?.click();
+    await settle(el);
+    expect(store.state.value.filters.categories).toEqual(['Tools', 'Cleaning']);
+    // Both rows read as picked, and the list keeps every row it had.
+    for (const value of ['Tools', 'Cleaning']) {
+      expect(rows(sr, 'categories').find((r) => r.dataset.value === value)?.classList).toContain(
+        'selected',
+      );
+    }
+
+    rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
+    await settle(el);
+    expect(store.state.value.filters.categories).toEqual(['Cleaning']);
+  });
+
+  // No Any/All control beside categories or locations, unlike tags: an item
+  // carries one of each, so a selection of several can only mean OR.
+  it('offers no match mode for categories, however many are picked', async () => {
+    const { el, store, sr } = await mount({ items: faceted });
+    rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
+    await settle(el);
+    rows(sr, 'categories').find((r) => r.dataset.value === 'Cleaning')?.click();
+    await settle(el);
+
+    expect(store.state.value.filters.categories).toHaveLength(2);
+    expect(q(sr, '[data-testid="sidebar-categories-mode"]')).toBe(null);
+  });
+
+  // Tags are a set for a different reason: an item carries several, so any/all
+  // is a real question there and not here.
   it('accumulates tags rather than replacing the selection', async () => {
     const { el, store, sr } = await mount({ items: faceted });
 
@@ -965,7 +1029,7 @@ describe('hv-full-view: context bar and table', () => {
 
     expect(q(sr, '[data-testid="full-breadcrumb"]')?.textContent).toContain('All items');
 
-    store.setFilters({ locationId: 'shelf-a' });
+    store.setFilters({ locationIds: ['shelf-a'] });
     await settle(el);
     const crumb = q(sr, '[data-testid="full-breadcrumb"]')?.textContent?.replace(/\s+/g, ' ');
     expect(crumb).toContain('garage › Shelf A');
@@ -984,7 +1048,7 @@ describe('hv-full-view: context bar and table', () => {
       areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
     });
 
-    store.setFilters({ locationId: 'shelf-a' });
+    store.setFilters({ locationIds: ['shelf-a'] });
     await settle(el);
     const crumb = q(sr, '[data-testid="full-breadcrumb"]');
     expect(crumb?.querySelector('.hv-area-chip')?.textContent).toContain('Kitchen');
@@ -1014,7 +1078,7 @@ describe('hv-full-view: context bar and table', () => {
         locations: [kitchen, pantry],
         areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
       });
-      store.setFilters({ locationId: id });
+      store.setFilters({ locationIds: [id] });
       await settle(el);
 
       const crumb = q(sr, '[data-testid="full-breadcrumb"]');
@@ -1033,7 +1097,7 @@ describe('hv-full-view: context bar and table', () => {
       areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
     });
 
-    store.setFilters({ locationId: 'shelf-a' });
+    store.setFilters({ locationIds: ['shelf-a'] });
     await settle(el);
     expect(q(sr, '[data-testid="full-breadcrumb"]')?.querySelector('.hv-area-chip')).toBeNull();
   });
@@ -1136,7 +1200,7 @@ describe('hv-full-view: empty table', () => {
 
   it('treats a lone location filter as an empty location, and offers to fill it', async () => {
     const { el, store, sr } = await mount({ items: [], locations: [loc('garage', 'Garage')] });
-    store.setFilters({ locationId: 'garage' });
+    store.setFilters({ locationIds: ['garage'] });
     await settle(el);
     await settle(el);
 

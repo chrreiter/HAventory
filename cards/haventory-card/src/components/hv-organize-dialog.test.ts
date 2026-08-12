@@ -633,7 +633,7 @@ describe('hv-organize-dialog: locations', () => {
       (tree.shadowRoot?.querySelector(`[data-testid="${testid}"][data-id="garage"]`) as HTMLButtonElement).click();
       await settle(el);
 
-      expect(store.state.value.filters.locationId, testid).toBe('garage');
+      expect(store.state.value.filters.locationIds, testid).toEqual(['garage']);
       // Organizing happens full-screen; so should the list it hands back.
       expect(browsed, testid).toBe(1);
       expect(el.open, testid).toBe(false);

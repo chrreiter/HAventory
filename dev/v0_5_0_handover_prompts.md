@@ -343,3 +343,76 @@ low-stock pill has something to select.
 - One with a long category name, to show the clip still happens on the label and not the
   tally.
 - Paste the result as a comment on #193 and reply on the PR thread.
+
+---
+
+## H5 — #192 multi-select categories and locations, and the two surfaces agreeing
+
+**Branch / PR**: `claude/v0-5-0-w2-multi-select` / #TBD
+**Why this needs a real HA**: the component tests drive the sidebar and the filter panel in
+separate shadow roots and assert each on its own. What they cannot show is the two of them
+open at once over one store, which is the whole point of the change — the panel was
+single-select and the sidebar was not, and a household that picks in one and looks at the
+other is who noticed. Nor can they show the location tree's selection at real depth, where
+several checks scattered down a scrolling tree either read as one selection or as noise.
+
+### Setup
+
+    set -a; . ./.env; set +a
+    bash scripts/reload_addon.sh --container home-assistant --sleep 30 --tail-logs
+
+Seed a tree at least three deep with items spread across it, and several categories:
+
+    uv run python scripts/ws_init_haventory.py     # if the instance is empty
+    uv run python scripts/create_test_items.py
+
+### Steps
+
+1. Full view, sidebar expanded. Click two categories in a row, then a third; then click the
+   first one again.
+2. With those categories still picked, open the filter panel (funnel icon). Read its
+   Category chips.
+3. In the panel, pick a fourth category and unpick one. Close the panel and read the sidebar.
+4. In the sidebar tree, click two locations in different branches. Then click a third that
+   is a *child* of one already picked.
+5. Toggle **Include sub-locations** in the filter panel while several locations are picked.
+6. Press "All items" at the top of the tree.
+7. Read the applied-filter chip row across all of this.
+8. Open a second browser tab on the panel, unfiltered. In tab A, pick two locations. In tab
+   B, move an item into one of them and edit an item in neither.
+9. Phone width: fold the sidebar away and repeat steps 1 and 4 in the filter sheet.
+
+### What "pass" looks like
+
+- Steps 1–3: the two surfaces always agree. A category picked in the sidebar comes up
+  already marked in the panel, and vice versa, with no reload. Picking never *replaces* —
+  the second pick widens the list rather than swapping it.
+- Neither Categories nor Locations grows an Any/All control. Only Tags has one, and only
+  from the second tag.
+- Step 4: all three read as selected, the child included, and the list holds the union.
+  Picking a child of an already-picked parent adds nothing new to the list when
+  sub-locations are included — that is correct, not a bug, and worth confirming it does not
+  *shrink*.
+- Step 5: the flag applies to the whole selection at once. There is deliberately no
+  per-location subtree switch.
+- Step 6: one press clears every picked location, and the tree's own "All items" row reads
+  as selected again.
+- Step 7: **one chip per facet, not one per value** — "Categories: Tools, Books" and one
+  location chip listing the paths, with "+ sub" on the end when sub-locations are on.
+  Removing that chip clears the whole selection. The chip row's "N filters active" counts
+  each facet once however many values it names.
+- Step 8: tab A shows the moved item arrive live, and does not react to the edit outside its
+  locations. This is the half the offline suite cannot reach: the subscription now carries
+  `location_ids`, so a card filtered to several locations must still hear about all of them.
+- Step 9: the sheet behaves as the sidebar does, and applying it does not lose a selection.
+- Nothing in the HA log at WARNING or above from `haventory` throughout — in particular no
+  `validation_error` naming `categories` or `location_ids`, which would mean the card and
+  the backend disagree about the wire shape.
+
+### What to send back
+
+- A screenshot with the sidebar and the filter panel both open and three categories picked,
+  showing them agreeing.
+- The chip row with several categories and several locations selected.
+- The devtools WS frames for tab A's `haventory/subscribe` in step 8, showing `location_ids`.
+- Paste the result as a comment on #192 and reply on the PR thread.

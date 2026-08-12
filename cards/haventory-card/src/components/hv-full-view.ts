@@ -9,7 +9,7 @@ import { icon } from '../ui/icons';
 import { counted, plural, showingCount } from '../ui/plural';
 import { nextZBase } from '../utils/zindex';
 import { debounce } from '../utils/debounce';
-import { activeFilterCount, defaultFilters } from '../store/store';
+import { activeFilterCount, defaultFilters, soleLocationId } from '../store/store';
 import { countLocations } from '../store/location-tree';
 import { emptyKindFor, renderEmptyState } from '../ui/empty-state';
 import { deepFocusables } from '../ui/dialog-focus';
@@ -927,7 +927,7 @@ export class HVFullView extends LitElement {
         // keyboard over the list the user came to read.
         if (!this.embedded) this._focusFirst();
         // Reveal the selected branch so the sidebar isn't showing roots only.
-        this._tree?.revealPathTo(this.st?.filters.locationId ?? null);
+        this._tree?.revealPathTo(soleLocationId(this.st?.filters ?? defaultFilters()));
       } else if (this._prevFocus?.isConnected) {
         this._prevFocus.focus();
       }
@@ -1282,7 +1282,11 @@ export class HVFullView extends LitElement {
     try {
       // New locations land under whatever the sidebar currently has selected,
       // which is what "add here" means in a tree.
-      await this.store?.createLocation(trimmed, this.st?.filters.locationId ?? null, null);
+      await this.store?.createLocation(
+        trimmed,
+        soleLocationId(this.st?.filters ?? defaultFilters()),
+        null,
+      );
       this._creatingLocation = false;
     } catch (err) {
       this._locationError = (err as { message?: string })?.message ?? 'Could not create that location.';
@@ -1414,9 +1418,10 @@ export class HVFullView extends LitElement {
   /**
    * Categories and tags as sidebar rows.
    *
-   * Category is single-select and tags are multi-select, because that is what
-   * the backend does with them: `category` is one value, `tags` is a set routed
-   * through tags_any/tags_all. Pressing the active one clears it.
+   * Both accumulate, and both mean OR — an item carries one category, so a
+   * selection of several can only be a union. Tags additionally offer any/all,
+   * because an item carries several of those and both readings are useful.
+   * Pressing a selected row takes it back out.
    */
   private _renderFacetSection(
     section: 'categories' | 'tags',
@@ -1499,6 +1504,7 @@ export class HVFullView extends LitElement {
     const filters = st?.filters ?? defaultFilters();
     const distinct = st?.distinctValuesCache;
     const selectedTags = new Set(filters.tags);
+    const selectedCategories = new Set(filters.categories);
     return html`
       <div class="sidebar" data-testid="full-sidebar">
         <div class="sidebar-head">
@@ -1534,8 +1540,13 @@ export class HVFullView extends LitElement {
           'categories',
           'Categories',
           distinct?.categories ?? [],
-          (v) => filters.category === v,
-          (v) => this._setFilters({ category: filters.category === v ? null : v }),
+          (v) => selectedCategories.has(v),
+          (v) =>
+            this._setFilters({
+              categories: selectedCategories.has(v)
+                ? filters.categories.filter((c) => c !== v)
+                : [...filters.categories, v],
+            }),
         )}
         ${this._renderFacetSection(
           'tags',
@@ -1550,6 +1561,17 @@ export class HVFullView extends LitElement {
         )}
       </div>
     `;
+  }
+
+  /**
+   * The location selection after picking `id`, matching how a category or tag
+   * row behaves: pressing an unselected one adds it, pressing a selected one
+   * takes it out, and the "All items" row (a null pick) clears the lot.
+   */
+  private _toggledLocations(id: string | null): string[] {
+    const current = this.st?.filters.locationIds ?? [];
+    if (id === null) return [];
+    return current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
   }
 
   private _renderLocationSection() {
@@ -1589,7 +1611,7 @@ export class HVFullView extends LitElement {
         <hv-location-tree
           data-testid="sidebar-tree"
           .nodes=${(st?.locationTreeCache ?? []) as LocationTreeNode[]}
-          .selectedId=${filters.locationId}
+          .selectedIds=${filters.locationIds}
           .orphansSelected=${filters.orphansOnly}
           .areas=${st?.areasCache?.areas ?? []}
           .selectedAreaId=${filters.areaId}
@@ -1602,14 +1624,14 @@ export class HVFullView extends LitElement {
           .matchingTotalCount=${st?.locationMatchTotal ?? null}
           @select=${(e: CustomEvent) =>
             this._setFilters({
-              locationId: (e.detail as { locationId: string | null }).locationId,
+              locationIds: this._toggledLocations((e.detail as { locationId: string | null }).locationId),
               orphansOnly: false,
             })}
-          @select-orphans=${() => this._setFilters({ locationId: null, orphansOnly: true })}
+          @select-orphans=${() => this._setFilters({ locationIds: [], orphansOnly: true })}
           @select-area=${(e: CustomEvent) =>
             this._setFilters({
               areaId: (e.detail as { areaId: string }).areaId,
-              locationId: null,
+              locationIds: [],
               orphansOnly: false,
             })}
         ></hv-location-tree>
@@ -1654,7 +1676,7 @@ export class HVFullView extends LitElement {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
     return renderEmptyState(emptyKindFor(this.st), {
-      locationName: (st?.locationsFlatCache ?? []).find((l) => l.id === filters.locationId)?.name ?? null,
+      locationName: (st?.locationsFlatCache ?? []).find((l) => l.id === soleLocationId(filters))?.name ?? null,
       onAction: (id: EmptyOffer['id']) => {
         if (id === 'clear-filters') this.store?.clearFilters();
         else if (id === 'add-item') this._leaveEditor('new');
@@ -1673,7 +1695,7 @@ export class HVFullView extends LitElement {
     const locations = st?.locationsFlatCache ?? [];
     // "Items with no location" is its own answer to where the table is pointed,
     // so the crumb says that instead of a path and there is none to mark.
-    const loc = filters.orphansOnly ? undefined : locations.find((l) => l.id === filters.locationId);
+    const loc = filters.orphansOnly ? undefined : locations.find((l) => l.id === soleLocationId(filters));
     const parts = locationPathParts(loc, locations, st?.areasCache?.areas ?? [], '');
     const segments = parts.path ? parts.path.split(PATH_SEPARATOR) : [];
     const filterCount = activeFilterCount(filters);

@@ -158,6 +158,11 @@ export interface ItemFilter {
   tags_any?: string[];
   tags_all?: string[];
   category?: string;
+  /**
+   * Multi-select beside `category`, unioned with it — an item has exactly one
+   * category, so a selection can only mean OR. An empty list does not narrow.
+   */
+  categories?: string[];
   /** Exact match against one status; unknown values are `validation_error`. */
   status?: ItemStatus;
   checked_out?: boolean;
@@ -172,6 +177,11 @@ export interface ItemFilter {
    */
   inspection_overdue_only?: boolean;
   location_id?: string | null;
+  /**
+   * Multi-select beside `location_id`, unioned with it. `include_subtree` is
+   * one flag for the whole selection, not one per entry.
+   */
+  location_ids?: string[];
   area_id?: string;
   include_subtree?: boolean;
   updated_after?: string;
@@ -571,7 +581,11 @@ export type TagMatchMode = 'any' | 'all';
 export interface StoreFilters {
   q: string;
   areaId: string | null;
-  locationId: string | null;
+  /**
+   * The locations the list is narrowed to, unioned. Empty means every
+   * location; `includeSubtree` governs the whole selection at once.
+   */
+  locationIds: string[];
   includeSubtree: boolean;
   checkedOutOnly: boolean;
   /** Presentation hint, not a filter: re-sorts low-stock items to the front. */
@@ -585,7 +599,8 @@ export interface StoreFilters {
   inspectionDueOnly: boolean;
   /** Only items with this stored status; null means any. */
   status: ItemStatus | null;
-  category: string | null;
+  /** The categories the list is narrowed to, unioned. Empty means every category. */
+  categories: string[];
   tags: string[];
   tagsMode: TagMatchMode;
   /** ISO-8601 instants; the backend compares strictly greater-than. */

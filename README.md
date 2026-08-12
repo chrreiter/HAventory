@@ -545,8 +545,11 @@ throughout.
   vocabulary rather than anything in the inventory — and
   Locations stays at the top. Every status row is priced from the backend's own per-status
   counts, so a status nothing carries reads 0 rather than inheriting the rest of the
-  inventory. Category and status each pick one value and
-  tags accumulate, matching how the backend treats them. With a filter on, each location,
+  inventory. Locations, categories and tags all accumulate — pick a second and
+  the list widens to hold both, pick a selected one again and it drops out — while
+  status stays one value, matching how the backend treats each of them. Several
+  categories or locations can only ever mean *or*, since an item has one of each,
+  so neither carries the any/all control tags do. With a filter on, each location,
   category and tag row reads "4 / 37" — matches over total — so you can see where the
   matches are rather than a total that never moves. All three switch to the pair together,
   as soon as anything is filtering. Each list drops its own dimension from what it measures

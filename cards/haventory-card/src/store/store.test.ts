@@ -661,7 +661,7 @@ describe('Store', () => {
 
     // A category and a tag are picked alongside the narrowing filter; neither
     // may reach the wire, or every other row would be priced at zero.
-    store.setFilters({ checkedOutOnly: true, category: 'Tools', tags: ['red'] });
+    store.setFilters({ checkedOutOnly: true, categories: ['Tools'], tags: ['red'] });
     await vi.waitUntil(
       () => hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length > 1,
     );
@@ -793,9 +793,39 @@ describe('Store', () => {
 
     // A filter the backend applies to the page rather than to the subscription
     // leaves the sockets alone.
-    store.setFilters({ category: 'Tools' });
+    store.setFilters({ categories: ['Tools'] });
     await new Promise((r) => setTimeout(r, 0));
     expect(hass.__subscribeCalls.length).toBe(roundOne * 2);
+  });
+
+  // The subscription is scoped by location as well, so a multi-select that only
+  // reached the page query would leave the socket delivering the other
+  // locations' events — and the card would act on them.
+  it('scopes the items subscription to every selected location', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+    const store = new Store(hass);
+    await store.init();
+    const itemsSubscribe = () => {
+      const sent = hass.__subscribeMessages.filter((m) => m.topic === 'items');
+      return sent[sent.length - 1];
+    };
+    const roundOne = hass.__subscribeCalls.length;
+
+    store.setFilters({ locationIds: ['garage', 'kitchen'] });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(hass.__subscribeCalls.length).toBe(roundOne * 2);
+    expect(itemsSubscribe().location_ids).toEqual(['garage', 'kitchen']);
+
+    // Re-picking the same set changes no scope, so the sockets stay up.
+    store.setFilters({ locationIds: ['garage', 'kitchen'] });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(hass.__subscribeCalls.length).toBe(roundOne * 2);
+
+    // Clearing the selection re-opens on every location.
+    store.setFilters({ locationIds: [] });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(itemsSubscribe().location_ids).toEqual([]);
   });
 
 });

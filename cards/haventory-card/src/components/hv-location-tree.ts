@@ -253,7 +253,18 @@ export class HVLocationTree extends LitElement {
   ];
 
   @property({ attribute: false }) nodes: LocationTreeNode[] = [];
+  /**
+   * The one selected location, for the pickers — the item editor's location
+   * field and the organize dialog's parent/merge targets, all of which assign
+   * exactly one.
+   */
   @property({ type: String }) selectedId: string | null = null;
+  /**
+   * Every selected location, for the filter surfaces, which narrow by a set.
+   * Takes precedence over `selectedId` when non-empty; a host sets one or the
+   * other, never both.
+   */
+  @property({ attribute: false }) selectedIds: string[] = [];
   /** Show an "All items" row that clears the location filter. */
   @property({ type: Boolean }) showAll = false;
   /**
@@ -443,7 +454,7 @@ export class HVLocationTree extends LitElement {
     const filtering = this.filterText.trim().length > 0;
     const open = filtering ? true : this._expanded.has(node.id);
     const isExcluded = excluded || node.id === this.excludeSubtreeOf;
-    const selected = !this.orphansSelected && this.selectedId === node.id;
+    const selected = !this.orphansSelected && this._isSelected(node.id);
 
     return html`
       <div>
@@ -584,6 +595,16 @@ export class HVLocationTree extends LitElement {
    * carries no id a picker could assign, and only a browsing tree
    * (`areaSelectable`) makes it pressable at all.
    */
+  /** True when this node is one of the host's selected locations. */
+  private _isSelected(id: string): boolean {
+    return this.selectedIds.length ? this.selectedIds.includes(id) : this.selectedId === id;
+  }
+
+  /** True when any location is selected, by either property. */
+  private _anySelected(): boolean {
+    return this.selectedIds.length > 0 || this.selectedId !== null;
+  }
+
   private _renderAreaHeader(
     group: AreaGroup | null,
     roots: LocationTreeNode[],
@@ -593,7 +614,7 @@ export class HVLocationTree extends LitElement {
   ) {
     const pickable = this.areaSelectable && group !== null;
     const selected =
-      pickable && this.selectedAreaId === group.id && this.selectedId === null && !this.orphansSelected;
+      pickable && this.selectedAreaId === group.id && !this._anySelected() && !this.orphansSelected;
     const label = group
       ? renderAreaChip(group.name)
       : html`<span class="hv-area-chip quiet area-none">No area</span>`;
@@ -752,7 +773,7 @@ export class HVLocationTree extends LitElement {
       <div role="tree" aria-label="Locations">
         ${this.showAll
           ? html`<button
-              class="row hv-browse-row ${!this.orphansSelected && this.selectedId === null ? 'selected' : ''}"
+              class="row hv-browse-row ${!this.orphansSelected && !this._anySelected() ? 'selected' : ''}"
               data-testid="tree-all"
               @click=${() => this._emit('select', { locationId: null, node: null })}
             >

@@ -13,7 +13,7 @@ import type { Location, StatusDefinition, StoreFilters } from '../store/types';
 export type FilterChipKey =
   | 'q'
   | 'areaId'
-  | 'locationId'
+  | 'locationIds'
   | 'checkedOutOnly'
   | 'orphansOnly'
   | 'lowStockOnly'
@@ -21,7 +21,7 @@ export type FilterChipKey =
   | 'overdueOnly'
   | 'inspectionDueOnly'
   | 'status'
-  | 'category'
+  | 'categories'
   | 'tags'
   | 'updatedAfter'
   | 'createdAfter'
@@ -59,17 +59,29 @@ export function chipsFor(
   const chips: FilterChip[] = [];
   if (filters.q) chips.push({ key: 'q', label: `"${filters.q}"`, tone: 'primary' });
 
-  if (filters.locationId) {
+  if (filters.locationIds.length) {
     const locations = ctx.locations ?? [];
-    const loc = locations.find((l) => l.id === filters.locationId);
     // A chip is already the smallest thing on this row, so the area is named in
     // words rather than nested in a chip of its own — the same "Area: X" the
     // area filter's own chip prints two lines down. It drops out when the path
     // opens with it, as the chip beside a path does.
-    const path = pathLabel(locationPathParts(loc, locations, ctx.areas ?? [], 'Location'));
+    const paths = filters.locationIds.map((id) =>
+      pathLabel(
+        locationPathParts(
+          locations.find((l) => l.id === id),
+          locations,
+          ctx.areas ?? [],
+          'Location',
+        ),
+      ),
+    );
+    // One chip for the whole selection, the way the tag chip below carries every
+    // selected tag: the row counts narrowings, not values, and "+ sub" applies
+    // to all of them at once.
+    const joined = paths.join(', ');
     chips.push({
-      key: 'locationId',
-      label: filters.includeSubtree ? `${path} + sub` : path,
+      key: 'locationIds',
+      label: filters.includeSubtree ? `${joined} + sub` : joined,
       tone: 'primary',
     });
   }
@@ -82,8 +94,12 @@ export function chipsFor(
   // text. The facets that read as a bare value say so in words, the way Area
   // and Status already do; tags carry the same mark they wear as chips, so the
   // two vocabularies agree.
-  if (filters.category)
-    chips.push({ key: 'category', label: `Category: ${filters.category}`, tone: 'primary' });
+  if (filters.categories.length)
+    chips.push({
+      key: 'categories',
+      label: `${filters.categories.length > 1 ? 'Categories' : 'Category'}: ${filters.categories.join(', ')}`,
+      tone: 'primary',
+    });
   if (filters.tags.length) {
     const joined = filters.tags.map((t) => `${TAG_MARK}${t}`).join(', ');
     chips.push({
@@ -134,10 +150,14 @@ export function clearedValueFor(key: FilterChipKey): Partial<StoreFilters> {
       return { q: '' };
     case 'tags':
       return { tags: [] };
+    // The multi-select facets clear to an empty selection, not to null: an
+    // empty list is how "not narrowing by this" is spelled end to end.
+    case 'locationIds':
+      return { locationIds: [] };
+    case 'categories':
+      return { categories: [] };
     case 'areaId':
-    case 'locationId':
     case 'status':
-    case 'category':
     case 'updatedAfter':
     case 'createdAfter':
     case 'updatedBefore':

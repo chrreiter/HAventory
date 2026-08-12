@@ -612,3 +612,58 @@ def test_distinct_values_counts_an_excluded_item_towards_count_only() -> None:
     # client can tell "unpriced" from "everything matches".
     unfiltered = repo.get_distinct_field_values()
     assert unfiltered["categories"] == [{"value": "Tools", "count": 2}]
+
+
+def test_list_items_unions_the_category_index_buckets() -> None:
+    """The index path and the post-filter must agree on a multi-select."""
+
+    repo = Repository()
+    repo.create_item(ItemCreate(name="Hammer", category="Tools"))
+    repo.create_item(ItemCreate(name="Novel", category="Books"))
+    repo.create_item(ItemCreate(name="Soap", category="Cleaning"))
+
+    page = repo.list_items(flt=ItemFilter(categories=["tools", "BOOKS"]))
+    assert sorted(it.name for it in page["items"]) == ["Hammer", "Novel"]
+    assert page["total"] == LOADED_ITEM_COUNT
+
+    # A selection nothing carries is an empty page, not the whole inventory.
+    empty = repo.list_items(flt=ItemFilter(categories=["Nonesuch"]))
+    assert empty["items"] == []
+    assert empty["total"] == 0
+
+
+def test_list_items_unions_the_location_index_buckets() -> None:
+    repo = Repository()
+    kitchen = repo.create_location(name="Kitchen")
+    drawer = repo.create_location(name="Drawer", parent_id=kitchen.id)
+    garage = repo.create_location(name="Garage")
+    repo.create_item(ItemCreate(name="Whisk", location_id=drawer.id))
+    repo.create_item(ItemCreate(name="Spanner", location_id=garage.id))
+    repo.create_item(ItemCreate(name="Loose"))
+
+    subtree = repo.list_items(
+        flt=ItemFilter(location_ids=[str(kitchen.id), str(garage.id)], include_subtree=True)
+    )
+    assert sorted(it.name for it in subtree["items"]) == ["Spanner", "Whisk"]
+
+    # One flag for the whole selection: the drawer is not itself selected.
+    direct = repo.list_items(
+        flt=ItemFilter(location_ids=[str(kitchen.id), str(garage.id)], include_subtree=False)
+    )
+    assert [it.name for it in direct["items"]] == ["Spanner"]
+
+
+def test_matching_by_location_counts_a_multi_select_the_same_way() -> None:
+    """The tree's counts ride the same candidate path, so they must not drift."""
+
+    repo = Repository()
+    kitchen = repo.create_location(name="Kitchen")
+    garage = repo.create_location(name="Garage")
+    repo.create_item(ItemCreate(name="Whisk", location_id=kitchen.id, category="Tools"))
+    repo.create_item(ItemCreate(name="Spanner", location_id=garage.id, category="Books"))
+
+    counts = repo.count_matching_by_location(ItemFilter(categories=["Tools", "Books"]))
+    assert counts == {str(kitchen.id): 1, str(garage.id): 1}
+
+    narrowed = repo.count_matching_by_location(ItemFilter(categories=["Tools"]))
+    assert narrowed == {str(kitchen.id): 1}

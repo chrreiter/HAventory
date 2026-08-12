@@ -468,9 +468,29 @@ def _execute_item_op(
 class _Subscription(TypedDict, total=False):
     topic: str
     location_id: str | None
+    location_ids: list[str]
     area_id: str | None
     include_subtree: bool
     inspection_overdue_only: bool
+
+
+def _subscription_location_ids(sub: _Subscription) -> list[str]:
+    """The locations a subscription is scoped to, scalar and list unioned.
+
+    The same union rule ``models.selected_location_ids`` applies to an
+    ``ItemFilter``, kept here because a subscription is not one: it carries a
+    payload matcher, not a query.
+    """
+
+    selection: list[str] = []
+    scalar = sub.get("location_id")
+    if scalar:
+        selection.append(str(scalar).strip())
+    for raw in sub.get("location_ids") or []:
+        value = str(raw).strip()
+        if value and value not in selection:
+            selection.append(value)
+    return [value for value in selection if value]
 
 
 def _subs_bucket(
@@ -643,29 +663,29 @@ def _item_matches_filter(item: dict[str, Any], sub: _Subscription) -> bool:
     area_filter = sub.get("area_id")
     if area_filter and item.get("effective_area_id") != area_filter:
         return False
-    loc_filter = sub.get("location_id")
-    if not loc_filter:
+    loc_filters = _subscription_location_ids(sub)
+    if not loc_filters:
         return True
     include_subtree = bool(sub.get("include_subtree", True))
     if include_subtree:
-        # Match if the filter id is anywhere in the id_path
+        # Match if any selected id is anywhere in the id_path
         path = item.get("location_path", {}).get("id_path", [])
-        return loc_filter in path
+        return any(loc in path for loc in loc_filters)
     # Direct-only
-    return item.get("location_id") == loc_filter
+    return item.get("location_id") in loc_filters
 
 
 def _location_matches_filter(location: dict[str, Any], sub: _Subscription) -> bool:
-    loc_filter = sub.get("location_id")
-    if not loc_filter:
+    loc_filters = _subscription_location_ids(sub)
+    if not loc_filters:
         return True
     include_subtree = bool(sub.get("include_subtree", True))
     if include_subtree:
-        # If subtree, match if this location is the filter or under it
+        # If subtree, match if this location is a selected one or under one
         path = location.get("path", {}).get("id_path", [])
-        return loc_filter in path or location.get("id") == loc_filter
-    # Direct-only: only the exact location
-    return location.get("id") == loc_filter
+        return any(loc in path or location.get("id") == loc for loc in loc_filters)
+    # Direct-only: only the exact locations
+    return location.get("id") in loc_filters
 
 
 def _collect_event_deliveries(
@@ -1100,6 +1120,9 @@ async def ws_health(
         vol.Required("type"): "haventory/subscribe",
         vol.Required("topic"): str,
         vol.Optional("location_id"): object,
+        # Multi-select beside the scalar, unioned with it. `object` throughout
+        # for the reason below.
+        vol.Optional("location_ids"): object,
         # `object` rather than `str`, matching `location_id`: an explicit null
         # clears the filter instead of being refused by HA core's schema.
         vol.Optional("area_id"): object,
@@ -1120,6 +1143,11 @@ async def ws_subscribe(
     }
     if "location_id" in msg:
         sub["location_id"] = msg.get("location_id")
+    if "location_ids" in msg:
+        raw_ids = msg.get("location_ids")
+        if raw_ids is not None and not isinstance(raw_ids, list):
+            raise ValidationError("location_ids must be a list of strings")
+        sub["location_ids"] = [str(value) for value in raw_ids or []]
     if "area_id" in msg:
         sub["area_id"] = msg.get("area_id")
     if "include_subtree" in msg:
