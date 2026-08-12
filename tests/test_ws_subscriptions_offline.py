@@ -648,6 +648,47 @@ async def test_an_area_set_on_a_nested_location_is_announced_too() -> None:
 
 
 @pytest.mark.asyncio
+async def test_an_area_a_nested_location_already_resolves_to_is_silent() -> None:
+    """Sending the area that is already in force moves nothing, so it says nothing.
+
+    The repository reports an area change as requested whenever the value differs
+    from the edited row's own field, and below a root that field is always None —
+    so every such call looks like a change from there. What decides the broadcast
+    is whether the tree ended up somewhere else, and here it did not.
+    """
+
+    hass = HomeAssistant()
+    repo = Repository()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    reg = await async_get_area_registry(hass)
+    reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
+
+    conn = _ConnStub()
+    root = repo.create_location(name="Home", area_id="kitchen")
+    shelf = repo.create_location(name="Shelf", parent_id=root.id)
+    await ws_send(hass, 700, "haventory/subscribe", conn=conn, topic="locations")
+
+    # Every field on every save, the way the card's location editor submits, with
+    # the area the tree already resolves to.
+    conn.messages.clear()
+    res = await ws_send(
+        hass,
+        1,
+        "haventory/location/update",
+        conn=conn,
+        location_id=str(shelf.id),
+        name="Shelf",
+        area_id="kitchen",
+    )
+    assert res["success"] is True
+    assert repo.get_location(str(root.id)).area_id == "kitchen"
+    assert conn.events(topic="locations") == []
+
+
+@pytest.mark.asyncio
 async def test_location_update_announces_what_changed_once() -> None:
     """One event per call, keyed on the change rather than on the keys sent.
 
