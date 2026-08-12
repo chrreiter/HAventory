@@ -410,6 +410,23 @@ export interface ImportError {
   message: string;
 }
 
+/**
+ * A non-blocking finding about an otherwise valid import document.
+ *
+ * Warnings never affect `valid` and never reach `import/execute` — the preview
+ * tells, the entity id still decides. `code` discriminates the kind:
+ * `name_collision` is an incoming entity about to be created under a name a
+ * stored entity of a *different* id already answers to, which import duplicates
+ * rather than merges.
+ */
+export interface ImportWarning {
+  code: 'name_collision' | string;
+  path: string;
+  message: string;
+  name?: string;
+  existing_id?: string;
+}
+
 /** Per-type classification counts in an import preview. */
 export interface ImportBucketCounts {
   total: number;
@@ -431,6 +448,8 @@ export interface ImportBuckets {
 export interface ImportPreview {
   valid: boolean;
   errors: ImportError[];
+  /** Optional so a preview from a backend that predates warnings still type-checks. */
+  warnings?: ImportWarning[];
   policy: ImportPolicy;
   document: {
     haventory_export_version: number | null;

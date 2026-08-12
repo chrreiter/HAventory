@@ -222,3 +222,59 @@ second area), one item in `Drawer`, one item in `Garage`, and one item with **no
   tab A across steps 3–6.
 - Whatever step 8 does, in one line — it decides whether the follow-up below is worth an issue.
 - Paste the result as a comment on #194 and reply on the PR thread.
+
+---
+
+## H2 — #195 the name-clash block on a hand-rebuilt inventory
+
+**Branch / PR**: `claude/v0-5-0-w1a-import-name-collisions` / #TBD
+**Why this needs a real HA**: the offline and phacc suites both prove the warning is
+produced and survives the wire, but neither renders it. What is unverified is the block in
+the import sheet on a realistic document — whether the clash list is legible at the width
+the sheet actually has, whether five entries plus "…and N more" is the right cut, and
+whether the block reads as a caution rather than as a refusal while the Import button
+beside it stays enabled.
+
+### Setup
+
+    set -a; . ./.env; set +a
+    bash scripts/reload_addon.sh --container home-assistant --sleep 30 --tail-logs
+
+Then build the situation the warning exists for — an inventory whose locations were
+rebuilt by hand, so they carry fresh ids under the old names:
+
+1. Seed a small tree and some items:
+   `uv run python scripts/ws_init_haventory.py` (or the card's own UI).
+2. **Export a backup** from the card: ⋮ → Export backup. Keep the file.
+3. **Delete every location** and recreate them by hand with the same names — same
+   spelling, same nesting. This is what gives them new ids.
+4. Recreate two or three items by hand under the old names as well, so the item side of
+   the block has something to show.
+
+### Steps
+
+1. Card ⋮ → Import backup, paste or pick the file from step 2, choose **Merge**, Preview.
+2. Read the preview sheet. Repeat with **Replace** and with **Skip**.
+3. Then the negative case, which is the one that matters most: export a *fresh* backup of
+   the inventory as it now stands and immediately preview that file back onto it, under all
+   three policies.
+
+### What "pass" looks like
+
+- Step 2: a `data-testid="import-warnings"` block appears above the fine print, listing the
+  clashes. Each location line quotes the stored location's path (`the location at "Garage /
+  Shelf A"`), which is what tells one legitimate "Shelf A" from the rebuilt duplicate. With
+  more than five, exactly five are listed and the rest are counted.
+- The **Import button stays enabled** in every case, and the preview still reports
+  `valid: true` — this warns, it does not gate.
+- Step 3 produces **no warning block at all**, under all three policies. A check that fires
+  on the ordinary round trip is worse than no check, so this is the failing case to watch
+  for.
+- Legible in both themes: the block uses the same `alert warn` treatment as the existing
+  conflict banner, so it should sit beside it without a second visual language.
+
+### What to send back
+
+- Screenshots of the preview sheet from step 2 (one with a handful of clashes, one with
+  more than five if you can make it) and from step 3, in light and dark.
+- Paste the result as a comment on #195 and reply on the PR thread.

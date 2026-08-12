@@ -197,6 +197,61 @@ describe('hv-import-sheet: preview', () => {
     expect(q(el, '[data-testid="import-conflicts"]')).toBe(null);
   });
 
+  it('flags an incoming name a different id already answers to', async () => {
+    const el = await mount({
+      preview: preview({
+        warnings: [
+          {
+            code: 'name_collision',
+            path: 'items[0]',
+            message: '"Hammer" will be added as a second entry: an existing item already goes by that name.',
+            name: 'Hammer',
+            existing_id: 'abc',
+          },
+        ],
+      }),
+    });
+    const block = q(el, '[data-testid="import-warnings"]');
+    expect(block?.textContent).toContain('1 name clash');
+    expect(block?.textContent).toContain('"Hammer" will be added as a second entry');
+  });
+
+  it('warns without gating: the import button stays enabled either way', async () => {
+    const withWarnings = await mount({
+      preview: preview({
+        warnings: [{ code: 'name_collision', path: 'items[0]', message: 'a clash' }],
+      }),
+    });
+    expect((q(withWarnings, '[data-testid="import-execute"]') as HTMLButtonElement).disabled).toBe(false);
+
+    const without = await mount({ preview: preview() });
+    expect((q(without, '[data-testid="import-execute"]') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('hides the warning block when there are none, and when the backend sends none', async () => {
+    const empty = await mount({ preview: preview({ warnings: [] }) });
+    expect(q(empty, '[data-testid="import-warnings"]')).toBe(null);
+
+    // A backend that predates warnings omits the key entirely.
+    const absent = await mount({ preview: preview() });
+    expect(absent.preview?.warnings).toBeUndefined();
+    expect(q(absent, '[data-testid="import-warnings"]')).toBe(null);
+  });
+
+  it('lists the first few clashes and counts the rest', async () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({
+      code: 'name_collision',
+      path: `items[${i}]`,
+      message: `clash ${i}`,
+    }));
+    const el = await mount({ preview: preview({ warnings: many }) });
+    const text = el.shadowRoot?.textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(text).toContain('8 name clashes');
+    expect(text).toContain('clash 4');
+    expect(text).not.toContain('clash 5');
+    expect(text).toContain('and 3 more');
+  });
+
   it('states the all-or-nothing behaviour and what it costs other clients', async () => {
     const el = await mount({ preview: preview() });
     const text = el.shadowRoot?.textContent?.replace(/\s+/g, ' ') ?? '';

@@ -809,3 +809,183 @@ def test_a_clean_round_trip_still_imports() -> None:
 
     assert report["valid"] is True, report["errors"]
     assert target is not None
+
+
+# -----------------------------
+# Name-collision warnings
+# -----------------------------
+
+
+def _rebuilt_item_doc(name: str, item_id: str = "44444444-4444-4444-8444-444444444444") -> dict:
+    """An item doc whose id is absent here, standing for a hand-rebuilt entity."""
+
+    return _item_doc(id=item_id, name=name)
+
+
+def test_an_incoming_name_taken_by_another_id_is_warned_about() -> None:
+    """The hazard the docs describe: rebuilt ids duplicate rather than merge."""
+
+    repo = Repository()
+    stored = repo.create_item({"name": "Hammer"})
+
+    report, target = ie.plan_import(
+        repo, _envelope(_rebuilt_item_doc("Hammer")), current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    # A warning tells; the id still decides.
+    assert report["valid"] is True, report["errors"]
+    assert target is not None
+    assert len(report["warnings"]) == 1
+    warning = report["warnings"][0]
+    assert warning["code"] == "name_collision"
+    assert warning["path"] == "items[0]"
+    assert warning["name"] == "Hammer"
+    assert warning["existing_id"] == str(stored.id)
+    # Classification is untouched: the entity is still an add.
+    assert report["items"]["add"] == ["44444444-4444-4444-8444-444444444444"]
+
+
+def test_a_location_collision_names_the_stored_path() -> None:
+    """Two legitimate "Shelf A"s under different parents are common."""
+
+    repo = Repository()
+    garage = repo.create_location(name="Garage")
+    shelf = repo.create_location(name="Shelf A", parent_id=str(garage.id))
+
+    doc = {
+        "haventory_export_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "items": [],
+        "locations": [
+            {"id": "55555555-5555-4555-8555-555555555555", "name": "Shelf A", "parent_id": None}
+        ],
+    }
+    report, target = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert report["valid"] is True, report["errors"]
+    assert target is not None
+    warning = report["warnings"][0]
+    assert warning["code"] == "name_collision"
+    assert warning["path"] == "locations[0]"
+    assert warning["existing_id"] == str(shelf.id)
+    assert "Garage / Shelf A" in warning["message"]
+
+
+@pytest.mark.parametrize("policy", ["merge", "replace", "skip"])
+def test_a_clean_round_trip_warns_about_nothing(policy: str) -> None:
+    """The regression that matters most.
+
+    Every entity of a re-imported export classifies `unchanged` or `update`, so
+    a check that fired here would fire on every healthy document — which is
+    worse than no check at all.
+    """
+
+    repo = Repository()
+    _seed(repo)
+    # Two entities deliberately sharing a name with a third, to prove a
+    # legitimate namesake is not what this warns about.
+    repo.create_item({"name": "Hammer"})
+    repo.create_location(name="Hammer")
+
+    report, target = ie.plan_import(
+        repo, _doc_from(repo), policy=policy, current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert report["valid"] is True, report["errors"]
+    assert target is not None
+    assert report["warnings"] == []
+
+
+@pytest.mark.parametrize("policy", ["merge", "replace", "skip"])
+def test_a_round_trip_onto_a_changed_inventory_still_warns_about_nothing(policy: str) -> None:
+    """`update` and `conflict` are the same entity by id — not a collision."""
+
+    repo = Repository()
+    ids = _seed(repo)
+    doc = _doc_from(repo)
+    # Change one stored item so the document classifies it update/conflict
+    # rather than unchanged, depending on the policy.
+    repo.update_item(ids["hammer"], {"quantity": 99})
+
+    report, _ = ie.plan_import(
+        repo, doc, policy=policy, current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert report["warnings"] == []
+
+
+@pytest.mark.parametrize("incoming_name", ["hammer", "HAMMER", "  Hammer  ", "Hämmer"])
+def test_names_differing_only_by_case_spacing_or_accent_still_collide(incoming_name: str) -> None:
+    """Compared the way the repository compares names, not byte for byte."""
+
+    repo = Repository()
+    repo.create_item({"name": "Hammer"})
+
+    report, _ = ie.plan_import(
+        repo,
+        _envelope(_rebuilt_item_doc(incoming_name)),
+        current_schema_version=CURRENT_SCHEMA_VERSION,
+    )
+
+    assert [w["code"] for w in report["warnings"]] == ["name_collision"]
+
+
+def test_no_warning_when_the_colliding_stored_entity_is_the_same_id() -> None:
+    """Same id means the same entity — an update, not a duplicate."""
+
+    repo = Repository()
+    stored = repo.create_item({"name": "Hammer"})
+
+    report, _ = ie.plan_import(
+        repo,
+        _envelope(_item_doc(id=str(stored.id), name="Hammer", quantity=7)),
+        current_schema_version=CURRENT_SCHEMA_VERSION,
+    )
+
+    assert report["items"]["update"] == [str(stored.id)]
+    assert report["warnings"] == []
+
+
+def test_an_invalid_document_returns_warnings_as_an_empty_list() -> None:
+    """One shape for the card to render, valid or not — never a missing key."""
+
+    repo = Repository()
+    bad = {"haventory_export_version": 1, "schema_version": CURRENT_SCHEMA_VERSION, "items": 3}
+
+    report, target = ie.plan_import(repo, bad, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert report["valid"] is False
+    assert target is None
+    assert report["warnings"] == []
+
+
+def test_warnings_do_not_reach_import_execute() -> None:
+    """The preview tells; the id still decides. Execute is unchanged."""
+
+    repo = Repository()
+    repo.create_item({"name": "Hammer"})
+
+    report, target = ie.plan_import(
+        repo, _envelope(_rebuilt_item_doc("Hammer")), current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+    assert report["warnings"]
+    assert target is not None
+
+    repo.load_state(target)
+    # Both survive: the warning flagged the duplicate, it did not prevent it.
+    names = sorted(item.name for item in repo._items_by_id.values())
+    assert names == ["Hammer", "Hammer"]
+
+
+@pytest.mark.asyncio
+async def test_ws_import_preview_carries_the_warnings() -> None:
+    hass = _new_hass()
+    hass.data[DOMAIN]["repository"].create_item({"name": "Hammer"})
+
+    res = await _send(
+        hass, 1, "haventory/import/preview", document=_envelope(_rebuilt_item_doc("Hammer"))
+    )
+
+    assert res["success"] is True, res
+    assert res["result"]["valid"] is True
+    assert [w["code"] for w in res["result"]["warnings"]] == ["name_collision"]

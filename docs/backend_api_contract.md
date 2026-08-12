@@ -364,6 +364,17 @@ data. See `data_shapes.md` for the full document, preview, and summary shapes.
     (id present, identical), `update` (id present, differs, resolved by the policy), or
     `conflict` (id present, differs, left untouched by `skip`). Invalid documents return
     `{valid: false, errors: [{path, message}]}` rather than throwing.
+  - **Every preview carries `warnings: <ImportWarning[]>`**, present whether or not it is
+    empty and whether or not the document is valid, so a client has one shape to render.
+    A warning **never affects `valid`** and **never reaches `import/execute`**: the preview
+    tells, the entity id still decides. One code exists today, `name_collision` — an incoming
+    entity classified `add` whose name matches, case- and accent-insensitively, that of a
+    stored entity of the same kind carrying a *different* id. That is exactly the
+    duplicate-on-rebuilt-ids hazard described under `import/execute` below, caught before
+    the write. Only the `add` bucket is checked: `update` and `unchanged` are the same entity
+    by id, so a name they share with some third entity is an ordinary namesake and warning on
+    it would fire on healthy documents. A clean round trip (export → import onto the same
+    instance) therefore produces no warnings under any policy.
   - A valid preview additionally carries `attachments: {referenced: number, missing: number}` —
     how many attachment references the resulting dataset would hold, and how many of them
     name a file this install does not have. The export carries metadata and not bytes, so
@@ -389,7 +400,10 @@ data. See `data_shapes.md` for the full document, preview, and summary shapes.
     `add`, and every incoming item follows its own `location_id` onto the incoming location,
     leaving the hand-rebuilt one holding nothing. `import/preview` shows this before the
     write — entities you expect to already exist appear under `unchanged`/`update`, never
-    under `add`.
+    under `add`, and the preview additionally flags each incoming name a different id already
+    answers to as a `name_collision` warning. It flags the case rather than resolving it:
+    resolving would mean matching by name, which is what identity-by-id exists to avoid.
+    `import/execute` is unchanged by this and applies the document either way.
   - Conflict policies (for ids already present): `skip` keeps the existing entity;
     `replace` overwrites it with the incoming one; `merge` overlays incoming onto
     existing (scalar fields from incoming; item `tags` unioned; item `attachments`

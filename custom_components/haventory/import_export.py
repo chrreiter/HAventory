@@ -75,6 +75,7 @@ from .models import (
     is_canonical_utc_timestamp,
     iso_utc_now,
     normalize_tags,
+    normalize_text_for_sort,
     parse_uuid4,
     seed_status_definitions,
     serialize_attachment_meta,
@@ -234,6 +235,17 @@ def _sorted_index_by_id(items: list[Item]) -> list[int]:
 
 def _err(path: str, message: str) -> dict[str, str]:
     return {"path": path, "message": message}
+
+
+def _warn(code: str, path: str, message: str, **fields: str) -> dict[str, str]:
+    """One non-blocking finding about an otherwise valid document.
+
+    Unlike an error, a warning carries a ``code``: every error means "this
+    document is unusable" and needs no discriminator, while warnings accumulate
+    kinds, and the code is what keeps a second kind from needing a second list.
+    """
+
+    return {"code": code, "path": path, "message": message, **fields}
 
 
 def _coerce_entity_list(value: Any) -> list[dict[str, Any]] | None:
@@ -676,6 +688,99 @@ def _recompute_paths(
     return {"items": out_items, "locations": out_locations}
 
 
+def _name_collision_warnings(  # noqa: PLR0913 - one document side, one stored side
+    *,
+    label: str,
+    added_ids: list[str],
+    incoming: list[dict[str, Any]],
+    ids: list[str],
+    existing: dict[str, Any],
+    describe,
+) -> list[dict[str, str]]:
+    """Flag each incoming entity about to be created under a taken name.
+
+    The hazard this catches is the one the contract already names: a document
+    imported onto entities that were deleted and rebuilt by hand duplicates
+    them rather than merging, because identity is the id and the rebuilt entity
+    has a new one. That is precisely an incoming entity about to be *created*
+    while a stored entity of a different id already answers to its name.
+
+    Restricted to the ``add`` bucket for the same reason. ``update`` and
+    ``unchanged`` are the same entity by id, so a name they share with some
+    third entity is an ordinary namesake — warning on it would fire on healthy
+    documents, and a check that fires on the normal case is worse than none.
+
+    Incoming-vs-incoming matches are out of scope: duplicate ids inside one
+    document are already an error, and two same-named entities in one document
+    are the exporting inventory's business, not a collision with this one.
+
+    Names are compared under ``normalize_text_for_sort`` — case-insensitive,
+    accent-folded, whitespace-collapsed — which is how the repository itself
+    compares names.
+    """
+
+    if not added_ids:
+        return []
+
+    stored_by_name: dict[str, tuple[str, dict[str, Any]]] = {}
+    for stored_id, stored in existing.items():
+        name = stored.get("name")
+        if isinstance(name, str) and name.strip():
+            stored_by_name.setdefault(normalize_text_for_sort(name), (str(stored_id), stored))
+
+    index_by_id = {eid: idx for idx, eid in enumerate(ids) if eid}
+    warnings: list[dict[str, str]] = []
+    for eid in added_ids:
+        idx = index_by_id.get(eid)
+        if idx is None:  # pragma: no cover - every added id came from `ids`
+            continue
+        name = incoming[idx].get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        match = stored_by_name.get(normalize_text_for_sort(name))
+        if match is None:
+            continue
+        existing_id, stored = match
+        warnings.append(
+            _warn(
+                "name_collision",
+                f"{label}[{idx}]",
+                (
+                    f'"{name.strip()}" will be added as a second entry: '
+                    f"{describe(stored)} already goes by that name under a different id. "
+                    "Import matches on the id alone, so this creates a duplicate rather "
+                    "than updating what is here."
+                ),
+                name=name.strip(),
+                existing_id=existing_id,
+            )
+        )
+    return warnings
+
+
+def _describe_stored_item(_stored: dict[str, Any]) -> str:
+    """An item has no path to quote — the id in the warning entry is the handle."""
+
+    return "an existing item"
+
+
+def _describe_stored_location(stored: dict[str, Any]) -> str:
+    """Name the stored location by its path.
+
+    Two legitimate "Shelf A"s under different parents are common, and the path
+    is what lets an operator tell one from the rebuilt duplicate at a glance.
+    The check itself deliberately does not scope by parent: an incoming
+    location's parent may itself be incoming, so resolving it would mean
+    planning the tree twice to answer what the path already answers.
+    """
+
+    path = stored.get("path")
+    display = path.get("display_path") if isinstance(path, dict) else None
+    if isinstance(display, str) and display:
+        return f'the location at "{display}"'
+    return "an existing location"
+
+
 def _empty_bucket() -> dict[str, list[str]]:
     return {"add": [], "update": [], "conflict": [], "unchanged": []}
 
@@ -717,6 +822,7 @@ def plan_import(
     if policy not in POLICIES:
         raise ValidationError(f"policy must be one of: {', '.join(POLICIES)}")
 
+    warnings: list[dict[str, str]] = []
     items_in, locations_in, errors = _parse_envelope(
         doc, current_schema_version=current_schema_version
     )
@@ -724,6 +830,9 @@ def plan_import(
     report: dict[str, Any] = {
         "valid": False,
         "errors": errors,
+        # Present from construction, so an invalid document returns the same
+        # shape as a valid one and the card has one thing to render.
+        "warnings": warnings,
         "policy": policy,
         "document": _document_meta(doc if isinstance(doc, dict) else {}),
         "items": _empty_bucket(),
@@ -778,6 +887,31 @@ def plan_import(
         policy=policy,
         canonical=_canonical_item,
         merge=_merge_item,
+    )
+
+    # After planning, because only planning says which entities land in `add` —
+    # and before path recomputation, because the stored paths a location warning
+    # quotes are the ones this inventory has now, not the ones the import would
+    # produce.
+    warnings.extend(
+        _name_collision_warnings(
+            label="locations",
+            added_ids=report["locations"]["add"],
+            incoming=locations_in,
+            ids=loc_ids,
+            existing=existing_locations,
+            describe=_describe_stored_location,
+        )
+    )
+    warnings.extend(
+        _name_collision_warnings(
+            label="items",
+            added_ids=report["items"]["add"],
+            incoming=items_in,
+            ids=item_ids,
+            existing=existing_items,
+            describe=_describe_stored_item,
+        )
     )
 
     payload = _recompute_paths(target_items, target_locations, errors)
