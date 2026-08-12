@@ -13,6 +13,8 @@ import time
 import pytest
 from custom_components.haventory.models import ItemCreate
 from custom_components.haventory.repository import Repository
+from custom_components.haventory.storage import DomainStore
+from homeassistant.core import HomeAssistant
 
 # Time budgets in seconds (conservative estimates)
 BUDGET_CREATE_1K_ITEMS = 1.0
@@ -219,3 +221,62 @@ async def test_benchmark_wp4_move_subtree_percentiles() -> None:
         samples.append((time.perf_counter() - start) * 1000)
     p50, p95 = _percentiles(samples)
     _print_percentiles("move_subtree (typical)", p50, p95, MOVE_BUDGET_P50_MS, MOVE_BUDGET_P95_MS)
+
+
+# The store is one JSON document rewritten in full on every mutation, so the
+# work a save costs is proportional to the whole inventory rather than to the
+# edit. These sizes are the ones the persistence numbers are quoted at.
+PERSIST_SIZES = (250, 500, 1000)
+
+# Per-save budget for everything HAventory itself does on the event loop:
+# building the payload and handing it to the store. Home Assistant's own file
+# write sits outside this and no offline run can see it.
+PERSIST_BUDGET_P50_MS = 60.0
+PERSIST_BUDGET_P95_MS = 120.0
+
+
+def _build_sized_dataset(n_items: int) -> Repository:
+    """An inventory of ``n_items`` with fields filled the way a household fills them."""
+
+    repo = Repository()
+    garage = repo.create_location(name="Garage")
+    shelves = [repo.create_location(name=f"Shelf {i}", parent_id=str(garage.id)) for i in range(10)]
+    for i in range(n_items):
+        repo.create_item(
+            ItemCreate(
+                name=f"Item {i:05d}",
+                description="A representative description of a household object.",
+                quantity=i % 7,
+                location_id=str(shelves[i % len(shelves)].id),
+                tags=["metric", "spare", f"batch-{i % 20}"],
+                category=f"Category {i % 12}",
+                custom_fields={"serial": f"SN-{i:08d}", "warranty_until": "2030-01-01"},
+            )
+        )
+    return repo
+
+
+@pytest.mark.asyncio
+async def test_benchmark_persist_payload_by_inventory_size() -> None:
+    """What one save costs the event loop at 250 / 500 / 1000 items.
+
+    Printed as a curve rather than a single number: the question this answers is
+    how the cost *grows*, which is what decides whether the persistence path
+    needs restructuring or only the constant taking out of it.
+    """
+
+    for size in PERSIST_SIZES:
+        repo = _build_sized_dataset(size)
+        store = DomainStore(HomeAssistant(), key=f"bench_persist_{size}")
+        repo.export_state()  # warm any lazily built index the export reads
+
+        samples = []
+        for _ in range(10):
+            start = time.perf_counter()
+            await store.async_save(repo.export_state())
+            samples.append((time.perf_counter() - start) * 1000)
+
+        p50, p95 = _percentiles(samples)
+        _print_percentiles(
+            f"persist ({size} items)", p50, p95, PERSIST_BUDGET_P50_MS, PERSIST_BUDGET_P95_MS
+        )

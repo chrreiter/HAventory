@@ -483,3 +483,77 @@ async def test_a_stored_collection_survives_a_repository_roundtrip() -> None:
         assert reloaded[name], f"{name} was emptied by the roundtrip"
     assert [i["name"] for i in reloaded["items"].values()] == ["Drill"]
     assert [loc["name"] for loc in reloaded["locations"].values()] == ["Garage"]
+
+
+@pytest.mark.asyncio
+async def test_save_leaves_the_caller_payload_alone() -> None:
+    """The defaults the save stamps on land on its own dict, not the caller's.
+
+    A payload built for one save would otherwise come back carrying a
+    ``schema_version`` it never had, which a caller comparing two exports — or
+    building an export document — would then have to strip.
+    """
+
+    hass = HomeAssistant()
+    store = DomainStore(hass, key="test_store_caller_payload")
+    payload: dict[str, Any] = {"items": {}}
+
+    await store.async_save(payload)
+
+    assert payload == {"items": {}}
+    assert "schema_version" not in payload
+    assert (await store.async_load())["schema_version"] == CURRENT_SCHEMA_VERSION
+
+
+@pytest.mark.asyncio
+async def test_a_later_mutation_cannot_reach_what_was_stored() -> None:
+    """Editing the inventory after a save does not rewrite the saved payload.
+
+    The save copies one level deep, so the isolation comes from
+    ``export_state`` building fresh collections rather than from the store
+    duplicating them. This is the property that has to hold; if a future export
+    starts handing out the repository's own dicts, this test is what fails.
+    """
+
+    hass = HomeAssistant()
+    store = DomainStore(hass, key="test_store_post_save_mutation")
+    repo = Repository()
+    item = repo.create_item(ItemCreate(name="Hammer", quantity=1))
+
+    await store.async_save(repo.export_state())
+
+    repo.update_item(str(item.id), {"name": "Renamed", "quantity": 99})
+    repo.create_item(ItemCreate(name="Second", quantity=1))
+
+    stored = await store.async_load()
+    assert [entry["name"] for entry in stored["items"].values()] == ["Hammer"]
+    assert next(iter(stored["items"].values()))["quantity"] == 1
+
+
+@pytest.mark.asyncio
+async def test_save_does_not_duplicate_the_dataset(monkeypatch) -> None:
+    """What reaches Home Assistant's Store is the caller's collections, not copies.
+
+    Copying them costs the event loop a second full pass over the inventory on
+    every mutation, which is the whole reason the save copies one level and not
+    more. A deep copy reintroduced here would pass every other test in this file
+    and only show up as a growing stall on a large store.
+    """
+
+    hass = HomeAssistant()
+    store = DomainStore(hass, key="test_store_no_duplication")
+    seen: list[dict[str, Any]] = []
+
+    async def _capture(payload: dict[str, Any]) -> None:
+        seen.append(payload)
+
+    monkeypatch.setattr(store._store, "async_save", _capture)
+    repo = Repository()
+    repo.create_item(ItemCreate(name="Hammer", quantity=1))
+    payload = repo.export_state()
+
+    await store.async_save(payload)
+
+    assert len(seen) == 1
+    for name in STORE_COLLECTIONS:
+        assert seen[0][name] is payload[name], name

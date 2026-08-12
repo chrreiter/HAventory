@@ -151,13 +151,18 @@ no longer used and can be deleted; the integration ignores it either way.
 
 What HAventory does *not* do today, stated up front so none of it is a surprise:
 
-- **Scale: a few thousand items.** Every mutation re-serializes the entire inventory and
-  rewrites the store blob, so write latency grows with the total item count. Measured p50
-  per create: ~70 ms at 250 items, ~114 ms at 500, ~200 ms at 1000; on that curve a single
-  create trends toward ~1 s at a few thousand items. Reads don't share the problem (query
-  paths are benchmarked at 10 000 items), correctness is unaffected at any size, and no
-  limit is enforced — writes simply get slower. Treat a few thousand items as the
-  comfortable ceiling.
+- **Scale: writes get slower as the inventory grows.** Every mutation re-serializes the
+  entire inventory and rewrites the store blob, so an edit costs more the more you have.
+  Measured against a real Home Assistant, one editor at a time — which is what a household
+  is — create p50 runs 2.5 ms on an empty store, 9.5 ms at 1 000 items, 17 ms at 2 000 and
+  43 ms at 5 000: linear at roughly 8 µs per item, with the persist about three quarters of
+  it. At and above ~3 000 items the p95 spikes to 230–280 ms against a 21–37 ms median, so
+  the occasional slow save arrives before the median becomes a problem. Bulk operations and
+  import write **once per batch** rather than once per row, so the paths that change many
+  items at a time do not multiply the cost. Reads don't share the problem (query paths are
+  benchmarked at 10 000 items), correctness is unaffected at any size, and no limit is
+  enforced. Several thousand items is comfortable; past that, an edit starts to be
+  something you notice.
 - **No automation triggers.** The integration creates no entities and fires no events on
   the Home Assistant bus. Automations and scripts can *call* the `haventory.*` services,
   but nothing can trigger *on* an inventory change — there is no state object to watch and
@@ -284,8 +289,10 @@ Every feature/fix ships with tests — happy path plus at least one edge/error c
 Performance benchmarks live in `tests/test_repository_benchmarks_offline.py`,
 including the WP4 percentile scenarios (item list: 50-item page p50 ≤ 30 ms /
 p95 ≤ 75 ms; `move_subtree` p50 ≤ 80 ms / p95 ≤ 150 ms on the 2k-items /
-60-locations typical dataset). They print results always and fail on budget
-misses only with `ASSERT_BUDGETS=1`:
+60-locations typical dataset) and the persistence curve at 250 / 500 / 1 000
+items, which is what a save costs the event loop before Home Assistant's own
+write. They print results always and fail on budget misses only with
+`ASSERT_BUDGETS=1`:
 
 ```bash
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ASSERT_BUDGETS=1 uv run pytest -q tests/test_repository_benchmarks_offline.py -s

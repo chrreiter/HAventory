@@ -198,9 +198,19 @@ class DomainStore:
         return deepcopy(data)
 
     async def async_save(self, data: dict[str, Any]) -> None:
-        """Persist the dataset ensuring schema_version is up-to-date."""
+        """Persist the dataset, ensuring schema_version is up to date.
 
-        payload = deepcopy(data) if isinstance(data, dict) else {}
+        The copy is one level deep: enough that the defaults below land on this
+        method's dict rather than the caller's, and no deeper. The collections
+        underneath are handed over, not duplicated — ``Repository.export_state``
+        builds every one of them fresh on each call and keeps no reference, so a
+        deep copy would rebuild the whole dataset a second time on the event
+        loop for nothing. At a thousand items that copy measured longer than
+        building the payload and encoding it put together, and it grows with the
+        inventory the way both of those do.
+        """
+
+        payload = dict(data) if isinstance(data, dict) else {}
         payload.setdefault("schema_version", self._schema_version)
         for name in STORE_COLLECTIONS:
             payload.setdefault(name, {})
