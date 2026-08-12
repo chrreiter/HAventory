@@ -285,7 +285,7 @@ which is the control a household actually uses.
 
 ## H4 — #193 Categories and Tags move with the filter the way Locations does
 
-**Branch / PR**: `claude/v0-5-0-w2-facet-counts` / #TBD
+**Branch / PR**: `claude/v0-5-0-w2-facet-counts` / #422
 **Why this needs a real HA**: the offline suite proves the tallies are computed and the
 component test proves the pair renders. What neither shows is the thing the issue was
 filed about — one sidebar column where the three lists finally agree, read at the width
