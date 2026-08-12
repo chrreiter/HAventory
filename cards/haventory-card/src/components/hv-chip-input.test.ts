@@ -1,18 +1,15 @@
 import './hv-chip-input';
 import type { HVChipInput } from './hv-chip-input';
+import { all, mountComponent, q } from '../test.utils';
 
 async function mount(props: Partial<HVChipInput> = {}) {
-  const el = document.createElement('hv-chip-input') as HVChipInput;
-  el.values = [];
-  el.suggestions = [];
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await el.updateComplete;
+  const { el } = await mountComponent<HVChipInput>('hv-chip-input', {
+    values: [],
+    suggestions: [],
+    ...props,
+  });
   return el;
 }
-
-const q = (el: HVChipInput, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
-const all = (el: HVChipInput, sel: string) => [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
 
 function changes(el: HVChipInput) {
   const seen: string[][] = [];

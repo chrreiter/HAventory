@@ -3,6 +3,7 @@ import './hv-filter-chips';
 import { chipsFor, clearedValueFor } from './hv-filter-chips';
 import { defaultFilters } from '../store/store';
 import type { Location, StatusDefinition, StoreFilters } from '../store/types';
+import { mountComponent } from '../test.utils';
 
 type Chips = HTMLElement & {
   filters: StoreFilters;
@@ -30,11 +31,7 @@ const nested = (areaId: string | null): Location[] => [
 ];
 
 async function mount(props: Partial<Chips>): Promise<Chips> {
-  const el = document.createElement('hv-filter-chips') as Chips;
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await customElements.whenDefined('hv-filter-chips');
-  if (el.updateComplete) await el.updateComplete;
+  const { el } = await mountComponent<Chips>('hv-filter-chips', props);
   return el;
 }
 

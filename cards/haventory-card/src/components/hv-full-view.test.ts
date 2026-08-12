@@ -1,9 +1,8 @@
 import './hv-full-view';
-import { makeMockHass, makeItem, stubViewport } from '../test.utils';
+import { componentCss, makeItem, mountComponent, mountStore, q, settle, stubViewport } from '../test.utils';
 import { deepActiveElement } from '../ui/dialog-focus';
 import { DISCARD_PROMPT } from '../ui/discard';
 import { NARROW_QUERY } from '../ui/responsive';
-import { Store } from '../store/store';
 import type { HVFullView } from './hv-full-view';
 import type { Item, Location, StatusDefinition } from '../store/types';
 
@@ -33,48 +32,32 @@ async function mount(
     narrow?: boolean;
   } = {},
 ) {
-  const hass = makeMockHass({
+  const { hass, store } = await mountStore({
     items: opts.items ?? [],
     locations: opts.locations ?? [],
     areas: opts.areas ?? [],
     ...(opts.statuses ? { statuses: opts.statuses } : {}),
   });
-  const store = new Store(hass, { retryBaseMs: 0 });
-  await store.init();
-
-  const el = document.createElement('hv-full-view') as HVFullView;
-  el.store = store;
-  el.columns = ['quantity', 'category'];
-  if (opts.embedded) el.embedded = true;
-  if (opts.narrow) el.narrow = true;
-  el.open = true;
-  document.body.appendChild(el);
-  await el.updateComplete;
-  await el.updateComplete;
-  return { el, store, hass, sr: el.shadowRoot as ShadowRoot };
+  const { el, sr } = await mountComponent<HVFullView>(
+    'hv-full-view',
+    {
+      store,
+      columns: ['quantity', 'category'],
+      ...(opts.embedded ? { embedded: true } : {}),
+      ...(opts.narrow ? { narrow: true } : {}),
+      open: true,
+    },
+    { renders: 2 },
+  );
+  return { el, store, hass, sr };
 }
 
-const settle = async (el: HVFullView) => {
-  await new Promise((r) => setTimeout(r, 0));
-  await el.updateComplete;
-};
-
-const q = (sr: ShadowRoot, sel: string) => sr.querySelector(sel) as HTMLElement | null;
-
 /** jsdom lays out no shadow DOM, so layout rules are asserted on the stylesheet. */
-const fullCss = () => {
-  const styles = (customElements.get('hv-full-view') as typeof HVFullView).styles;
-  return (Array.isArray(styles) ? styles : [styles])
-    .map((s) => String(s.cssText))
-    .join('\n')
-    .replace(/\s+/g, ' ');
-};
-
 describe('hv-full-view: phone-width app bar', () => {
   // Everything responsive in this component lives in one media query, because
   // the surface is fixed to the viewport rather than sized by the card.
   const narrow = () => {
-    const css = fullCss();
+    const css = componentCss('hv-full-view');
     const start = css.indexOf('@media (max-width: 700px)');
     expect(start, 'no narrow-viewport block').toBeGreaterThan(-1);
     return css.slice(start);
@@ -90,7 +73,7 @@ describe('hv-full-view: phone-width app bar', () => {
     // `flex: 1` alone leaves min-width at auto, so the field refuses to
     // compress below its content and shoves its siblings off the bar. The
     // desktop block puts a floor back under it — see the wide-bar describe.
-    expect(fullCss()).toMatch(/\.appbar \.search \{[^}]*min-width: 0/);
+    expect(componentCss('hv-full-view')).toMatch(/\.appbar \.search \{[^}]*min-width: 0/);
   });
 
   it('lets the heading give way rather than the controls after it', () => {
@@ -114,7 +97,7 @@ describe('hv-full-view: phone-width app bar', () => {
     expect(narrow()).toMatch(/\.appbar \.search \{[^}]*flex: 1 0 100%/);
     // A basis is a content-box width, so without this the field came out 24px
     // wider than the line it fills and hung off the right edge of the bar.
-    expect(fullCss()).toMatch(/\.appbar \.search \{[^}]*box-sizing: border-box/);
+    expect(componentCss('hv-full-view')).toMatch(/\.appbar \.search \{[^}]*box-sizing: border-box/);
   });
 
   // The bar came to 178px of a 844px screen: 16px search text and three 44px
@@ -136,7 +119,7 @@ describe('hv-full-view: phone-width app bar', () => {
   // screen — 751px of it below a fold nothing could scroll past — and a
   // 1280x900 desktop was losing the surface's own footer the same way.
   it('gives the filter panel a ceiling and something to scroll', () => {
-    const css = fullCss();
+    const css = componentCss('hv-full-view');
     const rule = /\.panel-holder \{([^}]*)\}/.exec(css)?.[1] ?? '';
     expect(rule).toMatch(/flex-direction: column/);
     expect(rule).toMatch(/max-height: min\(\d+dvh, calc\(100% - \d+px\)\)/);
@@ -158,7 +141,7 @@ describe('hv-full-view: phone-width app bar', () => {
     // The commit row is a sibling of the scroll box, not inside it, so the
     // count on the apply button stays visible while the filters move.
     expect(scroll.querySelector('.panel-foot')).toBe(null);
-    expect(fullCss()).toMatch(/\.panel-foot \{[^}]*flex: none/);
+    expect(componentCss('hv-full-view')).toMatch(/\.panel-foot \{[^}]*flex: none/);
   });
 
   it('keeps the count pills shorter than the actions above them', () => {
@@ -179,7 +162,7 @@ describe('hv-full-view: phone-width app bar', () => {
     // of these for a card measured at 600px or under — an ordinary dashboard
     // column on a desktop. The guaranteed-invalid value rather than a number,
     // so each consumer keeps the size it was written with.
-    const shell = /\.shell \{([^}]*)\}/.exec(fullCss())?.[1] ?? '';
+    const shell = /\.shell \{([^}]*)\}/.exec(componentCss('hv-full-view'))?.[1] ?? '';
     expect(shell).toMatch(/--hv-tap-min: initial/);
     expect(shell).toMatch(/--hv-input-font: initial/);
   });
@@ -248,7 +231,7 @@ describe('hv-full-view: phone-width app bar', () => {
 // content area, which is what this block exists to stop.
 describe('hv-full-view: wide app bar', () => {
   const wide = () => {
-    const css = fullCss();
+    const css = componentCss('hv-full-view');
     const start = css.indexOf('@media (min-width: 701px)');
     expect(start, 'no wide-viewport block').toBeGreaterThan(-1);
     // Stop at the phone block so a rule from it can never satisfy these.
@@ -260,7 +243,7 @@ describe('hv-full-view: wide app bar', () => {
   // must not leave a width where neither does.
   it('picks up exactly where the phone block leaves off', () => {
     expect(NARROW_QUERY).toBe('(max-width: 700px)');
-    expect(fullCss()).toContain('@media (min-width: 701px)');
+    expect(componentCss('hv-full-view')).toContain('@media (min-width: 701px)');
   });
 
   it('puts a floor under the search rather than letting the pills eat it', () => {
@@ -379,7 +362,7 @@ describe('hv-full-view: embedded', () => {
   });
 
   it('is sized by its host rather than by the viewport', () => {
-    const css = fullCss();
+    const css = componentCss('hv-full-view');
     expect(css).toContain(':host([embedded]) { display: block; height: 100%; }');
     expect(css).toContain(
       ':host([embedded]) .shell { position: relative; inset: auto; height: 100%; box-shadow: none; }',
@@ -389,7 +372,7 @@ describe('hv-full-view: embedded', () => {
   // The embedded rules override the shell's box and nothing else: the grid rows
   // and the sideways pan are what the layout inside depends on.
   it('keeps the shell a two-row grid that can be panned sideways', () => {
-    const css = fullCss();
+    const css = componentCss('hv-full-view');
     expect(css).toContain('.shell { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr;');
     expect(css).toContain('overflow-x: auto;');
   });
@@ -897,8 +880,8 @@ describe('hv-full-view: sidebar facets', () => {
   it('lines the three tallies up in one column', () => {
     // The Locations heading ends in a button and the other two in nothing, so
     // without a reserved slot its number sits an icon-button's width inboard.
-    expect(fullCss()).toMatch(/\.head-action \{[^}]*width: var\(--hv-tap-min, 34px\)/);
-    expect(fullCss()).toMatch(/\.head-action \{[^}]*flex: none/);
+    expect(componentCss('hv-full-view')).toMatch(/\.head-action \{[^}]*width: var\(--hv-tap-min, 34px\)/);
+    expect(componentCss('hv-full-view')).toMatch(/\.head-action \{[^}]*flex: none/);
   });
 
   it('says so when a facet has nothing in it yet', async () => {
@@ -1457,7 +1440,7 @@ describe('hv-full-view: editing', () => {
   // was free to be squeezed — it opened about 130px tall, a field and a half,
   // and never came near the ceiling meant to bound it.
   it('refuses to be squeezed by the table below it', () => {
-    const rule = /\.editor-holder \{([^}]*)\}/.exec(fullCss())?.[1] ?? '';
+    const rule = /\.editor-holder \{([^}]*)\}/.exec(componentCss('hv-full-view'))?.[1] ?? '';
     expect(rule, 'no .editor-holder rule').not.toBe('');
     expect(rule).toMatch(/flex: none/);
     // A ceiling is still wanted — the form is taller than a short viewport.
@@ -1470,7 +1453,7 @@ describe('hv-full-view: editing', () => {
   // the layout. Hidden on both axes, those 18px could not be reached: the ⋮ was
   // sliced in half and the editor's Save sat flush against the screen edge.
   it('can be panned sideways when the layout is wider than the screen', () => {
-    const rule = /\.shell \{([^}]*)\}/.exec(fullCss())?.[1] ?? '';
+    const rule = /\.shell \{([^}]*)\}/.exec(componentCss('hv-full-view'))?.[1] ?? '';
     expect(rule, 'no .shell rule').not.toBe('');
     expect(rule).toMatch(/overflow-x: auto/);
     // Vertical stays clipped: the surface is the viewport, and the boxes
@@ -1488,7 +1471,7 @@ describe('hv-full-view: editing', () => {
   // clips and cannot scroll — the footer and the sticky Save/Cancel bar were
   // both off the screen with no gesture that could reach them.
   it('leaves the footer its room on a landscape phone', () => {
-    const rule = /\.editor-holder \{([^}]*)\}/.exec(fullCss())?.[1] ?? '';
+    const rule = /\.editor-holder \{([^}]*)\}/.exec(componentCss('hv-full-view'))?.[1] ?? '';
     const ceiling = /max-height: min\((\d+)dvh, calc\(100% - (\d+)px\)\)/.exec(rule);
     expect(ceiling, `ceiling ignores the room the column has: ${rule}`).not.toBe(null);
 
@@ -1760,7 +1743,7 @@ describe('hv-full-view: phone-width children', () => {
   it('takes the shut holder out of the layout it would otherwise pad', async () => {
     const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
     expect((sr.getElementById('full-view-filter-panel') as HTMLElement).hidden).toBe(true);
-    expect(fullCss()).toMatch(/\.panel-holder\[hidden\] \{[^}]*display: none/);
+    expect(componentCss('hv-full-view')).toMatch(/\.panel-holder\[hidden\] \{[^}]*display: none/);
 
     (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
     await settle(el);
@@ -1912,7 +1895,7 @@ describe('hv-full-view: app bar filters', () => {
   // rather than the card's pale tints, because a tint over an already-coloured
   // bar is unreadable in dark mode.
   it('colours low and overdue the way the card does', () => {
-    const css = fullCss();
+    const css = componentCss('hv-full-view');
     expect(css).toMatch(/\.appbar \.hv-chip\.warning \{[^}]*background: var\(--hv-amber\)/);
     expect(css).toMatch(/\.appbar \.hv-chip\.error \{[^}]*background: var\(--hv-error\)/);
   });

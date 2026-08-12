@@ -1,34 +1,22 @@
 import './hv-lightbox';
-import { makeAttachment, makeItem, makeMediaBindings } from '../test.utils';
+import { componentCss, makeAttachment, makeItem, makeMediaBindings, mountComponent, q, settle } from '../test.utils';
 import type { HVLightbox } from './hv-lightbox';
 import type { Item } from '../store/types';
 
 const shots = (n: number) => Array.from({ length: n }, (_, i) => makeAttachment({ id: `att-${i + 1}` }));
 
 async function mount(item: Partial<Item>, index: number | null = null) {
-  const el = document.createElement('hv-lightbox') as HVLightbox;
-  el.item = makeItem(item);
-  el.media = makeMediaBindings();
-  el.index = index;
-  document.body.appendChild(el);
-  await el.updateComplete;
-  await el.updateComplete;
+  const { el } = await mountComponent<HVLightbox>(
+    'hv-lightbox',
+    { item: makeItem(item), media: makeMediaBindings(), index },
+    { renders: 2 },
+  );
   return el;
 }
 
-const q = (el: HVLightbox, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
 const panel = (el: HVLightbox) => q(el, '[data-testid="lightbox"]');
 const shown = (el: HVLightbox) => (q(el, 'img') as HTMLImageElement | null)?.getAttribute('alt');
 const counter = (el: HVLightbox) => q(el, '[data-testid="lightbox-counter"]')?.textContent?.trim();
-
-/**
- * Two passes: the URL for a photo this component has not shown yet is signed
- * asynchronously, so the first render after a move has no `src` to draw with.
- */
-const settle = async (el: HVLightbox) => {
-  await el.updateComplete;
-  await el.updateComplete;
-};
 
 const press = async (el: HVLightbox, key: string) => {
   panel(el)?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
@@ -41,11 +29,7 @@ const tap = async (el: HVLightbox, testid: string) => {
 };
 
 const lightboxCss = () => {
-  const styles = (customElements.get('hv-lightbox') as typeof HVLightbox).styles;
-  return (Array.isArray(styles) ? styles : [styles])
-    .map((s) => String(s.cssText))
-    .join('\n')
-    .replace(/\s+/g, ' ');
+  return componentCss('hv-lightbox');
 };
 
 /** Photos at full size, shared by the phone sheet and the edit form's strip. */

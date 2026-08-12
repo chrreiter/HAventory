@@ -1,6 +1,7 @@
 import './hv-import-sheet';
 import type { HVImportSheet } from './hv-import-sheet';
 import type { ImportPreview, ImportSummary } from '../store/types';
+import { all, mountComponent, q } from '../test.utils';
 
 const VALID_DOC = '{"haventory_export_version":1,"items":[],"locations":[]}';
 
@@ -42,16 +43,9 @@ function summary(): ImportSummary {
 }
 
 async function mount(props: Partial<HVImportSheet> = {}) {
-  const el = document.createElement('hv-import-sheet') as HVImportSheet;
-  el.open = true;
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await el.updateComplete;
+  const { el } = await mountComponent<HVImportSheet>('hv-import-sheet', { open: true, ...props });
   return el;
 }
-
-const q = (el: HVImportSheet, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
-const all = (el: HVImportSheet, sel: string) => [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
 
 async function type(el: HVImportSheet, text: string) {
   const area = q(el, '[data-testid="import-text"]') as HTMLTextAreaElement;

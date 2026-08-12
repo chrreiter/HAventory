@@ -1,5 +1,5 @@
 import './index';
-import { makeMockHass, makeItem } from './test.utils';
+import { makeItem, makeMockHass, mountComponent, settle } from './test.utils';
 import { COLUMN_PREFS_STORAGE_KEY, DEFAULT_COLUMNS } from './store/columns';
 import type { HAventoryCard } from './index';
 
@@ -13,9 +13,7 @@ async function mountCard(
     quickFilters?: string[] | null;
   } = {},
 ) {
-  const el = document.createElement('haventory-card') as Card;
-  document.body.appendChild(el);
-  await customElements.whenDefined('haventory-card');
+  const { el, sr } = await mountComponent<Card>('haventory-card');
   el.setConfig(config);
   el.hass = makeMockHass({
     items: opts.items ?? [],
@@ -23,13 +21,8 @@ async function mountCard(
     quickFilters: opts.quickFilters,
   });
   await el.updateComplete;
-  return { el, sr: el.shadowRoot as ShadowRoot };
+  return { el, sr };
 }
-
-const settle = async (el: Card) => {
-  await new Promise((r) => setTimeout(r, 0));
-  await el.updateComplete;
-};
 
 afterEach(() => {
   document.body.innerHTML = '';
@@ -98,9 +91,7 @@ describe('haventory-card: the Lovelace element', () => {
   });
 
   it('rejects a config that is not an object at all', async () => {
-    const el = document.createElement('haventory-card') as Card;
-    document.body.appendChild(el);
-    await customElements.whenDefined('haventory-card');
+    const { el } = await mountComponent<Card>('haventory-card');
     expect(() => el.setConfig('nope')).toThrow(/Invalid config/);
   });
 

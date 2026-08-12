@@ -1,5 +1,17 @@
 import './hv-item-editor';
-import { makeAttachment, makeItem, makeManual, makeMediaBindings, stubViewport } from '../test.utils';
+import {
+  all,
+  componentCss,
+  makeAttachment,
+  makeItem,
+  makeManual,
+  makeMediaBindings,
+  mountComponent,
+  ownCss,
+  q,
+  settle,
+  stubViewport,
+} from '../test.utils';
 import { DISCARD_PROMPT } from '../ui/discard';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import { addDays } from '../ui/relative-time';
@@ -28,30 +40,21 @@ const tree: LocationTreeNode[] = [
 ];
 
 async function mount(item: Item | null, props: Partial<HVItemEditor> = {}) {
-  const el = document.createElement('hv-item-editor') as HVItemEditor;
-  el.item = item;
-  el.locationTree = tree;
-  el.locations = [garage];
-  el.categorySuggestions = ['Hardware', 'Tools'];
-  el.tagSuggestions = ['metric', 'm4'];
-  el.customFieldKeys = ['serial', 'warranty_until'];
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await el.updateComplete;
+  const { el } = await mountComponent<HVItemEditor>('hv-item-editor', {
+    item,
+    locationTree: tree,
+    locations: [garage],
+    categorySuggestions: ['Hardware', 'Tools'],
+    tagSuggestions: ['metric', 'm4'],
+    customFieldKeys: ['serial', 'warranty_until'],
+    ...props,
+  });
   return el;
 }
 
-const q = (el: HVItemEditor, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
-const all = (el: HVItemEditor, sel: string) =>
-  [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
-
 /** jsdom lays out no shadow DOM, so layout rules are asserted on the sheet. */
 const editorCss = () => {
-  const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
-  return (Array.isArray(styles) ? styles : [styles])
-    .map((s) => String(s.cssText))
-    .join('\n')
-    .replace(/\s+/g, ' ');
+  return componentCss('hv-item-editor');
 };
 
 async function type(el: HVItemEditor, testid: string, value: string) {
@@ -240,11 +243,7 @@ describe('hv-item-editor: field parity', () => {
     expect(q(el, '.due-label')?.classList).not.toContain('muted');
     expect(q(el, '[data-testid="editor-due-hint"]')).toBe(null);
 
-    const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
-    const css = (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = componentCss('hv-item-editor');
     expect(css).toMatch(/\.hv-input:disabled \{[^}]*color: var\(--hv-text-tertiary\)/);
     expect(css).toMatch(/\.hv-input:disabled \{[^}]*-webkit-text-fill-color/);
   });
@@ -354,11 +353,7 @@ describe('hv-item-editor: field parity', () => {
   });
 
   it('stacks the checkout box on a phone rather than halving a date field', () => {
-    const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
-    const css = (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = componentCss('hv-item-editor');
 
     // Half of a 375px screen, minus the box padding, is under the ~140px a
     // native date input needs before it clips its own placeholder.
@@ -794,11 +789,7 @@ describe('hv-item-editor: category picker', () => {
     expect(list?.getAttribute('style')).toMatch(/left: -?\d+px/);
     expect(list?.getAttribute('style')).toMatch(/z-index: \d+/);
 
-    const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
-    const css = (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = componentCss('hv-item-editor');
     expect(css).toMatch(/\.list-holder\.floating \{[^}]*position: fixed/);
     // The location tree is the opposite case — it is *meant* to open the form.
     expect(css).toMatch(/\.tree-holder, \.list-holder \{[^}]*margin-top: 6px/);
@@ -963,11 +954,7 @@ describe('hv-item-editor: typed custom fields', () => {
   });
 
   it('lays a row out from its own width, not from the card-wide mobile flag', () => {
-    const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
-    const css = (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = componentCss('hv-item-editor');
 
     // The editor is a desktop row in one host and a phone sheet in another, so
     // `mobile` (which describes the card) must not decide this layout.
@@ -2427,11 +2414,7 @@ describe('hv-item-editor: touch targets and the shared tally', () => {
     expect(q(el, '[data-testid="editor-cf-tally"]')?.classList.contains('hv-tally')).toBe(true);
     // This component's own sheet may place the tally and nothing more — size
     // and dimming belong to the one declaration in `base`.
-    const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
-    const own = String((styles as { cssText: string }[])[(styles as unknown[]).length - 1].cssText).replace(
-      /\s+/g,
-      ' ',
-    );
+    const own = ownCss('hv-item-editor');
     for (const [, body] of own.matchAll(/\.hv-tally[^{]*\{([^}]*)\}/g)) {
       expect(body).not.toMatch(/font-size|opacity|color/);
     }
@@ -2676,11 +2659,9 @@ describe('hv-item-editor: one label recipe, one note size', () => {
   });
 
   it('reads its small print at one size', () => {
-    const styles = (customElements.get('hv-item-editor') as typeof HVItemEditor).styles;
-    const sheets = Array.isArray(styles) ? styles : [styles];
     // This component's own block; the shared sheets ahead of it answer for
     // every surface and are not this form's to consolidate.
-    const own = String(sheets[sheets.length - 1].cssText).replace(/\s+/g, ' ');
+    const own = ownCss('hv-item-editor');
 
     expect(own).toMatch(/:host \{[^}]*--hv-editor-note: 12px/);
     // One declaration, and nothing left of the 11.5/12.5px band around it.
@@ -2700,11 +2681,7 @@ describe('hv-item-editor: one label recipe, one note size', () => {
 
   // The tag field sat a point smaller than every input beside it.
   it('sets the tag input at the same size as the other fields', () => {
-    const styles = (customElements.get('hv-chip-input') as unknown as { styles: { cssText: string }[] }).styles;
-    const css = (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = componentCss('hv-chip-input');
     expect(css).toContain('font: 400 var(--hv-input-font, 13.5px) var(--hv-font)');
   });
 
@@ -2777,9 +2754,8 @@ describe('hv-item-editor: photos open full-size', () => {
     q(el, 'hv-lightbox')?.shadowRoot?.querySelector('[data-testid="lightbox"]') as HTMLElement | null;
 
   const settleBox = async (el: HVItemEditor) => {
-    await el.updateComplete;
-    await (q(el, 'hv-lightbox') as (HTMLElement & { updateComplete?: Promise<unknown> }) | null)
-      ?.updateComplete;
+    await settle(el);
+    await q<HTMLElement & { updateComplete?: Promise<unknown> }>(el, 'hv-lightbox')?.updateComplete;
   };
 
   it('opens the photo that was clicked', async () => {

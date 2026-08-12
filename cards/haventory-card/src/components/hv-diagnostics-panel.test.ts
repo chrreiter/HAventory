@@ -1,6 +1,7 @@
 import './hv-diagnostics-panel';
 import type { HVDiagnosticsPanel } from './hv-diagnostics-panel';
 import type { DegradedState, HealthResult, StatsCounts } from '../store/types';
+import { all, componentCss, mountComponent, q } from '../test.utils';
 
 const counts: StatsCounts = {
   items_total: 250,
@@ -33,23 +34,18 @@ const NO_DEGRADATION: DegradedState = {
 };
 
 async function mount(props: Partial<HVDiagnosticsPanel> = {}) {
-  const el = document.createElement('hv-diagnostics-panel') as HVDiagnosticsPanel;
-  el.open = true;
-  el.health = health();
-  el.counts = counts;
-  el.version = { integration_version: '0.0.1', schema_version: 4 };
-  el.degraded = { ...NO_DEGRADATION };
-  el.connected = { items: true, stats: true };
-  el.loadedItems = 50;
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await el.updateComplete;
+  const { el } = await mountComponent<HVDiagnosticsPanel>('hv-diagnostics-panel', {
+    open: true,
+    health: health(),
+    counts,
+    version: { integration_version: '0.0.1', schema_version: 4 },
+    degraded: { ...NO_DEGRADATION },
+    connected: { items: true, stats: true },
+    loadedItems: 50,
+    ...props,
+  });
   return el;
 }
-
-const q = (el: HVDiagnosticsPanel, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
-const all = (el: HVDiagnosticsPanel, sel: string) =>
-  [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
 
 describe('hv-diagnostics-panel: healthy', () => {
   it('collapses to one green line when there is nothing to report', async () => {
@@ -125,11 +121,7 @@ describe('hv-diagnostics-panel: not live', () => {
 describe('hv-diagnostics-panel: fits the screen', () => {
   /** jsdom lays out no shadow DOM, so sizing rules are asserted on the sheet. */
   const css = () => {
-    const styles = (customElements.get('hv-diagnostics-panel') as typeof HVDiagnosticsPanel).styles;
-    return (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    return componentCss('hv-diagnostics-panel');
   };
 
   // The centring grid's implicit track was auto-sized, so it took the panel's

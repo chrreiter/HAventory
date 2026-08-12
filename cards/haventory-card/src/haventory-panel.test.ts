@@ -1,5 +1,5 @@
 import './haventory-panel';
-import { makeMockHass, makeItem, stubViewport } from './test.utils';
+import { makeItem, makeMockHass, mountComponent, q, settle, stubViewport } from './test.utils';
 import { COLUMN_PREFS_STORAGE_KEY, DEFAULT_COLUMNS } from './store/columns';
 import type { HAventoryPanel } from './haventory-panel';
 
@@ -24,27 +24,21 @@ async function mountPanel(
     quickFilters?: string[] | null;
   } = {},
 ) {
-  const el = document.createElement('haventory-panel') as Panel;
-  document.body.appendChild(el);
-  await customElements.whenDefined('haventory-panel');
-  if (opts.config !== undefined) el.panel = { config: opts.config };
-  if (opts.narrow) el.narrow = true;
-  if (opts.withHass !== false) {
-    el.hass = makeMockHass({
-      items: opts.items ?? [],
-      cardTitle: opts.cardTitle,
-      quickFilters: opts.quickFilters,
-    });
-  }
-  await el.updateComplete;
-  const sr = el.shadowRoot as ShadowRoot;
-  return { el, sr, view: () => sr.querySelector('[data-testid="panel-full-view"]') as FullView };
+  const { el, sr } = await mountComponent<Panel>('haventory-panel', {
+    ...(opts.config !== undefined ? { panel: { config: opts.config } } : {}),
+    ...(opts.narrow ? { narrow: true } : {}),
+    ...(opts.withHass !== false
+      ? {
+          hass: makeMockHass({
+            items: opts.items ?? [],
+            cardTitle: opts.cardTitle,
+            quickFilters: opts.quickFilters,
+          }),
+        }
+      : {}),
+  });
+  return { el, sr, view: () => q<FullView>(sr, '[data-testid="panel-full-view"]')! };
 }
-
-const settle = async (el: Panel) => {
-  await new Promise((r) => setTimeout(r, 0));
-  await el.updateComplete;
-};
 
 afterEach(() => {
   document.body.innerHTML = '';

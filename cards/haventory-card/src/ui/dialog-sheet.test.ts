@@ -1,8 +1,8 @@
-import type { CSSResult } from 'lit';
 import '../components/hv-column-picker';
 import '../components/hv-confirm';
 import '../components/hv-diagnostics-panel';
 import '../components/hv-import-sheet';
+import { componentCss, mountComponent } from '../test.utils';
 
 /**
  * The four host dialogs, which have to end up alike: on a phone the card raises
@@ -11,21 +11,11 @@ import '../components/hv-import-sheet';
  */
 const DIALOGS = ['hv-column-picker', 'hv-confirm', 'hv-import-sheet', 'hv-diagnostics-panel'] as const;
 
-const cssOf = (tag: string) => {
-  const styles = (customElements.get(tag) as unknown as { styles: CSSResult | CSSResult[] }).styles;
-  return (Array.isArray(styles) ? styles : [styles])
-    .map((s) => String(s.cssText))
-    .join('\n')
-    .replace(/\s+/g, ' ');
-};
-
 const mount = async (tag: string, mobile: boolean) => {
-  const el = document.createElement(tag) as HTMLElement & { open: boolean; mobile: boolean };
-  el.open = true;
-  el.mobile = mobile;
-  document.body.appendChild(el);
-  await customElements.whenDefined(tag);
-  await (el as unknown as { updateComplete: Promise<unknown> }).updateComplete;
+  const { el } = await mountComponent<HTMLElement & { open: boolean; mobile: boolean }>(tag, {
+    open: true,
+    mobile,
+  });
   return el;
 };
 
@@ -36,7 +26,7 @@ afterEach(() => {
 describe('host dialogs: one phone presentation', () => {
   it('rises from the bottom edge, full width, under mobile', () => {
     for (const tag of DIALOGS) {
-      const css = cssOf(tag);
+      const css = componentCss(tag);
       expect(css, tag).toMatch(/:host\(\[mobile\]\) \.wrap \{[^}]*place-items: end stretch/);
       expect(css, tag).toMatch(/:host\(\[mobile\]\) \.panel \{[^}]*width: 100%/);
       expect(css, tag).toMatch(
@@ -48,7 +38,7 @@ describe('host dialogs: one phone presentation', () => {
 
   it('keeps the centred dialog when it is not on a phone', () => {
     for (const tag of DIALOGS) {
-      const css = cssOf(tag);
+      const css = componentCss(tag);
       expect(css, tag).toMatch(/[^)] \.wrap \{[^}]*place-items: center/);
       expect(css, tag).toMatch(/[^)] \.panel \{[^}]*border-radius: var\(--hv-radius-dialog\)/);
     }
@@ -71,7 +61,7 @@ describe('host dialogs: one phone presentation', () => {
   // A sheet sits against the bottom edge, where a phone's home indicator is.
   it('clears the safe area under the bottom row of actions', () => {
     for (const tag of DIALOGS) {
-      expect(cssOf(tag), tag).toMatch(
+      expect(componentCss(tag), tag).toMatch(
         /:host\(\[mobile\]\) \.panel \{[^}]*padding-bottom: max\(12px, env\(safe-area-inset-bottom\)\)/,
       );
     }
