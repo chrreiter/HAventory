@@ -227,7 +227,7 @@ second area), one item in `Drawer`, one item in `Garage`, and one item with **no
 
 ## H2 — #195 the name-clash block on a hand-rebuilt inventory
 
-**Branch / PR**: `claude/v0-5-0-w1a-import-name-collisions` / #TBD
+**Branch / PR**: `claude/v0-5-0-w1a-import-name-collisions` / #417
 **Why this needs a real HA**: the offline and phacc suites both prove the warning is
 produced and survives the wire, but neither renders it. What is unverified is the block in
 the import sheet on a realistic document — whether the clash list is legible at the width
