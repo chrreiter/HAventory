@@ -463,6 +463,23 @@ describe('hv-data-table: sorting', () => {
     expect(q(el, '[data-field="tags"]')).toBe(null);
   });
 
+  // The backend orders on the item's own location path, so this header stops
+  // being the odd one out among the columns that look sortable.
+  it('makes the Location header a sort control', async () => {
+    const el = await mount([{ id: '1' }], { columns: ['location'] });
+    const header = q(el, '[data-field="location"]') as HTMLElement;
+    expect(header).not.toBe(null);
+    expect(header.textContent?.trim()).toBe('Location');
+
+    let asked: unknown = null;
+    el.addEventListener('sort-change', (e) => {
+      asked = (e as CustomEvent).detail;
+    });
+    (header as HTMLButtonElement).click();
+    // Opens A→Z: a path is text, and top-down is what ordering by it means.
+    expect(asked).toEqual({ sort: { field: 'location', order: 'asc' } });
+  });
+
   it('marks the sorted column and its direction', async () => {
     const el = await mount([{ id: '1' }], { sort: { field: 'name', order: 'asc' } });
     const header = q(el, '[data-field="name"]') as HTMLElement;

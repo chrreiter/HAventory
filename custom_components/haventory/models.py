@@ -255,7 +255,19 @@ class ItemFilter(TypedDict, total=False):
 class Sort(TypedDict):
     """Sort definition for item queries."""
 
-    field: Literal["updated_at", "created_at", "name", "quantity", "due_date", "inspection_date"]
+    field: Literal[
+        "updated_at",
+        "created_at",
+        "name",
+        "quantity",
+        "due_date",
+        "inspection_date",
+        # The item's denormalized location path, which is the ordering the
+        # Location column implies. Not an area sort: an area lives on the
+        # location tree and its name in Home Assistant's registry, neither of
+        # which this module can reach.
+        "location",
+    ]
     order: Literal["asc", "desc"]
 
 
@@ -506,7 +518,7 @@ def selected_location_ids(flt: ItemFilter) -> list[str]:
 
 #: The fields :func:`sort_items` can order by, and the two orders it accepts.
 SORT_FIELDS: Final[frozenset[str]] = frozenset(
-    {"updated_at", "created_at", "name", "quantity", "due_date", "inspection_date"}
+    {"updated_at", "created_at", "name", "quantity", "due_date", "inspection_date", "location"}
 )
 SORT_ORDERS: Final[frozenset[str]] = frozenset({"asc", "desc"})
 #: The keys a sort object carries. Anything else is a client typo.
@@ -1395,6 +1407,30 @@ def filter_items(
     return filtered
 
 
+#: What an item with no location sorts under in ascending order.
+#: A location path's sort key is built from location *names*, so a printable
+#: sentinel like ``date_sort_key``'s ``"~"`` would be outranked by any name
+#: beginning with an accented or non-Latin letter — "Éclairage" folds to a
+#: character well above ``~``. The highest code point cannot be outranked.
+UNLOCATED_SORT_KEY: Final[str] = "\U0010ffff"
+
+
+def location_sort_key(path: LocationPath, order: str) -> str:
+    """Return a scalar sort key for an item's denormalized location path.
+
+    Items with no location sort last in BOTH orders — the rule
+    :func:`date_sort_key` applies to undated items. Their stored key is the
+    empty string, which a plain sort would float to the top of an ascending
+    list, so ascending substitutes the sentinel above and descending keeps the
+    empty string, which a reversed sort places last. The repository's cursor
+    pagination reads the same key, so page boundaries agree with this ordering.
+    """
+
+    if not path.sort_key:
+        return UNLOCATED_SORT_KEY if order == "asc" else ""
+    return path.sort_key
+
+
 def date_sort_key(value: str | None, order: str) -> str:
     """Return a scalar sort key for a nullable YYYY-MM-DD field.
 
@@ -1414,7 +1450,8 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
 
     Defaults to updated_at desc with id asc tie-break.
     name sorting is case-insensitive using normalize_text_for_sort.
-    due_date / inspection_date place undated items last in both orders.
+    due_date / inspection_date place undated items last in both orders, and
+    location does the same for items filed nowhere.
     """
 
     result = list(items)
@@ -1447,6 +1484,8 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
         result.sort(key=lambda x: date_sort_key(x.due_date, order), reverse=reverse)
     elif field == "inspection_date":
         result.sort(key=lambda x: date_sort_key(x.inspection_date, order), reverse=reverse)
+    elif field == "location":
+        result.sort(key=lambda x: location_sort_key(x.location_path, order), reverse=reverse)
     elif field == "created_at":
         result.sort(key=lambda x: x.created_at, reverse=reverse)
     else:  # updated_at

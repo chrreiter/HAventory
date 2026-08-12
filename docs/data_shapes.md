@@ -251,8 +251,21 @@ counts items at the node or any descendant (so it is always >= the direct count)
   breaking this form.
 
 - Sort:
-  - `{ field: "updated_at"|"created_at"|"name"|"quantity"|"due_date"|"inspection_date", order: "asc"|"desc" }`
+  - `{ field: "updated_at"|"created_at"|"name"|"quantity"|"due_date"|"inspection_date"|"location", order: "asc"|"desc" }`
   - `due_date` / `inspection_date`: items without a date sort last in both orders; ties break by id asc.
+  - `location` orders on the item's own denormalized `location_path.sort_key` — the same
+    key the Location column displays a path from, so the ordering is the one that column
+    implies. **Items with no location sort last in both orders**, the rule the two date
+    fields already follow: their stored key is `""`, which a plain ascending sort would
+    float to the top. Because an item's area is inherited from its location tree's root, a
+    path-ordered list groups by root, and therefore by area.
+  - There is **no area sort**, deliberately. `effective_area_id` is not stored on an item —
+    it is resolved by walking the location tree — and an area's *name* lives in Home
+    Assistant's own registry, which neither the models nor the repository can reach. A
+    sort field for it would need either a resolver threaded through the pure sort function
+    or a new denormalized field on every item, and would still order by `area_id`, which
+    Home Assistant generates from the name at creation and never changes on rename — so a
+    renamed area would sort under its old name.
 
 **Unknown keys are rejected**, in a filter and in a sort alike: the reply is `validation_error`
 naming the offending key. A dropped key is worse than a refused one — a filter that lost its

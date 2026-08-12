@@ -104,12 +104,24 @@ describe('columns model', () => {
   });
 
   // The API cannot order by status, so the header must stay inert rather than
-  // look clickable — the same reason category, location and tags have none.
+  // look clickable — the same reason category and tags have none.
   it('offers the status column without a sort field', () => {
     const col = COLUMN_DEFS.find((c) => c.key === 'status');
     expect(col?.label).toBe('Status');
     expect(col?.sortField).toBeUndefined();
     expect(normalizeColumns(['status'])).toEqual(['status']);
+  });
+
+  // The backend orders on the item's own denormalized location path, so this is
+  // the one of the three that can carry a sort control.
+  it('gives the location column the sort field the backend answers to', () => {
+    const col = COLUMN_DEFS.find((c) => c.key === 'location');
+    expect(col?.label).toBe('Location');
+    expect(col?.sortField).toBe('location');
+    // Category and tags still have none: nothing on the item sorts them.
+    for (const key of ['category', 'tags'] as const) {
+      expect(COLUMN_DEFS.find((c) => c.key === key)?.sortField).toBeUndefined();
+    }
   });
 
   // Status sits beside Qty: both describe the item itself, ahead of where it is

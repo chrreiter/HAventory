@@ -634,6 +634,48 @@ describe('Store', () => {
     expect(store.state.value.distinctValuesCache?.tags).toEqual([]);
   });
 
+  // The Location column's header is a sort control now, so the whole round trip
+  // — field on the wire, ordered page back — has to hold end to end.
+  it('lists items ordered by their location path, unlocated last', async () => {
+    const path = (display: string, ids: string[]) => ({
+      id_path: ids,
+      name_path: display.split(' / '),
+      display_path: display,
+      sort_key: display.toLowerCase(),
+    });
+    const items = [
+      makeItem({ id: '1', name: 'Deep', location_id: 'shelf', location_path: path('Garage / Shelf A', ['garage', 'shelf']) }),
+      makeItem({ id: '2', name: 'Loose' }),
+      makeItem({ id: '3', name: 'Elsewhere', location_id: 'cellar', location_path: path('Cellar', ['cellar']) }),
+      makeItem({ id: '4', name: 'Shallow', location_id: 'garage', location_path: path('Garage', ['garage']) }),
+    ];
+    const hass = makeMockHass({ items });
+    const store = new Store(hass);
+    await store.init();
+
+    store.setFilters({ sort: { field: 'location', order: 'asc' } });
+    await vi.waitUntil(() => store.state.value.items[0]?.name === 'Elsewhere');
+    expect(store.state.value.items.map((i) => i.name)).toEqual([
+      'Elsewhere',
+      'Shallow',
+      'Deep',
+      'Loose',
+    ]);
+
+    // Reversed, the located items flip and the unlocated one stays at the end.
+    store.setFilters({ sort: { field: 'location', order: 'desc' } });
+    await vi.waitUntil(() => store.state.value.items[0]?.name === 'Deep');
+    expect(store.state.value.items.map((i) => i.name)).toEqual([
+      'Deep',
+      'Shallow',
+      'Elsewhere',
+      'Loose',
+    ]);
+
+    const sent = hass.__messages.filter((m) => m.type === 'haventory/item/list');
+    expect(sent[sent.length - 1].sort).toEqual({ field: 'location', order: 'desc' });
+  });
+
   it('asks for unpriced facets while nothing is filtering', async () => {
     const hass = makeMockHass({ items: [makeItem({ id: '1', category: 'Tools', tags: ['red'] })] });
     const store = new Store(hass);

@@ -529,7 +529,9 @@ throughout.
   and a counter to walk the strip, Escape to come back — on every surface the form appears
   on, and from the detail sheet's gallery just the same.
 - **Full view** — a fullscreen workspace with a coloured app bar, a **browse sidebar**, and
-  a sortable table. Only columns the backend can sort by get a clickable header. A browser
+  a sortable table. Only columns the backend can sort by get a clickable header — Location
+  among them, ordering on the path each row shows, with items filed nowhere at the end
+  whichever way it runs. A browser
   that has made no choice yet shows every optional column — quantity, status, category,
   location, tags, due, next inspection, updated — and the ⋮ → **Columns** picker is where
   you thin that down and put the ones you keep in the order you want them, with the up/down

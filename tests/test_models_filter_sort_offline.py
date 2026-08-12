@@ -10,6 +10,7 @@ from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.models import (
     EMPTY_LOCATION_PATH,
     SORT_FIELDS,
+    Item,
     ItemFilter,
     Location,
     Sort,
@@ -649,3 +650,83 @@ def test_validate_item_filter_accepts_the_multi_select_keys() -> None:
 
     assert {"categories", "location_ids"} <= set(ItemFilter.__annotations__)
     validate_item_filter({"categories": ["Tools"], "location_ids": [new_uuid4_str()]})
+
+
+# -----------------------------
+# Ordering by location path
+# -----------------------------
+
+
+def _located(name: str, chain: list[Location]) -> Item:
+    """An item whose denormalized path is built from a root->leaf chain."""
+
+    by_id = {str(loc.id): loc for loc in chain}
+    return create_item_from_create(
+        {"name": name, "location_id": chain[-1].id}, locations_by_id=by_id
+    )
+
+
+@pytest.mark.asyncio
+async def test_sort_by_location_orders_on_the_denormalized_path() -> None:
+    by_id, root, mid, leaf = _build_locations()
+    cellar = _make_location(new_uuid4_str(), "Cellar", None)
+    cellar.path = build_location_path([cellar])
+    by_id[str(cellar.id)] = cellar
+
+    in_leaf = _located("Deep", [root, mid, leaf])  # Garage / Shelf A / Bin 3
+    in_root = _located("Shallow", [root])  # Garage
+    in_cellar = _located("Elsewhere", [cellar])  # Cellar
+    items = [in_leaf, in_root, in_cellar]
+
+    asc = sort_items(items, Sort(field="location", order="asc"))
+    assert [x.name for x in asc] == ["Elsewhere", "Shallow", "Deep"]
+
+    desc = sort_items(items, Sort(field="location", order="desc"))
+    assert [x.name for x in desc] == ["Deep", "Shallow", "Elsewhere"]
+
+
+@pytest.mark.asyncio
+async def test_sort_by_location_puts_unlocated_items_last_in_both_orders() -> None:
+    """The rule `date_sort_key` already applies to undated items.
+
+    A stored path key is "" for an item filed nowhere, which a plain ascending
+    sort would float to the top.
+    """
+
+    by_id, root, _mid, _leaf = _build_locations()
+    assert by_id
+    filed = _located("Filed", [root])
+    loose_a = create_item_from_create({"name": "Loose A"})
+    loose_b = create_item_from_create({"name": "Loose B"})
+    items = [loose_a, filed, loose_b]
+
+    asc = sort_items(items, Sort(field="location", order="asc"))
+    assert asc[0].name == "Filed"
+    assert {x.name for x in asc[1:]} == {"Loose A", "Loose B"}
+
+    desc = sort_items(items, Sort(field="location", order="desc"))
+    assert desc[0].name == "Filed"
+    assert {x.name for x in desc[1:]} == {"Loose A", "Loose B"}
+
+
+@pytest.mark.asyncio
+async def test_unlocated_items_stay_last_behind_a_non_latin_location_name() -> None:
+    """A printable sentinel would not have outranked this path.
+
+    The key is built from location *names*, and an accented or non-Latin one
+    folds to a character well above the "~" the date rule uses.
+    """
+
+    accented = _make_location(new_uuid4_str(), "Éclairage", None)
+    accented.path = build_location_path([accented])
+    filed = _located("Filed", [accented])
+    loose = create_item_from_create({"name": "Loose"})
+
+    asc = sort_items([loose, filed], Sort(field="location", order="asc"))
+    assert [x.name for x in asc] == ["Filed", "Loose"]
+
+
+def test_location_joins_the_sort_vocabulary() -> None:
+    assert "location" in SORT_FIELDS
+    validate_sort({"field": "location", "order": "asc"})
+    validate_sort({"field": "location", "order": "desc"})
