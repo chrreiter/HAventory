@@ -838,15 +838,21 @@ async def ws_config(
     """Return the settings the frontend renders, not the whole options set.
 
     Rate-limit tunables stay server-side. What is here is what the card cannot
-    know on its own: the configured heading, the status vocabulary items are
-    labelled with, and the attachment caps — reported so the picker can refuse
-    an oversized file before it is sent, never so the backend can trust that it
-    did.
+    know on its own: the configured heading, which quick-filter pills to offer,
+    the status vocabulary items are labelled with, and the attachment caps —
+    reported so the picker can refuse an oversized file before it is sent, never
+    so the backend can trust that it did.
     """
     bucket = hass.data.get(DOMAIN) or {}
     title = bucket.get("card_title")
+    pills = bucket.get("quick_filters")
     result = {
         "card_title": title if isinstance(title, str) and title else DEFAULT_CARD_TITLE,
+        # `null` is a value here, not an omission: it says the integration has
+        # no opinion, which leaves a dashboard's own `quick_filters:` — and
+        # then the card's every-pill default — to decide. An empty list is the
+        # opposite, an explicit choice of no pills, so the two never collapse.
+        "quick_filters": list(pills) if isinstance(pills, list) else None,
         "statuses": [serialize_status_definition(d) for d in _repo(hass).list_statuses()],
         # The route itself is not here: it is a constant on both sides, pinned
         # across the language boundary by tests/test_frontend_registration.py.

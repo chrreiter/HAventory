@@ -7,7 +7,11 @@ from copy import deepcopy
 
 import custom_components.haventory as haven_init
 import pytest
-from custom_components.haventory.const import CONF_CARD_TITLE, DEFAULT_CARD_TITLE
+from custom_components.haventory.const import (
+    CONF_CARD_TITLE,
+    CONF_QUICK_FILTERS,
+    DEFAULT_CARD_TITLE,
+)
 from custom_components.haventory.exceptions import (
     CorruptSchemaVersionError,
     SchemaDowngradeError,
@@ -193,6 +197,47 @@ async def test_setup_entry_publishes_card_title(monkeypatch) -> None:
     entry.options[CONF_CARD_TITLE] = "Garage"
     await haven_init._async_options_updated(hass, entry)
     assert hass.data[haven_init.DOMAIN]["card_title"] == "Garage"
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_publishes_the_quick_filter_choice(monkeypatch) -> None:
+    """The pill option reaches hass.data, and an edit to it lands there too."""
+
+    hass = HomeAssistant()
+    entry = ConfigEntry(options={CONF_QUICK_FILTERS: ["low_stock", "total"]})
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    assert await haven_init.async_setup_entry(hass, entry) is True
+    # Canonical order, not the order the checkboxes were ticked in.
+    assert hass.data[haven_init.DOMAIN]["quick_filters"] == ["total", "low_stock"]
+
+    entry.options[CONF_QUICK_FILTERS] = []
+    await haven_init._async_options_updated(hass, entry)
+    assert hass.data[haven_init.DOMAIN]["quick_filters"] == []
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_leaves_the_quick_filter_choice_unset(monkeypatch) -> None:
+    """No stored choice is `None`, which is not the same as an empty list.
+
+    `None` leaves a dashboard's own `quick_filters:` to decide and the card to
+    offer every pill; `[]` is a household asking for none.
+    """
+
+    hass = HomeAssistant()
+    entry = ConfigEntry()
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    assert await haven_init.async_setup_entry(hass, entry) is True
+    assert hass.data[haven_init.DOMAIN]["quick_filters"] is None
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 
 import pytest
+import voluptuous as vol
 from custom_components.haventory.config_flow import (
     RATE_LIMIT_DOCS_URL,
     HAventoryConfigFlow,
@@ -21,9 +22,11 @@ from custom_components.haventory.config_flow import (
 )
 from custom_components.haventory.const import (
     CONF_CARD_TITLE,
+    CONF_QUICK_FILTERS,
     CONF_SIDEBAR_PANEL_ENABLED,
     DEFAULT_CARD_TITLE,
     DEFAULT_SIDEBAR_PANEL_ENABLED,
+    QUICK_FILTER_KEYS,
 )
 from homeassistant.config_entries import ConfigEntry
 
@@ -209,6 +212,111 @@ async def test_sidebar_toggle_sits_outside_the_rate_limit_section() -> None:
 
     form = await flow.async_step_init(user_input=None)
     assert CONF_SIDEBAR_PANEL_ENABLED in _schema_keys(form["data_schema"])
+
+
+@pytest.mark.asyncio
+async def test_quick_filters_prefill_every_pill_for_an_entry_that_predates_them() -> None:
+    """An untouched entry opens the form with all five ticked.
+
+    The stored value is still absent at that point, and absent means "no
+    opinion" — so the prefill has to match what the card does without one, or
+    saving the form for the title alone would quietly take pills away.
+    """
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({CONF_CARD_TITLE: "Pantry"})
+
+    form = await flow.async_step_init(user_input=None)
+    assert _schema_default(form["data_schema"], CONF_QUICK_FILTERS) == list(QUICK_FILTER_KEYS)
+
+
+@pytest.mark.asyncio
+async def test_quick_filters_offer_and_store_a_narrowed_set() -> None:
+    """A chosen subset survives the round trip, in the card's own order."""
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({CONF_QUICK_FILTERS: ["low_stock", "total"]})
+
+    form = await flow.async_step_init(user_input=None)
+    assert _schema_default(form["data_schema"], CONF_QUICK_FILTERS) == ["total", "low_stock"]
+
+    result = await flow.async_step_init(
+        user_input={CONF_CARD_TITLE: "Pantry", CONF_QUICK_FILTERS: ["checked_out", "overdue"]}
+    )
+    assert result["data"][CONF_QUICK_FILTERS] == ["overdue", "checked_out"]
+
+
+@pytest.mark.asyncio
+async def test_quick_filters_keep_an_empty_choice_empty() -> None:
+    """Unticking everything means no pills, not "back to the default".
+
+    `[]` and an absent value are different answers all the way to the card, and
+    the form is the only place the empty one can be made.
+    """
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({CONF_QUICK_FILTERS: []})
+
+    form = await flow.async_step_init(user_input=None)
+    assert _schema_default(form["data_schema"], CONF_QUICK_FILTERS) == []
+
+    result = await flow.async_step_init(
+        user_input={CONF_CARD_TITLE: "Pantry", CONF_QUICK_FILTERS: []}
+    )
+    assert result["data"][CONF_QUICK_FILTERS] == []
+
+
+@pytest.mark.asyncio
+async def test_quick_filters_drop_a_name_this_build_does_not_know() -> None:
+    """A stored pill from another version is dropped rather than offered back.
+
+    The selector refuses anything outside the options it lists, so a prefill
+    carrying an unknown name would make the form unsubmittable until the user
+    noticed which invisible value was at fault.
+    """
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({CONF_QUICK_FILTERS: ["low_stock", "sideways"]})
+
+    form = await flow.async_step_init(user_input=None)
+    assert _schema_default(form["data_schema"], CONF_QUICK_FILTERS) == ["low_stock"]
+
+
+@pytest.mark.asyncio
+async def test_the_options_form_refuses_a_pill_that_is_not_offered() -> None:
+    """The selector is the guard: only the five names it lists validate."""
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({})
+
+    form = await flow.async_step_init(user_input=None)
+    with pytest.raises(vol.Invalid):
+        form["data_schema"](
+            {
+                CONF_CARD_TITLE: "Pantry",
+                CONF_SIDEBAR_PANEL_ENABLED: True,
+                CONF_QUICK_FILTERS: ["sideways"],
+                "rate_limit": {},
+            }
+        )
+
+
+@pytest.mark.asyncio
+async def test_setup_does_not_ask_which_pills(monkeypatch) -> None:
+    """Setup stays two questions; the pills have a default worth keeping.
+
+    Every pill is the right answer until a household says otherwise, and the
+    field means nothing before there is an inventory to filter.
+    """
+
+    flow = HAventoryConfigFlow()
+    monkeypatch.setattr(flow, "_async_current_entries", lambda: [], raising=False)
+
+    form = await flow.async_step_user(user_input=None)
+    assert CONF_QUICK_FILTERS not in _schema_keys(form["data_schema"])
+
+    result = await flow.async_step_user(user_input={CONF_CARD_TITLE: "Pantry"})
+    assert CONF_QUICK_FILTERS not in result["options"]
 
 
 @pytest.mark.asyncio

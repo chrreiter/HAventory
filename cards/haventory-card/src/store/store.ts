@@ -32,6 +32,7 @@ import type {
 } from './types';
 import { WSClient } from './ws';
 import { DEFAULT_SORT } from './sort';
+import { normalizeQuickFilters } from '../ui/quick-filters';
 import { sortLocationTree } from './location-tree';
 
 /** Page size for the main list. */
@@ -372,6 +373,7 @@ export class Store {
       healthCache: null,
       versionInfo: null,
       cardTitle: null,
+      quickFilters: null,
       mediaConfig: null,
       statuses: null,
       distinctValuesCache: null,
@@ -906,23 +908,31 @@ export class Store {
     this.stateObs.set({ versionInfo: info });
   }
 
-  /**
-   * Card heading configured in the integration's options flow.
-   *
-   * Cosmetic, so a backend that does not answer the command — an integration
-   * older than this bundle — leaves the card on its built-in heading instead
-   * of failing the whole init.
-   */
   /** Re-read the status vocabulary after another client changed it. */
   async refreshStatuses() {
     const statuses = await this.run(() => this.ws.listStatuses()).catch(() => null);
     if (statuses) this.stateObs.set({ statuses });
   }
 
+  /**
+   * What the integration decided: card heading, quick-filter pills, the status
+   * vocabulary, the attachment caps.
+   *
+   * All of it cosmetic, so a backend that does not answer the command — an
+   * integration older than this bundle — leaves every one of them at its
+   * built-in default instead of failing the whole init.
+   */
   async refreshConfig() {
     const config = await this.run(() => this.ws.config()).catch(() => null);
     const title = config?.card_title;
     if (typeof title === 'string' && title) this.stateObs.set({ cardTitle: title });
+    // `undefined` is a backend too old to answer and leaves the state alone;
+    // `null` is one that answered "no opinion". Both read as every pill, but
+    // only the second is a report, and an explicit `[]` is a third answer the
+    // normalizer keeps whole.
+    if (config && 'quick_filters' in config) {
+      this.stateObs.set({ quickFilters: normalizeQuickFilters(config.quick_filters) });
+    }
     if (config?.media) this.stateObs.set({ mediaConfig: config.media });
     if (config?.statuses?.length) this.stateObs.set({ statuses: config.statuses });
   }

@@ -4,6 +4,8 @@
  * These mirror the backend WebSocket contract in custom_components/haventory/ws.py.
  */
 
+import type { QuickFilterKey } from '../ui/quick-filters';
+
 export type ScalarValue = string | number | boolean;
 
 /**
@@ -285,6 +287,13 @@ export interface MediaConfig {
 export interface IntegrationConfig {
   /** Heading set in the integration's options flow. */
   card_title: string;
+  /**
+   * Which quick-filter pills the integration offers, or `null` when it has no
+   * opinion — which is also what an older backend's silence reads as. `null`
+   * and `[]` are different answers: no opinion leaves the choice to the
+   * dashboard's own `quick_filters:`, an empty list is a choice of no pills.
+   */
+  quick_filters?: string[] | null;
   /** The status vocabulary. Optional: an older backend does not send it. */
   statuses?: StatusDefinition[];
   /** Attachment caps and the media route. Optional for the same reason. */
@@ -621,6 +630,13 @@ export interface StoreState {
   versionInfo: VersionInfo | null;
   /** Heading configured in the integration, or null until it has been read. */
   cardTitle: string | null;
+  /**
+   * Quick-filter pills chosen in the integration's options flow, or null when
+   * it has none — the state a fresh install, an older backend and a store that
+   * has not answered yet all share. A dashboard's own `quick_filters:` outranks
+   * it; the sidebar panel has no dashboard config, so this is all it reads.
+   */
+  quickFilters: QuickFilterKey[] | null;
   /**
    * Attachment caps and the media route, or null until `haventory/config` has
    * answered — or permanently, against a backend too old to report them.

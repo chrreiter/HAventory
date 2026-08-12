@@ -1432,6 +1432,41 @@ describe('Store: location tree and diagnostics data', () => {
     expect(store.state.value.cardTitle).toBe('Pantry');
   });
 
+  it('reads the quick-filter pills configured in the integration', async () => {
+    const hass = makeMockHass({ items: [], quickFilters: ['low_stock', 'overdue'] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    expect(store.state.value.quickFilters).toEqual(['low_stock', 'overdue']);
+  });
+
+  // `null` and `[]` are different answers, and the store is where the two
+  // could most easily collapse into one falsy value.
+  it('keeps an explicit "no pills" apart from "no choice made"', async () => {
+    const none = new Store(makeMockHass({ items: [], quickFilters: [] }), fast);
+    await none.init();
+    expect(none.state.value.quickFilters).toEqual([]);
+
+    const unset = new Store(makeMockHass({ items: [], quickFilters: null }), fast);
+    await unset.init();
+    expect(unset.state.value.quickFilters).toBeNull();
+  });
+
+  it('drops a pill name this bundle does not know', async () => {
+    const hass = makeMockHass({ items: [], quickFilters: ['low_stock', 'sideways'] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    expect(store.state.value.quickFilters).toEqual(['low_stock']);
+  });
+
+  it('leaves the pills unset against a backend that does not report them', async () => {
+    const store = new Store(makeMockHass({ items: [] }), fast);
+    await store.init();
+
+    expect(store.state.value.quickFilters).toBeNull();
+  });
+
   // The card bundle is served by the integration, so this only happens with a
   // stale cached bundle — and a missing heading must not cost the user their
   // items, which init loads after this call.

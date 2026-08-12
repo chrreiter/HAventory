@@ -85,8 +85,9 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 
 - `haventory/config`
   - Request: `{id, type: "haventory/config"}` (no payload)
-  - Result: `{card_title: string, statuses: StatusDefinition[], media: MediaConfig}`
+  - Result: `{card_title: string, quick_filters: string[] | null, statuses: StatusDefinition[], media: MediaConfig}`
   - `card_title` is the heading set in the integration's options flow (Settings → Devices & services → HAventory → **Configure**), defaulting to `"HAventory"`. Only display settings appear here — rate-limit tunables stay server-side.
+  - `quick_filters` is which quick-filter pills the integration offers, out of `total`, `low_stock`, `overdue`, `inspection_due`, `checked_out`, set in the same options flow. `null` means no choice was made and leaves it to the client — a dashboard's own `quick_filters:` first, every pill otherwise — while `[]` is an explicit choice of no pills; the two are never interchangeable. Names the backend does not know are dropped before sending.
   - `statuses` is the status vocabulary in display order (see data shapes). Items store only a slug, so this is where a surface gets the label to render one with.
   - `media` is `{picture_mime_types: string[], max_pictures_per_item: number, manual_mime_types: string[], max_manuals_per_item: number, max_attachment_bytes: number}` — the attachment limits, reported so a picker can refuse a doomed file before uploading it. **Advisory only**: every one of them is re-derived server-side from the file's own bytes. The media *route* is deliberately not here; it is a constant on both sides of the language boundary (`/api/haventory/media/{item_id}/{attachment_id}`), pinned by a test.
   - Read at card init and on refresh, not pushed: changing the option emits no event, so an open dashboard shows the new heading after a refresh or reload.

@@ -8,6 +8,7 @@ type FullView = HTMLElement & {
   store?: unknown;
   heading: string;
   columns: string[];
+  quickFilters: string[] | null;
   embedded: boolean;
   open: boolean;
   narrow: boolean;
@@ -20,6 +21,7 @@ async function mountPanel(
     config?: Record<string, unknown> | null;
     narrow?: boolean;
     withHass?: boolean;
+    quickFilters?: string[] | null;
   } = {},
 ) {
   const el = document.createElement('haventory-panel') as Panel;
@@ -28,7 +30,11 @@ async function mountPanel(
   if (opts.config !== undefined) el.panel = { config: opts.config };
   if (opts.narrow) el.narrow = true;
   if (opts.withHass !== false) {
-    el.hass = makeMockHass({ items: opts.items ?? [], cardTitle: opts.cardTitle });
+    el.hass = makeMockHass({
+      items: opts.items ?? [],
+      cardTitle: opts.cardTitle,
+      quickFilters: opts.quickFilters,
+    });
   }
   await el.updateComplete;
   const sr = el.shadowRoot as ShadowRoot;
@@ -64,6 +70,34 @@ describe('haventory-panel: the surface', () => {
   it('leaves narrow off by default', async () => {
     const { view } = await mountPanel();
     expect(view().narrow).toBe(false);
+  });
+});
+
+// A panel has no Lovelace config, so the options flow is the only thing that
+// can narrow its pills — the reason the setting exists on the integration at
+// all rather than only in card YAML.
+describe('haventory-panel: quick-filter pills', () => {
+  it('offers every pill while the integration has no opinion', async () => {
+    const { el, view } = await mountPanel({ quickFilters: null });
+    await settle(el);
+    expect(view().quickFilters).toBe(null);
+  });
+
+  it('narrows to the pills the integration chose', async () => {
+    const { el, view } = await mountPanel({ quickFilters: ['low_stock', 'overdue'] });
+    await settle(el);
+    expect(view().quickFilters).toEqual(['low_stock', 'overdue']);
+  });
+
+  it('honours an integration that wants no pills at all', async () => {
+    const { el, view } = await mountPanel({ quickFilters: [] });
+    await settle(el);
+    expect(view().quickFilters).toEqual([]);
+  });
+
+  it('offers every pill before the store has answered', async () => {
+    const { view } = await mountPanel({ withHass: false });
+    expect(view().quickFilters).toBe(null);
   });
 });
 

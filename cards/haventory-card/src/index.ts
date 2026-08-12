@@ -155,9 +155,23 @@ export class HAventoryCard extends LitElement {
         data-testid="card-shell"
         .store=${this.store}
         .heading=${this._heading()}
-        .quickFilters=${this.config?.quickFilters ?? null}
+        .quickFilters=${this._quickFilters()}
       ></hv-card-shell>
     `;
+  }
+
+  /**
+   * Which pills this card offers, most specific source first: this dashboard's
+   * `quick_filters:`, then the choice made in the integration's options flow,
+   * then `null` — every pill, which is what a dashboard written before either
+   * setting existed still gets.
+   *
+   * An explicit empty list is a choice at both levels and stops the search, the
+   * way an empty `title:` would not: `[]` means no pills, not "ask the next
+   * source".
+   */
+  private _quickFilters(): QuickFilterKey[] | null {
+    return this.config?.quickFilters ?? this.store?.state.value.quickFilters ?? null;
   }
 
   /**
