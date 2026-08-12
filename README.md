@@ -151,16 +151,18 @@ no longer used and can be deleted; the integration ignores it either way.
 
 What HAventory does *not* do today, stated up front so none of it is a surprise:
 
-- **Scale: a few thousand items.** Every mutation re-serializes the entire inventory and
-  rewrites the store blob, so write latency grows with the total item count. Measured p50
-  per create: ~70 ms at 250 items, ~114 ms at 500, ~200 ms at 1000; on that curve a single
-  create trends toward ~1 s at a few thousand items. Those figures predate the save
-  dropping a redundant copy of the whole dataset, which took HAventory's own share of one
-  save from ~18 ms to ~6 ms at 1 000 items — a share the offline benchmarks now record, and
-  a small part of the total above, most of which is the store write itself. Reads don't
-  share the problem (query paths are benchmarked at 10 000 items), correctness is unaffected
-  at any size, and no limit is enforced — writes simply get slower. Treat a few thousand
-  items as the comfortable ceiling.
+- **Scale: writes get slower as the inventory grows.** Every mutation re-serializes the
+  entire inventory and rewrites the store blob, so an edit costs more the more you have.
+  Measured against a real Home Assistant, one editor at a time — which is what a household
+  is — create p50 runs 2.5 ms on an empty store, 9.5 ms at 1 000 items, 17 ms at 2 000 and
+  43 ms at 5 000: linear at roughly 8 µs per item, with the persist about three quarters of
+  it. At and above ~3 000 items the p95 spikes to 230–280 ms against a 21–37 ms median, so
+  the occasional slow save arrives before the median becomes a problem. Bulk operations and
+  import write **once per batch** rather than once per row, so the paths that change many
+  items at a time do not multiply the cost. Reads don't share the problem (query paths are
+  benchmarked at 10 000 items), correctness is unaffected at any size, and no limit is
+  enforced. Several thousand items is comfortable; past that, an edit starts to be
+  something you notice.
 - **No automation triggers.** The integration creates no entities and fires no events on
   the Home Assistant bus. Automations and scripts can *call* the `haventory.*` services,
   but nothing can trigger *on* an inventory change — there is no state object to watch and

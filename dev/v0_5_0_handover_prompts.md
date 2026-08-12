@@ -484,6 +484,21 @@ letter (e.g. "Éclairage" or "Übriges"), and a handful of items with **no** loc
 
 ## H8 — #200 where the per-mutation time at 250 / 500 / 1000 items actually goes
 
+**Answered** — [#200 comment](https://github.com/chrreiter/HAventory/issues/200#issuecomment-5267185373).
+The ~180 ms this handover set out to find is not a per-create cost: `stress.py bulk` drives
+eight connections and every mutation persists under one lock, so its p50 is roughly
+*connections × one save*. One writer at 1 000 items waits 9.5 ms, of which 7.8 ms is the
+persist — 3.87 ms `export_state` and 3.74 ms Home Assistant's `Store`. Recommendation on
+the issue is to close it as not-planned, with single-writer latency linear at ~8.4 µs/item
+and ~5 000 items as the reopen trigger.
+
+Two corrections to what is written below, kept visible because they are the parts that
+misled: **step 3 cannot work as written** — `cmd_bulk` deletes what it created and calls
+`cleanup_prefix` in its `finally`, so a second run always starts from an empty store; the
+store-size curve the local session substituted answers the same question directly. And the
+`elapsed_ms` in step 4 **never reaches the log** — Home Assistant's formatter drops `extra=`
+fields, so the figure has to be put into the message text by instrumenting the container.
+
 **Branch / PR**: `claude/v0-5-0-w3-storage-scaling` / #429
 **Why this needs a real HA**: #200's numbers — per-create p50 of 70 ms @250, 114 ms @500,
 200 ms @1000 — were measured over a real WebSocket against a real store on disk. The
