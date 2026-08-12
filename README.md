@@ -646,7 +646,9 @@ changed name on its next refresh or reload; the change is not pushed live.
 
 `quick_filters` says which pills are *allowed*; a pill still only shows when it has
 something to count, so `low_stock` draws nothing while nothing is low. An explicit empty
-list is a choice and offers none.
+list is a choice and offers none. `total` is narrower than the other four: only the card
+draws it as a pill, and only at full width — the full view and the sidebar page print the
+total in their header instead, whichever way it is set.
 
 Omitting the key hands the decision to **Quick-filter pills** under Settings → Devices &
 services → HAventory → **Configure**, which is the one place that reaches every surface:
