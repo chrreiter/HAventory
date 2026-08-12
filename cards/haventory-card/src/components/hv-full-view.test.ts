@@ -634,6 +634,37 @@ describe('hv-full-view: sidebar facets', () => {
     ]);
   });
 
+  // One sidebar column, one meaning for the grey number: with a filter on, the
+  // location rows read "matches / total" and these two read whole-inventory
+  // counts that never moved.
+  it('reads matches over total once a filter is narrowing the list', async () => {
+    const checkedOut = [
+      makeItem({ id: '1', category: 'Tools', tags: ['metric'], checked_out: true }),
+      makeItem({ id: '2', category: 'Tools', tags: ['metric'] }),
+      makeItem({ id: '3', category: 'Cleaning', tags: [] }),
+    ];
+    const { el, store, sr } = await mount({ items: checkedOut });
+    const tally = (section: string, value: string) =>
+      rows(sr, section)
+        .find((r) => r.dataset.value === value)
+        ?.querySelector('.hv-tally')
+        ?.textContent?.trim();
+
+    // Unfiltered, a bare total.
+    expect(tally('categories', 'Tools')).toBe('2');
+
+    store.setFilters({ checkedOutOnly: true });
+    await vi.waitUntil(() => store.state.value.distinctValuesCache?.categories[0]?.matching_count !== undefined);
+    await settle(el);
+
+    expect(tally('categories', 'Tools')).toBe('1 / 2');
+    expect(tally('categories', 'Cleaning')).toBe('0 / 1');
+    expect(tally('tags', 'metric')).toBe('1 / 2');
+    // The heading still counts rows rather than matches — it says how many
+    // categories there are, and none of them went away.
+    expect(q(sr, '[data-testid="sidebar-categories-tally"]')?.textContent?.trim()).toBe('2');
+  });
+
   it('puts a clipped facet name in reach of a pointer', async () => {
     const { sr } = await mount({ items: faceted });
     const row = rows(sr, 'categories').find((r) => r.dataset.value === 'Cleaning');

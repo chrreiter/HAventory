@@ -58,8 +58,15 @@ export class WSClient {
     return this.hass.callWS<HealthResult>({ type: 'haventory/health' });
   }
 
-  distinctValues() {
-    return this.hass.callWS<DistinctValues>({ type: 'haventory/distinct_values' });
+  /**
+   * Distinct categories, tags and custom-field keys with usage counts. With a
+   * filter each category and tag also carries `matching_count`; the lists
+   * themselves never shrink, so autocomplete keeps its full vocabulary.
+   */
+  distinctValues(filter?: ItemFilter) {
+    const msg: Record<string, unknown> = { type: 'haventory/distinct_values' };
+    if (filter) msg.filter = filter;
+    return this.hass.callWS<DistinctValues>(msg);
   }
 
   // ---------- Items ----------

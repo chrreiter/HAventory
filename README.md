@@ -546,10 +546,16 @@ throughout.
   Locations stays at the top. Every status row is priced from the backend's own per-status
   counts, so a status nothing carries reads 0 rather than inheriting the rest of the
   inventory. Category and status each pick one value and
-  tags accumulate, matching how the backend treats them. With a filter on, each location
-  row reads "4 / 37" — matches over total — so you can see where the matches are rather
-  than a total that never moves. The counts ignore the *location* filter, since the sidebar
-  is how you pick one. Each heading also offers a create action: Locations opens an inline
+  tags accumulate, matching how the backend treats them. With a filter on, each location,
+  category and tag row reads "4 / 37" — matches over total — so you can see where the
+  matches are rather than a total that never moves. All three switch to the pair together,
+  as soon as anything is filtering. Each list drops its own dimension from what it measures
+  against, since that list is how you pick one: the location counts ignore the location
+  filter, and the category and tag counts ignore the chosen category and tags — so with a
+  category as the only filter its own list reads "43 / 43" while the locations beside it
+  narrow, rather than one column carrying two kinds of number.
+  No row disappears for matching nothing — the same list is what the item editor offers as
+  autocomplete. Each heading also offers a create action: Locations opens an inline
   name field, while Categories, Tags and Status open the organize dialog on their own tab —
   a category exists through the items using it, so that is where making one is explained.
   The app bar carries an Organize button of its own, beside the ⋮ that also lists it.
@@ -712,7 +718,9 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
   Areas integration; real-time subscriptions (items, locations, stats); documented persistence.
 - `haventory/distinct_values` returns distinct categories and tags with usage counts
   (categories grouped case-insensitively) plus distinct custom-field keys — powers
-  category/tag autocomplete, the browser views, and custom-field key suggestions.
+  category/tag autocomplete, the browser views, and custom-field key suggestions. With an
+  optional filter each category and tag also reports how many of its items that filter
+  keeps, without dropping any value from the list.
 
 ### ✅ Phase 2: Frontend Lovelace Card (Complete — superseded by Phase 2.5)
 > Historical: this describes the proof-of-concept card. Phase 2.5 replaced its components;

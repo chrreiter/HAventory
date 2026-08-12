@@ -103,9 +103,12 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - `status_counts` is the same figure for **every** defined slug, including `ok`. Additive to the two keys above rather than a replacement for them, so a client written against the earlier shape keeps working.
 
 - `haventory/distinct_values`
-  - Request: `{id, type: "haventory/distinct_values"}` (no payload; extra fields → `validation_error`)
+  - Request: `{id, type: "haventory/distinct_values", filter?: ItemFilter}` (any other field → `invalid_format`; an unknown key *inside* `filter` → `validation_error` naming it, as for `item/list`)
   - Result: `{categories: DistinctValue[], tags: DistinctValue[], custom_field_keys: string[]}` (see data shapes)
   - `categories` are grouped case-insensitively; each `value` is a representative display label (most frequent original casing, ties broken alphabetically) and `count` is the number of items using that category. `tags` are already normalized (lowercase); each maps to one entry. Both lists are sorted case-insensitively by `value`. `custom_field_keys` is the sorted, distinct set of keys used across all items' `custom_fields` (case-sensitive keys, sorted case-insensitively).
+  - With a `filter`, every `categories` and `tags` entry also carries `matching_count` — how many of that value's items the filter keeps — beside its whole-inventory `count`, the pair `location/tree` reports as `matching_direct_count`/`matching_subtree_count`. **The lists never shrink**: an entry the filter keeps nothing of is present at `matching_count: 0`. The same payload feeds category/tag autocomplete and the organize dialog, both of which a list that dropped non-matching rows would starve. Omitting `filter` (or sending `null`) leaves the key off every entry entirely, which is what an unpriced list looks like — distinct from "everything matches".
+  - `custom_field_keys` is never filtered: it is a key picker, not a tally, and narrowing it would hide keys the user is about to type.
+  - Which dimensions to leave out of `filter` is the caller's decision, as it is for `location/tree`. The card drops `category` and `tags_any`/`tags_all` before sending, for the reason it drops `location_id` from the tree's filter: a facet priced against its own selection reads 0 on every other row exactly when the user wants to see where else the matches are. One request prices both facets, so a chosen category does not narrow the tag tallies.
   - Read-only: emits no events and does not mutate state.
 
 - `haventory/health`

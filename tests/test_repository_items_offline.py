@@ -16,6 +16,7 @@ from custom_components.haventory.models import ItemCreate, ItemFilter, ItemUpdat
 from custom_components.haventory.repository import CURSOR_MAX_LENGTH, Repository
 
 TOTAL_ITEMS = 3
+BOOKS_TOTAL = 3
 INITIAL_LOW_STOCK_COUNT = 1
 LOW_STOCK_AFTER_ADJUST = 2
 LOADED_ITEM_COUNT = 2
@@ -569,3 +570,45 @@ def test_a_valid_cursor_still_pages_to_the_end() -> None:
 
     assert seen == [f"Item {i}" for i in range(5)]
     assert cursor is None
+
+
+def test_distinct_values_priced_against_a_filter_folds_case_variants() -> None:
+    """One entry per casefolded category, and its matching_count is that group's."""
+
+    repo = Repository()
+    repo.create_item(ItemCreate(name="A", category="Books", quantity=0, low_stock_threshold=1))
+    repo.create_item(ItemCreate(name="B", category="books", quantity=5))
+    repo.create_item(ItemCreate(name="C", category="Books", quantity=5))
+
+    result = repo.get_distinct_field_values(ItemFilter(low_stock_only=True))
+    categories = result["categories"]
+    assert isinstance(categories, list)
+
+    assert len(categories) == 1
+    entry = categories[0]
+    # The representative label is still the most frequent original casing.
+    assert entry["value"] == "Books"
+    assert entry["count"] == BOOKS_TOTAL
+    assert entry["matching_count"] == 1
+
+
+def test_distinct_values_counts_an_excluded_item_towards_count_only() -> None:
+    """An item whose value matches but which the filter drops moves only `count`."""
+
+    repo = Repository()
+    repo.create_item(ItemCreate(name="Kept", category="Tools", tags=["red"], checked_out=True))
+    repo.create_item(ItemCreate(name="Dropped", category="Tools", tags=["red"]))
+
+    result = repo.get_distinct_field_values(ItemFilter(checked_out=True))
+    categories = result["categories"]
+    tags = result["tags"]
+    assert isinstance(categories, list)
+    assert isinstance(tags, list)
+
+    assert categories == [{"value": "Tools", "count": 2, "matching_count": 1}]
+    assert tags == [{"value": "red", "count": 2, "matching_count": 1}]
+
+    # Without a filter the key is absent rather than equal to `count`, so a
+    # client can tell "unpriced" from "everything matches".
+    unfiltered = repo.get_distinct_field_values()
+    assert unfiltered["categories"] == [{"value": "Tools", "count": 2}]

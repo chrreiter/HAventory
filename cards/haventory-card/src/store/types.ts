@@ -243,6 +243,12 @@ export interface AreasListResult {
 export interface DistinctValue {
   value: string;
   count: number;
+  /**
+   * How many of this value's items the request's filter keeps. Present only
+   * when the request carried a filter, so `undefined` means "unpriced" rather
+   * than "nothing matches" — a backend older than this never sends it.
+   */
+  matching_count?: number;
 }
 
 /** Result of haventory/distinct_values: distinct categories and tags with counts. */
