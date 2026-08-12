@@ -484,7 +484,7 @@ letter (e.g. "Éclairage" or "Übriges"), and a handful of items with **no** loc
 
 ## H8 — #200 where the per-mutation time at 250 / 500 / 1000 items actually goes
 
-**Branch / PR**: `claude/v0-5-0-w3-storage-scaling` / #NNN
+**Branch / PR**: `claude/v0-5-0-w3-storage-scaling` / #429
 **Why this needs a real HA**: #200's numbers — per-create p50 of 70 ms @250, 114 ms @500,
 200 ms @1000 — were measured over a real WebSocket against a real store on disk. The
 offline suite can measure everything HAventory itself does for one save, and it now does
