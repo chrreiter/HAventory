@@ -256,7 +256,35 @@ describe('hv-import-sheet: preview', () => {
 
   it('labels the import button with what will actually be written', async () => {
     const el = await mount({ preview: preview() });
-    expect(q(el, '[data-testid="import-execute"]')?.textContent).toContain('Import 128 + 64');
+    expect(q(el, '[data-testid="import-execute"]')?.textContent).toContain(
+      'Import 192 items · 6 locations',
+    );
+  });
+
+  it('names only the kind a document actually writes', async () => {
+    const locationsOnly = await mount({
+      preview: preview({
+        counts: {
+          items: { total: 5, add: 0, update: 0, conflict: 0, unchanged: 5 },
+          locations: { total: 4, add: 4, update: 0, conflict: 0, unchanged: 0 },
+        },
+      }),
+    });
+    expect(q(locationsOnly, '[data-testid="import-execute"]')?.textContent).toContain(
+      'Import 4 locations',
+    );
+    expect(q(locationsOnly, '[data-testid="import-execute"]')?.textContent).not.toContain('item');
+
+    const itemsOnly = await mount({
+      preview: preview({
+        counts: {
+          items: { total: 5, add: 1, update: 0, conflict: 0, unchanged: 4 },
+          locations: { total: 4, add: 0, update: 0, conflict: 0, unchanged: 4 },
+        },
+      }),
+    });
+    expect(q(itemsOnly, '[data-testid="import-execute"]')?.textContent).toContain('Import 1 item');
+    expect(q(itemsOnly, '[data-testid="import-execute"]')?.textContent).not.toContain('location');
   });
 
   it('says so when the document would change nothing', async () => {
@@ -266,6 +294,20 @@ describe('hv-import-sheet: preview', () => {
       }),
     });
     expect(q(el, '[data-testid="import-nothing-to-do"]')).toBeTruthy();
+    expect(q(el, '[data-testid="import-execute"]')?.textContent?.trim()).toBe('Import');
+  });
+
+  it('does not claim nothing would change when only locations would', async () => {
+    // A backup restored onto a hand-rebuilt tree: locations to write, no items.
+    const el = await mount({
+      preview: preview({
+        counts: {
+          items: { total: 5, add: 0, update: 0, conflict: 0, unchanged: 5 },
+          locations: { total: 4, add: 4, update: 0, conflict: 0, unchanged: 0 },
+        },
+      }),
+    });
+    expect(q(el, '[data-testid="import-nothing-to-do"]')).toBe(null);
   });
 
   it('goes back to the input step', async () => {

@@ -24,6 +24,21 @@ import type { ImportBucketCounts, ImportPolicy, ImportPreview, ImportSummary } f
  */
 const WARNING_LIST_LIMIT = 5;
 
+/**
+ * What the execute button promises to write.
+ *
+ * It names both kinds because either can be the whole document: a backup
+ * restored onto a hand-rebuilt tree writes locations and no items. The
+ * breakdown into added and updated is left to the count tables directly above,
+ * which carry it for both kinds; repeating it here would need four numbers.
+ */
+function importButtonLabel(itemWrites: number, locationWrites: number): string {
+  const parts: string[] = [];
+  if (itemWrites) parts.push(counted(itemWrites, 'item'));
+  if (locationWrites) parts.push(counted(locationWrites, 'location'));
+  return parts.length ? `Import ${parts.join(' · ')}` : 'Import';
+}
+
 const POLICIES: { id: ImportPolicy; title: string; description: string }[] = [
   {
     id: 'merge',
@@ -554,7 +569,12 @@ export class HVImportSheet extends LitElement {
     const items = preview.counts.items;
     const locations = preview.counts.locations;
     const conflicts = preview.items.conflict.length + preview.locations.conflict.length;
-    const willWrite = (items?.add ?? 0) + (items?.update ?? 0);
+    // Both kinds count: a document that rebuilds a location tree and touches no
+    // item still changes the inventory, and the hint below speaks for the
+    // inventory rather than for its items.
+    const itemWrites = (items?.add ?? 0) + (items?.update ?? 0);
+    const locationWrites = (locations?.add ?? 0) + (locations?.update ?? 0);
+    const willWrite = itemWrites + locationWrites;
     // Absent on a preview from a backend that predates warnings.
     const warnings = preview.warnings ?? [];
 
@@ -627,7 +647,7 @@ export class HVImportSheet extends LitElement {
           ?disabled=${this.busy}
           @click=${() => this._emit('execute')}
         >
-          ${this.busy ? 'Importing…' : `Import ${items?.add ?? 0} + ${items?.update ?? 0}`}
+          ${this.busy ? 'Importing…' : importButtonLabel(itemWrites, locationWrites)}
         </button>
       </div>
       ${willWrite === 0
