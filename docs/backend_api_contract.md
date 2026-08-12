@@ -113,8 +113,9 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 ### Subscriptions and events
 
 - Subscribe
-  - `haventory/subscribe` request: `{id, type, topic: "items"|"locations"|"stats"|"statuses", location_id?: string|null, include_subtree?: boolean, inspection_overdue_only?: boolean}`
+  - `haventory/subscribe` request: `{id, type, topic: "items"|"locations"|"stats"|"statuses", location_id?: string|null, area_id?: string|null, include_subtree?: boolean, inspection_overdue_only?: boolean}`
   - Result: `null` (result envelope with `result: null`)
+  - `area_id` narrows the `items` topic to items whose `effective_area_id` equals it — the same area `item/list`'s `area_id` filter selects by, read off the event's own item payload. A `null` (or an omitted key) means no area filter, not "items with no area"; an item with no location has `effective_area_id: null` and therefore reaches no area-filtered subscription. An `area_id` naming an area nothing resolves to is accepted and simply delivers nothing. Filters combine with AND: a subscription carrying both `area_id` and `location_id` requires both to match. The `locations` topic ignores `area_id`.
   - `inspection_overdue_only` narrows the `items` topic to items past their `inspection_date`, using the same rule as the `item/list` filter of that name. Like every subscription filter it is applied to the event's item payload as it stands *after* the mutation, so an item that leaves the filtered set (its inspection date rescheduled or cleared) produces no event for that subscription — a client that tracks a filtered set re-lists rather than relying on a departure event.
   - Subsequent events delivered as HA WS events to the same connection using this `id` as the subscription id.
 
@@ -138,6 +139,7 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - When `location_id` filter is provided on subscription:
     - Items: if `include_subtree` (default true) match any item whose `location_path.id_path` contains the filter id; otherwise only direct `location_id` matches.
     - Locations: if `include_subtree` match the location itself or descendants; otherwise only the exact location.
+  - Re-anchoring a location under a different root rewrites `effective_area_id` for its whole subtree and emits a single `locations` `moved` event; reassigning a location's own `area_id` through `location/update` emits no `locations` event at all. Neither emits item events, so an area-filtered items subscription sees no departure for the items that just left its area, and no arrival for those that joined it. A client tracking a filtered set re-lists on a `locations` event rather than waiting for one — the same rule `inspection_overdue_only` carries, and the reason there is no synthetic per-item event here.
 
 - **An event implies a durable write.** Every mutation command persists the change *before* it broadcasts and before it replies, so any event on any topic says the write behind it reached storage. When the write fails the caller receives `storage_error` and **no event is emitted at all** — subscribers are told nothing rather than told about a change that is not on disk. A client may therefore treat a received event as committed and never has to reconcile it against a `storage_error` another client saw for the same change.
   - The guarantee is about the wire, not about the running repository: a failed write leaves the mutation applied in memory (`import/execute` is the exception — it rolls the dataset back, because a wholesale swap has more to undo than one entity does). Nothing announces that divergence, and it ends at the next restart, which reads back whatever last reached disk.

@@ -229,6 +229,30 @@ describe('WSClient.subscribe when Home Assistant returns a promise', () => {
     expect(sent[0]).toMatchObject({ topic: 'items', location_id: 'l1', include_subtree: true });
     expect(sent[1]).not.toHaveProperty('location_id');
   });
+
+  it('scopes an items subscription by area only when asked', () => {
+    const sent: Record<string, unknown>[] = [];
+    const hass = {
+      callWS: () => Promise.resolve(undefined),
+      connection: {
+        subscribeMessage(_cb: unknown, msg: Record<string, unknown>) {
+          sent.push(msg);
+          return () => undefined;
+        },
+      },
+    } as unknown as HassLike;
+    const ws = new WSClient(hass);
+
+    ws.subscribe('items', () => undefined, { area_id: 'kitchen' });
+    // An undefined area is "every area": the backend reads a null as no filter,
+    // so the key going over the wire is not the same as the filter being on.
+    ws.subscribe('items', () => undefined, { area_id: undefined });
+    ws.subscribe('stats', () => undefined);
+
+    expect(sent[0]).toMatchObject({ topic: 'items', area_id: 'kitchen' });
+    expect(sent[1]).toMatchObject({ topic: 'items', area_id: null });
+    expect(sent[2]).not.toHaveProperty('area_id');
+  });
 });
 
 describe('WSClient attachments', () => {

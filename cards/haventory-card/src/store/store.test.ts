@@ -634,4 +634,33 @@ describe('Store', () => {
     expect(store.state.value.distinctValuesCache?.tags).toEqual([]);
   });
 
+  it('scopes the items subscription to the active area and re-opens it when the area changes', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+    const store = new Store(hass);
+    await store.init();
+
+    const itemsSubscribe = () => {
+      const sent = hass.__subscribeMessages.filter((m) => m.topic === 'items');
+      return sent[sent.length - 1];
+    };
+
+    // Unfiltered, the subscription asks for every area.
+    expect(itemsSubscribe().area_id).toBe(null);
+    const roundOne = hass.__subscribeCalls.length;
+
+    store.setFilters({ areaId: 'kitchen' });
+    await new Promise((r) => setTimeout(r, 0));
+
+    // A fresh round of all four topics, and the items one now names the area —
+    // without it the card would keep receiving every other area's events.
+    expect(hass.__subscribeCalls.length).toBe(roundOne * 2);
+    expect(itemsSubscribe().area_id).toBe('kitchen');
+
+    // A filter the backend applies to the page rather than to the subscription
+    // leaves the sockets alone.
+    store.setFilters({ category: 'Tools' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(hass.__subscribeCalls.length).toBe(roundOne * 2);
+  });
+
 });

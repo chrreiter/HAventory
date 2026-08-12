@@ -468,6 +468,7 @@ def _execute_item_op(
 class _Subscription(TypedDict, total=False):
     topic: str
     location_id: str | None
+    area_id: str | None
     include_subtree: bool
     inspection_overdue_only: bool
 
@@ -634,6 +635,13 @@ def _payload_inspection_is_overdue(item: dict[str, Any]) -> bool:
 
 def _item_matches_filter(item: dict[str, Any], sub: _Subscription) -> bool:
     if sub.get("inspection_overdue_only") and not _payload_inspection_is_overdue(item):
+        return False
+    # Read the area off the payload rather than resolving it from the repository:
+    # the matcher runs once per subscription per event, and `_serialize_item` has
+    # already walked the location ancestry to compute the same value. An item with
+    # no location carries `effective_area_id: None`, which matches no area filter.
+    area_filter = sub.get("area_id")
+    if area_filter and item.get("effective_area_id") != area_filter:
         return False
     loc_filter = sub.get("location_id")
     if not loc_filter:
@@ -1078,6 +1086,9 @@ async def ws_health(
         vol.Required("type"): "haventory/subscribe",
         vol.Required("topic"): str,
         vol.Optional("location_id"): object,
+        # `object` rather than `str`, matching `location_id`: an explicit null
+        # clears the filter instead of being refused by HA core's schema.
+        vol.Optional("area_id"): object,
         vol.Optional("include_subtree"): bool,
         vol.Optional("inspection_overdue_only"): bool,
     }
@@ -1095,6 +1106,8 @@ async def ws_subscribe(
     }
     if "location_id" in msg:
         sub["location_id"] = msg.get("location_id")
+    if "area_id" in msg:
+        sub["area_id"] = msg.get("area_id")
     if "include_subtree" in msg:
         sub["include_subtree"] = bool(msg.get("include_subtree"))
     if "inspection_overdue_only" in msg:
