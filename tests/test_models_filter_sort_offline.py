@@ -9,6 +9,7 @@ import pytest
 from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.models import (
     EMPTY_LOCATION_PATH,
+    SORT_FIELDS,
     ItemFilter,
     Location,
     Sort,
@@ -17,6 +18,8 @@ from custom_components.haventory.models import (
     filter_items,
     new_uuid4_str,
     sort_items,
+    validate_item_filter,
+    validate_sort,
 )
 
 
@@ -456,3 +459,72 @@ async def test_filter_then_sort_pipeline() -> None:
     filt = ItemFilter(tags_any=["x"])
     out = sort_items(filter_items([a, b, c], filt), Sort(field="name", order="asc"))
     assert [x.name for x in out] == ["B", "C"]
+
+
+# -----------------------------
+# Unknown filter and sort keys
+# -----------------------------
+
+
+def test_validate_item_filter_accepts_every_declared_key() -> None:
+    """Keyed off the TypedDict, so a new filter key needs no second list.
+
+    Asserted explicitly because that coupling is what lets a later filter key be
+    added without touching the validator — incidental agreement would not.
+    """
+
+    every_key: dict[str, object] = dict.fromkeys(ItemFilter.__annotations__, None)
+    validate_item_filter(every_key)
+
+
+@pytest.mark.parametrize("typo", ["search", "query", "location", "tags"])
+def test_validate_item_filter_names_the_unknown_key(typo: str) -> None:
+    with pytest.raises(ValidationError, match=typo):
+        validate_item_filter({typo: "hammer"})
+
+
+def test_validate_item_filter_reports_every_unknown_key() -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        validate_item_filter({"search": "x", "sort_by": "name", "q": "ok"})
+    message = str(excinfo.value)
+    assert "search" in message
+    assert "sort_by" in message
+    assert "q" not in message
+
+
+@pytest.mark.parametrize("bad", ["not-an-object", 5, ["q"]])
+def test_validate_item_filter_rejects_a_non_object(bad: object) -> None:
+    with pytest.raises(ValidationError, match=r"filter must be an object"):
+        validate_item_filter(bad)
+
+
+def test_validate_item_filter_passes_none_through() -> None:
+    validate_item_filter(None)
+
+
+def test_validate_sort_accepts_the_vocabulary_and_rejects_the_rest() -> None:
+    for field_name in SORT_FIELDS:
+        validate_sort({"field": field_name, "order": "asc"})
+        validate_sort({"field": field_name, "order": "desc"})
+
+    with pytest.raises(ValidationError, match=r"sort\.field"):
+        validate_sort({"field": "colour", "order": "asc"})
+    with pytest.raises(ValidationError, match=r"sort\.order"):
+        validate_sort({"field": "name", "order": "sideways"})
+    with pytest.raises(ValidationError, match="by"):
+        validate_sort({"by": "name", "order": "asc"})
+    with pytest.raises(ValidationError, match=r"sort must be an object"):
+        validate_sort("name")
+
+
+def test_validate_sort_agrees_with_sort_items() -> None:
+    """The two must not drift: both read the same allowed-field set."""
+
+    for field_name in SORT_FIELDS:
+        sort_items([], Sort(field=field_name, order="asc"))  # type: ignore[typeddict-item]
+
+    with pytest.raises(ValidationError):
+        sort_items(
+            [create_item_from_create({"name": "Widget"})],
+            {"field": "colour", "order": "asc"},  # type: ignore[typeddict-item]
+        )

@@ -136,3 +136,107 @@ async def test_ws_item_get_unknown_returns_error(hass: HomeAssistant, hass_ws_cl
     resp = await client.receive_json()
     assert resp["success"] is False, resp
     assert "error" in resp
+
+
+async def test_widened_frames_answer_validation_error(hass: HomeAssistant, hass_ws_client) -> None:
+    """The fields typed ``object`` reach the handler and answer through the guard.
+
+    Home Assistant refuses a schema mismatch before ``ws_guard`` runs, so a
+    frame the schema rejects can only ever answer ``invalid_format``. This is
+    the mode that applies the real voluptuous schemas, so it is the one that can
+    tell the two answers apart.
+    """
+
+    await _setup(hass)
+    client = await hass_ws_client(hass)
+
+    frames = [
+        {"type": "haventory/item/create", "name": "Hammer", "quantity": 1.5},
+        {"type": "haventory/item/create", "name": 42},
+        {"type": "haventory/items/bulk", "operations": "oops"},
+    ]
+    for msg_id, frame in enumerate(frames, start=1):
+        await client.send_json({"id": msg_id, **frame})
+        resp = await client.receive_json()
+        assert resp["success"] is False, resp
+        assert resp["error"]["code"] == "validation_error", resp
+
+    # Nothing was created along the way.
+    await client.send_json({"id": len(frames) + 1, "type": "haventory/item/list"})
+    listed = await client.receive_json()
+    assert listed["result"]["items"] == []
+
+
+async def test_item_list_input_hardening_over_the_real_schema(
+    hass: HomeAssistant, hass_ws_client
+) -> None:
+    """Unknown filter keys, unknown sort fields and bad cursors are refused."""
+
+    await _setup(hass)
+    client = await hass_ws_client(hass)
+
+    await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Hammer"})
+    assert (await client.receive_json())["success"] is True
+
+    refused = [
+        {"type": "haventory/item/list", "filter": {"query": "Hammer"}},
+        {"type": "haventory/item/list", "sort": {"field": "colour", "order": "asc"}},
+        {"type": "haventory/item/list", "limit": 1, "cursor": ""},
+        {"type": "haventory/item/list", "limit": 1, "cursor": "garbage"},
+    ]
+    for msg_id, frame in enumerate(refused, start=2):
+        await client.send_json({"id": msg_id, **frame})
+        resp = await client.receive_json()
+        assert resp["success"] is False, resp
+        assert resp["error"]["code"] == "validation_error", resp
+
+    # A known filter and a real cursor still page.
+    await client.send_json(
+        {
+            "id": 100,
+            "type": "haventory/item/list",
+            "filter": {"q": "Hammer"},
+            "sort": {"field": "name", "order": "asc"},
+            "limit": 1,
+        }
+    )
+    listed = await client.receive_json()
+    assert listed["success"] is True, listed
+    assert [i["name"] for i in listed["result"]["items"]] == ["Hammer"]
+
+
+async def test_duplicate_op_ids_reject_the_batch(hass: HomeAssistant, hass_ws_client) -> None:
+    """Results are keyed by op_id, so a repeat has to fail the whole command."""
+
+    await _setup(hass)
+    client = await hass_ws_client(hass)
+
+    await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Hammer"})
+    created = await client.receive_json()
+    item_id = created["result"]["id"]
+
+    await client.send_json(
+        {
+            "id": 2,
+            "type": "haventory/items/bulk",
+            "operations": [
+                {
+                    "op_id": "dup",
+                    "kind": "item_set_quantity",
+                    "payload": {"item_id": item_id, "quantity": 2},
+                },
+                {
+                    "op_id": "dup",
+                    "kind": "item_set_quantity",
+                    "payload": {"item_id": item_id, "quantity": 3},
+                },
+            ],
+        }
+    )
+    resp = await client.receive_json()
+    assert resp["success"] is False, resp
+    assert resp["error"]["code"] == "validation_error", resp
+
+    await client.send_json({"id": 3, "type": "haventory/item/get", "item_id": item_id})
+    fetched = await client.receive_json()
+    assert fetched["result"]["quantity"] == 1

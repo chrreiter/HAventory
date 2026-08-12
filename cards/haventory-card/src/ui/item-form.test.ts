@@ -124,6 +124,54 @@ describe('validateForm', () => {
     const rows = [newCustomFieldRow({ key: '  ', type: 'number', value: '' })];
     expect(validateForm({ ...base(), name: 'A', customFields: rows })).toEqual([]);
   });
+
+  it('mirrors the backend size caps so the editor refuses before the round trip', () => {
+    const over = [
+      { model: { description: 'd'.repeat(4001) }, field: 'description' },
+      { model: { category: 'c'.repeat(121) }, field: 'category' },
+      { model: { tags: ['t'.repeat(65)] }, field: 'tags' },
+      { model: { tags: Array.from({ length: 51 }, (_, i) => `t${i}`) }, field: 'tags' },
+      {
+        model: { customFields: [newCustomFieldRow({ key: 'k'.repeat(65), value: 'v' })] },
+        field: 'custom:',
+      },
+      {
+        model: { customFields: [newCustomFieldRow({ key: 'k', value: 'v'.repeat(1001) })] },
+        field: 'custom:',
+      },
+      {
+        model: {
+          customFields: Array.from({ length: 51 }, (_, i) =>
+            newCustomFieldRow({ key: `k${i}`, value: 'v' }),
+          ),
+        },
+        field: 'customFields',
+      },
+    ];
+    for (const { model, field } of over) {
+      const errors = validateForm({ ...base(), name: 'A', ...model });
+      expect(errors.length, JSON.stringify(field)).toBeGreaterThan(0);
+      expect(errors.some((e) => e.field.startsWith(field))).toBe(true);
+    }
+  });
+
+  it('accepts a form sitting exactly at every cap', () => {
+    const atCap = validateForm({
+      ...base(),
+      name: 'n'.repeat(120),
+      description: 'd'.repeat(4000),
+      category: 'c'.repeat(120),
+      tags: ['t'.repeat(64)],
+      customFields: [newCustomFieldRow({ key: 'k'.repeat(64), value: 'v'.repeat(1000) })],
+    });
+    expect(atCap).toEqual([]);
+  });
+
+  it('counts tags the way the backend counts them, after normalization', () => {
+    // Fifty-one entries, but two are the same tag under different casings.
+    const tags = ['Bolt', 'bolt', ...Array.from({ length: 49 }, (_, i) => `t${i}`)];
+    expect(validateForm({ ...base(), name: 'A', tags })).toEqual([]);
+  });
 });
 
 describe('customFieldsFrom', () => {
