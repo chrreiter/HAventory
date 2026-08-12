@@ -7,6 +7,8 @@ Scenarios:
   payload-less items event reaches every subscription regardless, because it is
   a refetch signal rather than a per-item patch
 - inspection_overdue_only narrows item events the way item/list narrows a page
+- area_id narrows item events to the payload's own effective_area_id, and never
+  delivers an item that has no location
 """
 
 from __future__ import annotations
@@ -409,6 +411,162 @@ async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
     undated = await _send(hass, conn, 5, "haventory/item/create", name="Bucket")
     assert undated["success"] is True
     assert item_event_ids() == {SUB_ID_EVERYTHING}
+
+
+@pytest.mark.asyncio
+async def test_area_filter_constrains_delivered_events() -> None:
+    """`area_id` narrows item events to the area the item's location tree is anchored to."""
+
+    hass = HomeAssistant()
+    repo = Repository()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    conn = _ConnStub()
+
+    # Kitchen(area=kitchen) -> Drawer, and a separate Garage(area=garage).
+    kitchen = repo.create_location(name="Kitchen", area_id="kitchen")
+    drawer = repo.create_location(name="Drawer", parent_id=kitchen.id)
+    garage = repo.create_location(name="Garage", area_id="garage")
+
+    SUB_ID_KITCHEN = 501
+    SUB_ID_EVERYTHING = 502
+    SUB_ID_NULL_AREA = 503
+    await _send(hass, conn, SUB_ID_KITCHEN, "haventory/subscribe", topic="items", area_id="kitchen")
+    await _send(hass, conn, SUB_ID_EVERYTHING, "haventory/subscribe", topic="items")
+    # An explicit null is "no area filter", not "items with no area".
+    await _send(hass, conn, SUB_ID_NULL_AREA, "haventory/subscribe", topic="items", area_id=None)
+
+    def item_event_ids() -> set[object]:
+        return {
+            m.get("id")
+            for m in conn.messages
+            if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
+        }
+
+    # An item deep under the kitchen inherits its area and reaches all three.
+    conn.messages.clear()
+    inside = await _send(
+        hass, conn, 1, "haventory/item/create", name="Whisk", location_id=str(drawer.id)
+    )
+    assert inside["success"] is True
+    assert item_event_ids() == {SUB_ID_KITCHEN, SUB_ID_EVERYTHING, SUB_ID_NULL_AREA}
+
+    # An item in another area does not.
+    conn.messages.clear()
+    outside = await _send(
+        hass, conn, 2, "haventory/item/create", name="Spanner", location_id=str(garage.id)
+    )
+    assert outside["success"] is True
+    assert item_event_ids() == {SUB_ID_EVERYTHING, SUB_ID_NULL_AREA}
+
+    # Neither does an item with no location: its effective_area_id is null, and a
+    # null resolves to no area rather than to every area.
+    conn.messages.clear()
+    orphan = await _send(hass, conn, 3, "haventory/item/create", name="Loose screw")
+    assert orphan["success"] is True
+    assert orphan["result"]["effective_area_id"] is None
+    assert item_event_ids() == {SUB_ID_EVERYTHING, SUB_ID_NULL_AREA}
+
+
+@pytest.mark.asyncio
+async def test_area_and_location_filters_are_conjunctive() -> None:
+    """`area_id` and `location_id` on one subscription both have to match."""
+
+    hass = HomeAssistant()
+    repo = Repository()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    conn = _ConnStub()
+
+    kitchen = repo.create_location(name="Kitchen", area_id="kitchen")
+    drawer = repo.create_location(name="Drawer", parent_id=kitchen.id)
+    shelf = repo.create_location(name="Shelf", parent_id=kitchen.id)
+
+    SUB_ID_BOTH = 601
+    SUB_ID_UNUSED_AREA = 602
+    await _send(
+        hass,
+        conn,
+        SUB_ID_BOTH,
+        "haventory/subscribe",
+        topic="items",
+        area_id="kitchen",
+        location_id=str(drawer.id),
+    )
+    # An area no item resolves to simply never matches; it is not an error.
+    await _send(
+        hass, conn, SUB_ID_UNUSED_AREA, "haventory/subscribe", topic="items", area_id="attic"
+    )
+
+    def item_event_ids() -> set[object]:
+        return {
+            m.get("id")
+            for m in conn.messages
+            if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
+        }
+
+    conn.messages.clear()
+    await _send(hass, conn, 1, "haventory/item/create", name="Whisk", location_id=str(drawer.id))
+    assert item_event_ids() == {SUB_ID_BOTH}
+
+    # Right area, wrong location.
+    conn.messages.clear()
+    await _send(hass, conn, 2, "haventory/item/create", name="Jar", location_id=str(shelf.id))
+    assert item_event_ids() == set()
+
+
+@pytest.mark.asyncio
+async def test_location_area_change_emits_no_item_events() -> None:
+    """Re-anchoring a subtree rewrites effective_area_id without item events.
+
+    An area-filtered subscription therefore sees no departure when the items it
+    was watching leave the area — the same rule `inspection_overdue_only`
+    carries: filters are applied to the payload as it stands after a mutation,
+    and a client tracking a filtered set re-lists rather than waiting for a
+    departure event.
+    """
+
+    hass = HomeAssistant()
+    repo = Repository()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    ws_setup(hass)
+
+    conn = _ConnStub()
+
+    kitchen = repo.create_location(name="Kitchen", area_id="kitchen")
+    garage = repo.create_location(name="Garage", area_id="garage")
+    drawer = repo.create_location(name="Drawer", parent_id=kitchen.id)
+    await _send(hass, conn, 1, "haventory/item/create", name="Whisk", location_id=str(drawer.id))
+
+    SUB_ID_KITCHEN = 701
+    await _send(hass, conn, SUB_ID_KITCHEN, "haventory/subscribe", topic="items", area_id="kitchen")
+    await _send(hass, conn, 702, "haventory/subscribe", topic="locations")
+
+    conn.messages.clear()
+    moved = await _send(
+        hass,
+        conn,
+        2,
+        "haventory/location/move_subtree",
+        location_id=str(drawer.id),
+        new_parent_id=str(garage.id),
+    )
+    assert moved["success"] is True
+
+    assert [ev.get("action") for ev in _extract_events(conn, topic="locations")] == ["moved"]
+    assert _extract_events(conn, topic="items") == []
+
+    # The item is genuinely out of the kitchen now, and the next event about it
+    # goes only to subscriptions watching where it landed.
+    conn.messages.clear()
+    listed = await _send(hass, conn, 3, "haventory/item/list", filter={"area_id": "garage"})
+    assert [it["name"] for it in listed["result"]["items"]] == ["Whisk"]
+    assert _extract_events(conn, topic="items") == []
 
 
 @pytest.mark.asyncio
