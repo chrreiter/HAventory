@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.5.0](https://github.com/chrreiter/HAventory/compare/v0.4.3...v0.5.0) (2026-08-13)
+
+
+### Features
+
+* **config:** offer the quick-filter pills in the options flow ([#416](https://github.com/chrreiter/HAventory/issues/416)) ([bf681bd](https://github.com/chrreiter/HAventory/commit/bf681bda901252df27663375b03d876c4d3056e5))
+* **import:** warn when an incoming name collides with another id ([#417](https://github.com/chrreiter/HAventory/issues/417)) ([3efdad6](https://github.com/chrreiter/HAventory/commit/3efdad6f34bb49093a3e006e77615b92cef6152e))
+* **status:** accept a hex colour beside the ten tokens ([#418](https://github.com/chrreiter/HAventory/issues/418)) ([31e9286](https://github.com/chrreiter/HAventory/commit/31e9286af05a2f0dfd46be05533be800277e715a))
+* **ws:** filter subscriptions by area ([#414](https://github.com/chrreiter/HAventory/issues/414)) ([c698886](https://github.com/chrreiter/HAventory/commit/c698886885e4649ea4f8cb65a04af0d1bf8bf119)), closes [#194](https://github.com/chrreiter/HAventory/issues/194)
+* **ws:** multi-select categories and locations in filters ([#423](https://github.com/chrreiter/HAventory/issues/423)) ([f4f0cfb](https://github.com/chrreiter/HAventory/commit/f4f0cfb8a2164e438e32ad28013e06a272cb065d))
+* **ws:** order items by their location path ([#424](https://github.com/chrreiter/HAventory/issues/424)) ([e9ea8de](https://github.com/chrreiter/HAventory/commit/e9ea8de71f59c7f13a982edc99ea32df90248ed4))
+* **ws:** price category and tag facets against the active filter ([#422](https://github.com/chrreiter/HAventory/issues/422)) ([d6c73ad](https://github.com/chrreiter/HAventory/commit/d6c73ad6c11a7e9cd96f040d57a5c07af012dad0))
+
+
+### Bug Fixes
+
+* **ci:** guard the Python floor's copies ([#409](https://github.com/chrreiter/HAventory/issues/409)) ([0b4a98b](https://github.com/chrreiter/HAventory/commit/0b4a98b193eeb3669952f7f58ff802aff2ba6d76)), closes [#356](https://github.com/chrreiter/HAventory/issues/356) [#355](https://github.com/chrreiter/HAventory/issues/355)
+* **storage:** stamp hex status colours at a version older builds refuse ([#443](https://github.com/chrreiter/HAventory/issues/443)) ([76bb7cc](https://github.com/chrreiter/HAventory/commit/76bb7cca0468d8ec22c6b589aadc0fffb0851e76)), closes [#436](https://github.com/chrreiter/HAventory/issues/436)
+* **ws:** bound and type the WebSocket inputs ([#415](https://github.com/chrreiter/HAventory/issues/415)) ([2a77eb2](https://github.com/chrreiter/HAventory/commit/2a77eb2bcb25b88b8b730f2f07a2bdb0c2bd68d6))
+* **ws:** close out V0.5.0 — area events, import counts, filter parsing ([#434](https://github.com/chrreiter/HAventory/issues/434)) ([2435a49](https://github.com/chrreiter/HAventory/commit/2435a49da216bceddbe0fae9372e973cac5e6910))
+
+
+### Performance Improvements
+
+* **storage:** stop copying the whole dataset on every save ([#429](https://github.com/chrreiter/HAventory/issues/429)) ([dc611fa](https://github.com/chrreiter/HAventory/commit/dc611fa0fa996288f61dbf8c27e62231cd8f14ac))
+
 ## [0.4.3](https://github.com/chrreiter/HAventory/compare/v0.4.2...v0.4.3) (2026-08-11)
 
 
