@@ -7,7 +7,8 @@ Usage:
 
 Behavior:
 - Starts the HAventory config flow (domain "haventory").
-- Submits empty user input (flow is single-step) to create the entry.
+- Answers each form with the defaults its returned schema offers, so setup asks
+  no questions and keeps working when the flow gains a field or a step.
 - If already configured (single instance), exits successfully.
 - Verifies integration by calling the "haventory/version" WS command.
 """
@@ -73,6 +74,51 @@ async def _expect_raw_result(ws: aiohttp.ClientWebSocketResponse, expect_id: int
 
 HTTP_ERROR_MIN_STATUS: int = 400
 
+# The flow is single-step; anything past a handful of forms is a loop between
+# this script and a step it cannot answer, not a longer setup.
+MAX_FORM_STEPS: int = 5
+
+
+def build_user_input(data_schema: object) -> dict[str, Any]:
+    """Build a form submission from the defaults the form itself offers.
+
+    ``data_schema`` is the serialized schema a config-flow form result carries:
+    a list of field descriptors with ``name``, ``required``, and — for every
+    field the flow prefills — ``default`` (or a suggested value under
+    ``description``). Answering with those keeps this script's contract of "a
+    working instance, no questions asked" without hard-coding values a later
+    release would silently drift from. A required field that offers no default
+    cannot be invented here, so it is refused by name rather than submitted
+    blank for the flow to 400 on.
+    """
+    payload: dict[str, Any] = {}
+    if not isinstance(data_schema, list):
+        return payload
+    for field in data_schema:
+        if not isinstance(field, dict):
+            continue
+        name = field.get("name")
+        if not isinstance(name, str):
+            continue
+        # A section serializes as an "expandable" wrapper around its own field
+        # list and is submitted as a nested object under the section's name.
+        if field.get("type") == "expandable":
+            payload[name] = build_user_input(field.get("schema"))
+            continue
+        if "default" in field:
+            payload[name] = field["default"]
+            continue
+        description = field.get("description")
+        if isinstance(description, dict) and "suggested_value" in description:
+            payload[name] = description["suggested_value"]
+            continue
+        if field.get("required"):
+            raise RuntimeError(
+                f"config flow field {name!r} is required but offers no default; "
+                "cannot set up without asking"
+            )
+    return payload
+
 
 async def run() -> int:  # noqa: PLR0912, PLR0915
     base = os.environ.get("HA_BASE_URL", "http://localhost:8123")
@@ -102,6 +148,7 @@ async def run() -> int:  # noqa: PLR0912, PLR0915
             await ws.send_json(payload)
             frame = await _expect_raw_result(ws, msg_id)
             used_transport = "ws"
+            result: dict[str, Any] = frame.get("result") or {}
             if not bool(frame.get("success")):
                 err = frame.get("error") or {}
                 if err.get("code") == "unknown_command":
@@ -137,26 +184,29 @@ async def run() -> int:  # noqa: PLR0912, PLR0915
                         raise RuntimeError(f"WS command failed: {frame}")
                     result = frame.get("result") or {}
 
-            flow_type = result.get("type")
-            flow_id = result.get("flow_id")
-            # If the flow already completes here (rare), continue gracefully
-            if flow_type == "abort":
-                reason = result.get("reason")
-                if reason in {"single_instance_allowed", "already_configured"}:
-                    # Treat as success; proceed to verification
-                    pass
-                else:
-                    print(f"Config flow aborted: {reason}", file=sys.stderr)
-                    return 2
-            elif flow_type == "form":
-                # 2) Submit empty user input (single-step integration)
+            # 2) Answer each presented form with its own defaults.
+            form_steps = 0
+            while result.get("type") == "form":
+                form_steps += 1
+                if form_steps > MAX_FORM_STEPS:
+                    raise RuntimeError(
+                        f"config flow still presents forms after {MAX_FORM_STEPS} submissions"
+                    )
+                errors = result.get("errors")
+                if errors:
+                    step = result.get("step_id")
+                    raise RuntimeError(
+                        f"config flow step {step!r} rejected the submitted defaults: {errors}"
+                    )
+                user_input = build_user_input(result.get("data_schema"))
+                flow_id = result.get("flow_id")
                 if used_transport == "ws":
-                    msg_id = 2
+                    msg_id += 1
                     payload2 = {
                         "id": msg_id,
                         "type": "config_entries/flow/configure",
                         "flow_id": flow_id,
-                        "user_input": {},
+                        "user_input": user_input,
                     }
                     await ws.send_json(payload2)
                     frame2 = await _expect_raw_result(ws, msg_id)
@@ -164,38 +214,36 @@ async def run() -> int:  # noqa: PLR0912, PLR0915
                         err = frame2.get("error") or {}
                         if err.get("code") == "unknown_command":
                             # Fallback for older cores
-                            msg_id = 12
+                            msg_id += 1
                             payload2["id"] = msg_id
                             payload2["type"] = "config/flow/configure"
                             await ws.send_json(payload2)
                             frame2 = await _expect_raw_result(ws, msg_id)
                         if not bool(frame2.get("success")):
                             raise RuntimeError(f"WS command failed: {frame2}")
-                    result2 = frame2.get("result") or {}
+                    result = frame2.get("result") or {}
                 else:
-                    # HTTP configure step
+                    # The REST configure endpoint takes the user input as the
+                    # request body itself; wrapping it under a "user_input" key
+                    # reads as an unknown extra field and fails validation.
                     step_url = f"{base.rstrip('/')}/api/config/config_entries/flow/{flow_id}"
                     headers = {
                         "Authorization": f"Bearer {token}",
                         "Content-Type": "application/json",
                     }
-                    async with session.post(
-                        step_url, headers=headers, json={"user_input": {}}
-                    ) as resp:
+                    async with session.post(step_url, headers=headers, json=user_input) as resp:
                         if resp.status >= HTTP_ERROR_MIN_STATUS:
-                            raise RuntimeError(f"HTTP {resp.status} configuring flow")
-                        result2 = await resp.json()
-                # Accept create_entry or abort(single_instance_allowed)
-                rtype = result2.get("type")
-                if rtype == "abort":
-                    reason = result2.get("reason")
-                    if reason not in {"single_instance_allowed", "already_configured"}:
-                        print(f"Config flow aborted: {reason}", file=sys.stderr)
-                        return 2
-                elif rtype not in {"create_entry", "form"}:
-                    # Some cores return the created entry info directly
-                    pass
-            # else: other types are unexpected; continue to verification
+                            body = await resp.text()
+                            raise RuntimeError(f"HTTP {resp.status} configuring flow: {body}")
+                        result = await resp.json()
+
+            # A completed flow reports create_entry; an instance that already
+            # has its entry aborts, which is this script's job done as well.
+            if result.get("type") == "abort":
+                reason = result.get("reason")
+                if reason not in {"single_instance_allowed", "already_configured"}:
+                    print(f"Config flow aborted: {reason}", file=sys.stderr)
+                    return 2
 
             # 3) Verify by calling haventory/version
             msg_id = 99
