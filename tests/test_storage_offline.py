@@ -36,6 +36,9 @@ from homeassistant.helpers.storage import Store as HAStore
 #: is the payload that step rewrites.
 _STATUS_BACKFILL_VERSION = 5
 _ATTACHMENTS_BACKFILL_VERSION = 6
+#: The version from which a status ``color`` may be a ``#rrggbb`` literal rather
+#: than one of the ten tone tokens. Builds below it reject the literal.
+_HEX_STATUS_COLOUR_VERSION = 7
 
 
 @pytest.mark.asyncio
@@ -288,6 +291,49 @@ async def test_newer_schema_version_is_refused_and_store_untouched() -> None:
 
     # Nothing was rewritten: version, unknown fields and all.
     assert await raw_store.async_load() == pre_payload
+
+
+@pytest.mark.asyncio
+async def test_a_hex_status_colour_is_stamped_beyond_the_builds_that_refuse_it() -> None:
+    """The colour shape and the stamp have to move together.
+
+    A status ``color`` may be a ``#rrggbb`` literal, which earlier builds
+    validate against the ten tone tokens and reject. Rejecting a status
+    definition is not fatal there — it is skipped, and every item carrying its
+    slug reads back as the default status — so the store has to announce itself
+    as one those builds cannot read. Stamping the wider shape at a version they
+    accept is what turns a refusal into silent data loss.
+    """
+
+    hass = HomeAssistant()
+    key = "test_store_hex_status_colour_is_stamped"
+
+    written_by_this_build = {
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "items": {"i1": {"id": "i1", "name": "Drill", "status": "loaned", "attachments": []}},
+        "locations": {},
+        "statuses": {
+            "loaned": {
+                "slug": "loaned",
+                "label": "Loaned out",
+                "order": 1,
+                "color": "#3366cc",
+                "icon": "check",
+            }
+        },
+    }
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save(deepcopy(written_by_this_build))
+
+    # The last version whose colour vocabulary is tokens only.
+    reader = DomainStore(hass, key=key, version=_HEX_STATUS_COLOUR_VERSION - 1)
+
+    with pytest.raises(SchemaDowngradeError):
+        await reader.async_load()
+
+    # Refused without a rewrite: the colour and the item's status both survive
+    # for whichever build the user runs next.
+    assert await raw_store.async_load() == written_by_this_build
 
 
 @pytest.mark.asyncio
