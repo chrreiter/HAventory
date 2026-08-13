@@ -172,6 +172,87 @@ describe('validateForm', () => {
     const tags = ['Bolt', 'bolt', ...Array.from({ length: 49 }, (_, i) => `t${i}`)];
     expect(validateForm({ ...base(), name: 'A', tags })).toEqual([]);
   });
+
+  // Issue #437: the caps refuse growth past the stored item, never the stored
+  // item itself — so a legacy over-cap item can be saved, including by the
+  // edit that trims some of the excess, and only what an edit adds is capped.
+  describe('with a stored item as baseline', () => {
+    const legacyDescription = 'd'.repeat(4500);
+    const legacyTags = Array.from({ length: 55 }, (_, i) => `tag-${i}`);
+    const legacyFields = { note: 'v'.repeat(1200), ['k'.repeat(70)]: 'x' };
+    const legacy = () =>
+      makeItem({
+        name: 'Legacy',
+        description: legacyDescription,
+        tags: legacyTags,
+        custom_fields: legacyFields,
+      });
+
+    it('accepts the untouched form of a legacy over-cap item', () => {
+      expect(validateForm(formFromItem(legacy()), legacy())).toEqual([]);
+    });
+
+    it('accepts the edit that trims the excess without clearing it', () => {
+      const model = {
+        ...formFromItem(legacy()),
+        description: legacyDescription.slice(0, 4200),
+        tags: legacyTags.slice(0, 52),
+      };
+      expect(validateForm(model, legacy())).toEqual([]);
+    });
+
+    it('still refuses what the edit adds past the stored value', () => {
+      const item = legacy();
+      const grown = validateForm(
+        { ...formFromItem(item), description: legacyDescription + 'x' },
+        item,
+      );
+      expect(grown.map((e) => e.field)).toEqual(['description']);
+
+      const moreTags = validateForm(
+        { ...formFromItem(item), tags: [...legacyTags, 'one-more'] },
+        item,
+      );
+      expect(moreTags.map((e) => e.field)).toEqual(['tags']);
+
+      const newLongTag = validateForm(
+        { ...formFromItem(item), tags: [...legacyTags.slice(0, 10), 'x'.repeat(65)] },
+        item,
+      );
+      expect(newLongTag.map((e) => e.field)).toEqual(['tags']);
+    });
+
+    it('grandfathers stored custom-field keys and values but not new ones', () => {
+      const item = legacy();
+      expect(validateForm(formFromItem(item), item)).toEqual([]);
+
+      const model = formFromItem(item);
+      const grownValue = model.customFields.map((row) =>
+        row.key === 'note' ? { ...row, value: 'v'.repeat(1300) } : row,
+      );
+      expect(
+        validateForm({ ...model, customFields: grownValue }, item).some((e) =>
+          e.field.startsWith('custom:'),
+        ),
+      ).toBe(true);
+
+      const newLongKey = [
+        ...model.customFields,
+        newCustomFieldRow({ key: 'n'.repeat(65), value: 'v' }),
+      ];
+      expect(
+        validateForm({ ...model, customFields: newLongKey }, item).some((e) =>
+          e.field.startsWith('custom:'),
+        ),
+      ).toBe(true);
+    });
+
+    it('applies the caps absolutely on the add-item form', () => {
+      expect(
+        validateForm({ ...base(), name: 'A', description: 'd'.repeat(4001) }).map((e) => e.field),
+      ).toEqual(['description']);
+    });
+  });
 });
 
 describe('customFieldsFrom', () => {

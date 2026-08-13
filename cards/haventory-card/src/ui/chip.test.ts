@@ -163,6 +163,22 @@ describe('ui/chip: the shared fragment', () => {
     }
   });
 
+  // Selecting a status chip must not repaint it primary blue: the hue is what
+  // says which status was picked. The selected-state rule reads the same two
+  // custom properties every route into the chip's colour sets — a tone class
+  // or an inline #rrggbb declaration — and has to sit after .hv-chip.toggle.on,
+  // whose equal specificity would otherwise win on source order.
+  it('keeps a selected status chip on its own colour, for tones and literals alike', () => {
+    const css = String(chip.cssText).replace(/\s+/g, ' ');
+    expect(css).toMatch(
+      /\.hv-status-chip\.toggle\.on \{[^}]*background: var\(--hv-status-bg[^}]*color: var\(--hv-status-fg/,
+    );
+    const genericOn = css.indexOf('.hv-chip.toggle.on {');
+    const statusOn = css.indexOf('.hv-status-chip.toggle.on {');
+    expect(genericOn).toBeGreaterThan(-1);
+    expect(statusOn).toBeGreaterThan(genericOn);
+  });
+
   // A household names its own statuses, so a label can outrun the column it
   // sits in — the table's 112px status column hard-cut "Lent out to the ne".
   // A cell's own text-overflow cannot reach into an inline-flex chip, so the

@@ -253,3 +253,84 @@ def test_an_item_over_the_custom_field_cap_may_not_grow_further() -> None:
 
     with pytest.raises(ValidationError):
         repo.update_item(item.id, ItemUpdate(custom_fields_set={"one_more": 1}))
+
+
+def test_a_pre_cap_description_may_be_resent_or_trimmed_but_not_grown() -> None:
+    """Issue #437: the growth rule covers the scalar caps, not just the collections.
+
+    An editor saves the whole form, so an untouched over-cap description comes
+    back in the update payload — and the edit that trims some of the excess is
+    exactly the one a user digging out of it makes first.
+    """
+
+    legacy = "d" * (DESCRIPTION_MAX_LENGTH + 500)
+    repo = Repository()
+    item = repo.create_item(ItemCreate(name="Widget"))
+    repo._items_by_id[str(item.id)].description = legacy
+
+    # Resending the stored value unchanged is not growth.
+    same = repo.update_item(item.id, ItemUpdate(description=legacy))
+    assert same.description == legacy
+
+    # Neither is trimming that leaves it over the cap.
+    shorter = legacy[:-200]
+    trimmed = repo.update_item(item.id, ItemUpdate(description=shorter))
+    assert trimmed.description == shorter
+
+    # Growing it past what is stored is what the cap refuses.
+    with pytest.raises(ValidationError):
+        repo.update_item(item.id, ItemUpdate(description=shorter + "x"))
+
+
+def test_a_pre_cap_category_follows_the_same_growth_rule() -> None:
+    legacy = "c" * (CATEGORY_MAX_LENGTH + 30)
+    repo = Repository()
+    item = repo.create_item(ItemCreate(name="Widget"))
+    repo._items_by_id[str(item.id)].category = legacy
+
+    kept = repo.update_item(item.id, ItemUpdate(category=legacy))
+    assert kept.category == legacy
+    with pytest.raises(ValidationError):
+        repo.update_item(item.id, ItemUpdate(category=legacy + "x"))
+
+
+def test_pre_cap_custom_field_values_and_keys_are_grandfathered() -> None:
+    """A stored over-cap value or key may be resent or shrunk, never lengthened."""
+
+    long_key = "k" * (CUSTOM_FIELD_KEY_MAX_LENGTH + 8)
+    long_value = "v" * (CUSTOM_FIELD_VALUE_MAX_LENGTH + 300)
+    repo = Repository()
+    item = repo.create_item(ItemCreate(name="Widget"))
+    repo._items_by_id[str(item.id)].custom_fields = {long_key: long_value}
+
+    # The editor resends the whole map: stored key and value pass unchanged.
+    same = repo.update_item(item.id, ItemUpdate(custom_fields_set={long_key: long_value}))
+    assert same.custom_fields == {long_key: long_value}
+
+    # Shrinking an over-cap value is allowed; growing it is refused.
+    shorter = long_value[:-100]
+    trimmed = repo.update_item(item.id, ItemUpdate(custom_fields_set={long_key: shorter}))
+    assert trimmed.custom_fields[long_key] == shorter
+    with pytest.raises(ValidationError):
+        repo.update_item(item.id, ItemUpdate(custom_fields_set={long_key: shorter + "x"}))
+
+    # A key the item never carried is still held to the key cap.
+    with pytest.raises(ValidationError):
+        repo.update_item(
+            item.id, ItemUpdate(custom_fields_set={"n" * (CUSTOM_FIELD_KEY_MAX_LENGTH + 1): 1})
+        )
+
+
+def test_a_pre_cap_custom_field_map_may_be_resent_wholesale() -> None:
+    """A full-form save of a 60-key legacy item is not a request to grow it."""
+
+    legacy_fields = {f"k{i}": i for i in range(CUSTOM_FIELDS_MAX_KEYS + 10)}
+    repo = Repository()
+    item = repo.create_item(ItemCreate(name="Widget"))
+    repo._items_by_id[str(item.id)].custom_fields = dict(legacy_fields)
+
+    same = repo.update_item(item.id, ItemUpdate(custom_fields_set=dict(legacy_fields)))
+    assert len(same.custom_fields) == CUSTOM_FIELDS_MAX_KEYS + 10
+
+    with pytest.raises(ValidationError):
+        repo.update_item(item.id, ItemUpdate(custom_fields_set={**legacy_fields, "one_more": 1}))

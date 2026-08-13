@@ -572,6 +572,142 @@ def test_a_valid_cursor_still_pages_to_the_end() -> None:
     assert cursor is None
 
 
+# -----------------------------
+# low_stock_first pagination
+# -----------------------------
+
+GROUPED_CATALOG_SIZE = 10
+LOW_STOCK_ROWS = frozenset({2, 5, 7, 9})
+
+
+def _walk_pages(repo: Repository, *, flt: ItemFilter, sort: Sort, limit: int) -> list[str]:
+    """Page a filtered list to exhaustion and return the delivered ids in order."""
+
+    delivered: list[str] = []
+    cursor: str | None = None
+    for _ in range(50):
+        page = repo.list_items(flt=flt, sort=sort, limit=limit, cursor=cursor)
+        delivered.extend(str(it.id) for it in page["items"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+    assert cursor is None, "pagination never reached the end"
+    return delivered
+
+
+@pytest.mark.parametrize(
+    "sort",
+    [
+        Sort(field="updated_at", order="desc"),
+        Sort(field="name", order="asc"),
+        Sort(field="quantity", order="desc"),
+    ],
+)
+@pytest.mark.parametrize("limit", [1, 3, 4, 7])
+def test_low_stock_first_pages_deliver_every_item(sort: Sort, limit: int) -> None:
+    """Issue #435: paging with low_stock_first on delivers exactly ``total`` items.
+
+    The regroup used to break the (sort value, id) ordering the cursor scan
+    assumed: after the low-stock block every remaining item compared *before*
+    the cursor, so page two came back empty and most of the list was
+    unreachable while ``total`` still reported all of it.
+    """
+
+    repo = Repository()
+    for i in range(GROUPED_CATALOG_SIZE):
+        low = i in LOW_STOCK_ROWS
+        repo.create_item(
+            ItemCreate(
+                name=f"item-{i:02d}",
+                quantity=0 if low else 5,
+                low_stock_threshold=1 if low else None,
+            )
+        )
+
+    flt = ItemFilter(low_stock_first=True)
+    unpaginated = repo.list_items(flt=flt, sort=sort)
+    expected = [str(it.id) for it in unpaginated["items"]]
+    assert unpaginated["total"] == GROUPED_CATALOG_SIZE
+
+    delivered = _walk_pages(repo, flt=flt, sort=sort, limit=limit)
+    assert delivered == expected
+
+
+def test_low_stock_first_pages_deliver_every_item_on_identical_sort_values() -> None:
+    """The id tie-break carries a page boundary that lands inside one sort value."""
+
+    repo = Repository()
+    for i in range(9):
+        low = i % 3 == 0
+        repo.create_item(
+            ItemCreate(
+                name="same name",
+                quantity=0 if low else 5,
+                low_stock_threshold=1 if low else None,
+            )
+        )
+
+    flt = ItemFilter(low_stock_first=True)
+    sort = Sort(field="name", order="asc")
+    expected = [str(it.id) for it in repo.list_items(flt=flt, sort=sort)["items"]]
+
+    delivered = _walk_pages(repo, flt=flt, sort=sort, limit=2)
+    assert delivered == expected
+
+
+def test_low_stock_first_page_boundary_can_split_the_low_stock_block() -> None:
+    """A cursor minted inside the low-stock block resumes inside it, not past it."""
+
+    low_stock_block = 4
+    repo = Repository()
+    for i in range(6):
+        low = i < low_stock_block
+        repo.create_item(
+            ItemCreate(
+                name=f"item-{i}",
+                quantity=0 if low else 5,
+                low_stock_threshold=1 if low else None,
+            )
+        )
+
+    flt = ItemFilter(low_stock_first=True)
+    sort = Sort(field="name", order="asc")
+
+    page1 = repo.list_items(flt=flt, sort=sort, limit=3)
+    assert [it.name for it in page1["items"]] == ["item-0", "item-1", "item-2"]
+    assert isinstance(page1["next_cursor"], str)
+
+    page2 = repo.list_items(flt=flt, sort=sort, limit=3, cursor=page1["next_cursor"])
+    assert [it.name for it in page2["items"]] == ["item-3", "item-4", "item-5"]
+    assert page2["next_cursor"] is None
+
+
+def test_a_cursor_minted_under_low_stock_first_is_refused_without_it() -> None:
+    """The grouping is part of the order, so it is held to the sort's rule."""
+
+    low_stock_block = 2
+    repo = Repository()
+    for i in range(5):
+        repo.create_item(
+            ItemCreate(
+                name=f"item-{i}", quantity=0 if i < low_stock_block else 5, low_stock_threshold=1
+            )
+        )
+
+    sort = Sort(field="name", order="asc")
+    grouped = repo.list_items(flt=ItemFilter(low_stock_first=True), sort=sort, limit=2)
+    assert isinstance(grouped["next_cursor"], str)
+    with pytest.raises(ValidationError):
+        repo.list_items(sort=sort, limit=2, cursor=grouped["next_cursor"])
+
+    flat = repo.list_items(sort=sort, limit=2)
+    assert isinstance(flat["next_cursor"], str)
+    with pytest.raises(ValidationError):
+        repo.list_items(
+            flt=ItemFilter(low_stock_first=True), sort=sort, limit=2, cursor=flat["next_cursor"]
+        )
+
+
 def test_distinct_values_priced_against_a_filter_folds_case_variants() -> None:
     """One entry per casefolded category, and its matching_count is that group's."""
 

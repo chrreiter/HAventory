@@ -47,7 +47,10 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * The backend's input caps, mirrored so the editor refuses before the round
  * trip rather than showing a server error on save. These are the values in
  * `models.py`; a value the editor accepts and the backend refuses is the
- * failure mode to avoid, so they only ever move together.
+ * failure mode to avoid, so they only ever move together — and so does the
+ * rule they are applied under: caps refuse growth past the stored item, never
+ * the stored item itself, which is how the backend treats data that predates
+ * a cap.
  */
 const NAME_MAX_LENGTH = 120;
 const DESCRIPTION_MAX_LENGTH = 4000;
@@ -98,8 +101,16 @@ export function formFromItem(item: Item | null): ItemFormModel {
   };
 }
 
-/** Every problem with the model, in field order. Empty means it is saveable. */
-export function validateForm(model: ItemFormModel): FieldError[] {
+/**
+ * Every problem with the model, in field order. Empty means it is saveable.
+ *
+ * `original` is the stored item the form was built from, and the caps refuse
+ * *growth* past it, the way the backend's write path does: an item that
+ * predates a cap can be saved as it is — including by the edit that trims some
+ * of the excess — while anything the edit adds is held to the cap. Without
+ * `original` (the "add item" form) every cap is absolute.
+ */
+export function validateForm(model: ItemFormModel, original: Item | null = null): FieldError[] {
   const errors: FieldError[] = [];
   if (!model.name.trim()) {
     errors.push({ field: 'name', message: 'Name is required.' });
@@ -109,13 +120,21 @@ export function validateForm(model: ItemFormModel): FieldError[] {
       message: `Name is limited to ${NAME_MAX_LENGTH} characters.`,
     });
   }
-  if (model.description.length > DESCRIPTION_MAX_LENGTH) {
+  const storedDescription = original?.description ?? '';
+  if (
+    model.description.length > DESCRIPTION_MAX_LENGTH &&
+    model.description.length > storedDescription.length
+  ) {
     errors.push({
       field: 'description',
       message: `Description is limited to ${DESCRIPTION_MAX_LENGTH} characters.`,
     });
   }
-  if (model.category.trim().length > CATEGORY_MAX_LENGTH) {
+  const storedCategory = original?.category ?? '';
+  if (
+    model.category.trim().length > CATEGORY_MAX_LENGTH &&
+    model.category.trim().length > storedCategory.length
+  ) {
     errors.push({
       field: 'category',
       message: `Category is limited to ${CATEGORY_MAX_LENGTH} characters.`,
@@ -130,15 +149,17 @@ export function validateForm(model: ItemFormModel): FieldError[] {
   // Counted after normalization, the way the backend counts it: two casings of
   // one tag are one tag on both sides.
   const tags = normalizeTags(model.tags);
-  if (tags.length > TAGS_MAX_COUNT) {
+  const storedTags = normalizeTags(original?.tags ?? []);
+  if (tags.length > TAGS_MAX_COUNT && tags.length > storedTags.length) {
     errors.push({ field: 'tags', message: `An item can carry at most ${TAGS_MAX_COUNT} tags.` });
   }
-  if (tags.some((tag) => tag.length > TAG_MAX_LENGTH)) {
+  if (tags.some((tag) => tag.length > TAG_MAX_LENGTH && !storedTags.includes(tag))) {
     errors.push({
       field: 'tags',
       message: `Each tag is limited to ${TAG_MAX_LENGTH} characters.`,
     });
   }
+  const storedFields = original?.custom_fields ?? {};
   const seen = new Set<string>();
   for (const row of model.customFields) {
     const key = row.key.trim();
@@ -148,7 +169,7 @@ export function validateForm(model: ItemFormModel): FieldError[] {
       continue;
     }
     seen.add(key);
-    if (key.length > CUSTOM_FIELD_KEY_MAX_LENGTH) {
+    if (key.length > CUSTOM_FIELD_KEY_MAX_LENGTH && !(key in storedFields)) {
       errors.push({
         field: `custom:${row.id}`,
         message: `Field names are limited to ${CUSTOM_FIELD_KEY_MAX_LENGTH} characters.`,
@@ -160,14 +181,20 @@ export function validateForm(model: ItemFormModel): FieldError[] {
     if (row.type === 'date' && row.value.trim() !== '' && !DATE_RE.test(row.value.trim())) {
       errors.push({ field: `custom:${row.id}`, message: `"${key}" must be a date.` });
     }
-    if (row.type === 'string' && row.value.length > CUSTOM_FIELD_VALUE_MAX_LENGTH) {
+    const storedValue = storedFields[key];
+    const storedValueLength = typeof storedValue === 'string' ? storedValue.length : 0;
+    if (
+      row.type === 'string' &&
+      row.value.length > CUSTOM_FIELD_VALUE_MAX_LENGTH &&
+      row.value.length > storedValueLength
+    ) {
       errors.push({
         field: `custom:${row.id}`,
         message: `"${key}" is limited to ${CUSTOM_FIELD_VALUE_MAX_LENGTH} characters.`,
       });
     }
   }
-  if (seen.size > CUSTOM_FIELDS_MAX_KEYS) {
+  if (seen.size > CUSTOM_FIELDS_MAX_KEYS && seen.size > Object.keys(storedFields).length) {
     errors.push({
       field: 'customFields',
       message: `An item can carry at most ${CUSTOM_FIELDS_MAX_KEYS} custom fields.`,
