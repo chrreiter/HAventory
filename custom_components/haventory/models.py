@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 import unicodedata
 import uuid
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final, Literal, NotRequired, TypedDict
@@ -399,17 +399,29 @@ def validate_location_name(name: str) -> str:
     return trimmed
 
 
-def validate_custom_fields(values: dict[str, ScalarValue]) -> None:
-    """Validate custom field keys and values are scalars of allowed types."""
+def validate_custom_fields(
+    values: dict[str, ScalarValue], *, previous: Mapping[str, ScalarValue] | None = None
+) -> None:
+    """Validate custom field keys and values are scalars of allowed types.
+
+    ``previous`` is the map the item already carries, and the caps refuse
+    *growth* past it, the way :func:`validate_tags` treats its ``previous``: a
+    key the item already has is not refused for its length, a stored string
+    value may stay over the cap as long as the edit does not lengthen it, and
+    a patch carrying more keys than the cap passes when the item already
+    carried that many. Without ``previous`` (a brand-new item) every cap is
+    absolute.
+    """
 
     if not isinstance(values, dict):
         raise ValidationError("custom_fields must be a mapping of string keys to scalars")
-    if len(values) > CUSTOM_FIELDS_MAX_KEYS:
+    prev = previous or {}
+    if len(values) > CUSTOM_FIELDS_MAX_KEYS and len(values) > len(prev):
         raise ValidationError(f"custom_fields must have at most {CUSTOM_FIELDS_MAX_KEYS} keys")
     for key, value in values.items():
         if not isinstance(key, str) or not key:
             raise ValidationError("custom_fields keys must be non-empty strings")
-        if len(key) > CUSTOM_FIELD_KEY_MAX_LENGTH:
+        if len(key) > CUSTOM_FIELD_KEY_MAX_LENGTH and key not in prev:
             raise ValidationError(
                 f"custom_fields keys must be at most {CUSTOM_FIELD_KEY_MAX_LENGTH} characters"
             )
@@ -418,9 +430,12 @@ def validate_custom_fields(values: dict[str, ScalarValue]) -> None:
                 "custom_fields values must be scalar (string, number, or boolean)"
             )
         if isinstance(value, str) and len(value) > CUSTOM_FIELD_VALUE_MAX_LENGTH:
-            raise ValidationError(
-                f"custom_fields values must be at most {CUSTOM_FIELD_VALUE_MAX_LENGTH} characters"
-            )
+            prev_value = prev.get(key)
+            if not isinstance(prev_value, str) or len(value) > len(prev_value):
+                raise ValidationError(
+                    f"custom_fields values must be at most "
+                    f"{CUSTOM_FIELD_VALUE_MAX_LENGTH} characters"
+                )
 
 
 def validate_tags(tags: list[str] | None, *, previous: Collection[str] = ()) -> list[str]:
@@ -856,18 +871,27 @@ def _is_int_not_bool(value: object) -> bool:
 
 
 def _validate_optional_text(
-    value: object, field_name: str, *, max_length: int | None = None
+    value: object, field_name: str, *, max_length: int | None = None, previous: str | None = None
 ) -> None:
     """Ensure an optional free-text field is a string or None, within its cap.
 
     Non-text values (list/dict/number) would otherwise reach the search-index
     build and crash mid-way, leaving a partially-indexed item.
+
+    ``previous`` is the value the item already carries, and the cap refuses
+    *growth* past it: a value over the cap but no longer than the stored one is
+    accepted, so an item that predates the cap can still be edited — including
+    by the edit that trims the excess without clearing it in one go.
     """
     if value is None:
         return
     if not isinstance(value, str):
         raise ValidationError(f"{field_name} must be a string or null")
-    if max_length is not None and len(value) > max_length:
+    if (
+        max_length is not None
+        and len(value) > max_length
+        and (previous is None or len(value) > len(previous))
+    ):
         raise ValidationError(f"{field_name} must be at most {max_length} characters")
 
 
@@ -987,7 +1011,10 @@ def _update_name_and_description(new_item: Item, update: ItemUpdate) -> None:
         new_item.name = trimmed
     if "description" in update:
         _validate_optional_text(
-            update["description"], "description", max_length=DESCRIPTION_MAX_LENGTH
+            update["description"],
+            "description",
+            max_length=DESCRIPTION_MAX_LENGTH,
+            previous=new_item.description,
         )
         new_item.description = update["description"]
 
@@ -1047,7 +1074,12 @@ def _update_tags_category_threshold(new_item: Item, update: ItemUpdate) -> None:
     if "tags" in update:
         new_item.tags = validate_tags(update.get("tags") or [], previous=new_item.tags)
     if "category" in update:
-        _validate_optional_text(update["category"], "category", max_length=CATEGORY_MAX_LENGTH)
+        _validate_optional_text(
+            update["category"],
+            "category",
+            max_length=CATEGORY_MAX_LENGTH,
+            previous=new_item.category,
+        )
         new_item.category = update["category"]
     if "low_stock_threshold" in update:
         thr = update["low_stock_threshold"]
@@ -1061,7 +1093,7 @@ def _update_custom_fields(new_item: Item, update: ItemUpdate) -> None:
     to_unset = update.get("custom_fields_unset", [])
     before = len(new_item.custom_fields)
     if to_set:
-        validate_custom_fields(to_set)
+        validate_custom_fields(to_set, previous=new_item.custom_fields)
         new_item.custom_fields = {**new_item.custom_fields, **to_set}
     if to_unset:
         new_item.custom_fields = {
@@ -1258,7 +1290,7 @@ def item_inspection_is_overdue(item: Item, *, today: str = "") -> bool:
 def _parse_location_selection(location_ids: Sequence[str]) -> list[uuid.UUID]:
     """The selected location ids as UUIDs, dropping any that will not parse.
 
-    An unparseable id contributes nothing rather than raising, so a selection
+    An unparsable id contributes nothing rather than raising, so a selection
     of only bad ids matches nothing — which is what a single bad id has always
     done. The parse belongs here rather than in the per-item predicate: the
     selection is constant for a whole query, and rebuilding the same UUID once

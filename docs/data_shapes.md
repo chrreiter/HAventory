@@ -402,9 +402,11 @@ With a filter on the request, each category and tag entry also carries `matching
   empty. Envelope problems (bad/missing versions, malformed `items`/`locations`, a
   `schema_version` newer than supported), invalid entities, duplicate ids, and broken
   references (e.g. an item's `location_id` with no matching location) all surface here.
-  Every import-side rule the WebSocket API enforces on a write is enforced here too — the
-  input caps, the 120-character name limit and the `due_date` ⇔ `checked_out` invariant — so
-  a document cannot introduce an entity the API would refuse.
+  A document is held to what `Repository.load_state` accepts, not to the write path's input
+  caps: the rules every release has enforced — the 120-character name limit, canonical
+  timestamps, the `due_date` ⇔ `checked_out` invariant, statuses the document can name — are
+  checked, and the free-text/collection caps are not, because a store written before those
+  caps existed exports data that must import back. See "Input caps" below.
 - `warnings` is present on every preview, empty or not, valid or not: one shape to render.
 
 `ImportWarning` — a non-blocking finding about an otherwise usable document:
@@ -497,12 +499,18 @@ a cap is `validation_error`, at a cap is accepted:
 | each string `custom_fields` value | 1000 characters |
 
 The caps refuse *growth*, not every edit: an item that predates them — one loaded from a
-store written by an earlier release — can still be edited, including by the edit that removes
-the excess. What it cannot do is add to a collection already over its cap.
+store written by an earlier release — can still be edited and saved as it is, including by
+the edit that trims part of the excess without clearing all of it. What an edit cannot do is
+make an over-cap value larger: lengthen an over-cap text past what is stored, add to a
+collection already over its cap, or introduce a *new* value over a cap. The card's editor
+applies the same rule client-side, so a legacy item is never trapped behind its own history.
 
-The same caps, the 120-character name limit and the `due_date` ⇔ `checked_out` invariant are
-applied to `import/preview` as well, so a document cannot introduce an entity the WebSocket
-API would refuse. They are reported per field in `report.errors`, as a refused import rather
-than as dropped rows. `Repository.load_state` deliberately does **not** re-validate: a store
-written before the caps existed is legal data this integration itself wrote, and refusing it
-would turn an upgrade into a backend that will not start.
+`import/preview` and `import/execute` do **not** apply these caps at all: a document is a
+restore, held to exactly what `Repository.load_state` accepts. `load_state` deliberately does
+not re-validate — a store written before the caps existed is legal data this integration
+itself wrote, and refusing it would turn an upgrade into a backend that will not start — and
+an export of such a store must import back, or a backup stops being one. What import *does*
+refuse is data no store can legally carry: structural problems, non-v4 UUIDs, the
+120-character name limit, non-canonical timestamps, unknown statuses, and a `due_date` on an
+item that is not checked out, each reported per field in `report.errors` as a refused import
+rather than as dropped rows.

@@ -686,27 +686,17 @@ def _envelope(item: dict) -> dict:
     ("overrides", "path"),
     [
         ({"name": "n" * (NAME_MAX_LENGTH + 1)}, "items[0].name"),
-        ({"description": "d" * (DESCRIPTION_MAX_LENGTH + 1)}, "items[0].description"),
-        ({"category": "c" * (CATEGORY_MAX_LENGTH + 1)}, "items[0].category"),
-        ({"tags": ["t" * (TAG_MAX_LENGTH + 1)]}, "items[0].tags"),
-        ({"tags": [f"t{i}" for i in range(TAGS_MAX_COUNT + 1)]}, "items[0].tags"),
-        (
-            {"custom_fields": {f"k{i}": i for i in range(CUSTOM_FIELDS_MAX_KEYS + 1)}},
-            "items[0].custom_fields",
-        ),
-        ({"custom_fields": {"k" * (CUSTOM_FIELD_KEY_MAX_LENGTH + 1): 1}}, "items[0].custom_fields"),
-        (
-            {"custom_fields": {"k": "v" * (CUSTOM_FIELD_VALUE_MAX_LENGTH + 1)}},
-            "items[0].custom_fields.k",
-        ),
         ({"due_date": "2026-01-01"}, "items[0].due_date"),
     ],
 )
-def test_preview_holds_an_imported_item_to_the_write_path_rules(overrides: dict, path: str) -> None:
-    """A document is the one way an entity the WS API would refuse could arrive.
+def test_preview_holds_an_imported_item_to_the_always_enforced_rules(
+    overrides: dict, path: str
+) -> None:
+    """Rules every release has enforced on writes still refuse a document.
 
-    Reported per field rather than dropped, because ``plan_import`` reports to
-    the caller — a refused import, not lost rows.
+    No store can carry data that violates them, so a document that does was
+    never an export of one. Reported per field rather than dropped, because
+    ``plan_import`` reports to the caller — a refused import, not lost rows.
     """
 
     repo = Repository()
@@ -717,6 +707,64 @@ def test_preview_holds_an_imported_item_to_the_write_path_rules(overrides: dict,
     assert report["valid"] is False
     assert target is None
     assert path in {e["path"] for e in report["errors"]}
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"description": "d" * (DESCRIPTION_MAX_LENGTH + 1)},
+        {"category": "c" * (CATEGORY_MAX_LENGTH + 1)},
+        {"tags": ["t" * (TAG_MAX_LENGTH + 1)]},
+        {"tags": [f"t{i}" for i in range(TAGS_MAX_COUNT + 1)]},
+        {"custom_fields": {f"k{i}": i for i in range(CUSTOM_FIELDS_MAX_KEYS + 1)}},
+        {"custom_fields": {"k" * (CUSTOM_FIELD_KEY_MAX_LENGTH + 1): 1}},
+        {"custom_fields": {"k": "v" * (CUSTOM_FIELD_VALUE_MAX_LENGTH + 1)}},
+    ],
+)
+def test_preview_accepts_pre_cap_data_the_load_path_accepts(overrides: dict) -> None:
+    """Issue #437: a document is a restore, as tolerant as ``load_state``.
+
+    Every one of these values is legal in a store written before the caps
+    existed, loads fine and exports unchanged — so the export has to import
+    back, or the backup this build wrote cannot be restored.
+    """
+
+    repo = Repository()
+    report, target = ie.plan_import(
+        repo, _envelope(_item_doc(**overrides)), current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert report["valid"] is True, report["errors"]
+    assert target is not None
+
+
+def test_a_legacy_over_cap_item_round_trips_through_export_and_import() -> None:
+    """The #437 acceptance path: load pre-cap data, export it, import the export."""
+
+    repo = Repository()
+    item = repo.create_item({"name": "Ghost"})
+    # A store written before the caps existed: mutate the persisted dict the way
+    # no current edit can, then load it — which deliberately re-validates nothing.
+    state = repo.export_state()
+    stored = state["items"][str(item.id)]
+    stored["description"] = "d" * (DESCRIPTION_MAX_LENGTH + 500)
+    stored["tags"] = [f"tag-{i}" for i in range(TAGS_MAX_COUNT + 5)]
+    stored["custom_fields"] = {"note": "v" * (CUSTOM_FIELD_VALUE_MAX_LENGTH + 200)}
+    repo.load_state(state)
+
+    document = ie.build_export_document(repo, schema_version=CURRENT_SCHEMA_VERSION)
+
+    # Restore onto a fresh install: nothing pre-exists to grandfather against.
+    fresh = Repository()
+    report, target = ie.plan_import(fresh, document, current_schema_version=CURRENT_SCHEMA_VERSION)
+    assert report["valid"] is True, report["errors"]
+    assert target is not None
+
+    fresh.load_state(target)
+    restored = fresh.get_item(item.id)
+    assert restored.description == "d" * (DESCRIPTION_MAX_LENGTH + 500)
+    assert len(restored.tags) == TAGS_MAX_COUNT + 5
+    assert restored.custom_fields["note"] == "v" * (CUSTOM_FIELD_VALUE_MAX_LENGTH + 200)
 
 
 def test_preview_reports_a_long_location_name() -> None:
