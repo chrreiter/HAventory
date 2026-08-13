@@ -39,6 +39,30 @@ function importButtonLabel(itemWrites: number, locationWrites: number): string {
   return parts.length ? `Import ${parts.join(' · ')}` : 'Import';
 }
 
+/**
+ * What the completed import did, as one sentence.
+ *
+ * Every dimension that moved is named and every dimension that did not is
+ * dropped, so a locations-only document reports its location updates instead
+ * of a row of zeros — the run that motivated this reported "Imported 0 new,
+ * updated 0" after doing exactly what its preview promised. An import that
+ * changed nothing says so in words rather than in numbers.
+ */
+export function importSummaryLine(summary: ImportSummary): string {
+  const added: string[] = [];
+  if (summary.items.add) added.push(counted(summary.items.add, 'item'));
+  if (summary.locations.add) added.push(counted(summary.locations.add, 'location'));
+  const updated: string[] = [];
+  if (summary.items.update) updated.push(counted(summary.items.update, 'item'));
+  if (summary.locations.update) updated.push(counted(summary.locations.update, 'location'));
+  const parts: string[] = [];
+  if (added.length) parts.push(`added ${added.join(' and ')}`);
+  if (updated.length) parts.push(`updated ${updated.join(' and ')}`);
+  if (!parts.length) return 'Nothing needed changing — the inventory already matched the file.';
+  const sentence = parts.join(', ');
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+}
+
 const POLICIES: { id: ImportPolicy; title: string; description: string }[] = [
   {
     id: 'merge',
@@ -671,10 +695,7 @@ export class HVImportSheet extends LitElement {
       <div class="body">
         <div class="alert ok" data-testid="import-summary">
           <span class="glyph">${icon('checkCircle', 18)}</span>
-          <span>
-            Imported ${summary.items.add} new, updated ${summary.items.update},
-            ${counted(summary.locations.add, 'location')} added.
-          </span>
+          <span>${importSummaryLine(summary)}</span>
         </div>
         <div class="fine">
           The inventory now holds ${counted(summary.totals.items_total, 'item')} across

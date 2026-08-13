@@ -368,13 +368,37 @@ describe('hv-import-sheet: summary', () => {
     });
 
     expect(q(el, '[data-testid="import-summary"]')?.textContent?.replace(/\s+/g, ' ')).toContain(
-      'Imported 128 new, updated 64',
+      'Added 128 items and 4 locations, updated 64 items.',
     );
     expect(el.shadowRoot?.textContent?.replace(/\s+/g, ' ')).toContain('250 items across 13 locations');
 
     (q(el, '[data-testid="import-done"]') as HTMLButtonElement).click();
     expect(cancels).toBe(1);
     expect(el.open).toBe(false);
+  });
+
+  // Issue #439: a locations-only document used to complete with every number on
+  // the screen at zero, because the sentence had no slot for location updates.
+  it('reports a locations-only import instead of a row of zeros', async () => {
+    const s = summary();
+    s.items = { total: 0, add: 0, update: 0, conflict: 0, unchanged: 0 };
+    s.locations = { total: 1, add: 0, update: 1, conflict: 0, unchanged: 0 };
+    const el = await mount({ summary: s });
+
+    expect(q(el, '[data-testid="import-summary"]')?.textContent?.replace(/\s+/g, ' ')).toContain(
+      'Updated 1 location.',
+    );
+  });
+
+  it('says in words when nothing needed changing', async () => {
+    const s = summary();
+    s.items = { total: 2, add: 0, update: 0, conflict: 0, unchanged: 2 };
+    s.locations = { total: 1, add: 0, update: 0, conflict: 0, unchanged: 1 };
+    const el = await mount({ summary: s });
+
+    expect(q(el, '[data-testid="import-summary"]')?.textContent?.replace(/\s+/g, ' ')).toContain(
+      'Nothing needed changing',
+    );
   });
 });
 
