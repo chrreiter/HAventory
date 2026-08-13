@@ -349,6 +349,10 @@ export class Store {
   private treeRefreshHandle: ReturnType<typeof setTimeout> | null = null;
   private facetRefreshHandle: ReturnType<typeof setTimeout> | null = null;
   private areasRefreshHandle: ReturnType<typeof setTimeout> | null = null;
+  /** Identifies the newest facet-tally request, so a superseded one cannot land. */
+  private distinctRefreshSeq = 0;
+  /** Identifies the newest tree refetch, for the same reason. */
+  private treeRefreshSeq = 0;
   /** Identifies the newest subscribe round, so a superseded one stops reporting. */
   private subscribeRound = 0;
   /** Subscribes in the current round that have not resolved or been refused yet. */
@@ -891,6 +895,12 @@ export class Store {
 
   /** Refresh distinct categories/tags with counts (source for autocomplete). */
   async refreshDistinctValues() {
+    // Not every caller is debounced — item events land beside filter changes —
+    // so two of these can be in flight against different filters, and run()'s
+    // retries mean the response that lands last is not the one issued last.
+    // The tallies must price the newest filter, so a superseded response is
+    // dropped rather than assigned.
+    const seq = ++this.distinctRefreshSeq;
     const counting = this.facetCountFilters();
     // Priced whenever *anything* is narrowing the list, including a filter this
     // measurement then drops. Gating on what survives the drop is what left a
@@ -902,6 +912,7 @@ export class Store {
     const distinct = (await this.run(() =>
       this.ws.distinctValues(filtered ? toWireFilter(counting) : undefined),
     )) as DistinctValues;
+    if (seq !== this.distinctRefreshSeq) return;
     this.serverDistinct = distinct;
     this.serverDistinctPriced = filtered;
     // A draft the backend now knows about is no longer a draft.
@@ -1092,18 +1103,25 @@ export class Store {
   }
 
   async refreshLocationTree() {
+    // Superseded responses are dropped, the way refreshDistinctValues drops
+    // them: the per-location counts ride the tree, so a stale answer would
+    // stick an older filter's numbers on the sidebar just the same.
+    const seq = ++this.treeRefreshSeq;
     const counting = this.locationCountFilters();
     // Same rule as the facet tallies, and the same reason: a lone location
     // filter would otherwise leave this list bare while the two beside it read
     // a pair.
     const filtered = activeFilterCount(this.state.value.filters) > 0;
     const tree = await this.run(() => this.ws.getLocationTree(filtered ? toWireFilter(counting) : undefined));
+    if (seq !== this.treeRefreshSeq) return;
     // Sorted once here so every consumer — sidebar, pickers, organize dialog —
     // sees the same order; the API returns nodes in insertion order.
     this.stateObs.set({ locationTreeCache: sortLocationTree((tree ?? []) as LocationTreeNode[]) });
     // The tree covers filed items only, so the whole-inventory match count comes
     // separately; "No location" is then the remainder, with no third query.
-    this.stateObs.set({ locationMatchTotal: filtered ? await this.countMatching(counting) : null });
+    const matchTotal = filtered ? await this.countMatching(counting) : null;
+    if (seq !== this.treeRefreshSeq) return;
+    this.stateObs.set({ locationMatchTotal: matchTotal });
   }
 
   async refreshLocationsFlat() {

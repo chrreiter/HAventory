@@ -792,6 +792,96 @@ describe('Store', () => {
     expect(after).toBe(before + 1);
   });
 
+  // Issue #440: not every facet refetch is debounced — an item event lands
+  // beside a filter change — so two can be in flight at once, and the response
+  // that lands last is not the one that was issued last. The newest request is
+  // the only one allowed to assign.
+  it('drops a facet response from a superseded request', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1', category: 'Fresh' })] });
+    const store = new Store(hass);
+    await store.init();
+
+    const original = hass.callWS.bind(hass);
+    let release: (() => void) | null = null;
+    let intercepted = false;
+    hass.callWS = (async (msg: Record<string, unknown>) => {
+      if (String(msg.type) === 'haventory/distinct_values' && !intercepted) {
+        intercepted = true;
+        // The older request: answer late, with data the inventory no longer holds.
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return { categories: [{ value: 'Stale', count: 9 }], tags: [], custom_field_keys: [] };
+      }
+      return original(msg);
+    }) as typeof hass.callWS;
+
+    const first = store.refreshDistinctValues();
+    const second = store.refreshDistinctValues();
+    await second;
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([
+      { value: 'Fresh', count: 1 },
+    ]);
+
+    await vi.waitUntil(() => release !== null);
+    release!();
+    await first;
+    // The late answer belongs to a superseded request and must not land.
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([
+      { value: 'Fresh', count: 1 },
+    ]);
+  });
+
+  // The per-location counts ride the tree, so it has the same overlap and gets
+  // the same guard.
+  it('drops a tree response from a superseded refetch', async () => {
+    const garage = {
+      id: 'garage',
+      name: 'Garage',
+      parent_id: null,
+      area_id: null,
+      path: { id_path: ['garage'], name_path: ['Garage'], display_path: 'Garage', sort_key: 'garage' },
+    };
+    const hass = makeMockHass({ items: [], locations: [garage] });
+    const store = new Store(hass);
+    await store.init();
+
+    const original = hass.callWS.bind(hass);
+    let release: (() => void) | null = null;
+    let intercepted = false;
+    hass.callWS = (async (msg: Record<string, unknown>) => {
+      if (String(msg.type) === 'haventory/location/tree' && !intercepted) {
+        intercepted = true;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return [
+          {
+            id: 'stale',
+            name: 'Stale',
+            parent_id: null,
+            area_id: null,
+            path: { id_path: ['stale'], name_path: ['Stale'], display_path: 'Stale', sort_key: 'stale' },
+            direct_item_count: 0,
+            subtree_item_count: 0,
+            children: [],
+          },
+        ];
+      }
+      return original(msg);
+    }) as typeof hass.callWS;
+
+    const first = store.refreshLocationTree();
+    const second = store.refreshLocationTree();
+    await second;
+    expect(store.state.value.locationTreeCache?.map((n) => n.name)).toEqual(['Garage']);
+
+    await vi.waitUntil(() => release !== null);
+    release!();
+    await first;
+    expect(store.state.value.locationTreeCache?.map((n) => n.name)).toEqual(['Garage']);
+  });
+
   it('gives a draft the priced shape once the server priced the rest', async () => {
     const hass = makeMockHass({ items: [makeItem({ id: '1', category: 'Tools', checked_out: true })] });
     const store = new Store(hass);
