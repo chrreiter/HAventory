@@ -1625,7 +1625,10 @@ class Repository:
         sorted_items = sort_items(filtered, sort)
         # Optional preference: group low-stock items first without filtering, while
         # preserving the selected primary ordering within groups (stable sort).
-        if flt and flt.get("low_stock_first"):
+        # The grouping is part of the order the cursor must describe, so it is
+        # handed to _paginate rather than left as a local rearrangement.
+        low_stock_first = bool(flt and flt.get("low_stock_first"))
+        if low_stock_first:
             sorted_items.sort(key=lambda it: not self._is_low_stock(it))
 
         # Normalize sort for cursor tracking
@@ -1640,7 +1643,9 @@ class Repository:
             # No pagination requested
             return {"items": sorted_items, "next_cursor": None, "total": total}
 
-        page, next_cursor = self._paginate(sorted_items, sort, limit, cursor)
+        page, next_cursor = self._paginate(
+            sorted_items, sort, limit, cursor, low_stock_first=low_stock_first
+        )
         return {"items": page, "next_cursor": next_cursor, "total": total}
 
     # -----------------------------
@@ -2091,25 +2096,42 @@ class Repository:
         # timestamps sort lexicographically, so the stored string is the key.
         return item.created_at if field == "created_at" else item.updated_at
 
-    def _tuple_cmp(self, a: tuple[str | int, str], b: tuple[str | int, str], order: str) -> int:
+    def _tuple_cmp(
+        self, a: tuple[int, str | int, str], b: tuple[int, str | int, str], order: str
+    ) -> int:
         asc = order == "asc"
+        # group — the low_stock_first block sits in front of the rest whatever
+        # the primary order is, so the group compares ascending unconditionally.
+        # Without that grouping every item carries group 0 and this is a no-op.
+        if a[0] != b[0]:
+            return -1 if a[0] < b[0] else 1
         # primary — within one sort field both values share a type; the str()
         # fallback keeps a mixed comparison (corrupt cursor) total instead of
         # raising TypeError.
-        a0, b0 = a[0], b[0]
-        if a0 != b0:
-            if isinstance(a0, int) and isinstance(b0, int):
-                primary_less = a0 < b0
+        a1, b1 = a[1], b[1]
+        if a1 != b1:
+            if isinstance(a1, int) and isinstance(b1, int):
+                primary_less = a1 < b1
             else:
-                primary_less = str(a0) < str(b0)
+                primary_less = str(a1) < str(b1)
             return -1 if (primary_less == asc) else 1
         # tie-break on id asc
-        if a[1] == b[1]:
+        if a[2] == b[2]:
             return 0
-        return -1 if a[1] < b[1] else 1
+        return -1 if a[2] < b[2] else 1
+
+    def _low_stock_group(self, item: Item) -> int:
+        """Which low_stock_first block an item sits in: 0 low-stock, 1 the rest."""
+        return 0 if self._is_low_stock(item) else 1
 
     def _paginate(
-        self, items_sorted: list[Item], sort: Sort, limit: int, cursor: str | None
+        self,
+        items_sorted: list[Item],
+        sort: Sort,
+        limit: int,
+        cursor: str | None,
+        *,
+        low_stock_first: bool = False,
     ) -> tuple[list[Item], str | None]:
         start_index = 0
         order = sort.get("order", "desc")
@@ -2134,6 +2156,14 @@ class Repository:
                 raise ValidationError(
                     "cursor was issued for a different sort; restart pagination without it"
                 )
+            # low_stock_first reorders the list the same way a sort does, so a
+            # cursor minted under the other setting describes positions in a
+            # list this request is not looking at — refuse it the same way.
+            if bool(cursor_info.get("low_stock_first", False)) != low_stock_first:
+                raise ValidationError(
+                    "cursor was issued under a different low_stock_first setting; "
+                    "restart pagination without it"
+                )
             last_key = cursor_info.get("last_sort_key")
             last_id = cursor_info.get("last_id")
             if (
@@ -2142,13 +2172,17 @@ class Repository:
                 or not isinstance(last_key, str | int)
             ):
                 raise ValidationError("cursor is not a valid pagination cursor")
+            last_group = cursor_info.get("last_group", 0) if low_stock_first else 0
+            if isinstance(last_group, bool) or last_group not in (0, 1):
+                raise ValidationError("cursor is not a valid pagination cursor")
             # Find first item strictly after the cursor tuple. When nothing
             # compares after it (e.g. the tail was deleted between pages), the
             # page is empty — not page one again.
-            needle: tuple[str | int, str] = (last_key, last_id)
+            needle: tuple[int, str | int, str] = (last_group, last_key, last_id)
             start_index = len(items_sorted)
             for idx, it in enumerate(items_sorted):
-                tup = (self._primary_sort_value(it, sort), str(it.id))
+                group = self._low_stock_group(it) if low_stock_first else 0
+                tup = (group, self._primary_sort_value(it, sort), str(it.id))
                 if self._tuple_cmp(tup, needle, order) > 0:
                     start_index = idx
                     break
@@ -2160,11 +2194,14 @@ class Repository:
             return page, None
 
         last_item = page[-1]
-        cursor_payload = {
+        cursor_payload: dict[str, Any] = {
             "sort": {"field": sort.get("field"), "order": sort.get("order")},
             "last_sort_key": self._primary_sort_value(last_item, sort),
             "last_id": str(last_item.id),
         }
+        if low_stock_first:
+            cursor_payload["low_stock_first"] = True
+            cursor_payload["last_group"] = self._low_stock_group(last_item)
         return page, self._encode_cursor(cursor_payload)
 
     # -----------------------------

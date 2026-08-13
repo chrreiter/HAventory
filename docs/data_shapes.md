@@ -281,11 +281,14 @@ is accepted the moment it is declared.
 - `cursor` is an opaque base64url-encoded JSON with last tuple and sort metadata; pass it back unchanged.
 - A cursor that cannot be honoured is `validation_error`, never a silent restart at page one:
   empty, undecodable, longer than 2048 characters, missing `last_id` / `last_sort_key`, or
-  minted under a different `sort` than the request carries. Restart pagination by omitting
-  `cursor` — sending `""` is refused, because a caller who meant page one had no reason to
-  send the key at all.
+  minted under a different `sort` — or a different `low_stock_first` setting — than the
+  request carries. Restart pagination by omitting `cursor` — sending `""` is refused, because
+  a caller who meant page one had no reason to send the key at all.
 - Changing the sort means dropping the cursor. A cursor addresses a position in one specific
   ordering, and honouring it against another would silently return a page from neither.
+  `filter.low_stock_first` changes the ordering the same way — it splits the list into a
+  low-stock block and the rest, sorted within each — so the cursor carries the item's block
+  beside its sort key, and flipping the setting mid-walk drops the cursor too.
 
 ### Stats
 
