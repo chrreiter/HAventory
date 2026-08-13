@@ -21,7 +21,7 @@ from custom_components.haventory.const import (
     DOMAIN,
 )
 from custom_components.haventory.exceptions import SchemaDowngradeError, StorageError
-from custom_components.haventory.migrations import migrate, migrate_5_to_6
+from custom_components.haventory.migrations import migrate, migrate_5_to_6, migrate_6_to_7
 from custom_components.haventory.storage import (
     CURRENT_SCHEMA_VERSION,
     STORE_COLLECTIONS,
@@ -364,3 +364,68 @@ def test_v5_to_v6_is_idempotent() -> None:
     twice = migrate_5_to_6(deepcopy(once))
 
     assert twice == once
+
+
+#: The version from which a status ``color`` may be a ``#rrggbb`` literal rather
+#: than one of the ten tone tokens, and the one below it.
+_HEX_STATUS_COLOUR_VERSION = 7
+_TOKEN_ONLY_COLOUR_VERSION = _HEX_STATUS_COLOUR_VERSION - 1
+
+
+def _v6_payload_with_token_colour() -> dict[str, Any]:
+    """A v6 store: every status colour is a tone token, which v6 and v7 both read."""
+
+    return {
+        "schema_version": _TOKEN_ONLY_COLOUR_VERSION,
+        "items": {"i1": {"id": "i1", "name": "Drill", "status": "loaned", "attachments": []}},
+        "locations": {"l1": {"id": "l1", "name": "Garage"}},
+        "statuses": {
+            "ok": {"slug": "ok", "label": "OK", "order": 0, "color": "green", "icon": "check"},
+            "loaned": {
+                "slug": "loaned",
+                "label": "Loaned out",
+                "order": 1,
+                "color": "blue",
+                "icon": "check",
+            },
+        },
+    }
+
+
+def test_v6_to_v7_changes_nothing_but_the_stamp() -> None:
+    """v7 admits a wider colour; it does not rewrite what v6 already stored."""
+
+    payload = _v6_payload_with_token_colour()
+    before = deepcopy(payload)
+
+    out = migrate(
+        payload,
+        from_version=_TOKEN_ONLY_COLOUR_VERSION,
+        to_version=_HEX_STATUS_COLOUR_VERSION,
+    )
+
+    assert out["schema_version"] == _HEX_STATUS_COLOUR_VERSION
+    for key in ("items", "locations", "statuses"):
+        assert out[key] == before[key]
+
+
+def test_v6_to_v7_is_idempotent() -> None:
+    """The step itself, re-applied — not the driver, which would skip it."""
+
+    payload = _v6_payload_with_token_colour()
+
+    once = migrate_6_to_7(deepcopy(payload))
+    twice = migrate_6_to_7(deepcopy(once))
+
+    assert twice == once
+
+
+def test_v6_to_v7_does_not_alias_the_payload_it_was_given() -> None:
+    """A no-op step still copies, or a caller's dict is the migrated one."""
+
+    payload = _v6_payload_with_token_colour()
+
+    out = migrate_6_to_7(payload)
+    out["statuses"]["loaned"]["color"] = "#3366cc"
+
+    assert payload["statuses"]["loaned"]["color"] == "blue"
