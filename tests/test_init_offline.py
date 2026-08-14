@@ -8,9 +8,15 @@ from copy import deepcopy
 import custom_components.haventory as haven_init
 import pytest
 from custom_components.haventory.const import (
+    CONF_ALLOW_LOSSY_LOAD,
     CONF_CARD_TITLE,
     CONF_QUICK_FILTERS,
+    CORRUPT_BACKUP_STORAGE_KEY,
     DEFAULT_CARD_TITLE,
+    ISSUE_CORRUPT_SCHEMA_VERSION,
+    ISSUE_CORRUPT_STORE,
+    ISSUE_SCHEMA_DOWNGRADE,
+    REPAIR_ISSUE_IDS,
 )
 from custom_components.haventory.exceptions import (
     CorruptSchemaVersionError,
@@ -18,7 +24,7 @@ from custom_components.haventory.exceptions import (
 )
 from custom_components.haventory.models import ItemCreate
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
+from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
@@ -309,3 +315,167 @@ async def test_setup_entry_accepts_a_readable_store(monkeypatch) -> None:
 
     assert await haven_init.async_setup_entry(hass, entry) is True
     assert isinstance(hass.data[haven_init.DOMAIN]["repository"], Repository)
+
+
+def _issues(hass: HomeAssistant) -> dict:
+    """What the offline issue-registry stub recorded, keyed as HA keys it."""
+
+    return hass.data.get("__issue_registry__") or {}
+
+
+class _ConfigEntries:
+    """The one config-entry API setup calls: writing the options back.
+
+    The offline `HomeAssistant` stub has no registry at all, which is how the
+    other setup tests get away without one — but the lossy-load opt-in is spent
+    through exactly this call, so the test that asserts it is spent has to
+    provide it.
+    """
+
+    def __init__(self) -> None:
+        self.updates: list[dict] = []
+
+    def async_update_entry(self, entry: ConfigEntry, *, options: dict) -> None:
+        entry.options = dict(options)
+        self.updates.append(dict(options))
+
+
+def _corrupt_payload() -> dict:
+    return {
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "locations": {},
+        "items": {
+            "not-a-uuid": {"id": "not-a-uuid", "name": "Broken"},
+            "also-not-a-uuid": {"id": "also-not-a-uuid", "name": "Also broken"},
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_newer_store_also_reaches_settings_repairs(monkeypatch) -> None:
+    """The entry's error state is one screen; Repairs is the one users are sent to."""
+
+    hass = HomeAssistant()
+    entry = ConfigEntry()
+
+    async def _newer(self):  # type: ignore[no-untyped-def]
+        return {"schema_version": CURRENT_SCHEMA_VERSION + 1, "items": {}, "locations": {}}
+
+    monkeypatch.setattr(DomainStore, "async_load", _newer)
+
+    with pytest.raises(ConfigEntryError):
+        await haven_init.async_setup_entry(hass, entry)
+
+    issue = _issues(hass)[(haven_init.DOMAIN, ISSUE_SCHEMA_DOWNGRADE)]
+    assert issue["is_fixable"] is False
+    assert issue["severity"] == "error"
+    assert str(CURRENT_SCHEMA_VERSION + 1) in issue["translation_placeholders"]["error"]
+    assert issue["translation_placeholders"]["storage_key"] == STORAGE_KEY
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_schema_version_reaches_settings_repairs(monkeypatch) -> None:
+    """Its own id, so restoring a store fixes one card rather than leaving the wrong one."""
+
+    hass = HomeAssistant()
+    entry = ConfigEntry()
+
+    async def _corrupt_version(self):  # type: ignore[no-untyped-def]
+        raise CorruptSchemaVersionError("stored data has a corrupt schema_version (None)")
+
+    monkeypatch.setattr(DomainStore, "async_load", _corrupt_version)
+
+    with pytest.raises(ConfigEntryError):
+        await haven_init.async_setup_entry(hass, entry)
+
+    assert (haven_init.DOMAIN, ISSUE_CORRUPT_SCHEMA_VERSION) in _issues(hass)
+    assert (haven_init.DOMAIN, ISSUE_SCHEMA_DOWNGRADE) not in _issues(hass)
+
+
+@pytest.mark.asyncio
+async def test_a_corrupt_store_offers_the_fixable_issue(monkeypatch) -> None:
+    """The only fixable one: the readable remainder is intact, so going on is a choice."""
+
+    hass = HomeAssistant()
+    entry = ConfigEntry()
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return deepcopy(_corrupt_payload())
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    with pytest.raises(ConfigEntryError):
+        await haven_init.async_setup_entry(hass, entry)
+
+    issue = _issues(hass)[(haven_init.DOMAIN, ISSUE_CORRUPT_STORE)]
+    assert issue["is_fixable"] is True
+    assert issue["severity"] == "warning"
+    assert issue["translation_placeholders"]["items"] == "2"
+    assert issue["translation_placeholders"]["backup_key"] == CORRUPT_BACKUP_STORAGE_KEY
+
+
+@pytest.mark.asyncio
+async def test_a_store_that_loads_clears_every_issue(monkeypatch) -> None:
+    """A card describing a store the integration just read is a card that lies."""
+
+    hass = HomeAssistant()
+    entry = ConfigEntry()
+    hass.data["__issue_registry__"] = {
+        (haven_init.DOMAIN, issue_id): {} for issue_id in REPAIR_ISSUE_IDS
+    }
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    assert await haven_init.async_setup_entry(hass, entry) is True
+    assert _issues(hass) == {}
+
+
+@pytest.mark.asyncio
+async def test_the_repair_option_loads_the_readable_remainder(monkeypatch, caplog) -> None:
+    """What the fix flow buys: the same store, loaded, minus what could not be read."""
+
+    hass = HomeAssistant()
+    hass.config_entries = _ConfigEntries()
+    entry = ConfigEntry(options={CONF_ALLOW_LOSSY_LOAD: True})
+    payload = _corrupt_payload()
+    payload["items"]["11111111-1111-4111-8111-111111111111"] = {
+        "id": "11111111-1111-4111-8111-111111111111",
+        "name": "Readable",
+        "quantity": 1,
+    }
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return deepcopy(payload)
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+    caplog.set_level(logging.WARNING)
+
+    assert await haven_init.async_setup_entry(hass, entry) is True
+
+    repository = hass.data[haven_init.DOMAIN]["repository"]
+    assert repository.get_counts()["items_total"] == 1
+    assert any("as the repair asked" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_the_repair_option_is_spent_on_the_boot_it_buys(monkeypatch) -> None:
+    """Left set, it would silently accept the next corruption too — a standing waiver."""
+
+    hass = HomeAssistant()
+    hass.config_entries = _ConfigEntries()
+    entry = ConfigEntry(options={CONF_ALLOW_LOSSY_LOAD: True, CONF_CARD_TITLE: "Pantry"})
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return deepcopy(_corrupt_payload())
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    assert await haven_init.async_setup_entry(hass, entry) is True
+
+    assert CONF_ALLOW_LOSSY_LOAD not in entry.options
+    # The rest of the options survive the edit; only the opt-in is taken back.
+    assert entry.options[CONF_CARD_TITLE] == "Pantry"
+    assert (haven_init.DOMAIN, ISSUE_CORRUPT_STORE) not in _issues(hass)

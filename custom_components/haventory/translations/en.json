@@ -146,5 +146,31 @@
       "name": "Delete location",
       "description": "Delete a storage location."
     }
+  },
+  "issues": {
+    "schema_downgrade": {
+      "title": "HAventory cannot read the stored data",
+      "description": "HAventory stopped instead of setting up: {error}\n\nThe file is `.storage/{storage_key}` in your Home Assistant configuration directory, and it has been left exactly as it was. This card clears itself once HAventory starts against a store it can read."
+    },
+    "corrupt_schema_version": {
+      "title": "HAventory cannot tell which schema the stored data uses",
+      "description": "HAventory stopped instead of setting up: {error}\n\nThe file is `.storage/{storage_key}` in your Home Assistant configuration directory, and it has been left exactly as it was. This card clears itself once HAventory starts against a store it can read."
+    },
+    "corrupt_store": {
+      "title": "HAventory cannot read part of the stored data",
+      "fix_flow": {
+        "abort": {
+          "no_config_entry": "HAventory is no longer set up, so there is nothing to reload.",
+          "backup_failed": "The copy of the stored file could not be written, so nothing was changed. Without it there would be no way back, so HAventory did not load.",
+          "reload_failed": "HAventory still did not start. The copy was written and the stored file is unchanged; check the Home Assistant log for what stopped it."
+        },
+        "step": {
+          "confirm": {
+            "title": "Load HAventory without the unreadable entries",
+            "description": "HAventory could not read {items} item(s) and {locations} location(s), and found {cyclic_locations} location(s) whose parent chain loops back on itself. It stopped rather than load the rest — it saves on every change, and the first edit would rewrite the file without them.\n\nConfirming copies `.storage/{storage_key}` to `.storage/{backup_key}` and then starts HAventory with everything it could read. The unreadable entries stay out, and the copy is how you get them back.\n\nTo keep them instead, close this dialog and repair those entries in the stored file, or restore it from a backup."
+          }
+        }
+      }
+    }
   }
 }

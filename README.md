@@ -1076,3 +1076,16 @@ the first public release.
   the file without those entries on the first edit and make the loss permanent. The store is
   left untouched, and the message names the first few affected ids. Fix those entries, or
   restore `haventory_store` from a backup, then reload the integration.
+- **All three of the above also appear in Settings → Repairs**, which is where they are
+  easiest to find: the entry's error state is one line on one screen. The first two are
+  informational — nothing HAventory can do repairs a store it must not touch. The third
+  offers a **Fix** button: it copies `haventory_store` to `haventory_store_corrupt_backup`
+  and then starts HAventory with everything it could read, leaving the unreadable entries
+  out. Take that only if you would rather have the readable remainder than repair the file;
+  the copy is how you get the rest back. The offer applies to one start — a store still
+  broken at the next restart is refused again.
+- **Reporting a bug**: Settings → Devices & services → HAventory → ⋮ → **Download
+  diagnostics** writes a JSON with counts, schema versions, index-health checks, which
+  runtime pieces are loaded and whether the card bundle is deployed. It carries no item or
+  location content — no names, notes or custom-field values — so it is safe to attach to a
+  public issue. If you need the content, use the export instead.

@@ -17,6 +17,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.loader import async_get_integration
 
 try:
@@ -53,17 +54,23 @@ from . import services as services_mod
 from . import todo_bridge as todo_mod
 from . import ws as ws_mod
 from .const import (
+    CONF_ALLOW_LOSSY_LOAD,
     CONF_CARD_TITLE,
     CONF_QUICK_FILTERS,
     CONF_SIDEBAR_PANEL_ENABLED,
+    CORRUPT_BACKUP_STORAGE_KEY,
     DEFAULT_CARD_TITLE,
     DEFAULT_SIDEBAR_PANEL_ENABLED,
     DOMAIN,
+    ISSUE_CORRUPT_SCHEMA_VERSION,
+    ISSUE_CORRUPT_STORE,
+    ISSUE_SCHEMA_DOWNGRADE,
     PANEL_ELEMENT_NAME,
     PANEL_ICON,
     PANEL_URL_PATH,
     PLATFORMS,
     QUICK_FILTER_KEYS,
+    REPAIR_ISSUE_IDS,
 )
 from .exceptions import CorruptSchemaVersionError, SchemaDowngradeError, StorageError
 from .rate_limit import RateLimitConfig, RateLimiter
@@ -146,65 +153,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     store = DomainStore(hass, key=STORAGE_KEY, version=CURRENT_SCHEMA_VERSION)
     hass.data[DOMAIN]["store"] = store
 
-    # Initialize in-memory repository for services and APIs by loading persisted state
-    try:
-        payload = await store.async_load()
-        _validate_storage_payload(payload, schema_version=store.schema_version)
-        _log_storage_health(payload, schema_version=store.schema_version)
-    except SchemaDowngradeError as exc:
-        LOGGER.error(
-            "Refusing to set up against storage written by a newer HAventory version",
-            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
-            exc_info=True,
-        )
-        # ConfigEntryError, not ConfigEntryNotReady: retrying cannot teach this build
-        # a newer schema, and the message reaches the user in the entry's error state.
-        raise ConfigEntryError(str(exc)) from exc
-    except CorruptSchemaVersionError as exc:
-        LOGGER.error(
-            "Refusing to set up against storage whose schema_version is unreadable",
-            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
-            exc_info=True,
-        )
-        # Same reasoning as the downgrade above: no number of retries turns a
-        # corrupt version into a readable one, so the entry stops with the
-        # specific message instead of backing off behind a generic one.
-        raise ConfigEntryError(str(exc)) from exc
-    except StorageError as exc:
-        LOGGER.error(
-            "Storage validation failed during setup",
-            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
-            exc_info=True,
-        )
-        raise ConfigEntryNotReady("storage validation failed") from exc
-    except Exception as exc:  # pragma: no cover - defensive
-        LOGGER.error(
-            "Failed to load storage during setup",
-            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
-            exc_info=True,
-        )
-        raise ConfigEntryNotReady("storage load failed") from exc
-    repository = Repository.from_state(payload)
-    load_report = repository.last_load_report
-    if load_report.has_corruption:
-        LOGGER.error(
-            "Refusing to set up against a store this build cannot fully read",
-            extra={
-                "domain": DOMAIN,
-                "op": "setup_storage",
-                "dropped_items": len(load_report.dropped_item_ids),
-                "dropped_locations": len(load_report.dropped_location_ids),
-                "cyclic_locations": len(load_report.cyclic_location_ids),
-                "unrooted_locations": len(load_report.unrooted_location_ids),
-            },
-        )
-        # Refuse rather than load what could be read. Every WS and service handler
-        # persists immediately, so a loaded entry rewrites the store without the
-        # unreadable rows on the very first mutation — a notification would narrate
-        # the loss, not prevent it. Refusing leaves the file intact for repair, and
-        # matches the two schema refusals above: retrying cannot fix any of them.
-        raise ConfigEntryError(_corrupt_store_message(load_report, store_key=store.key))
+    repository = await _async_load_repository(hass, entry, store)
     hass.data[DOMAIN]["repository"] = repository
+
+    # Whatever the previous boot left in Settings → Repairs described a store this
+    # one just read, so none of it is true any more.
+    _delete_refusal_issues(hass)
 
     # Which items are already low, before anything can mutate. Without this the
     # first mutation after every restart would announce `entered` for every item
@@ -255,6 +209,95 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _async_apply_sidebar_panel(hass, entry)
 
     return True
+
+
+async def _async_load_repository(
+    hass: HomeAssistant, entry: ConfigEntry, store: DomainStore
+) -> Repository:
+    """Read the store into a repository, or stop setup and say why in Repairs.
+
+    Four conditions end setup here. Two are refusals about the whole file —
+    written by a newer build, or carrying a `schema_version` that is not a
+    number — and one is about rows inside it this build cannot read; each puts
+    a card in Settings → Repairs beside the entry's error state, and only the
+    last is fixable. The fourth, a store that cannot be read at all right now,
+    is transient and gets a retry rather than a card.
+    """
+
+    try:
+        payload = await store.async_load()
+        _validate_storage_payload(payload, schema_version=store.schema_version)
+        _log_storage_health(payload, schema_version=store.schema_version)
+    except SchemaDowngradeError as exc:
+        LOGGER.error(
+            "Refusing to set up against storage written by a newer HAventory version",
+            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
+            exc_info=True,
+        )
+        _create_refusal_issue(hass, ISSUE_SCHEMA_DOWNGRADE, exc, store_key=store.key)
+        # ConfigEntryError, not ConfigEntryNotReady: retrying cannot teach this build
+        # a newer schema, and the message reaches the user in the entry's error state.
+        raise ConfigEntryError(str(exc)) from exc
+    except CorruptSchemaVersionError as exc:
+        LOGGER.error(
+            "Refusing to set up against storage whose schema_version is unreadable",
+            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
+            exc_info=True,
+        )
+        _create_refusal_issue(hass, ISSUE_CORRUPT_SCHEMA_VERSION, exc, store_key=store.key)
+        # Same reasoning as the downgrade above: no number of retries turns a
+        # corrupt version into a readable one, so the entry stops with the
+        # specific message instead of backing off behind a generic one.
+        raise ConfigEntryError(str(exc)) from exc
+    except StorageError as exc:
+        LOGGER.error(
+            "Storage validation failed during setup",
+            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
+            exc_info=True,
+        )
+        raise ConfigEntryNotReady("storage validation failed") from exc
+    except Exception as exc:  # pragma: no cover - defensive
+        LOGGER.error(
+            "Failed to load storage during setup",
+            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
+            exc_info=True,
+        )
+        raise ConfigEntryNotReady("storage load failed") from exc
+    repository = Repository.from_state(payload)
+    load_report = repository.last_load_report
+    if load_report.has_corruption:
+        allowed = _lossy_load_allowed(entry)
+        LOGGER.log(
+            logging.WARNING if allowed else logging.ERROR,
+            (
+                "Loading a store this build cannot fully read, as the repair asked"
+                if allowed
+                else "Refusing to set up against a store this build cannot fully read"
+            ),
+            extra={
+                "domain": DOMAIN,
+                "op": "setup_storage",
+                "dropped_items": len(load_report.dropped_item_ids),
+                "dropped_locations": len(load_report.dropped_location_ids),
+                "cyclic_locations": len(load_report.cyclic_location_ids),
+                "unrooted_locations": len(load_report.unrooted_location_ids),
+            },
+        )
+        if not allowed:
+            # Refuse rather than load what could be read. Every WS and service handler
+            # persists immediately, so a loaded entry rewrites the store without the
+            # unreadable rows on the very first mutation — a notification would narrate
+            # the loss, not prevent it. Refusing leaves the file intact for repair, and
+            # matches the two schema refusals above: retrying cannot fix any of them.
+            # The repairs issue is the way back in: it takes a copy first, then sets
+            # the option this branch reads.
+            _create_corrupt_store_issue(hass, load_report, store_key=store.key)
+            raise ConfigEntryError(_corrupt_store_message(load_report, store_key=store.key))
+        # Spend the opt-in here, ahead of the update listener setup registers
+        # afterwards, so clearing it cannot bounce the entry through a reload of
+        # its own. One boot is all it buys: the next corruption is a new decision.
+        _clear_lossy_load_option(hass, entry)
+    return repository
 
 
 async def _async_forward_platforms(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -1027,6 +1070,92 @@ async def _unregister_frontend_module(hass: HomeAssistant) -> None:
     for item in list(resources.async_items() or []):
         if _points_at_card(item.get("url")):
             await _delete_card_resource(resources, item, op="frontend_unregister")
+
+
+def _create_refusal_issue(
+    hass: HomeAssistant, issue_id: str, exc: Exception, *, store_key: str
+) -> None:
+    """Put a schema refusal in Settings → Repairs as well as the entry's error state.
+
+    The refusal message is handed over whole rather than picked apart into
+    version numbers: it is written for the user, it already names whatever
+    disagreed, and one wording for both places is one wording to keep true.
+
+    Not fixable and not persistent. Nothing HAventory can offer repairs a store
+    it must not touch, and the issue describes the last setup attempt — a stored
+    copy would outlive a store the user has since restored.
+    """
+
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=False,
+        is_persistent=False,
+        severity=ir.IssueSeverity.ERROR,
+        translation_key=issue_id,
+        translation_placeholders={"error": str(exc), "storage_key": store_key},
+    )
+
+
+def _create_corrupt_store_issue(hass: HomeAssistant, report: LoadReport, *, store_key: str) -> None:
+    """Offer the guarded "load anyway" for a store with unreadable rows.
+
+    A warning rather than an error, and the only fixable one: the data that can
+    be read is intact, and the decision to go on without the rest is the
+    household's to make. `repairs.py` runs the fix.
+    """
+
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        ISSUE_CORRUPT_STORE,
+        is_fixable=True,
+        is_persistent=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=ISSUE_CORRUPT_STORE,
+        translation_placeholders={
+            "items": str(len(report.dropped_item_ids)),
+            "locations": str(len(report.dropped_location_ids)),
+            "cyclic_locations": str(len(report.cyclic_location_ids)),
+            "storage_key": store_key,
+            "backup_key": CORRUPT_BACKUP_STORAGE_KEY,
+        },
+    )
+
+
+def _delete_refusal_issues(hass: HomeAssistant) -> None:
+    """Clear every repairs issue setup can raise. Deleting an absent one is not an error."""
+
+    for issue_id in REPAIR_ISSUE_IDS:
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
+
+
+def _lossy_load_allowed(entry: ConfigEntry) -> bool:
+    """Whether the corrupt-store repair has been run and its reload is now arriving."""
+
+    options = getattr(entry, "options", None) or {}
+    return bool(options.get(CONF_ALLOW_LOSSY_LOAD))
+
+
+def _clear_lossy_load_option(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Take the one-boot opt-in back off the entry.
+
+    Guarded with getattr for the offline test harness, whose HomeAssistant stub
+    has no config-entry registry — the same reason the platform forwarding is.
+    """
+
+    config_entries = getattr(hass, "config_entries", None)
+    update = getattr(config_entries, "async_update_entry", None)
+    if not callable(update):
+        return
+
+    options = {
+        key: value
+        for key, value in (getattr(entry, "options", None) or {}).items()
+        if key != CONF_ALLOW_LOSSY_LOAD
+    }
+    update(entry, options=options)
 
 
 def _corrupt_store_message(report: LoadReport, *, store_key: str) -> str:

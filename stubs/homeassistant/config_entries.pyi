@@ -1,9 +1,20 @@
 from collections.abc import Callable, Coroutine, Mapping
+from enum import Enum
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 
 class ConfigFlowResult(dict[str, Any]): ...
+
+class ConfigEntryState(Enum):
+    LOADED = "loaded"
+    SETUP_ERROR = "setup_error"
+    MIGRATION_ERROR = "migration_error"
+    SETUP_RETRY = "setup_retry"
+    NOT_LOADED = "not_loaded"
+    FAILED_UNLOAD = "failed_unload"
+    SETUP_IN_PROGRESS = "setup_in_progress"
+    UNLOAD_IN_PROGRESS = "unload_in_progress"
 
 class ConfigEntry:
     entry_id: str

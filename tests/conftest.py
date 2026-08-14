@@ -43,6 +43,7 @@ import os
 import sys
 import tempfile
 import types
+from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import Path
 
@@ -794,6 +795,65 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
 
     ha_helpers_area_registry.async_get = async_get
     sys.modules["homeassistant.helpers.area_registry"] = ha_helpers_area_registry
+
+    # homeassistant.helpers.issue_registry — `__init__.py` imports it at module
+    # scope to raise the setup refusals in Settings -> Repairs. The stub records
+    # what was raised and cleared, keyed the way HA keys it, so an offline test
+    # can assert both without a registry to read.
+    ha_helpers_issue_registry = types.ModuleType("homeassistant.helpers.issue_registry")
+
+    class IssueSeverity(StrEnum):  # type: ignore[override]
+        CRITICAL = "critical"
+        ERROR = "error"
+        WARNING = "warning"
+
+    def _issues(hass: HomeAssistant) -> dict:  # type: ignore[override]
+        return hass.data.setdefault("__issue_registry__", {})
+
+    def async_create_issue(  # type: ignore[override]
+        hass: HomeAssistant, domain: str, issue_id: str, **kwargs
+    ) -> None:
+        _issues(hass)[(domain, issue_id)] = dict(kwargs)
+
+    def async_delete_issue(hass: HomeAssistant, domain: str, issue_id: str) -> None:  # type: ignore[override]
+        _issues(hass).pop((domain, issue_id), None)
+
+    ha_helpers_issue_registry.IssueSeverity = IssueSeverity
+    ha_helpers_issue_registry.async_create_issue = async_create_issue
+    ha_helpers_issue_registry.async_delete_issue = async_delete_issue
+    ha_helpers.issue_registry = ha_helpers_issue_registry
+    sys.modules["homeassistant.helpers.issue_registry"] = ha_helpers_issue_registry
+
+    # homeassistant.components.diagnostics — `diagnostics.py` imports the
+    # redaction helper at module scope. Verbatim from HA's `diagnostics/util.py`
+    # down to the two skips (a `None` and an empty string are left alone), so an
+    # offline assertion about what the payload leaks means what it says.
+    ha_diagnostics = types.ModuleType("homeassistant.components.diagnostics")
+    REDACTED = "**REDACTED**"
+
+    def async_redact_data(data, to_redact):  # type: ignore[override]
+        if not isinstance(data, (Mapping, list)):
+            return data
+        if isinstance(data, list):
+            return [async_redact_data(val, to_redact) for val in data]
+
+        redacted = {**data}
+        for key, value in redacted.items():
+            if value is None:
+                continue
+            if isinstance(value, str) and not value:
+                continue
+            if key in to_redact:
+                redacted[key] = REDACTED
+            elif isinstance(value, Mapping):
+                redacted[key] = async_redact_data(value, to_redact)
+            elif isinstance(value, list):
+                redacted[key] = [async_redact_data(item, to_redact) for item in value]
+        return redacted
+
+    ha_diagnostics.REDACTED = REDACTED
+    ha_diagnostics.async_redact_data = async_redact_data
+    sys.modules["homeassistant.components.diagnostics"] = ha_diagnostics
 
     # homeassistant.loader
     ha_loader = types.ModuleType("homeassistant.loader")

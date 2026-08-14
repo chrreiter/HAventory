@@ -98,6 +98,38 @@ TODO_LINKS_STORAGE_KEY: str = "haventory_todo_links"
 TODO_LINKS_STORAGE_VERSION: int = 1
 
 # -----------------------------
+# Repairs
+# -----------------------------
+# What setup puts in Settings → Repairs when it refuses to run. Each id is a
+# constant rather than a per-run value, so meeting the same condition on the
+# next boot updates one card instead of stacking a second, and each doubles as
+# the `translation_key` naming its entry under `issues` in `strings.json`.
+
+ISSUE_SCHEMA_DOWNGRADE: str = "schema_downgrade"
+ISSUE_CORRUPT_SCHEMA_VERSION: str = "corrupt_schema_version"
+ISSUE_CORRUPT_STORE: str = "corrupt_store"
+
+# Every issue this integration raises, so a setup that got through can clear the
+# lot without naming them one at a time — whichever of them the previous boot
+# left behind no longer describes anything.
+REPAIR_ISSUE_IDS: tuple[str, ...] = (
+    ISSUE_SCHEMA_DOWNGRADE,
+    ISSUE_CORRUPT_SCHEMA_VERSION,
+    ISSUE_CORRUPT_STORE,
+)
+
+# Set by the corrupt-store repair, read by the setup its reload triggers, and
+# cleared there. Opting in to a lossy load is a decision about one boot: leaving
+# it set would silently accept the next corruption too.
+CONF_ALLOW_LOSSY_LOAD: str = "allow_lossy_load"
+
+# Where that repair copies the raw store before the lossy load. Loading destroys
+# nothing by itself — the first mutation afterwards does, by writing the
+# repository back over the rows it could not read — so the copy is what makes
+# "load anyway" reversible.
+CORRUPT_BACKUP_STORAGE_KEY: str = "haventory_store_corrupt_backup"
+
+# -----------------------------
 # Item attachments
 # -----------------------------
 # Files attached to an item live under the config directory, outside the

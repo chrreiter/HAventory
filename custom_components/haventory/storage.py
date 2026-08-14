@@ -26,7 +26,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from . import migrations
-from .const import DOMAIN
+from .const import CORRUPT_BACKUP_STORAGE_KEY, DOMAIN
 from .exceptions import (
     CorruptSchemaVersionError,
     NotLoadedError,
@@ -130,6 +130,39 @@ def read_schema_version(payload: Mapping[str, Any], *, missing: int) -> int:
     return value
 
 
+async def async_backup_store(
+    hass: HomeAssistant,
+    *,
+    source_key: str = STORAGE_KEY,
+    backup_key: str = CORRUPT_BACKUP_STORAGE_KEY,
+) -> bool:
+    """Copy the stored payload verbatim to a second key, returning whether there was one.
+
+    Deliberately raw: it goes around `DomainStore`, which migrates, normalizes
+    and would refuse the very payloads worth copying. The caller is the
+    corrupt-store repair, so what has to survive is exactly what is on disk —
+    unreadable rows included, since those are what the user might want back.
+    """
+
+    source: Store[dict[str, Any]] = Store(hass, DomainStore.HA_STORE_VERSION, source_key)
+    raw = await source.async_load()
+    if raw is None:
+        return False
+
+    backup: Store[dict[str, Any]] = Store(hass, DomainStore.HA_STORE_VERSION, backup_key)
+    await backup.async_save(raw)
+    _LOGGER.warning(
+        "Copied the HAventory store aside before loading it with unreadable rows",
+        extra={
+            "domain": DOMAIN,
+            "op": "backup_store",
+            "storage_key": source_key,
+            "backup_key": backup_key,
+        },
+    )
+    return True
+
+
 def _get_persist_lock(hass: HomeAssistant) -> asyncio.Lock:
     """Get or create the persistence lock for this hass instance.
 
@@ -152,15 +185,17 @@ class DomainStore:
     mechanism. All versioning is handled via `schema_version` in the payload.
     """
 
-    # HA Store wrapper version - always 1 to avoid HA's migration mechanism
-    _HA_STORE_VERSION: Final[int] = 1
+    # HA Store wrapper version - always 1 to avoid HA's migration mechanism.
+    # Public because the raw copy `async_backup_store` takes has to open the
+    # same file under the same version this wrapper wrote it with.
+    HA_STORE_VERSION: Final[int] = 1
 
     def __init__(
         self, hass: HomeAssistant, *, key: str = STORAGE_KEY, version: int = CURRENT_SCHEMA_VERSION
     ) -> None:
         self._hass = hass
         # Use constant HA Store version; our schema_version handles migrations
-        self._store: Store[dict[str, Any]] = Store(hass, self._HA_STORE_VERSION, key)
+        self._store: Store[dict[str, Any]] = Store(hass, self.HA_STORE_VERSION, key)
         self._schema_version = version
 
     @property

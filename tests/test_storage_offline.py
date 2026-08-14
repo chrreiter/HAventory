@@ -28,6 +28,7 @@ from custom_components.haventory.storage import (
     CURRENT_SCHEMA_VERSION,
     STORE_COLLECTIONS,
     DomainStore,
+    async_backup_store,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
@@ -616,3 +617,38 @@ async def test_save_does_not_duplicate_the_dataset(monkeypatch) -> None:
     assert len(seen) == 1
     for name in STORE_COLLECTIONS:
         assert seen[0][name] is payload[name], name
+
+
+@pytest.mark.asyncio
+async def test_the_backup_copies_the_file_as_it_is() -> None:
+    """The corrupt-store repair needs the unreadable rows, not a cleaned-up version.
+
+    `DomainStore` migrates, normalizes and refuses; a copy taken through it
+    would leave out exactly what the user might want back, or refuse to take one
+    at all. So the backup goes straight to Home Assistant's `Store`.
+    """
+
+    hass = HomeAssistant()
+    source_key = "test_backup_source"
+    backup_key = "test_backup_target"
+    stored = {
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "locations": {},
+        "items": {"not-a-uuid": {"id": "not-a-uuid", "name": "Broken"}},
+    }
+    await HAStore(hass, 1, source_key).async_save(deepcopy(stored))
+
+    assert await async_backup_store(hass, source_key=source_key, backup_key=backup_key) is True
+
+    assert await HAStore(hass, 1, backup_key).async_load() == stored
+    # And the original is where it was: the copy is a copy, not a move.
+    assert await HAStore(hass, 1, source_key).async_load() == stored
+
+
+@pytest.mark.asyncio
+async def test_the_backup_reports_that_there_was_nothing_to_copy() -> None:
+    """No stored file means no guard to offer, which the caller has to be able to see."""
+
+    hass = HomeAssistant()
+
+    assert await async_backup_store(hass, source_key="test_backup_absent") is False
