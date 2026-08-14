@@ -236,8 +236,9 @@ school holidays and bin collections:
 | `Extinguisher inspection` | the `inspection_date` on any item |
 
 Each is an all-day event on its date, described by the item's location path. The entity's
-own state is whatever happens next — `on` with the nearest event in its attributes, `off`
-when nothing is coming.
+attributes always carry the nearest event still to come, however far out it is; its state
+follows Home Assistant's own convention and reads `on` only while an event is actually
+running — which for an all-day event means today.
 
 Nothing is scheduled. The events are worked out whenever something reads the calendar, so
 editing a date changes the calendar immediately and no timer can drift out of step with the

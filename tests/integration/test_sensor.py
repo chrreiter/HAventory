@@ -26,9 +26,19 @@ async def _setup(hass: HomeAssistant) -> MockConfigEntry:
     return entry
 
 
-def _entity_ids(hass: HomeAssistant, entry: MockConfigEntry) -> list[str]:
+def _sensor_entries(hass: HomeAssistant, entry: MockConfigEntry) -> list[er.RegistryEntry]:
+    """Only this platform's entities — the entry also owns `calendar.haventory`."""
+
     registry = er.async_get(hass)
-    return sorted(e.entity_id for e in er.async_entries_for_config_entry(registry, entry.entry_id))
+    return [
+        e
+        for e in er.async_entries_for_config_entry(registry, entry.entry_id)
+        if e.domain == "sensor"
+    ]
+
+
+def _entity_ids(hass: HomeAssistant, entry: MockConfigEntry) -> list[str]:
+    return sorted(e.entity_id for e in _sensor_entries(hass, entry))
 
 
 async def test_four_sensors_land_on_one_device(hass: HomeAssistant) -> None:
@@ -36,8 +46,7 @@ async def test_four_sensors_land_on_one_device(hass: HomeAssistant) -> None:
 
     entry = await _setup(hass)
 
-    entity_registry = er.async_get(hass)
-    entries = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+    entries = _sensor_entries(hass, entry)
     assert len(entries) == len(SENSOR_DESCRIPTIONS)
 
     assert {e.unique_id for e in entries} == {

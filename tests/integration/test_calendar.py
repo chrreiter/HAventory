@@ -101,15 +101,45 @@ async def test_async_get_events_projects_both_dated_fields(hass: HomeAssistant) 
     assert projected[0]["end"] == (due + timedelta(days=1)).isoformat()
 
 
-async def test_checking_an_item_out_with_a_due_date_moves_the_state(hass: HomeAssistant) -> None:
-    """A mutation repaints the entity with no polling and no time travel."""
+async def test_checking_an_item_out_due_today_turns_the_calendar_on(hass: HomeAssistant) -> None:
+    """A mutation repaints the entity with no polling and no time travel.
+
+    `on` means an event is running now, which for an all-day occurrence means
+    today's — `test_an_upcoming_date_is_announced_while_the_state_stays_off`
+    covers the other half.
+    """
 
     await _setup(hass)
     assert hass.states.get(ENTITY_ID).state == "off"
 
     item = await _create(hass, name="Ladder")
+    today = dt_util.now().date()
+
+    await hass.services.async_call(
+        DOMAIN,
+        "item_check_out",
+        {"item_id": item["id"], "due_date": today.isoformat()},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    state = hass.states.get(ENTITY_ID)
+    assert state.state == "on"
+    assert state.attributes["message"] == "Ladder due back"
+    assert state.attributes["all_day"] is True
+    assert state.attributes["start_time"].startswith(today.isoformat())
+
+
+async def test_an_upcoming_date_is_announced_while_the_state_stays_off(
+    hass: HomeAssistant,
+) -> None:
+    """Home Assistant's `on` is "happening now", so a future date announces itself
+    through the attributes an automation's template reads."""
+
+    await _setup(hass)
     due = dt_util.now().date() + timedelta(days=2)
 
+    item = await _create(hass, name="Ladder")
     await hass.services.async_call(
         DOMAIN,
         "item_check_out",
@@ -119,9 +149,9 @@ async def test_checking_an_item_out_with_a_due_date_moves_the_state(hass: HomeAs
     await hass.async_block_till_done()
 
     state = hass.states.get(ENTITY_ID)
-    assert state.state == "on"
+    assert state.state == "off"
     assert state.attributes["message"] == "Ladder due back"
-    assert state.attributes["all_day"] is True
+    assert state.attributes["start_time"].startswith(due.isoformat())
 
 
 async def test_the_reported_event_is_the_nearest_one(hass: HomeAssistant) -> None:
@@ -142,7 +172,11 @@ async def test_a_past_date_is_not_reported_as_upcoming(hass: HomeAssistant) -> N
 
     await _create(hass, name="Extinguisher", inspection_date=yesterday.isoformat())
 
-    assert hass.states.get(ENTITY_ID).state == "off"
+    state = hass.states.get(ENTITY_ID)
+    assert state.state == "off"
+    # No event at all, rather than a past one that merely is not running: the
+    # state alone cannot tell those apart.
+    assert "message" not in state.attributes
 
 
 async def test_unload_removes_the_entity(hass: HomeAssistant) -> None:
