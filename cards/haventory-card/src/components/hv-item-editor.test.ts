@@ -1079,6 +1079,13 @@ describe('hv-item-editor: mobile layout', () => {
     );
     expect(q(el, '[data-testid="editor-more-toggle"]')?.textContent).toContain('description · dates · 1 custom');
   });
+
+  it('names a reminder in the summary rather than folding it into "dates"', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A', reminder_date: '2026-09-01' }), {
+      mobile: true,
+    });
+    expect(q(el, '[data-testid="editor-more-toggle"]')?.textContent).toContain('reminder');
+  });
 });
 
 describe('hv-item-editor: dirty tracking', () => {
@@ -2802,5 +2809,92 @@ describe('hv-item-editor: photos open full-size', () => {
     const el = await mount(makeItem({ id: 'i-1', attachments: shots() }), { media: null });
     await el.updateComplete;
     expect(q(el, '[data-testid="editor-photo-open"]')).toBe(null);
+  });
+});
+
+describe('hv-item-editor: reminders', () => {
+  const count = (el: HVItemEditor) =>
+    q(el, '[data-testid="editor-reminder-count"]') as HTMLInputElement;
+  const unit = (el: HVItemEditor) =>
+    q(el, '[data-testid="editor-reminder-unit"]') as HTMLSelectElement;
+
+  it('prefills a stored recurring reminder', async () => {
+    const el = await mount(
+      makeItem({
+        id: '1',
+        reminder_date: '2026-09-01',
+        reminder_interval: { unit: 'months', count: 3 },
+      }),
+    );
+
+    expect((q(el, '[data-testid="editor-reminder-date"]') as HTMLInputElement).value).toBe(
+      '2026-09-01',
+    );
+    expect(count(el).value).toBe('3');
+    expect(unit(el).value).toBe('months');
+  });
+
+  it('leaves the repeat blank and dead until a date is picked', async () => {
+    const el = await mount(makeItem({ id: '1' }));
+    expect(count(el).value).toBe('');
+    expect(count(el).disabled).toBe(true);
+    expect(unit(el).disabled).toBe(true);
+    // A tooltip alone never reaches a phone, so the reason is on the page too.
+    expect(q(el, '[data-testid="editor-reminder-hint"]')).toBeTruthy();
+
+    await type(el, 'editor-reminder-date', '2026-09-01');
+    expect(count(el).disabled).toBe(false);
+    expect(unit(el).disabled).toBe(false);
+    expect(q(el, '[data-testid="editor-reminder-hint"]')).toBe(null);
+  });
+
+  it('saves the anchor and the interval in the one item write', async () => {
+    const el = await mount(makeItem({ id: 'item-1', version: 3 }));
+    const saves = onSave(el);
+
+    await type(el, 'editor-reminder-date', '2026-09-01');
+    await type(el, 'editor-reminder-count', '3');
+    (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
+
+    expect(saves[0].changes?.reminder_date).toBe('2026-09-01');
+    expect(saves[0].changes?.reminder_interval).toEqual({ unit: 'months', count: 3 });
+  });
+
+  it('saves a date with no repeat as a one-off', async () => {
+    const el = await mount(makeItem({ id: 'item-1', version: 3 }));
+    const saves = onSave(el);
+
+    await type(el, 'editor-reminder-date', '2026-09-01');
+    (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
+
+    expect(saves[0].changes?.reminder_date).toBe('2026-09-01');
+    expect(saves[0].changes?.reminder_interval).toBe(null);
+  });
+
+  it('clears both halves when the date is cleared', async () => {
+    const el = await mount(
+      makeItem({
+        id: 'item-1',
+        version: 3,
+        reminder_date: '2026-09-01',
+        reminder_interval: { unit: 'months', count: 3 },
+      }),
+    );
+    const saves = onSave(el);
+
+    await type(el, 'editor-reminder-date', '');
+    (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
+
+    expect(saves[0].changes?.reminder_date).toBe(null);
+    // Not just left as it was: the backend refuses an interval with no anchor.
+    expect(saves[0].changes?.reminder_interval).toBe(null);
+  });
+
+  it('gives the reminder the whole row rather than half of one', () => {
+    const css = componentCss('hv-item-editor');
+
+    // Three controls where the boxes beside it have one or two; halved, the
+    // number and the unit would sit under 60px each at desktop width.
+    expect(css).toMatch(/\.state \.reminder \{[^}]*grid-column: 1 \/ -1/);
   });
 });

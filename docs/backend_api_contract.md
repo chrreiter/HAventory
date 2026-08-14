@@ -217,6 +217,31 @@ with no WebSocket client at all. Payload shapes: `docs/data_shapes.md`.
   - Payload: `{item_id: string, expected_version?: number}`
   - Result: `<Item>`; emits `items/checked_in` and `stats/counts`.
 
+- `haventory/reminder/set`
+  - Payload: `{item_id: string, reminder_date: YYYY-MM-DD, reminder_interval?: {unit, count}|null, expected_version?: number}`
+  - Result: `<Item>`; emits `items/updated` and `stats/counts`.
+  - The command names the **whole** reminder, so an omitted `reminder_interval` means "no
+    recurrence" and clears a stored one. `unit` is `days`, `weeks` or `months`; `count` is
+    an integer from 1 to 1000.
+  - `reminder_date` and `reminder_interval` are also writable through
+    `haventory/item/update`, which is how the card's editor saves them beside the rest of
+    an edit. These commands exist for callers with no form to carry the other fields.
+
+- `haventory/reminder/clear`
+  - Payload: `{item_id: string, expected_version?: number}`
+  - Result: `<Item>`; emits `items/updated` and `stats/counts`.
+  - Idempotent: an item with no reminder succeeds unchanged apart from its `version`.
+
+- `haventory/reminder/bump`
+  - Payload: `{item_id: string, expected_version?: number}`
+  - Result: `<Item>`; emits `items/updated` and `stats/counts`.
+  - Moves the anchor to the series' next occurrence — "I have just done this". Counted from
+    the later of the stored anchor and today (UTC), so a reminder bumped on the day it came
+    round advances by exactly one interval, and one nobody bumped for a year lands on its
+    next *future* occurrence rather than another date already past.
+  - `validation_error` when the item has no reminder, and when it has one with no interval:
+    a one-off has no next occurrence, and `haventory/reminder/clear` is what ends it.
+
 - `haventory/item/add_tags`
   - Payload: `{item_id: string, tags: string[], expected_version?: number}` (tags normalized: trimmed, casefolded, deduped)
   - Result: `<Item>`; emits `items/updated` and `stats/counts`.

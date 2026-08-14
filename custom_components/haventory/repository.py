@@ -48,6 +48,7 @@ from .models import (
     item_is_low_stock,
     item_is_overdue,
     load_attachments,
+    load_reminder_interval,
     location_sort_key,
     monotonic_timestamp_after,
     new_uuid4,
@@ -59,6 +60,7 @@ from .models import (
     selected_categories,
     selected_location_ids,
     serialize_attachment_meta,
+    serialize_reminder_interval,
     serialize_status_definition,
     sort_items,
     today_utc_date,
@@ -2274,6 +2276,8 @@ class Repository:
                 "checked_out": bool(item.checked_out),
                 "due_date": item.due_date,
                 "inspection_date": item.inspection_date,
+                "reminder_date": item.reminder_date,
+                "reminder_interval": serialize_reminder_interval(item.reminder_interval),
                 "location_id": str(item.location_id) if item.location_id is not None else None,
                 "tags": list(item.tags),
                 "category": item.category,
@@ -2442,6 +2446,13 @@ class Repository:
                         checked_out=bool(item_data.get("checked_out", False)),
                         due_date=item_data.get("due_date"),
                         inspection_date=item_data.get("inspection_date"),
+                        # Absent on every store written before v8, and read as
+                        # none there — which is exactly what migrate_7_to_8
+                        # writes, so the two paths agree.
+                        reminder_date=item_data.get("reminder_date"),
+                        reminder_interval=load_reminder_interval(
+                            item_data.get("reminder_interval")
+                        ),
                         location_id=(
                             parse_uuid4(
                                 str(item_data.get("location_id")), field_name="item.location_id"

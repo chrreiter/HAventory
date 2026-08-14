@@ -234,6 +234,7 @@ school holidays and bin collections:
 |---|---|
 | `Ladder due back` | the `due_date` on a checked-out item |
 | `Extinguisher inspection` | the `inspection_date` on any item |
+| `HVAC filter reminder` | the **reminder** on any item, and every repeat of it |
 
 Each is an all-day event on its date, described by the item's location path. The entity's
 attributes always carry the nearest event still to come, however far out it is; its state
@@ -266,6 +267,30 @@ automation:
 
 Add `offset: "-48:0:0"` to the trigger to be told two days ahead instead — useful for a
 return date somebody has to act on before it arrives.
+
+### Reminders
+
+The third kind of event is one you set: **change the HVAC filter every 3 months**. Open an
+item in the card, pick a date under **Reminder**, and optionally say how often it repeats —
+leave the repeat empty and it is a single date.
+
+The calendar then shows the next occurrence and the ones after it, as far ahead as whatever
+view you are looking at. Nothing is scheduled and no series is written down: the item stores
+one date and one interval however long it runs, and the occurrences are worked out when
+something reads them. A repeat measured in months keeps the day of the month it started on —
+a reminder anchored on the 31st shows 28 February and then 31 March, rather than sliding down
+to the 28th forever.
+
+When you have actually changed the filter, **bump** the reminder and the whole series moves
+on one step. From an automation or a script that is one WebSocket call:
+
+```json
+{"type": "haventory/reminder/bump", "item_id": "…"}
+```
+
+Bumping counts from today when the reminder is overdue, so one you forgot for a year lands on
+its next future date rather than on another one already past. A reminder you no longer want
+is cleared from the same editor, or with `haventory/reminder/clear`.
 
 ### Shopping list
 

@@ -192,3 +192,31 @@ def migrate_6_to_7(payload: dict[str, Any]) -> dict[str, Any]:
     """
 
     return deepcopy(payload) if isinstance(payload, dict) else {}
+
+
+def migrate_7_to_8(payload: dict[str, Any]) -> dict[str, Any]:
+    """Give every item the two reminder fields, both empty.
+
+    v8 is the version at which an item may carry a recurring reminder —
+    ``reminder_date`` as the anchor and ``reminder_interval`` as
+    ``{unit, count}``. Nothing existing gains a reminder: an item written before
+    the fields existed had none, and null is what that means.
+
+    Writing the keys rather than leaving them absent is what makes the bump
+    worth having. A v7 build reading a v8 store would otherwise find items it
+    can parse, keep them, and rewrite them on the next save with every reminder
+    dropped; stamped 8, that build refuses the store and the reminders wait for
+    one that understands them.
+
+    Idempotent: an item already carrying either key keeps what it holds,
+    including a reminder a later release wrote.
+    """
+
+    data = deepcopy(payload) if isinstance(payload, dict) else {}
+    items = data.get("items")
+    if isinstance(items, dict):
+        for item in items.values():
+            if isinstance(item, dict):
+                item.setdefault("reminder_date", None)
+                item.setdefault("reminder_interval", None)
+    return data

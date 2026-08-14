@@ -1,4 +1,12 @@
-import type { Item, ItemCreate, ItemStatus, ItemUpdate, ScalarValue } from '../store/types';
+import type {
+  Item,
+  ItemCreate,
+  ItemStatus,
+  ItemUpdate,
+  ReminderInterval,
+  ReminderUnit,
+  ScalarValue,
+} from '../store/types';
 import { itemStatus } from './status';
 
 /**
@@ -32,8 +40,18 @@ export interface ItemFormModel {
   checkedOut: boolean;
   dueDate: string;
   inspectionDate: string;
+  /** The reminder anchor. Empty means no reminder, whatever the interval says. */
+  reminderDate: string;
+  /** Empty means the reminder is a one-off; the unit only matters beside a count. */
+  reminderCount: number | null;
+  reminderUnit: ReminderUnit;
   customFields: CustomFieldRow[];
 }
+
+export const REMINDER_UNITS: readonly ReminderUnit[] = ['days', 'weeks', 'months'];
+
+/** Mirrors `REMINDER_COUNT_MAX` in `models.py`, for the same reason the other caps are. */
+const REMINDER_COUNT_MAX = 1000;
 
 /** A validation problem, scoped to the field that caused it. */
 export interface FieldError {
@@ -95,6 +113,11 @@ export function formFromItem(item: Item | null): ItemFormModel {
     checkedOut: !!item?.checked_out,
     dueDate: item?.due_date ?? '',
     inspectionDate: item?.inspection_date ?? '',
+    reminderDate: item?.reminder_date ?? '',
+    reminderCount: item?.reminder_interval?.count ?? null,
+    // A stored one-off has no unit to show, so the picker opens on the one a
+    // household reaches for most rather than on a blank.
+    reminderUnit: item?.reminder_interval?.unit ?? 'months',
     customFields: Object.entries(item?.custom_fields ?? {}).map(([key, value]) =>
       newCustomFieldRow({ key, type: inferType(value), value: valueToString(value) }),
     ),
@@ -158,6 +181,22 @@ export function validateForm(model: ItemFormModel, original: Item | null = null)
       field: 'tags',
       message: `Each tag is limited to ${TAG_MAX_LENGTH} characters.`,
     });
+  }
+  // Only while a date is set. The repeat is disabled without one and dropped
+  // from the payload, so a count left behind by clearing the date is stale
+  // rather than wrong — refusing the save over it would trap the one edit that
+  // gets you out of it.
+  if (model.reminderDate && model.reminderCount !== null) {
+    if (
+      !Number.isInteger(model.reminderCount) ||
+      model.reminderCount < 1 ||
+      model.reminderCount > REMINDER_COUNT_MAX
+    ) {
+      errors.push({
+        field: 'reminder',
+        message: `Repeat every 1 to ${REMINDER_COUNT_MAX}, or leave it empty for a one-off.`,
+      });
+    }
   }
   const storedFields = original?.custom_fields ?? {};
   const seen = new Set<string>();
@@ -251,7 +290,17 @@ function commonFields(model: ItemFormModel) {
     // A due date is only meaningful while an item is out; checking in clears it.
     due_date: model.checkedOut ? model.dueDate || null : null,
     inspection_date: model.inspectionDate || null,
+    reminder_date: model.reminderDate || null,
+    // An interval with no anchor is refused by the backend, so clearing the
+    // date clears the recurrence with it rather than sending a pair it rejects.
+    reminder_interval: reminderIntervalFrom(model),
   };
+}
+
+/** The interval the form describes, or none for a one-off. */
+export function reminderIntervalFrom(model: ItemFormModel): ReminderInterval | null {
+  if (!model.reminderDate || model.reminderCount === null || model.reminderCount < 1) return null;
+  return { unit: model.reminderUnit, count: model.reminderCount };
 }
 
 export function toCreatePayload(model: ItemFormModel): ItemCreate {
@@ -284,7 +333,12 @@ export function isDirty(model: ItemFormModel, original: Item | null): boolean {
     model.locationId !== baseline.locationId ||
     model.checkedOut !== baseline.checkedOut ||
     model.dueDate !== baseline.dueDate ||
-    model.inspectionDate !== baseline.inspectionDate
+    model.inspectionDate !== baseline.inspectionDate ||
+    model.reminderDate !== baseline.reminderDate ||
+    // Compared through the built interval, not the raw fields: a unit changed
+    // while no count is set describes the same one-off it started as.
+    JSON.stringify(reminderIntervalFrom(model)) !==
+      JSON.stringify(reminderIntervalFrom(baseline))
   ) {
     return true;
   }

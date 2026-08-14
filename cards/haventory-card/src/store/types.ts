@@ -93,6 +93,14 @@ export interface Location {
   path: LocationPath;
 }
 
+/** How far apart a recurring reminder's occurrences fall. */
+export type ReminderUnit = 'days' | 'weeks' | 'months';
+
+export interface ReminderInterval {
+  unit: ReminderUnit;
+  count: number;
+}
+
 export interface Item {
   id: string;
   name: string;
@@ -103,6 +111,13 @@ export interface Item {
   checked_out: boolean;
   due_date: string | null;
   inspection_date: string | null;
+  /**
+   * Optional because a backend older than schema v8 does not send them; absent
+   * reads as no reminder. The anchor alone is a one-off; with an interval it is
+   * the start of a series the calendar expands on read.
+   */
+  reminder_date?: string | null;
+  reminder_interval?: ReminderInterval | null;
   location_id: string | null;
   tags: string[];
   category: string | null;
@@ -129,6 +144,8 @@ export interface ItemCreate {
   checked_out?: boolean;
   due_date?: string | null;
   inspection_date?: string | null;
+  reminder_date?: string | null;
+  reminder_interval?: ReminderInterval | null;
   location_id?: string | null;
   tags?: string[];
   category?: string | null;
@@ -145,6 +162,8 @@ export interface ItemUpdate {
   checked_out?: boolean;
   due_date?: string | null;
   inspection_date?: string | null;
+  reminder_date?: string | null;
+  reminder_interval?: ReminderInterval | null;
   location_id?: string | null;
   tags?: string[] | null;
   category?: string | null;

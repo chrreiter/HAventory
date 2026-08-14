@@ -21,7 +21,12 @@ from custom_components.haventory.const import (
     DOMAIN,
 )
 from custom_components.haventory.exceptions import SchemaDowngradeError, StorageError
-from custom_components.haventory.migrations import migrate, migrate_5_to_6, migrate_6_to_7
+from custom_components.haventory.migrations import (
+    migrate,
+    migrate_5_to_6,
+    migrate_6_to_7,
+    migrate_7_to_8,
+)
 from custom_components.haventory.storage import (
     CURRENT_SCHEMA_VERSION,
     STORE_COLLECTIONS,
@@ -429,3 +434,61 @@ def test_v6_to_v7_does_not_alias_the_payload_it_was_given() -> None:
     out["statuses"]["loaned"]["color"] = "#3366cc"
 
     assert payload["statuses"]["loaned"]["color"] == "blue"
+
+
+_REMINDER_VERSION = 8
+
+
+def _v7_payload() -> dict[str, Any]:
+    return {
+        "schema_version": _REMINDER_VERSION - 1,
+        "items": {
+            "i1": {"id": "i1", "name": "HVAC filter", "quantity": 1},
+            "i2": {"id": "i2", "name": "Ladder", "quantity": 1},
+        },
+        "locations": {},
+        "statuses": {},
+    }
+
+
+def test_v7_to_v8_gives_every_item_an_empty_reminder() -> None:
+    """An item written before the fields existed had no reminder, and null says so."""
+
+    out = migrate_7_to_8(_v7_payload())
+
+    for item in out["items"].values():
+        assert item["reminder_date"] is None
+        assert item["reminder_interval"] is None
+
+
+def test_v7_to_v8_keeps_a_reminder_a_later_release_wrote() -> None:
+    """Idempotence has to mean "fills in what is absent", not "resets"."""
+
+    payload = _v7_payload()
+    payload["items"]["i1"]["reminder_date"] = "2026-09-01"
+    payload["items"]["i1"]["reminder_interval"] = {"unit": "months", "count": 3}
+
+    once = migrate_7_to_8(deepcopy(payload))
+    twice = migrate_7_to_8(deepcopy(once))
+
+    assert once["items"]["i1"]["reminder_date"] == "2026-09-01"
+    assert once["items"]["i1"]["reminder_interval"] == {"unit": "months", "count": 3}
+    assert twice == once
+
+
+def test_v7_to_v8_does_not_alias_the_payload_it_was_given() -> None:
+    payload = _v7_payload()
+
+    out = migrate_7_to_8(payload)
+    out["items"]["i1"]["reminder_date"] = "2026-09-01"
+
+    assert payload["items"]["i1"].get("reminder_date") is None
+
+
+def test_v7_to_v8_tolerates_a_payload_with_no_items() -> None:
+    """The same tolerance every other step carries: a shape it cannot walk is left."""
+
+    assert migrate_7_to_8({"schema_version": 7, "items": None}) == {
+        "schema_version": 7,
+        "items": None,
+    }

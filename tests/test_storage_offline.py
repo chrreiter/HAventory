@@ -36,6 +36,7 @@ from homeassistant.helpers.storage import Store as HAStore
 #: is the payload that step rewrites.
 _STATUS_BACKFILL_VERSION = 5
 _ATTACHMENTS_BACKFILL_VERSION = 6
+_REMINDER_BACKFILL_VERSION = 8
 #: The version from which a status ``color`` may be a ``#rrggbb`` literal rather
 #: than one of the ten tone tokens. Builds below it reject the literal.
 _HEX_STATUS_COLOUR_VERSION = 7
@@ -217,9 +218,17 @@ async def test_migration_from_v1_to_current_preserves_payload() -> None:
     migrated = await store.async_load()
 
     assert migrated["schema_version"] == CURRENT_SCHEMA_VERSION
-    # v4 -> v5 backfills the per-item status and v5 -> v6 the attachment list;
-    # everything else passes through.
-    expected_items = {"i1": {**pre_payload["items"]["i1"], "status": "ok", "attachments": []}}
+    # v4 -> v5 backfills the per-item status, v5 -> v6 the attachment list and
+    # v7 -> v8 the two reminder fields; everything else passes through.
+    expected_items = {
+        "i1": {
+            **pre_payload["items"]["i1"],
+            "status": "ok",
+            "attachments": [],
+            "reminder_date": None,
+            "reminder_interval": None,
+        }
+    }
     assert migrated["items"] == expected_items
     assert migrated["locations"] == pre_payload["locations"]
     # v6 seeds the status definitions the items' slugs resolve against.
@@ -250,13 +259,17 @@ async def test_equal_and_older_versions_still_load(stored_version: int) -> None:
 
     assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
     # Each step only runs for a payload below it: migrate_4_to_5 backfills the
-    # status, migrate_5_to_6 the attachment list. A payload already at the
-    # current version is normalized, never migrated.
+    # status, migrate_5_to_6 the attachment list, migrate_7_to_8 the reminder
+    # pair. A payload already at the current version is normalized, never
+    # migrated.
     expected_items = deepcopy(pre_payload["items"])
     if stored_version < _STATUS_BACKFILL_VERSION:
         expected_items["i1"]["status"] = "ok"
     if stored_version < _ATTACHMENTS_BACKFILL_VERSION:
         expected_items["i1"]["attachments"] = []
+    if stored_version < _REMINDER_BACKFILL_VERSION:
+        expected_items["i1"]["reminder_date"] = None
+        expected_items["i1"]["reminder_interval"] = None
     assert loaded["items"] == expected_items
     assert loaded["locations"] == pre_payload["locations"]
 

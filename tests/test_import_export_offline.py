@@ -31,6 +31,7 @@ from custom_components.haventory.models import (
     NAME_MAX_LENGTH,
     TAG_MAX_LENGTH,
     TAGS_MAX_COUNT,
+    ReminderInterval,
     validate_attachment_meta,
 )
 from custom_components.haventory.repository import Repository
@@ -1181,3 +1182,73 @@ def test_a_collision_message_does_not_repeat_the_sheet_lead() -> None:
     message = report["warnings"][0]["message"]
     assert "Import matches on the id alone" not in message
     assert message.count(".") == 1
+
+
+def test_a_reminder_survives_an_export_and_import() -> None:
+    """An export is the only way back to an older build, so it has to carry them.
+
+    Without the two fields in the document, a household that exported, wiped and
+    re-imported would find every reminder silently gone — the export would still
+    have looked complete.
+    """
+
+    source = Repository()
+    ids = _seed(source)
+    item_id = ids["hammer"]
+    source.update_item(
+        item_id,
+        {"reminder_date": "2026-09-01", "reminder_interval": {"unit": "months", "count": 3}},
+    )
+
+    doc = ie.build_export_document(source, schema_version=CURRENT_SCHEMA_VERSION)
+    exported = next(i for i in doc["items"] if i["id"] == item_id)
+    assert exported["reminder_date"] == "2026-09-01"
+    assert exported["reminder_interval"] == {"unit": "months", "count": 3}
+
+    target = Repository()
+    report, payload = ie.plan_import(
+        target, doc, policy="merge", current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+    assert report["valid"] is True
+    target.load_state(payload)
+
+    restored = target.get_item(item_id)
+    assert restored.reminder_date == "2026-09-01"
+    assert restored.reminder_interval == ReminderInterval(unit="months", count=3)
+
+
+def test_a_document_written_before_reminders_existed_imports_unchanged() -> None:
+    """A pre-v8 export has neither field; absent has to keep reading as none."""
+
+    source = Repository()
+    ids = _seed(source)
+    doc = ie.build_export_document(source, schema_version=CURRENT_SCHEMA_VERSION)
+    for entry in doc["items"]:
+        entry.pop("reminder_date", None)
+        entry.pop("reminder_interval", None)
+
+    target = Repository()
+    report, payload = ie.plan_import(
+        target, doc, policy="merge", current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert report["valid"] is True
+    target.load_state(payload)
+    assert target.get_item(ids["hammer"]).reminder_date is None
+
+
+def test_an_older_export_compares_as_unchanged_against_a_reminderless_item() -> None:
+    """Absent must not read as a change, or every old document becomes an update."""
+
+    repo = Repository()
+    _seed(repo)
+    doc = ie.build_export_document(repo, schema_version=CURRENT_SCHEMA_VERSION)
+    for entry in doc["items"]:
+        entry.pop("reminder_date", None)
+        entry.pop("reminder_interval", None)
+
+    report, _ = ie.plan_import(
+        repo, doc, policy="skip", current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert report["counts"]["items"]["unchanged"] == SEEDED_ITEMS
