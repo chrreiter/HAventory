@@ -56,10 +56,12 @@ def test_only_the_calendar_derived_counts_track_midnight() -> None:
     }
 
 
-def test_the_sensor_platform_is_the_only_one_forwarded() -> None:
-    """The calendar entity is #187's, not this platform's."""
+def test_the_forwarded_platforms_are_the_two_this_integration_owns() -> None:
+    """A platform in the tuple with no module beside it fails setup outright."""
 
-    assert [str(p) for p in PLATFORMS] == ["sensor"]
+    assert [str(p) for p in PLATFORMS] == ["sensor", "calendar"]
+    for platform in PLATFORMS:
+        assert (PACKAGE / f"{platform}.py").is_file(), platform
 
 
 def test_every_translation_key_is_named_in_both_translation_files() -> None:

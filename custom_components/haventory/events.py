@@ -23,7 +23,7 @@ from .const import (
     DOMAIN,
     EVENT_ITEM_CHANGED,
     EVENT_LOW_STOCK,
-    SIGNAL_COUNTS_UPDATED,
+    SIGNAL_INVENTORY_CHANGED,
 )
 from .models import iso_utc_now
 
@@ -96,7 +96,7 @@ def notify_mutation(
 
         _fire_low_stock_transitions(hass, bucket, item=item)
 
-        async_dispatcher_send(hass, SIGNAL_COUNTS_UPDATED)
+        async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED)
     except Exception:  # pragma: no cover - defensive
         LOGGER.exception(
             "Failed to notify a mutation",

@@ -246,9 +246,8 @@ Offline tests stub HA via `tests/conftest.py`.
   and [#231](https://github.com/chrreiter/HAventory/issues/231) sweep the rest).
 - Naming: domain/package `haventory`, services `haventory.*`, built assets
   `custom_components/haventory/www/` served at `/haventory_static/`, calendar entity
-  `calendar.haventory` — a name reserved for the calendar work
-  ([#187](https://github.com/chrreiter/HAventory/issues/187)), staged for the automation
-  milestone, not an entity that exists today.
+  `calendar.haventory` — pinned by the constant `CALENDAR_UNIQUE_ID`, which is what a
+  household's automations and dashboards name, so it does not move.
 - Report out-of-scope findings under a "Follow-ups" note rather than fixing them.
 
 See the README "Developer Checklist" for the full backend/frontend/CI checklist.
@@ -263,10 +262,13 @@ See the README "Developer Checklist" for the full backend/frontend/CI checklist.
 - **Areas are HA's, not ours.** The integration reads the area registry and never creates
   areas. An item's area is inherited from its location tree's root, exposed as
   `effective_area_id`, and shown with one chip vocabulary wherever the card marks an area.
-- **Reminders/calendar, when built, ride HA-native primitives** — a `CalendarEntity` plus
-  automations, not a bespoke scheduler. Staged for the automation milestone
-  ([#187](https://github.com/chrreiter/HAventory/issues/187)); do not start it before that
-  milestone is the current one.
+- **Reminders/calendar ride HA-native primitives** — `calendar.haventory` is a
+  `CalendarEntity`, and notifications are the household's own automations calling
+  `notify.notify`. Occurrences are **derived on read**, never scheduled and never stored:
+  `calendar_projection.py` turns the dates on items into events for whatever window is
+  asked about, and `calendar.py` is the Home Assistant wrapper over it. Do not add a timer,
+  a queue or a stored occurrence table — the only time-driven piece is a midnight state
+  rewrite so "next event" rolls over.
 
 ## Where work is tracked
 
