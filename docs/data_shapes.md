@@ -474,6 +474,45 @@ against the repository:
 - `area_id` reads the item's `effective_area_id`, so it selects the same area `ItemFilter.area_id` does. An item with no location carries `effective_area_id: null` and matches no area filter; a `null` or omitted `area_id` on the subscription means no area filter at all. `area_id` applies to the `items` topic only.
 - Filters combine with AND, and every one of them is applied to the payload as it stands *after* the mutation. An item that leaves a filtered set produces no event for that subscription, so a client tracking one re-lists rather than waiting for a departure event — including after a `locations` `moved` event, which is the only signal that a subtree's `effective_area_id` was rewritten.
 
+### Home Assistant bus events
+
+Fired on the HA bus after the durable write, from WebSocket mutations and `haventory.*`
+service calls alike. Separate from the WebSocket events above and unaffected by the rate
+limiter; see the API contract's "Home Assistant bus events".
+
+`haventory_item_changed`:
+```json
+{
+  "action": "created|updated|moved|quantity_changed|checked_out|checked_in|deleted",
+  "item_id": "uuid-v4",
+  "name": "string",
+  "quantity": 0,
+  "location_id": "uuid-v4|null",
+  "location_path": "Garage / Shelf A",
+  "effective_area_id": "string|null",
+  "version": 1,
+  "ts": "ISO8601Z"
+}
+```
+
+`haventory_low_stock`:
+```json
+{
+  "action": "entered|cleared",
+  "item_id": "uuid-v4",
+  "name": "string|null",
+  "quantity": 0,
+  "low_stock_threshold": 0,
+  "ts": "ISO8601Z"
+}
+```
+
+`location_path` is the **display path string**, not the object the WebSocket Item carries —
+a trigger template wants one readable value. The payload is trigger fodder: it deliberately
+omits `custom_fields`, `description`, `tags` and the rest, and an automation that needs them
+calls `haventory/item/get`. On a `cleared` fired for an item that was deleted, `name`,
+`quantity` and `low_stock_threshold` come from the body the delete removed.
+
 ### Service responses
 
 Every `haventory.*` service declares `SupportsResponse.OPTIONAL` and answers with the same

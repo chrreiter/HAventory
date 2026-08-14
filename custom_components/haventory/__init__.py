@@ -47,9 +47,9 @@ try:
 except ImportError:  # pragma: no cover - minimal harness without panel_custom
     async_register_panel = None  # type: ignore[assignment]
 
+from . import events, stale_files
 from . import media as media_mod
 from . import services as services_mod
-from . import stale_files
 from . import ws as ws_mod
 from .const import (
     CONF_CARD_TITLE,
@@ -61,6 +61,7 @@ from .const import (
     PANEL_ELEMENT_NAME,
     PANEL_ICON,
     PANEL_URL_PATH,
+    PLATFORMS,
     QUICK_FILTER_KEYS,
 )
 from .exceptions import CorruptSchemaVersionError, SchemaDowngradeError, StorageError
@@ -204,6 +205,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryError(_corrupt_store_message(load_report, store_key=store.key))
     hass.data[DOMAIN]["repository"] = repository
 
+    # Which items are already low, before anything can mutate. Without this the
+    # first mutation after every restart would announce `entered` for every item
+    # that was low before it.
+    events.seed_low_stock_snapshot(hass)
+
     # Serve attachment files, and collect the ones nothing references any more.
     # Both need the repository, so both come after it is in the bucket.
     _register_media_view(hass)
@@ -230,6 +236,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register WebSocket commands
     ws_mod.setup(hass)
 
+    # Entity platforms, after the repository is in the bucket the entities read
+    # so the first state write has data. Guarded like the update-listener wiring
+    # below: the offline HomeAssistant stub has no `config_entries`.
+    await _async_forward_platforms(hass, entry)
+
     # Serve the bundled card and point the frontend at it
     await _register_frontend_module(hass)
 
@@ -238,6 +249,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _async_apply_sidebar_panel(hass, entry)
 
     return True
+
+
+async def _async_forward_platforms(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Set up the entity platforms this entry owns, where there are any."""
+
+    config_entries = getattr(hass, "config_entries", None)
+    forward = getattr(config_entries, "async_forward_entry_setups", None)
+    if forward is None:
+        return
+    await forward(entry, list(PLATFORMS))
+
+
+async def _async_unload_platforms(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Take the entity platforms down before the bucket they read is emptied."""
+
+    config_entries = getattr(hass, "config_entries", None)
+    unload = getattr(config_entries, "async_unload_platforms", None)
+    if unload is None:
+        return True
+    return bool(await unload(entry, list(PLATFORMS)))
 
 
 def _register_media_view(hass: HomeAssistant) -> None:
@@ -424,7 +455,7 @@ async def _async_teardown_entry(hass: HomeAssistant, *, op: str) -> None:
     _drop_entry_runtime(hass)
 
 
-async def async_unload_entry(hass: HomeAssistant, _entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry.
 
     An unloaded entry owns nothing, so it serves nothing: the runtime goes the
@@ -437,9 +468,14 @@ async def async_unload_entry(hass: HomeAssistant, _entry: ConfigEntry) -> bool:
     # Ahead of the teardown, which empties the bucket the handler list lives in.
     _cleanup_ws_test_stub_registry(hass)
 
+    # Before the teardown too: the entities read the repository out of that
+    # bucket, and an entity still registered against an emptied one reports
+    # unavailable rather than being gone.
+    unloaded = await _async_unload_platforms(hass, entry)
+
     await _async_teardown_entry(hass, op="unload")
 
-    return True
+    return unloaded
 
 
 def _drop_entry_runtime(hass: HomeAssistant) -> None:

@@ -1,8 +1,13 @@
 """Constants for the HAventory integration.
 
 Defines the integration domain, the public integration version, the card
-title option, and the option keys/defaults for WebSocket rate limiting.
+title option, the option keys/defaults for WebSocket rate limiting, the entity
+platforms and the sensor catalog, and the Home Assistant bus event types.
 """
+
+from dataclasses import dataclass
+
+from homeassistant.const import Platform
 
 # Integration domain used across all modules and entity unique IDs
 DOMAIN: str = "haventory"
@@ -192,3 +197,57 @@ DEFAULT_RATE_LIMIT_EVENTS_PER_SECOND: float = 50.0
 DEFAULT_RATE_LIMIT_EVENTS_BURST: float = 200.0
 DEFAULT_RATE_LIMIT_GLOBAL_EVENTS_PER_SECOND: float = 500.0
 DEFAULT_RATE_LIMIT_GLOBAL_EVENTS_BURST: float = 1000.0
+
+# -----------------------------
+# Entity platforms
+# -----------------------------
+
+PLATFORMS: tuple[Platform, ...] = (Platform.SENSOR,)
+
+
+@dataclass(frozen=True, slots=True)
+class HaventorySensorDescription:
+    """One inventory count exposed as a sensor.
+
+    ``key`` is a key of ``Repository.get_counts()`` and the suffix of the
+    entity's ``unique_id``; ``translation_key`` names the entry under
+    ``entity.sensor`` in `strings.json`. ``date_derived`` marks the two counts
+    that move with the calendar rather than with a mutation, which is what makes
+    them subscribe to the UTC-midnight rollover as well as to mutations.
+    """
+
+    key: str
+    translation_key: str
+    icon: str
+    date_derived: bool = False
+
+
+# Four of the nine keys `get_counts()` returns. The rest stay card- and
+# WebSocket-only: a fresh install opening with nine entities is a worse default
+# than four, and promoting one later is additive.
+SENSOR_DESCRIPTIONS: tuple[HaventorySensorDescription, ...] = (
+    HaventorySensorDescription("items_total", "items_total", "mdi:package-variant-closed"),
+    HaventorySensorDescription("low_stock_count", "low_stock", "mdi:package-down"),
+    HaventorySensorDescription("overdue_count", "overdue", "mdi:calendar-alert", date_derived=True),
+    HaventorySensorDescription(
+        "inspection_overdue_count", "inspection_overdue", "mdi:clipboard-alert", date_derived=True
+    ),
+)
+
+# -----------------------------
+# Home Assistant bus events
+# -----------------------------
+# Fired after the durable write, from WebSocket mutations and `haventory.*`
+# service calls alike, so an automation can trigger on the inventory without a
+# WebSocket client. Payload shapes: docs/data_shapes.md.
+
+EVENT_ITEM_CHANGED: str = "haventory_item_changed"
+EVENT_LOW_STOCK: str = "haventory_low_stock"
+
+# Dispatcher signal the sensors listen on. Bus events are the public contract;
+# this is the internal nudge that repaints the entities.
+SIGNAL_COUNTS_UPDATED: str = "haventory_counts_updated"
+
+# `hass.data[DOMAIN]` key holding the previous low-stock id set. Seeded at setup
+# so a restart re-announces nothing, and diffed on every notification.
+DATA_LOW_STOCK_SNAPSHOT: str = "low_stock_snapshot"

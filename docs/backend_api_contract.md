@@ -151,6 +151,35 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - `items/bulk` shares one write across the whole batch, so a failed write costs the batch its `results` map: the command answers `storage_error` and none of its operations broadcast.
   - The rate limiter can still drop an event that was persisted — see "Rate limiting". The implication runs one way only: an event means a durable write, but a durable write does not guarantee an event.
 
+### Home Assistant bus events
+
+Everything above is WebSocket traffic, delivered to subscribed clients. HAventory also fires
+two event types on the **Home Assistant bus**, so an automation can trigger on the inventory
+with no WebSocket client at all. Payload shapes: `docs/data_shapes.md`.
+
+| Event type | Fired when | `action` |
+|---|---|---|
+| `haventory_item_changed` | an item is mutated | `created`, `updated`, `moved`, `quantity_changed`, `checked_out`, `checked_in`, `deleted` |
+| `haventory_low_stock` | an item crosses its `low_stock_threshold` | `entered`, `cleared` |
+
+- **The same "an event implies a durable write" rule holds here**: both are fired after the
+  persist, on every path — WebSocket handlers and `haventory.*` service calls alike. A
+  mutation that fails to persist fires nothing.
+- **The `action` vocabulary is the WebSocket one**, so a trigger and a subscription describe
+  the same mutation with the same word.
+- **`haventory_low_stock` is a set diff, not a per-handler check.** The set of low-stock ids
+  is snapshotted when the entry sets up — so a restart re-announces nothing — and diffed
+  after every mutation. One `entered` on the crossing, nothing while it stays low, one
+  `cleared` on restock or deletion. A wholesale `import/execute` diffs the same way rather
+  than announcing every row.
+- **The rate limiter does not apply.** It budgets WebSocket subscription traffic; bus events
+  are internal to Home Assistant, on the same reasoning as the `unavailable` notice.
+- **Bus events carry no item body beyond the trigger fields** — no `custom_fields`, no
+  `description`. An automation that needs the whole item calls `haventory/item/get`.
+- **Locations fire no bus event.** None of the counts a sensor exposes can move on a location
+  mutation: the repository refuses to delete a location that still holds items or children,
+  and a rename or re-anchor only rewrites derived fields.
+
 ### Items
 
 - `haventory/item/create`

@@ -17,7 +17,7 @@ import pytest
 import voluptuous as vol
 import yaml
 from custom_components.haventory import services as services_mod
-from custom_components.haventory.const import DOMAIN
+from custom_components.haventory.const import DOMAIN, EVENT_ITEM_CHANGED
 from custom_components.haventory.exceptions import ConflictError, NotFoundError, StorageError
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
@@ -371,6 +371,66 @@ async def test_delete_answers_once_and_then_raises_not_found() -> None:
     assert first["item"]["id"] == item_id
     with pytest.raises(NotFoundError):
         await services_mod.service_item_delete(hass, {"item_id": item_id})
+
+
+@pytest.mark.asyncio
+async def test_every_item_service_reaches_the_bus() -> None:
+    """A service mutation fires the same bus event its WebSocket twin does.
+
+    `services.py` imports no `ws` module, so before this it emitted nothing at
+    all: `haventory.item_create` left every sensor stale and triggered no
+    automation.
+    """
+
+    hass = HomeAssistant()
+    _repo, item_id, _loc_id = await _seeded(hass)
+
+    calls = [
+        (services_mod.service_item_update, {"item_id": item_id, "name": "Widget Pro"}, "updated"),
+        (
+            services_mod.service_item_move,
+            {"item_id": item_id, "new_location_id": None},
+            "moved",
+        ),
+        (
+            services_mod.service_item_adjust_quantity,
+            {"item_id": item_id, "delta": -1},
+            "quantity_changed",
+        ),
+        (
+            services_mod.service_item_set_quantity,
+            {"item_id": item_id, "quantity": 7},
+            "quantity_changed",
+        ),
+        (
+            services_mod.service_item_check_out,
+            {"item_id": item_id, "due_date": "2030-01-01"},
+            "checked_out",
+        ),
+        (services_mod.service_item_check_in, {"item_id": item_id}, "checked_in"),
+        (services_mod.service_item_delete, {"item_id": item_id}, "deleted"),
+    ]
+    for handler, payload, _action in calls:
+        await handler(hass, payload)
+
+    fired = hass.bus.events_of(EVENT_ITEM_CHANGED)
+    # The seed created one item and one location; the location fires nothing.
+    assert [e["action"] for e in fired] == ["created", *(action for _h, _p, action in calls)]
+    assert {e["item_id"] for e in fired} == {item_id}
+
+
+@pytest.mark.asyncio
+async def test_a_failed_service_fires_no_event() -> None:
+    """The event follows the durable write, so a rejected call announces nothing."""
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+
+    with pytest.raises(NotFoundError):
+        await services_mod.service_item_update(hass, {"item_id": "nope", "name": "Ghost"})
+
+    assert hass.bus.fired == []
 
 
 @pytest.mark.asyncio

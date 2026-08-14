@@ -5,9 +5,11 @@ back to Any via __getattr__. See pyproject [tool.mypy] mypy_path.
 """
 
 import asyncio
-from collections.abc import Coroutine, Mapping
+from collections.abc import Callable, Coroutine, Mapping
 from enum import StrEnum
 from typing import Any
+
+def callback[C: Callable[..., Any]](func: C) -> C: ...
 
 class SupportsResponse(StrEnum):
     NONE = "none"
