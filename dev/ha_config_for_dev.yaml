@@ -21,3 +21,11 @@ http:
   server_port: 8123
 
 websocket_api:
+
+# HAventory fires `haventory_item_changed` / `haventory_low_stock` on the bus, and
+# the only way to check that an automation really triggers on one is to have an
+# automation. Without these includes Home Assistant never reads the files the UI
+# editor and the config API write to, so an automation created there exists on disk
+# and nowhere else.
+automation: !include automations.yaml
+script: !include scripts.yaml

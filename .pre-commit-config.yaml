@@ -32,6 +32,10 @@ repos:
     rev: v4.6.0
     hooks:
       - id: check-yaml
+        # Syntax only. `dev/ha_config_for_dev.yaml` uses Home Assistant's `!include`
+        # tag, which a generic loader has no constructor for and rejects as a parse
+        # error rather than as bad YAML.
+        args: [--unsafe]
       - id: end-of-file-fixer
         exclude: |
           (?x)^(
