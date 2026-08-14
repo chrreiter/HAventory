@@ -16,11 +16,14 @@ import pytest
 from custom_components.haventory.calendar_projection import (
     KIND_DUE,
     KIND_INSPECTION,
+    KIND_REMINDER,
+    MAX_REMINDER_OCCURRENCES,
     build_events,
     next_event,
+    next_occurrence_after,
     window_dates,
 )
-from custom_components.haventory.models import Item, LocationPath
+from custom_components.haventory.models import Item, LocationPath, ReminderInterval
 
 WINDOW_START = date(2026, 8, 1)
 WINDOW_END = date(2026, 9, 1)
@@ -186,3 +189,144 @@ def test_a_part_day_window_finds_the_all_day_event_it_overlaps() -> None:
     events = build_events([_item("Ladder", due="2026-08-14")], start, end)
 
     assert [e.summary for e in events] == ["Ladder due back"]
+
+
+# ---------------------------------------------------------------------------
+# Recurring reminders — the anchor plus its interval, expanded on read
+# ---------------------------------------------------------------------------
+
+
+def _reminder(name: str, *, anchor: str, unit: str | None = None, count: int = 1) -> Item:
+    item = _item(name)
+    item.reminder_date = anchor
+    item.reminder_interval = ReminderInterval(unit=unit, count=count) if unit else None
+    return item
+
+
+def test_a_reminder_with_no_interval_is_a_single_occurrence() -> None:
+    events = build_events([_reminder("HVAC filter", anchor="2026-08-10")], WINDOW_START, WINDOW_END)
+
+    assert [(e.summary, e.start) for e in events] == [("HVAC filter reminder", date(2026, 8, 10))]
+    assert events[0].kind == KIND_REMINDER
+
+
+def test_a_monthly_reminder_shows_every_occurrence_the_window_covers() -> None:
+    """ "Every 3 months" over a year — the story the issue tells."""
+
+    filter_change = _reminder("HVAC filter", anchor="2026-03-01", unit="months", count=3)
+
+    events = build_events([filter_change], date(2026, 1, 1), date(2027, 1, 1))
+
+    assert [e.start for e in events] == [
+        date(2026, 3, 1),
+        date(2026, 6, 1),
+        date(2026, 9, 1),
+        date(2026, 12, 1),
+    ]
+
+
+def test_occurrences_before_the_window_are_not_drawn() -> None:
+    """The anchor may be years back; only what the window covers is projected.
+
+    Six months from 15 January lands on 15 January and 15 July, so the month
+    either side of one holds nothing at all.
+    """
+
+    smoke_alarm = _reminder("Smoke alarm", anchor="2020-01-15", unit="months", count=6)
+
+    assert [e.start for e in build_events([smoke_alarm], date(2026, 7, 1), date(2026, 8, 1))] == [
+        date(2026, 7, 15)
+    ]
+    assert build_events([smoke_alarm], date(2026, 8, 1), date(2026, 9, 1)) == []
+
+
+def test_a_series_anchored_on_the_31st_returns_to_the_31st() -> None:
+    """Clamping is measured from the anchor, so February does not capture it."""
+
+    events = build_events(
+        [_reminder("Meter reading", anchor="2026-01-31", unit="months", count=1)],
+        date(2026, 1, 1),
+        date(2026, 6, 1),
+    )
+
+    assert [e.start for e in events] == [
+        date(2026, 1, 31),
+        date(2026, 2, 28),
+        date(2026, 3, 31),
+        date(2026, 4, 30),
+        date(2026, 5, 31),
+    ]
+
+
+def test_every_occurrence_of_a_series_gets_its_own_uid() -> None:
+    """Two occurrences sharing a uid would be one event to any client reading them."""
+
+    events = build_events(
+        [_reminder("Water filter", anchor="2026-08-01", unit="weeks", count=1)],
+        WINDOW_START,
+        WINDOW_END,
+    )
+
+    assert len({e.uid for e in events}) == len(events)
+    assert all(e.uid.endswith(e.start.isoformat()) for e in events)
+
+
+def test_a_daily_reminder_is_capped_rather_than_expanded_without_bound() -> None:
+    """A window nothing could draw gets a bounded answer, not an unbounded list."""
+
+    events = build_events(
+        [_reminder("Watering", anchor="2026-01-01", unit="days", count=1)],
+        date(2026, 1, 1),
+        date(2036, 1, 1),
+    )
+
+    assert len(events) == MAX_REMINDER_OCCURRENCES
+
+
+def test_next_event_over_a_recurring_reminder_returns_the_nearest_occurrence() -> None:
+    """Unbounded ahead, but a series still costs one occurrence, not a horizon's worth."""
+
+    reminder = _reminder("Boiler service", anchor="2020-02-01", unit="months", count=12)
+
+    assert next_event([reminder], date(2026, 8, 14)).start == date(2027, 2, 1)
+
+
+def test_a_reminder_and_an_inspection_on_one_item_are_separate_events() -> None:
+    item = _reminder("Extinguisher", anchor="2026-08-10", unit="months", count=6)
+    item.inspection_date = "2026-08-12"
+
+    events = build_events([item], WINDOW_START, WINDOW_END)
+
+    assert [(e.kind, e.start) for e in events] == [
+        (KIND_REMINDER, date(2026, 8, 10)),
+        (KIND_INSPECTION, date(2026, 8, 12)),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("anchor", "unit", "count", "after", "expected"),
+    [
+        # Bumped on the day it came round: exactly one interval on.
+        ("2026-08-14", "months", 3, date(2026, 8, 14), date(2026, 11, 14)),
+        ("2026-08-14", "days", 30, date(2026, 8, 14), date(2026, 9, 13)),
+        ("2026-08-14", "weeks", 2, date(2026, 8, 14), date(2026, 8, 28)),
+        # Long overdue: the next *future* occurrence, not the next one after
+        # the anchor, which would still be in the past.
+        ("2020-01-01", "months", 6, date(2026, 8, 14), date(2027, 1, 1)),
+        # Month-end anchors keep counting from the anchor.
+        ("2026-01-31", "months", 1, date(2026, 1, 31), date(2026, 2, 28)),
+    ],
+    ids=["monthly", "days", "weeks", "long-overdue", "month-end"],
+)
+def test_next_occurrence_after_is_where_a_bump_lands(
+    anchor: str, unit: str, count: int, after: date, expected: date
+) -> None:
+    result = next_occurrence_after(date.fromisoformat(anchor), ReminderInterval(unit, count), after)
+
+    assert result == expected
+
+
+def test_next_occurrence_after_a_one_off_is_none() -> None:
+    """A one-off has nothing to move to; the caller decides to clear it instead."""
+
+    assert next_occurrence_after(date(2026, 8, 14), None, date(2026, 8, 14)) is None

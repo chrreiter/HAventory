@@ -894,6 +894,10 @@ export function makeItem(partial?: Partial<Item>): Item {
       : { effective_area_id: partial.effective_area_id }),
     ...(partial?.status === undefined ? {} : { status: partial.status }),
     ...(partial?.attachments === undefined ? {} : { attachments: partial.attachments }),
+    ...(partial?.reminder_date === undefined ? {} : { reminder_date: partial.reminder_date }),
+    ...(partial?.reminder_interval === undefined
+      ? {}
+      : { reminder_interval: partial.reminder_interval }),
   };
 }
 

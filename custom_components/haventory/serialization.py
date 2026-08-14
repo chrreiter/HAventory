@@ -13,7 +13,7 @@ from typing import Any, cast
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
-from .models import Item, Location, serialize_attachment_meta
+from .models import Item, Location, serialize_attachment_meta, serialize_reminder_interval
 from .repository import Repository
 
 
@@ -45,6 +45,8 @@ def serialize_item(hass: HomeAssistant, item: Item) -> dict[str, Any]:
         "checked_out": item.checked_out,
         "due_date": item.due_date,
         "inspection_date": item.inspection_date,
+        "reminder_date": item.reminder_date,
+        "reminder_interval": serialize_reminder_interval(item.reminder_interval),
         "location_id": str(item.location_id) if item.location_id is not None else None,
         "tags": list(item.tags),
         "category": item.category,

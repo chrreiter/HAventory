@@ -18,6 +18,7 @@ import { DISCARD_PROMPT } from '../ui/discard';
 import { ViewportNarrow } from '../ui/responsive';
 import { nextZBase } from '../utils/zindex';
 import {
+  REMINDER_UNITS,
   customFieldsFrom,
   formFromItem,
   isDirty,
@@ -47,6 +48,7 @@ import type {
   Location,
   LocationTreeNode,
   MediaConfig,
+  ReminderUnit,
   StatusDefinition,
 } from '../store/types';
 import './hv-chip-input';
@@ -61,6 +63,13 @@ import './hv-checkout-popover';
  * which is where the whole block hides behind a disclosure to begin with.
  */
 const DUE_DATE_HINT = 'A due date applies while the item is checked out.';
+
+/**
+ * Why the repeat is dead until a date is set. The backend refuses an interval
+ * with nothing to count from, so this says the same thing before the round trip
+ * — as a note and as the field's `title`, for the same reason as the due date's.
+ */
+const REMINDER_HINT = 'Pick a date first; leave the repeat empty for a one-off.';
 
 const CUSTOM_FIELD_TYPES: { value: CustomFieldType; label: string }[] = [
   { value: 'string', label: 'Text' },
@@ -230,6 +239,25 @@ export class HVItemEditor extends LitElement {
       }
       :host([mobile]) .state {
         grid-template-columns: 1fr;
+      }
+      /* The reminder is three controls where the boxes beside it are one or
+         two, so it takes the row rather than being squeezed into a half. */
+      .state .reminder {
+        grid-column: 1 / -1;
+      }
+      .repeat {
+        display: grid;
+        grid-template-columns: auto minmax(0, 4.5rem) minmax(0, 7rem);
+        align-items: center;
+        gap: 8px;
+      }
+      :host([mobile]) .repeat {
+        /* The label owns the first row on a phone; the two inputs share the
+           second, which keeps the number wide enough to read at 375px. */
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+      :host([mobile]) .repeat > label {
+        grid-column: 1 / -1;
       }
       /* Packed to the top, because the row above stretches these boxes to the
          taller of the two: auto rows in a stretched grid share the surplus out
@@ -1786,6 +1814,78 @@ export class HVItemEditor extends LitElement {
             ${this._renderInspectionOffsets(model.inspectionDate)}
           </div>
         </div>
+        ${this._renderReminderFields()}
+      </div>
+    </div>`;
+  }
+
+  /**
+   * A date that comes round again — "change the HVAC filter every 3 months".
+   *
+   * Two controls for one setting: the date is when it next comes round, and the
+   * repeat is optional beside it. Leaving the repeat empty is a one-off, which
+   * is why the count is a blank rather than a 1 — a household setting a single
+   * date should not have to clear a number to get one.
+   *
+   * The pair is written with the rest of the form, not through
+   * `haventory/reminder/set`: one save, one version bump, one conflict to
+   * resolve. The dedicated commands exist for automations, where there is no
+   * form to carry the other fields.
+   */
+  private _renderReminderFields() {
+    const model = this._model;
+    return html`<div class="group reminder" role="group" aria-labelledby="editor-reminder-caption">
+      <span class="hv-label group-caption" id="editor-reminder-caption" data-testid="editor-reminder-caption">
+        ${icon('clock', 14)} Reminder
+      </span>
+      <div class="group-body">
+        <input
+          id="editor-reminder-date"
+          class="hv-input"
+          type="date"
+          aria-label="Reminder date"
+          data-testid="editor-reminder-date"
+          .value=${model.reminderDate}
+          @input=${(e: Event) =>
+            this._patch({ reminderDate: (e.target as HTMLInputElement).value })}
+        />
+        <div class="repeat">
+          <label class="hv-label ${model.reminderDate ? '' : 'muted'}" for="editor-reminder-count">
+            Repeat every
+          </label>
+          <input
+            id="editor-reminder-count"
+            class="hv-input repeat-count"
+            type="number"
+            min="1"
+            max="1000"
+            placeholder="—"
+            data-testid="editor-reminder-count"
+            ?disabled=${!model.reminderDate}
+            title=${model.reminderDate ? '' : REMINDER_HINT}
+            .value=${model.reminderCount === null ? '' : String(model.reminderCount)}
+            @input=${(e: Event) => {
+              const raw = (e.target as HTMLInputElement).value.trim();
+              this._patch({ reminderCount: raw === '' ? null : Number(raw) });
+            }}
+          />
+          <select
+            class="hv-input repeat-unit"
+            aria-label="Repeat unit"
+            data-testid="editor-reminder-unit"
+            ?disabled=${!model.reminderDate}
+            .value=${model.reminderUnit}
+            @change=${(e: Event) =>
+              this._patch({ reminderUnit: (e.target as HTMLSelectElement).value as ReminderUnit })}
+          >
+            ${REMINDER_UNITS.map(
+              (unit) => html`<option value=${unit} ?selected=${unit === model.reminderUnit}>${unit}</option>`,
+            )}
+          </select>
+        </div>
+        ${model.reminderDate
+          ? null
+          : html`<span class="group-hint" data-testid="editor-reminder-hint">${REMINDER_HINT}</span>`}
       </div>
     </div>`;
   }

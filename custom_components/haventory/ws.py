@@ -10,7 +10,7 @@ import asyncio
 import functools
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, TypedDict, cast
 
 import voluptuous as vol
@@ -26,6 +26,7 @@ from . import import_export, todo_bridge
 from . import media as media_mod
 from . import storage as storage_mod
 from .areas import async_get_area_registry
+from .calendar_projection import next_occurrence_after
 from .const import (
     ATTACHMENT_MANUAL_MIME_TYPES,
     ATTACHMENT_PICTURE_MIME_TYPES,
@@ -1229,6 +1230,8 @@ async def ws_unsubscribe(
         vol.Optional("checked_out"): bool,
         vol.Optional("due_date"): vol.Any(str, None),
         vol.Optional("inspection_date"): vol.Any(str, None),
+        vol.Optional("reminder_date"): vol.Any(str, None),
+        vol.Optional("reminder_interval"): vol.Any(dict, None),
         vol.Optional("location_id"): object,
         vol.Optional("tags"): [str],
         vol.Optional("category"): object,
@@ -1276,6 +1279,8 @@ async def ws_item_get(
         vol.Optional("checked_out"): bool,
         vol.Optional("due_date"): vol.Any(str, None),
         vol.Optional("inspection_date"): vol.Any(str, None),
+        vol.Optional("reminder_date"): vol.Any(str, None),
+        vol.Optional("reminder_interval"): vol.Any(dict, None),
         vol.Optional("location_id"): object,
         vol.Optional("tags"): object,
         vol.Optional("category"): object,
@@ -1442,6 +1447,113 @@ async def ws_item_check_in(
     notify_mutation(hass, action="checked_in", item=serialized)
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+async def _apply_reminder(
+    hass: HomeAssistant,
+    conn: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+    update: ItemUpdate,
+) -> None:
+    """Write a reminder change as the ordinary item edit it is.
+
+    Setting a reminder bumps `version` and `updated_at` and answers the same
+    `conflict` a name edit would: unlike the derived `location_path`, a reminder
+    is something the household chose.
+    """
+
+    item = _repo(hass).update_item(
+        msg["item_id"], update, expected_version=msg.get("expected_version")
+    )
+    serialized = serialize_item(hass, item)
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
+    notify_mutation(hass, action="updated", item=serialized)
+    _broadcast_counts(hass)
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/reminder/set",
+        vol.Required("item_id"): object,
+        vol.Required("reminder_date"): str,
+        vol.Optional("reminder_interval"): vol.Any(dict, None),
+        vol.Optional("expected_version"): int,
+    }
+)
+@websocket_api.async_response
+@ws_guard("reminder_set", ("item_id", "reminder_date", "expected_version"))
+async def ws_reminder_set(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    # `reminder_interval` absent means "no recurrence", not "leave the stored
+    # one": the command names the whole reminder, so an omitted interval is the
+    # caller saying this is a one-off.
+    update = cast(
+        "ItemUpdate",
+        {
+            "reminder_date": msg["reminder_date"],
+            "reminder_interval": msg.get("reminder_interval"),
+        },
+    )
+    await _apply_reminder(hass, conn, msg, update)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/reminder/clear",
+        vol.Required("item_id"): object,
+        vol.Optional("expected_version"): int,
+    }
+)
+@websocket_api.async_response
+@ws_guard("reminder_clear", ("item_id", "expected_version"))
+async def ws_reminder_clear(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    update = cast("ItemUpdate", {"reminder_date": None, "reminder_interval": None})
+    await _apply_reminder(hass, conn, msg, update)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "haventory/reminder/bump",
+        vol.Required("item_id"): object,
+        vol.Optional("expected_version"): int,
+    }
+)
+@websocket_api.async_response
+@ws_guard("reminder_bump", ("item_id", "expected_version"))
+async def ws_reminder_bump(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Move a reminder on to its next occurrence — "I have just done this".
+
+    The whole series moves with the anchor, which is why bumping is one command
+    rather than the client working out the next date and writing it back: two
+    clients bumping the same reminder land on the same answer.
+
+    Counted from the later of the anchor and today, so a reminder bumped on the
+    day it came round advances by exactly one interval, and one nobody bumped
+    for a year lands on its next *future* occurrence instead of another date
+    already past. Today is the UTC one, the same day `overdue_only` and the two
+    date-derived counts are measured against.
+    """
+
+    item = _repo(hass).get_item(msg["item_id"])
+    if item.reminder_date is None:
+        raise ValidationError("item has no reminder to bump")
+    anchor = date.fromisoformat(item.reminder_date)
+    following = next_occurrence_after(
+        anchor, item.reminder_interval, max(anchor, date.fromisoformat(today_utc_date()))
+    )
+    if following is None:
+        raise ValidationError(
+            "a reminder with no interval has no next occurrence; clear it instead"
+        )
+    update = cast("ItemUpdate", {"reminder_date": following.isoformat()})
+    await _apply_reminder(hass, conn, msg, update)
 
 
 @websocket_api.websocket_command(
@@ -2504,6 +2616,9 @@ def setup(hass: HomeAssistant) -> None:
         ws_item_set_quantity,
         ws_item_check_out,
         ws_item_check_in,
+        ws_reminder_set,
+        ws_reminder_clear,
+        ws_reminder_bump,
         ws_item_add_tags,
         ws_item_remove_tags,
         ws_item_update_custom_fields,

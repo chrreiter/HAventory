@@ -154,6 +154,27 @@ class AttachmentMeta:
     order: int = 0
 
 
+# How often a reminder comes round. Calendar units rather than a plain number
+# of days: "every 3 months" is what a household says, and expanding it as 90
+# days would walk the date off the month it belongs to.
+REMINDER_UNITS: Final[tuple[str, ...]] = ("days", "weeks", "months")
+# A bound, not a policy: an interval is a small repeating period, and a count
+# this large is a typo or a probe rather than a household's intent.
+REMINDER_COUNT_MAX: Final[int] = 1000
+
+
+@dataclass(frozen=True, slots=True)
+class ReminderInterval:
+    """How far apart a reminder's occurrences fall.
+
+    Frozen: an interval is a value, and sharing one between items must not let
+    an edit to one move the other.
+    """
+
+    unit: str
+    count: int
+
+
 @dataclass
 class Item:
     """Persisted shape for an inventory item."""
@@ -168,6 +189,12 @@ class Item:
     # When the item is next due for inspection — a forward-looking date, so a
     # value before today means the inspection is outstanding.
     inspection_date: str | None = None  # YYYY-MM-DD
+    # The anchor of a recurring reminder: the next date it comes round. With
+    # `reminder_interval` set it is the start of a series the calendar expands
+    # on read; alone it is a one-off. Nothing schedules from it — see
+    # `calendar_projection.py`.
+    reminder_date: str | None = None  # YYYY-MM-DD
+    reminder_interval: ReminderInterval | None = None
     location_id: uuid.UUID | None = None
     tags: list[str] = field(default_factory=list)
     category: str | None = None
@@ -194,6 +221,8 @@ class ItemCreate(TypedDict, total=False):
     checked_out: bool
     due_date: str | None
     inspection_date: str | None
+    reminder_date: str | None
+    reminder_interval: dict[str, Any] | None
     location_id: str | None
     tags: list[str]
     category: str | None
@@ -211,6 +240,8 @@ class ItemUpdate(TypedDict, total=False):
     checked_out: bool
     due_date: str | None
     inspection_date: str | None
+    reminder_date: str | None
+    reminder_interval: dict[str, Any] | None
     location_id: str | None
     tags: list[str] | None
     category: str | None
@@ -815,6 +846,85 @@ def validate_inspection_date(inspection_date: str | None) -> str | None:
     return normalize_date_yyyy_mm_dd(inspection_date)
 
 
+def validate_reminder_date(reminder_date: str | None) -> str | None:
+    """Validate the reminder anchor's format if provided.
+
+    A past anchor is accepted: it is the date the series counts from, and a
+    recurring reminder set up years ago is still due on whichever occurrence
+    comes next.
+    """
+
+    if reminder_date is None:
+        return None
+    return normalize_date_yyyy_mm_dd(reminder_date)
+
+
+def validate_reminder_interval(value: object) -> ReminderInterval | None:
+    """Validate `{unit, count}` into a `ReminderInterval`, or none.
+
+    Rejects a zero or negative count outright: an interval of zero occurrences
+    apart has no next occurrence, and expanding it would not terminate.
+    """
+
+    if value is None:
+        return None
+    if isinstance(value, ReminderInterval):
+        interval = value
+    elif isinstance(value, Mapping):
+        # `count` is carried through unchecked so the guards below can name what
+        # is wrong with it; coercing here would turn "every True days" into 1.
+        interval = ReminderInterval(unit=str(value.get("unit", "")), count=value.get("count", 0))
+    else:
+        raise ValidationError("reminder_interval must be an object with 'unit' and 'count'")
+
+    if interval.unit not in REMINDER_UNITS:
+        raise ValidationError(f"reminder_interval.unit must be one of {', '.join(REMINDER_UNITS)}")
+    if not _is_int_not_bool(interval.count) or interval.count < 1:
+        raise ValidationError("reminder_interval.count must be an integer >= 1")
+    if interval.count > REMINDER_COUNT_MAX:
+        raise ValidationError(f"reminder_interval.count must be <= {REMINDER_COUNT_MAX}")
+    return ReminderInterval(unit=interval.unit, count=int(interval.count))
+
+
+def validate_reminder_rules(
+    *, reminder_date: str | None, reminder_interval: object
+) -> tuple[str | None, ReminderInterval | None]:
+    """Validate the pair, and hold the one rule that binds them.
+
+    An interval with no anchor has nothing to count from, so it is refused
+    rather than silently stored — an item carrying a recurrence that can never
+    produce an occurrence reads as a reminder that quietly does nothing.
+    """
+
+    normalized_date = validate_reminder_date(reminder_date)
+    interval = validate_reminder_interval(reminder_interval)
+    if interval is not None and normalized_date is None:
+        raise ValidationError("reminder_interval requires a reminder_date to count from")
+    return normalized_date, interval
+
+
+def serialize_reminder_interval(interval: ReminderInterval | None) -> dict[str, Any] | None:
+    """The stored and wire shape of an interval."""
+
+    if interval is None:
+        return None
+    return {"unit": interval.unit, "count": interval.count}
+
+
+def load_reminder_interval(value: object) -> ReminderInterval | None:
+    """Read a stored interval, treating anything unreadable as none.
+
+    Tolerant on the load path where `validate_reminder_interval` is strict: a
+    row whose interval cannot be read still has an item and an anchor worth
+    keeping, and refusing the store over it would cost more than the recurrence.
+    """
+
+    try:
+        return validate_reminder_interval(value)
+    except ValidationError:
+        return None
+
+
 def build_location_path(location_chain: list[Location]) -> LocationPath:
     """Build a denormalized LocationPath from a chain ordered root->leaf."""
 
@@ -963,6 +1073,10 @@ def create_item_from_create(
     validate_custom_fields(custom_fields)
     normalized_due_date = validate_due_date_rules(checked_out=checked_out, due_date=due_date)
     normalized_inspection_date = validate_inspection_date(inspection_date)
+    normalized_reminder_date, reminder_interval = validate_reminder_rules(
+        reminder_date=payload.get("reminder_date"),
+        reminder_interval=payload.get("reminder_interval"),
+    )
 
     location_id: uuid.UUID | None = None
     if location_id_raw is not None:
@@ -986,6 +1100,8 @@ def create_item_from_create(
         checked_out=checked_out,
         due_date=normalized_due_date,
         inspection_date=normalized_inspection_date,
+        reminder_date=normalized_reminder_date,
+        reminder_interval=reminder_interval,
         location_id=location_id,
         tags=tags,
         category=category,
@@ -1046,6 +1162,25 @@ def _update_checkout_and_due_date(new_item: Item, update: ItemUpdate) -> None:
 def _update_inspection_date(new_item: Item, update: ItemUpdate) -> None:
     if "inspection_date" in update:
         new_item.inspection_date = validate_inspection_date(update["inspection_date"])
+
+
+def _update_reminder(new_item: Item, update: ItemUpdate) -> None:
+    """Apply either half of the reminder, holding the pair's rule across both.
+
+    An update naming only one of the two is validated against the item's stored
+    other half, so clearing the anchor of a recurring reminder is refused rather
+    than leaving an interval with nothing to count from.
+    """
+
+    if "reminder_date" not in update and "reminder_interval" not in update:
+        return
+    date_value = update["reminder_date"] if "reminder_date" in update else new_item.reminder_date
+    interval_value = (
+        update["reminder_interval"] if "reminder_interval" in update else new_item.reminder_interval
+    )
+    new_item.reminder_date, new_item.reminder_interval = validate_reminder_rules(
+        reminder_date=date_value, reminder_interval=interval_value
+    )
 
 
 def _update_location_and_path(
@@ -1124,6 +1259,7 @@ def apply_item_update(
     _update_status(new_item, update, known_statuses)
     _update_checkout_and_due_date(new_item, update)
     _update_inspection_date(new_item, update)
+    _update_reminder(new_item, update)
     _update_location_and_path(new_item, update, locations_by_id)
     _update_tags_category_threshold(new_item, update)
     _update_custom_fields(new_item, update)

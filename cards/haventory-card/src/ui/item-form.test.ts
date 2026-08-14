@@ -6,6 +6,7 @@ import {
   isDirty,
   newCustomFieldRow,
   normalizeTags,
+  reminderIntervalFrom,
   toCreatePayload,
   toUpdatePayload,
   validateForm,
@@ -329,6 +330,8 @@ describe('toCreatePayload', () => {
       checked_out: false,
       due_date: null,
       inspection_date: null,
+      reminder_date: null,
+      reminder_interval: null,
       custom_fields: { supplier: 'Acme' },
     });
   });
@@ -401,5 +404,97 @@ describe('isDirty', () => {
 
   it('notices typing a name into a blank create form', () => {
     expect(isDirty({ ...formFromItem(null), name: 'New' }, null)).toBe(true);
+  });
+});
+
+describe('reminders', () => {
+  it('reads a stored reminder onto the form', () => {
+    const item = makeItem({
+      reminder_date: '2026-09-01',
+      reminder_interval: { unit: 'months', count: 3 },
+    });
+    expect(formFromItem(item)).toMatchObject({
+      reminderDate: '2026-09-01',
+      reminderCount: 3,
+      reminderUnit: 'months',
+    });
+  });
+
+  it('opens on a blank count so a single date needs nothing cleared', () => {
+    expect(base()).toMatchObject({ reminderDate: '', reminderCount: null, reminderUnit: 'months' });
+  });
+
+  it('sends no interval for a one-off', () => {
+    const payload = toCreatePayload({ ...base(), name: 'A', reminderDate: '2026-09-01' });
+    expect(payload.reminder_date).toBe('2026-09-01');
+    expect(payload.reminder_interval).toBe(null);
+  });
+
+  it('sends the interval the form describes', () => {
+    const payload = toCreatePayload({
+      ...base(),
+      name: 'A',
+      reminderDate: '2026-09-01',
+      reminderCount: 2,
+      reminderUnit: 'weeks',
+    });
+    expect(payload.reminder_interval).toEqual({ unit: 'weeks', count: 2 });
+  });
+
+  it('drops the interval when the date is cleared, because the backend refuses the pair', () => {
+    const payload = toCreatePayload({
+      ...base(),
+      name: 'A',
+      reminderDate: '',
+      reminderCount: 3,
+      reminderUnit: 'months',
+    });
+    expect(payload.reminder_date).toBe(null);
+    expect(payload.reminder_interval).toBe(null);
+  });
+
+  it('ignores a repeat left behind by clearing the date', () => {
+    // The repeat is disabled without a date and dropped from the payload, so
+    // refusing the save would trap the one edit that clears it.
+    expect(validateForm({ ...base(), name: 'A', reminderCount: 3 })).toEqual([]);
+    expect(toCreatePayload({ ...base(), name: 'A', reminderCount: 3 }).reminder_interval).toBe(
+      null,
+    );
+  });
+
+  it.each([0, -1, 1001, 1.5])('refuses a repeat of %s', (count) => {
+    const errors = validateForm({
+      ...base(),
+      name: 'A',
+      reminderDate: '2026-09-01',
+      reminderCount: count,
+    });
+    expect(errors.map((e) => e.field)).toContain('reminder');
+  });
+
+  it('accepts a date with no repeat, and a date with a valid one', () => {
+    expect(validateForm({ ...base(), name: 'A', reminderDate: '2026-09-01' })).toEqual([]);
+    expect(
+      validateForm({ ...base(), name: 'A', reminderDate: '2026-09-01', reminderCount: 3 }),
+    ).toEqual([]);
+  });
+
+  it('counts a changed reminder as dirty', () => {
+    const item = makeItem({ reminder_date: '2026-09-01' });
+    expect(isDirty(formFromItem(item), item)).toBe(false);
+    expect(isDirty({ ...formFromItem(item), reminderDate: '2026-10-01' }, item)).toBe(true);
+    expect(isDirty({ ...formFromItem(item), reminderCount: 3 }, item)).toBe(true);
+  });
+
+  it('does not count a unit change with no count as dirty', () => {
+    // It describes the same one-off it started as, so saving would be a no-op
+    // that still bumps the item's version.
+    const item = makeItem({ reminder_date: '2026-09-01' });
+    expect(isDirty({ ...formFromItem(item), reminderUnit: 'days' }, item)).toBe(false);
+  });
+
+  it('builds no interval without both halves', () => {
+    expect(reminderIntervalFrom({ ...base(), reminderDate: '2026-09-01' })).toBe(null);
+    expect(reminderIntervalFrom({ ...base(), reminderCount: 3 })).toBe(null);
   });
 });

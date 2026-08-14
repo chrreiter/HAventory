@@ -38,7 +38,7 @@ from .models import seed_status_definitions, serialize_status_definition
 _LOGGER = logging.getLogger(__name__)
 
 # Current schema version for persisted payloads
-CURRENT_SCHEMA_VERSION: Final[int] = 7
+CURRENT_SCHEMA_VERSION: Final[int] = 8
 
 # Storage key under which the persisted dataset is saved
 STORAGE_KEY: Final[str] = "haventory_store"

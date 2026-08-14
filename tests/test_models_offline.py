@@ -25,16 +25,19 @@ from custom_components.haventory.models import (
     ItemUpdate,
     Location,
     LocationPath,
+    ReminderInterval,
     apply_item_update,
     build_location_path,
     build_location_path_from_map,
     create_item_from_create,
     iso_utc_now,
     load_attachments,
+    load_reminder_interval,
     monotonic_timestamp_after,
     new_uuid4_str,
     seed_status_definitions,
     serialize_attachment_meta,
+    serialize_reminder_interval,
     serialize_status_definition,
     validate_attachment_meta,
     validate_status_definition,
@@ -414,3 +417,140 @@ def test_every_colour_has_a_light_and_a_strong_variant() -> None:
 
     assert light
     assert sorted(f"{hue}_strong" for hue in light) == sorted(strong)
+
+
+# ---------------------------------------------------------------------------
+# Reminders
+# ---------------------------------------------------------------------------
+
+
+def test_a_reminder_survives_creation_and_serialization() -> None:
+    item = create_item_from_create(
+        ItemCreate(
+            name="HVAC filter",
+            reminder_date="2026-09-01",
+            reminder_interval={"unit": "months", "count": 3},
+        )
+    )
+
+    assert item.reminder_date == "2026-09-01"
+    assert item.reminder_interval == ReminderInterval(unit="months", count=3)
+    assert serialize_reminder_interval(item.reminder_interval) == {"unit": "months", "count": 3}
+
+
+@pytest.mark.parametrize("count", [0, -1, -1000])
+def test_a_zero_or_negative_count_is_refused(count: int) -> None:
+    """Occurrences zero apart have no next one, and expanding them would not end."""
+
+    with pytest.raises(ValidationError, match="count"):
+        create_item_from_create(
+            ItemCreate(
+                name="HVAC filter",
+                reminder_date="2026-09-01",
+                reminder_interval={"unit": "months", "count": count},
+            )
+        )
+
+
+def test_a_true_count_is_refused_despite_being_an_int_in_python() -> None:
+    """`True == 1`, and "every True months" is not what anybody typed."""
+
+    with pytest.raises(ValidationError, match="count"):
+        create_item_from_create(
+            ItemCreate(
+                name="HVAC filter",
+                reminder_date="2026-09-01",
+                reminder_interval={"unit": "days", "count": True},
+            )
+        )
+
+
+def test_an_unknown_unit_is_refused() -> None:
+    with pytest.raises(ValidationError, match="unit"):
+        create_item_from_create(
+            ItemCreate(
+                name="HVAC filter",
+                reminder_date="2026-09-01",
+                reminder_interval={"unit": "fortnights", "count": 2},
+            )
+        )
+
+
+def test_an_interval_with_no_anchor_is_refused() -> None:
+    """A recurrence with nothing to count from can never produce an occurrence."""
+
+    with pytest.raises(ValidationError, match="reminder_date"):
+        create_item_from_create(
+            ItemCreate(name="HVAC filter", reminder_interval={"unit": "months", "count": 3})
+        )
+
+
+def test_a_malformed_anchor_is_refused() -> None:
+    with pytest.raises(ValidationError):
+        create_item_from_create(ItemCreate(name="HVAC filter", reminder_date="01-09-2026"))
+
+
+def test_an_update_may_change_the_interval_alone() -> None:
+    """The stored anchor is what the lone interval is validated against."""
+
+    item = create_item_from_create(
+        ItemCreate(
+            name="HVAC filter",
+            reminder_date="2026-09-01",
+            reminder_interval={"unit": "months", "count": 3},
+        )
+    )
+
+    updated = apply_item_update(item, ItemUpdate(reminder_interval={"unit": "weeks", "count": 2}))
+
+    assert updated.reminder_date == "2026-09-01"
+    assert updated.reminder_interval == ReminderInterval(unit="weeks", count=2)
+    assert updated.version == item.version + 1
+
+
+def test_clearing_both_halves_at_once_is_allowed() -> None:
+    item = create_item_from_create(
+        ItemCreate(
+            name="HVAC filter",
+            reminder_date="2026-09-01",
+            reminder_interval={"unit": "months", "count": 3},
+        )
+    )
+
+    updated = apply_item_update(item, ItemUpdate(reminder_date=None, reminder_interval=None))
+
+    assert updated.reminder_date is None
+    assert updated.reminder_interval is None
+
+
+def test_an_update_naming_neither_half_leaves_the_reminder_alone() -> None:
+    item = create_item_from_create(
+        ItemCreate(
+            name="HVAC filter",
+            reminder_date="2026-09-01",
+            reminder_interval={"unit": "months", "count": 3},
+        )
+    )
+
+    updated = apply_item_update(item, ItemUpdate(name="HVAC filter 2"))
+
+    assert updated.reminder_date == "2026-09-01"
+    assert updated.reminder_interval == ReminderInterval(unit="months", count=3)
+
+
+@pytest.mark.parametrize(
+    "stored", [None, {}, {"unit": "months"}, {"unit": "aeons", "count": 1}, "monthly", 3]
+)
+def test_an_unreadable_stored_interval_loads_as_none(stored: object) -> None:
+    """The load path keeps the item and the anchor; only the recurrence is lost.
+
+    Strict on the way in (`validate_reminder_interval`), tolerant on the way
+    back out: refusing a whole store over one unreadable recurrence would cost
+    more than the recurrence is worth.
+    """
+
+    assert load_reminder_interval(stored) is None
+
+
+def test_a_readable_stored_interval_loads_intact() -> None:
+    assert load_reminder_interval({"unit": "weeks", "count": 2}) == ReminderInterval("weeks", 2)

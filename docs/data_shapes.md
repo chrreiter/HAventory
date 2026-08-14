@@ -19,6 +19,8 @@ Object shape for persisted items and API results:
   "checked_out": false,
   "due_date": "YYYY-MM-DD|null",
   "inspection_date": "YYYY-MM-DD|null",
+  "reminder_date": "YYYY-MM-DD|null",
+  "reminder_interval": {"unit": "days|weeks|months", "count": 1},
   "location_id": "uuid-v4|null",
   "tags": ["string", "..."],
   "category": "string|null",
@@ -49,6 +51,21 @@ A value strictly before today (UTC) means that inspection is overdue — the pop
 the `inspection_overdue_only` filter and the `inspection_overdue_count` stat. It is
 independent of `checked_out` and of `due_date`; any item can carry one.
 
+`reminder_date` is the anchor of a recurring reminder — the next date it comes round —
+and `reminder_interval` is `{unit, count}` with `unit` one of `days`, `weeks`, `months`
+and `count` an integer from 1 to 1000. `reminder_interval` is `null` for a one-off, and an
+interval with no `reminder_date` to count from is rejected as `validation_error`: it could
+never produce an occurrence.
+
+Occurrences are **derived, never stored**. `calendar.haventory` expands the anchor and the
+interval over whatever window is read, so the store holds two fields however long the series
+runs. Month steps are measured from the anchor and clamped onto short months — a series
+anchored on the 31st gives 28 February and then 31 March, rather than sticking at 28. A past
+anchor is accepted and is what a reminder nobody has bumped looks like.
+
+Stores written before schema v8 carry neither field; `migrate_7_to_8` writes both as `null`,
+which is what "no reminder" means everywhere else.
+
 `status` is a stored per-item condition: exactly one slug from the store's `statuses`
 collection, seeded with `ok`, `missing` and `needs_repair`. It is **non-nullable** — setting
 `ok` is how a flagged state clears — and independent of `checked_out`/`quantity` (a
@@ -73,6 +90,8 @@ Input shapes:
   - `checked_out?: boolean`
   - `due_date?: YYYY-MM-DD|null` (only valid when `checked_out` is true)
   - `inspection_date?: YYYY-MM-DD|null` (independent of check-out state)
+  - `reminder_date?: YYYY-MM-DD|null`
+  - `reminder_interval?: {unit, count}|null` (requires `reminder_date`)
   - `location_id?: uuid-v4|null`
   - `tags?: string[]` (normalized: trimmed, lowercased, deduped)
   - `category?: string|null`
@@ -87,6 +106,9 @@ Input shapes:
   - `checked_out?: boolean`
   - `due_date?: YYYY-MM-DD|null` (only valid when `checked_out` is true)
   - `inspection_date?: YYYY-MM-DD|null` (null clears)
+  - `reminder_date?: YYYY-MM-DD|null` (null clears; refused while an interval is stored)
+  - `reminder_interval?: {unit, count}|null` (null clears; validated against the stored
+    `reminder_date` when the update does not name one)
   - `location_id?: uuid-v4|null`
   - `tags?: string[]|null` (null clears)
   - `category?: string|null`
