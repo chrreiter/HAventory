@@ -1237,7 +1237,7 @@ export class HVItemEditor extends LitElement {
 
   private _patch(patch: Partial<ItemFormModel>) {
     this._model = { ...this._model, ...patch };
-    if (this._showErrors) this._errors = validateForm(this._model);
+    if (this._showErrors) this._errors = validateForm(this._model, this._current);
   }
 
   private _errorFor(field: string): string | null {
@@ -1246,7 +1246,9 @@ export class HVItemEditor extends LitElement {
   }
 
   private _save = () => {
-    const errors = validateForm(this._model);
+    // `_current` as the baseline: the caps refuse growth past the stored item,
+    // so a legacy over-cap value the form still carries is not an error.
+    const errors = validateForm(this._model, this._current);
     this._errors = errors;
     this._showErrors = true;
     if (errors.length) return;

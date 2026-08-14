@@ -58,8 +58,15 @@ export class WSClient {
     return this.hass.callWS<HealthResult>({ type: 'haventory/health' });
   }
 
-  distinctValues() {
-    return this.hass.callWS<DistinctValues>({ type: 'haventory/distinct_values' });
+  /**
+   * Distinct categories, tags and custom-field keys with usage counts. With a
+   * filter each category and tag also carries `matching_count`; the lists
+   * themselves never shrink, so autocomplete keeps its full vocabulary.
+   */
+  distinctValues(filter?: ItemFilter) {
+    const msg: Record<string, unknown> = { type: 'haventory/distinct_values' };
+    if (filter) msg.filter = filter;
+    return this.hass.callWS<DistinctValues>(msg);
   }
 
   // ---------- Items ----------
@@ -426,6 +433,8 @@ export class WSClient {
     cb: (payload: AnyEventPayload) => void,
     opts?: {
       location_id?: string | null;
+      /** Multi-select beside `location_id`, unioned with it by the backend. */
+      location_ids?: string[];
       area_id?: string | null;
       include_subtree?: boolean;
       /**
@@ -448,6 +457,7 @@ export class WSClient {
       topic,
     };
     if (opts && 'location_id' in opts) msg.location_id = opts.location_id ?? null;
+    if (opts && 'location_ids' in opts) msg.location_ids = opts.location_ids ?? [];
     if (opts && 'area_id' in opts) msg.area_id = opts.area_id ?? null;
     if (opts && 'include_subtree' in opts) msg.include_subtree = !!opts.include_subtree;
 

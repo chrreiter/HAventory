@@ -23,6 +23,8 @@ from custom_components.haventory.storage import (
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from ws_helpers import ws_send
+
 # Named constants for test assertions
 RAPID_MUTATION_COUNT = 3
 
@@ -405,21 +407,10 @@ async def test_ws_mutations_use_immediate_persistence(monkeypatch):
 
     monkeypatch.setattr(storage_mod, "async_persist_repo", track_immediate)
 
-    # Helper to send WS commands
-    async def _send(_id: int, type_: str, **payload):
-        handlers = hass.data.get("__ws_commands__", [])
-        for h in handlers:
-            if not callable(h) or getattr(h, "_ws_command", None) != type_:
-                continue
-            req = {"id": _id, "type": type_}
-            req.update(payload)
-            return await h(hass, None, req)
-        raise AssertionError("No handler responded for type " + type_)
-
     # Execute multiple WS mutations
-    await _send(1, "haventory/item/create", name="Item 1")
-    await _send(2, "haventory/item/create", name="Item 2")
-    await _send(3, "haventory/item/create", name="Item 3")
+    await ws_send(hass, 1, "haventory/item/create", name="Item 1")
+    await ws_send(hass, 2, "haventory/item/create", name="Item 2")
+    await ws_send(hass, 3, "haventory/item/create", name="Item 3")
 
     # Each WS mutation should trigger an immediate persist
     assert len(immediate_calls) == RAPID_MUTATION_COUNT

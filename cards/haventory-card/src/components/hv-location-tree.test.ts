@@ -3,6 +3,7 @@ import type { HVLocationTree } from './hv-location-tree';
 import { chip } from '../ui/chip';
 import { browseRow } from '../ui/browse-row';
 import type { LocationTreeNode } from '../store/types';
+import { componentCss, mountComponent, ownCss, q } from '../test.utils';
 
 function node(
   id: string,
@@ -34,19 +35,13 @@ const tree: LocationTreeNode[] = [
 ];
 
 async function mount(props: Partial<HVLocationTree> = {}) {
-  const el = document.createElement('hv-location-tree') as HVLocationTree;
-  el.nodes = tree;
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await el.updateComplete;
+  const { el } = await mountComponent<HVLocationTree>('hv-location-tree', { nodes: tree, ...props });
   return el;
 }
 
 const rows = (el: HVLocationTree) =>
   [...(el.shadowRoot?.querySelectorAll('[data-testid="tree-row"]') ?? [])] as HTMLElement[];
 const ids = (el: HVLocationTree) => rows(el).map((r) => r.dataset.id);
-const q = (el: HVLocationTree, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
-
 describe('hv-location-tree: hierarchy', () => {
   it('starts collapsed, showing only the roots', async () => {
     const el = await mount();
@@ -161,11 +156,7 @@ describe('hv-location-tree: counts and decorations', () => {
     expect(row.querySelector('svg[data-icon="mapMarkerOff"]')).toBeTruthy();
     expect(row.querySelector('svg[data-icon="alert"]')).toBe(null);
 
-    const styles = (customElements.get('hv-location-tree') as typeof HVLocationTree).styles;
-    const css = (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = componentCss('hv-location-tree');
     expect(css).not.toMatch(/\.row\.orphans \{[^}]*hv-warn/);
   });
 
@@ -441,9 +432,7 @@ describe('hv-location-tree: area grouping', () => {
   // full view's sidebar and the organize dialog's — so its size is settled
   // here, once, for both.
   it('sets both band labels at row size, leaving the shared chip its smaller one', () => {
-    const styles = (customElements.get('hv-location-tree') as typeof HVLocationTree).styles;
-    const sheets = Array.isArray(styles) ? styles : [styles];
-    const own = String(sheets[sheets.length - 1].cssText).replace(/\s+/g, ' ');
+    const own = ownCss('hv-location-tree');
     // Tracks whatever a browse row is set to rather than restating a number
     // beside it, and both bands are named by one rule so neither can drift.
     expect(own).toMatch(/\.area-name \.hv-area-chip, \.area-none \{ font-size: inherit/);
@@ -650,11 +639,7 @@ describe('hv-location-tree: manage mode', () => {
   // measured at 390px, the count link came to 14px tall and the ⋮ to 26×26
   // beside 44px controls on the other three tabs.
   it('sizes the managed row for a finger, matching the dialog it renders in', () => {
-    const styles = (customElements.get('hv-location-tree') as typeof HVLocationTree).styles;
-    const css = (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = componentCss('hv-location-tree');
 
     // WCAG 2.2 asks 24px of any pointer, wherever the count is a link.
     expect(css).toMatch(/\.count\.link \{[^}]*min-height: 24px/);
@@ -672,11 +657,7 @@ describe('hv-location-tree: manage mode', () => {
   // which is what keeps the tightening scoped: the sidebar, the filter panel
   // and the editor's location field declare nothing and take the fallback.
   it('takes the organize dialog\'s row rhythm only when it is hosted there', () => {
-    const styles = (customElements.get('hv-location-tree') as typeof HVLocationTree).styles;
-    const css = (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = componentCss('hv-location-tree');
 
     expect(css).toMatch(/\.hv-browse-row \{[^}]*padding: var\(--hv-organize-row-pad, 7px\) 12px/);
     // Nothing here declares it — a tree that declared its own would answer for

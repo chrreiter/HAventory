@@ -31,6 +31,8 @@ from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
 
+from ws_helpers import ws_send
+
 # -----------------------------
 # Models
 # -----------------------------
@@ -256,18 +258,6 @@ async def test_domain_store_migrates_v4_store_on_load() -> None:
 # -----------------------------
 
 
-async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
-    handlers = hass.data.get("__ws_commands__", [])
-    for h in handlers:
-        if not callable(h) or getattr(h, "_ws_command", None) != type_:
-            continue
-        req = {"id": _id, "type": type_}
-        req.update(payload)
-        resp = await h(hass, None, req)
-        return resp
-    raise AssertionError("No handler responded for type " + type_)
-
-
 def _new_hass() -> HomeAssistant:
     hass = HomeAssistant()
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
@@ -280,16 +270,16 @@ def _new_hass() -> HomeAssistant:
 async def test_ws_item_create_and_update_status() -> None:
     hass = _new_hass()
 
-    res = await _send(hass, 1, "haventory/item/create", name="Hammer", status="missing")
+    res = await ws_send(hass, 1, "haventory/item/create", name="Hammer", status="missing")
     assert res["success"] is True
     assert res["result"]["status"] == "missing"
     item_id = res["result"]["id"]
 
-    res = await _send(hass, 2, "haventory/item/update", item_id=item_id, status="needs_repair")
+    res = await ws_send(hass, 2, "haventory/item/update", item_id=item_id, status="needs_repair")
     assert res["success"] is True
     assert res["result"]["status"] == "needs_repair"
 
-    res = await _send(hass, 3, "haventory/item/get", item_id=item_id)
+    res = await ws_send(hass, 3, "haventory/item/get", item_id=item_id)
     assert res["result"]["status"] == "needs_repair"
 
 
@@ -297,16 +287,16 @@ async def test_ws_item_create_and_update_status() -> None:
 async def test_ws_item_create_defaults_status_and_rejects_bad_values() -> None:
     hass = _new_hass()
 
-    res = await _send(hass, 1, "haventory/item/create", name="Hammer")
+    res = await ws_send(hass, 1, "haventory/item/create", name="Hammer")
     assert res["success"] is True
     assert res["result"]["status"] == "ok"
     item_id = res["result"]["id"]
 
-    res = await _send(hass, 2, "haventory/item/create", name="Drill", status="lost")
+    res = await ws_send(hass, 2, "haventory/item/create", name="Drill", status="lost")
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
 
-    res = await _send(hass, 3, "haventory/item/update", item_id=item_id, status=None)
+    res = await ws_send(hass, 3, "haventory/item/update", item_id=item_id, status=None)
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
 
@@ -314,15 +304,15 @@ async def test_ws_item_create_defaults_status_and_rejects_bad_values() -> None:
 @pytest.mark.asyncio
 async def test_ws_item_list_filters_by_status() -> None:
     hass = _new_hass()
-    await _send(hass, 1, "haventory/item/create", name="Hammer", status="missing")
-    await _send(hass, 2, "haventory/item/create", name="Wrench")
+    await ws_send(hass, 1, "haventory/item/create", name="Hammer", status="missing")
+    await ws_send(hass, 2, "haventory/item/create", name="Wrench")
 
-    res = await _send(hass, 3, "haventory/item/list", filter={"status": "missing"})
+    res = await ws_send(hass, 3, "haventory/item/list", filter={"status": "missing"})
     assert res["success"] is True
     assert [i["name"] for i in res["result"]["items"]] == ["Hammer"]
     assert res["result"]["total"] == 1
 
-    res = await _send(hass, 4, "haventory/item/list", filter={"status": "bogus"})
+    res = await ws_send(hass, 4, "haventory/item/list", filter={"status": "bogus"})
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
 
@@ -330,14 +320,14 @@ async def test_ws_item_list_filters_by_status() -> None:
 @pytest.mark.asyncio
 async def test_ws_stats_and_health_reflect_status() -> None:
     hass = _new_hass()
-    await _send(hass, 1, "haventory/item/create", name="Hammer", status="missing")
-    await _send(hass, 2, "haventory/item/create", name="Drill", status="needs_repair")
+    await ws_send(hass, 1, "haventory/item/create", name="Hammer", status="missing")
+    await ws_send(hass, 2, "haventory/item/create", name="Drill", status="needs_repair")
 
-    res = await _send(hass, 3, "haventory/stats")
+    res = await ws_send(hass, 3, "haventory/stats")
     assert res["result"]["missing_count"] == 1
     assert res["result"]["needs_repair_count"] == 1
 
-    res = await _send(hass, 4, "haventory/health")
+    res = await ws_send(hass, 4, "haventory/health")
     assert res["result"]["healthy"] is True
     assert res["result"]["issues"] == []
 
@@ -345,10 +335,10 @@ async def test_ws_stats_and_health_reflect_status() -> None:
 @pytest.mark.asyncio
 async def test_ws_bulk_item_update_sets_status() -> None:
     hass = _new_hass()
-    res = await _send(hass, 1, "haventory/item/create", name="Hammer")
+    res = await ws_send(hass, 1, "haventory/item/create", name="Hammer")
     item_id = res["result"]["id"]
 
-    res = await _send(
+    res = await ws_send(
         hass,
         2,
         "haventory/items/bulk",

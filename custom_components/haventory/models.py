@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 import unicodedata
 import uuid
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final, Literal, NotRequired, TypedDict
@@ -226,6 +226,9 @@ class ItemFilter(TypedDict, total=False):
     tags_any: list[str]
     tags_all: list[str]
     category: str
+    # Multi-select beside the scalar above. An item has exactly one category, so
+    # a selection can only ever mean OR — see `selected_categories`.
+    categories: list[str]
     status: ItemStatus
     checked_out: bool
     low_stock_only: bool
@@ -238,6 +241,9 @@ class ItemFilter(TypedDict, total=False):
     # When true, only items whose inspection_date has passed (see filter_items)
     inspection_overdue_only: bool
     location_id: str | None
+    # Multi-select beside the scalar above, unioned the same way — see
+    # `selected_location_ids`. `include_subtree` governs the whole selection.
+    location_ids: list[str]
     area_id: str
     include_subtree: bool
     updated_after: str
@@ -249,7 +255,19 @@ class ItemFilter(TypedDict, total=False):
 class Sort(TypedDict):
     """Sort definition for item queries."""
 
-    field: Literal["updated_at", "created_at", "name", "quantity", "due_date", "inspection_date"]
+    field: Literal[
+        "updated_at",
+        "created_at",
+        "name",
+        "quantity",
+        "due_date",
+        "inspection_date",
+        # The item's denormalized location path, which is the ordering the
+        # Location column implies. Not an area sort: an area lives on the
+        # location tree and its name in Home Assistant's registry, neither of
+        # which this module can reach.
+        "location",
+    ]
     order: Literal["asc", "desc"]
 
 
@@ -381,17 +399,29 @@ def validate_location_name(name: str) -> str:
     return trimmed
 
 
-def validate_custom_fields(values: dict[str, ScalarValue]) -> None:
-    """Validate custom field keys and values are scalars of allowed types."""
+def validate_custom_fields(
+    values: dict[str, ScalarValue], *, previous: Mapping[str, ScalarValue] | None = None
+) -> None:
+    """Validate custom field keys and values are scalars of allowed types.
+
+    ``previous`` is the map the item already carries, and the caps refuse
+    *growth* past it, the way :func:`validate_tags` treats its ``previous``: a
+    key the item already has is not refused for its length, a stored string
+    value may stay over the cap as long as the edit does not lengthen it, and
+    a patch carrying more keys than the cap passes when the item already
+    carried that many. Without ``previous`` (a brand-new item) every cap is
+    absolute.
+    """
 
     if not isinstance(values, dict):
         raise ValidationError("custom_fields must be a mapping of string keys to scalars")
-    if len(values) > CUSTOM_FIELDS_MAX_KEYS:
+    prev = previous or {}
+    if len(values) > CUSTOM_FIELDS_MAX_KEYS and len(values) > len(prev):
         raise ValidationError(f"custom_fields must have at most {CUSTOM_FIELDS_MAX_KEYS} keys")
     for key, value in values.items():
         if not isinstance(key, str) or not key:
             raise ValidationError("custom_fields keys must be non-empty strings")
-        if len(key) > CUSTOM_FIELD_KEY_MAX_LENGTH:
+        if len(key) > CUSTOM_FIELD_KEY_MAX_LENGTH and key not in prev:
             raise ValidationError(
                 f"custom_fields keys must be at most {CUSTOM_FIELD_KEY_MAX_LENGTH} characters"
             )
@@ -400,9 +430,12 @@ def validate_custom_fields(values: dict[str, ScalarValue]) -> None:
                 "custom_fields values must be scalar (string, number, or boolean)"
             )
         if isinstance(value, str) and len(value) > CUSTOM_FIELD_VALUE_MAX_LENGTH:
-            raise ValidationError(
-                f"custom_fields values must be at most {CUSTOM_FIELD_VALUE_MAX_LENGTH} characters"
-            )
+            prev_value = prev.get(key)
+            if not isinstance(prev_value, str) or len(value) > len(prev_value):
+                raise ValidationError(
+                    f"custom_fields values must be at most "
+                    f"{CUSTOM_FIELD_VALUE_MAX_LENGTH} characters"
+                )
 
 
 def validate_tags(tags: list[str] | None, *, previous: Collection[str] = ()) -> list[str]:
@@ -433,9 +466,74 @@ def validate_tags(tags: list[str] | None, *, previous: Collection[str] = ()) -> 
 #: to keep in step.
 ITEM_FILTER_KEYS: Final[frozenset[str]] = frozenset(ItemFilter.__annotations__)
 
+
+def normalize_filter_values(value: object, *, field_name: str, casefold: bool = False) -> list[str]:
+    """Normalize a multi-select filter list: trim, drop blanks, de-duplicate.
+
+    A bare string is the mistake worth naming rather than absorbing: iterating
+    one yields characters, so ``categories: "Tools"`` would quietly filter by
+    five single letters instead of by a category.
+    """
+
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValidationError(f"{field_name} must be a list of strings")
+    seen: set[str] = set()
+    result: list[str] = []
+    for raw in value:
+        if not isinstance(raw, str):
+            raise ValidationError(f"{field_name} must be a list of strings")
+        text = raw.strip().casefold() if casefold else raw.strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def selected_categories(flt: ItemFilter) -> list[str]:
+    """The casefolded categories a filter selects, scalar and list unioned.
+
+    An item carries exactly one category, so the two keys can only mean OR:
+    requiring both would match nothing whenever they name different values —
+    the silent empty result this filter shape exists to avoid. An empty
+    selection does not narrow at all, the way an empty ``tags_any`` does not.
+    """
+
+    selection: list[str] = []
+    scalar = (flt.get("category") or "").strip().casefold() if "category" in flt else ""
+    if scalar:
+        selection.append(scalar)
+    for value in normalize_filter_values(
+        flt.get("categories"), field_name="categories", casefold=True
+    ):
+        if value not in selection:
+            selection.append(value)
+    return selection
+
+
+def selected_location_ids(flt: ItemFilter) -> list[str]:
+    """The location ids a filter selects, scalar and list unioned.
+
+    Same rule as :func:`selected_categories` — an item sits in one location.
+    ``include_subtree`` is one flag for the whole selection rather than one per
+    entry: an item is kept when it is in, or under, *any* of them.
+    """
+
+    selection: list[str] = []
+    scalar = flt.get("location_id") if "location_id" in flt else None
+    if scalar is not None:
+        selection.append(str(scalar).strip())
+    for value in normalize_filter_values(flt.get("location_ids"), field_name="location_ids"):
+        if value not in selection:
+            selection.append(value)
+    return selection
+
+
 #: The fields :func:`sort_items` can order by, and the two orders it accepts.
 SORT_FIELDS: Final[frozenset[str]] = frozenset(
-    {"updated_at", "created_at", "name", "quantity", "due_date", "inspection_date"}
+    {"updated_at", "created_at", "name", "quantity", "due_date", "inspection_date", "location"}
 )
 SORT_ORDERS: Final[frozenset[str]] = frozenset({"asc", "desc"})
 #: The keys a sort object carries. Anything else is a client typo.
@@ -773,18 +871,27 @@ def _is_int_not_bool(value: object) -> bool:
 
 
 def _validate_optional_text(
-    value: object, field_name: str, *, max_length: int | None = None
+    value: object, field_name: str, *, max_length: int | None = None, previous: str | None = None
 ) -> None:
     """Ensure an optional free-text field is a string or None, within its cap.
 
     Non-text values (list/dict/number) would otherwise reach the search-index
     build and crash mid-way, leaving a partially-indexed item.
+
+    ``previous`` is the value the item already carries, and the cap refuses
+    *growth* past it: a value over the cap but no longer than the stored one is
+    accepted, so an item that predates the cap can still be edited — including
+    by the edit that trims the excess without clearing it in one go.
     """
     if value is None:
         return
     if not isinstance(value, str):
         raise ValidationError(f"{field_name} must be a string or null")
-    if max_length is not None and len(value) > max_length:
+    if (
+        max_length is not None
+        and len(value) > max_length
+        and (previous is None or len(value) > len(previous))
+    ):
         raise ValidationError(f"{field_name} must be at most {max_length} characters")
 
 
@@ -904,7 +1011,10 @@ def _update_name_and_description(new_item: Item, update: ItemUpdate) -> None:
         new_item.name = trimmed
     if "description" in update:
         _validate_optional_text(
-            update["description"], "description", max_length=DESCRIPTION_MAX_LENGTH
+            update["description"],
+            "description",
+            max_length=DESCRIPTION_MAX_LENGTH,
+            previous=new_item.description,
         )
         new_item.description = update["description"]
 
@@ -964,7 +1074,12 @@ def _update_tags_category_threshold(new_item: Item, update: ItemUpdate) -> None:
     if "tags" in update:
         new_item.tags = validate_tags(update.get("tags") or [], previous=new_item.tags)
     if "category" in update:
-        _validate_optional_text(update["category"], "category", max_length=CATEGORY_MAX_LENGTH)
+        _validate_optional_text(
+            update["category"],
+            "category",
+            max_length=CATEGORY_MAX_LENGTH,
+            previous=new_item.category,
+        )
         new_item.category = update["category"]
     if "low_stock_threshold" in update:
         thr = update["low_stock_threshold"]
@@ -978,7 +1093,7 @@ def _update_custom_fields(new_item: Item, update: ItemUpdate) -> None:
     to_unset = update.get("custom_fields_unset", [])
     before = len(new_item.custom_fields)
     if to_set:
-        validate_custom_fields(to_set)
+        validate_custom_fields(to_set, previous=new_item.custom_fields)
         new_item.custom_fields = {**new_item.custom_fields, **to_set}
     if to_unset:
         new_item.custom_fields = {
@@ -1172,20 +1287,40 @@ def item_inspection_is_overdue(item: Item, *, today: str = "") -> bool:
     return item.inspection_date < (today or today_utc_date())
 
 
-def _item_matches_location(item: Item, location_id: str | None, include_subtree: bool) -> bool:
-    if location_id is None:
+def _parse_location_selection(location_ids: Sequence[str]) -> list[uuid.UUID]:
+    """The selected location ids as UUIDs, dropping any that will not parse.
+
+    An unparsable id contributes nothing rather than raising, so a selection
+    of only bad ids matches nothing — which is what a single bad id has always
+    done. The parse belongs here rather than in the per-item predicate: the
+    selection is constant for a whole query, and rebuilding the same UUID once
+    per candidate is measurable on an inventory of any size.
+    """
+
+    parsed: list[uuid.UUID] = []
+    for raw in location_ids:
+        try:
+            parsed.append(parse_uuid4(raw, field_name="filter.location_id"))
+        except ValidationError:
+            continue
+    return parsed
+
+
+def _item_matches_locations(
+    item: Item, needles: Sequence[uuid.UUID], include_subtree: bool
+) -> bool:
+    """True when the item sits in — or under — any of the selected locations."""
+
+    if not needles:
         return True
     if not item.location_id:
         return False
-    try:
-        needle = parse_uuid4(location_id, field_name="filter.location_id")
-    except ValidationError:
-        return False
-    if include_subtree:
+    for needle in needles:
         if item.location_id == needle:
             return True
-        return bool(item.location_path.id_path and (needle in item.location_path.id_path))
-    return item.location_id == needle
+        if include_subtree and item.location_path.id_path and needle in item.location_path.id_path:
+            return True
+    return False
 
 
 def filter_items(
@@ -1199,14 +1334,15 @@ def filter_items(
     - q: case-insensitive match in name, description, tags, location display_path
     - tags_any: at least one matches
     - tags_all: all must be present
-    - category: case-insensitive equals
+    - category / categories: case-insensitive equals any of the selection
     - status: exact match against one of the known statuses
     - checked_out: exact match
     - low_stock_only: quantity <= threshold (0 valid, None disables)
     - orphaned_only: only items without a location (location_id is None)
     - overdue_only: due_date set and strictly before today (UTC)
     - inspection_overdue_only: inspection_date set and strictly before today (UTC)
-    - location_id: equals; include_subtree optionally includes descendants (by prefix of id_path)
+    - location_id / location_ids: equals any of the selection; include_subtree
+      optionally includes descendants (by prefix of id_path), one flag for all
     - updated_after/created_after: ISO-8601 UTC with 'Z', strictly greater-than
     - updated_before/created_before: ISO-8601 UTC with 'Z', strictly less-than
     """
@@ -1217,7 +1353,7 @@ def filter_items(
     q = (flt.get("q") or "").strip()
     tags_any = normalize_tags(flt.get("tags_any")) if "tags_any" in flt else []
     tags_all = normalize_tags(flt.get("tags_all")) if "tags_all" in flt else []
-    category = (flt.get("category") or "").strip().casefold() if "category" in flt else ""
+    categories = set(selected_categories(flt))
     status = (
         validate_item_status(flt["status"], known_statuses=known_statuses)
         if "status" in flt
@@ -1230,7 +1366,7 @@ def filter_items(
     inspection_overdue_only = (
         bool(flt.get("inspection_overdue_only")) if "inspection_overdue_only" in flt else False
     )
-    location_id = flt.get("location_id") if "location_id" in flt else None
+    location_ids = selected_location_ids(flt)
     include_subtree = bool(flt.get("include_subtree")) if "include_subtree" in flt else False
     updated_after = flt.get("updated_after") if "updated_after" in flt else None
     created_after = flt.get("created_after") if "created_after" in flt else None
@@ -1246,20 +1382,26 @@ def filter_items(
     ):
         if bound:
             _parse_iso8601_utc(bound, field_name=name)
+    # Parsed once for the whole query, beside the bounds, rather than once per
+    # candidate item. A selection that parses to nothing keeps its old meaning:
+    # it selects nothing, rather than falling through to "no location filter".
+    location_needles = _parse_location_selection(location_ids)
+    if location_ids and not location_needles:
+        return []
     today = today_utc_date() if (overdue_only or inspection_overdue_only) else ""
 
     predicates_active = (
         bool(q)
         or bool(tags_any)
         or bool(tags_all)
-        or bool(category)
+        or bool(categories)
         or status is not None
         or checked_out is not None
         or low_stock_only
         or orphaned_only
         or overdue_only
         or inspection_overdue_only
-        or location_id is not None
+        or bool(location_ids)
         or updated_after is not None
         or created_after is not None
         or updated_before is not None
@@ -1274,7 +1416,9 @@ def filter_items(
         matches_q = (not q) or _item_matches_q(it, q)
         matches_any = (not tags_any) or any(tag in it.tags for tag in tags_any)
         matches_all = (not tags_all) or all(tag in it.tags for tag in tags_all)
-        matches_category = (not category) or ((it.category or "").strip().casefold() == category)
+        matches_category = (not categories) or (
+            (it.category or "").strip().casefold() in categories
+        )
         matches_status = (status is None) or (it.status == status)
         matches_checked = (checked_out is None) or (it.checked_out == bool(checked_out))
         matches_low_stock = (not low_stock_only) or item_is_low_stock(it)
@@ -1283,7 +1427,7 @@ def filter_items(
         matches_inspection = (not inspection_overdue_only) or item_inspection_is_overdue(
             it, today=today
         )
-        matches_location = _item_matches_location(it, location_id, include_subtree)
+        matches_location = _item_matches_locations(it, location_needles, include_subtree)
         # Canonical fixed-width 'Z' timestamps compare lexicographically, so no
         # per-item parsing is needed (the filter bound was validated above).
         matches_updated = ((updated_after is None) or (it.updated_at > updated_after)) and (
@@ -1313,6 +1457,30 @@ def filter_items(
     return filtered
 
 
+#: What an item with no location sorts under in ascending order.
+#: A location path's sort key is built from location *names*, so a printable
+#: sentinel like ``date_sort_key``'s ``"~"`` would be outranked by any name
+#: beginning with an accented or non-Latin letter — "Éclairage" folds to a
+#: character well above ``~``. The highest code point cannot be outranked.
+UNLOCATED_SORT_KEY: Final[str] = "\U0010ffff"
+
+
+def location_sort_key(path: LocationPath, order: str) -> str:
+    """Return a scalar sort key for an item's denormalized location path.
+
+    Items with no location sort last in BOTH orders — the rule
+    :func:`date_sort_key` applies to undated items. Their stored key is the
+    empty string, which a plain sort would float to the top of an ascending
+    list, so ascending substitutes the sentinel above and descending keeps the
+    empty string, which a reversed sort places last. The repository's cursor
+    pagination reads the same key, so page boundaries agree with this ordering.
+    """
+
+    if not path.sort_key:
+        return UNLOCATED_SORT_KEY if order == "asc" else ""
+    return path.sort_key
+
+
 def date_sort_key(value: str | None, order: str) -> str:
     """Return a scalar sort key for a nullable YYYY-MM-DD field.
 
@@ -1332,7 +1500,8 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
 
     Defaults to updated_at desc with id asc tie-break.
     name sorting is case-insensitive using normalize_text_for_sort.
-    due_date / inspection_date place undated items last in both orders.
+    due_date / inspection_date place undated items last in both orders, and
+    location does the same for items filed nowhere.
     """
 
     result = list(items)
@@ -1365,6 +1534,8 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
         result.sort(key=lambda x: date_sort_key(x.due_date, order), reverse=reverse)
     elif field == "inspection_date":
         result.sort(key=lambda x: date_sort_key(x.inspection_date, order), reverse=reverse)
+    elif field == "location":
+        result.sort(key=lambda x: location_sort_key(x.location_path, order), reverse=reverse)
     elif field == "created_at":
         result.sort(key=lambda x: x.created_at, reverse=reverse)
     else:  # updated_at

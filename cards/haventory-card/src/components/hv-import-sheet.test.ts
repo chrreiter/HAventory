@@ -1,6 +1,7 @@
 import './hv-import-sheet';
 import type { HVImportSheet } from './hv-import-sheet';
 import type { ImportPreview, ImportSummary } from '../store/types';
+import { all, mountComponent, q } from '../test.utils';
 
 const VALID_DOC = '{"haventory_export_version":1,"items":[],"locations":[]}';
 
@@ -42,16 +43,9 @@ function summary(): ImportSummary {
 }
 
 async function mount(props: Partial<HVImportSheet> = {}) {
-  const el = document.createElement('hv-import-sheet') as HVImportSheet;
-  el.open = true;
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await el.updateComplete;
+  const { el } = await mountComponent<HVImportSheet>('hv-import-sheet', { open: true, ...props });
   return el;
 }
-
-const q = (el: HVImportSheet, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
-const all = (el: HVImportSheet, sel: string) => [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
 
 async function type(el: HVImportSheet, text: string) {
   const area = q(el, '[data-testid="import-text"]') as HTMLTextAreaElement;
@@ -262,7 +256,35 @@ describe('hv-import-sheet: preview', () => {
 
   it('labels the import button with what will actually be written', async () => {
     const el = await mount({ preview: preview() });
-    expect(q(el, '[data-testid="import-execute"]')?.textContent).toContain('Import 128 + 64');
+    expect(q(el, '[data-testid="import-execute"]')?.textContent).toContain(
+      'Import 192 items · 6 locations',
+    );
+  });
+
+  it('names only the kind a document actually writes', async () => {
+    const locationsOnly = await mount({
+      preview: preview({
+        counts: {
+          items: { total: 5, add: 0, update: 0, conflict: 0, unchanged: 5 },
+          locations: { total: 4, add: 4, update: 0, conflict: 0, unchanged: 0 },
+        },
+      }),
+    });
+    expect(q(locationsOnly, '[data-testid="import-execute"]')?.textContent).toContain(
+      'Import 4 locations',
+    );
+    expect(q(locationsOnly, '[data-testid="import-execute"]')?.textContent).not.toContain('item');
+
+    const itemsOnly = await mount({
+      preview: preview({
+        counts: {
+          items: { total: 5, add: 1, update: 0, conflict: 0, unchanged: 4 },
+          locations: { total: 4, add: 0, update: 0, conflict: 0, unchanged: 4 },
+        },
+      }),
+    });
+    expect(q(itemsOnly, '[data-testid="import-execute"]')?.textContent).toContain('Import 1 item');
+    expect(q(itemsOnly, '[data-testid="import-execute"]')?.textContent).not.toContain('location');
   });
 
   it('says so when the document would change nothing', async () => {
@@ -272,6 +294,20 @@ describe('hv-import-sheet: preview', () => {
       }),
     });
     expect(q(el, '[data-testid="import-nothing-to-do"]')).toBeTruthy();
+    expect(q(el, '[data-testid="import-execute"]')?.textContent?.trim()).toBe('Import');
+  });
+
+  it('does not claim nothing would change when only locations would', async () => {
+    // A backup restored onto a hand-rebuilt tree: locations to write, no items.
+    const el = await mount({
+      preview: preview({
+        counts: {
+          items: { total: 5, add: 0, update: 0, conflict: 0, unchanged: 5 },
+          locations: { total: 4, add: 4, update: 0, conflict: 0, unchanged: 0 },
+        },
+      }),
+    });
+    expect(q(el, '[data-testid="import-nothing-to-do"]')).toBe(null);
   });
 
   it('goes back to the input step', async () => {
@@ -332,13 +368,37 @@ describe('hv-import-sheet: summary', () => {
     });
 
     expect(q(el, '[data-testid="import-summary"]')?.textContent?.replace(/\s+/g, ' ')).toContain(
-      'Imported 128 new, updated 64',
+      'Added 128 items and 4 locations, updated 64 items.',
     );
     expect(el.shadowRoot?.textContent?.replace(/\s+/g, ' ')).toContain('250 items across 13 locations');
 
     (q(el, '[data-testid="import-done"]') as HTMLButtonElement).click();
     expect(cancels).toBe(1);
     expect(el.open).toBe(false);
+  });
+
+  // Issue #439: a locations-only document used to complete with every number on
+  // the screen at zero, because the sentence had no slot for location updates.
+  it('reports a locations-only import instead of a row of zeros', async () => {
+    const s = summary();
+    s.items = { total: 0, add: 0, update: 0, conflict: 0, unchanged: 0 };
+    s.locations = { total: 1, add: 0, update: 1, conflict: 0, unchanged: 0 };
+    const el = await mount({ summary: s });
+
+    expect(q(el, '[data-testid="import-summary"]')?.textContent?.replace(/\s+/g, ' ')).toContain(
+      'Updated 1 location.',
+    );
+  });
+
+  it('says in words when nothing needed changing', async () => {
+    const s = summary();
+    s.items = { total: 2, add: 0, update: 0, conflict: 0, unchanged: 2 };
+    s.locations = { total: 1, add: 0, update: 0, conflict: 0, unchanged: 1 };
+    const el = await mount({ summary: s });
+
+    expect(q(el, '[data-testid="import-summary"]')?.textContent?.replace(/\s+/g, ' ')).toContain(
+      'Nothing needed changing',
+    );
   });
 });
 

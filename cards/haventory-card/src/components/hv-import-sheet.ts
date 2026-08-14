@@ -24,6 +24,45 @@ import type { ImportBucketCounts, ImportPolicy, ImportPreview, ImportSummary } f
  */
 const WARNING_LIST_LIMIT = 5;
 
+/**
+ * What the execute button promises to write.
+ *
+ * It names both kinds because either can be the whole document: a backup
+ * restored onto a hand-rebuilt tree writes locations and no items. The
+ * breakdown into added and updated is left to the count tables directly above,
+ * which carry it for both kinds; repeating it here would need four numbers.
+ */
+function importButtonLabel(itemWrites: number, locationWrites: number): string {
+  const parts: string[] = [];
+  if (itemWrites) parts.push(counted(itemWrites, 'item'));
+  if (locationWrites) parts.push(counted(locationWrites, 'location'));
+  return parts.length ? `Import ${parts.join(' · ')}` : 'Import';
+}
+
+/**
+ * What the completed import did, as one sentence.
+ *
+ * Every dimension that moved is named and every dimension that did not is
+ * dropped, so a locations-only document reports its location updates instead
+ * of a row of zeros — the run that motivated this reported "Imported 0 new,
+ * updated 0" after doing exactly what its preview promised. An import that
+ * changed nothing says so in words rather than in numbers.
+ */
+export function importSummaryLine(summary: ImportSummary): string {
+  const added: string[] = [];
+  if (summary.items.add) added.push(counted(summary.items.add, 'item'));
+  if (summary.locations.add) added.push(counted(summary.locations.add, 'location'));
+  const updated: string[] = [];
+  if (summary.items.update) updated.push(counted(summary.items.update, 'item'));
+  if (summary.locations.update) updated.push(counted(summary.locations.update, 'location'));
+  const parts: string[] = [];
+  if (added.length) parts.push(`added ${added.join(' and ')}`);
+  if (updated.length) parts.push(`updated ${updated.join(' and ')}`);
+  if (!parts.length) return 'Nothing needed changing — the inventory already matched the file.';
+  const sentence = parts.join(', ');
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+}
+
 const POLICIES: { id: ImportPolicy; title: string; description: string }[] = [
   {
     id: 'merge',
@@ -554,7 +593,12 @@ export class HVImportSheet extends LitElement {
     const items = preview.counts.items;
     const locations = preview.counts.locations;
     const conflicts = preview.items.conflict.length + preview.locations.conflict.length;
-    const willWrite = (items?.add ?? 0) + (items?.update ?? 0);
+    // Both kinds count: a document that rebuilds a location tree and touches no
+    // item still changes the inventory, and the hint below speaks for the
+    // inventory rather than for its items.
+    const itemWrites = (items?.add ?? 0) + (items?.update ?? 0);
+    const locationWrites = (locations?.add ?? 0) + (locations?.update ?? 0);
+    const willWrite = itemWrites + locationWrites;
     // Absent on a preview from a backend that predates warnings.
     const warnings = preview.warnings ?? [];
 
@@ -627,7 +671,7 @@ export class HVImportSheet extends LitElement {
           ?disabled=${this.busy}
           @click=${() => this._emit('execute')}
         >
-          ${this.busy ? 'Importing…' : `Import ${items?.add ?? 0} + ${items?.update ?? 0}`}
+          ${this.busy ? 'Importing…' : importButtonLabel(itemWrites, locationWrites)}
         </button>
       </div>
       ${willWrite === 0
@@ -651,10 +695,7 @@ export class HVImportSheet extends LitElement {
       <div class="body">
         <div class="alert ok" data-testid="import-summary">
           <span class="glyph">${icon('checkCircle', 18)}</span>
-          <span>
-            Imported ${summary.items.add} new, updated ${summary.items.update},
-            ${counted(summary.locations.add, 'location')} added.
-          </span>
+          <span>${importSummaryLine(summary)}</span>
         </div>
         <div class="fine">
           The inventory now holds ${counted(summary.totals.items_total, 'item')} across

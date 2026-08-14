@@ -38,20 +38,11 @@ from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainSt
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from ws_helpers import ws_send
+
 # The `_seed` helper always creates exactly this many items and locations.
 SEEDED_ITEMS = 2
 SEEDED_LOCATIONS = 2
-
-
-async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
-    handlers = hass.data.get("__ws_commands__", [])
-    for h in handlers:
-        if not callable(h) or getattr(h, "_ws_command", None) != type_:
-            continue
-        req = {"id": _id, "type": type_}
-        req.update(payload)
-        return await h(hass, None, req)
-    raise AssertionError("No handler responded for type " + type_)
 
 
 def _new_hass() -> HomeAssistant:
@@ -126,7 +117,7 @@ async def test_ws_export_returns_document() -> None:
     hass = _new_hass()
     _seed(hass.data[DOMAIN]["repository"])
 
-    res = await _send(hass, 1, "haventory/export")
+    res = await ws_send(hass, 1, "haventory/export")
     assert res["success"] is True, res
     doc = res["result"]
     assert doc["haventory_export_version"] == ie.EXPORT_VERSION
@@ -144,7 +135,7 @@ async def test_ws_export_invalid_filter_field() -> None:
     """
 
     hass = _new_hass()
-    res = await _send(hass, 1, "haventory/export", filter="not-an-object")
+    res = await ws_send(hass, 1, "haventory/export", filter="not-an-object")
     assert res["success"] is False, res
     assert res["error"]["code"] == "validation_error"
 
@@ -154,7 +145,7 @@ async def test_ws_export_unknown_filter_key_is_named() -> None:
     """A typo'd filter key is refused rather than dropped, and named."""
 
     hass = _new_hass()
-    res = await _send(hass, 1, "haventory/export", filter={"search": "hammer"})
+    res = await ws_send(hass, 1, "haventory/export", filter={"search": "hammer"})
     assert res["success"] is False, res
     assert res["error"]["code"] == "validation_error"
     assert "search" in res["error"]["message"]
@@ -189,20 +180,20 @@ async def test_round_trip_via_ws_execute() -> None:
 
     src = _new_hass()
     _seed(src.data[DOMAIN]["repository"])
-    exported = (await _send(src, 1, "haventory/export"))["result"]
+    exported = (await ws_send(src, 1, "haventory/export"))["result"]
 
     dst = _new_hass()
-    preview = await _send(dst, 2, "haventory/import/preview", document=exported)
+    preview = await ws_send(dst, 2, "haventory/import/preview", document=exported)
     assert preview["success"] is True
     assert preview["result"]["valid"] is True
     assert preview["result"]["counts"]["items"]["add"] == SEEDED_ITEMS
 
-    applied = await _send(dst, 3, "haventory/import/execute", document=exported)
+    applied = await ws_send(dst, 3, "haventory/import/execute", document=exported)
     assert applied["success"] is True, applied
     assert applied["result"]["applied"] is True
     assert applied["result"]["totals"]["items_total"] == SEEDED_ITEMS
 
-    re_export = (await _send(dst, 4, "haventory/export"))["result"]
+    re_export = (await ws_send(dst, 4, "haventory/export"))["result"]
     assert re_export["items"] == exported["items"]
     assert re_export["locations"] == exported["locations"]
 
@@ -382,7 +373,7 @@ def test_plan_import_rejects_unknown_policy() -> None:
 async def test_ws_import_execute_invalid_document_is_validation_error() -> None:
     hass = _new_hass()
     bad = {"haventory_export_version": 1, "schema_version": CURRENT_SCHEMA_VERSION, "items": 3}
-    res = await _send(hass, 1, "haventory/import/execute", document=bad)
+    res = await ws_send(hass, 1, "haventory/import/execute", document=bad)
     assert res["success"] is False, res
     assert res["error"]["code"] == "validation_error"
     assert res["error"]["data"]["errors"]
@@ -416,7 +407,7 @@ async def test_ws_import_execute_rolls_back_on_persist_failure() -> None:
 
     hass.data[DOMAIN]["store"] = _FailingStore()
 
-    res = await _send(hass, 1, "haventory/import/execute", document=doc)
+    res = await ws_send(hass, 1, "haventory/import/execute", document=doc)
     assert res["success"] is False, res
     assert res["error"]["code"] == "storage_error"
     # State rolled back: the new item must NOT be present and counts unchanged.
@@ -606,7 +597,7 @@ async def test_import_preview_reports_references_with_no_file_on_this_install() 
     repo.add_attachment(item.id, validate_attachment_meta(_attachment_doc()))
     doc = _doc_from(repo)
 
-    res = await _send(hass, 1, "haventory/import/preview", document=doc, policy="merge")
+    res = await ws_send(hass, 1, "haventory/import/preview", document=doc, policy="merge")
 
     assert res["success"] is True
     assert res["result"]["attachments"] == {"referenced": 1, "missing": 1}
@@ -635,7 +626,7 @@ async def test_import_replace_deletes_a_file_whose_metadata_it_overwrote() -> No
     document = _doc_from(repo)
     document["items"][0]["attachments"] = []
     document["items"][0]["name"] = "Drill (restored)"
-    res = await _send(hass, 1, "haventory/import/execute", document=document, policy="replace")
+    res = await ws_send(hass, 1, "haventory/import/execute", document=document, policy="replace")
 
     assert res["success"] is True, res
     assert repo.get_item(item.id).attachments == []
@@ -658,7 +649,7 @@ async def test_import_merge_keeps_a_file_the_document_does_not_mention() -> None
     document = _doc_from(repo)
     document["items"][0]["attachments"] = []
     document["items"][0]["name"] = "Drill (restored)"
-    res = await _send(hass, 1, "haventory/import/execute", document=document, policy="merge")
+    res = await ws_send(hass, 1, "haventory/import/execute", document=document, policy="merge")
 
     assert res["success"] is True, res
     assert [str(a.id) for a in repo.get_item(item.id).attachments] == [str(meta.id)]
@@ -695,27 +686,17 @@ def _envelope(item: dict) -> dict:
     ("overrides", "path"),
     [
         ({"name": "n" * (NAME_MAX_LENGTH + 1)}, "items[0].name"),
-        ({"description": "d" * (DESCRIPTION_MAX_LENGTH + 1)}, "items[0].description"),
-        ({"category": "c" * (CATEGORY_MAX_LENGTH + 1)}, "items[0].category"),
-        ({"tags": ["t" * (TAG_MAX_LENGTH + 1)]}, "items[0].tags"),
-        ({"tags": [f"t{i}" for i in range(TAGS_MAX_COUNT + 1)]}, "items[0].tags"),
-        (
-            {"custom_fields": {f"k{i}": i for i in range(CUSTOM_FIELDS_MAX_KEYS + 1)}},
-            "items[0].custom_fields",
-        ),
-        ({"custom_fields": {"k" * (CUSTOM_FIELD_KEY_MAX_LENGTH + 1): 1}}, "items[0].custom_fields"),
-        (
-            {"custom_fields": {"k": "v" * (CUSTOM_FIELD_VALUE_MAX_LENGTH + 1)}},
-            "items[0].custom_fields.k",
-        ),
         ({"due_date": "2026-01-01"}, "items[0].due_date"),
     ],
 )
-def test_preview_holds_an_imported_item_to_the_write_path_rules(overrides: dict, path: str) -> None:
-    """A document is the one way an entity the WS API would refuse could arrive.
+def test_preview_holds_an_imported_item_to_the_always_enforced_rules(
+    overrides: dict, path: str
+) -> None:
+    """Rules every release has enforced on writes still refuse a document.
 
-    Reported per field rather than dropped, because ``plan_import`` reports to
-    the caller — a refused import, not lost rows.
+    No store can carry data that violates them, so a document that does was
+    never an export of one. Reported per field rather than dropped, because
+    ``plan_import`` reports to the caller — a refused import, not lost rows.
     """
 
     repo = Repository()
@@ -726,6 +707,64 @@ def test_preview_holds_an_imported_item_to_the_write_path_rules(overrides: dict,
     assert report["valid"] is False
     assert target is None
     assert path in {e["path"] for e in report["errors"]}
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"description": "d" * (DESCRIPTION_MAX_LENGTH + 1)},
+        {"category": "c" * (CATEGORY_MAX_LENGTH + 1)},
+        {"tags": ["t" * (TAG_MAX_LENGTH + 1)]},
+        {"tags": [f"t{i}" for i in range(TAGS_MAX_COUNT + 1)]},
+        {"custom_fields": {f"k{i}": i for i in range(CUSTOM_FIELDS_MAX_KEYS + 1)}},
+        {"custom_fields": {"k" * (CUSTOM_FIELD_KEY_MAX_LENGTH + 1): 1}},
+        {"custom_fields": {"k": "v" * (CUSTOM_FIELD_VALUE_MAX_LENGTH + 1)}},
+    ],
+)
+def test_preview_accepts_pre_cap_data_the_load_path_accepts(overrides: dict) -> None:
+    """Issue #437: a document is a restore, as tolerant as ``load_state``.
+
+    Every one of these values is legal in a store written before the caps
+    existed, loads fine and exports unchanged — so the export has to import
+    back, or the backup this build wrote cannot be restored.
+    """
+
+    repo = Repository()
+    report, target = ie.plan_import(
+        repo, _envelope(_item_doc(**overrides)), current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert report["valid"] is True, report["errors"]
+    assert target is not None
+
+
+def test_a_legacy_over_cap_item_round_trips_through_export_and_import() -> None:
+    """The #437 acceptance path: load pre-cap data, export it, import the export."""
+
+    repo = Repository()
+    item = repo.create_item({"name": "Ghost"})
+    # A store written before the caps existed: mutate the persisted dict the way
+    # no current edit can, then load it — which deliberately re-validates nothing.
+    state = repo.export_state()
+    stored = state["items"][str(item.id)]
+    stored["description"] = "d" * (DESCRIPTION_MAX_LENGTH + 500)
+    stored["tags"] = [f"tag-{i}" for i in range(TAGS_MAX_COUNT + 5)]
+    stored["custom_fields"] = {"note": "v" * (CUSTOM_FIELD_VALUE_MAX_LENGTH + 200)}
+    repo.load_state(state)
+
+    document = ie.build_export_document(repo, schema_version=CURRENT_SCHEMA_VERSION)
+
+    # Restore onto a fresh install: nothing pre-exists to grandfather against.
+    fresh = Repository()
+    report, target = ie.plan_import(fresh, document, current_schema_version=CURRENT_SCHEMA_VERSION)
+    assert report["valid"] is True, report["errors"]
+    assert target is not None
+
+    fresh.load_state(target)
+    restored = fresh.get_item(item.id)
+    assert restored.description == "d" * (DESCRIPTION_MAX_LENGTH + 500)
+    assert len(restored.tags) == TAGS_MAX_COUNT + 5
+    assert restored.custom_fields["note"] == "v" * (CUSTOM_FIELD_VALUE_MAX_LENGTH + 200)
 
 
 def test_preview_reports_a_long_location_name() -> None:
@@ -982,7 +1021,7 @@ async def test_ws_import_preview_carries_the_warnings() -> None:
     hass = _new_hass()
     hass.data[DOMAIN]["repository"].create_item({"name": "Hammer"})
 
-    res = await _send(
+    res = await ws_send(
         hass, 1, "haventory/import/preview", document=_envelope(_rebuilt_item_doc("Hammer"))
     )
 

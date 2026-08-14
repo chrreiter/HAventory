@@ -42,6 +42,14 @@ Import is a three-step contract:
 * the caller applies the returned ``target_payload`` via ``Repository.load_state``
   and persists, rolling back to a snapshot on any failure.
 
+A document is a restore, so validation here is exactly as tolerant as
+``Repository.load_state``: the rules every release has enforced on writes —
+UUIDs, the name cap, canonical timestamps, the ``due_date`` ⇔ ``checked_out``
+invariant, statuses the document can name — are checked, and the free-text and
+collection caps are **not**. Those caps bind what an edit may add; a store
+written before they existed is legal data this integration itself wrote, and an
+export of it has to import back or a backup stops being one.
+
 Conflict policies (for ids already present in the repository):
 
 * ``skip`` — keep the existing entity; the incoming one is ignored.
@@ -58,17 +66,10 @@ from typing import Any, Literal
 from .const import INTEGRATION_VERSION
 from .exceptions import ValidationError
 from .models import (
-    CATEGORY_MAX_LENGTH,
-    CUSTOM_FIELD_KEY_MAX_LENGTH,
-    CUSTOM_FIELD_VALUE_MAX_LENGTH,
-    CUSTOM_FIELDS_MAX_KEYS,
     DEFAULT_ITEM_STATUS,
-    DESCRIPTION_MAX_LENGTH,
     EMPTY_LOCATION_PATH,
     ITEM_STATUSES,
     NAME_MAX_LENGTH,
-    TAG_MAX_LENGTH,
-    TAGS_MAX_COUNT,
     Item,
     Location,
     build_location_path_from_map,
@@ -356,24 +357,16 @@ def _validate_uuid4(value: Any, path: str, errors: list[dict[str, str]]) -> str 
     return value
 
 
-def _validate_capped_text(
-    value: Any, path: str, max_length: int, errors: list[dict[str, str]]
-) -> None:
-    """Report an optional free-text field that is not a string, or is too long.
+def _validate_optional_text_doc(value: Any, path: str, errors: list[dict[str, str]]) -> None:
+    """Report an optional free-text field that is not a string.
 
     Absence and an explicit null are both fine; every item field this guards is
-    nullable.
+    nullable. Length is deliberately not checked — see the module note on caps:
+    a document is a restore, and the length caps bind edits, not stored data.
     """
 
-    if value is None:
-        return
-    if not isinstance(value, str):
+    if value is not None and not isinstance(value, str):
         errors.append(_err(path, f"{path.rsplit('.', 1)[-1]} must be a string or null"))
-        return
-    if len(value) > max_length:
-        errors.append(
-            _err(path, f"{path.rsplit('.', 1)[-1]} must be at most {max_length} characters")
-        )
 
 
 def _validate_location_doc(
@@ -429,60 +422,39 @@ def _validate_attachments_doc(base: str, doc: dict[str, Any], errors: list[dict[
 
 
 def _validate_tags_doc(base: str, doc: dict[str, Any], errors: list[dict[str, str]]) -> None:
-    """Hold an imported tag list to the caps a written one is held to.
+    """Report a tag list that is not a list of strings.
 
-    The count is measured on the normalized list, the way the write path
-    measures it: a document repeating a tag under two casings carries one tag.
+    The tag caps are deliberately not applied — a document is a restore, and a
+    store written before the caps existed can legally carry more tags, or
+    longer ones, than an edit may add today.
     """
 
     tags = doc.get("tags", [])
     if not isinstance(tags, list) or any(not isinstance(t, str) for t in tags):
         errors.append(_err(f"{base}.tags", "tags must be an array of strings"))
-        return
-    if len(normalize_tags(tags)) > TAGS_MAX_COUNT:
-        errors.append(_err(f"{base}.tags", f"tags must have at most {TAGS_MAX_COUNT} entries"))
-    if any(len(t) > TAG_MAX_LENGTH for t in tags):
-        errors.append(_err(f"{base}.tags", f"each tag must be at most {TAG_MAX_LENGTH} characters"))
 
 
 def _validate_custom_fields_doc(
     base: str, doc: dict[str, Any], errors: list[dict[str, str]]
 ) -> None:
-    """Hold an imported custom-field map to the caps a written one is held to."""
+    """Report a custom-field map that is structurally unusable.
+
+    Only the shape is checked — a mapping of non-empty string keys to scalars,
+    which is what the search-index build and the serializers require. The size
+    caps are deliberately not applied, for the reason the tag caps are not.
+    """
 
     cf = doc.get("custom_fields", {})
     if not isinstance(cf, dict):
         errors.append(_err(f"{base}.custom_fields", "custom_fields must be an object"))
         return
-    if len(cf) > CUSTOM_FIELDS_MAX_KEYS:
-        errors.append(
-            _err(
-                f"{base}.custom_fields",
-                f"custom_fields must have at most {CUSTOM_FIELDS_MAX_KEYS} keys",
-            )
-        )
     for k, v in cf.items():
         if not isinstance(k, str) or not k:
             errors.append(
                 _err(f"{base}.custom_fields", "custom_fields keys must be non-empty strings")
             )
-        elif len(k) > CUSTOM_FIELD_KEY_MAX_LENGTH:
-            errors.append(
-                _err(
-                    f"{base}.custom_fields",
-                    f"custom_fields keys must be at most {CUSTOM_FIELD_KEY_MAX_LENGTH} characters",
-                )
-            )
         elif not isinstance(v, str | int | float | bool):
             errors.append(_err(f"{base}.custom_fields.{k}", "custom_fields values must be scalar"))
-        elif isinstance(v, str) and len(v) > CUSTOM_FIELD_VALUE_MAX_LENGTH:
-            errors.append(
-                _err(
-                    f"{base}.custom_fields.{k}",
-                    "custom_fields values must be at most "
-                    f"{CUSTOM_FIELD_VALUE_MAX_LENGTH} characters",
-                )
-            )
 
 
 def _validate_item_doc(
@@ -495,10 +467,8 @@ def _validate_item_doc(
         errors.append(_err(f"{base}.name", "name is required and must be a non-empty string"))
     elif len(name.strip()) > NAME_MAX_LENGTH:
         errors.append(_err(f"{base}.name", f"name must be at most {NAME_MAX_LENGTH} characters"))
-    _validate_capped_text(
-        doc.get("description"), f"{base}.description", DESCRIPTION_MAX_LENGTH, errors
-    )
-    _validate_capped_text(doc.get("category"), f"{base}.category", CATEGORY_MAX_LENGTH, errors)
+    _validate_optional_text_doc(doc.get("description"), f"{base}.description", errors)
+    _validate_optional_text_doc(doc.get("category"), f"{base}.category", errors)
     qty = doc.get("quantity", 1)
     if not isinstance(qty, int) or isinstance(qty, bool) or qty < 0:
         errors.append(_err(f"{base}.quantity", "quantity must be an integer >= 0"))

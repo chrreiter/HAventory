@@ -1,5 +1,6 @@
 import './haventory-card-editor';
 import type { HAventoryCardEditor, HAventoryCardConfig } from './haventory-card-editor';
+import { mountComponent } from './test.utils';
 
 // jsdom does not define `ha-form` — Home Assistant does, at runtime — so the
 // node stays an unknown element. That is exactly the seam worth testing: what
@@ -12,12 +13,9 @@ type Form = HTMLElement & {
 };
 
 async function mount(config: HAventoryCardConfig) {
-  const el = document.createElement('haventory-card-editor') as HAventoryCardEditor & {
-    updateComplete: Promise<unknown>;
-    shadowRoot: ShadowRoot;
-  };
-  document.body.appendChild(el);
-  await customElements.whenDefined('haventory-card-editor');
+  const { el } = await mountComponent<
+    HAventoryCardEditor & { updateComplete: Promise<unknown>; shadowRoot: ShadowRoot }
+  >('haventory-card-editor');
   el.setConfig(config);
   await el.updateComplete;
   return el;

@@ -1,5 +1,5 @@
 import './hv-list-row';
-import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
+import { componentCss, makeAttachment, makeItem, makeManual, makeMediaBindings, mountComponent, q } from '../test.utils';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import { elideMobilePath, elidePath, isLowStock, rowMenuEntries } from './hv-list-row';
 import { toIsoDate } from '../ui/relative-time';
@@ -7,15 +7,9 @@ import type { HVListRow } from './hv-list-row';
 import type { Item } from '../store/types';
 
 async function mount(item: Partial<Item>, props: Partial<HVListRow> = {}) {
-  const el = document.createElement('hv-list-row') as HVListRow;
-  el.item = makeItem(item);
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await el.updateComplete;
+  const { el } = await mountComponent<HVListRow>('hv-list-row', { item: makeItem(item), ...props });
   return el;
 }
-
-const q = (el: HVListRow, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
 
 function captured(el: HVListRow, names: string[]) {
   const seen: string[] = [];
@@ -528,8 +522,7 @@ describe('hv-list-row: truncation', () => {
   // jsdom does not lay shadow DOM out, so the stylesheet itself is the only
   // thing here worth asserting on — and the bug was entirely in the stylesheet.
   const styleText = () => {
-    const styles = (customElements.get('hv-list-row') as typeof HVListRow).styles;
-    return (Array.isArray(styles) ? styles : [styles]).map((s) => String(s.cssText)).join('\n');
+    return componentCss('hv-list-row');
   };
   const rule = (selector: string) => {
     const css = styleText();
@@ -696,11 +689,7 @@ describe('hv-list-row: document marker', () => {
   // stops eliding the moment it shares a line with the mark unless it gives
   // that minimum up.
   it('leaves the name able to shrink on that line', () => {
-    const styles = (customElements.get('hv-list-row') as typeof HVListRow).styles;
-    const css = (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = componentCss('hv-list-row');
     expect(css).toMatch(/\.name-line \{[^}]*display: flex/);
     expect(css).toMatch(/\.name \{[^}]*min-width: 0[^}]*text-overflow: ellipsis/);
   });
@@ -708,11 +697,7 @@ describe('hv-list-row: document marker', () => {
 
 describe('hv-list-row: the row is a target', () => {
   it('shows the hand a button would', () => {
-    const styles = (customElements.get('hv-list-row') as typeof HVListRow).styles;
-    const css = (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = componentCss('hv-list-row');
     // The shared `button { cursor: pointer }` cannot reach a role=row div, and
     // every chip, pill and menu beside the row already shows the hand.
     expect(css).toMatch(/\.row \{[^}]*cursor: pointer/);

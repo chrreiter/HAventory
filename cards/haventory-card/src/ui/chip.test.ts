@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import type { CSSResult } from 'lit';
 import { chip } from './chip';
 import { base, tokens } from './tokens';
 
@@ -14,6 +13,7 @@ import '../components/hv-item-editor';
 import '../components/hv-list-row';
 import '../components/hv-location-tree';
 import '../components/hv-organize-dialog';
+import { ownCss, sheetsOf } from '../test.utils';
 
 /** Every surface that marks something with a chip. */
 const CHIPPED = [
@@ -29,18 +29,6 @@ const CHIPPED = [
   'hv-location-tree',
   'hv-organize-dialog',
 ];
-
-function sheetsOf(tag: string): CSSResult[] {
-  const ctor = customElements.get(tag) as { styles?: CSSResult | CSSResult[] } | undefined;
-  if (!ctor?.styles) throw new Error(`${tag} has no styles`);
-  return Array.isArray(ctor.styles) ? ctor.styles : [ctor.styles];
-}
-
-/** A component's own block — the last fragment, after the shared ones. */
-function ownCss(tag: string): string {
-  const sheets = sheetsOf(tag);
-  return String(sheets[sheets.length - 1].cssText).replace(/\s+/g, ' ');
-}
 
 describe('ui/chip: the shared fragment', () => {
   it('reaches every surface that draws a chip', () => {
@@ -173,6 +161,22 @@ describe('ui/chip: the shared fragment', () => {
       expect(css, hue).toMatch(new RegExp(`\\.hv-status-chip\\.tone-${hue} \\{`));
       expect(css, hue).toMatch(new RegExp(`\\.hv-status-chip\\.tone-${hue}-strong \\{`));
     }
+  });
+
+  // Selecting a status chip must not repaint it primary blue: the hue is what
+  // says which status was picked. The selected-state rule reads the same two
+  // custom properties every route into the chip's colour sets — a tone class
+  // or an inline #rrggbb declaration — and has to sit after .hv-chip.toggle.on,
+  // whose equal specificity would otherwise win on source order.
+  it('keeps a selected status chip on its own colour, for tones and literals alike', () => {
+    const css = String(chip.cssText).replace(/\s+/g, ' ');
+    expect(css).toMatch(
+      /\.hv-status-chip\.toggle\.on \{[^}]*background: var\(--hv-status-bg[^}]*color: var\(--hv-status-fg/,
+    );
+    const genericOn = css.indexOf('.hv-chip.toggle.on {');
+    const statusOn = css.indexOf('.hv-status-chip.toggle.on {');
+    expect(genericOn).toBeGreaterThan(-1);
+    expect(statusOn).toBeGreaterThan(genericOn);
   });
 
   // A household names its own statuses, so a label can outrun the column it

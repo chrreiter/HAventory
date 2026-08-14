@@ -1,5 +1,5 @@
 import './hv-data-table';
-import { makeItem } from '../test.utils';
+import { all, componentCss, makeItem, mountComponent, q } from '../test.utils';
 import { ACTIONS_COLUMN_WIDTH } from '../store/columns';
 import { rowMenuEntries } from './hv-list-row';
 import type { HVDataTable } from './hv-data-table';
@@ -7,26 +7,14 @@ import type { OverflowMenuEntry } from './hv-overflow-menu';
 import type { Item, Sort } from '../store/types';
 
 async function mount(items: Partial<Item>[], props: Partial<HVDataTable> = {}) {
-  const el = document.createElement('hv-data-table') as HVDataTable;
-  el.items = items.map((i) => makeItem(i));
-  el.columns = ['quantity', 'category', 'tags', 'due_date', 'updated_at'];
-  el.sort = { field: 'updated_at', order: 'desc' };
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await el.updateComplete;
+  const { el } = await mountComponent<HVDataTable>('hv-data-table', {
+    items: items.map((i) => makeItem(i)),
+    columns: ['quantity', 'category', 'tags', 'due_date', 'updated_at'],
+    sort: { field: 'updated_at', order: 'desc' },
+    ...props,
+  });
   return el;
 }
-
-const q = (el: HVDataTable, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
-const all = (el: HVDataTable, sel: string) => [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
-
-const tableCss = () => {
-  const styles = (customElements.get('hv-data-table') as typeof HVDataTable).styles;
-  return (Array.isArray(styles) ? styles : [styles])
-    .map((s) => String(s.cssText))
-    .join('\n')
-    .replace(/\s+/g, ' ');
-};
 
 describe('hv-data-table: area', () => {
   const AREAS = [{ id: 'area-kitchen', name: 'Kitchen' }];
@@ -173,7 +161,7 @@ describe('hv-data-table: a path too long for its column', () => {
   // item's only line, normal white-space processing drops them and the two
   // segments either side run together.
   it('wraps between segments rather than clipping at the cell edge', () => {
-    const css = tableCss();
+    const css = componentCss('hv-data-table');
     expect(css).toMatch(/\.cell\.path \{[^}]*flex-wrap: wrap/);
     expect(css).toMatch(/\.cell\.path > \.hv-chip-line-text \{[^}]*display: flex/);
     expect(css).toMatch(/\.cell\.path > \.hv-chip-line-text \{[^}]*flex-wrap: wrap/);
@@ -184,7 +172,7 @@ describe('hv-data-table: a path too long for its column', () => {
   // The last resort, for one segment wider than the whole column: an ellipsis
   // on the segment, never a hard cut — and the title above still has the truth.
   it('elides a single segment only once there is no break left to take', () => {
-    expect(tableCss()).toMatch(
+    expect(componentCss('hv-data-table')).toMatch(
       /\.hv-path-seg \{[^}]*min-width: 0;[^}]*overflow: hidden;[^}]*text-overflow: ellipsis/,
     );
   });
@@ -196,7 +184,7 @@ describe('hv-data-table: narrow screens', () => {
   // was clipped by the shell: rows measured clientWidth 634 / scrollWidth 854
   // at 375px, and three columns could not be reached by any gesture.
   it('scrolls sideways rather than clipping columns away', () => {
-    const css = tableCss();
+    const css = componentCss('hv-data-table');
     expect(css).toMatch(/:host \{[^}]*overflow-x: auto/);
     expect(css).toMatch(/:host \{[^}]*min-width: 0/);
   });
@@ -209,7 +197,7 @@ describe('hv-data-table: narrow screens', () => {
   // The host measured scrollWidth 874 against clientWidth 390 and never moved
   // off scrollLeft 0.
   it('contains the overscroll on the box that owns both axes', () => {
-    const css = tableCss();
+    const css = componentCss('hv-data-table');
     expect(css).toMatch(/:host \{[^}]*overscroll-behavior: contain/);
     expect(css).not.toMatch(/\.body \{[^}]*overscroll-behavior/);
   });
@@ -217,18 +205,18 @@ describe('hv-data-table: narrow screens', () => {
   it('sizes the header and body to the grid minimum so they scroll together', () => {
     // Left at the container width they would stay 375px wide while their
     // tracks painted past the edge, cutting the row dividers short.
-    expect(tableCss()).toMatch(/\.head, \.body \{ min-width: min-content; \}/);
+    expect(componentCss('hv-data-table')).toMatch(/\.head, \.body \{ min-width: min-content; \}/);
   });
 
   it('grows the checkbox hit area for touch without growing the box', () => {
     // 16px is right for a dense table; 16px of tappable area is not.
-    expect(tableCss()).toMatch(
+    expect(componentCss('hv-data-table')).toMatch(
       /\.box::after \{[^}]*inset: calc\(\(var\(--hv-tap-min, 16px\) - 16px\) \/ -2\)/,
     );
   });
 
   it('gives the sort headers a tappable height', () => {
-    expect(tableCss()).toMatch(/\.head button\.sort \{[^}]*min-height: var\(--hv-tap-min, auto\)/);
+    expect(componentCss('hv-data-table')).toMatch(/\.head button\.sort \{[^}]*min-height: var\(--hv-tap-min, auto\)/);
   });
 
   // jsdom computes no layout, so nothing here can watch a cell hold its place;
@@ -237,7 +225,7 @@ describe('hv-data-table: narrow screens', () => {
   // rows in a vertical scroll box of their own would pin `left` to a box that
   // never moves sideways — passing every offline check while doing nothing.
   it('scrolls both axes on one box, so a pinned cell has something to pin to', () => {
-    const css = tableCss();
+    const css = componentCss('hv-data-table');
     expect(css).toMatch(/:host \{[^}]*overflow-y: auto/);
     expect(css).not.toMatch(/\.body \{[^}]*overflow/);
     // Its own height rather than the leftover space, or it would stretch to the
@@ -246,7 +234,7 @@ describe('hv-data-table: narrow screens', () => {
   });
 
   it('holds the header against the top of that same box', () => {
-    const css = tableCss();
+    const css = componentCss('hv-data-table');
     expect(css).toMatch(/\.head \{[^}]*position: sticky/);
     expect(css).toMatch(/\.head \{[^}]*top: 0/);
     // Opaque, or the rows read through it as they pass underneath.
@@ -254,7 +242,7 @@ describe('hv-data-table: narrow screens', () => {
   });
 
   it('pins the name column and its header at the phone breakpoint', () => {
-    const css = tableCss();
+    const css = componentCss('hv-data-table');
     // The same width the full view drops its sidebar at.
     expect(css).toMatch(/@media \(max-width: 700px\) \{ \.name-head, \.name-cell, \.select-cell \{/);
     expect(css).toMatch(
@@ -275,7 +263,7 @@ describe('hv-data-table: narrow screens', () => {
     // an offset short of the track would leave the name over the checkboxes.
     // The gap between the two pinned cells travels with the name, or the
     // columns underneath show through it.
-    expect(tableCss()).toMatch(
+    expect(componentCss('hv-data-table')).toMatch(
       /:host\(\[selectable\]\) \.name-head, :host\(\[selectable\]\) \.name-cell \{ left: calc\(var\(--hv-table-pad-x\) \+ 40px\); margin-left: calc\(-1 \* var\(--hv-table-gap\)\); padding-left: var\(--hv-table-gap\)/,
     );
   });
@@ -283,7 +271,7 @@ describe('hv-data-table: narrow screens', () => {
   // The wash is painted on the row, which the pinned cells cover; a colour
   // would not do, because the dark half of the wash is translucent.
   it('repaints the row wash on the pinned cells', () => {
-    expect(tableCss()).toMatch(
+    expect(componentCss('hv-data-table')).toMatch(
       /\.row:hover \.name-cell,[^{]*\.row\.selected \.select-cell \{ background-image: linear-gradient\(var\(--hv-row-hover\), var\(--hv-row-hover\)\)/,
     );
   });
@@ -292,7 +280,7 @@ describe('hv-data-table: narrow screens', () => {
   // cover rides with the content and the shade with the box, so the shade shows
   // exactly while there is something further right.
   it('fades the edge it can still be scrolled towards', () => {
-    const css = tableCss();
+    const css = componentCss('hv-data-table');
     expect(css).toMatch(
       /:host \{ background: linear-gradient\(var\(--hv-surface\), var\(--hv-surface\)\) right \/ 28px 100% no-repeat local/,
     );
@@ -347,7 +335,7 @@ describe('hv-data-table: columns', () => {
     // Every tag, whole: no cut-off set and no "+N" standing in for one.
     expect(chips.map((c) => c.textContent?.trim())).toEqual(tags.map((t) => `#${t}`));
 
-    const css = tableCss();
+    const css = componentCss('hv-data-table');
     expect(css).toMatch(/\.tags \{[^}]*flex-wrap: wrap/);
     expect(css).not.toMatch(/\.tags \{[^}]*overflow: hidden/);
   });
@@ -446,7 +434,7 @@ describe('hv-data-table: the name cell picks one chip', () => {
   });
 
   it('keeps the name itself the only part of the cell that gives way', () => {
-    const css = tableCss();
+    const css = componentCss('hv-data-table');
     // The cell shares its shrink rule with the two other pinned cells.
     expect(css).toMatch(/\.name-cell,[^{]*\{[^}]*min-width: 0/);
     expect(/\.name \{([^}]*)\}/.exec(css)?.[1]).toContain('text-overflow: ellipsis');
@@ -461,6 +449,23 @@ describe('hv-data-table: sorting', () => {
     // Category and tags have no sort field server-side, so no button.
     expect(q(el, '[data-field="category"]')).toBe(null);
     expect(q(el, '[data-field="tags"]')).toBe(null);
+  });
+
+  // The backend orders on the item's own location path, so this header stops
+  // being the odd one out among the columns that look sortable.
+  it('makes the Location header a sort control', async () => {
+    const el = await mount([{ id: '1' }], { columns: ['location'] });
+    const header = q(el, '[data-field="location"]') as HTMLElement;
+    expect(header).not.toBe(null);
+    expect(header.textContent?.trim()).toBe('Location');
+
+    let asked: unknown = null;
+    el.addEventListener('sort-change', (e) => {
+      asked = (e as CustomEvent).detail;
+    });
+    (header as HTMLButtonElement).click();
+    // Opens A→Z: a path is text, and top-down is what ordering by it means.
+    expect(asked).toEqual({ sort: { field: 'location', order: 'asc' } });
   });
 
   it('marks the sorted column and its direction', async () => {
@@ -848,7 +853,7 @@ describe('hv-data-table: selection mode', () => {
   });
 
   it('keeps the sort-header reset off the header checkbox', async () => {
-    const css = tableCss();
+    const css = componentCss('hv-data-table');
     // Unscoped, this rule matches every button in the header — the select-all
     // included — and its 0-1-1 beats `.box`, so the unchecked box paints
     // neither border nor fill and the target is invisible until it is used.
@@ -933,8 +938,8 @@ describe('hv-data-table: row menu', () => {
   it('rides the same hover reveal as the rest of the actions cell', async () => {
     const el = await mount([{ id: '1' }]);
     expect(menu(el).closest('.actions')).toBeTruthy();
-    expect(tableCss()).toMatch(/\.actions \{[^}]*visibility: hidden/);
-    expect(tableCss()).toMatch(/\.row:hover \.actions, \.row:focus-within \.actions \{ visibility: visible/);
+    expect(componentCss('hv-data-table')).toMatch(/\.actions \{[^}]*visibility: hidden/);
+    expect(componentCss('hv-data-table')).toMatch(/\.row:hover \.actions, \.row:focus-within \.actions \{ visibility: visible/);
   });
 
   // 26px outlined here against 30px borderless on the card's rows: two answers
@@ -943,8 +948,8 @@ describe('hv-data-table: row menu', () => {
   it('draws Edit the way the card rows draw it', async () => {
     const el = await mount([{ id: '1' }]);
     expect(q(el, '[data-testid="table-edit"]')?.classList.contains('plain')).toBe(true);
-    expect(tableCss()).toMatch(/\.actions button\.plain \{[^}]*width: 30px/);
-    expect(tableCss()).toMatch(/\.actions button\.plain \{[^}]*border: none/);
+    expect(componentCss('hv-data-table')).toMatch(/\.actions button\.plain \{[^}]*width: 30px/);
+    expect(componentCss('hv-data-table')).toMatch(/\.actions button\.plain \{[^}]*border: none/);
   });
 
   // Fixed-width circles in a fixed track: too narrow and they come out as ovals.
@@ -972,7 +977,7 @@ describe('hv-data-table: row menu', () => {
 
 describe('hv-data-table: the row is a target', () => {
   it('shows the hand on a body row and not on the header', () => {
-    expect(tableCss()).toMatch(/\.row \{[^}]*cursor: pointer/);
-    expect(tableCss()).not.toMatch(/\.head \{[^}]*cursor: pointer/);
+    expect(componentCss('hv-data-table')).toMatch(/\.row \{[^}]*cursor: pointer/);
+    expect(componentCss('hv-data-table')).not.toMatch(/\.head \{[^}]*cursor: pointer/);
   });
 });

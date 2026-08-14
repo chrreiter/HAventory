@@ -19,6 +19,7 @@ const SORT_FIELDS: { field: SortField; label: string }[] = [
   { field: 'quantity', label: 'Quantity' },
   { field: 'due_date', label: 'Due date' },
   { field: 'inspection_date', label: 'Next inspection' },
+  { field: 'location', label: 'Location' },
 ];
 
 /** How many category chips to show before collapsing the rest behind "More…". */
@@ -414,6 +415,29 @@ export class HVFilterPanel extends LitElement {
     this._patch({ tags: next });
   }
 
+  // No Any/All control beside these two, unlike tags: an item carries exactly
+  // one category and sits in exactly one location, so a selection of several
+  // can only ever mean OR.
+  private _toggleCategory(category: string) {
+    const current = this.working.categories;
+    const next = current.includes(category)
+      ? current.filter((c) => c !== category)
+      : [...current, category];
+    this._patch({ categories: next });
+  }
+
+  private _toggleLocation(locationId: string | null) {
+    if (locationId === null) {
+      this._patch({ locationIds: [] });
+      return;
+    }
+    const current = this.working.locationIds;
+    const next = current.includes(locationId)
+      ? current.filter((id) => id !== locationId)
+      : [...current, locationId];
+    this._patch({ locationIds: next });
+  }
+
   private _commitTagDraft() {
     // Tags are normalized server-side (trimmed, lowercased, deduplicated), so
     // lowercase on commit and what the user sees matches what is stored.
@@ -460,16 +484,27 @@ export class HVFilterPanel extends LitElement {
   private _renderLocationGroup() {
     const f = this.working;
     const locations = this.locations ?? [];
-    const loc = locations.find((l) => l.id === f.locationId);
     // Named in words, not in a nested chip: this label lives inside a chip, and
     // it has to read the same as the chip row the applied filter turns into.
-    const label = pathLabel(locationPathParts(loc, locations, this.areas, 'Any location'));
+    // Several picked locations would not fit one chip's width, so past the first
+    // the chip counts them and the tree below is where they are read.
+    const label =
+      f.locationIds.length > 1
+        ? counted(f.locationIds.length, 'location')
+        : pathLabel(
+            locationPathParts(
+              locations.find((l) => l.id === f.locationIds[0]),
+              locations,
+              this.areas,
+              'Any location',
+            ),
+          );
     return html`
       <div class="group">
         <span class="hv-label">Where</span>
         <div class="chips">
           <button
-            class="hv-chip toggle chip ${f.locationId ? 'on' : ''}"
+            class="hv-chip toggle chip ${f.locationIds.length ? 'on' : ''}"
             data-testid="filter-location"
             aria-expanded=${String(this._locationOpen)}
             aria-controls=${LOCATION_TREE_ID}
@@ -505,13 +540,16 @@ export class HVFilterPanel extends LitElement {
                 data-testid="filter-location-tree"
                 .nodes=${this.locationTree}
                 .areas=${this.areas}
-                .selectedId=${f.locationId}
+                .selectedIds=${f.locationIds}
                 showAll
                 showCounts
                 .totalCount=${this.grandTotal}
                 @select=${(e: CustomEvent) => {
-                  this._patch({ locationId: (e.detail as { locationId: string | null }).locationId });
-                  this._locationOpen = false;
+                  const picked = (e.detail as { locationId: string | null }).locationId;
+                  this._toggleLocation(picked);
+                  // Adding to a selection means picking again, so the tree stays
+                  // open; "All items" is the one pick that finishes the job.
+                  if (picked === null) this._locationOpen = false;
                 }}
               ></hv-location-tree>`
             : null}
@@ -523,7 +561,15 @@ export class HVFilterPanel extends LitElement {
   private _renderCategoryGroup() {
     const f = this.working;
     const all = this.distinct?.categories ?? [];
-    const shown = this._showAllCategories ? all : all.slice(0, CATEGORY_CHIP_LIMIT);
+    const selected = new Set(f.categories);
+    // A selected category stays on screen even when it falls past the cut, or
+    // the chip that says the filter is on would be the one hidden by "More…".
+    const shown = this._showAllCategories
+      ? all
+      : [
+          ...all.slice(0, CATEGORY_CHIP_LIMIT),
+          ...all.slice(CATEGORY_CHIP_LIMIT).filter((c) => selected.has(c.value)),
+        ];
     const hidden = all.length - shown.length;
     if (!all.length) return null;
     return html`
@@ -532,13 +578,13 @@ export class HVFilterPanel extends LitElement {
         <div class="chips">
           ${shown.map(
             (c) => html`<button
-              class="hv-chip toggle chip ${f.category === c.value ? 'on' : ''}"
+              class="hv-chip toggle chip ${selected.has(c.value) ? 'on' : ''}"
               data-testid="filter-category"
               data-value=${c.value}
-              aria-pressed=${String(f.category === c.value)}
-              @click=${() => this._patch({ category: f.category === c.value ? null : c.value })}
+              aria-pressed=${String(selected.has(c.value))}
+              @click=${() => this._toggleCategory(c.value)}
             >
-              ${f.category === c.value ? icon('check', 12) : null}${c.value}
+              ${selected.has(c.value) ? icon('check', 12) : null}${c.value}
               <span class="hv-tally">${c.count}</span>
             </button>`,
           )}
@@ -554,7 +600,10 @@ export class HVFilterPanel extends LitElement {
               </button>`
             : null}
         </div>
-        <span class="hint">Pick one category</span>
+        <!-- The tag group below carries an any/all control and this one does
+             not, so the rule has to be said rather than inferred from its
+             absence. -->
+        <span class="hint">Any of the picked categories</span>
       </div>
     `;
   }

@@ -468,9 +468,29 @@ def _execute_item_op(
 class _Subscription(TypedDict, total=False):
     topic: str
     location_id: str | None
+    location_ids: list[str]
     area_id: str | None
     include_subtree: bool
     inspection_overdue_only: bool
+
+
+def _subscription_location_ids(sub: _Subscription) -> list[str]:
+    """The locations a subscription is scoped to, scalar and list unioned.
+
+    The same union rule ``models.selected_location_ids`` applies to an
+    ``ItemFilter``, kept here because a subscription is not one: it carries a
+    payload matcher, not a query.
+    """
+
+    selection: list[str] = []
+    scalar = sub.get("location_id")
+    if scalar:
+        selection.append(str(scalar).strip())
+    for raw in sub.get("location_ids") or []:
+        value = str(raw).strip()
+        if value and value not in selection:
+            selection.append(value)
+    return [value for value in selection if value]
 
 
 def _subs_bucket(
@@ -643,29 +663,29 @@ def _item_matches_filter(item: dict[str, Any], sub: _Subscription) -> bool:
     area_filter = sub.get("area_id")
     if area_filter and item.get("effective_area_id") != area_filter:
         return False
-    loc_filter = sub.get("location_id")
-    if not loc_filter:
+    loc_filters = _subscription_location_ids(sub)
+    if not loc_filters:
         return True
     include_subtree = bool(sub.get("include_subtree", True))
     if include_subtree:
-        # Match if the filter id is anywhere in the id_path
+        # Match if any selected id is anywhere in the id_path
         path = item.get("location_path", {}).get("id_path", [])
-        return loc_filter in path
+        return any(loc in path for loc in loc_filters)
     # Direct-only
-    return item.get("location_id") == loc_filter
+    return item.get("location_id") in loc_filters
 
 
 def _location_matches_filter(location: dict[str, Any], sub: _Subscription) -> bool:
-    loc_filter = sub.get("location_id")
-    if not loc_filter:
+    loc_filters = _subscription_location_ids(sub)
+    if not loc_filters:
         return True
     include_subtree = bool(sub.get("include_subtree", True))
     if include_subtree:
-        # If subtree, match if this location is the filter or under it
+        # If subtree, match if this location is a selected one or under one
         path = location.get("path", {}).get("id_path", [])
-        return loc_filter in path or location.get("id") == loc_filter
-    # Direct-only: only the exact location
-    return location.get("id") == loc_filter
+        return any(loc in path or location.get("id") == loc for loc in loc_filters)
+    # Direct-only: only the exact locations
+    return location.get("id") in loc_filters
 
 
 def _collect_event_deliveries(
@@ -900,13 +920,21 @@ async def ws_stats(
     conn.send_message(websocket_api.result_message(msg.get("id", 0), counts))
 
 
-@websocket_api.websocket_command({"type": "haventory/distinct_values"})
+@websocket_api.websocket_command(
+    {vol.Required("type"): "haventory/distinct_values", vol.Optional("filter"): object}
+)
 @websocket_api.async_response
 @ws_guard("distinct_values", ())
 async def ws_distinct_values(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    result = _repo(hass).get_distinct_field_values()
+    # With a filter, every value also reports how much of it the filter keeps, so
+    # a sidebar can read "4 / 37" the way the location tree already does. The
+    # list itself never shrinks — the same payload feeds autocomplete and the
+    # organize dialog.
+    item_filter = msg.get("filter")
+    validate_item_filter(item_filter)
+    result = _repo(hass).get_distinct_field_values(item_filter)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
 
@@ -1092,6 +1120,9 @@ async def ws_health(
         vol.Required("type"): "haventory/subscribe",
         vol.Required("topic"): str,
         vol.Optional("location_id"): object,
+        # Multi-select beside the scalar, unioned with it. `object` throughout
+        # for the reason below.
+        vol.Optional("location_ids"): object,
         # `object` rather than `str`, matching `location_id`: an explicit null
         # clears the filter instead of being refused by HA core's schema.
         vol.Optional("area_id"): object,
@@ -1112,6 +1143,11 @@ async def ws_subscribe(
     }
     if "location_id" in msg:
         sub["location_id"] = msg.get("location_id")
+    if "location_ids" in msg:
+        raw_ids = msg.get("location_ids")
+        if raw_ids is not None and not isinstance(raw_ids, list):
+            raise ValidationError("location_ids must be a list of strings")
+        sub["location_ids"] = [str(value) for value in raw_ids or []]
     if "area_id" in msg:
         sub["area_id"] = msg.get("area_id")
     if "include_subtree" in msg:
@@ -1953,16 +1989,34 @@ async def ws_location_update(
         reg = await async_get_area_registry(hass)
         if reg.async_get_area(area_id) is None:
             raise ValidationError("unknown area_id")
-    loc = _repo(hass).update_location(
+    repo = _repo(hass)
+    before = repo.get_location(msg["location_id"])
+    location_key = str(before.id)
+    # The area a location sits in is resolved through its tree, not read off the
+    # row: a tree's area lives on its root, so an area set on a nested location
+    # moves the root's `area_id` and leaves the edited row's at None. Comparing
+    # the resolved value catches both, and it is the value the items under the
+    # location report as `effective_area_id`.
+    was_anchored_at = (before.parent_id, repo.effective_area_id(location_key))
+    was_named = before.name
+    loc = repo.update_location(
         msg["location_id"], name=msg.get("name"), new_parent_id=new_parent, area_id=area_id
     )
     serialized = _serialize_location(loc)
     await _persist_repo(hass)
-    # If parent changed emit moved; if name changed emit renamed
-    # (move takes precedence when both)
-    if "new_parent_id" in msg:
+    # One event per call, decided by what changed rather than by which keys the
+    # request carried: an editor that sends every field on every save would
+    # otherwise announce a move on a plain rename, and one carrying both a new
+    # parent and a new area would announce two.
+    #
+    # An area reassignment is a move: it re-anchors the whole subtree, so every
+    # item under it gets a new effective_area_id, which is exactly what a client
+    # filtered by area re-lists on. No item events accompany it — the items
+    # themselves did not change.
+    is_anchored_at = (loc.parent_id, repo.effective_area_id(location_key))
+    if is_anchored_at != was_anchored_at:
         _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
-    if "name" in msg:
+    elif loc.name != was_named:
         _broadcast_event(
             hass, topic="locations", action="renamed", payload={"location": serialized}
         )
@@ -2096,7 +2150,7 @@ def _effective_area_id_for_item(hass: HomeAssistant, item: Item) -> str | None:
         if getattr(item, "location_id", None) is None:
             return None
         repo = _repo(hass)
-        return repo._resolve_effective_area_id_for_location(str(item.location_id))
+        return repo.effective_area_id(str(item.location_id))
     except Exception:
         return None
 

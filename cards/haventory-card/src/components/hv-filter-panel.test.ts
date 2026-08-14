@@ -2,6 +2,7 @@ import './hv-filter-panel';
 import type { HVFilterPanel } from './hv-filter-panel';
 import { defaultFilters } from '../store/store';
 import type { DistinctValues, Location, LocationTreeNode, StatusDefinition, StoreFilters } from '../store/types';
+import { all, componentCss, mountComponent, q } from '../test.utils';
 
 const distinct: DistinctValues = {
   categories: [
@@ -49,14 +50,13 @@ const tree: LocationTreeNode[] = [
 ];
 
 async function mount(filters: Partial<StoreFilters> = {}, props: Partial<HVFilterPanel> = {}) {
-  const el = document.createElement('hv-filter-panel') as HVFilterPanel;
-  el.filters = { ...defaultFilters(), ...filters };
-  el.distinct = distinct;
-  el.locationTree = tree;
-  el.areas = [{ id: 'area-garage', name: 'Garage' }];
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await el.updateComplete;
+  const { el } = await mountComponent<HVFilterPanel>('hv-filter-panel', {
+    filters: { ...defaultFilters(), ...filters },
+    distinct,
+    locationTree: tree,
+    areas: [{ id: 'area-garage', name: 'Garage' }],
+    ...props,
+  });
   return el;
 }
 
@@ -66,10 +66,8 @@ function changes(el: HVFilterPanel) {
   return seen;
 }
 
-const q = (el: HVFilterPanel, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement;
-const all = (el: HVFilterPanel, sel: string) => [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
 const label = (el: HVFilterPanel, testid: string) =>
-  (q(el, `[data-testid="${testid}"]`).textContent ?? '').replace(/\s+/g, ' ').trim();
+  (q(el, `[data-testid="${testid}"]`)!.textContent ?? '').replace(/\s+/g, ' ').trim();
 
 /** The flat cache behind `tree`, where only the root carries the area. */
 const nestedLocations = (areaId: string | null): Location[] => [
@@ -103,7 +101,7 @@ describe('hv-filter-panel: category', () => {
       'Consumables',
       'Adhesives',
     ]);
-    const more = q(el, '[data-testid="filter-category-more"]');
+    const more = q(el, '[data-testid="filter-category-more"]')!;
     expect(more.textContent).toContain('1');
 
     more.click();
@@ -115,8 +113,8 @@ describe('hv-filter-panel: category', () => {
   // a value used as both a category and a tag appears in each of them.
   it('tells a category chip from a tag chip without the group heading', async () => {
     const el = await mount();
-    const category = q(el, '[data-testid="filter-category"]');
-    const tag = q(el, '[data-testid="filter-tag"]');
+    const category = q(el, '[data-testid="filter-category"]')!;
+    const tag = q(el, '[data-testid="filter-tag"]')!;
 
     expect(tag.classList.contains('tag')).toBe(true);
     expect(category.classList.contains('tag')).toBe(false);
@@ -133,7 +131,7 @@ describe('hv-filter-panel: category', () => {
     const el = await mount();
     el.filters = { ...el.filters, tags: ['metric'] };
     await el.updateComplete;
-    const tag = q(el, '[data-testid="filter-tag"][data-value="metric"]');
+    const tag = q(el, '[data-testid="filter-tag"][data-value="metric"]')!;
 
     expect(tag.getAttribute('aria-pressed')).toBe('true');
     expect(tag.querySelector('svg')).toBeTruthy();
@@ -142,16 +140,16 @@ describe('hv-filter-panel: category', () => {
     expect(marks[0]).toBe('svg');
   });
 
-  it('is single-select and toggles off when picked again', async () => {
+  it('accumulates categories and takes one back out when picked again', async () => {
     const el = await mount();
     const seen = changes(el);
     (q(el, '[data-value="Hardware"]') as HTMLButtonElement).click();
-    expect(seen).toEqual([{ category: 'Hardware' }]);
+    expect(seen).toEqual([{ categories: ['Hardware'] }]);
 
-    el.filters = { ...el.filters, category: 'Hardware' };
+    el.filters = { ...el.filters, categories: ['Hardware'] };
     await el.updateComplete;
     (q(el, '[data-value="Hardware"]') as HTMLButtonElement).click();
-    expect(seen[1]).toEqual({ category: null });
+    expect(seen[1]).toEqual({ categories: [] });
   });
 });
 
@@ -234,11 +232,11 @@ describe('hv-filter-panel: status', () => {
   // "OK" is not a state worth marking.
   it('fills a selected status with its own tone and leaves the default plain', async () => {
     const el = await mount({ status: 'needs_repair' });
-    const chip = q(el, '[data-testid="filter-status"][data-value="needs_repair"]');
+    const chip = q(el, '[data-testid="filter-status"][data-value="needs_repair"]')!;
     expect(chip.classList.contains('on')).toBe(true);
     expect(chip.classList.contains('tone-amber')).toBe(true);
     expect(
-      q(el, '[data-testid="filter-status"][data-value="ok"]').classList.contains('tone-green'),
+      q(el, '[data-testid="filter-status"][data-value="ok"]')!.classList.contains('tone-green'),
     ).toBe(false);
   });
 
@@ -252,11 +250,11 @@ describe('hv-filter-panel: status', () => {
     const on = q(
       await mount({ status: 'sold' }, { statuses }),
       '[data-testid="filter-status"][data-value="sold"]',
-    );
+    )!;
     expect(on.style.getPropertyValue('--hv-status-bg')).toBe('#2f6f4f');
     expect(on.style.getPropertyValue('--hv-status-fg')).toBe('#ffffff');
 
-    const off = q(await mount({}, { statuses }), '[data-testid="filter-status"][data-value="sold"]');
+    const off = q(await mount({}, { statuses }), '[data-testid="filter-status"][data-value="sold"]')!;
     expect(off.getAttribute('style')).toBeNull();
   });
 });
@@ -268,7 +266,9 @@ describe('hv-filter-panel: hints', () => {
     const el = await mount();
     const hints = all(el, '.hint').map((h) => h.textContent?.trim());
 
-    expect(hints).toContain('Pick one category');
+    // Several picked categories can only mean OR — an item carries one — so
+    // the hint says which reading applies, where tags offer the choice.
+    expect(hints).toContain('Any of the picked categories');
     expect(hints).toContain('Tags are always lowercase');
     expect(hints.join(' ')).not.toMatch(/distinct values|on commit|Stored lowercase/);
   });
@@ -294,7 +294,7 @@ describe('hv-filter-panel: tags', () => {
   it('lowercases a typed tag on commit, matching how the backend stores it', async () => {
     const el = await mount();
     const seen = changes(el);
-    const input = q(el, '[data-testid="filter-tag-add"]').querySelector('input') as HTMLInputElement;
+    const input = q(el, '[data-testid="filter-tag-add"]')!.querySelector('input') as HTMLInputElement;
 
     input.value = '  Metric-Fine  ';
     input.dispatchEvent(new Event('input'));
@@ -306,7 +306,7 @@ describe('hv-filter-panel: tags', () => {
   it('ignores a duplicate or empty typed tag', async () => {
     const el = await mount({ tags: ['metric'] });
     const seen = changes(el);
-    const input = q(el, '[data-testid="filter-tag-add"]').querySelector('input') as HTMLInputElement;
+    const input = q(el, '[data-testid="filter-tag-add"]')!.querySelector('input') as HTMLInputElement;
 
     input.value = 'metric';
     input.dispatchEvent(new Event('input'));
@@ -329,7 +329,7 @@ describe('hv-filter-panel: tags', () => {
   // directly above an unrelated row, so what it applied to was anyone's guess.
   it('keeps the any/all toggle beside its own heading', async () => {
     const el = await mount();
-    const segmented = q(el, '[data-testid="filter-tags-mode"]').parentElement as HTMLElement;
+    const segmented = q(el, '[data-testid="filter-tags-mode"]')!.parentElement as HTMLElement;
 
     expect(segmented.style.marginLeft).toBe('');
     // Immediately after the heading it qualifies, in the same head row.
@@ -378,7 +378,7 @@ describe('hv-filter-panel: show only vs sort', () => {
       },
     );
     const tallyOf = (testid: string) =>
-      q(el, `[data-testid="${testid}"]`).querySelector('.hv-tally')?.textContent?.trim();
+      q(el, `[data-testid="${testid}"]`)!.querySelector('.hv-tally')?.textContent?.trim();
 
     expect(tallyOf('filter-low-stock-only')).toBe('102');
     expect(tallyOf('filter-checked-out')).toBe('82');
@@ -388,7 +388,7 @@ describe('hv-filter-panel: show only vs sort', () => {
 
   it('prints no tally at all when the counts have not arrived', async () => {
     const el = await mount();
-    expect(q(el, '[data-testid="filter-low-stock-only"]').querySelector('.hv-tally')).toBe(null);
+    expect(q(el, '[data-testid="filter-low-stock-only"]')!.querySelector('.hv-tally')).toBe(null);
   });
 
   it('carries the same tallies into the phone layout', async () => {
@@ -406,13 +406,13 @@ describe('hv-filter-panel: show only vs sort', () => {
         },
       },
     );
-    expect(q(el, '[data-testid="filter-overdue"]').textContent).toContain('1');
-    expect(q(el, '[data-testid="filter-orphans"]').textContent).toContain('2');
+    expect(q(el, '[data-testid="filter-overdue"]')!.textContent).toContain('1');
+    expect(q(el, '[data-testid="filter-orphans"]')!.textContent).toContain('2');
   });
 
   it('offers every sort field the backend supports', async () => {
     const el = await mount();
-    const options = [...q(el, '[data-testid="filter-sort-field"]').querySelectorAll('option')].map(
+    const options = [...q(el, '[data-testid="filter-sort-field"]')!.querySelectorAll('option')].map(
       (o) => (o as HTMLOptionElement).value,
     );
     expect(options).toEqual([
@@ -422,16 +422,17 @@ describe('hv-filter-panel: show only vs sort', () => {
       'quantity',
       'due_date',
       'inspection_date',
+      'location',
     ]);
   });
 
   it('labels the direction for the field being sorted', async () => {
     const el = await mount();
-    expect(q(el, '[data-order="desc"]').textContent?.trim()).toBe('Newest');
+    expect(q(el, '[data-order="desc"]')!.textContent?.trim()).toBe('Newest');
 
     el.filters = { ...el.filters, sort: { field: 'name', order: 'asc' } };
     await el.updateComplete;
-    expect(q(el, '[data-order="desc"]').textContent?.trim()).toBe('Descending');
+    expect(q(el, '[data-order="desc"]')!.textContent?.trim()).toBe('Descending');
   });
 
   it('changes sort direction without changing the field', async () => {
@@ -446,7 +447,7 @@ describe('hv-filter-panel: dates and location', () => {
   it('turns a date input into the ISO instant the backend compares against', async () => {
     const el = await mount();
     const seen = changes(el);
-    const input = q(el, '[data-testid="filter-updated-date"]').querySelector(
+    const input = q(el, '[data-testid="filter-updated-date"]')!.querySelector(
       'input',
     ) as HTMLInputElement;
 
@@ -467,12 +468,49 @@ describe('hv-filter-panel: dates and location', () => {
     (q(el, '[data-testid="filter-location"]') as HTMLButtonElement).click();
     await el.updateComplete;
 
-    const treeEl = el.shadowRoot?.querySelector('hv-location-tree') as HTMLElement;
-    (treeEl.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="garage"]') as HTMLButtonElement).click();
-    expect(seen[0]).toEqual({ locationId: 'garage' });
+    const tree = () => el.shadowRoot?.querySelector('hv-location-tree') as HTMLElement | null;
+    (tree()?.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="garage"]') as HTMLButtonElement).click();
+    expect(seen[0]).toEqual({ locationIds: ['garage'] });
 
+    // Adding to a selection means picking again, so the tree stays open.
     await el.updateComplete;
-    expect(el.shadowRoot?.querySelector('hv-location-tree')).toBe(null);
+    expect(tree()).not.toBe(null);
+
+    // "All items" is the pick that finishes the job, so it closes the tree.
+    (tree()?.shadowRoot?.querySelector('[data-testid="tree-all"]') as HTMLButtonElement).click();
+    expect(seen[1]).toEqual({ locationIds: [] });
+    await el.updateComplete;
+    expect(tree()).toBe(null);
+  });
+
+  // The sidebar accumulates locations; a panel that replaced on every click
+  // would disagree with it about what "picked" means.
+  it('accumulates locations and takes one back out on a second press', async () => {
+    const el = await mount();
+    const seen = changes(el);
+    (q(el, '[data-testid="filter-location"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    const inTree = (sel: string) =>
+      (el.shadowRoot?.querySelector('hv-location-tree') as HTMLElement)?.shadowRoot?.querySelector(
+        sel,
+      ) as HTMLButtonElement;
+    const row = (id: string) => inTree(`[data-testid="tree-row"][data-id="${id}"]`);
+
+    // Shelf A is a child, so its row only exists once Garage is expanded.
+    inTree('[data-testid="tree-twisty"]').click();
+    await el.updateComplete;
+
+    row('garage').click();
+    el.filters = { ...el.filters, locationIds: ['garage'] };
+    await el.updateComplete;
+    row('shelf-a').click();
+    expect(seen[1]).toEqual({ locationIds: ['garage', 'shelf-a'] });
+
+    el.filters = { ...el.filters, locationIds: ['garage', 'shelf-a'] };
+    await el.updateComplete;
+    row('garage').click();
+    expect(seen[2]).toEqual({ locationIds: ['shelf-a'] });
   });
 
   // aria-expanded on its own says only that something opened; which element it
@@ -501,7 +539,7 @@ describe('hv-filter-panel: dates and location', () => {
 
   it('names the picked location on the chip', async () => {
     const el = await mount(
-      { locationId: 'shelf-a' },
+      { locationIds: ['shelf-a'] },
       {
         locations: [
           {
@@ -519,12 +557,12 @@ describe('hv-filter-panel: dates and location', () => {
         ],
       },
     );
-    expect(q(el, '[data-testid="filter-location"]').textContent).toContain('Garage › Shelf A');
+    expect(q(el, '[data-testid="filter-location"]')!.textContent).toContain('Garage › Shelf A');
   });
 
   it('names the area the picked location inherits, matching the chip row wording', async () => {
     const el = await mount(
-      { locationId: 'shelf-a' },
+      { locationIds: ['shelf-a'] },
       { locations: nestedLocations('area-kitchen'), areas: [{ id: 'area-kitchen', name: 'Kitchen' }] },
     );
     expect(label(el, 'filter-location')).toContain('Area: Kitchen · Garage › Shelf A');
@@ -533,13 +571,13 @@ describe('hv-filter-panel: dates and location', () => {
   // A root named after its own room made the field read "Area: Garage · Garage
   // › Shelf A". The same elision the chip beside a path takes.
   it('drops the area when the picked path opens with that name', async () => {
-    const el = await mount({ locationId: 'shelf-a' }, { locations: nestedLocations('area-garage') });
+    const el = await mount({ locationIds: ['shelf-a'] }, { locations: nestedLocations('area-garage') });
     expect(label(el, 'filter-location')).toContain('Garage › Shelf A');
     expect(label(el, 'filter-location')).not.toContain('Area:');
   });
 
   it('leaves a location in no area labelled exactly as before', async () => {
-    const el = await mount({ locationId: 'shelf-a' }, { locations: nestedLocations(null) });
+    const el = await mount({ locationIds: ['shelf-a'] }, { locations: nestedLocations(null) });
     expect(label(el, 'filter-location')).toContain('Garage › Shelf A');
     expect(label(el, 'filter-location')).not.toContain('Area:');
   });
@@ -553,9 +591,9 @@ describe('hv-filter-panel: dates and location', () => {
 
 describe('hv-filter-panel: footer and staging', () => {
   it('summarises how many filters are on and how many items match', async () => {
-    const el = await mount({ category: 'Hardware', checkedOutOnly: true }, { total: 38, grandTotal: 250 });
-    expect(q(el, '[data-testid="filter-summary"]').textContent).toContain('2 filters active');
-    expect(q(el, '[data-testid="filter-summary"]').textContent).toContain('38 of 250 match');
+    const el = await mount({ categories: ['Hardware'], checkedOutOnly: true }, { total: 38, grandTotal: 250 });
+    expect(q(el, '[data-testid="filter-summary"]')!.textContent).toContain('2 filters active');
+    expect(q(el, '[data-testid="filter-summary"]')!.textContent).toContain('38 of 250 match');
   });
 
   it('hides the footer on mobile, where the sheet owns those controls', async () => {
@@ -574,8 +612,8 @@ describe('hv-filter-panel: footer and staging', () => {
     await el.updateComplete;
 
     expect(applied).toEqual([]);
-    expect(staged[0].category).toBe('Hardware');
-    expect(el.working.category).toBe('Hardware');
+    expect(staged[0].categories).toEqual(['Hardware']);
+    expect(el.working.categories).toEqual(['Hardware']);
   });
 
   it('emits the whole draft on apply, and forgets it on reset', async () => {
@@ -586,20 +624,20 @@ describe('hv-filter-panel: footer and staging', () => {
     (q(el, '[data-value="Tools"]') as HTMLButtonElement).click();
     await el.updateComplete;
     el.apply();
-    expect(applies[0].category).toBe('Tools');
+    expect(applies[0].categories).toEqual(['Tools']);
 
     (q(el, '[data-value="Tools"]') as HTMLButtonElement).click();
     await el.updateComplete;
     el.resetDraft();
     await el.updateComplete;
-    expect(el.working.category).toBe(null);
+    expect(el.working.categories).toEqual([]);
   });
 
   // Clearing used to go straight to the store: the list behind the sheet
   // reloaded while every control in the sheet kept its old value.
   it('clears the staged draft, not the applied filters', async () => {
     const el = await mount(
-      { category: 'Hardware', tags: ['metric'], lowStockOnly: true },
+      { categories: ['Hardware'], tags: ['metric'], lowStockOnly: true },
       { mobile: true },
     );
     const applied: unknown[] = [];
@@ -611,8 +649,8 @@ describe('hv-filter-panel: footer and staging', () => {
     await el.updateComplete;
 
     expect(applied).toEqual([]);
-    expect(el.working).toMatchObject({ category: null, tags: [], lowStockOnly: false });
-    expect(staged[0]).toMatchObject({ category: null, tags: [], lowStockOnly: false });
+    expect(el.working).toMatchObject({ categories: [], tags: [], lowStockOnly: false });
+    expect(staged[0]).toMatchObject({ categories: [], tags: [], lowStockOnly: false });
     // Every chip in the sheet is visibly off again.
     expect(all(el, '[data-testid="filter-category"].on')).toEqual([]);
 
@@ -620,18 +658,18 @@ describe('hv-filter-panel: footer and staging', () => {
     const applies: StoreFilters[] = [];
     el.addEventListener('apply', (e) => applies.push((e as CustomEvent).detail));
     el.apply();
-    expect(applies[0]).toMatchObject({ category: null, tags: [], lowStockOnly: false });
+    expect(applies[0]).toMatchObject({ categories: [], tags: [], lowStockOnly: false });
   });
 
   it('keeps the chosen sort when clearing', async () => {
-    const el = await mount({ category: 'Tools', sort: { field: 'name', order: 'asc' } }, { mobile: true });
+    const el = await mount({ categories: ['Tools'], sort: { field: 'name', order: 'asc' } }, { mobile: true });
     el.clearAll();
     await el.updateComplete;
     expect(el.working.sort).toEqual({ field: 'name', order: 'asc' });
   });
 
   it('still asks the host to clear when it applies live (desktop)', async () => {
-    const el = await mount({ category: 'Tools' });
+    const el = await mount({ categories: ['Tools'] });
     let cleared = 0;
     el.addEventListener('clear-filters', () => {
       cleared += 1;
@@ -645,8 +683,7 @@ describe('hv-filter-panel: native control affordances', () => {
   // The sort field draws its own chevron next to the <select>. Without
   // resetting the UA appearance the browser draws a second one beside it.
   it('suppresses the browser-drawn arrow on selects it decorates itself', () => {
-    const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
-    const cssText = (Array.isArray(sheet) ? sheet : [sheet]).map((s) => String(s.cssText)).join('\n');
+    const cssText = componentCss('hv-filter-panel');
     const selectRule = cssText.slice(cssText.indexOf('.field select'));
     expect(selectRule).toContain('appearance: none');
   });
@@ -656,13 +693,12 @@ describe('hv-filter-panel: native control affordances', () => {
   it('lets the select own the whole field, chevron included', async () => {
     const el = await mount();
     for (const testid of ['filter-sort-field', 'filter-area']) {
-      const field = q(el, `[data-testid="${testid}"]`);
+      const field = q(el, `[data-testid="${testid}"]`)!;
       expect(field.classList.contains('select-field')).toBe(true);
       expect(field.querySelector('.chevron')).not.toBe(null);
     }
 
-    const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
-    const cssText = (Array.isArray(sheet) ? sheet : [sheet]).map((s) => String(s.cssText)).join('\n');
+    const cssText = componentCss('hv-filter-panel');
     const chevronRule = cssText.slice(cssText.indexOf('.field .chevron'));
     expect(chevronRule).toContain('pointer-events: none');
   });
@@ -671,11 +707,7 @@ describe('hv-filter-panel: native control affordances', () => {
   // hover wash: the only clue it could be pressed arrived after the pointer was
   // already on it, and a touch screen never provided that clue at all.
   it('draws the comparison flip as a control at rest, not only on hover', () => {
-    const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
-    const cssText = (Array.isArray(sheet) ? sheet : [sheet])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const cssText = componentCss('hv-filter-panel');
 
     const rule = /\.field \.direction \{([^}]*)\}/.exec(cssText)?.[1] ?? '';
     expect(rule, 'no .field .direction rule').not.toBe('');
@@ -691,11 +723,7 @@ describe('hv-filter-panel: native control affordances', () => {
   // control in the panel — was the largest text on the page. Desktop has always
   // matched its chips at 12.5px.
   it('sizes its fields like the chips beside them, in both layouts', () => {
-    const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
-    const css = (Array.isArray(sheet) ? sheet : [sheet])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = componentCss('hv-filter-panel');
 
     // The selector is matched as a literal, so every regex metacharacter in it
     // has to reach the pattern escaped — the backslash included, or an escape
@@ -727,8 +755,8 @@ describe('hv-filter-panel: changed', () => {
         .map((s) => s.textContent?.trim())
         .join(' ');
 
-    expect(visibleText(q(el, '[data-testid="filter-updated-date"]'))).toMatch(/updated/i);
-    expect(visibleText(q(el, '[data-testid="filter-created-date"]'))).toMatch(/created/i);
+    expect(visibleText(q(el, '[data-testid="filter-updated-date"]')!)).toMatch(/updated/i);
+    expect(visibleText(q(el, '[data-testid="filter-created-date"]')!)).toMatch(/created/i);
   });
 
   it('keeps the two date inputs wired to their own filter keys', async () => {
@@ -806,7 +834,7 @@ describe('hv-filter-panel: inspection due', () => {
   // so it has to carry the same forward-looking wording as the editor.
   it('names the inspection sort field for the date it holds', async () => {
     const el = await mount();
-    const labels = [...q(el, '[data-testid="filter-sort-field"]').querySelectorAll('option')].map(
+    const labels = [...q(el, '[data-testid="filter-sort-field"]')!.querySelectorAll('option')].map(
       (o) => (o as HTMLOptionElement).textContent?.trim(),
     );
     expect(labels).toContain('Next inspection');
@@ -830,7 +858,7 @@ describe('hv-filter-panel: inspection due', () => {
           },
         },
       );
-      const chip = q(el, '[data-testid="filter-inspection-due"]');
+      const chip = q(el, '[data-testid="filter-inspection-due"]')!;
       expect(chip.textContent, `mobile=${mobile}`).toContain('Inspection due');
       expect(chip.textContent, `mobile=${mobile}`).toContain('5');
 
@@ -858,7 +886,7 @@ const STATEFUL_CHIPS: { name: string; sel: string; on: Partial<StoreFilters> }[]
   {
     name: 'category',
     sel: '[data-testid="filter-category"][data-value="Hardware"]',
-    on: { category: 'Hardware' },
+    on: { categories: ['Hardware'] },
   },
   { name: 'tag', sel: '[data-testid="filter-tag"][data-value="metric"]', on: { tags: ['metric'] } },
   { name: 'low stock', sel: '[data-testid="filter-low-stock-only"]', on: { lowStockOnly: true } },
@@ -881,14 +909,14 @@ describe('hv-filter-panel: pressed state', () => {
       for (const chip of STATEFUL_CHIPS) {
         const off = await mount({}, { mobile });
         expect(
-          q(off, chip.sel).getAttribute('aria-pressed'),
+          q(off, chip.sel)!.getAttribute('aria-pressed'),
           `${chip.name} off, mobile=${mobile}`,
         ).toBe('false');
         off.remove();
 
         const on = await mount(chip.on, { mobile });
         expect(
-          q(on, chip.sel).getAttribute('aria-pressed'),
+          q(on, chip.sel)!.getAttribute('aria-pressed'),
           `${chip.name} on, mobile=${mobile}`,
         ).toBe('true');
         on.remove();
@@ -899,7 +927,7 @@ describe('hv-filter-panel: pressed state', () => {
   it('keeps the announced state in step with the paint, chip for chip', async () => {
     for (const mobile of [false, true]) {
       const el = await mount(
-        { category: 'Tools', tags: ['m4'], overdueOnly: true, includeSubtree: true },
+        { categories: ['Tools'], tags: ['m4'], overdueOnly: true, includeSubtree: true },
         { mobile },
       );
       // Every toggle in the panel paints itself, rows included: a row is a chip
@@ -930,7 +958,7 @@ describe('hv-filter-panel: pressed state', () => {
     for (const mobile of [false, true]) {
       const el = await mount({ lowStockOnly: true, includeSubtree: true, lowStockFirst: true }, { mobile });
       for (const testid of ROWS) {
-        const row = q(el, `[data-testid="${testid}"]`);
+        const row = q(el, `[data-testid="${testid}"]`)!;
         // "Low stock" is a chip on a desktop and a row in the sheet; the other
         // two are rows at both widths.
         if (!mobile && testid === 'filter-low-stock-only') continue;
@@ -949,7 +977,7 @@ describe('hv-filter-panel: pressed state', () => {
   // with `on`.
   it('tints a warning chip when it is selected, never at rest', async () => {
     const el = await mount({}, { mobile: true });
-    const chipOf = (testid: string) => q(el, `[data-testid="${testid}"]`);
+    const chipOf = (testid: string) => q(el, `[data-testid="${testid}"]`)!;
 
     for (const testid of ['filter-low-stock-only', 'filter-overdue', 'filter-inspection-due']) {
       expect(chipOf(testid).classList.contains('warning'), testid).toBe(false);
@@ -965,11 +993,7 @@ describe('hv-filter-panel: pressed state', () => {
   // The row's on state has to be the shared chip's on state, not a second set
   // of colours that happens to look similar.
   it('takes its on state from the shared chip rule, warning variant included', () => {
-    const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
-    const css = (Array.isArray(sheet) ? sheet : [sheet])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = componentCss('hv-filter-panel');
 
     expect(css).toMatch(/\.hv-chip\.toggle\.on \{[^}]*background: var\(--hv-primary-tint\)/);
     expect(css).toMatch(/\.hv-chip\.toggle\.warning\.on \{[^}]*background: var\(--hv-warn-bg\)/);
@@ -981,25 +1005,21 @@ describe('hv-filter-panel: pressed state', () => {
 
   it('reserves the mark so a row keeps its label in place as it is pressed', async () => {
     const el = await mount({}, { mobile: true });
-    const row = q(el, '[data-testid="filter-low-stock-only"]');
+    const row = q(el, '[data-testid="filter-low-stock-only"]')!;
     expect(row.getAttribute('aria-pressed')).toBe('false');
     expect(row.querySelector('.mark'), 'off rows still hold the slot open').toBeTruthy();
 
     const el2 = await mount({ lowStockOnly: true }, { mobile: true });
-    expect(q(el2, '[data-testid="filter-low-stock-only"]').querySelector('.mark svg')).toBeTruthy();
+    expect(q(el2, '[data-testid="filter-low-stock-only"]')!.querySelector('.mark svg')).toBeTruthy();
 
-    const sheet = (customElements.get('hv-filter-panel') as typeof HVFilterPanel).styles;
-    const css = (Array.isArray(sheet) ? sheet : [sheet])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
+    const css = componentCss('hv-filter-panel');
     expect(css).toMatch(/\.check \.mark \{[^}]*width: 12px/);
     expect(css).toMatch(/:host\(\[mobile\]\) \.check \.mark \{[^}]*width: 15px/);
   });
 
   it('flips as the filter is applied, not only on mount', async () => {
     const el = await mount();
-    const chip = () => q(el, '[data-testid="filter-overdue"]');
+    const chip = () => q(el, '[data-testid="filter-overdue"]')!;
     expect(chip().getAttribute('aria-pressed')).toBe('false');
 
     (chip() as HTMLButtonElement).click();
@@ -1012,7 +1032,7 @@ describe('hv-filter-panel: pressed state', () => {
   it('presses a selected tag no item currently carries', async () => {
     const el = await mount({ tags: ['nobody-uses-this'] });
     expect(
-      q(el, '[data-testid="filter-tag"][data-value="nobody-uses-this"]').getAttribute(
+      q(el, '[data-testid="filter-tag"][data-value="nobody-uses-this"]')!.getAttribute(
         'aria-pressed',
       ),
     ).toBe('true');
@@ -1022,7 +1042,7 @@ describe('hv-filter-panel: pressed state', () => {
     for (const mobile of [false, true]) {
       const fresh = await mount({}, { mobile });
       const state = (el: HVFilterPanel, testid: string) =>
-        q(el, `[data-testid="${testid}"]`).getAttribute('aria-pressed');
+        q(el, `[data-testid="${testid}"]`)!.getAttribute('aria-pressed');
 
       // Sub-locations are included by default; low-stock-first is not.
       expect(state(fresh, 'filter-include-subtree'), `mobile=${mobile}`).toBe('true');

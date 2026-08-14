@@ -142,7 +142,10 @@ export const chip = css`
    * A chip with no hue of its own fills as well, or the ring would be drawn
    * around nothing. The two rules below restate their own hue for the same
    * reason the ordering note above exists: toggle-and-on is a three-class
-   * selector and would otherwise repaint a hued chip blue.
+   * selector and would otherwise repaint a hued chip blue. The status chip
+   * cannot restate per tone — a household can pick a #rrggbb literal no class
+   * covers — so its rule further down reads the same two custom properties
+   * every route into its colour already sets.
    */
   .hv-chip.on {
     outline: 2px solid var(--hv-primary);
@@ -207,6 +210,16 @@ export const chip = css`
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  /* Selected, it keeps its own colour — the hue is what says which status was
+     picked, so painting it primary blue erases the answer at the moment it is
+     given. Reading the custom-property pair covers every tone class and any
+     inline #rrggbb literal in one rule; source order past .hv-chip.toggle.on
+     is what lets this equal-specificity selector win. The fallback is the
+     plain applied fill, for the default status, which carries no hue. */
+  .hv-status-chip.toggle.on {
+    background: var(--hv-status-bg, var(--hv-primary-tint));
+    color: var(--hv-status-fg, var(--hv-on-primary-tint));
   }
   .hv-status-chip.tone-neutral {
     --hv-status-bg: var(--hv-tone-neutral-bg);

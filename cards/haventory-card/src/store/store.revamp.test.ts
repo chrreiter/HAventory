@@ -59,7 +59,7 @@ describe('toWireFilter', () => {
       ...defaultFilters(),
       q: 'screws',
       areaId: 'area-1',
-      locationId: 'loc-1',
+      locationIds: ['loc-1'],
       checkedOutOnly: true,
       lowStockOnly: true,
       lowStockFirst: true,
@@ -67,7 +67,7 @@ describe('toWireFilter', () => {
       overdueOnly: true,
       inspectionDueOnly: true,
       status: 'missing',
-      category: 'Hardware',
+      categories: ['Hardware'],
       updatedAfter: '2026-07-01T00:00:00Z',
       createdAfter: '2026-01-01T00:00:00Z',
       updatedBefore: '2026-08-01T00:00:00Z',
@@ -76,7 +76,7 @@ describe('toWireFilter', () => {
     expect(wire).toMatchObject({
       q: 'screws',
       area_id: 'area-1',
-      location_id: 'loc-1',
+      location_ids: ['loc-1'],
       checked_out: true,
       low_stock_only: true,
       low_stock_first: true,
@@ -84,12 +84,31 @@ describe('toWireFilter', () => {
       overdue_only: true,
       inspection_overdue_only: true,
       status: 'missing',
-      category: 'Hardware',
+      categories: ['Hardware'],
       updated_after: '2026-07-01T00:00:00Z',
       created_after: '2026-01-01T00:00:00Z',
       updated_before: '2026-08-01T00:00:00Z',
       created_before: '2026-02-01T00:00:00Z',
     });
+  });
+
+  // The plural keys only: sending both spellings would let the two disagree,
+  // and the backend unions them rather than intersecting.
+  it('sends the multi-select keys and never their scalars', () => {
+    const wire = toWireFilter({
+      ...defaultFilters(),
+      categories: ['Tools', 'Books'],
+      locationIds: ['loc-1', 'loc-2'],
+    });
+    expect(wire.categories).toEqual(['Tools', 'Books']);
+    expect(wire.location_ids).toEqual(['loc-1', 'loc-2']);
+    expect(wire.category).toBeUndefined();
+    expect(wire.location_id).toBeUndefined();
+
+    // An empty selection is not a filter, so neither key goes on the wire.
+    const clean = toWireFilter(defaultFilters());
+    expect(clean.categories).toBeUndefined();
+    expect(clean.location_ids).toBeUndefined();
   });
 
   it('leaves the before-bounds off when they are unset', () => {
@@ -127,7 +146,10 @@ describe('toWireFilter', () => {
 describe('activeFilterCount', () => {
   it('counts nothing for a clean slate and one per narrowing control', () => {
     expect(activeFilterCount(defaultFilters())).toBe(0);
-    expect(activeFilterCount({ ...defaultFilters(), q: 'x', category: 'Tools' })).toBe(2);
+    expect(activeFilterCount({ ...defaultFilters(), q: 'x', categories: ['Tools'] })).toBe(2);
+    // A multi-select counts once however many values it names, the way tags do.
+    expect(activeFilterCount({ ...defaultFilters(), categories: ['a', 'b'] })).toBe(1);
+    expect(activeFilterCount({ ...defaultFilters(), locationIds: ['x', 'y', 'z'] })).toBe(1);
     // Tags count once regardless of how many are selected.
     expect(activeFilterCount({ ...defaultFilters(), tags: ['a', 'b', 'c'] })).toBe(1);
   });
@@ -186,10 +208,10 @@ describe('Store: filtered total and loading', () => {
     const store = new Store(makeMockHass({ items }), fast);
     await store.init();
 
-    const count = await store.countMatching({ ...defaultFilters(), category: 'Hardware' });
+    const count = await store.countMatching({ ...defaultFilters(), categories: ['Hardware'] });
     expect(count).toBe(2);
     // The staged filter must not have touched the applied one.
-    expect(store.state.value.filters.category).toBe(null);
+    expect(store.state.value.filters.categories).toEqual([]);
     expect(store.state.value.items).toHaveLength(3);
   });
 
@@ -1385,7 +1407,7 @@ describe('Store: location tree and diagnostics data', () => {
 
     // Narrow by category *and* location: the sidebar still has to show where the
     // other matches are, or picking a different branch becomes guesswork.
-    store.setFilters({ category: 'Tools', locationId: 'kitchen' });
+    store.setFilters({ categories: ['Tools'], locationIds: ['kitchen'] });
     await new Promise((r) => setTimeout(r, 400));
 
     const tree = store.state.value.locationTreeCache!;
@@ -1502,13 +1524,13 @@ describe('Store: export scopes', () => {
 
     const store = new Store(hass, fast);
     await store.init();
-    store.setFilters({ category: 'Hardware' });
+    store.setFilters({ categories: ['Hardware'] });
 
     await store.exportDocument();
     await store.exportDocument('view');
 
     expect(calls[0]).toBe(null);
-    expect((calls[1] as { category?: string }).category).toBe('Hardware');
+    expect((calls[1] as { categories?: string[] }).categories).toEqual(['Hardware']);
   });
 });
 

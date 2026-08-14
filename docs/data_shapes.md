@@ -215,6 +215,7 @@ counts items at the node or any descendant (so it is always >= the direct count)
   - `tags_any?: string[]`
   - `tags_all?: string[]`
   - `category?: string`
+  - `categories?: string[]` (multi-select beside `category`; see the union rule below)
   - `status?: <status slug>` (exact match against the live status set; unknown values are `validation_error`)
   - `checked_out?: boolean`
   - `low_stock_only?: boolean`
@@ -222,17 +223,49 @@ counts items at the node or any descendant (so it is always >= the direct count)
   - `overdue_only?: boolean` (only items whose `due_date` is strictly before today, UTC)
   - `inspection_overdue_only?: boolean` (only items whose `inspection_date` is strictly before today, UTC; independent of check-out state)
   - `location_id?: uuid-v4|null`
+  - `location_ids?: uuid-v4[]` (multi-select beside `location_id`; see the union rule below)
   - `area_id?: string`
-  - `include_subtree?: boolean`
+  - `include_subtree?: boolean` (governs the whole `location_id` + `location_ids` selection, not one entry)
   - `low_stock_first?: boolean`
   - `updated_after?: ISO8601Z` (strictly greater-than)
   - `created_after?: ISO8601Z` (strictly greater-than)
   - `updated_before?: ISO8601Z` (strictly less-than; combine with `updated_after` for a range)
   - `created_before?: ISO8601Z` (strictly less-than; combine with `created_after` for a range)
 
+  **The multi-select rule.** `category`/`categories` and `location_id`/`location_ids` are
+  each *one* selection: the scalar and the list are unioned, and an item matches if it
+  carries any value in that union. They are never intersected — an item has exactly one
+  category and sits in exactly one location, so requiring both keys to hold would match
+  nothing whenever they name different values. Both keys are optional and either may be
+  sent alone; the card sends only the plural. An empty list does not narrow at all, the
+  same way an empty `tags_any` does not. Entries are trimmed and de-duplicated, categories
+  case-insensitively; a value that is not a list of strings is a `validation_error` naming
+  the key, because iterating a bare string would filter by its letters. A `location_ids`
+  entry that is not a valid UUID v4 contributes nothing, so a selection of only bad ids
+  matches nothing — what a single bad `location_id` has always done.
+
+  `include_subtree` is **one flag for the whole location selection**, not one per entry:
+  set, an item matches when it sits in, or under, any selected location. A per-entry form
+  (include this location's children but not that one's) is deliberately not offered; it
+  doubles the wire shape and the matcher's branches, and it can be added later without
+  breaking this form.
+
 - Sort:
-  - `{ field: "updated_at"|"created_at"|"name"|"quantity"|"due_date"|"inspection_date", order: "asc"|"desc" }`
+  - `{ field: "updated_at"|"created_at"|"name"|"quantity"|"due_date"|"inspection_date"|"location", order: "asc"|"desc" }`
   - `due_date` / `inspection_date`: items without a date sort last in both orders; ties break by id asc.
+  - `location` orders on the item's own denormalized `location_path.sort_key` — the same
+    key the Location column displays a path from, so the ordering is the one that column
+    implies. **Items with no location sort last in both orders**, the rule the two date
+    fields already follow: their stored key is `""`, which a plain ascending sort would
+    float to the top. Because an item's area is inherited from its location tree's root, a
+    path-ordered list groups by root, and therefore by area.
+  - There is **no area sort**, deliberately. `effective_area_id` is not stored on an item —
+    it is resolved by walking the location tree — and an area's *name* lives in Home
+    Assistant's own registry, which neither the models nor the repository can reach. A
+    sort field for it would need either a resolver threaded through the pure sort function
+    or a new denormalized field on every item, and would still order by `area_id`, which
+    Home Assistant generates from the name at creation and never changes on rename — so a
+    renamed area would sort under its old name.
 
 **Unknown keys are rejected**, in a filter and in a sort alike: the reply is `validation_error`
 naming the offending key. A dropped key is worse than a refused one — a filter that lost its
@@ -248,11 +281,14 @@ is accepted the moment it is declared.
 - `cursor` is an opaque base64url-encoded JSON with last tuple and sort metadata; pass it back unchanged.
 - A cursor that cannot be honoured is `validation_error`, never a silent restart at page one:
   empty, undecodable, longer than 2048 characters, missing `last_id` / `last_sort_key`, or
-  minted under a different `sort` than the request carries. Restart pagination by omitting
-  `cursor` — sending `""` is refused, because a caller who meant page one had no reason to
-  send the key at all.
+  minted under a different `sort` — or a different `low_stock_first` setting — than the
+  request carries. Restart pagination by omitting `cursor` — sending `""` is refused, because
+  a caller who meant page one had no reason to send the key at all.
 - Changing the sort means dropping the cursor. A cursor addresses a position in one specific
   ordering, and honouring it against another would silently return a page from neither.
+  `filter.low_stock_first` changes the ordering the same way — it splits the list into a
+  low-stock block and the rest, sorted within each — so the cursor carries the item's block
+  beside its sort key, and flipping the setting mid-walk drops the cursor too.
 
 ### Stats
 
@@ -293,7 +329,17 @@ Result of `distinct_values`, used by category/tag autocomplete, the browser view
 }
 ```
 
-- `DistinctValue`: `{ value: string, count: number }` where `count` is the number of items using that value.
+With a filter on the request, each category and tag entry also carries `matching_count`:
+```json
+{
+  "categories": [ { "value": "Books", "count": 1, "matching_count": 0 }, { "value": "Tools", "count": 2, "matching_count": 1 } ],
+  "tags": [ { "value": "blue", "count": 2, "matching_count": 1 }, { "value": "red", "count": 2, "matching_count": 0 } ],
+  "custom_field_keys": [ "serial", "Voltage", "warranty_until" ]
+}
+```
+
+- `DistinctValue`: `{ value: string, count: number, matching_count?: number }` where `count` is the number of items using that value.
+- `matching_count` is how many of that value's items the request's filter keeps. Present on every `categories` and `tags` entry when the request carried a `filter`, absent from all of them when it did not — so `undefined` means "unpriced", never "nothing matches". No entry is dropped for matching nothing; `count` is unaffected by the filter, and `custom_field_keys` is never filtered.
 - Categories are grouped case-insensitively; `value` is a representative display label (most frequent original casing, ties broken alphabetically). Tags are already normalized (lowercase), so `value` is the tag itself.
 - Both value lists are sorted case-insensitively by `value`. Items with no category (or no tags) contribute nothing to the respective list.
 - `custom_field_keys` is the sorted, distinct set of keys used across all items' `custom_fields` (keys are case-sensitive; sorted case-insensitively). Empty when no item has custom fields.
@@ -356,9 +402,11 @@ Result of `distinct_values`, used by category/tag autocomplete, the browser view
   empty. Envelope problems (bad/missing versions, malformed `items`/`locations`, a
   `schema_version` newer than supported), invalid entities, duplicate ids, and broken
   references (e.g. an item's `location_id` with no matching location) all surface here.
-  Every import-side rule the WebSocket API enforces on a write is enforced here too — the
-  input caps, the 120-character name limit and the `due_date` ⇔ `checked_out` invariant — so
-  a document cannot introduce an entity the API would refuse.
+  A document is held to what `Repository.load_state` accepts, not to the write path's input
+  caps: the rules every release has enforced — the 120-character name limit, canonical
+  timestamps, the `due_date` ⇔ `checked_out` invariant, statuses the document can name — are
+  checked, and the free-text/collection caps are not, because a store written before those
+  caps existed exports data that must import back. See "Input caps" below.
 - `warnings` is present on every preview, empty or not, valid or not: one shape to render.
 
 `ImportWarning` — a non-blocking finding about an otherwise usable document:
@@ -415,14 +463,14 @@ Common envelope inside HA WS event wrapper:
 ```
 
 - Items: `created`, `updated`, `moved`, `deleted`, `checked_out`, `checked_in`, `quantity_changed` with `{item: <Item>}`. `item` may be **absent** on any items event, and its absence means "refetch" rather than "patch this item": `reloaded` after an import replaces the dataset, and `updated` after `status/delete` with `reassign_to` rewrites every item carrying the slug at once.
-- Locations: `created`, `renamed`, `moved`, `deleted` with `{location: <Location>}`; plus `reloaded` (no `location`) after an import.
+- Locations: `created`, `renamed`, `moved`, `deleted` with `{location: <Location>}`; plus `reloaded` (no `location`) after an import. `moved` covers both ways a location is re-anchored — a new parent and a new area — because each rewrites `effective_area_id` for everything under it. The `location` payload is the one the command targeted, which for an area sent to a nested location is not the location whose stored `area_id` changed: a tree's area lives on its root. Read a `moved` event as "re-list this subtree", not as a patch.
 - Stats: `counts` with `{counts: <Counts>}`.
 - Every topic: `unavailable` (common fields only), sent once per open subscription when the config entry serving it tears down. The subscription is over at that point; see the API contract's "While no entry is loaded".
 
 Subscription filters (`haventory/subscribe`) are matched against the payload above, not
 against the repository:
 
-- `location_id` / `include_subtree` read the item's `location_path.id_path` (or the location's own `path.id_path`).
+- `location_id` / `location_ids` / `include_subtree` read the item's `location_path.id_path` (or the location's own `path.id_path`). The scalar and the list are unioned exactly as `ItemFilter` unions them, and `include_subtree` (defaulting to **true** here, unlike the list filter) applies to the whole selection.
 - `area_id` reads the item's `effective_area_id`, so it selects the same area `ItemFilter.area_id` does. An item with no location carries `effective_area_id: null` and matches no area filter; a `null` or omitted `area_id` on the subscription means no area filter at all. `area_id` applies to the `items` topic only.
 - Filters combine with AND, and every one of them is applied to the payload as it stands *after* the mutation. An item that leaves a filtered set produces no event for that subscription, so a client tracking one re-lists rather than waiting for a departure event — including after a `locations` `moved` event, which is the only signal that a subtree's `effective_area_id` was rewritten.
 
@@ -451,12 +499,18 @@ a cap is `validation_error`, at a cap is accepted:
 | each string `custom_fields` value | 1000 characters |
 
 The caps refuse *growth*, not every edit: an item that predates them — one loaded from a
-store written by an earlier release — can still be edited, including by the edit that removes
-the excess. What it cannot do is add to a collection already over its cap.
+store written by an earlier release — can still be edited and saved as it is, including by
+the edit that trims part of the excess without clearing all of it. What an edit cannot do is
+make an over-cap value larger: lengthen an over-cap text past what is stored, add to a
+collection already over its cap, or introduce a *new* value over a cap. The card's editor
+applies the same rule client-side, so a legacy item is never trapped behind its own history.
 
-The same caps, the 120-character name limit and the `due_date` ⇔ `checked_out` invariant are
-applied to `import/preview` as well, so a document cannot introduce an entity the WebSocket
-API would refuse. They are reported per field in `report.errors`, as a refused import rather
-than as dropped rows. `Repository.load_state` deliberately does **not** re-validate: a store
-written before the caps existed is legal data this integration itself wrote, and refusing it
-would turn an upgrade into a backend that will not start.
+`import/preview` and `import/execute` do **not** apply these caps at all: a document is a
+restore, held to exactly what `Repository.load_state` accepts. `load_state` deliberately does
+not re-validate — a store written before the caps existed is legal data this integration
+itself wrote, and refusing it would turn an upgrade into a backend that will not start — and
+an export of such a store must import back, or a backup stops being one. What import *does*
+refuse is data no store can legally carry: structural problems, non-v4 UUIDs, the
+120-character name limit, non-canonical timestamps, unknown statuses, and a `due_date` on an
+item that is not checked out, each reported per field in `report.errors` as a refused import
+rather than as dropped rows.

@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import './hv-column-picker';
 import type { ColumnKey } from '../store/columns';
 import type { HVColumnPicker } from './hv-column-picker';
+import { mountComponent } from '../test.utils';
 
 type Picker = HTMLElement & {
   open: boolean;
@@ -11,12 +12,7 @@ type Picker = HTMLElement & {
 };
 
 async function mount(props: Partial<Picker>): Promise<Picker> {
-  const el = document.createElement('hv-column-picker') as Picker;
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await customElements.whenDefined('hv-column-picker');
-  el.open = true;
-  if (el.updateComplete) await el.updateComplete;
+  const { el } = await mountComponent<Picker>('hv-column-picker', { ...props, open: true });
   return el;
 }
 

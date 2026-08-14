@@ -158,6 +158,11 @@ export interface ItemFilter {
   tags_any?: string[];
   tags_all?: string[];
   category?: string;
+  /**
+   * Multi-select beside `category`, unioned with it — an item has exactly one
+   * category, so a selection can only mean OR. An empty list does not narrow.
+   */
+  categories?: string[];
   /** Exact match against one status; unknown values are `validation_error`. */
   status?: ItemStatus;
   checked_out?: boolean;
@@ -172,6 +177,11 @@ export interface ItemFilter {
    */
   inspection_overdue_only?: boolean;
   location_id?: string | null;
+  /**
+   * Multi-select beside `location_id`, unioned with it. `include_subtree` is
+   * one flag for the whole selection, not one per entry.
+   */
+  location_ids?: string[];
   area_id?: string;
   include_subtree?: boolean;
   updated_after?: string;
@@ -180,7 +190,15 @@ export interface ItemFilter {
   created_before?: string;
 }
 
-export type SortField = 'updated_at' | 'created_at' | 'name' | 'quantity' | 'due_date' | 'inspection_date';
+export type SortField =
+  | 'updated_at'
+  | 'created_at'
+  | 'name'
+  | 'quantity'
+  | 'due_date'
+  | 'inspection_date'
+  /** The item's denormalized location path. Not an area sort — see the contract. */
+  | 'location';
 export type SortOrder = 'asc' | 'desc';
 
 export interface Sort {
@@ -243,6 +261,12 @@ export interface AreasListResult {
 export interface DistinctValue {
   value: string;
   count: number;
+  /**
+   * How many of this value's items the request's filter keeps. Present only
+   * when the request carried a filter, so `undefined` means "unpriced" rather
+   * than "nothing matches" — a backend older than this never sends it.
+   */
+  matching_count?: number;
 }
 
 /** Result of haventory/distinct_values: distinct categories and tags with counts. */
@@ -565,7 +589,11 @@ export type TagMatchMode = 'any' | 'all';
 export interface StoreFilters {
   q: string;
   areaId: string | null;
-  locationId: string | null;
+  /**
+   * The locations the list is narrowed to, unioned. Empty means every
+   * location; `includeSubtree` governs the whole selection at once.
+   */
+  locationIds: string[];
   includeSubtree: boolean;
   checkedOutOnly: boolean;
   /** Presentation hint, not a filter: re-sorts low-stock items to the front. */
@@ -579,7 +607,8 @@ export interface StoreFilters {
   inspectionDueOnly: boolean;
   /** Only items with this stored status; null means any. */
   status: ItemStatus | null;
-  category: string | null;
+  /** The categories the list is narrowed to, unioned. Empty means every category. */
+  categories: string[];
   tags: string[];
   tagsMode: TagMatchMode;
   /** ISO-8601 instants; the backend compares strictly greater-than. */

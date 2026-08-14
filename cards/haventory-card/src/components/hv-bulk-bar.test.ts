@@ -1,5 +1,5 @@
 import './hv-bulk-bar';
-import { makeItem } from '../test.utils';
+import { all, componentCss, makeItem, mountComponent, q } from '../test.utils';
 import { describeFailure } from './hv-bulk-bar';
 import type { BulkRunDetail, HVBulkBar } from './hv-bulk-bar';
 import type { BulkFailure, LocationTreeNode } from '../store/types';
@@ -26,22 +26,18 @@ function failure(itemId: string, code: string, message = 'boom'): BulkFailure {
 }
 
 async function mount(props: Partial<HVBulkBar> = {}) {
-  const el = document.createElement('hv-bulk-bar') as HVBulkBar;
-  el.selectedCount = 42;
-  el.locationTree = tree;
-  el.distinct = {
-    categories: [{ value: 'Hardware', count: 3 }],
-    tags: [{ value: 'metric', count: 2 }],
-    custom_field_keys: [],
-  };
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await el.updateComplete;
+  const { el } = await mountComponent<HVBulkBar>('hv-bulk-bar', {
+    selectedCount: 42,
+    locationTree: tree,
+    distinct: {
+      categories: [{ value: 'Hardware', count: 3 }],
+      tags: [{ value: 'metric', count: 2 }],
+      custom_field_keys: [],
+    },
+    ...props,
+  });
   return el;
 }
-
-const q = (el: HVBulkBar, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
-const all = (el: HVBulkBar, sel: string) => [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
 
 function runs(el: HVBulkBar) {
   const seen: BulkRunDetail[] = [];
@@ -293,16 +289,8 @@ describe('describeFailure', () => {
 // theme — and a running batch's Cancel that was a bare native button on top of
 // it, unstyled where every sibling control was a pill.
 describe('hv-bulk-bar: the band belongs to the theme', () => {
-  const barCss = () => {
-    const styles = (customElements.get('hv-bulk-bar') as typeof HVBulkBar).styles;
-    return (Array.isArray(styles) ? styles : [styles])
-      .map((s) => String(s.cssText))
-      .join('\n')
-      .replace(/\s+/g, ' ');
-  };
-
   it('takes its fill and its ink from tokens rather than from hex', () => {
-    const css = barCss();
+    const css = componentCss('hv-bulk-bar');
     expect(css).toMatch(/\.bar, \.progress \{[^}]*background: var\(--hv-selection-bar\)/);
     expect(css).toMatch(/\.bar, \.progress \{[^}]*color: var\(--hv-on-selection-bar\)/);
     expect(css).toMatch(/\.band-button\.danger \{[^}]*color: var\(--hv-on-selection-bar-danger\)/);
@@ -322,7 +310,7 @@ describe('hv-bulk-bar: the band belongs to the theme', () => {
   it('keeps the failure count and Cancel together at the trailing edge', async () => {
     const el = await mount({ progress: { done: 3, total: 4, failed: 1, label: 'Moving' } });
     expect(q(el, '[data-testid="bulk-progress-failed"]')?.className).toBe('failed');
-    expect(barCss()).toMatch(/\.progress \.spacer \{ margin-left: auto; \}/);
+    expect(componentCss('hv-bulk-bar')).toMatch(/\.progress \.spacer \{ margin-left: auto; \}/);
   });
 });
 

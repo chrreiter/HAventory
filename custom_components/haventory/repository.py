@@ -48,6 +48,7 @@ from .models import (
     item_is_low_stock,
     item_is_overdue,
     load_attachments,
+    location_sort_key,
     monotonic_timestamp_after,
     new_uuid4,
     normalize_search_text,
@@ -55,6 +56,8 @@ from .models import (
     normalize_text_for_sort,
     parse_uuid4,
     seed_status_definitions,
+    selected_categories,
+    selected_location_ids,
     serialize_attachment_meta,
     serialize_status_definition,
     sort_items,
@@ -420,7 +423,7 @@ class Repository:
             self._add_to_bucket(self._items_by_location_id, str(item.location_id), item_key)
 
             # area membership (effective area resolved via location ancestry)
-            eff_area_id = self._resolve_effective_area_id_for_location(str(item.location_id))
+            eff_area_id = self.effective_area_id(str(item.location_id))
             if eff_area_id is not None:
                 self._add_to_bucket(self._items_by_area_id, eff_area_id, item_key)
 
@@ -481,11 +484,16 @@ class Repository:
             if not s:
                 self._items_by_area_id.pop(area_key, None)
 
-    def _resolve_effective_area_id_for_location(self, location_key: str) -> str | None:
-        """Return the effective area id (string) for a location by walking ancestors.
+    def effective_area_id(self, location_key: str) -> str | None:
+        """Return the area a location sits in, walking ancestors to find it.
 
-        The first non-null ``area_id`` encountered from the node upwards is used.
-        Returns ``None`` if no ancestor defines an area.
+        The first non-null ``area_id`` from the node upwards wins; ``None`` when
+        no ancestor defines one. Public because it answers a question callers
+        outside the repository legitimately have — it is what an item reports as
+        ``effective_area_id`` and what an area-filtered client matches on — and
+        because a caller must never re-derive it from a location's own
+        ``area_id``: a tree keeps its area on the root, so every other node in it
+        stores ``None``.
         """
 
         cursor: str | None = location_key
@@ -766,7 +774,7 @@ class Repository:
         """Set area on root of tree and clear from all other locations in tree.
 
         When assigning an area to any location, it propagates to the root.
-        All descendants inherit from root via _resolve_effective_area_id_for_location.
+        All descendants inherit from the root via ``effective_area_id``.
 
         Returns set of modified location ids.
         """
@@ -1154,7 +1162,7 @@ class Repository:
             old_area = next(
                 (area for area, ids in self._items_by_area_id.items() if probe in ids), None
             )
-            new_area = self._resolve_effective_area_id_for_location(loc_id)
+            new_area = self.effective_area_id(loc_id)
             area_changed = old_area != new_area
 
             for item_id in item_id_list:
@@ -1502,29 +1510,31 @@ class Repository:
             candidate_sets.append(text_matches)
 
         # 2. Location Index
-        if flt.get("location_id"):
+        # A multi-select unions its buckets, the way tags_any does below; the
+        # one include_subtree flag picks which index every entry reads from.
+        location_keys = [key for key in selected_location_ids(flt) if key]
+        if location_keys:
             has_indexed_filter = True
-            loc_key = str(flt["location_id"]).strip()
-            if loc_key:
-                if flt.get("include_subtree"):
-                    s = self._items_in_subtree.get(loc_key, set())
-                    if not s:
-                        return []
-                    candidate_sets.append(s)
-                else:
-                    s = self._items_by_location_id.get(loc_key, set())
-                    if not s:
-                        return []
-                    candidate_sets.append(s)
+            index = (
+                self._items_in_subtree if flt.get("include_subtree") else self._items_by_location_id
+            )
+            loc_items: set[str] = set()
+            for loc_key in location_keys:
+                loc_items.update(index.get(loc_key, set()))
+            if not loc_items:
+                return []
+            candidate_sets.append(loc_items)
 
         # 3. Category Index
-        cat = (flt.get("category") or "").strip().casefold()
-        if cat:
+        category_keys = selected_categories(flt)
+        if category_keys:
             has_indexed_filter = True
-            s = self._category_to_item_ids.get(cat, set())
-            if not s:
+            cat_items: set[str] = set()
+            for cat_key in category_keys:
+                cat_items.update(self._category_to_item_ids.get(cat_key, set()))
+            if not cat_items:
                 return []
-            candidate_sets.append(s)
+            candidate_sets.append(cat_items)
 
         # 3b. Status Index (only non-default known statuses are bucketed; "ok"
         # and unrecognized values fall through to the scan path, where
@@ -1615,7 +1625,10 @@ class Repository:
         sorted_items = sort_items(filtered, sort)
         # Optional preference: group low-stock items first without filtering, while
         # preserving the selected primary ordering within groups (stable sort).
-        if flt and flt.get("low_stock_first"):
+        # The grouping is part of the order the cursor must describe, so it is
+        # handed to _paginate rather than left as a local rearrangement.
+        low_stock_first = bool(flt and flt.get("low_stock_first"))
+        if low_stock_first:
             sorted_items.sort(key=lambda it: not self._is_low_stock(it))
 
         # Normalize sort for cursor tracking
@@ -1630,7 +1643,9 @@ class Repository:
             # No pagination requested
             return {"items": sorted_items, "next_cursor": None, "total": total}
 
-        page, next_cursor = self._paginate(sorted_items, sort, limit, cursor)
+        page, next_cursor = self._paginate(
+            sorted_items, sort, limit, cursor, low_stock_first=low_stock_first
+        )
         return {"items": page, "next_cursor": next_cursor, "total": total}
 
     # -----------------------------
@@ -1734,7 +1749,31 @@ class Repository:
             "subtree": len(self._items_in_subtree.get(key, set())),
         }
 
-    def get_distinct_field_values(self) -> dict[str, object]:
+    def _count_facets_matching(self, flt: ItemFilter) -> tuple[dict[str, int], dict[str, int]]:
+        """Tally categories and tags over the items a filter keeps.
+
+        One pass prices both facets — the shape ``count_matching_by_location``
+        uses for its own dimension. Category keys are the casefolded form
+        ``_index_item`` writes, so they line up with ``_category_to_item_ids``;
+        tags are normalized at ingress and de-duplicated per item, so each item
+        contributes at most one to any tag.
+        """
+
+        candidates = self._get_filtered_candidates(flt)
+        source: Iterable[Item] = (
+            candidates if candidates is not None else self._items_by_id.values()
+        )
+        by_category: dict[str, int] = {}
+        by_tag: dict[str, int] = {}
+        for item in filter_items(source, flt, known_statuses=self.status_slugs()):
+            key = (item.category or "").strip().casefold()
+            if key:
+                by_category[key] = by_category.get(key, 0) + 1
+            for tag in item.tags:
+                by_tag[tag] = by_tag.get(tag, 0) + 1
+        return by_category, by_tag
+
+    def get_distinct_field_values(self, flt: ItemFilter | None = None) -> dict[str, object]:
         """Return distinct categories, tags, and custom-field keys.
 
         Categories are grouped case-insensitively (matching the case-insensitive
@@ -1746,7 +1785,20 @@ class Repository:
         used across all items' ``custom_fields`` (keys are case-sensitive; sorted
         case-insensitively). The two value lists are sorted case-insensitively by
         value.
+
+        With ``flt``, every category and tag entry also carries ``matching_count``
+        — how many of that value's items the filter keeps. ``count`` stays a
+        whole-inventory figure and no entry is dropped: the same payload feeds
+        autocomplete and the organize dialog, which a list that shrank with the
+        filter would starve. Which dimensions to leave out of ``flt`` is the
+        caller's call, the way it is for :meth:`count_matching_by_location`.
+        ``custom_field_keys`` is unfiltered either way — it is a key picker, not
+        a tally, and hiding keys would hide ones the user is about to type.
         """
+
+        matching_categories, matching_tags = (
+            self._count_facets_matching(flt) if flt is not None else (None, None)
+        )
 
         categories: list[dict[str, object]] = []
         for key, item_ids in self._category_to_item_ids.items():
@@ -1759,13 +1811,18 @@ class Repository:
                 if raw:
                     originals[raw] = originals.get(raw, 0) + 1
             display = max(sorted(originals), key=lambda o: originals[o]) if originals else key
-            categories.append({"value": display, "count": len(item_ids)})
+            entry: dict[str, object] = {"value": display, "count": len(item_ids)}
+            if matching_categories is not None:
+                entry["matching_count"] = matching_categories.get(key, 0)
+            categories.append(entry)
         categories.sort(key=lambda c: str(c["value"]).casefold())
 
-        tags = [
-            {"value": tag, "count": len(item_ids)}
-            for tag, item_ids in self._tags_to_item_ids.items()
-        ]
+        tags: list[dict[str, object]] = []
+        for tag, item_ids in self._tags_to_item_ids.items():
+            tag_entry: dict[str, object] = {"value": tag, "count": len(item_ids)}
+            if matching_tags is not None:
+                tag_entry["matching_count"] = matching_tags.get(tag, 0)
+            tags.append(tag_entry)
         tags.sort(key=lambda t: str(t["value"]).casefold())
 
         custom_keys: set[str] = set()
@@ -1975,7 +2032,7 @@ class Repository:
             item = self._items_by_id.get(item_id)
             if item is None or item.location_id is None:
                 continue
-            eff_area = self._resolve_effective_area_id_for_location(str(item.location_id))
+            eff_area = self.effective_area_id(str(item.location_id))
             if eff_area is not None:
                 self._add_to_bucket(self._items_by_area_id, eff_area, item_id)
 
@@ -2022,6 +2079,7 @@ class Repository:
 
     def _primary_sort_value(self, item: Item, sort: Sort) -> str | int:
         field = sort.get("field")
+        order = sort.get("order", "desc")
         if field == "name":
             return self._name_sort_key_by_item_id.get(str(item.id)) or normalize_text_for_sort(
                 item.name
@@ -2029,33 +2087,51 @@ class Repository:
         if field == "quantity":
             return int(item.quantity)
         if field == "due_date":
-            return date_sort_key(item.due_date, sort.get("order", "desc"))
+            return date_sort_key(item.due_date, order)
         if field == "inspection_date":
-            return date_sort_key(item.inspection_date, sort.get("order", "desc"))
-        if field == "created_at":
-            return item.created_at
-        # default / updated_at
-        return item.updated_at
+            return date_sort_key(item.inspection_date, order)
+        if field == "location":
+            return location_sort_key(item.location_path, order)
+        # created_at, or the updated_at default. Canonical fixed-width 'Z'
+        # timestamps sort lexicographically, so the stored string is the key.
+        return item.created_at if field == "created_at" else item.updated_at
 
-    def _tuple_cmp(self, a: tuple[str | int, str], b: tuple[str | int, str], order: str) -> int:
+    def _tuple_cmp(
+        self, a: tuple[int, str | int, str], b: tuple[int, str | int, str], order: str
+    ) -> int:
         asc = order == "asc"
+        # group — the low_stock_first block sits in front of the rest whatever
+        # the primary order is, so the group compares ascending unconditionally.
+        # Without that grouping every item carries group 0 and this is a no-op.
+        if a[0] != b[0]:
+            return -1 if a[0] < b[0] else 1
         # primary — within one sort field both values share a type; the str()
         # fallback keeps a mixed comparison (corrupt cursor) total instead of
         # raising TypeError.
-        a0, b0 = a[0], b[0]
-        if a0 != b0:
-            if isinstance(a0, int) and isinstance(b0, int):
-                primary_less = a0 < b0
+        a1, b1 = a[1], b[1]
+        if a1 != b1:
+            if isinstance(a1, int) and isinstance(b1, int):
+                primary_less = a1 < b1
             else:
-                primary_less = str(a0) < str(b0)
+                primary_less = str(a1) < str(b1)
             return -1 if (primary_less == asc) else 1
         # tie-break on id asc
-        if a[1] == b[1]:
+        if a[2] == b[2]:
             return 0
-        return -1 if a[1] < b[1] else 1
+        return -1 if a[2] < b[2] else 1
+
+    def _low_stock_group(self, item: Item) -> int:
+        """Which low_stock_first block an item sits in: 0 low-stock, 1 the rest."""
+        return 0 if self._is_low_stock(item) else 1
 
     def _paginate(
-        self, items_sorted: list[Item], sort: Sort, limit: int, cursor: str | None
+        self,
+        items_sorted: list[Item],
+        sort: Sort,
+        limit: int,
+        cursor: str | None,
+        *,
+        low_stock_first: bool = False,
     ) -> tuple[list[Item], str | None]:
         start_index = 0
         order = sort.get("order", "desc")
@@ -2080,6 +2156,14 @@ class Repository:
                 raise ValidationError(
                     "cursor was issued for a different sort; restart pagination without it"
                 )
+            # low_stock_first reorders the list the same way a sort does, so a
+            # cursor minted under the other setting describes positions in a
+            # list this request is not looking at — refuse it the same way.
+            if bool(cursor_info.get("low_stock_first", False)) != low_stock_first:
+                raise ValidationError(
+                    "cursor was issued under a different low_stock_first setting; "
+                    "restart pagination without it"
+                )
             last_key = cursor_info.get("last_sort_key")
             last_id = cursor_info.get("last_id")
             if (
@@ -2088,13 +2172,17 @@ class Repository:
                 or not isinstance(last_key, str | int)
             ):
                 raise ValidationError("cursor is not a valid pagination cursor")
+            last_group = cursor_info.get("last_group", 0) if low_stock_first else 0
+            if isinstance(last_group, bool) or last_group not in (0, 1):
+                raise ValidationError("cursor is not a valid pagination cursor")
             # Find first item strictly after the cursor tuple. When nothing
             # compares after it (e.g. the tail was deleted between pages), the
             # page is empty — not page one again.
-            needle: tuple[str | int, str] = (last_key, last_id)
+            needle: tuple[int, str | int, str] = (last_group, last_key, last_id)
             start_index = len(items_sorted)
             for idx, it in enumerate(items_sorted):
-                tup = (self._primary_sort_value(it, sort), str(it.id))
+                group = self._low_stock_group(it) if low_stock_first else 0
+                tup = (group, self._primary_sort_value(it, sort), str(it.id))
                 if self._tuple_cmp(tup, needle, order) > 0:
                     start_index = idx
                     break
@@ -2106,11 +2194,14 @@ class Repository:
             return page, None
 
         last_item = page[-1]
-        cursor_payload = {
+        cursor_payload: dict[str, Any] = {
             "sort": {"field": sort.get("field"), "order": sort.get("order")},
             "last_sort_key": self._primary_sort_value(last_item, sort),
             "last_id": str(last_item.id),
         }
+        if low_stock_first:
+            cursor_payload["low_stock_first"] = True
+            cursor_payload["last_group"] = self._low_stock_group(last_item)
         return page, self._encode_cursor(cursor_payload)
 
     # -----------------------------

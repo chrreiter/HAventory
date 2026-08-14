@@ -1,12 +1,9 @@
 import './hv-banner';
 import type { HVBanner } from './hv-banner';
+import { mountComponent } from '../test.utils';
 
 async function mount(props: Partial<HVBanner> = {}, light = '') {
-  const el = document.createElement('hv-banner') as HVBanner;
-  Object.assign(el, props);
-  if (light) el.innerHTML = light;
-  document.body.appendChild(el);
-  await el.updateComplete;
+  const { el } = await mountComponent<HVBanner>('hv-banner', props, { light });
   return el;
 }
 

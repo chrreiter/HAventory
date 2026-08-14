@@ -6,10 +6,12 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from custom_components.haventory import models
 from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.models import (
     EMPTY_LOCATION_PATH,
     SORT_FIELDS,
+    Item,
     ItemFilter,
     Location,
     Sort,
@@ -528,3 +530,236 @@ def test_validate_sort_agrees_with_sort_items() -> None:
             [create_item_from_create({"name": "Widget"})],
             {"field": "colour", "order": "asc"},  # type: ignore[typeddict-item]
         )
+
+
+# -----------------------------
+# Multi-select categories and locations
+# -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_filter_categories_unions_the_selection() -> None:
+    a = create_item_from_create({"name": "Hammer", "category": "Tools"})
+    b = create_item_from_create({"name": "Novel", "category": "Books"})
+    c = create_item_from_create({"name": "Soap", "category": "Cleaning"})
+
+    out = filter_items([a, b, c], ItemFilter(categories=["Tools", "Books"]))
+    assert sorted(x.name for x in out) == ["Hammer", "Novel"]
+
+    # Case-insensitive and de-duplicating, like the scalar it sits beside.
+    out_case = filter_items([a, b, c], ItemFilter(categories=["tOOLs", "TOOLS"]))
+    assert [x.name for x in out_case] == ["Hammer"]
+
+
+@pytest.mark.asyncio
+async def test_filter_categories_unions_with_the_scalar_rather_than_intersecting() -> None:
+    """An item has one category, so requiring both keys would match nothing."""
+
+    a = create_item_from_create({"name": "Hammer", "category": "Tools"})
+    b = create_item_from_create({"name": "Novel", "category": "Books"})
+
+    out = filter_items([a, b], ItemFilter(category="Tools", categories=["Books"]))
+    assert sorted(x.name for x in out) == ["Hammer", "Novel"]
+
+
+@pytest.mark.asyncio
+async def test_an_empty_category_selection_does_not_narrow() -> None:
+    """The rule `tags_any` already follows: an empty list is not a filter."""
+
+    a = create_item_from_create({"name": "Hammer", "category": "Tools"})
+    b = create_item_from_create({"name": "Loose", "category": None})
+
+    out = filter_items([a, b], ItemFilter(categories=[]))
+    assert sorted(x.name for x in out) == ["Hammer", "Loose"]
+
+
+@pytest.mark.asyncio
+async def test_filter_location_ids_unions_the_selection() -> None:
+    by_id, root, mid, leaf = _build_locations()
+    in_root = create_item_from_create(
+        {"name": "At root", "location_id": root.id}, locations_by_id=by_id
+    )
+    in_leaf = create_item_from_create(
+        {"name": "At leaf", "location_id": leaf.id}, locations_by_id=by_id
+    )
+    nowhere = create_item_from_create({"name": "Nowhere"})
+    items = [in_root, in_leaf, nowhere]
+
+    direct = filter_items(items, ItemFilter(location_ids=[str(root.id), str(leaf.id)]))
+    assert sorted(x.name for x in direct) == ["At leaf", "At root"]
+
+    # An item with no location is not in any selected location.
+    assert [x.name for x in filter_items(items, ItemFilter(location_ids=[str(mid.id)]))] == []
+
+
+@pytest.mark.asyncio
+async def test_include_subtree_is_one_flag_for_the_whole_location_selection() -> None:
+    by_id, _root, mid, leaf = _build_locations()
+    other = _make_location(new_uuid4_str(), "Cellar", None)
+    by_id[str(other.id)] = other
+    other.path = build_location_path([other])
+
+    in_leaf = create_item_from_create(
+        {"name": "At leaf", "location_id": leaf.id}, locations_by_id=by_id
+    )
+    in_other = create_item_from_create(
+        {"name": "At cellar", "location_id": other.id}, locations_by_id=by_id
+    )
+    items = [in_leaf, in_other]
+
+    # `mid` is an ancestor of `leaf`; `other` holds its item directly. One flag
+    # applies to both entries — there is no per-entry form.
+    with_subtree = filter_items(
+        items, ItemFilter(location_ids=[str(mid.id), str(other.id)], include_subtree=True)
+    )
+    assert sorted(x.name for x in with_subtree) == ["At cellar", "At leaf"]
+
+    without = filter_items(
+        items, ItemFilter(location_ids=[str(mid.id), str(other.id)], include_subtree=False)
+    )
+    assert [x.name for x in without] == ["At cellar"]
+
+
+@pytest.mark.asyncio
+async def test_a_selection_of_only_unparseable_location_ids_matches_nothing() -> None:
+    """The scalar has always answered "nothing" to a malformed id; so does a list."""
+
+    by_id, root, _mid, _leaf = _build_locations()
+    filed = create_item_from_create(
+        {"name": "Filed", "location_id": root.id}, locations_by_id=by_id
+    )
+
+    assert filter_items([filed], ItemFilter(location_ids=["not-a-uuid"])) == []
+    # One good id beside a bad one still selects on the good one.
+    kept = filter_items([filed], ItemFilter(location_ids=["not-a-uuid", str(root.id)]))
+    assert [x.name for x in kept] == ["Filed"]
+
+
+def test_the_location_selection_is_parsed_once_per_query(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Not once per candidate item.
+
+    The selection is constant for the whole query, so the cost of parsing it
+    must not grow with the inventory. Pinned by counting, because the only
+    other evidence is a benchmark nobody re-runs.
+    """
+
+    by_id, root, mid, _leaf = _build_locations()
+    items = [
+        create_item_from_create(
+            {"name": f"Item {n}", "location_id": root.id}, locations_by_id=by_id
+        )
+        for n in range(50)
+    ]
+
+    calls = 0
+    real = models.parse_uuid4
+
+    def counting(value, *, field_name="id"):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        if field_name == "filter.location_id":
+            calls += 1
+        return real(value, field_name=field_name)
+
+    monkeypatch.setattr(models, "parse_uuid4", counting)
+
+    kept = filter_items(items, ItemFilter(location_ids=[str(root.id), str(mid.id)]))
+    assert len(kept) == len(items)
+    assert calls == 2  # noqa: PLR2004 — one per selected id, whatever the item count
+
+
+@pytest.mark.parametrize("key", ["categories", "location_ids"])
+@pytest.mark.parametrize("bad", ["Tools", 5, {"a": 1}, [1], [None]])
+def test_a_multi_select_key_that_is_not_a_list_of_strings_is_refused(key: str, bad: object) -> None:
+    """A bare string is the one worth naming: iterating it filters by letters."""
+
+    with pytest.raises(ValidationError, match=f"{key} must be a list of strings"):
+        filter_items([], {key: bad})
+
+
+def test_validate_item_filter_accepts_the_multi_select_keys() -> None:
+    """Stated rather than incidental: the validator is keyed off the TypedDict,
+    so `categories` and `location_ids` were accepted the moment they were
+    declared there — no second list to extend."""
+
+    assert {"categories", "location_ids"} <= set(ItemFilter.__annotations__)
+    validate_item_filter({"categories": ["Tools"], "location_ids": [new_uuid4_str()]})
+
+
+# -----------------------------
+# Ordering by location path
+# -----------------------------
+
+
+def _located(name: str, chain: list[Location]) -> Item:
+    """An item whose denormalized path is built from a root->leaf chain."""
+
+    by_id = {str(loc.id): loc for loc in chain}
+    return create_item_from_create(
+        {"name": name, "location_id": chain[-1].id}, locations_by_id=by_id
+    )
+
+
+@pytest.mark.asyncio
+async def test_sort_by_location_orders_on_the_denormalized_path() -> None:
+    by_id, root, mid, leaf = _build_locations()
+    cellar = _make_location(new_uuid4_str(), "Cellar", None)
+    cellar.path = build_location_path([cellar])
+    by_id[str(cellar.id)] = cellar
+
+    in_leaf = _located("Deep", [root, mid, leaf])  # Garage / Shelf A / Bin 3
+    in_root = _located("Shallow", [root])  # Garage
+    in_cellar = _located("Elsewhere", [cellar])  # Cellar
+    items = [in_leaf, in_root, in_cellar]
+
+    asc = sort_items(items, Sort(field="location", order="asc"))
+    assert [x.name for x in asc] == ["Elsewhere", "Shallow", "Deep"]
+
+    desc = sort_items(items, Sort(field="location", order="desc"))
+    assert [x.name for x in desc] == ["Deep", "Shallow", "Elsewhere"]
+
+
+@pytest.mark.asyncio
+async def test_sort_by_location_puts_unlocated_items_last_in_both_orders() -> None:
+    """The rule `date_sort_key` already applies to undated items.
+
+    A stored path key is "" for an item filed nowhere, which a plain ascending
+    sort would float to the top.
+    """
+
+    by_id, root, _mid, _leaf = _build_locations()
+    assert by_id
+    filed = _located("Filed", [root])
+    loose_a = create_item_from_create({"name": "Loose A"})
+    loose_b = create_item_from_create({"name": "Loose B"})
+    items = [loose_a, filed, loose_b]
+
+    asc = sort_items(items, Sort(field="location", order="asc"))
+    assert asc[0].name == "Filed"
+    assert {x.name for x in asc[1:]} == {"Loose A", "Loose B"}
+
+    desc = sort_items(items, Sort(field="location", order="desc"))
+    assert desc[0].name == "Filed"
+    assert {x.name for x in desc[1:]} == {"Loose A", "Loose B"}
+
+
+@pytest.mark.asyncio
+async def test_unlocated_items_stay_last_behind_a_non_latin_location_name() -> None:
+    """A printable sentinel would not have outranked this path.
+
+    The key is built from location *names*, and an accented or non-Latin one
+    folds to a character well above the "~" the date rule uses.
+    """
+
+    accented = _make_location(new_uuid4_str(), "Éclairage", None)
+    accented.path = build_location_path([accented])
+    filed = _located("Filed", [accented])
+    loose = create_item_from_create({"name": "Loose"})
+
+    asc = sort_items([loose, filed], Sort(field="location", order="asc"))
+    assert [x.name for x in asc] == ["Filed", "Loose"]
+
+
+def test_location_joins_the_sort_vocabulary() -> None:
+    assert "location" in SORT_FIELDS
+    validate_sort({"field": "location", "order": "asc"})
+    validate_sort({"field": "location", "order": "desc"})

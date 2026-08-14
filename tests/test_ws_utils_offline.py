@@ -27,26 +27,7 @@ from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-
-class _StubConn:
-    def __init__(self) -> None:
-        self.last = None
-
-    def send_message(self, msg):
-        self.last = msg
-
-
-async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
-    handlers = hass.data.get("__ws_commands__", [])
-    for h in handlers:
-        if not callable(h) or getattr(h, "_ws_command", None) != type_:
-            continue
-        req = {"id": _id, "type": type_}
-        req.update(payload)
-        conn = _StubConn()
-        res = await h(hass, conn, req)
-        return res if res is not None else conn.last
-    raise AssertionError("No handler responded for type " + type_)
+from ws_helpers import ws_send
 
 
 @pytest.mark.asyncio
@@ -57,7 +38,7 @@ async def test_ping_echo_and_ts() -> None:
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
     ws_setup(hass)
 
-    res = await _send(hass, 1, "haventory/ping", echo={"hello": "world"})
+    res = await ws_send(hass, 1, "haventory/ping", echo={"hello": "world"})
     assert res["success"] is True
     assert res["result"]["echo"] == {"hello": "world"}
     assert isinstance(res["result"]["ts"], str) and len(res["result"]["ts"]) > 0
@@ -71,7 +52,7 @@ async def test_version_reports_integration_and_schema() -> None:
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
     ws_setup(hass)
 
-    res = await _send(hass, 2, "haventory/version")
+    res = await ws_send(hass, 2, "haventory/version")
     assert res["success"] is True
     assert res["result"]["integration_version"] == INTEGRATION_VERSION
     # In offline tests, store may not exist; default to CURRENT_SCHEMA_VERSION
@@ -88,7 +69,7 @@ async def test_config_reports_configured_card_title() -> None:
     bucket["card_title"] = "Pantry"
     ws_setup(hass)
 
-    res = await _send(hass, 5, "haventory/config")
+    res = await ws_send(hass, 5, "haventory/config")
     assert res["success"] is True
     assert res["result"]["card_title"] == "Pantry"
 
@@ -101,7 +82,7 @@ async def test_config_falls_back_to_default_card_title() -> None:
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
     ws_setup(hass)
 
-    res = await _send(hass, 6, "haventory/config")
+    res = await ws_send(hass, 6, "haventory/config")
     assert res["success"] is True
     assert res["result"]["card_title"] == DEFAULT_CARD_TITLE
 
@@ -116,7 +97,7 @@ async def test_config_reports_the_configured_quick_filter_pills() -> None:
     bucket["quick_filters"] = ["total", "low_stock"]
     ws_setup(hass)
 
-    res = await _send(hass, 7, "haventory/config")
+    res = await ws_send(hass, 7, "haventory/config")
     assert res["success"] is True
     assert res["result"]["quick_filters"] == ["total", "low_stock"]
 
@@ -131,7 +112,7 @@ async def test_config_reports_an_empty_pill_choice_as_empty() -> None:
     bucket["quick_filters"] = []
     ws_setup(hass)
 
-    res = await _send(hass, 8, "haventory/config")
+    res = await ws_send(hass, 8, "haventory/config")
     assert res["success"] is True
     assert res["result"]["quick_filters"] == []
 
@@ -144,7 +125,7 @@ async def test_config_reports_no_pill_choice_as_null() -> None:
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
     ws_setup(hass)
 
-    res = await _send(hass, 9, "haventory/config")
+    res = await ws_send(hass, 9, "haventory/config")
     assert res["success"] is True
     assert res["result"]["quick_filters"] is None
 
@@ -157,7 +138,7 @@ async def test_config_reports_the_status_vocabulary() -> None:
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
     ws_setup(hass)
 
-    res = await _send(hass, 7, "haventory/config")
+    res = await ws_send(hass, 7, "haventory/config")
 
     assert res["result"]["statuses"] == [
         {"slug": "ok", "label": "OK", "order": 0, "color": "green", "icon": "check"},
@@ -180,7 +161,7 @@ async def test_config_reports_the_attachment_caps_and_accepted_types() -> None:
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
     ws_setup(hass)
 
-    res = await _send(hass, 8, "haventory/config")
+    res = await ws_send(hass, 8, "haventory/config")
 
     media = res["result"]["media"]
     assert media["picture_mime_types"] == list(ATTACHMENT_PICTURE_MIME_TYPES)
@@ -203,7 +184,7 @@ async def test_stats_returns_counts() -> None:
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
     ws_setup(hass)
 
-    res = await _send(hass, 3, "haventory/stats")
+    res = await ws_send(hass, 3, "haventory/stats")
     assert res["success"] is True
     counts = res["result"]
     assert set(counts.keys()) == {
@@ -231,7 +212,7 @@ async def test_stats_carries_status_counts_beside_the_legacy_keys() -> None:
     hass.data.setdefault(DOMAIN, {})["repository"] = repo
     ws_setup(hass)
 
-    res = await _send(hass, 31, "haventory/stats")
+    res = await ws_send(hass, 31, "haventory/stats")
 
     counts = res["result"]
     # "ok" is counted even though the index deliberately does not bucket it.
@@ -248,7 +229,7 @@ async def test_health_is_healthy_for_fresh_repo() -> None:
     hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
     ws_setup(hass)
 
-    res = await _send(hass, 4, "haventory/health")
+    res = await ws_send(hass, 4, "haventory/health")
     assert res["success"] is True
     body = res["result"]
     assert isinstance(body, dict)

@@ -1,3 +1,6 @@
+import type { CSSResult } from 'lit';
+
+import { Store } from './store/store';
 import type {
   AnyEventPayload,
   AreaRef,
@@ -17,7 +20,7 @@ import type {
 // event payload, not the `{id, type:'event', event}` envelope.
 type SubCb = (event: AnyEventPayload) => void;
 
-interface MockConfig {
+export interface MockConfig {
   items?: Item[];
   locations?: Location[];
   conflictOnUpdate?: boolean;
@@ -300,7 +303,16 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         }
         case 'haventory/distinct_values': {
           // Mirror the backend: distinct categories (case-insensitive) and tags,
-          // each with a usage count, sorted case-insensitively by value.
+          // each with a usage count, sorted case-insensitively by value. With a
+          // filter each entry also carries `matching_count`, and no entry is
+          // dropped — the list is autocomplete's vocabulary, not a result set.
+          const facetFilter = (msg as any).filter as unknown;
+          const facetMatched = facetFilter ? applyMockFilter(items, facetFilter) : null;
+          const matchedIds = facetMatched && new Set(facetMatched.map((i) => i.id));
+          const priced = <T extends { count: number }>(entry: T, ids: Set<string>) =>
+            matchedIds
+              ? { ...entry, matching_count: [...ids].filter((id) => matchedIds.has(id)).length }
+              : entry;
           const catGroups = new Map<string, { display: string; ids: Set<string> }>();
           for (const it of items) {
             const raw = (it.category ?? '').trim();
@@ -311,7 +323,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             catGroups.set(key, group);
           }
           const categories = Array.from(catGroups.values())
-            .map((g) => ({ value: g.display, count: g.ids.size }))
+            .map((g) => priced({ value: g.display, count: g.ids.size }, g.ids))
             .sort((a, b) => a.value.toLowerCase().localeCompare(b.value.toLowerCase()));
           const tagGroups = new Map<string, Set<string>>();
           for (const it of items) {
@@ -322,7 +334,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             }
           }
           const tags = Array.from(tagGroups.entries())
-            .map(([value, ids]) => ({ value, count: ids.size }))
+            .map(([value, ids]) => priced({ value, count: ids.size }, ids))
             .sort((a, b) => a.value.toLowerCase().localeCompare(b.value.toLowerCase()));
           const customKeys = new Set<string>();
           for (const it of items) {
@@ -734,8 +746,10 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     overdue_only?: boolean;
     inspection_overdue_only?: boolean;
     location_id?: string | null;
+    location_ids?: string[];
     include_subtree?: boolean;
     category?: string;
+    categories?: string[];
     tags_any?: string[];
     updated_after?: string;
     updated_before?: string;
@@ -743,10 +757,22 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     created_before?: string;
   } | null;
   if (!filter) return list;
+  // The scalar and the list are one selection, unioned — an item has one
+  // category and one location, so requiring both keys would match nothing.
+  const categories = [
+    ...(typeof filter.category === 'string' ? [filter.category] : []),
+    ...(filter.categories ?? []),
+  ]
+    .map((c) => c.trim().toLowerCase())
+    .filter(Boolean);
+  const locationIds = [
+    ...(typeof filter.location_id === 'string' ? [filter.location_id] : []),
+    ...(filter.location_ids ?? []),
+  ].filter(Boolean);
   return list.filter((it) => {
     // Category equals + tags_any (case-insensitive), used by the browser views.
-    const cat = typeof filter.category === 'string' ? filter.category.trim().toLowerCase() : '';
-    if (cat && (it.category ?? '').trim().toLowerCase() !== cat) return false;
+    if (categories.length && !categories.includes((it.category ?? '').trim().toLowerCase()))
+      return false;
     if (Array.isArray(filter.tags_any) && filter.tags_any.length) {
       const wanted = filter.tags_any.map((t) => t.toLowerCase());
       if (!(it.tags ?? []).some((t) => wanted.includes(t.toLowerCase()))) return false;
@@ -780,10 +806,14 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     if (filter.updated_before && !(it.updated_at < filter.updated_before)) return false;
     if (filter.created_after && !(it.created_at > filter.created_after)) return false;
     if (filter.created_before && !(it.created_at < filter.created_before)) return false;
-    if (filter.location_id) {
-      const inSubtree = it.location_id === filter.location_id
-        || (it.location_path?.id_path ?? []).includes(filter.location_id);
-      if (filter.include_subtree ? !inSubtree : it.location_id !== filter.location_id) return false;
+    if (locationIds.length) {
+      // One include_subtree flag for the whole selection, as the backend has it.
+      const matches = locationIds.some((id) =>
+        filter.include_subtree
+          ? it.location_id === id || (it.location_path?.id_path ?? []).includes(id)
+          : it.location_id === id,
+      );
+      if (!matches) return false;
     }
     return true;
   });
@@ -796,12 +826,17 @@ function applyMockSort(list: Item[], rawSort: unknown): Item[] {
   const order = sort.order === 'desc' ? 'desc' : 'asc';
   const dir = order === 'desc' ? -1 : 1;
   const dateKey = (v: string | null) => v ?? (order === 'asc' ? '~' : '');
+  // Unlocated items sort last in both orders. The ascending sentinel is the
+  // highest code point rather than a printable one, because a path key is built
+  // from location names and any accented name would outrank "~".
+  const pathKey = (v: string) => v || (order === 'asc' ? '\u{10FFFF}' : '');
   const key = (it: Item): string | number => {
     switch (sort.field) {
       case 'name': return it.name.toLowerCase();
       case 'quantity': return it.quantity;
       case 'due_date': return dateKey(it.due_date);
       case 'inspection_date': return dateKey(it.inspection_date);
+      case 'location': return pathKey(it.location_path?.sort_key ?? '');
       case 'created_at': return it.created_at;
       default: return it.updated_at;
     }
@@ -973,4 +1008,140 @@ export function stubViewport(matches: boolean): () => void {
   return () => {
     window.matchMedia = original;
   };
+}
+
+// ---------------------------------------------------------------------------
+// Component-test harness
+// ---------------------------------------------------------------------------
+
+/** What a mounted component hands back: the element and its shadow root. */
+export interface Mounted<T extends HTMLElement> {
+  el: T;
+  sr: ShadowRoot;
+}
+
+export interface MountOptions {
+  /** Light-DOM markup, set before the element is connected. */
+  light?: string;
+  /**
+   * Render passes to await after connecting. One is enough for a component that
+   * draws itself; a component that renders another Lit element and then reads
+   * it needs two, because the child's first update is queued by the parent's.
+   */
+  renders?: number;
+}
+
+/** A Lit element seen from a test: the render-settled promise is all we need. */
+type Renderable = HTMLElement & { updateComplete?: Promise<unknown> };
+
+/**
+ * Create a component, set its properties, connect it, and wait for it to draw.
+ *
+ * Every component test mounts through here, so the ordering is the same
+ * everywhere: properties are assigned *before* the element is connected, which
+ * is what a Lit component's first render sees, and the custom element is
+ * awaited as defined before the first `updateComplete` is read — an element
+ * that has not been upgraded yet has no such property.
+ */
+export async function mountComponent<T extends HTMLElement>(
+  tag: string,
+  props: Partial<T> = {},
+  options: MountOptions = {},
+): Promise<Mounted<T>> {
+  const el = document.createElement(tag) as T;
+  Object.assign(el, props);
+  if (options.light) el.innerHTML = options.light;
+  document.body.appendChild(el);
+  await customElements.whenDefined(tag);
+  for (let i = 0; i < (options.renders ?? 1); i++) {
+    await (el as Renderable).updateComplete;
+  }
+  return { el, sr: el.shadowRoot as ShadowRoot };
+}
+
+/**
+ * A mock hass and an initialised `Store` over it, for the components that take
+ * one. The whole `MockConfig` is forwarded — statuses and areas included — so a
+ * test that needs a household vocabulary does not have to build its own hass.
+ */
+export async function mountStore(config: MockConfig = {}): Promise<{
+  hass: MockHass;
+  store: Store;
+}> {
+  const hass = makeMockHass(config);
+  // No retry backoff: a test that provokes a failure would otherwise wait it out.
+  const store = new Store(hass, { retryBaseMs: 0 });
+  await store.init();
+  return { hass, store };
+}
+
+/** The first match for a selector, from an element's shadow root or from a root itself. */
+export function q<T extends Element = HTMLElement>(
+  root: Element | DocumentFragment,
+  selector: string,
+): T | null {
+  return queryRoot(root).querySelector(selector) as T | null;
+}
+
+/** Every match for a selector, in document order. */
+export function all<T extends Element = HTMLElement>(
+  root: Element | DocumentFragment,
+  selector: string,
+): T[] {
+  return [...queryRoot(root).querySelectorAll(selector)] as T[];
+}
+
+function queryRoot(root: Element | DocumentFragment): ParentNode {
+  return 'shadowRoot' in root && root.shadowRoot ? root.shadowRoot : root;
+}
+
+/**
+ * Wait for everything a click or a property write set in motion.
+ *
+ * The macrotask boundary is what separates this from awaiting `updateComplete`
+ * alone: it drains the microtask queue first, so a render that another render
+ * queued has already been scheduled by the time the element is awaited.
+ */
+export async function settle(el: HTMLElement): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await (el as Renderable).updateComplete;
+}
+
+/**
+ * Everything a component draws with: its own block plus every shared fragment,
+ * whitespace-normalized so a rule reads as one line.
+ *
+ * jsdom lays nothing out, so a layout or type-size rule is asserted against the
+ * stylesheet rather than against a measured box.
+ */
+export function componentCss(tag: string): string {
+  return sheetsOf(tag)
+    .map((sheet) => String(sheet.cssText))
+    .join('\n')
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * A component's *own* block — the last fragment, after the shared ones.
+ *
+ * The distinction decides what a `not.toMatch` proves: against
+ * {@link componentCss} it says "nothing draws this", which a shared fragment
+ * would falsify; against this it says "this component does not restate what the
+ * shared fragment already gives it".
+ */
+export function ownCss(tag: string): string {
+  const sheets = sheetsOf(tag);
+  return String(sheets[sheets.length - 1].cssText).replace(/\s+/g, ' ');
+}
+
+/**
+ * A component's style fragments, in the order it lists them.
+ *
+ * The fragments themselves rather than their text, so a test can assert that a
+ * shared sheet *is* one of them rather than that its rules appear somewhere.
+ */
+export function sheetsOf(tag: string): CSSResult[] {
+  const ctor = customElements.get(tag) as { styles?: CSSResult | CSSResult[] } | undefined;
+  if (!ctor?.styles) throw new Error(`${tag} has no styles`);
+  return Array.isArray(ctor.styles) ? ctor.styles : [ctor.styles];
 }

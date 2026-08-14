@@ -8,6 +8,9 @@ describe('getDefaultOrderFor', () => {
   it('opens a name or a count smallest-first, so A and 0 lead', () => {
     expect(getDefaultOrderFor('name')).toBe('asc');
     expect(getDefaultOrderFor('quantity')).toBe('asc');
+    // A path is text too, and reading a location-ordered list top-down is what
+    // sorting by it is for.
+    expect(getDefaultOrderFor('location')).toBe('asc');
   });
 
   it('opens a deadline soonest-first, because the urgent end is what you came for', () => {
@@ -28,6 +31,7 @@ describe('getDefaultOrderFor', () => {
       'quantity',
       'due_date',
       'inspection_date',
+      'location',
     ];
     for (const field of fields) {
       expect(['asc', 'desc'], field).toContain(getDefaultOrderFor(field));

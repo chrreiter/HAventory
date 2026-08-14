@@ -16,26 +16,7 @@ from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-
-class _StubConn:
-    def __init__(self) -> None:
-        self.last = None
-
-    def send_message(self, msg):
-        self.last = msg
-
-
-async def _send(hass: HomeAssistant, _id: int, type_: str, **payload):
-    handlers = hass.data.get("__ws_commands__", [])
-    for h in handlers:
-        if not callable(h) or getattr(h, "_ws_command", None) != type_:
-            continue
-        req = {"id": _id, "type": type_}
-        req.update(payload)
-        conn = _StubConn()
-        resp = await h(hass, conn, req)
-        return resp if resp is not None else conn.last
-    raise AssertionError("No handler responded for type " + type_)
+from ws_helpers import ws_send
 
 
 @pytest.mark.asyncio
@@ -47,11 +28,11 @@ async def test_add_remove_tags_success_and_normalization() -> None:
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Thing")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Thing")
     item_id = created["result"]["id"]
 
     # Add tags with mixed case/whitespace and duplicates
-    res = await _send(
+    res = await ws_send(
         hass,
         2,
         "haventory/item/add_tags",
@@ -63,7 +44,7 @@ async def test_add_remove_tags_success_and_normalization() -> None:
     assert res["result"]["tags"] == ["alpha", "beta"]
 
     # Remove tags (normalize) and ensure subtraction
-    res = await _send(
+    res = await ws_send(
         hass,
         3,
         "haventory/item/remove_tags",
@@ -75,9 +56,9 @@ async def test_add_remove_tags_success_and_normalization() -> None:
 
     # A non-string tag is refused by the command's `[str]` schema, so the
     # handler never runs and the item keeps the tags it had.
-    res = await _send(hass, 4, "haventory/item/add_tags", item_id=item_id, tags=["gamma", None])
+    res = await ws_send(hass, 4, "haventory/item/add_tags", item_id=item_id, tags=["gamma", None])
     assert res["success"] is False and res["error"]["code"] == "invalid_format"
-    res = await _send(hass, 5, "haventory/item/get", item_id=item_id)
+    res = await ws_send(hass, 5, "haventory/item/get", item_id=item_id)
     assert res["result"]["tags"] == ["alpha"]
 
 
@@ -90,11 +71,11 @@ async def test_update_custom_fields_set_unset_and_validation_error() -> None:
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Widget")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Widget")
     item_id = created["result"]["id"]
 
     # Set two fields
-    res = await _send(
+    res = await ws_send(
         hass,
         2,
         "haventory/item/update_custom_fields",
@@ -107,7 +88,7 @@ async def test_update_custom_fields_set_unset_and_validation_error() -> None:
     assert res["result"]["custom_fields"]["size"] == SIZE_VALUE
 
     # Unset one field
-    res = await _send(
+    res = await ws_send(
         hass,
         3,
         "haventory/item/update_custom_fields",
@@ -118,7 +99,7 @@ async def test_update_custom_fields_set_unset_and_validation_error() -> None:
     assert "size" not in res["result"]["custom_fields"]
 
     # Invalid set payload: list value is not a scalar
-    res = await _send(
+    res = await ws_send(
         hass,
         4,
         "haventory/item/update_custom_fields",
@@ -137,16 +118,16 @@ async def test_set_low_stock_threshold_affects_counts() -> None:
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Nails", quantity=1)
+    created = await ws_send(hass, 1, "haventory/item/create", name="Nails", quantity=1)
     item_id = created["result"]["id"]
 
     # Initially, with no threshold, low_stock_count should be 0
-    stats = await _send(hass, 2, "haventory/stats")
+    stats = await ws_send(hass, 2, "haventory/stats")
     assert stats["success"] is True and stats["result"]["low_stock_count"] == 0
 
     # Set threshold to 2 -> item is low stock (1 <= 2)
     LOW_STOCK_THRESHOLD = 2
-    res = await _send(
+    res = await ws_send(
         hass,
         3,
         "haventory/item/set_low_stock_threshold",
@@ -156,7 +137,7 @@ async def test_set_low_stock_threshold_affects_counts() -> None:
     assert res["success"] is True
     assert res["result"]["low_stock_threshold"] == LOW_STOCK_THRESHOLD
 
-    stats2 = await _send(hass, 4, "haventory/stats")
+    stats2 = await ws_send(hass, 4, "haventory/stats")
     assert stats2["result"]["low_stock_count"] == 1
 
 
@@ -169,13 +150,13 @@ async def test_item_move_updates_location() -> None:
     hass.data[DOMAIN]["store"] = DomainStore(hass)
     ws_setup(hass)
 
-    created = await _send(hass, 1, "haventory/item/create", name="Box")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Box")
     item_id = created["result"]["id"]
 
-    loc = await _send(hass, 2, "haventory/location/create", name="Shelf A")
+    loc = await ws_send(hass, 2, "haventory/location/create", name="Shelf A")
     loc_id = loc["result"]["id"]
 
-    res = await _send(hass, 3, "haventory/item/move", item_id=item_id, location_id=loc_id)
+    res = await ws_send(hass, 3, "haventory/item/move", item_id=item_id, location_id=loc_id)
     assert res["success"] is True and res["result"]["location_id"] == loc_id
 
 
@@ -190,12 +171,12 @@ async def test_unknown_command_and_type_errors() -> None:
 
     # Unknown command type: ensure no handler responds
     with pytest.raises(AssertionError):
-        await _send(hass, 99, "haventory/does_not_exist")
+        await ws_send(hass, 99, "haventory/does_not_exist")
 
     # Type errors inside payload for wrappers that validate
-    created = await _send(hass, 1, "haventory/item/create", name="Thing")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Thing")
     iid = created["result"]["id"]
-    res = await _send(
+    res = await ws_send(
         hass,
         2,
         "haventory/item/set_quantity",

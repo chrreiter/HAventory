@@ -151,13 +151,18 @@ no longer used and can be deleted; the integration ignores it either way.
 
 What HAventory does *not* do today, stated up front so none of it is a surprise:
 
-- **Scale: a few thousand items.** Every mutation re-serializes the entire inventory and
-  rewrites the store blob, so write latency grows with the total item count. Measured p50
-  per create: ~70 ms at 250 items, ~114 ms at 500, ~200 ms at 1000; on that curve a single
-  create trends toward ~1 s at a few thousand items. Reads don't share the problem (query
-  paths are benchmarked at 10 000 items), correctness is unaffected at any size, and no
-  limit is enforced — writes simply get slower. Treat a few thousand items as the
-  comfortable ceiling.
+- **Scale: writes get slower as the inventory grows.** Every mutation re-serializes the
+  entire inventory and rewrites the store blob, so an edit costs more the more you have.
+  Measured against a real Home Assistant, one editor at a time — which is what a household
+  is — create p50 runs 2.5 ms on an empty store, 9.5 ms at 1 000 items, 17 ms at 2 000 and
+  43 ms at 5 000: linear at roughly 8 µs per item, with the persist about three quarters of
+  it. At and above ~3 000 items the p95 spikes to 230–280 ms against a 21–37 ms median, so
+  the occasional slow save arrives before the median becomes a problem. Bulk operations and
+  import write **once per batch** rather than once per row, so the paths that change many
+  items at a time do not multiply the cost. Reads don't share the problem (query paths are
+  benchmarked at 10 000 items), correctness is unaffected at any size, and no limit is
+  enforced. Several thousand items is comfortable; past that, an edit starts to be
+  something you notice.
 - **No automation triggers.** The integration creates no entities and fires no events on
   the Home Assistant bus. Automations and scripts can *call* the `haventory.*` services,
   but nothing can trigger *on* an inventory change — there is no state object to watch and
@@ -284,8 +289,10 @@ Every feature/fix ships with tests — happy path plus at least one edge/error c
 Performance benchmarks live in `tests/test_repository_benchmarks_offline.py`,
 including the WP4 percentile scenarios (item list: 50-item page p50 ≤ 30 ms /
 p95 ≤ 75 ms; `move_subtree` p50 ≤ 80 ms / p95 ≤ 150 ms on the 2k-items /
-60-locations typical dataset). They print results always and fail on budget
-misses only with `ASSERT_BUDGETS=1`:
+60-locations typical dataset) and the persistence curve at 250 / 500 / 1 000
+items, which is what a save costs the event loop before Home Assistant's own
+write. They print results always and fail on budget misses only with
+`ASSERT_BUDGETS=1`:
 
 ```bash
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ASSERT_BUDGETS=1 uv run pytest -q tests/test_repository_benchmarks_offline.py -s
@@ -418,9 +425,11 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
 - Areas via `homeassistant.helpers.area_registry.async_get(hass)`; never auto-create areas.
 - Every free-text and collection field is capped on the way in — 4000 characters of
   description, 50 tags, 50 custom fields, and so on beside the 120-character name limit —
-  because the store is one JSON document rewritten in full on every mutation. The same caps
-  apply to an imported document, so a restore cannot introduce an entity the API would refuse.
-  The full table is in [`docs/data_shapes.md`](docs/data_shapes.md) → "Input caps".
+  because the store is one JSON document rewritten in full on every mutation. The caps refuse
+  growth, never data that already exists: an item written before a cap existed still loads,
+  saves, exports and — because a backup must restore — imports, on the backend and in the
+  card's editor alike. The full table and the exact rule are in
+  [`docs/data_shapes.md`](docs/data_shapes.md) → "Input caps".
 - Case-insensitive search; denormalized `location_path` on items; item `version` for optimistic
   concurrency. `version` counts *item* mutations only — renaming or moving a location rewrites
   the derived `location_path` across its whole subtree without bumping `version` or restamping
@@ -529,7 +538,9 @@ throughout.
   and a counter to walk the strip, Escape to come back — on every surface the form appears
   on, and from the detail sheet's gallery just the same.
 - **Full view** — a fullscreen workspace with a coloured app bar, a **browse sidebar**, and
-  a sortable table. Only columns the backend can sort by get a clickable header. A browser
+  a sortable table. Only columns the backend can sort by get a clickable header — Location
+  among them, ordering on the path each row shows, with items filed nowhere at the end
+  whichever way it runs. A browser
   that has made no choice yet shows every optional column — quantity, status, category,
   location, tags, due, next inspection, updated — and the ⋮ → **Columns** picker is where
   you thin that down and put the ones you keep in the order you want them, with the up/down
@@ -545,11 +556,20 @@ throughout.
   vocabulary rather than anything in the inventory — and
   Locations stays at the top. Every status row is priced from the backend's own per-status
   counts, so a status nothing carries reads 0 rather than inheriting the rest of the
-  inventory. Category and status each pick one value and
-  tags accumulate, matching how the backend treats them. With a filter on, each location
-  row reads "4 / 37" — matches over total — so you can see where the matches are rather
-  than a total that never moves. The counts ignore the *location* filter, since the sidebar
-  is how you pick one. Each heading also offers a create action: Locations opens an inline
+  inventory. Locations, categories and tags all accumulate — pick a second and
+  the list widens to hold both, pick a selected one again and it drops out — while
+  status stays one value, matching how the backend treats each of them. Several
+  categories or locations can only ever mean *or*, since an item has one of each,
+  so neither carries the any/all control tags do. With a filter on, each location,
+  category and tag row reads "4 / 37" — matches over total — so you can see where the
+  matches are rather than a total that never moves. All three switch to the pair together,
+  as soon as anything is filtering. Each list drops its own dimension from what it measures
+  against, since that list is how you pick one: the location counts ignore the location
+  filter, and the category and tag counts ignore the chosen category and tags — so with a
+  category as the only filter its own list reads "43 / 43" while the locations beside it
+  narrow, rather than one column carrying two kinds of number.
+  No row disappears for matching nothing — the same list is what the item editor offers as
+  autocomplete. Each heading also offers a create action: Locations opens an inline
   name field, while Categories, Tags and Status open the organize dialog on their own tab —
   a category exists through the items using it, so that is where making one is explained.
   The app bar carries an Organize button of its own, beside the ⋮ that also lists it.
@@ -712,7 +732,9 @@ the offline suite. To bring up a real Home Assistant with HACS against the worki
   Areas integration; real-time subscriptions (items, locations, stats); documented persistence.
 - `haventory/distinct_values` returns distinct categories and tags with usage counts
   (categories grouped case-insensitively) plus distinct custom-field keys — powers
-  category/tag autocomplete, the browser views, and custom-field key suggestions.
+  category/tag autocomplete, the browser views, and custom-field key suggestions. With an
+  optional filter each category and tag also reports how many of its items that filter
+  keeps, without dropping any value from the list.
 
 ### ✅ Phase 2: Frontend Lovelace Card (Complete — superseded by Phase 2.5)
 > Historical: this describes the proof-of-concept card. Phase 2.5 replaced its components;

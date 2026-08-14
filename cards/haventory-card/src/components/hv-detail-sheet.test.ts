@@ -1,5 +1,15 @@
 import './hv-detail-sheet';
-import { makeAttachment, makeItem, makeManual, makeMediaBindings } from '../test.utils';
+import {
+  all,
+  componentCss,
+  makeAttachment,
+  makeItem,
+  makeManual,
+  makeMediaBindings,
+  mountComponent,
+  q,
+  settle as settleEl,
+} from '../test.utils';
 import { DISCARD_PROMPT } from '../ui/discard';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import type { HVDetailSheet } from './hv-detail-sheet';
@@ -7,17 +17,13 @@ import type { HVBottomSheet } from './hv-bottom-sheet';
 import type { Item } from '../store/types';
 
 async function mount(item: Partial<Item>, props: Partial<HVDetailSheet> = {}) {
-  const el = document.createElement('hv-detail-sheet') as HVDetailSheet;
-  el.item = makeItem(item);
-  el.open = true;
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await el.updateComplete;
-  await el.updateComplete;
+  const { el } = await mountComponent<HVDetailSheet>(
+    'hv-detail-sheet',
+    { item: makeItem(item), open: true, ...props },
+    { renders: 2 },
+  );
   return el;
 }
-
-const q = (el: HVDetailSheet, sel: string) => el.shadowRoot?.querySelector(sel) as HTMLElement | null;
 
 /**
  * The lightbox is a component of its own — shared with the edit form on every
@@ -25,27 +31,17 @@ const q = (el: HVDetailSheet, sel: string) => el.shadowRoot?.querySelector(sel) 
  */
 const lightbox = (el: HVDetailSheet, sel = '[data-testid="lightbox"]') =>
   (q(el, 'hv-lightbox')?.shadowRoot?.querySelector(sel) ?? null) as HTMLElement | null;
-const all = (el: HVDetailSheet, sel: string) =>
-  [...(el.shadowRoot?.querySelectorAll(sel) ?? [])] as HTMLElement[];
-
 /**
- * A host's own update does not carry its children's, and the lightbox is a
- * child now — so anything that opens or moves it needs its update too.
+ * A host's own update does not carry its children's, and the sheet renders the
+ * lightbox as a child — so anything that opens or moves it needs the child's
+ * update too.
  */
 const settle = async (el: HVDetailSheet) => {
-  await el.updateComplete;
-  await (q(el, 'hv-lightbox') as (HTMLElement & { updateComplete?: Promise<unknown> }) | null)?.updateComplete;
+  await settleEl(el);
+  await q<HTMLElement & { updateComplete?: Promise<unknown> }>(el, 'hv-lightbox')?.updateComplete;
 };
 
 /** jsdom lays out no shadow DOM, so type sizes are asserted on the sheet. */
-const sheetCss = () => {
-  const styles = (customElements.get('hv-detail-sheet') as typeof HVDetailSheet).styles;
-  return (Array.isArray(styles) ? styles : [styles])
-    .map((s) => String(s.cssText))
-    .join('\n')
-    .replace(/\s+/g, ' ');
-};
-
 function captured(el: HVDetailSheet, names: string[]) {
   const seen: string[] = [];
   for (const name of names) el.addEventListener(name, () => seen.push(name));
@@ -185,7 +181,7 @@ describe('hv-detail-sheet: read view', () => {
   // path at 12.5px was the smallest text on the sheet, while the quantity at
   // 34px was half again bigger than the item's own name.
   it('sizes the path and the quantity off one scale', () => {
-    const css = sheetCss();
+    const css = componentCss('hv-detail-sheet');
     const size = (selector: string) => {
       const rule = new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
       return Number(/font-size: ([\d.]+)px/.exec(rule)?.[1]);
@@ -1083,7 +1079,7 @@ describe('hv-detail-sheet: documents', () => {
   // to the widest row, whose tail (the Open link, the "File missing" chip) does
   // not shrink, and `overflow: hidden` clips exactly those two away.
   it('sizes the documents track off the list rather than off its widest row', () => {
-    const css = sheetCss();
+    const css = componentCss('hv-detail-sheet');
     const rule = (selector: string) =>
       new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
 
@@ -1094,7 +1090,7 @@ describe('hv-detail-sheet: documents', () => {
   // The row shrinking into its track is only worth anything if the two elements
   // it was cutting off are the ones that keep their size.
   it('leaves the Open link and the missing-file chip unshrinkable', () => {
-    const css = sheetCss();
+    const css = componentCss('hv-detail-sheet');
     const rule = (selector: string) =>
       new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
 

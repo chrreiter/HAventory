@@ -16,6 +16,7 @@ from custom_components.haventory.models import ItemCreate, ItemFilter, ItemUpdat
 from custom_components.haventory.repository import CURSOR_MAX_LENGTH, Repository
 
 TOTAL_ITEMS = 3
+BOOKS_TOTAL = 3
 INITIAL_LOW_STOCK_COUNT = 1
 LOW_STOCK_AFTER_ADJUST = 2
 LOADED_ITEM_COUNT = 2
@@ -569,3 +570,286 @@ def test_a_valid_cursor_still_pages_to_the_end() -> None:
 
     assert seen == [f"Item {i}" for i in range(5)]
     assert cursor is None
+
+
+# -----------------------------
+# low_stock_first pagination
+# -----------------------------
+
+GROUPED_CATALOG_SIZE = 10
+LOW_STOCK_ROWS = frozenset({2, 5, 7, 9})
+
+
+def _walk_pages(repo: Repository, *, flt: ItemFilter, sort: Sort, limit: int) -> list[str]:
+    """Page a filtered list to exhaustion and return the delivered ids in order."""
+
+    delivered: list[str] = []
+    cursor: str | None = None
+    for _ in range(50):
+        page = repo.list_items(flt=flt, sort=sort, limit=limit, cursor=cursor)
+        delivered.extend(str(it.id) for it in page["items"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+    assert cursor is None, "pagination never reached the end"
+    return delivered
+
+
+@pytest.mark.parametrize(
+    "sort",
+    [
+        Sort(field="updated_at", order="desc"),
+        Sort(field="name", order="asc"),
+        Sort(field="quantity", order="desc"),
+    ],
+)
+@pytest.mark.parametrize("limit", [1, 3, 4, 7])
+def test_low_stock_first_pages_deliver_every_item(sort: Sort, limit: int) -> None:
+    """Issue #435: paging with low_stock_first on delivers exactly ``total`` items.
+
+    The regroup used to break the (sort value, id) ordering the cursor scan
+    assumed: after the low-stock block every remaining item compared *before*
+    the cursor, so page two came back empty and most of the list was
+    unreachable while ``total`` still reported all of it.
+    """
+
+    repo = Repository()
+    for i in range(GROUPED_CATALOG_SIZE):
+        low = i in LOW_STOCK_ROWS
+        repo.create_item(
+            ItemCreate(
+                name=f"item-{i:02d}",
+                quantity=0 if low else 5,
+                low_stock_threshold=1 if low else None,
+            )
+        )
+
+    flt = ItemFilter(low_stock_first=True)
+    unpaginated = repo.list_items(flt=flt, sort=sort)
+    expected = [str(it.id) for it in unpaginated["items"]]
+    assert unpaginated["total"] == GROUPED_CATALOG_SIZE
+
+    delivered = _walk_pages(repo, flt=flt, sort=sort, limit=limit)
+    assert delivered == expected
+
+
+def test_low_stock_first_pages_deliver_every_item_on_identical_sort_values() -> None:
+    """The id tie-break carries a page boundary that lands inside one sort value."""
+
+    repo = Repository()
+    for i in range(9):
+        low = i % 3 == 0
+        repo.create_item(
+            ItemCreate(
+                name="same name",
+                quantity=0 if low else 5,
+                low_stock_threshold=1 if low else None,
+            )
+        )
+
+    flt = ItemFilter(low_stock_first=True)
+    sort = Sort(field="name", order="asc")
+    expected = [str(it.id) for it in repo.list_items(flt=flt, sort=sort)["items"]]
+
+    delivered = _walk_pages(repo, flt=flt, sort=sort, limit=2)
+    assert delivered == expected
+
+
+def test_low_stock_first_page_boundary_can_split_the_low_stock_block() -> None:
+    """A cursor minted inside the low-stock block resumes inside it, not past it."""
+
+    low_stock_block = 4
+    repo = Repository()
+    for i in range(6):
+        low = i < low_stock_block
+        repo.create_item(
+            ItemCreate(
+                name=f"item-{i}",
+                quantity=0 if low else 5,
+                low_stock_threshold=1 if low else None,
+            )
+        )
+
+    flt = ItemFilter(low_stock_first=True)
+    sort = Sort(field="name", order="asc")
+
+    page1 = repo.list_items(flt=flt, sort=sort, limit=3)
+    assert [it.name for it in page1["items"]] == ["item-0", "item-1", "item-2"]
+    assert isinstance(page1["next_cursor"], str)
+
+    page2 = repo.list_items(flt=flt, sort=sort, limit=3, cursor=page1["next_cursor"])
+    assert [it.name for it in page2["items"]] == ["item-3", "item-4", "item-5"]
+    assert page2["next_cursor"] is None
+
+
+def test_a_cursor_minted_under_low_stock_first_is_refused_without_it() -> None:
+    """The grouping is part of the order, so it is held to the sort's rule."""
+
+    low_stock_block = 2
+    repo = Repository()
+    for i in range(5):
+        repo.create_item(
+            ItemCreate(
+                name=f"item-{i}", quantity=0 if i < low_stock_block else 5, low_stock_threshold=1
+            )
+        )
+
+    sort = Sort(field="name", order="asc")
+    grouped = repo.list_items(flt=ItemFilter(low_stock_first=True), sort=sort, limit=2)
+    assert isinstance(grouped["next_cursor"], str)
+    with pytest.raises(ValidationError):
+        repo.list_items(sort=sort, limit=2, cursor=grouped["next_cursor"])
+
+    flat = repo.list_items(sort=sort, limit=2)
+    assert isinstance(flat["next_cursor"], str)
+    with pytest.raises(ValidationError):
+        repo.list_items(
+            flt=ItemFilter(low_stock_first=True), sort=sort, limit=2, cursor=flat["next_cursor"]
+        )
+
+
+def test_distinct_values_priced_against_a_filter_folds_case_variants() -> None:
+    """One entry per casefolded category, and its matching_count is that group's."""
+
+    repo = Repository()
+    repo.create_item(ItemCreate(name="A", category="Books", quantity=0, low_stock_threshold=1))
+    repo.create_item(ItemCreate(name="B", category="books", quantity=5))
+    repo.create_item(ItemCreate(name="C", category="Books", quantity=5))
+
+    result = repo.get_distinct_field_values(ItemFilter(low_stock_only=True))
+    categories = result["categories"]
+    assert isinstance(categories, list)
+
+    assert len(categories) == 1
+    entry = categories[0]
+    # The representative label is still the most frequent original casing.
+    assert entry["value"] == "Books"
+    assert entry["count"] == BOOKS_TOTAL
+    assert entry["matching_count"] == 1
+
+
+def test_distinct_values_counts_an_excluded_item_towards_count_only() -> None:
+    """An item whose value matches but which the filter drops moves only `count`."""
+
+    repo = Repository()
+    repo.create_item(ItemCreate(name="Kept", category="Tools", tags=["red"], checked_out=True))
+    repo.create_item(ItemCreate(name="Dropped", category="Tools", tags=["red"]))
+
+    result = repo.get_distinct_field_values(ItemFilter(checked_out=True))
+    categories = result["categories"]
+    tags = result["tags"]
+    assert isinstance(categories, list)
+    assert isinstance(tags, list)
+
+    assert categories == [{"value": "Tools", "count": 2, "matching_count": 1}]
+    assert tags == [{"value": "red", "count": 2, "matching_count": 1}]
+
+    # Without a filter the key is absent rather than equal to `count`, so a
+    # client can tell "unpriced" from "everything matches".
+    unfiltered = repo.get_distinct_field_values()
+    assert unfiltered["categories"] == [{"value": "Tools", "count": 2}]
+
+
+def test_list_items_unions_the_category_index_buckets() -> None:
+    """The index path and the post-filter must agree on a multi-select."""
+
+    repo = Repository()
+    repo.create_item(ItemCreate(name="Hammer", category="Tools"))
+    repo.create_item(ItemCreate(name="Novel", category="Books"))
+    repo.create_item(ItemCreate(name="Soap", category="Cleaning"))
+
+    page = repo.list_items(flt=ItemFilter(categories=["tools", "BOOKS"]))
+    assert sorted(it.name for it in page["items"]) == ["Hammer", "Novel"]
+    assert page["total"] == LOADED_ITEM_COUNT
+
+    # A selection nothing carries is an empty page, not the whole inventory.
+    empty = repo.list_items(flt=ItemFilter(categories=["Nonesuch"]))
+    assert empty["items"] == []
+    assert empty["total"] == 0
+
+
+def test_list_items_unions_the_location_index_buckets() -> None:
+    repo = Repository()
+    kitchen = repo.create_location(name="Kitchen")
+    drawer = repo.create_location(name="Drawer", parent_id=kitchen.id)
+    garage = repo.create_location(name="Garage")
+    repo.create_item(ItemCreate(name="Whisk", location_id=drawer.id))
+    repo.create_item(ItemCreate(name="Spanner", location_id=garage.id))
+    repo.create_item(ItemCreate(name="Loose"))
+
+    subtree = repo.list_items(
+        flt=ItemFilter(location_ids=[str(kitchen.id), str(garage.id)], include_subtree=True)
+    )
+    assert sorted(it.name for it in subtree["items"]) == ["Spanner", "Whisk"]
+
+    # One flag for the whole selection: the drawer is not itself selected.
+    direct = repo.list_items(
+        flt=ItemFilter(location_ids=[str(kitchen.id), str(garage.id)], include_subtree=False)
+    )
+    assert [it.name for it in direct["items"]] == ["Spanner"]
+
+
+def test_matching_by_location_counts_a_multi_select_the_same_way() -> None:
+    """The tree's counts ride the same candidate path, so they must not drift."""
+
+    repo = Repository()
+    kitchen = repo.create_location(name="Kitchen")
+    garage = repo.create_location(name="Garage")
+    repo.create_item(ItemCreate(name="Whisk", location_id=kitchen.id, category="Tools"))
+    repo.create_item(ItemCreate(name="Spanner", location_id=garage.id, category="Books"))
+
+    counts = repo.count_matching_by_location(ItemFilter(categories=["Tools", "Books"]))
+    assert counts == {str(kitchen.id): 1, str(garage.id): 1}
+
+    narrowed = repo.count_matching_by_location(ItemFilter(categories=["Tools"]))
+    assert narrowed == {str(kitchen.id): 1}
+
+
+def test_location_sort_paginates_on_a_cursor_that_round_trips() -> None:
+    """The cursor's key comes from the same helper the sort does.
+
+    A page boundary minted under one rule and read under another is what makes
+    an item repeat or go missing between pages.
+    """
+
+    repo = Repository()
+    garage = repo.create_location(name="Garage")
+    shelf = repo.create_location(name="Shelf A", parent_id=garage.id)
+    cellar = repo.create_location(name="Cellar")
+    repo.create_item(ItemCreate(name="Deep", location_id=shelf.id))
+    repo.create_item(ItemCreate(name="Shallow", location_id=garage.id))
+    repo.create_item(ItemCreate(name="Elsewhere", location_id=cellar.id))
+    repo.create_item(ItemCreate(name="Loose"))
+
+    sort = Sort(field="location", order="asc")
+    seen: list[str] = []
+    cursor: str | None = None
+    for _ in range(4):
+        page = repo.list_items(sort=sort, limit=2, cursor=cursor)
+        seen.extend(it.name for it in page["items"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+
+    # Cellar, then Garage, then Garage / Shelf A — and the unlocated item last.
+    assert seen == ["Elsewhere", "Shallow", "Deep", "Loose"]
+    assert cursor is None
+
+    # Descending reverses the located ones and still ends on the unlocated one.
+    desc = repo.list_items(sort=Sort(field="location", order="desc"))
+    assert [it.name for it in desc["items"]] == ["Deep", "Shallow", "Elsewhere", "Loose"]
+
+
+def test_a_cursor_minted_under_the_location_sort_is_refused_by_another() -> None:
+    """#197's rule holds for the new field too: no silent re-pagination."""
+
+    repo = Repository()
+    garage = repo.create_location(name="Garage")
+    for i in range(4):
+        repo.create_item(ItemCreate(name=f"Item {i}", location_id=garage.id))
+
+    page = repo.list_items(sort=Sort(field="location", order="asc"), limit=2)
+    assert isinstance(page["next_cursor"], str)
+
+    with pytest.raises(ValidationError):
+        repo.list_items(sort=Sort(field="name", order="asc"), limit=2, cursor=page["next_cursor"])

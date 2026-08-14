@@ -173,3 +173,22 @@ def _backfill_attachment_fields(attachments: object) -> None:
         placed[kind] = position + 1
         entry.setdefault("title", "")
         entry.setdefault("order", position)
+
+
+def migrate_6_to_7(payload: dict[str, Any]) -> dict[str, Any]:
+    """Mark the store as one whose status colours a v6 build cannot read.
+
+    Nothing in the payload changes, and nothing needs to: every v6 document is
+    already a valid v7 one. The version exists for the shape v7 *admits* — a
+    status definition's ``color`` may be a ``#rrggbb`` literal, where v6 accepts
+    only the ten tone tokens.
+
+    The bump is what stops the two shapes sharing a stamp. Under one stamp a v6
+    build reads a store holding a literal, cannot validate the definition, and —
+    because an unreadable status definition is skipped rather than fatal — drops
+    it and rewrites every item carrying that slug to the default status,
+    persisting the loss on the next save. Stamped 7, the same build refuses the
+    store outright and the data waits for one that understands it.
+    """
+
+    return deepcopy(payload) if isinstance(payload, dict) else {}

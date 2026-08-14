@@ -3,6 +3,7 @@ import './hv-filter-chips';
 import { chipsFor, clearedValueFor } from './hv-filter-chips';
 import { defaultFilters } from '../store/store';
 import type { Location, StatusDefinition, StoreFilters } from '../store/types';
+import { mountComponent } from '../test.utils';
 
 type Chips = HTMLElement & {
   filters: StoreFilters;
@@ -30,11 +31,7 @@ const nested = (areaId: string | null): Location[] => [
 ];
 
 async function mount(props: Partial<Chips>): Promise<Chips> {
-  const el = document.createElement('hv-filter-chips') as Chips;
-  Object.assign(el, props);
-  document.body.appendChild(el);
-  await customElements.whenDefined('hv-filter-chips');
-  if (el.updateComplete) await el.updateComplete;
+  const { el } = await mountComponent<Chips>('hv-filter-chips', props);
   return el;
 }
 
@@ -55,24 +52,24 @@ describe('chipsFor', () => {
   });
 
   it('names the location by its path, punctuated the way the rest of the card does', () => {
-    const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: false };
+    const filters = { ...defaultFilters(), locationIds: ['shelf'], includeSubtree: false };
     const [chip] = chipsFor(filters, { locations: [loc('shelf', 'Shelf A', 'Garage / Shelf A')] });
     expect(chip.label).toBe('Garage › Shelf A');
   });
 
   it('marks a subtree scope on the location chip', () => {
-    const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: true };
+    const filters = { ...defaultFilters(), locationIds: ['shelf'], includeSubtree: true };
     const [chip] = chipsFor(filters, { locations: [loc('shelf', 'Shelf A', 'Garage / Shelf A')] });
     expect(chip.label).toBe('Garage › Shelf A + sub');
   });
 
   it('falls back to a generic label when the location is not in the cache', () => {
-    const filters = { ...defaultFilters(), locationId: 'gone', includeSubtree: false };
+    const filters = { ...defaultFilters(), locationIds: ['gone'], includeSubtree: false };
     expect(chipsFor(filters, { locations: [] })[0].label).toBe('Location');
   });
 
   it('names the area a location inherits from its tree, in the chip row own wording', () => {
-    const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: false };
+    const filters = { ...defaultFilters(), locationIds: ['shelf'], includeSubtree: false };
     const [chip] = chipsFor(filters, {
       locations: nested('a1'),
       areas: [{ id: 'a1', name: 'Kitchen' }],
@@ -81,7 +78,7 @@ describe('chipsFor', () => {
   });
 
   it('keeps the subtree marker last, behind the area and the path', () => {
-    const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: true };
+    const filters = { ...defaultFilters(), locationIds: ['shelf'], includeSubtree: true };
     const [chip] = chipsFor(filters, {
       locations: nested('a1'),
       areas: [{ id: 'a1', name: 'Kitchen' }],
@@ -90,7 +87,7 @@ describe('chipsFor', () => {
   });
 
   it('leaves a location in no area labelled exactly as before', () => {
-    const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: false };
+    const filters = { ...defaultFilters(), locationIds: ['shelf'], includeSubtree: false };
     expect(chipsFor(filters, { locations: nested(null), areas: [] })[0].label).toBe('Garage › Shelf A');
   });
 
@@ -102,14 +99,14 @@ describe('chipsFor', () => {
       [false, 'Garage › Shelf A'],
       [true, 'Garage › Shelf A + sub'],
     ] as const) {
-      const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: subtree };
+      const filters = { ...defaultFilters(), locationIds: ['shelf'], includeSubtree: subtree };
       const [chip] = chipsFor(filters, { locations: nested('a1'), areas: [{ id: 'a1', name: 'Garage' }] });
       expect(chip.label, `subtree=${subtree}`).toBe(label);
     }
   });
 
   it('names an area the registry has dropped by its id, so the chip never reads as arealess', () => {
-    const filters = { ...defaultFilters(), locationId: 'shelf', includeSubtree: false };
+    const filters = { ...defaultFilters(), locationIds: ['shelf'], includeSubtree: false };
     expect(chipsFor(filters, { locations: nested('a-gone'), areas: [] })[0].label).toBe(
       'Area: a-gone · Garage › Shelf A',
     );
@@ -132,7 +129,7 @@ describe('chipsFor', () => {
   // could be the category, the location or the search box. Every facet that
   // would otherwise print one names itself.
   it('names the facet on a chip that would otherwise be a bare value', () => {
-    const filters = { ...defaultFilters(), category: 'Hardware', tags: ['metric'] };
+    const filters = { ...defaultFilters(), categories: ['Hardware'], tags: ['metric'] };
     expect(chipsFor(filters).map((c) => c.label)).toEqual(['Category: Hardware', 'any of: #metric']);
   });
 
@@ -253,9 +250,16 @@ describe('clearedValueFor', () => {
   });
 
   it('clears the nullable filters to null', () => {
-    for (const key of ['areaId', 'locationId', 'status', 'category', 'updatedAfter', 'createdAfter', 'updatedBefore', 'createdBefore'] as const) {
+    for (const key of ['areaId', 'status', 'updatedAfter', 'createdAfter', 'updatedBefore', 'createdBefore'] as const) {
       expect(clearedValueFor(key)).toEqual({ [key]: null });
     }
+  });
+
+  // A multi-select is empty rather than null when it is not narrowing, so its
+  // cleared value has to be the empty selection and not the scalar's null.
+  it('clears the multi-select filters to an empty selection', () => {
+    expect(clearedValueFor('locationIds')).toEqual({ locationIds: [] });
+    expect(clearedValueFor('categories')).toEqual({ categories: [] });
   });
 
   it('clears the boolean toggles to false', () => {
@@ -278,15 +282,15 @@ describe('hv-filter-chips', () => {
 
   it('draws one chip per active filter plus a clear-all', async () => {
     const el = await mount({
-      filters: { ...defaultFilters(), q: 'drill', category: 'Hardware', overdueOnly: true },
+      filters: { ...defaultFilters(), q: 'drill', categories: ['Hardware'], overdueOnly: true },
     });
-    expect(chipKeys(el)).toEqual(['q', 'category', 'overdueOnly']);
+    expect(chipKeys(el)).toEqual(['q', 'categories', 'overdueOnly']);
     expect(chipLabels(el)[0]).toContain('"drill"');
     expect(el.shadowRoot?.querySelector('[data-testid="filter-chips-clear"]')).not.toBeNull();
   });
 
   it('hands the host the patch that clears the chip it was given', async () => {
-    const el = await mount({ filters: { ...defaultFilters(), category: 'Hardware' } });
+    const el = await mount({ filters: { ...defaultFilters(), categories: ['Hardware'] } });
     let detail: { key: string; patch: Partial<StoreFilters> } | null = null;
     el.addEventListener('remove-filter', (e) => {
       detail = (e as CustomEvent).detail;
@@ -294,7 +298,7 @@ describe('hv-filter-chips', () => {
 
     (el.shadowRoot?.querySelector('[data-testid="filter-chip"]') as HTMLButtonElement).click();
 
-    expect(detail).toEqual({ key: 'category', patch: { category: null } });
+    expect(detail).toEqual({ key: 'categories', patch: { categories: [] } });
   });
 
   it('asks the host to clear everything', async () => {
