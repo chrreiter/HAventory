@@ -18,7 +18,7 @@ from custom_components.haventory.const import (
     DOMAIN,
     EVENT_ITEM_CHANGED,
     EVENT_LOW_STOCK,
-    SIGNAL_COUNTS_UPDATED,
+    SIGNAL_INVENTORY_CHANGED,
 )
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.serialization import serialize_item
@@ -113,7 +113,7 @@ def test_a_mutation_fires_one_item_changed_with_the_documented_keys() -> None:
     assert "description" not in payload
 
     # The sensors repaint off the dispatcher, not off the bus event.
-    assert hass.dispatcher_sends == [(SIGNAL_COUNTS_UPDATED, ())]
+    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
 
 
 def test_a_bulk_style_notification_carries_no_item_event() -> None:
@@ -125,7 +125,7 @@ def test_a_bulk_style_notification_carries_no_item_event() -> None:
     events_mod.notify_mutation(hass, action="reloaded")
 
     assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
-    assert hass.dispatcher_sends == [(SIGNAL_COUNTS_UPDATED, ())]
+    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
 
 
 def test_crossing_the_threshold_fires_entered_once() -> None:

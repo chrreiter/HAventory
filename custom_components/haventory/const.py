@@ -220,7 +220,17 @@ DEFAULT_RATE_LIMIT_GLOBAL_EVENTS_BURST: float = 1000.0
 # Entity platforms
 # -----------------------------
 
-PLATFORMS: tuple[Platform, ...] = (Platform.SENSOR,)
+PLATFORMS: tuple[Platform, ...] = (Platform.SENSOR, Platform.CALENDAR)
+
+# -----------------------------
+# Calendar
+# -----------------------------
+
+# The calendar's `unique_id`. Constant rather than entry-scoped like the
+# sensors': `single_config_entry` in the manifest means there is never a second
+# entry to distinguish, and `calendar.haventory` is a reserved name that this
+# string is what pins.
+CALENDAR_UNIQUE_ID: str = "haventory_calendar"
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,9 +272,10 @@ SENSOR_DESCRIPTIONS: tuple[HaventorySensorDescription, ...] = (
 EVENT_ITEM_CHANGED: str = "haventory_item_changed"
 EVENT_LOW_STOCK: str = "haventory_low_stock"
 
-# Dispatcher signal the sensors listen on. Bus events are the public contract;
-# this is the internal nudge that repaints the entities.
-SIGNAL_COUNTS_UPDATED: str = "haventory_counts_updated"
+# Dispatcher signal every entity this integration owns listens on — the counts
+# and the calendar alike, since both are derived from the same items. Bus events
+# are the public contract; this is the internal nudge that repaints entities.
+SIGNAL_INVENTORY_CHANGED: str = "haventory_inventory_changed"
 
 # `hass.data[DOMAIN]` key holding the previous low-stock id set. Seeded at setup
 # so a restart re-announces nothing, and diffed on every notification.

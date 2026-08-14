@@ -23,7 +23,7 @@ from .const import (
     DOMAIN,
     INTEGRATION_VERSION,
     SENSOR_DESCRIPTIONS,
-    SIGNAL_COUNTS_UPDATED,
+    SIGNAL_INVENTORY_CHANGED,
     HaventorySensorDescription,
 )
 
@@ -71,7 +71,7 @@ class HaventoryCountSensor(SensorEntity):
         """Subscribe to the two things that move this count."""
 
         self.async_on_remove(
-            async_dispatcher_connect(self.hass, SIGNAL_COUNTS_UPDATED, self._handle_update)
+            async_dispatcher_connect(self.hass, SIGNAL_INVENTORY_CHANGED, self._handle_update)
         )
         if self._description.date_derived:
             # `overdue_count` and `inspection_overdue_count` are derived from

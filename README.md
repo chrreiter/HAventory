@@ -149,8 +149,9 @@ no longer used and can be deleted; the integration ignores it either way.
 
 ## Automations
 
-HAventory shows up in Home Assistant as **four sensors on one device**, and fires **two event
-types** on the bus. Neither needs a WebSocket client, and neither polls.
+HAventory shows up in Home Assistant as **four sensors and a calendar on one device**, and
+fires **two event types** on the bus. None of it needs a WebSocket client, and none of it
+polls.
 
 ### The sensors
 
@@ -223,6 +224,47 @@ calls `haventory/item/get`.
 Services work the other way round: every `haventory.*` service returns the entity it
 touched, so a script can chain calls through `response_variable` — see the same document's
 "Service responses".
+
+### The calendar
+
+`calendar.haventory` puts the dates already on your items onto a calendar dashboard, beside
+school holidays and bin collections:
+
+| Event | Where the date comes from |
+|---|---|
+| `Ladder due back` | the `due_date` on a checked-out item |
+| `Extinguisher inspection` | the `inspection_date` on any item |
+
+Each is an all-day event on its date, described by the item's location path. The entity's
+own state is whatever happens next — `on` with the nearest event in its attributes, `off`
+when nothing is coming.
+
+Nothing is scheduled. The events are worked out whenever something reads the calendar, so
+editing a date changes the calendar immediately and no timer can drift out of step with the
+inventory. A date only exists as an event on its own day: yesterday's is gone from the
+calendar, and the **Overdue** sensor is what keeps counting it.
+
+Notifications are an ordinary calendar automation — the same one you would write for a
+birthday:
+
+```yaml
+automation:
+  - alias: Say what the inventory wants today
+    trigger:
+      platform: calendar
+      event: start
+      entity_id: calendar.haventory
+    action:
+      - service: notify.notify
+        data:
+          title: HAventory
+          message: >-
+            {{ trigger.calendar_event.summary }}
+            ({{ trigger.calendar_event.description }})
+```
+
+Add `offset: "-48:0:0"` to the trigger to be told two days ahead instead — useful for a
+return date somebody has to act on before it arrives.
 
 ### Shopping list
 
@@ -966,9 +1008,8 @@ through [private reporting](SECURITY.md), never a public issue.
 
 - Domain/package: `haventory` under `custom_components/haventory`; services `haventory.*`;
   built assets `custom_components/haventory/www/`, served at `/haventory_static/`;
-  calendar entity `calendar.haventory` — a reserved name for the calendar work
-  ([#187](https://github.com/chrreiter/HAventory/issues/187)), staged after the first
-  public release, not an entity that exists today.
+  calendar entity `calendar.haventory`, whose `unique_id` is the constant
+  `haventory_calendar`.
 - Logging: avoid reserved `LogRecord` keys in logger extras — use `item_name` /
   `location_name`, not `name`.
 
