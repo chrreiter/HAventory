@@ -1,4 +1,4 @@
-"""Offline tests for the WP4 error-mapping guarantees of the WS API.
+"""Offline tests for the error-mapping guarantees of the WS API.
 
 Scenarios:
 - every registered haventory/* command is wrapped by ws_guard
@@ -64,7 +64,10 @@ async def test_unexpected_exception_maps_to_unknown_error_without_leaking(monkey
     def _boom(*_args: Any, **_kwargs: Any) -> dict:
         raise RuntimeError("SECRET-INTERNAL-DETAIL")
 
-    monkeypatch.setattr(ws_module, "_serialize_item", _boom)
+    # Patch the name in `ws`, not in `serialization`: `ws` binds the serializer into
+    # its own namespace at import, so replacing it at the source module would leave
+    # every call site here pointing at the original function.
+    monkeypatch.setattr(ws_module, "serialize_item", _boom)
     conn = RecordingConn()
     res = await ws_send(hass, 5, "haventory/item/create", conn=conn, name="Widget")
 

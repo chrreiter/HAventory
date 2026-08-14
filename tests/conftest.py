@@ -139,8 +139,21 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def __init__(self, data=None) -> None:
             self.data = types.MappingProxyType(dict(data or {}))
 
+    class SupportsResponse(StrEnum):  # type: ignore[override]
+        """Stand in for HA's service-response classification.
+
+        ``services.py`` imports it at module scope and hands it to
+        ``async_register``, which the offline stub does not have — the member
+        identities are all the offline suite can see.
+        """
+
+        NONE = "none"
+        OPTIONAL = "optional"
+        ONLY = "only"
+
     ha_core.HomeAssistant = HomeAssistant
     ha_core.ServiceCall = ServiceCall
+    ha_core.SupportsResponse = SupportsResponse
     sys.modules["homeassistant.core"] = ha_core
 
     # homeassistant.exceptions

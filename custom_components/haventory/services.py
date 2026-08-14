@@ -13,10 +13,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Coroutine
-from typing import Any
+from typing import Any, NoReturn
 
 import voluptuous as vol
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 
 from .const import DOMAIN
 from .exceptions import (
@@ -30,6 +30,7 @@ from .exceptions import (
     log_severity,
 )
 from .repository import UNSET, Repository
+from .serialization import serialize_item, serialize_location
 from .storage import async_persist_repo as _storage_async_persist_repo
 
 LOGGER = logging.getLogger(__name__)
@@ -163,8 +164,12 @@ def _log_domain_error(op: str, context: dict[str, Any], exc: Exception) -> None:
     )
 
 
-def _raise_service_error(op: str, context: dict[str, Any], exc: Exception) -> None:
-    """Log and surface service errors so Home Assistant can report them."""
+def _raise_service_error(op: str, context: dict[str, Any], exc: Exception) -> NoReturn:
+    """Log and surface service errors so Home Assistant can report them.
+
+    Annotated ``NoReturn`` so a handler's ``except`` branch is not a path that
+    falls through to an implicit ``None`` response.
+    """
 
     _log_domain_error(op, context, exc)
     raise exc
@@ -184,18 +189,19 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
 # -----------------------------
 
 
-async def service_item_create(hass: HomeAssistant, data: dict) -> None:
+async def service_item_create(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     op = "item_create"
     try:
         payload = SCHEMA_ITEM_CREATE(data)
         repo = _get_repo(hass)
-        repo.create_item(payload)  # type: ignore[arg-type]
+        item = repo.create_item(payload)  # type: ignore[arg-type]
         await async_persist_repo(hass)
+        return {"item": serialize_item(hass, item)}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"item_name": data.get("name")}, exc)
 
 
-async def service_item_update(hass: HomeAssistant, data: dict) -> None:
+async def service_item_update(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     op = "item_update"
     item_id = data.get("item_id")
     try:
@@ -203,26 +209,32 @@ async def service_item_update(hass: HomeAssistant, data: dict) -> None:
         expected = payload.get("expected_version")
         update = {k: v for k, v in payload.items() if k not in {"item_id", "expected_version"}}
         repo = _get_repo(hass)
-        repo.update_item(payload["item_id"], update, expected_version=expected)  # type: ignore[arg-type]
+        item = repo.update_item(payload["item_id"], update, expected_version=expected)  # type: ignore[arg-type]
         await async_persist_repo(hass)
+        return {"item": serialize_item(hass, item)}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"item_id": item_id}, exc)
 
 
-async def service_item_delete(hass: HomeAssistant, data: dict) -> None:
+async def service_item_delete(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     op = "item_delete"
     item_id = data.get("item_id")
     try:
         payload = SCHEMA_ITEM_DELETE(data)
         expected = payload.get("expected_version")
         repo = _get_repo(hass)
+        # Read the body before removing it: the delete returns nothing, and after it
+        # the item is unreachable. An unknown id raises NotFoundError here exactly as
+        # the delete would, so the pre-read adds no error surface.
+        removed = serialize_item(hass, repo.get_item(payload["item_id"]))
         repo.delete_item(payload["item_id"], expected_version=expected)
         await async_persist_repo(hass)
+        return {"item": removed}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"item_id": item_id}, exc)
 
 
-async def service_item_move(hass: HomeAssistant, data: dict) -> None:
+async def service_item_move(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     op = "item_move"
     item_id = data.get("item_id")
     try:
@@ -230,88 +242,94 @@ async def service_item_move(hass: HomeAssistant, data: dict) -> None:
         update = {"location_id": payload.get("new_location_id")}
         expected = payload.get("expected_version")
         repo = _get_repo(hass)
-        repo.update_item(payload["item_id"], update, expected_version=expected)  # type: ignore[arg-type]
+        item = repo.update_item(payload["item_id"], update, expected_version=expected)  # type: ignore[arg-type]
         await async_persist_repo(hass)
+        return {"item": serialize_item(hass, item)}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(
             op, {"item_id": item_id, "new_location_id": data.get("new_location_id")}, exc
         )
 
 
-async def service_item_adjust_quantity(hass: HomeAssistant, data: dict) -> None:
+async def service_item_adjust_quantity(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     op = "item_adjust_quantity"
     item_id = data.get("item_id")
     try:
         payload = SCHEMA_ITEM_ADJUST_QTY(data)
         repo = _get_repo(hass)
-        repo.adjust_quantity(
+        item = repo.adjust_quantity(
             payload["item_id"], payload["delta"], expected_version=payload.get("expected_version")
         )
         await async_persist_repo(hass)
+        return {"item": serialize_item(hass, item)}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"item_id": item_id, "delta": data.get("delta")}, exc)
 
 
-async def service_item_set_quantity(hass: HomeAssistant, data: dict) -> None:
+async def service_item_set_quantity(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     op = "item_set_quantity"
     item_id = data.get("item_id")
     try:
         payload = SCHEMA_ITEM_SET_QTY(data)
         repo = _get_repo(hass)
-        repo.set_quantity(
+        item = repo.set_quantity(
             payload["item_id"],
             payload["quantity"],
             expected_version=payload.get("expected_version"),
         )
         await async_persist_repo(hass)
+        return {"item": serialize_item(hass, item)}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"item_id": item_id, "quantity": data.get("quantity")}, exc)
 
 
-async def service_item_check_out(hass: HomeAssistant, data: dict) -> None:
+async def service_item_check_out(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     op = "item_check_out"
     item_id = data.get("item_id")
     try:
         payload = SCHEMA_ITEM_CHECK_OUT(data)
         repo = _get_repo(hass)
-        repo.check_out(
+        item = repo.check_out(
             payload["item_id"],
             due_date=payload["due_date"],
             expected_version=payload.get("expected_version"),
         )
         await async_persist_repo(hass)
+        return {"item": serialize_item(hass, item)}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"item_id": item_id, "due_date": data.get("due_date")}, exc)
 
 
-async def service_item_check_in(hass: HomeAssistant, data: dict) -> None:
+async def service_item_check_in(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     op = "item_check_in"
     item_id = data.get("item_id")
     try:
         payload = SCHEMA_ITEM_CHECK_IN(data)
         repo = _get_repo(hass)
-        repo.check_in(payload["item_id"], expected_version=payload.get("expected_version"))
+        item = repo.check_in(payload["item_id"], expected_version=payload.get("expected_version"))
         await async_persist_repo(hass)
+        return {"item": serialize_item(hass, item)}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"item_id": item_id}, exc)
 
 
-async def service_location_create(hass: HomeAssistant, data: dict) -> None:
+async def service_location_create(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     op = "location_create"
     try:
         payload = SCHEMA_LOCATION_CREATE(data)
         repo = _get_repo(hass)
-        repo.create_location(
+        loc = repo.create_location(
             name=payload["name"],
             parent_id=payload.get("parent_id"),
             area_id=payload.get("area_id"),
         )
         await async_persist_repo(hass)
+        return {"location": serialize_location(loc)}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"location_name": data.get("name")}, exc)
 
 
-async def service_location_update(hass: HomeAssistant, data: dict) -> None:
+async def service_location_update(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     op = "location_update"
     location_id = data.get("location_id")
     try:
@@ -319,25 +337,28 @@ async def service_location_update(hass: HomeAssistant, data: dict) -> None:
         new_parent = payload["new_parent_id"] if "new_parent_id" in payload else UNSET
         area_id = payload["area_id"] if "area_id" in payload else UNSET
         repo = _get_repo(hass)
-        repo.update_location(
+        loc = repo.update_location(
             payload["location_id"],
             name=payload.get("name"),
             new_parent_id=new_parent,
             area_id=area_id,
         )
         await async_persist_repo(hass)
+        return {"location": serialize_location(loc)}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"location_id": location_id}, exc)
 
 
-async def service_location_delete(hass: HomeAssistant, data: dict) -> None:
+async def service_location_delete(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     op = "location_delete"
     location_id = data.get("location_id")
     try:
         payload = SCHEMA_LOCATION_DELETE(data)
         repo = _get_repo(hass)
+        removed = serialize_location(repo.get_location(payload["location_id"]))
         repo.delete_location(payload["location_id"])
         await async_persist_repo(hass)
+        return {"location": removed}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"location_id": location_id}, exc)
 
@@ -346,7 +367,7 @@ async def service_location_delete(hass: HomeAssistant, data: dict) -> None:
 # Registration
 # -----------------------------
 
-ServiceHandler = Callable[[HomeAssistant, dict[str, Any]], Coroutine[Any, Any, None]]
+ServiceHandler = Callable[[HomeAssistant, dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
 
 # Service name -> (handler, voluptuous schema). Home Assistant validates the call
 # against the schema before invoking the handler; the handler re-validates because
@@ -368,7 +389,7 @@ SERVICES: tuple[tuple[str, ServiceHandler, vol.Schema], ...] = (
 
 def _bind(
     hass: HomeAssistant, handler: ServiceHandler
-) -> Callable[[ServiceCall], Coroutine[Any, Any, None]]:
+) -> Callable[[ServiceCall], Coroutine[Any, Any, dict[str, Any]]]:
     """Adapt a ``(hass, data)`` handler to the ``ServiceCall`` signature HA invokes.
 
     The returned callable **must be a coroutine function**. Home Assistant classifies
@@ -376,11 +397,12 @@ def _bind(
     function nor a ``@callback`` is dispatched via ``async_add_executor_job``. A
     plain ``lambda call: handler(hass, ...)`` therefore runs on a worker thread,
     where it only *constructs* the coroutine — which HA then returns as the service
-    response and never awaits, so the mutation silently never happens.
+    response and never awaits, so the mutation silently never happens, and the
+    caller's ``response_variable`` is handed the coroutine object.
     """
 
-    async def _handle(call: ServiceCall) -> None:
-        await handler(hass, dict(call.data))
+    async def _handle(call: ServiceCall) -> dict[str, Any]:
+        return await handler(hass, dict(call.data))
 
     return _handle
 
@@ -398,7 +420,15 @@ def setup(hass: HomeAssistant) -> None:
         bucket["services_registered"] = True
         return
 
+    # OPTIONAL, not ONLY: every one of these is a mutation first and an answer
+    # second, so a caller that omits `response_variable` must keep working.
     for name, handler, schema in SERVICES:
-        hass.services.async_register(DOMAIN, name, _bind(hass, handler), schema)
+        hass.services.async_register(
+            DOMAIN,
+            name,
+            _bind(hass, handler),
+            schema,
+            supports_response=SupportsResponse.OPTIONAL,
+        )
 
     bucket["services_registered"] = True

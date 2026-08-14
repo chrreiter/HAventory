@@ -21,7 +21,7 @@ from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import ConflictError, NotFoundError, StorageError
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, SupportsResponse
 
 
 @pytest.mark.asyncio
@@ -137,9 +137,13 @@ async def test_service_registration_and_schema_errors(monkeypatch, caplog) -> No
     class _Services:
         def __init__(self) -> None:
             self._registered: list[tuple[str, str, object, object]] = []
+            self._responses: dict[str, object] = {}
 
-        def async_register(self, domain, name, handler, schema=None):  # type: ignore[no-untyped-def]
+        def async_register(  # type: ignore[no-untyped-def]
+            self, domain, name, handler, schema=None, *, supports_response=SupportsResponse.NONE
+        ):
             self._registered.append((domain, name, handler, schema))
+            self._responses[name] = supports_response
 
     hass.services = _Services()  # type: ignore[attr-defined]
 
@@ -163,6 +167,11 @@ async def test_service_registration_and_schema_errors(monkeypatch, caplog) -> No
         "location_update",
         "location_delete",
     }.issubset(names)
+
+    # OPTIONAL on every service: a caller passing `response_variable` gets the
+    # entity back, and one that omits it is unaffected. ONLY would break every
+    # existing automation that calls these without asking for a response.
+    assert set(hass.services._responses.values()) == {SupportsResponse.OPTIONAL}
 
     # Home Assistant classifies each handler with HassJob and dispatches anything
     # that is neither a coroutine function nor a @callback to the executor, where
@@ -262,3 +271,123 @@ def test_service_catalog_agrees_across_registration_yaml_and_strings() -> None:
     assert documented == registered, "services.yaml and the SERVICES table disagree"
     assert set(translated) == registered, "strings.json and the SERVICES table disagree"
     assert all(entry.keys() == {"name", "description"} for entry in translated.values())
+
+
+# -----------------------------
+# Service responses
+# -----------------------------
+
+
+async def _seeded(hass: HomeAssistant) -> tuple[Repository, str, str]:
+    """A repository holding one location and one item inside it."""
+
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    loc = await services_mod.service_location_create(hass, {"name": "Shelf"})
+    item = await services_mod.service_item_create(
+        hass, {"name": "Widget", "quantity": 5, "location_id": loc["location"]["id"]}
+    )
+    return hass.data[DOMAIN]["repository"], item["item"]["id"], loc["location"]["id"]
+
+
+@pytest.mark.asyncio
+async def test_every_service_answers_with_the_canonical_envelope() -> None:
+    """All eleven services hand back the entity they touched.
+
+    The keys are the ones `docs/data_shapes.md` specifies for the WebSocket
+    surface, so a script's `response_variable` and a card's WS result are the
+    same dict. Returning the whole entity rather than a bare id is what makes
+    chaining work: the next call needs `version` for its `expected_version`.
+    """
+
+    hass = HomeAssistant()
+    repo, item_id, loc_id = await _seeded(hass)
+
+    item_calls = [
+        (services_mod.service_item_update, {"item_id": item_id, "name": "Widget Pro"}),
+        (services_mod.service_item_move, {"item_id": item_id, "new_location_id": None}),
+        (services_mod.service_item_adjust_quantity, {"item_id": item_id, "delta": -1}),
+        (services_mod.service_item_set_quantity, {"item_id": item_id, "quantity": 7}),
+        (services_mod.service_item_check_out, {"item_id": item_id, "due_date": "2030-01-01"}),
+        (services_mod.service_item_check_in, {"item_id": item_id}),
+    ]
+    for handler, payload in item_calls:
+        response = await handler(hass, payload)
+        assert set(response) == {"item"}, handler.__name__
+        assert response["item"]["id"] == item_id, handler.__name__
+        assert response["item"]["version"] == repo.get_item(item_id).version, handler.__name__
+
+    updated_location = await services_mod.service_location_update(
+        hass, {"location_id": loc_id, "name": "Top shelf"}
+    )
+    assert set(updated_location) == {"location"}
+    assert updated_location["location"]["name"] == "Top shelf"
+
+    # The two deletes answer with the body they removed, read before the delete.
+    removed_item = await services_mod.service_item_delete(hass, {"item_id": item_id})
+    assert removed_item["item"]["id"] == item_id
+    removed_location = await services_mod.service_location_delete(hass, {"location_id": loc_id})
+    assert removed_location["location"]["id"] == loc_id
+    assert repo.get_counts()["items_total"] == 0
+    assert repo.get_counts()["locations_total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_item_create_response_survives_json_serialization() -> None:
+    """Home Assistant puts the response on the wire; an unserializable one fails there.
+
+    Called directly, a response carrying a `uuid.UUID` or a `date` looks fine —
+    the failure only surfaces once HA hands it to a websocket or REST caller.
+    """
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+
+    response = await services_mod.service_item_create(
+        hass,
+        {
+            "name": "Widget",
+            "quantity": 2,
+            "tags": ["blue"],
+            "checked_out": True,
+            "due_date": "2030-01-01",
+            "inspection_date": "2031-06-30",
+            "custom_fields": {"sku": "A-1", "count": 3, "fragile": True},
+        },
+    )
+
+    assert json.loads(json.dumps(response)) == response
+
+
+@pytest.mark.asyncio
+async def test_delete_answers_once_and_then_raises_not_found() -> None:
+    """A second delete of the same id is an error, not an empty envelope."""
+
+    hass = HomeAssistant()
+    _repo, item_id, _loc_id = await _seeded(hass)
+
+    first = await services_mod.service_item_delete(hass, {"item_id": item_id})
+    assert first["item"]["id"] == item_id
+    with pytest.raises(NotFoundError):
+        await services_mod.service_item_delete(hass, {"item_id": item_id})
+
+
+@pytest.mark.asyncio
+async def test_a_failed_persist_answers_nothing(monkeypatch) -> None:
+    """The response is produced after the write; a failed write raises instead.
+
+    Answering with an entity the store never accepted would tell the caller a
+    mutation is durable when it is not.
+    """
+
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+
+    async def _persist(_hass):  # type: ignore[no-untyped-def]
+        raise StorageError("persist failed")
+
+    monkeypatch.setattr(services_mod, "async_persist_repo", _persist)
+    with pytest.raises(StorageError):
+        await services_mod.service_item_create(hass, {"name": "Widget"})
