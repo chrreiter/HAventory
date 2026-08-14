@@ -2,9 +2,10 @@
 
 Status: **planned**. Companion to [`V0_6_0_concept.md`](V0_6_0_concept.md), which carries
 the user stories, the verified gaps and the reasons for the work order; this file assigns
-the six milestone issues to sessions, states the rules each session runs under, and ends
-with the paste-ready prompt each session is started from (§6). The issues' own
-implementation notes are the design — neither file restates them.
+the milestone's six open feature issues to sessions, states the rules each session runs
+under, and ends with the paste-ready prompt each session is started from (§6). The six
+already-closed 0.5.0-review fixes the milestone also carries need no session. The issues'
+own implementation notes are the design — neither file restates them.
 
 Five **local** sessions, strictly serial, seven PRs. Local means the session runs on the
 owner's machine with the dev Docker Home Assistant available: the `run-haventory` and
@@ -60,9 +61,9 @@ S5   #229               schema collapse to v1 — owner merges           1 PR
 ```
 
 A session starts only when the one before it has merged everything (for S5: when S4's PR
-is on `main`). S1 starts only when the V0.5.0 milestone is closed and release 0.5.0 is
-tagged — at the time of writing PRs #412, #422, #423 and #424 are still open, and they
-are V0.5.0's business, not this plan's.
+is on `main`). S1's start condition — the V0.5.0 milestone closed and release 0.5.0
+tagged — is **satisfied as of 2026-08-14**: 0.5.0 is tagged, the post-release fix PRs
+(#444, #446) are merged, and S1 can start as soon as this plan is on `main`.
 
 Serial is the default on purpose: the sessions share one machine, one checkout and one
 dev HA instance, and the milestone's file-contention hot spots (`__init__.py`,
@@ -80,7 +81,7 @@ live checks queue anyway.
 - **#218 before S2 and S3.** It creates the HAventory device, the `unique_id`
   convention, the HA-bus events, and the offline `bus` stub. #232 consumes the event as
   its reconcile trigger; #187's entity joins the device and re-renders on the same event.
-- **S3 before S5.** #187 slice B is the milestone's only schema bump (v6 → v7) and the
+- **S3 before S5.** #187 slice B is the milestone's only schema bump (v7 → v8) and the
   last planned change to the stored shape; #229 collapses only after the shape has
   stopped moving. If slice B slips out of the milestone, S5 moves to V0.7.0 with it
   rather than the release moving — #236's standing rule.
@@ -231,10 +232,10 @@ Two PRs, in order:
    bullet's "not an entity that exists today" and the pillar's "do not start before the
    automation milestone" are both true only until this merges.
 2. **"feat(reminders): recurring reminders on items"** — closes #187 (slice B).
-   `reminder_date` / `reminder_interval` on `Item`, `CURRENT_SCHEMA_VERSION` 6 → 7 with
-   an idempotent `migrate_6_to_7` (the notes say 5 → 6; the tree moved — same migration,
-   one number later), the `haventory/reminder/*` WS commands, occurrence expansion on
-   read in the calendar, and both docs files.
+   `reminder_date` / `reminder_interval` on `Item`, `CURRENT_SCHEMA_VERSION` 7 → 8 with
+   an idempotent `migrate_7_to_8` (the notes say 5 → 6; the tree has moved twice since —
+   same migration, a later number), the `haventory/reminder/*` WS commands, occurrence
+   expansion on read in the calendar, and both docs files.
 
 **The plan decides the open card question:** the reminder fields ship in the item
 editor in the slice-B PR — the issue is labelled `area:card`, and a reminder nobody can
@@ -246,7 +247,7 @@ Live checks: `calendar.haventory` exists with the constant `unique_id` and rende
 projected events on a calendar dashboard; checking an item out with a due date moves the
 entity's state; the notify automation fires; after slice B, a reminder with a 3-month
 interval shows its next occurrences in the calendar view, and the production-shaped dev
-store upgrades v6 → v7 losslessly on restart.
+store upgrades v7 → v8 losslessly on restart.
 
 ### 5.4 S4 — #225: diagnostics, the health move, repairs
 
@@ -279,7 +280,7 @@ This PR also deletes `dev/schema_collapse_plan.md` (superseded by the issue),
 
 **This session does not merge.** End state: PR open, both gates + phacc + CI green, the
 evidence and release-note text in the body, a comment summarizing what the adopter
-accepts (v1–v7) and what it refuses. The owner's merge is the go; the post-release
+accepts (v1–v8) and what it refuses. The owner's merge is the go; the post-release
 production-store verification and its watch window are the owner's, per the issue.
 
 ## 6. The prompts
@@ -288,7 +289,7 @@ One prompt per session, paste-ready. Each assumes this plan is merged to `main` 
 restates its own start condition; the owner starts a session by pasting its block,
 nothing more.
 
-### 6.1 S1 — start when V0.5.0 is closed and 0.5.0 is tagged
+### 6.1 S1 — start when V0.5.0 is closed and 0.5.0 is tagged (satisfied 2026-08-14)
 
 ```
 Work in the HAventory repo, branching off the current origin/main. You are session S1 of
@@ -343,7 +344,7 @@ the V0.6.0 plan; start only when S2's PR (#232) is merged. Read
 dev/V0_6_0_implementation.md §4 (rules) and §5.3 (your session), skim
 dev/V0_6_0_concept.md §3 stories S5–S6, then issue #187 — its implementation notes are
 the design, split as slice A / slice B. Decide drifted details against the code (the
-schema bump is 6 → 7, not the notes' 5 → 6) and record decisions in the PR body; do not
+schema bump is 7 → 8, not the notes' 5 → 6) and record decisions in the PR body; do not
 edit the issue.
 
 Deliver two PRs, in this order:
@@ -356,7 +357,7 @@ Deliver two PRs, in this order:
 
 For each PR: both gates and scripts/test_integration.sh before every merge, then the
 live checks in §5.3 (run-haventory skill), evidence in the PR body — including the
-dev store's v6 → v7 upgrade for slice B. Squash-merge each PR yourself once gates,
+dev store's v7 → v8 upgrade for slice B. Squash-merge each PR yourself once gates,
 phacc, CI and live checks are green; delete the branch. Branch names
 claude/v0-6-0-s3-<topic>. Never touch a release-please PR. Then report.
 ```
@@ -392,7 +393,7 @@ then issue #229 top to bottom — its body is the protocol, and where
 dev/schema_collapse_plan.md disagrees with it, the issue wins.
 
 Deliver one PR: "feat(storage): collapse the schema to v1" — closes #229. Follow the
-issue's delivery list: offline TDD across the dev range v1–v7, the sunset adopter
+issue's delivery list: offline TDD across the dev range v1–v8, the sunset adopter
 (idempotent, a closed set, refusing above-range with the store untouched), release-test
 scenarios D7/D8/E3/E4 re-run against v1, and the release-notes text in the PR body. This
 PR also deletes dev/schema_collapse_plan.md, dev/V0_6_0_concept.md and
@@ -411,8 +412,9 @@ The owner's merge is the explicit go #229 requires. Report and stop.
 
 V0.6.0 closes when:
 
-- All six issues are closed — implemented, or closed as not-planned with the reason in
-  the issue.
+- All six feature issues are closed — implemented, or closed as not-planned with the
+  reason in the issue. (The milestone's six 0.5.0-review fixes were closed before the
+  sessions began.)
 - A clean install starts at schema v1; the owner's store crossed via the sunset adopter;
   the adopter's deletion is filed for V0.7.0 (it ships one milestone after the collapse,
   per #229).

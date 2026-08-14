@@ -1,25 +1,26 @@
 # V0.6.0 — user-interaction concept and implementation gaps
 
-Status: **planned**. Covers every issue in
+Status: **planned**. Covers the six open feature issues in
 [milestone V0.6.0](https://github.com/chrreiter/HAventory/milestones) —
 [#218](https://github.com/chrreiter/HAventory/issues/218),
 [#219](https://github.com/chrreiter/HAventory/issues/219),
 [#225](https://github.com/chrreiter/HAventory/issues/225),
 [#232](https://github.com/chrreiter/HAventory/issues/232),
 [#187](https://github.com/chrreiter/HAventory/issues/187),
-[#229](https://github.com/chrreiter/HAventory/issues/229) — and nothing else.
-Baseline is `main` at `3efdad6` (release 0.4.3), with the 0.5.0 release PR
-([#412](https://github.com/chrreiter/HAventory/pull/412)) and the last three V0.5.0
-feature PRs ([#422](https://github.com/chrreiter/HAventory/pull/422),
-[#423](https://github.com/chrreiter/HAventory/pull/423),
-[#424](https://github.com/chrreiter/HAventory/pull/424)) open. V0.6.0 work starts once
-those merge and 0.5.0 is tagged.
+[#229](https://github.com/chrreiter/HAventory/issues/229). The milestone also carries
+six already-closed 0.5.0-review bug fixes (#431, #435, #437, #438, #439, #440) that
+went straight to `main` ahead of this plan — release-please folds them into the 0.6.0
+changelog, and no session touches them. Baseline is `main` at `1787922`: release 0.5.0
+is tagged, V0.5.0 is closed, and the post-release fix PRs
+([#444](https://github.com/chrreiter/HAventory/pull/444),
+[#446](https://github.com/chrreiter/HAventory/pull/446)) are merged. The feature work
+can start as soon as this plan is on `main`.
 
 Five of the six issues carry implementation notes written into the issue on 2026-08-05
 (#218, #219, #232, #187, #225), and #229's body was rewritten by the owner on 2026-08-11.
 **Those notes are the design; this document does not restate them.** What it adds is the
 user's side of the milestone — what somebody living with HAventory can do after V0.6.0
-that they cannot do today — and a check, against the tree as of 2026-08-12, of what each
+that they cannot do today — and a check, against the tree as of 2026-08-14, of what each
 story still needs built. Where this document and an issue disagree, the issue wins.
 
 Delete this file in the PR that closes the last V0.6.0 issue — a plan left behind reads
@@ -71,8 +72,8 @@ The order comes from the dependencies the issues themselves record; §5 spells i
 ## 3. User stories, and what each still needs
 
 Each story below gives the interaction as the user experiences it, then the gap between
-that and the tree today. Every "today" claim was verified against `main` at `3efdad6` on
-2026-08-12.
+that and the tree today. Every "today" claim was verified against `main` at `1787922` on
+2026-08-14.
 
 ### S1 — Inventory health at a glance (#218, sensors)
 
@@ -91,7 +92,7 @@ Gap today:
 - **No entity platform exists.** The package has no `sensor.py`, `__init__.py` forwards
   no platforms, and nothing in the integration creates a device.
 - The four values are already computed: `get_counts()` (`repository.py`, currently around
-  line 1640) returns them all. Since the notes were written it has also grown a
+  line 1655) returns them all. Since the notes were written it has also grown a
   `status_counts` map (custom statuses shipped in 0.4.x) — the four promoted keys are
   unaffected, but "the other five stay WS-only" in the notes is now six.
 - The low-stock id set is reachable only through `_debug_get_internal_indexes()`; the
@@ -120,11 +121,11 @@ Gap today:
 
 - **The integration never touches the event bus**: no `hass.bus.async_fire` anywhere
   under `custom_components/haventory/`. Broadcasts are WebSocket-only
-  (`_broadcast_counts`, `ws.py:783`, called from the WS handlers only —
+  (`_broadcast_counts`, `ws.py:803`, called from the WS handlers only —
   `services.py` emits nothing).
 - The planned `events.py` (mutation notification + low-stock set diff + snapshot
   seed/clear) does not exist.
-- The README limitation sits at `README.md:161` today (the notes say 154 — anchor drift
+- The README limitation sits at `README.md:166` today (the notes say 154 — anchor drift
   only).
 
 ### S3 — A shopping list that fills itself (#232)
@@ -212,9 +213,9 @@ RRULE explicitly later.
 Gap today:
 
 - New stored state: `Item` gains `reminder_date` / `reminder_interval`,
-  `CURRENT_SCHEMA_VERSION` goes 6 → 7 with an idempotent `migrate_6_to_7` defaulting both
-  to null. (The notes say 5 → 6; the tree is at 6 today — 0.4.x moved it. Same migration,
-  one number later.)
+  `CURRENT_SCHEMA_VERSION` goes 7 → 8 with an idempotent `migrate_7_to_8` defaulting both
+  to null. (The notes say 5 → 6; the tree is at 7 today — 0.4.x moved it once, and
+  0.5.0's status-colour fix (#443) again. Same migration, a later number.)
 - New WS commands under the reserved `haventory/reminder/*` namespace, which exists
   nowhere in `ws.py` or `docs/backend_api_contract.md` yet; both docs files and
   `docs/data_shapes.md` change with it.
@@ -262,8 +263,8 @@ issue body (offline TDD across the dev range, D7/D8/E3/E4 re-run, release notes,
 **owner's explicit go before merge**, post-release store verification). Two things the
 tree adds to the issue's picture:
 
-- The "known dev range" the sunset adopter accepts is **v1–v6 plus whatever slice B
-  adds** (v7 on the current plan) — not the v6 ceiling the 2026-08-05 staging assumed.
+- The "known dev range" the sunset adopter accepts is **v1–v7 plus whatever slice B
+  adds** (v8 on the current plan) — not the v6 ceiling the 2026-08-05 staging assumed.
 - `dev/schema_collapse_plan.md` still describes the retired export → wipe → import
   crossing. The issue supersedes it; that file is deleted or replaced in the #229 PR.
 
@@ -271,7 +272,7 @@ tree adds to the issue's picture:
 
 ## 4. Gap summary
 
-Verified against `main` at `3efdad6`, 2026-08-12. Grep for the symbol, never the line —
+Verified against `main` at `1787922`, 2026-08-14. Grep for the symbol, never the line —
 several anchors in the 2026-08-05 notes have already moved.
 
 | Capability | Today | Gap | Issue |
@@ -281,10 +282,10 @@ several anchors in the 2026-08-05 notes have already moved.
 | Low-stock accessor | Internal set only | `Repository.low_stock_item_ids` frozenset | #218 |
 | Service responses | None registered; results discarded | `SupportsResponse.OPTIONAL` on all 11; `serialization.py` extraction | #219 |
 | To-do bridge | Nothing; options flow has one section | `todo_bridge.py`, `CONF_TODO_ENTITY_ID`, own `Store`, reconcile pass | #232 |
-| Calendar | Reserved name only | `calendar.py` slice A (projection), slice B (reminders, v6→v7, `haventory/reminder/*`) | #187 |
+| Calendar | Reserved name only | `calendar.py` slice A (projection), slice B (reminders, v7→v8, `haventory/reminder/*`) | #187 |
 | Diagnostics/repairs | Nothing; health checks private in `ws.py` | `diagnostics.py`, `health.py`, `repairs.py`, `issues` strings | #225 |
-| Schema | v6, migrations v1→v6 present | Collapse to v1 + sunset adopter, after slice B | #229 |
-| README | "No automation triggers" limitation (`README.md:161`) | Retired + worked automation / `response_variable` / calendar examples | #218/#219/#187 |
+| Schema | v7, migrations v1→v7 present | Collapse to v1 + sunset adopter, after slice B | #229 |
+| README | "No automation triggers" limitation (`README.md:166`) | Retired + worked automation / `response_variable` / calendar examples | #218/#219/#187 |
 | Offline test stubs | `Platform` stubbed; no `bus`/services/`config_entries` on the stub | `bus` recorder (#218), `SupportsResponse` (#219), `selector` (#232) | each |
 
 ## 5. Order of work
@@ -300,7 +301,7 @@ The dependency chain the issues record, condensed:
    #218's bus event, and their file sets are disjoint except for light touches on
    `__init__.py`, `const.py` and `strings.json` (merge-order conflicts only, no design
    coupling).
-4. **#187 slice B fourth** — the milestone's only schema bump (v7); after it the stored
+4. **#187 slice B fourth** — the milestone's only schema bump (v8); after it the stored
    shape is final.
 5. **#225 fifth** (any time after #218/#219 to avoid `ws.py`/`strings.json` churn;
    before the collapse so the repairs strings exist when the adopter could first fire).
@@ -330,9 +331,10 @@ issue.
 
 ## 7. Milestone exit
 
-- All six issues closed; the store at v1; `calendar.haventory` real and the CLAUDE.md
-  reservation language updated; README's automation limitation replaced by working
-  examples (the full user-first rewrite stays #217, V0.7.0).
+- All six feature issues closed (the milestone's six 0.5.0-review fixes were closed
+  before the sessions began); the store at v1; `calendar.haventory` real and the
+  CLAUDE.md reservation language updated; README's automation limitation replaced by
+  working examples (the full user-first rewrite stays #217, V0.7.0).
 - Release-test scenarios D7/D8/E3/E4 re-run against v1 (#229's protocol), and the
   owner's post-release store verification window observed.
 - release-please cuts 0.6.0; per #236, V0.7.0 (launch prep) opens with the brands PR
