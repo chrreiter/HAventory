@@ -1079,6 +1079,13 @@ describe('hv-item-editor: mobile layout', () => {
     );
     expect(q(el, '[data-testid="editor-more-toggle"]')?.textContent).toContain('description · dates · 1 custom');
   });
+
+  it('names a reminder in the summary rather than folding it into "dates"', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A', reminder_date: '2026-09-01' }), {
+      mobile: true,
+    });
+    expect(q(el, '[data-testid="editor-more-toggle"]')?.textContent).toContain('reminder');
+  });
 });
 
 describe('hv-item-editor: dirty tracking', () => {

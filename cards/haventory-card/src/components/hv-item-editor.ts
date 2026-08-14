@@ -2645,6 +2645,10 @@ export class HVItemEditor extends LitElement {
     const summary = [
       model.description ? 'description' : null,
       model.dueDate || model.inspectionDate ? 'dates' : null,
+      // Named separately from the dates: a reminder is the one thing in here a
+      // household set deliberately, and folding it into "dates" would hide it
+      // behind a word that is already true of half the items.
+      model.reminderDate ? 'reminder' : null,
       model.customFields.length ? `${model.customFields.length} custom` : null,
     ]
       .filter(Boolean)
