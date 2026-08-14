@@ -474,6 +474,30 @@ against the repository:
 - `area_id` reads the item's `effective_area_id`, so it selects the same area `ItemFilter.area_id` does. An item with no location carries `effective_area_id: null` and matches no area filter; a `null` or omitted `area_id` on the subscription means no area filter at all. `area_id` applies to the `items` topic only.
 - Filters combine with AND, and every one of them is applied to the payload as it stands *after* the mutation. An item that leaves a filtered set produces no event for that subscription, so a client tracking one re-lists rather than waiting for a departure event — including after a `locations` `moved` event, which is the only signal that a subtree's `effective_area_id` was rewritten.
 
+### Service responses
+
+Every `haventory.*` service declares `SupportsResponse.OPTIONAL` and answers with the same
+shapes as the WebSocket surface — no bespoke service shape exists:
+
+```yaml
+- action: haventory.item_create
+  data: { name: Torch }
+  response_variable: created
+- action: haventory.item_move
+  data:
+    item_id: "{{ created.item.id }}"
+    new_location_id: "{{ shed_id }}"
+    expected_version: "{{ created.item.version }}"
+```
+
+- The eight `item_*` services return `{"item": <Item>}`; the three `location_*` ones return
+  `{"location": <Location>}`.
+- `item_delete` and `location_delete` return the entity as it last stood, read before the
+  removal. Deleting an unknown id is `not_found`, not an empty envelope.
+- The response is produced **after** the durable write, so an answer means the mutation is
+  persisted — the same ordering the WebSocket contract states for events.
+- `OPTIONAL`, not `ONLY`: a caller that omits `response_variable` is unaffected.
+
 ### Validation notes
 
 - UUIDs must be version 4.

@@ -57,7 +57,6 @@ from .models import (
     iso_utc_now,
     new_uuid4,
     normalize_tags,
-    serialize_attachment_meta,
     serialize_status_definition,
     today_utc_date,
     validate_attachment_meta,
@@ -66,6 +65,7 @@ from .models import (
 )
 from .rate_limit import RateLimiter
 from .repository import UNSET, InternalIndexes, Repository
+from .serialization import serialize_item, serialize_location
 from .storage import CURRENT_SCHEMA_VERSION
 
 LOGGER = logging.getLogger(__name__)
@@ -315,7 +315,7 @@ def _op_item_update(hass: HomeAssistant, payload: dict[str, Any]) -> tuple[dict[
     exclude_keys = {"item_id", "expected_version"}
     update = cast("ItemUpdate", {k: v for k, v in payload.items() if k not in exclude_keys})
     updated = repo.update_item(item_id, update, expected_version=expected)
-    serialized = _serialize_item(hass, updated)
+    serialized = serialize_item(hass, updated)
     action = "moved" if "location_id" in update else "updated"
     return serialized, action
 
@@ -325,7 +325,7 @@ def _op_item_delete(hass: HomeAssistant, payload: dict[str, Any]) -> tuple[dict[
     item_id = _payload_item_id(payload)
     expected = payload.get("expected_version")
     before = repo.get_item(item_id)
-    serialized_before = _serialize_item(hass, before)
+    serialized_before = serialize_item(hass, before)
     repo.delete_item(item_id, expected_version=expected)
     return serialized_before, "deleted"
 
@@ -337,7 +337,7 @@ def _op_item_move(hass: HomeAssistant, payload: dict[str, Any]) -> tuple[dict[st
     updated = repo.update_item(
         item_id, ItemUpdate(location_id=payload.get("location_id")), expected_version=expected
     )
-    return _serialize_item(hass, updated), "moved"
+    return serialize_item(hass, updated), "moved"
 
 
 def _op_item_adjust_quantity(
@@ -348,7 +348,7 @@ def _op_item_adjust_quantity(
     updated = repo.adjust_quantity(
         item_id, _payload_int(payload, "delta"), expected_version=payload.get("expected_version")
     )
-    return _serialize_item(hass, updated), "quantity_changed"
+    return serialize_item(hass, updated), "quantity_changed"
 
 
 def _op_item_set_quantity(
@@ -358,7 +358,7 @@ def _op_item_set_quantity(
     item_id = _payload_item_id(payload)
     qty = _payload_int(payload, "quantity")
     updated = repo.set_quantity(item_id, qty, expected_version=payload.get("expected_version"))
-    return _serialize_item(hass, updated), "quantity_changed"
+    return serialize_item(hass, updated), "quantity_changed"
 
 
 def _op_item_check_out(hass: HomeAssistant, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
@@ -367,14 +367,14 @@ def _op_item_check_out(hass: HomeAssistant, payload: dict[str, Any]) -> tuple[di
     updated = repo.check_out(
         item_id, due_date=payload.get("due_date"), expected_version=payload.get("expected_version")
     )
-    return _serialize_item(hass, updated), "checked_out"
+    return serialize_item(hass, updated), "checked_out"
 
 
 def _op_item_check_in(hass: HomeAssistant, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
     repo = _repo(hass)
     item_id = _payload_item_id(payload)
     updated = repo.check_in(item_id, expected_version=payload.get("expected_version"))
-    return _serialize_item(hass, updated), "checked_in"
+    return serialize_item(hass, updated), "checked_in"
 
 
 def _op_item_add_tags(hass: HomeAssistant, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
@@ -385,7 +385,7 @@ def _op_item_add_tags(hass: HomeAssistant, payload: dict[str, Any]) -> tuple[dic
     current = repo.get_item(item_id)
     new_tags = list(dict.fromkeys(list(current.tags) + list(tags)))
     updated = repo.update_item(item_id, ItemUpdate(tags=new_tags), expected_version=expected)
-    return _serialize_item(hass, updated), "updated"
+    return serialize_item(hass, updated), "updated"
 
 
 def _op_item_remove_tags(
@@ -398,7 +398,7 @@ def _op_item_remove_tags(
     current = repo.get_item(item_id)
     new_tags = [t for t in list(current.tags) if t not in to_remove]
     updated = repo.update_item(item_id, ItemUpdate(tags=new_tags), expected_version=expected)
-    return _serialize_item(hass, updated), "updated"
+    return serialize_item(hass, updated), "updated"
 
 
 def _op_item_update_custom_fields(
@@ -419,7 +419,7 @@ def _op_item_update_custom_fields(
             raise ValidationError("unset must be a list")
         update["custom_fields_unset"] = list(unset_value)
     updated = repo.update_item(item_id, update, expected_version=expected)
-    return _serialize_item(hass, updated), "updated"
+    return serialize_item(hass, updated), "updated"
 
 
 def _op_item_set_low_stock_threshold(
@@ -433,7 +433,7 @@ def _op_item_set_low_stock_threshold(
         ItemUpdate(low_stock_threshold=payload.get("low_stock_threshold")),
         expected_version=expected,
     )
-    return _serialize_item(hass, updated), "updated"
+    return serialize_item(hass, updated), "updated"
 
 
 def _execute_item_op(
@@ -657,7 +657,7 @@ def _item_matches_filter(item: dict[str, Any], sub: _Subscription) -> bool:
     if sub.get("inspection_overdue_only") and not _payload_inspection_is_overdue(item):
         return False
     # Read the area off the payload rather than resolving it from the repository:
-    # the matcher runs once per subscription per event, and `_serialize_item` has
+    # the matcher runs once per subscription per event, and `serialize_item` has
     # already walked the location ancestry to compute the same value. An item with
     # no location carries `effective_area_id: None`, which matches no area filter.
     area_filter = sub.get("area_id")
@@ -1242,7 +1242,7 @@ async def ws_item_create(
 ) -> None:
     payload = {k: v for k, v in msg.items() if k not in {"id", "type"}}
     item = _repo(hass).create_item(payload)  # type: ignore[arg-type]
-    serialized = _serialize_item(hass, item)
+    serialized = serialize_item(hass, item)
     await _persist_repo(hass)
     _broadcast_event(hass, topic="items", action="created", payload={"item": serialized})
     _broadcast_counts(hass)
@@ -1258,7 +1258,7 @@ async def ws_item_get(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     item = _repo(hass).get_item(msg["item_id"])
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), _serialize_item(hass, item)))
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialize_item(hass, item)))
 
 
 @websocket_api.websocket_command(
@@ -1294,7 +1294,7 @@ async def ws_item_update(
         {k: v for k, v in msg.items() if k not in {"id", "type", "item_id", "expected_version"}},
     )
     updated = _repo(hass).update_item(item_id, update, expected_version=expected)
-    serialized = _serialize_item(hass, updated)
+    serialized = serialize_item(hass, updated)
     action = "moved" if "location_id" in update else "updated"
     await _persist_repo(hass)
     _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
@@ -1317,7 +1317,7 @@ async def ws_item_delete(
     item_id = msg["item_id"]
     repo = _repo(hass)
     before = repo.get_item(item_id)
-    serialized_before = _serialize_item(hass, before)
+    serialized_before = serialize_item(hass, before)
     repo.delete_item(item_id, expected_version=msg.get("expected_version"))
     await _persist_repo(hass)
     # After the save, for the same reason attachment/remove deletes last: an
@@ -1354,7 +1354,7 @@ async def ws_item_adjust_quantity(
     item = _repo(hass).adjust_quantity(
         msg["item_id"], _payload_int(msg, "delta"), expected_version=msg.get("expected_version")
     )
-    serialized = _serialize_item(hass, item)
+    serialized = serialize_item(hass, item)
     await _persist_repo(hass)
     _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
     _broadcast_counts(hass)
@@ -1384,7 +1384,7 @@ async def ws_item_set_quantity(
     item = _repo(hass).set_quantity(
         msg["item_id"], qty, expected_version=msg.get("expected_version")
     )
-    serialized = _serialize_item(hass, item)
+    serialized = serialize_item(hass, item)
     await _persist_repo(hass)
     _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
     _broadcast_counts(hass)
@@ -1409,7 +1409,7 @@ async def ws_item_check_out(
         due_date=msg.get("due_date"),
         expected_version=msg.get("expected_version"),
     )
-    serialized = _serialize_item(hass, item)
+    serialized = serialize_item(hass, item)
     await _persist_repo(hass)
     _broadcast_event(hass, topic="items", action="checked_out", payload={"item": serialized})
     _broadcast_counts(hass)
@@ -1429,7 +1429,7 @@ async def ws_item_check_in(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     item = _repo(hass).check_in(msg["item_id"], expected_version=msg.get("expected_version"))
-    serialized = _serialize_item(hass, item)
+    serialized = serialize_item(hass, item)
     await _persist_repo(hass)
     _broadcast_event(hass, topic="items", action="checked_in", payload={"item": serialized})
     _broadcast_counts(hass)
@@ -1638,7 +1638,7 @@ async def ws_item_attachment_add(
         max_per_kind=media_mod.max_per_item(kind),
         expected_version=expected,
     )
-    serialized = _serialize_item(hass, updated)
+    serialized = serialize_item(hass, updated)
     # A failed persist leaves the file on disk with no saved metadata; setup's
     # orphan sweep is what collects it, so there is nothing to undo here beyond
     # letting the error through the way every other mutation does.
@@ -1670,7 +1670,7 @@ async def ws_item_attachment_remove(
         str(msg["attachment_id"]),
         expected_version=msg.get("expected_version"),
     )
-    serialized = _serialize_item(hass, updated)
+    serialized = serialize_item(hass, updated)
     # Persist before unlinking: a failed save with the file still there leaves
     # an orphan the sweep collects, while the reverse order would leave stored
     # metadata pointing at bytes that are already gone.
@@ -1704,7 +1704,7 @@ async def ws_item_attachment_update(
         title=msg["title"],
         expected_version=msg.get("expected_version"),
     )
-    serialized = _serialize_item(hass, updated)
+    serialized = serialize_item(hass, updated)
     await _persist_repo(hass)
     _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
@@ -1737,7 +1737,7 @@ async def ws_item_attachment_reorder(
         list(msg["attachment_ids"]),
         expected_version=msg.get("expected_version"),
     )
-    serialized = _serialize_item(hass, updated)
+    serialized = serialize_item(hass, updated)
     await _persist_repo(hass)
     _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
@@ -1916,7 +1916,7 @@ async def ws_item_list(
         raise ValidationError("cursor must be a non-empty string")
     page = _repo(hass).list_items(flt=flt, sort=sort, limit=limit, cursor=cursor)
     result = {
-        "items": [_serialize_item(hass, it) for it in page["items"]],
+        "items": [serialize_item(hass, it) for it in page["items"]],
         "next_cursor": page.get("next_cursor"),
         "total": page["total"],
     }
@@ -1950,7 +1950,7 @@ async def ws_location_create(
     loc = _repo(hass).create_location(
         name=msg["name"], parent_id=msg.get("parent_id"), area_id=area_id
     )
-    serialized = _serialize_location(loc)
+    serialized = serialize_location(loc)
     await _persist_repo(hass)
     _broadcast_event(hass, topic="locations", action="created", payload={"location": serialized})
     _broadcast_counts(hass)
@@ -1966,7 +1966,7 @@ async def ws_location_get(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     loc = _repo(hass).get_location(msg["location_id"])
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), _serialize_location(loc)))
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialize_location(loc)))
 
 
 @websocket_api.websocket_command(
@@ -2002,7 +2002,7 @@ async def ws_location_update(
     loc = repo.update_location(
         msg["location_id"], name=msg.get("name"), new_parent_id=new_parent, area_id=area_id
     )
-    serialized = _serialize_location(loc)
+    serialized = serialize_location(loc)
     await _persist_repo(hass)
     # One event per call, decided by what changed rather than by which keys the
     # request carried: an editor that sends every field on every save would
@@ -2035,7 +2035,7 @@ async def ws_location_delete(
     loc_id = msg["location_id"]
     repo = _repo(hass)
     before = repo.get_location(loc_id)
-    serialized_before = _serialize_location(before)
+    serialized_before = serialize_location(before)
     repo.delete_location(loc_id)
     await _persist_repo(hass)
     _broadcast_event(
@@ -2057,7 +2057,7 @@ async def ws_location_list(
     repo = _repo(hass)
     # Return flat list
     data = [
-        _serialize_location(repo.get_location(loc_id))
+        serialize_location(repo.get_location(loc_id))
         for loc_id in repo._debug_get_internal_indexes()["locations_by_id"]
     ]
     conn.send_message(websocket_api.result_message(msg.get("id", 0), data))
@@ -2132,71 +2132,11 @@ async def ws_location_move_subtree(
 ) -> None:
     new_parent = msg.get("new_parent_id") if "new_parent_id" in msg else UNSET
     loc = _repo(hass).update_location(msg["location_id"], new_parent_id=new_parent)
-    serialized = _serialize_location(loc)
+    serialized = serialize_location(loc)
     await _persist_repo(hass)
     _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
-
-
-# -----------------------------
-# Serialization helpers
-# -----------------------------
-
-
-def _effective_area_id_for_item(hass: HomeAssistant, item: Item) -> str | None:
-    """Resolve the effective area id for an item via its location ancestry."""
-    try:
-        if getattr(item, "location_id", None) is None:
-            return None
-        repo = _repo(hass)
-        return repo.effective_area_id(str(item.location_id))
-    except Exception:
-        return None
-
-
-def _serialize_item(hass: HomeAssistant, item: Item) -> dict[str, Any]:
-    return {
-        "id": str(item.id),
-        "name": item.name,
-        "description": item.description,
-        "quantity": item.quantity,
-        "status": item.status,
-        "checked_out": item.checked_out,
-        "due_date": item.due_date,
-        "inspection_date": item.inspection_date,
-        "location_id": str(item.location_id) if item.location_id is not None else None,
-        "tags": list(item.tags),
-        "category": item.category,
-        "low_stock_threshold": item.low_stock_threshold,
-        "custom_fields": dict(item.custom_fields),
-        "created_at": item.created_at,
-        "updated_at": item.updated_at,
-        "version": item.version,
-        "effective_area_id": _effective_area_id_for_item(hass, item),
-        "location_path": {
-            "id_path": [str(x) for x in item.location_path.id_path],
-            "name_path": item.location_path.name_path,
-            "display_path": item.location_path.display_path,
-            "sort_key": item.location_path.sort_key,
-        },
-        "attachments": [serialize_attachment_meta(a) for a in item.attachments],
-    }
-
-
-def _serialize_location(loc: Location) -> dict[str, Any]:
-    return {
-        "id": str(loc.id),
-        "name": loc.name,
-        "parent_id": str(loc.parent_id) if loc.parent_id is not None else None,
-        "area_id": str(loc.area_id) if getattr(loc, "area_id", None) is not None else None,
-        "path": {
-            "id_path": [str(x) for x in loc.path.id_path],
-            "name_path": loc.path.name_path,
-            "display_path": loc.path.display_path,
-            "sort_key": loc.path.sort_key,
-        },
-    }
 
 
 @websocket_api.websocket_command({"type": "haventory/status/list"})

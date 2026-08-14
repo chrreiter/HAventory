@@ -186,3 +186,78 @@ async def test_service_call_rejects_a_bad_payload(hass: HomeAssistant) -> None:
         await _call(hass, "item_create", {"name": "   "})
 
     assert repo.get_counts()["items_total"] == 0
+
+
+async def test_services_answer_when_the_caller_asks_for_a_response(hass: HomeAssistant) -> None:
+    """``return_response`` hands back the entity, so a script can chain calls.
+
+    ``supports_response`` lives in the real service registry — the offline stub
+    has none, so nothing about this classification is observable there.
+    """
+
+    repo = await _setup(hass)
+
+    created = await hass.services.async_call(
+        DOMAIN, "item_create", {"name": "Torch"}, blocking=True, return_response=True
+    )
+    await hass.async_block_till_done()
+
+    assert set(created) == {"item"}
+    item_id = created["item"]["id"]
+    assert created["item"]["name"] == "Torch"
+    assert item_id == _only_item_id(repo)
+    assert created["item"]["version"] == repo.get_item(item_id).version
+
+    # The chain the issue asks for: the response's id and version drive the next call.
+    location = await hass.services.async_call(
+        DOMAIN, "location_create", {"name": "Shed"}, blocking=True, return_response=True
+    )
+    await hass.async_block_till_done()
+    moved = await hass.services.async_call(
+        DOMAIN,
+        "item_move",
+        {
+            "item_id": item_id,
+            "new_location_id": location["location"]["id"],
+            "expected_version": created["item"]["version"],
+        },
+        blocking=True,
+        return_response=True,
+    )
+    await hass.async_block_till_done()
+
+    assert moved["item"]["location_id"] == location["location"]["id"]
+    assert moved["item"]["location_path"]["display_path"] == "Shed"
+    assert moved["item"]["version"] == created["item"]["version"] + 1
+
+
+async def test_a_caller_that_ignores_the_response_still_mutates(hass: HomeAssistant) -> None:
+    """``OPTIONAL`` means the pre-existing call shape keeps working unchanged."""
+
+    repo = await _setup(hass)
+
+    # No `return_response`: HA returns None and the mutation still lands.
+    answer = await hass.services.async_call(DOMAIN, "item_create", {"name": "Torch"}, blocking=True)
+    await hass.async_block_till_done()
+    assert answer is None
+
+    assert repo.get_counts()["items_total"] == 1
+
+
+async def test_delete_answers_with_the_body_it_removed(hass: HomeAssistant) -> None:
+    """The response is the item as it last stood, and the repository is empty after."""
+
+    quantity = 3
+    repo = await _setup(hass)
+    await _call(hass, "item_create", {"name": "Torch", "quantity": quantity})
+    item_id = _only_item_id(repo)
+
+    removed = await hass.services.async_call(
+        DOMAIN, "item_delete", {"item_id": item_id}, blocking=True, return_response=True
+    )
+    await hass.async_block_till_done()
+
+    assert removed["item"]["id"] == item_id
+    assert removed["item"]["name"] == "Torch"
+    assert removed["item"]["quantity"] == quantity
+    assert repo.get_counts()["items_total"] == 0

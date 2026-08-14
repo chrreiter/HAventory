@@ -6,7 +6,13 @@ back to Any via __getattr__. See pyproject [tool.mypy] mypy_path.
 
 import asyncio
 from collections.abc import Coroutine, Mapping
+from enum import StrEnum
 from typing import Any
+
+class SupportsResponse(StrEnum):
+    NONE = "none"
+    OPTIONAL = "optional"
+    ONLY = "only"
 
 class HomeAssistant:
     data: dict[str, Any]

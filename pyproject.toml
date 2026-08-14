@@ -98,12 +98,13 @@ mypy_path = "custom_components:stubs"
 ignore_missing_imports = true
 warn_redundant_casts = true
 
-# WP4: the core modules are held to (per-module) strict mode. The rest of the
-# integration stays at the non-strict baseline; ratcheting them is a WP5 call.
+# The core modules are held to (per-module) strict mode; the rest of the
+# integration stays at the non-strict baseline.
 [[tool.mypy.overrides]]
 module = [
   "haventory.models",
   "haventory.repository",
+  "haventory.serialization",
   "haventory.storage",
   "haventory.ws",
 ]
