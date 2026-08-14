@@ -86,6 +86,11 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     # homeassistant.const
     ha_const = types.ModuleType("homeassistant.const")
     ha_const.Platform = types.SimpleNamespace(SENSOR="sensor", CALENDAR="calendar")
+    # Verbatim from HA: the to-do bridge compares an entity's state against these
+    # two, and defers its first pass until Home Assistant says it has started.
+    ha_const.EVENT_HOMEASSISTANT_STARTED = "homeassistant_started"
+    ha_const.STATE_UNAVAILABLE = "unavailable"
+    ha_const.STATE_UNKNOWN = "unknown"
     sys.modules["homeassistant.const"] = ha_const
 
     # homeassistant.core
@@ -112,15 +117,17 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             return os.path.join(self.config_dir, *parts)
 
     class _Bus:  # type: ignore[override]
-        """Stand in for HA's event bus, recording what was fired.
+        """Stand in for HA's event bus, recording what was fired and who listens.
 
-        Real HA dispatches to listeners; offline there are none, so the record
-        *is* the observable behaviour — without it `events.py` cannot be tested
-        here at all.
+        Real HA dispatches a fired event to its listeners; here the two records
+        stay separate and a test drives a listener itself. That keeps `async_fire`
+        synchronous — HA's is too — without the stub having to schedule the
+        coroutine listeners the real bus runs as tasks.
         """
 
         def __init__(self) -> None:
             self.fired: list[tuple[str, dict]] = []
+            self.listeners: list[tuple[str, object]] = []
 
         def async_fire(self, event_type, event_data=None, *_args, **_kwargs) -> None:
             self.fired.append((event_type, dict(event_data or {})))
@@ -128,11 +135,62 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def events_of(self, event_type: str) -> list[dict]:
             return [data for kind, data in self.fired if kind == event_type]
 
+        def async_listen(self, event_type, listener, *_args, **_kwargs):
+            entry = (event_type, listener)
+            self.listeners.append(entry)
+
+            def _remove() -> None:
+                if entry in self.listeners:
+                    self.listeners.remove(entry)
+
+            return _remove
+
+        # HA's one-shot listener removes itself once fired; nothing offline
+        # fires through the bus, so recording it is the whole behaviour.
+        async_listen_once = async_listen
+
+        def listeners_for(self, event_type: str) -> list[object]:
+            return [listener for kind, listener in self.listeners if kind == event_type]
+
+    class _State:  # type: ignore[override]
+        """The two fields anything offline reads off a state object."""
+
+        def __init__(self, entity_id: str, state: str) -> None:
+            self.entity_id = entity_id
+            self.state = state
+
+    class _States:  # type: ignore[override]
+        """Stand in for HA's state machine, for the reads only.
+
+        The to-do bridge asks whether the list it was pointed at is there and
+        answering before it writes to it, so a test has to be able to say that
+        it is not. Nothing offline sets state through this — the integration
+        publishes state through entity platforms, which the offline suite does
+        not run.
+        """
+
+        def __init__(self) -> None:
+            self._states: dict[str, _State] = {}
+
+        def get(self, entity_id: str):
+            return self._states.get(entity_id)
+
+        def async_set(self, entity_id: str, state: str, *_args, **_kwargs) -> None:
+            self._states[entity_id] = _State(entity_id, state)
+
+        def async_remove(self, entity_id: str) -> None:
+            self._states.pop(entity_id, None)
+
     class HomeAssistant:  # type: ignore[override]
         def __init__(self) -> None:
             self.data = {}
             self.config = _Config()
             self.bus = _Bus()
+            self.states = _States()
+            # HA's own "startup is over" flag. Offline there is no startup, so
+            # it starts true — which is what every test but the ones about
+            # deferring the bridge's first pass wants.
+            self.is_running = True
             self.dispatcher_sends: list[tuple[str, tuple]] = []
             self.dispatcher_connects: list[tuple[str, object]] = []
 
@@ -340,6 +398,31 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
                     raise vol.Invalid(f"{entry!r} is not one of {offered}")
             return list(values) if self.config.get("multiple") else value
 
+    # A TypedDict in HA, like SelectSelectorConfig above.
+    def EntitySelectorConfig(**kwargs):  # type: ignore[override]
+        return dict(kwargs)
+
+    class EntitySelector:  # type: ignore[override]
+        """Stand in for HA's entity picker, validating the domain it restricts to.
+
+        Enough to hold the shopping-list field to `todo.*` entities: HA's own
+        selector checks the entity id's shape and its domain, and the option is
+        stored as whatever string comes back.
+        """
+
+        def __init__(self, config=None) -> None:  # type: ignore[no-untyped-def]
+            self.config = dict(config or {})
+
+        def __call__(self, value):  # type: ignore[no-untyped-def]
+            if not isinstance(value, str) or value.count(".") != 1:
+                raise vol.Invalid(f"{value!r} is not an entity id")
+            domain = self.config.get("domain")
+            if domain and value.split(".")[0] != domain:
+                raise vol.Invalid(f"{value!r} is not in the {domain} domain")
+            return value
+
+    ha_helpers_selector.EntitySelector = EntitySelector
+    ha_helpers_selector.EntitySelectorConfig = EntitySelectorConfig
     ha_helpers_selector.SelectSelector = SelectSelector
     ha_helpers_selector.SelectSelectorConfig = SelectSelectorConfig
     ha_helpers_selector.SelectSelectorMode = SelectSelectorMode
@@ -361,6 +444,14 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
 
         async def async_save(self, data):
             _IN_MEMORY_STORE[self.key] = data
+
+        async def async_remove(self):
+            """Delete the stored payload, as HA's `Store.async_remove` does.
+
+            The backing dict is module-global and outlives a test, so a suite
+            whose subject *loads* at setup needs a way to start from nothing.
+            """
+            _IN_MEMORY_STORE.pop(self.key, None)
 
     ha_helpers_storage.Store = Store
     sys.modules["homeassistant.helpers.storage"] = ha_helpers_storage

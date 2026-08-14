@@ -224,6 +224,36 @@ Services work the other way round: every `haventory.*` service returns the entit
 touched, so a script can chain calls through `response_variable` — see the same document's
 "Service responses".
 
+### Shopping list
+
+Pick a to-do list once, under Settings → Devices & services → HAventory → **Configure →
+Shopping list**, and low stock writes itself onto the list the household already shares.
+An item at or below its `low_stock_threshold` appears as `Peanut butter ×2` — the name, and
+how many it takes to reach the threshold, never less than one. Restock it and the line goes
+away.
+
+The field is empty by default, and empty means off; nothing is written to any list until
+one is chosen. Any `todo.*` entity works — Home Assistant's own **Local to-do** lists, or a
+shared Google Tasks or CalDAV list.
+
+The bridge does not track edges, it converges: every change runs one pass that compares
+what is low *right now* against the lines it has already written, and issues only the
+difference. A restart, a bulk edit, a wholesale import and a missed event therefore all end
+at the same list, with nothing listed twice.
+
+Three things follow from that, worth knowing before you pick a list:
+
+- **It only ever touches its own lines.** A list you already use for other things is safe;
+  everything the bridge did not write, it leaves alone.
+- **Delete one of its lines by hand and it stays deleted** while the item is still low —
+  the bridge takes that as "handled" rather than re-adding it. It comes back the next time
+  the item leaves the low-stock set and drops into it again.
+- **Clearing the field stops the mirroring and leaves the list as it stands.** Switching to
+  a different list moves the lines across instead.
+
+An inventory change never fails because the list did: a list that is unavailable, gone, or
+refuses the write is logged as a warning, and the next change tries again.
+
 ---
 
 ## Known limitations

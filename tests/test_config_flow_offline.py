@@ -17,6 +17,8 @@ import pytest
 import voluptuous as vol
 from custom_components.haventory.config_flow import (
     RATE_LIMIT_DOCS_URL,
+    SECTION_RATE_LIMIT,
+    SECTION_TODO,
     HAventoryConfigFlow,
     HAventoryOptionsFlowHandler,
 )
@@ -24,8 +26,10 @@ from custom_components.haventory.const import (
     CONF_CARD_TITLE,
     CONF_QUICK_FILTERS,
     CONF_SIDEBAR_PANEL_ENABLED,
+    CONF_TODO_ENTITY_ID,
     DEFAULT_CARD_TITLE,
     DEFAULT_SIDEBAR_PANEL_ENABLED,
+    DEFAULT_TODO_ENTITY_ID,
     QUICK_FILTER_KEYS,
 )
 from homeassistant.config_entries import ConfigEntry
@@ -37,6 +41,14 @@ def _entry(options: dict) -> ConfigEntry:
 
 def _schema_keys(schema) -> set[str]:
     return {str(marker) for marker in schema.schema}
+
+
+def _section_schema(schema, name: str):
+    """The inner schema of one form section, by the form-only key holding it."""
+    for marker, value in schema.schema.items():
+        if str(marker) == name:
+            return value.schema
+    raise AssertionError(f"no section {name} in schema")
 
 
 def _schema_default(schema, key: str):
@@ -215,6 +227,82 @@ async def test_sidebar_toggle_sits_outside_the_rate_limit_section() -> None:
 
 
 @pytest.mark.asyncio
+async def test_the_shopping_list_section_folds_flat_and_defaults_to_off() -> None:
+    """The bridge reads one flat `todo_entity_id`; the section is form dressing.
+
+    Stored nested, the option would be invisible to everything that looks for
+    it — the bridge, and the runtime that hands it the list to write to.
+    """
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({})
+
+    form = await flow.async_step_init(user_input=None)
+    assert SECTION_TODO in _schema_keys(form["data_schema"])
+
+    result = await flow.async_step_init(
+        user_input={
+            CONF_CARD_TITLE: "Pantry",
+            SECTION_TODO: {CONF_TODO_ENTITY_ID: "todo.shopping_list"},
+        }
+    )
+    assert result["data"][CONF_TODO_ENTITY_ID] == "todo.shopping_list"
+    assert SECTION_TODO not in result["data"]
+
+
+@pytest.mark.asyncio
+async def test_a_cleared_shopping_list_stores_the_empty_string() -> None:
+    """A cleared entity selector submits nothing, and nothing has to mean off.
+
+    Left absent, the stored options would keep the previous list and the bridge
+    would go on writing to it — the field could never be unpicked.
+    """
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({CONF_TODO_ENTITY_ID: "todo.shopping_list"})
+
+    result = await flow.async_step_init(user_input={CONF_CARD_TITLE: "Pantry", SECTION_TODO: {}})
+    assert result["data"][CONF_TODO_ENTITY_ID] == DEFAULT_TODO_ENTITY_ID
+
+
+@pytest.mark.asyncio
+async def test_the_shopping_list_field_is_prefilled_with_the_stored_list() -> None:
+    """Opening the form must not read as "no list chosen" to a household that has."""
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({CONF_TODO_ENTITY_ID: "todo.shopping_list"})
+
+    form = await flow.async_step_init(user_input=None)
+    section_schema = _section_schema(form["data_schema"], SECTION_TODO)
+    for marker in section_schema.schema:
+        if str(marker) == CONF_TODO_ENTITY_ID:
+            assert marker.description == {"suggested_value": "todo.shopping_list"}
+            break
+    else:  # pragma: no cover - the field is asserted to exist above
+        raise AssertionError(f"no field {CONF_TODO_ENTITY_ID} in the {SECTION_TODO} section")
+
+
+@pytest.mark.asyncio
+async def test_the_options_form_refuses_a_list_outside_the_todo_domain() -> None:
+    """The bridge calls `todo.*` services; anything else it cannot write to."""
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({})
+
+    form = await flow.async_step_init(user_input=None)
+    with pytest.raises(vol.Invalid):
+        form["data_schema"](
+            {
+                CONF_CARD_TITLE: "Pantry",
+                CONF_SIDEBAR_PANEL_ENABLED: True,
+                CONF_QUICK_FILTERS: list(QUICK_FILTER_KEYS),
+                SECTION_TODO: {CONF_TODO_ENTITY_ID: "sensor.not_a_list"},
+                SECTION_RATE_LIMIT: {},
+            }
+        )
+
+
+@pytest.mark.asyncio
 async def test_quick_filters_prefill_every_pill_for_an_entry_that_predates_them() -> None:
     """An untouched entry opens the form with all five ticked.
 
@@ -296,7 +384,8 @@ async def test_the_options_form_refuses_a_pill_that_is_not_offered() -> None:
                 CONF_CARD_TITLE: "Pantry",
                 CONF_SIDEBAR_PANEL_ENABLED: True,
                 CONF_QUICK_FILTERS: ["sideways"],
-                "rate_limit": {},
+                SECTION_TODO: {},
+                SECTION_RATE_LIMIT: {},
             }
         )
 
