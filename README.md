@@ -147,6 +147,85 @@ no longer used and can be deleted; the integration ignores it either way.
 
 ---
 
+## Automations
+
+HAventory shows up in Home Assistant as **four sensors on one device**, and fires **two event
+types** on the bus. Neither needs a WebSocket client, and neither polls.
+
+### The sensors
+
+One HAventory device under Settings → Devices & services, carrying:
+
+| Sensor | What it counts |
+|---|---|
+| Items | every item in the inventory |
+| Low stock | items at or below their `low_stock_threshold` |
+| Overdue | checked-out items whose due date has passed |
+| Inspection overdue | items whose inspection date has passed |
+
+They update the moment something changes — a card edit, a `haventory.*` service call, an
+import — with no polling interval to tune. The two date-derived ones also roll over at UTC
+midnight, so "Overdue" grows overnight without anybody touching the inventory.
+
+Put "Low stock: 3" on a dashboard next to the weather and nobody has to open the card to
+know whether a shopping trip is due.
+
+### The events
+
+- `haventory_item_changed` — `action` is one of `created`, `updated`, `moved`,
+  `quantity_changed`, `checked_out`, `checked_in`, `deleted`.
+- `haventory_low_stock` — `action` is `entered` or `cleared`, fired on the crossing only.
+
+Both are fired **after** the change is written to disk, so an automation that reacts to one
+is reacting to something that is already saved.
+
+A worked example — tell whoever is home when something runs low:
+
+```yaml
+automation:
+  - alias: Notify when stock runs low
+    trigger:
+      platform: event
+      event_type: haventory_low_stock
+      event_data:
+        action: entered
+    action:
+      - service: notify.notify
+        data:
+          title: Running low
+          message: >-
+            {{ trigger.event.data.name }} is down to
+            {{ trigger.event.data.quantity }}
+            (threshold {{ trigger.event.data.low_stock_threshold }})
+```
+
+And the other direction — react to a specific item being checked out:
+
+```yaml
+automation:
+  - alias: Media room lights when the projector goes out
+    trigger:
+      platform: event
+      event_type: haventory_item_changed
+      event_data:
+        action: checked_out
+    condition: "{{ trigger.event.data.name == 'Projector' }}"
+    action:
+      - service: light.turn_on
+        target:
+          entity_id: light.media_room
+```
+
+The full payload shapes are in [`docs/data_shapes.md`](docs/data_shapes.md); the events
+carry the fields a trigger needs and no more, so an automation that wants the whole item
+calls `haventory/item/get`.
+
+Services work the other way round: every `haventory.*` service returns the entity it
+touched, so a script can chain calls through `response_variable` — see the same document's
+"Service responses".
+
+---
+
 ## Known limitations
 
 What HAventory does *not* do today, stated up front so none of it is a surprise:
@@ -163,11 +242,6 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   benchmarked at 10 000 items), correctness is unaffected at any size, and no limit is
   enforced. Several thousand items is comfortable; past that, an edit starts to be
   something you notice.
-- **No automation triggers.** The integration creates no entities and fires no events on
-  the Home Assistant bus. Automations and scripts can *call* the `haventory.*` services,
-  but nothing can trigger *on* an inventory change — there is no state object to watch and
-  no event type to listen for. Change notification is WebSocket subscriptions only, for
-  clients holding an open connection.
 - **No admin gating.** No WebSocket command declares `require_admin`, so any logged-in
   Home Assistant user — not only administrators — can read and mutate the whole inventory.
   It is a household-wide tool, not a per-user one.

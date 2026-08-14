@@ -64,6 +64,22 @@
       }
     }
   },
+  "entity": {
+    "sensor": {
+      "items_total": {
+        "name": "Items"
+      },
+      "low_stock": {
+        "name": "Low stock"
+      },
+      "overdue": {
+        "name": "Overdue"
+      },
+      "inspection_overdue": {
+        "name": "Inspection overdue"
+      }
+    }
+  },
   "selector": {
     "quick_filters": {
       "options": {

@@ -19,6 +19,7 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 
 from .const import DOMAIN
+from .events import notify_mutation
 from .exceptions import (
     ConflictError,
     NotFoundError,
@@ -196,7 +197,9 @@ async def service_item_create(hass: HomeAssistant, data: dict) -> dict[str, Any]
         repo = _get_repo(hass)
         item = repo.create_item(payload)  # type: ignore[arg-type]
         await async_persist_repo(hass)
-        return {"item": serialize_item(hass, item)}
+        serialized = serialize_item(hass, item)
+        notify_mutation(hass, action="created", item=serialized)
+        return {"item": serialized}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"item_name": data.get("name")}, exc)
 
@@ -211,7 +214,9 @@ async def service_item_update(hass: HomeAssistant, data: dict) -> dict[str, Any]
         repo = _get_repo(hass)
         item = repo.update_item(payload["item_id"], update, expected_version=expected)  # type: ignore[arg-type]
         await async_persist_repo(hass)
-        return {"item": serialize_item(hass, item)}
+        serialized = serialize_item(hass, item)
+        notify_mutation(hass, action="updated", item=serialized)
+        return {"item": serialized}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"item_id": item_id}, exc)
 
@@ -229,6 +234,7 @@ async def service_item_delete(hass: HomeAssistant, data: dict) -> dict[str, Any]
         removed = serialize_item(hass, repo.get_item(payload["item_id"]))
         repo.delete_item(payload["item_id"], expected_version=expected)
         await async_persist_repo(hass)
+        notify_mutation(hass, action="deleted", item=removed)
         return {"item": removed}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"item_id": item_id}, exc)
@@ -244,7 +250,9 @@ async def service_item_move(hass: HomeAssistant, data: dict) -> dict[str, Any]:
         repo = _get_repo(hass)
         item = repo.update_item(payload["item_id"], update, expected_version=expected)  # type: ignore[arg-type]
         await async_persist_repo(hass)
-        return {"item": serialize_item(hass, item)}
+        serialized = serialize_item(hass, item)
+        notify_mutation(hass, action="moved", item=serialized)
+        return {"item": serialized}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(
             op, {"item_id": item_id, "new_location_id": data.get("new_location_id")}, exc
@@ -261,7 +269,9 @@ async def service_item_adjust_quantity(hass: HomeAssistant, data: dict) -> dict[
             payload["item_id"], payload["delta"], expected_version=payload.get("expected_version")
         )
         await async_persist_repo(hass)
-        return {"item": serialize_item(hass, item)}
+        serialized = serialize_item(hass, item)
+        notify_mutation(hass, action="quantity_changed", item=serialized)
+        return {"item": serialized}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"item_id": item_id, "delta": data.get("delta")}, exc)
 
@@ -278,7 +288,9 @@ async def service_item_set_quantity(hass: HomeAssistant, data: dict) -> dict[str
             expected_version=payload.get("expected_version"),
         )
         await async_persist_repo(hass)
-        return {"item": serialize_item(hass, item)}
+        serialized = serialize_item(hass, item)
+        notify_mutation(hass, action="quantity_changed", item=serialized)
+        return {"item": serialized}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"item_id": item_id, "quantity": data.get("quantity")}, exc)
 
@@ -295,7 +307,9 @@ async def service_item_check_out(hass: HomeAssistant, data: dict) -> dict[str, A
             expected_version=payload.get("expected_version"),
         )
         await async_persist_repo(hass)
-        return {"item": serialize_item(hass, item)}
+        serialized = serialize_item(hass, item)
+        notify_mutation(hass, action="checked_out", item=serialized)
+        return {"item": serialized}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"item_id": item_id, "due_date": data.get("due_date")}, exc)
 
@@ -308,7 +322,9 @@ async def service_item_check_in(hass: HomeAssistant, data: dict) -> dict[str, An
         repo = _get_repo(hass)
         item = repo.check_in(payload["item_id"], expected_version=payload.get("expected_version"))
         await async_persist_repo(hass)
-        return {"item": serialize_item(hass, item)}
+        serialized = serialize_item(hass, item)
+        notify_mutation(hass, action="checked_in", item=serialized)
+        return {"item": serialized}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"item_id": item_id}, exc)
 

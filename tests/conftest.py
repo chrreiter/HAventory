@@ -111,10 +111,30 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def path(self, *parts: str) -> str:
             return os.path.join(self.config_dir, *parts)
 
+    class _Bus:  # type: ignore[override]
+        """Stand in for HA's event bus, recording what was fired.
+
+        Real HA dispatches to listeners; offline there are none, so the record
+        *is* the observable behaviour — without it `events.py` cannot be tested
+        here at all.
+        """
+
+        def __init__(self) -> None:
+            self.fired: list[tuple[str, dict]] = []
+
+        def async_fire(self, event_type, event_data=None, *_args, **_kwargs) -> None:
+            self.fired.append((event_type, dict(event_data or {})))
+
+        def events_of(self, event_type: str) -> list[dict]:
+            return [data for kind, data in self.fired if kind == event_type]
+
     class HomeAssistant:  # type: ignore[override]
         def __init__(self) -> None:
             self.data = {}
             self.config = _Config()
+            self.bus = _Bus()
+            self.dispatcher_sends: list[tuple[str, tuple]] = []
+            self.dispatcher_connects: list[tuple[str, object]] = []
 
         def async_create_background_task(self, target, name, eager_start=True):
             """Stand in for HA's tracked-task helper; the real one also cancels on shutdown."""
@@ -344,6 +364,27 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
 
     ha_helpers_storage.Store = Store
     sys.modules["homeassistant.helpers.storage"] = ha_helpers_storage
+
+    # homeassistant.helpers.dispatcher — the signal the sensors repaint on.
+    # Offline there is no entity platform to receive it, so the stub only has to
+    # let `events.notify_mutation` run; `hass` records the sends for tests.
+    ha_helpers_dispatcher = types.ModuleType("homeassistant.helpers.dispatcher")
+
+    def async_dispatcher_send(hass, signal, *args):  # type: ignore[override]
+        hass.dispatcher_sends.append((signal, args))
+
+    def async_dispatcher_connect(hass, signal, target):  # type: ignore[override]
+        hass.dispatcher_connects.append((signal, target))
+
+        def _remove() -> None:
+            hass.dispatcher_connects.remove((signal, target))
+
+        return _remove
+
+    ha_helpers_dispatcher.async_dispatcher_send = async_dispatcher_send
+    ha_helpers_dispatcher.async_dispatcher_connect = async_dispatcher_connect
+    ha_helpers.dispatcher = ha_helpers_dispatcher
+    sys.modules["homeassistant.helpers.dispatcher"] = ha_helpers_dispatcher
 
     # homeassistant.components.websocket_api
     ha_components = types.ModuleType("homeassistant.components")

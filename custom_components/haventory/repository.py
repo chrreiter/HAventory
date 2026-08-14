@@ -1652,6 +1652,17 @@ class Repository:
     # Public API — Counts
     # -----------------------------
 
+    @property
+    def low_stock_item_ids(self) -> frozenset[str]:
+        """The ids currently below their low-stock threshold.
+
+        A snapshot, not a view: the low-stock bus events are a diff of this set
+        against the one taken before the mutation, and a caller holding the live
+        index would be diffing it against itself.
+        """
+
+        return frozenset(self._low_stock_item_ids)
+
     def get_counts(self) -> dict[str, Any]:
         """Aggregate counts for ``haventory/stats``, ``haventory/health`` and events.
 
