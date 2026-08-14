@@ -80,6 +80,24 @@ PANEL_ELEMENT_NAME: str = "haventory-panel"
 PANEL_ICON: str = "haventory:logo"
 
 # -----------------------------
+# Shopping list (config-entry option)
+# -----------------------------
+# Which Home Assistant to-do list the low-stock set is mirrored onto. Empty
+# means off, which is the default: a household that has not chosen a list gets
+# nothing written to any of them. One option rather than a list plus an enable
+# toggle — a toggle could only ever disagree with the entity it guards.
+
+CONF_TODO_ENTITY_ID: str = "todo_entity_id"
+DEFAULT_TODO_ENTITY_ID: str = ""
+
+# The bridge's link map gets a `Store` of its own rather than a section of the
+# inventory payload: it is bookkeeping about another integration's entity, and a
+# new key in the inventory payload would bump `CURRENT_SCHEMA_VERSION` and leak
+# into the `{schema_version, items, locations}` document import/export writes.
+TODO_LINKS_STORAGE_KEY: str = "haventory_todo_links"
+TODO_LINKS_STORAGE_VERSION: int = 1
+
+# -----------------------------
 # Item attachments
 # -----------------------------
 # Files attached to an item live under the config directory, outside the

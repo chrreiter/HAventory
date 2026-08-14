@@ -34,6 +34,16 @@
           "quick_filters": "The one-tap filters shown above the item list, here and on the sidebar page. A pill still only appears when it has something to count, so a household that never checks anything out sees no checked-out pill either way. Item total is the exception in a second way: only the card draws it as a pill, and only at full width — the sidebar page and the full view print the total in their header instead, whether or not it is ticked here. A dashboard card with its own quick_filters: option keeps that one. Reload the dashboard to see a change."
         },
         "sections": {
+          "todo": {
+            "name": "Shopping list",
+            "description": "Mirrors low-stock items onto a Home Assistant to-do list. An item at or below its low-stock threshold appears as a line naming it and how many to buy, and the line comes off again once the item is restocked. Leave the list empty to keep this off, which is the default. Clearing it later stops the mirroring and leaves whatever is on the list alone; picking a different list moves the lines across instead.",
+            "data": {
+              "todo_entity_id": "To-do list"
+            },
+            "data_description": {
+              "todo_entity_id": "Any to-do list this Home Assistant knows, including one the household already shares. HAventory only ever touches the lines it wrote itself, so a list you use for other things is safe to pick."
+            }
+          },
           "rate_limit": {
             "name": "WebSocket rate limiting",
             "description": "Caps how fast one client may use HAventory: over-budget commands are refused instead of executed, and surplus live-update events are dropped. Off by default — ordinary card use never comes close. Turn it on when something you don't fully control talks to HAventory, such as a wall panel stuck reconnecting or a script in a loop; leave it off during large imports and stress tests. What each setting means, and how to tell whether limiting is firing: {docs_url}",

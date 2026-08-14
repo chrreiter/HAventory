@@ -50,6 +50,7 @@ except ImportError:  # pragma: no cover - minimal harness without panel_custom
 from . import events, stale_files
 from . import media as media_mod
 from . import services as services_mod
+from . import todo_bridge as todo_mod
 from . import ws as ws_mod
 from .const import (
     CONF_CARD_TITLE,
@@ -230,6 +231,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if callable(add_listener) and callable(on_unload):
         on_unload(add_listener(_async_options_updated))
 
+    # The shopping-list bridge, after the repository it reads and the update
+    # listener above: its first pass needs the low-stock set, and an options
+    # change has to reach it.
+    await todo_mod.async_setup(hass, entry)
+
     # Register services
     services_mod.setup(hass)
 
@@ -368,6 +374,10 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
     # Covers the toggle and a renamed card alike: the sidebar entry carries the
     # card title, and re-registering is how a changed one reaches the sidebar.
     await _async_apply_sidebar_panel(hass, entry)
+    # A changed shopping list is applied by converging on it: the pass takes the
+    # lines off whichever list they were written to and puts them on the new one.
+    todo_mod.apply_options(hass, entry)
+    await todo_mod.async_reconcile(hass)
     LOGGER.info(
         "Applied updated HAventory options",
         extra={"domain": DOMAIN, "op": "options_updated"},

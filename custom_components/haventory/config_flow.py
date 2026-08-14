@@ -8,6 +8,8 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers.selector import (
+    EntitySelector,
+    EntitySelectorConfig,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
@@ -26,6 +28,7 @@ from .const import (
     CONF_RATE_LIMIT_GLOBAL_EVENTS_BURST,
     CONF_RATE_LIMIT_GLOBAL_EVENTS_PER_SECOND,
     CONF_SIDEBAR_PANEL_ENABLED,
+    CONF_TODO_ENTITY_ID,
     DEFAULT_CARD_TITLE,
     DEFAULT_QUICK_FILTERS,
     DEFAULT_RATE_LIMIT_COMMANDS_BURST,
@@ -38,17 +41,29 @@ from .const import (
     DEFAULT_RATE_LIMIT_GLOBAL_EVENTS_BURST,
     DEFAULT_RATE_LIMIT_GLOBAL_EVENTS_PER_SECOND,
     DEFAULT_SIDEBAR_PANEL_ENABLED,
+    DEFAULT_TODO_ENTITY_ID,
     DOMAIN,
     QUICK_FILTER_KEYS,
 )
 
+# The domain the shopping-list picker offers, taken from the module that calls
+# its services: a picker offering entities those calls cannot target would let a
+# household choose a list the bridge then refuses to write to.
+from .todo_bridge import TODO_DOMAIN
+
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
 
-# Form-only key grouping the rate-limit fields into one collapsible block. It
-# is a presentation device: `_flatten_options` folds the block away again, so
-# the stored options — and everything reading them — stay flat.
+# Form-only keys grouping fields into collapsible blocks. Both are presentation
+# devices: `_flatten_options` folds the blocks away again, so the stored options
+# — and everything reading them — stay flat.
 SECTION_RATE_LIMIT = "rate_limit"
+SECTION_TODO = "todo"
+
+# Ordered as the form shows them, and the one list `_flatten_options` folds. A
+# section added to the schema and not to this tuple would be stored nested,
+# where nothing looks for it.
+OPTION_SECTIONS: tuple[str, ...] = (SECTION_TODO, SECTION_RATE_LIMIT)
 
 # Filled into the rate-limit section's `{docs_url}`. Translation strings may not
 # contain URLs (hassfest rejects them), so the link target is supplied as a
@@ -94,6 +109,37 @@ def clean_quick_filters(value: Any) -> list[str]:
         return list(DEFAULT_QUICK_FILTERS)
     chosen = {entry for entry in value if isinstance(entry, str)}
     return [key for key in QUICK_FILTER_KEYS if key in chosen]
+
+
+def clean_todo_entity_id(value: Any) -> str:
+    """Normalize the chosen shopping list to an entity id, or `""` for off.
+
+    A cleared entity selector submits no value at all rather than an empty one,
+    so "absent" and "off" have to arrive at the same answer here. The option is
+    stored as a string either way, and the bridge reads `""` as "not
+    configured" — there is no third state for it to distinguish.
+    """
+    if not isinstance(value, str):
+        return DEFAULT_TODO_ENTITY_ID
+    return value.strip()
+
+
+def _todo_schema(current: dict[str, Any]) -> vol.Schema:
+    """Build the shopping-list section's schema: one to-do entity, or nothing.
+
+    `suggested_value` rather than `default`: voluptuous re-inserts a default
+    when the key is absent, which is exactly what a cleared field submits, so a
+    default would make the list impossible to unpick once chosen.
+    """
+    chosen = clean_todo_entity_id(current.get(CONF_TODO_ENTITY_ID))
+    return vol.Schema(
+        {
+            vol.Optional(
+                CONF_TODO_ENTITY_ID,
+                description={"suggested_value": chosen or None},
+            ): EntitySelector(EntitySelectorConfig(domain=TODO_DOMAIN)),
+        }
+    )
 
 
 def _quick_filters_selector() -> SelectSelector:
@@ -182,6 +228,13 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
                     current.get(CONF_QUICK_FILTERS, list(DEFAULT_QUICK_FILTERS))
                 ),
             ): _quick_filters_selector(),
+            # Collapsed until a list is chosen: the bridge is off by default,
+            # and a household that has not asked for a shopping list should not
+            # meet an entity picker on the way to renaming its card.
+            vol.Required(SECTION_TODO): section(
+                _todo_schema(current),
+                {"collapsed": not clean_todo_entity_id(current.get(CONF_TODO_ENTITY_ID))},
+            ),
             # Collapsed while the whole block is untouched, so the common case
             # is a form with one field; a customized limiter opens expanded
             # rather than hiding the values behind a header. No default on the
@@ -196,11 +249,12 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
 
 
 def _flatten_options(user_input: dict[str, Any]) -> dict[str, Any]:
-    """Fold the rate-limit section back into the flat keys the limiter reads."""
-    flat = {key: value for key, value in user_input.items() if key != SECTION_RATE_LIMIT}
-    nested = user_input.get(SECTION_RATE_LIMIT)
-    if isinstance(nested, dict):
-        flat.update(nested)
+    """Fold the form's sections back into the flat keys the runtime reads."""
+    flat = {key: value for key, value in user_input.items() if key not in OPTION_SECTIONS}
+    for name in OPTION_SECTIONS:
+        nested = user_input.get(name)
+        if isinstance(nested, dict):
+            flat.update(nested)
     return flat
 
 
@@ -212,6 +266,9 @@ class HAventoryOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             options = _flatten_options(user_input)
             options[CONF_CARD_TITLE] = clean_card_title(options.get(CONF_CARD_TITLE))
+            # Unconditionally, unlike the pills below: a cleared selector sends
+            # nothing, and "nothing" is the answer that turns the bridge off.
+            options[CONF_TODO_ENTITY_ID] = clean_todo_entity_id(options.get(CONF_TODO_ENTITY_ID))
             # Only when the form carried the field: writing it unconditionally
             # would turn "never chose" into an explicit list on any submission
             # that skipped it, and the two are different answers downstream.

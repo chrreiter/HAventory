@@ -22,7 +22,7 @@ try:
 except ImportError:  # pragma: no cover - offline harness without the component
     process_uploaded_file = None
 
-from . import import_export
+from . import import_export, todo_bridge
 from . import media as media_mod
 from . import storage as storage_mod
 from .areas import async_get_area_registry
@@ -2451,6 +2451,10 @@ async def ws_import_execute(
     # wants one signal, not one per row. The low-stock diff still runs, so a
     # restock done by import announces itself, and the sensors still repaint.
     notify_mutation(hass, action="reloaded")
+    # And the shopping list explicitly, because that diff is the only bus signal
+    # a wholesale swap produces: a document that renames items or changes their
+    # quantities without moving the low-stock set fires nothing at all.
+    await todo_bridge.async_reconcile(hass)
 
     summary = {
         "applied": True,

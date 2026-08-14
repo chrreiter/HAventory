@@ -22,6 +22,7 @@ from custom_components.haventory import rate_limit as rate_limit_module
 from custom_components.haventory import ws as ws_module
 from custom_components.haventory.config_flow import (
     SECTION_RATE_LIMIT,
+    SECTION_TODO,
     HAventoryOptionsFlowHandler,
     _options_schema,
 )
@@ -30,7 +31,9 @@ from custom_components.haventory.const import (
     CONF_RATE_LIMIT_COMMANDS_BURST,
     CONF_RATE_LIMIT_COMMANDS_PER_SECOND,
     CONF_RATE_LIMIT_ENABLED,
+    CONF_TODO_ENTITY_ID,
     DEFAULT_RATE_LIMIT_COMMANDS_BURST,
+    DEFAULT_TODO_ENTITY_ID,
     DOMAIN,
 )
 from custom_components.haventory.rate_limit import (
@@ -384,6 +387,7 @@ async def test_options_flow_shows_form_and_creates_entry() -> None:
     assert result["type"] == "create_entry"
     assert result["data"] == {
         CONF_CARD_TITLE: "Pantry",
+        CONF_TODO_ENTITY_ID: DEFAULT_TODO_ENTITY_ID,
         CONF_RATE_LIMIT_ENABLED: True,
         CONF_RATE_LIMIT_COMMANDS_PER_SECOND: 5.0,
         CONF_RATE_LIMIT_COMMANDS_BURST: 10.0,
@@ -398,7 +402,12 @@ async def test_options_flow_survives_a_missing_rate_limit_section() -> None:
     flow.config_entry = ConfigEntry(options={})
 
     result = await flow.async_step_init({CONF_CARD_TITLE: "Pantry"})
-    assert result["data"] == {CONF_CARD_TITLE: "Pantry"}
+    # The shopping list is stored either way: a submission without the section
+    # is a cleared selector, which is what turns the bridge off.
+    assert result["data"] == {
+        CONF_CARD_TITLE: "Pantry",
+        CONF_TODO_ENTITY_ID: DEFAULT_TODO_ENTITY_ID,
+    }
 
 
 def test_options_schema_collapses_only_while_untouched() -> None:
@@ -420,7 +429,7 @@ def test_options_schema_defaults_to_the_stored_options() -> None:
     schema = _options_schema(
         {CONF_CARD_TITLE: "Pantry", CONF_RATE_LIMIT_COMMANDS_PER_SECOND: stored_rate}
     )
-    filled = schema({SECTION_RATE_LIMIT: {}})
+    filled = schema({SECTION_TODO: {}, SECTION_RATE_LIMIT: {}})
     assert filled[CONF_CARD_TITLE] == "Pantry"
     assert filled[SECTION_RATE_LIMIT][CONF_RATE_LIMIT_COMMANDS_PER_SECOND] == stored_rate
     assert (
@@ -487,7 +496,12 @@ def test_options_schema_enforces_burst_minimum() -> None:
     schema = _options_schema({})
 
     def _submit(**section_fields: float) -> dict[str, Any]:
-        return schema({SECTION_RATE_LIMIT: {CONF_RATE_LIMIT_ENABLED: True, **section_fields}})
+        return schema(
+            {
+                SECTION_TODO: {},
+                SECTION_RATE_LIMIT: {CONF_RATE_LIMIT_ENABLED: True, **section_fields},
+            }
+        )
 
     base = _submit()  # defaults fill the rest
     assert base[SECTION_RATE_LIMIT][BURST] >= 1
