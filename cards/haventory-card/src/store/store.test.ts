@@ -960,4 +960,37 @@ describe('Store', () => {
     expect(itemsSubscribe().location_ids).toEqual([]);
   });
 
+  // Bumping is the one mutation with no optimistic update: where the next
+  // occurrence falls is month arithmetic counted from the series anchor, and a
+  // guess would be wrong for exactly the month-end series the anchor exists for.
+  it('bumps a reminder and takes the date the backend answers with', async () => {
+    const item = makeItem({
+      id: '1',
+      reminder_date: '2026-08-31',
+      reminder_anchor: '2026-01-31',
+      reminder_interval: { unit: 'days', count: 7 },
+    });
+    const hass = makeMockHass({ items: [item] });
+    const store = new Store(hass);
+    await store.init();
+
+    await store.bumpReminder('1', item.version);
+
+    const bumped = store.state.value.items.find((i) => i.id === '1');
+    expect(bumped?.reminder_date).toBe('2026-09-07');
+    // The anchor is the backend's and no client writes it.
+    expect(bumped?.reminder_anchor).toBe('2026-01-31');
+  });
+
+  it('surfaces a refused bump as an error and leaves the item alone', async () => {
+    const item = makeItem({ id: '1', reminder_date: '2026-08-31', reminder_interval: null });
+    const hass = makeMockHass({ items: [item] });
+    const store = new Store(hass);
+    await store.init();
+
+    await store.bumpReminder('1', item.version);
+
+    expect(store.state.value.errorQueue.length).toBeGreaterThan(0);
+    expect(store.state.value.items.find((i) => i.id === '1')?.reminder_date).toBe('2026-08-31');
+  });
 });

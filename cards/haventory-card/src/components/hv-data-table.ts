@@ -5,6 +5,7 @@ import { tokens, base } from '../ui/tokens';
 import { chip, renderTagChip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
+import { isReminderDue, reminderSummary } from '../ui/reminder';
 import {
   COLUMN_DEFS,
   SELECT_COLUMN_WIDTH,
@@ -295,6 +296,13 @@ export class HVDataTable extends LitElement {
         color: var(--hv-warn);
         font-weight: 500;
       }
+      /* Same amber as the inspection column, and for the same reason: a reminder
+         that has come round is a chore, not a lateness. Due includes today, so
+         this lights up on the day the household asked to be reminded. */
+      .cell.reminder.due {
+        color: var(--hv-warn);
+        font-weight: 500;
+      }
       .cell.updated {
         font-size: 12.5px;
         color: var(--hv-text-tertiary);
@@ -551,6 +559,13 @@ export class HVDataTable extends LitElement {
           role="cell"
           data-testid="cell-inspection_date"
           >${formatDate(item.inspection_date)}</span
+        >`;
+      case 'reminder_date':
+        return html`<span
+          class="cell reminder ${isReminderDue(item) ? 'due' : ''}"
+          role="cell"
+          data-testid="cell-reminder_date"
+          >${reminderSummary(item) ?? '—'}</span
         >`;
       case 'updated_at':
         return html`<span class="cell updated" role="cell" data-testid="cell-updated_at">${relativeTime(item.updated_at)}</span>`;

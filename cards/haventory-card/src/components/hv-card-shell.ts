@@ -129,7 +129,7 @@ export class HVCardShell extends LitElement {
         order: 1;
         flex-basis: 100%;
         margin-left: 0;
-        /* Four of these — low, overdue, to inspect, checked out — with
+        /* Five of these — low, overdue, to inspect, to do, checked out — with
            five-digit counts will not make one line of a 320px phone. Wrapping
            costs a second 44px band in the worst case; not wrapping pushes the
            last one off the side of the card, where it cannot be pressed at
@@ -694,6 +694,9 @@ export class HVCardShell extends LitElement {
       case 'check-in':
         void this.store?.markCheckedIn(item.id, item.version);
         break;
+      case 'reminder-bump':
+        void this.store?.bumpReminder(item.id, item.version);
+        break;
       case 'request-delete':
         this._requestDelete(item);
         break;
@@ -763,11 +766,12 @@ export class HVCardShell extends LitElement {
     const lowStock = allows('low_stock') && counts.low_stock_count > 0;
     const overdue = allows('overdue') && (counts.overdue_count ?? 0) > 0;
     const inspection = allows('inspection_due') && (counts.inspection_overdue_count ?? 0) > 0;
+    const reminder = allows('reminder_due') && (counts.reminder_due_count ?? 0) > 0;
     const checkedOut = allows('checked_out') && counts.checked_out_count > 0;
     // On mobile the wrapper takes a row of its own, so an empty one would leave
     // a blank band under the title rather than nothing at all. The total is not
     // among them: it does not render on a phone at all.
-    const anyBadge = !this.mobile || lowStock || overdue || inspection || checkedOut;
+    const anyBadge = !this.mobile || lowStock || overdue || inspection || reminder || checkedOut;
     if (!anyBadge) return null;
     return html`
       <div class="badges">
@@ -805,6 +809,17 @@ export class HVCardShell extends LitElement {
               @click=${() => this._setFilters({ inspectionDueOnly: !f?.inspectionDueOnly })}
             >
               ${counts.inspection_overdue_count} to inspect
+            </button>`
+          : null}
+        ${reminder
+          ? html`<button
+              class="hv-chip badge toggle warning ${f?.reminderDueOnly ? 'on' : ''}"
+              data-testid="badge-reminder"
+              aria-pressed=${String(!!f?.reminderDueOnly)}
+              title="Show only items whose reminder has come round"
+              @click=${() => this._setFilters({ reminderDueOnly: !f?.reminderDueOnly })}
+            >
+              ${counts.reminder_due_count} to do
             </button>`
           : null}
         ${checkedOut
@@ -1127,6 +1142,7 @@ export class HVCardShell extends LitElement {
               const item = this._itemById(itemId);
               if (item) void this.store?.updateItem(item.id, { due_date: dueDate }, item.version);
             }}
+            @reminder-bump=${(e: CustomEvent) => this._onRowEvent('reminder-bump', e.detail)}
             @request-delete=${(e: CustomEvent) => this._onRowEvent('request-delete', e.detail)}
             @save=${this._onEditorSave}
           ></hv-detail-sheet>`

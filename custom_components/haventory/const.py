@@ -46,6 +46,7 @@ QUICK_FILTER_KEYS: tuple[str, ...] = (
     "low_stock",
     "overdue",
     "inspection_due",
+    "reminder_due",
     "checked_out",
 )
 

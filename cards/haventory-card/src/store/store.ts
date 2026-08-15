@@ -222,6 +222,7 @@ export function toWireFilter(filters: StoreFilters): ItemFilter {
     orphaned_only: filters.orphansOnly || undefined,
     overdue_only: filters.overdueOnly || undefined,
     inspection_overdue_only: filters.inspectionDueOnly || undefined,
+    reminder_due_only: filters.reminderDueOnly || undefined,
     status: filters.status ?? undefined,
     categories: filters.categories.length ? [...filters.categories] : undefined,
     updated_after: filters.updatedAfter || undefined,
@@ -249,6 +250,7 @@ export function defaultFilters(): StoreFilters {
     lowStockOnly: false,
     overdueOnly: false,
     inspectionDueOnly: false,
+    reminderDueOnly: false,
     status: null,
     categories: [],
     tags: [],
@@ -291,6 +293,7 @@ export function activeFilterCount(filters: StoreFilters): number {
   if (filters.lowStockFirst) n += 1;
   if (filters.overdueOnly) n += 1;
   if (filters.inspectionDueOnly) n += 1;
+  if (filters.reminderDueOnly) n += 1;
   if (filters.status) n += 1;
   if (filters.categories.length) n += 1;
   if (filters.tags.length) n += 1;
@@ -1492,6 +1495,22 @@ export class Store {
     } catch (err) {
       this.pushError(err);
       if (before) this.applyOptimistic(before);
+    }
+  }
+
+  /**
+   * Mark a reminder done; the backend answers with the occurrence after it.
+   *
+   * No optimistic update, unlike the other mutations here: where the next
+   * occurrence falls is month arithmetic counted from the series anchor, and
+   * guessing it would show a date that is wrong for exactly the month-end
+   * series the anchor exists to keep right.
+   */
+  async bumpReminder(itemId: string, expectedVersion?: number) {
+    try {
+      this.applyOptimistic(await this.run(() => this.ws.bumpReminder(itemId, expectedVersion)));
+    } catch (err) {
+      this.pushError(err);
     }
   }
 

@@ -5,6 +5,7 @@ import { chip, renderTagChip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import { customFieldLabel } from '../ui/field-label';
+import { canBumpReminder, hasReminder, isReminderDue, reminderSummary } from '../ui/reminder';
 import { inferType } from '../ui/item-form';
 import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
 import { isLowStock } from './hv-list-row';
@@ -49,8 +50,8 @@ import type { HVItemEditor } from './hv-item-editor';
  * - **Out**: `save` (the editor's own detail, so a host's editor-save handler
  *   takes it unchanged), `increment` / `decrement`, `check-in`,
  *   `check-out-confirmed` and `set-due-date` with the picked date,
- *   `request-delete` — every one carrying `itemId` — and `cancel` when the
- *   sheet has finished closing.
+ *   `reminder-bump`, `request-delete` — every one carrying `itemId` — and
+ *   `cancel` when the sheet has finished closing.
  * - The sheet answers for the form inside it: a dismissal with unsaved typing
  *   raises the discard question here, and `cancel` follows only if it is
  *   answered yes. A host must not try to guard the form from outside; it cannot
@@ -231,6 +232,23 @@ export class HVDetailSheet extends LitElement {
       .fact .value.late {
         color: var(--hv-warn-deep);
         font-weight: 500;
+      }
+      /* The one fact row that acts. The value keeps its margin-left:auto, so the
+         button sits after it at the right edge; the negative right margin pulls
+         the tap target's padding back to the row's own gutter while the 44px
+         touch height stays. */
+      .fact .text-action {
+        border: none;
+        background: none;
+        color: var(--hv-primary-dark);
+        min-height: 44px;
+        padding: 0 8px;
+        margin-right: -8px;
+        font: 500 13.5px var(--hv-font);
+        white-space: nowrap;
+      }
+      .fact .text-action[disabled] {
+        color: var(--hv-text-tertiary);
       }
       .actions {
         display: grid;
@@ -721,6 +739,27 @@ export class HVDetailSheet extends LitElement {
             >${item.inspection_date ? formatDate(item.inspection_date) : 'Not set'}</span
           >
         </div>
+        ${hasReminder(item)
+          ? html`<div class="fact" data-testid="sheet-fact" data-key="reminder">
+              <span>Reminder</span>
+              <span
+                class="value ${isReminderDue(item) ? 'late' : ''}"
+                data-testid="sheet-reminder"
+                >${reminderSummary(item)}</span
+              >
+              ${canBumpReminder(item)
+                ? html`<button
+                    class="text-action"
+                    data-testid="sheet-reminder-bump"
+                    title="Mark this reminder done and move it to its next occurrence"
+                    ?disabled=${this.busy}
+                    @click=${() => this._emit('reminder-bump')}
+                  >
+                    Mark done
+                  </button>`
+                : null}
+            </div>`
+          : null}
         ${customEntries.map(([key, value]) => this._renderCustomFact(key, value))}
         <div class="fact" data-testid="sheet-fact" data-key="updated">
           <span>Updated</span>

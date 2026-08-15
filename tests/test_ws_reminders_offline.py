@@ -622,3 +622,84 @@ async def test_an_edit_that_moves_the_date_still_re_anchors() -> None:
 
     assert moved["result"]["reminder_date"] == "2026-03-15"
     assert moved["result"]["reminder_anchor"] == "2026-03-15"
+
+
+# -----------------------------
+# Finding the reminders: sort, filter and count
+# -----------------------------
+
+
+async def _item_with_reminder(hass: HomeAssistant, name: str, date_str: str, msg_id: int) -> str:
+    item_id = await _item(hass, name)
+    await ws_send(
+        hass,
+        msg_id,
+        "haventory/reminder/set",
+        item_id=item_id,
+        reminder_date=date_str,
+        reminder_interval={"unit": "months", "count": 1},
+    )
+    return item_id
+
+
+@pytest.mark.asyncio
+async def test_items_sort_by_reminder_date() -> None:
+    """Soonest first ascending, and an item with no reminder sorts last."""
+
+    hass = _hass()
+    late = await _item_with_reminder(hass, "Water filter", "2027-03-01", 10)
+    soon = await _item_with_reminder(hass, "Smoke detector", "2026-09-01", 20)
+    none = await _item(hass, "Hammer")
+
+    res = await ws_send(
+        hass, 30, "haventory/item/list", sort={"field": "reminder_date", "order": "asc"}
+    )
+
+    assert res["success"] is True, res
+    assert [i["id"] for i in res["result"]["items"]] == [soon, late, none]
+
+
+@pytest.mark.asyncio
+async def test_reminder_due_only_takes_today_and_leaves_the_future() -> None:
+    """Today counts: a reminder names the day it is asking about."""
+
+    hass = _hass()
+    today = _today().isoformat()
+    past = await _item_with_reminder(hass, "Gutters", "2020-01-01", 10)
+    now = await _item_with_reminder(hass, "Smoke detector", today, 20)
+    await _item_with_reminder(hass, "Water filter", "2099-01-01", 30)
+    await _item(hass, "Hammer")
+
+    res = await ws_send(hass, 40, "haventory/item/list", filter={"reminder_due_only": True})
+
+    assert res["success"] is True, res
+    assert sorted(i["id"] for i in res["result"]["items"]) == sorted([past, now])
+
+
+@pytest.mark.asyncio
+async def test_stats_counts_the_reminders_that_have_come_round() -> None:
+    """The count behind the quick-filter pill, on the same inclusive rule."""
+
+    hass = _hass()
+    await _item_with_reminder(hass, "Gutters", "2020-01-01", 10)
+    await _item_with_reminder(hass, "Smoke detector", _today().isoformat(), 20)
+    await _item_with_reminder(hass, "Water filter", "2099-01-01", 30)
+
+    res = await ws_send(hass, 40, "haventory/stats")
+
+    assert res["result"]["reminder_due_count"] == _AFTER_ONE_EDIT
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_reminder_sort_field_is_still_refused() -> None:
+    """The new key is additive; it does not open the vocabulary up."""
+
+    hass = _hass()
+    await _item(hass)
+
+    res = await ws_send(
+        hass, 10, "haventory/item/list", sort={"field": "reminder_anchor", "order": "asc"}
+    )
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"

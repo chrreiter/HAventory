@@ -58,8 +58,20 @@ describe('columns model', () => {
   });
 
   // A fresh browser shows the whole record; thinning it down is the picker's job.
-  it('defaults to every column', () => {
-    expect(DEFAULT_COLUMNS).toEqual(COLUMN_DEFS.map((c) => c.key));
+  // Reminder is the one column that starts off: the panel's grid at 1920 is
+  // already spent, and one more fixed track puts Location and Tags on their
+  // floors. Every other column is on, which is what makes them discoverable.
+  it('defaults to every column but Reminder', () => {
+    expect(DEFAULT_COLUMNS).toEqual(
+      COLUMN_DEFS.map((c) => c.key).filter((key) => key !== 'reminder_date'),
+    );
+    expect(DEFAULT_COLUMNS).not.toContain('reminder_date');
+  });
+
+  // Off by default is not absent: the picker still offers it, or there would be
+  // no way to switch it on.
+  it('still offers Reminder as a column that can be chosen', () => {
+    expect(COLUMN_DEFS.map((c) => c.key)).toContain('reminder_date');
   });
 
   it('round-trips a saved order', () => {

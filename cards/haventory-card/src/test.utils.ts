@@ -549,6 +549,22 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           // Checking in clears the due date — it only exists while an item is out.
           return replaceItem({ ...it, checked_out: false, due_date: null }) as unknown as T;
         }
+        case 'haventory/reminder/bump': {
+          const it = findItem(msg);
+          if (!it.reminder_interval) {
+            throw { code: 'validation_error', message: 'a reminder with no interval has no next occurrence; clear it instead' };
+          }
+          // The real backend counts the next occurrence from the series anchor;
+          // the stand-in only has to move the date and leave the anchor alone,
+          // which is the property a caller can observe.
+          const days = { days: 1, weeks: 7, months: 30 }[it.reminder_interval.unit] ?? 1;
+          const next = new Date(`${it.reminder_date}T00:00:00Z`);
+          next.setUTCDate(next.getUTCDate() + days * it.reminder_interval.count);
+          return replaceItem({
+            ...it,
+            reminder_date: next.toISOString().slice(0, 10),
+          }) as unknown as T;
+        }
         case 'haventory/item/adjust_quantity': {
           const it = findItem(msg);
           const delta = Number((msg as any).delta ?? 0);
@@ -836,6 +852,7 @@ function applyMockSort(list: Item[], rawSort: unknown): Item[] {
       case 'quantity': return it.quantity;
       case 'due_date': return dateKey(it.due_date);
       case 'inspection_date': return dateKey(it.inspection_date);
+      case 'reminder_date': return dateKey(it.reminder_date ?? null);
       case 'location': return pathKey(it.location_path?.sort_key ?? '');
       case 'created_at': return it.created_at;
       default: return it.updated_at;
@@ -895,6 +912,7 @@ export function makeItem(partial?: Partial<Item>): Item {
     ...(partial?.status === undefined ? {} : { status: partial.status }),
     ...(partial?.attachments === undefined ? {} : { attachments: partial.attachments }),
     ...(partial?.reminder_date === undefined ? {} : { reminder_date: partial.reminder_date }),
+    ...(partial?.reminder_anchor === undefined ? {} : { reminder_anchor: partial.reminder_anchor }),
     ...(partial?.reminder_interval === undefined
       ? {}
       : { reminder_interval: partial.reminder_interval }),
