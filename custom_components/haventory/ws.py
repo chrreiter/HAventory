@@ -10,7 +10,7 @@ import asyncio
 import functools
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 
 import voluptuous as vol
@@ -27,7 +27,7 @@ from . import import_export, todo_bridge
 from . import media as media_mod
 from . import storage as storage_mod
 from .areas import async_get_area_registry
-from .calendar_projection import next_occurrence_after
+from .calendar_projection import bumped_reminder_date
 from .const import (
     ATTACHMENT_MANUAL_MIME_TYPES,
     ATTACHMENT_PICTURE_MIME_TYPES,
@@ -1400,25 +1400,8 @@ async def ws_reminder_bump(
     """
 
     item = _repo(hass).get_item(msg["item_id"])
-    if item.reminder_date is None:
-        raise ValidationError("item has no reminder to bump")
-    try:
-        anchor = date.fromisoformat(item.reminder_date)
-    except ValueError as exc:
-        # Only a hand-edited store can hold one. Naming it beats the
-        # `unknown_error` a raw parse failure would answer with.
-        raise ValidationError(
-            f"stored reminder_date {item.reminder_date!r} is not a date this build can read; "
-            "set the reminder again to replace it"
-        ) from exc
-    following = next_occurrence_after(
-        anchor, item.reminder_interval, max(anchor, dt_util.now().date())
-    )
-    if following is None:
-        raise ValidationError(
-            "a reminder with no interval has no next occurrence; clear it instead"
-        )
-    update = cast("ItemUpdate", {"reminder_date": following.isoformat()})
+    following = bumped_reminder_date(item, today=dt_util.now().date())
+    update = cast("ItemUpdate", {"reminder_date": following})
     await _apply_reminder(hass, conn, msg, update)
 
 

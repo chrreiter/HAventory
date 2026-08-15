@@ -134,6 +134,10 @@
       "name": "Check in item",
       "description": "Mark an item as not checked out."
     },
+    "reminder_bump": {
+      "name": "Bump reminder",
+      "description": "Mark a recurring reminder done and move it on to its next occurrence."
+    },
     "location_create": {
       "name": "Create location",
       "description": "Create a new storage location."

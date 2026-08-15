@@ -251,7 +251,10 @@ running — which for an all-day event means today.
 Nothing is scheduled. The events are worked out whenever something reads the calendar, so
 editing a date changes the calendar immediately and no timer can drift out of step with the
 inventory. A date only exists as an event on its own day: yesterday's is gone from the
-calendar, and the **Overdue** sensor is what keeps counting it.
+calendar. For a **due date** or an **inspection date** the matching sensor keeps counting it
+after that. A **reminder** works differently: a recurring one rolls forward on its own and is
+never overdue, and a one-off whose date has passed simply leaves the calendar — no sensor
+counts it, so bump it or clear it while it is still in front of you.
 
 Notifications are an ordinary calendar automation — the same one you would write for a
 birthday:
@@ -289,17 +292,45 @@ a reminder anchored on the 31st shows 28 February and then 31 March, rather than
 to the 28th forever.
 
 When you have actually changed the filter, **bump** the reminder and the whole series moves
-on one step. From an automation or a script that is one WebSocket call:
+on one step. From an automation or a script that is one service call — say, when the smart
+plug on the boiler reports the service engineer's visit is done:
 
-```json
-{"type": "haventory/reminder/bump", "item_id": "…"}
+```yaml
+automation:
+  - alias: The filter has been changed
+    trigger:
+      platform: state
+      entity_id: input_button.hvac_filter_changed
+    action:
+      - service: haventory.reminder_bump
+        data:
+          item_id: "0f2c…"
+        response_variable: bumped
+      - service: notify.notify
+        data:
+          message: "Next filter change: {{ bumped.item.reminder_date }}"
 ```
+
+Setting and clearing a reminder are ordinary field writes, so they ride the item services:
+`haventory.item_create` and `haventory.item_update` both take `reminder_date` and
+`reminder_interval`, and `null` for either clears it.
+
+```yaml
+      - service: haventory.item_update
+        data:
+          item_id: "0f2c…"
+          reminder_date: "2026-09-01"
+          reminder_interval: { unit: months, count: 3 }
+```
+
+The same three verbs are on the WebSocket API for a client that has one open —
+`haventory/reminder/set`, `/clear` and `/bump`.
 
 Bumping counts from today when the reminder is overdue, so one you forgot for a year lands on
 its next future date rather than on another one already past. "Today" is your Home Assistant
 timezone's day, the same one the calendar rolls over on — so bumping something in the evening
 advances it to the occurrence the calendar is showing you next, wherever you live. A reminder
-you no longer want is cleared from the same editor, or with `haventory/reminder/clear`.
+you no longer want is cleared from the same editor, or by writing `null` over its date.
 
 ### Shopping list
 
