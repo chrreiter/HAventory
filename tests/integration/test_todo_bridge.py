@@ -280,3 +280,51 @@ async def test_the_options_flow_offers_the_shopping_list_field(hass: HomeAssista
     assert result["type"] == "form"
     assert result["step_id"] == "init"
     assert "todo" in result["data_schema"].schema
+
+    # And the picker only offers lists this bridge can take a line back off.
+    # Home Assistant resolves the feature name by importing the module, so a
+    # wrong string is refused when the selector is built, not when it is drawn.
+    section = result["data_schema"].schema["todo"]
+    selector = next(iter(section.schema.schema.values()))
+    assert selector.config["filter"] == [
+        {
+            "domain": ["todo"],
+            "supported_features": [int(TodoListEntityFeature.DELETE_TODO_ITEM)],
+        }
+    ]
+
+
+async def test_a_list_that_cannot_delete_keeps_one_line_rather_than_stacking_them(
+    hass: HomeAssistant, todo_list: _TestTodoList
+) -> None:
+    """An option set before the picker was filtered still names such a list.
+
+    Home Assistant refuses `todo.remove_item` on an entity without
+    `DELETE_TODO_ITEM`, and the bridge used to read that refusal as permanent and
+    give up the link — so the next crossing wrote a second line, and the one
+    after that a third, with nothing HAventory offers able to clear them.
+    """
+
+    todo_list._attr_supported_features = TodoListEntityFeature.CREATE_TODO_ITEM
+    todo_list.async_write_ha_state()
+    await _setup_haventory(hass, entity_id=LIST_ENTITY_ID)
+    item_id = await _create_low_item(hass)
+    assert todo_list.summaries == [f"Peanut butter {TIMES}2"]
+
+    for _cycle in range(3):
+        await hass.services.async_call(
+            DOMAIN,
+            "item_set_quantity",
+            {"item_id": item_id, "quantity": THRESHOLD + 1},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+        await hass.services.async_call(
+            DOMAIN,
+            "item_set_quantity",
+            {"item_id": item_id, "quantity": LOW_QUANTITY},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    assert todo_list.summaries == [f"Peanut butter {TIMES}2"]

@@ -46,6 +46,10 @@ ADD = f"{todo_bridge.TODO_DOMAIN}.{todo_bridge.SERVICE_ADD_ITEM}"
 REMOVE = f"{todo_bridge.TODO_DOMAIN}.{todo_bridge.SERVICE_REMOVE_ITEM}"
 UPDATE = f"{todo_bridge.TODO_DOMAIN}.{todo_bridge.SERVICE_UPDATE_ITEM}"
 
+# `TodoListEntityFeature` bits, as a state's `supported_features` reports them.
+CREATE_ONLY = 1
+CREATE_AND_DELETE = 1 | todo_bridge.TODO_FEATURE_DELETE_ITEM
+
 
 class _Services:
     """Record the `todo.*` calls a pass makes, and refuse the named ones."""
@@ -188,10 +192,11 @@ async def test_a_refused_add_leaves_the_item_unlinked_so_the_next_pass_retries()
 
 @pytest.mark.asyncio
 async def test_a_refused_removal_gives_up_the_link() -> None:
-    """A line deleted by hand, or a list that cannot delete, is permanent.
+    """A line deleted by hand, or a list that is gone, is permanent.
 
     Holding the link would keep the item off the list for good; giving it up
-    costs at most one line the user clears themselves.
+    costs at most one line the user clears themselves. A list that cannot delete
+    at all is the exception, tested below.
     """
 
     hass, repo, services, _entry = await _bridge()
@@ -390,3 +395,74 @@ async def test_a_stored_row_missing_half_of_itself_is_dropped_on_load() -> None:
     assert hass.data[DOMAIN]["todo_links"] == {
         "kept": {"entity_id": TODO_ENTITY, "summary": f"Peanut butter {TIMES}2"}
     }
+
+
+# -----------------------------
+# A list that cannot delete its own lines
+# -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_list_that_cannot_delete_collects_one_line_per_item_and_no_more() -> None:
+    """The one accumulation the bridge could not recover from.
+
+    Every other refusal is about one line and will not repeat. "This list cannot
+    delete" repeats on every crossing, and giving up the link each time meant the
+    next crossing wrote a fresh duplicate of a line the bridge had forgotten —
+    unbounded, and clearable by nothing HAventory offers.
+    """
+
+    hass, repo, services, _entry = await _bridge()
+    hass.states.async_set(TODO_ENTITY, "0", {"supported_features": CREATE_ONLY})
+    item = _low_item(repo)
+    await todo_bridge.async_reconcile(hass)
+    assert services.names == [ADD]
+
+    for cycle in range(3):
+        services.clear()
+        repo.set_quantity(str(item.id), THRESHOLD + 1)
+        await todo_bridge.async_reconcile(hass)
+        # Nothing is even attempted: Home Assistant would refuse it, and the
+        # link is what stops the next crossing writing a second line.
+        assert services.calls == [], cycle
+        assert list(hass.data[DOMAIN]["todo_links"]) == [str(item.id)], cycle
+
+        services.clear()
+        repo.set_quantity(str(item.id), THRESHOLD - 1)
+        await todo_bridge.async_reconcile(hass)
+        # The line already on the list is restated in place where the shortfall
+        # moved, and never added a second time.
+        assert ADD not in services.names, cycle
+
+
+@pytest.mark.asyncio
+async def test_a_list_that_can_delete_still_has_its_lines_retracted() -> None:
+    """The control: the new check must not stop an ordinary list working."""
+
+    hass, repo, services, _entry = await _bridge()
+    hass.states.async_set(TODO_ENTITY, "0", {"supported_features": CREATE_AND_DELETE})
+    item = _low_item(repo)
+    await todo_bridge.async_reconcile(hass)
+
+    services.clear()
+    repo.set_quantity(str(item.id), THRESHOLD + 1)
+    await todo_bridge.async_reconcile(hass)
+
+    assert services.names == [REMOVE]
+    assert hass.data[DOMAIN]["todo_links"] == {}
+
+
+@pytest.mark.asyncio
+async def test_a_list_publishing_no_features_is_treated_as_it_always_was() -> None:
+    """Only a list that positively says it cannot delete gets the new treatment."""
+
+    hass, repo, services, _entry = await _bridge()
+    item = _low_item(repo)
+    await todo_bridge.async_reconcile(hass)
+
+    services.clear()
+    repo.set_quantity(str(item.id), THRESHOLD + 1)
+    await todo_bridge.async_reconcile(hass)
+
+    assert services.names == [REMOVE]
+    assert hass.data[DOMAIN]["todo_links"] == {}

@@ -139,8 +139,11 @@ reinstall, move to another HACS channel, or clear a bad config entry.
 To delete the data as well — after exporting a backup, if you might want it later:
 
 1. Remove the integration and stop Home Assistant.
-2. Delete `<config>/.storage/haventory_store`.
-3. Start Home Assistant.
+2. Delete `<config>/.storage/haventory_store`, and `<config>/.storage/haventory_todo_links`
+   if you ever pointed HAventory at a shopping list — it records which lines on that list
+   are HAventory's, by item name.
+3. Delete `<config>/haventory/attachments/` if you attached photos or manuals.
+4. Start Home Assistant.
 
 Upgrading from a version that copied the card into `<config>/www/haventory/`? That copy is
 no longer used and can be deleted; the integration ignores it either way.
@@ -341,8 +344,10 @@ how many it takes to reach the threshold, never less than one. Restock it and th
 away.
 
 The field is empty by default, and empty means off; nothing is written to any list until
-one is chosen. Any `todo.*` entity works — Home Assistant's own **Local to-do** lists, or a
-shared Google Tasks or CalDAV list.
+one is chosen. Any `todo.*` entity that can both add and delete lines works — Home
+Assistant's own **Local to-do** lists, or a shared Google Tasks or CalDAV list. A list that
+can only be added to is not offered in the picker: restocking could never take its lines
+back off, so it would collect one per low-stock crossing with nothing able to clear them.
 
 The bridge does not track edges, it converges: every change runs one pass that compares
 what is low *right now* against the lines it has already written, and issues only the
@@ -357,7 +362,8 @@ Three things follow from that, worth knowing before you pick a list:
   the bridge takes that as "handled" rather than re-adding it. It comes back the next time
   the item leaves the low-stock set and drops into it again.
 - **Clearing the field stops the mirroring and leaves the list as it stands.** Switching to
-  a different list moves the lines across instead.
+  a different list moves the lines across instead — from whichever list is answering at the
+  time, so switching away from one that is unavailable leaves its lines where they are.
 
 An inventory change never fails because the list did: a list that is unavailable, gone, or
 refuses the write is logged as a warning, and the next change tries again.
