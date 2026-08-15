@@ -15,6 +15,7 @@ export type ColumnKey =
   | 'tags'
   | 'due_date'
   | 'inspection_date'
+  | 'reminder_date'
   | 'updated_at';
 
 export interface ColumnDef {
@@ -27,7 +28,13 @@ export interface ColumnDef {
    * category and tags are deliberately absent: the API cannot sort by them, and
    * a header that looks clickable but does nothing is worse than a plain one.
    */
-  sortField?: 'quantity' | 'due_date' | 'inspection_date' | 'updated_at' | 'location';
+  sortField?:
+    | 'quantity'
+    | 'due_date'
+    | 'inspection_date'
+    | 'reminder_date'
+    | 'updated_at'
+    | 'location';
 }
 
 /** Canonical column order — the default, and what "Reset order" restores. */
@@ -57,19 +64,43 @@ export const COLUMN_DEFS: readonly ColumnDef[] = [
     tableSize: '124px',
     sortField: 'inspection_date',
   },
+  {
+    key: 'reminder_date',
+    label: 'Reminder',
+    // The date is what the column sorts on, but the cell shows the repeat
+    // beside it — "Aug 31 · every 3 months" is the whole reminder, and the date
+    // alone cannot tell a series from a one-off.
+    tableSize: '150px',
+    sortField: 'reminder_date',
+  },
   { key: 'updated_at', label: 'Updated', tableSize: '96px', sortField: 'updated_at' },
 ];
 
 const COLUMN_ORDER: ColumnKey[] = COLUMN_DEFS.map((c) => c.key);
 
 /**
- * A browser that has made no choice yet gets every column.
+ * Columns a browser that has made no choice yet is off by default.
+ *
+ * Only Reminder. The sidebar panel at 1920 leaves the table a 1360px content
+ * box, and the rest of the set already spends it: Location and Tags finish a
+ * path segment and a tag chip out of what is left over, and one more fixed
+ * track puts every flexible column on its floor. A reminder is also the one
+ * column most households have nothing to put in — the feature is opt-in per
+ * item — so it is the one that earns its width only where it is asked for.
+ */
+const OFF_BY_DEFAULT: readonly ColumnKey[] = ['reminder_date'];
+
+/**
+ * A browser that has made no choice yet gets every column but those above.
  *
  * Showing the whole record is what makes the optional columns discoverable at
- * all; the picker is there to thin it down. The table scrolls sideways when the
- * full set is wider than the viewport, so no column is unreachable.
+ * all; the picker is there to thin it down, and to switch on what starts off.
+ * The table scrolls sideways when the chosen set is wider than the viewport, so
+ * no column is unreachable.
  */
-export const DEFAULT_COLUMNS: readonly ColumnKey[] = COLUMN_DEFS.map((c) => c.key);
+export const DEFAULT_COLUMNS: readonly ColumnKey[] = COLUMN_DEFS.map((c) => c.key).filter(
+  (key) => !OFF_BY_DEFAULT.includes(key),
+);
 
 export const COLUMN_PREFS_STORAGE_KEY = 'haventory:columns:v1';
 

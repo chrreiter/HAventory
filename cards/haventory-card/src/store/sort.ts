@@ -3,7 +3,7 @@ import type { Sort, SortField, SortOrder } from './types';
 /**
  * Returns the default sort order for a given sort field.
  * - name, quantity, location: ascending (human-friendly)
- * - due_date, inspection_date: ascending (due/inspection soonest first; undated last)
+ * - due_date, inspection_date, reminder_date: ascending (soonest first; undated last)
  * - created_at, updated_at: descending (newest first)
  *
  * `location` opens ascending for the reason `name` does — a path is text, and
@@ -16,6 +16,7 @@ export function getDefaultOrderFor(field: SortField): SortOrder {
     field === 'quantity' ||
     field === 'due_date' ||
     field === 'inspection_date' ||
+    field === 'reminder_date' ||
     field === 'location'
   )
     return 'asc';

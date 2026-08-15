@@ -1946,6 +1946,17 @@ export class HVFullView extends LitElement {
                 ${counts.inspection_overdue_count} to inspect
               </button>`
             : null}
+          ${allowsPill('reminder_due') && counts && (counts.reminder_due_count ?? 0) > 0
+            ? html`<button
+                class="hv-chip pill warning ${filters.reminderDueOnly ? 'on' : ''}"
+                data-testid="full-badge-reminder"
+                aria-pressed=${String(filters.reminderDueOnly)}
+                title="Show only items whose reminder has come round"
+                @click=${() => this._setFilters({ reminderDueOnly: !filters.reminderDueOnly })}
+              >
+                ${counts.reminder_due_count} to do
+              </button>`
+            : null}
           ${allowsPill('checked_out') && counts && counts.checked_out_count > 0
             ? html`<button
                 class="hv-chip pill ${filters.checkedOutOnly ? 'on' : ''}"
@@ -2200,6 +2211,11 @@ export class HVFullView extends LitElement {
                 const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
                 const item = st?.items.find((i) => i.id === itemId);
                 if (item) void this.store?.updateItem(item.id, { due_date: dueDate }, item.version);
+              }}
+              @reminder-bump=${(e: CustomEvent) => {
+                const { itemId } = e.detail as { itemId: string };
+                const item = st?.items.find((i) => i.id === itemId);
+                if (item) void this.store?.bumpReminder(item.id, item.version);
               }}
               @request-delete=${(e: CustomEvent) =>
                 this.dispatchEvent(

@@ -49,6 +49,7 @@ from .models import (
     item_inspection_is_overdue,
     item_is_low_stock,
     item_is_overdue,
+    item_reminder_is_due,
     load_attachments,
     load_reminder_anchor,
     load_reminder_interval,
@@ -1763,6 +1764,7 @@ class Repository:
             "checked_out_count": len(self._checked_out_item_ids),
             "overdue_count": self._count_overdue(),
             "inspection_overdue_count": self._count_inspection_overdue(),
+            "reminder_due_count": self._count_reminder_due(),
             "missing_count": len(self._status_to_item_ids.get("missing", set())),
             "needs_repair_count": len(self._status_to_item_ids.get("needs_repair", set())),
             "status_counts": status_counts,
@@ -1799,6 +1801,17 @@ class Repository:
         return sum(
             1 for it in self._items_by_id.values() if item_inspection_is_overdue(it, today=today)
         )
+
+    def _count_reminder_due(self) -> int:
+        """Count items whose reminder has come round.
+
+        Unindexed for the same reason as the two above, and today counts: a
+        reminder names the day it is asking about, so an item reminding today is
+        one the household still has to act on.
+        """
+
+        today = today_utc_date()
+        return sum(1 for it in self._items_by_id.values() if item_reminder_is_due(it, today=today))
 
     def count_matching_by_location(self, flt: ItemFilter | None = None) -> dict[str | None, int]:
         """Count filter matches grouped by the item's own location.
@@ -2171,10 +2184,15 @@ class Repository:
             )
         if field == "quantity":
             return int(item.quantity)
-        if field == "due_date":
-            return date_sort_key(item.due_date, order)
-        if field == "inspection_date":
-            return date_sort_key(item.inspection_date, order)
+        # The three date fields differ only in which date they read, so they are
+        # one branch rather than three that would have to be kept in step.
+        dates = {
+            "due_date": item.due_date,
+            "inspection_date": item.inspection_date,
+            "reminder_date": item.reminder_date,
+        }
+        if field in dates:
+            return date_sort_key(dates[field], order)
         if field == "location":
             return location_sort_key(item.location_path, order)
         # created_at, or the updated_at default. Canonical fixed-width 'Z'

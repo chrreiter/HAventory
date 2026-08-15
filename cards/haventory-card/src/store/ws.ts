@@ -123,6 +123,22 @@ export class WSClient {
     return this.hass.callWS<Item>(payload);
   }
 
+  /**
+   * Mark a recurring reminder done and move it to its next occurrence.
+   *
+   * The next date is the backend's to work out — it counts from the series
+   * anchor, which no client is sent in a form it could count from — so there is
+   * nothing to send but the item and its version.
+   */
+  bumpReminder(itemId: string, expectedVersion?: number) {
+    const payload: Record<string, unknown> = {
+      type: 'haventory/reminder/bump',
+      item_id: itemId,
+    };
+    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
+    return this.hass.callWS<Item>(payload);
+  }
+
   setLowStockThreshold(itemId: string, threshold: number | null, expectedVersion?: number) {
     const payload: Record<string, unknown> = {
       type: 'haventory/item/set_low_stock_threshold',

@@ -1116,4 +1116,64 @@ describe('hv-detail-sheet: documents', () => {
       ['First', 'Second'],
     );
   });
+  // A reminder was set-only before: the editor could write one and no surface
+  // read it back, so a household could not see which of its things had one.
+  describe('the reminder row', () => {
+    const MONTHLY = { unit: 'months' as const, count: 3 };
+
+    it('says nothing at all when the item carries no reminder', async () => {
+      const el = await mount({ reminder_date: null });
+      expect(q(el, '[data-testid="sheet-reminder"]')).toBe(null);
+      expect(q(el, '[data-testid="sheet-reminder-bump"]')).toBe(null);
+    });
+
+    // The date alone cannot tell a series from a one-off, and the difference is
+    // what Mark done means.
+    it('reads the date and the repeat together for a series', async () => {
+      const el = await mount({ reminder_date: '2026-08-31', reminder_interval: MONTHLY });
+      expect(q(el, '[data-testid="sheet-reminder"]')?.textContent).toContain('every 3 months');
+      expect(q(el, '[data-testid="sheet-reminder"]')?.textContent).toContain('Aug 31');
+    });
+
+    it('reads a one-off as its date alone', async () => {
+      const el = await mount({ reminder_date: '2026-08-31', reminder_interval: null });
+      expect(q(el, '[data-testid="sheet-reminder"]')?.textContent?.trim()).toBe('Aug 31');
+    });
+
+    // The backend refuses a bump on a one-off — there is no next occurrence to
+    // move to — so the action is only offered where it would succeed.
+    it('offers Mark done for a series and withholds it from a one-off', async () => {
+      const series = await mount({ reminder_date: '2026-08-31', reminder_interval: MONTHLY });
+      expect(q(series, '[data-testid="sheet-reminder-bump"]')).toBeTruthy();
+
+      const oneOff = await mount({ reminder_date: '2026-08-31', reminder_interval: null });
+      expect(q(oneOff, '[data-testid="sheet-reminder-bump"]')).toBe(null);
+    });
+
+    it('raises reminder-bump with the item it belongs to', async () => {
+      const el = await mount({ id: 'i-7', reminder_date: '2026-08-31', reminder_interval: MONTHLY });
+      let detail: { itemId?: string } | null = null;
+      el.addEventListener('reminder-bump', (e) => {
+        detail = (e as CustomEvent<{ itemId: string }>).detail;
+      });
+
+      q<HTMLButtonElement>(el, '[data-testid="sheet-reminder-bump"]')!.click();
+
+      expect(detail).toEqual({ itemId: 'i-7' });
+    });
+
+    // Same amber the Inspection row uses, and on the inclusive rule: a reminder
+    // names the day it is asking about, so today already counts.
+    it('marks a reminder that has come round, today included', async () => {
+      const today = new Date();
+      const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(
+        today.getDate(),
+      ).padStart(2, '0')}`;
+      const due = await mount({ reminder_date: iso, reminder_interval: MONTHLY });
+      expect(q(due, '[data-testid="sheet-reminder"]')?.classList.contains('late')).toBe(true);
+
+      const later = await mount({ reminder_date: '2099-01-01', reminder_interval: MONTHLY });
+      expect(q(later, '[data-testid="sheet-reminder"]')?.classList.contains('late')).toBe(false);
+    });
+  });
 });

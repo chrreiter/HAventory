@@ -17,6 +17,7 @@ export const QUICK_FILTER_KEYS = [
   'low_stock',
   'overdue',
   'inspection_due',
+  'reminder_due',
   'checked_out',
 ] as const;
 

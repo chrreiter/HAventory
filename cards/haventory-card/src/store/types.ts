@@ -201,6 +201,12 @@ export interface ItemFilter {
    * the next inspection is already missed. Independent of check-out state.
    */
   inspection_overdue_only?: boolean;
+  /**
+   * Only items whose `reminder_date` is on or before today (UTC). Today counts,
+   * unlike the two above: a reminder names the day it is asking about, so an
+   * item reminding today is one the household still has to act on.
+   */
+  reminder_due_only?: boolean;
   location_id?: string | null;
   /**
    * Multi-select beside `location_id`, unioned with it. `include_subtree` is
@@ -222,6 +228,7 @@ export type SortField =
   | 'quantity'
   | 'due_date'
   | 'inspection_date'
+  | 'reminder_date'
   /** The item's denormalized location path. Not an area sort — see the contract. */
   | 'location';
 export type SortOrder = 'asc' | 'desc';
@@ -254,6 +261,12 @@ export interface StatsCounts {
    * same reason: an older backend does not send it.
    */
   inspection_overdue_count?: number;
+  /**
+   * Items whose reminder has come round, across the whole inventory.
+   * Calendar-derived like the two above and optional for the same reason, but
+   * counted inclusive of today: a reminder names the day it is asking about.
+   */
+  reminder_due_count?: number;
   /**
    * Items whose stored `status` is `missing` / `needs_repair`. Stored state,
    * not calendar-derived — every mutation that moves them emits fresh counts.
@@ -630,6 +643,8 @@ export interface StoreFilters {
   overdueOnly: boolean;
   /** Only items past the date they were next due for inspection. */
   inspectionDueOnly: boolean;
+  /** Only items whose reminder has come round — today counts, unlike the two above. */
+  reminderDueOnly: boolean;
   /** Only items with this stored status; null means any. */
   status: ItemStatus | null;
   /** The categories the list is narrowed to, unioned. Empty means every category. */

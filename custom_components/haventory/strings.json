@@ -97,6 +97,7 @@
         "low_stock": "Low stock",
         "overdue": "Overdue",
         "inspection_due": "Due for inspection",
+        "reminder_due": "Reminder due",
         "checked_out": "Checked out"
       }
     }

@@ -265,6 +265,7 @@ counts items at the node or any descendant (so it is always >= the direct count)
   - `orphaned_only?: boolean` (only items without a location, i.e. `location_id == null`)
   - `overdue_only?: boolean` (only items whose `due_date` is strictly before today, UTC)
   - `inspection_overdue_only?: boolean` (only items whose `inspection_date` is strictly before today, UTC; independent of check-out state)
+  - `reminder_due_only?: boolean` (only items whose `reminder_date` is **on or before** today, UTC — today counts, because a reminder names the day it is asking about)
   - `location_id?: uuid-v4|null`
   - `location_ids?: uuid-v4[]` (multi-select beside `location_id`; see the union rule below)
   - `area_id?: string`
@@ -294,8 +295,8 @@ counts items at the node or any descendant (so it is always >= the direct count)
   breaking this form.
 
 - Sort:
-  - `{ field: "updated_at"|"created_at"|"name"|"quantity"|"due_date"|"inspection_date"|"location", order: "asc"|"desc" }`
-  - `due_date` / `inspection_date`: items without a date sort last in both orders; ties break by id asc.
+  - `{ field: "updated_at"|"created_at"|"name"|"quantity"|"due_date"|"inspection_date"|"reminder_date"|"location", order: "asc"|"desc" }`
+  - `due_date` / `inspection_date` / `reminder_date`: items without a date sort last in both orders; ties break by id asc. `reminder_date` orders on the next occurrence, which is what a reminder's date holds — not on `reminder_anchor`, which says where the series started rather than when it is next asking.
   - `location` orders on the item's own denormalized `location_path.sort_key` — the same
     key the Location column displays a path from, so the ordering is the one that column
     implies. **Items with no location sort last in both orders**, the rule the two date
@@ -356,6 +357,9 @@ Counts object used in `stats` results and events:
 it moves with the calendar, so the same data can report a different count tomorrow.
 `inspection_overdue_count` is the same question asked of `inspection_date`, over the whole
 inventory rather than only the checked-out items, and moves with the calendar the same way.
+`reminder_due_count` is the `reminder_date` equivalent, and the one calendar count that
+**includes today**: a reminder names the day it is asking about, so an item reminding today
+is one the household still has to act on.
 `missing_count` / `needs_repair_count` count items by their stored `status`; unlike the two
 calendar counts they only change on a mutation, so events keep them current.
 `status_counts` is that same count for every defined slug, `ok` included. It is additive to

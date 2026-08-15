@@ -276,6 +276,9 @@ class ItemFilter(TypedDict, total=False):
     overdue_only: bool
     # When true, only items whose inspection_date has passed (see filter_items)
     inspection_overdue_only: bool
+    # When true, only items whose reminder has come round — today included,
+    # unlike the two above (see filter_items)
+    reminder_due_only: bool
     location_id: str | None
     # Multi-select beside the scalar above, unioned the same way — see
     # `selected_location_ids`. `include_subtree` governs the whole selection.
@@ -298,6 +301,10 @@ class Sort(TypedDict):
         "quantity",
         "due_date",
         "inspection_date",
+        # The next occurrence a reminder is asking about, not `reminder_anchor`
+        # — the anchor says where the series started, which is not a useful
+        # order to read a list of chores in.
+        "reminder_date",
         # The item's denormalized location path, which is the ordering the
         # Location column implies. Not an area sort: an area lives on the
         # location tree and its name in Home Assistant's registry, neither of
@@ -569,7 +576,16 @@ def selected_location_ids(flt: ItemFilter) -> list[str]:
 
 #: The fields :func:`sort_items` can order by, and the two orders it accepts.
 SORT_FIELDS: Final[frozenset[str]] = frozenset(
-    {"updated_at", "created_at", "name", "quantity", "due_date", "inspection_date", "location"}
+    {
+        "updated_at",
+        "created_at",
+        "name",
+        "quantity",
+        "due_date",
+        "inspection_date",
+        "reminder_date",
+        "location",
+    }
 )
 SORT_ORDERS: Final[frozenset[str]] = frozenset({"asc", "desc"})
 #: The keys a sort object carries. Anything else is a client typo.
@@ -1472,6 +1488,20 @@ def item_inspection_is_overdue(item: Item, *, today: str = "") -> bool:
     return item.inspection_date < (today or today_utc_date())
 
 
+def item_reminder_is_due(item: Item, *, today: str = "") -> bool:
+    """Return True once the item's reminder has come round.
+
+    Inclusive of today, unlike the two overdue tests above: a reminder names the
+    day something should be done, so that day is when it is asking rather than
+    the last day it is not. A one-off counts the same as a series — both are a
+    date the household said to be reminded on.
+    """
+
+    if not item.reminder_date:
+        return False
+    return item.reminder_date <= (today or today_utc_date())
+
+
 def _parse_location_selection(location_ids: Sequence[str]) -> list[uuid.UUID]:
     """The selected location ids as UUIDs, dropping any that will not parse.
 
@@ -1526,6 +1556,8 @@ def filter_items(
     - orphaned_only: only items without a location (location_id is None)
     - overdue_only: due_date set and strictly before today (UTC)
     - inspection_overdue_only: inspection_date set and strictly before today (UTC)
+    - reminder_due_only: reminder_date set and on or before today (UTC) — today
+      counts, because a reminder names the day it is asking about
     - location_id / location_ids: equals any of the selection; include_subtree
       optionally includes descendants (by prefix of id_path), one flag for all
     - updated_after/created_after: ISO-8601 UTC with 'Z', strictly greater-than
@@ -1551,6 +1583,7 @@ def filter_items(
     inspection_overdue_only = (
         bool(flt.get("inspection_overdue_only")) if "inspection_overdue_only" in flt else False
     )
+    reminder_due_only = bool(flt.get("reminder_due_only")) if "reminder_due_only" in flt else False
     location_ids = selected_location_ids(flt)
     include_subtree = bool(flt.get("include_subtree")) if "include_subtree" in flt else False
     updated_after = flt.get("updated_after") if "updated_after" in flt else None
@@ -1573,7 +1606,9 @@ def filter_items(
     location_needles = _parse_location_selection(location_ids)
     if location_ids and not location_needles:
         return []
-    today = today_utc_date() if (overdue_only or inspection_overdue_only) else ""
+    today = (
+        today_utc_date() if (overdue_only or inspection_overdue_only or reminder_due_only) else ""
+    )
 
     predicates_active = (
         bool(q)
@@ -1586,6 +1621,7 @@ def filter_items(
         or orphaned_only
         or overdue_only
         or inspection_overdue_only
+        or reminder_due_only
         or bool(location_ids)
         or updated_after is not None
         or created_after is not None
@@ -1612,6 +1648,7 @@ def filter_items(
         matches_inspection = (not inspection_overdue_only) or item_inspection_is_overdue(
             it, today=today
         )
+        matches_reminder = (not reminder_due_only) or item_reminder_is_due(it, today=today)
         matches_location = _item_matches_locations(it, location_needles, include_subtree)
         # Canonical fixed-width 'Z' timestamps compare lexicographically, so no
         # per-item parsing is needed (the filter bound was validated above).
@@ -1632,6 +1669,7 @@ def filter_items(
             and matches_orphaned
             and matches_overdue
             and matches_inspection
+            and matches_reminder
             and matches_location
             and matches_updated
             and matches_created
@@ -1719,6 +1757,8 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
         result.sort(key=lambda x: date_sort_key(x.due_date, order), reverse=reverse)
     elif field == "inspection_date":
         result.sort(key=lambda x: date_sort_key(x.inspection_date, order), reverse=reverse)
+    elif field == "reminder_date":
+        result.sort(key=lambda x: date_sort_key(x.reminder_date, order), reverse=reverse)
     elif field == "location":
         result.sort(key=lambda x: location_sort_key(x.location_path, order), reverse=reverse)
     elif field == "created_at":

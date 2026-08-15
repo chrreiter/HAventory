@@ -296,9 +296,19 @@ sliding down to the 28th forever — and it keeps it **however often you bump it
 31st reminder in a 30-day month moves it to the 30th, and the one after that is the 31st
 again.
 
+An item that carries a reminder says so wherever you read it: the detail sheet gains a
+**Reminder** row with the next occurrence and the repeat beside it — *Aug 31 · every 3
+months* — and a **Mark done** button that moves the series on without leaving the card.
+The full view offers a **Reminder** column (switch it on under ⋮ → **Columns**; it starts
+off, because most households have nothing to put in it), sorting by the next occurrence,
+and a **to do** pill that narrows the list to reminders that have come round. That last
+one counts today: a reminder names the day it is asking about, unlike a due date, which
+has to pass before anything is late.
+
 When you have actually changed the filter, **bump** the reminder and the whole series moves
-on one step. From an automation or a script that is one service call — say, when the smart
-plug on the boiler reports the service engineer's visit is done:
+on one step. That is what **Mark done** does; from an automation or a script it is one
+service call — say, when the smart plug on the boiler reports the service engineer's visit
+is done:
 
 ```yaml
 automation:
@@ -734,10 +744,10 @@ throughout.
   when an item is flagged Missing / Needs repair, and hover actions.
 - **Filters** — a collapsible panel exposing the whole backend filter object: location
   (from a real tree), area, include-subtree, category chips with counts, tag chips with an
-  any/all toggle, low-stock-only, checked-out, overdue, inspection-due and no-location —
+  any/all toggle, low-stock-only, checked-out, overdue, inspection-due, reminder-due and no-location —
   each with the count of what it would keep — a single-select status row (OK / Missing /
   Needs repair, the flagged two priced from the stats counts), plus updated / created
-  windows (each row's ≥ flips to ≤ for "before") and sort across all six sortable fields.
+  windows (each row's ≥ flips to ≤ for "before") and sort across every sortable field.
   "Low stock" (a filter) and "Low stock first" (an ordering) are separate, independently
   clearable controls. Active filters appear as removable chips.
 - **Editing** — the row expands in place; there is no dialog chain. Full field parity:
@@ -767,10 +777,13 @@ throughout.
   a sortable table. Only columns the backend can sort by get a clickable header — Location
   among them, ordering on the path each row shows, with items filed nowhere at the end
   whichever way it runs. A browser
-  that has made no choice yet shows every optional column — quantity, status, category,
-  location, tags, due, next inspection, updated — and the ⋮ → **Columns** picker is where
-  you thin that down and put the ones you keep in the order you want them, with the up/down
-  buttons beside each shown column and a **Reset order** back to the canonical one. The
+  that has made no choice yet shows every optional column but one — quantity, status,
+  category, location, tags, due, next inspection, updated — and the ⋮ → **Columns** picker
+  is where you thin that down, switch on the one that starts off (**Reminder**), and put
+  the ones you keep in the order you want them, with the up/down buttons beside each shown
+  column and a **Reset order** back to the canonical one. Reminder is off by default
+  because the panel's table has no width to spare: one more column on by default would put
+  Location and Tags on their floors, and most households set no reminders at all. The
   order and the selection are one per-browser preference; the table scrolls sideways rather
   than dropping a column you kept.
   The Status column names every row, OK included, and the name's amber status chip stands
@@ -883,7 +896,7 @@ quick_filters:  # optional; which quick-filter pills this card offers
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `title` | string | the integration-wide card title | Names this card, for this dashboard only. |
-| `quick_filters` | list | the integration-wide choice, or every pill | Which quick-filter pills the card and its full view offer: `total`, `low_stock`, `overdue`, `inspection_due`, `checked_out`. |
+| `quick_filters` | list | the integration-wide choice, or every pill | Which quick-filter pills the card and its full view offer: `total`, `low_stock`, `overdue`, `inspection_due`, `reminder_due`, `checked_out`. |
 
 Those two are the only options the card reads. Any other key is ignored rather than
 rejected, so a stale dashboard config never breaks the card — and the same holds inside

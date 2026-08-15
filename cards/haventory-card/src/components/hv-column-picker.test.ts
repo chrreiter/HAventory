@@ -46,7 +46,15 @@ describe('hv-column-picker', () => {
     const el = await mount({ columns: ['location', 'quantity'] });
     const keys = keysOf(el);
     expect(keys.slice(0, 2)).toEqual(['location', 'quantity']);
-    expect(keys.slice(2)).toEqual(['status', 'category', 'tags', 'due_date', 'inspection_date', 'updated_at']);
+    expect(keys.slice(2)).toEqual([
+      'status',
+      'category',
+      'tags',
+      'due_date',
+      'inspection_date',
+      'reminder_date',
+      'updated_at',
+    ]);
   });
 
   // A re-enabled column joins at the end: dropping it back into its canonical
