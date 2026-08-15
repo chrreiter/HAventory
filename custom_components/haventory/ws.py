@@ -16,6 +16,7 @@ from typing import Any, TypedDict, cast
 import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 try:
     from homeassistant.components.file_upload import process_uploaded_file
@@ -1388,8 +1389,14 @@ async def ws_reminder_bump(
     Counted from the later of the anchor and today, so a reminder bumped on the
     day it came round advances by exactly one interval, and one nobody bumped
     for a year lands on its next *future* occurrence instead of another date
-    already past. Today is the UTC one, the same day `overdue_only` and the two
-    date-derived counts are measured against.
+    already past.
+
+    Today is the **local** one, the day the calendar runs on. A reminder is a
+    household-facing date rather than a timestamp, and bumping is what somebody
+    does in the evening — which west of Greenwich is already tomorrow in UTC, so
+    counting from the UTC day would skip the occurrence their own calendar is
+    showing them for tomorrow. The two date-derived counts still measure against
+    the UTC day; see the README's note on the two boundaries.
     """
 
     item = _repo(hass).get_item(msg["item_id"])
@@ -1405,7 +1412,7 @@ async def ws_reminder_bump(
             "set the reminder again to replace it"
         ) from exc
     following = next_occurrence_after(
-        anchor, item.reminder_interval, max(anchor, date.fromisoformat(today_utc_date()))
+        anchor, item.reminder_interval, max(anchor, dt_util.now().date())
     )
     if following is None:
         raise ValidationError(

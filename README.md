@@ -168,6 +168,13 @@ They update the moment something changes — a card edit, a `haventory.*` servic
 import — with no polling interval to tune. The two date-derived ones also roll over at UTC
 midnight, so "Overdue" grows overnight without anybody touching the inventory.
 
+**UTC midnight, deliberately, and it is not the calendar's midnight.** These two counts
+compare stored dates against the UTC day, which is also the day `item/list`'s overdue
+filters use; the calendar and the reminder bump run on your Home Assistant timezone's day,
+because those are dates you read and act on rather than numbers. The two boundaries coincide
+in London and diverge everywhere else: at UTC-8 "Overdue" ticks up at 4 pm local, eight hours
+before the calendar stops showing that item as due today.
+
 Put "Low stock: 3" on a dashboard next to the weather and nobody has to open the card to
 know whether a shopping trip is due.
 
@@ -289,8 +296,10 @@ on one step. From an automation or a script that is one WebSocket call:
 ```
 
 Bumping counts from today when the reminder is overdue, so one you forgot for a year lands on
-its next future date rather than on another one already past. A reminder you no longer want
-is cleared from the same editor, or with `haventory/reminder/clear`.
+its next future date rather than on another one already past. "Today" is your Home Assistant
+timezone's day, the same one the calendar rolls over on — so bumping something in the evening
+advances it to the occurrence the calendar is showing you next, wherever you live. A reminder
+you no longer want is cleared from the same editor, or with `haventory/reminder/clear`.
 
 ### Shopping list
 

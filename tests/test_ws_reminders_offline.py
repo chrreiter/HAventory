@@ -11,7 +11,7 @@ Scenarios:
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 from custom_components.haventory.const import DOMAIN
@@ -19,6 +19,7 @@ from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 from ws_helpers import ws_send
 
@@ -293,3 +294,36 @@ async def test_bump_names_a_stored_anchor_it_cannot_read() -> None:
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
     assert "reminder_date" in res["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_a_bump_counts_from_the_household_day_not_the_utc_one(monkeypatch) -> None:
+    """West of Greenwich an evening bump is already tomorrow in UTC.
+
+    The calendar rolls over at local midnight and a reminder is a household-facing
+    date, so counting from the UTC day skipped the occurrence the household's own
+    calendar was showing for tomorrow — silently, and only for the part of the day
+    the two disagree over. Neither the offline suite nor the dev container runs
+    anywhere but UTC, so the zone has to be pinned here.
+    """
+
+    hass = _hass()
+    item_id = await _item(hass)
+    # 18:00 on the 14th in Los Angeles is 02:00 on the 15th in UTC.
+    evening_local = datetime(2026, 8, 14, 18, 0, tzinfo=timezone(timedelta(hours=-8)))
+    monkeypatch.setattr(dt_util, "DEFAULT_TIME_ZONE", evening_local.tzinfo)
+    monkeypatch.setattr(dt_util, "now", lambda *_a, **_k: evening_local)
+    await ws_send(
+        hass,
+        2,
+        "haventory/reminder/set",
+        item_id=item_id,
+        reminder_date="2026-08-14",
+        reminder_interval={"unit": "days", "count": 1},
+    )
+
+    res = await ws_send(hass, 3, "haventory/reminder/bump", item_id=item_id)
+
+    assert res["success"] is True, res
+    # The 15th — the occurrence the calendar is showing for tomorrow — not the 16th.
+    assert res["result"]["reminder_date"] == "2026-08-15"
