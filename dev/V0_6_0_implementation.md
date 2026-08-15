@@ -278,6 +278,38 @@ for the owner to carry into the GitHub release.
 This PR also deletes `dev/schema_collapse_plan.md` (superseded by the issue),
 `dev/V0_6_0_concept.md` and this file — it closes the milestone's last issue.
 
+The issue's implementation notes are the design, but they were written on 2026-08-05 and
+the tree has moved three schema versions since. Decide the drifted details against the
+code and record them in the PR body, per §4; six are known already:
+
+- `CURRENT_SCHEMA_VERSION` is **8** (`storage.py:41`), not the notes' 5, so the closed
+  adoptable set is 2–8 — 0 and 1 stay outside it deliberately. The adopter folds in the
+  backfills of `migrate_4_to_5` (item statuses), `5_to_6`, `6_to_7` (hex status colours,
+  #436) and `7_to_8` (reminder nulls). There is no `migrate_3_to_4`; the chain no-ops
+  that step.
+- **The import side ships in this same PR, or the release notes are wrong.**
+  `_parse_envelope` refuses a document stamped above the running version, so the export
+  the release notes tell the owner to take first — stamped 8 — is unimportable into the
+  collapsed build. The notes cover this; `dev/schema_collapse_plan.md`'s export → wipe →
+  import crossing does not, which is one more reason this PR deletes it.
+- #454 put the repairs machinery in the path the adopter enters, so the notes'
+  "`__init__.py` — no change" is stale. Two behaviours to pin with tests: a store stamped
+  *inside* the adoptable range is adopted rather than routed to the schema-downgrade
+  Repairs card, and the corrupt-store repair still works on a v1 store. That card's text
+  names the supported version, so "newer than this build supports (8)" becomes (1).
+- Three stored artifacts sit outside the versioned payload and the collapse moves none of
+  them: `haventory_todo_links` (its own `Store` at version 1 — it survives the crossing
+  intact because import preserves item ids), the entry options (`todo_entity_id`, and a
+  possibly stale `allow_lossy_load` — #457), and any leftover
+  `.storage/haventory_store_corrupt_backup`, which keeps its pre-collapse stamp. State
+  that in the PR body rather than leaving a reader to work it out.
+- The notes' six-file test list undercounts: about 22 test files name a schema number or
+  a `migrate_N_to_M`, and both `haventory/version` and the diagnostics payload report one
+  — the latter written after the notes were.
+- **File the follow-up issue in this PR** (🔧 Task, V0.7.0): deleting `adopt_dev_schema`,
+  `ADOPTABLE_SCHEMA_VERSIONS` and the import-side exception one milestone after the
+  collapse ships. #229 asks for it and nothing has filed it yet.
+
 **This session does not merge.** End state: PR open, both gates + phacc + CI green, the
 evidence and release-note text in the body, a comment summarizing what the adopter
 accepts (v1–v8) and what it refuses. The owner's merge is the go; the post-release
@@ -390,14 +422,18 @@ Work in the HAventory repo, branching off the current origin/main. You are sessi
 the V0.6.0 plan; start only when S4's PR (#225) is merged and #229 is the milestone's
 last open issue. Read dev/V0_6_0_implementation.md §4 (rules) and §5.5 (your session),
 then issue #229 top to bottom — its body is the protocol, and where
-dev/schema_collapse_plan.md disagrees with it, the issue wins.
+dev/schema_collapse_plan.md disagrees with it, the issue wins. §5.5 lists six details the
+issue's 2026-08-05 notes get wrong or omit; the two that change the shape of the work are
+that the adoptable set is 2-8 rather than the notes' ceiling of 5, and that the
+import-side amnesty ships in this same PR or a pre-collapse export cannot be restored.
 
 Deliver one PR: "feat(storage): collapse the schema to v1" — closes #229. Follow the
 issue's delivery list: offline TDD across the dev range v1–v8, the sunset adopter
 (idempotent, a closed set, refusing above-range with the store untouched), release-test
 scenarios D7/D8/E3/E4 re-run against v1, and the release-notes text in the PR body. This
 PR also deletes dev/schema_collapse_plan.md, dev/V0_6_0_concept.md and
-dev/V0_6_0_implementation.md.
+dev/V0_6_0_implementation.md. Before you finish, file the V0.7.0 follow-up issue for the
+adopter's own deletion (🔧 Task), as #229 asks.
 
 Both gates and scripts/test_integration.sh before pushing; run the storage-lifecycle
 live checks against the dev HA (run-haventory skill) and put the evidence in the PR
