@@ -387,10 +387,14 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   items at a time do not multiply the cost. Reads don't share the problem (query paths are
   benchmarked at 10 000 items), correctness is unaffected at any size, and no limit is
   enforced. Several thousand items is comfortable; past that, an edit starts to be
-  something you notice.
-- **No admin gating.** No WebSocket command declares `require_admin`, so any logged-in
-  Home Assistant user — not only administrators — can read and mutate the whole inventory.
-  It is a household-wide tool, not a per-user one.
+  something you notice. The ceiling above a few thousand items is measured on real hardware
+  and published in [#277](https://github.com/chrreiter/HAventory/issues/277).
+- **No admin gating.** Neither a WebSocket command nor a `haventory.*` service asks whether
+  the caller is an administrator, so any logged-in Home Assistant user — not only
+  administrators — can read and mutate the whole inventory. It is a household-wide tool,
+  not a per-user one, which is the same choice Home Assistant's own to-do and shopping
+  lists make. The reasoning, and what gating it would cost, is in
+  [#479](https://github.com/chrreiter/HAventory/issues/479).
 - **Rate limiting is opt-in and off by default.** Out of the box nothing bounds how fast a
   client may issue commands or how many subscription events it is sent. Enabling it under
   Settings → Devices & services → HAventory → **Configure** turns on per-connection and
@@ -429,8 +433,10 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   that fails or comes out larger simply uploads the original. Lists still load the stored
   file at full size, leaning on `loading="lazy"` and `decoding="async"`.
 
-These are tracked, with their measurements and proposed fixes, in the
-[issue tracker](https://github.com/chrreiter/HAventory/issues).
+Every one of these is a decision rather than an oversight, and the reasoning is with the
+bullet. Two of them are also open work and say so above, linking the issue that carries the
+measurements and the proposed fix; the rest are settled, and the
+[issue tracker](https://github.com/chrreiter/HAventory/issues) is where that would change.
 
 ---
 
