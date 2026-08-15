@@ -79,6 +79,7 @@ from .storage import (
     CURRENT_SCHEMA_VERSION,
     STORAGE_KEY,
     DomainStore,
+    async_backup_store,
     async_persist_immediate,
     cancel_pending_persist,
     read_schema_version,
@@ -155,6 +156,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     repository = await _async_load_repository(hass, entry, store)
     hass.data[DOMAIN]["repository"] = repository
+
+    # A load that had to leave rows behind has to reach the file, or the next
+    # restart meets the same rows and refuses all over again.
+    await _async_settle_lossy_load(hass, store, repository)
 
     # Whatever the previous boot left in Settings → Repairs described a store this
     # one just read, so none of it is true any more.
@@ -293,11 +298,66 @@ async def _async_load_repository(
             # the option this branch reads.
             _create_corrupt_store_issue(hass, load_report, store_key=store.key)
             raise ConfigEntryError(_corrupt_store_message(load_report, store_key=store.key))
-        # Spend the opt-in here, ahead of the update listener setup registers
-        # afterwards, so clearing it cannot bounce the entry through a reload of
-        # its own. One boot is all it buys: the next corruption is a new decision.
-        _clear_lossy_load_option(hass, entry)
+    # Spend the opt-in on any load that reaches here, not only the corrupt one it
+    # was set for. A reload landing on a store that reads fine — a backup put
+    # back by hand before the button was pressed, or a later boot after the fix
+    # flow's own reload failed — would otherwise leave it armed, and the next
+    # corruption would then load lossily with nobody having asked. Ahead of the
+    # update listener setup registers afterwards, so clearing it cannot bounce
+    # the entry through a reload of its own.
+    _clear_lossy_load_option(hass, entry)
     return repository
+
+
+async def _async_settle_lossy_load(
+    hass: HomeAssistant, store: DomainStore, repository: Repository
+) -> None:
+    """Write the store back the way it was just read, when rows had to be dropped.
+
+    A lossy load leaves the unreadable rows on disk, so the refusal and its card
+    come back on the next restart unless something happens to persist first — the
+    repair would hold only until the household restarts Home Assistant, and the
+    copy it took would be the only sign it ever ran.
+
+    A copy is taken here as well as in the repair flow, so no path can write the
+    readable remainder over the file while the rows it left out exist nowhere. It
+    is the same raw copy under the same key: the store has not changed since the
+    flow took its own, so the second write is the same bytes.
+    """
+
+    if not repository.last_load_report.has_corruption:
+        return
+
+    try:
+        copied = await async_backup_store(hass, source_key=store.key)
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.exception(
+            "Failed to copy the HAventory store aside after loading it with unreadable rows",
+            extra={"domain": DOMAIN, "op": "settle_lossy_load"},
+        )
+        copied = False
+    if not copied:
+        # Leaving the file as it is keeps the rows recoverable, at the price of
+        # meeting the same refusal on the next restart. The alternative writes
+        # the only copy of them away.
+        LOGGER.error(
+            "Loaded a store with unreadable rows but could not copy it aside, so it "
+            "was left as it is; the same rows will stop the next start-up",
+            extra={"domain": DOMAIN, "op": "settle_lossy_load"},
+        )
+        return
+
+    await async_persist_immediate(hass)
+    LOGGER.warning(
+        "Rewrote the HAventory store without the rows this build cannot read",
+        extra={
+            "domain": DOMAIN,
+            "op": "settle_lossy_load",
+            "dropped_items": len(repository.last_load_report.dropped_item_ids),
+            "dropped_locations": len(repository.last_load_report.dropped_location_ids),
+            "backup_key": CORRUPT_BACKUP_STORAGE_KEY,
+        },
+    )
 
 
 async def _async_forward_platforms(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -1139,11 +1199,17 @@ def _lossy_load_allowed(entry: ConfigEntry) -> bool:
 
 
 def _clear_lossy_load_option(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Take the one-boot opt-in back off the entry.
+    """Take the one-boot opt-in back off the entry, where one is still on it.
+
+    Returns early when there is nothing to spend, so the ordinary boot — every
+    boot — does not write the entry back unchanged.
 
     Guarded with getattr for the offline test harness, whose HomeAssistant stub
     has no config-entry registry — the same reason the platform forwarding is.
     """
+
+    if not _lossy_load_allowed(entry):
+        return
 
     config_entries = getattr(hass, "config_entries", None)
     update = getattr(config_entries, "async_update_entry", None)

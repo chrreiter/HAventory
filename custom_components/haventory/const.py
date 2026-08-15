@@ -119,8 +119,11 @@ REPAIR_ISSUE_IDS: tuple[str, ...] = (
 )
 
 # Set by the corrupt-store repair, read by the setup its reload triggers, and
-# cleared there. Opting in to a lossy load is a decision about one boot: leaving
-# it set would silently accept the next corruption too.
+# cleared by any setup that gets as far as a loaded repository — including one
+# that finds nothing wrong, which is where a hand-restored backup lands. Opting
+# in to a lossy load is a decision about one boot: left on the entry it would
+# silently accept the next corruption too, and that one would arrive with no
+# copy of the store taken and no card raised.
 CONF_ALLOW_LOSSY_LOAD: str = "allow_lossy_load"
 
 # Where that repair copies the raw store before the lossy load. Loading destroys
