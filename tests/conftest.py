@@ -38,6 +38,7 @@ otherwise blocks the loopback the event loop sets itself up on.
 
 import asyncio
 import dataclasses
+import datetime
 import json
 import os
 import sys
@@ -477,6 +478,30 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     ha_helpers_dispatcher.async_dispatcher_connect = async_dispatcher_connect
     ha_helpers.dispatcher = ha_helpers_dispatcher
     sys.modules["homeassistant.helpers.dispatcher"] = ha_helpers_dispatcher
+
+    # homeassistant.util.dt — the household's own day, which is what every date a
+    # user reads or writes is measured in. `DEFAULT_TIME_ZONE` is a module
+    # attribute here exactly as it is in Home Assistant, so a test can move the
+    # instance west of Greenwich and see what a household there would.
+    ha_util = types.ModuleType("homeassistant.util")
+    ha_util_dt = types.ModuleType("homeassistant.util.dt")
+    ha_util_dt.DEFAULT_TIME_ZONE = datetime.UTC
+
+    def _now(time_zone=None):  # type: ignore[no-untyped-def]
+        return datetime.datetime.now(time_zone or ha_util_dt.DEFAULT_TIME_ZONE)
+
+    def _utcnow():  # type: ignore[no-untyped-def]
+        return datetime.datetime.now(datetime.UTC)
+
+    def _as_local(value):  # type: ignore[no-untyped-def]
+        return value.astimezone(ha_util_dt.DEFAULT_TIME_ZONE)
+
+    ha_util_dt.now = _now
+    ha_util_dt.utcnow = _utcnow
+    ha_util_dt.as_local = _as_local
+    ha_util.dt = ha_util_dt
+    sys.modules["homeassistant.util"] = ha_util
+    sys.modules["homeassistant.util.dt"] = ha_util_dt
 
     # homeassistant.components.websocket_api
     ha_components = types.ModuleType("homeassistant.components")

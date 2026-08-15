@@ -216,3 +216,43 @@ async def test_an_interval_with_no_anchor_is_refused_by_the_real_dispatch(
 
     assert result["success"] is False
     assert result["error"]["code"] == "validation_error"
+
+
+async def test_an_evening_bump_west_of_greenwich_keeps_the_calendar_day(
+    hass: HomeAssistant, hass_ws_client, freezer
+) -> None:
+    """The moment the two day boundaries disagree, pinned.
+
+    18:00 in Los Angeles is 02:00 the next day in UTC. Counting the bump from the
+    UTC day therefore skipped the occurrence the household's own calendar was
+    showing them for tomorrow — silently, and only for the part of the day the
+    two disagree over, which is why neither the offline suite nor the UTC dev
+    container could see it.
+    """
+
+    await hass.config.async_set_time_zone("America/Los_Angeles")
+    await _setup(hass)
+    # After the client has authenticated: the token the fixture mints is checked
+    # against the wall clock, and a frozen one is outside its window.
+    client = await hass_ws_client(hass)
+    freezer.move_to("2026-08-15T02:00:00+00:00")
+    assert dt_util.now().date().isoformat() == "2026-08-14"
+
+    await client.send_json({"id": 1, "type": "haventory/item/create", "name": "HVAC filter"})
+    item_id = (await client.receive_json())["result"]["id"]
+    await client.send_json(
+        {
+            "id": 2,
+            "type": "haventory/reminder/set",
+            "item_id": item_id,
+            "reminder_date": "2026-08-14",
+            "reminder_interval": {"unit": "days", "count": 1},
+        }
+    )
+    assert (await client.receive_json())["success"]
+
+    await client.send_json({"id": 3, "type": "haventory/reminder/bump", "item_id": item_id})
+    result = await client.receive_json()
+
+    assert result["success"], result
+    assert result["result"]["reminder_date"] == "2026-08-15"
