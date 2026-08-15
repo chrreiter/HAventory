@@ -176,8 +176,8 @@ async def cmd_smoke(base: str, token: str) -> int:
             )
             version = item["version"]
 
-            # Case-insensitive search is a load-bearing invariant: query in lowercase.
-            # NOTE: the filter key is `q` — unknown keys are silently ignored (match-all).
+            # Search is case-insensitive, so a lowercase query has to find a mixed-case
+            # name. The filter key is `q`; any other key is refused as a validation_error.
             frame = await ha.send(
                 {"type": "haventory/item/list", "filter": {"q": item_name.lower()}}
             )

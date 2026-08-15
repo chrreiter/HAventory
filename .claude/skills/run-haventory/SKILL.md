@@ -558,9 +558,10 @@ destructive clean-start mode), then `Online smoke test completed successfully.`
 - **`HA_CONTAINER` turns `smoke_online.sh` destructive**: when set, the script
   `rm -f`s `haventory_store` inside that container and restarts HA before testing —
   all dev items/locations are gone. Leave it unset unless you *want* a wiped store.
-- **`item/list` filter key is `q`, not `query`/`search` — and unknown filter keys are
-  silently ignored**, so a typo'd filter matches *everything* instead of erroring.
-  If a "filtered" list looks unfiltered, check the key.
+- **`item/list` filter key is `q`, not `query`/`search`.** A typo'd key is refused, not
+  dropped: the reply is `validation_error` naming it (`unknown filter key(s): …`), in a
+  filter and a sort alike. So an empty-looking result is a real result, and a request that
+  errors on a key you thought was valid is the API telling you the key does not exist.
 - **`location_path` shape** is `{id_path, name_path, display_path, sort_key}` (see
   `docs/data_shapes.md`) — not `names`/`ids`.
 - **Login bypass**: the HA frontend accepts an injected `hassTokens` localStorage entry
@@ -599,7 +600,9 @@ destructive clean-start mode), then `Online smoke test completed successfully.`
   still restarting. `docker ps`, `docker start home-assistant`, wait ~30 s, retry;
   `docker logs home-assistant --since 2m` for startup errors.
 - **Smoke step `[FAIL] item/list case-insensitive search` returning many items**: the
-  filter key regression above (`q` silently ignored → match-all).
+  `q` predicate reached the repository and matched too much, so look at the search index
+  and its casefold/accent normalization — a filter key that failed to apply would have
+  come back as a `validation_error` instead, not as a wide result.
 - **Every card harness times out waiting for `haventory-card`, and the panel is fine**:
   the dashboard is gone, not the card. `node card_views.mjs` says `0 view(s)`; put it back
   with the recipe in "Putting the card back on a dashboard".

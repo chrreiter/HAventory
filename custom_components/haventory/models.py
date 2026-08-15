@@ -1105,8 +1105,6 @@ def create_item_from_create(
         reminder_date=payload.get("reminder_date"),
         reminder_interval=payload.get("reminder_interval"),
     )
-    # Setting a reminder is saying where its series starts, so the anchor
-    # follows the date. Only a bump moves one without the other.
 
     location_id: uuid.UUID | None = None
     if location_id_raw is not None:
@@ -1131,6 +1129,8 @@ def create_item_from_create(
         due_date=normalized_due_date,
         inspection_date=normalized_inspection_date,
         reminder_date=normalized_reminder_date,
+        # Setting a reminder is saying where its series starts, so the anchor
+        # follows the date. Only a bump moves one without the other.
         reminder_anchor=normalized_reminder_date,
         reminder_interval=reminder_interval,
         location_id=location_id,
