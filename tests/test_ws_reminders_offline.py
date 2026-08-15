@@ -25,6 +25,8 @@ from ws_helpers import ws_send
 
 MONTHLY = {"unit": "months", "count": 3}
 _AFTER_ONE_EDIT = 2
+#: An arbitrary new quantity, standing in for any edit that is not the reminder.
+_EDITED_QUANTITY = 4
 
 
 def _hass() -> HomeAssistant:
@@ -481,3 +483,142 @@ async def test_a_bump_answers_conflict_on_a_stale_version() -> None:
 
     assert res["success"] is False
     assert res["error"]["code"] == "conflict"
+
+
+# -----------------------------
+# An ordinary edit is not a re-anchoring
+# -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_an_edit_that_resends_the_same_date_leaves_the_anchor_alone(monkeypatch) -> None:
+    """The whole walk: a series on the 31st survives edits landing between bumps.
+
+    The card's editor puts `reminder_date` in every payload it builds, changed or
+    not, so an item saved after a quantity edit re-sends whatever the last bump
+    left. Re-anchoring on presence of the key would move the anchor to that
+    occurrence, and the day of the month would decay one short month at a time
+    with nothing in the card showing it.
+    """
+
+    hass = _hass()
+    item_id = await _item(hass)
+    _freeze(monkeypatch, date(2026, 1, 15))
+    created = await ws_send(
+        hass,
+        2,
+        "haventory/reminder/set",
+        item_id=item_id,
+        reminder_date="2026-01-31",
+        reminder_interval={"unit": "months", "count": 1},
+    )
+    assert created["result"]["reminder_anchor"] == "2026-01-31"
+
+    _freeze(monkeypatch, date(2026, 8, 15))
+    bumped = await ws_send(hass, 3, "haventory/reminder/bump", item_id=item_id)
+    assert bumped["result"]["reminder_date"] == "2026-08-31"
+    assert bumped["result"]["reminder_anchor"] == "2026-01-31"
+
+    edited = await ws_send(
+        hass,
+        4,
+        "haventory/item/update",
+        item_id=item_id,
+        expected_version=bumped["result"]["version"],
+        quantity=_EDITED_QUANTITY,
+        reminder_date="2026-08-31",
+    )
+    assert edited["success"] is True, edited
+    assert edited["result"]["quantity"] == _EDITED_QUANTITY
+    assert edited["result"]["reminder_anchor"] == "2026-01-31"
+
+    _freeze(monkeypatch, date(2026, 8, 31))
+    again = await ws_send(hass, 5, "haventory/reminder/bump", item_id=item_id)
+    # September has no 31st; counted from the anchor the one after it does.
+    assert again["result"]["reminder_date"] == "2026-09-30"
+    assert again["result"]["reminder_anchor"] == "2026-01-31"
+
+    _freeze(monkeypatch, date(2026, 9, 30))
+    final = await ws_send(hass, 6, "haventory/reminder/bump", item_id=item_id)
+    assert final["result"]["reminder_date"] == "2026-10-31"
+
+
+@pytest.mark.asyncio
+async def test_the_cards_whole_save_payload_leaves_the_anchor_alone(monkeypatch) -> None:
+    """Pin the payload shape, not a minimal stand-in.
+
+    `commonFields` in `cards/haventory-card/src/ui/item-form.ts` builds this set
+    of keys for every save, and `toUpdatePayload` spreads it beside the custom
+    fields. A minimal update carrying only the reminder date would keep passing
+    if the builder started sending something else that re-anchors, so the test
+    sends what the editor sends.
+    """
+
+    hass = _hass()
+    item_id = await _item(hass)
+    _freeze(monkeypatch, date(2026, 1, 15))
+    await ws_send(
+        hass,
+        2,
+        "haventory/reminder/set",
+        item_id=item_id,
+        reminder_date="2026-01-31",
+        reminder_interval={"unit": "months", "count": 1},
+    )
+    _freeze(monkeypatch, date(2026, 8, 15))
+    bumped = await ws_send(hass, 3, "haventory/reminder/bump", item_id=item_id)
+    assert bumped["result"]["reminder_anchor"] == "2026-01-31"
+
+    saved = await ws_send(
+        hass,
+        4,
+        "haventory/item/update",
+        item_id=item_id,
+        expected_version=bumped["result"]["version"],
+        name="HVAC filter",
+        description=None,
+        quantity=2,
+        status="ok",
+        low_stock_threshold=None,
+        category=None,
+        tags=[],
+        location_id=None,
+        checked_out=False,
+        due_date=None,
+        inspection_date=None,
+        reminder_date=bumped["result"]["reminder_date"],
+        reminder_interval={"unit": "months", "count": 1},
+        custom_fields_set={},
+    )
+
+    assert saved["success"] is True, saved
+    assert saved["result"]["reminder_date"] == "2026-08-31"
+    assert saved["result"]["reminder_anchor"] == "2026-01-31"
+
+
+@pytest.mark.asyncio
+async def test_an_edit_that_moves_the_date_still_re_anchors() -> None:
+    """Picking a new date is still saying where the series starts."""
+
+    hass = _hass()
+    item_id = await _item(hass)
+    created = await ws_send(
+        hass,
+        2,
+        "haventory/reminder/set",
+        item_id=item_id,
+        reminder_date="2026-01-31",
+        reminder_interval=MONTHLY,
+    )
+
+    moved = await ws_send(
+        hass,
+        3,
+        "haventory/item/update",
+        item_id=item_id,
+        expected_version=created["result"]["version"],
+        reminder_date="2026-03-15",
+    )
+
+    assert moved["result"]["reminder_date"] == "2026-03-15"
+    assert moved["result"]["reminder_anchor"] == "2026-03-15"
