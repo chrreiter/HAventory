@@ -322,13 +322,14 @@ class Repository:
 
     def delete_status(
         self, slug: str, *, reassign_to: str | None = None
-    ) -> tuple[StatusDefinition, int]:
+    ) -> tuple[StatusDefinition, list[str]]:
         """Remove a definition, optionally moving the items that carry it.
 
         Refuses while items still reference the slug unless given somewhere to
         put them: an item whose status names nothing would be coerced to the
-        default on the next load, silently. Returns what was removed and how
-        many items moved.
+        default on the next load, silently. Returns what was removed and the ids
+        of the items that moved — the caller announces each of them, so a count
+        would leave it re-deriving which ones they were.
         """
 
         if slug == DEFAULT_ITEM_STATUS:
@@ -349,13 +350,13 @@ class Repository:
             if reassign_to not in self._statuses_by_slug:
                 raise ValidationError(f"status '{reassign_to}' not found")
 
-        moved = self._reassign_status(slug, reassign_to) if reassign_to is not None else 0
+        moved = self._reassign_status(slug, reassign_to) if reassign_to is not None else []
         del self._statuses_by_slug[slug]
         self._status_to_item_ids.pop(slug, None)
         self._increment_generation()
         return current, moved
 
-    def _reassign_status(self, slug: str, target: str) -> int:
+    def _reassign_status(self, slug: str, target: str) -> list[str]:
         """Move every item on ``slug`` to ``target``, as ordinary item edits."""
 
         # Materialized first: the loop reindexes, which mutates the bucket the
@@ -370,7 +371,7 @@ class Repository:
                 version=current.version + 1,
             )
             self._reindex_item_replacement(current, updated)
-        return len(affected)
+        return affected
 
     # -----------------------------
     # Internal helpers — indexing

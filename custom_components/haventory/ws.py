@@ -37,7 +37,7 @@ from .const import (
     MAX_MANUALS_PER_ITEM,
     MAX_PICTURES_PER_ITEM,
 )
-from .events import notify_mutation
+from .events import notify_bulk_mutation, notify_derived_paths_changed, notify_mutation
 from .exceptions import (
     ConflictError,
     NotFoundError,
@@ -2009,6 +2009,11 @@ async def ws_location_update(
         _broadcast_event(
             hass, topic="locations", action="renamed", payload={"location": serialized}
         )
+    # Only the two edits that rewrite a path: an area reassignment re-anchors the
+    # subtree without changing what any path reads, and a save that changed
+    # nothing repaints nothing.
+    if loc.parent_id != before.parent_id or loc.name != was_named:
+        notify_derived_paths_changed(hass)
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -2120,10 +2125,14 @@ async def ws_location_move_subtree(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     new_parent = msg.get("new_parent_id") if "new_parent_id" in msg else UNSET
-    loc = _repo(hass).update_location(msg["location_id"], new_parent_id=new_parent)
+    repo = _repo(hass)
+    was_below = repo.get_location(msg["location_id"]).parent_id
+    loc = repo.update_location(msg["location_id"], new_parent_id=new_parent)
     serialized = serialize_location(loc)
     await _persist_repo(hass)
     _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
+    if loc.parent_id != was_below:
+        notify_derived_paths_changed(hass)
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -2248,10 +2257,19 @@ async def ws_status_delete(
         # Two topics on purpose: one card is showing the vocabulary, another is
         # showing the items that just moved underneath it.
         _broadcast_event(hass, topic="items", action="updated", payload=None)
+        # Each rewritten item took a new version and a new updated_at, so each
+        # is an ordinary item edit as far as the bus is concerned. Announcing the
+        # command and not the edits would leave an automation watching
+        # `haventory_item_changed` blind while a whole set moved underneath it.
+        notify_bulk_mutation(
+            hass,
+            action="updated",
+            items=[serialize_item(hass, repo.get_item(item_id)) for item_id in reassigned],
+        )
         _broadcast_counts(hass)
     conn.send_message(
         websocket_api.result_message(
-            msg.get("id", 0), {"status": serialized, "reassigned": reassigned}
+            msg.get("id", 0), {"status": serialized, "reassigned": len(reassigned)}
         )
     )
 

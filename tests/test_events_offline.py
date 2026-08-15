@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import pytest
 from custom_components.haventory import events as events_mod
+from custom_components.haventory import services as services_mod
 from custom_components.haventory.const import (
     DATA_LOW_STOCK_SNAPSHOT,
     DOMAIN,
@@ -29,6 +30,8 @@ from homeassistant.core import HomeAssistant
 from ws_helpers import ws_send
 
 LOW_THRESHOLD = 3
+# One create, then the reassignment's edit.
+_AFTER_A_REASSIGNMENT = 2
 
 
 def _hass() -> tuple[HomeAssistant, Repository]:
@@ -236,3 +239,145 @@ def test_low_stock_ids_are_a_snapshot_not_the_live_index() -> None:
     repo.set_quantity(str(item.id), 10)
     assert repo.low_stock_item_ids == frozenset()
     assert before == frozenset({str(item.id)})
+
+
+# -----------------------------
+# Bulk rewrites and location edits
+# -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_status_with_reassign_to_announces_every_item_it_rewrote() -> None:
+    """The one mutation path that moved items and told nobody.
+
+    `_reassign_status` performs ordinary item edits — a new version and a new
+    `updated_at` each — so an automation watching `haventory_item_changed` was
+    blind while a whole set moved underneath it, against a contract that says the
+    event fires on every path.
+    """
+
+    hass = HomeAssistant()
+    hass.data[DOMAIN] = {"repository": Repository(), "store": DomainStore(hass)}
+    events_mod.seed_low_stock_snapshot(hass)
+    ws_setup(hass)
+    repo = hass.data[DOMAIN]["repository"]
+    moved = [repo.create_item({"name": f"Item {n}", "status": "missing"}) for n in range(3)]
+    repo.create_item({"name": "Untouched"})
+    hass.bus.fired.clear()
+
+    res = await ws_send(hass, 1, "haventory/status/delete", slug="missing", reassign_to="ok")
+
+    assert res["success"] is True, res
+    assert res["result"]["reassigned"] == len(moved)
+    fired = hass.bus.events_of(EVENT_ITEM_CHANGED)
+    assert {e["item_id"] for e in fired} == {str(i.id) for i in moved}
+    assert {e["action"] for e in fired} == {"updated"}
+    # Each event carries the version the reassignment wrote, not the one before.
+    assert all(e["version"] == _AFTER_A_REASSIGNMENT for e in fired)
+
+
+def test_a_bulk_notification_repaints_once_however_many_items_it_names() -> None:
+    """Forty rewritten rows are one inventory change, not forty."""
+
+    hass, repo = _hass()
+    serialized = [_create(repo, hass, name=f"Widget {n}")[1] for n in range(4)]
+
+    events_mod.notify_bulk_mutation(hass, action="updated", items=serialized)
+
+    assert len(hass.bus.events_of(EVENT_ITEM_CHANGED)) == len(serialized)
+    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+
+
+@pytest.mark.asyncio
+async def test_renaming_a_location_repaints_without_announcing_an_item_change() -> None:
+    """The calendar renders each event's description from the stored path.
+
+    Nothing invalidated that until local midnight or the next item edit, so a
+    renamed location kept being announced under its old name. The dispatcher
+    signal is what fires: no item's `version` or `updated_at` moved, and the bus
+    vocabulary has no location word.
+    """
+
+    hass = HomeAssistant()
+    hass.data[DOMAIN] = {"repository": Repository(), "store": DomainStore(hass)}
+    events_mod.seed_low_stock_snapshot(hass)
+    ws_setup(hass)
+    repo = hass.data[DOMAIN]["repository"]
+    garage = repo.create_location(name="Garage")
+    repo.create_item({"name": "Ladder", "location_id": str(garage.id)})
+    hass.bus.fired.clear()
+    hass.dispatcher_sends.clear()
+
+    res = await ws_send(
+        hass, 1, "haventory/location/update", location_id=str(garage.id), name="Workshop"
+    )
+
+    assert res["success"] is True, res
+    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+    assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
+
+
+@pytest.mark.asyncio
+async def test_a_location_save_that_changes_no_path_repaints_nothing() -> None:
+    """The control: a re-save with the same name is not a reason to recount."""
+
+    hass = HomeAssistant()
+    hass.data[DOMAIN] = {"repository": Repository(), "store": DomainStore(hass)}
+    events_mod.seed_low_stock_snapshot(hass)
+    ws_setup(hass)
+    repo = hass.data[DOMAIN]["repository"]
+    garage = repo.create_location(name="Garage")
+    hass.dispatcher_sends.clear()
+
+    res = await ws_send(
+        hass, 1, "haventory/location/update", location_id=str(garage.id), name="Garage"
+    )
+
+    assert res["success"] is True, res
+    assert hass.dispatcher_sends == []
+
+
+@pytest.mark.asyncio
+async def test_moving_a_subtree_repaints_the_paths_it_rewrote() -> None:
+    """`move_subtree` rewrites every path below the moved node."""
+
+    hass = HomeAssistant()
+    hass.data[DOMAIN] = {"repository": Repository(), "store": DomainStore(hass)}
+    events_mod.seed_low_stock_snapshot(hass)
+    ws_setup(hass)
+    repo = hass.data[DOMAIN]["repository"]
+    garage = repo.create_location(name="Garage")
+    cellar = repo.create_location(name="Cellar")
+    shelf = repo.create_location(name="Shelf A", parent_id=str(garage.id))
+    hass.dispatcher_sends.clear()
+
+    res = await ws_send(
+        hass,
+        1,
+        "haventory/location/move_subtree",
+        location_id=str(shelf.id),
+        new_parent_id=str(cellar.id),
+    )
+
+    assert res["success"] is True, res
+    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+    assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
+
+
+@pytest.mark.asyncio
+async def test_the_location_service_repaints_the_same_way_the_command_does() -> None:
+    """An automation renaming a location must not leave the calendar behind."""
+
+    hass = HomeAssistant()
+    hass.data[DOMAIN] = {"repository": Repository(), "store": DomainStore(hass)}
+    events_mod.seed_low_stock_snapshot(hass)
+    repo = hass.data[DOMAIN]["repository"]
+    garage = repo.create_location(name="Garage")
+    hass.dispatcher_sends.clear()
+
+    await services_mod.service_location_update(
+        hass, {"location_id": str(garage.id), "name": "Workshop"}
+    )
+
+    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+    assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
