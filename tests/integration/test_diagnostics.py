@@ -12,7 +12,12 @@ from __future__ import annotations
 import json
 import uuid
 
-from custom_components.haventory.const import CONF_CARD_TITLE, DOMAIN, INTEGRATION_VERSION
+from custom_components.haventory.const import (
+    CONF_CARD_TITLE,
+    CONF_TODO_ENTITY_ID,
+    DOMAIN,
+    INTEGRATION_VERSION,
+)
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -25,6 +30,10 @@ LOCATION_ID = str(uuid.uuid4())
 CARD_TITLE = "Haus Hoffmann Vorratskammer"
 ITEM_NAME = "Zdrojova kniha 1987"
 LOCATION_NAME = "Kellerregal hinter der Heizung"
+# A status a household typed itself, stored the way a real one is, and the list
+# it mirrors low stock onto.
+CUSTOM_STATUS = "lent_to_alice"
+TODO_LIST = "todo.alices_einkaufsliste"
 
 
 def _store_data() -> dict:
@@ -36,9 +45,14 @@ def _store_data() -> dict:
                 "name": ITEM_NAME,
                 "quantity": 1,
                 "location_id": LOCATION_ID,
+                "status": CUSTOM_STATUS,
             }
         },
         "locations": {LOCATION_ID: {"id": LOCATION_ID, "name": LOCATION_NAME}},
+        "statuses": [
+            {"slug": "ok", "label": "OK", "order": 0},
+            {"slug": CUSTOM_STATUS, "label": "Lent to Alice", "order": 1},
+        ],
     }
 
 
@@ -50,7 +64,10 @@ async def test_the_download_reports_shape_and_never_content(
     hass_storage[STORAGE_KEY] = {"version": 1, "key": STORAGE_KEY, "data": _store_data()}
 
     entry = MockConfigEntry(
-        domain=DOMAIN, data={}, options={CONF_CARD_TITLE: CARD_TITLE}, title="HAventory"
+        domain=DOMAIN,
+        data={},
+        options={CONF_CARD_TITLE: CARD_TITLE, CONF_TODO_ENTITY_ID: TODO_LIST},
+        title="HAventory",
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -67,6 +84,9 @@ async def test_the_download_reports_shape_and_never_content(
     assert "repository" in payload["runtime"]["data_keys"]
     assert "frontend_bundle" in payload
 
+    # The household's own status vocabulary is reported as a spread, not by name.
+    assert payload["repository"]["counts"]["status_counts"]["custom_1"] == 1
+
     document = json.dumps(payload)
-    for secret in (ITEM_NAME, LOCATION_NAME, CARD_TITLE):
+    for secret in (ITEM_NAME, LOCATION_NAME, CARD_TITLE, CUSTOM_STATUS, TODO_LIST):
         assert secret not in document, secret

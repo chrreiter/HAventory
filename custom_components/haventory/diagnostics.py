@@ -3,14 +3,21 @@
 Home Assistant discovers this module by name and puts "Download diagnostics" on
 the entry's ⋮ menu; the JSON it writes is what a bug report carries.
 
-**Aggregates only — no item or location bodies at any depth.** A diagnostics
-dump answers questions about the *shape* of an install: how much is stored, what
-schema it is on, whether the indexes agree with themselves, whether the card
-bundle is even deployed. Redacting free text well enough to paste into a public
-issue is not something a name, a note or a custom field can be trusted to
-survive, and a user who wants their content already has `haventory/export`. The
-one user-authored string that does appear — the card title, out of the entry's
-options — goes through Home Assistant's redaction helper.
+**Aggregates only — no item or location bodies at any depth, and none of the
+household's own words.** A diagnostics dump answers questions about the *shape*
+of an install: how much is stored, what schema it is on, whether the indexes
+agree with themselves, whether the card bundle is even deployed. Redacting free
+text well enough to paste into a public issue is not something a name, a note or
+a custom field can be trusted to survive, and a user who wants their content
+already has `haventory/export`.
+
+Three strings a household authors could otherwise reach the file, and none does:
+the card title and the chosen shopping list go through Home Assistant's
+redaction helper, and the status slugs — `status_counts` is keyed by *every*
+defined status, and a household writes its own — are replaced with indices
+unless they are the three this integration ships. A user who is told a file is
+safe to attach and finds their own words in it has no way to know what else is
+in there.
 
 Home Assistant can call this on an entry whose setup failed, which is exactly
 when it is worth having, so every block reports what it found rather than
@@ -27,15 +34,20 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from . import _CARD_BUNDLE_PATH
-from .const import CONF_CARD_TITLE, DOMAIN, INTEGRATION_VERSION
+from .const import CONF_CARD_TITLE, CONF_TODO_ENTITY_ID, DOMAIN, INTEGRATION_VERSION
 from .health import collect_health_issues
+from .models import ITEM_STATUSES
 from .rate_limit import RateLimiter
 from .repository import Repository
 from .storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore
 
-# The card title is the one free-text string a household writes into the entry's
-# options; everything else there is a number, a flag or an entity id.
-_REDACT_OPTIONS = {CONF_CARD_TITLE}
+# What the entry's options can carry that the household chose the words for. The
+# card title is free text. `todo_entity_id` is an entity id rather than prose,
+# but its object id is whatever the list was named — `todo.alices_shopping` — and
+# the diagnostic question it answers, whether the bridge is configured at all,
+# survives redaction because the key stays in the dump either way. Everything
+# else there is a number or a flag.
+_REDACT_OPTIONS = {CONF_CARD_TITLE, CONF_TODO_ENTITY_ID}
 
 
 def _bundle_state(path: Path) -> dict[str, Any]:
@@ -59,10 +71,36 @@ def _repository_block(repo: Repository | None) -> dict[str, Any]:
     issues, counts = collect_health_issues(repo)
     return {
         "loaded": True,
-        "counts": counts,
+        "counts": _without_household_status_names(counts),
         "generation": repo.generation,
         "health_issues": issues,
     }
+
+
+def _without_household_status_names(counts: dict[str, Any]) -> dict[str, Any]:
+    """Report the spread across statuses without the household's words for them.
+
+    `status_counts` is keyed by every defined slug, and the slug constraint —
+    lowercase, digits and underscores, up to 64 of them — does nothing to stop
+    one being a name. The diagnostic value is whether items are spread across
+    statuses or piled on one, and that survives the anonymisation; the three this
+    integration ships stay readable, because a report saying `needs_repair` is
+    easier to act on than one saying `custom_2`.
+    """
+
+    status_counts = counts.get("status_counts")
+    if not isinstance(status_counts, dict):  # pragma: no cover - defensive
+        return counts
+
+    anonymized: dict[str, Any] = {}
+    household = 0
+    for slug, count in status_counts.items():
+        if slug in ITEM_STATUSES:
+            anonymized[slug] = count
+            continue
+        household += 1
+        anonymized[f"custom_{household}"] = count
+    return {**counts, "status_counts": anonymized}
 
 
 def _rate_limit_block(limiter: RateLimiter | None) -> dict[str, Any] | None:

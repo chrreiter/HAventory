@@ -13,8 +13,8 @@ import json
 
 import pytest
 from custom_components.haventory import diagnostics
-from custom_components.haventory.const import CONF_CARD_TITLE, DOMAIN
-from custom_components.haventory.models import ItemCreate
+from custom_components.haventory.const import CONF_CARD_TITLE, CONF_TODO_ENTITY_ID, DOMAIN
+from custom_components.haventory.models import ITEM_STATUSES, ItemCreate
 from custom_components.haventory.rate_limit import RateLimitConfig, RateLimiter
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore
@@ -25,6 +25,10 @@ STORED_TITLE = "Haus Hoffmann Vorratskammer"
 STORED_ITEM = "Zdrojova kniha 1987"
 STORED_LOCATION = "Kellerregal hinter der Heizung"
 STORED_FIELD_VALUE = "Rechnung 44-2019"
+# A status a household typed itself, and the list it mirrors low stock onto —
+# both under the entry's own vocabulary rather than an item's.
+STORED_STATUS = "lent_to_alice"
+STORED_TODO_LIST = "todo.alices_einkaufsliste"
 
 
 def _loaded_hass() -> tuple[HomeAssistant, ConfigEntry]:
@@ -33,11 +37,13 @@ def _loaded_hass() -> tuple[HomeAssistant, ConfigEntry]:
     hass = HomeAssistant()
     repo = Repository()
     where = repo.create_location(name=STORED_LOCATION)
+    repo.create_status({"slug": STORED_STATUS, "label": "Lent to Alice"})
     repo.create_item(
         ItemCreate(
             name=STORED_ITEM,
             location_id=str(where.id),
             custom_fields={"invoice": STORED_FIELD_VALUE},
+            status=STORED_STATUS,
         )
     )
     hass.data[DOMAIN] = {
@@ -46,7 +52,9 @@ def _loaded_hass() -> tuple[HomeAssistant, ConfigEntry]:
         "card_title": STORED_TITLE,
         "rate_limiter": RateLimiter(RateLimitConfig.from_options(None)),
     }
-    entry = ConfigEntry(options={CONF_CARD_TITLE: STORED_TITLE})
+    entry = ConfigEntry(
+        options={CONF_CARD_TITLE: STORED_TITLE, CONF_TODO_ENTITY_ID: STORED_TODO_LIST}
+    )
     return hass, entry
 
 
@@ -95,7 +103,14 @@ async def test_no_stored_content_reaches_the_payload() -> None:
     payload = await diagnostics.async_get_config_entry_diagnostics(hass, entry)
 
     document = json.dumps(payload, default=str)
-    for stored in (STORED_ITEM, STORED_LOCATION, STORED_FIELD_VALUE, STORED_TITLE):
+    for stored in (
+        STORED_ITEM,
+        STORED_LOCATION,
+        STORED_FIELD_VALUE,
+        STORED_TITLE,
+        STORED_STATUS,
+        STORED_TODO_LIST,
+    ):
         assert stored not in document, stored
 
 
@@ -167,3 +182,36 @@ async def test_a_deployed_card_bundle_reports_its_size(monkeypatch, tmp_path) ->
 
     assert payload["frontend_bundle"]["exists"] is True
     assert payload["frontend_bundle"]["size_bytes"] == bundle.stat().st_size
+
+
+@pytest.mark.asyncio
+async def test_the_shape_of_the_status_spread_survives_the_anonymisation() -> None:
+    """The question the block answers is "spread across statuses, or piled on one".
+
+    That is worth keeping, and it does not need the household's own words: the
+    three shipped slugs stay readable so a report saying `needs_repair` can be
+    acted on, and everything else becomes an index carrying its count.
+    """
+
+    hass, entry = _loaded_hass()
+
+    payload = await diagnostics.async_get_config_entry_diagnostics(hass, entry)
+
+    status_counts = payload["repository"]["counts"]["status_counts"]
+    assert set(status_counts) == {*ITEM_STATUSES, "custom_1"}
+    # The one item in the fixture carries the household's status, and its count
+    # travels with the index rather than being lost to the redaction.
+    assert status_counts["custom_1"] == 1
+    assert status_counts["ok"] == 0
+
+
+@pytest.mark.asyncio
+async def test_the_shopping_list_is_redacted_rather_than_dropped() -> None:
+    """Whether the bridge is configured is a shape question; which list is not."""
+
+    hass, entry = _loaded_hass()
+
+    payload = await diagnostics.async_get_config_entry_diagnostics(hass, entry)
+
+    assert CONF_TODO_ENTITY_ID in payload["options"]
+    assert payload["options"][CONF_TODO_ENTITY_ID] != STORED_TODO_LIST
