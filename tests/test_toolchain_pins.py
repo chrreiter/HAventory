@@ -7,9 +7,10 @@ files that read nothing back. A copy that goes stale stays stale: the CodeQL
 workflow analysed Python on 3.12 for as long as nothing looked at it.
 
 The Python side works in two passes. Registered files are checked by count and
-by value, so changing a copy without changing the declaration fails; the whole
-tree is then swept for the same spellings, so a copy in an unregistered file
-fails too. Adding a copy means registering it here or not writing it.
+by value, so changing a copy without changing the declaration fails; every
+committed file is then swept for the same spellings, so a copy in an
+unregistered file fails too. Adding a copy means registering it here or not
+writing it.
 
 Two Python copies are shaped so no interpreter-version pattern can see them, and
 neither is unguarded: ``.github/rulesets/main.json`` names the required check
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -98,29 +100,14 @@ PYTHON_FLOOR_SITES: tuple[tuple[str, int], ...] = (
     (".claude/skills/test-haventory/SKILL.md", 7),
 )
 
-# Directories the sweep does not enter. `dev/` holds design documents that quote
-# configuration verbatim to describe it — snapshots, not copies anyone keeps
-# true, and they are deleted with the work they plan.
-SWEPT_SKIP_DIRS = frozenset(
-    {
-        ".git",
-        ".mypy_cache",
-        ".pytest_cache",
-        ".ruff_cache",
-        ".venv",
-        ".venv-integration",
-        "__pycache__",
-        "dev",
-        "node_modules",
-    }
-)
+# `dev/` holds design documents that quote configuration verbatim to describe
+# it — snapshots, not copies anyone keeps true, and they are deleted with the
+# work they plan.
+SWEPT_SKIP_DIR_PREFIXES = ("dev/",)
 
-# Generated or vendored trees that carry versions nobody here writes.
+# Committed files that carry versions nobody here writes.
 SWEPT_SKIP_PATHS = frozenset(
     {
-        "cards/haventory-card/coverage",
-        "cards/haventory-card/dist",
-        "custom_components/haventory/www",
         "cards/haventory-card/package-lock.json",
         "uv.lock",
         # This file names the spellings it looks for; it is the register, not a copy.
@@ -167,19 +154,30 @@ def python_versions_in(text: str) -> list[str]:
 
 
 def swept_files() -> list[Path]:
-    """Every committed text file that could carry a copy of a version."""
+    """Every committed text file that could carry a copy of a version.
+
+    Committed means read from the git index, not the working tree: a
+    contributor's local-only files are not copies anyone ships, and sweeping
+    them would fail the gate on one machine for files no other checkout has.
+    """
+    # S603/S607: the argument list is fixed, and `git` comes from PATH the same
+    # way it did for the clone this test is reading.
+    tracked = subprocess.run(  # noqa: S603
+        ["git", "-C", str(REPO_ROOT), "ls-files", "-z"],  # noqa: S607
+        capture_output=True,
+        check=True,
+    ).stdout.decode("utf-8")
     found: list[Path] = []
-    stack = [REPO_ROOT]
-    while stack:
-        for entry in sorted(stack.pop().iterdir()):
-            relative = entry.relative_to(REPO_ROOT).as_posix()
-            if relative in SWEPT_SKIP_PATHS:
-                continue
-            if entry.is_dir():
-                if entry.name not in SWEPT_SKIP_DIRS:
-                    stack.append(entry)
-            elif entry.suffix in SWEPT_SUFFIXES or entry.name in SWEPT_NAMES:
-                found.append(entry)
+    for relative in sorted(filter(None, tracked.split("\0"))):
+        if relative.startswith(SWEPT_SKIP_DIR_PREFIXES) or relative in SWEPT_SKIP_PATHS:
+            continue
+        path = REPO_ROOT / relative
+        # A deletion not yet staged leaves the index entry behind with no file
+        # under it; there is nothing to read.
+        if not path.is_file():
+            continue
+        if path.suffix in SWEPT_SUFFIXES or path.name in SWEPT_NAMES:
+            found.append(path)
     return found
 
 
@@ -207,6 +205,21 @@ def test_python_floor_sites_match_pyproject(relative_path: str, occurrences: int
         f"{relative_path} states {sorted(set(found))}, "
         f"pyproject.toml declares {declared_python_floor()!r}"
     )
+
+
+def test_a_local_only_file_is_not_swept() -> None:
+    """The sweep reads the index, so an untracked file cannot redden the gate.
+
+    A contributor's machine carries files no other checkout has — session
+    settings, scratch notes — and some of them state interpreter versions.
+    Failing on those fails one machine for a copy nothing ships.
+    """
+    probe = REPO_ROOT / "sweep_probe_local_only.md"
+    probe.write_text("built on Python 3.99\n", encoding="utf-8")
+    try:
+        assert probe not in swept_files()
+    finally:
+        probe.unlink()
 
 
 def test_no_unregistered_file_states_an_interpreter_version() -> None:
