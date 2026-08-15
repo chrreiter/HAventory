@@ -126,7 +126,10 @@ describe('validateForm', () => {
     expect(validateForm({ ...base(), name: 'A', customFields: rows })).toEqual([]);
   });
 
-  it('mirrors the backend size caps so the editor refuses before the round trip', () => {
+  // That these caps hold the *same* numbers as the backend is checked across the
+  // language boundary, in `tests/test_item_form_caps.py`. This covers the other
+  // half: that the editor actually enforces each one before the round trip.
+  it('refuses input past every size cap', () => {
     const over = [
       { model: { description: 'd'.repeat(4001) }, field: 'description' },
       { model: { category: 'c'.repeat(121) }, field: 'category' },

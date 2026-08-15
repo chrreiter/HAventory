@@ -50,7 +50,7 @@ export interface ItemFormModel {
 
 export const REMINDER_UNITS: readonly ReminderUnit[] = ['days', 'weeks', 'months'];
 
-/** Mirrors `REMINDER_COUNT_MAX` in `models.py`, for the same reason the other caps are. */
+/** `REMINDER_COUNT_MAX` in `models.py`, held equal to it by the test named below. */
 const REMINDER_COUNT_MAX = 1000;
 
 /** A validation problem, scoped to the field that caused it. */
@@ -62,13 +62,15 @@ export interface FieldError {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * The backend's input caps, mirrored so the editor refuses before the round
+ * The backend's input caps, copied here so the editor refuses before the round
  * trip rather than showing a server error on save. These are the values in
- * `models.py`; a value the editor accepts and the backend refuses is the
- * failure mode to avoid, so they only ever move together — and so does the
- * rule they are applied under: caps refuse growth past the stored item, never
- * the stored item itself, which is how the backend treats data that predates
- * a cap.
+ * `models.py`, and `tests/test_item_form_caps.py` reads both files and fails
+ * when they disagree — including `REMINDER_UNITS` and `REMINDER_COUNT_MAX`
+ * above, and a cap added to either side alone. So they can only move together.
+ *
+ * The rule they are applied under moves with them: a cap refuses growth past
+ * the stored item, never the stored item itself, which is how the backend
+ * treats data that predates a cap.
  */
 const NAME_MAX_LENGTH = 120;
 const DESCRIPTION_MAX_LENGTH = 4000;
