@@ -113,10 +113,16 @@ export interface Item {
   inspection_date: string | null;
   /**
    * Optional because a backend older than schema v8 does not send them; absent
-   * reads as no reminder. The anchor alone is a one-off; with an interval it is
-   * the start of a series the calendar expands on read.
+   * reads as no reminder. `reminder_date` alone is a one-off; with an interval
+   * it is the next occurrence of a series the calendar expands on read.
+   *
+   * `reminder_anchor` is what that series is measured from, and only the
+   * backend writes it — the editor sends a date, and the backend anchors the
+   * series on it. Read-only here, and absent from `ItemCreate` / `ItemUpdate`
+   * for that reason.
    */
   reminder_date?: string | null;
+  reminder_anchor?: string | null;
   reminder_interval?: ReminderInterval | null;
   location_id: string | null;
   tags: string[];

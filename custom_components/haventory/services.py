@@ -19,7 +19,6 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.util import dt as dt_util
 
-from .calendar_projection import bumped_reminder_date
 from .const import DOMAIN
 from .events import notify_derived_paths_changed, notify_mutation
 from .exceptions import (
@@ -356,15 +355,10 @@ async def service_reminder_bump(hass: HomeAssistant, data: dict) -> dict[str, An
     try:
         payload = SCHEMA_REMINDER_BUMP(data)
         repo = _get_repo(hass)
-        # The household's day, the one the calendar rolls over on.
-        update = {
-            "reminder_date": bumped_reminder_date(
-                repo.get_item(payload["item_id"]), today=dt_util.now().date()
-            )
-        }
-        item = repo.update_item(
+        item = repo.bump_reminder(
             payload["item_id"],
-            update,  # type: ignore[arg-type]
+            # The household's day, the one the calendar rolls over on.
+            today=dt_util.now().date(),
             expected_version=payload.get("expected_version"),
         )
         await async_persist_repo(hass)

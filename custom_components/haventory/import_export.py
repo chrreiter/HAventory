@@ -110,6 +110,7 @@ _ITEM_SOURCE_FIELDS: tuple[str, ...] = (
     "due_date",
     "inspection_date",
     "reminder_date",
+    "reminder_anchor",
     "reminder_interval",
     "location_id",
     "tags",
@@ -145,6 +146,7 @@ def _serialize_item_doc(item: Item) -> dict[str, Any]:
         "due_date": item.due_date,
         "inspection_date": item.inspection_date,
         "reminder_date": item.reminder_date,
+        "reminder_anchor": item.reminder_anchor,
         "reminder_interval": serialize_reminder_interval(item.reminder_interval),
         "location_id": str(item.location_id) if item.location_id is not None else None,
         "tags": list(item.tags),
@@ -549,15 +551,18 @@ def _validate_inspection_date_doc(
 def _validate_reminder_doc(base: str, doc: dict[str, Any], errors: list[dict[str, str]]) -> None:
     """Hold an imported reminder to the rules every write path enforces.
 
-    Both halves matter, and they fail differently. An anchor nothing can parse
+    All three halves matter, and they fail differently. A date nothing can parse
     reaches the calendar, which derives its occurrences from stored dates on
     every read. A misspelled unit — ``"month"`` for ``"months"`` — is read by the
     deliberately tolerant loader as no recurrence at all, so the document would
-    import clean and the recurrence would be gone with nothing saying so.
+    import clean and the recurrence would be gone with nothing saying so. An
+    anchor later than the date it belongs to describes a series this build
+    cannot walk.
     """
 
     reminder_date = doc.get("reminder_date")
     interval = doc.get("reminder_interval")
+    anchor = doc.get("reminder_anchor")
     refused = False
 
     if reminder_date is not None:
@@ -566,6 +571,33 @@ def _validate_reminder_doc(base: str, doc: dict[str, Any], errors: list[dict[str
         except ValidationError as exc:
             errors.append(_err(f"{base}.reminder_date", str(exc)))
             refused = True
+    if anchor is not None:
+        try:
+            validate_reminder_date(anchor)
+        except ValidationError as exc:
+            errors.append(_err(f"{base}.reminder_anchor", str(exc)))
+            refused = True
+        else:
+            # The anchor is where the series starts and the date is how far it
+            # has been marked done, so an anchor beyond its own date describes a
+            # series with no occurrence to lead to. Absent is fine — it reads as
+            # the date, which is what every export written before v9 carries.
+            if reminder_date is None:
+                errors.append(
+                    _err(
+                        f"{base}.reminder_anchor",
+                        "reminder_anchor requires a reminder_date to lead to",
+                    )
+                )
+                refused = True
+            elif isinstance(reminder_date, str) and anchor > reminder_date:
+                errors.append(
+                    _err(
+                        f"{base}.reminder_anchor",
+                        "reminder_anchor must not be later than reminder_date",
+                    )
+                )
+                refused = True
     if interval is not None:
         try:
             validate_reminder_interval(interval)
@@ -592,6 +624,11 @@ def _canonical_item(doc: dict[str, Any]) -> dict[str, Any]:
             out[f] = normalize_tags(doc.get("tags") or [])
         elif f == "custom_fields":
             out[f] = dict(doc.get("custom_fields") or {})
+        elif f == "reminder_anchor":
+            # Absent reads as the reminder's own date on load, so a document
+            # written before the field existed compares as unchanged against a
+            # stored item whose series has never been bumped.
+            out[f] = doc.get("reminder_anchor") or doc.get("reminder_date")
         elif f == "status":
             # An absent status reads as the default on load, so a pre-status
             # export compares as unchanged against a stored "ok" item.

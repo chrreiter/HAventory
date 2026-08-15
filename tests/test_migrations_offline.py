@@ -26,6 +26,7 @@ from custom_components.haventory.migrations import (
     migrate_5_to_6,
     migrate_6_to_7,
     migrate_7_to_8,
+    migrate_8_to_9,
 )
 from custom_components.haventory.storage import (
     CURRENT_SCHEMA_VERSION,
@@ -492,3 +493,66 @@ def test_v7_to_v8_tolerates_a_payload_with_no_items() -> None:
         "schema_version": 7,
         "items": None,
     }
+
+
+_REMINDER_ANCHOR_VERSION = 9
+
+
+def _v8_payload() -> dict[str, Any]:
+    return {
+        "schema_version": _REMINDER_ANCHOR_VERSION - 1,
+        "items": {
+            "i1": {
+                "id": "i1",
+                "name": "HVAC filter",
+                "quantity": 1,
+                "reminder_date": "2026-09-30",
+                "reminder_interval": {"unit": "months", "count": 1},
+            },
+            "i2": {
+                "id": "i2",
+                "name": "Ladder",
+                "quantity": 1,
+                "reminder_date": None,
+                "reminder_interval": None,
+            },
+        },
+        "locations": {},
+        "statuses": {},
+    }
+
+
+def test_v8_to_v9_anchors_every_reminder_on_its_own_date() -> None:
+    """Under the old rule a bump rewrote the date, so the date *is* the anchor.
+
+    Nothing knows how far a v8 series had already drifted, and nothing needs to:
+    from here on it is measured from wherever it currently stands.
+    """
+
+    out = migrate_8_to_9(_v8_payload())
+
+    assert out["items"]["i1"]["reminder_anchor"] == "2026-09-30"
+    assert out["items"]["i2"]["reminder_anchor"] is None
+
+
+def test_v8_to_v9_keeps_an_anchor_a_bump_has_moved_away_from() -> None:
+    """Idempotence means "fills in what is absent", not "resets to the date"."""
+
+    payload = _v8_payload()
+    payload["items"]["i1"]["reminder_anchor"] = "2026-08-31"
+
+    out = migrate_8_to_9(payload)
+
+    assert out["items"]["i1"]["reminder_anchor"] == "2026-08-31"
+    assert migrate_8_to_9(out) == out
+
+
+def test_v8_to_v9_leaves_an_item_that_is_not_a_dict_alone() -> None:
+    """A corrupt row is the load report's business, not a migration's."""
+
+    payload = _v8_payload()
+    payload["items"]["broken"] = "not-an-item"
+
+    out = migrate_8_to_9(payload)
+
+    assert out["items"]["broken"] == "not-an-item"

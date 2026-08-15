@@ -21,9 +21,10 @@ CALENDAR = "calendar.haventory"
 PLAIN_ITEM_ID = str(uuid.uuid4())
 REMINDER_ITEM_ID = str(uuid.uuid4())
 
-# The version this slice introduces, spelled out so the assertion below reads as
-# "v8, and CURRENT_SCHEMA_VERSION agrees" rather than as a bare number.
-REMINDER_SCHEMA_VERSION = 8
+# The version the reminder's stored anchor introduces, spelled out so the
+# assertion below reads as "v9, and CURRENT_SCHEMA_VERSION agrees" rather than as
+# a bare number.
+REMINDER_SCHEMA_VERSION = 9
 _HAMMER_QUANTITY = 2
 _EVERY_THREE_MONTHS = 3
 _OCCURRENCES_IN_A_YEAR = 4
@@ -64,7 +65,7 @@ async def _setup(hass: HomeAssistant) -> MockConfigEntry:
     return entry
 
 
-async def test_a_v7_store_boots_to_v8_with_both_fields_backfilled(
+async def test_a_v7_store_boots_to_the_current_version_with_the_fields_backfilled(
     hass: HomeAssistant, hass_storage: dict
 ) -> None:
     """The upgrade an existing install takes, against a real `Store`."""
@@ -77,9 +78,10 @@ async def test_a_v7_store_boots_to_v8_with_both_fields_backfilled(
     assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION == REMINDER_SCHEMA_VERSION
     for item_id in (PLAIN_ITEM_ID, REMINDER_ITEM_ID):
         assert persisted["items"][item_id]["reminder_date"] is None
+        assert persisted["items"][item_id]["reminder_anchor"] is None
         assert persisted["items"][item_id]["reminder_interval"] is None
 
-    # Nothing else moved: the upgrade adds two nulls and takes nothing away.
+    # Nothing else moved: the upgrade adds nulls and takes nothing away.
     repo = hass.data[DOMAIN]["repository"]
     assert repo.get_item(PLAIN_ITEM_ID).name == "Hammer"
     assert repo.get_item(PLAIN_ITEM_ID).quantity == _HAMMER_QUANTITY
@@ -256,3 +258,89 @@ async def test_an_evening_bump_west_of_greenwich_keeps_the_calendar_day(
 
     assert result["success"], result
     assert result["result"]["reminder_date"] == "2026-08-15"
+
+
+async def test_a_v8_store_gains_an_anchor_for_every_reminder_it_holds(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """The upgrade the release before this one leaves behind, through a real `Store`.
+
+    A v8 store's `reminder_date` was both the next occurrence and the series
+    origin, because a bump wrote one over the other. Nothing can recover how far
+    such a series had already drifted, and nothing needs to: from here on it is
+    measured from wherever it currently stands.
+    """
+
+    data = _v7_store_data()
+    data["schema_version"] = 8
+    data["items"][REMINDER_ITEM_ID]["reminder_date"] = "2026-09-30"
+    data["items"][REMINDER_ITEM_ID]["reminder_interval"] = {"unit": "months", "count": 1}
+    data["items"][PLAIN_ITEM_ID]["reminder_date"] = None
+    data["items"][PLAIN_ITEM_ID]["reminder_interval"] = None
+    hass_storage[STORAGE_KEY] = {"version": 1, "key": STORAGE_KEY, "data": data}
+
+    await _setup(hass)
+
+    persisted = hass_storage[STORAGE_KEY]["data"]
+    assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert persisted["items"][REMINDER_ITEM_ID]["reminder_anchor"] == "2026-09-30"
+    assert persisted["items"][PLAIN_ITEM_ID]["reminder_anchor"] is None
+    assert hass.data[DOMAIN]["repository"].get_item(REMINDER_ITEM_ID).reminder_anchor == (
+        "2026-09-30"
+    )
+
+
+async def test_a_bumped_month_end_series_keeps_its_day_across_a_reload(
+    hass: HomeAssistant, hass_storage: dict, hass_ws_client
+) -> None:
+    """The whole point of the stored anchor, end to end and through a restart.
+
+    Bumped once in a 30-day month, the series must still be a 31st series — on
+    the wire, in the file, and after the entry has been unloaded and set up again
+    from what was written.
+    """
+
+    entry = await _setup(hass)
+    client = await hass_ws_client(hass)
+
+    await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Meter reading"})
+    item_id = (await client.receive_json())["result"]["id"]
+    await client.send_json(
+        {
+            "id": 2,
+            "type": "haventory/reminder/set",
+            "item_id": item_id,
+            "reminder_date": "2026-08-31",
+            "reminder_interval": {"unit": "months", "count": 1},
+        }
+    )
+    assert (await client.receive_json())["success"]
+
+    await client.send_json({"id": 3, "type": "haventory/reminder/bump", "item_id": item_id})
+    bumped = (await client.receive_json())["result"]
+    assert (bumped["reminder_date"], bumped["reminder_anchor"]) == ("2026-09-30", "2026-08-31")
+
+    await hass.async_block_till_done()
+    stored = hass_storage[STORAGE_KEY]["data"]["items"][item_id]
+    assert (stored["reminder_date"], stored["reminder_anchor"]) == ("2026-09-30", "2026-08-31")
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    reloaded = hass.data[DOMAIN]["repository"].get_item(item_id)
+    assert reloaded.reminder_anchor == "2026-08-31"
+    # And the calendar draws the series the anchor describes, not the bump's date.
+    events = await hass.services.async_call(
+        "calendar",
+        "get_events",
+        {
+            "entity_id": CALENDAR,
+            "start_date_time": "2026-10-01 00:00:00",
+            "end_date_time": "2026-11-01 00:00:00",
+        },
+        blocking=True,
+        return_response=True,
+    )
+    assert [e["start"] for e in events[CALENDAR]["events"]] == ["2026-10-31"]

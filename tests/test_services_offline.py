@@ -586,3 +586,25 @@ async def test_the_bump_service_reaches_the_bus() -> None:
     fired = hass.bus.events_of(EVENT_ITEM_CHANGED)
     assert [e["action"] for e in fired] == ["updated"]
     assert fired[0]["item_id"] == item_id
+
+
+@pytest.mark.asyncio
+async def test_the_bump_service_keeps_the_series_on_its_own_day() -> None:
+    """One rule, in `Repository.bump_reminder`, so both surfaces answer the same."""
+
+    hass = HomeAssistant()
+    repo, item_id, _loc_id = await _seeded(hass)
+    await services_mod.service_item_update(
+        hass,
+        {
+            "item_id": item_id,
+            "reminder_date": "2026-08-31",
+            "reminder_interval": {"unit": "months", "count": 1},
+        },
+    )
+
+    bumped = await services_mod.service_reminder_bump(hass, {"item_id": item_id})
+
+    assert bumped["item"]["reminder_date"] == "2026-09-30"
+    assert bumped["item"]["reminder_anchor"] == "2026-08-31"
+    assert repo.get_item(item_id).reminder_anchor == "2026-08-31"

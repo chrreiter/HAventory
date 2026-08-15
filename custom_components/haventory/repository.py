@@ -20,8 +20,10 @@ import uuid
 from collections import deque
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
+from datetime import date
 from typing import Any, NamedTuple, TypedDict
 
+from .calendar_projection import next_occurrence_after
 from .exceptions import ConflictError, NotFoundError, ValidationError
 from .models import (
     DEFAULT_ITEM_STATUS,
@@ -48,6 +50,7 @@ from .models import (
     item_is_low_stock,
     item_is_overdue,
     load_attachments,
+    load_reminder_anchor,
     load_reminder_interval,
     location_sort_key,
     monotonic_timestamp_after,
@@ -191,6 +194,23 @@ class LoadReport:
             or self.cyclic_location_ids
             or self.unrooted_location_ids
         )
+
+
+def _parse_reminder_date(value: str, field: str) -> date:
+    """Read one of an item's two reminder dates, naming it if it cannot be read.
+
+    Every write path and the import side validate these, so only a hand-edited
+    store holds one that fails here — and naming the field beats the
+    `unknown_error` a raw parse failure answers a caller with.
+    """
+
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValidationError(
+            f"stored reminder {field} {value!r} is not a date this build can read; "
+            "set the reminder again to replace it"
+        ) from exc
 
 
 class Repository:
@@ -1308,6 +1328,56 @@ class Repository:
             expected_version=expected_version,
         )
 
+    def bump_reminder(
+        self, item_id: str | uuid.UUID, *, today: date, expected_version: int | None = None
+    ) -> Item:
+        """Mark a recurring reminder done and move it on to its next occurrence.
+
+        The one write that moves `reminder_date` without re-anchoring the series,
+        which is the whole reason the anchor is stored: counted from the anchor,
+        a series on the 31st returns to the 31st in every month that has one, and
+        no occurrence is skipped on the way. Writing back the occurrence as the
+        new anchor — which is what one stored date forces — would settle the
+        series on the lowest day of month it ever met.
+
+        Counted from the later of the stored occurrence and `today`, so a
+        reminder bumped on the day it came round advances by exactly one
+        interval, and one nobody bumped for a year lands on its next *future*
+        occurrence rather than another date already past. `today` is the
+        caller's to supply: it is the household's day, and this module does not
+        know what timezone they live in.
+
+        An ordinary item edit otherwise — a new `version`, a new `updated_at`,
+        and the same optimistic-concurrency check as every other mutation.
+        """
+
+        key = str(item_id)
+        current = self._items_by_id.get(key)
+        if current is None:
+            raise NotFoundError("item not found")
+        if current.reminder_date is None:
+            raise ValidationError("item has no reminder to bump")
+        if current.reminder_interval is None:
+            raise ValidationError(
+                "a reminder with no interval has no next occurrence; clear it instead"
+            )
+
+        anchor = _parse_reminder_date(current.reminder_anchor or current.reminder_date, "anchor")
+        occurrence = _parse_reminder_date(current.reminder_date, "date")
+        following = next_occurrence_after(anchor, current.reminder_interval, max(occurrence, today))
+        if following is None:  # pragma: no cover - an interval is present above
+            raise ValidationError("this reminder has no next occurrence")
+
+        updated = self.update_item(
+            key,
+            ItemUpdate(reminder_date=following.isoformat()),
+            expected_version=expected_version,
+        )
+        # `update_item` re-anchored on the date it just wrote, because that is
+        # what every other caller means. This is the one that does not.
+        self._items_by_id[key] = replace(updated, reminder_anchor=current.reminder_anchor)
+        return self._items_by_id[key]
+
     # -----------------------------
     # Public API — Attachments
     # -----------------------------
@@ -2278,6 +2348,7 @@ class Repository:
                 "due_date": item.due_date,
                 "inspection_date": item.inspection_date,
                 "reminder_date": item.reminder_date,
+                "reminder_anchor": item.reminder_anchor,
                 "reminder_interval": serialize_reminder_interval(item.reminder_interval),
                 "location_id": str(item.location_id) if item.location_id is not None else None,
                 "tags": list(item.tags),
@@ -2449,8 +2520,14 @@ class Repository:
                         inspection_date=item_data.get("inspection_date"),
                         # Absent on every store written before v8, and read as
                         # none there — which is exactly what migrate_7_to_8
-                        # writes, so the two paths agree.
+                        # writes, so the two paths agree. The anchor is the same
+                        # story one version later: absent before v9, and equal to
+                        # the date for any reminder nobody has bumped.
                         reminder_date=item_data.get("reminder_date"),
+                        reminder_anchor=load_reminder_anchor(
+                            item_data.get("reminder_anchor"),
+                            reminder_date=item_data.get("reminder_date"),
+                        ),
                         reminder_interval=load_reminder_interval(
                             item_data.get("reminder_interval")
                         ),

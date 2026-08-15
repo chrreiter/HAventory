@@ -200,6 +200,7 @@ def test_a_part_day_window_finds_the_all_day_event_it_overlaps() -> None:
 def _reminder(name: str, *, anchor: str, unit: str | None = None, count: int = 1) -> Item:
     item = _item(name)
     item.reminder_date = anchor
+    item.reminder_anchor = anchor
     item.reminder_interval = ReminderInterval(unit=unit, count=count) if unit else None
     return item
 
@@ -392,3 +393,51 @@ def test_one_unreadable_value_is_reported_once_however_often_it_is_read(caplog) 
 
     matching = [r for r in caplog.records if "not a date this build can read" in r.message]
     assert len(matching) == 1
+
+
+# -----------------------------
+# A bumped series: measured from the anchor, starting at the date
+# -----------------------------
+
+
+def test_a_bumped_series_keeps_the_anchor_s_day_of_month() -> None:
+    """The stored pair, projected: anchor 31 August, marked done through September.
+
+    The occurrences the household has already dealt with are behind
+    `reminder_date` and do not come back; everything ahead is still measured from
+    the anchor, so October is the 31st rather than the 30th the bump landed on.
+    """
+
+    item = _reminder("Meter reading", anchor="2026-09-30", unit="months", count=1)
+    item.reminder_anchor = "2026-08-31"
+
+    events = build_events([item], date(2026, 8, 1), date(2027, 1, 1))
+
+    assert [e.start for e in events] == [
+        date(2026, 9, 30),
+        date(2026, 10, 31),
+        date(2026, 11, 30),
+        date(2026, 12, 31),
+    ]
+
+
+def test_occurrences_already_marked_done_stay_off_the_calendar() -> None:
+    """A window covering them is what "bumped" has to survive."""
+
+    item = _reminder("Water filter", anchor="2026-08-15", unit="weeks", count=1)
+    item.reminder_anchor = "2026-08-01"
+
+    events = build_events([item], date(2026, 8, 1), date(2026, 8, 31))
+
+    assert [e.start for e in events] == [date(2026, 8, 15), date(2026, 8, 22), date(2026, 8, 29)]
+
+
+def test_a_reminder_with_no_anchor_projects_from_its_own_date() -> None:
+    """Every store written before v9 carries none, and reads as this."""
+
+    item = _reminder("HVAC filter", anchor="2026-08-10", unit="months", count=1)
+    item.reminder_anchor = None
+
+    events = build_events([item], WINDOW_START, date(2026, 11, 1))
+
+    assert [e.start for e in events] == [date(2026, 8, 10), date(2026, 9, 10), date(2026, 10, 10)]

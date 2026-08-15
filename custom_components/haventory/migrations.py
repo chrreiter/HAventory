@@ -220,3 +220,34 @@ def migrate_7_to_8(payload: dict[str, Any]) -> dict[str, Any]:
                 item.setdefault("reminder_date", None)
                 item.setdefault("reminder_interval", None)
     return data
+
+
+def migrate_8_to_9(payload: dict[str, Any]) -> dict[str, Any]:
+    """Give every reminder the anchor its series is measured from.
+
+    v9 splits the one stored reminder date in two: ``reminder_date`` stays the
+    next occurrence nobody has marked done, and ``reminder_anchor`` is what the
+    month arithmetic counts from. Before this, a bump wrote the occurrence back
+    as the anchor, so a series on the 31st settled on the 30th — then the 28th —
+    the first time it was bumped through a short month, permanently.
+
+    Every existing reminder is one nobody has bumped *under the new rule*, and
+    for those the two are the same date. An item with no reminder gets ``None``,
+    which is what "no reminder" means in both fields.
+
+    Written rather than left absent, for the reason ``migrate_7_to_8`` gives: a
+    v8 build reading a v9 store would parse these items, keep them, and rewrite
+    them on the next save with every anchor dropped. Stamped 9, it refuses the
+    store instead and the anchors wait for a build that understands them.
+
+    Idempotent: an item already carrying the key keeps what it holds, including
+    an anchor a bump has since moved away from its date.
+    """
+
+    data = deepcopy(payload) if isinstance(payload, dict) else {}
+    items = data.get("items")
+    if isinstance(items, dict):
+        for item in items.values():
+            if isinstance(item, dict):
+                item.setdefault("reminder_anchor", item.get("reminder_date"))
+    return data

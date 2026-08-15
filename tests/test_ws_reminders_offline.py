@@ -44,6 +44,13 @@ def _today() -> date:
     return datetime.now(UTC).date()
 
 
+def _freeze(monkeypatch, today: date) -> None:
+    """Pin the household's day, which is what a bump counts from."""
+
+    frozen = datetime(today.year, today.month, today.day, tzinfo=UTC)
+    monkeypatch.setattr(dt_util, "now", lambda *_a, **_k: frozen)
+
+
 @pytest.mark.asyncio
 async def test_set_stores_the_anchor_and_the_interval() -> None:
     hass = _hass()
@@ -285,7 +292,14 @@ async def test_bump_names_a_stored_anchor_it_cannot_read() -> None:
 
     hass = _hass()
     item_id = await _item(hass)
-    await ws_send(hass, 2, "haventory/reminder/set", item_id=item_id, reminder_date="2026-09-01")
+    await ws_send(
+        hass,
+        2,
+        "haventory/reminder/set",
+        item_id=item_id,
+        reminder_date="2026-09-01",
+        reminder_interval=MONTHLY,
+    )
     repo = hass.data[DOMAIN]["repository"]
     repo.get_item(item_id).reminder_date = "next week"
 
@@ -293,7 +307,7 @@ async def test_bump_names_a_stored_anchor_it_cannot_read() -> None:
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
-    assert "reminder_date" in res["error"]["message"]
+    assert "reminder date" in res["error"]["message"]
 
 
 @pytest.mark.asyncio
@@ -327,3 +341,143 @@ async def test_a_bump_counts_from_the_household_day_not_the_utc_one(monkeypatch)
     assert res["success"] is True, res
     # The 15th — the occurrence the calendar is showing for tomorrow — not the 16th.
     assert res["result"]["reminder_date"] == "2026-08-15"
+
+
+# -----------------------------
+# The series' own day, across any number of bumps
+# -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_month_end_series_still_lands_on_the_31st_after_a_bump(monkeypatch) -> None:
+    """The guarantee the projection makes, now true for a reminder somebody uses.
+
+    Month steps are measured from the anchor, so a series on the 31st returns to
+    the 31st in every month that has one. Bumping used to write the occurrence
+    back as the anchor, so one pass through a 30-day month re-anchored the series
+    on the 30th — and February re-anchored it on the 28th — permanently.
+    """
+
+    hass = _hass()
+    item_id = await _item(hass)
+    _freeze(monkeypatch, date(2026, 8, 15))
+    await ws_send(
+        hass,
+        2,
+        "haventory/reminder/set",
+        item_id=item_id,
+        reminder_date="2026-08-31",
+        reminder_interval={"unit": "months", "count": 1},
+    )
+
+    first = await ws_send(hass, 3, "haventory/reminder/bump", item_id=item_id)
+    assert first["result"]["reminder_date"] == "2026-09-30"
+    # The anchor did not move with it — that is what the next bump counts from.
+    assert first["result"]["reminder_anchor"] == "2026-08-31"
+
+    _freeze(monkeypatch, date(2026, 9, 30))
+    second = await ws_send(hass, 4, "haventory/reminder/bump", item_id=item_id)
+    assert second["result"]["reminder_date"] == "2026-10-31"
+    assert second["result"]["reminder_anchor"] == "2026-08-31"
+
+
+@pytest.mark.asyncio
+async def test_a_bump_through_february_skips_no_occurrence(monkeypatch) -> None:
+    """The worst case in the issue, and the one the rejected fix would have skipped.
+
+    A 1/31 series bumped in February lands on 2/28 — the occurrence February
+    actually has — and the one after it is 3/31, not 3/28. Advancing straight to
+    3/31 would have kept the day at the price of the household never being
+    reminded in February.
+    """
+
+    hass = _hass()
+    item_id = await _item(hass)
+    _freeze(monkeypatch, date(2027, 1, 20))
+    await ws_send(
+        hass,
+        2,
+        "haventory/reminder/set",
+        item_id=item_id,
+        reminder_date="2027-01-31",
+        reminder_interval={"unit": "months", "count": 1},
+    )
+
+    _freeze(monkeypatch, date(2027, 2, 10))
+    first = await ws_send(hass, 3, "haventory/reminder/bump", item_id=item_id)
+    assert first["result"]["reminder_date"] == "2027-02-28"
+
+    _freeze(monkeypatch, date(2027, 2, 28))
+    second = await ws_send(hass, 4, "haventory/reminder/bump", item_id=item_id)
+    assert second["result"]["reminder_date"] == "2027-03-31"
+
+
+@pytest.mark.asyncio
+async def test_setting_a_date_re_anchors_the_series_on_it() -> None:
+    """A household picking a date is saying where the series starts."""
+
+    hass = _hass()
+    item_id = await _item(hass)
+    await ws_send(
+        hass,
+        2,
+        "haventory/reminder/set",
+        item_id=item_id,
+        reminder_date="2026-08-31",
+        reminder_interval={"unit": "months", "count": 1},
+    )
+    await ws_send(hass, 3, "haventory/reminder/bump", item_id=item_id)
+
+    reset = await ws_send(
+        hass,
+        4,
+        "haventory/reminder/set",
+        item_id=item_id,
+        reminder_date="2026-12-01",
+        reminder_interval={"unit": "months", "count": 1},
+    )
+
+    assert reset["result"]["reminder_date"] == "2026-12-01"
+    assert reset["result"]["reminder_anchor"] == "2026-12-01"
+
+
+@pytest.mark.asyncio
+async def test_clearing_a_reminder_takes_the_anchor_with_it() -> None:
+    """An anchor with no date names a series with no next occurrence."""
+
+    hass = _hass()
+    item_id = await _item(hass)
+    await ws_send(
+        hass,
+        2,
+        "haventory/reminder/set",
+        item_id=item_id,
+        reminder_date="2026-08-31",
+        reminder_interval={"unit": "months", "count": 1},
+    )
+
+    cleared = await ws_send(hass, 3, "haventory/reminder/clear", item_id=item_id)
+
+    assert cleared["result"]["reminder_date"] is None
+    assert cleared["result"]["reminder_anchor"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_bump_answers_conflict_on_a_stale_version() -> None:
+    """It is an ordinary item edit, so it takes the same concurrency check."""
+
+    hass = _hass()
+    item_id = await _item(hass)
+    await ws_send(
+        hass,
+        2,
+        "haventory/reminder/set",
+        item_id=item_id,
+        reminder_date=_today().isoformat(),
+        reminder_interval={"unit": "days", "count": 7},
+    )
+
+    res = await ws_send(hass, 3, "haventory/reminder/bump", item_id=item_id, expected_version=1)
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "conflict"

@@ -20,7 +20,6 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
-from .exceptions import ValidationError
 from .models import Item, ReminderInterval
 
 LOGGER = logging.getLogger(__name__)
@@ -124,40 +123,6 @@ def next_occurrence_after(
     return _occurrence(anchor, interval, _first_step_after(anchor, interval, after))
 
 
-def bumped_reminder_date(item: Item, *, today: date) -> str:
-    """The stored anchor an item's reminder moves to when it is marked done.
-
-    The whole rule, in one place, because two surfaces ask for it — the
-    WebSocket command and the `haventory.reminder_bump` service — and two
-    answers to "where does this reminder go next" would be one answer too many.
-
-    Counted from the later of the anchor and `today`, so a reminder bumped on
-    the day it came round advances by exactly one interval, and one nobody
-    bumped for a year lands on its next *future* occurrence instead of another
-    date already past. `today` is the caller's to supply: it is the household's
-    day, and this module does not know what timezone they live in.
-    """
-
-    if item.reminder_date is None:
-        raise ValidationError("item has no reminder to bump")
-    try:
-        anchor = date.fromisoformat(item.reminder_date)
-    except ValueError as exc:
-        # Only a hand-edited store can hold one, and naming the field beats the
-        # `unknown_error` a raw parse failure answers with.
-        raise ValidationError(
-            f"stored reminder_date {item.reminder_date!r} is not a date this build can read; "
-            "set the reminder again to replace it"
-        ) from exc
-
-    following = next_occurrence_after(anchor, item.reminder_interval, max(anchor, today))
-    if following is None:
-        raise ValidationError(
-            "a reminder with no interval has no next occurrence; clear it instead"
-        )
-    return following.isoformat()
-
-
 def _iter_events(
     items: Iterable[Item], start: date, end: date, *, limit: int = MAX_REMINDER_OCCURRENCES
 ) -> Iterator[ProjectedEvent]:
@@ -183,25 +148,33 @@ def _item_events(item: Item, start: date, end: date, *, limit: int) -> Iterator[
 def _reminder_events(item: Item, start: date, end: date, *, limit: int) -> Iterator[ProjectedEvent]:
     """Every occurrence of the item's reminder inside `[start, end)`.
 
-    With no interval the anchor is the whole series — a one-off. With one, the
-    anchor and every step after it are occurrences, and the window is what bounds
-    them; the anchor itself may be years before `start`.
+    With no interval `reminder_date` is the whole series — a one-off. With one,
+    the series is measured from `reminder_anchor` and begins at `reminder_date`:
+    the anchor is what the month steps count from, and the date is how far the
+    household has marked it done. They are equal until the first bump, so a
+    reminder nobody has bumped projects from its own date either way, and the
+    anchor may be years before `start`.
     """
 
     if item.reminder_date is None:
         return
-    anchor = _stored_date(item, "reminder_date", item.reminder_date)
-    if anchor is None:
+    occurrence = _stored_date(item, "reminder_date", item.reminder_date)
+    if occurrence is None:
         return
     interval = item.reminder_interval
     summary = f"{item.name} reminder"
 
     if interval is None:
-        if start <= anchor < end:
-            yield _event(item, KIND_REMINDER, summary, anchor, uid=f"{item.id}:{KIND_REMINDER}")
+        if start <= occurrence < end:
+            yield _event(item, KIND_REMINDER, summary, occurrence, uid=f"{item.id}:{KIND_REMINDER}")
         return
 
-    step = _first_step_on_or_after(anchor, interval, start)
+    anchor = _stored_date(item, "reminder_anchor", item.reminder_anchor or item.reminder_date)
+    if anchor is None:
+        return
+    # Nothing before the stored occurrence: those are the ones already marked
+    # done, and the window cannot un-do them.
+    step = _first_step_on_or_after(anchor, interval, max(start, occurrence))
     for _ in range(limit):
         day = _occurrence(anchor, interval, step)
         if day >= end:
