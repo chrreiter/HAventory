@@ -4,7 +4,13 @@ The WebSocket broadcasts in `ws.py` reach subscribed clients; these reach the
 rest of Home Assistant. Every mutation path — WebSocket handler, `haventory.*`
 service, bulk operation, import — calls `notify_mutation` after its durable
 write, which fires `haventory_item_changed`, diffs the low-stock set to fire
-`haventory_low_stock`, and dispatches the signal the sensors repaint on.
+`haventory_low_stock`, and dispatches the signal the sensors repaint on. A
+command that rewrites many items at once calls `notify_bulk_mutation` instead:
+same events per item, one diff and one repaint for the batch.
+
+A location mutation calls `notify_derived_paths_changed`, which repaints without
+announcing anything on the bus — the items underneath it did not change, only
+the path denormalized onto them.
 
 Bus events bypass the rate limiter: it budgets WebSocket subscription traffic,
 and these are internal to Home Assistant.
@@ -13,6 +19,7 @@ and these are internal to Home Assistant.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -78,21 +85,7 @@ def notify_mutation(
             return
 
         if item is not None:
-            _fire(
-                hass,
-                EVENT_ITEM_CHANGED,
-                {
-                    "action": action,
-                    "item_id": item.get("id"),
-                    "name": item.get("name"),
-                    "quantity": item.get("quantity"),
-                    "location_id": item.get("location_id"),
-                    "location_path": (item.get("location_path") or {}).get("display_path"),
-                    "effective_area_id": item.get("effective_area_id"),
-                    "version": item.get("version"),
-                    "ts": iso_utc_now(),
-                },
-            )
+            _fire_item_changed(hass, action, item)
 
         _fire_low_stock_transitions(hass, bucket, item=item)
 
@@ -102,6 +95,81 @@ def notify_mutation(
             "Failed to notify a mutation",
             extra={"domain": DOMAIN, "op": "notify_mutation", "action": action},
         )
+
+
+def notify_bulk_mutation(
+    hass: HomeAssistant, *, action: str, items: Sequence[dict[str, Any]]
+) -> None:
+    """Announce one command that rewrote many items, after the persist.
+
+    One `haventory_item_changed` per item, because an automation subscribed to it
+    is watching items rather than commands — a bulk command that announced
+    nothing would be the one hole in "fired on every path". One low-stock diff
+    and one repaint for the whole batch, because both describe the inventory as a
+    whole and running them per row would repaint every sensor once per row.
+    """
+
+    try:
+        bucket = hass.data.get(DOMAIN)
+        if bucket is None:
+            return
+
+        for item in items:
+            _fire_item_changed(hass, action, item)
+
+        # `item=None`: the diff covers the batch, and no single row is the one
+        # a crossing should be attributed to.
+        _fire_low_stock_transitions(hass, bucket, item=None)
+
+        async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED)
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.exception(
+            "Failed to notify a bulk mutation",
+            extra={"domain": DOMAIN, "op": "notify_bulk_mutation", "action": action},
+        )
+
+
+def notify_derived_paths_changed(hass: HomeAssistant) -> None:
+    """Repaint what reads location data, without announcing an item mutation.
+
+    A rename or a re-parent rewrites the denormalized `location_path` on every
+    item underneath it, and the calendar renders each event's description from
+    that path — so an entity holding a state derived from the old path has
+    nothing to invalidate it until local midnight or until some item happens to
+    be edited.
+
+    The dispatcher signal only: `haventory_item_changed` stays unfired, because a
+    derived-path rewrite deliberately moves neither an item's `version` nor its
+    `updated_at`, and the documented action vocabulary has no location word.
+    """
+
+    try:
+        if hass.data.get(DOMAIN) is None:
+            return
+        async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED)
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.exception(
+            "Failed to repaint after a location change",
+            extra={"domain": DOMAIN, "op": "notify_derived_paths_changed"},
+        )
+
+
+def _fire_item_changed(hass: HomeAssistant, action: str, item: dict[str, Any]) -> None:
+    _fire(
+        hass,
+        EVENT_ITEM_CHANGED,
+        {
+            "action": action,
+            "item_id": item.get("id"),
+            "name": item.get("name"),
+            "quantity": item.get("quantity"),
+            "location_id": item.get("location_id"),
+            "location_path": (item.get("location_path") or {}).get("display_path"),
+            "effective_area_id": item.get("effective_area_id"),
+            "version": item.get("version"),
+            "ts": iso_utc_now(),
+        },
+    )
 
 
 def _fire_low_stock_transitions(

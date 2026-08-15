@@ -172,3 +172,44 @@ async def test_a_restart_re_announces_nothing(hass: HomeAssistant, hass_storage)
 
     assert captured == []
     assert hass.data[DOMAIN]["repository"].low_stock_item_ids
+
+
+async def test_a_status_reassignment_reaches_the_bus_once_per_item(
+    hass: HomeAssistant, hass_ws_client
+) -> None:
+    """A bulk rewrite is still a set of item edits, and each one is announced.
+
+    `status/delete` with `reassign_to` gives every affected item a new version
+    and a new `updated_at`, but announced only the vocabulary change — so an
+    automation triggered on `haventory_item_changed` saw nothing while a whole
+    set moved underneath it.
+    """
+
+    await _setup(hass)
+    client = await hass_ws_client(hass)
+
+    await client.send_json(
+        {"id": 1, "type": "haventory/status/create", "slug": "lent_out", "label": "Lent out"}
+    )
+    assert (await client.receive_json())["success"]
+    moved = []
+    for index, name in enumerate(("Drill", "Ladder", "Torch"), start=2):
+        await client.send_json(
+            {"id": index, "type": "haventory/item/create", "name": name, "status": "lent_out"}
+        )
+        moved.append((await client.receive_json())["result"]["id"])
+    await client.send_json({"id": 10, "type": "haventory/item/create", "name": "Untouched"})
+    assert (await client.receive_json())["success"]
+
+    captured = async_capture_events(hass, EVENT_ITEM_CHANGED)
+    await client.send_json(
+        {"id": 11, "type": "haventory/status/delete", "slug": "lent_out", "reassign_to": "ok"}
+    )
+    result = await client.receive_json()
+    assert result["success"], result
+    assert result["result"]["reassigned"] == len(moved)
+    await hass.async_block_till_done()
+
+    payloads = _data(captured)
+    assert {p["item_id"] for p in payloads} == set(moved)
+    assert {p["action"] for p in payloads} == {"updated"}

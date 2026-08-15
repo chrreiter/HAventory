@@ -19,7 +19,7 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 
 from .const import DOMAIN
-from .events import notify_mutation
+from .events import notify_derived_paths_changed, notify_mutation
 from .exceptions import (
     ConflictError,
     NotFoundError,
@@ -353,6 +353,8 @@ async def service_location_update(hass: HomeAssistant, data: dict) -> dict[str, 
         new_parent = payload["new_parent_id"] if "new_parent_id" in payload else UNSET
         area_id = payload["area_id"] if "area_id" in payload else UNSET
         repo = _get_repo(hass)
+        before = repo.get_location(payload["location_id"])
+        was_named, was_below = before.name, before.parent_id
         loc = repo.update_location(
             payload["location_id"],
             name=payload.get("name"),
@@ -360,6 +362,11 @@ async def service_location_update(hass: HomeAssistant, data: dict) -> dict[str, 
             area_id=area_id,
         )
         await async_persist_repo(hass)
+        # A rename or a re-parent rewrites the path denormalized onto every item
+        # underneath, and the calendar renders those paths. No bus event: the
+        # items themselves did not change.
+        if loc.name != was_named or loc.parent_id != was_below:
+            notify_derived_paths_changed(hass)
         return {"location": serialize_location(loc)}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"location_id": location_id}, exc)

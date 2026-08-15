@@ -138,7 +138,7 @@ def test_an_unused_status_deletes_outright() -> None:
     removed, moved = repo.delete_status("needs_repair")
 
     assert removed.slug == "needs_repair"
-    assert moved == 0
+    assert moved == []
     assert "needs_repair" not in repo.status_slugs()
 
 
@@ -159,7 +159,8 @@ def test_reassigning_moves_the_items_and_then_deletes() -> None:
 
     removed, moved = repo.delete_status("missing", reassign_to="ok")
 
-    assert (removed.slug, moved) == ("missing", 1)
+    # The ids, not a count: the caller announces each item that moved.
+    assert (removed.slug, moved) == ("missing", [str(item.id)])
     assert "missing" not in repo.status_slugs()
     after = repo.get_item(item.id)
     assert after.status == "ok"

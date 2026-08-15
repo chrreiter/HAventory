@@ -188,3 +188,39 @@ async def test_unload_removes_the_entity(hass: HomeAssistant) -> None:
 
     state = hass.states.get(ENTITY_ID)
     assert state is None or state.state == "unavailable"
+
+
+async def test_a_location_rename_reaches_the_calendar_at_once(hass: HomeAssistant) -> None:
+    """The event description is the item's stored path, held in a cached state.
+
+    Nothing invalidated that state on a rename, so `calendar.haventory` kept
+    announcing the old path until local midnight or until some item happened to
+    be edited — and the README's own automation example templates exactly this
+    attribute to say where the item is.
+    """
+
+    await _setup(hass)
+    garage = (
+        await hass.services.async_call(
+            DOMAIN, "location_create", {"name": "Garage"}, blocking=True, return_response=True
+        )
+    )["location"]
+    await _create(
+        hass,
+        name="Extinguisher",
+        location_id=garage["id"],
+        inspection_date=(dt_util.now().date() + timedelta(days=7)).isoformat(),
+    )
+
+    assert hass.states.get(ENTITY_ID).attributes["description"] == "Garage"
+
+    await hass.services.async_call(
+        DOMAIN,
+        "location_update",
+        {"location_id": garage["id"], "name": "Workshop"},
+        blocking=True,
+        return_response=True,
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(ENTITY_ID).attributes["description"] == "Workshop"

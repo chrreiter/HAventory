@@ -176,9 +176,18 @@ with no WebSocket client at all. Payload shapes: `docs/data_shapes.md`.
   are internal to Home Assistant, on the same reasoning as the `unavailable` notice.
 - **Bus events carry no item body beyond the trigger fields** — no `custom_fields`, no
   `description`. An automation that needs the whole item calls `haventory/item/get`.
-- **Locations fire no bus event.** None of the counts a sensor exposes can move on a location
-  mutation: the repository refuses to delete a location that still holds items or children,
-  and a rename or re-anchor only rewrites derived fields.
+- **Locations fire no bus event** — but a rename or a re-parent still repaints. No count a
+  sensor exposes can move on a location mutation: the repository refuses to delete a location
+  that still holds items or children, and a rename or re-anchor only rewrites derived fields.
+  Counts are no longer the only thing derived from location data, though: every projected
+  calendar event's `description` is the item's `location_path.display_path`, read from a
+  cached entity state. So `location/update` and `location/move_subtree` — and the
+  `haventory.location_update` service — dispatch the repaint signal when the name or the
+  parent changed, and nothing else does: an area-only reassignment moves no path, and neither
+  `location/create` (no existing item's path can change) nor `location/delete` (refused while
+  the location holds anything) can leave a stale one behind. `haventory_item_changed` stays
+  unfired for all of them: a derived-path rewrite deliberately moves neither an item's
+  `version` nor its `updated_at`, and the action vocabulary above has no location word.
 
 ### Items
 
@@ -375,7 +384,11 @@ except `status/delete` with a reassign target.
   - Result: `{status: <StatusDefinition>, reassigned: number}`; emits `statuses/deleted`, and
     when `reassigned` is non-zero also `items/updated` and `stats/counts`. That `items/updated`
     carries **no `item`**: the move is a bulk rewrite, so the event is a refetch signal rather
-    than a per-item patch (see "Event payloads").
+    than a per-item patch (see "Event payloads"). On the Home Assistant bus it is the other way
+    round: one `haventory_item_changed` with action `updated` **per rewritten item**, because
+    each of them took a new `version` and a new `updated_at` and an automation subscribed to
+    that event is watching items rather than commands. The low-stock diff and the sensor
+    repaint run once for the batch.
   - **Refused while items still carry the slug and no `reassign_to` is given.** An item whose
     status names nothing would be coerced to the default on the next load, silently. With a
     target the items move and the definition is deleted in the same call, so no client can
