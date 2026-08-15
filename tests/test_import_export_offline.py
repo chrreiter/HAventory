@@ -688,6 +688,23 @@ def _envelope(item: dict) -> dict:
     [
         ({"name": "n" * (NAME_MAX_LENGTH + 1)}, "items[0].name"),
         ({"due_date": "2026-01-01"}, "items[0].due_date"),
+        ({"inspection_date": "soon"}, "items[0].inspection_date"),
+        ({"reminder_date": "next week"}, "items[0].reminder_date"),
+        ({"reminder_date": "2026-02-30"}, "items[0].reminder_date"),
+        # A misspelled unit is the one the tolerant loader would drop in silence.
+        (
+            {"reminder_date": "2026-09-01", "reminder_interval": {"unit": "month", "count": 3}},
+            "items[0].reminder_interval",
+        ),
+        (
+            {"reminder_date": "2026-09-01", "reminder_interval": {"unit": "months", "count": 0}},
+            "items[0].reminder_interval",
+        ),
+        # An interval with nothing to count from produces no occurrence, ever.
+        (
+            {"reminder_interval": {"unit": "months", "count": 3}},
+            "items[0].reminder_interval",
+        ),
     ],
 )
 def test_preview_holds_an_imported_item_to_the_always_enforced_rules(
@@ -1252,3 +1269,40 @@ def test_an_older_export_compares_as_unchanged_against_a_reminderless_item() -> 
     )
 
     assert report["counts"]["items"]["unchanged"] == SEEDED_ITEMS
+
+
+def test_preview_accepts_a_reminder_the_write_path_would_accept() -> None:
+    """The new checks refuse bad rows, not reminders."""
+
+    repo = Repository()
+    report, target = ie.plan_import(
+        repo,
+        _envelope(
+            _item_doc(
+                reminder_date="2026-09-01",
+                reminder_interval={"unit": "months", "count": 3},
+            )
+        ),
+        current_schema_version=CURRENT_SCHEMA_VERSION,
+    )
+
+    assert report["valid"] is True, report["errors"]
+    assert target is not None
+
+
+def test_preview_names_the_row_and_the_field_a_bad_date_is_in() -> None:
+    """A refusal nobody can act on is a refusal that costs the whole document.
+
+    The user reads one message; it has to say which item and which field, or
+    finding the row means reading the export by hand.
+    """
+
+    repo = Repository()
+    doc = _envelope(_item_doc())
+    doc["items"].append(_item_doc(id="33333333-3333-4333-8333-333333333333", reminder_date="soon"))
+
+    report, _ = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert report["valid"] is False
+    errors = {e["path"] for e in report["errors"]}
+    assert errors == {"items[1].reminder_date"}

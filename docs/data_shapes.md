@@ -426,9 +426,15 @@ With a filter on the request, each category and tag entry also carries `matching
   references (e.g. an item's `location_id` with no matching location) all surface here.
   A document is held to what `Repository.load_state` accepts, not to the write path's input
   caps: the rules every release has enforced — the 120-character name limit, canonical
-  timestamps, the `due_date` ⇔ `checked_out` invariant, statuses the document can name — are
+  timestamps, the `due_date` ⇔ `checked_out` invariant, every date's calendar validity
+  (`due_date`, `inspection_date`, `reminder_date`), the `{unit, count}` shape of
+  `reminder_interval` and its need for an anchor, statuses the document can name — are
   checked, and the free-text/collection caps are not, because a store written before those
   caps existed exports data that must import back. See "Input caps" below.
+- A `reminder_interval` whose unit is misspelled is a **rejected row**, not a silent loss.
+  The load path is tolerant of one it cannot read — a row still has an item and an anchor
+  worth keeping — so an unchecked import would have stored the item with its recurrence
+  quietly gone.
 - `warnings` is present on every preview, empty or not, valid or not: one shape to render.
 
 `ImportWarning` — a non-blocking finding about an otherwise usable document:
@@ -562,7 +568,11 @@ shapes as the WebSocket surface — no bespoke service shape exists:
 ### Validation notes
 
 - UUIDs must be version 4.
-- Dates use `YYYY-MM-DD` and are validated for real calendar dates.
+- Dates use `YYYY-MM-DD` and are validated for real calendar dates — on every write path
+  and on import alike.
+- The calendar derives its occurrences from those stored dates on every read. One it cannot
+  parse — reachable only by hand-editing the store — costs that item its occurrences and is
+  logged once; the rest of the inventory still renders.
 - `name` trimmed; max length 120 for items and locations.
 - `custom_fields` keys must be non-empty strings; values must be scalars.
 

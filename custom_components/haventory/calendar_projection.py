@@ -14,12 +14,22 @@ occurrences the window covers, and none of them is written anywhere.
 
 from __future__ import annotations
 
+import logging
 from calendar import monthrange
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
 from .models import Item, ReminderInterval
+
+LOGGER = logging.getLogger(__name__)
+
+# Which unreadable stored dates have already been reported, as
+# ``(item_id, field, value)``. The projection runs on every calendar read, so an
+# unguarded warning would repeat for as long as the row is there; one line per
+# distinct bad value is what makes the log worth reading. Bounded by the
+# inventory, and only ever holds rows no write path could have produced.
+_REPORTED_UNREADABLE: set[tuple[str, str, str]] = set()
 
 # The dated fields on `Item`, and the word each one contributes to an event's
 # summary. `due_date` only exists while an item is checked out
@@ -127,8 +137,8 @@ def _item_events(item: Item, start: date, end: date, *, limit: int) -> Iterator[
     ):
         if stored is None:
             continue
-        day = date.fromisoformat(stored)
-        if not (start <= day < end):
+        day = _stored_date(item, f"{kind}_date", stored)
+        if day is None or not (start <= day < end):
             continue
         yield _event(item, kind, summary, day, uid=f"{item.id}:{kind}")
 
@@ -145,7 +155,9 @@ def _reminder_events(item: Item, start: date, end: date, *, limit: int) -> Itera
 
     if item.reminder_date is None:
         return
-    anchor = date.fromisoformat(item.reminder_date)
+    anchor = _stored_date(item, "reminder_date", item.reminder_date)
+    if anchor is None:
+        return
     interval = item.reminder_interval
     summary = f"{item.name} reminder"
 
@@ -168,6 +180,36 @@ def _reminder_events(item: Item, start: date, end: date, *, limit: int) -> Itera
             item, KIND_REMINDER, summary, day, uid=f"{item.id}:{KIND_REMINDER}:{day.isoformat()}"
         )
         step += 1
+
+
+def _stored_date(item: Item, field: str, stored: str) -> date | None:
+    """Read one stored date, or none if this build cannot parse it.
+
+    Every write path validates these, so a value that lands here came from a
+    hand-edited store or an import written before the import side validated
+    them. Skipping the row's own occurrences costs that row its events; raising
+    would cost every item on the calendar theirs, because one projection serves
+    the whole entity.
+    """
+
+    try:
+        return date.fromisoformat(stored)
+    except ValueError:
+        key = (str(item.id), field, stored)
+        if key not in _REPORTED_UNREADABLE:
+            _REPORTED_UNREADABLE.add(key)
+            LOGGER.warning(
+                "Leaving an item off the calendar: its %s is not a date this build can read",
+                field,
+                extra={
+                    "op": "calendar_projection",
+                    "item_id": str(item.id),
+                    "item_name": item.name,
+                    "field": field,
+                    "value": stored,
+                },
+            )
+        return None
 
 
 def _first_step_on_or_after(anchor: date, interval: ReminderInterval, target: date) -> int:
