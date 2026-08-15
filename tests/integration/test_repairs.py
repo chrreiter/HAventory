@@ -136,3 +136,72 @@ async def test_a_clean_store_leaves_no_issue_behind(
     registry = ir.async_get(hass)
     assert registry.async_get_issue(DOMAIN, ISSUE_SCHEMA_DOWNGRADE) is None
     assert registry.async_get_issue(DOMAIN, ISSUE_CORRUPT_STORE) is None
+
+
+async def test_the_repair_survives_a_restart_with_no_mutation_in_between(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """A household that repairs and then restarts must not land back at the refusal.
+
+    The lossy load leaves the unreadable rows on disk unless something writes the
+    store, and nothing does until the next edit — so a repair that visibly worked
+    came undone at the next start-up, with the backup file the only sign it ran.
+    """
+
+    assert await async_setup_component(hass, "repairs", {})
+    hass_storage[STORAGE_KEY] = _stored(_corrupt_store_data())
+
+    entry = await _added_entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id) is False
+    await hass.async_block_till_done()
+
+    flow_manager = repairs_flow_manager(hass)
+    assert flow_manager is not None
+    result = await flow_manager.async_init(DOMAIN, data={"issue_id": ISSUE_CORRUPT_STORE})
+    result = await flow_manager.async_configure(result["flow_id"], {})
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    # The file now holds what was loaded, and the row it lost is in the copy.
+    assert set(hass_storage[STORAGE_KEY]["data"]["items"]) == {READABLE_ITEM_ID}
+    assert "not-a-uuid" in hass_storage[CORRUPT_BACKUP_STORAGE_KEY]["data"]["items"]
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_setup(entry.entry_id) is True
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_CORRUPT_STORE) is None
+    assert hass.data[DOMAIN]["repository"].get_counts()["items_total"] == 1
+
+
+async def test_a_clean_load_spends_an_opt_in_left_on_the_entry(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """Where the waiver lingers is where it is most dangerous.
+
+    A backup restored by hand before the button is pressed, or a boot after the
+    flow's own reload failed, both land on a store that reads fine — and an
+    opt-in left armed there is spent by the *next* corruption, which then loads
+    with no copy taken and no card raised.
+    """
+
+    hass_storage[STORAGE_KEY] = _stored(
+        {
+            "schema_version": CURRENT_SCHEMA_VERSION,
+            "items": {READABLE_ITEM_ID: {"id": READABLE_ITEM_ID, "name": "Hammer"}},
+            "locations": {},
+        }
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={}, title="HAventory", options={CONF_ALLOW_LOSSY_LOAD: True}
+    )
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id) is True
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert CONF_ALLOW_LOSSY_LOAD not in entry.options

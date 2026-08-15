@@ -479,3 +479,114 @@ async def test_the_repair_option_is_spent_on_the_boot_it_buys(monkeypatch) -> No
     # The rest of the options survive the edit; only the opt-in is taken back.
     assert entry.options[CONF_CARD_TITLE] == "Pantry"
     assert (haven_init.DOMAIN, ISSUE_CORRUPT_STORE) not in _issues(hass)
+
+
+@pytest.mark.asyncio
+async def test_a_clean_load_spends_a_leftover_repair_option(monkeypatch) -> None:
+    """The option only lingers where it is most dangerous: on a store that reads fine.
+
+    That is where a restored backup and a failed reload both land, and a waiver
+    left armed there is spent by the *next* corruption — which arrives with no
+    copy of the store taken and no card raised.
+    """
+
+    hass = HomeAssistant()
+    hass.config_entries = _ConfigEntries()
+    entry = ConfigEntry(options={CONF_ALLOW_LOSSY_LOAD: True, CONF_CARD_TITLE: "Pantry"})
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    assert await haven_init.async_setup_entry(hass, entry) is True
+
+    assert CONF_ALLOW_LOSSY_LOAD not in entry.options
+    assert entry.options[CONF_CARD_TITLE] == "Pantry"
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_boot_does_not_write_the_entry_back(monkeypatch) -> None:
+    """Nothing to spend means nothing to write: every boot would otherwise touch the entry."""
+
+    hass = HomeAssistant()
+    registry = _ConfigEntries()
+    hass.config_entries = registry
+    entry = ConfigEntry(options={CONF_CARD_TITLE: "Pantry"})
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    assert await haven_init.async_setup_entry(hass, entry) is True
+
+    assert registry.updates == []
+
+
+@pytest.mark.asyncio
+async def test_a_lossy_load_rewrites_the_store_it_could_not_fully_read(monkeypatch) -> None:
+    """Otherwise the repair holds until the next restart and no further.
+
+    The lossy load leaves the unreadable rows on disk, so a household that
+    repairs, sees it work and restarts that evening meets the same refusal —
+    with a backup file that looks like the only thing the repair did.
+    """
+
+    hass = HomeAssistant()
+    hass.config_entries = _ConfigEntries()
+    entry = ConfigEntry(options={CONF_ALLOW_LOSSY_LOAD: True})
+    key = "test_init_lossy_load_rewrites"
+    monkeypatch.setattr(haven_init, "STORAGE_KEY", key)
+
+    payload = _corrupt_payload()
+    payload["items"]["11111111-1111-4111-8111-111111111111"] = {
+        "id": "11111111-1111-4111-8111-111111111111",
+        "name": "Readable",
+        "quantity": 1,
+    }
+    raw_store = HAStore(hass, DomainStore.HA_STORE_VERSION, key)
+    await raw_store.async_save(deepcopy(payload))
+    backup = HAStore(hass, DomainStore.HA_STORE_VERSION, CORRUPT_BACKUP_STORAGE_KEY)
+    await backup.async_remove()
+
+    try:
+        assert await haven_init.async_setup_entry(hass, entry) is True
+
+        written = await raw_store.async_load()
+        assert set(written["items"]) == {"11111111-1111-4111-8111-111111111111"}
+        # The rows that just left the store are in the copy, which is what makes
+        # rewriting it something other than deleting them.
+        assert set((await backup.async_load())["items"]) == set(payload["items"])
+    finally:
+        # The stub's backing dict is module-global, so a copy left under the real
+        # key would outlive this test.
+        await backup.async_remove()
+
+
+@pytest.mark.asyncio
+async def test_a_lossy_load_that_cannot_be_copied_leaves_the_store_alone(
+    monkeypatch, caplog
+) -> None:
+    """No copy, no rewrite: the rows stay recoverable at the price of one more refusal."""
+
+    hass = HomeAssistant()
+    hass.config_entries = _ConfigEntries()
+    entry = ConfigEntry(options={CONF_ALLOW_LOSSY_LOAD: True})
+    key = "test_init_lossy_load_no_copy"
+    monkeypatch.setattr(haven_init, "STORAGE_KEY", key)
+
+    payload = _corrupt_payload()
+    raw_store = HAStore(hass, DomainStore.HA_STORE_VERSION, key)
+    await raw_store.async_save(deepcopy(payload))
+
+    async def _no_copy(_hass, **_kwargs):  # type: ignore[no-untyped-def]
+        return False
+
+    monkeypatch.setattr(haven_init, "async_backup_store", _no_copy)
+    caplog.set_level(logging.ERROR)
+
+    assert await haven_init.async_setup_entry(hass, entry) is True
+
+    assert await raw_store.async_load() == payload
+    assert any("could not copy it aside" in record.message for record in caplog.records)
