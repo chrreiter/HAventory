@@ -84,6 +84,10 @@ from .models import (
     serialize_status_definition,
     validate_attachment_meta,
     validate_due_date_rules,
+    validate_inspection_date,
+    validate_reminder_date,
+    validate_reminder_interval,
+    validate_reminder_rules,
     validate_status_definition,
 )
 from .repository import Repository
@@ -506,6 +510,8 @@ def _validate_item_doc(
                 )
             )
     _validate_due_date_doc(base, doc, errors)
+    _validate_inspection_date_doc(base, doc, errors)
+    _validate_reminder_doc(base, doc, errors)
     return iid
 
 
@@ -524,6 +530,57 @@ def _validate_due_date_doc(base: str, doc: dict[str, Any], errors: list[dict[str
         validate_due_date_rules(checked_out=bool(doc.get("checked_out", False)), due_date=due_date)
     except ValidationError as exc:
         errors.append(_err(f"{base}.due_date", str(exc)))
+
+
+def _validate_inspection_date_doc(
+    base: str, doc: dict[str, Any], errors: list[dict[str, str]]
+) -> None:
+    """Hold an imported inspection date to the format every write path enforces."""
+
+    inspection_date = doc.get("inspection_date")
+    if inspection_date is None:
+        return
+    try:
+        validate_inspection_date(inspection_date)
+    except ValidationError as exc:
+        errors.append(_err(f"{base}.inspection_date", str(exc)))
+
+
+def _validate_reminder_doc(base: str, doc: dict[str, Any], errors: list[dict[str, str]]) -> None:
+    """Hold an imported reminder to the rules every write path enforces.
+
+    Both halves matter, and they fail differently. An anchor nothing can parse
+    reaches the calendar, which derives its occurrences from stored dates on
+    every read. A misspelled unit — ``"month"`` for ``"months"`` — is read by the
+    deliberately tolerant loader as no recurrence at all, so the document would
+    import clean and the recurrence would be gone with nothing saying so.
+    """
+
+    reminder_date = doc.get("reminder_date")
+    interval = doc.get("reminder_interval")
+    refused = False
+
+    if reminder_date is not None:
+        try:
+            validate_reminder_date(reminder_date)
+        except ValidationError as exc:
+            errors.append(_err(f"{base}.reminder_date", str(exc)))
+            refused = True
+    if interval is not None:
+        try:
+            validate_reminder_interval(interval)
+        except ValidationError as exc:
+            errors.append(_err(f"{base}.reminder_interval", str(exc)))
+            refused = True
+    if refused:
+        return
+
+    # The rule binding the two lives in one place rather than being restated
+    # here; the interval is the half that is wrong when it fires.
+    try:
+        validate_reminder_rules(reminder_date=reminder_date, reminder_interval=interval)
+    except ValidationError as exc:
+        errors.append(_err(f"{base}.reminder_interval", str(exc)))
 
 
 def _canonical_item(doc: dict[str, Any]) -> dict[str, Any]:

@@ -9,6 +9,7 @@ type at all.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta, timezone
 
@@ -330,3 +331,64 @@ def test_next_occurrence_after_a_one_off_is_none() -> None:
     """A one-off has nothing to move to; the caller decides to clear it instead."""
 
     assert next_occurrence_after(date(2026, 8, 14), None, date(2026, 8, 14)) is None
+
+
+# -----------------------------
+# Dates this build cannot read — one row's problem, not the entity's
+# -----------------------------
+
+
+def test_a_reminder_date_that_cannot_be_parsed_costs_only_that_item(caplog) -> None:
+    """One unreadable row used to answer 500 for every window and every item.
+
+    The projection serves the whole entity, so raising on a row nobody can parse
+    takes every other item's occurrences down with it. Only a hand-edited store
+    can produce one now — every write path and the import side refuse it — and
+    the answer is to leave that item off and say so once.
+    """
+
+    broken = _reminder("Boiler", anchor="2026-08-10")
+    broken.reminder_date = "next week"
+    ladder = _item("Ladder", due="2026-08-10")
+
+    with caplog.at_level(logging.WARNING):
+        events = build_events([broken, ladder], WINDOW_START, WINDOW_END)
+
+    assert [e.summary for e in events] == ["Ladder due back"]
+    assert any("not a date this build can read" in record.message for record in caplog.records)
+
+
+def test_an_unreadable_due_or_inspection_date_is_skipped_the_same_way() -> None:
+    """All three dated fields reach the same parse, so all three need the same guard."""
+
+    broken_due = _item("Ladder", due="whenever")
+    broken_inspection = _item("Extinguisher", inspection="2026-13-40")
+    fine = _item("Drill", inspection="2026-08-20")
+
+    events = build_events([broken_due, broken_inspection, fine], WINDOW_START, WINDOW_END)
+
+    assert [e.summary for e in events] == ["Drill inspection"]
+
+
+def test_the_next_event_walk_survives_an_unreadable_date() -> None:
+    """The entity's state comes from this walk, so it fails the same way or not at all."""
+
+    broken = _reminder("Boiler", anchor="2026-08-10")
+    broken.reminder_date = "next week"
+
+    assert next_event([broken], date(2026, 8, 1)) is None
+    assert next_event([broken, _item("Ladder", due="2026-08-10")], date(2026, 8, 1)) is not None
+
+
+def test_one_unreadable_value_is_reported_once_however_often_it_is_read(caplog) -> None:
+    """A calendar read happens on every state write; a warning per read is a log nobody reads."""
+
+    broken = _reminder("Boiler", anchor="2026-08-10")
+    broken.reminder_date = "not-a-date-at-all"
+
+    with caplog.at_level(logging.WARNING):
+        for _ in range(5):
+            build_events([broken], WINDOW_START, WINDOW_END)
+
+    matching = [r for r in caplog.records if "not a date this build can read" in r.message]
+    assert len(matching) == 1

@@ -1395,7 +1395,15 @@ async def ws_reminder_bump(
     item = _repo(hass).get_item(msg["item_id"])
     if item.reminder_date is None:
         raise ValidationError("item has no reminder to bump")
-    anchor = date.fromisoformat(item.reminder_date)
+    try:
+        anchor = date.fromisoformat(item.reminder_date)
+    except ValueError as exc:
+        # Only a hand-edited store can hold one. Naming it beats the
+        # `unknown_error` a raw parse failure would answer with.
+        raise ValidationError(
+            f"stored reminder_date {item.reminder_date!r} is not a date this build can read; "
+            "set the reminder again to replace it"
+        ) from exc
     following = next_occurrence_after(
         anchor, item.reminder_interval, max(anchor, date.fromisoformat(today_utc_date()))
     )

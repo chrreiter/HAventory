@@ -272,3 +272,24 @@ async def test_a_stale_expected_version_is_a_conflict() -> None:
 
     assert res["success"] is False
     assert res["error"]["code"] == "conflict"
+
+
+@pytest.mark.asyncio
+async def test_bump_names_a_stored_anchor_it_cannot_read() -> None:
+    """A hand-edited store is the only way in, and `unknown_error` says nothing.
+
+    No write path and no import can store one, so the answer's job is to point
+    at the field and at the way out rather than to report a crash.
+    """
+
+    hass = _hass()
+    item_id = await _item(hass)
+    await ws_send(hass, 2, "haventory/reminder/set", item_id=item_id, reminder_date="2026-09-01")
+    repo = hass.data[DOMAIN]["repository"]
+    repo.get_item(item_id).reminder_date = "next week"
+
+    res = await ws_send(hass, 3, "haventory/reminder/bump", item_id=item_id)
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+    assert "reminder_date" in res["error"]["message"]
