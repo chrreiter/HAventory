@@ -155,11 +155,17 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             return [listener for kind, listener in self.listeners if kind == event_type]
 
     class _State:  # type: ignore[override]
-        """The two fields anything offline reads off a state object."""
+        """The three fields anything offline reads off a state object.
 
-        def __init__(self, entity_id: str, state: str) -> None:
+        `attributes` carries `supported_features`, which is how the to-do bridge
+        asks whether a list can delete its own lines — the same place Home
+        Assistant reads it from before refusing the service.
+        """
+
+        def __init__(self, entity_id: str, state: str, attributes: dict | None = None) -> None:
             self.entity_id = entity_id
             self.state = state
+            self.attributes = dict(attributes or {})
 
     class _States:  # type: ignore[override]
         """Stand in for HA's state machine, for the reads only.
@@ -177,8 +183,8 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def get(self, entity_id: str):
             return self._states.get(entity_id)
 
-        def async_set(self, entity_id: str, state: str, *_args, **_kwargs) -> None:
-            self._states[entity_id] = _State(entity_id, state)
+        def async_set(self, entity_id: str, state: str, attributes=None, *_args, **_kwargs) -> None:
+            self._states[entity_id] = _State(entity_id, state, attributes)
 
         def async_remove(self, entity_id: str) -> None:
             self._states.pop(entity_id, None)
@@ -404,6 +410,10 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     def EntitySelectorConfig(**kwargs):  # type: ignore[override]
         return dict(kwargs)
 
+    # Ditto, and the nested one the entity picker's `filter` key takes.
+    def EntityFilterSelectorConfig(**kwargs):  # type: ignore[override]
+        return dict(kwargs)
+
     class EntitySelector:  # type: ignore[override]
         """Stand in for HA's entity picker, validating the domain it restricts to.
 
@@ -418,11 +428,12 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def __call__(self, value):  # type: ignore[no-untyped-def]
             if not isinstance(value, str) or value.count(".") != 1:
                 raise vol.Invalid(f"{value!r} is not an entity id")
-            domain = self.config.get("domain")
+            domain = self.config.get("domain") or (self.config.get("filter") or {}).get("domain")
             if domain and value.split(".")[0] != domain:
                 raise vol.Invalid(f"{value!r} is not in the {domain} domain")
             return value
 
+    ha_helpers_selector.EntityFilterSelectorConfig = EntityFilterSelectorConfig
     ha_helpers_selector.EntitySelector = EntitySelector
     ha_helpers_selector.EntitySelectorConfig = EntitySelectorConfig
     ha_helpers_selector.SelectSelector = SelectSelector

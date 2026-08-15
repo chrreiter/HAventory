@@ -46,6 +46,15 @@ SERVICE_ADD_ITEM = "add_item"
 SERVICE_REMOVE_ITEM = "remove_item"
 SERVICE_UPDATE_ITEM = "update_item"
 
+# `TodoListEntityFeature.DELETE_TODO_ITEM`, in the two spellings the two readers
+# need: the bit, to test against a state's `supported_features`, and the name an
+# entity selector's filter takes, which Home Assistant resolves by importing the
+# module. Spelled out rather than imported because the offline suite has no
+# `homeassistant.components.todo` to read them from, and both are part of Home
+# Assistant's published entity API rather than internals.
+TODO_FEATURE_DELETE_ITEM = 2
+TODO_FEATURE_DELETE_ITEM_NAME = "todo.TodoListEntityFeature.DELETE_TODO_ITEM"
+
 # The multiplication sign, U+00D7 — not the letter x a line like "Peanut butter
 # x2" would carry. It is what the card prints against a quantity, so the list
 # and the card read the same way.
@@ -206,8 +215,8 @@ async def _async_retract(
     for item_id, link in list(links.items()):
         if item_id in desired and link["entity_id"] == entity_id:
             continue
-        await _async_remove_line(hass, link)
-        del links[item_id]
+        if await _async_remove_line(hass, link):
+            del links[item_id]
 
 
 async def _async_restate(
@@ -262,6 +271,33 @@ def _desired_summaries(repo: Any) -> dict[str, str]:
     return desired
 
 
+def _list_can_delete(hass: HomeAssistant, entity_id: str) -> bool:
+    """Whether the list advertises the one feature the bridge cannot work around.
+
+    A `todo` entity is free to offer `CREATE_TODO_ITEM` without
+    `DELETE_TODO_ITEM`, and the options flow's picker only hides such a list from
+    a household choosing one now — an option set before this shipped, or through
+    the API, still names one. Read from the state the same way Home Assistant
+    reads it before refusing the service, so the two agree.
+
+    Only a list that positively says it cannot delete is treated as one. An
+    entity missing from the state machine, or one publishing no
+    `supported_features` at all, answers yes and is left to the ordinary path —
+    the old behaviour, for anything this cannot read.
+    """
+
+    state = hass.states.get(entity_id)
+    if state is None:
+        return True
+    features = getattr(state, "attributes", {}).get("supported_features")
+    if features is None:
+        return True
+    try:
+        return bool(int(features) & TODO_FEATURE_DELETE_ITEM)
+    except TypeError, ValueError:  # pragma: no cover - defensive
+        return True
+
+
 def _list_is_available(hass: HomeAssistant, entity_id: str) -> bool:
     """Whether the configured list is in the state machine and answering.
 
@@ -299,14 +335,35 @@ async def _async_add_line(hass: HomeAssistant, entity_id: str, summary: str) -> 
     return True
 
 
-async def _async_remove_line(hass: HomeAssistant, link: dict[str, str]) -> None:
-    """Take one line back off the list, and give up the link either way.
+async def _async_remove_line(hass: HomeAssistant, link: dict[str, str]) -> bool:
+    """Take one line back off the list. False keeps the link, so nothing duplicates.
 
-    Everything Home Assistant refuses here is permanent — the line was deleted
-    by hand, the list cannot delete, the list is gone — and a link held for a
+    Most of what Home Assistant refuses here is about that one line and will not
+    change — it was deleted by hand, or the list is gone — and a link held for a
     line that cannot be retracted would stop that item from ever being listed
-    again.
+    again. So the link is given up and the line, if any, is left to be cleared by
+    hand.
+
+    A list that cannot delete at all is the exception, and the only unbounded
+    one: that refusal repeats on every future crossing, and giving up the link
+    each time means the next crossing writes a fresh duplicate of a line the
+    bridge has forgotten. Keeping the link caps the damage at one stale line per
+    item — the restate phase then rewrites that line in place when the item
+    crosses again, rather than adding a second.
     """
+
+    if not _list_can_delete(hass, link["entity_id"]):
+        LOGGER.warning(
+            "The to-do list cannot delete its own lines, so this one stays on it; "
+            "keeping the link so the next crossing restates it rather than repeating it",
+            extra={
+                "domain": DOMAIN,
+                "op": "todo_remove",
+                "entity_id": link["entity_id"],
+                "summary": link["summary"],
+            },
+        )
+        return False
 
     try:
         await hass.services.async_call(
@@ -327,6 +384,7 @@ async def _async_remove_line(hass: HomeAssistant, link: dict[str, str]) -> None:
             },
             exc_info=True,
         )
+    return True
 
 
 async def _async_rename_line(

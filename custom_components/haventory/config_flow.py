@@ -8,6 +8,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers.selector import (
+    EntityFilterSelectorConfig,
     EntitySelector,
     EntitySelectorConfig,
     SelectSelector,
@@ -49,7 +50,7 @@ from .const import (
 # The domain the shopping-list picker offers, taken from the module that calls
 # its services: a picker offering entities those calls cannot target would let a
 # household choose a list the bridge then refuses to write to.
-from .todo_bridge import TODO_DOMAIN
+from .todo_bridge import TODO_DOMAIN, TODO_FEATURE_DELETE_ITEM_NAME
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
@@ -137,7 +138,18 @@ def _todo_schema(current: dict[str, Any]) -> vol.Schema:
             vol.Optional(
                 CONF_TODO_ENTITY_ID,
                 description={"suggested_value": chosen or None},
-            ): EntitySelector(EntitySelectorConfig(domain=TODO_DOMAIN)),
+            ): EntitySelector(
+                EntitySelectorConfig(
+                    filter=EntityFilterSelectorConfig(
+                        domain=TODO_DOMAIN,
+                        # A list that can be written to but not deleted from
+                        # collects one line per low-stock crossing and nothing
+                        # HAventory can do ever clears them. Not offering it is
+                        # the only way a household cannot choose wrongly here.
+                        supported_features=[TODO_FEATURE_DELETE_ITEM_NAME],
+                    )
+                )
+            ),
         }
     )
 
