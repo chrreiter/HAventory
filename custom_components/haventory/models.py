@@ -1202,15 +1202,20 @@ def _update_reminder(new_item: Item, update: ItemUpdate) -> None:
     other half, so clearing the date of a recurring reminder is refused rather
     than leaving an interval with nothing to count from.
 
-    Writing a date re-anchors the series on it: `ItemUpdate` carries no anchor of
-    its own, deliberately, because a household picking a date is saying where the
-    series starts. `Repository.bump_reminder` is the one path that moves the date
-    and keeps the anchor, which is what makes a bumped month-end series stay on
-    its own day.
+    Writing a *different* date re-anchors the series on it: `ItemUpdate` carries
+    no anchor of its own, deliberately, because a household picking a date is
+    saying where the series starts. Re-sending the date the item already carries
+    says nothing, so it must not move the anchor — the card's editor puts every
+    field in every payload, changed or not, and re-anchoring on presence alone
+    would let an ordinary save walk a month-end series off its day one short
+    month at a time. `Repository.bump_reminder` is the one path that moves the
+    date and keeps the anchor, which is what makes a bumped month-end series stay
+    on its own day.
     """
 
     if "reminder_date" not in update and "reminder_interval" not in update:
         return
+    previous_reminder_date = new_item.reminder_date
     date_value = update["reminder_date"] if "reminder_date" in update else new_item.reminder_date
     interval_value = (
         update["reminder_interval"] if "reminder_interval" in update else new_item.reminder_interval
@@ -1218,7 +1223,7 @@ def _update_reminder(new_item: Item, update: ItemUpdate) -> None:
     new_item.reminder_date, new_item.reminder_interval = validate_reminder_rules(
         reminder_date=date_value, reminder_interval=interval_value
     )
-    if "reminder_date" in update:
+    if "reminder_date" in update and new_item.reminder_date != previous_reminder_date:
         new_item.reminder_anchor = new_item.reminder_date
     elif new_item.reminder_date is None:
         # The interval was cleared alongside a date that was already absent, or

@@ -1373,8 +1373,9 @@ class Repository:
             ItemUpdate(reminder_date=following.isoformat()),
             expected_version=expected_version,
         )
-        # `update_item` re-anchored on the date it just wrote, because that is
-        # what every other caller means. This is the one that does not.
+        # The next occurrence is always a date the item did not already carry, so
+        # `update_item` re-anchored on it, which is what writing a new date means
+        # everywhere else. This is the one caller for which it does not.
         self._items_by_id[key] = replace(updated, reminder_anchor=current.reminder_anchor)
         return self._items_by_id[key]
 
