@@ -27,7 +27,6 @@ from . import import_export, todo_bridge
 from . import media as media_mod
 from . import storage as storage_mod
 from .areas import async_get_area_registry
-from .calendar_projection import bumped_reminder_date
 from .const import (
     ATTACHMENT_MANUAL_MIME_TYPES,
     ATTACHMENT_PICTURE_MIME_TYPES,
@@ -1382,14 +1381,10 @@ async def ws_reminder_bump(
 ) -> None:
     """Move a reminder on to its next occurrence — "I have just done this".
 
-    The whole series moves with the anchor, which is why bumping is one command
-    rather than the client working out the next date and writing it back: two
-    clients bumping the same reminder land on the same answer.
-
-    Counted from the later of the anchor and today, so a reminder bumped on the
-    day it came round advances by exactly one interval, and one nobody bumped
-    for a year lands on its next *future* occurrence instead of another date
-    already past.
+    One command rather than the client working out the next date and writing it
+    back: the rule lives in `Repository.bump_reminder`, so two clients bumping
+    the same reminder land on the same answer, and neither of them can re-anchor
+    a series by accident.
 
     Today is the **local** one, the day the calendar runs on. A reminder is a
     household-facing date rather than a timestamp, and bumping is what somebody
@@ -1399,10 +1394,18 @@ async def ws_reminder_bump(
     the UTC day; see the README's note on the two boundaries.
     """
 
-    item = _repo(hass).get_item(msg["item_id"])
-    following = bumped_reminder_date(item, today=dt_util.now().date())
-    update = cast("ItemUpdate", {"reminder_date": following})
-    await _apply_reminder(hass, conn, msg, update)
+    repo = _repo(hass)
+    updated = repo.bump_reminder(
+        msg["item_id"],
+        today=dt_util.now().date(),
+        expected_version=msg.get("expected_version"),
+    )
+    serialized = serialize_item(hass, updated)
+    await _persist_repo(hass)
+    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
+    notify_mutation(hass, action="updated", item=serialized)
+    _broadcast_counts(hass)
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
 @websocket_api.websocket_command(

@@ -17,6 +17,8 @@ Covers the ``import_export`` module and the three WebSocket commands
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from custom_components.haventory import import_export as ie
 from custom_components.haventory import media
@@ -1306,3 +1308,82 @@ def test_preview_names_the_row_and_the_field_a_bad_date_is_in() -> None:
     assert report["valid"] is False
     errors = {e["path"] for e in report["errors"]}
     assert errors == {"items[1].reminder_date"}
+
+
+def test_a_bumped_series_survives_an_export_and_import() -> None:
+    """The anchor is the point of the field, so a backup that loses it loses the fix.
+
+    A round trip through a document has to bring back a series measured from
+    31 August and marked done through September — not one that re-anchors on the
+    30th and drifts from there.
+    """
+
+    repo = Repository()
+    item = repo.create_item(
+        {
+            "name": "Meter reading",
+            "reminder_date": "2026-08-31",
+            "reminder_interval": {"unit": "months", "count": 1},
+        }
+    )
+    repo.bump_reminder(str(item.id), today=date(2026, 8, 31))
+    doc = ie.build_export_document(repo, schema_version=CURRENT_SCHEMA_VERSION)
+
+    exported = doc["items"][0]
+    assert (exported["reminder_date"], exported["reminder_anchor"]) == ("2026-09-30", "2026-08-31")
+
+    target = Repository()
+    report, payload = ie.plan_import(target, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+    assert report["valid"] is True, report["errors"]
+    assert payload is not None
+    target.load_state(payload)
+
+    restored = target.get_item(str(item.id))
+    assert (restored.reminder_date, restored.reminder_anchor) == ("2026-09-30", "2026-08-31")
+
+
+def test_a_document_written_before_the_anchor_existed_imports_unchanged() -> None:
+    """Every export up to v8 carries none, and a re-import must not read as an edit."""
+
+    repo = Repository()
+    _seed(repo)
+    repo.create_item(
+        {
+            "name": "HVAC filter",
+            "reminder_date": "2026-09-01",
+            "reminder_interval": {"unit": "months", "count": 3},
+        }
+    )
+    doc = ie.build_export_document(repo, schema_version=CURRENT_SCHEMA_VERSION)
+    for entry in doc["items"]:
+        entry.pop("reminder_anchor", None)
+
+    report, _payload = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert report["valid"] is True, report["errors"]
+    assert report["counts"]["items"]["unchanged"] == report["counts"]["items"]["total"]
+
+
+@pytest.mark.parametrize(
+    ("overrides", "path"),
+    [
+        ({"reminder_anchor": "whenever"}, "items[0].reminder_anchor"),
+        # An anchor beyond its own date leads to no occurrence at all.
+        (
+            {"reminder_date": "2026-09-01", "reminder_anchor": "2026-10-01"},
+            "items[0].reminder_anchor",
+        ),
+        ({"reminder_anchor": "2026-09-01"}, "items[0].reminder_anchor"),
+    ],
+)
+def test_preview_refuses_an_anchor_that_leads_nowhere(overrides: dict, path: str) -> None:
+    """A document is the one way an anchor could arrive that no write path allows."""
+
+    repo = Repository()
+    report, target = ie.plan_import(
+        repo, _envelope(_item_doc(**overrides)), current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert report["valid"] is False
+    assert target is None
+    assert path in {e["path"] for e in report["errors"]}

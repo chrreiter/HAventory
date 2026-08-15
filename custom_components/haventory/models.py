@@ -189,11 +189,16 @@ class Item:
     # When the item is next due for inspection — a forward-looking date, so a
     # value before today means the inspection is outstanding.
     inspection_date: str | None = None  # YYYY-MM-DD
-    # The anchor of a recurring reminder: the next date it comes round. With
-    # `reminder_interval` set it is the start of a series the calendar expands
-    # on read; alone it is a one-off. Nothing schedules from it — see
-    # `calendar_projection.py`.
+    # A reminder is three fields, and two of them are dates on purpose.
+    # `reminder_date` is the next occurrence nobody has marked done — what the
+    # calendar shows first and what a bump advances. `reminder_anchor` is what
+    # the series is measured from, and a bump leaves it alone: month steps are
+    # counted from the anchor, so a series anchored on the 31st returns to the
+    # 31st in every month that has one, however often it is bumped through a
+    # short one. The two are equal until the first bump; neither exists without
+    # the other. Nothing schedules from any of it — see `calendar_projection.py`.
     reminder_date: str | None = None  # YYYY-MM-DD
+    reminder_anchor: str | None = None  # YYYY-MM-DD
     reminder_interval: ReminderInterval | None = None
     location_id: uuid.UUID | None = None
     tags: list[str] = field(default_factory=list)
@@ -891,9 +896,9 @@ def validate_reminder_rules(
 ) -> tuple[str | None, ReminderInterval | None]:
     """Validate the pair, and hold the one rule that binds them.
 
-    An interval with no anchor has nothing to count from, so it is refused
-    rather than silently stored — an item carrying a recurrence that can never
-    produce an occurrence reads as a reminder that quietly does nothing.
+    An interval with no date has nothing to count from, so it is refused rather
+    than silently stored — an item carrying a recurrence that can never produce
+    an occurrence reads as a reminder that quietly does nothing.
     """
 
     normalized_date = validate_reminder_date(reminder_date)
@@ -901,6 +906,29 @@ def validate_reminder_rules(
     if interval is not None and normalized_date is None:
         raise ValidationError("reminder_interval requires a reminder_date to count from")
     return normalized_date, interval
+
+
+def load_reminder_anchor(value: object, *, reminder_date: str | None) -> str | None:
+    """Read a stored series anchor, falling back to the date it belongs to.
+
+    Tolerant, the way `load_reminder_interval` is: every store written before v9
+    carries no anchor, and a reminder that has never been bumped has one equal to
+    its date anyway — so "absent" and "equal" have to reach the same answer.
+
+    An anchor *after* its date describes no series this build can walk (the
+    occurrences would all start beyond the date they are supposed to lead to), so
+    it is read as the date rather than refused. Compared as text, which is what
+    fixed-width ISO dates are for.
+    """
+
+    if reminder_date is None:
+        return None
+    if not isinstance(value, str) or not value or value > reminder_date:
+        return reminder_date
+    try:
+        return normalize_date_yyyy_mm_dd(value)
+    except ValidationError:
+        return reminder_date
 
 
 def serialize_reminder_interval(interval: ReminderInterval | None) -> dict[str, Any] | None:
@@ -1077,6 +1105,8 @@ def create_item_from_create(
         reminder_date=payload.get("reminder_date"),
         reminder_interval=payload.get("reminder_interval"),
     )
+    # Setting a reminder is saying where its series starts, so the anchor
+    # follows the date. Only a bump moves one without the other.
 
     location_id: uuid.UUID | None = None
     if location_id_raw is not None:
@@ -1101,6 +1131,7 @@ def create_item_from_create(
         due_date=normalized_due_date,
         inspection_date=normalized_inspection_date,
         reminder_date=normalized_reminder_date,
+        reminder_anchor=normalized_reminder_date,
         reminder_interval=reminder_interval,
         location_id=location_id,
         tags=tags,
@@ -1168,8 +1199,14 @@ def _update_reminder(new_item: Item, update: ItemUpdate) -> None:
     """Apply either half of the reminder, holding the pair's rule across both.
 
     An update naming only one of the two is validated against the item's stored
-    other half, so clearing the anchor of a recurring reminder is refused rather
+    other half, so clearing the date of a recurring reminder is refused rather
     than leaving an interval with nothing to count from.
+
+    Writing a date re-anchors the series on it: `ItemUpdate` carries no anchor of
+    its own, deliberately, because a household picking a date is saying where the
+    series starts. `Repository.bump_reminder` is the one path that moves the date
+    and keeps the anchor, which is what makes a bumped month-end series stay on
+    its own day.
     """
 
     if "reminder_date" not in update and "reminder_interval" not in update:
@@ -1181,6 +1218,13 @@ def _update_reminder(new_item: Item, update: ItemUpdate) -> None:
     new_item.reminder_date, new_item.reminder_interval = validate_reminder_rules(
         reminder_date=date_value, reminder_interval=interval_value
     )
+    if "reminder_date" in update:
+        new_item.reminder_anchor = new_item.reminder_date
+    elif new_item.reminder_date is None:
+        # The interval was cleared alongside a date that was already absent, or
+        # the pair rule left nothing behind. An anchor without a date names a
+        # series with no next occurrence.
+        new_item.reminder_anchor = None
 
 
 def _update_location_and_path(

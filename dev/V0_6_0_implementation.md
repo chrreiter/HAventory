@@ -81,10 +81,11 @@ live checks queue anyway.
 - **#218 before S2 and S3.** It creates the HAventory device, the `unique_id`
   convention, the HA-bus events, and the offline `bus` stub. #232 consumes the event as
   its reconcile trigger; #187's entity joins the device and re-renders on the same event.
-- **S3 before S5.** #187 slice B is the milestone's only schema bump (v7 → v8) and the
-  last planned change to the stored shape; #229 collapses only after the shape has
-  stopped moving. If slice B slips out of the milestone, S5 moves to V0.7.0 with it
-  rather than the release moving — #236's standing rule.
+- **S3 before S5.** #187 slice B bumped the stored shape (v7 → v8), and the V0.6.0
+  pre-release audit's #460 bumped it once more (v8 → v9, the reminder's series anchor);
+  #229 collapses only after the shape has stopped moving, which it now has. If a further
+  shape change lands, S5 moves with it rather than the release moving — #236's standing
+  rule.
 - **S4 before S5.** The repairs strings and the lossy-load flow should exist in the same
   release whose sunset adopter could first meet a store it mistrusts. S4 is otherwise
   independent and runs late simply to keep `ws.py`/`strings.json` churn serial.
@@ -279,24 +280,25 @@ This PR also deletes `dev/schema_collapse_plan.md` (superseded by the issue),
 `dev/V0_6_0_concept.md` and this file — it closes the milestone's last issue.
 
 The issue's implementation notes are the design, but they were written on 2026-08-05 and
-the tree has moved three schema versions since. Decide the drifted details against the
+the tree has moved four schema versions since. Decide the drifted details against the
 code and record them in the PR body, per §4; six are known already:
 
-- `CURRENT_SCHEMA_VERSION` is **8** (`storage.py:41`), not the notes' 5, so the closed
-  adoptable set is 2–8 — 0 and 1 stay outside it deliberately. The adopter folds in the
+- `CURRENT_SCHEMA_VERSION` is **9** (`storage.py`), not the notes' 5, so the closed
+  adoptable set is 2–9 — 0 and 1 stay outside it deliberately. The adopter folds in the
   backfills of `migrate_4_to_5` (item statuses), `5_to_6`, `6_to_7` (hex status colours,
-  #436) and `7_to_8` (reminder nulls). There is no `migrate_3_to_4`; the chain no-ops
+  #436), `7_to_8` (reminder nulls) and `8_to_9` (the reminder's series anchor, #460, which
+  reads as the item's own `reminder_date`). There is no `migrate_3_to_4`; the chain no-ops
   that step.
 - **The import side ships in this same PR, or the release notes are wrong.**
   `_parse_envelope` refuses a document stamped above the running version, so the export
-  the release notes tell the owner to take first — stamped 8 — is unimportable into the
+  the release notes tell the owner to take first — stamped 9 — is unimportable into the
   collapsed build. The notes cover this; `dev/schema_collapse_plan.md`'s export → wipe →
   import crossing does not, which is one more reason this PR deletes it.
 - #454 put the repairs machinery in the path the adopter enters, so the notes'
   "`__init__.py` — no change" is stale. Two behaviours to pin with tests: a store stamped
   *inside* the adoptable range is adopted rather than routed to the schema-downgrade
   Repairs card, and the corrupt-store repair still works on a v1 store. That card's text
-  names the supported version, so "newer than this build supports (8)" becomes (1).
+  names the supported version, so "newer than this build supports (9)" becomes (1).
 - Three stored artifacts sit outside the versioned payload and the collapse moves none of
   them: `haventory_todo_links` (its own `Store` at version 1 — it survives the crossing
   intact because import preserves item ids), the entry options (`todo_entity_id`, and a

@@ -38,6 +38,7 @@ from homeassistant.helpers.storage import Store as HAStore
 _STATUS_BACKFILL_VERSION = 5
 _ATTACHMENTS_BACKFILL_VERSION = 6
 _REMINDER_BACKFILL_VERSION = 8
+_REMINDER_ANCHOR_BACKFILL_VERSION = 9
 #: The version from which a status ``color`` may be a ``#rrggbb`` literal rather
 #: than one of the ten tone tokens. Builds below it reject the literal.
 _HEX_STATUS_COLOUR_VERSION = 7
@@ -219,8 +220,9 @@ async def test_migration_from_v1_to_current_preserves_payload() -> None:
     migrated = await store.async_load()
 
     assert migrated["schema_version"] == CURRENT_SCHEMA_VERSION
-    # v4 -> v5 backfills the per-item status, v5 -> v6 the attachment list and
-    # v7 -> v8 the two reminder fields; everything else passes through.
+    # v4 -> v5 backfills the per-item status, v5 -> v6 the attachment list,
+    # v7 -> v8 the two reminder fields and v8 -> v9 the reminder's anchor;
+    # everything else passes through.
     expected_items = {
         "i1": {
             **pre_payload["items"]["i1"],
@@ -228,6 +230,7 @@ async def test_migration_from_v1_to_current_preserves_payload() -> None:
             "attachments": [],
             "reminder_date": None,
             "reminder_interval": None,
+            "reminder_anchor": None,
         }
     }
     assert migrated["items"] == expected_items
@@ -271,6 +274,8 @@ async def test_equal_and_older_versions_still_load(stored_version: int) -> None:
     if stored_version < _REMINDER_BACKFILL_VERSION:
         expected_items["i1"]["reminder_date"] = None
         expected_items["i1"]["reminder_interval"] = None
+    if stored_version < _REMINDER_ANCHOR_BACKFILL_VERSION:
+        expected_items["i1"]["reminder_anchor"] = None
     assert loaded["items"] == expected_items
     assert loaded["locations"] == pre_payload["locations"]
 

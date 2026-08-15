@@ -289,10 +289,12 @@ leave the repeat empty and it is a single date.
 
 The calendar then shows the next occurrence and the ones after it, as far ahead as whatever
 view you are looking at. Nothing is scheduled and no series is written down: the item stores
-one date and one interval however long it runs, and the occurrences are worked out when
-something reads them. A repeat measured in months keeps the day of the month it started on —
-a reminder anchored on the 31st shows 28 February and then 31 March, rather than sliding down
-to the 28th forever.
+one date, one anchor and one interval however long it runs, and the occurrences are worked
+out when something reads them. A repeat measured in months keeps the day of the month it
+started on — a reminder anchored on the 31st shows 28 February and then 31 March, rather than
+sliding down to the 28th forever — and it keeps it **however often you bump it**: bumping a
+31st reminder in a 30-day month moves it to the 30th, and the one after that is the 31st
+again.
 
 When you have actually changed the filter, **bump** the reminder and the whole series moves
 on one step. From an automation or a script that is one service call — say, when the smart

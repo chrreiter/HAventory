@@ -46,6 +46,7 @@ def serialize_item(hass: HomeAssistant, item: Item) -> dict[str, Any]:
         "due_date": item.due_date,
         "inspection_date": item.inspection_date,
         "reminder_date": item.reminder_date,
+        "reminder_anchor": item.reminder_anchor,
         "reminder_interval": serialize_reminder_interval(item.reminder_interval),
         "location_id": str(item.location_id) if item.location_id is not None else None,
         "tags": list(item.tags),

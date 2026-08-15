@@ -20,6 +20,7 @@ Object shape for persisted items and API results:
   "due_date": "YYYY-MM-DD|null",
   "inspection_date": "YYYY-MM-DD|null",
   "reminder_date": "YYYY-MM-DD|null",
+  "reminder_anchor": "YYYY-MM-DD|null",
   "reminder_interval": {"unit": "days|weeks|months", "count": 1},
   "location_id": "uuid-v4|null",
   "tags": ["string", "..."],
@@ -51,20 +52,38 @@ A value strictly before today (UTC) means that inspection is overdue — the pop
 the `inspection_overdue_only` filter and the `inspection_overdue_count` stat. It is
 independent of `checked_out` and of `due_date`; any item can carry one.
 
-`reminder_date` is the anchor of a recurring reminder — the next date it comes round —
-and `reminder_interval` is `{unit, count}` with `unit` one of `days`, `weeks`, `months`
-and `count` an integer from 1 to 1000. `reminder_interval` is `null` for a one-off, and an
-interval with no `reminder_date` to count from is rejected as `validation_error`: it could
-never produce an occurrence.
+A reminder is **three** fields, and two of them are dates on purpose:
+
+- `reminder_date` — the next occurrence nobody has marked done. What the calendar shows
+  first, what a household picks, and what `haventory/reminder/bump` advances.
+- `reminder_anchor` — what the series is measured from. Equal to `reminder_date` until the
+  first bump, and `null` exactly when `reminder_date` is.
+- `reminder_interval` — `{unit, count}` with `unit` one of `days`, `weeks`, `months` and
+  `count` an integer from 1 to 1000. `null` for a one-off, and an interval with no
+  `reminder_date` to count from is rejected as `validation_error`: it could never produce an
+  occurrence.
+
+`reminder_anchor` is **derived on write, not client-written**: neither `ItemCreate` nor
+`ItemUpdate` carries it, and every path that writes `reminder_date` sets the anchor to that
+same date, because picking a date is saying where the series starts. `reminder/bump` and
+`haventory.reminder_bump` are the only writers that move the date and keep the anchor — which
+is the whole reason it is stored. A document may carry one, so a backup can restore a series
+mid-flight; an anchor later than its own `reminder_date`, or one with no date to lead to, is
+refused on import.
 
 Occurrences are **derived, never stored**. `calendar.haventory` expands the anchor and the
-interval over whatever window is read, so the store holds two fields however long the series
-runs. Month steps are measured from the anchor and clamped onto short months — a series
-anchored on the 31st gives 28 February and then 31 March, rather than sticking at 28. A past
-anchor is accepted and is what a reminder nobody has bumped looks like.
+interval over whatever window is read, so the store holds three fields however long the
+series runs, and everything before `reminder_date` is already done and never comes back.
+Month steps are measured from the anchor and clamped onto short months — a series anchored on
+the 31st gives 28 February and then 31 March, rather than sticking at 28, **and that holds
+after any number of bumps**: bumping a 31st series in a 30-day month lands on the 30th, and
+the one after it is the 31st again. A past anchor is accepted and is what a reminder nobody
+has bumped looks like.
 
-Stores written before schema v8 carry neither field; `migrate_7_to_8` writes both as `null`,
-which is what "no reminder" means everywhere else.
+Stores written before schema v8 carry none of the three; `migrate_7_to_8` writes the date and
+the interval as `null`, and `migrate_8_to_9` gives every reminder an anchor equal to its own
+date — which is what a series that has never been bumped under this rule has. A store from
+before v9 that carries no anchor reads the same way, so the two paths agree.
 
 `status` is a stored per-item condition: exactly one slug from the store's `statuses`
 collection, seeded with `ok`, `missing` and `needs_repair`. It is **non-nullable** — setting
@@ -90,7 +109,7 @@ Input shapes:
   - `checked_out?: boolean`
   - `due_date?: YYYY-MM-DD|null` (only valid when `checked_out` is true)
   - `inspection_date?: YYYY-MM-DD|null` (independent of check-out state)
-  - `reminder_date?: YYYY-MM-DD|null`
+  - `reminder_date?: YYYY-MM-DD|null` (also sets `reminder_anchor`)
   - `reminder_interval?: {unit, count}|null` (requires `reminder_date`)
   - `location_id?: uuid-v4|null`
   - `tags?: string[]` (normalized: trimmed, lowercased, deduped)
@@ -106,7 +125,8 @@ Input shapes:
   - `checked_out?: boolean`
   - `due_date?: YYYY-MM-DD|null` (only valid when `checked_out` is true)
   - `inspection_date?: YYYY-MM-DD|null` (null clears)
-  - `reminder_date?: YYYY-MM-DD|null` (null clears; refused while an interval is stored)
+  - `reminder_date?: YYYY-MM-DD|null` (null clears; refused while an interval is stored;
+    re-anchors the series on the date written)
   - `reminder_interval?: {unit, count}|null` (null clears; validated against the stored
     `reminder_date` when the update does not name one)
   - `location_id?: uuid-v4|null`
@@ -116,8 +136,9 @@ Input shapes:
   - `custom_fields_set?: { [k: string]: scalar }`
   - `custom_fields_unset?: string[]`
 
-Neither input shape carries `attachments`: the two attachment commands are its only
-writers, so an item save can never rewrite the list.
+Neither input shape carries `attachments` or `reminder_anchor`: the two attachment commands
+are the only writers of the first, and the second follows whatever `reminder_date` is written
+except across a bump.
 
 ### Status definitions
 
