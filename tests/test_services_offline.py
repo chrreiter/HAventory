@@ -11,17 +11,25 @@ from __future__ import annotations
 
 import inspect
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
 import voluptuous as vol
 import yaml
+from custom_components.haventory import events as events_mod
 from custom_components.haventory import services as services_mod
 from custom_components.haventory.const import DOMAIN, EVENT_ITEM_CHANGED
-from custom_components.haventory.exceptions import ConflictError, NotFoundError, StorageError
+from custom_components.haventory.exceptions import (
+    ConflictError,
+    NotFoundError,
+    StorageError,
+    ValidationError,
+)
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
 from homeassistant.core import HomeAssistant, SupportsResponse
+from homeassistant.util import dt as dt_util
 
 
 @pytest.mark.asyncio
@@ -292,7 +300,7 @@ async def _seeded(hass: HomeAssistant) -> tuple[Repository, str, str]:
 
 @pytest.mark.asyncio
 async def test_every_service_answers_with_the_canonical_envelope() -> None:
-    """All eleven services hand back the entity they touched.
+    """Every service hands back the entity it touched.
 
     The keys are the ones `docs/data_shapes.md` specifies for the WebSocket
     surface, so a script's `response_variable` and a card's WS result are the
@@ -310,6 +318,15 @@ async def test_every_service_answers_with_the_canonical_envelope() -> None:
         (services_mod.service_item_set_quantity, {"item_id": item_id, "quantity": 7}),
         (services_mod.service_item_check_out, {"item_id": item_id, "due_date": "2030-01-01"}),
         (services_mod.service_item_check_in, {"item_id": item_id}),
+        (
+            services_mod.service_item_update,
+            {
+                "item_id": item_id,
+                "reminder_date": "2026-09-01",
+                "reminder_interval": {"unit": "months", "count": 3},
+            },
+        ),
+        (services_mod.service_reminder_bump, {"item_id": item_id}),
     ]
     for handler, payload in item_calls:
         response = await handler(hass, payload)
@@ -451,3 +468,121 @@ async def test_a_failed_persist_answers_nothing(monkeypatch) -> None:
     monkeypatch.setattr(services_mod, "async_persist_repo", _persist)
     with pytest.raises(StorageError):
         await services_mod.service_item_create(hass, {"name": "Widget"})
+
+
+# -----------------------------
+# Reminders from an automation
+# -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_reminder_can_be_set_and_cleared_through_item_update() -> None:
+    """No reminder-specific service for the two field writes: they are field writes.
+
+    The schemas carried `due_date` and `inspection_date` but not these two, so
+    an automation could set every date on an item except the one the release is
+    about.
+    """
+
+    hass = HomeAssistant()
+    repo, item_id, _loc_id = await _seeded(hass)
+
+    stored = await services_mod.service_item_update(
+        hass,
+        {
+            "item_id": item_id,
+            "reminder_date": "2026-09-01",
+            "reminder_interval": {"unit": "months", "count": 3},
+        },
+    )
+    assert stored["item"]["reminder_date"] == "2026-09-01"
+    assert stored["item"]["reminder_interval"] == {"unit": "months", "count": 3}
+
+    cleared = await services_mod.service_item_update(
+        hass, {"item_id": item_id, "reminder_date": None, "reminder_interval": None}
+    )
+    assert cleared["item"]["reminder_date"] is None
+    assert repo.get_item(item_id).reminder_interval is None
+
+
+@pytest.mark.asyncio
+async def test_a_reminder_created_with_the_item_is_stored() -> None:
+    hass = HomeAssistant()
+    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    hass.data[DOMAIN]["store"] = DomainStore(hass)
+
+    created = await services_mod.service_item_create(
+        hass,
+        {
+            "name": "HVAC filter",
+            "reminder_date": "2026-09-01",
+            "reminder_interval": {"unit": "months", "count": 3},
+        },
+    )
+
+    assert created["item"]["reminder_date"] == "2026-09-01"
+
+
+@pytest.mark.asyncio
+async def test_the_bump_service_moves_the_series_the_way_the_command_does() -> None:
+    """Two surfaces, one rule — `bumped_reminder_date` is the only copy of it."""
+
+    hass = HomeAssistant()
+    _repo, item_id, _loc_id = await _seeded(hass)
+    await services_mod.service_item_update(
+        hass,
+        {
+            "item_id": item_id,
+            "reminder_date": "2020-01-01",
+            "reminder_interval": {"unit": "days", "count": 7},
+        },
+    )
+
+    bumped = await services_mod.service_reminder_bump(hass, {"item_id": item_id})
+
+    landed = date.fromisoformat(bumped["item"]["reminder_date"])
+    assert landed > dt_util.now().date()
+    # Series-aligned: whole weeks from the anchor, not "today plus seven".
+    assert (landed - date(2020, 1, 1)).days % 7 == 0
+
+
+@pytest.mark.asyncio
+async def test_the_bump_service_refuses_what_the_command_refuses() -> None:
+    """A one-off has no next occurrence, and an automation gets told so."""
+
+    hass = HomeAssistant()
+    _repo, item_id, _loc_id = await _seeded(hass)
+    await services_mod.service_item_update(
+        hass, {"item_id": item_id, "reminder_date": "2026-09-01"}
+    )
+
+    with pytest.raises(ValidationError, match="no interval"):
+        await services_mod.service_reminder_bump(hass, {"item_id": item_id})
+
+    with pytest.raises(ValidationError, match="no reminder"):
+        await services_mod.service_reminder_bump(hass, {"item_id": (await _seeded(hass))[1]})
+
+
+@pytest.mark.asyncio
+async def test_the_bump_service_reaches_the_bus() -> None:
+    """It is an item edit, so an automation watching items has to see it."""
+
+    hass = HomeAssistant()
+    events_mod.seed_low_stock_snapshot(hass)
+    _repo, item_id, _loc_id = await _seeded(hass)
+    events_mod.seed_low_stock_snapshot(hass)
+    await services_mod.service_item_update(
+        hass,
+        {
+            "item_id": item_id,
+            "reminder_date": "2026-09-01",
+            "reminder_interval": {"unit": "months", "count": 3},
+        },
+    )
+    hass.bus.fired.clear()
+
+    await services_mod.service_reminder_bump(hass, {"item_id": item_id})
+
+    fired = hass.bus.events_of(EVENT_ITEM_CHANGED)
+    assert [e["action"] for e in fired] == ["updated"]
+    assert fired[0]["item_id"] == item_id

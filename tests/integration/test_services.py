@@ -11,6 +11,8 @@ every registered service through it and assert the repository actually changed.
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 import voluptuous as vol
 from custom_components.haventory.const import DOMAIN
@@ -18,6 +20,7 @@ from custom_components.haventory.exceptions import NotFoundError, StorageError, 
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import STORAGE_KEY
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 DUE_DATE = "2030-01-01"
@@ -62,6 +65,7 @@ async def test_all_services_are_registered(hass: HomeAssistant) -> None:
         "item_set_quantity",
         "item_check_out",
         "item_check_in",
+        "reminder_bump",
         "location_create",
         "location_update",
         "location_delete",
@@ -261,3 +265,46 @@ async def test_delete_answers_with_the_body_it_removed(hass: HomeAssistant) -> N
     assert removed["item"]["name"] == "Torch"
     assert removed["item"]["quantity"] == quantity
     assert repo.get_counts()["items_total"] == 0
+
+
+async def test_reminders_are_reachable_from_an_automation(hass: HomeAssistant) -> None:
+    """The whole point of the service surface: a household can act on a reminder.
+
+    Reminders shipped WebSocket-only, and no Home Assistant automation can send a
+    WebSocket command — so "check the smoke detector every three months", the
+    automation-facing feature of the release, was unreachable from an automation.
+    """
+
+    await _setup(hass)
+
+    created = await hass.services.async_call(
+        DOMAIN,
+        "item_create",
+        {
+            "name": "HVAC filter",
+            "reminder_date": "2020-01-01",
+            "reminder_interval": {"unit": "days", "count": 7},
+        },
+        blocking=True,
+        return_response=True,
+    )
+    item_id = created["item"]["id"]
+    assert created["item"]["reminder_interval"] == {"unit": "days", "count": 7}
+
+    bumped = await hass.services.async_call(
+        DOMAIN, "reminder_bump", {"item_id": item_id}, blocking=True, return_response=True
+    )
+
+    landed = date.fromisoformat(bumped["item"]["reminder_date"])
+    assert landed > dt_util.now().date()
+    # Series-aligned, exactly as the WebSocket command leaves it.
+    assert (landed - date(2020, 1, 1)).days % 7 == 0
+
+    cleared = await hass.services.async_call(
+        DOMAIN,
+        "item_update",
+        {"item_id": item_id, "reminder_date": None, "reminder_interval": None},
+        blocking=True,
+        return_response=True,
+    )
+    assert cleared["item"]["reminder_date"] is None

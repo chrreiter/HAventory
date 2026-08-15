@@ -46,6 +46,18 @@ item_create:
       example: "2025-06-01"
       selector:
         date:
+    reminder_date:
+      required: false
+      example: "2025-09-01"
+      selector:
+        date:
+    reminder_interval:
+      required: false
+      # How often the reminder repeats, as {unit, count} — unit is days, weeks
+      # or months. Leave it out for a one-off date.
+      example: {"unit": "months", "count": 3}
+      selector:
+        object:
     location_id:
       required: false
       example: "uuid-of-location"
@@ -122,6 +134,14 @@ item_update:
       required: false
       selector:
         date:
+    reminder_date:
+      required: false
+      selector:
+        date:
+    reminder_interval:
+      required: false
+      selector:
+        object:
     location_id:
       required: false
       selector:
@@ -239,6 +259,21 @@ item_check_in:
         text:
     expected_version:
       required: false
+      selector:
+        number:
+
+reminder_bump:
+  name: Bump reminder
+  description: Mark a recurring reminder done and move it on to its next occurrence
+  fields:
+    item_id:
+      required: true
+      example: "uuid-of-item"
+      selector:
+        text:
+    expected_version:
+      required: false
+      example: 2
       selector:
         number:
 

@@ -17,7 +17,9 @@ from typing import Any, NoReturn
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.util import dt as dt_util
 
+from .calendar_projection import bumped_reminder_date
 from .const import DOMAIN
 from .events import notify_derived_paths_changed, notify_mutation
 from .exceptions import (
@@ -52,6 +54,11 @@ SCHEMA_ITEM_CREATE = vol.Schema(
         vol.Optional("checked_out", default=False): bool,
         vol.Optional("due_date"): str,
         vol.Optional("inspection_date"): str,
+        # Permissive on purpose, exactly as the WebSocket commands are: the
+        # shape rules live in `validate_reminder_rules`, which names what is
+        # wrong with a value far better than a schema mismatch can.
+        vol.Optional("reminder_date"): vol.Any(str, None),
+        vol.Optional("reminder_interval"): vol.Any(dict, None),
         vol.Optional("location_id"): vol.Any(str, None),
         vol.Optional("tags", default=[]): [str],
         vol.Optional("category"): vol.Any(str, None),
@@ -71,6 +78,8 @@ SCHEMA_ITEM_UPDATE = vol.Schema(
         vol.Optional("checked_out"): bool,
         vol.Optional("due_date"): vol.Any(str, None),
         vol.Optional("inspection_date"): vol.Any(str, None),
+        vol.Optional("reminder_date"): vol.Any(str, None),
+        vol.Optional("reminder_interval"): vol.Any(dict, None),
         vol.Optional("location_id"): vol.Any(str, None),
         vol.Optional("tags"): vol.Any([str], None),
         vol.Optional("category"): vol.Any(str, None),
@@ -117,6 +126,10 @@ SCHEMA_ITEM_CHECK_OUT = vol.Schema(
 )
 
 SCHEMA_ITEM_CHECK_IN = vol.Schema(
+    {vol.Required("item_id"): str, vol.Optional("expected_version"): int}
+)
+
+SCHEMA_REMINDER_BUMP = vol.Schema(
     {vol.Required("item_id"): str, vol.Optional("expected_version"): int}
 )
 
@@ -329,6 +342,39 @@ async def service_item_check_in(hass: HomeAssistant, data: dict) -> dict[str, An
         _raise_service_error(op, {"item_id": item_id}, exc)
 
 
+async def service_reminder_bump(hass: HomeAssistant, data: dict) -> dict[str, Any]:
+    """Mark a recurring reminder done and move the series on one step.
+
+    The one reminder verb that is not an ordinary field write: setting and
+    clearing a reminder are `item_update` with `reminder_date` and
+    `reminder_interval`, but "I have just done this" is a question about where
+    the series goes next, and the answer has to be the same one the card gets.
+    """
+
+    op = "reminder_bump"
+    item_id = data.get("item_id")
+    try:
+        payload = SCHEMA_REMINDER_BUMP(data)
+        repo = _get_repo(hass)
+        # The household's day, the one the calendar rolls over on.
+        update = {
+            "reminder_date": bumped_reminder_date(
+                repo.get_item(payload["item_id"]), today=dt_util.now().date()
+            )
+        }
+        item = repo.update_item(
+            payload["item_id"],
+            update,  # type: ignore[arg-type]
+            expected_version=payload.get("expected_version"),
+        )
+        await async_persist_repo(hass)
+        serialized = serialize_item(hass, item)
+        notify_mutation(hass, action="updated", item=serialized)
+        return {"item": serialized}
+    except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
+        _raise_service_error(op, {"item_id": item_id}, exc)
+
+
 async def service_location_create(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     op = "location_create"
     try:
@@ -404,6 +450,7 @@ SERVICES: tuple[tuple[str, ServiceHandler, vol.Schema], ...] = (
     ("item_set_quantity", service_item_set_quantity, SCHEMA_ITEM_SET_QTY),
     ("item_check_out", service_item_check_out, SCHEMA_ITEM_CHECK_OUT),
     ("item_check_in", service_item_check_in, SCHEMA_ITEM_CHECK_IN),
+    ("reminder_bump", service_reminder_bump, SCHEMA_REMINDER_BUMP),
     ("location_create", service_location_create, SCHEMA_LOCATION_CREATE),
     ("location_update", service_location_update, SCHEMA_LOCATION_UPDATE),
     ("location_delete", service_location_delete, SCHEMA_LOCATION_DELETE),

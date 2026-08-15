@@ -20,6 +20,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
+from .exceptions import ValidationError
 from .models import Item, ReminderInterval
 
 LOGGER = logging.getLogger(__name__)
@@ -121,6 +122,40 @@ def next_occurrence_after(
     if interval is None:
         return None
     return _occurrence(anchor, interval, _first_step_after(anchor, interval, after))
+
+
+def bumped_reminder_date(item: Item, *, today: date) -> str:
+    """The stored anchor an item's reminder moves to when it is marked done.
+
+    The whole rule, in one place, because two surfaces ask for it — the
+    WebSocket command and the `haventory.reminder_bump` service — and two
+    answers to "where does this reminder go next" would be one answer too many.
+
+    Counted from the later of the anchor and `today`, so a reminder bumped on
+    the day it came round advances by exactly one interval, and one nobody
+    bumped for a year lands on its next *future* occurrence instead of another
+    date already past. `today` is the caller's to supply: it is the household's
+    day, and this module does not know what timezone they live in.
+    """
+
+    if item.reminder_date is None:
+        raise ValidationError("item has no reminder to bump")
+    try:
+        anchor = date.fromisoformat(item.reminder_date)
+    except ValueError as exc:
+        # Only a hand-edited store can hold one, and naming the field beats the
+        # `unknown_error` a raw parse failure answers with.
+        raise ValidationError(
+            f"stored reminder_date {item.reminder_date!r} is not a date this build can read; "
+            "set the reminder again to replace it"
+        ) from exc
+
+    following = next_occurrence_after(anchor, item.reminder_interval, max(anchor, today))
+    if following is None:
+        raise ValidationError(
+            "a reminder with no interval has no next occurrence; clear it instead"
+        )
+    return following.isoformat()
 
 
 def _iter_events(

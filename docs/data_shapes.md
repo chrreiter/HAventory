@@ -557,8 +557,15 @@ shapes as the WebSocket surface — no bespoke service shape exists:
     expected_version: "{{ created.item.version }}"
 ```
 
-- The eight `item_*` services return `{"item": <Item>}`; the three `location_*` ones return
-  `{"location": <Location>}`.
+- The eight `item_*` services and `reminder_bump` return `{"item": <Item>}`; the three
+  `location_*` ones return `{"location": <Location>}`.
+- Reminders reach automations through the same services rather than through three of their
+  own: `item_create` and `item_update` carry `reminder_date` and `reminder_interval` (either
+  set to `null` clears it), which is what setting and clearing a reminder *is*, and
+  `reminder_bump` exists because "I have just done this" is a question about where the series
+  goes next rather than a field write. It answers the item as the bump left it, so a script
+  can template `reminder_date` out of the response. The rule behind it lives in one place,
+  `calendar_projection.bumped_reminder_date`, which the WebSocket command also calls.
 - `item_delete` and `location_delete` return the entity as it last stood, read before the
   removal. Deleting an unknown id is `not_found`, not an empty envelope.
 - The response is produced **after** the durable write, so an answer means the mutation is
