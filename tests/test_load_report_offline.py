@@ -6,7 +6,7 @@ whose own guard rejects a cyclic document before any state swap, and
 ``update_location`` refuses a move under a descendant. So everything here is about
 the setup path reading a file somebody else wrote.
 
-Two properties are load-bearing:
+Two properties have to hold:
 
 - the walk **terminates** — a cyclic parent chain used to be followed forever,
   once per item, during Home Assistant startup;
@@ -20,7 +20,7 @@ import logging
 import uuid
 
 import pytest
-from custom_components.haventory.models import ItemCreate
+from custom_components.haventory.models import NAME_MAX_LENGTH, ItemCreate
 from custom_components.haventory.repository import LOAD_DROP_LOG_LIMIT, LoadReport, Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 
@@ -255,3 +255,164 @@ def test_has_corruption_covers_every_kind(report: LoadReport, expected: bool) ->
     """Setup keys off this one property, so each tuple has to feed it."""
 
     assert report.has_corruption is expected
+
+
+# --------------------------------------------------------------------------- #
+# Names the load path used to invent
+# --------------------------------------------------------------------------- #
+
+
+#: Marks a key a case wants *absent* rather than set to something unreadable.
+#: The two are different bugs — a missing key read as ``""``, a stored ``null``
+#: as the literal ``"None"`` — so both have to be reachable from one table.
+ABSENT = object()
+
+
+def _without_absent(row: dict[str, object]) -> dict[str, object]:
+    return {key: value for key, value in row.items() if value is not ABSENT}
+
+
+def _item(item_id: str, **overrides: object) -> dict[str, object]:
+    """An item row as the store holds it, with one field bent out of shape."""
+
+    row: dict[str, object] = {
+        "id": item_id,
+        "name": "Drill",
+        "location_id": None,
+        "quantity": 1,
+        "status": "ok",
+        "checked_out": False,
+        "tags": [],
+        "custom_fields": {},
+        "version": 1,
+    }
+    row.update(overrides)
+    return _without_absent(row)
+
+
+#: Every spelling of "this row has no name". ``.get("name", "")`` answered the
+#: first with ``""`` and the second with the literal string ``"None"``; the rest
+#: are what a third-party writer or a hand-edit produces.
+UNREADABLE_NAMES: list[tuple[str, dict[str, object]]] = [
+    ("missing", {"name": ABSENT}),
+    ("null", {"name": None}),
+    ("blank", {"name": ""}),
+    ("whitespace", {"name": "   "}),
+    ("number", {"name": 42}),
+    ("list", {"name": ["Drill"]}),
+]
+UNREADABLE_IDS = [label for label, _ in UNREADABLE_NAMES]
+
+
+@pytest.mark.parametrize(("label", "overrides"), UNREADABLE_NAMES, ids=UNREADABLE_IDS)
+def test_an_item_with_no_readable_name_is_dropped(label: str, overrides: dict[str, object]) -> None:
+    """A row no write path could have produced is corrupt, not an item named "".
+
+    The write paths all refuse a name that is empty after a trim. The load path
+    used to coerce instead, which put a row in memory the model rejects and made
+    it permanent on the next save — and an empty name indexes no search tokens,
+    so the row is unfindable as well as unnameable.
+    """
+
+    item_id = str(uuid.uuid4())
+    payload = {
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "locations": {},
+        "items": {item_id: _item(item_id, **overrides)},
+    }
+
+    repo = Repository.from_state(payload)
+
+    assert repo.last_load_report.dropped_item_ids == (item_id,)
+    assert repo.last_load_report.has_corruption is True
+    assert repo.export_state()["items"] == {}
+
+
+@pytest.mark.parametrize(("label", "overrides"), UNREADABLE_NAMES, ids=UNREADABLE_IDS)
+def test_a_location_with_no_readable_name_is_dropped(
+    label: str, overrides: dict[str, object]
+) -> None:
+    """The location twin behaves the same — it had the identical coercion."""
+
+    loc_id = str(uuid.uuid4())
+    row = _loc(loc_id, "Garage", None)
+    row.update(overrides)
+    payload = {
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "locations": {loc_id: _without_absent(row)},
+        "items": {},
+    }
+
+    repo = Repository.from_state(payload)
+
+    assert repo.last_load_report.dropped_location_ids == (loc_id,)
+    assert repo.export_state()["locations"] == {}
+
+
+def test_an_unreadable_name_is_logged_at_error_like_any_other_corrupt_row(caplog) -> None:
+    """It reaches the same report and the same log line the Repairs card reads.
+
+    No new wiring was needed: ``ValidationError`` is already what both ``except``
+    blocks in ``load_state`` catch, so the row lands in ``dropped_item_ids`` and
+    feeds the corrupt-store repair that shipped with the load report.
+    """
+
+    item_id = str(uuid.uuid4())
+    payload = {
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "locations": {},
+        "items": {item_id: _item(item_id, name=None)},
+    }
+
+    with caplog.at_level(logging.DEBUG):
+        Repository.from_state(payload)
+
+    failures = [r for r in caplog.records if "Failed to load item" in r.getMessage()]
+    assert [r.levelno for r in failures] == [logging.ERROR]
+    assert [getattr(r, "item_id", None) for r in failures] == [item_id]
+
+
+def test_a_name_that_only_needs_trimming_still_loads() -> None:
+    """Padding is not corruption, and the row keeps the name a write would give it.
+
+    Every write path trims, so a padded stored name is a hand-edit rather than
+    something this codebase wrote — and the honest reading of it is the trimmed
+    name, not a refusal.
+    """
+
+    item_id, loc_id = str(uuid.uuid4()), str(uuid.uuid4())
+    location = _loc(loc_id, "Garage", None)
+    location["name"] = "  Garage  "
+    payload = {
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "locations": {loc_id: location},
+        "items": {item_id: _item(item_id, name="  Drill  ")},
+    }
+
+    repo = Repository.from_state(payload)
+
+    assert repo.last_load_report == LoadReport()
+    assert repo.get_item(item_id).name == "Drill"
+    assert repo.get_location(loc_id).name == "Garage"
+
+
+def test_a_stored_name_over_the_cap_still_loads() -> None:
+    """The cap binds what an edit may add, not what a store may already hold.
+
+    Deliberate, and the reason the load path checks non-emptiness only: an
+    over-cap name predates the cap, so refusing it here would drop rows this
+    integration itself wrote — and a corrupt-store refusal blocks setup.
+    """
+
+    item_id = str(uuid.uuid4())
+    long_name = "L" * (NAME_MAX_LENGTH + 50)
+    payload = {
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "locations": {},
+        "items": {item_id: _item(item_id, name=long_name)},
+    }
+
+    repo = Repository.from_state(payload)
+
+    assert repo.last_load_report == LoadReport()
+    assert repo.get_item(item_id).name == long_name

@@ -86,6 +86,7 @@ from .models import (
     validate_reminder_date,
     validate_reminder_interval,
     validate_reminder_rules,
+    validate_required_name,
     validate_status_definition,
 )
 from .repository import Repository
@@ -195,6 +196,22 @@ def _sorted_index_by_id(items: list[Item]) -> list[int]:
 
 def _err(path: str, message: str) -> dict[str, str]:
     return {"path": path, "message": message}
+
+
+def _validate_name_doc(value: object, path: str, errors: list[dict[str, str]]) -> None:
+    """The write paths' name rule, reported into ``errors`` rather than raised.
+
+    Items and locations share it, and so does the load path — a document may
+    only name something a store could have held.
+    """
+
+    try:
+        trimmed = validate_required_name(value)
+    except ValidationError as err:
+        errors.append(_err(path, str(err)))
+        return
+    if len(trimmed) > NAME_MAX_LENGTH:
+        errors.append(_err(path, f"name must be at most {NAME_MAX_LENGTH} characters"))
 
 
 def _warn(code: str, path: str, message: str, **fields: Any) -> dict[str, Any]:
@@ -333,11 +350,7 @@ def _validate_location_doc(
 ) -> str | None:
     base = f"locations[{idx}]"
     lid = _validate_uuid4(doc.get("id"), f"{base}.id", errors)
-    name = doc.get("name")
-    if not isinstance(name, str) or not name.strip():
-        errors.append(_err(f"{base}.name", "name is required and must be a non-empty string"))
-    elif len(name.strip()) > NAME_MAX_LENGTH:
-        errors.append(_err(f"{base}.name", f"name must be at most {NAME_MAX_LENGTH} characters"))
+    _validate_name_doc(doc.get("name"), f"{base}.name", errors)
     parent_id = doc.get("parent_id")
     if parent_id is not None:
         _validate_uuid4(parent_id, f"{base}.parent_id", errors)
@@ -421,11 +434,7 @@ def _validate_item_doc(
 ) -> str | None:
     base = f"items[{idx}]"
     iid = _validate_uuid4(doc.get("id"), f"{base}.id", errors)
-    name = doc.get("name")
-    if not isinstance(name, str) or not name.strip():
-        errors.append(_err(f"{base}.name", "name is required and must be a non-empty string"))
-    elif len(name.strip()) > NAME_MAX_LENGTH:
-        errors.append(_err(f"{base}.name", f"name must be at most {NAME_MAX_LENGTH} characters"))
+    _validate_name_doc(doc.get("name"), f"{base}.name", errors)
     _validate_optional_text_doc(doc.get("description"), f"{base}.description", errors)
     _validate_optional_text_doc(doc.get("category"), f"{base}.category", errors)
     qty = doc.get("quantity", 1)

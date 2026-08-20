@@ -1141,8 +1141,11 @@ the first public release.
   mean it. The entry stops with that error and the store is left untouched; fix the value in
   the file, or replace `haventory_store` with a backup.
 - **"HAventory could not read N item(s) / location(s) from .storage/haventory_store"**: some
-  entries in the store are structurally broken — a hand edit, a truncated write, or a
-  location whose parent chain loops back on itself. The entry stops rather than loading the
+  entries in the store are structurally broken — a hand edit, a truncated write, a row with
+  no usable name, or a location whose parent chain loops back on itself. (A name has to be
+  a non-empty string, which is what every way of creating one already requires; there is no
+  length limit on reading, so a name from before the 120-character cap still loads.) The
+  entry stops rather than loading the
   readable remainder, because HAventory saves on every change: a partial load would rewrite
   the file without those entries on the first edit and make the loss permanent. The store is
   left untouched, and the message names the first few affected ids. Fix those entries, or
