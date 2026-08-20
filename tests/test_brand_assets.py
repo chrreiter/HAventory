@@ -6,9 +6,9 @@
 - ``docs/assets/social-preview.html`` — the repository's preview image, one ``<path
   d>`` under ``fill-rule="evenodd"``, where winding carries no meaning and every
   subpath is wound alike.
-- ``docs/assets/brand/`` — the artwork ``home-assistant/brands`` serves for the HACS
-  listing and the integrations page, generated from the first of the three by
-  ``scripts/render_brand_assets.py``.
+- ``custom_components/haventory/brand/`` — the images Home Assistant serves for the
+  integrations page and the add-integration dialog, generated from the first of the
+  three by ``scripts/render_brand_assets.py``.
 
 The first two are the same outline written for two fill rules, and read side by side
 they look like they contradict each other. What follows normalises both to one
@@ -29,18 +29,30 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from brand_wordmark import (  # noqa: E402
+    WORDMARK_CAP_HEIGHT,
+    WORDMARK_PATH,
+)
 from render_brand_assets import (  # noqa: E402
-    ICON_SIZES,
+    DENSITIES,
+    FLATTENING,
+    LIGHT,
     Line,
+    Quad,
     Segment,
     Subpath,
     flatten,
+    flattened,
+    lockup,
+    on_square,
+    palettes,
     parse_path,
+    render,
 )
 
 BRAND_ICON_TS = REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "brand-icon.ts"
 SOCIAL_PREVIEW_HTML = REPO_ROOT / "docs" / "assets" / "social-preview.html"
-BRAND_DIR = REPO_ROOT / "docs" / "assets" / "brand"
+BRAND_DIR = REPO_ROOT / "custom_components" / "haventory" / "brand"
 
 # In SVG the y axis grows downward, which flips the sign the shoelace formula
 # carries in school geometry: a positive signed area is clockwise *on screen*.
@@ -68,7 +80,7 @@ def card_mark_path() -> str:
     """``HAVENTORY_MARK_PATH``, rebuilt from the groups it is joined from.
 
     Read independently of ``scripts/render_brand_assets.py``: the script writes the
-    brand SVG from its own reading, and the two only agree if both are right.
+    artwork from its own reading, and the two only agree if both are right.
     """
     source = BRAND_ICON_TS.read_text(encoding="utf-8")
     groups = []
@@ -113,6 +125,14 @@ def brand_color() -> str:
     )
 
 
+def png_shape(filename: str) -> tuple[int, int, int, int]:
+    """``(width, height, bit depth, colour type)`` from a PNG's IHDR."""
+    data = (BRAND_DIR / filename).read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n", f"{filename} is not a PNG"
+    width, height, depth, color_type = struct.unpack(">IIBB", data[16:26])
+    return width, height, depth, color_type
+
+
 # --------------------------------------------------------------------------- #
 # Normalising one outline to a canonical form
 # --------------------------------------------------------------------------- #
@@ -130,6 +150,8 @@ def _key(segment: Segment) -> tuple[object, ...]:
     """
     if isinstance(segment, Line):
         return ("line", _point(segment.start), _point(segment.end))
+    if isinstance(segment, Quad):
+        return ("quad", _point(segment.start), _point(segment.end), _point(segment.control))
     return (
         "arc",
         _point(segment.start),
@@ -160,8 +182,8 @@ def _reversed(segments: list[Segment]) -> list[Segment]:
     """
     walked: list[Segment] = []
     for segment in reversed(segments):
-        if isinstance(segment, Line):
-            walked.append(Line(segment.end, segment.start))
+        if isinstance(segment, Line | Quad):
+            walked.append(replace(segment, start=segment.end, end=segment.start))
         else:
             walked.append(
                 replace(segment, start=segment.end, end=segment.start, sweep=not segment.sweep)
@@ -260,49 +282,91 @@ def test_the_social_previews_subpaths_are_all_wound_alike() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# The brands artwork
+# The brand images
 # --------------------------------------------------------------------------- #
 
 
-def test_the_brand_svg_is_the_mark_the_card_publishes() -> None:
-    """``docs/assets/brand/icon.svg`` is a rendering of the card's constant, not a copy.
+def brand_files() -> dict[str, tuple[int, int]]:
+    """Every file the renderer writes, mapped to the size it must come out at.
 
-    It is the source the PNGs below are rasterised from, so this is the assertion
-    that keeps the artwork the brands repository serves tied to the icon the sidebar
-    draws. Regenerate with ``uv run python scripts/render_brand_assets.py``.
+    The logo's width is not a constant anywhere: it falls out of setting the mark
+    beside the word and trimming to the ink. Asking ``lockup`` for it — which
+    computes the layout without rasterising anything — is what ties the committed
+    strip to that arrangement rather than to a number somebody wrote down.
     """
-    svg = (BRAND_DIR / "icon.svg").read_text(encoding="utf-8")
+    expected: dict[str, tuple[int, int]] = {}
+    for suffix, size in DENSITIES.items():
+        _, width = lockup(card_mark_path(), WORDMARK_PATH, size)
+        for palette in palettes(SOCIAL_PREVIEW_HTML.read_text(encoding="utf-8")):
+            expected[f"{palette.prefix}icon{suffix}.png"] = (size, size)
+            expected[f"{palette.prefix}logo{suffix}.png"] = (width, size)
+    return expected
 
-    assert svg.count("<path") == 1
-    assert _sole_attribute(svg, "d", "icon.svg") == card_mark_path()
-    assert _sole_attribute(svg, "viewBox", "icon.svg") == card_view_box()
-    assert _sole_attribute(svg, "fill", "icon.svg") == brand_color()
-    # No fill-rule: nonzero is the default, and the crates are wound for it.
-    assert "fill-rule" not in svg
 
+@pytest.mark.parametrize("filename", sorted(brand_files()))
+def test_every_brand_image_is_the_shape_home_assistant_serves(filename: str) -> None:
+    """8-bit RGBA at the sizes the brands specification names, trimmed to the ink.
 
-@pytest.mark.parametrize(("filename", "size"), sorted(ICON_SIZES.items()))
-def test_the_brand_rasters_are_the_shape_brands_asks_for(filename: str, size: int) -> None:
-    """Square, 8-bit RGBA, at the two sizes the brands repository names.
-
-    Its own CI rejects anything else, on a review timeline measured in days, so the
-    cheap half of that check runs here.
+    The icon is square at 256 and 512. The logo's shortest side is its height, which
+    has the same two brackets, and its width is whatever the lockup makes it — a
+    logo padded out to a rounder number would be showing empty space where the
+    frontend expects artwork.
     """
-    data = (BRAND_DIR / filename).read_bytes()
+    width, height, depth, color_type = png_shape(filename)
 
-    assert data[:8] == b"\x89PNG\r\n\x1a\n"
-    width, height, depth, color_type = struct.unpack(">IIBB", data[16:26])
-    assert (width, height) == (size, size)
+    assert (width, height) == brand_files()[filename]
     assert (depth, color_type) == (8, 6)
+
+
+def test_the_committed_icon_is_what_the_renderer_draws_from_the_cards_mark() -> None:
+    """Byte for byte, so a mark that moved and artwork that did not cannot both ship.
+
+    This is the one file re-rendered here rather than merely measured, and it stands
+    in for the other seven: they come out of the same run of the same script, so an
+    ``icon.png`` that still matches is an ``icon.png`` written after the last edit to
+    the mark. Regenerate with ``uv run python scripts/render_brand_assets.py``.
+    """
+    size = DENSITIES[""]
+    extent = max(float(part) for part in card_view_box().split())
+    icon = on_square([flattened(card_mark_path(), FLATTENING * extent / size)], size)
+
+    assert render(icon, [LIGHT.mark], size, size) == (BRAND_DIR / "icon.png").read_bytes()
+
+
+def test_the_dark_artwork_is_painted_in_the_colour_the_preview_names() -> None:
+    """The mark has one colour, and the social preview is where it is written down.
+
+    The dark-theme images are the ones that carry it — the preview's own background
+    is dark. The light-theme pair uses a deeper blue, which nothing else in the
+    repository states, so it is declared next to the renderer rather than copied
+    from a file that means something else.
+    """
+    _, dark = palettes(SOCIAL_PREVIEW_HTML.read_text(encoding="utf-8"))
+
+    assert dark.mark == brand_color()
+    assert dark.mark != LIGHT.mark
+
+
+def test_the_wordmark_is_stated_at_the_size_the_lockup_measures_against() -> None:
+    """The outlines and ``WORDMARK_CAP_HEIGHT`` have to describe the same lettering.
+
+    The lockup sizes and centres the mark against the cap band, so a wordmark re-cut
+    at another size would keep rendering — at the right size, because the strip is
+    scaled to fit — with the mark suddenly the wrong height beside it. Capitals are
+    the tallest thing in "HAventory", and its baseline is y=0 by construction.
+    """
+    ys = [y for polygon in flattened(WORDMARK_PATH, FLATTEN_TOLERANCE) for _, y in polygon]
+
+    assert min(ys) == pytest.approx(-WORDMARK_CAP_HEIGHT, abs=0.01)
+    # The descender of the "y", which is what puts the baseline where it is.
+    assert max(ys) > 0.0
 
 
 def test_the_brand_directory_holds_only_what_the_renderer_writes() -> None:
     """A file here that the renderer does not write is a hand-made asset.
 
     That is the third independent copy of the mark this whole file exists to
-    prevent, and it would reach the brands repository looking exactly like the
-    generated ones.
+    prevent, and it would reach every install looking exactly like the generated
+    ones — this directory ships inside the integration.
     """
-    written = {"icon.svg", *ICON_SIZES}
-
-    assert {path.name for path in BRAND_DIR.iterdir() if path.is_file()} == written
+    assert {path.name for path in BRAND_DIR.iterdir() if path.is_file()} == set(brand_files())

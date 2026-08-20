@@ -28,8 +28,12 @@ The owner's total involvement, by design:
    German speaker, a README read as a stranger.
 4. **Merge four PRs the sessions leave open on purpose** (§4, "Merging"): the two test
    purges of #353, the `CLAUDE.md` trim of #216, and the README rewrite of #217.
-5. **File the `home-assistant/brands` PR** from S1's prepared assets and text (§6.1) —
-   it goes to an external repository under the owner's name, so no session files it.
+5. **Decide whether the `home-assistant/brands` PR is still worth filing.** It is no
+   longer what makes the artwork appear: the integration ships its own icons and logos
+   in `custom_components/haventory/brand/`, and Home Assistant serves those in
+   preference to the brands CDN. What the CDN still backs is the HACS store listing,
+   which is read before anything is installed. Either way it goes to another project's
+   repository under the owner's name, so no session files it. #196 tracks it.
 6. **Merge release-please's 0.7.0 PR** after S11 has finished — S11's findings ship in
    0.7.0, so the release PR waits for it.
 
@@ -315,6 +319,11 @@ Four PRs, in order:
    `docs/assets/brand/`. Write the brands PR body and the exact `gh` sequence (fork,
    branch, copy, PR) into the handover. **Do not open the external PR** — it goes under
    the owner's name to another project's repository.
+   *Outcome:* shipped, then moved. Home Assistant 2026.3 — three releases below this
+   project's floor — serves a custom integration's own brand images from a `brand/`
+   directory inside it, in preference to the CDN, so the artwork now lives at
+   `custom_components/haventory/brand/` and a logo was added beside the icon. The
+   external PR became optional; see item 5 of §1.
 2. **"refactor(storage): stop persisting the write-only `_generation`"** — refs #482.
    Plan decision: **no schema bump.** A missing key reads as absent on both sides, and a
    bump would add a migration step the collapse deletes anyway. Tests: a store with the

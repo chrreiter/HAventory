@@ -97,6 +97,10 @@ and the two must move together, which `tests/test_toolchain_pins.py` now enforce
   `async def` adapters: a lambda handler is classified as an executor job, runs on a worker
   thread, and its coroutine is never awaited — a silent no-op that offline tests cannot see.
 - `areas.py` — HA area registry integration (read-only; never auto-creates areas).
+- `brand/` — the eight PNGs Home Assistant serves as this integration's icon and logo,
+  in light and dark palettes at both densities. Generated from the card's mark constants
+  by `scripts/render_brand_assets.py`; never hand-edited, and pinned to the mark by
+  `tests/test_brand_assets.py`.
 - `config_flow.py` — single-instance config flow; asks for card title and the sidebar-panel
   preference at setup, and the options flow carries those plus the rate-limit section.
   `const.py`, `exceptions.py`, `manifest.json`, `strings.json`, `translations/`.

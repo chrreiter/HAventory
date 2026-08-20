@@ -20,8 +20,10 @@ repos:
           # Contributor Covenant's spelling, and CODE_OF_CONDUCT.md quotes that
           # document verbatim so it stays checkable against the original.
           # "statics" is the plural of a class's `static` members, which is what
-          # Home Assistant reads a card's picker interface off.
-          - --ignore-words-list=hass,batery,afterall,socio-economic,statics
+          # Home Assistant reads a card's picker interface off. "crate" is one of
+          # the three boxes the mark draws, named that in the icon geometry and in
+          # everything that reads it.
+          - --ignore-words-list=hass,batery,afterall,socio-economic,statics,crate
         exclude: |
           (?x)^(
             custom_components/haventory/www/|
