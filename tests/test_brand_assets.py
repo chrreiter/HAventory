@@ -21,6 +21,7 @@ from __future__ import annotations
 import re
 import struct
 import sys
+import zlib
 from dataclasses import replace
 from pathlib import Path
 
@@ -125,11 +126,30 @@ def brand_color() -> str:
     )
 
 
+def png_parts(data: bytes) -> tuple[bytes, bytes]:
+    """A PNG's header and its uncompressed scanlines — the parts that are the picture.
+
+    Deliberately not the file's bytes. zlib's output depends on which build of zlib
+    produced it, so two runs on two machines encode the same image to different
+    IDAT payloads; what they cannot differ on is what those payloads decompress to.
+    """
+    assert data[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
+    header, body, at = b"", bytearray(), 8
+    while at < len(data):
+        length = struct.unpack(">I", data[at : at + 4])[0]
+        kind, payload = data[at + 4 : at + 8], data[at + 8 : at + 8 + length]
+        if kind == b"IHDR":
+            header = payload
+        elif kind == b"IDAT":
+            body += payload
+        at += 12 + length
+    return header, zlib.decompress(bytes(body))
+
+
 def png_shape(filename: str) -> tuple[int, int, int, int]:
     """``(width, height, bit depth, colour type)`` from a PNG's IHDR."""
-    data = (BRAND_DIR / filename).read_bytes()
-    assert data[:8] == b"\x89PNG\r\n\x1a\n", f"{filename} is not a PNG"
-    width, height, depth, color_type = struct.unpack(">IIBB", data[16:26])
+    header, _ = png_parts((BRAND_DIR / filename).read_bytes())
+    width, height, depth, color_type = struct.unpack(">IIBB", header[:10])
     return width, height, depth, color_type
 
 
@@ -319,7 +339,7 @@ def test_every_brand_image_is_the_shape_home_assistant_serves(filename: str) -> 
 
 
 def test_the_committed_icon_is_what_the_renderer_draws_from_the_cards_mark() -> None:
-    """Byte for byte, so a mark that moved and artwork that did not cannot both ship.
+    """Pixel for pixel, so a mark that moved and artwork that did not cannot both ship.
 
     This is the one file re-rendered here rather than merely measured, and it stands
     in for the other seven: they come out of the same run of the same script, so an
@@ -330,7 +350,9 @@ def test_the_committed_icon_is_what_the_renderer_draws_from_the_cards_mark() -> 
     extent = max(float(part) for part in card_view_box().split())
     icon = on_square([flattened(card_mark_path(), FLATTENING * extent / size)], size)
 
-    assert render(icon, [LIGHT.mark], size, size) == (BRAND_DIR / "icon.png").read_bytes()
+    assert png_parts(render(icon, [LIGHT.mark], size, size)) == png_parts(
+        (BRAND_DIR / "icon.png").read_bytes()
+    )
 
 
 def test_the_dark_artwork_is_painted_in_the_colour_the_preview_names() -> None:
