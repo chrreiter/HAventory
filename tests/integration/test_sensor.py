@@ -41,6 +41,22 @@ def _entity_ids(hass: HomeAssistant, entry: MockConfigEntry) -> list[str]:
     return sorted(e.entity_id for e in _sensor_entries(hass, entry))
 
 
+def _entity_id_for(hass: HomeAssistant, entry: MockConfigEntry, key: str) -> str:
+    """Find a sensor by the count it reports rather than by its entity_id.
+
+    `unique_id` is the entry_id plus the count's key, and neither moves. The
+    entity_id is generated once, from whatever the entity was named at first
+    creation, so matching on it would tie these tests to the wording of a name.
+    """
+
+    registry = er.async_get(hass)
+    return next(
+        e.entity_id
+        for e in er.async_entries_for_config_entry(registry, entry.entry_id)
+        if e.unique_id == f"{entry.entry_id}_{key}"
+    )
+
+
 async def test_four_sensors_land_on_one_device(hass: HomeAssistant) -> None:
     """One service device, four entities, `unique_id`s scoped to the entry."""
 
@@ -76,7 +92,7 @@ async def test_items_total_moves_on_a_service_call_with_no_polling(hass: HomeAss
     """
 
     entry = await _setup(hass)
-    total = next(e for e in _entity_ids(hass, entry) if e.endswith("_items"))
+    total = _entity_id_for(hass, entry, "items_total")
 
     assert hass.states.get(total).state == "0"
 
@@ -92,7 +108,7 @@ async def test_items_total_moves_on_a_websocket_mutation(
     """The other write path pushes the same way."""
 
     entry = await _setup(hass)
-    total = next(e for e in _entity_ids(hass, entry) if e.endswith("_items"))
+    total = _entity_id_for(hass, entry, "items_total")
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Torch"})
@@ -104,7 +120,7 @@ async def test_items_total_moves_on_a_websocket_mutation(
 
 async def test_low_stock_sensor_tracks_the_threshold(hass: HomeAssistant) -> None:
     entry = await _setup(hass)
-    low = next(e for e in _entity_ids(hass, entry) if e.endswith("_low_stock"))
+    low = _entity_id_for(hass, entry, "low_stock_count")
 
     created = await hass.services.async_call(
         DOMAIN,
@@ -148,11 +164,6 @@ async def test_each_sensor_reports_its_count(hass: HomeAssistant, descriptor) ->
     entry = await _setup(hass)
     repo = hass.data[DOMAIN]["repository"]
 
-    registry = er.async_get(hass)
-    entity_id = next(
-        e.entity_id
-        for e in er.async_entries_for_config_entry(registry, entry.entry_id)
-        if e.unique_id == f"{entry.entry_id}_{descriptor.key}"
-    )
+    entity_id = _entity_id_for(hass, entry, descriptor.key)
 
     assert hass.states.get(entity_id).state == str(repo.get_counts()[descriptor.key])
