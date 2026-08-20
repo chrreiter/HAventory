@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.6.0](https://github.com/chrreiter/HAventory/compare/v0.5.0...v0.6.0) (2026-08-15)
+
+
+### Features
+
+* **calendar:** project due and inspection dates ([#452](https://github.com/chrreiter/HAventory/issues/452)) ([cd5a35a](https://github.com/chrreiter/HAventory/commit/cd5a35a00ebeb580a8a746ce7e1c4bf4b7270923))
+* **diagnostics:** entry diagnostics, repairs issues and a guarded lossy load ([#454](https://github.com/chrreiter/HAventory/issues/454)) ([71e494c](https://github.com/chrreiter/HAventory/commit/71e494c77861f928834bafe776174f559a4f1304)), closes [#225](https://github.com/chrreiter/HAventory/issues/225)
+* **reminders:** read a reminder in the card, and mark one done ([#487](https://github.com/chrreiter/HAventory/issues/487)) ([2235d39](https://github.com/chrreiter/HAventory/commit/2235d39fd0fdd7e7f30bc3a3dbef5b6dcfcecea0)), closes [#478](https://github.com/chrreiter/HAventory/issues/478)
+* **reminders:** recurring reminders on items ([#453](https://github.com/chrreiter/HAventory/issues/453)) ([986b0bf](https://github.com/chrreiter/HAventory/commit/986b0bfa0892fbfa54b8c33b173545b40459ddab))
+* **reminders:** store the series anchor so a bump keeps its day of month ([#476](https://github.com/chrreiter/HAventory/issues/476)) ([1056d88](https://github.com/chrreiter/HAventory/commit/1056d88c710e7341aa384cfa1fc7db8afe9a7b14)), closes [#460](https://github.com/chrreiter/HAventory/issues/460)
+* **sensor:** four inventory sensors and bus events for automations ([#449](https://github.com/chrreiter/HAventory/issues/449)) ([e17bc64](https://github.com/chrreiter/HAventory/commit/e17bc64b805461f966ed721348eced7346a8a1e3))
+* **services:** return response data from every service ([#448](https://github.com/chrreiter/HAventory/issues/448)) ([684e591](https://github.com/chrreiter/HAventory/commit/684e591a1723927a799e2a0d681a2756299242aa)), closes [#219](https://github.com/chrreiter/HAventory/issues/219)
+* **services:** set, clear and bump reminders from an automation ([#473](https://github.com/chrreiter/HAventory/issues/473)) ([897ff1e](https://github.com/chrreiter/HAventory/commit/897ff1eaac3ede8f012c21976f5be3602ade32cf)), closes [#464](https://github.com/chrreiter/HAventory/issues/464) [#467](https://github.com/chrreiter/HAventory/issues/467)
+* **todo:** mirror low-stock items onto a chosen to-do list ([#451](https://github.com/chrreiter/HAventory/issues/451)) ([c89ee82](https://github.com/chrreiter/HAventory/commit/c89ee82099873b1f98a9aed58d86fc06b09dd972)), closes [#232](https://github.com/chrreiter/HAventory/issues/232)
+
+
+### Bug Fixes
+
+* **diagnostics:** keep the household's own vocabulary out of the download ([#475](https://github.com/chrreiter/HAventory/issues/475)) ([c3916f6](https://github.com/chrreiter/HAventory/commit/c3916f672a0f9f2d7c002d7774ce46003b2088e2)), closes [#465](https://github.com/chrreiter/HAventory/issues/465)
+* **events:** announce a status reassignment and repaint after a location rename ([#471](https://github.com/chrreiter/HAventory/issues/471)) ([31b897f](https://github.com/chrreiter/HAventory/commit/31b897fe9b9c4a4841a47741dce2d97c96fe09f5)), closes [#462](https://github.com/chrreiter/HAventory/issues/462) [#463](https://github.com/chrreiter/HAventory/issues/463)
+* **import:** validate reminder and inspection dates, and keep the calendar up on one it cannot read ([#470](https://github.com/chrreiter/HAventory/issues/470)) ([4f3d26c](https://github.com/chrreiter/HAventory/commit/4f3d26cfe0269bb0a5ae098c9f44b9f088a26daa)), closes [#458](https://github.com/chrreiter/HAventory/issues/458)
+* **reminders:** count a bump from the local day the calendar runs on ([#472](https://github.com/chrreiter/HAventory/issues/472)) ([f4a3a48](https://github.com/chrreiter/HAventory/commit/f4a3a48256129a1f6c51dba5cc88628c1ba7665a)), closes [#461](https://github.com/chrreiter/HAventory/issues/461)
+* **reminders:** stop an ordinary save re-anchoring a month-end series ([#484](https://github.com/chrreiter/HAventory/issues/484)) ([122f266](https://github.com/chrreiter/HAventory/commit/122f266ced6d60157673665820f428ac5db57efc)), closes [#477](https://github.com/chrreiter/HAventory/issues/477)
+* resolve the five v0.5.0 review bugs staged for v0.6.0 ([#444](https://github.com/chrreiter/HAventory/issues/444)) ([1459cc6](https://github.com/chrreiter/HAventory/commit/1459cc68cd65b9a13e4921263022b21dea8bdd59))
+* **scripts:** answer the config flow with the defaults its schema offers ([#446](https://github.com/chrreiter/HAventory/issues/446)) ([1787922](https://github.com/chrreiter/HAventory/commit/1787922efaa87340ca841fc15fc0ba7ed1990e99)), closes [#431](https://github.com/chrreiter/HAventory/issues/431)
+* **storage:** spend the lossy-load opt-in on every load and make the repair stick ([#469](https://github.com/chrreiter/HAventory/issues/469)) ([86f49b0](https://github.com/chrreiter/HAventory/commit/86f49b027c63a6ff2d7f863c65f466e0121ff8b8))
+* **todo:** stop a list that cannot delete collecting one orphan line per crossing ([#474](https://github.com/chrreiter/HAventory/issues/474)) ([62dfe27](https://github.com/chrreiter/HAventory/commit/62dfe27e58f1bccbf4d90d91cef4d58c66790d57)), closes [#459](https://github.com/chrreiter/HAventory/issues/459)
+
+
+### Documentation
+
+* **dev:** add the V0.6.0 concept and session plan ([#447](https://github.com/chrreiter/HAventory/issues/447)) ([7594b1a](https://github.com/chrreiter/HAventory/commit/7594b1a073e2fe57ad32e65cb310aa63a0509fb6))
+* **dev:** record what the tree adds to S5's collapse brief ([#468](https://github.com/chrreiter/HAventory/issues/468)) ([bb9d474](https://github.com/chrreiter/HAventory/commit/bb9d474ecddea14c1a7ff642578a08091f8e20c8))
+* fix two comments that no longer describe their code ([#483](https://github.com/chrreiter/HAventory/issues/483)) ([3ea1f86](https://github.com/chrreiter/HAventory/commit/3ea1f86017652729d1073ced88e5782ac1057d59)), closes [#481](https://github.com/chrreiter/HAventory/issues/481)
+* make the known-limitations tracking sentence true ([#486](https://github.com/chrreiter/HAventory/issues/486)) ([ae0ccb4](https://github.com/chrreiter/HAventory/commit/ae0ccb4a472586c641e8ad9b094052db53092e18)), closes [#479](https://github.com/chrreiter/HAventory/issues/479)
+
 ## [0.5.0](https://github.com/chrreiter/HAventory/compare/v0.4.3...v0.5.0) (2026-08-13)
 
 
