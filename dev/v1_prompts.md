@@ -169,8 +169,10 @@ GitHub issue #196 is the spec; v1.0.0 is live. Verify current requirements from
 the official HACS publisher docs before each step — do not work from memory. Then, with
 my explicit go per submission:
 a. Repo prep: description, topics, README requirements per the HACS docs.
-b. home-assistant/brands PR for the `haventory` domain — ask me for the artwork with
-   the required specs; I supply or approve it.
+b. home-assistant/brands PR for the `haventory` domain, if we still want one — the
+   integration already serves its own icons and logos from
+   `custom_components/haventory/brand/`, so this only buys the HACS store listing that
+   is read before install. The artwork is rendered, not hand-made: use those files.
 c. Submission PR to the HACS default repository.
 Track both external PRs, relay reviewer feedback, and address it. Once the listing
 merges: confirm a clean-instance install from HACS search, then switch the README

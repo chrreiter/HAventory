@@ -57,8 +57,10 @@ const HANDLES = [
  * spellings are not interchangeable — taking that one for this file fills the
  * crates in. `tests/test_brand_assets.py` normalises both to one winding and
  * fails if the outlines diverge, and separately pins each file's winding to the
- * rule it is written for. The brand artwork under `docs/assets/brand/` is
- * rendered from the constants here, so it is not a third place to edit.
+ * rule it is written for. The brand images under
+ * `custom_components/haventory/brand/`, which Home Assistant serves for the
+ * integrations page, are rendered from the constants here, so they are not a
+ * third place to edit.
  */
 export const HAVENTORY_MARK_PATH = [HOUSE, ...CRATES, ...HANDLES].join(' ');
 
