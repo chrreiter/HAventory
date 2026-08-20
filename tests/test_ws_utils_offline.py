@@ -3,6 +3,7 @@
 Scenarios:
 - ping returns echo and timestamp
 - version reports integration_version and schema_version
+- health reports the generation this process has reached
 - config reports the configured card title, and the default when unset
 - config carries the status vocabulary and the attachment caps
 - stats returns repository counts, including the per-slug map
@@ -22,6 +23,7 @@ from custom_components.haventory.const import (
     MAX_MANUALS_PER_ITEM,
     MAX_PICTURES_PER_ITEM,
 )
+from custom_components.haventory.models import ItemCreate
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 from custom_components.haventory.ws import setup as ws_setup
@@ -57,6 +59,29 @@ async def test_version_reports_integration_and_schema() -> None:
     assert res["result"]["integration_version"] == INTEGRATION_VERSION
     # In offline tests, store may not exist; default to CURRENT_SCHEMA_VERSION
     assert int(res["result"]["schema_version"]) == int(CURRENT_SCHEMA_VERSION)
+
+
+@pytest.mark.asyncio
+async def test_health_reports_the_generation_this_run_has_reached() -> None:
+    """The counter left the store; it did not leave the health command.
+
+    It is what a maintainer reads to see whether a repository is being written
+    to at all, and it counts this process's mutations — so it moves under
+    traffic and starts near zero after a restart, rather than continuing a
+    number the last run left behind.
+    """
+
+    hass = HomeAssistant()
+    repo = Repository()
+    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    ws_setup(hass)
+
+    before = await ws_send(hass, 30, "haventory/health")
+    repo.create_item(ItemCreate(name="Drill"))
+    after = await ws_send(hass, 31, "haventory/health")
+
+    assert before["result"]["generation"] == repo.generation - 1
+    assert after["result"]["generation"] == repo.generation
 
 
 @pytest.mark.asyncio

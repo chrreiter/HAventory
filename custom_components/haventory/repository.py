@@ -2313,10 +2313,13 @@ class Repository:
 
     @property
     def generation(self) -> int:
-        """Current repository generation for optimistic locking and debugging.
+        """How many times this process has modified the repository.
 
-        The generation counter increments on every state modification and can
-        be used to detect stale snapshots or track changes for debugging.
+        Reported by ``haventory/health`` and the diagnostics dump, and useful for
+        telling a snapshot apart from a later one *within one run*. It is not
+        stored, so it starts near zero on every boot and says nothing about how
+        much the household has changed — the item ``version`` field is the
+        persisted counter, and the one optimistic concurrency runs on.
         """
         return self._generation
 
@@ -2417,7 +2420,6 @@ class Repository:
             "items": items_dict,
             "locations": locations_dict,
             "statuses": statuses_dict,
-            "_generation": self._generation,
         }
 
     def load_state(self, data: dict[str, Any]) -> None:
@@ -2438,8 +2440,11 @@ class Repository:
         if not isinstance(data, dict):
             return
 
-        # Restore generation counter from persisted state
-        self._generation = int(data.get("_generation", 0))
+        # The generation counter is not restored, and stores written by older
+        # builds carry a `_generation` key that is ignored here. It counts this
+        # process's mutations for the health command and the diagnostics dump;
+        # nothing compares it across a restart, and the item `version` field —
+        # which is persisted — is what optimistic concurrency runs on.
 
         # Statuses BEFORE the item loop, or ``coerce_item_status`` would see
         # only the built-ins and rewrite every item on a custom status to "ok"
