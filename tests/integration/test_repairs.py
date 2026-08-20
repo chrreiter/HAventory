@@ -27,6 +27,7 @@ from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 READABLE_ITEM_ID = str(uuid.uuid4())
+NAMELESS_ITEM_ID = str(uuid.uuid4())
 
 
 def _stored(data: dict) -> dict:
@@ -205,3 +206,85 @@ async def test_a_clean_load_spends_an_opt_in_left_on_the_entry(
 
     assert entry.state is ConfigEntryState.LOADED
     assert CONF_ALLOW_LOSSY_LOAD not in entry.options
+
+
+async def test_a_row_with_no_name_reaches_the_repairs_card_and_its_fix(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """A stored ``"name": null`` is corruption, and behaves like every other kind.
+
+    It used to load: ``str(None)`` produced an item literally called ``"None"``,
+    which no write path could have created and which the next edit would have
+    made permanent. Now it is refused — and the point of asserting that here
+    rather than offline is that nothing about the *consequences* is visible
+    offline: whether an issue is actually registered, whether the fix flow runs,
+    and whether the entry comes back up with the readable remainder.
+    """
+
+    assert await async_setup_component(hass, "repairs", {})
+    hass_storage[STORAGE_KEY] = _stored(
+        {
+            "schema_version": CURRENT_SCHEMA_VERSION,
+            "items": {
+                READABLE_ITEM_ID: {"id": READABLE_ITEM_ID, "name": "Hammer", "quantity": 2},
+                NAMELESS_ITEM_ID: {"id": NAMELESS_ITEM_ID, "name": None, "quantity": 1},
+            },
+            "locations": {},
+        }
+    )
+
+    entry = await _added_entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id) is False
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_CORRUPT_STORE)
+    assert issue is not None
+    assert issue.is_fixable is True
+    assert issue.translation_placeholders["items"] == "1"
+
+    flow_manager = repairs_flow_manager(hass)
+    assert flow_manager is not None
+    result = await flow_manager.async_init(DOMAIN, data={"issue_id": ISSUE_CORRUPT_STORE})
+    result = await flow_manager.async_configure(result["flow_id"], {})
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_CORRUPT_STORE) is None
+
+    repo = hass.data[DOMAIN]["repository"]
+    assert repo.get_counts()["items_total"] == 1
+    assert repo.get_item(READABLE_ITEM_ID).name == "Hammer"
+    # The dropped row survives in the copy, with its name still null — a backup
+    # that had "repaired" it to something would be worth nothing.
+    backup = hass_storage[CORRUPT_BACKUP_STORAGE_KEY]["data"]
+    assert backup["items"][NAMELESS_ITEM_ID]["name"] is None
+
+
+async def test_a_stored_name_over_the_cap_is_not_corruption(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """The refusal blocks setup, so what it refuses has to be exactly right.
+
+    The load path checks non-emptiness and not the 120-character cap. An
+    over-cap name predates the cap and is data this integration itself wrote;
+    refusing it would put a household's whole instance behind a Repairs card
+    for a name that is merely long.
+    """
+
+    hass_storage[STORAGE_KEY] = _stored(
+        {
+            "schema_version": CURRENT_SCHEMA_VERSION,
+            "items": {READABLE_ITEM_ID: {"id": READABLE_ITEM_ID, "name": "L" * 400}},
+            "locations": {},
+        }
+    )
+
+    entry = await _added_entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id) is True
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_CORRUPT_STORE) is None
+    assert hass.data[DOMAIN]["repository"].get_item(READABLE_ITEM_ID).name == "L" * 400

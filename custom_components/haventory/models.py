@@ -496,19 +496,38 @@ def normalize_tags(tags: list[str] | None) -> list[str]:
     return result
 
 
+def validate_required_name(value: object) -> str:
+    """A name that survives a trim, or a ``ValidationError``. Returns it trimmed.
+
+    The one rule every item and location write path enforces, in one place, so
+    that the *load* path can enforce it too: a stored row whose name is missing,
+    ``null``, not a string, or only whitespace is not something this codebase
+    could have written, and reading it as ``""`` — or, for a ``null``, as the
+    literal ``"None"`` — puts a row in memory that no write path would accept
+    and that the first mutation afterwards makes permanent. An empty name also
+    produces no search-index tokens, and reaches the to-do bridge as a line whose
+    quantity suffix is all there is to read.
+
+    Deliberately **not** the length cap. The load path grandfathers over-cap
+    stored values elsewhere, so refusing one here would reject a store this
+    integration itself wrote.
+    """
+
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError("name is required and must be a non-empty string")
+    return value.strip()
+
+
 def validate_location_name(name: str) -> str:
     """Validate a location name and return a trimmed value.
 
-    Enforces non-empty string and maximum length consistent with item names.
+    The write path's rule: what the load path requires, plus the length cap the
+    load path deliberately does not apply.
     """
 
-    if not isinstance(name, str):
-        raise ValidationError("name is required and must be a non-empty string")
-    trimmed = name.strip()
-    if len(trimmed) == 0:
-        raise ValidationError("name is required and must be a non-empty string")
+    trimmed = validate_required_name(name)
     if len(trimmed) > NAME_MAX_LENGTH:
-        raise ValidationError("name must be at most 120 characters")
+        raise ValidationError(f"name must be at most {NAME_MAX_LENGTH} characters")
     return trimmed
 
 
@@ -1120,10 +1139,8 @@ def _validate_optional_text(
 
 
 def _validate_item_core_fields(name: str, quantity: int, low_stock_threshold: int | None) -> None:
-    if not isinstance(name, str) or len(name.strip()) == 0:
-        raise ValidationError("name is required and must be a non-empty string")
-    if len(name) > NAME_MAX_LENGTH:
-        raise ValidationError("name must be at most 120 characters")
+    if len(validate_required_name(name)) > NAME_MAX_LENGTH:
+        raise ValidationError(f"name must be at most {NAME_MAX_LENGTH} characters")
     if not _is_int_not_bool(quantity) or quantity < 0:
         raise ValidationError("quantity must be an integer >= 0")
     if low_stock_threshold is not None and (
@@ -1150,16 +1167,12 @@ def create_item_from_create(
         A fully-populated Item instance with defaults applied.
     """
 
-    raw_name = payload.get("name")
-    if raw_name is None:
-        raise ValidationError("name is required")
     # Type before shape: the command schema types `name` as `object` so a wrong
     # type answers `validation_error` rather than an HA-core schema rejection,
     # and `.strip()` on a non-string would reach that route as `unknown_error`.
-    if not isinstance(raw_name, str):
-        raise ValidationError("name is required and must be a non-empty string")
-    # Trim whitespace before validation and persistence
-    name = raw_name.strip()
+    # `validate_required_name` checks the type first for that reason, and
+    # returns the trimmed value this stores.
+    name = validate_required_name(payload.get("name"))
     description = payload.get("description")
     # Type before conversion, for the same reason `name` is checked before
     # `.strip()`: the command schema types `quantity` as `object`, and `int()`
@@ -1235,12 +1248,9 @@ def create_item_from_create(
 
 def _update_name_and_description(new_item: Item, update: ItemUpdate) -> None:
     if "name" in update and update["name"] is not None:
-        # Trim before validation and persistence
-        if not isinstance(update["name"], str) or len(update["name"].strip()) == 0:
-            raise ValidationError("name must be a non-empty string")
-        trimmed = update["name"].strip()
+        trimmed = validate_required_name(update["name"])
         if len(trimmed) > NAME_MAX_LENGTH:
-            raise ValidationError("name must be at most 120 characters")
+            raise ValidationError(f"name must be at most {NAME_MAX_LENGTH} characters")
         new_item.name = trimmed
     if "description" in update:
         _validate_optional_text(

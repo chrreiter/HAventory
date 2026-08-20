@@ -67,6 +67,7 @@ from .models import (
     sort_items,
     today_utc_date,
     validate_location_name,
+    validate_required_name,
     validate_status_definition,
     validate_status_slug,
 )
@@ -2436,7 +2437,12 @@ class Repository:
                             if loc_data.get("parent_id") is not None
                             else None
                         ),
-                        name=str(loc_data.get("name", "")),
+                        # Not `str(...)`: a missing key would read as "" and a
+                        # stored `null` as the literal "None", both of them rows
+                        # no write path could have produced. Raising here drops
+                        # the row into the load report, which is what the
+                        # corrupt-store repair is built on.
+                        name=validate_required_name(loc_data.get("name")),
                         area_id=(
                             str(loc_data.get("area_id"))
                             if loc_data.get("area_id") is not None
@@ -2487,7 +2493,9 @@ class Repository:
                     )
                     item = Item(
                         id=parse_uuid4(str(item_data.get("id", item_id)), field_name="item.id"),
-                        name=str(item_data.get("name", "")),
+                        # See the location above: an unreadable name is a
+                        # corrupt row, not an item called "" or "None".
+                        name=validate_required_name(item_data.get("name")),
                         description=item_data.get("description"),
                         quantity=int(item_data.get("quantity", 0)),
                         # Stores written before the field existed carry no
