@@ -1,6 +1,6 @@
 # V0.7.0 — session plan
 
-Status: **planned** (2026-08-20). Assigns the milestone's 22 open issues to eleven
+Status: **planned** (2026-08-20). Assigns the milestone's 23 open issues to eleven
 **local** sessions, states the rules each session runs under, fixes the model each one
 runs on, and ends with the paste-ready prompt each session is started from (§7). The
 issues' own implementation notes (written 2026-08-05 for most of them) are the design —
@@ -9,8 +9,9 @@ plan decides, and the session records the rest in its PR body.
 
 Baseline: `main` after release 0.6.0 (tagged 2026-08-20), the two Dependabot PRs (#455,
 #456) merged, and #302 and #442 closed on the evidence (no alert in any state;
-#442 shipped as #488), and #490 — the row thumbnail the card shows and the full view and
-panel do not — filed into the milestone the same day. The 22 open issues are all below.
+#442 shipped as #488), and two issues filed into the milestone the same day: #490 (the
+row thumbnail the card shows and the full view and panel do not) and #493 (three more
+count sensors). The 23 open issues are all below.
 
 Local means the session runs on the owner's machine with the dev Docker Home Assistant
 (`home-assistant`, `http://localhost:8123`) available: the `run-haventory` and
@@ -51,11 +52,11 @@ Four process changes, all owner direction (2026-08-20):
   PRs that stay open for the owner (§4). The criterion: a PR whose review is a judgment
   the owner would want to make — bulk test deletion, the file every future session reads
   first, the document every stranger reads first.
-- **Each session names its model.** Opus 5 at `xhigh` effort is the default. One session
-  whose work is fully specified by its issues and carries no design decision runs on
-  Sonnet 5 at `high` (S4). The closing online pass (S11) runs on **Fable 5**, and
-  that is not negotiable — it is the one session whose value is in noticing what nobody
-  wrote an assertion for.
+- **Each session names its model.** Opus 5 at `xhigh` effort for every session but the
+  last — one model throughout, because switching models between sessions is not worth
+  the owner's effort. The closing online pass (S11) runs on **Fable 5**, and that is not
+  negotiable — it is the one session whose value is in noticing what nobody wrote an
+  assertion for.
 - **The milestone closes with a testing session, not a feature.** S11 deploys `main` to a
   clean dev HA, runs every automated regimen the repo has, then drives the product the
   way a household would — desktop, phone width, German, dark theme, two tabs, slow
@@ -89,13 +90,14 @@ Three things that are the owner's to decide and that a session must not wait on:
 ```
 S1   #285 + brands prep → #482 ×2 → #466    Opus 5 xhigh   the stored shape settles      4 PRs
 ──────────────────────────────────────────────────────────────────────────────────────────
-S2   #450 → #280 → #430                     Opus 5 xhigh   service fan-out, runtime,      3 PRs
-                                                           greppable logs
+S2   #493 → #450 → #280 → #430              Opus 5 xhigh   three more sensors, service    4 PRs
+                                                           fan-out, runtime, greppable
+                                                           logs
 ──────────────────────────────────────────────────────────────────────────────────────────
 S3   #433 → #235 → #210                     Opus 5 xhigh   floors, the floor policy,      3 PRs
                                                            CI polish
 ──────────────────────────────────────────────────────────────────────────────────────────
-S4   #432 → #212 → #209                     Sonnet 5 high  harness and suite hygiene      3 PRs
+S4   #432 → #212 → #209                     Opus 5 xhigh   harness and suite hygiene      3 PRs
 ──────────────────────────────────────────────────────────────────────────────────────────
 S5   #208 → #227 → #366 item 4              Opus 5 xhigh   real-HA coverage, scheduled    3 PRs
                                                            drift checks
@@ -118,7 +120,7 @@ S11  online regression / usability pass     Fable 5 xhigh  findings → issues +
 ```
 
 A session starts only when the one before it has merged everything — or, for S6, S9 and
-S10, when the owner has merged the PR(s) it left open. Eleven sessions, 27 planned PRs
+S10, when the owner has merged the PR(s) it left open. Eleven sessions, 28 planned PRs
 plus whatever S11 ships.
 
 ## 4. Rules every session follows
@@ -261,23 +263,25 @@ carries its own). Five parts, in this order, each present even when short:
   the collapse depends on, and it stages the brands PR "at the start" of launch prep
   because it runs on an external review timeline. Both want to be first; they share a
   session so the owner's one brands decision arrives in the first handover.
-- **S2 after S1.** #482 changes the serializers in `repository.py`; #280 moves the wiring
-  around them; #430 then rewrites log calls across every backend module. Running the
-  sweeping textual change last keeps it from conflicting with the two structural ones.
+- **S2 after S1, and #493 at its head.** #482 changes the serializers in `repository.py`;
+  #280 moves the wiring around them; #430 then rewrites log calls across every backend
+  module. Running the sweeping textual change last keeps it from conflicting with the
+  structural ones. #493 — a catalog edit plus one repository count — goes first so the
+  runtime move ports a settled seven-sensor catalog rather than chasing it.
 - **#280 before #230, inverting its notes.** The notes say to land #280 after #230's
   cuts; the owner staged #230 in V0.8.0 and #280 here. The notes' own assessment stands:
   #280 is safe in either order and the V0.8.0 cuts simply port a little less.
 - **S3 before S5.** #210's action-pinning guard test should exist before #227 adds a
   workflow; #433's floor change wants to be in before anything else provisions Python.
-- **S4 (Sonnet) anywhere after S3.** Nothing depends on it; it is placed where it
+- **S4 anywhere after S3.** Nothing depends on it; it is placed where it
   cannot collide with S3's edits to `tests/test_toolchain_pins.py`.
 - **S5 before S7.** #366 item 4 (the scheduled card smoke) reuses what #227 builds; S7
   closes #366 on items 1 and 3 only once item 4 has either landed or been re-filed.
 - **S6 (the purge) before S7 and S8.** #366 item 1 moves ~56 call sites and #190
   touches 52 source files; purging first means both refactors update fewer tests.
 - **#490 rides S7.** It changes the same table row #426 measures, and its one judgment
-  — what the name column gives up at the docked-sidebar width — is why S7 runs on Opus
-  rather than Sonnet.
+  — what the name column gives up at the docked-sidebar width — is taken there, with the
+  screenshots that prove it.
 - **S8 (German) last among the card sessions.** It is the largest card diff; nothing
   should have to rebase over it.
 - **S9's `CLAUDE.md` trim after every code session.** The trim moves conventions into
@@ -341,41 +345,53 @@ Handover hand-tests: `[desktop]` open the card and the panel — nothing visible
 have changed, say so if it did. Owner decision carried: **approve the brand artwork and
 file the brands PR** with the prepared text and commands.
 
-### 6.2 S2 — #450, #280, #430: fan-out, runtime wiring, greppable logs
+### 6.2 S2 — #493, #450, #280, #430: three more sensors, fan-out, runtime wiring, greppable logs
 
-Three PRs, in order:
+Four PRs, in order:
 
-1. **"fix(services): broadcast service mutations to WebSocket subscribers"** — closes
+1. **"feat(sensor): checked-out, locations and inspection-due counts"** — closes #493.
+   Two catalog entries over counts `get_counts()` already returns, and one new count —
+   `inspection_due_count`, inspection date **on or before** today (UTC), the reminder
+   reading of "due" — with its `models.py` helper, `date_derived=True`, both translation
+   files, both docs files, the card's counts type and the README's sensor table. A
+   look-ahead window is out of scope by the issue's own line. #492 renames the existing
+   four sensors and is the owner's own in-flight work; if it has not landed when this
+   PR opens, take the new names from #492's title vocabulary and leave the four alone.
+2. **"fix(services): broadcast service mutations to WebSocket subscribers"** — closes
    #450. Take the issue's second shape: the WS broadcast rides beside
    `events.notify_mutation`, so one call after every persist covers the bus, the
    sensors, the `items` event and the `stats` counts. The one constraint: the rate
    limiter's event budget is charged for the WS half exactly as today, and bus events
    are never charged. Asserted in the phacc suite (the offline stub has no service
    registry), plus the offline rate-limit accounting.
-2. **"refactor: move the runtime onto `entry.runtime_data`"** — closes #280. The notes'
+3. **"refactor: move the runtime onto `entry.runtime_data`"** — closes #280. The notes'
    design stands (`runtime.py`, the PEP 695 alias, the **two lookups** — the client
    boundary checks `LOADED`, the teardown path does not, or the final flush is lost).
    mypy strict over `haventory.runtime` with no new `cast(...)` is part of acceptance.
    The 27 test files that hand-wire `hass.data[DOMAIN]` convert to the new
    `haventory_entry` fixture.
-3. **"fix(logging): put the context a bug report needs into the message text"** — closes
+4. **"fix(logging): put the context a bug report needs into the message text"** — closes
    #430. One helper that folds a context dict into the message and keeps `extra=`;
    `op`, `elapsed_ms`, the schema versions and `storage_key` are the fields that must be
    greppable. Rewrite the rule in `CONTRIBUTING.md` and `CLAUDE.md` to describe what
    actually happens. Test via `caplog`: `record.getMessage()` carries
    `op=persist_complete elapsed_ms=`.
 
-phacc required for all three.
+phacc required for all four.
 
-Live checks: two browser tabs on the card; `haventory.item_create` from Developer Tools
+Live checks: the HAventory device page shows seven sensors with sensible names and
+ids; checking an item out moves `Checked out count` at once, and an item whose
+inspection date is today counts as due and not as overdue; two browser tabs on the card; `haventory.item_create` from Developer Tools
 → Actions repaints the *other* tab's list and counts with no interaction (the
 `two-tab` recipe in the `run-haventory` skill); a config-entry reload and an options
 change with a dashboard open — the card reconnects, the sidebar panel survives;
 `grep persist_complete /config/home-assistant.log` inside the container finds lines
 carrying `elapsed_ms`.
 
-Handover hand-tests: `[phone]` with the card open, trigger an automation or script that
-calls a `haventory.*` service — the list updates without touching it. `[log]` Settings →
+Handover hand-tests: `[HA settings]` the HAventory device page lists seven sensors and
+their values match the card's counts. `[phone]` with the card open, trigger an
+automation or script that calls a `haventory.*` service — the list updates without
+touching it. `[log]` Settings →
 System → Logs, filter `haventory`: the lines name their operation.
 
 ### 6.3 S3 — #433, #235, #210: floors, the floor policy, CI polish
@@ -413,7 +429,7 @@ Live checks: `uv sync` on a fresh venv at the raised floor; `pre-commit run <hoo
 Handover hand-tests: nothing by hand. If coverage was enabled: `[desktop]` the Codecov
 badge resolves after the first `main` run.
 
-### 6.4 S4 — #432, #212, #209: harness and suite hygiene (Sonnet 5)
+### 6.4 S4 — #432, #212, #209: harness and suite hygiene
 
 Three PRs, in order; each is fully specified by its issue and carries no design choice:
 
@@ -758,19 +774,20 @@ Model for this session: Opus 5, effort xhigh.
 Work in the HAventory repo, branching off the current origin/main. You are session S2
 of the V0.7.0 plan; start only when S1's four PRs are merged and #285, #482 and #466
 are closed. Read dev/V0_7_0_implementation.md §4 (rules, handover format, phacc Docker
-recipe) and §6.2 (your session), then issues #450, #280 and #430 — their bodies and
-implementation notes are the design. #280's notes say to land after #230; the plan
+recipe) and §6.2 (your session), then issues #493, #450, #280 and #430 — #493's body
+and the others' notes are the design. #280's notes say to land after #230; the plan
 inverts that on purpose (§5). Decide drifted details against the code and record
 decisions in the PR body; do not edit the issues. The stored payload is settled: if
 anything here would change what serialize_state writes, stop and report.
 
-Deliver three PRs, in this order:
-1. "fix(services): broadcast service mutations to WebSocket subscribers" — closes #450.
-2. "refactor: move the runtime onto `entry.runtime_data`" — closes #280.
-3. "fix(logging): put the context a bug report needs into the message text" — closes #430.
+Deliver four PRs, in this order:
+1. "feat(sensor): checked-out, locations and inspection-due counts" — closes #493.
+2. "fix(services): broadcast service mutations to WebSocket subscribers" — closes #450.
+3. "refactor: move the runtime onto `entry.runtime_data`" — closes #280.
+4. "fix(logging): put the context a bug report needs into the message text" — closes #430.
 
 Both gates before every commit; scripts/test_integration.sh (Docker recipe) before
-every merge — all three PRs ship something only the phacc suite can see. Then the live
+every merge — all four PRs ship something only the phacc suite can see. Then the live
 checks in §6.2 (two tabs, reload + options change, the log grep), evidence in the PR
 body. Squash-merge each PR yourself once gates, phacc, CI and live checks are green;
 delete the branch. Branch names claude/v0-7-0-s2-<topic>. Never touch a release-please
@@ -778,13 +795,13 @@ PR. End with the ## Handover block from §4, in the last PR body and in your fin
 message.
 ```
 
-### 7.3 S3 — start when S2 has merged all three PRs
+### 7.3 S3 — start when S2 has merged all four PRs
 
 ```
 Model for this session: Opus 5, effort xhigh.
 
 Work in the HAventory repo, branching off the current origin/main. You are session S3
-of the V0.7.0 plan; start only when S2's three PRs are merged. Read
+of the V0.7.0 plan; start only when S2's four PRs are merged. Read
 dev/V0_7_0_implementation.md §2 item 2 (the Codecov rule), §4 (rules, handover format,
 phacc Docker recipe) and §6.3 (your session), then issues #433, #235 and #210 — their
 bodies and implementation notes are the design; #433 takes its option 1 and #235 its
@@ -809,7 +826,7 @@ your final message.
 ### 7.4 S4 — start when S3 has merged all three PRs
 
 ```
-Model for this session: Sonnet 5, effort high.
+Model for this session: Opus 5, effort xhigh.
 
 Work in the HAventory repo, branching off the current origin/main. You are session S4
 of the V0.7.0 plan; start only when S3's three PRs are merged. Read
@@ -1045,7 +1062,7 @@ upgrade and the German a native reader catches — in your final message.
 
 V0.7.0 closes when:
 
-- All 22 issues in the milestone are closed — implemented, or closed as not-planned with
+- All 23 issues in the milestone are closed — implemented, or closed as not-planned with
   the reason in the issue — plus whatever S11 filed into it.
 - The stored payload has stopped moving: `_generation` is gone, one `to_dict()` per
   model, and nothing after S1 changed `serialize_state`'s output (#482's condition for
