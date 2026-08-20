@@ -51,6 +51,14 @@ const HANDLES = [
  * `nonzero` decides what is solid: a subpath is a hole only when it is wound
  * against the shape enclosing it. Reversing any of the three groups above turns
  * the crates back into solid blocks.
+ *
+ * `docs/assets/social-preview.html` draws the same outline, wound the other way
+ * for `fill-rule="evenodd"`, under which winding means nothing. The two
+ * spellings are not interchangeable — taking that one for this file fills the
+ * crates in. `tests/test_brand_assets.py` normalises both to one winding and
+ * fails if the outlines diverge, and separately pins each file's winding to the
+ * rule it is written for. The brand artwork under `docs/assets/brand/` is
+ * rendered from the constants here, so it is not a third place to edit.
  */
 export const HAVENTORY_MARK_PATH = [HOUSE, ...CRATES, ...HANDLES].join(' ');
 

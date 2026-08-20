@@ -947,6 +947,9 @@ Leave both unset — a fresh install, or any dashboard written before either opt
   names in `.github/workflows/`, or a pull request can never satisfy them.
 - The repository's social preview is `docs/assets/social-preview.png`, rendered from the
   `.html` beside it. GitHub has no API for it — upload it under *Settings → General*.
+- The artwork `home-assistant/brands` serves is `docs/assets/brand/`, rendered from the
+  card's mark constants by `uv run python scripts/render_brand_assets.py`. Regenerate it
+  rather than editing it; `tests/test_brand_assets.py` fails when the two drift apart.
 - Release automation via **release-please**: merging its release PR tags the version,
   drafts the GitHub Release, builds and attaches `haventory.zip` — the bundle HACS
   installs — and publishes the draft last. See [CONTRIBUTING.md](CONTRIBUTING.md) →

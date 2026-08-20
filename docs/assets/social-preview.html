@@ -139,6 +139,13 @@
     </div>
 
     <svg class="mark" width="356" height="356" viewBox="0 0 512 512" aria-hidden="true">
+      <!-- Wound for the fill-rule below: under evenodd an enclosed subpath is a
+           hole whichever way it runs, so all seven run the same way. The card
+           writes the same outline the other way round in
+           cards/haventory-card/src/ui/brand-icon.ts, because ha-svg-icon leaves
+           the nonzero default there and only a crate wound against the house
+           cuts a hole in it. Neither spelling works under the other's rule.
+           tests/test_brand_assets.py holds the two outlines to each other. -->
       <path
         fill="#5CA1F2"
         fill-rule="evenodd"
