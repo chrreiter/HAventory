@@ -8,9 +8,9 @@ write, which fires `haventory_item_changed`, diffs the low-stock set to fire
 command that rewrites many items at once calls `notify_bulk_mutation` instead:
 same events per item, one diff and one repaint for the batch.
 
-A location mutation calls `notify_derived_paths_changed`, which repaints without
-announcing anything on the bus — the items underneath it did not change, only
-the path denormalized onto them.
+A location mutation calls `notify_location_changed`, which repaints without
+announcing anything on the bus — no item changed, only the tree the items are
+counted and pathed against.
 
 Bus events bypass the rate limiter: it budgets WebSocket subscription traffic,
 and these are internal to Home Assistant.
@@ -129,18 +129,19 @@ def notify_bulk_mutation(
         )
 
 
-def notify_derived_paths_changed(hass: HomeAssistant) -> None:
-    """Repaint what reads location data, without announcing an item mutation.
+def notify_location_changed(hass: HomeAssistant) -> None:
+    """Repaint what reads the location tree, without announcing an item mutation.
 
-    A rename or a re-parent rewrites the denormalized `location_path` on every
-    item underneath it, and the calendar renders each event's description from
-    that path — so an entity holding a state derived from the old path has
-    nothing to invalidate it until local midnight or until some item happens to
-    be edited.
+    Two kinds of change need it, and nothing else invalidates either until local
+    midnight or until some item happens to be edited. A create or a delete moves
+    `locations_total`, which is a sensor. A rename or a re-parent rewrites the
+    denormalized `location_path` on every item underneath, which the calendar
+    renders each event's description from.
 
-    The dispatcher signal only: `haventory_item_changed` stays unfired, because a
-    derived-path rewrite deliberately moves neither an item's `version` nor its
-    `updated_at`, and the documented action vocabulary has no location word.
+    The dispatcher signal only: `haventory_item_changed` stays unfired, because
+    no item changed — a derived-path rewrite deliberately moves neither an item's
+    `version` nor its `updated_at` — and the documented action vocabulary has no
+    location word.
     """
 
     try:
@@ -150,7 +151,7 @@ def notify_derived_paths_changed(hass: HomeAssistant) -> None:
     except Exception:  # pragma: no cover - defensive
         LOGGER.exception(
             "Failed to repaint after a location change",
-            extra={"domain": DOMAIN, "op": "notify_derived_paths_changed"},
+            extra={"domain": DOMAIN, "op": "notify_location_changed"},
         )
 
 

@@ -237,3 +237,39 @@ async def test_the_inspection_due_sensor_moves_at_utc_midnight(
     await hass.async_block_till_done()
 
     assert hass.states.get(due).state == "1"
+
+
+async def test_the_location_sensor_moves_on_a_location_mutation(
+    hass: HomeAssistant, hass_ws_client
+) -> None:
+    """A location create touches no item, and the count is still a sensor.
+
+    Only `events.notify_location_changed` moves it; without that call the entity
+    reports the old figure until something happens to edit an item.
+    """
+
+    entry = await _setup(hass)
+    locations = _entity_id_for(hass, entry, "locations_total")
+    client = await hass_ws_client(hass)
+
+    assert hass.states.get(locations).state == "0"
+
+    await client.send_json({"id": 1, "type": "haventory/location/create", "name": "Garage"})
+    created = await client.receive_json()
+    assert created["success"] is True, created
+    await hass.async_block_till_done()
+
+    assert hass.states.get(locations).state == "1"
+
+    await hass.services.async_call(DOMAIN, "location_create", {"name": "Cellar"}, blocking=True)
+    await hass.async_block_till_done()
+
+    assert hass.states.get(locations).state == "2"
+
+    await client.send_json(
+        {"id": 2, "type": "haventory/location/delete", "location_id": created["result"]["id"]}
+    )
+    assert (await client.receive_json())["success"] is True
+    await hass.async_block_till_done()
+
+    assert hass.states.get(locations).state == "1"
