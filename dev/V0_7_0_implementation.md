@@ -1,6 +1,6 @@
 # V0.7.0 — session plan
 
-Status: **planned** (2026-08-20). Assigns the milestone's 21 open issues to eleven
+Status: **planned** (2026-08-20). Assigns the milestone's 22 open issues to eleven
 **local** sessions, states the rules each session runs under, fixes the model each one
 runs on, and ends with the paste-ready prompt each session is started from (§7). The
 issues' own implementation notes (written 2026-08-05 for most of them) are the design —
@@ -9,7 +9,8 @@ plan decides, and the session records the rest in its PR body.
 
 Baseline: `main` after release 0.6.0 (tagged 2026-08-20), the two Dependabot PRs (#455,
 #456) merged, and #302 and #442 closed on the evidence (no alert in any state;
-#442 shipped as #488). The milestone's remaining 21 issues are all below.
+#442 shipped as #488), and #490 — the row thumbnail the card shows and the full view and
+panel do not — filed into the milestone the same day. The 22 open issues are all below.
 
 Local means the session runs on the owner's machine with the dev Docker Home Assistant
 (`home-assistant`, `http://localhost:8123`) available: the `run-haventory` and
@@ -50,9 +51,9 @@ Four process changes, all owner direction (2026-08-20):
   PRs that stay open for the owner (§4). The criterion: a PR whose review is a judgment
   the owner would want to make — bulk test deletion, the file every future session reads
   first, the document every stranger reads first.
-- **Each session names its model.** Opus 5 at `xhigh` effort is the default. Two sessions
-  whose work is fully specified by their issues and carries no design decision run on
-  Sonnet 5 at `high` (S4, S7). The closing online pass (S11) runs on **Fable 5**, and
+- **Each session names its model.** Opus 5 at `xhigh` effort is the default. One session
+  whose work is fully specified by its issues and carries no design decision runs on
+  Sonnet 5 at `high` (S4). The closing online pass (S11) runs on **Fable 5**, and
   that is not negotiable — it is the one session whose value is in noticing what nobody
   wrote an assertion for.
 - **The milestone closes with a testing session, not a feature.** S11 deploys `main` to a
@@ -101,8 +102,9 @@ S5   #208 → #227 → #366 item 4              Opus 5 xhigh   real-HA coverage,
 ──────────────────────────────────────────────────────────────────────────────────────────
 S6   #353 backend → #353 card               Opus 5 xhigh   test purge — owner merges      2 PRs
 ──────────────────────────────────────────────────────────────────────────────────────────
-S7   #426 → #366 items 1+3                  Sonnet 5 high  the area-chip clip, the HA     2 PRs
-                                                           contact surface
+S7   #426 → #490 → #366 items 1+3           Opus 5 xhigh   the area-chip clip, row        3 PRs
+                                                           thumbnails, the HA contact
+                                                           surface
 ──────────────────────────────────────────────────────────────────────────────────────────
 S8   #190                                   Opus 5 xhigh   German                         3 PRs
 ──────────────────────────────────────────────────────────────────────────────────────────
@@ -116,7 +118,7 @@ S11  online regression / usability pass     Fable 5 xhigh  findings → issues +
 ```
 
 A session starts only when the one before it has merged everything — or, for S6, S9 and
-S10, when the owner has merged the PR(s) it left open. Eleven sessions, 26 planned PRs
+S10, when the owner has merged the PR(s) it left open. Eleven sessions, 27 planned PRs
 plus whatever S11 ships.
 
 ## 4. Rules every session follows
@@ -273,6 +275,9 @@ carries its own). Five parts, in this order, each present even when short:
   closes #366 on items 1 and 3 only once item 4 has either landed or been re-filed.
 - **S6 (the purge) before S7 and S8.** #366 item 1 moves ~56 call sites and #190
   touches 52 source files; purging first means both refactors update fewer tests.
+- **#490 rides S7.** It changes the same table row #426 measures, and its one judgment
+  — what the name column gives up at the docked-sidebar width — is why S7 runs on Opus
+  rather than Sonnet.
 - **S8 (German) last among the card sessions.** It is the largest card diff; nothing
   should have to rebase over it.
 - **S9's `CLAUDE.md` trim after every code session.** The trim moves conventions into
@@ -497,16 +502,24 @@ Live checks: none — nothing here is observable against a running HA.
 
 Handover hand-tests: nothing by hand. **Owner merges both PRs**; S7 starts after.
 
-### 6.7 S7 — #426, #366 items 1+3: the area-chip clip, the HA contact surface (Sonnet 5)
+### 6.7 S7 — #426, #490, #366 items 1+3: the area-chip clip, row thumbnails, the HA contact surface
 
-Two PRs, in order:
+Three PRs, in order:
 
 1. **"fix(card): keep the location tree's tally whole when an area name is long"** —
    closes #426. Clip the *name* with an ellipsis the way the category and tag rows do;
    the tally draws in full at the default 264px sidebar. The dev HA already has the
    `Ground Floor Utility Room` area the issue reproduces with. Before/after screenshots
    in the PR body.
-2. **"refactor(card): name the Home Assistant contact surface in one module and hold
+2. **"feat(card): show the row thumbnail in the full view and the sidebar panel"** —
+   closes #490. `hv-data-table`'s name cell gains the leading thumbnail `hv-list-row`
+   already renders: the same `MediaBindings` / `MediaUrls` path, the same fixed box,
+   lazy loading, and **nothing for a row without a picture**. The one measurement the
+   issue asks for is taken, not assumed: the full column set at the docked-sidebar
+   width (~1400px at 1920) and at 375px, before and after, in the PR body — if the name
+   column loses its last word on that width, the column template moves, not the
+   thumbnail.
+3. **"refactor(card): name the Home Assistant contact surface in one module and hold
    `ha-*` at zero"** — closes #366 if item 4 landed in S5, otherwise closes it on items
    1–3 with item 4 re-filed (§6.5). `src/ha-contract.ts` re-exporting thin wrappers for
    `callWS`, `subscribeMessage`, the `window.customCards` registration and
@@ -518,10 +531,14 @@ phacc: not involved (nothing crosses the boundary).
 
 Live checks: deploy and confirm the card registers and subscribes — **in Firefox**, the
 only browser where registration is a real test; the live-update smoke passes; the panel
-at `/haventory` renders; the area row at 264px shows `18 / 41`-shaped tallies whole.
+at `/haventory` renders; the area row at 264px shows `18 / 41`-shaped tallies whole;
+a row with a picture shows it in the full view, the panel and the narrow branch, and a
+row without shows no placeholder.
 
 Handover hand-tests: `[desktop]` `[phone]` open the full view's sidebar with a long area
 name — the number on the right is whole and the name is the thing that shortens.
+`[desktop]` `[phone]` browse the panel and the full view — rows with photos carry the
+same small picture the card shows, at the same size, and nothing else moved.
 
 ### 6.8 S8 — #190: German
 
@@ -877,20 +894,23 @@ The owner's merge is the go. Report and stop.
 ### 7.7 S7 — start when the owner has merged S6's two PRs
 
 ```
-Model for this session: Sonnet 5, effort high.
+Model for this session: Opus 5, effort xhigh.
 
 Work in the HAventory repo, branching off the current origin/main. You are session S7
 of the V0.7.0 plan; start only when S6's two PRs are merged and #353 is closed. Read
 dev/V0_7_0_implementation.md §4 (rules, handover format) and §6.7 (your session), then
-issues #426 and #366 (items 1 and 3; item 4 was S5's — check #366's comments for
+issues #426, #490 and #366 (items 1 and 3; item 4 was S5's — check #366's comments for
 whether it landed or was re-filed). Their bodies and implementation notes are the
 design. Where a file or line has moved, grep for the symbol and record the drift in the
 PR body; do not edit the issues.
 
-Deliver two PRs, in this order:
+Deliver three PRs, in this order:
 1. "fix(card): keep the location tree's tally whole when an area name is long" —
    closes #426. Before/after screenshots in the PR body.
-2. "refactor(card): name the Home Assistant contact surface in one module and hold
+2. "feat(card): show the row thumbnail in the full view and the sidebar panel" —
+   closes #490. Measure the name column at the docked-sidebar width and at 375px
+   before and after; screenshots in the PR body.
+3. "refactor(card): name the Home Assistant contact surface in one module and hold
    `ha-*` at zero" — closes #366 (or refs it, per its comments).
 
 Both gates before every commit; no phacc run needed. Live checks per §6.7 against the
@@ -1025,7 +1045,7 @@ upgrade and the German a native reader catches — in your final message.
 
 V0.7.0 closes when:
 
-- All 21 issues in the milestone are closed — implemented, or closed as not-planned with
+- All 22 issues in the milestone are closed — implemented, or closed as not-planned with
   the reason in the issue — plus whatever S11 filed into it.
 - The stored payload has stopped moving: `_generation` is gone, one `to_dict()` per
   model, and nothing after S1 changed `serialize_state`'s output (#482's condition for
