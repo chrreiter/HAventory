@@ -357,6 +357,7 @@ run either passes or says why not. All are read-only except `lifecycle_probe.py`
 | `rl_banner.mjs` | the card's rate-limit degraded-banner lifecycle, with the WS frames that caused each state |
 | `visual_pass.mjs` | every card surface still opens, at desktop and mobile widths, and every panel surface on `/haventory` |
 | `import_policies.mjs` | the import sheet describes the conflict policy the backend actually applied |
+| `two_tab.mjs` | a mutation nobody in the browser made repaints every open card |
 | `log_sweep.py` | the container log obeys the error taxonomy's severity policy |
 | `lifecycle_probe.py` | resource cache-bust rewriting, schema-downgrade refusal, entry removal/re-add |
 
@@ -422,6 +423,27 @@ the app bar shows the button that reopens HA's drawer. That last one is driven b
 `narrow` property rather than the media query, so the width has to satisfy both switches.
 
 The panel passes need no `wide` dashboard — HA gives a panel the whole content area.
+
+### Two tabs, one mutation from neither of them
+
+```bash
+cd .claude/skills/run-haventory
+node two_tab.mjs                     # via haventory.item_create, the service path
+node two_tab.mjs --ws                # via haventory/item/create, the control
+node two_tab.mjs --path /dashboard-dev/0 --out narrow
+```
+
+Two `context.newPage()` tabs are two independent HA WebSocket connections; the mutation goes
+out over a **third**, by default as the core `call_service` frame Developer Tools → Actions
+sends. So neither tab made the change and both have to repaint on their own — which is what
+separates "the backend broadcast it" from "the card that sent it patched itself".
+
+Both tabs type the probe name into the search box first, so the oracle is a row appearing out
+of nothing, next to the WS frames each tab actually received. Creates one item and deletes it
+again; screenshots land as `<out>-a.png` / `<out>-b.png`.
+
+`--ws` is the control worth running next to any failure: if the WebSocket command repaints
+both tabs and the service call does not, the gap is in the service path, not in the card.
 
 ### Import policy cross-check
 
