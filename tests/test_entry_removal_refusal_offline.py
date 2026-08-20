@@ -200,7 +200,7 @@ async def test_removal_drops_live_subscriptions() -> None:
     await async_remove_entry(hass, entry)
     conn.messages.clear()
 
-    ws_mod._broadcast_event(hass, topic="items", action="created", payload={"item": {"id": "x"}})
+    ws_mod.broadcast_event(hass, topic="items", action="created", payload={"item": {"id": "x"}})
 
     assert conn.messages == []
     assert hass.data[DOMAIN].get("subscriptions") in (None, {})

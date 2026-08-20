@@ -20,7 +20,7 @@ from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
-from .events import notify_location_changed, notify_mutation
+from .events import notify_counts, notify_location_mutation, notify_mutation
 from .exceptions import (
     ConflictError,
     NotFoundError,
@@ -380,8 +380,9 @@ async def service_location_create(hass: HomeAssistant, data: dict) -> dict[str, 
             area_id=payload.get("area_id"),
         )
         await async_persist_repo(hass)
-        notify_location_changed(hass)
-        return {"location": serialize_location(loc)}
+        serialized = serialize_location(loc)
+        notify_location_mutation(hass, action="created", location=serialized)
+        return {"location": serialized}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"location_name": data.get("name")}, exc)
 
@@ -396,6 +397,11 @@ async def service_location_update(hass: HomeAssistant, data: dict) -> dict[str, 
         repo = _get_repo(hass)
         before = repo.get_location(payload["location_id"])
         was_named, was_below = before.name, before.parent_id
+        # The area a location sits in is resolved through its tree, so an area
+        # set on a nested row moves the root's `area_id` and leaves this row's at
+        # None. Comparing the resolved value catches both, exactly as
+        # `ws_location_update` does.
+        was_anchored_at = (was_below, repo.effective_area_id(str(before.id)))
         loc = repo.update_location(
             payload["location_id"],
             name=payload.get("name"),
@@ -403,12 +409,21 @@ async def service_location_update(hass: HomeAssistant, data: dict) -> dict[str, 
             area_id=area_id,
         )
         await async_persist_repo(hass)
-        # A rename or a re-parent rewrites the path denormalized onto every item
-        # underneath, and the calendar renders those paths. No bus event: the
-        # items themselves did not change.
-        if loc.name != was_named or loc.parent_id != was_below:
-            notify_location_changed(hass)
-        return {"location": serialize_location(loc)}
+        serialized = serialize_location(loc)
+        # One event per call, decided by what changed rather than by which keys
+        # the call carried. A rename or a re-parent also rewrites the path
+        # denormalized onto every item underneath, which the calendar renders;
+        # an area reassignment re-anchors the subtree without moving a path.
+        # No bus event either way: the items themselves did not change.
+        is_anchored_at = (loc.parent_id, repo.effective_area_id(str(loc.id)))
+        repaint = loc.name != was_named or loc.parent_id != was_below
+        if is_anchored_at != was_anchored_at:
+            notify_location_mutation(hass, action="moved", location=serialized, repaint=repaint)
+        elif loc.name != was_named:
+            notify_location_mutation(hass, action="renamed", location=serialized, repaint=repaint)
+        else:
+            notify_counts(hass)
+        return {"location": serialized}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"location_id": location_id}, exc)
 
@@ -422,7 +437,7 @@ async def service_location_delete(hass: HomeAssistant, data: dict) -> dict[str, 
         removed = serialize_location(repo.get_location(payload["location_id"]))
         repo.delete_location(payload["location_id"])
         await async_persist_repo(hass)
-        notify_location_changed(hass)
+        notify_location_mutation(hass, action="deleted", location=removed)
         return {"location": removed}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"location_id": location_id}, exc)

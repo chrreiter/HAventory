@@ -243,6 +243,10 @@ Services work the other way round: every `haventory.*` service returns the entit
 touched, so a script can chain calls through `response_variable` — see the same document's
 "Service responses".
 
+A service mutation also reaches any card left open, the same way a card's own edit does: an
+automation that restocks something repaints the list and the counts on every screen showing
+them, with nobody touching anything.
+
 ### The calendar
 
 `calendar.haventory` puts the dates already on your items onto a calendar dashboard, beside

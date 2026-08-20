@@ -1,19 +1,28 @@
-"""Home Assistant bus events and the sensor nudge behind them.
+"""Announcing a mutation — to WebSocket subscribers, to the bus, to the sensors.
 
-The WebSocket broadcasts in `ws.py` reach subscribed clients; these reach the
-rest of Home Assistant. Every mutation path — WebSocket handler, `haventory.*`
-service, bulk operation, import — calls `notify_mutation` after its durable
-write, which fires `haventory_item_changed`, diffs the low-stock set to fire
-`haventory_low_stock`, and dispatches the signal the sensors repaint on. A
-command that rewrites many items at once calls `notify_bulk_mutation` instead:
-same events per item, one diff and one repaint for the batch.
+One call per mutation path covers all three. Every path — WebSocket handler,
+`haventory.*` service, bulk operation, import — calls `notify_mutation` after
+its durable write, which broadcasts the `items` event to subscribed clients,
+fires `haventory_item_changed` on the bus, diffs the low-stock set to fire
+`haventory_low_stock`, dispatches the signal the sensors repaint on, and
+broadcasts the fresh `stats` counts. A command that rewrites many items at once
+calls `notify_bulk_mutation` instead: one `items` event and one counts event for
+the batch, a bus event per item, one diff and one repaint.
 
-A location mutation calls `notify_location_changed`, which repaints without
-announcing anything on the bus — no item changed, only the tree the items are
-counted and pathed against.
+That the two surfaces are one call is the point rather than a convenience: they
+were two, and every `haventory.*` service call reached the bus and no subscriber
+at all, so a card left open showed a stale list until something made it re-list.
+
+A location mutation calls `notify_location_mutation`, which broadcasts the
+`locations` event and the counts and repaints, but announces nothing on the bus —
+no item changed, only the tree the items are counted and pathed against.
+`notify_location_changed` is the repaint on its own, for the paths that have
+already broadcast.
 
 Bus events bypass the rate limiter: it budgets WebSocket subscription traffic,
-and these are internal to Home Assistant.
+and these are internal to Home Assistant. The WebSocket half charged here is
+charged exactly as it is when a WebSocket handler broadcasts, because it is the
+same call.
 """
 
 from __future__ import annotations
@@ -43,6 +52,29 @@ ITEM_ACTIONS: frozenset[str] = frozenset(
 )
 
 
+def _broadcast_event(
+    hass: HomeAssistant, *, topic: str, action: str, payload: dict[str, Any] | None = None
+) -> None:
+    """Hand one event to the WebSocket broadcaster.
+
+    The import is function-local because `ws.py` imports this module at its own
+    module scope; at module scope here the two would be a cycle. Python caches
+    the module, so every call after the first is a dictionary lookup.
+    """
+
+    from .ws import broadcast_event  # noqa: PLC0415 - the cycle, see above
+
+    broadcast_event(hass, topic=topic, action=action, payload=payload)
+
+
+def _broadcast_counts(hass: HomeAssistant) -> None:
+    """Hand the fresh counts to the WebSocket broadcaster. Local import as above."""
+
+    from .ws import broadcast_counts  # noqa: PLC0415 - the cycle, see above
+
+    broadcast_counts(hass)
+
+
 def seed_low_stock_snapshot(hass: HomeAssistant) -> None:
     """Record which items are low at setup, so a restart re-announces nothing.
 
@@ -63,18 +95,25 @@ def notify_mutation(
     *,
     action: str,
     item: dict[str, Any] | None = None,
+    counts: bool = True,
 ) -> None:
-    """Announce a mutation on the HA bus and repaint the sensors.
+    """Announce a mutation to subscribers and to Home Assistant, and repaint.
 
     Call it **after** the persist, on every path: the contract's "an event
-    implies a durable write" rule holds on the bus as well as on the wire.
+    implies a durable write" rule holds on the bus and on the wire alike.
 
     ``item`` is the serialized item the mutation produced — for a delete, the
-    body as it last stood. A bulk path that rewrote many items at once passes
-    none, which still diffs the low-stock set and still repaints the sensors.
+    body as it last stood. A path that rewrote the dataset wholesale passes
+    none, which broadcasts no `items` event and fires nothing on the bus, but
+    still diffs the low-stock set, still repaints the sensors and still
+    broadcasts the counts.
 
-    Best-effort, like the WebSocket broadcasts: a mutation that is already
-    written must not fail because something downstream of it did.
+    ``counts`` False is for a command emitting many item mutations in a row: it
+    calls ``notify_counts`` once when the batch is through, rather than sending
+    a whole counts object per row and charging a token for each.
+
+    Best-effort: a mutation that is already written must not fail because
+    something downstream of it did.
     """
 
     try:
@@ -85,16 +124,26 @@ def notify_mutation(
             return
 
         if item is not None:
+            _broadcast_event(hass, topic="items", action=action, payload={"item": item})
             _fire_item_changed(hass, action, item)
 
         _fire_low_stock_transitions(hass, bucket, item=item)
 
         async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED)
+
+        if counts:
+            _broadcast_counts(hass)
     except Exception:  # pragma: no cover - defensive
         LOGGER.exception(
             "Failed to notify a mutation",
             extra={"domain": DOMAIN, "op": "notify_mutation", "action": action},
         )
+
+
+def notify_counts(hass: HomeAssistant) -> None:
+    """Broadcast the counts alone, for a batch that suppressed them per row."""
+
+    _broadcast_counts(hass)
 
 
 def notify_bulk_mutation(
@@ -104,15 +153,21 @@ def notify_bulk_mutation(
 
     One `haventory_item_changed` per item, because an automation subscribed to it
     is watching items rather than commands — a bulk command that announced
-    nothing would be the one hole in "fired on every path". One low-stock diff
-    and one repaint for the whole batch, because both describe the inventory as a
-    whole and running them per row would repaint every sensor once per row.
+    nothing would be the one hole in "fired on every path". One WebSocket `items`
+    event, one low-stock diff, one repaint and one counts event for the whole
+    batch, because each describes the inventory as a whole and running them per
+    row would repeat the same work once per row.
     """
 
     try:
         bucket = hass.data.get(DOMAIN)
         if bucket is None:
             return
+
+        # One `items` event for the batch, carrying no row: a subscriber is
+        # being told its list is stale, not which rows moved, and a payload per
+        # row would be a whole inventory on the wire.
+        _broadcast_event(hass, topic="items", action=action, payload=None)
 
         for item in items:
             _fire_item_changed(hass, action, item)
@@ -122,11 +177,38 @@ def notify_bulk_mutation(
         _fire_low_stock_transitions(hass, bucket, item=None)
 
         async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED)
+        _broadcast_counts(hass)
     except Exception:  # pragma: no cover - defensive
         LOGGER.exception(
             "Failed to notify a bulk mutation",
             extra={"domain": DOMAIN, "op": "notify_bulk_mutation", "action": action},
         )
+
+
+def notify_location_mutation(
+    hass: HomeAssistant,
+    *,
+    action: str,
+    location: dict[str, Any],
+    repaint: bool = True,
+) -> None:
+    """Announce a location change to subscribers, and repaint what reads the tree.
+
+    The counterpart of ``notify_mutation`` for the other topic, and it exists for
+    the same reason: a `haventory.location_*` service reached no subscriber at
+    all while the WebSocket command beside it did.
+
+    Nothing is fired on the bus — the documented action vocabulary is about
+    items, and no item changed. ``repaint`` is False for the one edit that
+    announces a change without moving anything an entity reads: reassigning a
+    subtree's area re-anchors it for a client filtered by area, while
+    `locations_total` and every `location_path` stay exactly as they were.
+    """
+
+    _broadcast_event(hass, topic="locations", action=action, payload={"location": location})
+    if repaint:
+        notify_location_changed(hass)
+    _broadcast_counts(hass)
 
 
 def notify_location_changed(hass: HomeAssistant) -> None:

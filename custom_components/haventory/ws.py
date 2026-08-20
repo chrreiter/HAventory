@@ -37,7 +37,12 @@ from .const import (
     MAX_MANUALS_PER_ITEM,
     MAX_PICTURES_PER_ITEM,
 )
-from .events import notify_bulk_mutation, notify_location_changed, notify_mutation
+from .events import (
+    notify_bulk_mutation,
+    notify_counts,
+    notify_location_mutation,
+    notify_mutation,
+)
 from .exceptions import (
     ConflictError,
     NotFoundError,
@@ -722,13 +727,20 @@ def _collect_event_deliveries(
     return deliveries
 
 
-def _broadcast_event(
+def broadcast_event(
     hass: HomeAssistant,
     *,
     topic: str,
     action: str,
     payload: dict[str, Any] | None = None,
 ) -> None:
+    """Deliver one event to every subscription that asked for it.
+
+    Public because `events.py` calls it: a mutation announces itself to
+    subscribers and to the Home Assistant bus in one call, so no write path can
+    reach one surface and miss the other.
+    """
+
     # Broadcasts are best-effort: they run after a mutation has been applied and
     # persisted, so a broadcast failure must never turn the originating command
     # into an error.
@@ -780,7 +792,7 @@ def notify_backend_unavailable(hass: HomeAssistant) -> None:
     Teardown calls this while the registry is still populated; the subscriptions
     themselves go with the rest of the runtime immediately after.
 
-    Deliberately not routed through ``_broadcast_event``: this is a lifecycle
+    Deliberately not routed through ``broadcast_event``: this is a lifecycle
     signal rather than inventory traffic, so it ignores the rate limiter. A
     connection whose event budget happened to be spent would otherwise be the one
     client left believing its topics are still live.
@@ -800,7 +812,9 @@ def notify_backend_unavailable(hass: HomeAssistant) -> None:
             )
 
 
-def _broadcast_counts(hass: HomeAssistant) -> None:
+def broadcast_counts(hass: HomeAssistant) -> None:
+    """Send the whole counts object on the `stats` topic. Public for `events.py`."""
+
     try:
         counts_payload = _repo(hass).get_counts()
     except Exception:  # pragma: no cover - defensive
@@ -808,7 +822,7 @@ def _broadcast_counts(hass: HomeAssistant) -> None:
             "Failed to broadcast counts", extra={"domain": DOMAIN, "op": "broadcast_counts"}
         )
         return
-    _broadcast_event(
+    broadcast_event(
         hass,
         topic="stats",
         action="counts",
@@ -1099,9 +1113,7 @@ async def ws_item_create(
     item = _repo(hass).create_item(payload)  # type: ignore[arg-type]
     serialized = serialize_item(hass, item)
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action="created", payload={"item": serialized})
     notify_mutation(hass, action="created", item=serialized)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1155,9 +1167,7 @@ async def ws_item_update(
     serialized = serialize_item(hass, updated)
     action = "moved" if "location_id" in update else "updated"
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     notify_mutation(hass, action=action, item=serialized)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1185,14 +1195,7 @@ async def ws_item_delete(
     await media_mod.async_delete_attachments(
         hass, [(str(before.id), a) for a in before.attachments]
     )
-    _broadcast_event(
-        hass,
-        topic="items",
-        action="deleted",
-        payload={"item": serialized_before},
-    )
     notify_mutation(hass, action="deleted", item=serialized_before)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
 
 
@@ -1216,9 +1219,7 @@ async def ws_item_adjust_quantity(
     )
     serialized = serialize_item(hass, item)
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
     notify_mutation(hass, action="quantity_changed", item=serialized)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1247,9 +1248,7 @@ async def ws_item_set_quantity(
     )
     serialized = serialize_item(hass, item)
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action="quantity_changed", payload={"item": serialized})
     notify_mutation(hass, action="quantity_changed", item=serialized)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1273,9 +1272,7 @@ async def ws_item_check_out(
     )
     serialized = serialize_item(hass, item)
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action="checked_out", payload={"item": serialized})
     notify_mutation(hass, action="checked_out", item=serialized)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1294,9 +1291,7 @@ async def ws_item_check_in(
     item = _repo(hass).check_in(msg["item_id"], expected_version=msg.get("expected_version"))
     serialized = serialize_item(hass, item)
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action="checked_in", payload={"item": serialized})
     notify_mutation(hass, action="checked_in", item=serialized)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1318,9 +1313,7 @@ async def _apply_reminder(
     )
     serialized = serialize_item(hass, item)
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
     notify_mutation(hass, action="updated", item=serialized)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1402,9 +1395,7 @@ async def ws_reminder_bump(
     )
     serialized = serialize_item(hass, updated)
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
     notify_mutation(hass, action="updated", item=serialized)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1431,9 +1422,7 @@ async def ws_item_add_tags(
         },
     )
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     notify_mutation(hass, action=action, item=serialized)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1460,9 +1449,7 @@ async def ws_item_remove_tags(
         },
     )
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     notify_mutation(hass, action=action, item=serialized)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1491,9 +1478,7 @@ async def ws_item_update_custom_fields(
         },
     )
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     notify_mutation(hass, action=action, item=serialized)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1520,9 +1505,7 @@ async def ws_item_set_low_stock_threshold(
         },
     )
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     notify_mutation(hass, action=action, item=serialized)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1619,9 +1602,7 @@ async def ws_item_attachment_add(
     # orphan sweep is what collects it, so there is nothing to undo here beyond
     # letting the error through the way every other mutation does.
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
     notify_mutation(hass, action="updated", item=serialized)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1653,9 +1634,7 @@ async def ws_item_attachment_remove(
     # metadata pointing at bytes that are already gone.
     await _persist_repo(hass)
     await media_mod.async_delete_attachments(hass, [(str(updated.id), removed)])
-    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
     notify_mutation(hass, action="updated", item=serialized)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1684,8 +1663,8 @@ async def ws_item_attachment_update(
     )
     serialized = serialize_item(hass, updated)
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
-    notify_mutation(hass, action="updated", item=serialized)
+    # No counts event: a title and an order move nothing any count reads.
+    notify_mutation(hass, action="updated", item=serialized, counts=False)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1718,8 +1697,8 @@ async def ws_item_attachment_reorder(
     )
     serialized = serialize_item(hass, updated)
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action="updated", payload={"item": serialized})
-    notify_mutation(hass, action="updated", item=serialized)
+    # No counts event: a title and an order move nothing any count reads.
+    notify_mutation(hass, action="updated", item=serialized, counts=False)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1746,9 +1725,7 @@ async def ws_item_move(
         },
     )
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
     notify_mutation(hass, action=action, item=serialized)
-    _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1861,11 +1838,13 @@ async def ws_items_bulk(
             },
         )
 
+        # One counts event for the batch rather than one per row: each row's
+        # own event still names it, and the counts describe the inventory as a
+        # whole.
         for _op_id, serialized, action in successful_ops:
-            _broadcast_event(hass, topic="items", action=action, payload={"item": serialized})
-            notify_mutation(hass, action=action, item=serialized)
+            notify_mutation(hass, action=action, item=serialized, counts=False)
 
-        _broadcast_counts(hass)
+        notify_counts(hass)
 
     conn.send_message(websocket_api.result_message(msg.get("id", 0), {"results": results}))
 
@@ -1934,9 +1913,7 @@ async def ws_location_create(
     )
     serialized = serialize_location(loc)
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="locations", action="created", payload={"location": serialized})
-    _broadcast_counts(hass)
-    notify_location_changed(hass)
+    notify_location_mutation(hass, action="created", location=serialized)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1997,18 +1974,18 @@ async def ws_location_update(
     # filtered by area re-lists on. No item events accompany it — the items
     # themselves did not change.
     is_anchored_at = (loc.parent_id, repo.effective_area_id(location_key))
+    # Only the two edits that rewrite a path repaint: an area reassignment
+    # re-anchors the subtree without changing what any path reads, and a save
+    # that changed nothing repaints nothing.
+    repaint = loc.parent_id != before.parent_id or loc.name != was_named
     if is_anchored_at != was_anchored_at:
-        _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
+        notify_location_mutation(hass, action="moved", location=serialized, repaint=repaint)
     elif loc.name != was_named:
-        _broadcast_event(
-            hass, topic="locations", action="renamed", payload={"location": serialized}
-        )
-    # Only the two edits that rewrite a path: an area reassignment re-anchors the
-    # subtree without changing what any path reads, and a save that changed
-    # nothing repaints nothing.
-    if loc.parent_id != before.parent_id or loc.name != was_named:
-        notify_location_changed(hass)
-    _broadcast_counts(hass)
+        notify_location_mutation(hass, action="renamed", location=serialized, repaint=repaint)
+    else:
+        # A save that rewrote no field announces nothing and repaints nothing;
+        # the counts still go out, as they do after every other command.
+        notify_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -2026,14 +2003,7 @@ async def ws_location_delete(
     serialized_before = serialize_location(before)
     repo.delete_location(loc_id)
     await _persist_repo(hass)
-    _broadcast_event(
-        hass,
-        topic="locations",
-        action="deleted",
-        payload={"location": serialized_before},
-    )
-    _broadcast_counts(hass)
-    notify_location_changed(hass)
+    notify_location_mutation(hass, action="deleted", location=serialized_before)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
 
 
@@ -2125,10 +2095,9 @@ async def ws_location_move_subtree(
     loc = repo.update_location(msg["location_id"], new_parent_id=new_parent)
     serialized = serialize_location(loc)
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
-    if loc.parent_id != was_below:
-        notify_location_changed(hass)
-    _broadcast_counts(hass)
+    notify_location_mutation(
+        hass, action="moved", location=serialized, repaint=loc.parent_id != was_below
+    )
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -2168,7 +2137,7 @@ async def ws_status_create(
     created = repo.create_status(doc)
     serialized = serialize_status_definition(created)
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="statuses", action="created", payload={"status": serialized})
+    broadcast_event(hass, topic="statuses", action="created", payload={"status": serialized})
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -2199,7 +2168,7 @@ async def ws_status_update(
     updated = repo.update_status(msg["slug"], changes)
     serialized = serialize_status_definition(updated)
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="statuses", action="updated", payload={"status": serialized})
+    broadcast_event(hass, topic="statuses", action="updated", payload={"status": serialized})
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -2220,7 +2189,7 @@ async def ws_status_reorder(
     ordered = repo.reorder_statuses(list(msg["slugs"]))
     serialized = [serialize_status_definition(d) for d in ordered]
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="statuses", action="reordered", payload={"statuses": serialized})
+    broadcast_event(hass, topic="statuses", action="reordered", payload={"statuses": serialized})
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -2247,11 +2216,12 @@ async def ws_status_delete(
     removed, reassigned = repo.delete_status(msg["slug"], reassign_to=msg.get("reassign_to"))
     serialized = serialize_status_definition(removed)
     await _persist_repo(hass)
-    _broadcast_event(hass, topic="statuses", action="deleted", payload={"status": serialized})
+    broadcast_event(hass, topic="statuses", action="deleted", payload={"status": serialized})
     if reassigned:
         # Two topics on purpose: one card is showing the vocabulary, another is
-        # showing the items that just moved underneath it.
-        _broadcast_event(hass, topic="items", action="updated", payload=None)
+        # showing the items that just moved underneath it — that second topic is
+        # the `items` event `notify_bulk_mutation` broadcasts.
+        #
         # Each rewritten item took a new version and a new updated_at, so each
         # is an ordinary item edit as far as the bus is concerned. Announcing the
         # command and not the edits would leave an automation watching
@@ -2261,7 +2231,6 @@ async def ws_status_delete(
             action="updated",
             items=[serialize_item(hass, repo.get_item(item_id)) for item_id in reassigned],
         )
-        _broadcast_counts(hass)
     conn.send_message(
         websocket_api.result_message(
             msg.get("id", 0), {"status": serialized, "reassigned": len(reassigned)}
@@ -2428,12 +2397,14 @@ async def ws_import_execute(
     await media_mod.async_sweep_orphans(hass, repo.iter_attachments())
 
     # Tell every subscriber the dataset was replaced wholesale.
-    _broadcast_event(hass, topic="items", action="reloaded", payload=None)
-    _broadcast_event(hass, topic="locations", action="reloaded", payload=None)
-    _broadcast_counts(hass)
-    # No per-item bus event — an import rewrites the dataset and an automation
-    # wants one signal, not one per row. The low-stock diff still runs, so a
-    # restock done by import announces itself, and the sensors still repaint.
+    broadcast_event(hass, topic="items", action="reloaded", payload=None)
+    broadcast_event(hass, topic="locations", action="reloaded", payload=None)
+    # No per-item bus event and no per-item `items` event — an import rewrites
+    # the dataset, and both an automation and a card want one signal rather than
+    # one per row, which is what the two `reloaded` events above are. Passing no
+    # item leaves `notify_mutation` the rest of its job: the low-stock diff still
+    # runs, so a restock done by import announces itself, the sensors repaint,
+    # and the counts go out.
     notify_mutation(hass, action="reloaded")
     # And the shopping list explicitly, because that diff is the only bus signal
     # a wholesale swap produces: a document that renames items or changes their

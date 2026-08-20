@@ -148,6 +148,13 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
     - Locations: if `include_subtree` match the location itself or descendants; otherwise only the exact location.
   - Re-anchoring a location under a different root rewrites `effective_area_id` for its whole subtree and emits a single `locations` `moved` event; reassigning the area through `location/update` emits the same event, for the same reason — including when the `area_id` is sent for a location inside the tree rather than for its root, which is the same re-anchoring written a different way. Neither emits item events, so an area-filtered items subscription sees no departure for the items that just left its area, and no arrival for those that joined it. A client tracking a filtered set re-lists on a `locations` event rather than waiting for one — the same rule `inspection_overdue_only` carries, and the reason there is no synthetic per-item event here.
 
+- **Both write paths broadcast the same events.** A `haventory.*` service call emits exactly
+  what the WebSocket command doing the same thing emits — the `items` or `locations` event
+  and the `stats` counts — because one call in `events.py` covers both surfaces. So an
+  automation mutating the inventory repaints an open card with no interaction, and a
+  subscriber cannot tell which surface a change arrived through. The rate limiter's event
+  budget is charged identically either way, since it is the same broadcast.
+
 - **An event implies a durable write.** Every mutation command persists the change *before* it broadcasts and before it replies, so any event on any topic says the write behind it reached storage. When the write fails the caller receives `storage_error` and **no event is emitted at all** — subscribers are told nothing rather than told about a change that is not on disk. A client may therefore treat a received event as committed and never has to reconcile it against a `storage_error` another client saw for the same change.
   - The guarantee is about the wire, not about the running repository: a failed write leaves the mutation applied in memory (`import/execute` is the exception — it rolls the dataset back, because a wholesale swap has more to undo than one entity does). Nothing announces that divergence, and it ends at the next restart, which reads back whatever last reached disk.
   - `items/bulk` shares one write across the whole batch, so a failed write costs the batch its `results` map: the command answers `storage_error` and none of its operations broadcast.
@@ -178,18 +185,16 @@ with no WebSocket client at all. Payload shapes: `docs/data_shapes.md`.
   are internal to Home Assistant, on the same reasoning as the `unavailable` notice.
 - **Bus events carry no item body beyond the trigger fields** — no `custom_fields`, no
   `description`. An automation that needs the whole item calls `haventory/item/get`.
-- **Locations fire no bus event** — but a rename or a re-parent still repaints. No count a
-  sensor exposes can move on a location mutation: the repository refuses to delete a location
-  that still holds items or children, and a rename or re-anchor only rewrites derived fields.
-  Counts are no longer the only thing derived from location data, though: every projected
-  calendar event's `description` is the item's `location_path.display_path`, read from a
-  cached entity state. So `location/update` and `location/move_subtree` — and the
-  `haventory.location_update` service — dispatch the repaint signal when the name or the
-  parent changed, and nothing else does: an area-only reassignment moves no path, and neither
-  `location/create` (no existing item's path can change) nor `location/delete` (refused while
-  the location holds anything) can leave a stale one behind. `haventory_item_changed` stays
-  unfired for all of them: a derived-path rewrite deliberately moves neither an item's
-  `version` nor its `updated_at`, and the action vocabulary above has no location word.
+- **Locations fire no bus event** — but most of them still repaint the entities. Two kinds of
+  location change reach something derived. A create or a delete moves `locations_total`,
+  which is a sensor. A rename or a re-parent rewrites `location_path` across the subtree, and
+  every projected calendar event's `description` is an item's `location_path.display_path`,
+  read from a cached entity state. So `location/create`, `location/delete`,
+  `location/update`, `location/move_subtree` and their `haventory.location_*` services
+  dispatch the repaint signal, with one exception: an area-only reassignment, which moves no
+  count and no path. `haventory_item_changed` stays unfired for all of them — a derived-path
+  rewrite deliberately moves neither an item's `version` nor its `updated_at`, and the action
+  vocabulary above has no location word.
 
 ### Items
 

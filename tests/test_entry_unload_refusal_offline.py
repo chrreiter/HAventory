@@ -212,7 +212,7 @@ async def test_unload_drops_live_subscriptions() -> None:
     await async_unload_entry(hass, entry)
     conn.messages.clear()
 
-    ws_mod._broadcast_event(hass, topic="items", action="created", payload={"item": {"id": "x"}})
+    ws_mod.broadcast_event(hass, topic="items", action="created", payload={"item": {"id": "x"}})
 
     assert conn.messages == []
     assert hass.data[DOMAIN].get("subscriptions") in (None, {})
@@ -245,7 +245,7 @@ async def test_teardown_signal_outranks_the_event_budget() -> None:
     # Drain the global budget, then prove an ordinary broadcast is now dropped.
     assert limiter.allow_event_broadcast() is True
     conn.messages.clear()
-    ws_mod._broadcast_event(hass, topic="items", action="created", payload={"item": {"id": "x"}})
+    ws_mod.broadcast_event(hass, topic="items", action="created", payload={"item": {"id": "x"}})
     assert conn.messages == []
 
     await async_unload_entry(hass, entry)
