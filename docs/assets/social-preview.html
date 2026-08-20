@@ -13,7 +13,8 @@
       rel="stylesheet"
     />
     <style>
-      /* Source for social-preview.png, which is this page captured at 2x.
+      /* Source for social-preview.png: this page in a 1280x640 viewport at a
+         device pixel ratio of 2, captured once `document.fonts.ready` resolves.
          GitHub renders the social preview at 1280x640 and link unfurls in chat
          clients scale it down hard, hence the large type and the 80px margin. */
       * {
@@ -80,7 +81,8 @@
         display: flex;
         flex-wrap: wrap;
         gap: 12px;
-        /* Narrower than the column so the four pills wrap 2+2 instead of 3+1. */
+        /* Narrower than the column so the six pills wrap three even rows of two
+           rather than filling each row until it runs out. */
         max-width: 580px;
         margin-top: 10px;
         padding: 0;
@@ -132,8 +134,10 @@
       <ul>
         <li>Nested locations</li>
         <li>Quantities &amp; low stock</li>
-        <li>Inspection dates</li>
+        <li>Photos &amp; PDF manuals</li>
+        <li>Reminders in your calendar</li>
         <li>Instant search</li>
+        <li>Built for automations</li>
       </ul>
       <div class="meta">custom integration · installs via HACS</div>
     </div>
