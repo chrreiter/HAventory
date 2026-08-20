@@ -40,7 +40,7 @@ def _record_broadcasts(monkeypatch) -> list[Broadcast]:
     def fake(hass, *, topic, action, payload=None):
         seen.append((topic, action, payload))
 
-    monkeypatch.setattr(ws_mod, "_broadcast_event", fake)
+    monkeypatch.setattr(ws_mod, "broadcast_event", fake)
     return seen
 
 

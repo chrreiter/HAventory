@@ -458,7 +458,7 @@ async def test_attachment_add_announces_the_item_as_updated(upload, monkeypatch)
     broadcasts: list[tuple[str, str]] = []
     monkeypatch.setattr(
         ws_mod,
-        "_broadcast_event",
+        "broadcast_event",
         lambda _hass, *, topic, action, payload=None: broadcasts.append((topic, action)),
     )
 

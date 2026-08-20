@@ -22,7 +22,7 @@ from custom_components.haventory.areas import async_get_area_registry
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
-from custom_components.haventory.ws import _broadcast_event, _subs_bucket
+from custom_components.haventory.ws import _subs_bucket, broadcast_event
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
@@ -305,7 +305,7 @@ async def test_location_filters_subtree_and_direct_only() -> None:
     # dataset moved wholesale and the client must re-list, and a subscription
     # watching one shelf has just as much reason to re-list as any other.
     conn.messages.clear()
-    _broadcast_event(hass, topic="items", action="updated", payload=None)
+    broadcast_event(hass, topic="items", action="updated", payload=None)
     ids = {
         m.get("id")
         for m in conn.messages
