@@ -1,9 +1,9 @@
-"""Four inventory counts as sensor entities on one HAventory device.
+"""The promoted inventory counts as sensor entities on one HAventory device.
 
 Push only — no coordinator and no polling. Two things move a state: a mutation,
 through the dispatcher signal `events.notify_mutation` sends, and UTC midnight,
-for the two counts that are derived from the calendar and so change with no
-mutation at all.
+for the counts that are derived from the calendar and so change with no mutation
+at all. `const.SENSOR_DESCRIPTIONS` is the catalog; nothing here is per-count.
 """
 
 from __future__ import annotations
@@ -74,10 +74,9 @@ class HaventoryCountSensor(SensorEntity):
             async_dispatcher_connect(self.hass, SIGNAL_INVENTORY_CHANGED, self._handle_update)
         )
         if self._description.date_derived:
-            # `overdue_count` and `inspection_overdue_count` are derived from
-            # today's date against stored dates, so they move at midnight with
-            # nothing having been mutated. UTC, because the counts themselves
-            # compare against a UTC date.
+            # A date-derived count compares today's date against stored dates,
+            # so it moves at midnight with nothing having been mutated. UTC,
+            # because the counts themselves compare against a UTC date.
             self.async_on_remove(
                 async_track_utc_time_change(
                     self.hass, self._handle_time_change, hour=0, minute=0, second=0

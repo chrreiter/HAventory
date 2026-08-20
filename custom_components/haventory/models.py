@@ -1568,6 +1568,21 @@ def item_inspection_is_overdue(item: Item, *, today: str = "") -> bool:
     return item.inspection_date < (today or today_utc_date())
 
 
+def item_inspection_is_due(item: Item, *, today: str = "") -> bool:
+    """Return True once the item's inspection is being asked for.
+
+    Inclusive of today, like ``item_reminder_is_due`` and unlike
+    ``item_inspection_is_overdue``: an inspection date names the day the item is
+    next due to be inspected, so that day is when it is being asked for rather
+    than the last day it is not. The two answers therefore differ by exactly the
+    items whose date is today, and every overdue item is also due.
+    """
+
+    if not item.inspection_date:
+        return False
+    return item.inspection_date <= (today or today_utc_date())
+
+
 def item_reminder_is_due(item: Item, *, today: str = "") -> bool:
     """Return True once the item's reminder has come round.
 

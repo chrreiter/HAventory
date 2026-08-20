@@ -46,6 +46,7 @@ from .models import (
     filter_items,
     is_canonical_utc_timestamp,
     iso_utc_now,
+    item_inspection_is_due,
     item_inspection_is_overdue,
     item_is_low_stock,
     item_is_overdue,
@@ -1763,6 +1764,7 @@ class Repository:
             "checked_out_count": len(self._checked_out_item_ids),
             "overdue_count": self._count_overdue(),
             "inspection_overdue_count": self._count_inspection_overdue(),
+            "inspection_due_count": self._count_inspection_due(),
             "reminder_due_count": self._count_reminder_due(),
             "missing_count": len(self._status_to_item_ids.get("missing", set())),
             "needs_repair_count": len(self._status_to_item_ids.get("needs_repair", set())),
@@ -1799,6 +1801,19 @@ class Repository:
         today = today_utc_date()
         return sum(
             1 for it in self._items_by_id.values() if item_inspection_is_overdue(it, today=today)
+        )
+
+    def _count_inspection_due(self) -> int:
+        """Count items whose inspection is being asked for, today included.
+
+        Unindexed for the same reason as the two above. This is a superset of
+        ``_count_inspection_overdue``: it walks the same population and the two
+        differ by exactly the items whose inspection date is today.
+        """
+
+        today = today_utc_date()
+        return sum(
+            1 for it in self._items_by_id.values() if item_inspection_is_due(it, today=today)
         )
 
     def _count_reminder_due(self) -> int:

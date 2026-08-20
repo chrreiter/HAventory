@@ -218,6 +218,7 @@ async def test_stats_returns_counts() -> None:
         "checked_out_count",
         "overdue_count",
         "inspection_overdue_count",
+        "inspection_due_count",
         "reminder_due_count",
         "missing_count",
         "needs_repair_count",
