@@ -393,11 +393,16 @@ async def test_generation_property_accessor() -> None:
 
 
 @pytest.mark.asyncio
-async def test_generation_export_and_load_roundtrip() -> None:
-    """Generation counter persists across export/load cycles."""
+async def test_generation_does_not_survive_an_export_and_load() -> None:
+    """The counter is this process's, and the export does not carry it.
+
+    A repository built from a stored payload starts counting again from the load
+    itself, however long the household has been running. What the round trip must
+    carry is the data, which is asserted here beside it so a change that dropped
+    both would not read as this one.
+    """
     repo = Repository()
 
-    # Create some data
     item1 = repo.create_item(ItemCreate(name="Item 1"))
     item2 = repo.create_item(ItemCreate(name="Item 2"))
     loc = repo.create_location(name="Location")
@@ -405,19 +410,16 @@ async def test_generation_export_and_load_roundtrip() -> None:
     generation_before = repo.generation
     assert generation_before > 0
 
-    # Export state
     state = repo.export_state()
-    assert "_generation" in state
-    assert state["_generation"] == generation_before
+    assert "_generation" not in state
 
-    # Create new repo and load state
     new_repo = Repository.from_state(state)
 
-    # Generation should be restored and incremented during load
-    # (load calls _index_item/_add_location for each entity, incrementing generation)
-    assert new_repo.generation > generation_before
+    # Nothing in the payload can move the counter: the same data loaded with a
+    # stale key beside it reaches exactly the same number, so what the loaded
+    # repository reports is its own indexing and nothing the exporter had done.
+    assert Repository.from_state({**state, "_generation": 9999}).generation == new_repo.generation
 
-    # Verify data integrity
     assert len(new_repo.list_items()["items"]) == LOADED_ITEM_COUNT
     assert new_repo.get_item(item1.id).name == "Item 1"
     assert new_repo.get_item(item2.id).name == "Item 2"
@@ -425,19 +427,17 @@ async def test_generation_export_and_load_roundtrip() -> None:
 
 
 @pytest.mark.asyncio
-async def test_generation_load_state_without_generation() -> None:
-    """Loading state without _generation field initializes to 0."""
+async def test_a_stored_generation_from_an_older_build_is_ignored() -> None:
+    """Every store written before this build carries the key, and keeps carrying it.
+
+    Nothing rewrites a file on load, so the key survives until the next save. It
+    must not be read back — a stale counter from the last run would make the
+    health command's number look like activity this one has not had.
+    """
     repo = Repository()
 
-    # Create state without _generation field (legacy data)
-    state = {
-        "items": {},
-        "locations": {},
-    }
+    repo.load_state({"items": {}, "locations": {}, "_generation": 4096})
 
-    repo.load_state(state)
-
-    # Should initialize to 0, then increment for load
     assert repo.generation == 1
 
 

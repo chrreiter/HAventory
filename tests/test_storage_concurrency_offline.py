@@ -280,28 +280,6 @@ async def test_generation_counter_increments_on_modification():
 
 
 @pytest.mark.asyncio
-async def test_generation_persisted_and_restored():
-    """Generation counter is persisted and restored across save/load cycles."""
-    repo = Repository()
-
-    # Make some modifications
-    repo.create_item(ItemCreate(name="Item 1"))
-    repo.create_item(ItemCreate(name="Item 2"))
-    generation_before = repo.generation
-
-    # Export state
-    state = repo.export_state()
-    assert state["_generation"] == generation_before
-
-    # Create new repo and load state
-    new_repo = Repository.from_state(state)
-
-    # Generation should be restored and incremented during load
-    # (load calls _index_item for each item, incrementing generation)
-    assert new_repo.generation > generation_before
-
-
-@pytest.mark.asyncio
 async def test_concurrent_operations_with_persistence():
     """Multiple concurrent operations complete successfully with locking."""
     hass = MagicMock()

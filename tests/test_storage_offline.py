@@ -8,6 +8,8 @@ Scenarios:
 - Corrupted payload (non-dict) raises StorageError
 - A payload written by a newer schema is refused without rewriting the store
 - A payload whose schema_version is not an integer is refused, never coerced
+- A saved payload carries the stored collections and the schema number, nothing else
+- A store still carrying `_generation` loads, and the key is not read back
 """
 
 from __future__ import annotations
@@ -42,6 +44,9 @@ _REMINDER_ANCHOR_BACKFILL_VERSION = 9
 #: The version from which a status ``color`` may be a ``#rrggbb`` literal rather
 #: than one of the ten tone tokens. Builds below it reject the literal.
 _HEX_STATUS_COLOUR_VERSION = 7
+
+#: A counter value no fresh load could reach, so reading it back would be visible.
+STALE_GENERATION = 17
 
 
 @pytest.mark.asyncio
@@ -496,6 +501,57 @@ async def test_corrupted_payload_non_dict_raises_storage_error() -> None:
     # Act + Assert
     with pytest.raises(StorageError):
         await store.async_load()
+
+
+@pytest.mark.asyncio
+async def test_a_saved_payload_carries_nothing_beyond_the_stored_collections() -> None:
+    """The store holds the household's data and the schema number, and nothing else.
+
+    The guard below runs the other way — every collection the store defines must
+    be emitted. This one closes the gap on that side: a key the repository emits
+    but the store knows nothing about is written to disk anyway, read back into
+    the load path, and becomes a field of the stored shape that nobody decided
+    on. ``_generation`` was one for the whole dev range.
+    """
+
+    hass = HomeAssistant()
+    store = DomainStore(hass, key="test_store_saved_payload_keys")
+    repo = Repository()
+    where = repo.create_location(name="Garage")
+    repo.create_item(ItemCreate(name="Screws", location_id=str(where.id)))
+
+    await store.async_save(repo.export_state())
+    written = await store.async_load()
+
+    assert set(written) == {*STORE_COLLECTIONS, "schema_version"}
+
+
+@pytest.mark.asyncio
+async def test_a_store_written_before_the_generation_was_dropped_still_loads() -> None:
+    """Every store this build inherits carries the key, and none of them may refuse.
+
+    Dropping the key took no schema bump — a build that no longer writes it and
+    one that never wrote it are the same store to read — so nothing rewrites the
+    stores that have it. They have to keep loading, and the key has to survive
+    until the next save rather than making the load fail.
+    """
+
+    hass = HomeAssistant()
+    store = DomainStore(hass, key="test_store_stale_generation_key")
+    repo = Repository()
+    repo.create_item(ItemCreate(name="Screws"))
+    legacy = {**repo.export_state(), "_generation": STALE_GENERATION}
+
+    await store.async_save(legacy)
+    payload = await store.async_load()
+    reloaded = Repository.from_state(payload)
+
+    assert payload["_generation"] == STALE_GENERATION
+    assert [item.name for item in reloaded.list_items()["items"]] == ["Screws"]
+    # Read as a key this build has no use for, not as a counter to resume: the
+    # same payload with the key stripped out reaches the same number.
+    stripped = {name: value for name, value in payload.items() if name != "_generation"}
+    assert reloaded.generation == Repository.from_state(stripped).generation
 
 
 @pytest.mark.asyncio
