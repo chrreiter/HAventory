@@ -77,16 +77,16 @@
   "entity": {
     "sensor": {
       "items_total": {
-        "name": "Items"
+        "name": "Item count"
       },
       "low_stock": {
-        "name": "Low stock"
+        "name": "Low stock count"
       },
       "overdue": {
-        "name": "Overdue"
+        "name": "Checked out overdue count"
       },
       "inspection_overdue": {
-        "name": "Inspection overdue"
+        "name": "Inspection overdue count"
       }
     }
   },
