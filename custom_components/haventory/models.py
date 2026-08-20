@@ -73,6 +73,22 @@ class LocationPath:
     display_path: str
     sort_key: str
 
+    def to_dict(self) -> dict[str, Any]:
+        """The serialized shape, nested under an item's ``location_path`` and a
+        location's ``path``.
+
+        The lists are copied: every caller receives a payload it is free to edit,
+        and an item's own path must not change because something edited what it
+        was handed.
+        """
+
+        return {
+            "id_path": [str(entry) for entry in self.id_path],
+            "name_path": list(self.name_path),
+            "display_path": self.display_path,
+            "sort_key": self.sort_key,
+        }
+
 
 EMPTY_LOCATION_PATH = LocationPath(id_path=[], name_path=[], display_path="", sort_key="")
 
@@ -106,6 +122,21 @@ class Location:
     name: str
     area_id: str | None = None
     path: LocationPath = field(default_factory=lambda: EMPTY_LOCATION_PATH)
+
+    def to_dict(self) -> dict[str, Any]:
+        """The one serialized shape of a location.
+
+        The store, the export document and the wire all send exactly this — a
+        location has no derived field the way an item has ``effective_area_id``.
+        """
+
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "parent_id": str(self.parent_id) if self.parent_id is not None else None,
+            "area_id": str(self.area_id) if self.area_id is not None else None,
+            "path": self.path.to_dict(),
+        }
 
 
 @dataclass
@@ -214,6 +245,45 @@ class Item:
     # Deliberately absent from ItemCreate / ItemUpdate: the two attachment
     # commands own this field, so an ordinary item edit can never rewrite it.
     attachments: list[AttachmentMeta] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """The one serialized shape of an item.
+
+        This is what the store holds and what the export document carries, byte
+        for byte. The WebSocket and service surfaces send it with
+        ``effective_area_id`` added — resolved from the location tree per
+        request and never stored, which is why it is added at that boundary
+        (``serialization.serialize_item``) rather than here.
+
+        ``location_path`` is derived too, but it *is* stored: the backend
+        recomputes it on every location change and no client can write it, and
+        the store carries the last computed value so a boot has the paths
+        before the tree is walked.
+        """
+
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "description": self.description,
+            "quantity": int(self.quantity),
+            "status": self.status,
+            "checked_out": bool(self.checked_out),
+            "due_date": self.due_date,
+            "inspection_date": self.inspection_date,
+            "reminder_date": self.reminder_date,
+            "reminder_anchor": self.reminder_anchor,
+            "reminder_interval": serialize_reminder_interval(self.reminder_interval),
+            "location_id": str(self.location_id) if self.location_id is not None else None,
+            "tags": list(self.tags),
+            "category": self.category,
+            "low_stock_threshold": self.low_stock_threshold,
+            "custom_fields": dict(self.custom_fields),
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "version": int(self.version),
+            "location_path": self.location_path.to_dict(),
+            "attachments": [serialize_attachment_meta(meta) for meta in self.attachments],
+        }
 
 
 class ItemCreate(TypedDict, total=False):

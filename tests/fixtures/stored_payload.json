@@ -1,0 +1,201 @@
+{
+  "items": {
+    "aaaaaaaa-0000-4000-8000-000000000001": {
+      "id": "aaaaaaaa-0000-4000-8000-000000000001",
+      "name": "Cordless drill",
+      "description": "18V, two batteries",
+      "quantity": 2,
+      "status": "lent_out",
+      "checked_out": true,
+      "due_date": "2026-09-01",
+      "inspection_date": "2026-12-24",
+      "reminder_date": "2026-10-31",
+      "reminder_anchor": "2026-10-31",
+      "reminder_interval": {
+        "unit": "months",
+        "count": 6
+      },
+      "location_id": "aaaaaaaa-0000-4000-8000-000000000003",
+      "tags": [
+        "power",
+        "tools"
+      ],
+      "category": "Tools",
+      "low_stock_threshold": 1,
+      "custom_fields": {
+        "serial": "X-1",
+        "warranty_years": 3,
+        "registered": true
+      },
+      "created_at": "2026-08-01T10:00:00Z",
+      "updated_at": "2026-08-02T10:00:01Z",
+      "version": 2,
+      "location_path": {
+        "id_path": [
+          "aaaaaaaa-0000-4000-8000-000000000002",
+          "aaaaaaaa-0000-4000-8000-000000000004",
+          "aaaaaaaa-0000-4000-8000-000000000003"
+        ],
+        "name_path": [
+          "Garage",
+          "Shelf A",
+          "Bin 3"
+        ],
+        "display_path": "Garage / Shelf A / Bin 3",
+        "sort_key": "garage / shelf a / bin 3"
+      },
+      "attachments": [
+        {
+          "id": "11111111-1111-4111-8111-111111111111",
+          "kind": "picture",
+          "filename": "drill.jpg",
+          "mime": "image/jpeg",
+          "size": 20480,
+          "uploaded_at": "2026-08-01T09:00:00Z",
+          "title": "On the shelf",
+          "order": 0
+        },
+        {
+          "id": "22222222-2222-4222-8222-222222222222",
+          "kind": "manual",
+          "filename": "drill-manual.pdf",
+          "mime": "application/pdf",
+          "size": 512000,
+          "uploaded_at": "2026-08-01T09:05:00Z",
+          "title": "",
+          "order": 1
+        }
+      ]
+    },
+    "aaaaaaaa-0000-4000-8000-000000000005": {
+      "id": "aaaaaaaa-0000-4000-8000-000000000005",
+      "name": "Ünlabelled späre",
+      "description": null,
+      "quantity": 1,
+      "status": "ok",
+      "checked_out": false,
+      "due_date": null,
+      "inspection_date": null,
+      "reminder_date": null,
+      "reminder_anchor": null,
+      "reminder_interval": null,
+      "location_id": null,
+      "tags": [],
+      "category": null,
+      "low_stock_threshold": null,
+      "custom_fields": {},
+      "created_at": "2026-08-01T10:00:00Z",
+      "updated_at": "2026-08-01T10:00:00Z",
+      "version": 1,
+      "location_path": {
+        "id_path": [],
+        "name_path": [],
+        "display_path": "",
+        "sort_key": ""
+      },
+      "attachments": []
+    }
+  },
+  "locations": {
+    "aaaaaaaa-0000-4000-8000-000000000002": {
+      "id": "aaaaaaaa-0000-4000-8000-000000000002",
+      "name": "Garage",
+      "parent_id": null,
+      "area_id": "garage_area",
+      "path": {
+        "id_path": [
+          "aaaaaaaa-0000-4000-8000-000000000002"
+        ],
+        "name_path": [
+          "Garage"
+        ],
+        "display_path": "Garage",
+        "sort_key": "garage"
+      }
+    },
+    "aaaaaaaa-0000-4000-8000-000000000003": {
+      "id": "aaaaaaaa-0000-4000-8000-000000000003",
+      "name": "Bin 3",
+      "parent_id": "aaaaaaaa-0000-4000-8000-000000000004",
+      "area_id": null,
+      "path": {
+        "id_path": [
+          "aaaaaaaa-0000-4000-8000-000000000002",
+          "aaaaaaaa-0000-4000-8000-000000000004",
+          "aaaaaaaa-0000-4000-8000-000000000003"
+        ],
+        "name_path": [
+          "Garage",
+          "Shelf A",
+          "Bin 3"
+        ],
+        "display_path": "Garage / Shelf A / Bin 3",
+        "sort_key": "garage / shelf a / bin 3"
+      }
+    },
+    "aaaaaaaa-0000-4000-8000-000000000004": {
+      "id": "aaaaaaaa-0000-4000-8000-000000000004",
+      "name": "Shelf A",
+      "parent_id": "aaaaaaaa-0000-4000-8000-000000000002",
+      "area_id": null,
+      "path": {
+        "id_path": [
+          "aaaaaaaa-0000-4000-8000-000000000002",
+          "aaaaaaaa-0000-4000-8000-000000000004"
+        ],
+        "name_path": [
+          "Garage",
+          "Shelf A"
+        ],
+        "display_path": "Garage / Shelf A",
+        "sort_key": "garage / shelf a"
+      }
+    },
+    "aaaaaaaa-0000-4000-8000-000000000006": {
+      "id": "aaaaaaaa-0000-4000-8000-000000000006",
+      "name": "Ünsorted / Späte",
+      "parent_id": null,
+      "area_id": null,
+      "path": {
+        "id_path": [
+          "aaaaaaaa-0000-4000-8000-000000000006"
+        ],
+        "name_path": [
+          "Ünsorted / Späte"
+        ],
+        "display_path": "Ünsorted / Späte",
+        "sort_key": "unsorted / spate"
+      }
+    }
+  },
+  "statuses": {
+    "lent_out": {
+      "slug": "lent_out",
+      "label": "Lent out",
+      "order": 9,
+      "color": "blue",
+      "icon": "hand"
+    },
+    "missing": {
+      "slug": "missing",
+      "label": "Missing",
+      "order": 1,
+      "color": "amber",
+      "icon": "alert"
+    },
+    "needs_repair": {
+      "slug": "needs_repair",
+      "label": "Needs repair",
+      "order": 2,
+      "color": "amber",
+      "icon": "wrench"
+    },
+    "ok": {
+      "slug": "ok",
+      "label": "OK",
+      "order": 0,
+      "color": "green",
+      "icon": "check"
+    }
+  }
+}

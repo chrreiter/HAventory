@@ -79,8 +79,6 @@ from .models import (
     normalize_text_for_sort,
     parse_uuid4,
     seed_status_definitions,
-    serialize_attachment_meta,
-    serialize_reminder_interval,
     serialize_status_definition,
     validate_attachment_meta,
     validate_due_date_rules,
@@ -133,56 +131,6 @@ _LOCATION_SOURCE_FIELDS: tuple[str, ...] = ("name", "parent_id", "area_id")
 # -----------------------------
 
 
-def _serialize_item_doc(item: Item) -> dict[str, Any]:
-    """Serialize an item to a document entry (all source + path fields)."""
-
-    return {
-        "id": str(item.id),
-        "name": item.name,
-        "description": item.description,
-        "quantity": int(item.quantity),
-        "status": item.status,
-        "checked_out": bool(item.checked_out),
-        "due_date": item.due_date,
-        "inspection_date": item.inspection_date,
-        "reminder_date": item.reminder_date,
-        "reminder_anchor": item.reminder_anchor,
-        "reminder_interval": serialize_reminder_interval(item.reminder_interval),
-        "location_id": str(item.location_id) if item.location_id is not None else None,
-        "tags": list(item.tags),
-        "category": item.category,
-        "low_stock_threshold": item.low_stock_threshold,
-        "custom_fields": dict(item.custom_fields),
-        "created_at": item.created_at,
-        "updated_at": item.updated_at,
-        "version": int(item.version),
-        "location_path": {
-            "id_path": [str(x) for x in item.location_path.id_path],
-            "name_path": list(item.location_path.name_path),
-            "display_path": item.location_path.display_path,
-            "sort_key": item.location_path.sort_key,
-        },
-        "attachments": [serialize_attachment_meta(a) for a in item.attachments],
-    }
-
-
-def _serialize_location_doc(loc: Location) -> dict[str, Any]:
-    """Serialize a location to a document entry (all source + path fields)."""
-
-    return {
-        "id": str(loc.id),
-        "name": loc.name,
-        "parent_id": str(loc.parent_id) if loc.parent_id is not None else None,
-        "area_id": str(loc.area_id) if loc.area_id is not None else None,
-        "path": {
-            "id_path": [str(x) for x in loc.path.id_path],
-            "name_path": list(loc.path.name_path),
-            "display_path": loc.path.display_path,
-            "sort_key": loc.path.sort_key,
-        },
-    }
-
-
 def build_export_document(
     repo: Repository,
     *,
@@ -213,11 +161,11 @@ def build_export_document(
             if it.location_id is not None:
                 location_ids.add(str(it.location_id))
 
-    items_docs = [_serialize_item_doc(items[i]) for i in _sorted_index_by_id(items)]
+    items_docs = [items[i].to_dict() for i in _sorted_index_by_id(items)]
     locations = [
         repo._locations_by_id[lid] for lid in sorted(location_ids) if lid in repo._locations_by_id
     ]
-    locations_docs = [_serialize_location_doc(loc) for loc in locations]
+    locations_docs = [loc.to_dict() for loc in locations]
 
     return {
         "haventory_export_version": EXPORT_VERSION,

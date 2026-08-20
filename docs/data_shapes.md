@@ -8,7 +8,12 @@ Canonical shapes used in WebSocket payloads and storage, derived from `custom_co
 
 ### Item
 
-Object shape for persisted items and API results:
+Object shape for persisted items and API results. Everything down to `attachments` is
+the **one** shape `Item.to_dict()` produces — what the store holds and what an export
+document carries, identically. `effective_area_id` is the single field the API adds on
+top: it is resolved from the location tree per request and is never stored, so it appears
+on WebSocket results and service responses only, and never in the store or an export.
+
 ```json
 {
   "id": "uuid-v4",
@@ -36,8 +41,9 @@ Object shape for persisted items and API results:
     "display_path": "Garage / Shelf A",
     "sort_key": "garage / shelf a"
   },
-  "effective_area_id": "string|null",
-  "attachments": [ <Attachment>, ... ]
+  "attachments": [ <Attachment>, ... ],
+
+  "effective_area_id": "string|null"
 }
 ```
 
