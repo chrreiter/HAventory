@@ -1,4 +1,4 @@
-"""Integration: the four count sensors on the HAventory device.
+"""Integration: the count sensors on the HAventory device.
 
 Everything here needs machinery the offline stub does not have — an entity
 platform, a device registry, `hass.config_entries`, and a service registry that
@@ -8,14 +8,23 @@ from (`tests/test_sensor_offline.py`).
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from custom_components.haventory.const import DOMAIN, SENSOR_DESCRIPTIONS
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 LOW_THRESHOLD = 3
+
+
+def _utc_day_offset(days: int) -> str:
+    """A UTC calendar date `days` from today, as YYYY-MM-DD."""
+
+    return (datetime.now(UTC).date() + timedelta(days=days)).isoformat()
 
 
 async def _setup(hass: HomeAssistant) -> MockConfigEntry:
@@ -57,8 +66,8 @@ def _entity_id_for(hass: HomeAssistant, entry: MockConfigEntry, key: str) -> str
     )
 
 
-async def test_four_sensors_land_on_one_device(hass: HomeAssistant) -> None:
-    """One service device, four entities, `unique_id`s scoped to the entry."""
+async def test_every_sensor_lands_on_one_device(hass: HomeAssistant) -> None:
+    """One service device, one entity per catalog entry, `unique_id`s scoped to it."""
 
     entry = await _setup(hass)
 
@@ -167,3 +176,100 @@ async def test_each_sensor_reports_its_count(hass: HomeAssistant, descriptor) ->
     entity_id = _entity_id_for(hass, entry, descriptor.key)
 
     assert hass.states.get(entity_id).state == str(repo.get_counts()[descriptor.key])
+
+
+async def test_an_inspection_due_today_is_due_and_not_overdue(hass: HomeAssistant) -> None:
+    """The two inspection sensors differ by exactly the items due today.
+
+    `due` includes today and `overdue` does not — the distinction the counts are
+    named for, read off the entities a dashboard actually shows.
+    """
+
+    entry = await _setup(hass)
+    due = _entity_id_for(hass, entry, "inspection_due_count")
+    overdue = _entity_id_for(hass, entry, "inspection_overdue_count")
+
+    await hass.services.async_call(
+        DOMAIN,
+        "item_create",
+        {"name": "Harness", "inspection_date": _utc_day_offset(0)},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(due).state == "1"
+    assert hass.states.get(overdue).state == "0"
+
+    await hass.services.async_call(
+        DOMAIN,
+        "item_create",
+        {"name": "Ladder", "inspection_date": _utc_day_offset(-1)},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(due).state == "2"
+    assert hass.states.get(overdue).state == "1"
+
+
+async def test_the_inspection_due_sensor_moves_at_utc_midnight(
+    hass: HomeAssistant, freezer
+) -> None:
+    """A date-derived count rewrites on the rollover, with nothing mutated.
+
+    Tomorrow's inspection becomes today's without anybody touching the item, so
+    a sensor that only listened for mutations would sit at yesterday's figure
+    all day.
+    """
+
+    entry = await _setup(hass)
+    due = _entity_id_for(hass, entry, "inspection_due_count")
+    tomorrow = _utc_day_offset(1)
+
+    await hass.services.async_call(
+        DOMAIN, "item_create", {"name": "Harness", "inspection_date": tomorrow}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get(due).state == "0"
+
+    freezer.move_to(f"{tomorrow}T00:00:30+00:00")
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+
+    assert hass.states.get(due).state == "1"
+
+
+async def test_the_location_sensor_moves_on_a_location_mutation(
+    hass: HomeAssistant, hass_ws_client
+) -> None:
+    """A location create touches no item, and the count is still a sensor.
+
+    Only `events.notify_location_changed` moves it; without that call the entity
+    reports the old figure until something happens to edit an item.
+    """
+
+    entry = await _setup(hass)
+    locations = _entity_id_for(hass, entry, "locations_total")
+    client = await hass_ws_client(hass)
+
+    assert hass.states.get(locations).state == "0"
+
+    await client.send_json({"id": 1, "type": "haventory/location/create", "name": "Garage"})
+    created = await client.receive_json()
+    assert created["success"] is True, created
+    await hass.async_block_till_done()
+
+    assert hass.states.get(locations).state == "1"
+
+    await hass.services.async_call(DOMAIN, "location_create", {"name": "Cellar"}, blocking=True)
+    await hass.async_block_till_done()
+
+    assert hass.states.get(locations).state == "2"
+
+    await client.send_json(
+        {"id": 2, "type": "haventory/location/delete", "location_id": created["result"]["id"]}
+    )
+    assert (await client.receive_json())["success"] is True
+    await hass.async_block_till_done()
+
+    assert hass.states.get(locations).state == "1"

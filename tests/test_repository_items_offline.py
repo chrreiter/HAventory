@@ -219,6 +219,53 @@ async def test_inspection_overdue_count_follows_the_stored_date() -> None:
 
 
 @pytest.mark.asyncio
+async def test_inspection_due_count_includes_today_where_overdue_does_not() -> None:
+    """The two counts differ by exactly the items due today.
+
+    `due` includes today and `overdue` does not — the vocabulary
+    `reminder_due_count` already uses, asked of `inspection_date`.
+    """
+
+    repo = Repository()
+    repo.create_item(ItemCreate(name="Ladder", inspection_date=_utc_day_offset(-1)))
+    repo.create_item(ItemCreate(name="Harness", inspection_date=_utc_day_offset(0)))
+    repo.create_item(ItemCreate(name="Rope", inspection_date=_utc_day_offset(1)))
+    repo.create_item(ItemCreate(name="Bucket"))
+
+    counts = repo.get_counts()
+    INSPECTION_DUE = 2
+    assert counts["inspection_due_count"] == INSPECTION_DUE
+    assert counts["inspection_overdue_count"] == 1
+    # Tomorrow's inspection and the item carrying no date are in neither count.
+    assert counts["items_total"] == INSPECTION_DUE + 2
+
+
+@pytest.mark.asyncio
+async def test_inspection_due_count_is_never_below_the_overdue_count() -> None:
+    """Rescheduling moves an item between the two counts without inverting them."""
+
+    repo = Repository()
+    ladder = repo.create_item(ItemCreate(name="Ladder", inspection_date=_utc_day_offset(-3)))
+    assert repo.get_counts()["inspection_due_count"] == 1
+    assert repo.get_counts()["inspection_overdue_count"] == 1
+
+    today = repo.update_item(
+        ladder.id, ItemUpdate(inspection_date=_utc_day_offset(0)), expected_version=ladder.version
+    )
+    counts = repo.get_counts()
+    assert counts["inspection_due_count"] == 1
+    assert counts["inspection_overdue_count"] == 0
+
+    later = repo.update_item(
+        today.id, ItemUpdate(inspection_date=_utc_day_offset(30)), expected_version=today.version
+    )
+    assert repo.get_counts()["inspection_due_count"] == 0
+
+    repo.update_item(later.id, ItemUpdate(inspection_date=None), expected_version=later.version)
+    assert repo.get_counts()["inspection_due_count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_prefilter_by_area_and_and_logic_with_location() -> None:
     """Pre-filter by area id and support AND with location_id."""
 

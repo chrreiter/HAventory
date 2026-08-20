@@ -20,7 +20,7 @@ from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
-from .events import notify_derived_paths_changed, notify_mutation
+from .events import notify_location_changed, notify_mutation
 from .exceptions import (
     ConflictError,
     NotFoundError,
@@ -380,6 +380,7 @@ async def service_location_create(hass: HomeAssistant, data: dict) -> dict[str, 
             area_id=payload.get("area_id"),
         )
         await async_persist_repo(hass)
+        notify_location_changed(hass)
         return {"location": serialize_location(loc)}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"location_name": data.get("name")}, exc)
@@ -406,7 +407,7 @@ async def service_location_update(hass: HomeAssistant, data: dict) -> dict[str, 
         # underneath, and the calendar renders those paths. No bus event: the
         # items themselves did not change.
         if loc.name != was_named or loc.parent_id != was_below:
-            notify_derived_paths_changed(hass)
+            notify_location_changed(hass)
         return {"location": serialize_location(loc)}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"location_id": location_id}, exc)
@@ -421,6 +422,7 @@ async def service_location_delete(hass: HomeAssistant, data: dict) -> dict[str, 
         removed = serialize_location(repo.get_location(payload["location_id"]))
         repo.delete_location(payload["location_id"])
         await async_persist_repo(hass)
+        notify_location_changed(hass)
         return {"location": removed}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"location_id": location_id}, exc)

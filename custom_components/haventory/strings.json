@@ -82,11 +82,20 @@
       "low_stock": {
         "name": "Low stock count"
       },
+      "checked_out": {
+        "name": "Checked out count"
+      },
       "overdue": {
         "name": "Checked out overdue count"
       },
       "inspection_overdue": {
         "name": "Inspection overdue count"
+      },
+      "inspection_due": {
+        "name": "Inspection due count"
+      },
+      "locations": {
+        "name": "Location count"
       }
     }
   },

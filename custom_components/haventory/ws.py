@@ -37,7 +37,7 @@ from .const import (
     MAX_MANUALS_PER_ITEM,
     MAX_PICTURES_PER_ITEM,
 )
-from .events import notify_bulk_mutation, notify_derived_paths_changed, notify_mutation
+from .events import notify_bulk_mutation, notify_location_changed, notify_mutation
 from .exceptions import (
     ConflictError,
     NotFoundError,
@@ -1936,6 +1936,7 @@ async def ws_location_create(
     await _persist_repo(hass)
     _broadcast_event(hass, topic="locations", action="created", payload={"location": serialized})
     _broadcast_counts(hass)
+    notify_location_changed(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -2006,7 +2007,7 @@ async def ws_location_update(
     # subtree without changing what any path reads, and a save that changed
     # nothing repaints nothing.
     if loc.parent_id != before.parent_id or loc.name != was_named:
-        notify_derived_paths_changed(hass)
+        notify_location_changed(hass)
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -2032,6 +2033,7 @@ async def ws_location_delete(
         payload={"location": serialized_before},
     )
     _broadcast_counts(hass)
+    notify_location_changed(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
 
 
@@ -2125,7 +2127,7 @@ async def ws_location_move_subtree(
     await _persist_repo(hass)
     _broadcast_event(hass, topic="locations", action="moved", payload={"location": serialized})
     if loc.parent_id != was_below:
-        notify_derived_paths_changed(hass)
+        notify_location_changed(hass)
     _broadcast_counts(hass)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 

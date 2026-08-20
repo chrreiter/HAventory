@@ -55,7 +55,8 @@ not an item mutation, so tokens held for optimistic concurrency survive the rena
 
 `inspection_date` is a **forward-looking** date: when the item is next due for inspection.
 A value strictly before today (UTC) means that inspection is overdue — the population behind
-the `inspection_overdue_only` filter and the `inspection_overdue_count` stat. It is
+the `inspection_overdue_only` filter and the `inspection_overdue_count` stat; a value on or
+before today means it is due, which is what `inspection_due_count` reports. It is
 independent of `checked_out` and of `due_date`; any item can carry one.
 
 A reminder is **three** fields, and two of them are dates on purpose:
@@ -350,6 +351,8 @@ Counts object used in `stats` results and events:
   "checked_out_count": 0,
   "overdue_count": 0,
   "inspection_overdue_count": 0,
+  "inspection_due_count": 0,
+  "reminder_due_count": 0,
   "missing_count": 0,
   "needs_repair_count": 0,
   "status_counts": { "ok": 0, "missing": 0, "needs_repair": 0 },
@@ -363,10 +366,12 @@ Counts object used in `stats` results and events:
 it moves with the calendar, so the same data can report a different count tomorrow.
 `inspection_overdue_count` is the same question asked of `inspection_date`, over the whole
 inventory rather than only the checked-out items, and moves with the calendar the same way.
-`reminder_due_count` is the `reminder_date` equivalent, and the one calendar count that
-**includes today**: a reminder names the day it is asking about, so an item reminding today
-is one the household still has to act on.
-`missing_count` / `needs_repair_count` count items by their stored `status`; unlike the two
+`inspection_due_count` asks it inclusive of today, so it is `inspection_overdue_count` plus
+the items whose inspection date is today and is never smaller than it.
+`reminder_due_count` is the `reminder_date` equivalent, inclusive of today in the same way:
+a reminder names the day it is asking about, so an item reminding today is one the household
+still has to act on. Throughout, *due* includes today and *overdue* does not.
+`missing_count` / `needs_repair_count` count items by their stored `status`; unlike the
 calendar counts they only change on a mutation, so events keep them current.
 `status_counts` is that same count for every defined slug, `ok` included. It is additive to
 the two named keys, not a replacement for them.

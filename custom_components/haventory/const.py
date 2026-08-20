@@ -275,9 +275,9 @@ class HaventorySensorDescription:
 
     ``key`` is a key of ``Repository.get_counts()`` and the suffix of the
     entity's ``unique_id``; ``translation_key`` names the entry under
-    ``entity.sensor`` in `strings.json`. ``date_derived`` marks the two counts
-    that move with the calendar rather than with a mutation, which is what makes
-    them subscribe to the UTC-midnight rollover as well as to mutations.
+    ``entity.sensor`` in `strings.json`. ``date_derived`` marks the counts that
+    move with the calendar rather than with a mutation, which is what makes them
+    subscribe to the UTC-midnight rollover as well as to mutations.
     """
 
     key: str
@@ -286,16 +286,22 @@ class HaventorySensorDescription:
     date_derived: bool = False
 
 
-# Four of the nine keys `get_counts()` returns. The rest stay card- and
-# WebSocket-only: a fresh install opening with nine entities is a worse default
-# than four, and promoting one later is additive.
+# Seven of the twelve keys `get_counts()` returns. The rest stay card- and
+# WebSocket-only: `status_counts` is a mapping rather than a number, and the
+# remaining figures are either derivable from these or too narrow to be worth an
+# entity on every install. Promoting one later is additive.
 SENSOR_DESCRIPTIONS: tuple[HaventorySensorDescription, ...] = (
     HaventorySensorDescription("items_total", "items_total", "mdi:package-variant-closed"),
     HaventorySensorDescription("low_stock_count", "low_stock", "mdi:package-down"),
+    HaventorySensorDescription("checked_out_count", "checked_out", "mdi:account-arrow-right"),
     HaventorySensorDescription("overdue_count", "overdue", "mdi:calendar-alert", date_derived=True),
     HaventorySensorDescription(
         "inspection_overdue_count", "inspection_overdue", "mdi:clipboard-alert", date_derived=True
     ),
+    HaventorySensorDescription(
+        "inspection_due_count", "inspection_due", "mdi:clipboard-text-clock", date_derived=True
+    ),
+    HaventorySensorDescription("locations_total", "locations", "mdi:map-marker-multiple"),
 )
 
 # -----------------------------

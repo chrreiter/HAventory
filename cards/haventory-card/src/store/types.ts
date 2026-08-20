@@ -262,6 +262,12 @@ export interface StatsCounts {
    */
   inspection_overdue_count?: number;
   /**
+   * Items whose inspection is being asked for, counted inclusive of today — so
+   * `inspection_overdue_count` plus the items due today, never smaller than it.
+   * Calendar-derived and optional for the same reason as the counts above.
+   */
+  inspection_due_count?: number;
+  /**
    * Items whose reminder has come round, across the whole inventory.
    * Calendar-derived like the two above and optional for the same reason, but
    * counted inclusive of today: a reminder names the day it is asking about.

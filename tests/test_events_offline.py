@@ -381,3 +381,49 @@ async def test_the_location_service_repaints_the_same_way_the_command_does() -> 
 
     assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
     assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
+
+
+@pytest.mark.asyncio
+async def test_creating_and_deleting_a_location_repaints_the_count() -> None:
+    """`locations_total` is a sensor, and only this signal moves it.
+
+    Neither create nor delete touches an item, so nothing else on either path
+    invalidates the state — it would sit at the old figure until the next item
+    edit.
+    """
+
+    hass = HomeAssistant()
+    hass.data[DOMAIN] = {"repository": Repository(), "store": DomainStore(hass)}
+    events_mod.seed_low_stock_snapshot(hass)
+    ws_setup(hass)
+    hass.dispatcher_sends.clear()
+
+    created = await ws_send(hass, 1, "haventory/location/create", name="Garage")
+    assert created["success"] is True, created
+    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+
+    hass.dispatcher_sends.clear()
+    deleted = await ws_send(
+        hass, 2, "haventory/location/delete", location_id=created["result"]["id"]
+    )
+    assert deleted["success"] is True, deleted
+    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+    assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
+
+
+@pytest.mark.asyncio
+async def test_the_location_services_repaint_the_count_too() -> None:
+    """The same two mutations through `haventory.location_*`."""
+
+    hass = HomeAssistant()
+    hass.data[DOMAIN] = {"repository": Repository(), "store": DomainStore(hass)}
+    events_mod.seed_low_stock_snapshot(hass)
+    hass.dispatcher_sends.clear()
+
+    created = await services_mod.service_location_create(hass, {"name": "Garage"})
+    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+
+    hass.dispatcher_sends.clear()
+    await services_mod.service_location_delete(hass, {"location_id": created["location"]["id"]})
+    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+    assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
