@@ -1402,13 +1402,31 @@ describe('Store: location tree and diagnostics data', () => {
       makeItem({ id: '4', location_id: 'kitchen', category: 'Tools' }),
       makeItem({ id: '5', category: 'Tools' }),
     ];
-    const store = new Store(makeMockHass({ items, locations }), fast);
+    const hass = makeMockHass({ items, locations });
+    const store = new Store(hass, fast);
     await store.init();
+    const treeCalls = () => hass.__calls.filter((c) => c === 'haventory/location/tree').length;
+    const before = treeCalls();
 
-    // Narrow by category *and* location: the sidebar still has to show where the
-    // other matches are, or picking a different branch becomes guesswork.
-    store.setFilters({ categories: ['Tools'], locationIds: ['kitchen'] });
-    await new Promise((r) => setTimeout(r, 400));
+    // The refresh rides a 250 ms debounce, so the test drives that clock rather
+    // than out-waiting it: installed here, after init, so the setup above keeps
+    // running on real timers.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      // Narrow by category *and* location: the sidebar still has to show where
+      // the other matches are, or picking a different branch becomes guesswork.
+      store.setFilters({ categories: ['Tools'], locationIds: ['kitchen'] });
+
+      // Nothing on the last millisecond before the window closes...
+      await vi.advanceTimersByTimeAsync(249);
+      expect(treeCalls()).toBe(before);
+
+      // ...and exactly one walk when it does.
+      await vi.advanceTimersByTimeAsync(1);
+      expect(treeCalls()).toBe(before + 1);
+    } finally {
+      vi.useRealTimers();
+    }
 
     const tree = store.state.value.locationTreeCache!;
     const garage = tree.find((n) => n.id === 'garage')!;
@@ -1427,8 +1445,15 @@ describe('Store: location tree and diagnostics data', () => {
     await store.init();
 
     const before = hass.__calls.filter((c) => c === 'haventory/location/tree').length;
-    store.setFilters({ sort: { field: 'name', order: 'asc' } });
-    await new Promise((r) => setTimeout(r, 400));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      store.setFilters({ sort: { field: 'name', order: 'asc' } });
+      // Well past the 250 ms debounce: the claim is that nothing was scheduled
+      // at all, not that it had not fired yet.
+      await vi.advanceTimersByTimeAsync(400);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(hass.__calls.filter((c) => c === 'haventory/location/tree').length).toBe(before);
   });
 
@@ -1544,7 +1569,9 @@ describe('Store: import reload signalling', () => {
     store.state.onChange(() => seen.push(store.state.value.degraded.reloading));
 
     hass.__emit('items', 'reloaded', {});
-    await new Promise((r) => setTimeout(r, 5));
+    // The re-list is a promise chain, not a debounce: draining the queue is the
+    // whole wait, and 5 ms of real time was only ever a hedge on the scheduler.
+    await flush(2);
 
     // It went up and came back down; nothing is left stuck.
     expect(seen).toContain(true);
@@ -1564,7 +1591,7 @@ describe('Store: import reload signalling', () => {
     store.state.onChange(() => seen.push(store.state.value.degraded.reloading));
 
     hass.__emit('items', 'updated', {});
-    await new Promise((r) => setTimeout(r, 5));
+    await flush(2);
 
     expect(seen).toContain(true);
     expect(store.state.value.degraded.reloading).toBe(false);

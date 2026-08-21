@@ -1,4 +1,5 @@
 import type { CSSResult } from 'lit';
+import { vi } from 'vitest';
 
 import { Store } from './store/store';
 import type {
@@ -1146,9 +1147,14 @@ function queryRoot(root: Element | DocumentFragment): ParentNode {
  * The macrotask boundary is what separates this from awaiting `updateComplete`
  * alone: it drains the microtask queue first, so a render that another render
  * queued has already been scheduled by the time the element is awaited.
+ *
+ * Under fake timers that boundary has to be driven rather than waited on —
+ * nothing advances a fake clock on its own, so a real zero-delay wait there
+ * never resolves and the test hangs until vitest kills it.
  */
 export async function settle(el: HTMLElement): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(0);
+  else await new Promise((resolve) => setTimeout(resolve, 0));
   await (el as Renderable).updateComplete;
 }
 

@@ -2,6 +2,17 @@ import { describe, it, expect, vi } from 'vitest';
 import { Store } from './store';
 import { makeMockHass, makeItem } from '../test.utils';
 
+/**
+ * Let queued microtasks and any zero-delay timers run.
+ *
+ * What the waits below are actually waiting for is a promise chain — a list or a
+ * facet call answered by the mock — so draining the queue is the whole wait, and
+ * a real delay was only ever a hedge on the scheduler.
+ */
+async function flush(rounds = 2): Promise<void> {
+  for (let i = 0; i < rounds; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe('Store', () => {
   it('initializes with stats, areas, locations, and first page of items', async () => {
     const items = Array.from({ length: 30 }, (_, i) => makeItem({ id: `${i}`, name: `Item ${i}` }));
@@ -214,7 +225,7 @@ describe('Store', () => {
     expect(store.state.value.total).toBe(total);
     expect(store.state.value.loading).toBe(true);
 
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
     expect(store.state.value.loading).toBe(false);
     expect(store.state.value.items.map((i) => i.name)).toEqual(['Item 1']);
   });
@@ -239,7 +250,7 @@ describe('Store', () => {
       await store.init();
 
       store.setFilters({ q: 'Alpha' });
-      await new Promise((r) => setTimeout(r, 10));
+      await flush();
       expect(store.state.value.items.map((i) => i.id)).toEqual(['a']);
       expect(store.wasRemoved('b')).toBe(false);
     });
@@ -335,12 +346,12 @@ describe('Store', () => {
     };
 
     store.setFilters({ orphansOnly: true });
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
     expect(listFilters.length).toBeGreaterThan(0);
     expect(listFilters[listFilters.length - 1]?.orphaned_only).toBe(true);
 
     store.setFilters({ orphansOnly: false });
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
     expect(listFilters[listFilters.length - 1]?.orphaned_only).toBeUndefined();
   });
 
@@ -356,11 +367,11 @@ describe('Store', () => {
     expect(store.state.value.items.length).toBe(2);
 
     store.setFilters({ orphansOnly: true });
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
     expect(store.state.value.items.map((i) => i.id)).toEqual(['o1']);
 
     store.setFilters({ orphansOnly: false });
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
     expect(store.state.value.items.length).toBe(2);
   });
 
@@ -372,12 +383,12 @@ describe('Store', () => {
     await store.init();
 
     store.setFilters({ q: 'saw' });
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
     expect(store.state.value.items.map((i) => i.name)).toEqual(['Electric Saw']);
 
     // Tags are searchable too
     store.setFilters({ q: 'adhesive' });
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
     expect(store.state.value.items.map((i) => i.name)).toEqual(['Glue']);
   });
 
@@ -390,11 +401,11 @@ describe('Store', () => {
     await store.init();
 
     store.setFilters({ sort: { field: 'due_date', order: 'asc' } });
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
     expect(store.state.value.items.map((i) => i.name)).toEqual(['Early', 'Late', 'Undated']);
 
     store.setFilters({ sort: { field: 'due_date', order: 'desc' } });
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
     expect(store.state.value.items.map((i) => i.name)).toEqual(['Late', 'Early', 'Undated']);
   });
 
@@ -780,16 +791,30 @@ describe('Store', () => {
     const before = hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length;
 
     // What a filter panel does: several keys in a row, one answer wanted.
-    store.setFilters({ checkedOutOnly: true });
-    store.setFilters({ lowStockOnly: true });
-    store.setFilters({ q: 'drill' });
-    await vi.waitUntil(
-      () => hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length > before,
-    );
-    await new Promise((r) => setTimeout(r, 300));
+    // The coalescing window is a 250 ms debounce, so the test drives that clock
+    // rather than out-waiting it: installed here, after init, so the setup above
+    // keeps running on real timers.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      store.setFilters({ checkedOutOnly: true });
+      store.setFilters({ lowStockOnly: true });
+      store.setFilters({ q: 'drill' });
 
-    const after = hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length;
-    expect(after).toBe(before + 1);
+      // Nothing has been asked yet on the last millisecond of the window...
+      await vi.advanceTimersByTimeAsync(249);
+      const facetCalls = () =>
+        hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length;
+      expect(facetCalls()).toBe(before);
+
+      // ...and the three patches then produce exactly one answer, with nothing
+      // trailing behind it.
+      await vi.advanceTimersByTimeAsync(1);
+      expect(facetCalls()).toBe(before + 1);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(facetCalls()).toBe(before + 1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // Issue #440: not every facet refetch is debounced — an item event lands

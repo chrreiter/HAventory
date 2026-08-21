@@ -46,9 +46,55 @@ export function pendingIntervalCount(): number {
   return liveIntervals.size;
 }
 
+/*
+ * A `setTimeout` still pending when the environment goes away fails exactly the
+ * same way an interval does, so it is swept the same way. One difference decides
+ * the shape: a timeout fires once and is then gone, and nothing tells the set
+ * that. The wrapper therefore wraps the handler and drops the id as it runs —
+ * without that, every zero-delay wait a spec file makes stays in the set and the
+ * count reports garbage.
+ */
+const liveTimeouts = new Set<number>();
+const scheduleTimeout = window.setTimeout.bind(window);
+const cancelTimeout = window.clearTimeout.bind(window);
+
+window.setTimeout = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+  // A string handler would have to be wrapped through `eval` to learn when it
+  // fired; nothing here schedules one, so it is passed straight through.
+  if (typeof handler !== 'function') return scheduleTimeout(handler, timeout, ...args);
+  let id = 0;
+  id = scheduleTimeout(
+    (...fired: unknown[]) => {
+      liveTimeouts.delete(id);
+      handler(...fired);
+    },
+    timeout,
+    ...args,
+  );
+  liveTimeouts.add(id);
+  return id;
+}) as typeof window.setTimeout;
+
+window.clearTimeout = ((id?: number) => {
+  if (id !== undefined) liveTimeouts.delete(id);
+  cancelTimeout(id);
+}) as typeof window.clearTimeout;
+
+/** Cancel every timeout still pending in this spec file's window. */
+export function stopPendingTimeouts(): void {
+  for (const id of liveTimeouts) cancelTimeout(id);
+  liveTimeouts.clear();
+}
+
+/** How many timeouts the sweep is currently holding. */
+export function pendingTimeoutCount(): number {
+  return liveTimeouts.size;
+}
+
 // Per spec file, immediately before the environment goes away. Fake timers
-// install their own `setInterval` over the wrapper above and clean up after
+// install their own timer functions over the wrappers above and clean up after
 // themselves, so what reaches here is the real-timer work only.
 afterAll(() => {
   stopPendingIntervals();
+  stopPendingTimeouts();
 });
