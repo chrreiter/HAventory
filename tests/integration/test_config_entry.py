@@ -11,6 +11,14 @@ The reload tests are the reason this file talks to a real WebSocket rather than
 calling handlers: unload, setup and the subscription registry all move under one
 connection that outlives them, and that interleaving is exactly what the stubs
 cannot reproduce.
+
+The refusal tests at the bottom are here for the same kind of reason. Setup
+raises ``ConfigEntryError`` rather than ``ConfigEntryNotReady`` for a store this
+build cannot read, and the whole point of that choice is the state Home
+Assistant then lands the entry in — ``SETUP_ERROR``, which stays put and shows
+its message, against ``SETUP_RETRY``, which backs off behind a generic one. A
+stub raising a stub exception can show which class was raised; only a real core
+shows what it costs.
 """
 
 from __future__ import annotations
@@ -24,6 +32,7 @@ from custom_components.haventory.const import (
 )
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.runtime import find_runtime
+from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.config_entries import ConfigEntryDisabler, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType, InvalidData
@@ -309,3 +318,71 @@ async def test_the_options_flow_refuses_a_pill_it_does_not_offer(hass: HomeAssis
         )
 
     assert CONF_QUICK_FILTERS not in entry.options
+
+
+def _seed_store(hass_storage: dict, data: object) -> None:
+    """Put ``data`` on disk under HAventory's key, exactly as written."""
+
+    hass_storage[STORAGE_KEY] = {"version": 1, "key": STORAGE_KEY, "data": data}
+
+
+async def _setup_expecting_failure(hass: HomeAssistant) -> MockConfigEntry:
+    """Set the entry up knowing it will not load, and hand it back to be read."""
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id) is False
+    await hass.async_block_till_done()
+    return entry
+
+
+async def test_a_store_from_a_newer_build_stops_the_entry_rather_than_retrying(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """The refusal reaches the user as an error state carrying both versions."""
+
+    newer = CURRENT_SCHEMA_VERSION + 1
+    _seed_store(hass_storage, {"schema_version": newer, "items": {}, "locations": {}})
+
+    entry = await _setup_expecting_failure(hass)
+
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert str(newer) in entry.reason
+    assert str(CURRENT_SCHEMA_VERSION) in entry.reason
+    assert find_runtime(hass) is None
+    # And the file it refused to read is still the file it was handed.
+    assert hass_storage[STORAGE_KEY]["data"]["schema_version"] == newer
+
+
+async def test_an_unreadable_schema_version_stops_the_entry_with_its_own_message(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """A hand-edited store says nothing about its schema; guessing is the bug."""
+
+    _seed_store(hass_storage, {"schema_version": None, "items": {}, "locations": {}})
+
+    entry = await _setup_expecting_failure(hass)
+
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert "corrupt schema_version" in entry.reason
+    assert find_runtime(hass) is None
+    assert hass_storage[STORAGE_KEY]["data"]["schema_version"] is None
+
+
+async def test_a_store_that_cannot_be_read_right_now_is_retried_instead(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """The counter-case that gives the two above their meaning.
+
+    A payload that is not a mapping at all is a plain storage failure, not a
+    verdict about which schema wrote it, so it takes the retry path. Without
+    this case "raises ConfigEntryError" and "raises ConfigEntryNotReady" would
+    be indistinguishable from the outside.
+    """
+
+    _seed_store(hass_storage, ["not", "a", "mapping"])
+
+    entry = await _setup_expecting_failure(hass)
+
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert find_runtime(hass) is None
