@@ -10,7 +10,14 @@
     "jsx": "react-jsx",
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["vitest/globals"]
+    // The JavaScript in this package opts in per file with `// @ts-check`, so
+    // `checkJs` stays off: `e2e/live-updates.smoke.mjs` imports a module from
+    // `.claude/skills/`, which enters the program and would otherwise be blamed
+    // for errors under a gate it is not part of. The Node globals the driver
+    // uses come from @types/node.
+    "allowJs": true,
+    "checkJs": false,
+    "types": ["vitest/globals", "node"]
   },
-  "include": ["src"]
+  "include": ["src", "vite.config.ts", "eslint.config.js", "e2e"]
 }
