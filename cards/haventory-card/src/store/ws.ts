@@ -1,3 +1,4 @@
+import { callWS, subscribeMessage } from '../ha-contract';
 import type {
   AnyEventPayload,
   AreasListResult,
@@ -39,23 +40,23 @@ export class WSClient {
 
   // ---------- Utility ----------
   ping(echo?: unknown) {
-    return this.hass.callWS<{ echo: unknown; ts: string }>({ type: 'haventory/ping', echo });
+    return callWS<{ echo: unknown; ts: string }>(this.hass, { type: 'haventory/ping', echo });
   }
 
   version() {
-    return this.hass.callWS<VersionInfo>({ type: 'haventory/version' });
+    return callWS<VersionInfo>(this.hass, { type: 'haventory/version' });
   }
 
   config() {
-    return this.hass.callWS<IntegrationConfig>({ type: 'haventory/config' });
+    return callWS<IntegrationConfig>(this.hass, { type: 'haventory/config' });
   }
 
   stats() {
-    return this.hass.callWS<StatsCounts>({ type: 'haventory/stats' });
+    return callWS<StatsCounts>(this.hass, { type: 'haventory/stats' });
   }
 
   health() {
-    return this.hass.callWS<HealthResult>({ type: 'haventory/health' });
+    return callWS<HealthResult>(this.hass, { type: 'haventory/health' });
   }
 
   /**
@@ -66,12 +67,12 @@ export class WSClient {
   distinctValues(filter?: ItemFilter) {
     const msg: Record<string, unknown> = { type: 'haventory/distinct_values' };
     if (filter) msg.filter = filter;
-    return this.hass.callWS<DistinctValues>(msg);
+    return callWS<DistinctValues>(this.hass, msg);
   }
 
   // ---------- Items ----------
   getItem(itemId: string) {
-    return this.hass.callWS<Item>({ type: 'haventory/item/get', item_id: itemId });
+    return callWS<Item>(this.hass, { type: 'haventory/item/get', item_id: itemId });
   }
   listItems(filter?: ItemFilter, sort?: Sort, limit?: number, cursor?: string) {
     const msg: Record<string, unknown> = { type: 'haventory/item/list' };
@@ -79,48 +80,48 @@ export class WSClient {
     if (sort) msg.sort = sort;
     if (typeof limit === 'number') msg.limit = limit;
     if (cursor) msg.cursor = cursor;
-    return this.hass.callWS<ListItemsResult>(msg);
+    return callWS<ListItemsResult>(this.hass, msg);
   }
 
   createItem(input: ItemCreate) {
-    return this.hass.callWS<Item>({ type: 'haventory/item/create', ...input });
+    return callWS<Item>(this.hass, { type: 'haventory/item/create', ...input });
   }
 
   updateItem(itemId: string, changes: ItemUpdate, expectedVersion?: number) {
     const payload: Record<string, unknown> = { type: 'haventory/item/update', item_id: itemId, ...changes };
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<Item>(payload);
+    return callWS<Item>(this.hass, payload);
   }
 
   deleteItem(itemId: string, expectedVersion?: number) {
     const payload: Record<string, unknown> = { type: 'haventory/item/delete', item_id: itemId };
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<null>(payload);
+    return callWS<null>(this.hass, payload);
   }
 
   adjustQuantity(itemId: string, delta: number, expectedVersion?: number) {
     const payload: Record<string, unknown> = { type: 'haventory/item/adjust_quantity', item_id: itemId, delta };
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<Item>(payload);
+    return callWS<Item>(this.hass, payload);
   }
 
   setQuantity(itemId: string, quantity: number, expectedVersion?: number) {
     const payload: Record<string, unknown> = { type: 'haventory/item/set_quantity', item_id: itemId, quantity };
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<Item>(payload);
+    return callWS<Item>(this.hass, payload);
   }
 
   checkOut(itemId: string, dueDate?: string | null, expectedVersion?: number) {
     const payload: Record<string, unknown> = { type: 'haventory/item/check_out', item_id: itemId };
     if (dueDate !== undefined) payload.due_date = dueDate;
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<Item>(payload);
+    return callWS<Item>(this.hass, payload);
   }
 
   markCheckedIn(itemId: string, expectedVersion?: number) {
     const payload: Record<string, unknown> = { type: 'haventory/item/check_in', item_id: itemId };
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<Item>(payload);
+    return callWS<Item>(this.hass, payload);
   }
 
   /**
@@ -136,7 +137,7 @@ export class WSClient {
       item_id: itemId,
     };
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<Item>(payload);
+    return callWS<Item>(this.hass, payload);
   }
 
   setLowStockThreshold(itemId: string, threshold: number | null, expectedVersion?: number) {
@@ -146,13 +147,13 @@ export class WSClient {
       low_stock_threshold: threshold,
     };
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<Item>(payload);
+    return callWS<Item>(this.hass, payload);
   }
 
   moveItem(itemId: string, locationId: string | null, expectedVersion?: number) {
     const payload: Record<string, unknown> = { type: 'haventory/item/move', item_id: itemId, location_id: locationId };
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<Item>(payload);
+    return callWS<Item>(this.hass, payload);
   }
 
   /**
@@ -162,13 +163,13 @@ export class WSClient {
   addTags(itemId: string, tags: string[], expectedVersion?: number) {
     const payload: Record<string, unknown> = { type: 'haventory/item/add_tags', item_id: itemId, tags };
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<Item>(payload);
+    return callWS<Item>(this.hass, payload);
   }
 
   removeTags(itemId: string, tags: string[], expectedVersion?: number) {
     const payload: Record<string, unknown> = { type: 'haventory/item/remove_tags', item_id: itemId, tags };
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<Item>(payload);
+    return callWS<Item>(this.hass, payload);
   }
 
   updateCustomFields(
@@ -184,7 +185,7 @@ export class WSClient {
     if (set) payload.set = set;
     if (unset) payload.unset = unset;
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<Item>(payload);
+    return callWS<Item>(this.hass, payload);
   }
 
   /**
@@ -193,7 +194,7 @@ export class WSClient {
    * no rollback — earlier successes stand.
    */
   bulk(operations: BulkOperation[]) {
-    return this.hass.callWS<BulkResults>({ type: 'haventory/items/bulk', operations });
+    return callWS<BulkResults>(this.hass, { type: 'haventory/items/bulk', operations });
   }
 
   // ---------- Attachments ----------
@@ -239,7 +240,7 @@ export class WSClient {
       filename: file.name,
     };
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<Item>(payload);
+    return callWS<Item>(this.hass, payload);
   }
 
   /**
@@ -261,7 +262,7 @@ export class WSClient {
       title,
     };
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<Item>(payload);
+    return callWS<Item>(this.hass, payload);
   }
 
   /**
@@ -284,7 +285,7 @@ export class WSClient {
       attachment_ids: attachmentIds,
     };
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<Item>(payload);
+    return callWS<Item>(this.hass, payload);
   }
 
   /** Detach one file from an item; the backend deletes the bytes with it. */
@@ -295,7 +296,7 @@ export class WSClient {
       attachment_id: attachmentId,
     };
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return this.hass.callWS<Item>(payload);
+    return callWS<Item>(this.hass, payload);
   }
 
   /**
@@ -309,7 +310,7 @@ export class WSClient {
    * lets the browser cache and evict it normally.
    */
   async signPath(path: string, expires: number): Promise<string> {
-    const signed = await this.hass.callWS<{ path: string }>({
+    const signed = await callWS<{ path: string }>(this.hass, {
       type: 'auth/sign_path',
       path,
       expires,
@@ -319,18 +320,18 @@ export class WSClient {
 
   // ---------- Locations / Areas ----------
   listLocations() {
-    return this.hass.callWS<Location[]>({ type: 'haventory/location/list' });
+    return callWS<Location[]>(this.hass, { type: 'haventory/location/list' });
   }
 
   createLocation(name: string, parentId?: string | null, areaId?: string | null) {
     const msg: Record<string, unknown> = { type: 'haventory/location/create', name };
     if (parentId !== undefined) msg.parent_id = parentId;
     if (areaId !== undefined) msg.area_id = areaId;
-    return this.hass.callWS<Location>(msg);
+    return callWS<Location>(this.hass, msg);
   }
 
   getLocation(locationId: string) {
-    return this.hass.callWS<Location>({ type: 'haventory/location/get', location_id: locationId });
+    return callWS<Location>(this.hass, { type: 'haventory/location/get', location_id: locationId });
   }
 
   /**
@@ -346,15 +347,15 @@ export class WSClient {
     if (changes.name !== undefined) msg.name = changes.name;
     if (changes.areaId !== undefined) msg.area_id = changes.areaId;
     if (changes.newParentId !== undefined) msg.new_parent_id = changes.newParentId;
-    return this.hass.callWS<Location>(msg);
+    return callWS<Location>(this.hass, msg);
   }
 
   deleteLocation(locationId: string) {
-    return this.hass.callWS<null>({ type: 'haventory/location/delete', location_id: locationId });
+    return callWS<null>(this.hass, { type: 'haventory/location/delete', location_id: locationId });
   }
 
   moveLocationSubtree(locationId: string, newParentId: string | null) {
-    return this.hass.callWS<Location>({
+    return callWS<Location>(this.hass, {
       type: 'haventory/location/move_subtree',
       location_id: locationId,
       new_parent_id: newParentId,
@@ -369,11 +370,11 @@ export class WSClient {
   getLocationTree(filter?: ItemFilter) {
     const msg: Record<string, unknown> = { type: 'haventory/location/tree' };
     if (filter) msg.filter = filter;
-    return this.hass.callWS<LocationTreeNode[]>(msg);
+    return callWS<LocationTreeNode[]>(this.hass, msg);
   }
 
   listAreas() {
-    return this.hass.callWS<AreasListResult>({ type: 'haventory/areas/list' });
+    return callWS<AreasListResult>(this.hass, { type: 'haventory/areas/list' });
   }
 
   // ---------- Import / export (data safety) ----------
@@ -381,24 +382,24 @@ export class WSClient {
   exportDocument(filter?: ItemFilter) {
     const msg: Record<string, unknown> = { type: 'haventory/export' };
     if (filter) msg.filter = filter;
-    return this.hass.callWS<ExportDocument>(msg);
+    return callWS<ExportDocument>(this.hass, msg);
   }
 
   /** Validate + classify a document without mutating state. */
   importPreview(document: unknown, policy: ImportPolicy) {
-    return this.hass.callWS<ImportPreview>({ type: 'haventory/import/preview', document, policy });
+    return callWS<ImportPreview>(this.hass, { type: 'haventory/import/preview', document, policy });
   }
 
   /** Apply a document with the chosen conflict policy (rolls back on failure). */
   importExecute(document: unknown, policy: ImportPolicy) {
-    return this.hass.callWS<ImportSummary>({ type: 'haventory/import/execute', document, policy });
+    return callWS<ImportSummary>(this.hass, { type: 'haventory/import/execute', document, policy });
   }
 
   // ---------- Status definitions ----------
 
   /** The status vocabulary in display order. */
   listStatuses() {
-    return this.hass.callWS<StatusDefinition[]>({ type: 'haventory/status/list' });
+    return callWS<StatusDefinition[]>(this.hass, { type: 'haventory/status/list' });
   }
 
   createStatus(status: {
@@ -408,7 +409,7 @@ export class WSClient {
     icon?: string;
     order?: number;
   }) {
-    return this.hass.callWS<StatusDefinition>({ type: 'haventory/status/create', ...status });
+    return callWS<StatusDefinition>(this.hass, { type: 'haventory/status/create', ...status });
   }
 
   /** Edit presentation only — the slug is what items store and cannot change. */
@@ -416,7 +417,7 @@ export class WSClient {
     slug: string,
     changes: { label?: string; color?: StatusColorValue; icon?: string; order?: number },
   ) {
-    return this.hass.callWS<StatusDefinition>({
+    return callWS<StatusDefinition>(this.hass, {
       type: 'haventory/status/update',
       slug,
       ...changes,
@@ -425,7 +426,7 @@ export class WSClient {
 
   /** Rewrite display order. `slugs` must name every status exactly once. */
   reorderStatuses(slugs: string[]) {
-    return this.hass.callWS<StatusDefinition[]>({ type: 'haventory/status/reorder', slugs });
+    return callWS<StatusDefinition[]>(this.hass, { type: 'haventory/status/reorder', slugs });
   }
 
   /**
@@ -436,7 +437,7 @@ export class WSClient {
    * item naming a status that no longer exists.
    */
   deleteStatus(slug: string, reassignTo?: string) {
-    return this.hass.callWS<{ status: StatusDefinition; reassigned: number }>({
+    return callWS<{ status: StatusDefinition; reassigned: number }>(this.hass, {
       type: 'haventory/status/delete',
       slug,
       ...(reassignTo ? { reassign_to: reassignTo } : {}),
@@ -477,7 +478,7 @@ export class WSClient {
     if (opts && 'area_id' in opts) msg.area_id = opts.area_id ?? null;
     if (opts && 'include_subtree' in opts) msg.include_subtree = !!opts.include_subtree;
 
-    const unsubOrPromise = this.hass.connection.subscribeMessage((event) => {
+    const unsubOrPromise = subscribeMessage(this.hass, (event) => {
       // Home Assistant's `subscribeMessage` delivers the *inner* event payload
       // (the `event` field of the `{id, type:'event', event}` wire frame) to the
       // callback — NOT the whole envelope. Guard only against a nullish payload.
@@ -581,7 +582,7 @@ export class WSClient {
     cb: () => void,
     opts?: { onOpen?: () => void; onError?: (err: unknown) => void },
   ): Unsubscribe {
-    const unsubOrPromise = this.hass.connection.subscribeMessage(() => cb(), {
+    const unsubOrPromise = subscribeMessage(this.hass, () => cb(), {
       type: 'subscribe_events',
       event_type: 'area_registry_updated',
     });

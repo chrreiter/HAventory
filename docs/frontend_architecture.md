@@ -50,9 +50,10 @@ which HA's custom-panel loader instantiates for the sidebar page. It mirrors the
 store lifecycle and renders `<hv-full-view embedded open>`.
 
 `src/haventory-card-editor.ts` defines `haventory-card-editor` — the bundle's third
-HA-facing element, which `getConfigElement` creates by tag. It renders one `ha-form` field
-for `title`, HA's own control rather than a local input, and turns the form's
-`value-changed` into a `config-changed` carrying `{ ...config, title }`. The spread is the
+HA-facing element, which `getConfigElement` creates by tag. It renders one field for
+`title`, built from the card's own input and `--hv-*` tokens rather than HA's `ha-form`
+(see "The Home Assistant contact surface" below), and turns its `input` event into a
+`config-changed` carrying `{ ...config, title }`. The spread is the
 point: the card ignores unknown keys instead of rejecting them, so `quick_filters` and
 anything a future version writes survive an edit untouched. An emptied title is dropped
 from the config rather than written as `""`, which hands the heading back to the
@@ -79,6 +80,25 @@ Host differences enter as constructor hooks (`onItemDeleted`, `onBrowse`). The p
 those dialogs is not one of them: the instance watches the viewport itself (`NARROW_QUERY`,
 started and stopped from each host's connected/disconnected callbacks) and hands the same
 answer to all five, so the card and the panel cannot disagree about what a phone is.
+
+---
+
+## The Home Assistant contact surface
+
+`src/ha-contract.ts` is the one module that names what the card asks of Home Assistant,
+and the file to open when an upgrade breaks something: the `HassLike` shape, thin wrappers
+for `callWS` and `connection.subscribeMessage`, the `window.customCards` picker
+registration, and the theme variables the card binds. `store/ws.ts` is the only caller of
+the two WebSocket wrappers; `index.ts` is the only caller of the registration; `ui/theme.ts`
+reads `SURFACE_VARS` from here to classify the surface the card is painted on.
+
+The row that matters most is empty: **the card renders no `ha-*` element.** HA's frontend
+components are registered lazily inside its own bundle, are not published for card authors
+and are not versioned, and none of them exists in jsdom — so one rendered here would break
+after a user's upgrade rather than in CI. Every glyph is inlined in `ui/icons` for the same
+reason. `src/ha-contract.test.ts` sweeps the sources and fails on an `ha-*` tag, on a
+`callWS` / `subscribeMessage` / `window.customCards` reached outside the contract, and on a
+Home Assistant theme variable bound without a line in `HA_THEME_VARS`.
 
 ---
 

@@ -1,16 +1,7 @@
 import './haventory-card-editor';
 import type { HAventoryCardEditor, HAventoryCardConfig } from './haventory-card-editor';
+import { DEFAULT_CARD_TITLE } from './ui/card-title';
 import { mountComponent } from './test.utils';
-
-// jsdom does not define `ha-form` — Home Assistant does, at runtime — so the
-// node stays an unknown element. That is exactly the seam worth testing: what
-// Lit sets on it going in, and what this element makes of the event HA's own
-// control dispatches coming back.
-type Form = HTMLElement & {
-  schema?: { name: string }[];
-  data?: HAventoryCardConfig;
-  computeLabel?: () => string;
-};
 
 async function mount(config: HAventoryCardConfig) {
   const { el } = await mountComponent<
@@ -21,14 +12,14 @@ async function mount(config: HAventoryCardConfig) {
   return el;
 }
 
-const formOf = (el: { shadowRoot: ShadowRoot }) =>
-  el.shadowRoot.querySelector('[data-testid="card-editor-form"]') as Form;
+const titleOf = (el: { shadowRoot: ShadowRoot }) =>
+  el.shadowRoot.querySelector('[data-testid="card-editor-title"]') as HTMLInputElement;
 
-/** What HA's own `ha-form` raises when a field is edited. */
-const edit = (form: Form, value: Record<string, unknown>) =>
-  form.dispatchEvent(
-    new CustomEvent('value-changed', { detail: { value }, bubbles: true, composed: true }),
-  );
+/** Type into the field the way a person editing the card does. */
+const edit = (input: HTMLInputElement, value: string) => {
+  input.value = value;
+  input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+};
 
 function captured(el: HTMLElement) {
   const seen: HAventoryCardConfig[] = [];
@@ -43,19 +34,31 @@ afterEach(() => {
 });
 
 describe('haventory-card-editor', () => {
-  it('puts the title into the form HA renders', async () => {
+  // The card's own input rather than HA's `ha-form`: that control is lazily
+  // registered inside HA's bundle and does not exist in jsdom, so a break would
+  // arrive as a user report after an upgrade rather than as a red test here.
+  it("edits the title with the card's own labelled field", async () => {
     const el = await mount({ type: 'custom:haventory-card', title: 'Pantry' });
-    const form = formOf(el);
-    expect(form.schema?.map((f) => f.name)).toEqual(['title']);
-    expect(form.data?.title).toBe('Pantry');
-    expect(form.computeLabel?.()).toBe('Title');
+    const input = titleOf(el);
+
+    expect(input.value).toBe('Pantry');
+    expect(el.shadowRoot.querySelector('label')?.textContent?.trim()).toBe('Title');
+    expect(el.shadowRoot.querySelector('label')?.getAttribute('for')).toBe(input.id);
+  });
+
+  // The heading a card with no title of its own shows, so the empty field says
+  // what leaving it empty means rather than only that it is empty.
+  it('shows the heading an untitled card falls back to', async () => {
+    const el = await mount({ type: 'custom:haventory-card' });
+    expect(titleOf(el).value).toBe('');
+    expect(titleOf(el).placeholder).toBe(DEFAULT_CARD_TITLE);
   });
 
   it('raises exactly one config-changed, keeping the card type', async () => {
     const el = await mount({ type: 'custom:haventory-card', title: 'Pantry' });
     const seen = captured(el);
 
-    edit(formOf(el), { title: 'Garage shelf' });
+    edit(titleOf(el), 'Garage shelf');
 
     expect(seen).toHaveLength(1);
     expect(seen[0]).toEqual({ type: 'custom:haventory-card', title: 'Garage shelf' });
@@ -73,7 +76,7 @@ describe('haventory-card-editor', () => {
     });
     const seen = captured(el);
 
-    edit(formOf(el), { title: 'Garage shelf' });
+    edit(titleOf(el), 'Garage shelf');
 
     expect(seen[0]).toEqual({
       type: 'custom:haventory-card',
@@ -89,20 +92,9 @@ describe('haventory-card-editor', () => {
     const el = await mount({ type: 'custom:haventory-card', title: 'Pantry' });
     const seen = captured(el);
 
-    edit(formOf(el), { title: '   ' });
+    edit(titleOf(el), '   ');
 
     expect(seen[0]).toEqual({ type: 'custom:haventory-card' });
     expect('title' in seen[0]).toBe(false);
-  });
-
-  it('does not let the form event escape as well as the config change', async () => {
-    const el = await mount({ type: 'custom:haventory-card' });
-    const escaped: Event[] = [];
-    document.addEventListener('value-changed', (e) => escaped.push(e));
-
-    edit(formOf(el), { title: 'Garage shelf' });
-
-    expect(escaped).toHaveLength(0);
-    document.removeEventListener('value-changed', (e) => escaped.push(e));
   });
 });

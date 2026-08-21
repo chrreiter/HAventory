@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { tokens, base } from './ui/tokens';
+import { DEFAULT_CARD_TITLE } from './ui/card-title';
 import { defineCardElement } from './register';
 import type { HassLike } from './store/types';
 
@@ -12,19 +13,20 @@ export interface HAventoryCardConfig {
 }
 
 /**
+ * The visual editor Home Assistant opens from the card picker.
+ *
  * One field. `setConfig` on the card reads `title` and `quick_filters`, and the
  * pill choice belongs to the integration's options flow instead — the sidebar
  * panel has no dashboard config at all, so a card editor could never reach it.
- */
-const SCHEMA = [{ name: 'title', selector: { text: {} } }];
-
-/**
- * The visual editor Home Assistant opens from the card picker.
  *
- * `ha-form` rather than a local input: it is the frontend's own control, so it
- * takes the dashboard's theming and its layout without this card re-deriving
- * either. The element is not defined here — HA defines it — so nothing in this
- * module may depend on it existing.
+ * The field is the card's own input rather than Home Assistant's `ha-form`.
+ * That control is registered lazily inside HA's bundle, is not published for
+ * card authors and is not versioned, so a card that renders it depends on an
+ * internal that moves — and does not exist in jsdom, which means the break
+ * would arrive as a user report after an upgrade rather than as a red test.
+ * `ha-contract` states that rule for the whole card and `ha-contract.test.ts`
+ * holds it at zero. The card's own tokens bind the dashboard's theme variables,
+ * so a local field still takes the theme it is opened inside.
  *
  * Registered through `defineCardElement` rather than the decorator the `hv-*`
  * components use, because HA instantiates this element by tag name after the
@@ -37,6 +39,13 @@ export class HAventoryCardEditor extends LitElement {
     css`
       :host {
         display: block;
+      }
+      /* HA's own editor dialog stacks its rows with this much between them, so
+         a card editor that grows a second field sits in the same rhythm. */
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
       }
     `,
   ];
@@ -51,18 +60,18 @@ export class HAventoryCardEditor extends LitElement {
   }
 
   render() {
-    return html`<ha-form
-      data-testid="card-editor-form"
-      .hass=${this.hass}
-      .data=${this._config}
-      .schema=${SCHEMA}
-      .computeLabel=${this._label}
-      @value-changed=${this._onValueChanged}
-    ></ha-form>`;
-  }
-
-  private _label(): string {
-    return 'Title';
+    return html`<div class="field" data-testid="card-editor-form">
+      <label class="hv-label" for="card-editor-title">Title</label>
+      <input
+        id="card-editor-title"
+        class="hv-input"
+        type="text"
+        data-testid="card-editor-title"
+        .value=${typeof this._config.title === 'string' ? this._config.title : ''}
+        placeholder=${DEFAULT_CARD_TITLE}
+        @input=${this._onInput}
+      />
+    </div>`;
   }
 
   /**
@@ -74,9 +83,8 @@ export class HAventoryCardEditor extends LitElement {
    * An emptied title is dropped rather than written as "", which is what hands
    * the heading back to the integration-wide option.
    */
-  private _onValueChanged(event: CustomEvent<{ value?: { title?: unknown } }>): void {
-    event.stopPropagation();
-    const title = event.detail?.value?.title;
+  private _onInput(event: Event): void {
+    const title = (event.target as HTMLInputElement).value;
     const config: HAventoryCardConfig = { ...this._config };
     if (typeof title === 'string' && title.trim() !== '') config.title = title;
     else delete config.title;

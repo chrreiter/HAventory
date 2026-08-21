@@ -1,4 +1,5 @@
 import { LitElement, css, html } from 'lit';
+import { registerCustomCard } from './ha-contract';
 import type { HassLike } from './store/types';
 import { Store } from './store/store';
 import { resolveColorScheme } from './ui/theme';
@@ -190,32 +191,12 @@ defineCardElement('haventory-card', HAventoryCard);
 // page — including the ones no card is on.
 registerBrandIcon();
 
-// Auto-register with Lovelace card picker when loaded via /local
-interface CustomCardMeta {
-  type: string;
-  name: string;
-  description: string;
-  preview?: boolean;
-  /** The picker entry's "documentation" link. */
-  documentationURL?: string;
-}
-
-declare global {
-  interface Window {
-    customCards?: CustomCardMeta[];
-  }
-}
-
-if (typeof window !== 'undefined') {
-  window.customCards = window.customCards || [];
-  const already = window.customCards.some((c) => c?.type === 'haventory-card');
-  if (!already) {
-    window.customCards.push({
-      type: 'haventory-card',
-      name: 'HAventory',
-      description: 'HAventory inventory card',
-      preview: true,
-      documentationURL: 'https://github.com/chrreiter/HAventory#readme',
-    });
-  }
-}
+// The picker entry, so the card can be added by name rather than by typing
+// `custom:haventory-card` into a YAML editor.
+registerCustomCard({
+  type: 'haventory-card',
+  name: 'HAventory',
+  description: 'HAventory inventory card',
+  preview: true,
+  documentationURL: 'https://github.com/chrreiter/HAventory#readme',
+});
