@@ -211,6 +211,10 @@ export const en = {
   'hv.reminder.every.months.one': 'every month',
   'hv.reminder.every.months.other': 'every {count} months',
 
+  // ui/media — what a screen reader says about an item's photo.
+  'hv.media.photoAlt': '{name} — photo {index} of {total}',
+  'hv.media.photoAltOnly': 'Photo of {name}',
+
   // ui/location-path — the area beside a path.
   'hv.area.prefix': 'Area: {name}',
   // Read out before the chip's name, for anyone who cannot see the glyph that

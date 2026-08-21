@@ -10,6 +10,7 @@
  * read a URL out of it synchronously, which is what a Lit template needs.
  */
 
+import { t } from '../i18n';
 import type { Attachment, AttachmentKind, Item } from '../store/types';
 
 /**
@@ -139,7 +140,9 @@ export function formatBytes(size: number): string {
 
 /** Alt text for one picture: the item names it, the index distinguishes it. */
 export function pictureAlt(itemName: string, index: number, total: number): string {
-  return total > 1 ? `${itemName} — photo ${index + 1} of ${total}` : `Photo of ${itemName}`;
+  return total > 1
+    ? t('hv.media.photoAlt', { name: itemName, index: index + 1, total })
+    : t('hv.media.photoAltOnly', { name: itemName });
 }
 
 /**

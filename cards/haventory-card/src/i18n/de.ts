@@ -207,6 +207,9 @@ export const de: Record<TranslationKey, string> = {
   'hv.reminder.every.months.one': 'monatlich',
   'hv.reminder.every.months.other': 'alle {count} Monate',
 
+  'hv.media.photoAlt': '{name} – Foto {index} von {total}',
+  'hv.media.photoAltOnly': 'Foto von {name}',
+
   'hv.area.prefix': 'Bereich: {name}',
   'hv.area.srPrefix': 'Bereich: ',
 
