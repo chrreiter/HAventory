@@ -46,6 +46,7 @@ full toolchain and helper scripts.
 # Backend
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
 uv run ruff check .
+uv run ruff format --check .   # CI fails on formatting alone; `ruff check` does not cover it
 uv run mypy
 
 # Frontend (in cards/haventory-card)
