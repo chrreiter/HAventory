@@ -38,9 +38,12 @@ GitHub release, which already contains the built card. Installing from the defau
 is deliberately not offered — the card bundle is a build artifact and is not in git, so a
 branch install would come up without a card and report success.
 
-Minimum Home Assistant version: **2026.6.0** — the oldest release that both runs the
-integration and carries no known security advisory. Developers: see the Developer
-Checklist below and [CONTRIBUTING.md](CONTRIBUTING.md).
+Minimum Home Assistant version: **2026.6.0** — one declared floor, and this is it: the
+oldest release that both runs the integration and carries no known unpatched high or
+critical security advisory. The integration is verified against older releases as well,
+but a declared minimum is also a recommendation about what to run, and this project will
+not point it at a release with a known hole. Developers: see the Developer Checklist
+below and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Finding HAventory after install
 

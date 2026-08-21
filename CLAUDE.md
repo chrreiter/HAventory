@@ -51,10 +51,12 @@ hook can no longer run a different version than CI.
 When raising the HA floor, three constraints stack and the binding one is not always the
 same: the HA APIs the integration touches, the Python floor those releases carry, and
 **security** — a declared floor is a recommendation about what to run, so it must not point
-at a release with a known unpatched advisory. That last one moves with new advisories, so
-"the oldest release with no known advisory" is not a fixed number; re-derive it rather than
-assuming the current floor is still the right one. `dependency-review` fails CI if
-`requirements-integration.txt` is pinned below it.
+at a release carrying a known unpatched **high or critical** advisory. Lower severities do
+not move it: "any advisory at all" is what turns a floor into a treadmill, and it is not how
+the current one was derived. The high/critical set still moves with new advisories, so that
+number is not fixed either; re-derive it rather than assuming the current floor is still the
+right one. `dependency-review` fails CI if `requirements-integration.txt` is pinned below
+it.
 
 Toolchain: **uv** (env + lockfile + dependency groups), ruff, mypy, ESLint (no separate
 formatter), TypeScript, Vite, Vitest. Pins live in `pyproject.toml` and
@@ -287,6 +289,16 @@ See the README "Developer Checklist" for the full backend/frontend/CI checklist.
 - **Areas are HA's, not ours.** The integration reads the area registry and never creates
   areas. An item's area is inherited from its location tree's root, exposed as
   `effective_area_id`, and shown with one chip vocabulary wherever the card marks an area.
+- **One declared Home Assistant floor, and `hacs.json` is it.** There is no second,
+  lower "runs on" number beside a higher "recommended" one. `requirements-integration.txt`
+  pins the in-process suite to the declared floor, which is the only reason "minimum
+  supported" is a tested claim rather than an assertion — and a lower API floor could not
+  be pinned there, because the releases below the current floor carry the advisory
+  `dependency-review` rejects. So the older releases the integration also works on live in
+  git history and in
+  [#235](https://github.com/chrreiter/HAventory/issues/235), not in a second
+  version-shaped string in the README that nothing would keep true;
+  `tests/test_min_ha_version.py` fails when one appears.
 - **Reminders/calendar ride HA-native primitives** — `calendar.haventory` is a
   `CalendarEntity`, and notifications are the household's own automations calling
   `notify.notify`. Occurrences are **derived on read**, never scheduled and never stored:

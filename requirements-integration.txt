@@ -26,6 +26,13 @@
 # when the declared minimum moves; `tests/test_min_ha_version.py` fails if the two
 # drift apart.
 #
+# This pin is also what makes the declared floor testable, and therefore why the
+# floor cannot be split into a lower "runs on" number and a higher "recommended"
+# one: the suite runs at exactly what is pinned here, so a declared floor this
+# file did not pin would be the one version CI never exercises. A second file
+# pinned lower does not rescue it — it re-introduces the advisory below, which
+# `dependency-review` fails outright.
+#
 # 2026.6.0 rather than 2026.3.x, which the API touch points would also allow:
 # every release below 2026.6.0 is affected by GHSA-x84v-g949-293w (high, fixed in
 # 2026.6.0), and the dependency-review check fails the pin outright.

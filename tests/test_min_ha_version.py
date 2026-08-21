@@ -9,6 +9,13 @@ and unrelated pins.
 ``requirements-integration.txt`` is the one that makes the claim testable: the
 in-process HA suite runs against exactly that pin, so pinning it to the floor is
 what turns "minimum supported" from an assertion into something CI defends.
+
+That is also why there is one floor and not two. A lower "runs on" number beside
+a higher "recommended" one could not be pinned here — the releases below the
+current floor carry the advisory ``dependency-review`` rejects — so the declared
+minimum would become the one version CI never runs at. The README is therefore
+held to a single Home Assistant version, by a guard that reads the shape rather
+than the two registered sentences.
 """
 
 from __future__ import annotations
@@ -43,6 +50,24 @@ DECLARATION_SITES: tuple[tuple[str, str, int], ...] = (
 )
 
 
+# A Home Assistant version as the README writes one. Prose wraps, so the mention
+# and the number often land on different lines; whitespace is flattened before
+# the window in front of a number decides whether it is Home Assistant's.
+BOLD_VERSION = re.compile(rf"\*\*({VERSION})\*\*")
+HOME_ASSISTANT = re.compile(r"\b(?:Home Assistant|HA)\b")
+CONTEXT_CHARS = 120
+
+
+def home_assistant_versions_in(text: str) -> list[str]:
+    """Every bold three-component version the text states about Home Assistant."""
+    flattened = re.sub(r"\s+", " ", text)
+    return [
+        match.group(1)
+        for match in BOLD_VERSION.finditer(flattened)
+        if HOME_ASSISTANT.search(flattened[max(0, match.start() - CONTEXT_CHARS) : match.start()])
+    ]
+
+
 def declared_floor() -> str:
     """The minimum supported HA version as HACS reads it."""
     return json.loads((REPO_ROOT / "hacs.json").read_text(encoding="utf-8"))["homeassistant"]
@@ -73,3 +98,36 @@ def test_declaration_sites_match_hacs_json(
     assert set(found) == {declared_floor()}, (
         f"{relative_path} declares {sorted(set(found))}, hacs.json declares {declared_floor()!r}"
     )
+
+
+def test_readme_names_one_home_assistant_version() -> None:
+    """A second version in the README would be a floor nothing keeps true.
+
+    ``DECLARATION_SITES`` pins the two sentences that state the floor today, by
+    the wording they use. A "recommended version" written anywhere else, in any
+    wording, is the copy that goes stale — and this project decided there is one
+    number, so the guard reads the shape instead of a sentence.
+    """
+    stated = home_assistant_versions_in((REPO_ROOT / "README.md").read_text(encoding="utf-8"))
+
+    assert set(stated) == {declared_floor()}, (
+        f"README.md states Home Assistant {sorted(set(stated))}; hacs.json declares "
+        f"{declared_floor()!r}, and there is one floor — anchor a second number in "
+        f"DECLARATION_SITES or drop it"
+    )
+
+
+def test_a_second_home_assistant_version_is_reported() -> None:
+    """The guard sees the number that was added, not only the declared one."""
+    sample = (
+        "Minimum Home Assistant version: **2026.3.1** is the oldest release that\n"
+        "runs the integration. For Home Assistant itself we recommend\n"
+        "**2026.6.0** or newer.\n"
+    )
+
+    assert home_assistant_versions_in(sample) == ["2026.3.1", "2026.6.0"]
+
+
+def test_a_version_that_is_not_home_assistants_is_left_alone() -> None:
+    """The card and the integration carry their own versions, in the same shape."""
+    assert home_assistant_versions_in("The store listing lands with **1.0.0**.") == []
