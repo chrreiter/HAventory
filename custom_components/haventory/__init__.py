@@ -1301,12 +1301,11 @@ def _log_storage_health(payload: dict[str, Any], *, schema_version: int) -> None
     location_count = len(locations) if isinstance(locations, dict) else 0
 
     level = logging.WARNING if item_count == 0 and location_count == 0 else logging.DEBUG
+    # The three numbers are the context's, not the message's: it is rendered into
+    # the line either way, and formatting them here as well printed each twice.
     LOGGER.log(
         level,
-        "Storage health: schema_version=%s items=%s locations=%s",
-        schema_version,
-        item_count,
-        location_count,
+        "Storage health",
         extra={
             "domain": DOMAIN,
             "op": "setup_storage_health",

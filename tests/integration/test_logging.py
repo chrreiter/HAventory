@@ -69,15 +69,10 @@ async def test_a_refusal_logs_the_operation_it_refused(
     assert "item_id=nope" in refusals[-1]
 
 
-async def test_the_setup_line_carries_its_op_beside_its_own_percent_args(
+async def test_the_setup_line_carries_the_numbers_a_boot_is_diagnosed_from(
     hass: HomeAssistant, caplog
 ) -> None:
-    """A record with `%`-args keeps them, and gains the context behind them.
-
-    "Storage health" is the one line in the integration that formats its own
-    numbers into the message, so it is where a rendering that clobbered the
-    `%`-args would show first.
-    """
+    """The line an operator reads first after a start-up that looks wrong."""
 
     caplog.set_level(logging.DEBUG, logger="custom_components.haventory")
     await _setup(hass)
@@ -85,5 +80,8 @@ async def test_the_setup_line_carries_its_op_beside_its_own_percent_args(
     health = [r.getMessage() for r in caplog.records if "Storage health" in r.getMessage()]
 
     assert health, [r.getMessage() for r in caplog.records][-10:]
-    assert "schema_version=" in health[-1]
     assert "op=setup_storage_health" in health[-1]
+    assert "schema_version=" in health[-1]
+    assert "items_count=" in health[-1]
+    # Once each: the numbers used to be formatted into the message as well.
+    assert health[-1].count("schema_version=") == 1
