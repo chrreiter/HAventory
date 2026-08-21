@@ -63,9 +63,17 @@ describe('the German dictionary', () => {
       'hv.editor.field.status',
       'hv.editor.type.string',
       'hv.surfaces.badge.offline',
+      'hv.column.status',
+      'hv.filter.status',
+      'hv.filter.sortField.name',
+      'hv.table.name',
+      'hv.organize.locationName',
       // Nothing but placeholders and punctuation — there is no word to move.
       'hv.editor.upload.progress',
       'hv.sheet.updatedValue',
+      'hv.chips.status',
+      'hv.chips.dated',
+      'hv.diagnostics.noIssuesDetail',
     ];
     const untranslated = Object.entries(de)
       .filter(([key, value]) => value === en[key as keyof typeof en])

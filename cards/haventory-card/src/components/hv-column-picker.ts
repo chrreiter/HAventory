@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -7,7 +8,7 @@ import { icon } from '../ui/icons';
 import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
 import type { ColumnKey } from '../store/columns';
-import { COLUMN_DEFS, canonicalOrder, moveColumn, normalizeColumns } from '../store/columns';
+import { COLUMN_DEFS, canonicalOrder, columnLabel, moveColumn, normalizeColumns } from '../store/columns';
 
 /**
  * Small modal to choose which optional columns show in a given view, and in
@@ -156,7 +157,7 @@ export class HVColumnPicker extends LitElement {
   /** Phone viewport: rise from the bottom edge instead of centring. */
   @property({ type: Boolean, reflect: true }) mobile = false;
   @property({ attribute: false }) columns: ColumnKey[] = [];
-  @property({ type: String }) heading: string = 'Columns';
+  @property({ type: String }) heading: string = t('hv.columns.heading');
 
   @state() private _zBase: number | null = null;
 
@@ -209,12 +210,11 @@ export class HVColumnPicker extends LitElement {
    */
   private _rows(): { key: ColumnKey; label: string; on: boolean }[] {
     const selected = normalizeColumns(this.columns);
-    const labelOf = (key: ColumnKey) => COLUMN_DEFS.find((c) => c.key === key)!.label;
     return [
-      ...selected.map((key) => ({ key, label: labelOf(key), on: true })),
+      ...selected.map((key) => ({ key, label: columnLabel(key), on: true })),
       ...COLUMN_DEFS.filter((c) => !selected.includes(c.key)).map((c) => ({
         key: c.key,
-        label: c.label,
+        label: columnLabel(c.key),
         on: false,
       })),
     ];
@@ -229,7 +229,7 @@ export class HVColumnPicker extends LitElement {
     return html`
       <div class="backdrop" role="presentation" style="z-index: ${this._zBase ?? 9998};" @click=${this._close}></div>
       <div class="wrap" role="none" style="z-index: ${(this._zBase ?? 9998) + 1};">
-        <div class="panel" role="dialog" aria-modal="true" aria-label="Column selection"
+        <div class="panel" role="dialog" aria-modal="true" aria-label=${t('hv.columns.dialogLabel')}
           @keydown=${onEscape(() => this._close())}>
           <h2>${this.heading}</h2>
           <ul data-testid="column-options">
@@ -252,8 +252,8 @@ export class HVColumnPicker extends LitElement {
                         <button
                           data-testid="column-up"
                           data-key=${r.key}
-                          aria-label=${`Move ${r.label} up`}
-                          title="Move up"
+                          aria-label=${t('hv.columns.moveUp', { column: r.label })}
+                          title=${t('hv.term.moveUp')}
                           ?disabled=${index === 0}
                           @click=${() => this._move(r.key, -1)}
                         >
@@ -262,8 +262,8 @@ export class HVColumnPicker extends LitElement {
                         <button
                           data-testid="column-down"
                           data-key=${r.key}
-                          aria-label=${`Move ${r.label} down`}
-                          title="Move down"
+                          aria-label=${t('hv.columns.moveDown', { column: r.label })}
+                          title=${t('hv.term.moveDown')}
                           ?disabled=${index === shown - 1}
                           @click=${() => this._move(r.key, 1)}
                         >
@@ -282,9 +282,11 @@ export class HVColumnPicker extends LitElement {
               ?disabled=${isCanonical}
               @click=${() => this._emit(canonicalOrder(ordered))}
             >
-              Reset order
+              ${t('hv.columns.resetOrder')}
             </button>
-            <button class="hv-pill" data-testid="column-picker-done" @click=${this._close}>Done</button>
+            <button class="hv-pill" data-testid="column-picker-done" @click=${this._close}>
+              ${t('hv.action.done')}
+            </button>
           </div>
         </div>
       </div>

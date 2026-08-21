@@ -17,6 +17,10 @@ Assistant view, never from `/local`. On a phone, the photo picker opens the comp
 app's camera directly; a manual gets a title of your choosing, because `scan_0142.pdf`
 does not say which appliance it belongs to.
 
+**Languages:** English and German. Both the card and the integration's own screens follow
+your Home Assistant profile language; anything else falls back to English. Adding a
+language is two files — see [CONTRIBUTING.md](CONTRIBUTING.md#adding-a-language).
+
 **Targets:** Linux dev (Windows via WSL2) + `ubuntu-latest` CI. Minimum Home Assistant **2026.6.0** ⇒ Python
 **3.14** everywhere (uv provisions the interpreter automatically; the source uses 3.14-only
 PEP 758 syntax). Node **22.13+ / 24 LTS** for the card.

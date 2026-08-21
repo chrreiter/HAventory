@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import type {
   AnyEventPayload,
   AreasListResult,
@@ -61,7 +62,7 @@ export const BULK_CHUNK_SIZE = 25;
 const TRANSPORT_ERROR_CODE = 'connection_lost';
 
 /** What a transport failure says out loud; the rejection carries no usable text. */
-const TRANSPORT_ERROR_MESSAGE = 'Could not reach Home Assistant — the last action did not go through.';
+const transportErrorMessage = () => t('hv.store.transportError');
 
 /** Consecutive transport failures before the card declares the connection lost. */
 const CONNECTION_LOST_THRESHOLD = 2;
@@ -1673,7 +1674,7 @@ export class Store {
           if (!(op.op_id in results)) {
             failed.push({
               op,
-              error: unknownBulkError('no result returned for this operation'),
+              error: unknownBulkError(t('hv.store.noResult')),
               itemId: opTargetId(op),
             });
           }
@@ -1683,7 +1684,7 @@ export class Store {
         // retry, transport). Attribute it to each op in the chunk.
         const error = {
           code: errorCode(err),
-          message: String((err as { message?: unknown } | undefined)?.message ?? 'Batch failed'),
+          message: String((err as { message?: unknown } | undefined)?.message ?? t('hv.store.batchFailed')),
         };
         for (const op of chunk) failed.push({ op, error, itemId: opTargetId(op) });
       }
@@ -1755,7 +1756,9 @@ export class Store {
     if (transport && this.state.value.errorQueue.some((e) => e.code === TRANSPORT_ERROR_CODE)) return;
     // A transport rejection carries either nothing or a socket-level string; in
     // both cases the card's own wording is the only one worth showing.
-    const message = transport ? TRANSPORT_ERROR_MESSAGE : String(anyErr?.message ?? 'Unknown error');
+    const message = transport
+      ? transportErrorMessage()
+      : String(anyErr?.message ?? t('hv.store.unknownError'));
     const context = (anyErr?.context ?? anyErr?.data ?? null) as Record<string, unknown> | null;
     const entry = {
       id: `${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
@@ -1854,7 +1857,7 @@ function opTargetId(op: BulkOperation): string | null {
   return typeof id === 'string' ? id : null;
 }
 
-function unknownBulkError(message = 'Operation failed') {
+function unknownBulkError(message = t('hv.store.operationFailed')) {
   return { code: 'unknown_error', message };
 }
 

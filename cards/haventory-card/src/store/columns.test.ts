@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { setLanguage } from '../i18n';
 import {
   COLUMN_DEFS,
+  columnLabel,
   COLUMN_PREFS_STORAGE_KEY,
   DEFAULT_COLUMNS,
   SELECT_COLUMN_WIDTH,
@@ -120,7 +122,7 @@ describe('columns model', () => {
   // look clickable — the same reason category and tags have none.
   it('offers the status column without a sort field', () => {
     const col = COLUMN_DEFS.find((c) => c.key === 'status');
-    expect(col?.label).toBe('Status');
+    expect(columnLabel('status')).toBe('Status');
     expect(col?.sortField).toBeUndefined();
     expect(normalizeColumns(['status'])).toEqual(['status']);
   });
@@ -129,7 +131,7 @@ describe('columns model', () => {
   // the one of the three that can carry a sort control.
   it('gives the location column the sort field the backend answers to', () => {
     const col = COLUMN_DEFS.find((c) => c.key === 'location');
-    expect(col?.label).toBe('Location');
+    expect(columnLabel('location')).toBe('Location');
     expect(col?.sortField).toBe('location');
     // Category and tags still have none: nothing on the item sorts them.
     for (const key of ['category', 'tags'] as const) {
@@ -147,8 +149,25 @@ describe('columns model', () => {
   // next one due, which is what every other surface now says.
   it('labels the inspection column for the date it holds', () => {
     const col = COLUMN_DEFS.find((c) => c.key === 'inspection_date');
-    expect(col?.label).toBe('Next inspection');
+    expect(columnLabel('inspection_date')).toBe('Next inspection');
     expect(col?.sortField).toBe('inspection_date');
+  });
+
+  // The label is the one thing about a column that is not the same in every
+  // language, which is why it is a lookup rather than a field on the record.
+  it('names every column in the language in force', () => {
+    setLanguage('de');
+    expect(COLUMN_DEFS.map((c) => columnLabel(c.key))).toEqual([
+      'Menge',
+      'Status',
+      'Kategorie',
+      'Ort',
+      'Labels',
+      'Fällig',
+      'Nächste Prüfung',
+      'Erinnerung',
+      'Geändert',
+    ]);
   });
 });
 

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LitElement, css, html, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
@@ -8,6 +9,7 @@ import { formatDate, isDue, isOverdue, relativeTime } from '../ui/relative-time'
 import { isReminderDue, reminderSummary } from '../ui/reminder';
 import {
   COLUMN_DEFS,
+  columnLabel,
   SELECT_COLUMN_WIDTH,
   normalizeColumns,
   tableTemplateFor,
@@ -646,7 +648,7 @@ export class HVDataTable extends LitElement {
                 class="box ${allSelected ? 'on' : someSelected ? 'mixed' : ''}"
                 role="checkbox"
                 aria-checked=${allSelected ? 'true' : someSelected ? 'mixed' : 'false'}
-                aria-label="Select all loaded rows"
+                aria-label=${t('hv.table.selectAll')}
                 data-testid="table-select-all"
                 @click=${() => this._emit(allSelected ? 'clear-selection' : 'select-all-loaded')}
               >
@@ -654,11 +656,14 @@ export class HVDataTable extends LitElement {
               </button></span
             >`
           : null}
-        <span class="name-head" role="columnheader">${this._sortHeader('name', 'Name')}</span>
+        <span class="name-head" role="columnheader"
+          >${this._sortHeader('name', t('hv.table.name'))}</span
+        >
         ${columns.map((key) => {
           const def = COLUMN_DEFS.find((d) => d.key === key)!;
+          const label = columnLabel(key);
           return html`<span role="columnheader"
-            >${def.sortField ? this._sortHeader(def.sortField, def.label) : def.label}</span
+            >${def.sortField ? this._sortHeader(def.sortField, label) : label}</span
           >`;
         })}
         <span role="columnheader"></span>
@@ -687,7 +692,7 @@ export class HVDataTable extends LitElement {
                           class="box ${this.selection.has(item.id) ? 'on' : ''}"
                           role="checkbox"
                           aria-checked=${String(this.selection.has(item.id))}
-                          aria-label=${`Select ${item.name}`}
+                          aria-label=${t('hv.table.select', { name: item.name })}
                           data-testid="table-row-select"
                           @click=${(e: Event) => {
                             e.stopPropagation();
@@ -705,8 +710,8 @@ export class HVDataTable extends LitElement {
                       ? html`<span
                           class="hv-chip warning"
                           data-testid="table-low"
-                          aria-label="Low stock"
-                          >Low</span
+                          aria-label=${t('hv.term.lowStock')}
+                          >${t('hv.term.low')}</span
                         >`
                       : null}
                     ${!statusColumn && itemStatus(item) !== DEFAULT_STATUS
@@ -714,13 +719,15 @@ export class HVDataTable extends LitElement {
                           testid: 'table-status',
                         })
                       : null}
-                    ${item.checked_out ? html`<span class="hv-chip state">Checked out</span>` : null}
+                    ${item.checked_out
+                      ? html`<span class="hv-chip state">${t('hv.term.checkedOut')}</span>`
+                      : null}
                   </span>
                   ${columns.map((key) => this._cell(item, key))}
                   <span class="actions" role="cell">
                     <button
                       data-testid="table-decrement"
-                      aria-label="Decrease quantity"
+                      aria-label=${t('hv.row.decreaseQuantity')}
                       ?disabled=${item.checked_out || item.quantity <= 0}
                       @click=${(e: Event) => {
                         e.stopPropagation();
@@ -731,7 +738,7 @@ export class HVDataTable extends LitElement {
                     </button>
                     <button
                       data-testid="table-increment"
-                      aria-label="Increase quantity"
+                      aria-label=${t('hv.row.increaseQuantity')}
                       ?disabled=${item.checked_out}
                       @click=${(e: Event) => {
                         e.stopPropagation();
@@ -743,7 +750,7 @@ export class HVDataTable extends LitElement {
                     <button
                       class="plain"
                       data-testid="table-edit"
-                      aria-label=${`Edit ${item.name}`}
+                      aria-label=${t('hv.table.edit', { name: item.name })}
                       @click=${(e: Event) => {
                         e.stopPropagation();
                         this._emit('edit', { itemId: item.id });
@@ -753,7 +760,7 @@ export class HVDataTable extends LitElement {
                     </button>
                     <hv-overflow-menu
                       data-testid="table-row-menu"
-                      label=${`Actions for ${item.name}`}
+                      label=${t('hv.table.actionsFor', { name: item.name })}
                       .entries=${rowMenuEntries(item)}
                       @click=${(e: Event) => e.stopPropagation()}
                       @select=${(e: CustomEvent) => {
@@ -775,7 +782,7 @@ export class HVDataTable extends LitElement {
                    is a live region already, and a second one wrapped around it
                    says everything twice. -->
               <div class="empty" role="cell" data-testid="table-empty">
-                <slot name="empty">No items yet</slot>
+                <slot name="empty">${t('hv.table.empty')}</slot>
               </div>
             </div>`}
       </div>

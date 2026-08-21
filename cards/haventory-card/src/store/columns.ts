@@ -7,6 +7,8 @@
  * view's setting alone. The choice is persisted in localStorage (per browser).
  */
 
+import { t } from '../i18n';
+
 export type ColumnKey =
   | 'quantity'
   | 'status'
@@ -20,7 +22,6 @@ export type ColumnKey =
 
 export interface ColumnDef {
   key: ColumnKey;
-  label: string;
   /** grid-template-columns sizing for the full-view table. */
   tableSize: string;
   /**
@@ -37,28 +38,39 @@ export interface ColumnDef {
     | 'location';
 }
 
+/**
+ * What a column is called, in the language in force.
+ *
+ * Separate from `COLUMN_DEFS` below rather than a field on it: everything else
+ * about a column — its order, its track size, the backend field it sorts on —
+ * is the same in every language and is read at module scope, while the label is
+ * copy and is not known until Home Assistant hands the card a `hass`.
+ */
+export function columnLabel(key: ColumnKey): string {
+  return t(`hv.column.${key}`);
+}
+
 /** Canonical column order — the default, and what "Reset order" restores. */
 export const COLUMN_DEFS: readonly ColumnDef[] = [
-  { key: 'quantity', label: 'Qty', tableSize: '70px', sortField: 'quantity' },
+  { key: 'quantity', tableSize: '70px', sortField: 'quantity' },
   // Wide enough for the "Needs repair" chip on one line: a status that wrapped
   // or clipped would be unreadable in exactly the rows that matter most.
-  { key: 'status', label: 'Status', tableSize: '112px' },
+  { key: 'status', tableSize: '112px' },
   // One word, and the only flexible column that carries one: it takes the
   // smallest floor and the smallest share of whatever is left over. The floor
   // holds its own header and a one-word value and stops there — with the full
   // column set every flexible track freezes on its floor, so what this one does
   // not claim is what the name beside it gets to finish a word on.
-  { key: 'category', label: 'Category', tableSize: 'minmax(92px, 1fr)' },
+  { key: 'category', tableSize: 'minmax(92px, 1fr)' },
   // The two columns whose content has no natural end — a path grows a segment
   // per nesting level, a tag set a chip per tag — so they are where surplus
   // width does the most: their cells wrap, and every pixel they get is a
   // segment or a chip that does not need a second line.
-  { key: 'location', label: 'Location', tableSize: 'minmax(140px, 2fr)', sortField: 'location' },
-  { key: 'tags', label: 'Tags', tableSize: 'minmax(130px, 2fr)' },
-  { key: 'due_date', label: 'Due', tableSize: '100px', sortField: 'due_date' },
+  { key: 'location', tableSize: 'minmax(140px, 2fr)', sortField: 'location' },
+  { key: 'tags', tableSize: 'minmax(130px, 2fr)' },
+  { key: 'due_date', tableSize: '100px', sortField: 'due_date' },
   {
     key: 'inspection_date',
-    label: 'Next inspection',
     // Wider than the other date columns because the header is what sets the
     // floor here, not the "Jul 31" it sits above.
     tableSize: '124px',
@@ -66,14 +78,13 @@ export const COLUMN_DEFS: readonly ColumnDef[] = [
   },
   {
     key: 'reminder_date',
-    label: 'Reminder',
     // The date is what the column sorts on, but the cell shows the repeat
     // beside it — "Aug 31 · every 3 months" is the whole reminder, and the date
     // alone cannot tell a series from a one-off.
     tableSize: '150px',
     sortField: 'reminder_date',
   },
-  { key: 'updated_at', label: 'Updated', tableSize: '96px', sortField: 'updated_at' },
+  { key: 'updated_at', tableSize: '96px', sortField: 'updated_at' },
 ];
 
 const COLUMN_ORDER: ColumnKey[] = COLUMN_DEFS.map((c) => c.key);

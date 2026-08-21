@@ -676,6 +676,13 @@ destructive clean-start mode), then `Online smoke test completed successfully.`
   checked in all four combinations. Drive HA's side with a `selectedTheme`
   localStorage entry (`{"dark":true}`) before load, the OS side with
   `page.emulateMedia({ colorScheme })`.
+- **The harness browser speaks the host's language.** Chromium takes its locale from the
+  host, which reports `navigator.language = "de"` on this machine, and Home Assistant falls
+  back to the browser language whenever the profile has none — so with the profile cleared
+  the whole UI, HAventory included, still comes up German and a screenshot proves nothing
+  about which language a string came from. Name it: `screenshot.mjs --locale en-US`, or set
+  the profile language over WS (see "Screenshot the setup and options screens"). The other
+  harnesses do not take `--locale`, so drive them by setting the profile.
 - **`HA_CONTAINER` turns `smoke_online.sh` destructive**: when set, the script
   `rm -f`s `haventory_store` inside that container and restarts HA before testing —
   all dev items/locations are gone. Leave it unset unless you *want* a wiped store.
