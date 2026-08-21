@@ -82,7 +82,7 @@ describe('toWireFilter', () => {
       low_stock_first: true,
       orphaned_only: true,
       overdue_only: true,
-      inspection_overdue_only: true,
+      inspection_due_only: true,
       status: 'missing',
       categories: ['Hardware'],
       updated_after: '2026-07-01T00:00:00Z',

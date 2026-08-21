@@ -1,4 +1,4 @@
-import { addDays, formatDate, isOverdue, parseTs, relativeTime, toIsoDate } from './relative-time';
+import { addDays, formatDate, isDue, isOverdue, parseTs, relativeTime, toIsoDate } from './relative-time';
 
 const NOW = Date.parse('2026-07-24T12:00:00Z');
 
@@ -9,7 +9,7 @@ describe('parseTs', () => {
     expect(parseTs('2026-07-24T12:00:00.123456+00:00')).toBe(NOW + 123);
   });
 
-  it('returns null for missing or unparseable input', () => {
+  it('returns null for missing or unparsable input', () => {
     expect(parseTs(null)).toBe(null);
     expect(parseTs(undefined)).toBe(null);
     expect(parseTs('')).toBe(null);
@@ -58,6 +58,21 @@ describe('isOverdue', () => {
   it('treats undated items as never overdue', () => {
     expect(isOverdue(null, NOW)).toBe(false);
     expect(isOverdue(undefined, NOW)).toBe(false);
+  });
+});
+
+describe('isDue', () => {
+  it('counts today, which is the whole difference from isOverdue', () => {
+    const today = toIsoDate(NOW);
+    expect(isDue(today, NOW)).toBe(true);
+    expect(isOverdue(today, NOW)).toBe(false);
+    expect(isDue(addDays(-1, NOW), NOW)).toBe(true);
+    expect(isDue(addDays(1, NOW), NOW)).toBe(false);
+  });
+
+  it('treats undated items as never due', () => {
+    expect(isDue(null, NOW)).toBe(false);
+    expect(isDue(undefined, NOW)).toBe(false);
   });
 });
 

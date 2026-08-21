@@ -765,7 +765,7 @@ export class HVCardShell extends LitElement {
     const allows = (key: QuickFilterKey) => quickFilterAllowed(this.quickFilters, key);
     const lowStock = allows('low_stock') && counts.low_stock_count > 0;
     const overdue = allows('overdue') && (counts.overdue_count ?? 0) > 0;
-    const inspection = allows('inspection_due') && (counts.inspection_overdue_count ?? 0) > 0;
+    const inspection = allows('inspection_due') && (counts.inspection_due_count ?? 0) > 0;
     const reminder = allows('reminder_due') && (counts.reminder_due_count ?? 0) > 0;
     const checkedOut = allows('checked_out') && counts.checked_out_count > 0;
     // On mobile the wrapper takes a row of its own, so an empty one would leave
@@ -808,7 +808,7 @@ export class HVCardShell extends LitElement {
               title="Show only items due for inspection"
               @click=${() => this._setFilters({ inspectionDueOnly: !f?.inspectionDueOnly })}
             >
-              ${counts.inspection_overdue_count} to inspect
+              ${counts.inspection_due_count} to inspect
             </button>`
           : null}
         ${reminder

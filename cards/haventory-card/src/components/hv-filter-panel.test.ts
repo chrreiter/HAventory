@@ -854,7 +854,9 @@ describe('hv-filter-panel: inspection due', () => {
             low_stock_count: 4,
             checked_out_count: 3,
             overdue_count: 1,
-            inspection_overdue_count: 5,
+            // The tally reads the inclusive count, not the strict one beside it.
+            inspection_overdue_count: 4,
+            inspection_due_count: 5,
             no_location_count: 2,
           },
         },

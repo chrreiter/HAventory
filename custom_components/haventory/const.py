@@ -286,7 +286,7 @@ class HaventorySensorDescription:
     date_derived: bool = False
 
 
-# Seven of the twelve keys `get_counts()` returns. The rest stay card- and
+# Eight of the thirteen keys `get_counts()` returns. The rest stay card- and
 # WebSocket-only: `status_counts` is a mapping rather than a number, and the
 # remaining figures are either derivable from these or too narrow to be worth an
 # entity on every install. Promoting one later is additive.
@@ -295,6 +295,9 @@ SENSOR_DESCRIPTIONS: tuple[HaventorySensorDescription, ...] = (
     HaventorySensorDescription("low_stock_count", "low_stock", "mdi:package-down"),
     HaventorySensorDescription("checked_out_count", "checked_out", "mdi:account-arrow-right"),
     HaventorySensorDescription("overdue_count", "overdue", "mdi:calendar-alert", date_derived=True),
+    HaventorySensorDescription(
+        "checked_out_due_count", "checked_out_due", "mdi:calendar-clock", date_derived=True
+    ),
     HaventorySensorDescription(
         "inspection_overdue_count", "inspection_overdue", "mdi:clipboard-alert", date_derived=True
     ),

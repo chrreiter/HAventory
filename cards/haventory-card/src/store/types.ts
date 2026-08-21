@@ -197,14 +197,25 @@ export interface ItemFilter {
   /** Only items whose `due_date` is strictly before today (UTC). */
   overdue_only?: boolean;
   /**
+   * Only items whose `due_date` is on or before today (UTC) — `overdue_only`'s
+   * population plus the items due back today.
+   */
+  checked_out_due_only?: boolean;
+  /**
    * Only items whose `inspection_date` is strictly before today (UTC) — i.e.
    * the next inspection is already missed. Independent of check-out state.
    */
   inspection_overdue_only?: boolean;
   /**
+   * Only items whose `inspection_date` is on or before today (UTC) —
+   * `inspection_overdue_only`'s population plus the items due today.
+   * Independent of check-out state.
+   */
+  inspection_due_only?: boolean;
+  /**
    * Only items whose `reminder_date` is on or before today (UTC). Today counts,
-   * unlike the two above: a reminder names the day it is asking about, so an
-   * item reminding today is one the household still has to act on.
+   * like the two `*_due_only` keys above: a reminder names the day it is asking
+   * about, so an item reminding today is one the household still has to act on.
    */
   reminder_due_only?: boolean;
   location_id?: string | null;
@@ -255,6 +266,12 @@ export interface StatsCounts {
    * because older backends do not send it.
    */
   overdue_count?: number;
+  /**
+   * Items that are due back, counted inclusive of today — so `overdue_count`
+   * plus the items due back today, never smaller than it. Calendar-derived and
+   * optional for the same reason as `overdue_count`.
+   */
+  checked_out_due_count?: number;
   /**
    * Items past the date they were next due for inspection, across the whole
    * inventory. Calendar-derived like `overdue_count`, and optional for the
@@ -647,9 +664,13 @@ export interface StoreFilters {
   lowStockOnly: boolean;
   /** Only items past their due date. */
   overdueOnly: boolean;
-  /** Only items past the date they were next due for inspection. */
+  /**
+   * Only items whose inspection is being asked for. Today counts, unlike
+   * `overdueOnly`: an inspection date names the day the item is next due to be
+   * inspected, so that day is when it is being asked for.
+   */
   inspectionDueOnly: boolean;
-  /** Only items whose reminder has come round — today counts, unlike the two above. */
+  /** Only items whose reminder has come round — today counts, like the one above. */
   reminderDueOnly: boolean;
   /** Only items with this stored status; null means any. */
   status: ItemStatus | null;

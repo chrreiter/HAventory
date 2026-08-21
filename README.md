@@ -152,7 +152,7 @@ no longer used and can be deleted; the integration ignores it either way.
 
 ## Automations
 
-HAventory shows up in Home Assistant as **seven sensors and a calendar on one device**, and
+HAventory shows up in Home Assistant as **eight sensors and a calendar on one device**, and
 fires **two event types** on the bus. None of it needs a WebSocket client, and none of it
 polls.
 
@@ -166,16 +166,16 @@ One HAventory device under Settings → Devices & services, carrying:
 | Low stock count | items at or below their `low_stock_threshold` |
 | Checked out count | items somebody has taken out and not brought back |
 | Checked out overdue count | checked-out items whose due date has passed |
+| Checked out due count | checked-out items whose due date is today or has passed |
 | Inspection overdue count | items whose inspection date has passed |
 | Inspection due count | items whose inspection date is today or has passed |
 | Location count | places in the location tree |
 
 *Due* includes today and *overdue* does not, here and everywhere else in HAventory — so
-"Inspection due count" is "Inspection overdue count" plus whatever is due today, and never
-smaller than it.
+each *due* count is its *overdue* twin plus whatever falls today, and never smaller than it.
 
 They update the moment something changes — a card edit, a `haventory.*` service call, an
-import — with no polling interval to tune. The three date-derived ones also roll over at UTC
+import — with no polling interval to tune. The four date-derived ones also roll over at UTC
 midnight, so "Checked out overdue count" grows overnight without anybody touching the
 inventory.
 
@@ -682,14 +682,15 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
   concurrency. `version` counts *item* mutations only — renaming or moving a location rewrites
   the derived `location_path` across its whole subtree without bumping `version` or restamping
   `updated_at`, so an expected version taken before the rename is still accepted after it.
-- Calendar-derived counts on `haventory/stats`, two of them with a matching `item/list`
-  filter: `overdue_count` / `overdue_only` for a passed `due_date` (checked-out items only,
-  since that is where a due date can exist), and `inspection_overdue_count` /
+- Calendar-derived counts on `haventory/stats`, each with a matching `item/list` filter:
+  `overdue_count` / `overdue_only` for a passed `due_date` (checked-out items only, since
+  that is where a due date can exist), and `inspection_overdue_count` /
   `inspection_overdue_only` for a passed `inspection_date` — the date the item is next due
   for inspection, over the whole inventory, since an inspection is independent of any
-  check-out. `inspection_due_count` asks the inspection question inclusive of today and has
-  no filter of its own, since the filters are strict. All of them move with the calendar and
-  emit no event when the date rolls over.
+  check-out. Each has a *due* twin that counts today as well:
+  `checked_out_due_count` / `checked_out_due_only` and `inspection_due_count` /
+  `inspection_due_only`. All of them move with the calendar and emit no event when the date
+  rolls over.
 - A stored per-item **status** — `ok` / `missing` / `needs_repair`, always exactly one,
   `ok` being the default and the way a flagged state clears. Filterable via the
   `item/list` `status` filter, counted on `haventory/stats` as `missing_count` /

@@ -88,6 +88,9 @@
       "overdue": {
         "name": "Checked out overdue count"
       },
+      "checked_out_due": {
+        "name": "Checked out due count"
+      },
       "inspection_overdue": {
         "name": "Inspection overdue count"
       },

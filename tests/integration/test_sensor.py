@@ -179,6 +179,55 @@ async def test_each_sensor_reports_its_count(hass: HomeAssistant, descriptor) ->
     assert hass.states.get(entity_id).state == str(repo.get_counts()[descriptor.key])
 
 
+async def test_an_item_due_back_today_is_due_and_not_overdue(hass: HomeAssistant) -> None:
+    """The two check-out sensors differ by exactly the items due back today.
+
+    Driven through `item_check_out`, which is the only way a due date can exist,
+    so the count is read off the same path a household uses.
+    """
+
+    entry = await _setup(hass)
+    due = _entity_id_for(hass, entry, "checked_out_due_count")
+    overdue = _entity_id_for(hass, entry, "overdue_count")
+
+    borrowed = await hass.services.async_call(
+        DOMAIN, "item_create", {"name": "Drill"}, blocking=True, return_response=True
+    )
+    await hass.services.async_call(
+        DOMAIN,
+        "item_check_out",
+        {"item_id": borrowed["item"]["id"], "due_date": _utc_day_offset(0)},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(due).state == "1"
+    assert hass.states.get(overdue).state == "0"
+
+    late = await hass.services.async_call(
+        DOMAIN, "item_create", {"name": "Ladder"}, blocking=True, return_response=True
+    )
+    await hass.services.async_call(
+        DOMAIN,
+        "item_check_out",
+        {"item_id": late["item"]["id"], "due_date": _utc_day_offset(-1)},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(due).state == "2"
+    assert hass.states.get(overdue).state == "1"
+
+    # Checking the late one back in clears its due date, so it leaves both.
+    await hass.services.async_call(
+        DOMAIN, "item_check_in", {"item_id": late["item"]["id"]}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(due).state == "1"
+    assert hass.states.get(overdue).state == "0"
+
+
 async def test_an_inspection_due_today_is_due_and_not_overdue(hass: HomeAssistant) -> None:
     """The two inspection sensors differ by exactly the items due today.
 

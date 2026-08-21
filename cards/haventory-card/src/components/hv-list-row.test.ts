@@ -2,7 +2,7 @@ import './hv-list-row';
 import { componentCss, makeAttachment, makeItem, makeManual, makeMediaBindings, mountComponent, q } from '../test.utils';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import { elideMobilePath, elidePath, isLowStock, rowMenuEntries } from './hv-list-row';
-import { toIsoDate } from '../ui/relative-time';
+import { addDays, toIsoDate } from '../ui/relative-time';
 import type { HVListRow } from './hv-list-row';
 import type { Item } from '../store/types';
 
@@ -208,11 +208,19 @@ describe('hv-list-row: content', () => {
     expect(secondary?.textContent).not.toContain('Inspection due');
   });
 
-  // Today's inspection has not been missed — same strictly-before boundary the
-  // backend count and filter use, so the row and the pill cannot disagree.
-  it('does not badge an inspection due today', async () => {
+  // An inspection date names the day the item is next due to be inspected, so
+  // that day is already asking — the same inclusive boundary the pill's count
+  // and the `inspection_due_only` filter use, so the row and the pill agree.
+  it('badges an inspection due today', async () => {
     for (const mobile of [false, true]) {
       const el = await mount({ inspection_date: toIsoDate() }, { mobile });
+      expect(q(el, '[data-testid="row-inspection-due"]'), `mobile=${mobile}`).toBeTruthy();
+    }
+  });
+
+  it('leaves an inspection still ahead of today unbadged', async () => {
+    for (const mobile of [false, true]) {
+      const el = await mount({ inspection_date: addDays(1) }, { mobile });
       expect(q(el, '[data-testid="row-inspection-due"]'), `mobile=${mobile}`).toBe(null);
     }
   });

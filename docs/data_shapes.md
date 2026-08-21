@@ -56,7 +56,8 @@ not an item mutation, so tokens held for optimistic concurrency survive the rena
 `inspection_date` is a **forward-looking** date: when the item is next due for inspection.
 A value strictly before today (UTC) means that inspection is overdue — the population behind
 the `inspection_overdue_only` filter and the `inspection_overdue_count` stat; a value on or
-before today means it is due, which is what `inspection_due_count` reports. It is
+before today means it is due, which is what `inspection_due_only` and `inspection_due_count`
+report. It is
 independent of `checked_out` and of `due_date`; any item can carry one.
 
 A reminder is **three** fields, and two of them are dates on purpose:
@@ -271,7 +272,9 @@ counts items at the node or any descendant (so it is always >= the direct count)
   - `low_stock_only?: boolean`
   - `orphaned_only?: boolean` (only items without a location, i.e. `location_id == null`)
   - `overdue_only?: boolean` (only items whose `due_date` is strictly before today, UTC)
+  - `checked_out_due_only?: boolean` (only items whose `due_date` is **on or before** today, UTC — `overdue_only`'s population plus the items due back today)
   - `inspection_overdue_only?: boolean` (only items whose `inspection_date` is strictly before today, UTC; independent of check-out state)
+  - `inspection_due_only?: boolean` (only items whose `inspection_date` is **on or before** today, UTC — `inspection_overdue_only`'s population plus the items due today; independent of check-out state)
   - `reminder_due_only?: boolean` (only items whose `reminder_date` is **on or before** today, UTC — today counts, because a reminder names the day it is asking about)
   - `location_id?: uuid-v4|null`
   - `location_ids?: uuid-v4[]` (multi-select beside `location_id`; see the union rule below)
@@ -350,6 +353,7 @@ Counts object used in `stats` results and events:
   "low_stock_count": 0,
   "checked_out_count": 0,
   "overdue_count": 0,
+  "checked_out_due_count": 0,
   "inspection_overdue_count": 0,
   "inspection_due_count": 0,
   "reminder_due_count": 0,
@@ -364,6 +368,8 @@ Counts object used in `stats` results and events:
 `no_location_count` is the number of items without a location (`location_id == null`).
 `overdue_count` is the number of items whose `due_date` is strictly before today (UTC);
 it moves with the calendar, so the same data can report a different count tomorrow.
+`checked_out_due_count` asks it inclusive of today, so it is `overdue_count` plus the items
+due back today and is never smaller than it.
 `inspection_overdue_count` is the same question asked of `inspection_date`, over the whole
 inventory rather than only the checked-out items, and moves with the calendar the same way.
 `inspection_due_count` asks it inclusive of today, so it is `inspection_overdue_count` plus

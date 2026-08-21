@@ -221,7 +221,7 @@ export function toWireFilter(filters: StoreFilters): ItemFilter {
     low_stock_first: filters.lowStockFirst || undefined,
     orphaned_only: filters.orphansOnly || undefined,
     overdue_only: filters.overdueOnly || undefined,
-    inspection_overdue_only: filters.inspectionDueOnly || undefined,
+    inspection_due_only: filters.inspectionDueOnly || undefined,
     reminder_due_only: filters.reminderDueOnly || undefined,
     status: filters.status ?? undefined,
     categories: filters.categories.length ? [...filters.categories] : undefined,
