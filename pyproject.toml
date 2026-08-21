@@ -5,10 +5,12 @@ description = "Home Assistant custom integration for household inventory trackin
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "chrreiter" }]
-# Matches the declared HA runtime (min HA 2026.6.0 => Python 3.14). uv provisions
-# the interpreter automatically (`uv sync` / `uv python install 3.14`); dev
-# environments must allow that download or preinstall Python 3.14.
-requires-python = ">=3.14"
+# Matches the declared HA runtime (min HA 2026.6.0 => Python 3.14.2), patch level
+# included: that is the floor Home Assistant's own metadata states, so an
+# interpreter this project accepts can install it. uv provisions the interpreter
+# automatically (`uv sync` / `uv python install 3.14`); dev environments must
+# allow that download or preinstall Python 3.14.
+requires-python = ">=3.14.2"
 
 [project.urls]
 Homepage = "https://github.com/chrreiter/HAventory#readme"
@@ -45,8 +47,9 @@ probes = [
 # `custom_components/haventory` directly. Don't build/install the project itself.
 package = false
 
-# py314 matches requires-python. Note: the 2026 formatter emits PEP 758
-# unparenthesized `except A, B:` at this target — the source is 3.14-only.
+# py314 is the floor's series; ruff's target carries no patch level. Note: the
+# 2026 formatter emits PEP 758 unparenthesized `except A, B:` at this target —
+# the source is 3.14-only.
 [tool.ruff]
 target-version = "py314"
 line-length = 100
@@ -85,7 +88,8 @@ quote-style = "preserve"
 "scripts/**" = ["ASYNC240", "ASYNC250"]
 
 [tool.mypy]
-# python_version matches requires-python / ruff target (HA 2026.6.0 => Python 3.14).
+# python_version follows requires-python; mypy takes the series only
+# (HA 2026.6.0 => Python 3.14).
 python_version = "3.14"
 files = ["custom_components/haventory"]
 namespace_packages = true
