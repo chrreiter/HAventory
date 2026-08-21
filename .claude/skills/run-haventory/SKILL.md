@@ -358,6 +358,7 @@ run either passes or says why not. All are read-only except `lifecycle_probe.py`
 | `visual_pass.mjs` | every card surface still opens, at desktop and mobile widths, and every panel surface on `/haventory` |
 | `import_policies.mjs` | the import sheet describes the conflict policy the backend actually applied |
 | `two_tab.mjs` | a mutation nobody in the browser made repaints every open card |
+| `reload_probe.mjs` | a reload and an options change leave the card, the panel and the sidebar working |
 | `log_sweep.py` | the container log obeys the error taxonomy's severity policy |
 | `lifecycle_probe.py` | resource cache-bust rewriting, schema-downgrade refusal, entry removal/re-add |
 
@@ -444,6 +445,25 @@ again; screenshots land as `<out>-a.png` / `<out>-b.png`.
 
 `--ws` is the control worth running next to any failure: if the WebSocket command repaints
 both tabs and the service call does not, the gap is in the service path, not in the card.
+
+### A reload and an options change, with two tabs open
+
+```bash
+cd .claude/skills/run-haventory
+node reload_probe.mjs                 # reload, then options changed and changed back
+node reload_probe.mjs --out before    # to compare two builds
+```
+
+One tab on the card, one on `/haventory`, neither touched. Reloads the entry over REST, then
+drives the **real options flow** (fresh `flow_id` per POST, every section key present, the
+values read back out of the form so the instance's own settings are restored). Watches for
+the `unavailable` notice on each open topic, for the card re-subscribing on its own, for a
+mutation afterwards still repainting it, and for the sidebar entry still being there.
+
+Two of its lines are worth reading rather than just passing: `panel after reload` records
+whether the open `/haventory` tab is still on `/haventory` — the frontend takes it to the
+default dashboard when the panel is briefly unregistered ([#507](https://github.com/chrreiter/HAventory/issues/507)) — and the run leaves one item
+behind only if the delete at the end failed.
 
 ### Import policy cross-check
 
