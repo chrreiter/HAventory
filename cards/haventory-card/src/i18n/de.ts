@@ -310,7 +310,7 @@ export const de: Record<TranslationKey, string> = {
   'hv.sheet.documentAdded': 'hinzugefügt {when}',
   'hv.sheet.openPhoto': '{photo} öffnen',
   'hv.sheet.lowStockAt': 'niedriger Bestand ab {threshold}',
-  'hv.sheet.fact.due': 'Rückgabe',
+  'hv.sheet.fact.due': 'Fällig',
   'hv.sheet.fact.nextInspection': 'Nächste Prüfung',
   'hv.sheet.fact.reminder': 'Erinnerung',
   'hv.sheet.fact.updated': 'Geändert',
