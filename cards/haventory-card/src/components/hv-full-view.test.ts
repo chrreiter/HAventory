@@ -1906,12 +1906,22 @@ describe('hv-full-view: app bar filters', () => {
   it('debounces the app bar search', async () => {
     const { store, sr } = await mount({ items: [makeItem({ id: '1' })] });
     const input = q(sr, '[data-testid="full-search"]') as HTMLInputElement;
-    input.value = 'glue';
-    input.dispatchEvent(new Event('input'));
-    expect(store.state.value.filters.q).toBe('');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      input.value = 'glue';
+      input.dispatchEvent(new Event('input'));
+      expect(store.state.value.filters.q).toBe('');
 
-    await new Promise((r) => setTimeout(r, 250));
-    expect(store.state.value.filters.q).toBe('glue');
+      // Still nothing on the last millisecond of the 200 ms window...
+      await vi.advanceTimersByTimeAsync(199);
+      expect(store.state.value.filters.q).toBe('');
+
+      // ...and the store hears it on the next one.
+      await vi.advanceTimersByTimeAsync(1);
+      expect(store.state.value.filters.q).toBe('glue');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

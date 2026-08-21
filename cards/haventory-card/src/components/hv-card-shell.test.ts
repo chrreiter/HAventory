@@ -385,12 +385,22 @@ describe('hv-card-shell: search and filters', () => {
     const { store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
     const input = sr.querySelector('[data-testid="search-input"]') as HTMLInputElement;
 
-    input.value = 'glue';
-    input.dispatchEvent(new Event('input'));
-    expect(store.state.value.filters.q).toBe('');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      input.value = 'glue';
+      input.dispatchEvent(new Event('input'));
+      expect(store.state.value.filters.q).toBe('');
 
-    await new Promise((r) => setTimeout(r, 250));
-    expect(store.state.value.filters.q).toBe('glue');
+      // Still nothing on the last millisecond of the 200 ms window...
+      await vi.advanceTimersByTimeAsync(199);
+      expect(store.state.value.filters.q).toBe('');
+
+      // ...and the store hears it on the next one.
+      await vi.advanceTimersByTimeAsync(1);
+      expect(store.state.value.filters.q).toBe('glue');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // The full view and the panel word it this way, and the card searches the same
@@ -1049,26 +1059,42 @@ describe('hv-card-shell: mobile', () => {
       makeItem({ id: '3', category: 'Hardware' }),
     ];
     const { el, store, sr } = await mountShell({ items, mobile: true });
-    (sr.querySelector('[data-testid="filter-toggle"]') as HTMLButtonElement).click();
-    await settle(el);
 
-    const panel = sr.querySelector('hv-filter-panel') as HTMLElement;
-    (panel.shadowRoot?.querySelector('[data-value="Hardware"]') as HTMLButtonElement).click();
-    await settle(el);
+    // The staged count rides a 150 ms debounce that the clicks below schedule,
+    // so the clock is taken over before them — installed here, after the mount,
+    // so the setup keeps running on real timers.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      (sr.querySelector('[data-testid="filter-toggle"]') as HTMLButtonElement).click();
+      await settle(el);
 
-    // Staged only — the list has not moved.
-    expect(store.state.value.filters.categories).toEqual([]);
-    expect(store.state.value.items).toHaveLength(3);
+      const panel = sr.querySelector('hv-filter-panel') as HTMLElement;
+      (panel.shadowRoot?.querySelector('[data-value="Hardware"]') as HTMLButtonElement).click();
+      await settle(el);
 
-    // ...and the apply button reports what committing would do.
-    await new Promise((r) => setTimeout(r, 250));
-    await el.updateComplete;
-    const apply = sr.querySelector('[data-testid="sheet-apply"]') as HTMLButtonElement;
-    expect(apply.textContent?.trim()).toBe('Show 2 items');
+      // Staged only — the list has not moved.
+      expect(store.state.value.filters.categories).toEqual([]);
+      expect(store.state.value.items).toHaveLength(3);
 
-    apply.click();
-    await settle(el);
-    expect(store.state.value.filters.categories).toEqual(['Hardware']);
+      // ...and the apply button reports what committing would do, but not
+      // before the window is up.
+      const apply = sr.querySelector('[data-testid="sheet-apply"]') as HTMLButtonElement;
+      await vi.advanceTimersByTimeAsync(149);
+      await settle(el);
+      expect(apply.textContent?.trim()).toBe('Show items');
+
+      // The debounce fires into an async count, so the render lands one settle
+      // past the millisecond — `settle` drives this same clock.
+      await vi.advanceTimersByTimeAsync(1);
+      await settle(el);
+      expect(apply.textContent?.trim()).toBe('Show 2 items');
+
+      apply.click();
+      await settle(el);
+      expect(store.state.value.filters.categories).toEqual(['Hardware']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // "Clear all" went straight to the store: the list behind the sheet reloaded

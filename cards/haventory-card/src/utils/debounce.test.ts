@@ -1,51 +1,65 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { debounce } from './debounce';
 
+// The unit under test *is* a timer, so every case here drives a fake clock:
+// waiting out a real 50 ms window can only ever assert "by now", while advancing
+// to the millisecond before and the millisecond itself asserts the delay. There
+// is no async setup in this file for the fake clock to interfere with, so it is
+// installed for the whole describe rather than per test.
 describe('debounce', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('delays function execution by specified ms', async () => {
-    // Function should not be called until delay has passed
     const fn = vi.fn();
     const debounced = debounce(fn, 50);
 
     debounced();
+    await vi.advanceTimersByTimeAsync(49);
     expect(fn).not.toHaveBeenCalled();
 
-    await new Promise((r) => setTimeout(r, 60));
+    await vi.advanceTimersByTimeAsync(1);
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
   it('resets timer on subsequent calls', async () => {
-    // Multiple rapid calls should only result in one execution
+    // Multiple rapid calls should only result in one execution, and each call
+    // starts the window again rather than shortening it.
     const fn = vi.fn();
     const debounced = debounce(fn, 50);
 
     debounced();
-    await new Promise((r) => setTimeout(r, 30));
+    await vi.advanceTimersByTimeAsync(30);
     debounced(); // Reset timer
-    await new Promise((r) => setTimeout(r, 30));
+    await vi.advanceTimersByTimeAsync(30);
     debounced(); // Reset timer again
 
-    // Should not have been called yet
+    // 60 ms of calls, and nothing has fired: the window is measured from the
+    // last one.
+    await vi.advanceTimersByTimeAsync(49);
     expect(fn).not.toHaveBeenCalled();
 
-    // Wait for final debounce to complete
-    await new Promise((r) => setTimeout(r, 60));
+    await vi.advanceTimersByTimeAsync(1);
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
   it('passes arguments to wrapped function', async () => {
-    // Arguments should be preserved and passed to the original function
     const fn = vi.fn();
     const debounced = debounce(fn, 50);
 
     debounced('arg1', 42, { key: 'value' });
-    await new Promise((r) => setTimeout(r, 60));
+    await vi.advanceTimersByTimeAsync(50);
 
     expect(fn).toHaveBeenCalledWith('arg1', 42, { key: 'value' });
   });
 
   it('uses arguments from last call when debouncing', async () => {
-    // When multiple calls happen, only the last arguments should be used
+    // When multiple calls happen, only the last arguments should be used.
     const fn = vi.fn();
     const debounced = debounce(fn, 50);
 
@@ -53,7 +67,7 @@ describe('debounce', () => {
     debounced('second');
     debounced('third');
 
-    await new Promise((r) => setTimeout(r, 60));
+    await vi.advanceTimersByTimeAsync(50);
     expect(fn).toHaveBeenCalledTimes(1);
     expect(fn).toHaveBeenCalledWith('third');
   });
