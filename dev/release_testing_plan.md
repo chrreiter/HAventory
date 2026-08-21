@@ -88,11 +88,16 @@ therefore validates what was rehydrated from disk, which makes it the corruption
 this plan. Prefer it over eyeballing the JSON:
 
 ```bash
-HA_BASE_URL=http://<host>:8123 HA_TOKEN=<token> \
+HAVENTORY_IGNORE_ENV_FILE=1 HA_BASE_URL=http://<host>:8123 HA_TOKEN=<token> \
   HAV_MSG='{"id":1,"type":"haventory/health"}' uv run python scripts/ws_probe.py
 ```
 
 Pass = `{"healthy": true, "issues": []}` and `counts` matching what the card shows.
+
+`HAVENTORY_IGNORE_ENV_FILE=1` is what makes the two variables beside it win: without it
+the `.env` in the checkout takes precedence, and the probe would answer for the local dev
+instance instead of the release-test host. The probe prints the target it resolved on
+stderr — read that line before reading the result.
 
 **3. Store snapshots.** Before and after every destructive scenario:
 

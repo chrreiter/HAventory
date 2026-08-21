@@ -2,8 +2,6 @@ r"""Online probes for the HAventory attachment path, against a live dev instance
 
 Usage:
   export RUN_ONLINE=1
-  export HA_BASE_URL='http://localhost:8123'
-  export HA_TOKEN='<your-long-lived-token>'
   export HA_CONTAINER='home-assistant'          # or HA_CONFIG_DIR, see below
   uv sync --group probes
   uv run --group probes python scripts/probe_attachments.py
@@ -16,8 +14,10 @@ Options:
 Environment variables:
 - RUN_ONLINE: must be `1`. Nothing here mocks anything and it writes to a real
   inventory, so it never runs by accident.
-- HA_BASE_URL: Home Assistant base URL. Default: http://localhost:8123
-- HA_TOKEN: long-lived access token (required)
+- HA_BASE_URL / HA_TOKEN: taken from the `.env` beside this checkout, which wins
+  over an inherited export; HAVENTORY_IGNORE_ENV_FILE=1 hands the decision back
+  to the environment. The resolved target and the store's counts print on stderr
+  before the first upload. A token is required.
 - HA_CONFIG_DIR: the Home Assistant config directory as this host sees it. Set
   it when the config lives on a bind mount; leave it unset to read the stored
   bytes through `docker exec`.
@@ -78,7 +78,10 @@ except ImportError:  # pragma: no cover - the group is opt-in
 
 # Both helpers live in `scripts/`, which is the interpreter's own directory when
 # this file is run as a script.
+import dev_env
 from probe_fixtures import generate as generate_fixtures
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # -----------------------------------------------------------------------------
 # Mirrors of what the card decides before an upload starts.
@@ -670,11 +673,13 @@ async def run_probes(args: argparse.Namespace) -> int:
     if os.environ.get("RUN_ONLINE") != "1":
         print("Set RUN_ONLINE=1: this writes to a real inventory.", file=sys.stderr)
         return 2
-    token = os.environ.get("HA_TOKEN")
+    target = dev_env.load_env(REPO_ROOT)
+    token = target.token
+    base = target.base_url
+    await dev_env.announce_store(target, action="the attachment probes")
     if not token:
-        print("Missing HA_TOKEN in environment", file=sys.stderr)
+        print(f"Missing HA_TOKEN (looked in {target.source})", file=sys.stderr)
         return 2
-    base = os.environ.get("HA_BASE_URL", "http://localhost:8123")
 
     temporary = args.fixtures_dir is None
     fixtures = (

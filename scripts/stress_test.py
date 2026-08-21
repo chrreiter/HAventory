@@ -38,9 +38,14 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 from itertools import count
+from pathlib import Path
 from typing import Any
 
 import aiohttp
+
+import dev_env
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # -----------------------------------------------------------------------------
 # Constants
@@ -1412,10 +1417,12 @@ async def main() -> int:  # noqa: PLR0911, PLR0912, PLR0915
     parser.add_argument("--skip-confirm", action="store_true", help="Skip user confirmation")
     args = parser.parse_args()
 
-    # Get environment variables
+    # The .env beside the checkout names the instance; HA_CONTAINER stays an export
+    # (a container named in .env arms scripts/smoke_online.sh to purge that store).
+    target = dev_env.load_env(REPO_ROOT)
     container_name = os.environ.get("HA_CONTAINER")
-    base_url = os.environ.get("HA_BASE_URL", "http://localhost:8123")
-    token = os.environ.get("HA_TOKEN")
+    base_url = target.base_url
+    token = target.token
 
     if not container_name:
         print_status("Missing HA_CONTAINER environment variable", "fail")
@@ -1426,7 +1433,7 @@ async def main() -> int:  # noqa: PLR0911, PLR0912, PLR0915
 
     print_status("HAventory Backend Stress Test", "header")
     print_status(f"Container: {container_name}", "info")
-    print_status(f"Base URL: {base_url}", "info")
+    print_status(f"Base URL: {base_url} (from {target.source})", "info")
 
     # Step 1: Deploy code
     if not args.skip_deploy:

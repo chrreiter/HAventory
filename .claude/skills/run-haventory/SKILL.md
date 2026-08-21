@@ -22,12 +22,21 @@ Docker and filesystem through Git Bash instead; nothing else here depends on the
   It was provisioned once by hand (image run + HA onboarding in the browser); if it's
   ever gone, that one-time onboarding has to be redone in a browser — not scripted.
 - `uv` (Python 3.14 env) and Node 22.13+ (or ≥ 24, per the card's `engines`) on PATH.
-- Repo-root **`.env`** (gitignored) with the credentials both drivers auto-read:
+- A **`.env`** (gitignored) at the root of the checkout you are standing in, with the
+  credentials every driver and harness auto-reads:
 
   ```
   HA_BASE_URL=http://localhost:8123
   HA_TOKEN=<long-lived access token>
   ```
+
+  It **wins over an inherited export**: a worktree carrying its own `.env` names the
+  instance that worktree is for, whatever a shell profile exported.
+  `HAVENTORY_IGNORE_ENV_FILE=1` hands the decision back to the environment for one run.
+  Every driver and harness prints the resolved target on stderr before it acts
+  (`[target] HA_BASE_URL=…`), and the Python ones print the store's counts with it — so
+  a run against the wrong inventory shows up in the first line instead of in a number
+  that looks off later.
 
   Do **not** put `HA_CONTAINER` in `.env` — `scripts/smoke_online.sh` purges the
   HAventory store from that container whenever it's set (see Gotchas).

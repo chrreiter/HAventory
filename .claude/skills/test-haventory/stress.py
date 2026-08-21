@@ -21,9 +21,13 @@ Subcommands (run one at a time; non-destructive first, `restart` last):
   restart      DESTRUCTIVE: mid-load storm + docker restart + on-disk store cross-check
   cleanup      delete everything with the stress_test_ prefix
 
-Config from env or repo-root .env: HA_BASE_URL, HA_TOKEN. HA_CONTAINER (default
-"home-assistant") is only needed by `restart`. Set HAVENTORY_REPO to override the
-repo root that .env is read from (otherwise derived from this file's location).
+Config from the .env beside this checkout (HA_BASE_URL, HA_TOKEN), which wins over
+an inherited export -- a worktree's .env names the instance that worktree is for.
+HAVENTORY_IGNORE_ENV_FILE=1 hands the decision back to the environment for one run.
+Every command prints the resolved target and the store's counts before it acts, and
+a command that writes says so and proceeds without prompting. HA_CONTAINER (default
+"home-assistant") is only needed by `restart`. Set HAVENTORY_REPO to override which
+checkout's .env is read (otherwise derived from this file's location).
 
 Run:  uv run --no-project --with aiohttp python .claude/skills/test-haventory/stress.py <cmd> [args]
 """
@@ -44,29 +48,22 @@ from typing import Any
 import aiohttp
 
 PREFIX = "stress_test_"
-# Repo root holds the .env this harness reads. Prefer an explicit override, else
-# derive it from this file's committed location (<repo>/.claude/skills/test-haventory/).
+# This file's committed location is <repo>/.claude/skills/test-haventory/, so it
+# always knows its own checkout -- that is where the shared target resolution
+# lives, and it is read from there even when HAVENTORY_REPO points the .env
+# lookup at a different tree.
+CHECKOUT = Path(__file__).resolve().parents[3]
 _env_repo = os.environ.get("HAVENTORY_REPO")
-REPO_ROOT = Path(_env_repo) if _env_repo else Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(_env_repo) if _env_repo else CHECKOUT
+sys.path.insert(0, str(CHECKOUT / "scripts"))
 
+import dev_env
 
-def load_env() -> None:
-    env_file = REPO_ROOT / ".env"
-    if not env_file.is_file():
-        return
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, _, v = line.partition("=")
-        os.environ.setdefault(k.strip(), v.strip())
-
-
-def ws_url(base: str) -> str:
-    base = base.rstrip("/")
-    if base.startswith("https://"):
-        return f"wss://{base[len('https://') :]}/api/websocket"
-    return f"ws://{base.removeprefix('http://')}/api/websocket"
+# Every command mutates the instance except these two: `baseline` reads health and
+# version, `subteardown` only subscribes and unsubscribes. The rest create or delete
+# stress_test_-prefixed fixtures, rewrite the rate-limit options through the config
+# flow, or restart the container.
+READ_ONLY_COMMANDS = frozenset({"baseline", "subteardown"})
 
 
 class WSConn:
@@ -139,7 +136,9 @@ async def connect() -> WSConn:
     # abandoned session there surfaces as an "Unclosed client session" warning — and
     # the log sweep is an oracle whose value is that a clean run is silent.
     try:
-        ws = await session.ws_connect(ws_url(base), timeout=aiohttp.ClientWSTimeout(ws_receive=20))
+        ws = await session.ws_connect(
+            dev_env.ws_url(base), timeout=aiohttp.ClientWSTimeout(ws_receive=20)
+        )
         await asyncio.wait_for(ws.receive_json(), timeout=20)  # hello
         await ws.send_json({"type": "auth", "access_token": token})
         auth = await asyncio.wait_for(ws.receive_json(), timeout=20)
@@ -1512,17 +1511,52 @@ async def cmd_cleanup() -> None:
         await conn.close()
 
 
-def main() -> None:
-    load_env()
-    if not os.environ.get("HA_TOKEN"):
+COMMANDS = READ_ONLY_COMMANDS | {
+    "fuzz",
+    "bulkfuzz",
+    "ratelimit",
+    "bulk",
+    "races",
+    "hammer",
+    "restart",
+    "statsprobe",
+    "cleanup",
+}
+
+
+def announce_target(cmd: str) -> None:
+    """Name the instance -- and what is in it -- before the command touches it."""
+    target = dev_env.load_env(REPO_ROOT)
+    if not target.token:
         print("Missing HA_TOKEN", file=sys.stderr)
         sys.exit(2)
-    os.environ.setdefault("HA_BASE_URL", "http://localhost:8123")
+    os.environ["HA_BASE_URL"] = target.base_url
+    counts, why = asyncio.run(dev_env.probe_counts(target.base_url, target.token))
+    writes = counts is not None and cmd not in READ_ONLY_COMMANDS
+    dev_env.announce(
+        target,
+        counts=counts,
+        unavailable=why,
+        action=f"'{cmd}'" if writes else None,
+        stream=sys.stdout,
+    )
+    if counts is None:
+        # Every layer needs a loaded integration; failing here beats failing three
+        # minutes into a bulk run against an instance that was never the target.
+        print(f"cannot read the store at {target.base_url}: {why}", file=sys.stderr)
+        sys.exit(2)
+
+
+def main() -> None:
     args = sys.argv[1:]
     if not args:
         print(__doc__)
         sys.exit(2)
     cmd = args[0]
+    if cmd not in COMMANDS:
+        print(f"unknown command: {cmd}", file=sys.stderr)
+        sys.exit(2)
+    announce_target(cmd)
     if cmd == "baseline":
         asyncio.run(cmd_baseline())
     elif cmd == "fuzz":
@@ -1547,9 +1581,6 @@ def main() -> None:
         asyncio.run(cmd_subteardown())
     elif cmd == "cleanup":
         asyncio.run(cmd_cleanup())
-    else:
-        print(f"unknown command: {cmd}", file=sys.stderr)
-        sys.exit(2)
 
 
 if __name__ == "__main__":

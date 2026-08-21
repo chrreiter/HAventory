@@ -5,8 +5,11 @@ haventory integration loaded. Complements scripts/ws_probe.py (single message)
 by holding ONE authenticated connection for a whole command sequence, so ids
 and item versions can flow between steps.
 
-Config: reads HA_BASE_URL / HA_TOKEN from the environment, falling back to a
-`.env` file at the repo root (KEY=VALUE lines; see SKILL.md).
+Config: HA_BASE_URL / HA_TOKEN come from the `.env` beside this checkout, which
+wins over an inherited export -- a worktree's .env names the instance that worktree
+is for. HAVENTORY_IGNORE_ENV_FILE=1 hands the decision back to the environment for
+one run. Every command prints the resolved target and the store's counts on stderr
+before it acts, and `smoke` (which creates and deletes) says that it writes.
 
 Usage (from repo root):
   uv run python .claude/skills/run-haventory/driver.py status
@@ -20,13 +23,12 @@ It only touches objects it creates (unique suffix), so it is safe on a dev
 instance holding existing data.
 """
 # Dev/agent harness script — magic numbers in assertions are fine here.
-# ruff: noqa: PLR2004, PLW2901
+# ruff: noqa: PLR2004
 
 from __future__ import annotations
 
 import asyncio
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -36,26 +38,12 @@ import aiohttp
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RECV_TIMEOUT_S = 20.0
+# One definition of "which instance is this?" for every helper in the repo. This
+# file's committed location names the checkout it belongs to, so the import
+# follows the same tree the .env is read from.
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-
-def load_env() -> None:
-    """Populate os.environ from repo-root .env (existing env vars win)."""
-    env_file = REPO_ROOT / ".env"
-    if not env_file.is_file():
-        return
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip())
-
-
-def ws_url(base_url: str) -> str:
-    base_url = base_url.rstrip("/")
-    if base_url.startswith("https://"):
-        return f"wss://{base_url[len('https://') :]}/api/websocket"
-    return f"ws://{base_url.removeprefix('http://')}/api/websocket"
+import dev_env  # noqa: E402
 
 
 class HaWs:
@@ -83,7 +71,9 @@ class HaWs:
 
 
 async def connect(session: aiohttp.ClientSession, base: str, token: str) -> HaWs:
-    ws = await session.ws_connect(ws_url(base), timeout=aiohttp.ClientWSTimeout(ws_receive=15))
+    ws = await session.ws_connect(
+        dev_env.ws_url(base), timeout=aiohttp.ClientWSTimeout(ws_receive=15)
+    )
     await asyncio.wait_for(ws.receive_json(), timeout=RECV_TIMEOUT_S)  # hello
     await ws.send_json({"type": "auth", "access_token": token})
     auth = await asyncio.wait_for(ws.receive_json(), timeout=RECV_TIMEOUT_S)
@@ -238,15 +228,18 @@ async def cmd_smoke(base: str, token: str) -> int:
 
 
 def main() -> None:
-    load_env()
-    base = os.environ.get("HA_BASE_URL", "http://localhost:8123")
-    token = os.environ.get("HA_TOKEN")
     args = sys.argv[1:]
     if not args or args[0] not in {"status", "send", "smoke"}:
         print(__doc__, file=sys.stderr)
         sys.exit(2)
+    target = dev_env.load_env(REPO_ROOT)
+    base = target.base_url
+    token = target.token
+    # `send` carries whatever frames the caller hands it, so only `smoke` is known
+    # to write here; the base URL and counts are what name the target either way.
+    asyncio.run(dev_env.announce_store(target, action="smoke" if args[0] == "smoke" else None))
     if not token:
-        print("Missing HA_TOKEN (env or repo-root .env)", file=sys.stderr)
+        print(f"Missing HA_TOKEN (looked in {target.source})", file=sys.stderr)
         sys.exit(2)
     try:
         if args[0] == "status":

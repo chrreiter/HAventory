@@ -30,13 +30,17 @@ Usage (from the repo root):
   uv run python .claude/skills/run-haventory/lifecycle_probe.py entry --yes
   uv run python .claude/skills/run-haventory/lifecycle_probe.py all --yes
 
-Reads HA_BASE_URL / HA_TOKEN from the environment or the repo-root `.env`, and
-HA_CONTAINER (default "home-assistant") for the docker exec calls.
+HA_BASE_URL / HA_TOKEN come from the `.env` beside this checkout, which wins over
+an inherited export -- a worktree's .env names the instance that worktree is for.
+HAVENTORY_IGNORE_ENV_FILE=1 hands the decision back to the environment for one run.
+The target and the store's counts print on stderr before anything is restarted or
+rewritten. HA_CONTAINER (default "home-assistant") names the container the docker
+exec calls go to.
 """
 # Dev/agent harness script. Driving the container means shelling out to `docker`
 # on PATH (S603/S607), and the restart has to block the loop while it runs
-# (ASYNC221). The .env loader is copied from driver.py verbatim (PLW2901).
-# ruff: noqa: S603, S607, ASYNC221, PLW2901
+# (ASYNC221).
+# ruff: noqa: S603, S607, ASYNC221
 
 from __future__ import annotations
 
@@ -59,26 +63,12 @@ RECV_TIMEOUT_S = 30.0
 # polled on the WS command the integration itself registers.
 READY_TIMEOUT_S = 120.0
 HTTP_OK = 200
+# One definition of "which instance is this?" for every helper in the repo. This
+# file's committed location names the checkout it belongs to, so the import
+# follows the same tree the .env is read from.
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-
-def load_env() -> None:
-    """Populate os.environ from repo-root .env (existing env vars win)."""
-    env_file = REPO_ROOT / ".env"
-    if not env_file.is_file():
-        return
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip())
-
-
-def ws_url(base_url: str) -> str:
-    base_url = base_url.rstrip("/")
-    if base_url.startswith("https://"):
-        return f"wss://{base_url[len('https://') :]}/api/websocket"
-    return f"ws://{base_url.removeprefix('http://')}/api/websocket"
+import dev_env  # noqa: E402
 
 
 def container() -> str:
@@ -132,7 +122,7 @@ async def connect(session: aiohttp.ClientSession) -> Ws:
     base = os.environ["HA_BASE_URL"]
     token = os.environ["HA_TOKEN"]
     ws = await session.ws_connect(
-        ws_url(base), timeout=aiohttp.ClientWSTimeout(ws_receive=RECV_TIMEOUT_S)
+        dev_env.ws_url(base), timeout=aiohttp.ClientWSTimeout(ws_receive=RECV_TIMEOUT_S)
     )
     await asyncio.wait_for(ws.receive_json(), timeout=RECV_TIMEOUT_S)
     await ws.send_json({"type": "auth", "access_token": token})
@@ -407,7 +397,6 @@ async def run(names: list[str]) -> int:
 
 
 def main() -> int:
-    load_env()
     argv = sys.argv[1:]
     names = [a for a in argv if not a.startswith("-")]
     if not names or (names[0] != "all" and any(n not in CHECKS for n in names)):
@@ -415,14 +404,21 @@ def main() -> int:
         return 2
     if names[0] == "all":
         names = list(CHECKS)
-    if "--yes" not in argv:
+    target = dev_env.load_env(REPO_ROOT)
+    os.environ["HA_BASE_URL"] = target.base_url
+    # Before the --yes gate, not after: the instance about to be restarted is what
+    # the operator needs on screen while deciding whether to pass --yes.
+    confirmed = "--yes" in argv
+    action = f"{' '.join(names)} (container restart, store edit)" if confirmed else None
+    asyncio.run(dev_env.announce_store(target, action=action))
+    if not confirmed:
         print(
             f"This restarts container '{container()}' and edits {STORE_PATH}. Re-run with --yes.",
             file=sys.stderr,
         )
         return 2
-    if not os.environ.get("HA_TOKEN"):
-        print("Missing HA_TOKEN (env or repo-root .env)", file=sys.stderr)
+    if not target.token:
+        print(f"Missing HA_TOKEN (looked in {target.source})", file=sys.stderr)
         return 2
     return asyncio.run(run(names))
 
