@@ -110,9 +110,10 @@ quick_filters: # optional; which quick-filter pills this card offers
 ```
 
 Those two keys are the only ones the card reads, and both are optional — without them the
-card follows the integration's own settings, which is what the sidebar page always does.
-Any other key is ignored rather than rejected, so a stale dashboard config never breaks the
-card.
+card follows the integration's own settings, which is what the sidebar page always does. Any
+other key is ignored rather than rejected, so a stale dashboard config never breaks the card.
+What each key accepts, and which setting wins where:
+[`docs/installing.md`](docs/installing.md#card-configuration).
 
 Home Assistant's redesigned Overview hosts no cards at all, core or custom. What it does
 take is a shortcut to a panel: **Edit** the Overview, choose **Add shortcut**, and pick
@@ -145,15 +146,27 @@ automation:
             (threshold {{ trigger.event.data.low_stock_threshold }})
 ```
 
-Write to the inventory from an automation — here a button that logs one coffee bag used,
-and a barcode scanner that files a new item:
+And write back to the inventory — a button by the coffee machine that books one bag out:
 
 ```yaml
+automation:
+  - alias: One bag of coffee used
+    trigger:
+      platform: state
+      entity_id: input_button.coffee_used
+    action:
       - service: haventory.item_adjust_quantity
         data:
           item_id: "0f2c…"
           delta: -1
+```
 
+A script that files a delivery, with every field the card's editor offers:
+
+```yaml
+script:
+  file_the_coffee_delivery:
+    sequence:
       - service: haventory.item_create
         data:
           name: Coffee beans
@@ -163,6 +176,9 @@ and a barcode scanner that files a new item:
           low_stock_threshold: 2
           location_id: "8a11…"
 ```
+
+The ids those take are the ones in a JSON export (⋮ → **Export backup**); nothing in the
+card shows an id today.
 
 Every action returns the entity it touched, so a script can chain calls through
 `response_variable`. The sensors and what each one counts, the event payloads, the calendar,
@@ -272,7 +288,7 @@ Three messages are worth recognising, all three of which also appear in **Repair
 ## Where next
 
 - [`docs/installing.md`](docs/installing.md) — where HAventory appears, how the card is
-  loaded, YAML-mode dashboards, removing it again.
+  loaded, the card's configuration keys, YAML-mode dashboards, removing it again.
 - [`docs/automations.md`](docs/automations.md) — the sensors, the events, the calendar,
   reminders and the shopping-list bridge.
 - [`docs/rate_limiting.md`](docs/rate_limiting.md) — what the rate-limit options mean.
