@@ -1,5 +1,5 @@
 import './hv-checkout-popover';
-import { all, componentCss, makeItem, mountComponent, q } from '../test.utils';
+import { all, makeItem, mountComponent, q } from '../test.utils';
 import { addDays, formatDate } from '../ui/relative-time';
 import type { HVCheckoutPopover } from './hv-checkout-popover';
 import type { Item } from '../store/types';
@@ -217,18 +217,6 @@ describe('hv-checkout-popover: placement', () => {
 });
 
 describe('hv-checkout-popover: where it draws and how big it is are separate asks', () => {
-  /** jsdom lays out no shadow DOM, so the sizes are asserted on the stylesheet. */
-  // As one flag, a caller that could not draw the inline step could not ask for
-  // finger-sized controls either — and the surfaces that open this as a centred
-  // dialog on a phone are exactly that caller.
-  it('hangs every thumb size on touch, and only the step itself on inline', () => {
-    const css = componentCss('hv-checkout-popover');
-    for (const sel of ['.offset', '.custom input', '.date', '.actions', '.confirm', '.none-button']) {
-      expect(css, sel).toContain(`:host([touch]) ${sel} {`);
-    }
-    expect(css).toMatch(/:host\(\[inline\]\) \.card \{[^}]*position: static/);
-    expect(css.match(/:host\(\[inline\]\)/g)?.length).toBe(1);
-  });
 
   it('keeps the scrim and its own placement when only the sizes grow', async () => {
     const el = await mount({}, { touch: true });

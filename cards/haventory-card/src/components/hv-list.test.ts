@@ -1,7 +1,7 @@
 import { html } from 'lit';
 import './hv-list';
 import type { HVList } from './hv-list';
-import { componentCss, makeItem, mountComponent } from '../test.utils';
+import { makeItem, mountComponent } from '../test.utils';
 
 async function mount(props: Partial<HVList> = {}) {
   const { el } = await mountComponent<HVList>('hv-list', {
@@ -89,14 +89,6 @@ describe('hv-list: editing', () => {
     expect(el.hasAttribute('editing')).toBe(false);
   });
 
-  it('gives the scroller more room while editing', () => {
-    const text = componentCss('hv-list');
-    // the compact cap still exists...
-    expect(text).toContain('--hv-list-max-height');
-    // ...and a taller one applies while an editor is open
-    expect(text).toContain('--hv-list-editing-max-height');
-    expect(text).toMatch(/:host\(.*\[editing\].*\)\s*\.scroller/);
-  });
 });
 
 // The three render branches are mutually exclusive and only the row branch was

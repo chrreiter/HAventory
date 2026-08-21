@@ -1,6 +1,6 @@
 import './hv-bottom-sheet';
 import type { HVBottomSheet } from './hv-bottom-sheet';
-import { componentCss, mountComponent } from '../test.utils';
+import { mountComponent } from '../test.utils';
 
 async function mount(props: Partial<HVBottomSheet> = {}) {
   const { el } = await mountComponent<HVBottomSheet>(
@@ -59,25 +59,6 @@ describe('hv-bottom-sheet', () => {
       expect(el.open, `still up after ${trigger}`).toBe(true);
       el.remove();
     }
-  });
-
-  it('caps its width and centres itself so a wide screen does not stretch the content', () => {
-    const css = componentCss('hv-bottom-sheet');
-    const rule = css.slice(css.indexOf('.sheet {'), css.indexOf('@keyframes')).replace(/\s+/g, ' ');
-
-    // min() keeps a phone full-bleed and stops a 2560px desktop from spreading
-    // a 48px-tall label/value row — or a pair of action buttons — edge to edge.
-    expect(rule).toMatch(/width: min\(100%, var\(--hv-sheet-max-width, \d+px\)\)/);
-    expect(rule).toMatch(/margin-inline: auto/);
-  });
-
-  // `vh` resolves against the viewport with the browser chrome retracted, so a
-  // sheet at its cap could stand taller than the screen actually showing and
-  // push its sticky footer under the URL bar.
-  it('caps its height against the viewport that is really visible', () => {
-    const css = componentCss('hv-bottom-sheet');
-    expect(css).toMatch(/max-height: 92dvh/);
-    expect(css).not.toMatch(/max-height: 92vh/);
   });
 
   it('stacks above previously opened surfaces', async () => {

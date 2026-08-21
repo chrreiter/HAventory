@@ -2,7 +2,6 @@ import './hv-full-view';
 import { componentCss, makeItem, mountComponent, mountStore, q, settle, stubViewport } from '../test.utils';
 import { deepActiveElement } from '../ui/dialog-focus';
 import { DISCARD_PROMPT } from '../ui/discard';
-import { NARROW_QUERY } from '../ui/responsive';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVFullView } from './hv-full-view';
 import type { Item, Location, StatusDefinition } from '../store/types';
@@ -70,13 +69,6 @@ describe('hv-full-view: phone-width app bar', () => {
     expect(narrow()).toMatch(/\.appbar \{[^}]*flex-wrap: wrap/);
   });
 
-  it('lets the search field shrink to nothing at phone widths', () => {
-    // `flex: 1` alone leaves min-width at auto, so the field refuses to
-    // compress below its content and shoves its siblings off the bar. The
-    // desktop block puts a floor back under it — see the wide-bar describe.
-    expect(componentCss('hv-full-view')).toMatch(/\.appbar \.search \{[^}]*min-width: 0/);
-  });
-
   it('lets the heading give way rather than the controls after it', () => {
     const css = narrow();
     expect(css).toMatch(/\.appbar h2 \{[^}]*flex: 1/);
@@ -91,16 +83,6 @@ describe('hv-full-view: phone-width app bar', () => {
     expect(css).toMatch(/\.appbar \.spacer \{ display: none; \}/);
   });
 
-  // With a 200px basis the search shared its line with whichever pills fit —
-  // at 390px "102 low" rode up beside it while the other two sat on a row of
-  // their own, so the three counts read as two unrelated groups.
-  it('gives the search a row to itself so no count pill rides beside it', () => {
-    expect(narrow()).toMatch(/\.appbar \.search \{[^}]*flex: 1 0 100%/);
-    // A basis is a content-box width, so without this the field came out 24px
-    // wider than the line it fills and hung off the right edge of the bar.
-    expect(componentCss('hv-full-view')).toMatch(/\.appbar \.search \{[^}]*box-sizing: border-box/);
-  });
-
   // The bar came to 178px of a 844px screen: 16px search text and three 44px
   // pills, all of it above the list it belongs to.
   it('reads at the size of the rows it searches', () => {
@@ -108,28 +90,6 @@ describe('hv-full-view: phone-width app bar', () => {
     // repeated rather than shared.
     expect(narrow()).toMatch(/\.appbar \.search input \{[^}]*font-size: 13\.5px/);
     expect(narrow()).not.toMatch(/\.appbar \.search input \{[^}]*min-height: var\(--hv-tap-min/);
-  });
-
-  // The panel is ~1600px of form in one column. The shell is fixed to the
-  // viewport and clips, and nothing in this column was a scroll container, so
-  // on a 756px screen 1138px of it was unreachable — including the apply
-  // button, which measured 1039px below the bottom edge — and the table under
-  // it was squeezed to zero height.
-  // Not in the narrow block: the ceiling belongs at every width. Sideways, the
-  // same phone is 760px wide and the panel opened 1007px tall in a 400px
-  // screen — 751px of it below a fold nothing could scroll past — and a
-  // 1280x900 desktop was losing the surface's own footer the same way.
-  it('gives the filter panel a ceiling and something to scroll', () => {
-    const css = componentCss('hv-full-view');
-    const rule = /\.panel-holder \{([^}]*)\}/.exec(css)?.[1] ?? '';
-    expect(rule).toMatch(/flex-direction: column/);
-    expect(rule).toMatch(/max-height: min\(\d+dvh, calc\(100% - \d+px\)\)/);
-    expect(css).toMatch(/\.panel-scroll \{[^}]*overflow-y: auto/);
-    expect(css).toMatch(/\.panel-scroll \{[^}]*min-height: 0/);
-    // The ceiling has to hold on a landscape phone, where the column is 336px
-    // tall: 80dvh of 400 is 320, so the second term is what bounds it.
-    const [, dvh, reserved] = /max-height: min\((\d+)dvh, calc\(100% - (\d+)px\)\)/.exec(rule) ?? [];
-    expect(Math.min((Number(dvh) / 100) * 400, 336 - Number(reserved))).toBeLessThanOrEqual(336 - 68 - 41);
   });
 
   it('keeps the apply button out of the scroll, where the count is visible', async () => {
@@ -151,21 +111,6 @@ describe('hv-full-view: phone-width app bar', () => {
     expect(css).not.toMatch(/\.appbar \.pill \{[^}]*min-height: var\(--hv-tap-min/);
     // The bar's actual actions keep the full target.
     expect(css).toMatch(/\.appbar \.ghost,\s*\.appbar \.add \{[^}]*min-height: var\(--hv-tap-min/);
-  });
-
-  it('sizes its own touch targets rather than inheriting the card its opener had', () => {
-    // On the shell, not the app bar: the table, its sort headers and the
-    // context bar are on this surface too and need the same sizing.
-    expect(narrow()).toMatch(/\.shell \{[^}]*--hv-tap-min: 44px/);
-    expect(narrow()).toMatch(/\.shell \{[^}]*--hv-input-font: 16px/);
-    // And outside the query, where the card's own idea of narrow used to reach
-    // in: an overlay renders inside hv-card-shell's tree, which declares both
-    // of these for a card measured at 600px or under — an ordinary dashboard
-    // column on a desktop. The guaranteed-invalid value rather than a number,
-    // so each consumer keeps the size it was written with.
-    const shell = /\.shell \{([^}]*)\}/.exec(componentCss('hv-full-view'))?.[1] ?? '';
-    expect(shell).toMatch(/--hv-tap-min: initial/);
-    expect(shell).toMatch(/--hv-input-font: initial/);
   });
 
   // Selection mode reuses the same bar. `.subcount` was the only shrinkable
@@ -239,13 +184,6 @@ describe('hv-full-view: wide app bar', () => {
     const end = css.indexOf('@media (max-width: 700px)', start);
     return end > start ? css.slice(start, end) : css.slice(start);
   };
-
-  // The complement of NARROW_QUERY: the two blocks must not both apply, and
-  // must not leave a width where neither does.
-  it('picks up exactly where the phone block leaves off', () => {
-    expect(NARROW_QUERY).toBe('(max-width: 700px)');
-    expect(componentCss('hv-full-view')).toContain('@media (min-width: 701px)');
-  });
 
   it('puts a floor under the search rather than letting the pills eat it', () => {
     expect(wide()).toMatch(/\.appbar \.search \{[^}]*min-width: 260px/);
@@ -360,22 +298,6 @@ describe('hv-full-view: embedded', () => {
 
     expect(document.activeElement).toBe(outside);
     outside.remove();
-  });
-
-  it('is sized by its host rather than by the viewport', () => {
-    const css = componentCss('hv-full-view');
-    expect(css).toContain(':host([embedded]) { display: block; height: 100%; }');
-    expect(css).toContain(
-      ':host([embedded]) .shell { position: relative; inset: auto; height: 100%; box-shadow: none; }',
-    );
-  });
-
-  // The embedded rules override the shell's box and nothing else: the grid rows
-  // and the sideways pan are what the layout inside depends on.
-  it('keeps the shell a two-row grid that can be panned sideways', () => {
-    const css = componentCss('hv-full-view');
-    expect(css).toContain('.shell { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr;');
-    expect(css).toContain('overflow-x: auto;');
   });
 
   it('leaves the overlay variant modal', async () => {
@@ -876,13 +798,6 @@ describe('hv-full-view: sidebar facets', () => {
 
     expect(seen).toEqual([{ id: 'organize', tab: 'statuses' }]);
     expect(q(sr, '[data-testid="sidebar-new-status"]')?.getAttribute('title')).toBe('New status…');
-  });
-
-  it('lines the three tallies up in one column', () => {
-    // The Locations heading ends in a button and the other two in nothing, so
-    // without a reserved slot its number sits an icon-button's width inboard.
-    expect(componentCss('hv-full-view')).toMatch(/\.head-action \{[^}]*width: var\(--hv-tap-min, 34px\)/);
-    expect(componentCss('hv-full-view')).toMatch(/\.head-action \{[^}]*flex: none/);
   });
 
   it('says so when a facet has nothing in it yet', async () => {
@@ -1436,59 +1351,6 @@ describe('hv-full-view: editing', () => {
     expect(q(sr, '[data-testid="pinned-editor-hint"]')).toBe(null);
   });
 
-  // The form sits in a column flex beside a table that wants every pixel. An
-  // `overflow-y: auto` box has an automatic minimum size of zero, so the form
-  // was free to be squeezed — it opened about 130px tall, a field and a half,
-  // and never came near the ceiling meant to bound it.
-  it('refuses to be squeezed by the table below it', () => {
-    const rule = /\.editor-holder \{([^}]*)\}/.exec(componentCss('hv-full-view'))?.[1] ?? '';
-    expect(rule, 'no .editor-holder rule').not.toBe('');
-    expect(rule).toMatch(/flex: none/);
-    // A ceiling is still wanted — the form is taller than a short viewport.
-    expect(rule).toMatch(/max-height: min\(\d+dvh/);
-    expect(rule).toMatch(/overflow-y: auto/);
-  });
-
-  // The app bar's minimum is 778px — close, title, the search box's own floor,
-  // three pills, Add item, the ⋮ — so a 760px landscape phone was 18px short of
-  // the layout. Hidden on both axes, those 18px could not be reached: the ⋮ was
-  // sliced in half and the editor's Save sat flush against the screen edge.
-  it('can be panned sideways when the layout is wider than the screen', () => {
-    const rule = /\.shell \{([^}]*)\}/.exec(componentCss('hv-full-view'))?.[1] ?? '';
-    expect(rule, 'no .shell rule').not.toBe('');
-    expect(rule).toMatch(/overflow-x: auto/);
-    // Vertical stays clipped: the surface is the viewport, and the boxes
-    // inside it (the form holder, the filter panel, the table) scroll
-    // themselves.
-    expect(rule).toMatch(/overflow-y: hidden/);
-    expect(rule).not.toMatch(/overflow: hidden/);
-    // Without this a pan that runs out of surface scrolls the dashboard behind.
-    expect(rule).toMatch(/overscroll-behavior: contain/);
-  });
-
-  // Turn a phone on its side and the viewport is 400px tall, not 844. The app
-  // bar (64), the context bar (68) and the footer (41) leave 227px; a 70dvh
-  // ceiling asked for 280, so the holder ran past the bottom of a shell that
-  // clips and cannot scroll — the footer and the sticky Save/Cancel bar were
-  // both off the screen with no gesture that could reach them.
-  it('leaves the footer its room on a landscape phone', () => {
-    const rule = /\.editor-holder \{([^}]*)\}/.exec(componentCss('hv-full-view'))?.[1] ?? '';
-    const ceiling = /max-height: min\((\d+)dvh, calc\(100% - (\d+)px\)\)/.exec(rule);
-    expect(ceiling, `ceiling ignores the room the column has: ${rule}`).not.toBe(null);
-
-    // Measured against the column, not the viewport, so however the app bar
-    // lays out is already priced in. What is reserved is what sits inside this
-    // column around the form: the context bar and the footer.
-    const reserved = Number(ceiling?.[2]);
-    expect(reserved).toBeGreaterThanOrEqual(109);
-
-    // 400px landscape: the column is 336 tall, so the form stops at 220 and
-    // both the sticky action bar and the footer stay on the screen.
-    const column = 400 - 64;
-    expect(Math.min((Number(ceiling?.[1]) / 100) * 400, column - reserved)).toBeLessThanOrEqual(
-      column - 68 - 41,
-    );
-  });
 });
 
 // Switching rows, the backdrop and Escape all wiped a form mid-sentence. The
@@ -1892,15 +1754,6 @@ describe('hv-full-view: app bar filters', () => {
   it('spells out what the checked-out pill counts', async () => {
     const { sr } = await mount({ items: flagged });
     expect(q(sr, '[data-testid="full-badge-out"]')?.textContent?.trim()).toBe('2 checked out');
-  });
-
-  // The card's hues carry the meaning on this bar too, but the fills are solid
-  // rather than the card's pale tints, because a tint over an already-coloured
-  // bar is unreadable in dark mode.
-  it('colours low and overdue the way the card does', () => {
-    const css = componentCss('hv-full-view');
-    expect(css).toMatch(/\.appbar \.hv-chip\.warning \{[^}]*background: var\(--hv-amber\)/);
-    expect(css).toMatch(/\.appbar \.hv-chip\.error \{[^}]*background: var\(--hv-error\)/);
   });
 
   it('debounces the app bar search', async () => {

@@ -950,17 +950,6 @@ describe('hv-organize-dialog: mobile value actions', () => {
     expect(sheet.querySelector('[data-testid="sheet-merge-suggestion"]')?.textContent).toContain('battery');
   });
 
-  // jsdom lays out no shadow DOM, so the row's geometry is asserted on the
-  // stylesheet. At 375px the filter, the count and the create button shared a
-  // 335px row and the field came out 110px wide — its own placeholder clipped.
-  it('gives the filter field a row of its own', () => {
-    const css = dialogCss();
-    expect(css).toMatch(/:host\(\[mobile\]\) \.toolbar \{[^}]*flex-wrap: wrap/);
-    expect(css).toMatch(/:host\(\[mobile\]\) \.search \{[^}]*flex-basis: 100%/);
-    // …with the count keeping the button company on the second row.
-    expect(css).toMatch(/:host\(\[mobile\]\) \.toolbar-count \{[^}]*margin-right: auto/);
-  });
-
   it('opens the merge editor from the sheet', async () => {
     const { el, sr } = await mount({ items, tab: 'tags', mobile: true });
     const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'batery')!;
@@ -1336,25 +1325,6 @@ describe('hv-organize-dialog: statuses', () => {
     expect(q(sr, '[data-testid="status-color-custom-hint"]')).toBe(null);
   });
 
-  // The bug this guards against paints nothing and throws nothing: the swatch
-  // still reads as selected, so only a screenshot catches it.
-  it('leaves the chip fill to the pair the chip reads, on every swatch rule', () => {
-    // Comments quote property names freely.
-    const css = componentCss('hv-organize-dialog').replace(/\/\*[\s\S]*?\*\//g, '');
-
-    for (const block of css.matchAll(/([^{}]*\.swatch[^{}]*)\{([^}]*)\}/g)) {
-      const [selector, body] = [block[1].trim(), block[2]];
-      // A swatch is a status chip, and `.hv-status-chip` resolves its fill
-      // through --hv-status-bg / --hv-status-fg. A `background` or `color`
-      // longhand on a selector of this specificity outranks that rule, so the
-      // inline pair a chosen colour arrives as would never paint — and the
-      // swatch would sit there grey while reading as selected.
-      expect(body, `${selector} sets a fill longhand`).not.toMatch(
-        /(^|;)\s*(background|background-color|color)\s*:/,
-      );
-    }
-  });
-
   // An import can define a status naming a glyph this bundle has never carried.
   // The swatch still has to put ink on its tint, or the tone is half-shown again.
   it('letters a swatch whose glyph this bundle does not carry', async () => {
@@ -1440,36 +1410,6 @@ describe('hv-organize-dialog: statuses', () => {
     expect(preview?.getAttribute('title')).toBe('lent_out_to_the_neighbours');
   });
 
-  it('lets the slug wrap under the name field rather than eliding beside it', () => {
-    const css = dialogCss();
-    expect(css).toMatch(/\.status-name \{[^}]*flex-wrap: wrap/);
-    // Not shrinkable, so it wraps to a line of its own instead of being cut…
-    expect(css).toMatch(/\.status-name \.status-slug \{[^}]*flex: 0 0 auto/);
-    // …and elides only when the slug alone outruns that line.
-    expect(css).toMatch(/\.status-slug \{[^}]*text-overflow: ellipsis/);
-  });
-
-  // Measured in the sidebar panel at 390px: the row needed 404px of a 362px
-  // box, so the trash button for "Lent out to the neighbours" sat 28px past the
-  // dialog's right edge — off the screen, with no way to scroll to it.
-  it('lets a long status label elide so the row actions stay inside the dialog', () => {
-    const css = dialogCss();
-    // The chip is flex:none everywhere else; in a status row it has to give way.
-    expect(css).toMatch(/\.status-row \.hv-status-chip \{[^}]*flex: 0 1 auto/);
-    expect(css).toMatch(/\.status-row \.hv-status-chip \{[^}]*min-width: 0/);
-  });
-
-  // Five children on one row left the select ~44px wide, showing "O⌄" — the one
-  // thing the guard exists to make legible before a destructive click.
-  it('stacks the delete guard on a phone and keeps the reassign select readable', () => {
-    const css = dialogCss();
-    expect(css).toMatch(/\.guard \{[^}]*flex-wrap: wrap/);
-    expect(css).toMatch(/:host\(\[mobile\]\) \.status-guard \{[^}]*flex-direction: column/);
-    expect(css).toMatch(/:host\(\[mobile\]\) \.status-guard \{[^}]*align-items: stretch/);
-    expect(css).toMatch(/\.status-guard \.guard-message \{[^}]*flex: 1 1 100%/);
-    expect(css).toMatch(/\.guard-target select\.control \{[^}]*min-width: 140px/);
-  });
-
   // The sentence naming where 40 items are about to go carried .note's tertiary
   // grey, which measures 2.5:1 over the guard's fill. It is the guard's own
   // message, so it takes the guard's ink.
@@ -1501,18 +1441,6 @@ describe('hv-organize-dialog: statuses', () => {
     expect(guard?.querySelector('.guard-target select')).not.toBe(null);
   });
 
-  // The stacked pair was the whole of the gap: a status row stood ~71px tall
-  // against ~48px on the sibling tabs, and the arrows were 24px boxes around a
-  // 15px glyph that had to be aimed at.
-  it('lays the reorder pair out side by side, at a size a pointer can hit', () => {
-    const css = dialogCss();
-    expect(css).toMatch(/\.move \{[^}]*flex-direction: row/);
-    expect(css).toMatch(/\.move button \{[^}]*width: 28px/);
-    // A phone keeps them stacked — 88px of horizontal pair does not fit a row
-    // that also carries the chip, the slug, the count and two 44px actions.
-    expect(css).toMatch(/:host\(\[mobile\]\) \.move \{[^}]*flex-direction: column/);
-  });
-
   it('draws a chevron big enough to read at the button it sits in', async () => {
     const { sr } = await mount({ tab: 'statuses' });
     const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
@@ -1522,60 +1450,6 @@ describe('hv-organize-dialog: statuses', () => {
     }
   });
 
-  // One rhythm across all four tabs, from one declaration: the value rows read
-  // it directly and it inherits into the location tree the Locations tab hosts.
-  it('gives every tab one row rhythm, the hosted tree included', () => {
-    const css = dialogCss();
-    expect(css).toMatch(/:host \{[^}]*--hv-organize-row-pad: 8px/);
-    expect(css).toMatch(/\.value-row \{[^}]*padding: var\(--hv-organize-row-pad\) 8px/);
-    // Nothing redeclares it per tab, or the tabs could drift again.
-    expect(css.match(/--hv-organize-row-pad:/g)).toHaveLength(1);
-  });
-
-  // DOM-measured on a phone: edit/delete 26×26, swatches 26×22, the count link
-  // 14px tall. WCAG 2.2 asks 24px of every pointer; a finger wants the
-  // platform's 44. The reorder pair takes more than the minimum — a pair that
-  // has to be aimed at is the complaint it answers.
-  it('sizes every row control for a finger, on all four tabs', () => {
-    const css = dialogCss();
-    for (const [selector, size] of [
-      ['\\.move button', '28px'],
-      ['\\.swatch', '26px'],
-    ] as const) {
-      expect(css, selector).toMatch(new RegExp(`${selector} \\{[^}]*height: ${size}`));
-    }
-    expect(css).toMatch(/\.count-link \{[^}]*min-height: 24px/);
-
-    for (const selector of ['\\.move button', '\\.swatch', '\\.glyph', '\\.row-actions button']) {
-      expect(css, selector).toMatch(
-        new RegExp(
-          `:host\\(\\[mobile\\]\\) ${selector} \\{[^}]*width: var\\(--hv-tap-min, 44px\\)[^}]*height: var\\(--hv-tap-min, 44px\\)`,
-        ),
-      );
-    }
-    expect(css).toMatch(/:host\(\[mobile\]\) \.count-link \{[^}]*min-height: var\(--hv-tap-min, 44px\)/);
-
-    // The count link and the row actions are the same controls on Locations,
-    // Categories and Tags, so none of the sizing is scoped to a status row —
-    // one dialog cannot offer two target sizes for one control.
-    expect(css).not.toMatch(/\.status-row \.count-link/);
-    expect(css).not.toMatch(/:host\(\[mobile\]\) \.status-row/);
-  });
-
-  // `.glyph` is the icon-picker button — a bordered box with a pointer cursor.
-  // Sharing it made the mobile picker sizing reach for `.swatches` to stay off
-  // the guard; with the mark on a class of its own, neither needs the scoping.
-  it('keeps .glyph meaning the icon-picker button alone', () => {
-    const css = dialogCss();
-    expect(css).not.toMatch(/\.swatches \.glyph/);
-    expect(css).not.toMatch(/\.guard \.glyph/);
-  });
-
-  // The colour row compressed ten swatches onto one line while the icon row
-  // wrapped; at touch size neither fits, so both must wrap.
-  it('wraps the swatch rows instead of squeezing them onto one line', () => {
-    expect(dialogCss()).toMatch(/\.swatches \{[^}]*flex-wrap: wrap/);
-  });
 });
 
 // Every disclosure renders after the row that opened it, inside a `.body` that

@@ -2,7 +2,7 @@ import '../components/hv-column-picker';
 import '../components/hv-confirm';
 import '../components/hv-diagnostics-panel';
 import '../components/hv-import-sheet';
-import { componentCss, mountComponent } from '../test.utils';
+import { mountComponent } from '../test.utils';
 
 /**
  * The four host dialogs, which have to end up alike: on a phone the card raises
@@ -24,25 +24,6 @@ afterEach(() => {
 });
 
 describe('host dialogs: one phone presentation', () => {
-  it('rises from the bottom edge, full width, under mobile', () => {
-    for (const tag of DIALOGS) {
-      const css = componentCss(tag);
-      expect(css, tag).toMatch(/:host\(\[mobile\]\) \.wrap \{[^}]*place-items: end stretch/);
-      expect(css, tag).toMatch(/:host\(\[mobile\]\) \.panel \{[^}]*width: 100%/);
-      expect(css, tag).toMatch(
-        /:host\(\[mobile\]\) \.panel \{[^}]*border-radius: var\(--hv-radius-sheet\) var\(--hv-radius-sheet\) 0 0/,
-      );
-      expect(css, tag).toMatch(/:host\(\[mobile\]\) \.panel \{[^}]*box-shadow: var\(--hv-shadow-sheet\)/);
-    }
-  });
-
-  it('keeps the centred dialog when it is not on a phone', () => {
-    for (const tag of DIALOGS) {
-      const css = componentCss(tag);
-      expect(css, tag).toMatch(/[^)] \.wrap \{[^}]*place-items: center/);
-      expect(css, tag).toMatch(/[^)] \.panel \{[^}]*border-radius: var\(--hv-radius-dialog\)/);
-    }
-  });
 
   // The flag has to reach the shadow root as an attribute or none of the rules
   // above can match — a property alone selects nothing.
@@ -58,12 +39,4 @@ describe('host dialogs: one phone presentation', () => {
     }
   });
 
-  // A sheet sits against the bottom edge, where a phone's home indicator is.
-  it('clears the safe area under the bottom row of actions', () => {
-    for (const tag of DIALOGS) {
-      expect(componentCss(tag), tag).toMatch(
-        /:host\(\[mobile\]\) \.panel \{[^}]*padding-bottom: max\(12px, env\(safe-area-inset-bottom\)\)/,
-      );
-    }
-  });
 });

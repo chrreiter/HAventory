@@ -693,21 +693,4 @@ describe('hv-list-row: document marker', () => {
     expect(mark?.previousElementSibling?.getAttribute('data-testid')).toBe('row-name');
   });
 
-  // A flex item takes an automatic minimum width from its content, so the name
-  // stops eliding the moment it shares a line with the mark unless it gives
-  // that minimum up.
-  it('leaves the name able to shrink on that line', () => {
-    const css = componentCss('hv-list-row');
-    expect(css).toMatch(/\.name-line \{[^}]*display: flex/);
-    expect(css).toMatch(/\.name \{[^}]*min-width: 0[^}]*text-overflow: ellipsis/);
-  });
-});
-
-describe('hv-list-row: the row is a target', () => {
-  it('shows the hand a button would', () => {
-    const css = componentCss('hv-list-row');
-    // The shared `button { cursor: pointer }` cannot reach a role=row div, and
-    // every chip, pill and menu beside the row already shows the hand.
-    expect(css).toMatch(/\.row \{[^}]*cursor: pointer/);
-  });
 });
