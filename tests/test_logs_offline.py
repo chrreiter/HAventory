@@ -105,8 +105,8 @@ async def test_a_real_persist_writes_its_op_and_elapsed_ms_into_the_message(capl
     assert any("op=persist_start" in message for message in messages)
 
 
-def test_every_module_logger_goes_through_the_adapter() -> None:
-    """A module taking `logging.getLogger` directly loses its context silently.
+def test_no_module_takes_a_logger_around_the_adapter() -> None:
+    """`logging.getLogger` anywhere but `logs.py` loses that module's context.
 
     Read from the source rather than by importing: several modules pull in Home
     Assistant packages the offline stubs deliberately do not provide.
@@ -114,12 +114,25 @@ def test_every_module_logger_goes_through_the_adapter() -> None:
 
     offenders = []
     for path in sorted(PACKAGE.glob("*.py")):
-        source = path.read_text(encoding="utf-8")
-        for line in source.splitlines():
-            if line.startswith(("LOGGER = ", "_LOGGER = ")) and "context_logger" not in line:
-                offenders.append(f"{path.name}: {line.strip()}")
+        if path.name == "logs.py":
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if "logging.getLogger(" in line:
+                offenders.append(f"{path.name}:{number}: {line.strip()}")
 
-    assert offenders == []
+    assert offenders == [], "take the logger from logs.context_logger(__name__) instead"
+
+
+def test_every_module_that_logs_has_a_logger_from_the_adapter() -> None:
+    """The other half: a module that logs at all takes its logger from here."""
+
+    for path in sorted(PACKAGE.glob("*.py")):
+        if path.name == "logs.py":
+            continue
+        source = path.read_text(encoding="utf-8")
+        if "LOGGER." not in source:
+            continue
+        assert "context_logger(__name__)" in source, path.name
 
 
 def test_the_logger_keeps_the_module_name_it_was_asked_for() -> None:
