@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -526,7 +527,7 @@ export class HVDetailSheet extends LitElement {
       return html`<div class="fact" data-testid="sheet-fact" data-key=${key}>
         <span>${label}</span>
         <span class="value ${on ? 'yes' : 'unset'}">
-          ${on ? html`${icon('check', 15)} Yes` : 'No'}
+          ${on ? html`${icon('check', 15)} ${t('hv.term.yes')}` : t('hv.term.no')}
         </span>
       </div>`;
     }
@@ -552,7 +553,9 @@ export class HVDetailSheet extends LitElement {
         return html`<figure data-testid="sheet-photo">
           <button
             data-testid="sheet-photo-open"
-            aria-label=${`Open ${pictureAlt(item.name, index, shots.length)}`}
+            aria-label=${t('hv.sheet.openPhoto', {
+              photo: pictureAlt(item.name, index, shots.length),
+            })}
             @click=${() => {
               this._lightbox = index;
             }}
@@ -584,7 +587,7 @@ export class HVDetailSheet extends LitElement {
     const docs = manuals(item.attachments);
     if (!docs.length) return null;
     return html`<div class="documents" data-testid="sheet-documents">
-      <h3>Documents</h3>
+      <h3>${t('hv.sheet.documents')}</h3>
       <ul>
         ${docs.map((doc) => {
           const src = this._urls.get(item.id, doc.id, attachmentNameToken(doc));
@@ -596,7 +599,7 @@ export class HVDetailSheet extends LitElement {
           const meta = [
             ...(title === doc.filename ? [] : [doc.filename]),
             formatBytes(doc.size),
-            `added ${relativeTime(doc.uploaded_at)}`,
+            t('hv.sheet.documentAdded', { when: relativeTime(doc.uploaded_at) }),
           ].join(' · ');
           return html`<li class=${missing ? 'missing' : ''} data-testid="sheet-document">
             <span class="doc-icon">${icon('fileDocument', 20)}</span>
@@ -606,7 +609,7 @@ export class HVDetailSheet extends LitElement {
             </span>
             ${missing
               ? html`<span class="hv-chip warning" data-testid="sheet-document-missing"
-                  >File missing</span
+                  >${t('hv.term.fileMissing')}</span
                 >`
               : src
                 ? html`<a
@@ -615,7 +618,7 @@ export class HVDetailSheet extends LitElement {
                     href=${src}
                     target="_blank"
                     rel="noopener noreferrer"
-                    >${icon('openInNew', 15)}Open</a
+                    >${icon('openInNew', 15)}${t('hv.action.open')}</a
                   >`
                 : null}
           </li>`;
@@ -643,12 +646,17 @@ export class HVDetailSheet extends LitElement {
 
     return html`
       <div class="bar">
-        <button class="tap" data-testid="sheet-close" aria-label="Close" @click=${() => this._leaveEdit('close')}>
+        <button
+          class="tap"
+          data-testid="sheet-close"
+          aria-label=${t('hv.action.close')}
+          @click=${() => this._leaveEdit('close')}
+        >
           ${icon('close', 22)}
         </button>
         <span class="crumb hv-chip-line" data-testid="sheet-path" title=${pathTitle(parts)}
           >${renderAreaChip(areaMarkName(parts.areaName, parts.path))}<span class="hv-chip-line-text"
-            >${parts.path || 'No location'}</span
+            >${parts.path || t('hv.term.noLocation')}</span
           ></span
         >
         <button
@@ -658,7 +666,7 @@ export class HVDetailSheet extends LitElement {
             this._mode = 'edit';
           }}
         >
-          Edit
+          ${t('hv.action.edit')}
         </button>
       </div>
 
@@ -666,8 +674,11 @@ export class HVDetailSheet extends LitElement {
         <h2 data-testid="sheet-name">${item.name}</h2>
         <div class="chips">
           ${low
-            ? html`<span class="hv-chip warning" data-testid="sheet-low" aria-label="Low stock"
-                >Low</span
+            ? html`<span
+                class="hv-chip warning"
+                data-testid="sheet-low"
+                aria-label=${t('hv.term.lowStock')}
+                >${t('hv.term.low')}</span
               >`
             : null}
           ${itemStatus(item) !== DEFAULT_STATUS
@@ -678,14 +689,14 @@ export class HVDetailSheet extends LitElement {
                 class="hv-chip ${overdue ? 'error' : 'state'}"
                 data-testid="sheet-out"
               >
-                ${overdue ? 'Overdue' : 'Checked out'}${item.due_date
-                  ? ` · due ${formatDate(item.due_date)}`
+                ${overdue ? t('hv.term.overdue') : t('hv.term.checkedOut')}${item.due_date
+                  ? ` · ${t('hv.term.due', { date: formatDate(item.due_date) })}`
                   : ''}
               </span>`
             : null}
           ${inspectionDue
             ? html`<span class="hv-chip warning" data-testid="sheet-inspection-due">
-                Inspection due · ${formatDate(item.inspection_date)}
+                ${t('hv.term.inspectionDueOn', { date: formatDate(item.inspection_date) })}
               </span>`
             : null}
           ${item.category ? html`<span class="hv-chip" data-testid="sheet-category">${item.category}</span>` : null}
@@ -697,7 +708,7 @@ export class HVDetailSheet extends LitElement {
         <button
           class="minus"
           data-testid="sheet-decrement"
-          aria-label="Decrease quantity"
+          aria-label=${t('hv.row.decreaseQuantity')}
           ?disabled=${item.checked_out || item.quantity <= 0}
           @click=${() => this._emit('decrement')}
         >
@@ -707,14 +718,14 @@ export class HVDetailSheet extends LitElement {
           <span class="qty ${low ? 'low' : ''}" data-testid="sheet-qty">${item.quantity}</span>
           ${item.low_stock_threshold !== null
             ? html`<span class="caption" data-testid="sheet-threshold"
-                >low-stock at ${item.low_stock_threshold}</span
+                >${t('hv.sheet.lowStockAt', { threshold: item.low_stock_threshold })}</span
               >`
             : null}
         </span>
         <button
           class="plus"
           data-testid="sheet-increment"
-          aria-label="Increase quantity"
+          aria-label=${t('hv.row.increaseQuantity')}
           ?disabled=${item.checked_out}
           @click=${() => this._emit('increment')}
         >
@@ -730,18 +741,20 @@ export class HVDetailSheet extends LitElement {
 
       <div class="facts">
         <div class="fact" data-testid="sheet-fact" data-key="due">
-          <span>Due</span>
-          <span class="value ${item.due_date ? '' : 'unset'}">${item.due_date ? formatDate(item.due_date) : 'Not set'}</span>
+          <span>${t('hv.sheet.fact.due')}</span>
+          <span class="value ${item.due_date ? '' : 'unset'}"
+            >${item.due_date ? formatDate(item.due_date) : t('hv.term.notSet')}</span
+          >
         </div>
         <div class="fact" data-testid="sheet-fact" data-key="inspection">
-          <span>Next inspection</span>
+          <span>${t('hv.sheet.fact.nextInspection')}</span>
           <span class="value ${item.inspection_date ? '' : 'unset'} ${inspectionDue ? 'late' : ''}"
-            >${item.inspection_date ? formatDate(item.inspection_date) : 'Not set'}</span
+            >${item.inspection_date ? formatDate(item.inspection_date) : t('hv.term.notSet')}</span
           >
         </div>
         ${hasReminder(item)
           ? html`<div class="fact" data-testid="sheet-fact" data-key="reminder">
-              <span>Reminder</span>
+              <span>${t('hv.sheet.fact.reminder')}</span>
               <span
                 class="value ${isReminderDue(item) ? 'late' : ''}"
                 data-testid="sheet-reminder"
@@ -751,20 +764,23 @@ export class HVDetailSheet extends LitElement {
                 ? html`<button
                     class="text-action"
                     data-testid="sheet-reminder-bump"
-                    title="Mark this reminder done and move it to its next occurrence"
+                    title=${t('hv.sheet.markDoneTitle')}
                     ?disabled=${this.busy}
                     @click=${() => this._emit('reminder-bump')}
                   >
-                    Mark done
+                    ${t('hv.sheet.markDone')}
                   </button>`
                 : null}
             </div>`
           : null}
         ${customEntries.map(([key, value]) => this._renderCustomFact(key, value))}
         <div class="fact" data-testid="sheet-fact" data-key="updated">
-          <span>Updated</span>
+          <span>${t('hv.sheet.fact.updated')}</span>
           <span class="value" data-testid="sheet-updated"
-            >${relativeTime(item.updated_at)} · v${item.version}</span
+            >${t('hv.sheet.updatedValue', {
+              when: relativeTime(item.updated_at),
+              version: item.version,
+            })}</span
           >
         </div>
       </div>
@@ -803,7 +819,7 @@ export class HVDetailSheet extends LitElement {
         <div class="pair">
           ${item.checked_out
             ? html`<button class="outline" data-testid="sheet-check-in" @click=${() => this._emit('check-in')}>
-                ${icon('account', 18)}Check in
+                ${icon('account', 18)}${t('hv.action.checkIn')}
               </button>`
             : html`<button
                 class="outline"
@@ -812,7 +828,7 @@ export class HVDetailSheet extends LitElement {
                   this._checkoutOpen = true;
                 }}
               >
-                ${icon('account', 18)}Check out
+                ${icon('account', 18)}${t('hv.action.checkOut')}
               </button>`}
           <button
             class="hv-pill large"
@@ -821,11 +837,11 @@ export class HVDetailSheet extends LitElement {
               this._mode = 'edit';
             }}
           >
-            ${icon('pencil', 18)}Edit details
+            ${icon('pencil', 18)}${t('hv.sheet.editDetails')}
           </button>
         </div>
         <button class="danger" data-testid="sheet-delete" @click=${() => this._emit('request-delete')}>
-          Delete item
+          ${t('hv.action.deleteItem')}
         </button>
       </div>
     `;
@@ -837,19 +853,19 @@ export class HVDetailSheet extends LitElement {
         <button
           class="tap"
           data-testid="sheet-back"
-          aria-label="Back"
+          aria-label=${t('hv.action.back')}
           @click=${() => this._leaveEdit('read')}
         >
           ${icon('arrowLeft', 21)}
         </button>
-        <span class="heading">Edit item</span>
+        <span class="heading">${t('hv.sheet.editItem')}</span>
         <button
           class="save"
           data-testid="sheet-save"
           ?disabled=${this.busy}
           @click=${() => this._editor?.shadowRoot?.querySelector<HTMLButtonElement>('[data-testid="editor-save"]')?.click()}
         >
-          ${this.busy ? 'Saving…' : 'Save'}
+          ${this.busy ? t('hv.action.saving') : t('hv.action.save')}
         </button>
       </div>
       <hv-item-editor
@@ -890,7 +906,7 @@ export class HVDetailSheet extends LitElement {
         data-testid="detail-sheet"
         ?open=${this.open && !!item}
         ?noHandle=${this._mode === 'edit'}
-        label=${item?.name ?? 'Item'}
+        label=${item?.name ?? t('hv.sheet.label')}
         @cancel=${(e: Event) => {
           // The inner sheet's cancel is composed, so it would reach the host as
           // "the detail sheet closed" — before this sheet has decided whether it

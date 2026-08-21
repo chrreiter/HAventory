@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LitElement, css, html, nothing } from 'lit';
 import type { PropertyValues } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
@@ -285,7 +286,7 @@ export class HVList extends LitElement {
                 // showing the collapsed row as well would just be a duplicate.
                 html`${it.id === pinnedId
                   ? html`<p class="pinned-hint" data-testid="pinned-editor-hint">
-                      No longer matches the current filters
+                      ${t('hv.list.noLongerMatches')}
                     </p>`
                   : nothing}${this.editorTemplate(it.id)}`
               : html`<hv-list-row

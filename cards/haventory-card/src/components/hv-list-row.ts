@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LitElement, css, html, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -36,21 +37,21 @@ export function isLowStock(item: Item): boolean {
 export function rowMenuEntries(item: Item): OverflowMenuEntry[] {
   if (item.checked_out) {
     return [
-      { id: 'check-in', label: 'Check in', glyph: 'account' },
+      { id: 'check-in', label: t('hv.action.checkIn'), glyph: 'account' },
       {
         id: 'set-due-date',
-        label: item.due_date ? 'Change due date…' : 'Set due date…',
+        label: item.due_date ? t('hv.row.menu.changeDueDate') : t('hv.row.menu.setDueDate'),
         glyph: 'calendar',
       },
       { divider: true },
-      { id: 'delete', label: 'Delete item', glyph: 'del' },
+      { id: 'delete', label: t('hv.action.deleteItem'), glyph: 'del' },
     ];
   }
   return [
-    { id: 'check-out', label: 'Check out…', glyph: 'account' },
-    { id: 'edit', label: 'Edit', glyph: 'pencil' },
+    { id: 'check-out', label: t('hv.action.checkOutEllipsis'), glyph: 'account' },
+    { id: 'edit', label: t('hv.action.edit'), glyph: 'pencil' },
     { divider: true },
-    { id: 'delete', label: 'Delete item', glyph: 'del' },
+    { id: 'delete', label: t('hv.action.deleteItem'), glyph: 'del' },
   ];
 }
 
@@ -477,14 +478,14 @@ export class HVListRow extends LitElement {
           this._emit('check-in');
         }}
       >
-        Check in
+        ${t('hv.action.checkIn')}
       </button>`;
     }
     return html`
       <span class="stepper" data-testid="row-stepper">
         <button
           data-testid="row-decrement"
-          aria-label="Decrease quantity"
+          aria-label=${t('hv.row.decreaseQuantity')}
           @click=${(e: Event) => {
             e.stopPropagation();
             this._emit('decrement');
@@ -495,7 +496,7 @@ export class HVListRow extends LitElement {
         <span class="qty ${low ? 'low' : ''}" data-testid="row-qty">${item.quantity}</span>
         <button
           data-testid="row-increment"
-          aria-label="Increase quantity"
+          aria-label=${t('hv.row.increaseQuantity')}
           @click=${(e: Event) => {
             e.stopPropagation();
             this._emit('increment');
@@ -547,7 +548,7 @@ export class HVListRow extends LitElement {
         class="row ${this.mobile ? 'touch' : ''} ${this.selected ? 'selected' : ''}"
         role="row"
         tabindex="0"
-        aria-label=${`Item ${item.name}`}
+        aria-label=${t('hv.row.label', { name: item.name })}
         data-testid="list-row"
         data-item-id=${item.id}
         @keydown=${this._onKeydown}
@@ -561,7 +562,7 @@ export class HVListRow extends LitElement {
               class="box ${this.selected ? 'on' : ''}"
               role="checkbox"
               aria-checked=${String(this.selected)}
-              aria-label=${`Select ${item.name}`}
+              aria-label=${t('hv.row.select', { name: item.name })}
               data-testid="row-select"
               @click=${(e: Event) => {
                 e.stopPropagation();
@@ -579,8 +580,8 @@ export class HVListRow extends LitElement {
               ? html`<span
                   class="doc-marker"
                   data-testid="row-has-document"
-                  title="Has a document"
-                  aria-label="Has a document"
+                  title=${t('hv.row.hasDocument')}
+                  aria-label=${t('hv.row.hasDocument')}
                   >${icon('fileDocument', 14)}</span
                 >`
               : null}
@@ -597,29 +598,32 @@ export class HVListRow extends LitElement {
               ? html`<span class="dot" data-testid="row-low-dot"></span>`
               : null}
             ${this.mobile && item.checked_out
-              ? html`${overdue ? 'Overdue' : 'Checked out'}${item.due_date
-                  ? ` · due ${formatDate(item.due_date)}`
+              ? html`${overdue ? t('hv.term.overdue') : t('hv.term.checkedOut')}${item.due_date
+                  ? ` · ${t('hv.term.due', { date: formatDate(item.due_date) })}`
                   : ''}${hasMobileSecondary ? html` · ${mobileSecondary}` : ''}`
               : this.mobile && flagged
                 ? html`<span data-testid="row-status">${statusLabel(status, this.statuses)}</span>${hasMobileSecondary
                     ? html` · ${mobileSecondary}`
                     : ''}`
                 : this.mobile && inspectionDue
-                  ? html`<span data-testid="row-inspection-due">Inspection due</span> · ${formatDate(item.inspection_date)}`
+                  ? html`<span data-testid="row-inspection-due">${t('hv.term.inspectionDue')}</span> ·
+                      ${formatDate(item.inspection_date)}`
                   : this.mobile
                     ? hasMobileSecondary
                       ? mobileSecondary
-                      : 'No location'
+                      : t('hv.term.noLocation')
                     : html`${renderAreaChip(areaMark)}<span class="hv-chip-line-text"
-                        >${secondary || 'No location'}</span
+                        >${secondary || t('hv.term.noLocation')}</span
                       >`}
           </span>
         </span>
         ${this.pending
-          ? html`<span class="hv-chip warning" data-testid="row-pending">Pending</span>`
+          ? html`<span class="hv-chip warning" data-testid="row-pending">${t('hv.row.pending')}</span>`
           : null}
         ${!this.mobile && low
-          ? html`<span class="hv-chip warning" data-testid="row-low" aria-label="Low stock">Low</span>`
+          ? html`<span class="hv-chip warning" data-testid="row-low" aria-label=${t('hv.term.lowStock')}
+              >${t('hv.term.low')}</span
+            >`
           : null}
         ${!this.mobile && flagged
           ? renderStatusChip(status, this.statuses, { testid: 'row-status' })
@@ -629,12 +633,14 @@ export class HVListRow extends LitElement {
               class="hv-chip ${overdue ? 'error' : 'state'}"
               data-testid="row-checked-out"
             >
-              ${overdue ? `Overdue · ${formatDate(item.due_date)}` : 'Checked out'}
+              ${overdue
+                ? t('hv.term.overdueOn', { date: formatDate(item.due_date) })
+                : t('hv.term.checkedOut')}
             </span>`
           : null}
         ${!this.mobile && inspectionDue
           ? html`<span class="hv-chip warning" data-testid="row-inspection-due">
-              Inspection due
+              ${t('hv.term.inspectionDue')}
             </span>`
           : null}
         ${this.selectable
@@ -642,8 +648,8 @@ export class HVListRow extends LitElement {
           : html`<span class="hover-actions">
               <button
                 data-testid="row-edit"
-                aria-label=${`Edit ${item.name}`}
-                title="Edit item"
+                aria-label=${t('hv.row.editNamed', { name: item.name })}
+                title=${t('hv.row.editItem')}
                 @click=${(e: Event) => {
                   e.stopPropagation();
                   this._emit('edit');
@@ -653,7 +659,7 @@ export class HVListRow extends LitElement {
               </button>
               <hv-overflow-menu
                 data-testid="row-menu"
-                label=${`Actions for ${item.name}`}
+                label=${t('hv.row.actionsFor', { name: item.name })}
                 .entries=${rowMenuEntries(item)}
                 @click=${(e: Event) => e.stopPropagation()}
                 @select=${(e: CustomEvent) => {

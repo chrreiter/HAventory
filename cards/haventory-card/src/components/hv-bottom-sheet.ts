@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -103,7 +104,7 @@ export class HVBottomSheet extends LitElement {
 
   @property({ type: Boolean, reflect: true }) open = false;
   /** Accessible name for the dialog. */
-  @property({ type: String }) label = 'Details';
+  @property({ type: String }) label = t('hv.bottomSheet.label');
   /** Hide the drag handle when the sheet has its own header affordance. */
   @property({ type: Boolean }) noHandle = false;
 

@@ -5,7 +5,7 @@ import { loadColumnPrefs, saveColumnPrefs } from './store/columns';
 import { activeFilterCount, defaultFilters } from './store/store';
 import type { Store } from './store/store';
 import type { ImportPolicy, ImportPreview, ImportSummary } from './store/types';
-import { tn } from './i18n';
+import { t, tn } from './i18n';
 import { counted } from './ui/plural';
 import { NARROW_QUERY } from './ui/responsive';
 import type { OrganizeTab } from './components/hv-organize-dialog';
@@ -181,9 +181,9 @@ export class HostSurfaces {
     const item = store?.state.value.items.find((i) => i.id === itemId);
     if (!item) return;
     this.confirm({
-      heading: `Delete "${item.name}"?`,
-      message: 'This cannot be undone. The item is removed for every connected client.',
-      confirmLabel: 'Delete',
+      heading: t('hv.surfaces.delete.heading', { name: item.name }),
+      message: t('hv.surfaces.delete.message'),
+      confirmLabel: t('hv.action.delete'),
       destructive: true,
       onConfirm: () => {
         this.hooks.onItemDeleted?.(item.id);
@@ -219,25 +219,38 @@ export class HostSurfaces {
     const filtered = st?.total ?? null;
     const filtersOn = activeFilterCount(st?.filters ?? defaultFilters()) > 0;
     return [
-      { id: 'select-items', label: 'Select items…', glyph: 'select' },
-      { id: 'organize', label: 'Organize…', glyph: 'mapMarker', meta: 'Locations · Tags · Categories · Statuses' },
-      { id: 'columns', label: 'Columns…', glyph: 'viewColumn' },
+      { id: 'select-items', label: t('hv.surfaces.menu.selectItems'), glyph: 'select' },
+      {
+        id: 'organize',
+        label: t('hv.surfaces.menu.organize'),
+        glyph: 'mapMarker',
+        meta: t('hv.surfaces.menu.organizeMeta'),
+      },
+      { id: 'columns', label: t('hv.surfaces.menu.columns'), glyph: 'viewColumn' },
       { divider: true },
-      { id: 'refresh', label: 'Refresh data', glyph: 'refresh', meta: 'Items · Locations · Stats' },
+      {
+        id: 'refresh',
+        label: t('hv.surfaces.menu.refresh'),
+        glyph: 'refresh',
+        meta: t('hv.surfaces.menu.refreshMeta'),
+      },
       {
         id: 'diagnostics',
-        label: 'Diagnostics',
+        label: t('hv.surfaces.menu.diagnostics'),
         glyph: 'alertCircle',
         // Badge only when there is actually something wrong — otherwise it is a plain row.
         ...(this.diagnosticsBadge ? { badge: this.diagnosticsBadge } : {}),
       },
       { divider: true },
-      { caption: 'Data' },
+      { caption: t('hv.surfaces.menu.data') },
       {
         id: 'export-all',
-        label: 'Export backup',
+        label: t('hv.surfaces.menu.exportAll'),
         glyph: 'download',
-        sub: total === null ? 'Everything' : `All ${counted(total, 'item')} · All locations`,
+        sub:
+          total === null
+            ? t('hv.surfaces.menu.exportAllSub')
+            : tn('hv.surfaces.menu.exportAllCount', total),
       },
       // Only while a filter is on. Unfiltered, "the current view" is the whole
       // inventory that Export backup above already offers, and the entry could
@@ -246,16 +259,16 @@ export class HostSurfaces {
         ? [
             {
               id: 'export-view',
-              label: 'Export current view',
+              label: t('hv.surfaces.menu.exportView'),
               glyph: 'download' as const,
               sub:
                 filtered === null
-                  ? 'Active filter · Keeps location paths'
+                  ? t('hv.surfaces.menu.exportViewSub')
                   : tn('hv.surfaces.exportView.filtered', filtered),
             },
           ]
         : []),
-      { id: 'import', label: 'Import backup…', glyph: 'upload' },
+      { id: 'import', label: t('hv.surfaces.menu.import'), glyph: 'upload' },
     ];
   }
 
@@ -265,10 +278,10 @@ export class HostSurfaces {
     if (!st) return null;
     const rate = st.healthCache?.rate_limit;
     const dropped = (rate?.dropped_commands ?? 0) + (rate?.dropped_events ?? 0);
-    if (dropped > 0) return `${dropped} dropped`;
+    if (dropped > 0) return t('hv.surfaces.badge.dropped', { count: dropped });
     const issues = st.healthCache?.issues.length ?? 0;
     if (issues > 0) return counted(issues, 'issue');
-    if (st.degraded.connectionLost) return 'offline';
+    if (st.degraded.connectionLost) return t('hv.surfaces.badge.offline');
     return null;
   }
 
@@ -282,7 +295,7 @@ export class HostSurfaces {
         .open=${this.pickerOpen}
         ?mobile=${mobile}
         .columns=${this.columns}
-        heading="Full view columns"
+        heading=${t('hv.surfaces.columnsHeading')}
         @change=${(e: CustomEvent) => this.setColumns((e.detail as { columns: ColumnKey[] }).columns)}
         @cancel=${() => {
           this.pickerOpen = false;
@@ -296,7 +309,7 @@ export class HostSurfaces {
         ?mobile=${mobile}
         .heading=${this.confirmSpec?.heading ?? ''}
         .message=${this.confirmSpec?.message ?? ''}
-        .confirmLabel=${this.confirmSpec?.confirmLabel ?? 'Delete'}
+        .confirmLabel=${this.confirmSpec?.confirmLabel ?? t('hv.action.delete')}
         .destructive=${this.confirmSpec?.destructive ?? true}
         @confirm=${() => {
           this.confirmSpec?.onConfirm();
@@ -398,7 +411,8 @@ export class HostSurfaces {
       this.importPreview = (await this.getStore()?.previewImport(document, policy)) ?? null;
     } catch (err) {
       this.importPreview = null;
-      this.importError = (err as { message?: string })?.message ?? 'Could not check that document.';
+      this.importError =
+        (err as { message?: string })?.message ?? t('hv.surfaces.importCheckFailed');
     } finally {
       this.importBusy = false;
       this.host.requestUpdate();
@@ -437,7 +451,7 @@ export class HostSurfaces {
           counts: {},
         };
       } else {
-        this.importError = anyErr?.message ?? 'The import failed.';
+        this.importError = anyErr?.message ?? t('hv.surfaces.importFailed');
       }
     } finally {
       this.importBusy = false;

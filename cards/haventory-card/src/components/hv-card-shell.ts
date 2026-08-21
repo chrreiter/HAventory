@@ -3,6 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
+import { t, tn } from '../i18n';
 import { counted, showingCount } from '../ui/plural';
 import { ResponsiveController } from '../ui/responsive';
 import { debounce } from '../utils/debounce';
@@ -605,7 +606,7 @@ export class HVCardShell extends LitElement {
    */
   private _createLocationForEditor = (name: string): Promise<Location> => {
     const store = this.store;
-    if (!store) return Promise.reject(new Error('Not connected to Home Assistant yet.'));
+    if (!store) return Promise.reject(new Error(t('hv.card.notConnected')));
     return store.createLocation(name, null, null);
   };
 
@@ -783,10 +784,10 @@ export class HVCardShell extends LitElement {
               class="hv-chip badge toggle warning ${f?.lowStockOnly ? 'on' : ''}"
               data-testid="badge-low"
               aria-pressed=${String(!!f?.lowStockOnly)}
-              title="Show only low-stock items"
+              title=${t('hv.card.badge.lowTitle')}
               @click=${() => this._setFilters({ lowStockOnly: !f?.lowStockOnly })}
             >
-              ${counts.low_stock_count} low
+              ${t('hv.card.badge.low', { count: counts.low_stock_count })}
             </button>`
           : null}
         ${overdue
@@ -794,10 +795,10 @@ export class HVCardShell extends LitElement {
               class="hv-chip badge toggle error ${f?.overdueOnly ? 'on' : ''}"
               data-testid="badge-overdue"
               aria-pressed=${String(!!f?.overdueOnly)}
-              title="Show only overdue items"
+              title=${t('hv.card.badge.overdueTitle')}
               @click=${() => this._setFilters({ overdueOnly: !f?.overdueOnly })}
             >
-              ${counts.overdue_count} overdue
+              ${t('hv.card.badge.overdue', { count: counts.overdue_count ?? 0 })}
             </button>`
           : null}
         ${inspection
@@ -805,10 +806,10 @@ export class HVCardShell extends LitElement {
               class="hv-chip badge toggle warning ${f?.inspectionDueOnly ? 'on' : ''}"
               data-testid="badge-inspection"
               aria-pressed=${String(!!f?.inspectionDueOnly)}
-              title="Show only items due for inspection"
+              title=${t('hv.card.badge.inspectionTitle')}
               @click=${() => this._setFilters({ inspectionDueOnly: !f?.inspectionDueOnly })}
             >
-              ${counts.inspection_due_count} to inspect
+              ${t('hv.card.badge.inspection', { count: counts.inspection_due_count ?? 0 })}
             </button>`
           : null}
         ${reminder
@@ -816,10 +817,10 @@ export class HVCardShell extends LitElement {
               class="hv-chip badge toggle warning ${f?.reminderDueOnly ? 'on' : ''}"
               data-testid="badge-reminder"
               aria-pressed=${String(!!f?.reminderDueOnly)}
-              title="Show only items whose reminder has come round"
+              title=${t('hv.card.badge.reminderTitle')}
               @click=${() => this._setFilters({ reminderDueOnly: !f?.reminderDueOnly })}
             >
-              ${counts.reminder_due_count} to do
+              ${t('hv.card.badge.reminder', { count: counts.reminder_due_count ?? 0 })}
             </button>`
           : null}
         ${checkedOut
@@ -827,10 +828,10 @@ export class HVCardShell extends LitElement {
               class="hv-chip badge toggle state ${f?.checkedOutOnly ? 'on' : ''}"
               data-testid="badge-out"
               aria-pressed=${String(!!f?.checkedOutOnly)}
-              title="Show only checked-out items"
+              title=${t('hv.card.badge.checkedOutTitle')}
               @click=${() => this._setFilters({ checkedOutOnly: !f?.checkedOutOnly })}
             >
-              ${counts.checked_out_count} checked out
+              ${t('hv.card.badge.checkedOut', { count: counts.checked_out_count })}
             </button>`
           : null}
       </div>
@@ -898,10 +899,10 @@ export class HVCardShell extends LitElement {
         <button
           class="hv-icon-button expand"
           data-testid="expand-toggle"
-          aria-label="Open full view"
+          aria-label=${t('hv.card.openFullView')}
           aria-expanded=${String(this._fullViewOpen)}
           aria-controls=${FULL_VIEW_ID}
-          title="Open full view"
+          title=${t('hv.card.openFullView')}
           @click=${() => {
             this._fullViewOpen = true;
           }}
@@ -911,11 +912,11 @@ export class HVCardShell extends LitElement {
         <button
           class="add ${mobile ? 'round' : ''}"
           data-testid="add-item"
-          aria-label="Add item"
-          title="Add item"
+          aria-label=${t('hv.card.addItem')}
+          title=${t('hv.card.addItem')}
           @click=${() => this._startEdit('new')}
         >
-          ${icon('plus', 16)}${mobile ? null : 'Add'}
+          ${icon('plus', 16)}${mobile ? null : t('hv.card.addShort')}
         </button>
         <hv-overflow-menu
           .entries=${this.cardMenuEntries}
@@ -927,11 +928,13 @@ export class HVCardShell extends LitElement {
       <div class="search-row">
         <label class="search">
           ${icon('magnify', 18)}
-          <span class="hv-sr-only">Search items</span>
+          <span class="hv-sr-only">${t('hv.card.searchItems')}</span>
           <input
             type="search"
             data-testid="search-input"
-            placeholder=${searchTotal === null ? 'Search items…' : `Search all ${counted(searchTotal, 'item')}…`}
+            placeholder=${searchTotal === null
+              ? t('hv.card.searchPlaceholder')
+              : tn('hv.card.searchAllPlaceholder', searchTotal)}
             .value=${this._searchDraft}
             @input=${(e: Event) => {
               this._searchDraft = (e.target as HTMLInputElement).value;
@@ -942,10 +945,10 @@ export class HVCardShell extends LitElement {
         <button
           class="icon-toggle ${filterSurfaceOpen ? 'on' : ''}"
           data-testid="filter-toggle"
-          aria-label="Filters"
+          aria-label=${t('hv.card.filters')}
           aria-expanded=${String(filterSurfaceOpen)}
           aria-controls=${FILTER_SURFACE_ID}
-          title="Filters"
+          title=${t('hv.card.filters')}
           @click=${this._toggleFilterSurface}
         >
           ${icon('tune', 19)}
@@ -1013,7 +1016,7 @@ export class HVCardShell extends LitElement {
                     this._fullViewOpen = true;
                   }}
                 >
-                  Open full view${icon('openInNew', 15)}
+                  ${t('hv.card.openFullView')}${icon('openInNew', 15)}
                 </button>`}
           </div>`
         : null}
@@ -1038,7 +1041,7 @@ export class HVCardShell extends LitElement {
       ${mobile
         ? html`<hv-bottom-sheet
             id=${FILTER_SURFACE_ID}
-            label="Filters"
+            label=${t('hv.card.filters')}
             ?open=${this._filterSheetOpen}
             data-testid="filter-sheet"
             @cancel=${() => {
@@ -1048,15 +1051,17 @@ export class HVCardShell extends LitElement {
             }}
           >
             <div class="sheet-head">
-              <span class="heading">Filters</span>
-              <span style="font-size:12.5px;color:var(--hv-text-secondary)">${stagedFilterCount} active</span>
+              <span class="heading">${t('hv.card.filters')}</span>
+              <span style="font-size:12.5px;color:var(--hv-text-secondary)"
+                >${t('hv.card.filtersActive', { count: stagedFilterCount })}</span
+              >
               <button
                 class="hv-text-button"
                 style="margin-left:auto"
                 data-testid="sheet-clear-all"
                 @click=${() => this._filterPanel?.clearAll()}
               >
-                Clear all
+                ${t('hv.action.clearAll')}
               </button>
             </div>
             ${this._renderFilterPanel(true)}
@@ -1070,7 +1075,7 @@ export class HVCardShell extends LitElement {
                   this._filterPanel?.resetDraft();
                 }}
               >
-                Cancel
+                ${t('hv.action.cancel')}
               </button>
               <button
                 class="hv-pill large apply"
@@ -1078,8 +1083,8 @@ export class HVCardShell extends LitElement {
                 @click=${() => this._filterPanel?.apply()}
               >
                 ${this._stagedCount === null
-                  ? 'Show items'
-                  : `Show ${counted(this._stagedCount, 'item')}`}
+                  ? t('hv.card.showItems')
+                  : tn('hv.card.showCount', this._stagedCount)}
               </button>
             </div>
           </hv-bottom-sheet>`
@@ -1087,18 +1092,18 @@ export class HVCardShell extends LitElement {
 
       ${mobile
         ? html`<hv-bottom-sheet
-            label="New item"
+            label=${t('hv.card.newItem')}
             ?open=${this._editing === 'new'}
             data-testid="add-sheet"
             @cancel=${() => this._startEdit(null)}
           >
             <div class="sheet-head">
-              <span class="heading">New item</span>
+              <span class="heading">${t('hv.card.newItem')}</span>
               <button
                 class="hv-icon-button"
                 style="margin-left:auto"
                 data-testid="add-sheet-close"
-                aria-label="Close"
+                aria-label=${t('hv.action.close')}
                 @click=${() => this._startEdit(null)}
               >
                 ${icon('close', 18)}

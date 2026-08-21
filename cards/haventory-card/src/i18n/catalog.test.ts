@@ -56,7 +56,17 @@ describe('the German dictionary', () => {
     // Some words are the same in both languages — a product name, a borrowed
     // term, a symbol — and those are listed here so that being identical is a
     // decision somebody took rather than a key pasted across and forgotten.
-    const SAME_IN_BOTH: string[] = [];
+    const SAME_IN_BOTH = [
+      // Loan words and international terms German uses unchanged.
+      'hv.bottomSheet.label',
+      'hv.editor.field.name',
+      'hv.editor.field.status',
+      'hv.editor.type.string',
+      'hv.surfaces.badge.offline',
+      // Nothing but placeholders and punctuation — there is no word to move.
+      'hv.editor.upload.progress',
+      'hv.sheet.updatedValue',
+    ];
     const untranslated = Object.entries(de)
       .filter(([key, value]) => value === en[key as keyof typeof en])
       .map(([key]) => key);

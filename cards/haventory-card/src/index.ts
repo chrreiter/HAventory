@@ -197,6 +197,11 @@ registerBrandIcon();
 
 // The picker entry, so the card can be added by name rather than by typing
 // `custom:haventory-card` into a YAML editor.
+//
+// English in every language, and it has to be: this runs when the bundle is
+// evaluated, and the user's language arrives with the first `hass` — which is
+// after Home Assistant has already read `window.customCards`. The name is the
+// product's own either way; the description is the one line that pays for it.
 registerCustomCard({
   type: 'haventory-card',
   name: 'HAventory',

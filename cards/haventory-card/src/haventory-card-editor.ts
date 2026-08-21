@@ -1,7 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import type { PropertyValues } from 'lit';
 import { property, state } from 'lit/decorators.js';
-import { setLanguage } from './i18n';
+import { setLanguage, t } from './i18n';
 import { tokens, base } from './ui/tokens';
 import { DEFAULT_CARD_TITLE } from './ui/card-title';
 import { defineCardElement } from './register';
@@ -72,7 +72,7 @@ export class HAventoryCardEditor extends LitElement {
 
   render() {
     return html`<div class="field" data-testid="card-editor-form">
-      <label class="hv-label" for="card-editor-title">Title</label>
+      <label class="hv-label" for="card-editor-title">${t('hv.cardEditor.title')}</label>
       <input
         id="card-editor-title"
         class="hv-input"
