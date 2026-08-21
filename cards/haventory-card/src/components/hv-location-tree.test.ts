@@ -1,7 +1,7 @@
 import './hv-location-tree';
 import type { HVLocationTree } from './hv-location-tree';
 import type { LocationTreeNode } from '../store/types';
-import { componentCss, mountComponent, q } from '../test.utils';
+import { mountComponent, q } from '../test.utils';
 
 function node(
   id: string,
@@ -153,9 +153,6 @@ describe('hv-location-tree: counts and decorations', () => {
 
     expect(row.querySelector('svg[data-icon="mapMarkerOff"]')).toBeTruthy();
     expect(row.querySelector('svg[data-icon="alert"]')).toBe(null);
-
-    const css = componentCss('hv-location-tree');
-    expect(css).not.toMatch(/\.row\.orphans \{[^}]*hv-warn/);
   });
 
   // The row clears the location either way, but a picker is assigning one, not

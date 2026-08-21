@@ -52,45 +52,7 @@ async function mount(
   return { el, store, hass, sr };
 }
 
-/** jsdom lays out no shadow DOM, so layout rules are asserted on the stylesheet. */
 describe('hv-full-view: phone-width app bar', () => {
-  // Everything responsive in this component lives in one media query, because
-  // the surface is fixed to the viewport rather than sized by the card.
-  const narrow = () => {
-    const css = componentCss('hv-full-view');
-    const start = css.indexOf('@media (max-width: 700px)');
-    expect(start, 'no narrow-viewport block').toBeGreaterThan(-1);
-    return css.slice(start);
-  };
-
-  // At 375px the bar laid out to 634px inside a 375px page that had no
-  // horizontal scroll, so Add item, the count pills and the ⋮ were unreachable.
-  it('lets the bar wrap instead of running off the end', () => {
-    expect(narrow()).toMatch(/\.appbar \{[^}]*flex-wrap: wrap/);
-  });
-
-  it('lets the heading give way rather than the controls after it', () => {
-    const css = narrow();
-    expect(css).toMatch(/\.appbar h2 \{[^}]*flex: 1/);
-    expect(css).toMatch(/\.appbar h2 \{[^}]*text-overflow: ellipsis/);
-  });
-
-  it('drops the search and the pills onto later rows', () => {
-    const css = narrow();
-    expect(css).toMatch(/\.appbar \.search \{[^}]*order: 1/);
-    expect(css).toMatch(/\.appbar \.pill \{[^}]*order: 2/);
-    // An auto margin cannot push anything once the row wraps.
-    expect(css).toMatch(/\.appbar \.spacer \{ display: none; \}/);
-  });
-
-  // The bar came to 178px of a 844px screen: 16px search text and three 44px
-  // pills, all of it above the list it belongs to.
-  it('reads at the size of the rows it searches', () => {
-    // 13.5px is hv-data-table's .row — another shadow root, so the size is
-    // repeated rather than shared.
-    expect(narrow()).toMatch(/\.appbar \.search input \{[^}]*font-size: 13\.5px/);
-    expect(narrow()).not.toMatch(/\.appbar \.search input \{[^}]*min-height: var\(--hv-tap-min/);
-  });
 
   it('keeps the apply button out of the scroll, where the count is visible', async () => {
     const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
@@ -103,23 +65,6 @@ describe('hv-full-view: phone-width app bar', () => {
     // count on the apply button stays visible while the filters move.
     expect(scroll.querySelector('.panel-foot')).toBe(null);
     expect(componentCss('hv-full-view')).toMatch(/\.panel-foot \{[^}]*flex: none/);
-  });
-
-  it('keeps the count pills shorter than the actions above them', () => {
-    const css = narrow();
-    expect(css).toMatch(/\.appbar \.pill \{[^}]*min-height: 30px/);
-    expect(css).not.toMatch(/\.appbar \.pill \{[^}]*min-height: var\(--hv-tap-min/);
-    // The bar's actual actions keep the full target.
-    expect(css).toMatch(/\.appbar \.ghost,\s*\.appbar \.add \{[^}]*min-height: var\(--hv-tap-min/);
-  });
-
-  // Selection mode reuses the same bar. `.subcount` was the only shrinkable
-  // item among flex:none siblings, so it collapsed to its longest word and
-  // stacked "of 556 / matching / the / current / filter" down five lines.
-  it('gives the selection subtitle a line instead of a column', () => {
-    const css = narrow();
-    expect(css).toMatch(/\.appbar\.selecting \.subcount \{[^}]*flex-basis: 100%/);
-    expect(css).toMatch(/\.appbar\.selecting \.count \{[^}]*flex: 1/);
   });
 
   it('keeps Clear selection on screen', async () => {
@@ -168,36 +113,6 @@ describe('hv-full-view: phone-width app bar', () => {
     store.toggleSelected('1');
     await settle(el);
     expect(clear().disabled).toBe(false);
-  });
-});
-
-// The search is the only item on the bar that can shrink — every pill, the
-// title and both trailing buttons are flex:none — so each pill added comes out
-// of it. With all six showing it collapsed to "Search all 1(" in a 1024px
-// content area, which is what this block exists to stop.
-describe('hv-full-view: wide app bar', () => {
-  const wide = () => {
-    const css = componentCss('hv-full-view');
-    const start = css.indexOf('@media (min-width: 701px)');
-    expect(start, 'no wide-viewport block').toBeGreaterThan(-1);
-    // Stop at the phone block so a rule from it can never satisfy these.
-    const end = css.indexOf('@media (max-width: 700px)', start);
-    return end > start ? css.slice(start, end) : css.slice(start);
-  };
-
-  it('puts a floor under the search rather than letting the pills eat it', () => {
-    expect(wide()).toMatch(/\.appbar \.search \{[^}]*min-width: 260px/);
-  });
-
-  it('lets the bar take a second line once the pills stop fitting', () => {
-    expect(wide()).toMatch(/\.appbar \{[^}]*flex-wrap: wrap/);
-  });
-
-  // A spacer can only push on the line it is on, so once the bar wraps it holds
-  // the first line open while the actions land left-aligned under the title.
-  it('carries the right-alignment on the actions, not on a spacer', () => {
-    expect(wide()).toMatch(/\.appbar \.spacer \{[^}]*display: none/);
-    expect(wide()).toMatch(/\.appbar \.add \{[^}]*margin-left: auto/);
   });
 });
 

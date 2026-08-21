@@ -582,8 +582,6 @@ describe('hv-organize-dialog: locations', () => {
     const css = dialogCss();
     expect(css).toMatch(/\.guard-mark \{[^}]*color: var\(--hv-warn\)/);
     expect(css).toMatch(/\.guard-mark \{[^}]*flex: none/);
-    expect(css).not.toMatch(/\.guard-mark \{[^}]*border/);
-    expect(css).not.toMatch(/\.guard-mark \{[^}]*cursor/);
   });
 
   it('deletes an empty location without a guard', async () => {

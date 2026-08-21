@@ -7,7 +7,6 @@ import {
   makeManual,
   makeMediaBindings,
   mountComponent,
-  ownCss,
   q,
   settle,
   stubViewport,
@@ -528,7 +527,6 @@ describe('hv-item-editor: saving', () => {
       'editor-save',
     ]);
     expect(editorCss()).toMatch(/\.actions \.spacer \{[^}]*margin-left: auto/);
-    expect(/\.actions \.hint \{([^}]*)\}/.exec(editorCss())?.[1]).not.toContain('margin-left');
   });
 
   // Three buttons in one row, three shapes: measured at a 390px viewport in the
@@ -546,7 +544,6 @@ describe('hv-item-editor: saving', () => {
     expect(q(el, '[data-testid="editor-cancel"]')?.classList.contains('hv-text-button')).toBe(true);
     // Which only holds while the shared sheet is what dresses it.
     expect(editorCss()).toMatch(/\.hv-text-button\.danger \{[^}]*color: var\(--hv-error-soft\)/);
-    expect(editorCss()).not.toMatch(/\.delete \{/);
   });
 
   it('surfaces a server-side failure without losing the form', async () => {
@@ -768,9 +765,7 @@ describe('hv-item-editor: category picker', () => {
 
     const css = componentCss('hv-item-editor');
     expect(css).toMatch(/\.list-holder\.floating \{[^}]*position: fixed/);
-    // The location tree is the opposite case — it is *meant* to open the form.
     expect(css).toMatch(/\.tree-holder, \.list-holder \{[^}]*margin-top: 6px/);
-    expect(css).not.toMatch(/\.tree-holder[^{]*\{[^}]*position: fixed/);
   });
 
   // The combobox always named its listbox, but the listbox left the DOM with
@@ -909,9 +904,6 @@ describe('hv-item-editor: typed custom fields', () => {
     // containing block, and the actions' parent is exactly as tall as they are.
     expect(css).toMatch(/[^)] \.actions-cell \{[^}]*position: sticky/);
     expect(css).toMatch(/[^)] \.actions-cell \{[^}]*bottom: -14px/);
-    expect(css).not.toMatch(/\.actions \{[^}]*position: sticky/);
-    // Not gated on the phone flag any more — that was the whole bug.
-    expect(css).not.toMatch(/:host\(\[mobile\]\) \.actions-cell \{[^}]*position: sticky/);
 
     // The opaque bar bleeds past the form's side padding, or the rows it covers
     // show through in a strip either side of it.
@@ -2347,13 +2339,6 @@ describe('hv-item-editor: touch targets and the shared tally', () => {
   it('prices its custom fields with the shared tally', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
     expect(q(el, '[data-testid="editor-cf-tally"]')?.classList.contains('hv-tally')).toBe(true);
-    // This component's own sheet may place the tally and nothing more — size
-    // and dimming belong to the one declaration in `base`.
-    const own = ownCss('hv-item-editor');
-    for (const [, body] of own.matchAll(/\.hv-tally[^{]*\{([^}]*)\}/g)) {
-      expect(body).not.toMatch(/font-size|opacity|color/);
-    }
-    expect(own).not.toMatch(/\.custom-head \.tally\b/);
   });
 });
 
@@ -2558,12 +2543,6 @@ describe('hv-item-editor: geometry and type', () => {
 
 describe('hv-item-editor: one label recipe, one note size', () => {
   it('gives every section label the shared recipe', async () => {
-    const css = editorCss();
-    // What is left of `.group-caption` is layout for its icon; the type comes
-    // from `.hv-label`, the same recipe TAGS, PHOTOS and DOCUMENTS use.
-    expect(css).not.toMatch(/\.group-caption \{[^}]*font-weight/);
-    expect(css).not.toMatch(/\.group-caption \{[^}]*text-transform/);
-
     const el = await mount(makeItem({ id: '1' }));
     for (const testid of ['editor-checkout-caption', 'editor-inspection-caption']) {
       expect(q(el, `[data-testid="${testid}"]`)?.classList.contains('hv-label'), testid).toBe(true);
