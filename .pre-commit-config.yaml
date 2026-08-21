@@ -28,7 +28,14 @@ repos:
         exclude: |
           (?x)^(
             custom_components/haventory/www/|
-            cards/haventory-card/package-lock\.json
+            cards/haventory-card/package-lock\.json|
+            # A dictionary for a language other than English is not English
+            # prose, and every word in it is a false positive — "ist", "sie",
+            # "oder" and "alle" are all real English typos and all ordinary
+            # German. The English originals they are written against stay in
+            # scope: `strings.json` and `i18n/en.ts` are still read.
+            custom_components/haventory/translations/(?!en\.json)|
+            cards/haventory-card/src/i18n/(?!en\.ts)
           )
         additional_dependencies: ["tomli"]
   # The card's half of the gate, run from the card package because that is where

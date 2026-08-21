@@ -11,6 +11,7 @@ Scenarios:
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -424,6 +425,24 @@ async def test_options_form_fills_the_docs_link() -> None:
     assert form["description_placeholders"] == {"docs_url": RATE_LIMIT_DOCS_URL}
 
 
+def _translation_files() -> list[Path]:
+    """Every file Home Assistant reads a translated string out of."""
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
+    return [root / "strings.json", *sorted((root / "translations").glob("*.json"))]
+
+
+def _flatten(node: object, prefix: str = "") -> dict[str, str]:
+    """A nested translation document as `a.b.c` -> value."""
+
+    if not isinstance(node, dict):
+        return {prefix: str(node)}
+    out: dict[str, str] = {}
+    for key, value in node.items():
+        out.update(_flatten(value, f"{prefix}.{key}" if prefix else key))
+    return out
+
+
 def test_translation_strings_carry_no_urls() -> None:
     """hassfest fails the build on a URL in a translation string.
 
@@ -431,10 +450,45 @@ def test_translation_strings_carry_no_urls() -> None:
     `{placeholder}` the flow fills, never inline in the string.
     """
 
-    root = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
-    for path in (root / "strings.json", root / "translations" / "en.json"):
+    for path in _translation_files():
         text = path.read_text(encoding="utf-8")
         assert "http://" not in text and "https://" not in text, f"{path.name} contains a URL"
+
+
+def test_translations_mirror_the_strings_key_tree() -> None:
+    """Every shipped language answers to exactly the keys `strings.json` declares.
+
+    A key only one language carries is a screen that renders in English for
+    everyone else with nothing to say so, and a key a language carries that
+    `strings.json` has dropped is dead weight nothing reads.
+    """
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
+    expected = set(_flatten(json.loads((root / "strings.json").read_text(encoding="utf-8"))))
+    for path in sorted((root / "translations").glob("*.json")):
+        keys = set(_flatten(json.loads(path.read_text(encoding="utf-8"))))
+        assert keys == expected, f"{path.name} does not mirror strings.json"
+
+
+def test_translations_repeat_their_placeholders() -> None:
+    """A `{placeholder}` renames or vanishes silently, and renders literally.
+
+    Home Assistant fills these by name — `{docs_url}` on the options screen,
+    `{error}` and `{storage_key}` on a repairs issue — so a German value that
+    spells one differently prints the braces on the screen, and one that drops
+    it loses the only concrete detail the sentence carried. Nothing else
+    catches it: hassfest validates the shape of the file, not the insides of
+    its strings.
+    """
+
+    root = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
+    english = _flatten(json.loads((root / "strings.json").read_text(encoding="utf-8")))
+    placeholder = re.compile(r"\{(\w+)\}")
+    for path in sorted((root / "translations").glob("*.json")):
+        for key, value in _flatten(json.loads(path.read_text(encoding="utf-8"))).items():
+            assert set(placeholder.findall(value)) == set(placeholder.findall(english[key])), (
+                f"{path.name}: {key} does not carry the same placeholders as strings.json"
+            )
 
 
 def test_translation_flow_sections_match_strings() -> None:

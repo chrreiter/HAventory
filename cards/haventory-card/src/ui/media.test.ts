@@ -1,3 +1,4 @@
+import { setLanguage } from '../i18n';
 import { describe, it, expect, vi } from 'vitest';
 import {
   MEDIA_NAME_TOKEN_PARAM,
@@ -186,6 +187,8 @@ describe('pictureAlt', () => {
 
   it('distinguishes photos when there is more than one', () => {
     expect(pictureAlt('Drill', 1, 3)).toBe('Drill — photo 2 of 3');
+    setLanguage('de');
+    expect(pictureAlt('Drill', 1, 3)).toBe('Drill – Foto 2 von 3'); // codespell:ignore
   });
 });
 

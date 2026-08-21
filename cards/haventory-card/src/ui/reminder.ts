@@ -6,6 +6,8 @@
  * them here rather than each spelling out the date-and-interval rule.
  */
 
+import { tn } from '../i18n';
+import type { PluralKey } from '../i18n';
 import type { Item, ReminderInterval, ReminderUnit } from '../store/types';
 import { formatDate, toIsoDate } from './relative-time';
 
@@ -26,18 +28,18 @@ export function isReminderDue(item: Item, now: number = Date.now()): boolean {
   return !!date && date <= toIsoDate(now);
 }
 
-const UNIT_SINGULAR: Record<ReminderUnit, string> = {
-  days: 'day',
-  weeks: 'week',
-  months: 'month',
-};
+const UNIT_KEYS = {
+  days: 'hv.reminder.every.days',
+  weeks: 'hv.reminder.every.weeks',
+  months: 'hv.reminder.every.months',
+} as const satisfies Record<ReminderUnit, PluralKey>;
 
 /** "every 3 months", "every day" — the repeat in the words a household uses. */
 export function formatInterval(interval: ReminderInterval | null | undefined): string | null {
   if (!interval) return null;
-  const unit = UNIT_SINGULAR[interval.unit];
-  if (!unit) return null;
-  return interval.count === 1 ? `every ${unit}` : `every ${interval.count} ${interval.unit}`;
+  const key = UNIT_KEYS[interval.unit];
+  if (!key) return null;
+  return tn(key, interval.count);
 }
 
 /**

@@ -1,5 +1,7 @@
 import { LitElement, css, html } from 'lit';
+import type { PropertyValues } from 'lit';
 import { property, state } from 'lit/decorators.js';
+import { setLanguage } from './i18n';
 import { tokens, base } from './ui/tokens';
 import { DEFAULT_CARD_TITLE } from './ui/card-title';
 import { defineCardElement } from './register';
@@ -57,6 +59,15 @@ export class HAventoryCardEditor extends LitElement {
   /** Lovelace hands the whole card config in, including keys the card ignores. */
   public setConfig(config: HAventoryCardConfig): void {
     this._config = { ...config };
+  }
+
+  /**
+   * Home Assistant sets `hass` as a plain property here rather than through the
+   * setter the card and the panel have, so the language is picked up on the
+   * update it arrives on.
+   */
+  protected willUpdate(changed: PropertyValues<this>): void {
+    if (changed.has('hass')) setLanguage(this.hass?.language);
   }
 
   render() {

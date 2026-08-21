@@ -12,6 +12,7 @@
  * | what | why it is safe to depend on |
  * | --- | --- |
  * | `hass.callWS` | the frontend's own command channel, unchanged for years |
+ * | `hass.language` | the user's profile language, read once to pick a dictionary |
  * | `hass.connection.subscribeMessage` | the same channel's subscription half |
  * | `hass.fetchWithAuth` | the only way to POST attachment bytes to core's `/api/file_upload` |
  * | `window.customCards` | how every custom card has advertised itself to the picker |
@@ -46,6 +47,13 @@ export type { Unsubscribe };
 export interface HassLike {
   /** Home Assistant's `callWS` returns the `result` part of the message. */
   callWS<T>(msg: Record<string, unknown>): Promise<T>;
+  /**
+   * The language the user reads Home Assistant in, as a BCP-47 tag (`de`,
+   * `de-CH`, `en-GB`). Optional because this interface is structural and
+   * because a `hass` object handed over before the profile has loaded may not
+   * carry one yet; the card resolves anything it cannot answer to English.
+   */
+  language?: string;
   /**
    * `fetch` with the user's auth header attached — the only way to POST to
    * core's `/api/file_upload`, which is how attachment bytes reach the server

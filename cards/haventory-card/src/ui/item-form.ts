@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import type {
   Item,
   ItemCreate,
@@ -138,11 +139,11 @@ export function formFromItem(item: Item | null): ItemFormModel {
 export function validateForm(model: ItemFormModel, original: Item | null = null): FieldError[] {
   const errors: FieldError[] = [];
   if (!model.name.trim()) {
-    errors.push({ field: 'name', message: 'Name is required.' });
+    errors.push({ field: 'name', message: t('hv.form.error.nameRequired') });
   } else if (model.name.trim().length > NAME_MAX_LENGTH) {
     errors.push({
       field: 'name',
-      message: `Name is limited to ${NAME_MAX_LENGTH} characters.`,
+      message: t('hv.form.error.nameTooLong', { max: NAME_MAX_LENGTH }),
     });
   }
   const storedDescription = original?.description ?? '';
@@ -152,7 +153,7 @@ export function validateForm(model: ItemFormModel, original: Item | null = null)
   ) {
     errors.push({
       field: 'description',
-      message: `Description is limited to ${DESCRIPTION_MAX_LENGTH} characters.`,
+      message: t('hv.form.error.descriptionTooLong', { max: DESCRIPTION_MAX_LENGTH }),
     });
   }
   const storedCategory = original?.category ?? '';
@@ -162,26 +163,26 @@ export function validateForm(model: ItemFormModel, original: Item | null = null)
   ) {
     errors.push({
       field: 'category',
-      message: `Category is limited to ${CATEGORY_MAX_LENGTH} characters.`,
+      message: t('hv.form.error.categoryTooLong', { max: CATEGORY_MAX_LENGTH }),
     });
   }
   if (!Number.isFinite(model.quantity) || !Number.isInteger(model.quantity) || model.quantity < 0) {
-    errors.push({ field: 'quantity', message: "Quantity can't be negative." });
+    errors.push({ field: 'quantity', message: t('hv.form.error.quantityNegative') });
   }
   if (model.lowStock !== null && (!Number.isFinite(model.lowStock) || model.lowStock < 0)) {
-    errors.push({ field: 'lowStock', message: 'Low-stock threshold must be 0 or more, or empty.' });
+    errors.push({ field: 'lowStock', message: t('hv.form.error.lowStockRange') });
   }
   // Counted after normalization, the way the backend counts it: two casings of
   // one tag are one tag on both sides.
   const tags = normalizeTags(model.tags);
   const storedTags = normalizeTags(original?.tags ?? []);
   if (tags.length > TAGS_MAX_COUNT && tags.length > storedTags.length) {
-    errors.push({ field: 'tags', message: `An item can carry at most ${TAGS_MAX_COUNT} tags.` });
+    errors.push({ field: 'tags', message: t('hv.form.error.tooManyTags', { max: TAGS_MAX_COUNT }) });
   }
   if (tags.some((tag) => tag.length > TAG_MAX_LENGTH && !storedTags.includes(tag))) {
     errors.push({
       field: 'tags',
-      message: `Each tag is limited to ${TAG_MAX_LENGTH} characters.`,
+      message: t('hv.form.error.tagTooLong', { max: TAG_MAX_LENGTH }),
     });
   }
   // Only while a date is set. The repeat is disabled without one and dropped
@@ -196,7 +197,7 @@ export function validateForm(model: ItemFormModel, original: Item | null = null)
     ) {
       errors.push({
         field: 'reminder',
-        message: `Repeat every 1 to ${REMINDER_COUNT_MAX}, or leave it empty for a one-off.`,
+        message: t('hv.form.error.reminderRange', { max: REMINDER_COUNT_MAX }),
       });
     }
   }
@@ -206,21 +207,21 @@ export function validateForm(model: ItemFormModel, original: Item | null = null)
     const key = row.key.trim();
     if (!key) continue;
     if (seen.has(key)) {
-      errors.push({ field: `custom:${row.id}`, message: `"${key}" is used twice.` });
+      errors.push({ field: `custom:${row.id}`, message: t('hv.form.error.customFieldDuplicate', { key }) });
       continue;
     }
     seen.add(key);
     if (key.length > CUSTOM_FIELD_KEY_MAX_LENGTH && !(key in storedFields)) {
       errors.push({
         field: `custom:${row.id}`,
-        message: `Field names are limited to ${CUSTOM_FIELD_KEY_MAX_LENGTH} characters.`,
+        message: t('hv.form.error.customFieldKeyTooLong', { max: CUSTOM_FIELD_KEY_MAX_LENGTH }),
       });
     }
     if (row.type === 'number' && (row.value.trim() === '' || !Number.isFinite(Number(row.value)))) {
-      errors.push({ field: `custom:${row.id}`, message: `"${key}" must be a number.` });
+      errors.push({ field: `custom:${row.id}`, message: t('hv.form.error.customFieldNotNumber', { key }) });
     }
     if (row.type === 'date' && row.value.trim() !== '' && !DATE_RE.test(row.value.trim())) {
-      errors.push({ field: `custom:${row.id}`, message: `"${key}" must be a date.` });
+      errors.push({ field: `custom:${row.id}`, message: t('hv.form.error.customFieldNotDate', { key }) });
     }
     const storedValue = storedFields[key];
     const storedValueLength = typeof storedValue === 'string' ? storedValue.length : 0;
@@ -231,14 +232,17 @@ export function validateForm(model: ItemFormModel, original: Item | null = null)
     ) {
       errors.push({
         field: `custom:${row.id}`,
-        message: `"${key}" is limited to ${CUSTOM_FIELD_VALUE_MAX_LENGTH} characters.`,
+        message: t('hv.form.error.customFieldValueTooLong', {
+          key,
+          max: CUSTOM_FIELD_VALUE_MAX_LENGTH,
+        }),
       });
     }
   }
   if (seen.size > CUSTOM_FIELDS_MAX_KEYS && seen.size > Object.keys(storedFields).length) {
     errors.push({
       field: 'customFields',
-      message: `An item can carry at most ${CUSTOM_FIELDS_MAX_KEYS} custom fields.`,
+      message: t('hv.form.error.tooManyCustomFields', { max: CUSTOM_FIELDS_MAX_KEYS }),
     });
   }
   return errors;

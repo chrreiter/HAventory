@@ -1,5 +1,5 @@
+import { tn } from '../i18n';
 import { makeBulkOp } from '../store/store';
-import { plural } from './plural';
 import { normalizeTags } from './item-form';
 import type { BulkOperation, Item, ItemFilter } from '../store/types';
 
@@ -65,12 +65,11 @@ export function describeRewrite(
   from: string,
   to: string | null,
 ): string {
-  const noun = plural(count, 'item');
   if (to === null) {
     return kind === 'tag'
-      ? `Removes "${from}" from ${count} ${noun}.`
-      : `Clears the category on ${count} ${noun}.`;
+      ? tn('hv.rewrite.tag.remove', count, { from })
+      : tn('hv.rewrite.category.clear', count);
   }
-  if (kind === 'tag') return `Retags ${count} ${noun}, then removes "${from}".`;
-  return `Recategorises ${count} ${noun} as "${to}".`;
+  if (kind === 'tag') return tn('hv.rewrite.tag.retag', count, { from });
+  return tn('hv.rewrite.category.set', count, { to });
 }

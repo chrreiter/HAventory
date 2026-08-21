@@ -11,7 +11,7 @@ import {
   settle,
   stubViewport,
 } from '../test.utils';
-import { DISCARD_PROMPT } from '../ui/discard';
+import { discardPrompt } from '../ui/discard';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import { addDays } from '../ui/relative-time';
 import type { HVItemEditor } from './hv-item-editor';
@@ -1170,7 +1170,7 @@ describe('hv-item-editor: every close this form owns asks the same question', ()
     const guard = await dialog(el, 'editor-discard-confirm');
     expect(guard.open).toBe(true);
     expect(guard.shadowRoot?.querySelector('[data-testid="confirm-message"]')?.textContent).toContain(
-      DISCARD_PROMPT.message,
+      discardPrompt().message,
     );
     expect(cancels).toBe(0);
 

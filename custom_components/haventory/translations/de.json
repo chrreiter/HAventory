@@ -1,0 +1,193 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HAventory",
+        "description": "Richte HAventory für die Inventarverwaltung in Home Assistant ein. Beide Antworten unten – und alles Weitere – kannst du später unter Konfigurieren ändern. Hinweis für danach: Eine Browserseite, die schon offen ist, übernimmt die Karte erst, wenn sie das nächste Mal lädt – ein Neuladen, oder ein Besuch des neuen HAventory-Eintrags in der Seitenleiste, holt sie herein.",
+        "data": {
+          "card_title": "Kartentitel",
+          "sidebar_panel_enabled": "HAventory in der Seitenleiste anzeigen"
+        },
+        "data_description": {
+          "card_title": "Überschrift auf der HAventory-Karte.",
+          "sidebar_panel_enabled": "Gibt HAventory eine eigene Seite, benannt nach dem Kartentitel oben. Jeder Benutzer kann den Eintrag weiterhin über den Bearbeitungsmodus der Seitenleiste ausblenden."
+        }
+      }
+    },
+    "create_entry": {
+      "default": "HAventory wurde erfolgreich eingerichtet. Lade diese Browserseite einmal neu: Karte und Symbol in der Seitenleiste werden geladen, wenn eine Seite geöffnet wird – eine Seite, die schon offen war, hat also beides noch nicht. Der neue HAventory-Eintrag in der Seitenleiste erledigt dasselbe: Seite und Karte stecken in einem Bündel, und ein offenes Dashboard zeigt die Karte in dem Moment, in dem dieses Bündel lädt."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HAventory-Optionen",
+        "description": "Lege fest, welche Überschrift die Karte trägt, ob HAventory einen eigenen Eintrag in der Seitenleiste bekommt und welche Schnellfilter-Pillen sie anbietet.",
+        "data": {
+          "card_title": "Kartentitel",
+          "sidebar_panel_enabled": "HAventory in der Seitenleiste anzeigen",
+          "quick_filters": "Schnellfilter-Pillen"
+        },
+        "data_description": {
+          "card_title": "Überschrift auf der HAventory-Karte. Eine Dashboard-Karte mit eigener Option „title:“ behält ihre eigene. Lade das Dashboard neu, um eine Änderung zu sehen.",
+          "sidebar_panel_enabled": "Gibt HAventory eine eigene Seite, benannt nach dem Kartentitel oben. Das gilt für alle, die dieses Home Assistant nutzen; jeder Benutzer kann den Eintrag weiterhin über den Bearbeitungsmodus der Seitenleiste ausblenden. Der Eintrag erscheint und verschwindet, während du dieses Formular speicherst – ohne Neustart. Auf der Übersichtsseite kann HAventory über Bearbeiten und dann Verknüpfung hinzufügen auch als Kachel angeheftet werden.",
+          "quick_filters": "Die Ein-Tipp-Filter über der Gegenstandsliste, hier und auf der Seite in der Seitenleiste. Eine Pille erscheint weiterhin nur, wenn sie etwas zu zählen hat – ein Haushalt, der nie etwas ausleiht, sieht also so oder so keine Ausleih-Pille. „Gegenstände gesamt“ ist noch auf eine zweite Art die Ausnahme: Nur die Karte zeichnet sie als Pille, und nur in voller Breite – die Seite in der Seitenleiste und die volle Ansicht schreiben die Gesamtzahl stattdessen in ihre Kopfzeile, ob sie hier angehakt ist oder nicht. Eine Dashboard-Karte mit eigener Option „quick_filters:“ behält ihre eigene. Lade das Dashboard neu, um eine Änderung zu sehen."
+        },
+        "sections": {
+          "todo": {
+            "name": "Einkaufsliste",
+            "description": "Spiegelt Gegenstände mit niedrigem Bestand auf eine To-do-Liste von Home Assistant. Ein Gegenstand, der seine Bestandsschwelle erreicht oder unterschreitet, erscheint als Zeile mit seinem Namen und der nachzukaufenden Menge, und die Zeile verschwindet wieder, sobald der Gegenstand aufgefüllt ist. Lass die Liste leer, um das ausgeschaltet zu lassen – so ist es voreingestellt. Leerst du sie später, endet die Spiegelung und was auf der Liste steht, bleibt unangetastet; wählst du eine andere Liste, wandern die Zeilen stattdessen mit.",
+            "data": {
+              "todo_entity_id": "To-do-Liste"
+            },
+            "data_description": {
+              "todo_entity_id": "Jede To-do-Liste, die dieses Home Assistant kennt, auch eine, die der Haushalt schon gemeinsam nutzt. HAventory rührt immer nur die Zeilen an, die es selbst geschrieben hat – eine Liste, die du für anderes verwendest, kannst du also bedenkenlos wählen."
+            }
+          },
+          "rate_limit": {
+            "name": "WebSocket-Ratenbegrenzung",
+            "description": "Begrenzt, wie schnell ein Client HAventory nutzen darf: Befehle über dem Budget werden abgelehnt statt ausgeführt, und überzählige Live-Update-Ereignisse werden verworfen. Standardmäßig aus – normale Kartennutzung kommt nie in die Nähe. Schalte sie ein, wenn etwas mit HAventory spricht, das du nicht ganz unter Kontrolle hast, etwa ein Wandpanel, das dauernd neu verbindet, oder ein Skript in einer Schleife; lass sie bei großen Importen und Belastungstests aus. Was die einzelnen Einstellungen bedeuten und woran du erkennst, ob die Begrenzung greift: {docs_url}",
+            "data": {
+              "rate_limit_enabled": "WebSocket-Ratenbegrenzung aktivieren",
+              "rate_limit_commands_per_second": "Befehle pro Sekunde (ein Client)",
+              "rate_limit_commands_burst": "Befehls-Burst (ein Client)",
+              "rate_limit_global_commands_per_second": "Befehle pro Sekunde (alle Clients)",
+              "rate_limit_global_commands_burst": "Befehls-Burst (alle Clients)",
+              "rate_limit_events_per_second": "Live-Update-Ereignisse pro Sekunde (ein Client)",
+              "rate_limit_events_burst": "Live-Update-Ereignis-Burst (ein Client)",
+              "rate_limit_global_events_per_second": "Live-Update-Ereignisse pro Sekunde (alle Clients)",
+              "rate_limit_global_events_burst": "Live-Update-Ereignis-Burst (alle Clients)"
+            },
+            "data_description": {
+              "rate_limit_enabled": "Solange sie aus ist, wird nichts begrenzt und die Werte darunter werden ignoriert.",
+              "rate_limit_commands_per_second": "Dauerhafte Anfragen, die ein Client senden darf. Standard 20.",
+              "rate_limit_commands_burst": "Anfragen, die ein Client nach einer Ruhephase direkt hintereinander senden darf. Standard 60.",
+              "rate_limit_global_commands_per_second": "Dauerhafte Anfragen über alle Clients zusammen. Standard 100.",
+              "rate_limit_global_commands_burst": "Anfragen, die alle Clients zusammen direkt hintereinander senden dürfen. Standard 200.",
+              "rate_limit_events_per_second": "Dauerhafte Ereignisse, die einem Client gesendet werden dürfen. Standard 50.",
+              "rate_limit_events_burst": "Ereignisse, die einem Client nach einer ruhigen Phase direkt hintereinander gesendet werden dürfen. Standard 200.",
+              "rate_limit_global_events_per_second": "Dauerhafte Ereignisse über alle Clients zusammen. Standard 500.",
+              "rate_limit_global_events_burst": "Ereignisse, die allen Clients zusammen direkt hintereinander gesendet werden dürfen. Standard 1000."
+            }
+          }
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "items_total": {
+        "name": "Anzahl Gegenstände"
+      },
+      "low_stock": {
+        "name": "Anzahl niedriger Bestand"
+      },
+      "checked_out": {
+        "name": "Anzahl ausgeliehen"
+      },
+      "overdue": {
+        "name": "Anzahl überfällig ausgeliehen"
+      },
+      "checked_out_due": {
+        "name": "Anzahl Rückgabe fällig"
+      },
+      "inspection_overdue": {
+        "name": "Anzahl Prüfung überfällig"
+      },
+      "inspection_due": {
+        "name": "Anzahl Prüfung fällig"
+      },
+      "locations": {
+        "name": "Anzahl Orte"
+      }
+    }
+  },
+  "selector": {
+    "quick_filters": {
+      "options": {
+        "total": "Gegenstände gesamt",
+        "low_stock": "Niedriger Bestand",
+        "overdue": "Überfällig",
+        "inspection_due": "Prüfung fällig",
+        "reminder_due": "Erinnerung fällig",
+        "checked_out": "Ausgeliehen"
+      }
+    }
+  },
+  "services": {
+    "item_create": {
+      "name": "Gegenstand anlegen",
+      "description": "Legt einen neuen Gegenstand im Inventar an."
+    },
+    "item_update": {
+      "name": "Gegenstand aktualisieren",
+      "description": "Aktualisiert einen vorhandenen Gegenstand im Inventar."
+    },
+    "item_delete": {
+      "name": "Gegenstand löschen",
+      "description": "Löscht einen Gegenstand aus dem Inventar."
+    },
+    "item_move": {
+      "name": "Gegenstand verschieben",
+      "description": "Verschiebt einen Gegenstand an einen anderen Ort (oder in die oberste Ebene)."
+    },
+    "item_adjust_quantity": {
+      "name": "Menge anpassen",
+      "description": "Erhöht oder verringert die Menge eines Gegenstands."
+    },
+    "item_set_quantity": {
+      "name": "Menge setzen",
+      "description": "Setzt die Menge eines Gegenstands auf einen genauen Wert."
+    },
+    "item_check_out": {
+      "name": "Gegenstand ausleihen",
+      "description": "Markiert einen Gegenstand als ausgeliehen, mit Rückgabedatum."
+    },
+    "item_check_in": {
+      "name": "Gegenstand zurückgeben",
+      "description": "Markiert einen Gegenstand als nicht mehr ausgeliehen."
+    },
+    "reminder_bump": {
+      "name": "Erinnerung erledigen",
+      "description": "Markiert eine wiederkehrende Erinnerung als erledigt und setzt sie auf ihren nächsten Termin."
+    },
+    "location_create": {
+      "name": "Ort anlegen",
+      "description": "Legt einen neuen Aufbewahrungsort an."
+    },
+    "location_update": {
+      "name": "Ort aktualisieren",
+      "description": "Aktualisiert einen vorhandenen Aufbewahrungsort."
+    },
+    "location_delete": {
+      "name": "Ort löschen",
+      "description": "Löscht einen Aufbewahrungsort."
+    }
+  },
+  "issues": {
+    "schema_downgrade": {
+      "title": "HAventory kann die gespeicherten Daten nicht lesen",
+      "description": "HAventory hat angehalten, statt sich einzurichten: {error}\n\nDie Datei ist `.storage/{storage_key}` in deinem Home-Assistant-Konfigurationsverzeichnis, und sie wurde genau so gelassen, wie sie war. Dieser Hinweis verschwindet von selbst, sobald HAventory mit einem Speicher startet, den es lesen kann."
+    },
+    "corrupt_schema_version": {
+      "title": "HAventory kann nicht erkennen, welches Schema die gespeicherten Daten verwenden",
+      "description": "HAventory hat angehalten, statt sich einzurichten: {error}\n\nDie Datei ist `.storage/{storage_key}` in deinem Home-Assistant-Konfigurationsverzeichnis, und sie wurde genau so gelassen, wie sie war. Dieser Hinweis verschwindet von selbst, sobald HAventory mit einem Speicher startet, den es lesen kann."
+    },
+    "corrupt_store": {
+      "title": "HAventory kann einen Teil der gespeicherten Daten nicht lesen",
+      "fix_flow": {
+        "abort": {
+          "no_config_entry": "HAventory ist nicht mehr eingerichtet, es gibt also nichts neu zu laden.",
+          "backup_failed": "Die Kopie der gespeicherten Datei konnte nicht geschrieben werden, deshalb wurde nichts geändert. Ohne sie gäbe es keinen Weg zurück, also hat HAventory nicht geladen.",
+          "reload_failed": "HAventory ist immer noch nicht gestartet. Die Kopie wurde geschrieben und die gespeicherte Datei ist unverändert; sieh im Home-Assistant-Protokoll nach, was es aufgehalten hat."
+        },
+        "step": {
+          "confirm": {
+            "title": "HAventory ohne die unlesbaren Einträge laden",
+            "description": "HAventory konnte {items} Gegenstände und {locations} Orte nicht lesen und hat {cyclic_locations} Orte gefunden, deren Elternkette sich im Kreis dreht. Es hat angehalten, statt den Rest zu laden – es speichert bei jeder Änderung, und die erste Bearbeitung würde die Datei ohne sie neu schreiben.\n\nBestätigen kopiert `.storage/{storage_key}` nach `.storage/{backup_key}` und startet HAventory dann mit allem, was es lesen konnte. Die unlesbaren Einträge bleiben draußen, und die Kopie ist dein Weg, sie zurückzuholen.\n\nUm sie stattdessen zu behalten, schließe diesen Dialog und repariere die Einträge in der gespeicherten Datei, oder stelle sie aus einem Backup wieder her."
+          }
+        }
+      }
+    }
+  }
+}

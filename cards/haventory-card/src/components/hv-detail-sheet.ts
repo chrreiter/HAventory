@@ -20,7 +20,7 @@ import {
   pictures,
 } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
-import { DISCARD_PROMPT } from '../ui/discard';
+import { discardPrompt } from '../ui/discard';
 import { ViewportNarrow } from '../ui/responsive';
 import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, ScalarValue, StatusDefinition } from '../store/types';
 import './hv-bottom-sheet';
@@ -921,9 +921,9 @@ export class HVDetailSheet extends LitElement {
         data-testid="sheet-discard-confirm"
         ?open=${this._pendingDiscard !== null}
         ?mobile=${this._viewport.narrow}
-        .heading=${DISCARD_PROMPT.heading}
-        .message=${DISCARD_PROMPT.message}
-        .confirmLabel=${DISCARD_PROMPT.confirmLabel}
+        .heading=${discardPrompt().heading}
+        .message=${discardPrompt().message}
+        .confirmLabel=${discardPrompt().confirmLabel}
         destructive
         @confirm=${(e: Event) => {
           e.stopPropagation();

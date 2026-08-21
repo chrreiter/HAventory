@@ -5,7 +5,7 @@ import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import {
   DEFAULT_CUSTOM_DAYS,
-  QUICK_DAY_OFFSETS,
+  quickDayOffsets,
   addDays,
   formatDate,
 } from '../ui/relative-time';
@@ -321,7 +321,7 @@ export class HVCheckoutPopover extends LitElement {
         </div>
         <div class="body">
           <div class="offsets">
-            ${QUICK_DAY_OFFSETS.map((offset) => {
+            ${quickDayOffsets().map((offset) => {
               const value = addDays(offset.days);
               return html`<button
                 class="offset ${!this._customOpen && this._due === value ? 'on' : ''}"

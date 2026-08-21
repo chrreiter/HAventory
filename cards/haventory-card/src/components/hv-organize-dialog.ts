@@ -936,7 +936,7 @@ export class HVOrganizeDialog extends LitElement {
       // saying why up front beats surfacing a validation error after the fact.
       const parts: string[] = [];
       if (items) parts.push(counted(items, 'item'));
-      if (children) parts.push(counted(children, 'sub-location'));
+      if (children) parts.push(counted(children, 'subLocation'));
       this._guard = {
         locationId: node.id,
         message: `"${node.name}" still contains ${parts.join(' and ')}. Move or delete them first.`,
@@ -1367,7 +1367,7 @@ export class HVOrganizeDialog extends LitElement {
     const items = source.direct_item_count ?? 0;
     const children = source.children?.length ?? 0;
     const parts = [counted(items, 'item')];
-    if (children) parts.push(counted(children, 'sub-location'));
+    if (children) parts.push(counted(children, 'subLocation'));
 
     return html`<div class="expander" data-testid="location-merge">
       <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
@@ -1813,7 +1813,7 @@ export class HVOrganizeDialog extends LitElement {
     return html`
       <div class="toolbar">
         <span class="toolbar-count" data-testid="organize-status-count"
-          >${counted(defs.length, 'status', 'statuses')}</span
+          >${counted(defs.length, 'status')}</span
         >
         <button
           class="hv-pill"
@@ -2086,7 +2086,7 @@ export class HVOrganizeDialog extends LitElement {
             }}
           />
         </label>
-        <span class="toolbar-count" data-testid="organize-value-count">${counted(values.length, this._noun, noun)}</span>
+        <span class="toolbar-count" data-testid="organize-value-count">${counted(values.length, this.tab === 'tags' ? 'tag' : 'category')}</span>
         <button
           class="hv-pill"
           data-testid="organize-new-value"

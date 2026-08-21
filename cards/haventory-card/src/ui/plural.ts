@@ -1,5 +1,5 @@
 /**
- * English pluralization for the card's count strings.
+ * The card's count strings.
  *
  * Roughly half of them agreed with their number and half did not: the location
  * tree said "1 item" while the bulk bar, three components away, said "Move 1
@@ -7,15 +7,28 @@
  * of those was a hand-written `n === 1 ? '' : 's'`, so the drift was inevitable
  * rather than careless.
  *
- * Irregular nouns take an explicit plural: `counted(n, 'category', 'categories')`.
+ * The forms now come from the dictionaries, one pair per noun, which is also
+ * the only way a language that does not build its plural by appending a letter
+ * can have one. A count *inside* a sentence does not come through here at all —
+ * it gets a key for the whole sentence, because where the number sits and what
+ * the verb does with it are the sentence's business, not the noun's.
  */
-export function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
-  return count === 1 ? singular : pluralForm;
-}
+
+import { tn } from '../i18n';
+import type { PluralKey } from '../i18n';
+
+/**
+ * Every noun the card counts on its own, read off the key universe — so a
+ * `hv.count.*` pair added to the dictionaries is immediately callable, and one
+ * removed stops compiling at its call sites.
+ */
+export type CountNoun = {
+  [K in PluralKey]: K extends `hv.count.${infer Noun}` ? Noun : never;
+}[PluralKey];
 
 /** The count and its noun: `counted(1, 'item')` → "1 item". */
-export function counted(count: number, singular: string, pluralForm = `${singular}s`): string {
-  return `${count} ${plural(count, singular, pluralForm)}`;
+export function counted(count: number, noun: CountNoun): string {
+  return tn(`hv.count.${noun}`, count);
 }
 
 /**
@@ -28,7 +41,11 @@ export function counted(count: number, singular: string, pluralForm = `${singula
  * not priced the set yet. A surface may append its own suffix (the expanded
  * view offers "scroll to load more"), but not rephrase this.
  */
-export function showingCount(loaded: number, total: number | null | undefined, filtered = false): string {
-  if (total === null || total === undefined) return `Showing ${counted(loaded, 'item')}`;
-  return `Showing ${loaded} of ${counted(total, filtered ? 'matching item' : 'item')}`;
+export function showingCount(
+  loaded: number,
+  total: number | null | undefined,
+  filtered = false,
+): string {
+  if (total === null || total === undefined) return tn('hv.list.showingAll', loaded);
+  return tn(filtered ? 'hv.list.showingOfMatching' : 'hv.list.showingOf', total, { loaded });
 }

@@ -101,7 +101,7 @@ describe('hv-diagnostics-panel: integrity issues', () => {
     const issues = all(el, '[data-testid="diagnostics-issue"]');
     expect(issues).toHaveLength(2);
     expect(issues[0].dataset.code).toBe('item_references_missing_location');
-    expect(issues[0].textContent).toContain('3 item(s) reference a location that no longer exists');
+    expect(issues[0].textContent).toContain('3 items reference a location that no longer exists');
     expect(q(el, '[data-testid="diagnostics-status"]')?.textContent).toContain('Issues found');
   });
 });

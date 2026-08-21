@@ -14,6 +14,8 @@
  * on a PC names a key that is not on the keyboard.
  */
 
+import { t } from '../i18n';
+
 /** The slice of `navigator` this needs, so tests can pass a plain object. */
 export interface KeyboardPlatform {
   /** Chromium's replacement for the frozen `navigator.platform`. */
@@ -64,5 +66,5 @@ export function onEscape(close: () => void): (e: KeyboardEvent) => void {
 
 /** How to write "save" as a chord: `⌘↵` on a Mac, `Ctrl+Enter` everywhere else. */
 export function saveShortcutLabel(nav: KeyboardPlatform = navigator): string {
-  return hasCommandKey(nav) ? '⌘↵' : 'Ctrl+Enter';
+  return hasCommandKey(nav) ? '⌘↵' : t('hv.shortcut.ctrlEnter');
 }

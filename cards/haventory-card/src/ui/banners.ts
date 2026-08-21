@@ -1,7 +1,7 @@
 import { css, html } from 'lit';
 import type { TemplateResult } from 'lit';
+import { t, tn } from '../i18n';
 import { icon } from './icons';
-import { counted } from './plural';
 import type { Store } from '../store/store';
 import type { StoreState } from '../store/types';
 // Registers the element this file emits. Kept here rather than left to each
@@ -60,26 +60,29 @@ export function renderDegradedBanners(st: StoreState | null, hooks: BannerHooks)
     banners.push(html`<hv-banner
       kind="error"
       glyph="wifiOff"
-      heading="Connection lost"
-      message=" · showing the data already loaded. Changes may not save."
+      heading=${t('hv.banner.connectionLost.heading')}
+      message=${t('hv.banner.connectionLost.message')}
       data-testid="degraded-offline"
     >
       <button slot="actions" class="hv-pill outline" data-testid="degraded-reconnect" @click=${hooks.onRefresh}>
-        Reconnect
+        ${t('hv.banner.connectionLost.action')}
       </button>
     </hv-banner>`);
   } else if (degraded.liveUpdates !== 'live') {
     // Ranked above the generic rate-limit warning below: that one says events
     // *may* have been dropped, this one says there are no events at all.
     const retrying = degraded.liveUpdates === 'retrying';
-    const cause = degraded.liveUpdatesReason === 'unavailable' ? 'HAventory is not available' : 'rate limited';
+    const cause =
+      degraded.liveUpdatesReason === 'unavailable'
+        ? t('hv.banner.liveUpdates.cause.unavailable')
+        : t('hv.banner.liveUpdates.cause.rateLimited');
     banners.push(html`<hv-banner
       kind="warning"
       glyph="clock"
-      heading="Live updates paused"
+      heading=${t('hv.banner.liveUpdates.heading')}
       message=${retrying
-        ? ` · ${cause}. Retrying automatically; this list may be out of date until then.`
-        : ` · ${cause}. This list may be out of date until you refresh.`}
+        ? t('hv.banner.liveUpdates.retrying', { cause })
+        : t('hv.banner.liveUpdates.stalled', { cause })}
       data-testid="degraded-live-updates"
     >
       ${retrying
@@ -90,27 +93,27 @@ export function renderDegradedBanners(st: StoreState | null, hooks: BannerHooks)
             data-testid="degraded-live-refresh"
             @click=${hooks.onRefresh}
           >
-            Refresh
+            ${t('hv.action.refresh')}
           </button>`}
     </hv-banner>`);
   } else if (degraded.retrying > 0) {
     banners.push(html`<hv-banner
       kind="warning"
       glyph="clock"
-      heading="Busy — retrying"
-      message=${` · ${counted(degraded.retrying, 'change')} queued`}
+      heading=${t('hv.banner.retrying.heading')}
+      message=${tn('hv.banner.retrying.message', degraded.retrying)}
       data-testid="degraded-retrying"
     ></hv-banner>`);
   } else if (degraded.rateLimited) {
     banners.push(html`<hv-banner
       kind="warning"
       glyph="clock"
-      heading="Rate limited"
-      message=" · some live updates may have been dropped, so this list can be out of date."
+      heading=${t('hv.banner.rateLimited.heading')}
+      message=${t('hv.banner.rateLimited.message')}
       data-testid="degraded-rate-limited"
     >
       <button slot="actions" class="hv-pill outline" data-testid="degraded-refresh" @click=${hooks.onRefresh}>
-        Refresh
+        ${t('hv.action.refresh')}
       </button>
     </hv-banner>`);
   }
@@ -119,8 +122,8 @@ export function renderDegradedBanners(st: StoreState | null, hooks: BannerHooks)
     banners.push(html`<hv-banner
       kind="info"
       glyph="refresh"
-      heading="Inventory was replaced by an import"
-      message=" · reloading…"
+      heading=${t('hv.banner.reloading.heading')}
+      message=${t('hv.banner.reloading.message')}
       data-testid="degraded-reloading"
     ></hv-banner>`);
   }
@@ -139,7 +142,7 @@ export function renderErrorBanners(st: StoreState | null, hooks: BannerHooks): T
         const conflict = e.kind === 'conflict' && e.itemId;
         return html`<hv-banner
           kind=${conflict ? 'warning' : 'error'}
-          .heading=${conflict ? 'Someone else changed this item.' : null}
+          .heading=${conflict ? t('hv.banner.conflict.heading') : null}
           .message=${e.message}
           data-testid="banner-entry"
           data-code=${e.code}
@@ -154,7 +157,7 @@ export function renderErrorBanners(st: StoreState | null, hooks: BannerHooks): T
                     store?.dismissError(e.id);
                   }}
                 >
-                  View latest
+                  ${t('hv.banner.conflict.viewLatest')}
                 </button>
                 ${e.changes
                   ? html`<button
@@ -165,7 +168,7 @@ export function renderErrorBanners(st: StoreState | null, hooks: BannerHooks): T
                         store?.dismissError(e.id);
                       }}
                     >
-                      Re-apply my change
+                      ${t('hv.banner.conflict.reapply')}
                     </button>`
                   : null}
               </span>`
@@ -174,7 +177,7 @@ export function renderErrorBanners(st: StoreState | null, hooks: BannerHooks): T
             slot="actions"
             class="hv-icon-button"
             data-testid="banner-dismiss"
-            aria-label="Dismiss"
+            aria-label=${t('hv.action.dismiss')}
             @click=${() => store?.dismissError(e.id)}
           >
             ${icon('close', 16)}

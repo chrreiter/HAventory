@@ -1,4 +1,15 @@
-import { afterAll } from 'vitest';
+import { afterAll, beforeEach } from 'vitest';
+import { setLanguage } from './i18n';
+
+/*
+ * The card's language is a module singleton, and a spec file shares one module
+ * registry across its tests — so a test that switches to German leaves every
+ * test after it in German. Reset before each, which also means a spec need only
+ * say `setLanguage('de')` and not clean up after itself.
+ */
+beforeEach(() => {
+  setLanguage('en');
+});
 
 // Minimal polyfills for jsdom environment used in Vitest.
 // `ui/responsive.ts` observes the card element's own width, so jsdom needs a

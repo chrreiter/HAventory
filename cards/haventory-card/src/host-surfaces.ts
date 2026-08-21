@@ -5,7 +5,8 @@ import { loadColumnPrefs, saveColumnPrefs } from './store/columns';
 import { activeFilterCount, defaultFilters } from './store/store';
 import type { Store } from './store/store';
 import type { ImportPolicy, ImportPreview, ImportSummary } from './store/types';
-import { counted, plural } from './ui/plural';
+import { tn } from './i18n';
+import { counted } from './ui/plural';
 import { NARROW_QUERY } from './ui/responsive';
 import type { OrganizeTab } from './components/hv-organize-dialog';
 import type { OverflowMenuEntry } from './components/hv-overflow-menu';
@@ -250,7 +251,7 @@ export class HostSurfaces {
               sub:
                 filtered === null
                   ? 'Active filter · Keeps location paths'
-                  : `${filtered} filtered ${plural(filtered, 'item')} · Keeps location paths`,
+                  : tn('hv.surfaces.exportView.filtered', filtered),
             },
           ]
         : []),

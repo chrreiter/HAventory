@@ -9,7 +9,7 @@ import {
   q,
   settle as settleEl,
 } from '../test.utils';
-import { DISCARD_PROMPT } from '../ui/discard';
+import { discardPrompt } from '../ui/discard';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVDetailSheet } from './hv-detail-sheet';
@@ -567,13 +567,13 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
 
     const panel = guard(el).shadowRoot as ShadowRoot;
     expect(panel.querySelector('[data-testid="confirm-dialog"]')?.getAttribute('aria-label')).toBe(
-      DISCARD_PROMPT.heading,
+      discardPrompt().heading,
     );
     expect(panel.querySelector('[data-testid="confirm-message"]')?.textContent).toContain(
-      DISCARD_PROMPT.message,
+      discardPrompt().message,
     );
     expect(panel.querySelector('[data-testid="confirm-accept"]')?.textContent).toContain(
-      DISCARD_PROMPT.confirmLabel,
+      discardPrompt().confirmLabel,
     );
   });
 

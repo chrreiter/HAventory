@@ -1,5 +1,6 @@
 import { html } from 'lit';
 import type { TemplateResult } from 'lit';
+import { t } from '../i18n';
 import { icon } from './icons';
 import { areaNameById, effectiveAreaIdForLocation } from './area';
 import type { AreaRef, Item, Location } from '../store/types';
@@ -75,7 +76,9 @@ export function locationPathParts(
  * glyph cannot go and the area has to say its own name.
  */
 export function pathTitle(parts: PathParts): string {
-  return [parts.areaName ? `Area: ${parts.areaName}` : '', parts.path].filter(Boolean).join(' · ');
+  return [parts.areaName ? t('hv.area.prefix', { name: parts.areaName }) : '', parts.path]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 /**
@@ -149,7 +152,7 @@ export function areaMarkName(areaName: string | null, path: string): string | nu
 export function renderAreaChip(areaName: string | null): TemplateResult | null {
   if (!areaName) return null;
   return html`<span class="hv-area-chip" data-testid="area-chip"
-    >${icon('home', 12)}<span class="hv-sr-only">Area: </span
+    >${icon('home', 12)}<span class="hv-sr-only">${t('hv.area.srPrefix')}</span
     ><span class="hv-chip-text">${areaName}</span></span
   >`;
 }

@@ -381,6 +381,41 @@ nothing, which is only visible by reading the sheet next to the counts it produc
 (`"C:/Users/you/backup.json"`) and prefix the command with `MSYS_NO_PATHCONV=1` if you
 override `--path` — see the path-conversion gotcha below.
 
+### Screenshot the setup and options screens
+
+Neither dialog has a URL of its own, so both are opened by clicking through HA's own UI:
+
+```bash
+cd .claude/skills/run-haventory
+node shot_options.mjs --out de            # de-entry.png, de-options.png + the step text
+node shot_config_flow.mjs --out de-setup  # de-setup-step.png
+node shot_config_flow.mjs --out de-setup --submit   # CREATES the config entry
+```
+
+`shot_options.mjs` opens the integration page and presses Configure, so it works whatever
+language the profile is in — it matches the button on either spelling. `shot_config_flow.mjs`
+goes through HA's own `/_my_redirect/config_flow_start?domain=haventory`, which **only starts
+when no entry exists**: HAventory is single-instance, so the caller has to remove the entry
+first and `--submit` is how it is put back.
+
+The language is the Home Assistant *profile's*, not a flag. Set and restore it over WS —
+`value: null` is what the profile looks like before anyone chose:
+
+```bash
+D=.claude/skills/run-haventory/driver.py
+uv run python $D send '{"type":"frontend/set_user_data","key":"language","value":{"language":"de"}}'
+uv run python $D send '{"type":"frontend/set_user_data","key":"language","value":null}'
+uv run python $D send '{"type":"frontend/get_user_data","key":"language"}'   # confirm
+```
+
+Removing the entry keeps the store (`.storage/haventory_store` is not touched) but **drops
+the entry's options**, so read them out first and put them back through the options flow
+afterwards — every section key is required in that POST, `todo` and `rate_limit` included:
+
+```bash
+docker exec home-assistant python -c "import json; d = json.load(open('/config/.storage/core.config_entries')); print([e['options'] for e in d['data']['entries'] if e['domain'] == 'haventory'])"
+```
+
 ## Verification harnesses
 
 Four checks that need a real instance and a real browser, each with its own oracle so a
