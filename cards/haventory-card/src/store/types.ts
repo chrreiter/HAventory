@@ -615,34 +615,14 @@ export type AnyEventPayload = ItemsEventPayload | LocationsEventPayload | StatsE
 
 export type Unsubscribe = () => void;
 
-/** Minimal Home Assistant-like interface used by the WS client. */
-export interface HassLike {
-  // Home Assistant's callWS returns the `result` part of the message.
-  callWS<T>(msg: Record<string, unknown>): Promise<T>;
-  /**
-   * `fetch` with the user's auth header attached — the only way to POST to
-   * core's `/api/file_upload`, which is how attachment bytes reach the server
-   * without crossing the WebSocket. Optional because this interface is
-   * structural: a caller that never uploads need not provide it.
-   */
-  fetchWithAuth?(path: string, init?: RequestInit): Promise<Response>;
-  // WebSocket connection with subscribeMessage to receive event messages; returns unsubscribe.
-  // Home Assistant delivers the *inner* event payload to the callback (the `event`
-  // field of the `{id, type:'event', event}` wire frame), not the whole envelope.
-  connection: {
-    subscribeMessage(
-      cb: (event: AnyEventPayload) => void,
-      msg: Record<string, unknown>,
-    ): Unsubscribe | Promise<Unsubscribe>;
-    // Connection lifecycle. `disconnected` fires when the socket closes, before
-    // Home Assistant starts reconnecting; `ready` fires once it is back and HA
-    // has re-issued the subscriptions it was holding, so a listener runs with
-    // the watches already live again. Optional because the interface is
-    // structural: a caller may pass a connection that only sends messages.
-    addEventListener?(event: 'ready' | 'disconnected', cb: () => void): void;
-    removeEventListener?(event: 'ready' | 'disconnected', cb: () => void): void;
-  };
-}
+/**
+ * The `hass` object, as much of it as this card uses.
+ *
+ * Defined in `ha-contract`, with every other thing the card asks of Home
+ * Assistant, and re-exported here because this is where the shapes it carries
+ * are declared.
+ */
+export type { HassLike } from '../ha-contract';
 
 /** How a tag selection is combined: any of them, or all of them. */
 export type TagMatchMode = 'any' | 'all';

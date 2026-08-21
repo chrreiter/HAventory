@@ -85,6 +85,17 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
   goes in one of the two, and neither is a tracker: work lives in GitHub issues.
 - **Preserve the core invariants**: case-insensitive search, denormalized
   `location_path` on items, and optimistic concurrency via the item `version`.
+- **The card renders no `ha-*` element.** Home Assistant's frontend components
+  — `ha-form`, `ha-dialog`, `ha-selector`, `ha-data-table` — are registered
+  lazily inside HA's own bundle, are not published for card authors to import,
+  and are not versioned, so a card that renders one depends on an internal that
+  moves. None of them exists in jsdom either, which means the break arrives as a
+  user report after an upgrade rather than as a red test. Build the control out
+  of the card's own elements and `--hv-*` tokens instead; the glyphs are inlined
+  in `ui/icons` for the same reason.
+  `cards/haventory-card/src/ha-contract.ts` names everything the card *does* ask
+  of Home Assistant, and its test holds this rule — and that file's list of
+  theme variables and WebSocket calls — to the sources.
 - **Deleting or renaming a file inside `custom_components/haventory/`?** Add its
   old path to `RETIRED_PATHS` in `custom_components/haventory/stale_files.py` in
   the same PR — an upgrade extracts the release asset over the install directory

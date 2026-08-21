@@ -17,6 +17,8 @@
  * every `hv-*` component without threading anything through them.
  */
 
+import { SURFACE_VARS } from '../ha-contract';
+
 /** Alpha below this reads as "nothing painted here" rather than a real colour. */
 const MIN_OPAQUE_ALPHA = 0.1;
 
@@ -74,13 +76,10 @@ export function schemeForSurface(cssColor: string): 'light' | 'dark' | null {
 
 /**
  * The theme variables that describe the surface the card sits on, most specific
- * first. These are the same ones `--hv-surface` binds to.
+ * first. These are the same ones `--hv-surface` binds to, and they are declared
+ * with the rest of the card's Home Assistant contact surface in `ha-contract`.
  */
-export const SURFACE_VARS = [
-  '--card-background-color',
-  '--ha-card-background',
-  '--primary-background-color',
-] as const;
+export { SURFACE_VARS };
 
 /**
  * The scheme implied by an element's resolved theme variables, or `null` when
