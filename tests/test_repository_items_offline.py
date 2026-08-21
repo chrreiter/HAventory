@@ -168,6 +168,58 @@ def _utc_day_offset(days: int) -> str:
 
 
 @pytest.mark.asyncio
+async def test_checked_out_due_count_includes_today_where_overdue_does_not() -> None:
+    """The two counts differ by exactly the items due back today.
+
+    `due` includes today and `overdue` does not — the same vocabulary
+    `inspection_due_count` uses, asked of `due_date`.
+    """
+
+    repo = Repository()
+    repo.create_item(ItemCreate(name="Late Drill", checked_out=True, due_date=_utc_day_offset(-1)))
+    repo.create_item(ItemCreate(name="Today Drill", checked_out=True, due_date=_utc_day_offset(0)))
+    repo.create_item(ItemCreate(name="Soon Drill", checked_out=True, due_date=_utc_day_offset(1)))
+    repo.create_item(ItemCreate(name="Out Drill", checked_out=True))
+    repo.create_item(ItemCreate(name="Home Drill"))
+
+    counts = repo.get_counts()
+    CHECKED_OUT_DUE = 2
+    assert counts["checked_out_due_count"] == CHECKED_OUT_DUE
+    assert counts["overdue_count"] == 1
+    # None of them carries an inspection date, which is a different question.
+    assert counts["inspection_due_count"] == 0
+
+    out = repo.list_items(flt=ItemFilter(checked_out_due_only=True))
+    assert sorted(x.name for x in out["items"]) == ["Late Drill", "Today Drill"]
+    assert out["total"] == CHECKED_OUT_DUE
+
+
+@pytest.mark.asyncio
+async def test_checked_out_due_count_empties_on_check_in() -> None:
+    """Checking in clears the due date, so the due population empties with it."""
+
+    repo = Repository()
+    late = repo.create_item(
+        ItemCreate(name="Late Drill", checked_out=True, due_date=_utc_day_offset(-2))
+    )
+    today = repo.create_item(
+        ItemCreate(name="Today Drill", checked_out=True, due_date=_utc_day_offset(0))
+    )
+    BOTH_DRILLS = 2
+    assert repo.get_counts()["checked_out_due_count"] == BOTH_DRILLS
+
+    repo.check_in(late.id)
+    counts = repo.get_counts()
+    assert counts["checked_out_due_count"] == 1
+    # The one left is due today, so it is due and not yet overdue.
+    assert counts["overdue_count"] == 0
+
+    repo.check_in(today.id)
+    assert repo.get_counts()["checked_out_due_count"] == 0
+    assert repo.list_items(flt=ItemFilter(checked_out_due_only=True))["items"] == []
+
+
+@pytest.mark.asyncio
 async def test_inspection_overdue_count_walks_the_whole_inventory() -> None:
     """`inspection_overdue_count` spans every item, not just the checked-out ones."""
 

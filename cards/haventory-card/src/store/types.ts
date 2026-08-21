@@ -197,6 +197,11 @@ export interface ItemFilter {
   /** Only items whose `due_date` is strictly before today (UTC). */
   overdue_only?: boolean;
   /**
+   * Only items whose `due_date` is on or before today (UTC) — `overdue_only`'s
+   * population plus the items due back today.
+   */
+  checked_out_due_only?: boolean;
+  /**
    * Only items whose `inspection_date` is strictly before today (UTC) — i.e.
    * the next inspection is already missed. Independent of check-out state.
    */
@@ -255,6 +260,12 @@ export interface StatsCounts {
    * because older backends do not send it.
    */
   overdue_count?: number;
+  /**
+   * Items that are due back, counted inclusive of today — so `overdue_count`
+   * plus the items due back today, never smaller than it. Calendar-derived and
+   * optional for the same reason as `overdue_count`.
+   */
+  checked_out_due_count?: number;
   /**
    * Items past the date they were next due for inspection, across the whole
    * inventory. Calendar-derived like `overdue_count`, and optional for the

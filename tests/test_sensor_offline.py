@@ -17,7 +17,7 @@ from custom_components.haventory.const import PLATFORMS, SENSOR_DESCRIPTIONS
 from custom_components.haventory.repository import Repository
 
 PACKAGE = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
-EXPECTED_SENSOR_COUNT = 7
+EXPECTED_SENSOR_COUNT = 8
 
 
 def test_every_descriptor_names_a_count_the_repository_computes() -> None:
@@ -36,6 +36,7 @@ def test_the_promoted_counts_are_the_documented_ones() -> None:
         "low_stock_count",
         "checked_out_count",
         "overdue_count",
+        "checked_out_due_count",
         "inspection_overdue_count",
         "inspection_due_count",
         "locations_total",
@@ -55,6 +56,7 @@ def test_only_the_calendar_derived_counts_track_midnight() -> None:
 
     assert {d.key for d in SENSOR_DESCRIPTIONS if d.date_derived} == {
         "overdue_count",
+        "checked_out_due_count",
         "inspection_overdue_count",
         "inspection_due_count",
     }

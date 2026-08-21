@@ -211,6 +211,7 @@ async def test_stats_returns_counts() -> None:
         "low_stock_count",
         "checked_out_count",
         "overdue_count",
+        "checked_out_due_count",
         "inspection_overdue_count",
         "inspection_due_count",
         "reminder_due_count",

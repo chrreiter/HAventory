@@ -48,6 +48,7 @@ from .models import (
     iso_utc_now,
     item_inspection_is_due,
     item_inspection_is_overdue,
+    item_is_due,
     item_is_low_stock,
     item_is_overdue,
     item_reminder_is_due,
@@ -1763,6 +1764,7 @@ class Repository:
             "low_stock_count": len(self._low_stock_item_ids),
             "checked_out_count": len(self._checked_out_item_ids),
             "overdue_count": self._count_overdue(),
+            "checked_out_due_count": self._count_checked_out_due(),
             "inspection_overdue_count": self._count_inspection_overdue(),
             "inspection_due_count": self._count_inspection_due(),
             "reminder_due_count": self._count_reminder_due(),
@@ -1787,6 +1789,22 @@ class Repository:
             1
             for iid in self._checked_out_item_ids
             if (it := self._items_by_id.get(iid)) is not None and item_is_overdue(it, today=today)
+        )
+
+    def _count_checked_out_due(self) -> int:
+        """Count items that are due back, today included.
+
+        Unindexed and over the checked-out set, for the same two reasons as
+        ``_count_overdue``. This is a superset of it: the two differ by exactly
+        the items due back today, the same relation ``_count_inspection_due``
+        has to ``_count_inspection_overdue``.
+        """
+
+        today = today_utc_date()
+        return sum(
+            1
+            for iid in self._checked_out_item_ids
+            if (it := self._items_by_id.get(iid)) is not None and item_is_due(it, today=today)
         )
 
     def _count_inspection_overdue(self) -> int:

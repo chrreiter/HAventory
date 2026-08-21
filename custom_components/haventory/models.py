@@ -344,10 +344,16 @@ class ItemFilter(TypedDict, total=False):
     orphaned_only: bool
     # When true, only items whose due_date has passed (see filter_items)
     overdue_only: bool
+    # When true, only items whose due date has come round — today included,
+    # unlike `overdue_only` (see filter_items)
+    checked_out_due_only: bool
     # When true, only items whose inspection_date has passed (see filter_items)
     inspection_overdue_only: bool
+    # When true, only items whose inspection is being asked for — today
+    # included, unlike `inspection_overdue_only` (see filter_items)
+    inspection_due_only: bool
     # When true, only items whose reminder has come round — today included,
-    # unlike the two above (see filter_items)
+    # like the two `*_due_only` keys above (see filter_items)
     reminder_due_only: bool
     location_id: str | None
     # Multi-select beside the scalar above, unioned the same way — see
@@ -1555,6 +1561,21 @@ def item_is_overdue(item: Item, *, today: str = "") -> bool:
     return item.due_date < (today or today_utc_date())
 
 
+def item_is_due(item: Item, *, today: str = "") -> bool:
+    """Return True once the item is due back.
+
+    Inclusive of today, unlike ``item_is_overdue``: a due date names the day the
+    item is owed back, so that day is when it is being asked for rather than the
+    last day it is not. The two answers differ by exactly the items due today,
+    and every overdue item is also due — the same relation
+    ``item_inspection_is_due`` has to ``item_inspection_is_overdue``.
+    """
+
+    if not item.due_date:
+        return False
+    return item.due_date <= (today or today_utc_date())
+
+
 def item_inspection_is_overdue(item: Item, *, today: str = "") -> bool:
     """Return True when the item is past the date it was next due for inspection.
 
@@ -1650,9 +1671,13 @@ def filter_items(
     - low_stock_only: quantity <= threshold (0 valid, None disables)
     - orphaned_only: only items without a location (location_id is None)
     - overdue_only: due_date set and strictly before today (UTC)
+    - checked_out_due_only: due_date set and on or before today (UTC)
     - inspection_overdue_only: inspection_date set and strictly before today (UTC)
-    - reminder_due_only: reminder_date set and on or before today (UTC) — today
-      counts, because a reminder names the day it is asking about
+    - inspection_due_only: inspection_date set and on or before today (UTC)
+    - reminder_due_only: reminder_date set and on or before today (UTC)
+    - the three ``*_due_only`` keys count today and the two ``*overdue*`` ones do
+      not: a due date names the day something is being asked for, not the last
+      day it is not
     - location_id / location_ids: equals any of the selection; include_subtree
       optionally includes descendants (by prefix of id_path), one flag for all
     - updated_after/created_after: ISO-8601 UTC with 'Z', strictly greater-than
@@ -1675,8 +1700,14 @@ def filter_items(
     low_stock_only = bool(flt.get("low_stock_only")) if "low_stock_only" in flt else False
     orphaned_only = bool(flt.get("orphaned_only")) if "orphaned_only" in flt else False
     overdue_only = bool(flt.get("overdue_only")) if "overdue_only" in flt else False
+    checked_out_due_only = (
+        bool(flt.get("checked_out_due_only")) if "checked_out_due_only" in flt else False
+    )
     inspection_overdue_only = (
         bool(flt.get("inspection_overdue_only")) if "inspection_overdue_only" in flt else False
+    )
+    inspection_due_only = (
+        bool(flt.get("inspection_due_only")) if "inspection_due_only" in flt else False
     )
     reminder_due_only = bool(flt.get("reminder_due_only")) if "reminder_due_only" in flt else False
     location_ids = selected_location_ids(flt)
@@ -1701,9 +1732,15 @@ def filter_items(
     location_needles = _parse_location_selection(location_ids)
     if location_ids and not location_needles:
         return []
-    today = (
-        today_utc_date() if (overdue_only or inspection_overdue_only or reminder_due_only) else ""
+    # One clock read for the whole query, and only when a date predicate is on.
+    date_predicates = (
+        overdue_only,
+        checked_out_due_only,
+        inspection_overdue_only,
+        inspection_due_only,
+        reminder_due_only,
     )
+    today = today_utc_date() if any(date_predicates) else ""
 
     predicates_active = (
         bool(q)
@@ -1714,9 +1751,7 @@ def filter_items(
         or checked_out is not None
         or low_stock_only
         or orphaned_only
-        or overdue_only
-        or inspection_overdue_only
-        or reminder_due_only
+        or any(date_predicates)
         or bool(location_ids)
         or updated_after is not None
         or created_after is not None
@@ -1740,7 +1775,11 @@ def filter_items(
         matches_low_stock = (not low_stock_only) or item_is_low_stock(it)
         matches_orphaned = (not orphaned_only) or (it.location_id is None)
         matches_overdue = (not overdue_only) or item_is_overdue(it, today=today)
-        matches_inspection = (not inspection_overdue_only) or item_inspection_is_overdue(
+        matches_due = (not checked_out_due_only) or item_is_due(it, today=today)
+        matches_inspection_overdue = (not inspection_overdue_only) or item_inspection_is_overdue(
+            it, today=today
+        )
+        matches_inspection_due = (not inspection_due_only) or item_inspection_is_due(
             it, today=today
         )
         matches_reminder = (not reminder_due_only) or item_reminder_is_due(it, today=today)
@@ -1763,7 +1802,9 @@ def filter_items(
             and matches_low_stock
             and matches_orphaned
             and matches_overdue
-            and matches_inspection
+            and matches_due
+            and matches_inspection_overdue
+            and matches_inspection_due
             and matches_reminder
             and matches_location
             and matches_updated

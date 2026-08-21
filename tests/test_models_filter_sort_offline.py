@@ -336,6 +336,75 @@ async def test_filter_inspection_overdue_is_independent_of_checkout() -> None:
 
 
 @pytest.mark.asyncio
+async def test_filter_checked_out_due_only_counts_today() -> None:
+    """`checked_out_due_only` is `overdue_only` plus the items due back today."""
+
+    late = create_item_from_create(
+        {"name": "Late", "checked_out": True, "due_date": _utc_day_offset(-1)}
+    )
+    today = create_item_from_create(
+        {"name": "Today", "checked_out": True, "due_date": _utc_day_offset(0)}
+    )
+    tomorrow = create_item_from_create(
+        {"name": "Tomorrow", "checked_out": True, "due_date": _utc_day_offset(1)}
+    )
+    undated = create_item_from_create({"name": "Out", "checked_out": True})
+    home = create_item_from_create({"name": "Home"})
+    every = [late, today, tomorrow, undated, home]
+
+    kept = filter_items(every, ItemFilter(checked_out_due_only=True))
+    assert [x.name for x in kept] == ["Late", "Today"]
+    # The strict twin drops the one due today, which is the whole difference.
+    assert [x.name for x in filter_items(every, ItemFilter(overdue_only=True))] == ["Late"]
+
+    # Off (or absent) it is not a predicate at all, so nothing is excluded.
+    assert filter_items(every, ItemFilter(checked_out_due_only=False)) == every
+
+
+@pytest.mark.asyncio
+async def test_filter_inspection_due_only_counts_today() -> None:
+    """`inspection_due_only` is `inspection_overdue_only` plus today's inspections."""
+
+    yesterday = create_item_from_create(
+        {"name": "Yesterday", "inspection_date": _utc_day_offset(-1)}
+    )
+    today = create_item_from_create({"name": "Today", "inspection_date": _utc_day_offset(0)})
+    tomorrow = create_item_from_create({"name": "Tomorrow", "inspection_date": _utc_day_offset(1)})
+    undated = create_item_from_create({"name": "Undated"})
+    every = [yesterday, today, tomorrow, undated]
+
+    kept = filter_items(every, ItemFilter(inspection_due_only=True))
+    assert [x.name for x in kept] == ["Yesterday", "Today"]
+    strict = filter_items(every, ItemFilter(inspection_overdue_only=True))
+    assert [x.name for x in strict] == ["Yesterday"]
+
+    # Off (or absent) it is not a predicate at all, so nothing is excluded.
+    assert filter_items(every, ItemFilter(inspection_due_only=False)) == every
+
+
+@pytest.mark.asyncio
+async def test_the_two_due_filters_ask_about_different_dates() -> None:
+    """A due date is about a borrowing; an inspection date is about the item."""
+
+    borrowed = create_item_from_create(
+        {"name": "Borrowed", "checked_out": True, "due_date": _utc_day_offset(0)}
+    )
+    shelved = create_item_from_create({"name": "Shelved", "inspection_date": _utc_day_offset(0)})
+    every = [borrowed, shelved]
+
+    assert [x.name for x in filter_items(every, ItemFilter(checked_out_due_only=True))] == [
+        "Borrowed"
+    ]
+    assert [x.name for x in filter_items(every, ItemFilter(inspection_due_only=True))] == [
+        "Shelved"
+    ]
+
+    # Both predicates at once is an AND, and neither item answers both.
+    both = ItemFilter(checked_out_due_only=True, inspection_due_only=True)
+    assert filter_items(every, both) == []
+
+
+@pytest.mark.asyncio
 async def test_sort_default_and_fields_with_tiebreak() -> None:
     a = create_item_from_create({"name": "Alpha"})
     b = create_item_from_create({"name": "Bravo"})
