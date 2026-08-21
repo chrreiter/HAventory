@@ -1,0 +1,150 @@
+name: card-smoke
+
+# The card, driven in a real browser against a real Home Assistant, once a month.
+#
+# The card's contact surface with Home Assistant is small and named — `callWS`,
+# `subscribeMessage`, `window.customCards`, the theme variables — and the reason
+# it survives HA upgrades is that it renders no `ha-*` element. Nothing in the
+# unit suite can check that: a mock is only as truthful as its author's model of
+# the contract, and `e2e/live-updates.smoke.mjs` exists because one once was not.
+# That smoke drives the real card against a real HA, and until now it never ran
+# unattended.
+#
+# Two channels. `stable` says what users have; `beta` says what they will have in
+# a few weeks, which is the whole point of running it early.
+#
+# Scheduled only, like `ha-latest.yml`: no `pull_request` trigger, so it reports
+# no check and can never become a gate a pull request waits on.
+on:
+  schedule:
+    # Same slot as `ha-latest.yml`, an hour later so the two do not contend for
+    # runners. The 8th is after Home Assistant's monthly minor, which lands on the
+    # first Wednesday.
+    - cron: "0 6 8 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [stable, beta]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up uv
+        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d  # v10.0.0
+        with:
+          enable-cache: true
+      - name: Install Python 3.14
+        run: uv python install 3.14
+      - name: Sync dev environment
+        # `scripts/ci_provision_ha.py` and `scripts/ws_init_haventory.py` both
+        # talk to Home Assistant over aiohttp, which the dev group carries.
+        run: uv sync --python 3.14
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: cards/haventory-card/package-lock.json
+      - name: Build the card
+        # Into `custom_components/haventory/www/`, which is inside the directory
+        # the container mounts below — so the bundle Home Assistant serves is the
+        # one this commit produces.
+        run: npm ci --no-audit --no-fund && npm run build
+        working-directory: cards/haventory-card
+      - name: Install the browser the smoke drives
+        run: npx playwright install --with-deps chromium
+        working-directory: cards/haventory-card
+      - name: Boot Home Assistant (${{ matrix.channel }})
+        # Read-only mount: Home Assistant reads the integration out of the
+        # checkout, and nothing it does can write back into the workspace.
+        run: |
+          docker run -d --name ha-smoke -e TZ=UTC -p 8123:8123 \
+            -v "${{ github.workspace }}/custom_components/haventory:/config/custom_components/haventory:ro" \
+            "ghcr.io/home-assistant/home-assistant:${{ matrix.channel }}"
+      - name: Onboard it and put the card on a dashboard
+        id: provision
+        # A blank instance needs everything a dev instance was set up with by
+        # hand: an owner, a token, and a view holding the card. All of it is REST
+        # and WebSocket — no browser, and nothing interactive.
+        run: uv run python scripts/ci_provision_ha.py --base-url http://localhost:8123
+      - name: Add the HAventory config entry
+        env:
+          HA_BASE_URL: http://localhost:8123
+          HA_TOKEN: ${{ steps.provision.outputs.token }}
+          # There is no `.env` on a runner, but the helper prefers one when there
+          # is; saying so here means a stray file could never redirect the run.
+          HAVENTORY_IGNORE_ENV_FILE: "1"
+        run: uv run python scripts/ws_init_haventory.py
+      - name: Report the Home Assistant this ran against
+        id: version
+        run: |
+          version=$(curl -fsS -H "Authorization: Bearer ${{ steps.provision.outputs.token }}" \
+            http://localhost:8123/api/config | python3 -c "import json,sys; print(json.load(sys.stdin)['version'])")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Card smoke against Home Assistant ${{ matrix.channel }}"
+            echo
+            echo "- Home Assistant \`${version}\` (channel \`${{ matrix.channel }}\`)"
+            echo "- Dashboard view: \`${{ steps.provision.outputs.card-path }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Live-update smoke
+        env:
+          # Without this the smoke prints SKIP and exits 0 — a green job that
+          # tested nothing. `tests/test_repo_hardening_offline.py` holds it.
+          RUN_ONLINE: "1"
+          HA_BASE_URL: http://localhost:8123
+          HA_TOKEN: ${{ steps.provision.outputs.token }}
+          HAVENTORY_IGNORE_ENV_FILE: "1"
+        run: node e2e/live-updates.smoke.mjs --path "${{ steps.provision.outputs.card-path }}"
+        working-directory: cards/haventory-card
+      - name: Home Assistant log
+        # The card failing and Home Assistant failing look identical from the
+        # browser, and only this tells them apart.
+        if: failure()
+        run: docker logs ha-smoke
+
+  notify:
+    # Its own label rather than `ha-latest.yml`'s: two workflows sharing one
+    # pinned issue would have each closing the other's report.
+    needs: [smoke]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open, update or close the drift issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          FAILED: ${{ needs.smoke.result != 'success' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          existing=$(gh issue list --label ci:card-smoke --state open --limit 1 --json number --jq '.[0].number // empty')
+
+          if [ "${FAILED}" = "true" ]; then
+            # printf rather than a multi-line string: a shell string indented to
+            # match this block would carry its leading spaces into the issue, and
+            # Markdown reads an indented line as a code block.
+            body=$(printf '%s\n\n%s\n' \
+              "The scheduled card smoke failed: ${RUN_URL}" \
+              "The run page says which channel — a \`beta\` failure is a warning about the next release, a \`stable\` one is affecting users now. The step summary of each leg names the Home Assistant version it drove.")
+            if [ -n "${existing}" ]; then
+              gh issue comment "${existing}" --body "${body}"
+            else
+              gh issue create \
+                --title "Card smoke fails against current Home Assistant" \
+                --label ci:card-smoke \
+                --body "${body}"
+            fi
+          elif [ -n "${existing}" ]; then
+            gh issue comment "${existing}" \
+              --body "The scheduled card smoke passes again on both channels: ${RUN_URL}"
+            gh issue close "${existing}" --reason completed
+          fi

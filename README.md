@@ -960,6 +960,14 @@ Leave both unset — a fresh install, or any dashboard written before either opt
   pull request is open that day — and it opens or updates one issue labelled
   `ci:ha-latest`, which a later passing run closes again. It reports no check on a pull
   request and can never block one.
+- **`card-smoke`** is the frontend counterpart, on the same schedule: it boots Home
+  Assistant `stable` and `beta` in the runner, onboards them over REST
+  (`scripts/ci_provision_ha.py`), installs the integration and the built card, and drives
+  `cards/haventory-card/e2e/live-updates.smoke.mjs` against each. Nothing in the unit
+  suite renders the card against a real Home Assistant, so this is what would catch the
+  card's contact surface breaking; a `beta` failure arrives before users upgrade rather
+  than after. Same handling: one issue labelled `ci:card-smoke`, closed again by a later
+  passing run, and no check on a pull request.
 - PR hygiene: Conventional-Commit PR-title check, path-based auto-labeling
   (`.github/labeler.yml`), labels-as-code (`.github/labels.yml`), CODEOWNERS review
   requests, and issue/PR templates.
