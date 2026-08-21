@@ -50,8 +50,8 @@ uv sync
 (cd cards/haventory-card && npm ci)
 ```
 
-See the [README "Developer Checklist"](README.md#developer-checklist) for the
-full toolchain and helper scripts.
+See [`docs/developing.md`](docs/developing.md) for the full toolchain, both test
+modes and the helper scripts.
 
 ## The gate (run before every commit — both halves must be green)
 

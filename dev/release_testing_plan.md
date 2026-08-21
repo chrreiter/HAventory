@@ -4,8 +4,8 @@ Manual validation of HAventory on **real** Home Assistant instances, executed ag
 release candidate proposed for the HACS listing.
 
 The automated suites (offline gate, in-process integration tests, online WS smokes, the
-adversarial stress regimen) are assumed green before this plan starts — see the README
-"Developer Checklist". This document covers only what those suites structurally cannot:
+adversarial stress regimen) are assumed green before this plan starts — see
+`docs/developing.md`. This document covers only what those suites structurally cannot:
 real hardware, real phones, real networks, real upgrades, real backups.
 
 Out of scope: feature work, and the backlog — all of it lives in the GitHub issue tracker.

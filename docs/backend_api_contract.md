@@ -92,7 +92,7 @@ Home Assistant has no API for unregistering a WebSocket command, so every `haven
 - **Every command** answers `storage_error`, `ping`, `version` and `config` included: they read no inventory, but a half-answering API for a backend that owns nothing is worse than none.
 - **Nothing is written.** A mutation is refused before it reaches the repository, so the store file stops changing the moment the entry goes.
 - **Live subscriptions end**, and each is told so — see the `unavailable` action under "Subscriptions and events". A client that is not listening for it simply stops receiving events.
-- **The next setup restores everything** — the API and the inventory, which teardown flushes on the way out and setup reads back. Removal keeps the store file too, so re-adding the integration brings the inventory with it (README → "Removing HAventory").
+- **The next setup restores everything** — the API and the inventory, which teardown flushes on the way out and setup reads back. Removal keeps the store file too, so re-adding the integration brings the inventory with it (`installing.md` → "Removing HAventory").
 
 Clients cannot tell a reload apart from a removal by code alone. Re-opening the subscriptions on a bounded backoff covers both: a reload is answering again within seconds, and a removal runs the budget out and leaves the client to tell the user.
 

@@ -99,9 +99,9 @@ PYTHON_FLOOR_SITES: tuple[tuple[str, int, int], ...] = (
     (".github/workflows/codeql.yml", 1, 0),
     (".github/workflows/ha-latest.yml", 3, 0),
     (".github/workflows/card-smoke.yml", 3, 0),
-    ("README.md", 10, 0),
     ("CONTRIBUTING.md", 1, 0),
     ("docs/backend_api_contract.md", 1, 0),
+    ("docs/developing.md", 8, 0),
     ("requirements-integration.txt", 2, 0),
     ("scripts/test_integration.sh", 4, 0),
     (".devcontainer/Dockerfile", 1, 0),
@@ -301,8 +301,8 @@ def test_both_spellings_of_a_version_are_found() -> None:
 NODE_PROSE = re.compile(r"Node ?(\d+)(?:\.(\d+))?")
 
 NODE_PROSE_SITES: tuple[str, ...] = (
-    "README.md",
     "CONTRIBUTING.md",
+    "docs/developing.md",
     "scripts/setup.sh",
     "scripts/test_frontend.sh",
     ".claude/skills/run-haventory/SKILL.md",
