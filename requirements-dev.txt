@@ -73,7 +73,7 @@ python-discovery==1.5.1
     # via virtualenv
 pyyaml==6.0.3
     # via pre-commit
-ruff==0.16.2
+ruff==0.16.3
 typing-extensions==4.16.0
     # via mypy
 virtualenv==21.7.4
