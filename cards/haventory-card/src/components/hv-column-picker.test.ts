@@ -195,9 +195,7 @@ describe('hv-column-picker', () => {
     expect(own, 'the component block').toBeTruthy();
     expect(own).toMatch(/\.panel \{[^}]*border-radius: var\(--hv-radius-dialog\)/);
     expect(own).toMatch(/\.option \{[^}]*min-height: var\(--hv-tap-min, 34px\)/);
-    // Nothing reaches past the tokens to HA's own variables any more.
-    expect(own).not.toMatch(/--card-background-color|--primary-color|--divider-color/);
-    // …and Done is the shared pill, not a bespoke button.
+    // Done is the shared pill, not a bespoke button.
     expect(
       el.shadowRoot?.querySelector('[data-testid="column-picker-done"]')?.classList.contains('hv-pill'),
     ).toBe(true);

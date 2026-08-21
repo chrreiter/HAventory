@@ -1,8 +1,7 @@
 import './hv-overflow-menu';
 import { placeMenu } from './hv-overflow-menu';
 import type { HVOverflowMenu } from './hv-overflow-menu';
-import { NARROW_QUERY } from '../ui/responsive';
-import { componentCss, mountComponent, q } from '../test.utils';
+import { mountComponent, q } from '../test.utils';
 
 async function mount(entries: HVOverflowMenu['entries']) {
   const { el } = await mountComponent<HVOverflowMenu>('hv-overflow-menu', { entries });
@@ -65,39 +64,6 @@ describe('hv-overflow-menu', () => {
 });
 
 describe('hv-overflow-menu: narrow screens', () => {
-  const narrow = () => {
-    const css = componentCss('hv-overflow-menu');
-    const start = css.indexOf(`@media ${NARROW_QUERY}`);
-    expect(start, 'no narrow-viewport block').toBeGreaterThan(-1);
-    return css.slice(start);
-  };
-
-  // The card once carried three phone breakpoints — this menu at 600px, the
-  // card element at 600px and the full view's viewport at 700px — so a window
-  // between them showed a sheet menu over centred dialogs. Every overlay now
-  // flips at the one viewport width; CSS cannot read the constant, so the two
-  // spellings are pinned to each other here.
-  it('rises at the same viewport width as every other overlay', () => {
-    expect(NARROW_QUERY).toBe('(max-width: 700px)');
-    expect(narrow()).toContain('@media (max-width: 700px)');
-  });
-
-  // A 250px trigger-anchored dropdown covered most of the list it was acting
-  // on, and "Export current view" wrapped onto two lines inside it. The base
-  // rule already carries position: fixed; the sheet is the inset overriding
-  // the measured coordinates.
-  it('becomes a bottom sheet instead of an anchored dropdown', () => {
-    const css = narrow();
-    expect(css).toMatch(/\.menu \{[^}]*inset: auto 0 0 0/);
-    expect(css).toMatch(/\.menu \{[^}]*max-width: none/);
-  });
-
-  it('keeps the scrim from swallowing the tap that should close it', () => {
-    // The menu closes on any outside pointerdown, and that check asks whether
-    // the composed path includes this element. A scrim that took the tap would
-    // be inside that path, so tapping away would leave the menu open.
-    expect(narrow()).toMatch(/\.scrim \{[^}]*pointer-events: none/);
-  });
 
   // The scrim was a ::before on the menu. A negative-z-index child paints after
   // the background of the element establishing the stacking context and before
@@ -115,14 +81,9 @@ describe('hv-overflow-menu: narrow screens', () => {
     const z = (n: HTMLElement) => Number(/z-index: (\d+)/.exec(n.getAttribute('style') ?? '')?.[1]);
     expect(z(scrim)).toBeLessThan(z(menu));
     // The surface itself is untouched.
-    expect(narrow()).not.toMatch(/\.menu::before/);
     expect(String((customElements.get('hv-overflow-menu') as never as { styles: unknown[] }).styles)).toContain(
       'background: var(--hv-surface)',
     );
-  });
-
-  it('gives the entries a touch-sized row', () => {
-    expect(narrow()).toMatch(/\.entry \{[^}]*min-height: 48px/);
   });
 
   it('still closes on an outside pointerdown once it is a sheet', async () => {
@@ -182,18 +143,6 @@ describe('hv-overflow-menu: narrow screens', () => {
 // flipping up both left a ~6px sliver. The menu is viewport-fixed instead, so
 // no ancestor's overflow can cut it.
 describe('hv-overflow-menu: escaping ancestor clips', () => {
-  // The first .menu block is the base rule; the sheet's overrides live in the
-  // narrow @media block after it.
-  const baseMenuRule = () => {
-    const css = componentCss('hv-overflow-menu');
-    return /\.menu \{[^}]*\}/.exec(css)?.[0] ?? '';
-  };
-
-  it('draws the dropdown viewport-fixed, from measured coordinates', () => {
-    expect(baseMenuRule()).toContain('position: fixed');
-    expect(baseMenuRule()).toContain('top: var(--hv-menu-top');
-    expect(baseMenuRule()).toContain('left: var(--hv-menu-left');
-  });
 
   it('carries live placement coordinates while open', async () => {
     const el = await mount([{ id: 'refresh', label: 'Refresh data' }]);

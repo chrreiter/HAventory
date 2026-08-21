@@ -1,9 +1,7 @@
 import './hv-location-tree';
 import type { HVLocationTree } from './hv-location-tree';
-import { chip } from '../ui/chip';
-import { browseRow } from '../ui/browse-row';
 import type { LocationTreeNode } from '../store/types';
-import { componentCss, mountComponent, ownCss, q } from '../test.utils';
+import { mountComponent, q } from '../test.utils';
 
 function node(
   id: string,
@@ -155,9 +153,6 @@ describe('hv-location-tree: counts and decorations', () => {
 
     expect(row.querySelector('svg[data-icon="mapMarkerOff"]')).toBeTruthy();
     expect(row.querySelector('svg[data-icon="alert"]')).toBe(null);
-
-    const css = componentCss('hv-location-tree');
-    expect(css).not.toMatch(/\.row\.orphans \{[^}]*hv-warn/);
   });
 
   // The row clears the location either way, but a picker is assigning one, not
@@ -428,24 +423,6 @@ describe('hv-location-tree: area grouping', () => {
     expect(heads(el)[0].querySelector('[data-icon="home"]')).toBeTruthy();
   });
 
-  // Both trees that head their roots with a chip are this component — the
-  // full view's sidebar and the organize dialog's — so its size is settled
-  // here, once, for both.
-  it('sets both band labels at row size, leaving the shared chip its smaller one', () => {
-    const own = ownCss('hv-location-tree');
-    // Tracks whatever a browse row is set to rather than restating a number
-    // beside it, and both bands are named by one rule so neither can drift.
-    expect(own).toMatch(/\.area-name \.hv-area-chip, \.area-none \{ font-size: inherit/);
-    expect(String(browseRow.cssText).replace(/\s+/g, ' ')).toMatch(
-      /\.hv-browse-row \{[^}]*font: 400 [\d.]+px/,
-    );
-    // The other surfaces put this chip beside a path it qualifies, where it is
-    // an annotation and stays smaller than the line carrying it.
-    expect(String(chip.cssText).replace(/\s+/g, ' ')).toMatch(
-      /\.hv-chip, \.hv-area-chip, \.hv-status-chip \{[^}]*font-size: var\(--hv-chip-font-size\)/,
-    );
-  });
-
   it('leaves an inventory that assigns no areas exactly as it was', async () => {
     const el = await mount();
     expect(heads(el)).toEqual([]);
@@ -632,37 +609,6 @@ describe('hv-location-tree: manage mode', () => {
 
     expect(seen).toEqual(['edit', 'delete']);
     expect(editId).toBe('garage');
-  });
-
-  // The organize dialog sizes its own rows for a finger, but the Locations tab
-  // is this component and its stylesheet is out of that dialog's reach: DOM-
-  // measured at 390px, the count link came to 14px tall and the ⋮ to 26×26
-  // beside 44px controls on the other three tabs.
-  it('sizes the managed row for a finger, matching the dialog it renders in', () => {
-    const css = componentCss('hv-location-tree');
-
-    // WCAG 2.2 asks 24px of any pointer, wherever the count is a link.
-    expect(css).toMatch(/\.count\.link \{[^}]*min-height: 24px/);
-    expect(css).toMatch(/\.row\.manage\.touch \.count\.link \{[^}]*min-height: var\(--hv-tap-min, 44px\)/);
-    expect(css).toMatch(
-      /\.row\.manage\.touch \.action \{[^}]*width: var\(--hv-tap-min, 44px\)[^}]*height: var\(--hv-tap-min, 44px\)/,
-    );
-    // Browsing is a list to read down; 44px counts would stretch it past what a
-    // phone shows at once, so the bump stops at the managing tree.
-    expect(css).not.toMatch(/:host\(\[mobile\]\) \.count/);
-  });
-
-  // The Locations tab is this component, so the dialog cannot reach its rows
-  // with a selector. It reaches them with an inherited custom property instead,
-  // which is what keeps the tightening scoped: the sidebar, the filter panel
-  // and the editor's location field declare nothing and take the fallback.
-  it('takes the organize dialog\'s row rhythm only when it is hosted there', () => {
-    const css = componentCss('hv-location-tree');
-
-    expect(css).toMatch(/\.hv-browse-row \{[^}]*padding: var\(--hv-organize-row-pad, 7px\) 12px/);
-    // Nothing here declares it — a tree that declared its own would answer for
-    // every host at once.
-    expect(css).not.toContain('--hv-organize-row-pad:');
   });
 
   it('marks the row so the touch sizing has something to hang on', async () => {

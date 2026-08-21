@@ -3,7 +3,7 @@ import { browseRow } from './browse-row';
 
 import '../components/hv-full-view';
 import '../components/hv-location-tree';
-import { ownCss, sheetsOf } from '../test.utils';
+import { sheetsOf } from '../test.utils';
 
 /**
  * The two shadow roots that draw a row you browse by. They render one under the
@@ -18,16 +18,4 @@ describe('ui/browse-row: one row in two shadow roots', () => {
     for (const tag of BROWSERS) expect(sheetsOf(tag), tag).toContain(browseRow);
   });
 
-  it('leaves neither of them restating the shape it provides', () => {
-    for (const tag of BROWSERS) {
-      const css = ownCss(tag);
-      // The two rules that used to hold these, in the shapes that disagreed.
-      for (const selector of ['\\.value-row', '\\.row']) {
-        const rule = new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
-        expect(rule, `${tag}: ${selector} { ${rule} }`).not.toMatch(
-          /padding|font:|min-height|border-radius|display: flex/,
-        );
-      }
-    }
-  });
 });

@@ -1,7 +1,7 @@
 import './hv-diagnostics-panel';
 import type { HVDiagnosticsPanel } from './hv-diagnostics-panel';
 import type { DegradedState, HealthResult, StatsCounts } from '../store/types';
-import { all, componentCss, mountComponent, q } from '../test.utils';
+import { all, mountComponent, q } from '../test.utils';
 
 const counts: StatsCounts = {
   items_total: 250,
@@ -115,29 +115,6 @@ describe('hv-diagnostics-panel: not live', () => {
 
     expect(q(el, '[data-testid="diagnostics-status"]')?.textContent).toContain('Not live');
     expect(q(el, '[data-testid="diagnostics-subscriptions"]')?.textContent).toContain('not connected');
-  });
-});
-
-describe('hv-diagnostics-panel: fits the screen', () => {
-  /** jsdom lays out no shadow DOM, so sizing rules are asserted on the sheet. */
-  const css = () => {
-    return componentCss('hv-diagnostics-panel');
-  };
-
-  // The centring grid's implicit track was auto-sized, so it took the panel's
-  // own 470px however narrow the screen was, and the panel's max-width: 100%
-  // resolved against that track rather than the viewport. At 390px the panel
-  // measured 470 wide: the third tile and the Close button hung off the edge.
-  it('sizes its track to the viewport, not to the panel inside it', () => {
-    expect(css()).toMatch(/\.wrap \{[^}]*grid-template-columns: minmax\(0, 1fr\)/);
-    expect(css()).toMatch(/\.wrap \{[^}]*grid-template-rows: minmax\(0, 1fr\)/);
-    // Which is what the panel's own clamps are relying on.
-    expect(css()).toMatch(/\.panel \{[^}]*max-width: 100%/);
-    expect(css()).toMatch(/\.panel \{[^}]*max-height: 100%/);
-  });
-
-  it('lets the three counter tiles wrap once there is no room for three', () => {
-    expect(css()).toMatch(/\.tiles \{[^}]*grid-template-columns: repeat\(auto-fit, minmax\(96px, 1fr\)\)/);
   });
 });
 

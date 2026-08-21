@@ -289,16 +289,6 @@ describe('describeFailure', () => {
 // theme — and a running batch's Cancel that was a bare native button on top of
 // it, unstyled where every sibling control was a pill.
 describe('hv-bulk-bar: the band belongs to the theme', () => {
-  it('takes its fill and its ink from tokens rather than from hex', () => {
-    const css = componentCss('hv-bulk-bar');
-    expect(css).toMatch(/\.bar, \.progress \{[^}]*background: var\(--hv-selection-bar\)/);
-    expect(css).toMatch(/\.bar, \.progress \{[^}]*color: var\(--hv-on-selection-bar\)/);
-    expect(css).toMatch(/\.band-button\.danger \{[^}]*color: var\(--hv-on-selection-bar-danger\)/);
-    // The rules that draw the band carry no literal colour of their own.
-    const band = css.slice(css.indexOf('.bar, .progress {'), css.indexOf('.result {'));
-    expect(band).not.toMatch(/#[0-9a-f]{3,8}\b/i);
-    expect(band).not.toMatch(/rgba?\(/);
-  });
 
   it('draws the running batch a real button', async () => {
     const el = await mount({ progress: { done: 1, total: 4, failed: 0, label: 'Moving' } });

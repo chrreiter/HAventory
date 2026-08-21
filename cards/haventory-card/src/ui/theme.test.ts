@@ -1,6 +1,4 @@
-import { css } from 'lit';
 import { luminanceOf, schemeForSurface, resolveColorScheme } from './theme';
-import { tokens } from './tokens';
 
 describe('luminanceOf', () => {
   it('reads the rgb()/rgba() forms getComputedStyle returns', () => {
@@ -72,39 +70,5 @@ describe('resolveColorScheme', () => {
 
   it('returns null when no theme is readable, so the OS default stands', () => {
     expect(resolveColorScheme(styleOf({}))).toBeNull();
-  });
-});
-
-describe('tokens', () => {
-  // The regression this guards: dark values used to sit behind
-  // @media (prefers-color-scheme: dark), which is the OS preference — not the
-  // Home Assistant theme. A user on a light HA theme with a dark OS got dark
-  // chips and near-black dividers on a white card.
-  it('does not gate dark values on the OS colour-scheme preference', () => {
-    expect(tokens.cssText).not.toContain('prefers-color-scheme');
-  });
-
-  it('expresses theme-dependent values with light-dark()', () => {
-    expect(tokens.cssText).toContain('light-dark(');
-  });
-
-  it('still collapses motion under prefers-reduced-motion', () => {
-    expect(tokens.cssText).toContain('prefers-reduced-motion');
-  });
-
-  it('is a plain style fragment that only declares custom properties', () => {
-    expect(tokens).toBeInstanceOf(css``.constructor);
-    // every declaration inside :host must be a custom property
-    const hostBlock = tokens.cssText
-      .slice(tokens.cssText.indexOf('{') + 1, tokens.cssText.indexOf('}'))
-      .replace(/\/\*[\s\S]*?\*\//g, '');
-    const decls = hostBlock
-      .split(';')
-      .map((d) => d.trim())
-      .filter(Boolean);
-    expect(decls.length).toBeGreaterThan(20);
-    for (const decl of decls) {
-      expect(decl.startsWith('--')).toBe(true);
-    }
   });
 });

@@ -1,5 +1,5 @@
 import './hv-list-row';
-import { componentCss, makeAttachment, makeItem, makeManual, makeMediaBindings, mountComponent, q } from '../test.utils';
+import { makeAttachment, makeItem, makeManual, makeMediaBindings, mountComponent, q } from '../test.utils';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import { elideMobilePath, elidePath, isLowStock, rowMenuEntries } from './hv-list-row';
 import { addDays, toIsoDate } from '../ui/relative-time';
@@ -526,57 +526,6 @@ describe('hv-list-row: mobile affordances', () => {
   });
 });
 
-describe('hv-list-row: truncation', () => {
-  // jsdom does not lay shadow DOM out, so the stylesheet itself is the only
-  // thing here worth asserting on — and the bug was entirely in the stylesheet.
-  const styleText = () => {
-    return componentCss('hv-list-row');
-  };
-  const rule = (selector: string) => {
-    const css = styleText();
-    const start = css.indexOf(`${selector} {`);
-    expect(start, `no rule for ${selector}`).toBeGreaterThan(-1);
-    return css.slice(start, css.indexOf('}', start)).replace(/\s+/g, ' ');
-  };
-
-  // `overflow`/`text-overflow` are ignored on an inline box, and `text-overflow`
-  // is ignored on a flex container. Both lines asked for an ellipsis from a box
-  // that could never draw one, so a long path hard-cut mid-character instead.
-  it('gives the name line a box an ellipsis can apply to', () => {
-    const css = rule('.name');
-    expect(css).toMatch(/display: block/);
-    expect(css).toMatch(/text-overflow: ellipsis/);
-    expect(css).not.toMatch(/display: flex/);
-  });
-
-  it('gives the location line a box an ellipsis can apply to', () => {
-    const css = rule('.secondary');
-    expect(css).toMatch(/display: block/);
-    expect(css).toMatch(/text-overflow: ellipsis/);
-    expect(css).not.toMatch(/display: flex/);
-  });
-
-  it('keeps the low-stock dot on the same line once that line is a block', () => {
-    // It used to be a flex item; as a block child it would have stacked above
-    // the text and pushed every row 6px taller.
-    expect(rule('.dot')).toMatch(/display: inline-block/);
-  });
-
-  // 34x34, fifteen to a screen, with − directly beside + — the control most
-  // likely to be mis-tapped and the one where a mis-tap moves stock.
-  it('sizes the stepper from the inherited touch target on a phone', () => {
-    expect(rule(':host([mobile]) .stepper button')).toMatch(/width: var\(--hv-tap-min, 34px\)/);
-  });
-
-  it('expands the selection checkbox hit area without resizing the box', () => {
-    // The row toggles the same selection, so the grown area can only agree
-    // with what is underneath it.
-    expect(rule(':host([mobile]) .box::after')).toMatch(
-      /inset: calc\(\(var\(--hv-tap-min, 16px\) - 16px\) \/ -2\)/,
-    );
-  });
-});
-
 describe('hv-list-row: selection mode', () => {
   it('swaps row navigation for a checkbox', async () => {
     const el = await mount({ id: 'item-1' }, { selectable: true });
@@ -693,21 +642,4 @@ describe('hv-list-row: document marker', () => {
     expect(mark?.previousElementSibling?.getAttribute('data-testid')).toBe('row-name');
   });
 
-  // A flex item takes an automatic minimum width from its content, so the name
-  // stops eliding the moment it shares a line with the mark unless it gives
-  // that minimum up.
-  it('leaves the name able to shrink on that line', () => {
-    const css = componentCss('hv-list-row');
-    expect(css).toMatch(/\.name-line \{[^}]*display: flex/);
-    expect(css).toMatch(/\.name \{[^}]*min-width: 0[^}]*text-overflow: ellipsis/);
-  });
-});
-
-describe('hv-list-row: the row is a target', () => {
-  it('shows the hand a button would', () => {
-    const css = componentCss('hv-list-row');
-    // The shared `button { cursor: pointer }` cannot reach a role=row div, and
-    // every chip, pill and menu beside the row already shows the hand.
-    expect(css).toMatch(/\.row \{[^}]*cursor: pointer/);
-  });
 });

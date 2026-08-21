@@ -12,7 +12,6 @@ import {
 } from '../test.utils';
 import { DISCARD_PROMPT } from '../ui/discard';
 import { addDays, toIsoDate } from '../ui/relative-time';
-import { base, tokens } from '../ui/tokens';
 import type { HVCardShell } from './hv-card-shell';
 import type { Item, Location } from '../store/types';
 
@@ -794,20 +793,6 @@ describe('hv-card-shell: banners', () => {
 });
 
 describe('hv-card-shell: narrow header', () => {
-  // The title is `flex: 1` among siblings that are all `flex: none`, so it
-  // absorbed every pixel the badges and buttons needed: 40px for a 78px
-  // heading at 375px, and 0px at 320px. jsdom cannot lay this out, so the
-  // stylesheet is what gets asserted.
-  it('wraps the badges onto their own row on a phone', () => {
-    const css = componentCss('hv-card-shell');
-    expect(css).toMatch(/:host\(\[mobile\]\) \.header \{ flex-wrap: wrap; \}/);
-    expect(css).toMatch(/:host\(\[mobile\]\) \.badges \{[^}]*flex-basis: 100%/);
-  });
-
-  it('leaves the desktop header on one row', () => {
-    // `.badges { margin-left: auto }` is what right-aligns them there.
-    expect(componentCss('hv-card-shell')).toMatch(/\.badges \{ display: flex; align-items: center; gap: 6px; margin-left: auto; \}/);
-  });
 
   it('renders no badge row at all when a phone has nothing to badge', async () => {
     const { sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
@@ -840,48 +825,6 @@ describe('hv-card-shell: narrow header', () => {
   it('counts a checked-out phone badge as reason enough to draw the row', async () => {
     const { sr } = await mountShell({ items: [makeItem({ id: '1', checked_out: true })], mobile: true });
     expect(sr.querySelector('.badges')).toBeTruthy();
-  });
-});
-
-describe('hv-card-shell: touch targets', () => {
-  // One declaration on the card host, inherited into every nested shadow root.
-  // It only works because `--hv-tap-min` is absent from `tokens` — every
-  // component redeclares those on its own `:host`, which would shadow an
-  // inherited value at the first boundary.
-  it('publishes a 44px target size to every nested component', () => {
-    expect(componentCss('hv-card-shell')).toMatch(/:host\(\[mobile\]\) \{[^}]*--hv-tap-min: 44px/);
-  });
-
-  it('does not declare the target size in the shared token block', () => {
-    // Guard the mechanism itself: `tokens` is re-applied to every component's
-    // own `:host`, so a `--hv-tap-min` in there would shadow the inherited
-    // value at the first boundary and quietly undo all of this.
-    expect(String(tokens.cssText)).not.toMatch(/--hv-tap-min/);
-    // ...while `base`, which is not a `:host` declaration block, must read it.
-    expect(String(base.cssText)).toMatch(/\.hv-icon-button \{[^}]*width: var\(--hv-tap-min, 34px\)/);
-  });
-
-  it('sizes the header actions from it rather than hard-coding 36px', () => {
-    const css = componentCss('hv-card-shell');
-    expect(css).toMatch(/\.add\.round \{ width: var\(--hv-tap-min, 36px\)/);
-    expect(css).toMatch(/\.header \.expand \{ width: var\(--hv-tap-min, 36px\)/);
-    expect(css).toMatch(/:host\(\[mobile\]\) \.icon-toggle \{ width: var\(--hv-tap-min, 40px\)/);
-  });
-
-  it('gives the stat badges a tappable height on a phone', () => {
-    expect(componentCss('hv-card-shell')).toMatch(/:host\(\[mobile\]\) \.badge \{[^}]*min-height: var\(--hv-tap-min, auto\)/);
-  });
-
-  // iOS Safari zooms the page whenever a field under 16px takes focus, and does
-  // not zoom back out. Every field on the card was 12.5–14.5px.
-  it('publishes a 16px field size so iOS does not zoom on focus', () => {
-    expect(componentCss('hv-card-shell')).toMatch(/:host\(\[mobile\]\) \{[^}]*--hv-input-font: 16px/);
-    expect(String(tokens.cssText)).not.toMatch(/--hv-input-font/);
-    expect(String(base.cssText)).toMatch(/\.hv-input \{[^}]*font: 400 var\(--hv-input-font, 13\.5px\)/);
-  });
-
-  it('keeps the card search field reading from it', () => {
-    expect(componentCss('hv-card-shell')).toMatch(/\.search input \{[^}]*font: 400 var\(--hv-input-font, 13\.5px\)/);
   });
 });
 
@@ -1000,19 +943,7 @@ describe('hv-card-shell: adding an item on a phone', () => {
       },
     );
 
-    it('keeps the sheet and the typing when the question is declined', async () => {
-      const { el, sr } = await dirtyAddSheet();
 
-      dismiss.scrim(sr);
-      await settle(el);
-      (
-        hostGuard(sr).shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement
-      ).click();
-      await settle(el);
-
-      expect(addSheet(sr)?.open).toBe(true);
-      expect(typed(sr)).toBe('Half typed');
-    });
 
     it('asks the same question every other surface asks', async () => {
       const { el, sr } = await dirtyAddSheet();

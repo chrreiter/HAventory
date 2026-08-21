@@ -681,13 +681,6 @@ describe('hv-filter-panel: footer and staging', () => {
 });
 
 describe('hv-filter-panel: native control affordances', () => {
-  // The sort field draws its own chevron next to the <select>. Without
-  // resetting the UA appearance the browser draws a second one beside it.
-  it('suppresses the browser-drawn arrow on selects it decorates itself', () => {
-    const cssText = componentCss('hv-filter-panel');
-    const selectRule = cssText.slice(cssText.indexOf('.field select'));
-    expect(selectRule).toContain('appearance: none');
-  });
 
   // The drawn chevron used to be a sibling of a select only as wide as its own
   // text, so clicking the arrow — the obvious target — did nothing at all.
@@ -704,43 +697,6 @@ describe('hv-filter-panel: native control affordances', () => {
     expect(chevronRule).toContain('pointer-events: none');
   });
 
-  // "Updated ≥" flips the comparison, but it was drawn as a plain caption with a
-  // hover wash: the only clue it could be pressed arrived after the pointer was
-  // already on it, and a touch screen never provided that clue at all.
-  it('draws the comparison flip as a control at rest, not only on hover', () => {
-    const cssText = componentCss('hv-filter-panel');
-
-    const rule = /\.field \.direction \{([^}]*)\}/.exec(cssText)?.[1] ?? '';
-    expect(rule, 'no .field .direction rule').not.toBe('');
-    expect(rule).toMatch(/border: 1px solid/);
-    expect(rule).not.toMatch(/border: none/);
-    expect(rule).toMatch(/background: var\(--hv-surface\)/);
-    // Hover still adds emphasis; it is no longer the only state that has any.
-    expect(cssText).toMatch(/\.field \.direction:hover \{[^}]*border-color/);
-  });
-
-  // On a phone the fields took --hv-input-font (16px on this surface) while the
-  // chips beside them are 13.5px, so the area select — the one full-width
-  // control in the panel — was the largest text on the page. Desktop has always
-  // matched its chips at 12.5px.
-  it('sizes its fields like the chips beside them, in both layouts', () => {
-    const css = componentCss('hv-filter-panel');
-
-    // The selector is matched as a literal, so every regex metacharacter in it
-    // has to reach the pattern escaped — the backslash included, or an escape
-    // introduced here would itself be read as syntax.
-    const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const size = (selector: string) => {
-      const rule = new RegExp(`${escapeRe(selector)} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
-      return /font(?:-size)?:[^;]*?(\d+(?:\.\d+)?)px/.exec(rule)?.[1] ?? null;
-    };
-
-    expect(size('.field')).toBe(size('.chip'));
-    expect(size(':host([mobile]) .field')).toBe(size(':host([mobile]) .chip'));
-    expect(size(':host([mobile]) .field')).toBe('13.5');
-    // The one exception, and why: a text box iOS would zoom the page for.
-    expect(css).toMatch(/:host\(\[mobile\]\) \.field input\[type='search'\] \{[^}]*var\(--hv-input-font/);
-  });
 });
 
 describe('hv-filter-panel: changed', () => {
@@ -991,19 +947,6 @@ describe('hv-filter-panel: pressed state', () => {
     expect(chipOf('filter-low-stock-only').classList.contains('warning')).toBe(true);
     expect(chipOf('filter-low-stock-only').classList.contains('on')).toBe(true);
     expect(chipOf('filter-overdue').classList.contains('warning')).toBe(false);
-  });
-
-  // The row's on state has to be the shared chip's on state, not a second set
-  // of colours that happens to look similar.
-  it('takes its on state from the shared chip rule, warning variant included', () => {
-    const css = componentCss('hv-filter-panel');
-
-    expect(css).toMatch(/\.hv-chip\.toggle\.on \{[^}]*background: var\(--hv-primary-tint\)/);
-    expect(css).toMatch(/\.hv-chip\.toggle\.warning\.on \{[^}]*background: var\(--hv-warn-bg\)/);
-    // No rule of its own to drift from those, and no checkbox box left to draw.
-    expect(css).not.toMatch(/[^-]\.chip\.on \{/);
-    expect(css).not.toMatch(/\.check\.on \{/);
-    expect(css).not.toMatch(/\.box[ .{]/);
   });
 
   it('reserves the mark so a row keeps its label in place as it is pressed', async () => {

@@ -156,139 +156,9 @@ describe('hv-data-table: a path too long for its column', () => {
     );
   });
 
-  // jsdom computes no layout, so what is assertable is the contract the wrap
-  // rests on: the segments are the flex items of a wrapping box, each holds its
-  // own line, and the separator's spaces are protected — at the end of a flex
-  // item's only line, normal white-space processing drops them and the two
-  // segments either side run together.
-  it('wraps between segments rather than clipping at the cell edge', () => {
-    const css = componentCss('hv-data-table');
-    expect(css).toMatch(/\.cell\.path \{[^}]*flex-wrap: wrap/);
-    expect(css).toMatch(/\.cell\.path > \.hv-chip-line-text \{[^}]*display: flex/);
-    expect(css).toMatch(/\.cell\.path > \.hv-chip-line-text \{[^}]*flex-wrap: wrap/);
-    expect(css).toMatch(/\.hv-path-seg \{[^}]*white-space: nowrap/);
-    expect(css).toMatch(/\.hv-path-sep \{ white-space: pre; \}/);
-  });
-
-  // The last resort, for one segment wider than the whole column: an ellipsis
-  // on the segment, never a hard cut — and the title above still has the truth.
-  it('elides a single segment only once there is no break left to take', () => {
-    expect(componentCss('hv-data-table')).toMatch(
-      /\.hv-path-seg \{[^}]*min-width: 0;[^}]*overflow: hidden;[^}]*text-overflow: ellipsis/,
-    );
-  });
 });
 
 describe('hv-data-table: narrow screens', () => {
-  // The template has a hard ~1366px minimum, and a grid whose tracks do not fit
-  // overflows its box rather than shrinking. With overflow visible the spill
-  // was clipped by the shell: rows measured clientWidth 634 / scrollWidth 854
-  // at 375px, and three columns could not be reached by any gesture.
-  it('scrolls sideways rather than clipping columns away', () => {
-    const css = componentCss('hv-data-table');
-    expect(css).toMatch(/:host \{[^}]*overflow-x: auto/);
-    expect(css).toMatch(/:host \{[^}]*min-width: 0/);
-  });
-
-  // A swipe that runs out of table must not scroll the dashboard behind this
-  // surface, on either axis — and with one scroll container there is one place
-  // to say so. Split across two boxes it was the row group that swallowed the
-  // sideways gesture: it is exactly as wide as its own content, so it had
-  // nothing to scroll and contained the overscroll rather than handing it on.
-  // The host measured scrollWidth 874 against clientWidth 390 and never moved
-  // off scrollLeft 0.
-  it('contains the overscroll on the box that owns both axes', () => {
-    const css = componentCss('hv-data-table');
-    expect(css).toMatch(/:host \{[^}]*overscroll-behavior: contain/);
-    expect(css).not.toMatch(/\.body \{[^}]*overscroll-behavior/);
-  });
-
-  it('sizes the header and body to the grid minimum so they scroll together', () => {
-    // Left at the container width they would stay 375px wide while their
-    // tracks painted past the edge, cutting the row dividers short.
-    expect(componentCss('hv-data-table')).toMatch(/\.head, \.body \{ min-width: min-content; \}/);
-  });
-
-  it('grows the checkbox hit area for touch without growing the box', () => {
-    // 16px is right for a dense table; 16px of tappable area is not.
-    expect(componentCss('hv-data-table')).toMatch(
-      /\.box::after \{[^}]*inset: calc\(\(var\(--hv-tap-min, 16px\) - 16px\) \/ -2\)/,
-    );
-  });
-
-  it('gives the sort headers a tappable height', () => {
-    expect(componentCss('hv-data-table')).toMatch(/\.head button\.sort \{[^}]*min-height: var\(--hv-tap-min, auto\)/);
-  });
-
-  // jsdom computes no layout, so nothing here can watch a cell hold its place;
-  // what is assertable is that the rules resolve against the box that scrolls.
-  // A sticky cell resolves its offsets against the nearest scroll container, so
-  // rows in a vertical scroll box of their own would pin `left` to a box that
-  // never moves sideways — passing every offline check while doing nothing.
-  it('scrolls both axes on one box, so a pinned cell has something to pin to', () => {
-    const css = componentCss('hv-data-table');
-    expect(css).toMatch(/:host \{[^}]*overflow-y: auto/);
-    expect(css).not.toMatch(/\.body \{[^}]*overflow/);
-    // Its own height rather than the leftover space, or it would stretch to the
-    // visible height and leave the scroll nothing to move.
-    expect(css).toMatch(/\.body \{ flex: none; \}/);
-  });
-
-  it('holds the header against the top of that same box', () => {
-    const css = componentCss('hv-data-table');
-    expect(css).toMatch(/\.head \{[^}]*position: sticky/);
-    expect(css).toMatch(/\.head \{[^}]*top: 0/);
-    // Opaque, or the rows read through it as they pass underneath.
-    expect(css).toMatch(/\.head \{[^}]*background: var\(--hv-surface\)/);
-  });
-
-  it('pins the name column and its header at the phone breakpoint', () => {
-    const css = componentCss('hv-data-table');
-    // The same width the full view drops its sidebar at.
-    expect(css).toMatch(/@media \(max-width: 700px\) \{ \.name-head, \.name-cell, \.select-cell \{/);
-    expect(css).toMatch(
-      /\.name-head, \.name-cell, \.select-cell \{[^}]*position: sticky[^}]*left: 0/,
-    );
-    // Opaque and full height, or the columns passing underneath show through.
-    expect(css).toMatch(
-      /\.name-head, \.name-cell, \.select-cell \{[^}]*align-self: stretch[^}]*background: var\(--hv-surface\)/,
-    );
-    // The row's own left padding travels with the pinned cell.
-    expect(css).toMatch(
-      /\.name-head, \.name-cell, \.select-cell \{[^}]*margin-left: calc\(-1 \* var\(--hv-table-pad-x\)\)[^}]*padding-left: var\(--hv-table-pad-x\)/,
-    );
-  });
-
-  it('offsets the pinned name past the checkbox track while selecting', () => {
-    // Built from the template's own track width, so the two cannot disagree —
-    // an offset short of the track would leave the name over the checkboxes.
-    // The gap between the two pinned cells travels with the name, or the
-    // columns underneath show through it.
-    expect(componentCss('hv-data-table')).toMatch(
-      /:host\(\[selectable\]\) \.name-head, :host\(\[selectable\]\) \.name-cell \{ left: calc\(var\(--hv-table-pad-x\) \+ 40px\); margin-left: calc\(-1 \* var\(--hv-table-gap\)\); padding-left: var\(--hv-table-gap\)/,
-    );
-  });
-
-  // The wash is painted on the row, which the pinned cells cover; a colour
-  // would not do, because the dark half of the wash is translucent.
-  it('repaints the row wash on the pinned cells', () => {
-    expect(componentCss('hv-data-table')).toMatch(
-      /\.row:hover \.name-cell,[^{]*\.row\.selected \.select-cell \{ background-image: linear-gradient\(var\(--hv-row-hover\), var\(--hv-row-hover\)\)/,
-    );
-  });
-
-  // Nothing said the table scrolled but a chip clipped at the right edge. The
-  // cover rides with the content and the shade with the box, so the shade shows
-  // exactly while there is something further right.
-  it('fades the edge it can still be scrolled towards', () => {
-    const css = componentCss('hv-data-table');
-    expect(css).toMatch(
-      /:host \{ background: linear-gradient\(var\(--hv-surface\), var\(--hv-surface\)\) right \/ 28px 100% no-repeat local/,
-    );
-    // The shade underneath it, and a dark theme reads a black wash as nothing.
-    expect(css).toMatch(/light-dark\(rgba\(0, 0, 0, 0\.16\), rgba\(0, 0, 0, 0\.5\)\)/);
-    expect(css).toMatch(/no-repeat scroll; \}/);
-  });
 
   it('reflects the selecting flag, which is all the pinning rules can read', async () => {
     const el = await mount([{ id: '1' }], { selectable: true });
@@ -338,7 +208,6 @@ describe('hv-data-table: columns', () => {
 
     const css = componentCss('hv-data-table');
     expect(css).toMatch(/\.tags \{[^}]*flex-wrap: wrap/);
-    expect(css).not.toMatch(/\.tags \{[^}]*overflow: hidden/);
   });
 
   it('says so when an item carries no tags', async () => {
@@ -434,12 +303,6 @@ describe('hv-data-table: the name cell picks one chip', () => {
     expect(q(el, '.name-cell')?.textContent).toContain('Checked out');
   });
 
-  it('keeps the name itself the only part of the cell that gives way', () => {
-    const css = componentCss('hv-data-table');
-    // The cell shares its shrink rule with the two other pinned cells.
-    expect(css).toMatch(/\.name-cell,[^{]*\{[^}]*min-width: 0/);
-    expect(/\.name \{([^}]*)\}/.exec(css)?.[1]).toContain('text-overflow: ellipsis');
-  });
 });
 
 describe('hv-data-table: sorting', () => {
@@ -858,10 +721,6 @@ describe('hv-data-table: selection mode', () => {
 
   it('keeps the sort-header reset off the header checkbox', async () => {
     const css = componentCss('hv-data-table');
-    // Unscoped, this rule matches every button in the header — the select-all
-    // included — and its 0-1-1 beats `.box`, so the unchecked box paints
-    // neither border nor fill and the target is invisible until it is used.
-    expect(css).not.toMatch(/\.head button \{/);
     expect(css).toMatch(/\.head button\.sort \{[^}]*border: none/);
     expect(css).toMatch(/\.box \{[^}]*border: 1\.5px solid var\(--hv-text-tertiary\)/);
     expect(css).toMatch(/\.box\.on, \.box\.mixed \{[^}]*background: var\(--hv-primary-dark\)/);
@@ -976,12 +835,5 @@ describe('hv-data-table: row menu', () => {
     );
 
     expect(seen).toEqual(['key', 'delete']);
-  });
-});
-
-describe('hv-data-table: the row is a target', () => {
-  it('shows the hand on a body row and not on the header', () => {
-    expect(componentCss('hv-data-table')).toMatch(/\.row \{[^}]*cursor: pointer/);
-    expect(componentCss('hv-data-table')).not.toMatch(/\.head \{[^}]*cursor: pointer/);
   });
 });

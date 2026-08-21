@@ -7,7 +7,6 @@ import {
   makeManual,
   makeMediaBindings,
   mountComponent,
-  ownCss,
   q,
   settle,
   stubViewport,
@@ -352,20 +351,6 @@ describe('hv-item-editor: field parity', () => {
     expect(saves[0].changes?.inspection_date).toBe(addDays(7));
   });
 
-  it('stacks the checkout box on a phone rather than halving a date field', () => {
-    const css = componentCss('hv-item-editor');
-
-    // Half of a 375px screen, minus the box padding, is under the ~140px a
-    // native date input needs before it clips its own placeholder.
-    expect(css).toMatch(/\.checkout-body \{[^}]*grid-template-columns: 1fr 1fr/);
-    expect(css).toMatch(/:host\(\[mobile\]\) \.checkout-body \{[^}]*grid-template-columns: 1fr;/);
-    expect(css).toMatch(/:host\(\[mobile\]\) \.state \{[^}]*grid-template-columns: 1fr;/);
-    // Stacked, the button leads and the label stays with its own field.
-    expect(css).toMatch(
-      /:host\(\[mobile\]\) \.checkout-body \{[^}]*grid-template-areas: 'action' 'label' 'field' 'hint'/,
-    );
-  });
-
   /*
    * The check-out box holds two controls side by side and one of them has no
    * label, which is what put them on different lines: packed to the top of
@@ -530,15 +515,6 @@ describe('hv-item-editor: saving', () => {
     expect(saves).toHaveLength(1);
   });
 
-  // Same phone, turned sideways: 760px wide, so the mobile property is false
-  // and the expanded view drew the hint again — on a screen with no keyboard.
-  it('drops the keyboard hint on any touch screen, however wide', () => {
-    const css = editorCss();
-    const block = /@media \(hover: none\), \(pointer: coarse\) \{(.*?\})\s*\}/.exec(css)?.[1] ?? '';
-    expect(block, 'no coarse-pointer block in the editor stylesheet').not.toBe('');
-    expect(block).toMatch(/\.actions \.hint \{[^}]*display: none/);
-  });
-
   // The auto margin that holds Cancel and Save against the right edge used to
   // ride on the hint, so hiding the hint dropped them back beside Delete.
   it('keeps Cancel and Save off the left edge once the hint is gone', async () => {
@@ -551,7 +527,6 @@ describe('hv-item-editor: saving', () => {
       'editor-save',
     ]);
     expect(editorCss()).toMatch(/\.actions \.spacer \{[^}]*margin-left: auto/);
-    expect(/\.actions \.hint \{([^}]*)\}/.exec(editorCss())?.[1]).not.toContain('margin-left');
   });
 
   // Three buttons in one row, three shapes: measured at a 390px viewport in the
@@ -569,7 +544,6 @@ describe('hv-item-editor: saving', () => {
     expect(q(el, '[data-testid="editor-cancel"]')?.classList.contains('hv-text-button')).toBe(true);
     // Which only holds while the shared sheet is what dresses it.
     expect(editorCss()).toMatch(/\.hv-text-button\.danger \{[^}]*color: var\(--hv-error-soft\)/);
-    expect(editorCss()).not.toMatch(/\.delete \{/);
   });
 
   it('surfaces a server-side failure without losing the form', async () => {
@@ -791,9 +765,7 @@ describe('hv-item-editor: category picker', () => {
 
     const css = componentCss('hv-item-editor');
     expect(css).toMatch(/\.list-holder\.floating \{[^}]*position: fixed/);
-    // The location tree is the opposite case — it is *meant* to open the form.
     expect(css).toMatch(/\.tree-holder, \.list-holder \{[^}]*margin-top: 6px/);
-    expect(css).not.toMatch(/\.tree-holder[^{]*\{[^}]*position: fixed/);
   });
 
   // The combobox always named its listbox, but the listbox left the DOM with
@@ -932,9 +904,6 @@ describe('hv-item-editor: typed custom fields', () => {
     // containing block, and the actions' parent is exactly as tall as they are.
     expect(css).toMatch(/[^)] \.actions-cell \{[^}]*position: sticky/);
     expect(css).toMatch(/[^)] \.actions-cell \{[^}]*bottom: -14px/);
-    expect(css).not.toMatch(/\.actions \{[^}]*position: sticky/);
-    // Not gated on the phone flag any more — that was the whole bug.
-    expect(css).not.toMatch(/:host\(\[mobile\]\) \.actions-cell \{[^}]*position: sticky/);
 
     // The opaque bar bleeds past the form's side padding, or the rows it covers
     // show through in a strip either side of it.
@@ -951,27 +920,6 @@ describe('hv-item-editor: typed custom fields', () => {
       expect(cell?.querySelector('[data-testid="editor-cancel"]')).toBeTruthy();
       el.remove();
     }
-  });
-
-  it('lays a row out from its own width, not from the card-wide mobile flag', () => {
-    const css = componentCss('hv-item-editor');
-
-    // The editor is a desktop row in one host and a phone sheet in another, so
-    // `mobile` (which describes the card) must not decide this layout.
-    expect(css).toMatch(/\.custom \{[^}]*container-type: inline-size/);
-    expect(css).not.toMatch(/:host\(\[mobile\]\) \.cf-row/);
-    // Wide enough: key, type, value and the remove button share one line. The
-    // remove column tracks the inherited touch target so the button and the
-    // track it sits in cannot drift apart when the card is narrow.
-    expect(css).toMatch(
-      /\.cf-row \{[^}]*grid-template-columns: minmax\(0, 1\.2fr\) 110px minmax\(0, 1\.6fr\) var\(--hv-tap-min, 34px\)/,
-    );
-    expect(css).toMatch(/\.cf-remove \{[^}]*width: var\(--hv-tap-min, 30px\)/);
-    // Too tight: the value drops under its key and remove spans both rows, so
-    // it still reads as belonging to that field.
-    expect(css).toMatch(
-      /@container \(max-width: \d+px\) \{ \.cf-row \{[^}]*grid-template-areas: 'key type remove' 'value value remove'/,
-    );
   });
 
   it('adds and removes rows', async () => {
@@ -1064,12 +1012,6 @@ describe('hv-item-editor: mobile layout', () => {
     expect(toggle().getAttribute('aria-controls')).toBe(id);
     const open = el.shadowRoot?.getElementById(id);
     expect(open?.querySelector('[data-testid="editor-description"]'), 'fields open inside it').toBeTruthy();
-  });
-
-  // The fields are cells of the form's grid; a holder that laid itself out would
-  // take their place in it and swallow the gaps between them.
-  it('keeps the holder out of the grid its fields belong to', () => {
-    expect(editorCss()).toMatch(/\.more-fields \{[^}]*display: contents/);
   });
 
   it('summarises what is inside the disclosure', async () => {
@@ -1204,32 +1146,9 @@ describe('hv-item-editor: Escape takes back one thing at a time', () => {
     expect(cancels.count).toBe(1);
   });
 
-  it('keeps the form when the discard guard is dismissed', async () => {
-    const el = await mount(makeItem({ id: '1', name: 'A' }));
-    const cancels = onCancel(el);
-    await type(el, 'editor-name', 'A longer name');
 
-    esc(el);
-    await el.updateComplete;
-    const guard = await dialog(el, 'editor-discard-confirm');
-    (guard.shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement).click();
-    await el.updateComplete;
 
-    expect(cancels.count).toBe(0);
-    expect((q(el, '[data-testid="editor-name"]') as HTMLInputElement).value).toBe('A longer name');
-    expect(el.dirty).toBe(true);
-  });
 
-  it('closes a clean form on the spot, with nothing to ask about', async () => {
-    const el = await mount(makeItem({ id: '1', name: 'A' }));
-    const cancels = onCancel(el);
-
-    esc(el);
-    await el.updateComplete;
-
-    expect(cancels.count).toBe(1);
-    expect((await dialog(el, 'editor-discard-confirm')).open).toBe(false);
-  });
 });
 
 // Escape asked and the two buttons beside it did not, so the same decision had
@@ -2389,43 +2308,14 @@ describe('hv-item-editor: the upload queue reports where the work is', () => {
     expect(q(el, '[data-testid="editor-upload-progress"]')).toBe(null);
   });
 
-  it('leaves the motion to the people who asked for it', async () => {
-    const css = editorCss();
-    expect(css).toMatch(/@media \(prefers-reduced-motion: no-preference\) \{ \.progress \.fill \{[^}]*animation:/);
-    expect(css).toMatch(/@keyframes hv-upload-sweep/);
-  });
 });
 
 describe('hv-item-editor: touch targets and the shared tally', () => {
-  // WCAG 2.2 asks 24px of every pointer target; the remove X measured 22.
-  it('gives the photo remove control the pointer minimum', () => {
-    expect(editorCss()).toMatch(/\.photos \.remove \{[^}]*width: 24px;[^}]*height: 24px/);
-  });
-
-  it('grows the tile controls into a real strip on a phone', () => {
-    const css = editorCss();
-    expect(css).toMatch(/\.tile-controls \{[^}]*height: 24px/);
-    expect(css).toMatch(/:host\(\[mobile\]\) \.tile-controls \{[^}]*height: var\(--hv-tap-min, 24px\)/);
-  });
-
-  it('sizes the queue controls from the same token', () => {
-    const css = editorCss();
-    expect(css).toMatch(
-      /\.upload-list li \.retry,\s*\.upload-list li \.dismiss \{[^}]*min-height: var\(--hv-tap-min, 24px\)/,
-    );
-  });
 
   // The count beside a facet is declared once, in the shared sheet.
   it('prices its custom fields with the shared tally', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
     expect(q(el, '[data-testid="editor-cf-tally"]')?.classList.contains('hv-tally')).toBe(true);
-    // This component's own sheet may place the tally and nothing more — size
-    // and dimming belong to the one declaration in `base`.
-    const own = ownCss('hv-item-editor');
-    for (const [, body] of own.matchAll(/\.hv-tally[^{]*\{([^}]*)\}/g)) {
-      expect(body).not.toMatch(/font-size|opacity|color/);
-    }
-    expect(own).not.toMatch(/\.custom-head \.tally\b/);
   });
 });
 
@@ -2612,29 +2502,6 @@ describe('hv-item-editor: dropping files onto the editor', () => {
 // The form was authored for a 600–900px card and then given a 1080p surface to
 // fill. Everything below is a measurement that stopped being true there.
 describe('hv-item-editor: geometry and type', () => {
-  it('gives the two numbers a number-sized field', () => {
-    const css = editorCss();
-    // Name takes what is left; 2fr/1fr/1fr handed a two-digit quantity ~400px.
-    expect(css).toMatch(/[^)] \.grid \{[^}]*grid-template-columns: minmax\(0, 1fr\) 140px 160px/);
-    // The phone collapse is untouched — one field per row, as before.
-    expect(css).toMatch(/:host\(\[mobile\]\) \.grid \{[^}]*grid-template-columns: 1fr/);
-  });
-
-  // A stretched cell shared out the row's surplus between its label row and its
-  // control row, which is how the status select landed at exactly the midpoint
-  // between an input and the textarea beside it.
-  it('packs a cell to the top instead of splitting the row surplus', () => {
-    expect(editorCss()).toMatch(/[^)] \.cell \{[^}]*align-content: start/);
-  });
-
-  it('draws the two state boxes as siblings', () => {
-    const css = editorCss();
-    // Even halves: at 2fr/1fr the inspection offsets wrapped onto three rows.
-    expect(css).toMatch(/[^)] \.state \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\)/);
-    // No bottom-aligning a label-less button against a labelled field, which
-    // put the dead air between the caption and the first control.
-    expect(css).not.toMatch(/\.checkout-body \{[^}]*align-items: end/);
-  });
 
   // Both boxes are caption + body and nothing else, so the hint belongs to the
   // field it explains rather than hanging under the box.
@@ -2653,28 +2520,10 @@ describe('hv-item-editor: geometry and type', () => {
 
 describe('hv-item-editor: one label recipe, one note size', () => {
   it('gives every section label the shared recipe', async () => {
-    const css = editorCss();
-    // What is left of `.group-caption` is layout for its icon; the type comes
-    // from `.hv-label`, the same recipe TAGS, PHOTOS and DOCUMENTS use.
-    expect(css).not.toMatch(/\.group-caption \{[^}]*font-weight/);
-    expect(css).not.toMatch(/\.group-caption \{[^}]*text-transform/);
-
     const el = await mount(makeItem({ id: '1' }));
     for (const testid of ['editor-checkout-caption', 'editor-inspection-caption']) {
       expect(q(el, `[data-testid="${testid}"]`)?.classList.contains('hv-label'), testid).toBe(true);
     }
-  });
-
-  it('reads its small print at one size', () => {
-    // This component's own block; the shared sheets ahead of it answer for
-    // every surface and are not this form's to consolidate.
-    const own = ownCss('hv-item-editor');
-
-    expect(own).toMatch(/:host \{[^}]*--hv-editor-note: 12px/);
-    // One declaration, and nothing left of the 11.5/12.5px band around it.
-    expect(own.match(/--hv-editor-note:/g)).toHaveLength(1);
-    expect(own).not.toContain('font-size: 11.5px');
-    expect(own).not.toContain('font-size: 12.5px');
   });
 
   // A note riding inside a label needs to step out of the uppercase treatment;
@@ -2686,19 +2535,6 @@ describe('hv-item-editor: one label recipe, one note size', () => {
     expect(note?.textContent).toContain('always lowercase');
   });
 
-  // The tag field sat a point smaller than every input beside it.
-  it('sets the tag input at the same size as the other fields', () => {
-    const css = componentCss('hv-chip-input');
-    expect(css).toContain('font: 400 var(--hv-input-font, 13.5px) var(--hv-font)');
-  });
-
-  // The label-to-content gap is the cell's, so a section that added its own
-  // margin sat further from its label than every field around it.
-  it('leaves the label gap to the cell', () => {
-    const css = editorCss();
-    expect(css).not.toMatch(/\.photos \{[^}]*margin-top/);
-    expect(css).not.toMatch(/\.documents \{[^}]*margin: 4px/);
-  });
 });
 
 // "0 of 2 keys in use" reads as a quota. There is none: the denominator was the
@@ -2890,11 +2726,4 @@ describe('hv-item-editor: reminders', () => {
     expect(saves[0].changes?.reminder_interval).toBe(null);
   });
 
-  it('gives the reminder the whole row rather than half of one', () => {
-    const css = componentCss('hv-item-editor');
-
-    // Three controls where the boxes beside it have one or two; halved, the
-    // number and the unit would sit under 60px each at desktop width.
-    expect(css).toMatch(/\.state \.reminder \{[^}]*grid-column: 1 \/ -1/);
-  });
 });

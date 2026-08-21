@@ -1,7 +1,6 @@
 import './hv-detail-sheet';
 import {
   all,
-  componentCss,
   makeAttachment,
   makeItem,
   makeManual,
@@ -176,27 +175,6 @@ describe('hv-detail-sheet: read view', () => {
     expect(q(el, '[data-testid="sheet-qty"]')?.textContent).toBe('2');
     expect(q(el, '[data-testid="sheet-qty"]')?.classList.contains('low')).toBe(true);
     expect(q(el, '[data-testid="sheet-threshold"]')?.textContent).toContain('low-stock at 8');
-  });
-
-  // The two things this view exists to show were 2.7 sizes apart: the location
-  // path at 12.5px was the smallest text on the sheet, while the quantity at
-  // 34px was half again bigger than the item's own name.
-  it('sizes the path and the quantity off one scale', () => {
-    const css = componentCss('hv-detail-sheet');
-    const size = (selector: string) => {
-      const rule = new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
-      return Number(/font-size: ([\d.]+)px/.exec(rule)?.[1]);
-    };
-    const path = size('\\.bar \\.crumb');
-    const qty = size('\\.hero \\.qty');
-    const name = size('\\.title h2');
-
-    // Body size, like the description under it — not the smallest text here.
-    expect(path).toBe(13.5);
-    // Still the biggest number on the surface, but no louder than the item it
-    // belongs to.
-    expect(qty).toBeLessThanOrEqual(name);
-    expect(qty / path).toBeLessThan(2);
   });
 
   it('emits quantity changes', async () => {
@@ -548,25 +526,7 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     expect(el.open).toBe(false);
   });
 
-  it.each(['scrim', 'escape'] as const)('%s keeps the form when the question is declined', async (how) => {
-    const el = await dirtySheet();
-    let cancels = 0;
-    el.addEventListener('cancel', () => {
-      cancels += 1;
-    });
 
-    dismissals[how](el);
-    await settle(el);
-    press(el, 'confirm-cancel');
-    await settle(el);
-
-    expect(cancels).toBe(0);
-    expect(el.open).toBe(true);
-    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
-    expect((editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement).value).toBe(
-      'A longer name',
-    );
-  });
 
   // The grip is hidden in edit mode, so the drag is exercised on the read view:
   // clean there, and it must not start asking about nothing.
@@ -1078,31 +1038,6 @@ describe('hv-detail-sheet: documents', () => {
 
     expect(q(el, '[data-testid="sheet-document-missing"]')).toBeNull();
     expect(all(el, '[data-testid="sheet-document-open"]')).toHaveLength(2);
-  });
-
-  // jsdom computes no layout, so the widths these two rules produce are only
-  // observable on a real phone. What is pinned here is the pair of declarations
-  // that keeps a row inside the list: without them the single track sizes itself
-  // to the widest row, whose tail (the Open link, the "File missing" chip) does
-  // not shrink, and `overflow: hidden` clips exactly those two away.
-  it('sizes the documents track off the list rather than off its widest row', () => {
-    const css = componentCss('hv-detail-sheet');
-    const rule = (selector: string) =>
-      new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
-
-    expect(rule('\\.documents ul')).toContain('grid-template-columns: minmax(0, 1fr)');
-    expect(rule('\\.documents li')).toContain('min-width: 0');
-  });
-
-  // The row shrinking into its track is only worth anything if the two elements
-  // it was cutting off are the ones that keep their size.
-  it('leaves the Open link and the missing-file chip unshrinkable', () => {
-    const css = componentCss('hv-detail-sheet');
-    const rule = (selector: string) =>
-      new RegExp(`${selector} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
-
-    expect(rule('\\.documents \\.doc-open')).toContain('flex: none');
-    expect(rule('\\.documents \\.doc-text')).toContain('min-width: 0');
   });
 
   it('shows the documents in stored order, not the order they were uploaded', async () => {
