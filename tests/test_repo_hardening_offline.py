@@ -10,6 +10,11 @@ Then two things a workflow run cannot tell you about itself: that every
 third-party action it calls is pinned to an immutable revision, and that
 Dependabot is configured to keep ``requirements-integration.txt`` patched
 without fighting the pins that file carries deliberately.
+
+Last, the scheduled ``ha-latest`` run, which is worthless in two specific ways
+that a green run of its own would not reveal: reporting a check that a pull
+request then waits on, and installing the pinned floor instead of the newest
+core — which would make it a second, slower copy of ``ci.yml``'s integration job.
 """
 
 from __future__ import annotations
@@ -27,6 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 RULESET_PATH = REPO_ROOT / ".github" / "rulesets" / "main.json"
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 DEPENDABOT_PATH = REPO_ROOT / ".github" / "dependabot.yml"
+HA_LATEST_PATH = WORKFLOWS_DIR / "ha-latest.yml"
 
 # `actions/*` is GitHub's own namespace, and this repository pins it by tag on
 # purpose; everything else names an immutable revision, because a tag can be
@@ -307,3 +313,45 @@ def test_a_blanket_ignore_is_told_from_a_scoped_one() -> None:
 
     assert ignored_update_types(blanket) == {"homeassistant": set()}
     assert ignored_update_types(scoped) == {"homeassistant": set(VERSION_UPDATE_TYPES)}
+
+
+@pytest.fixture
+def ha_latest() -> dict[str, Any]:
+    return yaml.safe_load(HA_LATEST_PATH.read_text(encoding="utf-8"))
+
+
+def test_scheduled_ha_latest_reports_no_required_contexts(ha_latest: dict[str, Any]) -> None:
+    """A monthly run must never become a check a pull request waits on.
+
+    It has no pull-request trigger, so it reports nothing on one and the ruleset
+    needs no edit. Adding that trigger later would put two check names into
+    ``available_contexts()`` that no pull request can satisfy quickly.
+    """
+    assert workflow_contexts(ha_latest) == set()
+
+
+def test_ha_latest_installs_no_pinned_home_assistant(ha_latest: dict[str, Any]) -> None:
+    """The failure mode that would leave it green and worthless.
+
+    Either naming ``homeassistant`` on the command line or installing
+    ``requirements-integration.txt`` would pull the declared floor, and the job
+    would quietly re-test what ``ci.yml`` already tests.
+    """
+    commands = "\n".join(
+        str(step["run"])
+        for job in ha_latest["jobs"].values()
+        for step in job.get("steps", [])
+        if "run" in step
+    )
+
+    assert "requirements-integration.txt" not in commands
+    assert "homeassistant==" not in commands
+    assert "pytest-homeassistant-custom-component" in commands
+
+
+def test_ha_latest_is_dispatchable_and_scheduled(ha_latest: dict[str, Any]) -> None:
+    """Both triggers: the cron is the point, and dispatch is how it is proved."""
+    triggers = workflow_triggers(ha_latest)
+
+    assert "workflow_dispatch" in triggers
+    assert [entry["cron"] for entry in triggers["schedule"]] == ["0 5 8 * *"]

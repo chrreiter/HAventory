@@ -176,6 +176,12 @@ async def test_the_sidebar_panel_lands_in_the_real_panel_registry(hass: HomeAssi
     The offline suite asserts this against a stub of `async_register_panel`;
     only the real helper proves the `_panel_custom` block HA's frontend reads is
     the one we asked for, module URL and element name included.
+
+    A subset rather than an equality: `panel_custom` fills the block with its own
+    defaults too, and Home Assistant adds one from time to time (`2026.8`
+    introduced `handle_safe_area`). What matters is what this integration asked
+    for; a key HA chose for itself is not drift and must not fail the scheduled
+    run against a newer core.
     """
     await _setup(hass)
 
@@ -186,12 +192,15 @@ async def test_the_sidebar_panel_lands_in_the_real_panel_registry(hass: HomeAssi
     assert panel.sidebar_icon == PANEL_ICON
     assert panel.require_admin is False
     assert panel.config["title"] == DEFAULT_CARD_TITLE
-    assert panel.config["_panel_custom"] == {
-        "name": PANEL_ELEMENT_NAME,
-        "embed_iframe": False,
-        "trust_external": False,
-        "module_url": next(iter(hass.data[frontend.DATA_EXTRA_MODULE_URL].urls)),
-    }
+    assert (
+        panel.config["_panel_custom"].items()
+        >= {
+            "name": PANEL_ELEMENT_NAME,
+            "embed_iframe": False,
+            "trust_external": False,
+            "module_url": next(iter(hass.data[frontend.DATA_EXTRA_MODULE_URL].urls)),
+        }.items()
+    )
 
 
 @needs_bundle

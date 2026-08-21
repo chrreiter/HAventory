@@ -97,6 +97,7 @@ PYTHON_FLOOR_SITES: tuple[tuple[str, int, int], ...] = (
     ("pyproject.toml", 6, 2),
     (".github/workflows/ci.yml", 5, 0),
     (".github/workflows/codeql.yml", 1, 0),
+    (".github/workflows/ha-latest.yml", 3, 0),
     ("README.md", 10, 0),
     ("CONTRIBUTING.md", 1, 0),
     ("docs/backend_api_contract.md", 1, 0),
