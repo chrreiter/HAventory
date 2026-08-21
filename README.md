@@ -493,8 +493,13 @@ Run any Python tool through uv (`uv run <tool>`), so it uses the locked dev envi
 - **uv** — Python env, dependency resolution, and lockfile (`uv.lock`). Dev deps live in
   `pyproject.toml` under `[dependency-groups]`; `requirements-dev.txt` is a generated,
   pip-installable export kept for environments without uv.
-- **Ruff** `0.15.x` — lint + format, configured in `pyproject.toml`.
-- **mypy** `2.x` — type checking (non-strict baseline; scoped to `custom_components/haventory`).
+- **Ruff** — lint + format, configured and pinned in `pyproject.toml`; the hook in
+  `.pre-commit-config.yaml` pins the same version and `tests/test_toolchain_pins.py`
+  holds the two together.
+- **mypy** `2.x` — type checking, scoped to `custom_components/haventory`. The core
+  modules are held to per-module strict mode against the local HA stubs in `stubs/`
+  and the rest of the integration sits at the non-strict baseline; which modules those
+  are is the `[[tool.mypy.overrides]]` list in `pyproject.toml`.
 - **ESLint** `10` (flat config `cards/haventory-card/eslint.config.js`) + `@typescript-eslint 8`.
 - **TypeScript** `6`, **Vite** `8`, **Vitest** `4` (+ `@vitest/coverage-v8`) for the card.
 - **pre-commit** — ruff, codespell, basic hooks.
@@ -505,6 +510,7 @@ Run any Python tool through uv (`uv run <tool>`), so it uses the locked dev envi
 # Backend
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
 uv run ruff check .
+uv run ruff format --check .   # CI fails on formatting alone; `ruff check` does not cover it
 uv run mypy
 
 # Frontend (in cards/haventory-card)
@@ -567,8 +573,11 @@ uv pip install --python .venv-integration/bin/python -r requirements-integration
 Do **not** set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` for this mode. `tests/conftest.py`
 detects the real `homeassistant` package these tests pull in and installs none of the
 offline stubs, so the two modes never collide; the offline run never collects
-`tests/integration/`. Covered: config-entry setup/unload, WebSocket item CRUD end-to-end,
-Store persistence round-trip, and `haventory/areas/list` against the real area registry.
+`tests/integration/`. What they cover has grown to most of the HA-facing surface —
+config-entry setup/unload, WebSocket CRUD and error envelopes, persistence and schema
+migration, services and their broadcasts, the sensors, calendar, repairs, diagnostics,
+to-do bridge, attachments, translations, the retired-files sweep and the frontend
+registration — one file per subject under `tests/integration/`.
 
 > Restricted-egress environments (e.g. sandboxes that can't fetch Python 3.14 or the HA
 > core) can't run this mode — CI provisions Python 3.14 and runs it in its own job.
@@ -750,12 +759,13 @@ throughout.
   [Finding HAventory after install](#finding-haventory-after-install).
 - **Standard card** — one Add button and a single ⋮ menu (Select items, Organize, Refresh,
   Diagnostics, Export backup / Export current view, Import); Columns is offered in the full
-  view, which is the only surface it changes. Live stat badges — items, low stock, overdue,
-  due for inspection, checked out — are click-to-filter, and which of them a household
-  offers is set under Settings → Devices & services → HAventory → **Configure**, or per
-  dashboard with the card's `quick_filters:`. Rows carry a quantity stepper, a
-  LOW badge, an overdue check-out chip, an "Inspection due" chip, an amber status chip
-  when an item is flagged Missing / Needs repair, and hover actions.
+  view, which is the only surface it changes. Live stat badges — items, low stock,
+  overdue, due for inspection, reminders to do, checked out — are click-to-filter, and
+  which of them a household offers is set under Settings → Devices & services →
+  HAventory → **Configure**, or per dashboard with the card's `quick_filters:`. Rows
+  carry a quantity stepper, a LOW badge, an overdue check-out chip, an "Inspection due"
+  chip, an amber status chip when an item is flagged Missing / Needs repair, and hover
+  actions.
 - **Filters** — a collapsible panel exposing the whole backend filter object: location
   (from a real tree), area, include-subtree, category chips with counts, tag chips with an
   any/all toggle, low-stock-only, checked-out, overdue, inspection-due, reminder-due and no-location —
@@ -932,7 +942,7 @@ changed name on its next refresh or reload; the change is not pushed live.
 
 `quick_filters` says which pills are *allowed*; a pill still only shows when it has
 something to count, so `low_stock` draws nothing while nothing is low. An explicit empty
-list is a choice and offers none. `total` is narrower than the other four: only the card
+list is a choice and offers none. `total` is narrower than the other five: only the card
 draws it as a pill, and only at full width — the full view and the sidebar page print the
 total in their header instead, whichever way it is set.
 
@@ -940,7 +950,7 @@ Omitting the key hands the decision to **Quick-filter pills** under Settings →
 services → HAventory → **Configure**, which is the one place that reaches every surface:
 the sidebar panel has no dashboard config of its own, so that setting is all it reads.
 Leave both unset — a fresh install, or any dashboard written before either option existed
-— and all five pills are offered.
+— and all six pills are offered.
 
 ### CI/CD & Ops
 

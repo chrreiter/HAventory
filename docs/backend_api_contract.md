@@ -38,7 +38,37 @@ Guarantees (every `haventory/*` command is wrapped by the same guard):
 
 Transport-level errors produced by Home Assistant itself (before a handler runs) are outside this taxonomy and can also be observed by clients: `invalid_format` (request failed the command's voluptuous schema) and `unknown_command` (integration not loaded or unknown `type`).
 
-Several fields are deliberately typed `object` in their command schema rather than concretely, so that a wrong type is answered by the handler as `validation_error` instead of by Home Assistant as `invalid_format`. The difference matters to an operator: core refuses the frame before the guard runs and logs the client's payload at ERROR, while the guard names the field at WARNING with no traceback. The fields treated this way are the ones a client most plausibly gets wrong: `name` (`item/create`, `location/create`, `location/update`), `quantity` (`item/create`, `item/update`, `item/set_quantity`), `delta` (`item/adjust_quantity`), `operations` (`items/bulk`), and `filter` / `sort` / `limit` / `cursor` (`item/list`, `location/tree`, `export`). Every other field keeps its concrete schema type, and a wrong type there is still `invalid_format`.
+#### Which of the two answers a wrong type
+
+Most fields in a command schema are deliberately typed `object` rather than concretely, so
+that a wrong type is answered by the handler as `validation_error` instead of by Home
+Assistant as `invalid_format`. The difference matters to an operator: core refuses the frame
+before the guard runs and logs the client's payload at ERROR, while the guard names the field
+at WARNING with no traceback.
+
+That is the default, and it widens whenever a command gains a typed-input pass, so the
+object-typed fields are not listed here. What is listed is the **exception** set: the fields
+that keep a concrete schema type, and therefore still answer `invalid_format`.
+
+- `expected_version`, on every command that takes it.
+- The dates, and the two fields that travel with them: `due_date`, `inspection_date`,
+  `reminder_date`, `reminder_interval`, `checked_out`.
+- The collections a caller writes whole: `tags`, `custom_fields`, `custom_fields_set`,
+  `custom_fields_unset`, `set`, `unset`, `attachment_ids`.
+- The attachment handles: `file_id`, `kind`, `filename`, `title`.
+- `haventory/subscribe`'s own three: `topic`, `include_subtree`, `inspection_overdue_only`.
+- Every field the `haventory/status/*` commands take: `slug`, `slugs`, `label`, `color`,
+  `icon`, `order`, `reassign_to`.
+- Import's `document` and `policy`.
+
+`tags` is the one name on both sides: concrete on `item/create`, `item/add_tags` and
+`item/remove_tags`, `object` on `item/update`. The same wrong value therefore answers a
+different code depending on which command carried it, which is the reason to handle both
+rather than to key on the field name.
+
+`tests/test_docs_contract_offline.py` reads the schemas back off the registered handlers and
+fails when this list and the code disagree, so a new concretely-typed field arrives here in
+the same change.
 
 ### Logging
 
@@ -89,7 +119,7 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - Request: `{id, type: "haventory/config"}` (no payload)
   - Result: `{card_title: string, quick_filters: string[] | null, statuses: StatusDefinition[], media: MediaConfig}`
   - `card_title` is the heading set in the integration's options flow (Settings → Devices & services → HAventory → **Configure**), defaulting to `"HAventory"`. Only display settings appear here — rate-limit tunables stay server-side.
-  - `quick_filters` is which quick-filter pills the integration offers, out of `total`, `low_stock`, `overdue`, `inspection_due`, `checked_out`, set in the same options flow. `null` means no choice was made and leaves it to the client — a dashboard's own `quick_filters:` first, every pill otherwise — while `[]` is an explicit choice of no pills; the two are never interchangeable. Names the backend does not know are dropped before sending.
+  - `quick_filters` is which quick-filter pills the integration offers, out of `total`, `low_stock`, `overdue`, `inspection_due`, `reminder_due`, `checked_out`, set in the same options flow. `null` means no choice was made and leaves it to the client — a dashboard's own `quick_filters:` first, every pill otherwise — while `[]` is an explicit choice of no pills; the two are never interchangeable. Names the backend does not know are dropped before sending.
   - `statuses` is the status vocabulary in display order (see data shapes). Items store only a slug, so this is where a surface gets the label to render one with.
   - `media` is `{picture_mime_types: string[], max_pictures_per_item: number, manual_mime_types: string[], max_manuals_per_item: number, max_attachment_bytes: number}` — the attachment limits, reported so a picker can refuse a doomed file before uploading it. **Advisory only**: every one of them is re-derived server-side from the file's own bytes. The media *route* is deliberately not here; it is a constant on both sides of the language boundary (`/api/haventory/media/{item_id}/{attachment_id}`), pinned by a test.
   - Read at card init and on refresh, not pushed: changing the option emits no event, so an open dashboard shows the new heading after a refresh or reload.
@@ -530,7 +560,8 @@ Note: a successful import emits `items/reloaded` and `locations/reloaded` (no `i
   `version` or `updated_at`, so an `expected_version` taken before a rename is still
   accepted after it. Clients learn about the new paths from the `locations` event, not from
   per-item events — none are emitted for the rewrite.
-- Locations are not versioned in Phase 1.
+- Locations carry no `version` and take no `expected_version`. A location edit is
+  last-write-wins; only items are under optimistic concurrency.
 
 ### Timestamps
 
