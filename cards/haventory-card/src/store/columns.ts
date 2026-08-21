@@ -167,6 +167,18 @@ const COLUMN_TABLE_SIZE: Record<ColumnKey, string> = Object.fromEntries(
  * whether a name ends or elides: it holds an ordinary one of about 35
  * characters, which is 245px at the row's 13.5px text.
  *
+ * A row carrying a picture spends 42px of that floor on the leading thumbnail
+ * — the `ROW_THUMB_SIZE` box and the cell's gap — and the floor is deliberately
+ * *not* widened to hold both. Widening it by that much is what the panel cannot
+ * afford: at the 1360px content box the docked HA sidebar leaves it, the
+ * default column set has 34px of slack, so a 42px reserve puts the table into a
+ * sideways scroll at the width it is most often read at and drops Location and
+ * Tags from 152px each onto their floors — on every row, including the ones
+ * with no picture at all. Against that, the reserve would buy the guarantee
+ * back from ~31 characters to ~35, on the rows that have a photo, where the
+ * photo is itself what makes the row recognisable. Measured on a 1093-item
+ * inventory: 0.4% of names run past 31 characters.
+ *
  * The growth factor does not outrank the others, and that is the point. A name
  * is one line of text with an end to it; a path and a tag set are not. Past the
  * floors every extra pixel goes to Location and Tags, whose cells wrap — which

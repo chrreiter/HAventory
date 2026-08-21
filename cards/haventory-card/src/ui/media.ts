@@ -47,6 +47,21 @@ export const MEDIA_NAME_TOKEN_PARAM = 'v';
  */
 export const SIGNED_URL_TTL_SECONDS = 1800;
 
+/**
+ * The box a row's leading thumbnail draws in, on every surface that shows one.
+ *
+ * One number rather than one per component: the full view's table has to
+ * reserve this much inside its name column, and a box that outgrew the reserve
+ * would take the width back out of the name.
+ */
+export const ROW_THUMB_SIZE = 34;
+
+/**
+ * The same box where a finger is the pointer. A phone shows one column of rows
+ * and can spend the extra six pixels on making the picture legible.
+ */
+export const ROW_THUMB_SIZE_TOUCH = 40;
+
 /** Re-sign this long before expiry, so an in-flight request never lands late. */
 const REFRESH_MARGIN_MS = 60_000;
 

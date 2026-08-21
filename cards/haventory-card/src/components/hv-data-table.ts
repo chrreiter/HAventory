@@ -12,6 +12,8 @@ import {
   normalizeColumns,
   tableTemplateFor,
 } from '../store/columns';
+import { MediaUrls, ROW_THUMB_SIZE, attachmentNameToken, pictureAlt, pictures } from '../ui/media';
+import type { MediaBindings } from '../ui/media';
 import { getDefaultOrderFor } from '../store/sort';
 import type { AreaRef, StatusDefinition } from '../store/types';
 import type { ColumnKey } from '../store/columns';
@@ -167,6 +169,22 @@ export class HVDataTable extends LitElement {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+      /* The same box the card's list rows draw, so one item is the same size
+         and shape whichever surface it is browsed on. Fixed, so a portrait
+         photo and a landscape one leave the row the same height; and rendered
+         only where there is a picture, so a mostly photo-less inventory does
+         not grow a column of empty squares — and so the name keeps its whole
+         floor on every row that has no photo to spend it on. What the picture
+         costs the name on the rows that do have one, and why the column's floor
+         does not grow to cover it, is on NAME_COLUMN_SIZE. */
+      .thumb {
+        flex: none;
+        width: ${unsafeCSS(ROW_THUMB_SIZE)}px;
+        height: ${unsafeCSS(ROW_THUMB_SIZE)}px;
+        border-radius: 6px;
+        object-fit: cover;
+        background: var(--hv-surface-raised);
       }
       /*
        * A phone shows about a quarter of this table — the template's floor is
@@ -402,6 +420,36 @@ export class HVDataTable extends LitElement {
   /** HA areas, to name the one each item's location resolves to. */
   @property({ attribute: false }) areas: AreaRef[] = [];
   @property({ attribute: false }) selection: Set<string> = new Set();
+  /** Picture access; null means the rows show no thumbnails. */
+  @property({ attribute: false }) media: MediaBindings | null = null;
+
+  private readonly _urls = new MediaUrls(this);
+
+  protected willUpdate() {
+    this._urls.configure(this.media?.sign ?? null);
+  }
+
+  /**
+   * A row's leading thumbnail: the item's first picture, or nothing.
+   *
+   * The full-size file is what loads — nothing is thumbnailed server-side — so
+   * `loading="lazy"` and `decoding="async"` are what keep a long table from
+   * fetching and decoding every row's photo at once.
+   */
+  private _renderThumb(item: Item) {
+    const first = pictures(item.attachments)[0];
+    if (!first) return null;
+    const src = this._urls.get(item.id, first.id, attachmentNameToken(first));
+    if (!src) return null;
+    return html`<img
+      class="thumb"
+      data-testid="row-thumb"
+      src=${src}
+      alt=${pictureAlt(item.name, 0, 1)}
+      loading="lazy"
+      decoding="async"
+    />`;
+  }
 
   /**
    * `row`, `columnheader` and `cell` are only meaningful under a table, grid or
@@ -651,6 +699,7 @@ export class HVDataTable extends LitElement {
                       >`
                     : null}
                   <span class="name-cell" role="cell">
+                    ${this._renderThumb(item)}
                     <span class="name" data-testid="table-name" title=${item.name}>${item.name}</span>
                     ${isLowStock(item) && !item.checked_out
                       ? html`<span
