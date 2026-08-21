@@ -45,7 +45,7 @@ import sys
 import tempfile
 import types
 from collections.abc import Mapping
-from enum import StrEnum
+from enum import Enum, StrEnum
 from pathlib import Path
 
 import voluptuous as vol
@@ -189,6 +189,39 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def async_remove(self, entity_id: str) -> None:
             self._states.pop(entity_id, None)
 
+    class _ConfigEntries:
+        """Stand in for HA's config-entry registry, for the one lookup we do.
+
+        Only `async_entries(domain)` — which is all `runtime.find_entry` calls,
+        and which real HA answers including disabled and ignored entries.
+        """
+
+        def __init__(self) -> None:
+            self._entries: list = []
+            self.updates: list[dict] = []
+
+        def async_entries(self, domain=None):
+            if domain is None:
+                return list(self._entries)
+            return [e for e in self._entries if getattr(e, "domain", None) == domain]
+
+        def add(self, entry) -> None:
+            # Idempotent: single-instance means a reload sets the *same* entry
+            # up again, and real HA keeps one registration for it.
+            if entry not in self._entries:
+                self._entries.append(entry)
+
+        def async_update_entry(self, entry, *, options=None, **_kwargs) -> None:
+            """Write options back, as setup does when it spends the repair opt-in."""
+
+            if options is not None:
+                entry.options = dict(options)
+                self.updates.append(dict(options))
+
+        def remove(self, entry) -> None:
+            if entry in self._entries:
+                self._entries.remove(entry)
+
     class HomeAssistant:  # type: ignore[override]
         def __init__(self) -> None:
             self.data = {}
@@ -201,6 +234,10 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             self.is_running = True
             self.dispatcher_sends: list[tuple[str, tuple]] = []
             self.dispatcher_connects: list[tuple[str, object]] = []
+            # Real HA holds an entry's runtime on the entry, and every read
+            # resolves it through here. A test that wants a loaded HAventory
+            # calls `install_runtime(hass)`, which registers one.
+            self.config_entries = _ConfigEntries()
 
         def async_create_background_task(self, target, name, eager_start=True):
             """Stand in for HA's tracked-task helper; the real one also cancels on shutdown."""
@@ -262,9 +299,36 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     # homeassistant.config_entries
     ha_config_entries = types.ModuleType("homeassistant.config_entries")
 
+    class ConfigEntryState(Enum):  # type: ignore[override]
+        LOADED = "loaded"
+        SETUP_ERROR = "setup_error"
+        MIGRATION_ERROR = "migration_error"
+        SETUP_RETRY = "setup_retry"
+        NOT_LOADED = "not_loaded"
+        FAILED_UNLOAD = "failed_unload"
+        SETUP_IN_PROGRESS = "setup_in_progress"
+        UNLOAD_IN_PROGRESS = "unload_in_progress"
+
     class ConfigEntry:  # type: ignore[override]
-        def __init__(self, *, options: dict | None = None) -> None:
+        # Real HA's ConfigEntry is generic in its runtime type, and
+        # `runtime.HAventoryConfigEntry` subscripts it. The alias is a PEP 695
+        # `type` statement, so it is never evaluated at import — this keeps the
+        # mistake impossible rather than merely unhit.
+        def __class_getitem__(cls, _item):
+            return cls
+
+        def __init__(
+            self,
+            *,
+            options: dict | None = None,
+            entry_id: str = "haventory-test-entry",
+            domain: str = "haventory",
+            state=None,
+        ) -> None:
             self.options: dict = dict(options or {})
+            self.entry_id = entry_id
+            self.domain = domain
+            self.state = state if state is not None else ConfigEntryState.LOADED
             self._update_listeners: list = []
             self._on_unload: list = []
 
@@ -324,6 +388,7 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             }
 
     ha_config_entries.ConfigEntry = ConfigEntry
+    ha_config_entries.ConfigEntryState = ConfigEntryState
     ha_config_entries.ConfigFlow = ConfigFlow
     ha_config_entries.OptionsFlow = OptionsFlow
     sys.modules["homeassistant.config_entries"] = ha_config_entries

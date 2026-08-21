@@ -12,7 +12,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.models import (
     CATEGORY_MAX_LENGTH,
@@ -26,10 +25,10 @@ from custom_components.haventory.models import (
     ItemUpdate,
 )
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime
 from ws_helpers import ws_send
 
 # -----------------------------
@@ -103,9 +102,7 @@ def test_low_stock_threshold_rejects_bool() -> None:
 
 def _make_hass() -> HomeAssistant:
     hass = HomeAssistant()
-    bucket = hass.data.setdefault(DOMAIN, {})
-    bucket["repository"] = Repository()
-    bucket["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
     return hass
 

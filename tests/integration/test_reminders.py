@@ -12,6 +12,7 @@ import uuid
 from datetime import timedelta
 
 from custom_components.haventory.const import DOMAIN
+from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -82,7 +83,7 @@ async def test_a_v7_store_boots_to_the_current_version_with_the_fields_backfille
         assert persisted["items"][item_id]["reminder_interval"] is None
 
     # Nothing else moved: the upgrade adds nulls and takes nothing away.
-    repo = hass.data[DOMAIN]["repository"]
+    repo = find_runtime(hass).repository
     assert repo.get_item(PLAIN_ITEM_ID).name == "Hammer"
     assert repo.get_item(PLAIN_ITEM_ID).quantity == _HAMMER_QUANTITY
     assert repo.get_item(REMINDER_ITEM_ID).inspection_date == "2027-01-01"
@@ -115,7 +116,7 @@ async def test_a_reminder_set_over_websocket_survives_a_reload(
     assert await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
 
-    reloaded = hass.data[DOMAIN]["repository"].get_item(item_id)
+    reloaded = find_runtime(hass).repository.get_item(item_id)
     assert reloaded.reminder_date == "2027-03-01"
     assert reloaded.reminder_interval.unit == "months"
     assert reloaded.reminder_interval.count == _EVERY_THREE_MONTHS
@@ -285,7 +286,7 @@ async def test_a_v8_store_gains_an_anchor_for_every_reminder_it_holds(
     assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION
     assert persisted["items"][REMINDER_ITEM_ID]["reminder_anchor"] == "2026-09-30"
     assert persisted["items"][PLAIN_ITEM_ID]["reminder_anchor"] is None
-    assert hass.data[DOMAIN]["repository"].get_item(REMINDER_ITEM_ID).reminder_anchor == (
+    assert find_runtime(hass).repository.get_item(REMINDER_ITEM_ID).reminder_anchor == (
         "2026-09-30"
     )
 
@@ -329,7 +330,7 @@ async def test_a_bumped_month_end_series_keeps_its_day_across_a_reload(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    reloaded = hass.data[DOMAIN]["repository"].get_item(item_id)
+    reloaded = find_runtime(hass).repository.get_item(item_id)
     assert reloaded.reminder_anchor == "2026-08-31"
     # And the calendar draws the series the anchor describes, not the bump's date.
     events = await hass.services.async_call(

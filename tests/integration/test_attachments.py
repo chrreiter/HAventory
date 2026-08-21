@@ -22,6 +22,7 @@ import pytest
 from aiohttp import FormData
 from custom_components.haventory import media
 from custom_components.haventory.const import DOMAIN, MEDIA_NAME_TOKEN_PARAM, MEDIA_SUBDIR
+from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -304,7 +305,7 @@ async def test_a_non_image_is_refused_and_leaves_nothing_behind(
 
     assert refused["success"] is False
     assert refused["error"]["code"] == "validation_error"
-    assert hass.data[DOMAIN]["repository"].get_item(item["id"]).attachments == []
+    assert find_runtime(hass).repository.get_item(item["id"]).attachments == []
     # Refused bytes are torn down on the same terms as accepted ones: off the
     # loop, and gone by the time the caller is told no.
     assert len(upload_teardowns) == 1
@@ -393,7 +394,7 @@ async def test_a_v5_store_boots_to_v6_with_both_backfills(
     assert persisted["items"][item_id]["attachments"] == []
     assert set(persisted["statuses"]) == {"lent_out", "ok", "missing", "needs_repair"}
     # The definition loaded before the item loop, so the slug was not coerced.
-    assert hass.data[DOMAIN]["repository"].get_item(item_id).status == "lent_out"
+    assert find_runtime(hass).repository.get_item(item_id).status == "lent_out"
 
     ws = await hass_ws_client(hass)
     await ws.send_json({"id": 1, "type": "haventory/config"})
@@ -555,4 +556,4 @@ async def test_a_pdf_is_refused_as_a_picture(
 
     assert refused["success"] is False
     assert refused["error"]["code"] == "validation_error"
-    assert hass.data[DOMAIN]["repository"].get_item(item["id"]).attachments == []
+    assert find_runtime(hass).repository.get_item(item["id"]).attachments == []

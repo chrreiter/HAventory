@@ -30,6 +30,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers.storage import Store as HAStore
 
+from runtime_helpers import repo_of, runtime_of, setup_entry
+
 
 @pytest.mark.asyncio
 async def test_setup_entry_logs_warning_for_empty_storage(monkeypatch, caplog) -> None:
@@ -46,10 +48,9 @@ async def test_setup_entry_logs_warning_for_empty_storage(monkeypatch, caplog) -
 
     caplog.set_level(logging.WARNING)
 
-    result = await haven_init.async_setup_entry(hass, entry)
+    await setup_entry(hass, entry)
 
-    assert result is True
-    assert isinstance(hass.data[haven_init.DOMAIN]["repository"], Repository)
+    assert isinstance(repo_of(hass), Repository)
     assert any("Storage health" in record.message for record in caplog.records)
     assert any(
         record.levelname == "WARNING" and "Storage health" in record.message
@@ -197,12 +198,12 @@ async def test_setup_entry_publishes_card_title(monkeypatch) -> None:
 
     monkeypatch.setattr(DomainStore, "async_load", _fake_load)
 
-    assert await haven_init.async_setup_entry(hass, entry) is True
-    assert hass.data[haven_init.DOMAIN]["card_title"] == "Pantry"
+    await setup_entry(hass, entry)
+    assert runtime_of(hass).card_title == "Pantry"
 
     entry.options[CONF_CARD_TITLE] = "Garage"
     await haven_init._async_options_updated(hass, entry)
-    assert hass.data[haven_init.DOMAIN]["card_title"] == "Garage"
+    assert runtime_of(hass).card_title == "Garage"
 
 
 @pytest.mark.asyncio
@@ -217,13 +218,13 @@ async def test_setup_entry_publishes_the_quick_filter_choice(monkeypatch) -> Non
 
     monkeypatch.setattr(DomainStore, "async_load", _fake_load)
 
-    assert await haven_init.async_setup_entry(hass, entry) is True
+    await setup_entry(hass, entry)
     # Canonical order, not the order the checkboxes were ticked in.
-    assert hass.data[haven_init.DOMAIN]["quick_filters"] == ["total", "low_stock"]
+    assert runtime_of(hass).quick_filters == ["total", "low_stock"]
 
     entry.options[CONF_QUICK_FILTERS] = []
     await haven_init._async_options_updated(hass, entry)
-    assert hass.data[haven_init.DOMAIN]["quick_filters"] == []
+    assert runtime_of(hass).quick_filters == []
 
 
 @pytest.mark.asyncio
@@ -242,8 +243,8 @@ async def test_setup_entry_leaves_the_quick_filter_choice_unset(monkeypatch) -> 
 
     monkeypatch.setattr(DomainStore, "async_load", _fake_load)
 
-    assert await haven_init.async_setup_entry(hass, entry) is True
-    assert hass.data[haven_init.DOMAIN]["quick_filters"] is None
+    await setup_entry(hass, entry)
+    assert runtime_of(hass).quick_filters is None
 
 
 @pytest.mark.asyncio
@@ -258,8 +259,8 @@ async def test_setup_entry_defaults_card_title_for_older_entries(monkeypatch) ->
 
     monkeypatch.setattr(DomainStore, "async_load", _fake_load)
 
-    assert await haven_init.async_setup_entry(hass, entry) is True
-    assert hass.data[haven_init.DOMAIN]["card_title"] == DEFAULT_CARD_TITLE
+    await setup_entry(hass, entry)
+    assert runtime_of(hass).card_title == DEFAULT_CARD_TITLE
 
 
 @pytest.mark.asyncio
@@ -313,31 +314,14 @@ async def test_setup_entry_accepts_a_readable_store(monkeypatch) -> None:
 
     monkeypatch.setattr(DomainStore, "async_load", _fake_load)
 
-    assert await haven_init.async_setup_entry(hass, entry) is True
-    assert isinstance(hass.data[haven_init.DOMAIN]["repository"], Repository)
+    await setup_entry(hass, entry)
+    assert isinstance(repo_of(hass), Repository)
 
 
 def _issues(hass: HomeAssistant) -> dict:
     """What the offline issue-registry stub recorded, keyed as HA keys it."""
 
     return hass.data.get("__issue_registry__") or {}
-
-
-class _ConfigEntries:
-    """The one config-entry API setup calls: writing the options back.
-
-    The offline `HomeAssistant` stub has no registry at all, which is how the
-    other setup tests get away without one — but the lossy-load opt-in is spent
-    through exactly this call, so the test that asserts it is spent has to
-    provide it.
-    """
-
-    def __init__(self) -> None:
-        self.updates: list[dict] = []
-
-    def async_update_entry(self, entry: ConfigEntry, *, options: dict) -> None:
-        entry.options = dict(options)
-        self.updates.append(dict(options))
 
 
 def _corrupt_payload() -> dict:
@@ -429,7 +413,7 @@ async def test_a_store_that_loads_clears_every_issue(monkeypatch) -> None:
 
     monkeypatch.setattr(DomainStore, "async_load", _fake_load)
 
-    assert await haven_init.async_setup_entry(hass, entry) is True
+    await setup_entry(hass, entry)
     assert _issues(hass) == {}
 
 
@@ -438,7 +422,6 @@ async def test_the_repair_option_loads_the_readable_remainder(monkeypatch, caplo
     """What the fix flow buys: the same store, loaded, minus what could not be read."""
 
     hass = HomeAssistant()
-    hass.config_entries = _ConfigEntries()
     entry = ConfigEntry(options={CONF_ALLOW_LOSSY_LOAD: True})
     payload = _corrupt_payload()
     payload["items"]["11111111-1111-4111-8111-111111111111"] = {
@@ -453,9 +436,9 @@ async def test_the_repair_option_loads_the_readable_remainder(monkeypatch, caplo
     monkeypatch.setattr(DomainStore, "async_load", _fake_load)
     caplog.set_level(logging.WARNING)
 
-    assert await haven_init.async_setup_entry(hass, entry) is True
+    await setup_entry(hass, entry)
 
-    repository = hass.data[haven_init.DOMAIN]["repository"]
+    repository = repo_of(hass)
     assert repository.get_counts()["items_total"] == 1
     assert any("as the repair asked" in record.message for record in caplog.records)
 
@@ -465,7 +448,6 @@ async def test_the_repair_option_is_spent_on_the_boot_it_buys(monkeypatch) -> No
     """Left set, it would silently accept the next corruption too — a standing waiver."""
 
     hass = HomeAssistant()
-    hass.config_entries = _ConfigEntries()
     entry = ConfigEntry(options={CONF_ALLOW_LOSSY_LOAD: True, CONF_CARD_TITLE: "Pantry"})
 
     async def _fake_load(self):  # type: ignore[no-untyped-def]
@@ -473,7 +455,7 @@ async def test_the_repair_option_is_spent_on_the_boot_it_buys(monkeypatch) -> No
 
     monkeypatch.setattr(DomainStore, "async_load", _fake_load)
 
-    assert await haven_init.async_setup_entry(hass, entry) is True
+    await setup_entry(hass, entry)
 
     assert CONF_ALLOW_LOSSY_LOAD not in entry.options
     # The rest of the options survive the edit; only the opt-in is taken back.
@@ -491,7 +473,6 @@ async def test_a_clean_load_spends_a_leftover_repair_option(monkeypatch) -> None
     """
 
     hass = HomeAssistant()
-    hass.config_entries = _ConfigEntries()
     entry = ConfigEntry(options={CONF_ALLOW_LOSSY_LOAD: True, CONF_CARD_TITLE: "Pantry"})
 
     async def _fake_load(self):  # type: ignore[no-untyped-def]
@@ -499,7 +480,7 @@ async def test_a_clean_load_spends_a_leftover_repair_option(monkeypatch) -> None
 
     monkeypatch.setattr(DomainStore, "async_load", _fake_load)
 
-    assert await haven_init.async_setup_entry(hass, entry) is True
+    await setup_entry(hass, entry)
 
     assert CONF_ALLOW_LOSSY_LOAD not in entry.options
     assert entry.options[CONF_CARD_TITLE] == "Pantry"
@@ -510,7 +491,7 @@ async def test_an_ordinary_boot_does_not_write_the_entry_back(monkeypatch) -> No
     """Nothing to spend means nothing to write: every boot would otherwise touch the entry."""
 
     hass = HomeAssistant()
-    registry = _ConfigEntries()
+    registry = hass.config_entries
     hass.config_entries = registry
     entry = ConfigEntry(options={CONF_CARD_TITLE: "Pantry"})
 
@@ -519,7 +500,7 @@ async def test_an_ordinary_boot_does_not_write_the_entry_back(monkeypatch) -> No
 
     monkeypatch.setattr(DomainStore, "async_load", _fake_load)
 
-    assert await haven_init.async_setup_entry(hass, entry) is True
+    await setup_entry(hass, entry)
 
     assert registry.updates == []
 
@@ -534,7 +515,6 @@ async def test_a_lossy_load_rewrites_the_store_it_could_not_fully_read(monkeypat
     """
 
     hass = HomeAssistant()
-    hass.config_entries = _ConfigEntries()
     entry = ConfigEntry(options={CONF_ALLOW_LOSSY_LOAD: True})
     key = "test_init_lossy_load_rewrites"
     monkeypatch.setattr(haven_init, "STORAGE_KEY", key)
@@ -551,7 +531,7 @@ async def test_a_lossy_load_rewrites_the_store_it_could_not_fully_read(monkeypat
     await backup.async_remove()
 
     try:
-        assert await haven_init.async_setup_entry(hass, entry) is True
+        await setup_entry(hass, entry)
 
         written = await raw_store.async_load()
         assert set(written["items"]) == {"11111111-1111-4111-8111-111111111111"}
@@ -571,7 +551,6 @@ async def test_a_lossy_load_that_cannot_be_copied_leaves_the_store_alone(
     """No copy, no rewrite: the rows stay recoverable at the price of one more refusal."""
 
     hass = HomeAssistant()
-    hass.config_entries = _ConfigEntries()
     entry = ConfigEntry(options={CONF_ALLOW_LOSSY_LOAD: True})
     key = "test_init_lossy_load_no_copy"
     monkeypatch.setattr(haven_init, "STORAGE_KEY", key)
@@ -586,7 +565,7 @@ async def test_a_lossy_load_that_cannot_be_copied_leaves_the_store_alone(
     monkeypatch.setattr(haven_init, "async_backup_store", _no_copy)
     caplog.set_level(logging.ERROR)
 
-    assert await haven_init.async_setup_entry(hass, entry) is True
+    await setup_entry(hass, entry)
 
     assert await raw_store.async_load() == payload
     assert any("could not copy it aside" in record.message for record in caplog.records)

@@ -10,10 +10,12 @@ Scenarios:
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory import async_setup, async_setup_entry, async_unload_entry
+from custom_components.haventory import async_setup, async_setup_entry
 from custom_components.haventory.const import DOMAIN
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+
+from runtime_helpers import runtime_of, setup_entry, unload_entry
 
 
 @pytest.mark.asyncio
@@ -31,16 +33,13 @@ async def test_setup_and_setup_entry_idempotent() -> None:
     class _Entry(ConfigEntry):
         pass
 
-    entry = _Entry()
-
-    # First setup entry
-    ok = await async_setup_entry(hass, entry)
-    assert ok is True
+    entry = await setup_entry(hass, _Entry())
     bucket = hass.data[DOMAIN]
-    assert "store" in bucket
-    assert "repository" in bucket
+    assert runtime_of(hass).store is not None
+    assert runtime_of(hass).repository is not None
 
-    # WS/services registration flags set
+    # WS/services registration flags — the bookkeeping that stays in the shared
+    # bucket, because Home Assistant can unregister neither.
     assert bucket.get("ws_registered") is True
     assert bucket.get("services_registered") is True
 
@@ -48,8 +47,7 @@ async def test_setup_and_setup_entry_idempotent() -> None:
     ws_handlers_before = list(hass.data.get("__ws_commands__", []))
 
     # Second setup entry should be effectively idempotent for registration
-    ok2 = await async_setup_entry(hass, entry)
-    assert ok2 is True
+    await setup_entry(hass, entry)
     assert bucket.get("ws_registered") is True
     assert bucket.get("services_registered") is True
     assert list(hass.data.get("__ws_commands__", [])) == ws_handlers_before
@@ -74,7 +72,7 @@ async def test_unload_entry_cleans_flags_and_ws_handlers() -> None:
     ws_registry = hass.data.get("__ws_commands__")
     assert isinstance(ws_registry, list) and len(ws_registry) > 0
 
-    ok = await async_unload_entry(hass, entry)
+    ok = await unload_entry(hass, entry)
     assert ok is True
 
     # Flags cleared

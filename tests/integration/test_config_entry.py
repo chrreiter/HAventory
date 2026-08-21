@@ -23,6 +23,7 @@ from custom_components.haventory.const import (
     DOMAIN,
 )
 from custom_components.haventory.repository import Repository
+from custom_components.haventory.runtime import find_runtime
 from homeassistant.config_entries import ConfigEntryDisabler, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType, InvalidData
@@ -55,15 +56,19 @@ async def test_config_entry_setup_and_unload(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
 
     assert entry.state is ConfigEntryState.LOADED
-    # Setup wired the runtime data structures into hass.data.
-    bucket = hass.data[DOMAIN]
-    assert "store" in bucket
-    assert isinstance(bucket["repository"], Repository)
+    # Setup handed the runtime to Home Assistant, on the entry.
+    assert isinstance(entry.runtime_data.repository, Repository)
+    assert entry.runtime_data.store is not None
+    assert find_runtime(hass) is entry.runtime_data
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
     assert entry.state is ConfigEntryState.NOT_LOADED
+    # And took it back: Home Assistant *deletes* the attribute, which is the one
+    # thing only a real core can be asked to prove.
+    assert not hasattr(entry, "runtime_data")
+    assert find_runtime(hass) is None
     # Ephemeral registration flags are cleared on unload.
     assert hass.data[DOMAIN].get("ws_registered") is None
 
@@ -94,7 +99,7 @@ async def test_unloaded_entry_leaves_the_ws_api_refusing(
         assert refused["success"] is False, refused
         assert refused["error"]["code"] == "storage_error", refused
 
-    assert hass.data[DOMAIN].get("repository") is None
+    assert find_runtime(hass) is None
 
     # The second half of a reload puts it all back, inventory included.
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -219,7 +224,7 @@ async def test_removed_entry_leaves_the_ws_api_refusing(
     assert created["success"] is False, created
     assert created["error"]["code"] == "storage_error", created
 
-    assert hass.data[DOMAIN].get("repository") is None
+    assert find_runtime(hass) is None
 
 
 async def test_re_adding_a_removed_entry_restores_the_inventory(

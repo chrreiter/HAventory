@@ -10,13 +10,13 @@ Scenarios:
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import _item_matches_filter
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime, runtime_of
 from ws_helpers import ws_send
 
 
@@ -26,8 +26,8 @@ async def test_effective_area_id_present_from_ancestor() -> None:
 
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass, repository=repo)
+    runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
     # Tree: Garage(area='wohnzimmer') -> Shelf A -> Bin 1
@@ -63,8 +63,8 @@ async def test_effective_area_id_none_when_no_area() -> None:
 
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass, repository=repo)
+    runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
     root = repo.create_location(name="Root")  # no area
@@ -85,8 +85,8 @@ async def test_effective_area_id_updates_on_area_change_without_version_bump() -
 
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass, repository=repo)
+    runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
     # Root without area -> effective_area_id None
@@ -118,8 +118,8 @@ async def test_subscription_matcher_agrees_with_item_list_on_area() -> None:
 
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass, repository=repo)
+    runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
     kitchen = repo.create_location(name="Kitchen", area_id="kitchen")

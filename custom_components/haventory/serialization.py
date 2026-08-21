@@ -8,13 +8,12 @@ caller: the WebSocket API and the ``haventory.*`` services. Both emit the shapes
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
 from .models import Item, Location
-from .repository import Repository
+from .runtime import find_runtime
 
 
 def effective_area_id_for_item(hass: HomeAssistant, item: Item) -> str | None:
@@ -27,9 +26,10 @@ def effective_area_id_for_item(hass: HomeAssistant, item: Item) -> str | None:
     try:
         if getattr(item, "location_id", None) is None:
             return None
-        bucket = hass.data.get(DOMAIN) or {}
-        repo = cast("Repository", bucket["repository"])
-        return repo.effective_area_id(str(item.location_id))
+        runtime = find_runtime(hass)
+        if runtime is None:
+            return None
+        return runtime.repository.effective_area_id(str(item.location_id))
     except Exception:
         return None
 

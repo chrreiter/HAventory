@@ -318,7 +318,3 @@ EVENT_LOW_STOCK: str = "haventory_low_stock"
 # and the calendar alike, since both are derived from the same items. Bus events
 # are the public contract; this is the internal nudge that repaints entities.
 SIGNAL_INVENTORY_CHANGED: str = "haventory_inventory_changed"
-
-# `hass.data[DOMAIN]` key holding the previous low-stock id set. Seeded at setup
-# so a restart re-announces nothing, and diffed on every notification.
-DATA_LOW_STOCK_SNAPSHOT: str = "low_stock_snapshot"

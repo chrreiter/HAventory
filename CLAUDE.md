@@ -60,10 +60,18 @@ and the two must move together, which `tests/test_toolchain_pins.py` now enforce
 ## Architecture & key files
 
 ### Backend — `custom_components/haventory/`
-- `__init__.py` — integration setup/teardown, `hass.data[DOMAIN]` wiring, persistence helpers
-  (`async_persist_repo`, `async_persist_immediate`, `async_request_persist`), Lovelace resource
-  registration, and the sidebar panel (`_async_apply_sidebar_panel`: `panel_custom` at
-  `/haventory`, remove-then-register, driven by the `sidebar_panel_enabled` option).
+- `__init__.py` — integration setup/teardown, the runtime wiring (built here, handed to
+  `entry.runtime_data`), persistence helpers (`async_persist_repo`, `async_persist_immediate`,
+  `async_request_persist`), Lovelace resource registration, and the sidebar panel
+  (`_async_apply_sidebar_panel`: `panel_custom` at `/haventory`, remove-then-register, driven
+  by the `sidebar_panel_enabled` option).
+- `runtime.py` — `HAventoryRuntime`, everything one loaded config entry owns, and the **two**
+  lookups that reach it: `loaded_runtime` refuses unless the entry is `LOADED` and is what
+  makes a command or a service go quiet once the entry is gone; `find_runtime` asks only
+  whether a runtime exists, and is what the teardown flush, the teardown broadcast and the
+  subscription close callbacks must use — they all run while the entry is *not* loaded. Only
+  the flags recording registrations Home Assistant cannot hand back (an aiohttp route, a
+  frontend module URL, a sidebar panel) stay in `hass.data[DOMAIN]`.
 - `models.py` — `Item` / `Location` dataclasses, validation, serializers. Items carry a
   denormalized `location_path` (rebuilt on location changes) and a `version` int (starts at 1,
   bumped on each *item* mutation — derived `location_path` rewrites excluded) for
@@ -84,7 +92,7 @@ and the two must move together, which `tests/test_toolchain_pins.py` now enforce
   `websocket_api.error_message` (HA's helper has no `data` param).
 - `rate_limit.py` — opt-in token-bucket rate limiting (per-connection + global, for
   commands and broadcasts). Off by default; configured via the options flow
-  (`config_flow.py`); limiter instance lives in `hass.data[DOMAIN]["rate_limiter"]`.
+  (`config_flow.py`); limiter instance lives on the runtime (`entry.runtime_data.rate_limiter`).
 - `import_export.py` — JSON import/export with `merge` / `replace` / `skip` policies and a
   read-only preview. **Import identity is the id, never the name.**
 - `stale_files.py` — `RETIRED_PATHS`, the explicit list of files earlier releases shipped

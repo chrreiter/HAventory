@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.config_entries import ConfigEntry
@@ -27,6 +26,7 @@ from homeassistant.util import dt as dt_util
 from .calendar_projection import ProjectedEvent, build_events, next_event, window_dates
 from .const import CALENDAR_UNIQUE_ID, DOMAIN, INTEGRATION_VERSION, SIGNAL_INVENTORY_CHANGED
 from .models import Item
+from .runtime import find_runtime
 
 LOGGER = logging.getLogger(__name__)
 
@@ -121,11 +121,11 @@ class HaventoryCalendar(CalendarEntity):
         ceiling the README states.
         """
 
-        repo = (self.hass.data.get(DOMAIN) or {}).get("repository")
-        if repo is None:
+        runtime = find_runtime(self.hass)
+        if runtime is None:
             return None
         try:
-            result: dict[str, Any] = repo.list_items()
+            result = runtime.repository.list_items()
         except Exception:  # pragma: no cover - defensive
             LOGGER.exception(
                 "Failed to read items for the calendar",

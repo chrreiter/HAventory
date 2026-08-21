@@ -656,7 +656,7 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
 ### Backend (custom component)
 
 - `custom_components/haventory/` with `manifest.json`, `__init__.py`, `config_flow.py`, `services.yaml`.
-- Store: `hass.data[DOMAIN]["store"]` with versioned schema and safe writes. Migrations are
+- Store: `entry.runtime_data.store` with versioned schema and safe writes. Migrations are
   forward-only: a store written by a **newer** HAventory version is refused (setup fails with
   an "upgrade HAventory" message) and never rewritten, so a rollback cannot relabel data the
   running build cannot read.

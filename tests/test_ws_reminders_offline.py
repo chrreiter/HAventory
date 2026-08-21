@@ -14,13 +14,11 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
-from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
+from runtime_helpers import install_runtime, repo_of
 from ws_helpers import ws_send
 
 MONTHLY = {"unit": "months", "count": 3}
@@ -31,8 +29,7 @@ _EDITED_QUANTITY = 4
 
 def _hass() -> HomeAssistant:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
     return hass
 
@@ -302,7 +299,7 @@ async def test_bump_names_a_stored_anchor_it_cannot_read() -> None:
         reminder_date="2026-09-01",
         reminder_interval=MONTHLY,
     )
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     repo.get_item(item_id).reminder_date = "next week"
 
     res = await ws_send(hass, 3, "haventory/reminder/bump", item_id=item_id)

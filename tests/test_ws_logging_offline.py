@@ -23,14 +23,12 @@ from typing import Any
 import pytest
 import voluptuous as vol
 from custom_components.haventory import services as services_mod
-from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import NotLoadedError, StorageError
 from custom_components.haventory.rate_limit import RateLimitConfig, RateLimiter
-from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime, repo_of, runtime_of
 from ws_helpers import RecordingConn, ws_send
 
 WS_LOGGER = "custom_components.haventory.ws"
@@ -40,11 +38,7 @@ RATE_LIMIT_LOGGER = "custom_components.haventory.rate_limit"
 
 def _make_hass(limiter: RateLimiter | None = None) -> HomeAssistant:
     hass = HomeAssistant()
-    bucket = hass.data.setdefault(DOMAIN, {})
-    bucket["repository"] = Repository()
-    bucket["store"] = DomainStore(hass)
-    if limiter is not None:
-        bucket["rate_limiter"] = limiter
+    install_runtime(hass, rate_limiter=limiter)
     ws_setup(hass)
     return hass
 
@@ -163,7 +157,7 @@ async def test_storage_error_logs_error_with_traceback(caplog, monkeypatch) -> N
     async def _raise(*_args: Any, **_kwargs: Any) -> None:
         raise StorageError("failed to persist repository")
 
-    monkeypatch.setattr(hass.data[DOMAIN]["store"], "async_save", _raise)
+    monkeypatch.setattr(runtime_of(hass).store, "async_save", _raise)
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
     res = await ws_send(hass, 1, "haventory/item/create", name="X")
@@ -184,7 +178,7 @@ async def test_unknown_error_logs_error_with_traceback(caplog, monkeypatch) -> N
     def _boom(*_args: Any, **_kwargs: Any) -> None:
         raise RuntimeError("kaboom")
 
-    monkeypatch.setattr(hass.data[DOMAIN]["repository"], "create_item", _boom)
+    monkeypatch.setattr(repo_of(hass), "create_item", _boom)
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
     res = await ws_send(hass, 1, "haventory/item/create", name="X")
@@ -281,7 +275,7 @@ async def test_a_real_storage_failure_still_logs_error_with_traceback(caplog, mo
     async def _raise(*_args: Any, **_kwargs: Any) -> None:
         raise StorageError("failed to persist repository")
 
-    monkeypatch.setattr(hass.data[DOMAIN]["store"], "async_save", _raise)
+    monkeypatch.setattr(runtime_of(hass).store, "async_save", _raise)
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
     res = await ws_send(hass, 1, "haventory/item/create", name="X")
@@ -351,7 +345,7 @@ async def test_bulk_unexpected_error_logs_error_with_traceback(caplog, monkeypat
     def _boom(*_args: Any, **_kwargs: Any) -> None:
         raise RuntimeError("kaboom")
 
-    monkeypatch.setattr(hass.data[DOMAIN]["repository"], "update_item", _boom)
+    monkeypatch.setattr(repo_of(hass), "update_item", _boom)
     caplog.clear()
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
@@ -440,7 +434,7 @@ async def test_partly_successful_bulk_still_logs_its_summary(caplog) -> None:
 @pytest.mark.asyncio
 async def test_service_conflict_logs_warning_without_traceback(caplog) -> None:
     hass = _make_hass()
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     await services_mod.service_item_create(hass, {"name": "Widget"})
     item_id = next(iter(repo._debug_get_internal_indexes()["items_by_id"]))
 

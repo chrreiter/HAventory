@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from custom_components.haventory.const import DOMAIN, EVENT_ITEM_CHANGED, EVENT_LOW_STOCK
+from custom_components.haventory.runtime import find_runtime
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
@@ -171,7 +172,7 @@ async def test_a_restart_re_announces_nothing(hass: HomeAssistant, hass_storage)
     await hass.async_block_till_done()
 
     assert captured == []
-    assert hass.data[DOMAIN]["repository"].low_stock_item_ids
+    assert find_runtime(hass).repository.low_stock_item_ids
 
 
 async def test_a_status_reassignment_reaches_the_bus_once_per_item(

@@ -22,7 +22,6 @@ from datetime import date
 import pytest
 from custom_components.haventory import import_export as ie
 from custom_components.haventory import media
-from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import StorageError, ValidationError
 from custom_components.haventory.models import (
     CATEGORY_MAX_LENGTH,
@@ -37,10 +36,11 @@ from custom_components.haventory.models import (
     validate_attachment_meta,
 )
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
+from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime, repo_of, runtime_of
 from ws_helpers import ws_send
 
 # The `_seed` helper always creates exactly this many items and locations.
@@ -50,8 +50,7 @@ SEEDED_LOCATIONS = 2
 
 def _new_hass() -> HomeAssistant:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
     return hass
 
@@ -118,7 +117,7 @@ def test_build_export_document_filtered_includes_ancestor_locations() -> None:
 @pytest.mark.asyncio
 async def test_ws_export_returns_document() -> None:
     hass = _new_hass()
-    _seed(hass.data[DOMAIN]["repository"])
+    _seed(repo_of(hass))
 
     res = await ws_send(hass, 1, "haventory/export")
     assert res["success"] is True, res
@@ -182,7 +181,7 @@ async def test_round_trip_via_ws_execute() -> None:
     """End-to-end round-trip through the export + execute WS commands."""
 
     src = _new_hass()
-    _seed(src.data[DOMAIN]["repository"])
+    _seed(repo_of(src))
     exported = (await ws_send(src, 1, "haventory/export"))["result"]
 
     dst = _new_hass()
@@ -385,7 +384,7 @@ async def test_ws_import_execute_invalid_document_is_validation_error() -> None:
 @pytest.mark.asyncio
 async def test_ws_import_execute_rolls_back_on_persist_failure() -> None:
     hass = _new_hass()
-    repo: Repository = hass.data[DOMAIN]["repository"]
+    repo: Repository = repo_of(hass)
     _seed(repo)
     before_counts = repo.get_counts()
 
@@ -408,7 +407,7 @@ async def test_ws_import_execute_rolls_back_on_persist_failure() -> None:
         async def async_save(self, _payload):
             raise StorageError("disk full")
 
-    hass.data[DOMAIN]["store"] = _FailingStore()
+    runtime_of(hass).store = _FailingStore()
 
     res = await ws_send(hass, 1, "haventory/import/execute", document=doc)
     assert res["success"] is False, res
@@ -595,7 +594,7 @@ async def test_import_preview_reports_references_with_no_file_on_this_install() 
     """A JSON export carries metadata and not bytes, so this is a caveat, not an error."""
 
     hass = _new_hass()
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     item = repo.create_item({"name": "Drill"})
     repo.add_attachment(item.id, validate_attachment_meta(_attachment_doc()))
     doc = _doc_from(repo)
@@ -617,7 +616,7 @@ async def test_import_replace_deletes_a_file_whose_metadata_it_overwrote() -> No
     """
 
     hass = _new_hass()
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     item = repo.create_item({"name": "Drill"})
     meta = validate_attachment_meta(_attachment_doc())
     repo.add_attachment(item.id, meta)
@@ -641,7 +640,7 @@ async def test_import_merge_keeps_a_file_the_document_does_not_mention() -> None
     """The other side of the same coin: `merge` unions, so nothing is orphaned."""
 
     hass = _new_hass()
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     item = repo.create_item({"name": "Drill"})
     meta = validate_attachment_meta(_attachment_doc())
     repo.add_attachment(item.id, meta)
@@ -1039,7 +1038,7 @@ def test_warnings_do_not_reach_import_execute() -> None:
 @pytest.mark.asyncio
 async def test_ws_import_preview_carries_the_warnings() -> None:
     hass = _new_hass()
-    hass.data[DOMAIN]["repository"].create_item({"name": "Hammer"})
+    repo_of(hass).create_item({"name": "Hammer"})
 
     res = await ws_send(
         hass, 1, "haventory/import/preview", document=_envelope(_rebuilt_item_doc("Hammer"))

@@ -52,6 +52,7 @@ from .const import (
 )
 from .exceptions import ValidationError
 from .models import AttachmentKind, AttachmentMeta
+from .runtime import find_runtime
 
 LOGGER = logging.getLogger(__name__)
 
@@ -369,14 +370,13 @@ class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
         """Return the file the two ids name, or 404 if no metadata claims it."""
 
         hass: HomeAssistant = request.app["hass"]
-        bucket = hass.data.get(DOMAIN) or {}
-        repo = bucket.get("repository")
-        if repo is None:
+        runtime = find_runtime(hass)
+        if runtime is None:
             # No config entry owns the data — an unload, a disable, or the first
             # half of a reload. Same refusal the WebSocket commands make.
             return web.Response(status=HTTPStatus.SERVICE_UNAVAILABLE)
 
-        meta = repo.find_attachment(item_id, attachment_id)
+        meta = runtime.repository.find_attachment(item_id, attachment_id)
         if meta is None:
             return web.Response(status=HTTPStatus.NOT_FOUND)
 

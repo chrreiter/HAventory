@@ -11,7 +11,7 @@ import functools
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any, TypedDict, cast
+from typing import Any, cast
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
@@ -46,7 +46,6 @@ from .events import (
 from .exceptions import (
     ConflictError,
     NotFoundError,
-    NotLoadedError,
     StorageError,
     ValidationError,
     error_code,
@@ -70,6 +69,7 @@ from .models import (
 )
 from .rate_limit import RateLimiter
 from .repository import UNSET, Repository
+from .runtime import Subscription, find_runtime, loaded_runtime
 from .serialization import serialize_item, serialize_location
 from .storage import CURRENT_SCHEMA_VERSION
 
@@ -77,32 +77,33 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _repo(hass: HomeAssistant) -> Repository:
-    bucket = hass.data.get(DOMAIN) or {}
-    repo = bucket.get("repository")
-    if repo is None:
-        raise NotLoadedError("repository not initialized; run integration setup")
-    return cast("Repository", repo)
+    return loaded_runtime(hass).repository
 
 
 def _require_loaded(hass: HomeAssistant) -> None:
-    """Refuse the command when no config entry owns the data.
+    """Refuse the command when no loaded config entry owns the data.
 
     Home Assistant cannot unregister a WebSocket command, so these keep
-    listening after the integration is unloaded, disabled or removed — and each
-    of those empties the domain bucket for exactly this check to find. It sits in
-    the guard rather than in the handlers so the whole surface goes quiet at
-    once: the commands that read no inventory (ping, version, config) would
-    otherwise keep answering for a backend that owns nothing.
+    listening after the integration is unloaded, disabled or removed — and in
+    each of those states the entry is no longer `LOADED`, which is what
+    `loaded_runtime` refuses on. It sits in the guard rather than in the handlers
+    so the whole surface goes quiet at once: the commands that read no inventory
+    (ping, version, config) would otherwise keep answering for a backend that
+    owns nothing.
     """
 
-    _repo(hass)
+    loaded_runtime(hass)
 
 
 def _rate_limiter(hass: HomeAssistant) -> RateLimiter | None:
-    """Return the configured rate limiter, or None when limiting is off."""
-    bucket = hass.data.get(DOMAIN) or {}
-    limiter = bucket.get("rate_limiter")
-    return limiter if isinstance(limiter, RateLimiter) else None
+    """The configured rate limiter, or None when limiting is off.
+
+    Resolved without the loaded check: the broadcaster charges this budget, and
+    a broadcast can run during teardown.
+    """
+
+    runtime = find_runtime(hass)
+    return runtime.rate_limiter if runtime is not None else None
 
 
 def _ctx(op: str, **extra: Any) -> dict[str, Any]:
@@ -470,16 +471,7 @@ def _execute_item_op(
 # -----------------------------
 
 
-class _Subscription(TypedDict, total=False):
-    topic: str
-    location_id: str | None
-    location_ids: list[str]
-    area_id: str | None
-    include_subtree: bool
-    inspection_overdue_only: bool
-
-
-def _subscription_location_ids(sub: _Subscription) -> list[str]:
+def _subscription_location_ids(sub: Subscription) -> list[str]:
     """The locations a subscription is scoped to, scalar and list unioned.
 
     The same union rule ``models.selected_location_ids`` applies to an
@@ -500,19 +492,23 @@ def _subscription_location_ids(sub: _Subscription) -> list[str]:
 
 def _subs_bucket(
     hass: HomeAssistant,
-) -> dict[websocket_api.ActiveConnection, dict[int, _Subscription]]:
-    """Get or create the subscriptions bucket.
+) -> dict[websocket_api.ActiveConnection, dict[int, Subscription]]:
+    """The open subscriptions, or an empty map when no runtime holds any.
 
-    Note: We use a regular dict (not WeakKeyDictionary) because HA's
-    ActiveConnection doesn't support weak references. Cleanup is handled
-    via the close callback registered in _register_close_listener.
+    A regular dict rather than a WeakKeyDictionary, because HA's
+    `ActiveConnection` does not support weak references; cleanup is the close
+    callback registered in `_register_close_listener`. That callback fires when
+    the *connection* closes, which can be long after the entry went — so this
+    resolves without the loaded check and answers `{}` rather than raising out
+    of a close callback.
     """
-    bucket = hass.data.setdefault(DOMAIN, {})
-    subs = bucket.get("subscriptions")
-    if subs is None:
-        subs = {}
-        bucket["subscriptions"] = subs
-    return cast("dict[websocket_api.ActiveConnection, dict[int, _Subscription]]", subs)
+
+    runtime = find_runtime(hass)
+    if runtime is None:
+        return {}
+    return cast(
+        "dict[websocket_api.ActiveConnection, dict[int, Subscription]]", runtime.subscriptions
+    )
 
 
 def _cleanup_subscriptions_for_conn(hass: HomeAssistant, conn: object) -> None:
@@ -658,7 +654,7 @@ def _payload_inspection_is_overdue(item: dict[str, Any]) -> bool:
     return date < today_utc_date()
 
 
-def _item_matches_filter(item: dict[str, Any], sub: _Subscription) -> bool:
+def _item_matches_filter(item: dict[str, Any], sub: Subscription) -> bool:
     if sub.get("inspection_overdue_only") and not _payload_inspection_is_overdue(item):
         return False
     # Read the area off the payload rather than resolving it from the repository:
@@ -680,7 +676,7 @@ def _item_matches_filter(item: dict[str, Any], sub: _Subscription) -> bool:
     return item.get("location_id") in loc_filters
 
 
-def _location_matches_filter(location: dict[str, Any], sub: _Subscription) -> bool:
+def _location_matches_filter(location: dict[str, Any], sub: Subscription) -> bool:
     loc_filters = _subscription_location_ids(sub)
     if not loc_filters:
         return True
@@ -867,8 +863,8 @@ async def ws_ping(
 
 
 def _schema_version_from_hass(hass: HomeAssistant) -> int:
-    bucket = hass.data.get(DOMAIN) or {}
-    ver = getattr(bucket.get("store"), "schema_version", None)
+    runtime = find_runtime(hass)
+    ver = getattr(runtime.store, "schema_version", None) if runtime is not None else None
     return ver if isinstance(ver, int) else int(CURRENT_SCHEMA_VERSION)
 
 
@@ -899,9 +895,9 @@ async def ws_config(
     reported so the picker can refuse an oversized file before it is sent, never
     so the backend can trust that it did.
     """
-    bucket = hass.data.get(DOMAIN) or {}
-    title = bucket.get("card_title")
-    pills = bucket.get("quick_filters")
+    runtime = loaded_runtime(hass)
+    title = runtime.card_title
+    pills = runtime.quick_filters
     result = {
         "card_title": title if isinstance(title, str) and title else DEFAULT_CARD_TITLE,
         # `null` is a value here, not an omission: it says the integration has
@@ -1005,7 +1001,7 @@ async def ws_subscribe(
     topic = msg.get("topic")
     if topic not in {"items", "locations", "stats", "statuses"}:
         raise ValidationError("topic must be one of: items, locations, stats, statuses")
-    sub: _Subscription = {
+    sub: Subscription = {
         "topic": topic,
     }
     if "location_id" in msg:

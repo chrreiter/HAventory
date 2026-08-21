@@ -18,6 +18,7 @@ from __future__ import annotations
 import pytest
 from custom_components.haventory import todo_bridge
 from custom_components.haventory.const import CONF_TODO_ENTITY_ID, DOMAIN
+from custom_components.haventory.runtime import find_runtime
 from homeassistant.components.todo import (
     TodoItem,
     TodoItemStatus,
@@ -149,7 +150,7 @@ async def _create_low_item(hass: HomeAssistant, *, name: str = "Peanut butter") 
         blocking=True,
     )
     await hass.async_block_till_done()
-    items = hass.data[DOMAIN]["repository"]._debug_get_internal_indexes()["items_by_id"]
+    items = find_runtime(hass).repository._debug_get_internal_indexes()["items_by_id"]
     return next(item_id for item_id, item in items.items() if item.name == name)
 
 
@@ -240,9 +241,9 @@ async def test_a_list_that_is_not_there_does_not_fail_the_mutation(
     await _setup_haventory(hass, entity_id="todo.does_not_exist")
     item_id = await _create_low_item(hass)
 
-    assert hass.data[DOMAIN]["repository"].get_item(item_id).quantity == LOW_QUANTITY
+    assert find_runtime(hass).repository.get_item(item_id).quantity == LOW_QUANTITY
     assert todo_list.summaries == []
-    assert hass.data[DOMAIN][todo_bridge._LINKS_KEY] == {}
+    assert find_runtime(hass).todo.links == {}
 
 
 async def test_unloading_the_entry_stops_the_bridge_listening(
@@ -261,7 +262,8 @@ async def test_unloading_the_entry_stops_the_bridge_listening(
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert todo_bridge._LINKS_KEY not in hass.data[DOMAIN]
+    # The link map went with the runtime Home Assistant took back.
+    assert find_runtime(hass) is None
     # The list keeps what it had: an unloaded entry gives up its own runtime,
     # not the household's shopping list.
     assert todo_list.summaries == [f"Peanut butter {TIMES}2"]

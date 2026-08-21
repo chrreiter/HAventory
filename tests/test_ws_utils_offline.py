@@ -17,7 +17,6 @@ from custom_components.haventory.const import (
     ATTACHMENT_MANUAL_MIME_TYPES,
     ATTACHMENT_PICTURE_MIME_TYPES,
     DEFAULT_CARD_TITLE,
-    DOMAIN,
     INTEGRATION_VERSION,
     MAX_ATTACHMENT_BYTES,
     MAX_MANUALS_PER_ITEM,
@@ -29,6 +28,7 @@ from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime
 from ws_helpers import ws_send
 
 
@@ -37,7 +37,7 @@ async def test_ping_echo_and_ts() -> None:
     """haventory/ping echoes input and includes ts."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    install_runtime(hass)
     ws_setup(hass)
 
     res = await ws_send(hass, 1, "haventory/ping", echo={"hello": "world"})
@@ -51,7 +51,7 @@ async def test_version_reports_integration_and_schema() -> None:
     """haventory/version reports integration_version and schema_version."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    install_runtime(hass)
     ws_setup(hass)
 
     res = await ws_send(hass, 2, "haventory/version")
@@ -73,7 +73,7 @@ async def test_health_reports_the_generation_this_run_has_reached() -> None:
 
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    install_runtime(hass, repository=repo)
     ws_setup(hass)
 
     before = await ws_send(hass, 30, "haventory/health")
@@ -89,9 +89,7 @@ async def test_config_reports_configured_card_title() -> None:
     """haventory/config hands the card the title set in the options flow."""
 
     hass = HomeAssistant()
-    bucket = hass.data.setdefault(DOMAIN, {})
-    bucket["repository"] = Repository()
-    bucket["card_title"] = "Pantry"
+    install_runtime(hass, card_title="Pantry")
     ws_setup(hass)
 
     res = await ws_send(hass, 5, "haventory/config")
@@ -104,7 +102,7 @@ async def test_config_falls_back_to_default_card_title() -> None:
     """An entry predating the option has no stored title; the default stands in."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    install_runtime(hass)
     ws_setup(hass)
 
     res = await ws_send(hass, 6, "haventory/config")
@@ -117,9 +115,7 @@ async def test_config_reports_the_configured_quick_filter_pills() -> None:
     """haventory/config hands the card the pill choice made in the options flow."""
 
     hass = HomeAssistant()
-    bucket = hass.data.setdefault(DOMAIN, {})
-    bucket["repository"] = Repository()
-    bucket["quick_filters"] = ["total", "low_stock"]
+    install_runtime(hass, quick_filters=["total", "low_stock"])
     ws_setup(hass)
 
     res = await ws_send(hass, 7, "haventory/config")
@@ -132,9 +128,7 @@ async def test_config_reports_an_empty_pill_choice_as_empty() -> None:
     """No pills is a choice, and has to arrive as one rather than as "unset"."""
 
     hass = HomeAssistant()
-    bucket = hass.data.setdefault(DOMAIN, {})
-    bucket["repository"] = Repository()
-    bucket["quick_filters"] = []
+    install_runtime(hass, quick_filters=[])
     ws_setup(hass)
 
     res = await ws_send(hass, 8, "haventory/config")
@@ -147,7 +141,7 @@ async def test_config_reports_no_pill_choice_as_null() -> None:
     """An entry that never chose leaves the decision to the dashboard."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    install_runtime(hass)
     ws_setup(hass)
 
     res = await ws_send(hass, 9, "haventory/config")
@@ -160,7 +154,7 @@ async def test_config_reports_the_status_vocabulary() -> None:
     """The card labels a stored slug from here, not from a constant of its own."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    install_runtime(hass)
     ws_setup(hass)
 
     res = await ws_send(hass, 7, "haventory/config")
@@ -183,7 +177,7 @@ async def test_config_reports_the_attachment_caps_and_accepted_types() -> None:
     """Reported so the picker can refuse early — never so the backend can trust it."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    install_runtime(hass)
     ws_setup(hass)
 
     res = await ws_send(hass, 8, "haventory/config")
@@ -206,7 +200,7 @@ async def test_stats_returns_counts() -> None:
     """haventory/stats returns repository counts."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    install_runtime(hass)
     ws_setup(hass)
 
     res = await ws_send(hass, 3, "haventory/stats")
@@ -236,7 +230,7 @@ async def test_stats_carries_status_counts_beside_the_legacy_keys() -> None:
     repo.create_item({"name": "Hammer", "status": "missing"})
     repo.create_item({"name": "Saw"})
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    install_runtime(hass, repository=repo)
     ws_setup(hass)
 
     res = await ws_send(hass, 31, "haventory/stats")
@@ -253,7 +247,7 @@ async def test_health_is_healthy_for_fresh_repo() -> None:
     """haventory/health returns healthy True and includes counts and issues list."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    install_runtime(hass)
     ws_setup(hass)
 
     res = await ws_send(hass, 4, "haventory/health")

@@ -15,18 +15,16 @@ import pytest
 from custom_components.haventory import events as events_mod
 from custom_components.haventory import services as services_mod
 from custom_components.haventory.const import (
-    DATA_LOW_STOCK_SNAPSHOT,
-    DOMAIN,
     EVENT_ITEM_CHANGED,
     EVENT_LOW_STOCK,
     SIGNAL_INVENTORY_CHANGED,
 )
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.serialization import serialize_item
-from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime, installed_entry, repo_of, unload_runtime
 from ws_helpers import ws_send
 
 LOW_THRESHOLD = 3
@@ -37,7 +35,7 @@ _AFTER_A_REASSIGNMENT = 2
 def _hass() -> tuple[HomeAssistant, Repository]:
     hass = HomeAssistant()
     repo = Repository()
-    hass.data[DOMAIN] = {"repository": repo}
+    install_runtime(hass, repository=repo)
     events_mod.seed_low_stock_snapshot(hass)
     return hass, repo
 
@@ -57,7 +55,7 @@ async def test_every_websocket_item_mutation_reaches_the_bus() -> None:
     """
 
     hass = HomeAssistant()
-    hass.data[DOMAIN] = {"repository": Repository(), "store": DomainStore(hass)}
+    install_runtime(hass)
     events_mod.seed_low_stock_snapshot(hass)
     ws_setup(hass)
 
@@ -189,9 +187,9 @@ def test_the_seeded_snapshot_keeps_a_restart_quiet() -> None:
         {"name": "Batteries", "quantity": 1, "low_stock_threshold": LOW_THRESHOLD}
     )
     # The entry sets up against a store that already holds a low item.
-    hass.data[DOMAIN] = {"repository": repo}
+    runtime = install_runtime(hass, repository=repo)
     events_mod.seed_low_stock_snapshot(hass)
-    assert hass.data[DOMAIN][DATA_LOW_STOCK_SNAPSHOT] == frozenset({str(item.id)})
+    assert runtime.low_stock_ids == frozenset({str(item.id)})
 
     unrelated = repo.create_item({"name": "Rope", "quantity": 5})  # type: ignore[arg-type]
     events_mod.notify_mutation(hass, action="created", item=serialize_item(hass, unrelated))
@@ -205,12 +203,12 @@ def test_an_emptied_bucket_is_a_no_op() -> None:
     hass, repo = _hass()
     _item, serialized = _create(repo, hass, name="Widget")
 
-    hass.data.pop(DOMAIN)
+    unload_runtime(hass)
     events_mod.notify_mutation(hass, action="created", item=serialized)
     assert hass.bus.fired == []
 
-    # A bucket that survived but lost its repository is the same story.
-    hass.data[DOMAIN] = {}
+    # An entry that survived the unload but has no runtime is the same story.
+    hass.config_entries.remove(installed_entry(hass))
     events_mod.notify_mutation(hass, action="created", item=serialized)
     assert hass.bus.events_of(EVENT_LOW_STOCK) == []
 
@@ -257,10 +255,10 @@ async def test_deleting_a_status_with_reassign_to_announces_every_item_it_rewrot
     """
 
     hass = HomeAssistant()
-    hass.data[DOMAIN] = {"repository": Repository(), "store": DomainStore(hass)}
+    install_runtime(hass)
     events_mod.seed_low_stock_snapshot(hass)
     ws_setup(hass)
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     moved = [repo.create_item({"name": f"Item {n}", "status": "missing"}) for n in range(3)]
     repo.create_item({"name": "Untouched"})
     hass.bus.fired.clear()
@@ -299,10 +297,10 @@ async def test_renaming_a_location_repaints_without_announcing_an_item_change() 
     """
 
     hass = HomeAssistant()
-    hass.data[DOMAIN] = {"repository": Repository(), "store": DomainStore(hass)}
+    install_runtime(hass)
     events_mod.seed_low_stock_snapshot(hass)
     ws_setup(hass)
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     garage = repo.create_location(name="Garage")
     repo.create_item({"name": "Ladder", "location_id": str(garage.id)})
     hass.bus.fired.clear()
@@ -322,10 +320,10 @@ async def test_a_location_save_that_changes_no_path_repaints_nothing() -> None:
     """The control: a re-save with the same name is not a reason to recount."""
 
     hass = HomeAssistant()
-    hass.data[DOMAIN] = {"repository": Repository(), "store": DomainStore(hass)}
+    install_runtime(hass)
     events_mod.seed_low_stock_snapshot(hass)
     ws_setup(hass)
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     garage = repo.create_location(name="Garage")
     hass.dispatcher_sends.clear()
 
@@ -342,10 +340,10 @@ async def test_moving_a_subtree_repaints_the_paths_it_rewrote() -> None:
     """`move_subtree` rewrites every path below the moved node."""
 
     hass = HomeAssistant()
-    hass.data[DOMAIN] = {"repository": Repository(), "store": DomainStore(hass)}
+    install_runtime(hass)
     events_mod.seed_low_stock_snapshot(hass)
     ws_setup(hass)
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     garage = repo.create_location(name="Garage")
     cellar = repo.create_location(name="Cellar")
     shelf = repo.create_location(name="Shelf A", parent_id=str(garage.id))
@@ -369,9 +367,9 @@ async def test_the_location_service_repaints_the_same_way_the_command_does() -> 
     """An automation renaming a location must not leave the calendar behind."""
 
     hass = HomeAssistant()
-    hass.data[DOMAIN] = {"repository": Repository(), "store": DomainStore(hass)}
+    install_runtime(hass)
     events_mod.seed_low_stock_snapshot(hass)
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     garage = repo.create_location(name="Garage")
     hass.dispatcher_sends.clear()
 
@@ -393,7 +391,7 @@ async def test_creating_and_deleting_a_location_repaints_the_count() -> None:
     """
 
     hass = HomeAssistant()
-    hass.data[DOMAIN] = {"repository": Repository(), "store": DomainStore(hass)}
+    install_runtime(hass)
     events_mod.seed_low_stock_snapshot(hass)
     ws_setup(hass)
     hass.dispatcher_sends.clear()
@@ -416,7 +414,7 @@ async def test_the_location_services_repaint_the_count_too() -> None:
     """The same two mutations through `haventory.location_*`."""
 
     hass = HomeAssistant()
-    hass.data[DOMAIN] = {"repository": Repository(), "store": DomainStore(hass)}
+    install_runtime(hass)
     events_mod.seed_low_stock_snapshot(hass)
     hass.dispatcher_sends.clear()
 

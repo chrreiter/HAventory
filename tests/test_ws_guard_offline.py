@@ -4,6 +4,8 @@ Scenarios:
 - handlers return the error envelope while also attempting to send it
 - send_message raising does not prevent returning the error envelope
 - missing send_message still returns the error envelope
+- the loaded-entry refusal: answered while `LOADED`, `storage_error` when the
+  entry is gone and when it exists in any other state
 """
 
 from __future__ import annotations
@@ -12,11 +14,12 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 import pytest
-from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+
+from runtime_helpers import install_runtime
+from ws_helpers import ws_send
 
 
 def _get_handler(
@@ -51,8 +54,7 @@ async def test_returns_and_sends_error_when_validation_fails() -> None:
     """Handlers should send AND return the error envelope."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     handler = _get_handler(hass, "haventory/item/set_quantity")
@@ -76,8 +78,7 @@ async def test_returns_error_when_send_message_raises() -> None:
     """Even if send fails, the error envelope must be returned to caller."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     handler = _get_handler(hass, "haventory/item/set_quantity")
@@ -95,8 +96,7 @@ async def test_returns_error_when_no_send_message_attribute() -> None:
     """If the connection lacks send_message, the error is still returned."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     handler = _get_handler(hass, "haventory/item/set_quantity")
@@ -107,3 +107,52 @@ async def test_returns_error_when_no_send_message_attribute() -> None:
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command", ["haventory/item/list", "haventory/ping"])
+async def test_a_command_answers_while_the_entry_is_loaded(command: str) -> None:
+    """The happy path of the state check that replaced the emptied bucket."""
+
+    hass = HomeAssistant()
+    install_runtime(hass)
+    ws_setup(hass)
+
+    res = await ws_send(hass, 1, command)
+
+    assert res["success"] is True, res
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command", ["haventory/item/list", "haventory/ping"])
+async def test_a_command_refuses_when_no_entry_exists(command: str) -> None:
+    """Nothing to resolve a runtime through is the removed-integration case."""
+
+    hass = HomeAssistant()
+    ws_setup(hass)
+
+    res = await ws_send(hass, 1, command)
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "storage_error"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command", ["haventory/item/list", "haventory/ping"])
+async def test_a_command_refuses_while_the_entry_is_not_loaded(command: str) -> None:
+    """An entry that exists but is unloaded or disabled serves nothing.
+
+    The behavior `_require_loaded` used to get from an emptied bucket, restated
+    against the source of truth that replaced it. The runtime is deliberately
+    left attached: what refuses here is the *state*, not a missing object, which
+    is exactly the disabled-entry case.
+    """
+
+    hass = HomeAssistant()
+    install_runtime(hass, state=ConfigEntryState.NOT_LOADED)
+    ws_setup(hass)
+
+    res = await ws_send(hass, 1, command)
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "storage_error"

@@ -8,12 +8,11 @@ Scenarios:
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime, runtime_of
 from ws_helpers import ws_send
 
 
@@ -22,9 +21,9 @@ async def test_bulk_mixed_results_and_single_persist(monkeypatch) -> None:
     """Bulk should return per-op results and persist once if any success."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    install_runtime(hass)
     store = DomainStore(hass)
-    hass.data[DOMAIN]["store"] = store
+    runtime_of(hass).store = store
     ws_setup(hass)
 
     calls = {"count": 0}
@@ -72,9 +71,9 @@ async def test_bulk_empty_and_invalid_operations_and_duplicate_ids(monkeypatch) 
     """Bulk: empty returns empty results; invalid type rejected; dup op_id rejects."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    install_runtime(hass)
     store = DomainStore(hass)
-    hass.data[DOMAIN]["store"] = store
+    runtime_of(hass).store = store
     ws_setup(hass)
 
     calls = {"count": 0}

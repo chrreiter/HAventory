@@ -11,7 +11,6 @@ from __future__ import annotations
 import pytest
 from custom_components.haventory import import_export as ie
 from custom_components.haventory import migrations
-from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.models import (
     DEFAULT_ITEM_STATUS,
@@ -31,6 +30,7 @@ from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
 
+from runtime_helpers import install_runtime
 from ws_helpers import ws_send
 
 # -----------------------------
@@ -260,8 +260,7 @@ async def test_domain_store_migrates_v4_store_on_load() -> None:
 
 def _new_hass() -> HomeAssistant:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
     return hass
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import uuid
 
 from custom_components.haventory.const import DOMAIN
+from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -51,7 +52,7 @@ async def test_v4_store_boots_to_v5_with_status_backfilled(
     assert persisted["items"][FLAGGED_ITEM_ID]["status"] == "needs_repair"
 
     # The running repository serves the backfilled items.
-    repo = hass.data[DOMAIN]["repository"]
+    repo = find_runtime(hass).repository
     assert repo.get_item(ITEM_ID).status == "ok"
     assert repo.get_item(FLAGGED_ITEM_ID).status == "needs_repair"
 

@@ -26,17 +26,17 @@ from pathlib import Path
 import pytest
 from custom_components.haventory import media as media_mod
 from custom_components.haventory import ws as ws_mod
-from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime, repo_of, runtime_of
 from ws_helpers import ws_send
 
 
 def _repo_of(hass: HomeAssistant) -> Repository:
-    return hass.data[DOMAIN]["repository"]
+    return repo_of(hass)
 
 
 @pytest.mark.asyncio
@@ -44,8 +44,7 @@ async def test_item_create_get_update_delete_success() -> None:
     """Create, get, update, delete an item via WS and assert envelopes."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     # Create
@@ -79,8 +78,7 @@ async def test_item_update_normalizes_a_tag_list_carrying_a_null() -> None:
     """
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Battery")
@@ -104,8 +102,7 @@ async def test_item_quantity_and_checkout_helpers() -> None:
     """Adjust/set quantity and check in/out via WS."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     initial_quantity = 1
@@ -142,8 +139,7 @@ async def test_item_check_out_due_date_is_optional() -> None:
     """
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
@@ -169,8 +165,7 @@ async def test_item_list_pagination_cursor_passthrough() -> None:
     """List items returns items array and next_cursor passthrough shape."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     # Seed a couple items
@@ -192,8 +187,7 @@ async def test_error_mapping_validation_and_not_found_and_conflict() -> None:
     """Ensure errors map to codes and include context."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     # validation_error: negative quantity
@@ -222,10 +216,10 @@ async def test_ws_mutations_persist_to_store(monkeypatch) -> None:
     """After WS mutations, DomainStore.async_save is invoked with export_state."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    install_runtime(hass)
     # Real store instance so key exists; we'll spy on method
     store = DomainStore(hass)
-    hass.data[DOMAIN]["store"] = store
+    runtime_of(hass).store = store
     ws_setup(hass)
 
     calls = {"count": 0}
@@ -275,8 +269,7 @@ async def test_inspection_date_in_create_update_get() -> None:
     """inspection_date field is handled correctly in WS create/update/get operations."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     # Create item with inspection_date
@@ -310,8 +303,7 @@ async def test_item_list_reports_filtered_total() -> None:
     """item/list includes `total`: all matches for the filter, on every page."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     await ws_send(hass, 1, "haventory/item/create", name="Hammer", category="tools")
@@ -405,8 +397,7 @@ async def test_attachment_add_and_remove_bump_the_version(upload) -> None:
     """Attaching a file is an item edit, unlike the derived location path."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
@@ -450,8 +441,7 @@ async def test_attachment_add_announces_the_item_as_updated(upload, monkeypatch)
     """An open card learns about a new photo the same way it learns about an edit."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
@@ -477,8 +467,7 @@ async def test_attachment_add_announces_the_item_as_updated(upload, monkeypatch)
 @pytest.mark.asyncio
 async def test_attachment_add_refuses_a_stale_expected_version(upload) -> None:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
@@ -504,8 +493,7 @@ async def test_attachment_add_refuses_a_stale_expected_version(upload) -> None:
 @pytest.mark.asyncio
 async def test_attachment_add_on_an_unknown_item_is_not_found(upload) -> None:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     upload("upload-1")
@@ -526,8 +514,7 @@ async def test_attachment_add_reports_an_unknown_file_id_as_not_found(upload) ->
     """`file_upload` raises for an expired upload, or one already consumed."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
@@ -547,8 +534,7 @@ async def test_attachment_add_reports_an_unknown_file_id_as_not_found(upload) ->
 @pytest.mark.asyncio
 async def test_attachment_add_refuses_a_file_whose_bytes_are_not_an_image(upload) -> None:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
@@ -578,8 +564,7 @@ async def test_attachment_add_consumes_the_upload_handle_off_the_event_loop(uplo
     """
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
@@ -607,8 +592,7 @@ async def test_attachment_add_tears_the_upload_down_off_the_loop_when_it_is_refu
     """The failure path pays the same teardown, so it offloads it the same way."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
@@ -640,8 +624,7 @@ async def test_attachment_add_tears_the_upload_down_when_the_command_is_cancelle
     """
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
@@ -675,8 +658,7 @@ async def test_attachment_add_tears_the_upload_down_when_the_command_is_cancelle
 @pytest.mark.asyncio
 async def test_attachment_remove_deletes_the_file_and_the_item_delete_cascades(upload) -> None:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
@@ -714,8 +696,7 @@ async def test_attachment_remove_deletes_the_file_and_the_item_delete_cascades(u
 @pytest.mark.asyncio
 async def test_attachment_remove_of_an_unknown_id_is_not_found() -> None:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
@@ -737,8 +718,7 @@ async def test_attachment_update_retitles_and_bumps_the_version(upload) -> None:
     """A title is what a manuals list reads, so it is a real item edit."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Dishwasher")
@@ -766,8 +746,7 @@ async def test_attachment_update_retitles_and_bumps_the_version(upload) -> None:
 @pytest.mark.asyncio
 async def test_attachment_update_reports_a_stale_version_as_conflict(upload) -> None:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Dishwasher")
@@ -794,8 +773,7 @@ async def test_attachment_update_reports_a_stale_version_as_conflict(upload) -> 
 @pytest.mark.asyncio
 async def test_attachment_reorder_makes_the_named_first_one_the_cover(upload) -> None:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
@@ -827,8 +805,7 @@ async def test_attachment_reorder_refuses_a_partial_list(upload) -> None:
     """A partial list would leave two attachments claiming the same position."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
@@ -860,8 +837,7 @@ async def test_attachment_reorder_refuses_a_partial_list(upload) -> None:
 
 def _hass_with_items(count: int = 3) -> HomeAssistant:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
     repo = _repo_of(hass)
     for i in range(count):

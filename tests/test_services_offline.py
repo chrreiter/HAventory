@@ -19,7 +19,7 @@ import voluptuous as vol
 import yaml
 from custom_components.haventory import events as events_mod
 from custom_components.haventory import services as services_mod
-from custom_components.haventory.const import DOMAIN, EVENT_ITEM_CHANGED
+from custom_components.haventory.const import EVENT_ITEM_CHANGED
 from custom_components.haventory.exceptions import (
     ConflictError,
     NotFoundError,
@@ -31,14 +31,15 @@ from custom_components.haventory.storage import DomainStore
 from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.util import dt as dt_util
 
+from runtime_helpers import install_runtime, repo_of, runtime_of
+
 
 @pytest.mark.asyncio
 async def test_item_create_and_update_flow_logs_and_mutates() -> None:
     """Create an item, then update it; ensure repo state changes and no exceptions bubble."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
 
     # Create
     await services_mod.service_item_create(
@@ -50,7 +51,7 @@ async def test_item_create_and_update_flow_logs_and_mutates() -> None:
         },
     )
 
-    repo: Repository = hass.data[DOMAIN]["repository"]
+    repo: Repository = repo_of(hass)
     assert repo.get_counts()["items_total"] == 1
 
     # Update name and quantity
@@ -71,8 +72,8 @@ async def test_item_move_and_quantity_helpers() -> None:
 
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass, repository=repo)
+    runtime_of(hass).store = DomainStore(hass)
 
     # Create locations and item
     await services_mod.service_location_create(hass, {"name": "Garage"})
@@ -109,9 +110,9 @@ async def test_services_persist_after_mutations(monkeypatch) -> None:
     """Service handlers should call DomainStore.async_save after changes."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    install_runtime(hass)
     store = DomainStore(hass)
-    hass.data[DOMAIN]["store"] = store
+    runtime_of(hass).store = store
 
     calls = {"count": 0}
 
@@ -128,7 +129,7 @@ async def test_services_persist_after_mutations(monkeypatch) -> None:
     assert calls["count"] >= MIN_PERSISTS_AFTER_CREATE
 
     # Also ensure delete persists
-    repo: Repository = hass.data[DOMAIN]["repository"]
+    repo: Repository = repo_of(hass)
     loc_id = next(iter(repo._debug_get_internal_indexes()["locations_by_id"]))
     await services_mod.service_location_delete(hass, {"location_id": loc_id})
     MIN_PERSISTS_AFTER_DELETE = 3
@@ -156,8 +157,7 @@ async def test_service_registration_and_schema_errors(monkeypatch, caplog) -> No
     hass.services = _Services()  # type: ignore[attr-defined]
 
     # Wire repository and store
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
 
     services_mod.setup(hass)
     # Ensure all expected services are registered
@@ -216,8 +216,8 @@ async def test_repository_exceptions_are_logged(monkeypatch, caplog) -> None:
 
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass, repository=repo)
+    runtime_of(hass).store = DomainStore(hass)
 
     # Create one item to operate on
     await services_mod.service_item_create(hass, {"name": "Widget"})
@@ -289,13 +289,12 @@ def test_service_catalog_agrees_across_registration_yaml_and_strings() -> None:
 async def _seeded(hass: HomeAssistant) -> tuple[Repository, str, str]:
     """A repository holding one location and one item inside it."""
 
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     loc = await services_mod.service_location_create(hass, {"name": "Shelf"})
     item = await services_mod.service_item_create(
         hass, {"name": "Widget", "quantity": 5, "location_id": loc["location"]["id"]}
     )
-    return hass.data[DOMAIN]["repository"], item["item"]["id"], loc["location"]["id"]
+    return repo_of(hass), item["item"]["id"], loc["location"]["id"]
 
 
 @pytest.mark.asyncio
@@ -358,8 +357,7 @@ async def test_item_create_response_survives_json_serialization() -> None:
     """
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
 
     response = await services_mod.service_item_create(
         hass,
@@ -441,8 +439,7 @@ async def test_a_failed_service_fires_no_event() -> None:
     """The event follows the durable write, so a rejected call announces nothing."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
 
     with pytest.raises(NotFoundError):
         await services_mod.service_item_update(hass, {"item_id": "nope", "name": "Ghost"})
@@ -459,8 +456,7 @@ async def test_a_failed_persist_answers_nothing(monkeypatch) -> None:
     """
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
 
     async def _persist(_hass):  # type: ignore[no-untyped-def]
         raise StorageError("persist failed")
@@ -508,8 +504,7 @@ async def test_a_reminder_can_be_set_and_cleared_through_item_update() -> None:
 @pytest.mark.asyncio
 async def test_a_reminder_created_with_the_item_is_stored() -> None:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
 
     created = await services_mod.service_item_create(
         hass,

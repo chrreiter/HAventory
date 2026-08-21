@@ -16,8 +16,13 @@ class ConfigEntryState(Enum):
     SETUP_IN_PROGRESS = "setup_in_progress"
     UNLOAD_IN_PROGRESS = "unload_in_progress"
 
-class ConfigEntry:
+class ConfigEntry[DataT = Any]:
     entry_id: str
+    domain: str
+    state: ConfigEntryState
+    # Real HA deletes the attribute on unload rather than setting it to None, so
+    # every read goes through `getattr(entry, "runtime_data", None)`.
+    runtime_data: DataT
     options: Mapping[str, Any]
     def add_update_listener(
         self,

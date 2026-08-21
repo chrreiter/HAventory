@@ -12,19 +12,17 @@ from __future__ import annotations
 
 import pytest
 from custom_components.haventory import ws as ws_mod
-from custom_components.haventory.const import DEFAULT_STATUS_COLOR, DEFAULT_STATUS_ICON, DOMAIN
-from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import DomainStore
+from custom_components.haventory.const import DEFAULT_STATUS_COLOR, DEFAULT_STATUS_ICON
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime
 from ws_helpers import ws_send
 
 
 def _new_hass() -> HomeAssistant:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
     return hass
 
