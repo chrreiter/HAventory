@@ -1,0 +1,151 @@
+name: ha-latest
+
+# The integration suite against the NEWEST Home Assistant, once a month.
+#
+# `ci.yml`'s `integration` job pins Home Assistant to the declared floor, which is
+# what makes "minimum supported" a tested claim — and means nothing in CI ever
+# runs against current HA. Home Assistant ships breaking changes monthly, so this
+# job is the early warning: a failure here is drift against a newer core, never a
+# regression in whatever pull request happens to be open that day.
+#
+# Deliberately scheduled only. With no `pull_request` trigger it reports no check
+# on a pull request, so it can never become a gate one waits on — see
+# `tests/test_repo_hardening_offline.py`.
+on:
+  schedule:
+    # 05:00 UTC on the 8th. Home Assistant's monthly minor lands on the first
+    # Wednesday, so the 8th is always after it and after phacc has published the
+    # build that pins it.
+    - cron: "0 5 8 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration-latest:
+    runs-on: ubuntu-latest
+    outputs:
+      ha-version: ${{ steps.resolved.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up uv
+        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d  # v10.0.0
+        with:
+          enable-cache: true
+      - name: Install Python 3.14
+        # Pinned, unlike the Home Assistant version. If a future HA raises its own
+        # Python floor, this job is where that surfaces first — as a resolution
+        # failure with a legible message, which is the warning the job is for.
+        run: uv python install 3.14
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: cards/haventory-card/package-lock.json
+      - name: Build the card the integration serves
+        # Same reason as in `ci.yml`: the bundle is git-ignored and the
+        # integration skips its frontend registration when it is absent, so
+        # without this step the frontend tests skip rather than run.
+        run: npm ci --no-audit --no-fund && npm run build
+        working-directory: cards/haventory-card
+      - name: Create integration environment (newest phacc, newest HA core)
+        # phacc ALONE, unpinned, and `homeassistant` is never named: each phacc
+        # release pins one exact Home Assistant version, so asking for phacc is
+        # the only way to ask for "the newest core there is a harness for".
+        # Naming `homeassistant` here would just be overridden by that pin, and
+        # `requirements-integration.txt` would pin the floor — the two mistakes
+        # that would silently turn this into a second copy of the floor run.
+        run: |
+          uv venv --python 3.14 .venv-integration
+          uv pip install --python .venv-integration/bin/python pytest-homeassistant-custom-component
+      - name: Install the frontend wheel this core asks for
+        # `requirements-integration.txt` hand-carries this pin because the harness
+        # does not install component requirements, and `frontend` fails to set up
+        # without it. A hand-carried pin is exactly what a "latest" job cannot
+        # have, so it is derived from the resolved core's own manifest — which
+        # satisfies `test_the_frontend_wheel_matches_what_this_ha_release_asks_for`
+        # by construction, at whatever version that core asks for.
+        run: |
+          wheel=$(.venv-integration/bin/python -c "
+          import json, pathlib
+          from homeassistant.components import frontend
+          manifest = pathlib.Path(frontend.__file__).with_name('manifest.json')
+          print(json.loads(manifest.read_text(encoding='utf-8'))['requirements'][0])
+          ")
+          echo "Derived frontend wheel: ${wheel}"
+          uv pip install --python .venv-integration/bin/python "${wheel}"
+      - name: Report what "latest" resolved to
+        id: resolved
+        # A passing run has to say what it proved, or it proves nothing legible.
+        run: |
+          version=$(.venv-integration/bin/python -c "from homeassistant.const import __version__; print(__version__)")
+          harness=$(.venv-integration/bin/python -c "from importlib.metadata import version; print(version('pytest-homeassistant-custom-component'))")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Integration suite against current Home Assistant"
+            echo
+            echo "- Home Assistant \`${version}\` (phacc \`${harness}\`)"
+            echo "- The declared floor is tested separately, by the integration job in \`ci.yml\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Integration tests (in-process HA via phacc)
+        # Autoload ON so phacc and its pytest-asyncio/aiohttp/socket stack load;
+        # phacc requires pytest-asyncio's auto mode.
+        run: >
+          .venv-integration/bin/python -m pytest -q
+          -o asyncio_mode=auto
+          tests/integration
+          --junitxml=integration-latest-junit.xml
+      - name: Upload integration artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-latest-artifacts
+          path: integration-latest-junit.xml
+
+  notify:
+    # One pinned issue, opened on the first failing month and closed again when a
+    # later run passes — so the tracker never carries a stale drift report, and a
+    # month that stays broken gets a comment rather than a second issue.
+    needs: [integration-latest]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open, update or close the drift issue
+        # The preinstalled `gh` CLI rather than a third-party action: no new
+        # dependency to digest-pin, which keeps Scorecard's pinned-dependencies
+        # check where it is.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          FAILED: ${{ needs.integration-latest.result != 'success' }}
+          HA_VERSION: ${{ needs.integration-latest.outputs.ha-version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          version="${HA_VERSION:-unknown}"
+          existing=$(gh issue list --label ci:ha-latest --state open --limit 1 --json number --jq '.[0].number // empty')
+
+          if [ "${FAILED}" = "true" ]; then
+            # printf rather than a multi-line string: a shell string indented to
+            # match this block would carry its leading spaces into the issue, and
+            # Markdown reads an indented line as a code block.
+            body=$(printf '%s\n\n%s\n' \
+              "The scheduled integration run against current Home Assistant (\`${version}\`) failed: ${RUN_URL}" \
+              "This is drift against a newer Home Assistant, not a regression in whatever pull request is open today. The floor run in \`ci.yml\` is unaffected.")
+            if [ -n "${existing}" ]; then
+              gh issue comment "${existing}" --body "${body}"
+            else
+              gh issue create \
+                --title "Integration suite fails against Home Assistant ${version}" \
+                --label ci:ha-latest \
+                --body "${body}"
+            fi
+          elif [ -n "${existing}" ]; then
+            gh issue comment "${existing}" \
+              --body "The scheduled integration run passes again, against Home Assistant \`${version}\`: ${RUN_URL}"
+            gh issue close "${existing}" --reason completed
+          fi

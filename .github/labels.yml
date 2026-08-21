@@ -29,6 +29,11 @@
   color: "bfd4f2"
   description: "Documentation and READMEs"
 
+# --- CI ---
+- name: "ci:ha-latest"
+  color: "fbca04"
+  description: "Drift against current Home Assistant, found by the scheduled ha-latest run"
+
 # --- Housekeeping ---
 - name: "good first issue"
   color: "7057ff"

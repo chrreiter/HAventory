@@ -953,6 +953,13 @@ Leave both unset — a fresh install, or any dashboard written before either opt
   frontend (npm audit + eslint + tsc + vitest + build, Node 22/24 matrix), actionlint,
   hassfest + HACS validation, CodeQL, OpenSSF Scorecard, and dependency review.
   Third-party actions are SHA-pinned; first-party `actions/*` use `@v7`.
+- **`ha-latest`** runs the same integration suite against the *newest* Home Assistant on
+  the 8th of each month (and on demand via *Run workflow*). The `integration` job above
+  pins the declared floor, so this is the only thing in CI that meets a current core. A
+  failure here is drift against that newer Home Assistant — not a regression in whatever
+  pull request is open that day — and it opens or updates one issue labelled
+  `ci:ha-latest`, which a later passing run closes again. It reports no check on a pull
+  request and can never block one.
 - PR hygiene: Conventional-Commit PR-title check, path-based auto-labeling
   (`.github/labeler.yml`), labels-as-code (`.github/labels.yml`), CODEOWNERS review
   requests, and issue/PR templates.
