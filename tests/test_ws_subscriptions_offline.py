@@ -19,13 +19,13 @@ from typing import Any
 
 import pytest
 from custom_components.haventory.areas import async_get_area_registry
-from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import _subs_bucket, broadcast_event
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime, runtime_of
 from ws_helpers import RecordingConn, ws_send
 
 
@@ -122,8 +122,7 @@ async def test_subscribe_receives_item_created_and_counts() -> None:
     """Subscribe to items and stats; creating an item emits item+counts events."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     conn = _ConnStub()
@@ -154,8 +153,7 @@ async def test_unsubscribe_stops_events() -> None:
     """Unsubscribe removes further deliveries for the subscription id."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     conn = _ConnStub()
@@ -185,8 +183,7 @@ async def test_double_subscribe_and_unsubscribe_edge() -> None:
     """Double subscribing reuses conn bucket; unsubscribe of unknown id is benign."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     conn = _ConnStub()
@@ -210,8 +207,7 @@ async def test_subscriptions_cleanup_on_connection_close() -> None:
     """Connection close should remove all subscriptions for that connection."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     conn = _ConnStub()
@@ -230,8 +226,7 @@ async def test_location_filters_subtree_and_direct_only() -> None:
     """location_id + include_subtree filters constrain delivered item events."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     conn = _ConnStub()
@@ -327,8 +322,7 @@ async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
     """`inspection_overdue_only` narrows item events the same way `item/list` does."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     conn = _ConnStub()
@@ -392,8 +386,8 @@ async def test_area_filter_constrains_delivered_events() -> None:
 
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass, repository=repo)
+    runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
     conn = _ConnStub()
@@ -453,8 +447,8 @@ async def test_area_and_location_filters_are_conjunctive() -> None:
 
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass, repository=repo)
+    runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
     conn = _ConnStub()
@@ -513,8 +507,8 @@ async def test_location_area_change_emits_no_item_events() -> None:
 
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass, repository=repo)
+    runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
     conn = _ConnStub()
@@ -566,8 +560,8 @@ async def test_reassigning_a_locations_own_area_announces_one_moved_event() -> N
 
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass, repository=repo)
+    runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
     reg = await async_get_area_registry(hass)
@@ -610,8 +604,8 @@ async def test_an_area_set_on_a_nested_location_is_announced_too() -> None:
 
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass, repository=repo)
+    runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
     reg = await async_get_area_registry(hass)
@@ -659,8 +653,8 @@ async def test_an_area_a_nested_location_already_resolves_to_is_silent() -> None
 
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass, repository=repo)
+    runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
     reg = await async_get_area_registry(hass)
@@ -700,8 +694,8 @@ async def test_location_update_announces_what_changed_once() -> None:
 
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass, repository=repo)
+    runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
     reg = await async_get_area_registry(hass)
@@ -764,8 +758,7 @@ async def test_framework_unsubscribe_events_tears_down_subscription() -> None:
     """
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     sub_id = 501
@@ -799,8 +792,7 @@ async def test_dedicated_unsubscribe_clears_framework_registry() -> None:
     teardown paths symmetric (no stale callback left in ``connection.subscriptions``)."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     sub_id = 601
@@ -827,8 +819,7 @@ async def test_subscribe_on_slotted_connection_never_stamps_attribute() -> None:
     """
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     conn = _SlottedHAConn()
@@ -866,8 +857,8 @@ async def test_location_ids_scopes_a_subscription_to_several_locations() -> None
 
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass, repository=repo)
+    runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
     conn = _ConnStub()
@@ -945,8 +936,7 @@ async def test_location_ids_scopes_a_subscription_to_several_locations() -> None
 @pytest.mark.asyncio
 async def test_subscribe_refuses_location_ids_that_is_not_a_list() -> None:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     res = await ws_send(

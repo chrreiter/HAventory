@@ -41,13 +41,13 @@ from custom_components.haventory.rate_limit import (
     RateLimiter,
     TokenBucket,
 )
-from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
 from custom_components.haventory.ws import RATE_LIMITED_MESSAGE
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime, repo_of, runtime_of, setup_entry
 from ws_helpers import RecordingConn, ws_send
 
 
@@ -71,11 +71,7 @@ def clock(monkeypatch) -> _FakeClock:
 
 def _make_hass(limiter: RateLimiter | None = None) -> HomeAssistant:
     hass = HomeAssistant()
-    bucket = hass.data.setdefault(DOMAIN, {})
-    bucket["repository"] = Repository()
-    bucket["store"] = DomainStore(hass)
-    if limiter is not None:
-        bucket["rate_limiter"] = limiter
+    install_runtime(hass, rate_limiter=limiter)
     ws_setup(hass)
     return hass
 
@@ -207,7 +203,7 @@ async def test_rate_limited_command_does_not_execute(clock: _FakeClock) -> None:
     res = await ws_send(hass, 2, "haventory/item/create", conn=conn, name="Second")
     assert res["success"] is False
     assert res["error"]["code"] == "rate_limited"
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     assert repo.get_counts()["items_total"] == 1
 
 
@@ -441,7 +437,6 @@ def test_options_schema_defaults_to_the_stored_options() -> None:
 @pytest.mark.asyncio
 async def test_options_update_listener_rebuilds_limiter() -> None:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})
     configured_rate = 5.0
     configured_burst = 7.0
     entry = ConfigEntry(
@@ -451,9 +446,11 @@ async def test_options_update_listener_rebuilds_limiter() -> None:
             CONF_RATE_LIMIT_COMMANDS_BURST: configured_burst,
         }
     )
+    # The listener rewrites a live runtime; an entry that never loaded has none.
+    install_runtime(hass, entry=entry)
 
     await _async_options_updated(hass, entry)
-    limiter = hass.data[DOMAIN]["rate_limiter"]
+    limiter = runtime_of(hass).rate_limiter
     assert isinstance(limiter, RateLimiter)
     assert limiter.enabled is True
     assert limiter.config.commands_per_second == configured_rate
@@ -461,7 +458,7 @@ async def test_options_update_listener_rebuilds_limiter() -> None:
 
     entry.options[CONF_RATE_LIMIT_ENABLED] = False
     await _async_options_updated(hass, entry)
-    assert hass.data[DOMAIN]["rate_limiter"].enabled is False
+    assert runtime_of(hass).rate_limiter.enabled is False
 
 
 def test_from_options_ignores_invalid_values() -> None:
@@ -536,8 +533,8 @@ async def test_setup_entry_wires_rate_limiter_from_entry_options(monkeypatch) ->
 
     monkeypatch.setattr(DomainStore, "async_load", _fake_load)
 
-    assert await haven_init.async_setup_entry(hass, entry) is True
-    limiter = hass.data[DOMAIN]["rate_limiter"]
+    await setup_entry(hass, entry)
+    limiter = runtime_of(hass).rate_limiter
     assert isinstance(limiter, RateLimiter)
     assert limiter.enabled is True
     assert limiter.config.commands_per_second == configured_rate
@@ -546,7 +543,7 @@ async def test_setup_entry_wires_rate_limiter_from_entry_options(monkeypatch) ->
     # An options change rebuilds the limiter through the registered listener.
     entry.options[CONF_RATE_LIMIT_ENABLED] = False
     await entry._update_listeners[0](hass, entry)
-    assert hass.data[DOMAIN]["rate_limiter"].enabled is False
+    assert runtime_of(hass).rate_limiter.enabled is False
 
     # Unload drops the limiter with the other ephemeral state.
     assert await haven_init.async_unload_entry(hass, entry) is True
@@ -574,10 +571,10 @@ async def test_close_cleanup_registers_in_conn_subscriptions() -> None:
     # The cleanup callable is registered where real HA invokes it on close.
     cleanup = conn.subscriptions.get("haventory/cleanup")
     assert callable(cleanup)
-    assert conn in hass.data[DOMAIN]["subscriptions"]
+    assert conn in runtime_of(hass).subscriptions
 
     cleanup()
-    assert conn not in hass.data[DOMAIN]["subscriptions"]
+    assert conn not in runtime_of(hass).subscriptions
 
 
 @pytest.mark.asyncio

@@ -24,7 +24,6 @@ from .events import notify_counts, notify_location_mutation, notify_mutation
 from .exceptions import (
     ConflictError,
     NotFoundError,
-    NotLoadedError,
     StorageError,
     ValidationError,
     error_code,
@@ -32,6 +31,7 @@ from .exceptions import (
     log_severity,
 )
 from .repository import UNSET, Repository
+from .runtime import loaded_runtime
 from .serialization import serialize_item, serialize_location
 from .storage import async_persist_repo as _storage_async_persist_repo
 
@@ -158,11 +158,14 @@ SCHEMA_LOCATION_DELETE = vol.Schema({vol.Required("location_id"): str})
 
 
 def _get_repo(hass: HomeAssistant) -> Repository:
-    bucket = hass.data.get(DOMAIN) or {}
-    repo = bucket.get("repository")
-    if repo is None:
-        raise NotLoadedError("repository not initialized; run integration setup")
-    return repo  # type: ignore[return-value]
+    """The repository of a loaded entry, or `NotLoadedError`.
+
+    The same client-facing refusal `ws_guard` makes: Home Assistant cannot
+    unregister a service, so these handlers keep answering after the entry is
+    unloaded, disabled or removed, and the state check is what makes them stop.
+    """
+
+    return loaded_runtime(hass).repository
 
 
 def _log_domain_error(op: str, context: dict[str, Any], exc: Exception) -> None:

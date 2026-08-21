@@ -26,6 +26,7 @@ from .const import (
     SIGNAL_INVENTORY_CHANGED,
     HaventorySensorDescription,
 )
+from .runtime import find_runtime
 
 LOGGER = logging.getLogger(__name__)
 
@@ -106,11 +107,11 @@ class HaventoryCountSensor(SensorEntity):
         return int(value) if value is not None else None
 
     def _counts(self) -> dict[str, Any] | None:
-        repo = (self.hass.data.get(DOMAIN) or {}).get("repository")
-        if repo is None:
+        runtime = find_runtime(self.hass)
+        if runtime is None:
             return None
         try:
-            return dict(repo.get_counts())
+            return dict(runtime.repository.get_counts())
         except Exception:  # pragma: no cover - defensive
             LOGGER.exception(
                 "Failed to read counts for a sensor",

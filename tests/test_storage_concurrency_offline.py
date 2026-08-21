@@ -6,7 +6,7 @@ prevents race conditions, and properly debounces rapid changes.
 
 import asyncio
 import logging
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from custom_components.haventory import storage as storage_mod
@@ -23,22 +23,25 @@ from custom_components.haventory.storage import (
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime, runtime_of
 from ws_helpers import ws_send
 
 # Named constants for test assertions
 RAPID_MUTATION_COUNT = 3
 
 
-class _TrackedTaskHass:
+class _TrackedTaskHass(HomeAssistant):
     """hass double that records the background tasks it is handed.
 
     Mirrors ``HomeAssistant.async_create_background_task``'s signature so the
     debounced persist path is driven through the same call it makes against a
-    real core, and keeps every scheduled task addressable for assertions.
+    real core, and keeps every scheduled task addressable for assertions. It
+    subclasses the stub rather than standing alone because the persist path
+    resolves its runtime through `hass.config_entries`.
     """
 
     def __init__(self) -> None:
-        self.data: dict = {}
+        super().__init__()
         self.background_tasks: list[tuple[str, asyncio.Task]] = []
 
     def async_create_background_task(self, target, name, eager_start=True):
@@ -50,8 +53,7 @@ class _TrackedTaskHass:
 @pytest.mark.asyncio
 async def test_persist_lock_prevents_concurrent_saves():
     """Concurrent persist calls are serialized by lock, preventing race conditions."""
-    hass = MagicMock()
-    hass.data = {"haventory": {}}
+    hass = HomeAssistant()
 
     # Create a mock store with artificial delay to simulate slow I/O
     mock_store = AsyncMock(spec=DomainStore)
@@ -67,8 +69,7 @@ async def test_persist_lock_prevents_concurrent_saves():
 
     # Create repository and store
     repo = Repository()
-    hass.data["haventory"]["store"] = mock_store
-    hass.data["haventory"]["repository"] = repo
+    install_runtime(hass, repository=repo, store=mock_store)
 
     # Launch multiple concurrent persist operations
     tasks = [async_persist_repo(hass) for _ in range(3)]
@@ -82,7 +83,6 @@ async def test_persist_lock_prevents_concurrent_saves():
 async def test_debounce_coalesces_rapid_changes():
     """Rapid persist requests are coalesced into a single save operation."""
     hass = _TrackedTaskHass()
-    hass.data = {"haventory": {}}
 
     # Create mock store that counts save calls
     mock_store = AsyncMock(spec=DomainStore)
@@ -95,8 +95,7 @@ async def test_debounce_coalesces_rapid_changes():
 
     # Create repository and store
     repo = Repository()
-    hass.data["haventory"]["store"] = mock_store
-    hass.data["haventory"]["repository"] = repo
+    install_runtime(hass, repository=repo, store=mock_store)
 
     # Request multiple rapid persists
     for _ in range(10):
@@ -114,25 +113,23 @@ async def test_debounce_coalesces_rapid_changes():
 async def test_debounce_cancels_pending_task():
     """New persist request cancels previous pending task."""
     hass = _TrackedTaskHass()
-    hass.data = {"haventory": {}}
 
     mock_store = AsyncMock(spec=DomainStore)
     mock_store.async_save = AsyncMock()
 
     repo = Repository()
-    hass.data["haventory"]["store"] = mock_store
-    hass.data["haventory"]["repository"] = repo
+    install_runtime(hass, repository=repo, store=mock_store)
 
     # Request first persist
     await async_request_persist(hass)
-    first_task = hass.data["haventory"].get("persist_task")
+    first_task = runtime_of(hass).persist_task
     assert first_task is not None
     assert not first_task.done()
 
     # Request second persist before first completes
     await asyncio.sleep(0.1)  # Wait a bit but not full delay
     await async_request_persist(hass)
-    second_task = hass.data["haventory"].get("persist_task")
+    second_task = runtime_of(hass).persist_task
 
     # Give time for cancellation to propagate
     await asyncio.sleep(0.01)
@@ -146,7 +143,6 @@ async def test_debounce_cancels_pending_task():
 async def test_immediate_persist_bypasses_debounce():
     """Immediate persist cancels pending debounced task and saves immediately."""
     hass = _TrackedTaskHass()
-    hass.data = {"haventory": {}}
 
     mock_store = AsyncMock(spec=DomainStore)
     save_times = []
@@ -157,8 +153,7 @@ async def test_immediate_persist_bypasses_debounce():
     mock_store.async_save = record_save
 
     repo = Repository()
-    hass.data["haventory"]["store"] = mock_store
-    hass.data["haventory"]["repository"] = repo
+    install_runtime(hass, repository=repo, store=mock_store)
 
     # Request debounced persist
     start_time = asyncio.get_event_loop().time()
@@ -192,14 +187,14 @@ async def test_debounce_schedules_ha_tracked_background_task(monkeypatch):
     mock_store.async_save = record_save
     repo = Repository()
     repo.create_item(ItemCreate(name="Tracked"))
-    hass.data[DOMAIN] = {"store": mock_store, "repository": repo}
+    install_runtime(hass, repository=repo, store=mock_store)
 
     await async_request_persist(hass)
 
     assert len(hass.background_tasks) == 1
     name, task = hass.background_tasks[0]
     assert DOMAIN in name
-    assert hass.data[DOMAIN]["persist_task"] is task
+    assert runtime_of(hass).persist_task is task
 
     await asyncio.sleep(0.2)
 
@@ -221,7 +216,7 @@ async def test_debounce_coalesces_across_tracked_tasks(monkeypatch):
 
     mock_store = AsyncMock(spec=DomainStore)
     mock_store.async_save = record_save
-    hass.data[DOMAIN] = {"store": mock_store, "repository": Repository()}
+    install_runtime(hass, repository=Repository(), store=mock_store)
 
     for _ in range(RAPID_MUTATION_COUNT):
         await async_request_persist(hass)
@@ -245,8 +240,13 @@ async def test_debounced_tracked_task_reports_failure_without_raising(monkeypatc
     monkeypatch.setattr(storage_mod, "PERSIST_DEBOUNCE_DELAY", 0.05)
 
     hass = _TrackedTaskHass()
-    # No "store" entry: async_persist_repo raises StorageError.
-    hass.data[DOMAIN] = {"repository": Repository()}
+
+    async def refuse_save(_data):
+        raise OSError("disk went away")
+
+    failing_store = AsyncMock(spec=DomainStore)
+    failing_store.async_save = refuse_save
+    install_runtime(hass, store=failing_store)
 
     await async_request_persist(hass)
     _, task = hass.background_tasks[0]
@@ -282,15 +282,13 @@ async def test_generation_counter_increments_on_modification():
 @pytest.mark.asyncio
 async def test_concurrent_operations_with_persistence():
     """Multiple concurrent operations complete successfully with locking."""
-    hass = MagicMock()
-    hass.data = {"haventory": {}}
+    hass = HomeAssistant()
 
     mock_store = AsyncMock(spec=DomainStore)
     mock_store.async_save = AsyncMock()
 
     repo = Repository()
-    hass.data["haventory"]["store"] = mock_store
-    hass.data["haventory"]["repository"] = repo
+    install_runtime(hass, repository=repo, store=mock_store)
 
     # Create initial items
     items = [repo.create_item(ItemCreate(name=f"Item {i}")) for i in range(10)]
@@ -318,15 +316,13 @@ async def test_persist_with_timing_logs(caplog):
     """Persistence operations log timing information for debugging."""
     caplog.set_level(logging.DEBUG)
 
-    hass = MagicMock()
-    hass.data = {"haventory": {}}
+    hass = HomeAssistant()
 
     mock_store = AsyncMock(spec=DomainStore)
     mock_store.async_save = AsyncMock()
 
     repo = Repository()
-    hass.data["haventory"]["store"] = mock_store
-    hass.data["haventory"]["repository"] = repo
+    install_runtime(hass, repository=repo, store=mock_store)
 
     await async_persist_repo(hass)
 
@@ -343,14 +339,12 @@ async def test_debounce_request_logs(caplog):
     caplog.set_level(logging.DEBUG)
 
     hass = _TrackedTaskHass()
-    hass.data = {"haventory": {}}
 
     mock_store = AsyncMock(spec=DomainStore)
     mock_store.async_save = AsyncMock()
 
     repo = Repository()
-    hass.data["haventory"]["store"] = mock_store
-    hass.data["haventory"]["repository"] = repo
+    install_runtime(hass, repository=repo, store=mock_store)
 
     await async_request_persist(hass)
 
@@ -372,9 +366,9 @@ async def test_ws_mutations_use_immediate_persistence(monkeypatch):
     """
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    install_runtime(hass, repository=repo)
     store = DomainStore(hass)
-    hass.data[DOMAIN]["store"] = store
+    runtime_of(hass).store = store
     ws_setup(hass)
 
     # Track calls to async_persist_repo (immediate)

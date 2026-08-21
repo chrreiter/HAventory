@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from custom_components.haventory.const import DOMAIN, SENSOR_DESCRIPTIONS
+from custom_components.haventory.runtime import find_runtime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -171,7 +172,7 @@ async def test_each_sensor_reports_its_count(hass: HomeAssistant, descriptor) ->
     """Every entity reads its own key, so none of them is wired to the wrong one."""
 
     entry = await _setup(hass)
-    repo = hass.data[DOMAIN]["repository"]
+    repo = find_runtime(hass).repository
 
     entity_id = _entity_id_for(hass, entry, descriptor.key)
 

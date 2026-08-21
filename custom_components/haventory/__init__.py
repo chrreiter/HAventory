@@ -75,6 +75,7 @@ from .const import (
 from .exceptions import CorruptSchemaVersionError, SchemaDowngradeError, StorageError
 from .rate_limit import RateLimitConfig, RateLimiter
 from .repository import LoadReport, Repository
+from .runtime import HAventoryConfigEntry, HAventoryRuntime, find_runtime
 from .storage import (
     CURRENT_SCHEMA_VERSION,
     STORAGE_KEY,
@@ -139,7 +140,7 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) -> bool:
     """Set up HAventory from a config entry."""
     if DOMAIN not in hass.data:
         hass.data[DOMAIN] = {}
@@ -149,13 +150,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # First, so a retired bundle is gone before the card directory is served.
     await stale_files.async_sweep_retired_files(hass)
 
-    # Expose storage manager via hass.data[DOMAIN]["store"]. Keep name compatible
-    # with tests while upgrading to a schema-aware wrapper.
     store = DomainStore(hass, key=STORAGE_KEY, version=CURRENT_SCHEMA_VERSION)
-    hass.data[DOMAIN]["store"] = store
-
     repository = await _async_load_repository(hass, entry, store)
-    hass.data[DOMAIN]["repository"] = repository
+
+    # Onto the entry, before anything that reads it: every module resolves the
+    # runtime through `hass.config_entries`, so nothing below this line would
+    # find a repository without it. Home Assistant clears it again on unload.
+    entry.runtime_data = HAventoryRuntime(
+        store=store,
+        repository=repository,
+        # Heading and pill choice served to the card by `haventory/config`.
+        card_title=_resolve_card_title(entry),
+        quick_filters=_resolve_quick_filters(entry),
+        # WebSocket rate limiting (off by default; configured via the options flow)
+        rate_limiter=RateLimiter(RateLimitConfig.from_options(getattr(entry, "options", None))),
+    )
 
     # A load that had to leave rows behind has to reach the file, or the next
     # restart meets the same rows and refuses all over again.
@@ -171,18 +180,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     events.seed_low_stock_snapshot(hass)
 
     # Serve attachment files, and collect the ones nothing references any more.
-    # Both need the repository, so both come after it is in the bucket.
+    # Both need the repository, so both come after the runtime is on the entry.
     _register_media_view(hass)
     await _async_sweep_orphaned_media(hass, repository)
 
-    # Heading and pill choice served to the card by `haventory/config`.
-    hass.data[DOMAIN]["card_title"] = _resolve_card_title(entry)
-    hass.data[DOMAIN]["quick_filters"] = _resolve_quick_filters(entry)
-
-    # WebSocket rate limiting (off by default; configured via the options flow)
-    hass.data[DOMAIN]["rate_limiter"] = RateLimiter(
-        RateLimitConfig.from_options(getattr(entry, "options", None))
-    )
     # Re-read the options when they change. Guarded with getattr so the
     # minimal offline-test ConfigEntry stubs keep working.
     add_listener = getattr(entry, "add_update_listener", None)
@@ -466,14 +467,15 @@ def _resolve_quick_filters(entry: ConfigEntry) -> list[str] | None:
     return [key for key in QUICK_FILTER_KEYS if key in known]
 
 
-async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _async_options_updated(hass: HomeAssistant, entry: HAventoryConfigEntry) -> None:
     """Apply changed options: card title, pills, sidebar panel, WS rate limiter."""
-    bucket = hass.data.setdefault(DOMAIN, {})
-    bucket["card_title"] = _resolve_card_title(entry)
-    bucket["quick_filters"] = _resolve_quick_filters(entry)
-    bucket["rate_limiter"] = RateLimiter(
-        RateLimitConfig.from_options(getattr(entry, "options", None))
-    )
+    runtime = find_runtime(hass)
+    if runtime is not None:
+        runtime.card_title = _resolve_card_title(entry)
+        runtime.quick_filters = _resolve_quick_filters(entry)
+        runtime.rate_limiter = RateLimiter(
+            RateLimitConfig.from_options(getattr(entry, "options", None))
+        )
     # Covers the toggle and a renamed card alike: the sidebar entry carries the
     # card title, and re-registering is how a changed one reaches the sidebar.
     await _async_apply_sidebar_panel(hass, entry)
@@ -495,8 +497,7 @@ async def _async_flush_pending_writes(hass: HomeAssistant, *, op: str) -> None:
     a repository that is on its way out.
     """
 
-    bucket = hass.data.get(DOMAIN) or {}
-    if bucket.get("store") is None or bucket.get("repository") is None:
+    if find_runtime(hass) is None:
         cancel_pending_persist(hass, op=op)
         return
 
@@ -546,10 +547,16 @@ def _cleanup_ws_test_stub_registry(hass: HomeAssistant) -> None:
 async def _async_teardown_entry(hass: HomeAssistant, *, op: str) -> None:
     """Give up everything the config entry owns, in the order that keeps it safe.
 
+    Every step here runs while the entry is **not** loaded — Home Assistant marks
+    it `UNLOAD_IN_PROGRESS` before calling `async_unload_entry` — so each reads
+    the runtime through `find_runtime` rather than through the loaded check a
+    client-facing command uses. A flush routed through that check would write
+    nothing and drop whatever was still unsaved.
+
     Flush first, while the repository is still reachable; then tell open
     subscribers, while the subscription registry still lists them; then hand back
-    the frontend registrations, which read the URL the bucket recorded; and only
-    then empty the bucket.
+    the frontend registrations, which read the URL the bucket recorded. Home
+    Assistant clears `runtime_data` itself once this returns.
     """
 
     await _async_flush_pending_writes(hass, op=op)
@@ -565,7 +572,7 @@ async def _async_teardown_entry(hass: HomeAssistant, *, op: str) -> None:
     # cannot load; setup registers it again.
     _remove_sidebar_panel(hass)
 
-    _drop_entry_runtime(hass)
+    _forget_registration_flags(hass)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -591,29 +598,28 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unloaded
 
 
-def _drop_entry_runtime(hass: HomeAssistant) -> None:
-    """Leave the domain bucket holding only what outlives the config entry.
+def _forget_registration_flags(hass: HomeAssistant) -> None:
+    """Forget that the WebSocket commands and services were registered.
 
-    Home Assistant has no API for unregistering a WebSocket command, so ours go
-    on listening whether the entry is unloaded, disabled or removed. Emptying the
-    bucket is what makes them refuse: `ws._repo` raises `NotLoadedError` without a
-    repository, so every command answers the contract's `storage_error` envelope
-    instead of letting a dashboard left open read — and write — state the entry
-    no longer owns. The same lookup backs the `haventory.*` service handlers.
+    Not the runtime — Home Assistant takes that back itself, and a command
+    refuses from the moment the entry stops being `LOADED`. What is left here is
+    bookkeeping: Home Assistant has no API for unregistering a WebSocket command
+    or a service, so the next setup re-registers over the top, and the offline
+    stub registry — which *can* unregister — needs the handler list at this point
+    to take ours back out.
 
-    `_STATIC_PATH_KEY` and `_MEDIA_VIEW_KEY` are kept: each records an aiohttp
-    route, which cannot be unregistered and so outlives every entry. Dropping
-    either flag would make the next setup in the same run register the same
-    route a second time.
+    `_STATIC_PATH_KEY` and `_MEDIA_VIEW_KEY` stay: each records an aiohttp route,
+    which cannot be unregistered and so outlives every entry. Dropping either
+    flag would make the next setup in the same run register the same route a
+    second time.
     """
 
     bucket = hass.data.get(DOMAIN)
     if not isinstance(bucket, dict):
         return
 
-    kept = {key: bucket[key] for key in (_STATIC_PATH_KEY, _MEDIA_VIEW_KEY) if key in bucket}
-    bucket.clear()
-    bucket.update(kept)
+    for key in ("ws_registered", "services_registered", "ws_handlers"):
+        bucket.pop(key, None)
 
 
 async def async_remove_entry(hass: HomeAssistant, _entry: ConfigEntry) -> None:

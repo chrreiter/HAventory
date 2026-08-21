@@ -22,13 +22,13 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import StorageError
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime, runtime_of
 from ws_helpers import RecordingConn, ws_send
 
 
@@ -42,9 +42,9 @@ class _ConnStub(RecordingConn):
 def _make_hass() -> tuple[HomeAssistant, Repository, DomainStore]:
     hass = HomeAssistant()
     repo = Repository()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    install_runtime(hass, repository=repo)
     store = DomainStore(hass)
-    hass.data[DOMAIN]["store"] = store
+    runtime_of(hass).store = store
     ws_setup(hass)
     return hass, repo, store
 

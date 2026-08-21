@@ -21,21 +21,18 @@ import asyncio
 import logging
 
 import pytest
-from custom_components.haventory import (
-    async_setup,
-    async_setup_entry,
-    async_unload_entry,
-)
 from custom_components.haventory import services as services_mod
 from custom_components.haventory import storage as storage_mod
 from custom_components.haventory import ws as ws_mod
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import NotLoadedError
 from custom_components.haventory.rate_limit import RateLimitConfig, RateLimiter
+from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import repo_of, runtime_of, setup_entry, unload_entry
 from ws_helpers import RecordingConn, ws_call, ws_handler, ws_send
 
 
@@ -50,10 +47,7 @@ async def _setup_entry(hass: HomeAssistant) -> ConfigEntry:
     await DomainStore(hass, key=STORAGE_KEY).async_save(
         {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
     )
-    entry = ConfigEntry()
-    await async_setup(hass, {})
-    assert await async_setup_entry(hass, entry) is True
-    return entry
+    return await setup_entry(hass)
 
 
 @pytest.mark.asyncio
@@ -81,7 +75,7 @@ async def test_command_refuses_while_unloaded(command: str, payload: dict) -> No
     handler = ws_handler(hass, command)
     assert (await ws_call(handler, hass, 1, command, **payload))["success"] is True
 
-    await async_unload_entry(hass, entry)
+    await unload_entry(hass, entry)
 
     res = await ws_call(handler, hass, 2, command, **payload)
     assert res["success"] is False, res
@@ -94,14 +88,16 @@ async def test_unload_drops_the_loaded_runtime() -> None:
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
-    bucket = hass.data[DOMAIN]
-    assert bucket["store"] is not None
-    assert bucket["repository"] is not None
+    runtime = runtime_of(hass)
+    assert runtime.store is not None
+    assert runtime.repository is not None
 
-    await async_unload_entry(hass, entry)
+    await unload_entry(hass, entry)
 
-    for key in ("store", "repository", "rate_limiter", "card_title", "persist_task"):
-        assert hass.data[DOMAIN].get(key) is None, key
+    # Home Assistant deletes the attribute rather than emptying it, so nothing
+    # the entry owned is reachable at all.
+    assert not hasattr(entry, "runtime_data")
+    assert find_runtime(hass) is None
 
 
 @pytest.mark.asyncio
@@ -116,7 +112,7 @@ async def test_unload_keeps_the_static_route_flag() -> None:
     entry = await _setup_entry(hass)
     hass.data[DOMAIN]["static_path_registered"] = True
 
-    await async_unload_entry(hass, entry)
+    await unload_entry(hass, entry)
 
     assert hass.data[DOMAIN].get("static_path_registered") is True
 
@@ -129,7 +125,7 @@ async def test_unload_flushes_before_dropping(monkeypatch) -> None:
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
-    store = hass.data[DOMAIN]["store"]
+    store = runtime_of(hass).store
     saved: list[dict] = []
 
     async def _record(payload: dict) -> None:
@@ -137,11 +133,11 @@ async def test_unload_flushes_before_dropping(monkeypatch) -> None:
 
     monkeypatch.setattr(store, "async_save", _record)
 
-    hass.data[DOMAIN]["repository"].create_item({"name": "Unsaved"})
+    repo_of(hass).create_item({"name": "Unsaved"})
     await storage_mod.async_request_persist(hass)
-    pending = hass.data[DOMAIN]["persist_task"]
+    pending = runtime_of(hass).persist_task
 
-    await async_unload_entry(hass, entry)
+    await unload_entry(hass, entry)
 
     assert len(saved) == 1, "unload writes the pending state out"
     assert [item["name"] for item in saved[0]["items"].values()] == ["Unsaved"]
@@ -160,7 +156,7 @@ async def test_unloaded_service_refuses() -> None:
     entry = await _setup_entry(hass)
     await services_mod.service_item_create(hass, {"name": "Before"})
 
-    await async_unload_entry(hass, entry)
+    await unload_entry(hass, entry)
 
     with pytest.raises(NotLoadedError):
         await services_mod.service_item_create(hass, {"name": "After"})
@@ -189,7 +185,7 @@ async def test_unload_tells_open_subscribers_their_topic_stopped() -> None:
         ]
     conn.messages.clear()
 
-    await async_unload_entry(hass, entry)
+    await unload_entry(hass, entry)
 
     assert [(m["id"], m["event"]["topic"], m["event"]["action"]) for m in conn.messages] == [
         (11, "items", "unavailable"),
@@ -209,7 +205,7 @@ async def test_unload_drops_live_subscriptions() -> None:
     conn = RecordingConn()
     assert (await ws_send(hass, 7, "haventory/subscribe", conn=conn, topic="items"))["success"]
 
-    await async_unload_entry(hass, entry)
+    await unload_entry(hass, entry)
     conn.messages.clear()
 
     ws_mod.broadcast_event(hass, topic="items", action="created", payload={"item": {"id": "x"}})
@@ -238,7 +234,7 @@ async def test_teardown_signal_outranks_the_event_budget() -> None:
             global_events_burst=1.0,
         )
     )
-    hass.data[DOMAIN]["rate_limiter"] = limiter
+    runtime_of(hass).rate_limiter = limiter
     conn = RecordingConn()
     assert (await ws_send(hass, 5, "haventory/subscribe", conn=conn, topic="items"))["success"]
 
@@ -248,7 +244,7 @@ async def test_teardown_signal_outranks_the_event_budget() -> None:
     ws_mod.broadcast_event(hass, topic="items", action="created", payload={"item": {"id": "x"}})
     assert conn.messages == []
 
-    await async_unload_entry(hass, entry)
+    await unload_entry(hass, entry)
 
     assert [m["event"]["action"] for m in conn.messages] == ["unavailable"]
 
@@ -268,10 +264,10 @@ async def test_setup_after_unload_serves_again() -> None:
     assert created["success"] is True
     handler = ws_handler(hass, "haventory/item/list")
 
-    await async_unload_entry(hass, entry)
+    await unload_entry(hass, entry)
     assert (await ws_call(handler, hass, 2, "haventory/item/list"))["success"] is False
 
-    assert await async_setup_entry(hass, ConfigEntry()) is True
+    await setup_entry(hass, entry)
 
     listed = await ws_call(handler, hass, 3, "haventory/item/list")
     assert listed["success"] is True, listed
@@ -284,7 +280,7 @@ async def test_a_reload_writes_nothing_while_it_is_refusing(monkeypatch) -> None
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
-    store = hass.data[DOMAIN]["store"]
+    store = runtime_of(hass).store
     saved: list[dict] = []
 
     async def _record(payload: dict) -> None:
@@ -293,7 +289,7 @@ async def test_a_reload_writes_nothing_while_it_is_refusing(monkeypatch) -> None
     monkeypatch.setattr(store, "async_save", _record)
     handler = ws_handler(hass, "haventory/item/create")
 
-    await async_unload_entry(hass, entry)
+    await unload_entry(hass, entry)
     saved.clear()  # unload's own flush is test_unload_flushes_before_dropping's business
 
     res = await ws_call(handler, hass, 1, "haventory/item/create", name="Ghost")
@@ -301,7 +297,7 @@ async def test_a_reload_writes_nothing_while_it_is_refusing(monkeypatch) -> None
     assert res["success"] is False
     assert saved == []
 
-    assert await async_setup_entry(hass, ConfigEntry()) is True
+    await setup_entry(hass, entry)
     listed = await ws_send(hass, 2, "haventory/item/list")
     assert [item["name"] for item in listed["result"]["items"]] == []
 
@@ -313,7 +309,7 @@ async def test_refusal_is_mapped_not_an_unhandled_crash(caplog) -> None:
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
     handler = ws_handler(hass, "haventory/item/create")
-    await async_unload_entry(hass, entry)
+    await unload_entry(hass, entry)
 
     caplog.set_level(logging.DEBUG, logger="custom_components.haventory.ws")
     res = await ws_call(handler, hass, 1, "haventory/item/create", name="Nope")

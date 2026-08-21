@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import pytest
 from custom_components.haventory.areas import async_get_area_registry
-from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime, repo_of, runtime_of
 from ws_helpers import ws_send
 
 
@@ -25,8 +24,7 @@ async def test_location_crud_and_tree() -> None:
     """Create a small tree, list, get, move via WS, and delete."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     # Seed areas and create root and child
@@ -62,8 +60,7 @@ async def test_ws_location_create_update_area_validation() -> None:
     """Create/update with area validation and serialization of area_id."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     # Unknown area on create → validation_error
@@ -100,8 +97,7 @@ async def test_ws_location_create_update_area_with_non_uuid_id() -> None:
     """WS accepts non-UUID area ids when present in HA area registry."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     reg = await async_get_area_registry(hass)
@@ -123,8 +119,7 @@ async def test_location_error_mapping() -> None:
     """Invalid operations yield validation/not_found errors."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
 
@@ -133,9 +128,9 @@ async def test_ws_location_mutations_persist_to_store(monkeypatch) -> None:
     """Location create/update/delete should persist via DomainStore.save."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    install_runtime(hass)
     store = DomainStore(hass)
-    hass.data[DOMAIN]["store"] = store
+    runtime_of(hass).store = store
     ws_setup(hass)
 
     calls = {"count": 0}
@@ -168,9 +163,9 @@ async def test_location_move_subtree_persists(monkeypatch) -> None:
     """move_subtree persists via DomainStore.async_save."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
+    install_runtime(hass)
     store = DomainStore(hass)
-    hass.data[DOMAIN]["store"] = store
+    runtime_of(hass).store = store
     ws_setup(hass)
 
     calls = {"count": 0}
@@ -204,8 +199,7 @@ async def test_location_tree_includes_item_counts() -> None:
     """Tree nodes carry direct and subtree item counts."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     root = await ws_send(hass, 1, "haventory/location/create", name="Garage")
@@ -228,8 +222,8 @@ async def test_location_tree_includes_item_counts() -> None:
     assert child_node["subtree_item_count"] == 1
 
     # Moving the wrench out of the tree drops both counts
-    items = hass.data[DOMAIN]["repository"].list_items(flt={"q": "wrench"})["items"]
-    hass.data[DOMAIN]["repository"].update_item(items[0].id, {"location_id": None})
+    items = repo_of(hass).list_items(flt={"q": "wrench"})["items"]
+    repo_of(hass).update_item(items[0].id, {"location_id": None})
     res2 = await ws_send(hass, 8, "haventory/location/tree")
     node2 = res2["result"][0]
     assert node2["direct_item_count"] == 1
@@ -243,8 +237,7 @@ async def test_location_tree_reports_matching_counts_for_a_filter() -> None:
     """With a filter, nodes also carry how much of themselves it keeps."""
 
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
 
     root = await ws_send(hass, 1, "haventory/location/create", name="Garage")

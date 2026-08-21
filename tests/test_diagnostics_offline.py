@@ -15,11 +15,12 @@ import pytest
 from custom_components.haventory import diagnostics
 from custom_components.haventory.const import CONF_CARD_TITLE, CONF_TODO_ENTITY_ID, DOMAIN
 from custom_components.haventory.models import ITEM_STATUSES, ItemCreate
-from custom_components.haventory.rate_limit import RateLimitConfig, RateLimiter
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+
+from runtime_helpers import install_runtime, repo_of
 
 STORED_TITLE = "Haus Hoffmann Vorratskammer"
 STORED_ITEM = "Zdrojova kniha 1987"
@@ -46,12 +47,12 @@ def _loaded_hass() -> tuple[HomeAssistant, ConfigEntry]:
             status=STORED_STATUS,
         )
     )
-    hass.data[DOMAIN] = {
-        "store": DomainStore(hass, key=STORAGE_KEY, version=CURRENT_SCHEMA_VERSION),
-        "repository": repo,
-        "card_title": STORED_TITLE,
-        "rate_limiter": RateLimiter(RateLimitConfig.from_options(None)),
-    }
+    install_runtime(
+        hass,
+        repository=repo,
+        store=DomainStore(hass, key=STORAGE_KEY, version=CURRENT_SCHEMA_VERSION),
+        card_title=STORED_TITLE,
+    )
     entry = ConfigEntry(
         options={CONF_CARD_TITLE: STORED_TITLE, CONF_TODO_ENTITY_ID: STORED_TODO_LIST}
     )
@@ -76,12 +77,20 @@ async def test_the_payload_answers_shape_questions() -> None:
     assert repository["counts"]["items_total"] == 1
     assert repository["counts"]["locations_total"] == 1
     assert repository["health_issues"] == []
-    assert repository["generation"] == hass.data[DOMAIN]["repository"].generation
+    assert repository["generation"] == repo_of(hass).generation
+    # Field names, so a report says what the runtime holds without holding any
+    # of it. `repository` naming the object and never its contents is the point.
     assert payload["runtime"]["data_keys"] == [
         "card_title",
+        "low_stock_ids",
+        "persist_lock",
+        "persist_task",
+        "quick_filters",
         "rate_limiter",
         "repository",
         "store",
+        "subscriptions",
+        "todo",
     ]
     assert payload["runtime"]["rate_limit"] == {
         "enabled": False,

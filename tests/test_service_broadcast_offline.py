@@ -23,13 +23,12 @@ import pytest
 from custom_components.haventory import events as events_mod
 from custom_components.haventory import rate_limit as rate_limit_module
 from custom_components.haventory import services as services_mod
-from custom_components.haventory.const import DOMAIN, EVENT_ITEM_CHANGED
+from custom_components.haventory.const import EVENT_ITEM_CHANGED
 from custom_components.haventory.rate_limit import RateLimitConfig, RateLimiter
-from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime
 from ws_helpers import RecordingConn, ws_send
 
 _BULK_ROWS = 3
@@ -37,11 +36,7 @@ _BULK_ROWS = 3
 
 def _hass(limiter: RateLimiter | None = None) -> HomeAssistant:
     hass = HomeAssistant()
-    bucket = hass.data.setdefault(DOMAIN, {})
-    bucket["repository"] = Repository()
-    bucket["store"] = DomainStore(hass)
-    if limiter is not None:
-        bucket["rate_limiter"] = limiter
+    install_runtime(hass, rate_limiter=limiter)
     ws_setup(hass)
     events_mod.seed_low_stock_snapshot(hass)
     return hass

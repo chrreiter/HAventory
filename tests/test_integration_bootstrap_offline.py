@@ -2,17 +2,18 @@
 
 Scenarios:
 - async_setup initializes hass.data[DOMAIN] without side effects
-- async_setup_entry creates a Store in hass.data[DOMAIN]["store"]
+- async_setup_entry creates a Store in runtime_of(hass).store
 """
 
 import pytest
-from custom_components.haventory import async_setup, async_setup_entry
+from custom_components.haventory import async_setup
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import repo_of, runtime_of, setup_entry
 from ws_helpers import ws_send
 
 
@@ -33,25 +34,19 @@ async def test_async_setup_initializes_domain_bucket() -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_exposes_store_on_domain_bucket() -> None:
-    """async_setup_entry populates hass.data[DOMAIN]["store"]."""
+async def test_async_setup_entry_puts_the_runtime_on_the_entry() -> None:
+    """Setup builds the runtime and hands it to Home Assistant, not to a dict."""
 
-    # Arrange
     hass = HomeAssistant()
 
     class _DummyEntry(ConfigEntry):
         pass
 
-    entry = _DummyEntry()
+    entry = await setup_entry(hass, _DummyEntry())
 
-    # Act
-    result = await async_setup_entry(hass, entry)
-
-    # Assert
-    assert result is True
-    assert DOMAIN in hass.data
-    assert isinstance(hass.data[DOMAIN], dict)
-    assert "store" in hass.data[DOMAIN]
+    assert isinstance(entry.runtime_data.store, DomainStore)
+    assert isinstance(entry.runtime_data.repository, Repository)
+    assert runtime_of(hass) is entry.runtime_data
 
 
 @pytest.mark.asyncio
@@ -69,12 +64,10 @@ async def test_async_setup_entry_loads_repository_from_store_and_ws_reads() -> N
     class _DummyEntry(ConfigEntry):
         pass
 
-    entry = _DummyEntry()
-    ok = await async_setup_entry(hass, entry)
-    assert ok is True
+    await setup_entry(hass, _DummyEntry())
 
     # Repository is hydrated
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     assert repo.get_item(item.id).name == "SeedItem"
 
     # And WS commands are registered and can read the same item

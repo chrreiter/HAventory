@@ -26,6 +26,7 @@ assuming a loaded runtime.
 
 from __future__ import annotations
 
+from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +40,7 @@ from .health import collect_health_issues
 from .models import ITEM_STATUSES
 from .rate_limit import RateLimiter
 from .repository import Repository
+from .runtime import find_runtime
 from .storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore
 
 # What the entry's options can carry that the household chose the words for. The
@@ -118,9 +120,9 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Build the diagnostics payload for the HAventory config entry."""
 
-    bucket = hass.data.get(DOMAIN) or {}
-    store = bucket.get("store")
-    repo = bucket.get("repository")
+    runtime = find_runtime(hass)
+    store = runtime.store if runtime is not None else None
+    repo = runtime.repository if runtime is not None else None
 
     # Off the event loop, the way `stale_files` does its own filesystem work.
     bundle = await hass.async_add_executor_job(_bundle_state, _CARD_BUNDLE_PATH)
@@ -141,12 +143,17 @@ async def async_get_config_entry_diagnostics(
         },
         "repository": _repository_block(repo if isinstance(repo, Repository) else None),
         "runtime": {
-            # Key names, never values: the bucket holds the repository itself,
-            # and a dump of it would be the whole inventory.
-            "data_keys": sorted(str(key) for key in bucket),
+            # Field names, never values: the runtime holds the repository
+            # itself, and a dump of it would be the whole inventory. Empty when
+            # no entry is loaded, which is the first thing to read here.
+            "data_keys": sorted(f.name for f in fields(runtime)) if runtime is not None else [],
+            # What is left in the shared domain bucket: the flags recording
+            # registrations Home Assistant cannot hand back, which say whether a
+            # route or a panel is already in place.
+            "shared_keys": sorted(str(key) for key in (hass.data.get(DOMAIN) or {})),
             "rate_limit": _rate_limit_block(
-                bucket.get("rate_limiter")
-                if isinstance(bucket.get("rate_limiter"), RateLimiter)
+                runtime.rate_limiter
+                if runtime is not None and isinstance(runtime.rate_limiter, RateLimiter)
                 else None
             ),
         },

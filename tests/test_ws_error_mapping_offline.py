@@ -21,21 +21,18 @@ from typing import Any
 import pytest
 from custom_components.haventory import ws as ws_module
 from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import UNEXPECTED_ERROR_MESSAGE
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime, repo_of
 from ws_helpers import RecordingConn, ws_send
 
 
 def _make_hass(*, with_repo: bool = True) -> HomeAssistant:
     hass = HomeAssistant()
-    bucket = hass.data.setdefault(DOMAIN, {})
     if with_repo:
-        bucket["repository"] = Repository()
-        bucket["store"] = DomainStore(hass)
+        install_runtime(hass)
     ws_setup(hass)
     return hass
 
@@ -136,7 +133,7 @@ async def test_bulk_malformed_custom_fields_payload_fails_only_that_op() -> None
     """A payload that would raise TypeError fails per-op as validation_error."""
 
     hass = _make_hass()
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     item = repo.create_item({"name": "Widget", "quantity": 1})
 
     conn = RecordingConn()
@@ -180,7 +177,7 @@ async def test_bulk_payload_field_validation_errors() -> None:
     """Missing/typed-wrong per-op payload fields fail their own op only."""
 
     hass = _make_hass()
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     item = repo.create_item({"name": "Widget", "quantity": 1})
 
     res = await ws_send(
@@ -223,7 +220,7 @@ async def test_bulk_unexpected_per_op_error_is_contained(monkeypatch) -> None:
     """An unexpected exception in one op yields per-op unknown_error only."""
 
     hass = _make_hass()
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     item = repo.create_item({"name": "Widget", "quantity": 1})
 
     def _boom(_hass: HomeAssistant, _payload: dict) -> tuple[dict, str]:
@@ -274,5 +271,5 @@ async def test_broadcast_failure_does_not_fail_the_command(monkeypatch) -> None:
 
     res = await ws_send(hass, 101, "haventory/item/create", conn=conn, name="Widget")
     assert res["success"] is True
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
     assert repo.get_counts()["items_total"] == 1

@@ -11,12 +11,10 @@ fails loudly rather than returning nothing.
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime
 from ws_helpers import RecordingConn, ws_call, ws_handler, ws_send
 
 # One frame id, reused: what matters is that the envelope echoes the one sent.
@@ -25,9 +23,7 @@ FRAME_ID = 7
 
 def _make_hass() -> HomeAssistant:
     hass = HomeAssistant()
-    bucket = hass.data.setdefault(DOMAIN, {})
-    bucket["repository"] = Repository()
-    bucket["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
     return hass
 

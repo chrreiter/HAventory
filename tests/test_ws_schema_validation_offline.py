@@ -25,13 +25,11 @@ from typing import Any
 
 import pytest
 import voluptuous as vol
-from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import install_runtime, repo_of
 from ws_helpers import RecordingConn, ws_send
 
 INVALID_FORMAT = "invalid_format"
@@ -70,8 +68,7 @@ class _Probe:
 
 def _fresh_hass() -> HomeAssistant:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = Repository()
-    hass.data[DOMAIN]["store"] = DomainStore(hass)
+    install_runtime(hass)
     ws_setup(hass)
     return hass
 
@@ -236,7 +233,7 @@ async def test_a_real_command_refuses_a_wrong_typed_field_and_mutates_nothing() 
     """
 
     hass = _fresh_hass()
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
 
     res = await ws_send(hass, 1, "haventory/item/create", name="Hammer", tags="chisel")
 
@@ -256,7 +253,7 @@ async def test_the_widened_fields_answer_validation_error_and_mutate_nothing() -
     """
 
     hass = _fresh_hass()
-    repo = hass.data[DOMAIN]["repository"]
+    repo = repo_of(hass)
 
     for payload in (
         {"name": "Hammer", "quantity": "many"},

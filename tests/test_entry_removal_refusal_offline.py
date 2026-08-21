@@ -20,18 +20,15 @@ import asyncio
 import logging
 
 import pytest
-from custom_components.haventory import (
-    async_remove_entry,
-    async_setup,
-    async_setup_entry,
-)
 from custom_components.haventory import storage as storage_mod
 from custom_components.haventory import ws as ws_mod
 from custom_components.haventory.const import DOMAIN
+from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from runtime_helpers import remove_entry, repo_of, runtime_of, setup_entry
 from ws_helpers import RecordingConn, ws_send
 
 WS_LOGGER = "custom_components.haventory.ws"
@@ -48,10 +45,7 @@ async def _setup_entry(hass: HomeAssistant) -> ConfigEntry:
     await DomainStore(hass, key=STORAGE_KEY).async_save(
         {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
     )
-    entry = ConfigEntry()
-    await async_setup(hass, {})
-    assert await async_setup_entry(hass, entry) is True
-    return entry
+    return await setup_entry(hass)
 
 
 @pytest.mark.asyncio
@@ -77,7 +71,7 @@ async def test_command_refuses_after_removal(command: str, payload: dict) -> Non
     entry = await _setup_entry(hass)
     assert (await ws_send(hass, 1, command, **payload))["success"] is True
 
-    await async_remove_entry(hass, entry)
+    await remove_entry(hass, entry)
 
     res = await ws_send(hass, 2, command, **payload)
     assert res["success"] is False, res
@@ -90,7 +84,7 @@ async def test_refusal_is_mapped_not_an_unhandled_crash(caplog) -> None:
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
-    await async_remove_entry(hass, entry)
+    await remove_entry(hass, entry)
 
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
     res = await ws_send(hass, 1, "haventory/item/create", name="Nope")
@@ -107,7 +101,7 @@ async def test_removal_stops_persistence(monkeypatch) -> None:
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
-    store = hass.data[DOMAIN]["store"]
+    store = runtime_of(hass).store
     saved: list[dict] = []
 
     async def _record(payload: dict) -> None:
@@ -115,7 +109,7 @@ async def test_removal_stops_persistence(monkeypatch) -> None:
 
     monkeypatch.setattr(store, "async_save", _record)
 
-    await async_remove_entry(hass, entry)
+    await remove_entry(hass, entry)
     saved.clear()  # removal's own flush is test_removal_flushes_before_dropping's business
 
     res = await ws_send(hass, 1, "haventory/item/create", name="Ghost")
@@ -132,7 +126,7 @@ async def test_removal_flushes_before_dropping(monkeypatch) -> None:
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
-    store = hass.data[DOMAIN]["store"]
+    store = runtime_of(hass).store
     saved: list[dict] = []
 
     async def _record(payload: dict) -> None:
@@ -140,11 +134,11 @@ async def test_removal_flushes_before_dropping(monkeypatch) -> None:
 
     monkeypatch.setattr(store, "async_save", _record)
 
-    hass.data[DOMAIN]["repository"].create_item({"name": "Unsaved"})
+    repo_of(hass).create_item({"name": "Unsaved"})
     await storage_mod.async_request_persist(hass)
-    pending = hass.data[DOMAIN]["persist_task"]
+    pending = runtime_of(hass).persist_task
 
-    await async_remove_entry(hass, entry)
+    await remove_entry(hass, entry)
 
     assert len(saved) == 1, "removal writes the pending state out"
     assert [item["name"] for item in saved[0]["items"].values()] == ["Unsaved"]
@@ -161,14 +155,16 @@ async def test_removal_drops_the_loaded_runtime() -> None:
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
-    bucket = hass.data[DOMAIN]
-    assert bucket["store"] is not None
-    assert bucket["repository"] is not None
+    runtime = runtime_of(hass)
+    assert runtime.store is not None
+    assert runtime.repository is not None
 
-    await async_remove_entry(hass, entry)
+    await remove_entry(hass, entry)
 
-    for key in ("store", "repository", "rate_limiter", "card_title", "persist_task"):
-        assert hass.data[DOMAIN].get(key) is None, key
+    # Home Assistant deletes the attribute rather than emptying it, so nothing
+    # the entry owned is reachable at all.
+    assert not hasattr(entry, "runtime_data")
+    assert find_runtime(hass) is None
 
 
 @pytest.mark.asyncio
@@ -183,7 +179,7 @@ async def test_removal_keeps_the_static_route_flag() -> None:
     entry = await _setup_entry(hass)
     hass.data[DOMAIN]["static_path_registered"] = True
 
-    await async_remove_entry(hass, entry)
+    await remove_entry(hass, entry)
 
     assert hass.data[DOMAIN].get("static_path_registered") is True
 
@@ -197,7 +193,7 @@ async def test_removal_drops_live_subscriptions() -> None:
     conn = RecordingConn()
     assert (await ws_send(hass, 7, "haventory/subscribe", conn=conn, topic="items"))["success"]
 
-    await async_remove_entry(hass, entry)
+    await remove_entry(hass, entry)
     conn.messages.clear()
 
     ws_mod.broadcast_event(hass, topic="items", action="created", payload={"item": {"id": "x"}})
@@ -215,10 +211,10 @@ async def test_re_adding_the_entry_restores_service() -> None:
     created = await ws_send(hass, 1, "haventory/item/create", name="Screwdriver")
     assert created["success"] is True
 
-    await async_remove_entry(hass, entry)
+    await remove_entry(hass, entry)
     assert (await ws_send(hass, 2, "haventory/item/list"))["success"] is False
 
-    assert await async_setup_entry(hass, ConfigEntry()) is True
+    await setup_entry(hass)
 
     listed = await ws_send(hass, 3, "haventory/item/list")
     assert listed["success"] is True, listed

@@ -26,13 +26,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.import_export import build_export_document
 from custom_components.haventory.models import EMPTY_LOCATION_PATH, Item, Location, LocationPath
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.serialization import serialize_item, serialize_location
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 from homeassistant.core import HomeAssistant
+
+from runtime_helpers import install_runtime
 
 GOLDEN = Path(__file__).resolve().parent / "fixtures" / "stored_payload.json"
 
@@ -83,7 +84,7 @@ def loaded_repository() -> Repository:
 
 def hass_with(repo: Repository) -> HomeAssistant:
     hass = HomeAssistant()
-    hass.data.setdefault(DOMAIN, {})["repository"] = repo
+    install_runtime(hass, repository=repo)
     return hass
 
 

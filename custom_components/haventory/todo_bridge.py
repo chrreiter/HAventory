@@ -19,7 +19,6 @@ rollback.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -38,6 +37,7 @@ from .const import (
     TODO_LINKS_STORAGE_KEY,
     TODO_LINKS_STORAGE_VERSION,
 )
+from .runtime import HAventoryRuntime, find_runtime
 
 LOGGER = logging.getLogger(__name__)
 
@@ -59,13 +59,6 @@ TODO_FEATURE_DELETE_ITEM_NAME = "todo.TodoListEntityFeature.DELETE_TODO_ITEM"
 # x2" would carry. It is what the card prints against a quantity, so the list
 # and the card read the same way.
 MULTIPLICATION_SIGN = "\u00d7"
-
-# `hass.data[DOMAIN]` keys, all entry-scoped — unload empties the bucket and the
-# next setup rebuilds them.
-_LINKS_KEY = "todo_links"
-_STORE_KEY = "todo_link_store"
-_LOCK_KEY = "todo_lock"
-_ENTITY_KEY = "todo_entity_id"
 
 
 def summary_for(name: str, quantity: int, threshold: int) -> str:
@@ -90,17 +83,21 @@ def configured_entity_id(entry: ConfigEntry) -> str:
 def apply_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Record which list the bridge writes to, from the entry's options."""
 
-    hass.data.setdefault(DOMAIN, {})[_ENTITY_KEY] = configured_entity_id(entry)
+    runtime = find_runtime(hass)
+    if runtime is None:
+        return
+    runtime.todo.entity_id = configured_entity_id(entry)
 
 
 async def async_setup(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Load the link map, subscribe to the mutation events, run a first pass."""
 
-    bucket = hass.data.setdefault(DOMAIN, {})
+    runtime = find_runtime(hass)
+    if runtime is None:
+        return
     store: Store[dict[str, Any]] = Store(hass, TODO_LINKS_STORAGE_VERSION, TODO_LINKS_STORAGE_KEY)
-    bucket[_STORE_KEY] = store
-    bucket[_LOCK_KEY] = asyncio.Lock()
-    bucket[_LINKS_KEY] = await _async_load_links(store)
+    runtime.todo.store = store
+    runtime.todo.links = await _async_load_links(store)
     apply_options(hass, entry)
 
     on_unload = getattr(entry, "async_on_unload", None)
@@ -141,18 +138,15 @@ async def async_reconcile(hass: HomeAssistant) -> None:
     to-do list that refuses must not turn a saved change into a failed one.
     """
 
-    bucket = hass.data.get(DOMAIN)
-    if not isinstance(bucket, dict):
-        return
-    lock = bucket.get(_LOCK_KEY)
-    if lock is None:
-        # No bridge in this bucket: the entry was torn down between the write
-        # and this call, or never set one up.
+    runtime = find_runtime(hass)
+    if runtime is None or runtime.todo.store is None:
+        # The entry was torn down between the write and this call, or never set
+        # a bridge up at all.
         return
 
     try:
-        async with lock:
-            await _async_reconcile_locked(hass, bucket)
+        async with runtime.todo.lock:
+            await _async_reconcile_locked(hass, runtime)
     except Exception:
         LOGGER.exception(
             "Failed to reconcile the to-do list",
@@ -160,15 +154,12 @@ async def async_reconcile(hass: HomeAssistant) -> None:
         )
 
 
-async def _async_reconcile_locked(hass: HomeAssistant, bucket: dict[str, Any]) -> None:
+async def _async_reconcile_locked(hass: HomeAssistant, runtime: HAventoryRuntime) -> None:
     """One pass, with the bridge lock held so two triggers cannot interleave."""
 
-    repo = bucket.get("repository")
-    links: dict[str, dict[str, str]] | None = bucket.get(_LINKS_KEY)
-    if repo is None or links is None:
-        return
-
-    entity_id: str = bucket.get(_ENTITY_KEY) or ""
+    repo = runtime.repository
+    links = runtime.todo.links
+    entity_id = runtime.todo.entity_id
     if not entity_id:
         # Off. The map is kept rather than retracted: clearing the option means
         # "stop managing the list", not "delete what is on it", and keeping it
@@ -194,7 +185,7 @@ async def _async_reconcile_locked(hass: HomeAssistant, bucket: dict[str, Any]) -
         # `finally`, so a pass that dies halfway still records the lines it did
         # write — losing them would mean writing them all a second time.
         if links != before:
-            await _async_save_links(bucket)
+            await _async_save_links(runtime)
 
 
 async def _async_retract(
@@ -445,16 +436,15 @@ async def _async_load_links(store: Store[dict[str, Any]]) -> dict[str, dict[str,
     return links
 
 
-async def _async_save_links(bucket: dict[str, Any]) -> None:
+async def _async_save_links(runtime: HAventoryRuntime) -> None:
     """Write the map out. A failed write costs duplicates, never the inventory."""
 
-    store = bucket.get(_STORE_KEY)
-    links = bucket.get(_LINKS_KEY)
-    if store is None or links is None:
+    store = runtime.todo.store
+    if store is None:
         return
 
     try:
-        await store.async_save({"links": links})
+        await store.async_save({"links": runtime.todo.links})
     except Exception:
         LOGGER.warning(
             "Could not save the to-do link map; lines already on the list may be written again",

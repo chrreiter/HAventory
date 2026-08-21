@@ -17,6 +17,7 @@ from custom_components.haventory.const import (
     ISSUE_CORRUPT_STORE,
     ISSUE_SCHEMA_DOWNGRADE,
 )
+from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.components.repairs import repairs_flow_manager
 from homeassistant.config_entries import ConfigEntryState
@@ -111,7 +112,7 @@ async def test_a_corrupt_row_offers_a_fix_that_backs_up_reloads_and_clears(
     assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_CORRUPT_STORE) is None
 
     # Loaded with the readable remainder, and the opt-in spent rather than kept.
-    repo = hass.data[DOMAIN]["repository"]
+    repo = find_runtime(hass).repository
     assert repo.get_counts()["items_total"] == 1
     assert repo.get_item(READABLE_ITEM_ID).name == "Hammer"
     assert CONF_ALLOW_LOSSY_LOAD not in entry.options
@@ -174,7 +175,7 @@ async def test_the_repair_survives_a_restart_with_no_mutation_in_between(
 
     assert entry.state is ConfigEntryState.LOADED
     assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_CORRUPT_STORE) is None
-    assert hass.data[DOMAIN]["repository"].get_counts()["items_total"] == 1
+    assert find_runtime(hass).repository.get_counts()["items_total"] == 1
 
 
 async def test_a_clean_load_spends_an_opt_in_left_on_the_entry(
@@ -253,7 +254,7 @@ async def test_a_row_with_no_name_reaches_the_repairs_card_and_its_fix(
     assert entry.state is ConfigEntryState.LOADED
     assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_CORRUPT_STORE) is None
 
-    repo = hass.data[DOMAIN]["repository"]
+    repo = find_runtime(hass).repository
     assert repo.get_counts()["items_total"] == 1
     assert repo.get_item(READABLE_ITEM_ID).name == "Hammer"
     # The dropped row survives in the copy, with its name still null — a backup
@@ -287,4 +288,4 @@ async def test_a_stored_name_over_the_cap_is_not_corruption(
 
     assert entry.state is ConfigEntryState.LOADED
     assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_CORRUPT_STORE) is None
-    assert hass.data[DOMAIN]["repository"].get_item(READABLE_ITEM_ID).name == "L" * 400
+    assert find_runtime(hass).repository.get_item(READABLE_ITEM_ID).name == "L" * 400

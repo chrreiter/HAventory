@@ -35,13 +35,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
-    DATA_LOW_STOCK_SNAPSHOT,
     DOMAIN,
     EVENT_ITEM_CHANGED,
     EVENT_LOW_STOCK,
     SIGNAL_INVENTORY_CHANGED,
 )
 from .models import iso_utc_now
+from .runtime import HAventoryRuntime, find_runtime
 
 LOGGER = logging.getLogger(__name__)
 
@@ -78,16 +78,15 @@ def _broadcast_counts(hass: HomeAssistant) -> None:
 def seed_low_stock_snapshot(hass: HomeAssistant) -> None:
     """Record which items are low at setup, so a restart re-announces nothing.
 
-    Called once the repository is in the bucket. Without it the first mutation
-    after every restart would diff against an empty set and fire `entered` for
-    every item that was already low before the restart.
+    Called once the runtime is on the entry. Without it the first mutation after
+    every restart would diff against an empty set and fire `entered` for every
+    item that was already low before the restart.
     """
 
-    bucket = hass.data.get(DOMAIN)
-    if bucket is None:
+    runtime = find_runtime(hass)
+    if runtime is None:
         return
-    repo = bucket.get("repository")
-    bucket[DATA_LOW_STOCK_SNAPSHOT] = repo.low_stock_item_ids if repo is not None else frozenset()
+    runtime.low_stock_ids = runtime.repository.low_stock_item_ids
 
 
 def notify_mutation(
@@ -117,8 +116,8 @@ def notify_mutation(
     """
 
     try:
-        bucket = hass.data.get(DOMAIN)
-        if bucket is None:
+        runtime = find_runtime(hass)
+        if runtime is None:
             # The entry tore down between the write and this call. Nothing to
             # notify and nothing to diff against.
             return
@@ -127,7 +126,7 @@ def notify_mutation(
             _broadcast_event(hass, topic="items", action=action, payload={"item": item})
             _fire_item_changed(hass, action, item)
 
-        _fire_low_stock_transitions(hass, bucket, item=item)
+        _fire_low_stock_transitions(hass, runtime, item=item)
 
         async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED)
 
@@ -160,8 +159,8 @@ def notify_bulk_mutation(
     """
 
     try:
-        bucket = hass.data.get(DOMAIN)
-        if bucket is None:
+        runtime = find_runtime(hass)
+        if runtime is None:
             return
 
         # One `items` event for the batch, carrying no row: a subscriber is
@@ -174,7 +173,7 @@ def notify_bulk_mutation(
 
         # `item=None`: the diff covers the batch, and no single row is the one
         # a crossing should be attributed to.
-        _fire_low_stock_transitions(hass, bucket, item=None)
+        _fire_low_stock_transitions(hass, runtime, item=None)
 
         async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED)
         _broadcast_counts(hass)
@@ -227,7 +226,7 @@ def notify_location_changed(hass: HomeAssistant) -> None:
     """
 
     try:
-        if hass.data.get(DOMAIN) is None:
+        if find_runtime(hass) is None:
             return
         async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED)
     except Exception:  # pragma: no cover - defensive
@@ -256,7 +255,7 @@ def _fire_item_changed(hass: HomeAssistant, action: str, item: dict[str, Any]) -
 
 
 def _fire_low_stock_transitions(
-    hass: HomeAssistant, bucket: dict[str, Any], *, item: dict[str, Any] | None
+    hass: HomeAssistant, runtime: HAventoryRuntime, *, item: dict[str, Any] | None
 ) -> None:
     """Fire `entered` / `cleared` for the ids that crossed the threshold.
 
@@ -265,15 +264,12 @@ def _fire_low_stock_transitions(
     needs a pre-mutation read of its own.
     """
 
-    repo = bucket.get("repository")
-    if repo is None:
-        return
-
-    previous: frozenset[str] = bucket.get(DATA_LOW_STOCK_SNAPSHOT) or frozenset()
+    repo = runtime.repository
+    previous = runtime.low_stock_ids
     current = repo.low_stock_item_ids
     if current == previous:
         return
-    bucket[DATA_LOW_STOCK_SNAPSHOT] = current
+    runtime.low_stock_ids = current
 
     for item_id in current - previous:
         _fire(hass, EVENT_LOW_STOCK, _low_stock_payload(repo, item_id, "entered", item))

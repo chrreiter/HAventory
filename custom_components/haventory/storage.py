@@ -20,7 +20,7 @@ import logging
 import time
 from collections.abc import Mapping
 from copy import deepcopy
-from typing import Any, Final, cast
+from typing import Any, Final
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
@@ -34,6 +34,7 @@ from .exceptions import (
     StorageError,
 )
 from .models import seed_status_definitions, serialize_status_definition
+from .runtime import find_runtime
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -163,23 +164,11 @@ async def async_backup_store(
     return True
 
 
-def _get_persist_lock(hass: HomeAssistant) -> asyncio.Lock:
-    """Get or create the persistence lock for this hass instance.
-
-    Returns a per-hass-instance asyncio.Lock to serialize persistence operations
-    and prevent race conditions from concurrent saves.
-    """
-    bucket = hass.data.setdefault(DOMAIN, {})
-    if "persist_lock" not in bucket:
-        bucket["persist_lock"] = asyncio.Lock()
-    return cast("asyncio.Lock", bucket["persist_lock"])
-
-
 class DomainStore:
     """Schema-aware wrapper around Home Assistant's Store for HAventory.
 
-    This class centralizes storage access and schema migrations. It should be
-    exposed via ``hass.data[DOMAIN]["store"]``.
+    This class centralizes storage access and schema migrations. One instance per
+    config entry, held on the entry's runtime.
 
     Note: HA's Store version is fixed at 1 to avoid HA's internal migration
     mechanism. All versioning is handled via `schema_version` in the payload.
@@ -342,25 +331,25 @@ class DomainStore:
 
 
 async def async_persist_repo(hass: HomeAssistant) -> None:
-    """Persist the current repository state via DomainStore with exclusive locking.
+    """Persist the current repository state, one writer at a time.
 
-    Looks up both the storage manager and repository in hass.data[DOMAIN].
-    Fails fast with StorageError if prerequisites are missing to avoid
-    silent data loss. Callers should ensure setup completed successfully.
+    Reads the store and the repository off the entry's runtime, and refuses with
+    `NotLoadedError` when there is none rather than silently writing nothing.
+    Deliberately **not** the loaded-entry lookup: teardown flushes through here
+    while the entry is already `UNLOAD_IN_PROGRESS`, and a loaded check would
+    turn the last write into a no-op.
 
-    Uses an asyncio.Lock to serialize concurrent persistence operations and
-    prevent race conditions from multiple handlers attempting to save simultaneously.
+    The lock is the runtime's, so it serializes exactly the writes that go to
+    that entry's one store file.
     """
 
-    lock = _get_persist_lock(hass)
-    async with lock:
-        bucket = hass.data.get(DOMAIN) or {}
-        store = bucket.get("store")
-        repo = bucket.get("repository")
-        if store is None:
-            raise NotLoadedError("storage manager not initialized; run integration setup")
-        if repo is None:
-            raise NotLoadedError("repository not initialized; run integration setup")
+    runtime = find_runtime(hass)
+    if runtime is None:
+        raise NotLoadedError("HAventory runtime not initialized; run integration setup")
+
+    async with runtime.persist_lock:
+        store = runtime.store
+        repo = runtime.repository
 
         start_time = time.monotonic()
         generation = getattr(repo, "generation", None)
@@ -408,9 +397,11 @@ def cancel_pending_persist(hass: HomeAssistant, *, op: str = "persist_cancel") -
     write would read — has to clear the pending task first, or it fires against
     state that has moved on.
     """
-    bucket = hass.data.setdefault(DOMAIN, {})
+    runtime = find_runtime(hass)
+    if runtime is None:
+        return
 
-    existing_task = bucket.get("persist_task")
+    existing_task = runtime.persist_task
     if existing_task is None or existing_task.done():
         return
 
@@ -431,7 +422,9 @@ async def async_request_persist(hass: HomeAssistant) -> None:
 
     The debounce delay is PERSIST_DEBOUNCE_DELAY (1.0 seconds by default).
     """
-    bucket = hass.data.setdefault(DOMAIN, {})
+    runtime = find_runtime(hass)
+    if runtime is None:
+        raise NotLoadedError("HAventory runtime not initialized; run integration setup")
 
     cancel_pending_persist(hass, op="persist_debounce_cancel")
 
@@ -465,7 +458,7 @@ async def async_request_persist(hass: HomeAssistant) -> None:
     # Schedule through HA rather than asyncio directly: hass tracks the task and
     # cancels/awaits it during shutdown, so a pending debounce cannot outlive the
     # event loop.
-    bucket["persist_task"] = hass.async_create_background_task(
+    runtime.persist_task = hass.async_create_background_task(
         _delayed_persist(), name=f"{DOMAIN} debounced persist"
     )
 

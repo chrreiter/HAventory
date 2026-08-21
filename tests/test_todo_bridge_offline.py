@@ -23,7 +23,6 @@ import pytest
 from custom_components.haventory import todo_bridge
 from custom_components.haventory.const import (
     CONF_TODO_ENTITY_ID,
-    DOMAIN,
     EVENT_ITEM_CHANGED,
     EVENT_LOW_STOCK,
     TODO_LINKS_STORAGE_KEY,
@@ -35,6 +34,8 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
+
+from runtime_helpers import install_runtime, runtime_of
 
 TODO_ENTITY = "todo.shopping_list"
 OTHER_ENTITY = "todo.household"
@@ -91,9 +92,9 @@ async def _bridge(
 ) -> tuple[HomeAssistant, Repository, _Services, ConfigEntry]:
     """A hass with a loaded repository and the bridge set up against it.
 
-    The repository goes into the bucket before setup, as `async_setup_entry`
-    puts it there — the bridge's first pass reads it, so a test that seeds it
-    afterwards is not testing the same sequence Home Assistant runs.
+    The runtime goes onto the entry before setup, as `async_setup_entry` puts it
+    there — the bridge's first pass reads the repository off it, so a test that
+    seeds it afterwards is not testing the same sequence Home Assistant runs.
     """
 
     hass = HomeAssistant()
@@ -101,13 +102,15 @@ async def _bridge(
     services = _Services()
     hass.services = services  # type: ignore[attr-defined]
     repository = repo if repo is not None else Repository()
-    hass.data[DOMAIN] = {"repository": repository}
+    entry = ConfigEntry(options={CONF_TODO_ENTITY_ID: entity_id})
+    install_runtime(
+        hass, repository=repository, entry=entry, options={CONF_TODO_ENTITY_ID: entity_id}
+    )
     if available:
         hass.states.async_set(entity_id, "0")
     if not keep_links:
         await _forget_links(hass)
 
-    entry = ConfigEntry(options={CONF_TODO_ENTITY_ID: entity_id})
     await todo_bridge.async_setup(hass, entry)
     return hass, repository, services, entry
 
@@ -179,13 +182,13 @@ async def test_a_refused_add_leaves_the_item_unlinked_so_the_next_pass_retries()
 
     await todo_bridge.async_reconcile(hass)
     assert services.names == [ADD]
-    assert hass.data[DOMAIN]["todo_links"] == {}
+    assert runtime_of(hass).todo.links == {}
 
     services.refuse = set()
     services.clear()
     await todo_bridge.async_reconcile(hass)
     assert services.names == [ADD]
-    assert list(hass.data[DOMAIN]["todo_links"].values()) == [
+    assert list(runtime_of(hass).todo.links.values()) == [
         {"entity_id": TODO_ENTITY, "summary": f"Peanut butter {TIMES}2"}
     ]
 
@@ -208,7 +211,7 @@ async def test_a_refused_removal_gives_up_the_link() -> None:
     repo.set_quantity(str(item.id), THRESHOLD + 1)
     await todo_bridge.async_reconcile(hass)
     assert services.names == [REMOVE]
-    assert hass.data[DOMAIN]["todo_links"] == {}
+    assert runtime_of(hass).todo.links == {}
 
     # And the retraction is not attempted a second time on the next pass.
     services.clear()
@@ -240,7 +243,7 @@ async def test_clearing_the_option_stops_writing_without_retracting() -> None:
     todo_bridge.apply_options(hass, entry)
     await todo_bridge.async_reconcile(hass)
     assert services.calls == []
-    assert len(hass.data[DOMAIN]["todo_links"]) == 1
+    assert len(runtime_of(hass).todo.links) == 1
 
 
 @pytest.mark.asyncio
@@ -260,7 +263,7 @@ async def test_changing_the_list_moves_the_lines_across() -> None:
     assert services.names == [REMOVE, ADD]
     assert services.calls[0][1]["entity_id"] == TODO_ENTITY
     assert services.calls[1][1]["entity_id"] == OTHER_ENTITY
-    assert list(hass.data[DOMAIN]["todo_links"].values()) == [
+    assert list(runtime_of(hass).todo.links.values()) == [
         {"entity_id": OTHER_ENTITY, "summary": f"Peanut butter {TIMES}2"}
     ]
 
@@ -277,7 +280,7 @@ async def test_a_missing_or_unavailable_list_is_left_alone_until_it_answers() ->
 
     await todo_bridge.async_reconcile(hass)
     assert services.calls == []
-    assert hass.data[DOMAIN]["todo_links"] == {}
+    assert runtime_of(hass).todo.links == {}
 
     hass.states.async_set(TODO_ENTITY, STATE_UNAVAILABLE)
     await todo_bridge.async_reconcile(hass)
@@ -306,7 +309,7 @@ async def test_a_line_is_restated_when_the_shortfall_moves() -> None:
         "item": f"Peanut butter {TIMES}1",
         "rename": f"Peanut butter {TIMES}3",
     }
-    assert list(hass.data[DOMAIN]["todo_links"].values()) == [
+    assert list(runtime_of(hass).todo.links.values()) == [
         {"entity_id": TODO_ENTITY, "summary": f"Peanut butter {TIMES}3"}
     ]
 
@@ -323,7 +326,7 @@ async def test_a_refused_restatement_keeps_the_link_on_the_text_already_there() 
     services.clear()
     repo.set_quantity(str(item.id), 0)
     await todo_bridge.async_reconcile(hass)
-    assert list(hass.data[DOMAIN]["todo_links"].values()) == [
+    assert list(runtime_of(hass).todo.links.values()) == [
         {"entity_id": TODO_ENTITY, "summary": f"Peanut butter {TIMES}1"}
     ]
 
@@ -392,7 +395,7 @@ async def test_a_stored_row_missing_half_of_itself_is_dropped_on_load() -> None:
     # exactly as it read it and the assertion is about the read alone.
     hass, _repo, _services, _entry = await _bridge(entity_id="", keep_links=True)
 
-    assert hass.data[DOMAIN]["todo_links"] == {
+    assert runtime_of(hass).todo.links == {
         "kept": {"entity_id": TODO_ENTITY, "summary": f"Peanut butter {TIMES}2"}
     }
 
@@ -425,7 +428,7 @@ async def test_a_list_that_cannot_delete_collects_one_line_per_item_and_no_more(
         # Nothing is even attempted: Home Assistant would refuse it, and the
         # link is what stops the next crossing writing a second line.
         assert services.calls == [], cycle
-        assert list(hass.data[DOMAIN]["todo_links"]) == [str(item.id)], cycle
+        assert list(runtime_of(hass).todo.links) == [str(item.id)], cycle
 
         services.clear()
         repo.set_quantity(str(item.id), THRESHOLD - 1)
@@ -449,7 +452,7 @@ async def test_a_list_that_can_delete_still_has_its_lines_retracted() -> None:
     await todo_bridge.async_reconcile(hass)
 
     assert services.names == [REMOVE]
-    assert hass.data[DOMAIN]["todo_links"] == {}
+    assert runtime_of(hass).todo.links == {}
 
 
 @pytest.mark.asyncio
@@ -465,4 +468,4 @@ async def test_a_list_publishing_no_features_is_treated_as_it_always_was() -> No
     await todo_bridge.async_reconcile(hass)
 
     assert services.names == [REMOVE]
-    assert hass.data[DOMAIN]["todo_links"] == {}
+    assert runtime_of(hass).todo.links == {}

@@ -18,6 +18,7 @@ import voluptuous as vol
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import NotFoundError, StorageError, ValidationError
 from custom_components.haventory.repository import Repository
+from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import STORAGE_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -31,7 +32,7 @@ async def _setup(hass: HomeAssistant) -> Repository:
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    return hass.data[DOMAIN]["repository"]
+    return find_runtime(hass).repository
 
 
 async def _call(hass: HomeAssistant, service: str, data: dict) -> None:

@@ -105,6 +105,7 @@ module = [
   "haventory.health",
   "haventory.models",
   "haventory.repository",
+  "haventory.runtime",
   "haventory.serialization",
   "haventory.storage",
   "haventory.ws",

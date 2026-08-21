@@ -16,8 +16,18 @@ class SupportsResponse(StrEnum):
     OPTIONAL = "optional"
     ONLY = "only"
 
+class ConfigEntries:
+    def async_entries(
+        self,
+        domain: str | None = ...,
+        include_ignore: bool = ...,
+        include_disabled: bool = ...,
+    ) -> list[Any]: ...
+    def __getattr__(self, name: str) -> Any: ...
+
 class HomeAssistant:
     data: dict[str, Any]
+    config_entries: ConfigEntries
     def async_create_background_task[R](
         self,
         target: Coroutine[Any, Any, R],
