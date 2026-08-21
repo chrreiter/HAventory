@@ -1,6 +1,15 @@
 import './hv-data-table';
-import { all, componentCss, makeItem, mountComponent, q } from '../test.utils';
+import {
+  all,
+  componentCss,
+  makeAttachment,
+  makeItem,
+  makeMediaBindings,
+  mountComponent,
+  q,
+} from '../test.utils';
 import { ACTIONS_COLUMN_WIDTH } from '../store/columns';
+import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import { toIsoDate } from '../ui/relative-time';
 import { rowMenuEntries } from './hv-list-row';
 import type { HVDataTable } from './hv-data-table';
@@ -303,6 +312,65 @@ describe('hv-data-table: the name cell picks one chip', () => {
     expect(q(el, '.name-cell')?.textContent).toContain('Checked out');
   });
 
+});
+
+describe('hv-data-table: row thumbnail', () => {
+  it('shows the first picture beside the name, at the card list row’s own box', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(
+      [{ id: 'i-thumb', name: 'Cordless drill', attachments: [makeAttachment({ id: 'att-1' })] }],
+      { media },
+    );
+    // One more frame: the signed URL arrives from a resolved promise.
+    await el.updateComplete;
+    await el.updateComplete;
+
+    const img = q(el, '[data-testid="row-thumb"]') as HTMLImageElement | null;
+    expect(img).toBeTruthy();
+    expect(img?.getAttribute('src')).toBe(
+      `/api/haventory/media/i-thumb/att-1?${MEDIA_NAME_TOKEN_PARAM}=`
+        + `${attachmentNameToken(makeAttachment({ id: 'att-1' }))}&authSig=test`,
+    );
+    expect(img?.getAttribute('alt')).toBe('Photo of Cordless drill');
+    // Nothing is thumbnailed server-side, so the browser must be told not to
+    // fetch and decode every row's full-size photo at once.
+    expect(img?.getAttribute('loading')).toBe('lazy');
+    expect(img?.getAttribute('decoding')).toBe('async');
+    // It leads the cell: a picture after the name would be a second column of
+    // ragged marks rather than the thing the eye lands on first.
+    expect(q(el, '.name-cell')?.firstElementChild).toBe(img);
+  });
+
+  // A placeholder here would add a column of empty squares to a mostly
+  // photo-less inventory — and would spend the name's floor on every row.
+  it('renders no image element at all for a row without a picture', async () => {
+    const el = await mount([{ id: '1', name: 'Screws' }], { media: makeMediaBindings() });
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-thumb"]')).toBeNull();
+    expect(el.shadowRoot?.querySelector('img')).toBeNull();
+  });
+
+  // The panel and the card are two hosts of the same table; one that was never
+  // handed the signer must not render broken images.
+  it('shows nothing rather than a broken image without a signer', async () => {
+    const el = await mount([{ id: '1', attachments: [makeAttachment()] }]);
+    await el.updateComplete;
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-thumb"]')).toBeNull();
+  });
+
+  it('ignores a non-picture attachment', async () => {
+    const el = await mount(
+      [{ id: '1', attachments: [makeAttachment({ kind: 'manual', mime: 'application/pdf' })] }],
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-thumb"]')).toBeNull();
+  });
 });
 
 describe('hv-data-table: sorting', () => {

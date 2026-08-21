@@ -12,6 +12,7 @@ import {
   tableTemplateFor,
 } from './columns';
 import type { ColumnKey } from './columns';
+import { ROW_THUMB_SIZE } from '../ui/media';
 
 describe('columns model', () => {
   beforeEach(() => {
@@ -305,6 +306,22 @@ describe('table column widths', () => {
   // an Updated column holding nothing but "—".
   it('renders an ordinary name whole at the width the sidebar panel gets', () => {
     expect(nameWidthOf(PANEL_GRID_AT_1920)).toBeGreaterThanOrEqual(ORDINARY_NAME_WIDTH);
+  });
+
+  // The panel is also where the whole default set has to fit, and it does, with
+  // room over — which is what keeps Location and Tags off their floors and the
+  // table free of a sideways scroll at the width it is most often read at.
+  //
+  // That room is smaller than a row's leading thumbnail, which is why the name
+  // column's floor is not widened to hold one: the picture comes out of the
+  // name's own floor on the rows that have a picture, rather than out of every
+  // row's Location and Tags. See NAME_COLUMN_SIZE.
+  it('fits the whole default set inside the box the sidebar panel gives it', () => {
+    const template = tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false });
+    const gaps = 8 * (template.split(/\s+(?![^(]*\))/).length - 1);
+    const slack = PANEL_GRID_AT_1920 - (minWidthOf(template) + gaps);
+    expect(slack).toBeGreaterThan(0);
+    expect(slack).toBeLessThan(ROW_THUMB_SIZE + 8);
   });
 
   // The name is fed from Category, the flexible column carrying one word, and

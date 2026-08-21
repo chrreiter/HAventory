@@ -1,4 +1,4 @@
-import { LitElement, css, html } from 'lit';
+import { LitElement, css, html, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
@@ -6,7 +6,15 @@ import { areaMarkName, itemPathParts, pathTitle, renderAreaChip } from '../ui/lo
 import { icon } from '../ui/icons';
 import { formatDate, isDue, isOverdue } from '../ui/relative-time';
 import { itemStatus, renderStatusChip, statusLabel } from '../ui/status';
-import { MediaUrls, attachmentNameToken, manuals, pictureAlt, pictures } from '../ui/media';
+import {
+  MediaUrls,
+  ROW_THUMB_SIZE,
+  ROW_THUMB_SIZE_TOUCH,
+  attachmentNameToken,
+  manuals,
+  pictureAlt,
+  pictures,
+} from '../ui/media';
 import type { MediaBindings } from '../ui/media';
 import type { AreaRef, Item, StatusDefinition } from '../store/types';
 import './hv-overflow-menu';
@@ -153,15 +161,15 @@ export class HVListRow extends LitElement {
          inventory would otherwise grow a column of empty squares. */
       .thumb {
         flex: none;
-        width: 34px;
-        height: 34px;
+        width: ${unsafeCSS(ROW_THUMB_SIZE)}px;
+        height: ${unsafeCSS(ROW_THUMB_SIZE)}px;
         border-radius: 6px;
         object-fit: cover;
         background: var(--hv-surface-raised);
       }
       :host([mobile]) .thumb {
-        width: 40px;
-        height: 40px;
+        width: ${unsafeCSS(ROW_THUMB_SIZE_TOUCH)}px;
+        height: ${unsafeCSS(ROW_THUMB_SIZE_TOUCH)}px;
       }
       /* A mark, not a chip: that an item has a manual is a fact about it, not
          a state anyone has to act on, so it stays out of the hue vocabulary the
