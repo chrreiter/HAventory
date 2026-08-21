@@ -46,21 +46,80 @@ const WS_TIMEOUT_MS = 10000;
 
 let cachedConfig = null;
 
-/** HA base URL + long-lived token: real env vars win, the repo-root .env fills the gaps. */
+const IGNORE_FLAG = "HAVENTORY_IGNORE_ENV_FILE";
+const DEFAULT_BASE = "http://localhost:8123";
+
+/**
+ * Which instance a harness resolved, and what to say about it — the pure half of
+ * `haConfig`, so `node --test` can hold the precedence rule without a filesystem.
+ *
+ * `envText` is the `.env` beside the checkout, or null when there is none.
+ */
+export function resolveTarget({ envText, env, envFile }) {
+  const ignored = !["", "0", "false", "no"].includes(
+    (env[IGNORE_FLAG] ?? "").trim().toLowerCase(),
+  );
+  const values = {};
+  const overrode = [];
+
+  if (envText != null && !ignored) {
+    for (const line of envText.split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (!m) continue;
+      const [, key, value] = m;
+      // The displaced base URL is the whole point of the report — it is the
+      // instance the run would have gone to. No other displaced value is named:
+      // one of them is the token.
+      if (key in env && env[key] !== value) {
+        overrode.push(key === "HA_BASE_URL" ? `${key}=${env[key]}` : key);
+      }
+      values[key] = value;
+    }
+  }
+
+  let source;
+  if (envText == null) source = "the environment; no .env beside the checkout";
+  else if (ignored) source = `the environment; ${envFile} ignored via ${IGNORE_FLAG}`;
+  else source = envFile;
+
+  const merged = { ...env, ...values };
+  return {
+    base: (merged.HA_BASE_URL || DEFAULT_BASE).replace(/\/$/, ""),
+    token: merged.HA_TOKEN,
+    source,
+    overrode,
+    values,
+  };
+}
+
+/**
+ * HA base URL + long-lived token, and the target named out loud.
+ *
+ * The `.env` beside this checkout wins over an inherited export: a worktree
+ * carrying its own `.env` names the instance that worktree is for, and a shell
+ * profile exporting `HA_BASE_URL` for a different one must not silently outrank
+ * it. `HAVENTORY_IGNORE_ENV_FILE=1` hands the decision back to the environment
+ * for one run. The resolved target goes to stderr, which every harness keeps
+ * free of its own output.
+ */
 export function haConfig() {
   if (cachedConfig) return cachedConfig;
+  const envFile = path.join(repoRoot, ".env");
+  let envText = null;
   try {
-    for (const line of readFileSync(path.join(repoRoot, ".env"), "utf8").split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
-      if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
-    }
+    envText = readFileSync(envFile, "utf8");
   } catch {
     /* no .env — rely on real env vars */
   }
-  cachedConfig = {
-    base: (process.env.HA_BASE_URL ?? "http://localhost:8123").replace(/\/$/, ""),
-    token: process.env.HA_TOKEN,
-  };
+
+  const target = resolveTarget({ envText, env: process.env, envFile });
+  Object.assign(process.env, target.values);
+  cachedConfig = { base: target.base, token: target.token };
+
+  console.error(`[target] HA_BASE_URL=${target.base} (from ${target.source})`);
+  if (target.overrode.length) {
+    console.error(`[target] the .env overrode the environment's ${target.overrode.join(", ")}`);
+  }
   return cachedConfig;
 }
 

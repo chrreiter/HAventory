@@ -1058,10 +1058,14 @@ scripts/reload_addon.sh --container <your_container> --tail-logs
 
 Quick probes/subscriptions without writing test code. Run via `uv run python scripts/<name>.py`.
 
+They take `HA_BASE_URL`/`HA_TOKEN` from a `.env` at the root of the checkout they are run
+from, which **wins over an inherited export** (`HAVENTORY_IGNORE_ENV_FILE=1` hands the
+decision back to the environment), and each prints the instance it resolved — plus the
+store's item and location totals — on stderr before it acts.
+
 `scripts/ws_probe.py` — send a single WS command and print the first reply:
 
 ```bash
-export HA_TOKEN=<token>            # HA_BASE_URL defaults to http://localhost:8123
 export HAV_MSG='{"id":1,"type":"haventory/ping","echo":"hi"}'
 uv run python scripts/ws_probe.py
 ```
@@ -1071,7 +1075,6 @@ print events. Optional: `HAV_LOCATION_ID`, `HAV_INCLUDE_SUBTREE`, `HAV_MAX_EVENT
 `HAV_MUTATIONS` (JSON array of WS messages to send after subscribing):
 
 ```bash
-export HA_TOKEN=<token>
 export HAV_TOPIC=items HAV_MAX_EVENTS=3
 uv run python scripts/ws_subscribe.py
 ```

@@ -1,8 +1,6 @@
 r"""WebSocket subscription helper for HAventory topics.
 
 Environment variables:
-  export HA_BASE_URL='http://localhost:8123'
-  export HA_TOKEN='<your-long-lived-token>'
   export HAV_TOPIC='items'            # or 'locations' or 'stats'
   export HAV_LOCATION_ID=''           # for topic 'locations' (optional)
   export HAV_INCLUDE_SUBTREE='true'   # for topic 'locations' (optional)
@@ -13,6 +11,13 @@ Optional mutations after subscribe:
 
 Run:
   uv run python scripts/ws_subscribe.py
+
+Target:
+  HA_BASE_URL / HA_TOKEN come from the .env beside this checkout, which wins over an
+  inherited export -- a worktree's .env names the instance that worktree is for. Set
+  HAVENTORY_IGNORE_ENV_FILE=1 to hand the decision back to the environment for one
+  run. The resolved base URL and the store's counts print on stderr before anything
+  is sent.
 
 Notes:
 - Converts http(s) base URL into ws(s) automatically.
@@ -26,18 +31,14 @@ import json
 import os
 import sys
 from itertools import count
+from pathlib import Path
 from typing import Any
 
 import aiohttp
 
+import dev_env
 
-def _ws_url_from_base(base_url: str) -> str:
-    base_url = base_url.rstrip("/")
-    if base_url.startswith("https://"):
-        return f"wss://{base_url[len('https://') :]}/api/websocket"
-    if base_url.startswith("http://"):
-        return f"ws://{base_url[len('http://') :]}/api/websocket"
-    return f"ws://{base_url}/api/websocket"
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -70,8 +71,9 @@ async def _drain_until(ws: aiohttp.ClientWebSocketResponse, predicate, limit: in
 
 
 async def run_subscriber() -> int:
-    base = os.environ.get("HA_BASE_URL", "http://localhost:8123")
-    token = os.environ.get("HA_TOKEN")
+    target = dev_env.load_env(REPO_ROOT)
+    base = target.base_url
+    token = target.token
     topic = os.environ.get("HAV_TOPIC", "items").strip().lower()
     location_id = os.environ.get("HAV_LOCATION_ID")
     include_subtree = _env_bool("HAV_INCLUDE_SUBTREE", True)
@@ -98,7 +100,9 @@ async def run_subscriber() -> int:
             subscribe_payload["location_id"] = location_id
         subscribe_payload["include_subtree"] = include_subtree
 
-    ws_url = _ws_url_from_base(base)
+    await dev_env.announce_store(target, action="HAV_MUTATIONS" if mutations else None)
+
+    ws_url = dev_env.ws_url(base)
 
     async with aiohttp.ClientSession() as session:
         # Bound the websocket upgrade with connect_timeout_s (asyncio.wait_for); the

@@ -13,7 +13,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-import { cardViewsOf, holdsCard, parsePathOverrides, pickView } from "./card_views.mjs";
+import { cardViewsOf, holdsCard, parsePathOverrides, pickView, resolveTarget } from "./card_views.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -161,3 +161,62 @@ for (const file of HARNESSES.filter((f) => codeOf(f).includes("page.goto("))) {
     assert.doesNotMatch(code, /["'`][^"'`]*\/(lovelace|dashboard-)[^"'`]*["'`]/);
   });
 }
+
+// --- which instance a harness is pointed at -------------------------------
+//
+// A shell profile exporting HA_BASE_URL for one instance must not outrank the
+// .env in the worktree the harness was started from: the harnesses that import
+// data or drive two tabs write, and writing into someone else's inventory is
+// the failure this precedence exists to remove.
+
+const ENV_A = "HA_BASE_URL=http://instance-a:8123\nHA_TOKEN=token-a\n";
+
+test("the .env beside the checkout beats an inherited export", () => {
+  const target = resolveTarget({
+    envText: ENV_A,
+    env: { HA_BASE_URL: "http://instance-b:8123", HA_TOKEN: "token-b" },
+    envFile: "/wt/.env",
+  });
+
+  assert.equal(target.base, "http://instance-a:8123");
+  assert.equal(target.token, "token-a");
+  assert.equal(target.source, "/wt/.env");
+  assert.deepEqual(target.overrode, ["HA_BASE_URL=http://instance-b:8123", "HA_TOKEN"]);
+});
+
+test("the displaced token is named but never printed", () => {
+  const target = resolveTarget({ envText: ENV_A, env: { HA_TOKEN: "token-b" }, envFile: "/wt/.env" });
+
+  assert.deepEqual(target.overrode, ["HA_TOKEN"]);
+});
+
+test("HAVENTORY_IGNORE_ENV_FILE hands the decision back to the environment", () => {
+  const target = resolveTarget({
+    envText: ENV_A,
+    env: { HA_BASE_URL: "http://release-host:8123", HAVENTORY_IGNORE_ENV_FILE: "1" },
+    envFile: "/wt/.env",
+  });
+
+  assert.equal(target.base, "http://release-host:8123");
+  assert.deepEqual(target.overrode, []);
+  assert.match(target.source, /HAVENTORY_IGNORE_ENV_FILE/);
+});
+
+test("no .env leaves the environment alone, and no HA_BASE_URL falls back to localhost", () => {
+  const exported = resolveTarget({ envText: null, env: { HA_BASE_URL: "http://b:8123/" }, envFile: "/wt/.env" });
+  assert.equal(exported.base, "http://b:8123");
+  assert.deepEqual(exported.values, {});
+
+  const bare = resolveTarget({ envText: null, env: {}, envFile: "/wt/.env" });
+  assert.equal(bare.base, "http://localhost:8123");
+});
+
+test("a value the environment already agrees with is not reported as overridden", () => {
+  const target = resolveTarget({
+    envText: ENV_A,
+    env: { HA_BASE_URL: "http://instance-a:8123" },
+    envFile: "/wt/.env",
+  });
+
+  assert.deepEqual(target.overrode, []);
+});

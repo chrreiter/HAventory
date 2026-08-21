@@ -25,8 +25,13 @@ clean-Linux/CI commands live in the README ("The gate").
   not parse on ≤3.13), **Node 22.13+**, **Docker** (for the online surfaces). [Windows/Git
   Bash] **Git Bash** for the `.sh`/`.py` helpers.
 - `pre-commit` on PATH (the git hook needs it): `uv tool install pre-commit`.
-- A `.env` at the repo root with `HA_BASE_URL` + `HA_TOKEN` (a long-lived token; per session,
-  never committed). The online surfaces read it directly.
+- A `.env` at the root of **the checkout you are standing in** with `HA_BASE_URL` +
+  `HA_TOKEN` (a long-lived token; per session, never committed). The online surfaces read
+  it directly, and it **wins over an inherited export** — a worktree carrying its own
+  `.env` names the instance that worktree is for, whatever a shell profile exported.
+  `HAVENTORY_IGNORE_ENV_FILE=1` hands the decision back to the environment for one run
+  (that is how a recipe points a helper at a remote instance while a dev `.env` sits in
+  the tree).
 - For the browser smoke: Chromium for Playwright — `npx playwright install chromium`. It
   caches under `~/.cache/ms-playwright`; [Windows/Git Bash] `~/AppData/Local/ms-playwright`.
 
@@ -98,7 +103,22 @@ for i in $(seq 1 45); do \
 `stress.py` is the adversarial online driver. Each subcommand runs one layer, prefixes its
 data with `stress_test_` (so `cleanup` sweeps it), and polls `haventory/health` as the pass
 gate (`healthy: true`, `issues: []`). Run **one at a time, non-destructive first, `restart`
-last**. Reads `HA_BASE_URL`/`HA_TOKEN` from `.env`.
+last**.
+
+Every command prints its target before it acts, and stops if it cannot read the store —
+so "wrong instance" is the first line of output rather than a count that looks off later:
+
+```
+[target] HA_BASE_URL=http://localhost:8123 (from /repo/.env)
+[target] store: items_total=1087 locations_total=89
+[target] 'bulk' writes to this instance; proceeding
+```
+
+The second line is the tell: an empty store where 1 000 items were expected (or the
+reverse) means the `.env`, the export or the container is not the one you meant. A
+destructive command names its target and proceeds — nothing prompts. When the `.env`
+displaced an exported `HA_BASE_URL`, a middle line says which instance the run would
+otherwise have gone to.
 
 ```bash
 export PYTHONIOENCODING=utf-8   # [Windows/Git Bash] only; a Linux terminal is UTF-8 already
@@ -212,5 +232,8 @@ not re-verified here.
   the tar-pipe deploy above instead.
 - **`stress.py` baseline errors / `unknown command`** — check `.env` has `HA_BASE_URL`/`HA_TOKEN`
   and the container is up; run `baseline` first to confirm the integration imported.
+- **`cannot read the store at …`** — the `[target]` line above it names the instance that
+  was resolved. Either it is the wrong one (fix the `.env`, or re-run with
+  `HAVENTORY_IGNORE_ENV_FILE=1` to use the export) or the integration is not loaded there.
 - **E2E redirected to `/auth/authorize`** — `HA_TOKEN` is missing/expired.
 - **`pre-commit` not found on commit** — `uv tool install pre-commit`.

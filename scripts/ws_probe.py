@@ -1,14 +1,17 @@
 r"""WebSocket probe for HAventory commands.
 
 Usage:
-  export HA_BASE_URL='http://localhost:8123'
-  export HA_TOKEN='<your-long-lived-token>'
   export HAV_MSG='{"id":1, "type":"haventory/ping", "echo":"hi"}'
   uv run python scripts/ws_probe.py
 
+Target:
+  HA_BASE_URL / HA_TOKEN come from the .env beside this checkout, which wins over an
+  inherited export -- a worktree's .env names the instance that worktree is for. Set
+  HAVENTORY_IGNORE_ENV_FILE=1 to hand the decision back to the environment for one
+  run. The resolved base URL and the store's counts print on stderr before anything
+  is sent.
+
 Environment variables:
-- HA_BASE_URL: Home Assistant base URL (http/https). Default: http://localhost:8123
-- HA_TOKEN: Long-lived access token (required)
 - HAV_MSG: JSON message to send (required). Example: {"id":1, "type":"haventory/version"}
 
 Notes:
@@ -21,25 +24,20 @@ import asyncio
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 import aiohttp
 
+import dev_env
 
-def _ws_url_from_base(base_url: str) -> str:
-    """Convert an HTTP(S) base URL to a WS(S) endpoint."""
-    base_url = base_url.rstrip("/")
-    if base_url.startswith("https://"):
-        return f"wss://{base_url[len('https://') :]}/api/websocket"
-    if base_url.startswith("http://"):
-        return f"ws://{base_url[len('http://') :]}/api/websocket"
-    # Fallback: assume it's a bare host:port
-    return f"ws://{base_url}/api/websocket"
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 async def run_probe() -> int:
-    base = os.environ.get("HA_BASE_URL", "http://localhost:8123")
-    token = os.environ.get("HA_TOKEN")
+    target = dev_env.load_env(REPO_ROOT)
+    base = target.base_url
+    token = target.token
     raw_msg = os.environ.get("HAV_MSG")
     connect_timeout_s = float(os.environ.get("HAV_CONNECT_TIMEOUT", "10"))
     recv_timeout_s = float(os.environ.get("HAV_RECV_TIMEOUT", "20"))
@@ -57,7 +55,9 @@ async def run_probe() -> int:
         print(f"HAV_MSG is not valid JSON: {err}", file=sys.stderr)
         return 2
 
-    ws_url = _ws_url_from_base(base)
+    await dev_env.announce_store(target)
+
+    ws_url = dev_env.ws_url(base)
 
     async with aiohttp.ClientSession() as session:
         # Bound the websocket upgrade with connect_timeout_s (asyncio.wait_for); the

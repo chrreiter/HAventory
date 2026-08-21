@@ -1,9 +1,13 @@
 r"""Initialize HAventory config entry via Home Assistant WebSocket API.
 
 Usage:
-  export HA_BASE_URL='http://localhost:8123'
-  export HA_TOKEN='<your-long-lived-token>'
   uv run python scripts/ws_init_haventory.py
+
+Target:
+  HA_BASE_URL / HA_TOKEN come from the .env beside this checkout, which wins over an
+  inherited export -- a worktree's .env names the instance that worktree is for. Set
+  HAVENTORY_IGNORE_ENV_FILE=1 to hand the decision back to the environment for one
+  run. The resolved base URL prints on stderr before anything is written.
 
 Behavior:
 - Starts the HAventory config flow (domain "haventory").
@@ -17,20 +21,15 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import sys
+from pathlib import Path
 from typing import Any
 
 import aiohttp
 
+import dev_env
 
-def _ws_url_from_base(base_url: str) -> str:
-    base_url = base_url.rstrip("/")
-    if base_url.startswith("https://"):
-        return f"wss://{base_url[len('https://') :]}/api/websocket"
-    if base_url.startswith("http://"):
-        return f"ws://{base_url[len('http://') :]}/api/websocket"
-    return f"ws://{base_url}/api/websocket"
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 async def _recv_json(ws: aiohttp.ClientWebSocketResponse) -> dict[str, Any]:
@@ -121,13 +120,17 @@ def build_user_input(data_schema: object) -> dict[str, Any]:
 
 
 async def run() -> int:  # noqa: PLR0912, PLR0915
-    base = os.environ.get("HA_BASE_URL", "http://localhost:8123")
-    token = os.environ.get("HA_TOKEN")
+    target = dev_env.load_env(REPO_ROOT)
+    base = target.base_url
+    token = target.token
+    # The config entry this creates is what loads the integration, so the store is
+    # routinely unreadable here -- the banner says so and the run continues.
+    await dev_env.announce_store(target, action="creating the haventory config entry")
     if not token:
         print("Missing HA_TOKEN in environment", file=sys.stderr)
         return 2
 
-    ws_url = _ws_url_from_base(base)
+    ws_url = dev_env.ws_url(base)
 
     async with aiohttp.ClientSession() as session:
         async with session.ws_connect(ws_url) as ws:

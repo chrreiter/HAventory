@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Create random test items with all fields populated via HA WebSocket API.
 
+HA_BASE_URL / HA_TOKEN come from the .env beside this checkout, which wins over an
+inherited export; HAVENTORY_IGNORE_ENV_FILE=1 hands the decision back to the
+environment. The target and the store's counts print on stderr before the first
+item is created -- this script writes, and writing into the wrong inventory is the
+failure it has to make visible.
+
 This is a dev/test utility script - security linting rules are relaxed:
 - S311: Uses standard random (not crypto) - fine for test data generation
 - S603: subprocess call is trusted (pip install)
@@ -13,9 +19,14 @@ import os
 import random
 import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import dev_env
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 try:
     import aiohttp
@@ -197,22 +208,23 @@ def generate_random_item(index):
 
 async def main():
     """Run the test item creation script."""
-    base_url = os.environ.get("HA_BASE_URL", "http://localhost:8123")
-    token = os.environ.get("HA_TOKEN")
+    target = dev_env.load_env(REPO_ROOT)
+    base_url = target.base_url
+    token = target.token
+
+    start_index = int(os.environ.get("START_INDEX", "0"))
+    count = int(os.environ.get("ITEM_COUNT", "30"))
+    await dev_env.announce_store(target, action=f"creating {count} items")
 
     if not token:
         print("Error: HA_TOKEN environment variable not set")
         sys.exit(1)
 
-    print(f"Connecting to Home Assistant at {base_url}")
     print("Creating random items with all bells and whistles...")
     print("-" * 60)
 
     created = 0
     failed = 0
-
-    start_index = int(os.environ.get("START_INDEX", "0"))
-    count = int(os.environ.get("ITEM_COUNT", "30"))
 
     async with aiohttp.ClientSession() as session:
         for i in range(start_index, start_index + count):
