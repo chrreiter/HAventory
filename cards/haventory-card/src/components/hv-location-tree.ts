@@ -615,9 +615,12 @@ export class HVLocationTree extends LitElement {
     const pickable = this.areaSelectable && group !== null;
     const selected =
       pickable && this.selectedAreaId === group.id && !this._anySelected() && !this.orphansSelected;
+    const name = group?.name ?? 'No area';
     const label = group
       ? renderAreaChip(group.name)
-      : html`<span class="hv-area-chip quiet area-none">No area</span>`;
+      : html`<span class="hv-area-chip quiet area-none"
+          ><span class="hv-chip-text">${name}</span></span
+        >`;
 
     return html`<div
       class="row hv-browse-row area-head ${selected ? 'selected' : ''} ${pickable ? 'selectable' : ''}"
@@ -635,9 +638,7 @@ export class HVLocationTree extends LitElement {
             class="twisty hv-browse-row-lead"
             data-testid="tree-area-twisty"
             data-area=${group?.id ?? NO_AREA_KEY}
-            aria-label=${open
-              ? `Collapse ${group?.name ?? 'No area'}`
-              : `Expand ${group?.name ?? 'No area'}`}
+            aria-label=${open ? `Collapse ${name}` : `Expand ${name}`}
             @click=${(e: Event) => {
               e.stopPropagation();
               this._toggleArea(key);
@@ -650,11 +651,12 @@ export class HVLocationTree extends LitElement {
             class="area-name"
             data-testid="tree-area-select"
             data-area=${group.id}
+            title=${name}
             @click=${() => this._emit('select-area', { areaId: group.id })}
           >
             ${label}
           </button>`
-        : html`<span class="area-name">${label}</span>`}
+        : html`<span class="area-name" title=${name}>${label}</span>`}
       ${this.showCounts ? this._renderAreaCount(roots) : null}
     </div>`;
   }

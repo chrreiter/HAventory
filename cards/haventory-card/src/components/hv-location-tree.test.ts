@@ -423,6 +423,24 @@ describe('hv-location-tree: area grouping', () => {
     expect(heads(el)[0].querySelector('[data-icon="home"]')).toBeTruthy();
   });
 
+  // The band's name is the thing that shortens when it outgrows the column —
+  // the tally beside it has to stay whole, because a clipped number reads as a
+  // smaller one and nothing says it was cut. What elision takes, the title
+  // gives back, the way the sidebar's category and tag rows do it.
+  it('keeps the full area name reachable when the band has to shorten it', async () => {
+    const el = await mountAreas({
+      areas: [{ id: 'area-kitchen', name: 'Ground Floor Utility Room' }, AREAS[1]],
+    });
+    const kitchen = heads(el).find((h) => h.dataset.area === 'area-kitchen');
+    const holder = kitchen?.querySelector('.area-name');
+    expect(holder?.getAttribute('title')).toBe('Ground Floor Utility Room');
+    expect(holder?.querySelector('.hv-chip-text')?.textContent).toBe('Ground Floor Utility Room');
+    // The band for the locations no area claims is a heading like any other,
+    // and names itself rather than reading `null` out of a missing group.
+    const none = heads(el).find((h) => h.dataset.area === 'no-area');
+    expect(none?.querySelector('.area-name')?.getAttribute('title')).toBe('No area');
+  });
+
   it('leaves an inventory that assigns no areas exactly as it was', async () => {
     const el = await mount();
     expect(heads(el)).toEqual([]);

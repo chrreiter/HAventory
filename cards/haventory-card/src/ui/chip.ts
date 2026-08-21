@@ -59,6 +59,35 @@ export const chip = css`
   }
 
   /*
+   * The two chips whose label a household writes — a status it named, an HA
+   * area it named — and which therefore have no length this card can rely on.
+   *
+   * Both have to be allowed to shrink for their label to elide at all: the
+   * metrics above hold every chip at flex: none, which is right beside other
+   * chips and wrong inside a box narrower than the chip. Left unshrunk they do
+   * not merely spill — the location tree's area band painted its name over the
+   * tally beside it, and a clipped number reads as a smaller one with nothing
+   * to say it was cut.
+   *
+   * The elision belongs on the label, not on the box around it: the chip is an
+   * inline-flex container, so text-overflow on an ancestor cannot reach into it
+   * and text-overflow on the chip itself does nothing. As a flex item the label
+   * is a block container already, so only the shrink and the overflow are
+   * needed. The glyph and the screen-reader word stay outside the label, which
+   * is why every caller renders the name in its own element.
+   */
+  .hv-area-chip,
+  .hv-status-chip {
+    max-width: 100%;
+  }
+  .hv-area-chip > .hv-chip-text,
+  .hv-status-chip > .hv-chip-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /*
    * Pressable. Reads as an empty outline until it carries a hue or is applied,
    * so a row of them says "these are choices" rather than "these are facts".
    *
@@ -196,20 +225,6 @@ export const chip = css`
     gap: 4px;
     background: var(--hv-status-bg, var(--hv-tone-neutral-bg));
     color: var(--hv-status-fg, var(--hv-tone-neutral-fg));
-    /* A household names its own statuses, so a label can outrun the column it
-       sits in. The chip must be allowed to shrink for the label to elide at
-       all — the metrics above hold every chip at flex: none, which is right
-       beside other chips and wrong inside a cell narrower than this one. */
-    max-width: 100%;
-  }
-  /* Elision has to happen on the label, not on the cell around it: the chip is
-     an inline-flex box, and text-overflow on an ancestor cannot reach into one
-     — the label was hard-cut mid-word instead. As a flex item the label is a
-     block container already, so only the shrink and the overflow are needed. */
-  .hv-status-chip > .hv-chip-text {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   /* Selected, it keeps its own colour — the hue is what says which status was
      picked, so painting it primary blue erases the answer at the moment it is

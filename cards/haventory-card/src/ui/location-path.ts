@@ -141,10 +141,15 @@ export function areaMarkName(areaName: string | null, path: string): string | nu
  *
  * The glyph carries that distinction visually and is decorative, so the word
  * "Area" is spelled out for anyone who cannot see it.
+ *
+ * The name sits in its own element because a household writes it and it can
+ * outrun the box the chip lands in: that element is what the shared rule in
+ * `ui/chip` elides, and text-overflow has nothing to act on without it.
  */
 export function renderAreaChip(areaName: string | null): TemplateResult | null {
   if (!areaName) return null;
   return html`<span class="hv-area-chip" data-testid="area-chip"
-    >${icon('home', 12)}<span class="hv-sr-only">Area: </span>${areaName}</span
+    >${icon('home', 12)}<span class="hv-sr-only">Area: </span
+    ><span class="hv-chip-text">${areaName}</span></span
   >`;
 }
