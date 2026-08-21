@@ -128,13 +128,16 @@ jobs:
           cache-dependency-path: cards/haventory-card/package-lock.json
       - name: Install
         run: npm ci --no-audit --no-fund
-      - name: Audit (npm advisories, high+)
+      - name: Audit (npm advisories, moderate+)
         # The repository's Dependabot auto-triage rule dismisses development-scope
         # alerts, so the alert dashboard cannot be trusted to surface a vulnerable
         # dev dependency — this blocking step is where the lockfile is checked.
-        # Kept explicit rather than folded into the install above, whose
-        # `--no-audit` keeps install output free of advisory noise.
-        run: npm audit --audit-level=high
+        # Moderate rather than high: a moderate development-scope advisory is
+        # dismissed on the dashboard and would otherwise clear the gate here too,
+        # so it would surface nowhere. Kept explicit rather than folded into the
+        # install above, whose `--no-audit` keeps install output free of advisory
+        # noise.
+        run: npm audit --audit-level=moderate
       - name: Lint
         run: npx eslint .
       - name: Types (tsc --noEmit)
@@ -160,7 +163,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: actionlint
-        uses: docker://rhysd/actionlint:1.7.12
+        # Digest-pinned: a tag can be moved, and Scorecard's pinned-dependencies
+        # check reads a tag pin as unpinned. The trailing comment is where the
+        # version lives, and `tests/test_toolchain_pins.py` ties it to the
+        # `.pre-commit-config.yaml` rev so the hook and the job stay one release.
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667  # v1.7.12
         with:
           args: -color
 

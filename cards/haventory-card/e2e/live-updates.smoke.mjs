@@ -1,3 +1,4 @@
+// @ts-check
 // End-to-end *live-update* smoke test for the HAventory Lovelace card.
 //
 // WHY THIS EXISTS
@@ -49,6 +50,7 @@ if (!token) {
 }
 
 const args = process.argv.slice(2);
+/** @type {(name: string, dflt: string | null) => string | null} */
 const flag = (name, dflt) => {
   const i = args.indexOf(name);
   return i >= 0 && args[i + 1] ? args[i + 1] : dflt;
@@ -81,12 +83,17 @@ const nameB = `e2e_smoke_${stamp}_b`; // renamed to this out-of-band to prove li
 // WebSocket, performs the auth handshake, sends exactly one command, resolves with
 // {result} or {error}, then closes. Deliberately NOT the card's connection: the card
 // must learn of the change purely through its own subscription.
+/**
+ * @param {import('playwright').Page} page
+ * @param {Record<string, unknown>} command
+ * @returns {Promise<{ result?: any, error?: { code: string, message: string } }>}
+ */
 async function wsCommand(page, command) {
   return page.evaluate(
     ([wsUrl, accessToken, cmd]) =>
       new Promise((resolve, reject) => {
         const ws = new WebSocket(wsUrl);
-        const done = (v) => {
+        const done = (/** @type {any} */ v) => {
           try { ws.close(); } catch { /* ignore */ }
           resolve(v);
         };
@@ -112,10 +119,18 @@ async function wsCommand(page, command) {
 }
 
 // --- small polling helper (no @playwright/test expect here) --------------
+/**
+ * The predicate is handed the page it polls rather than closing over it, so
+ * every caller polls the page `waitFor` is waiting on.
+ *
+ * @param {import('playwright').Page} page
+ * @param {(page: import('playwright').Page) => Promise<boolean>} predicate
+ * @param {{ timeout?: number, interval?: number, label?: string }} [options]
+ */
 async function waitFor(page, predicate, { timeout = 12000, interval = 250, label = 'condition' } = {}) {
   const deadline = Date.now() + timeout;
   for (;;) {
-    if (await predicate()) return true;
+    if (await predicate(page)) return true;
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${label} (${timeout}ms)`);
     await page.waitForTimeout(interval);
   }
@@ -126,14 +141,19 @@ async function waitFor(page, predicate, { timeout = 12000, interval = 250, label
 // hv-list-row). The item name is always rendered (unlike the optional columns the
 // full view can hide), so it is the reliable signal that a live event reached the
 // card's list.
+/** @type {(page: import('playwright').Page, name: string) => import('playwright').Locator} */
 const rowByName = (page, name) => page.locator('haventory-card hv-list-row', { hasText: name });
 
 // --- drive ---------------------------------------------------------------
+/** @type {string[]} */
 const consoleErrors = [];
+/** @type {string[]} */
 const pageErrors = [];
 const browser = await chromium.launch();
 let createdId = null;
+/** @type {Error | null} */
 let failure = null;
+/** @type {import('playwright').Page | null} */
 let page = null;
 
 try {
@@ -176,7 +196,7 @@ try {
   if (created.error) throw new Error(`create failed: ${JSON.stringify(created.error)}`);
   createdId = created.result?.id;
   if (!createdId) throw new Error('create returned no id');
-  await waitFor(page, async () => (await rowByName(page, nameA).count()) > 0, {
+  await waitFor(page, async (p) => (await rowByName(p, nameA).count()) > 0, {
     label: 'created row to appear live',
   });
   console.log('  ok: created item appeared live (no manual re-list)');
@@ -192,7 +212,7 @@ try {
   if (upd.error) throw new Error(`update failed: ${JSON.stringify(upd.error)}`);
   await waitFor(
     page,
-    async () => (await rowByName(page, nameB).count()) > 0 && (await rowByName(page, nameA).count()) === 0,
+    async (p) => (await rowByName(p, nameB).count()) > 0 && (await rowByName(p, nameA).count()) === 0,
     { label: 'rename to reflect live (in-place replace)' },
   );
   console.log('  ok: rename reflected live (in-place replace)');
@@ -205,12 +225,12 @@ try {
   });
   if (del.error) throw new Error(`delete failed: ${JSON.stringify(del.error)}`);
   createdId = null; // deleted; nothing to clean up
-  await waitFor(page, async () => (await rowByName(page, nameB).count()) === 0, {
+  await waitFor(page, async (p) => (await rowByName(p, nameB).count()) === 0, {
     label: 'deleted row to disappear live',
   });
   console.log('  ok: deletion reflected live');
 } catch (e) {
-  failure = e;
+  failure = /** @type {Error} */ (e);
 } finally {
   // Best-effort cleanup so a mid-run failure never leaves e2e_smoke_ junk behind.
   if (createdId && page) {

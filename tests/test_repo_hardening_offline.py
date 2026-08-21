@@ -1,15 +1,22 @@
-"""Tests for the committed branch ruleset in ``.github/rulesets/``.
+"""Tests for the repository configuration that CI itself cannot report on.
 
-A required status check that never reports blocks every pull request forever, so
-the checks named in the ruleset are validated against the workflows that are
-supposed to produce them: the context has to be a job that runs on pull requests
-to ``main`` through an unfiltered trigger.
+The committed branch ruleset in ``.github/rulesets/`` comes first: a required
+status check that never reports blocks every pull request forever, so the checks
+it names are validated against the workflows that are supposed to produce them —
+the context has to be a job that runs on pull requests to ``main`` through an
+unfiltered trigger.
+
+Then two things a workflow run cannot tell you about itself: that every
+third-party action it calls is pinned to an immutable revision, and that
+Dependabot is configured to keep ``requirements-integration.txt`` patched
+without fighting the pins that file carries deliberately.
 """
 
 from __future__ import annotations
 
 import itertools
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +26,25 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RULESET_PATH = REPO_ROOT / ".github" / "rulesets" / "main.json"
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+DEPENDABOT_PATH = REPO_ROOT / ".github" / "dependabot.yml"
+
+# `actions/*` is GitHub's own namespace, and this repository pins it by tag on
+# purpose; everything else names an immutable revision, because a tag can be
+# repointed by whoever owns it and Scorecard's pinned-dependencies check reads a
+# tag as unpinned. A `docker://` image counts as third party too.
+FIRST_PARTY_ACTION = re.compile(r"^actions/")
+IMMUTABLE_REVISION = re.compile(r"@(?:[0-9a-f]{40}|sha256:[0-9a-f]{64})$")
+
+# The two pins `requirements-integration.txt` carries as derived numbers rather
+# than as dependencies to keep current.
+HA_PINS = ("homeassistant", "home-assistant-frontend")
+VERSION_UPDATE_TYPES = frozenset(
+    {
+        "version-update:semver-major",
+        "version-update:semver-minor",
+        "version-update:semver-patch",
+    }
+)
 
 # App id of GitHub Actions. Pinning it on a required check means a status posted
 # by any other app cannot satisfy the requirement.
@@ -167,3 +193,117 @@ def test_path_filtered_workflow_reports_no_required_contexts() -> None:
 
 def test_unknown_required_check_is_not_satisfied_by_the_workflows() -> None:
     assert "backend (3.13)" not in available_contexts()
+
+
+def uses_values(node: Any) -> list[str]:
+    """Every ``uses:`` value anywhere in a parsed workflow."""
+    if isinstance(node, dict):
+        return [
+            *([str(node["uses"])] if "uses" in node else []),
+            *(value for child in node.values() for value in uses_values(child)),
+        ]
+    if isinstance(node, list):
+        return [value for child in node for value in uses_values(child)]
+    return []
+
+
+def unpinned_actions(workflow: dict[str, Any]) -> list[str]:
+    """Third-party references a workflow calls without naming a revision."""
+    return [
+        reference
+        for reference in uses_values(workflow)
+        if not FIRST_PARTY_ACTION.match(reference) and not IMMUTABLE_REVISION.search(reference)
+    ]
+
+
+def dependabot_block(ecosystem: str, directory: str) -> dict[str, Any] | None:
+    """The update block for one ecosystem and directory, if it is configured."""
+    config = yaml.safe_load(DEPENDABOT_PATH.read_text(encoding="utf-8"))
+    for update in config["updates"]:
+        if update["package-ecosystem"] == ecosystem and update["directory"] == directory:
+            return dict(update)
+    return None
+
+
+def ignored_update_types(block: dict[str, Any]) -> dict[str, set[str]]:
+    """What each ignored dependency is ignored for; an empty set means everything."""
+    return {
+        entry["dependency-name"]: set(entry.get("update-types", []))
+        for entry in block.get("ignore", [])
+    }
+
+
+def test_third_party_actions_are_pinned_by_digest() -> None:
+    """A tag can be moved under the workflow that calls it; a digest cannot."""
+    for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+        assert unpinned_actions(workflow) == [], f"{path.name} calls an unpinned action"
+
+
+def test_a_tag_pinned_reference_is_reported() -> None:
+    """The error case, in the shape a new workflow arrives in."""
+    workflow = yaml.safe_load(
+        """
+        name: new
+        on: [push]
+        jobs:
+          check:
+            runs-on: ubuntu-latest
+            steps:
+              - uses: actions/checkout@v7
+              - uses: astral-sh/setup-uv@v10
+              - uses: docker://rhysd/actionlint:1.7.12
+        """
+    )
+
+    assert unpinned_actions(workflow) == [
+        "astral-sh/setup-uv@v10",
+        "docker://rhysd/actionlint:1.7.12",
+    ]
+
+
+def test_dependabot_updates_the_integration_requirements() -> None:
+    """Without a pip block nothing opens the fix for an advisory in that file.
+
+    The dependency graph scans ``requirements-integration.txt`` either way, so
+    the alert arrives; the pull request that closes it does not.
+    """
+    assert dependabot_block("pip", "/") is not None
+
+
+def test_dependabot_leaves_the_ha_pins_alone() -> None:
+    """Both pins are derived numbers: a version bump of either is a red build.
+
+    ``homeassistant`` is the floor ``hacs.json`` declares, and
+    ``home-assistant-frontend`` must equal what that release's own manifest asks
+    for — so an automated bump is not an upgrade. Ignoring them outright would
+    also swallow the security update this block exists to receive, so the ignore
+    names version updates and nothing else.
+    """
+    block = dependabot_block("pip", "/")
+    assert block is not None
+    ignored = ignored_update_types(block)
+
+    assert set(HA_PINS) <= set(ignored), f"pip block ignores {sorted(ignored)}"
+    for name in HA_PINS:
+        assert ignored[name] == VERSION_UPDATE_TYPES, (
+            f"{name} is ignored for {sorted(ignored[name]) or 'every update'} — a blanket "
+            f"ignore also mutes the security channel"
+        )
+
+
+def test_a_blanket_ignore_is_told_from_a_scoped_one() -> None:
+    """The two are one line apart in the file and opposite in effect."""
+    blanket = {"ignore": [{"dependency-name": "homeassistant"}]}
+    scoped = {
+        "ignore": [
+            {
+                "dependency-name": "homeassistant",
+                "update-types": sorted(VERSION_UPDATE_TYPES),
+            }
+        ]
+    }
+
+    assert ignored_update_types(blanket) == {"homeassistant": set()}
+    assert ignored_update_types(scoped) == {"homeassistant": set(VERSION_UPDATE_TYPES)}

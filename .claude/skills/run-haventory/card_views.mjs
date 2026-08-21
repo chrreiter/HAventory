@@ -231,6 +231,10 @@ let notesPrinted = false;
  * The URL path a harness should open for the given shape, announced on stdout
  * so a run says which view it chose and why. `label` names the caller's own
  * notion of the pass when it has one; the shape is the sensible default.
+ *
+ * @param {string} shape
+ * @param {{ override?: string | null, label?: string }} [options]
+ * @returns {Promise<string>}
  */
 export async function cardPath(shape, { override = null, label = shape } = {}) {
   if (override) {

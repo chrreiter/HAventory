@@ -31,6 +31,27 @@ repos:
             cards/haventory-card/package-lock\.json
           )
         additional_dependencies: ["tomli"]
+  # The card's half of the gate, run from the card package because that is where
+  # its node_modules and config live. `pass_filenames: false` because both tools
+  # take the package, not a file list; `language: system` because the hooks run
+  # the npm binaries this checkout already installed rather than an environment
+  # pre-commit builds. Vitest deliberately stays out: a full card suite on every
+  # commit is what makes people reach for `--no-verify`, and CI plus
+  # `scripts/ci_local.sh` already run it.
+  - repo: local
+    hooks:
+      - id: card-eslint
+        name: eslint (card)
+        entry: bash -c 'cd cards/haventory-card && npx eslint .'
+        language: system
+        pass_filenames: false
+        files: ^cards/haventory-card/
+      - id: card-typecheck
+        name: tsc --noEmit (card)
+        entry: bash -c 'cd cards/haventory-card && npm run typecheck'
+        language: system
+        pass_filenames: false
+        files: ^cards/haventory-card/
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:

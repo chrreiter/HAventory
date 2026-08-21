@@ -413,9 +413,15 @@ def test_the_documented_ruff_command_runs_the_pinned_ruff() -> None:
 
 
 def test_pre_commit_runs_the_actionlint_ci_runs() -> None:
-    """Same split as ruff: the hook and the CI job are pinned independently."""
+    """Same split as ruff: the hook and the CI job are pinned independently.
+
+    The job pins the image by digest, which names no version — so the trailing
+    comment is where the version lives, and the tie to the hook's ``rev`` is
+    only readable if the two are written together.
+    """
     ci_image = re.search(
-        r"docker://rhysd/actionlint:(\S+)", CI_WORKFLOW.read_text(encoding="utf-8")
+        r"docker://rhysd/actionlint@sha256:[0-9a-f]{64} +# v(\S+)",
+        CI_WORKFLOW.read_text(encoding="utf-8"),
     )
-    assert ci_image is not None
+    assert ci_image is not None, "the actionlint job names no digest-pinned image with a version"
     assert pre_commit_rev("https://github.com/rhysd/actionlint") == ci_image.group(1)

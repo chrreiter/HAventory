@@ -30,6 +30,20 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 3
+    groups:
+      python-dev:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # Integration test harness (pip): `requirements-integration.txt` at the root.
+  # The dependency graph already scans that file, so an advisory in it alerts;
+  # what was missing is the pull request that fixes it.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 3
     ignore:
       # Not dependencies to keep current. `requirements-integration.txt` pins the
       # Home Assistant core to the floor `hacs.json` declares, so the in-process
@@ -39,9 +53,16 @@ updates:
       # tests/test_min_ha_version.py and tests/integration/test_frontend.py — so
       # a bump arrives as a red pull request that reopens every week. Both move
       # together, by hand, when the declared floor moves.
+      #
+      # Scoped to version updates rather than ignored outright: a security update
+      # for either must still be able to open a pull request.
       - dependency-name: "homeassistant"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
       - dependency-name: "home-assistant-frontend"
-    groups:
-      python-dev:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
