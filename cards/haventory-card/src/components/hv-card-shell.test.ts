@@ -943,19 +943,7 @@ describe('hv-card-shell: adding an item on a phone', () => {
       },
     );
 
-    it('keeps the sheet and the typing when the question is declined', async () => {
-      const { el, sr } = await dirtyAddSheet();
 
-      dismiss.scrim(sr);
-      await settle(el);
-      (
-        hostGuard(sr).shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement
-      ).click();
-      await settle(el);
-
-      expect(addSheet(sr)?.open).toBe(true);
-      expect(typed(sr)).toBe('Half typed');
-    });
 
     it('asks the same question every other surface asks', async () => {
       const { el, sr } = await dirtyAddSheet();

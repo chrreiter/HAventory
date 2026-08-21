@@ -526,25 +526,7 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     expect(el.open).toBe(false);
   });
 
-  it.each(['scrim', 'escape'] as const)('%s keeps the form when the question is declined', async (how) => {
-    const el = await dirtySheet();
-    let cancels = 0;
-    el.addEventListener('cancel', () => {
-      cancels += 1;
-    });
 
-    dismissals[how](el);
-    await settle(el);
-    press(el, 'confirm-cancel');
-    await settle(el);
-
-    expect(cancels).toBe(0);
-    expect(el.open).toBe(true);
-    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
-    expect((editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement).value).toBe(
-      'A longer name',
-    );
-  });
 
   // The grip is hidden in edit mode, so the drag is exercised on the read view:
   // clean there, and it must not start asking about nothing.

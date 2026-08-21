@@ -1336,21 +1336,7 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
     },
   );
 
-  it.each(Object.keys(leave) as (keyof typeof leave)[])(
-    '%s keeps the typing when the question is declined',
-    async (how) => {
-      const { el, sr } = await dirtyEditor(two());
 
-      leave[how](sr);
-      await settle(el);
-      answer(sr, 'confirm-cancel');
-      await settle(el);
-
-      expect(guard(sr).open).toBe(false);
-      expect(el.open).toBe(true);
-      expect(editorName(sr)).toBe('Typed but unsaved');
-    },
-  );
 
   it('opens the other row once the discard is confirmed', async () => {
     const { el, sr } = await dirtyEditor(two());

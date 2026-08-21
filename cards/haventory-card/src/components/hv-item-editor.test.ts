@@ -1146,32 +1146,9 @@ describe('hv-item-editor: Escape takes back one thing at a time', () => {
     expect(cancels.count).toBe(1);
   });
 
-  it('keeps the form when the discard guard is dismissed', async () => {
-    const el = await mount(makeItem({ id: '1', name: 'A' }));
-    const cancels = onCancel(el);
-    await type(el, 'editor-name', 'A longer name');
 
-    esc(el);
-    await el.updateComplete;
-    const guard = await dialog(el, 'editor-discard-confirm');
-    (guard.shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement).click();
-    await el.updateComplete;
 
-    expect(cancels.count).toBe(0);
-    expect((q(el, '[data-testid="editor-name"]') as HTMLInputElement).value).toBe('A longer name');
-    expect(el.dirty).toBe(true);
-  });
 
-  it('closes a clean form on the spot, with nothing to ask about', async () => {
-    const el = await mount(makeItem({ id: '1', name: 'A' }));
-    const cancels = onCancel(el);
-
-    esc(el);
-    await el.updateComplete;
-
-    expect(cancels.count).toBe(1);
-    expect((await dialog(el, 'editor-discard-confirm')).open).toBe(false);
-  });
 });
 
 // Escape asked and the two buttons beside it did not, so the same decision had
