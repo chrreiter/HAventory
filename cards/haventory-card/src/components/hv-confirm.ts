@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -77,12 +78,12 @@ export class HVConfirm extends LitElement {
   @property({ type: Boolean, reflect: true }) open = false;
   /** Phone viewport: rise from the bottom edge instead of centring. */
   @property({ type: Boolean, reflect: true }) mobile = false;
-  @property({ type: String }) heading = 'Are you sure?';
+  @property({ type: String }) heading = t('hv.confirm.heading');
   @property({ type: String }) message = '';
   /** Optional warning strip rendered above the actions. */
   @property({ type: String }) warning: string | null = null;
-  @property({ type: String }) confirmLabel = 'Confirm';
-  @property({ type: String }) cancelLabel = 'Cancel';
+  @property({ type: String }) confirmLabel = t('hv.action.confirm');
+  @property({ type: String }) cancelLabel = t('hv.action.cancel');
   @property({ type: Boolean }) destructive = false;
 
   @state() private _zBase: number | null = null;

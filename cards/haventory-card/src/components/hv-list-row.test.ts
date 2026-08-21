@@ -1,3 +1,4 @@
+import { setLanguage } from '../i18n';
 import './hv-list-row';
 import { makeAttachment, makeItem, makeManual, makeMediaBindings, mountComponent, q } from '../test.utils';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
@@ -642,4 +643,24 @@ describe('hv-list-row: document marker', () => {
     expect(mark?.previousElementSibling?.getAttribute('data-testid')).toBe('row-name');
   });
 
+});
+
+describe('hv-list-row: the language in force', () => {
+  // The row is the card's densest surface and the one every install sees
+  // first, so it is where a literal left behind by the extraction shows up.
+  it('names the state, the location and the actions in German', async () => {
+    setLanguage('de');
+    const el = await mount({
+      name: 'Bohrmaschine',
+      checked_out: true,
+      due_date: addDays(-2, Date.parse('2026-07-24T12:00:00Z')),
+    });
+    expect(q(el, '[data-testid="row-checked-out"]')?.textContent).toContain('Überfällig');
+    expect(q(el, '[data-testid="row-secondary"]')?.textContent).toContain('Kein Ort');
+    expect(
+      rowMenuEntries(makeItem({ checked_out: false })).map((entry) =>
+        'label' in entry ? entry.label : 'divider',
+      ),
+    ).toEqual(['Ausleihen …', 'Bearbeiten', 'divider', 'Gegenstand löschen']);
+  });
 });

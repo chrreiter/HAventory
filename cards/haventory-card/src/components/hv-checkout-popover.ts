@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -308,16 +309,20 @@ export class HVCheckoutPopover extends LitElement {
         class="card"
         role="dialog"
         aria-modal="true"
-        aria-label=${settingOnly ? 'Set due date' : `Check out ${subject}`}
+        aria-label=${settingOnly
+          ? t('hv.checkout.setDueDate')
+          : t('hv.checkout.checkOutNamed', { name: subject })}
         data-testid="checkout-popover"
         style=${this.inline ? '' : `z-index:${z + 1}; ${this._position}`}
         @keydown=${onEscape(() => this._cancel())}
       >
         <div class="head">
           <div class="title" data-testid="checkout-title">
-            ${settingOnly ? 'Set a due date' : `Check out ${subject}`}
+            ${settingOnly
+              ? t('hv.checkout.setADueDate')
+              : t('hv.checkout.checkOutNamed', { name: subject })}
           </div>
-          <div class="sub">A due date is optional — it's what makes overdue highlighting work.</div>
+          <div class="sub">${t('hv.checkout.sub')}</div>
         </div>
         <div class="body">
           <div class="offsets">
@@ -343,7 +348,7 @@ export class HVCheckoutPopover extends LitElement {
                 this._due = addDays(this._customDays);
               }}
             >
-              +X days
+              ${t('hv.editor.customDaysOffset')}
             </button>
           </div>
           ${this._customOpen
@@ -353,7 +358,7 @@ export class HVCheckoutPopover extends LitElement {
                   min="1"
                   max="3650"
                   inputmode="numeric"
-                  aria-label="Days from today"
+                  aria-label=${t('hv.editor.daysFromToday')}
                   .value=${String(this._customDays)}
                   @input=${(e: Event) => {
                     const days = Number((e.target as HTMLInputElement).value);
@@ -363,12 +368,12 @@ export class HVCheckoutPopover extends LitElement {
                     this._due = Number.isFinite(days) && days >= 1 ? addDays(Math.floor(days)) : null;
                   }}
                 />
-                <span>days from today</span>
+                <span>${t('hv.editor.daysFromToday')}</span>
               </label>`
             : null}
           <label class="date ${this._due ? '' : 'none'}" data-testid="checkout-date">
             ${icon('calendar', 17)}
-            <span class="hv-sr-only">Due date</span>
+            <span class="hv-sr-only">${t('hv.editor.dueDate')}</span>
             <input
               type="date"
               .value=${this._due ?? ''}
@@ -376,7 +381,9 @@ export class HVCheckoutPopover extends LitElement {
                 this._due = (e.target as HTMLInputElement).value || null;
               }}
             />
-            <span data-testid="checkout-date-label">${this._due ? formatDate(this._due) : 'No due date'}</span>
+            <span data-testid="checkout-date-label"
+              >${this._due ? formatDate(this._due) : t('hv.checkout.noDueDate')}</span
+            >
           </label>
         </div>
         <div class="actions">
@@ -385,17 +392,26 @@ export class HVCheckoutPopover extends LitElement {
             data-testid="checkout-no-date"
             @click=${() => this._commit(null)}
           >
-            ${settingOnly ? 'Clear due date' : 'Check out with no due date'}
+            ${settingOnly ? t('hv.checkout.clearDueDate') : t('hv.checkout.withoutDueDate')}
           </button>
           ${this.touch ? null : html`<span class="spacer"></span>`}
-          <button class="hv-text-button" data-testid="checkout-cancel" @click=${this._cancel}>Cancel</button>
+          <button class="hv-text-button" data-testid="checkout-cancel" @click=${this._cancel}>
+            ${t('hv.action.cancel')}
+          </button>
           <button
             class="confirm"
             data-testid="checkout-confirm"
             ?disabled=${!this._due}
             @click=${() => this._commit(this._due)}
           >
-            ${settingOnly ? 'Set' : 'Check out'}${this._due ? ` · due ${formatDate(this._due)}` : ''}
+            ${this._due
+              ? t('hv.checkout.confirmWithDate', {
+                  action: settingOnly ? t('hv.checkout.set') : t('hv.action.checkOut'),
+                  date: formatDate(this._due),
+                })
+              : settingOnly
+                ? t('hv.checkout.set')
+                : t('hv.action.checkOut')}
           </button>
         </div>
       </div>

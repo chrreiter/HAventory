@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -100,7 +101,7 @@ export class HVChipInput extends LitElement {
 
   @property({ attribute: false }) values: string[] = [];
   @property({ attribute: false }) suggestions: string[] = [];
-  @property({ type: String }) placeholder = 'Add tag…';
+  @property({ type: String }) placeholder = t('hv.chipInput.placeholder');
   @property({ type: Number }) maxSuggestions = 3;
 
   @state() private _draft = '';

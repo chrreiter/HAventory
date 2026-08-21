@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -207,20 +208,20 @@ export class HVLightbox extends LitElement {
       @click=${this._close}
     >
       ${src ? html`<img src=${src} alt=${pictureAlt(item.name, index, shots.length)} />` : null}
-      <button class="close" data-testid="lightbox-close" aria-label="Close photo" @click=${this._close}>
+      <button class="close" data-testid="lightbox-close" aria-label=${t('hv.lightbox.close')} @click=${this._close}>
         ${icon('close', 22)}
       </button>
       ${many
-        ? html`<button class="nav prev" data-testid="lightbox-prev" aria-label="Previous photo" @click=${nav(-1)}>
+        ? html`<button class="nav prev" data-testid="lightbox-prev" aria-label=${t('hv.lightbox.previous')} @click=${nav(-1)}>
               ${icon('chevronLeft', 26)}
             </button>
-            <button class="nav next" data-testid="lightbox-next" aria-label="Next photo" @click=${nav(1)}>
+            <button class="nav next" data-testid="lightbox-next" aria-label=${t('hv.lightbox.next')} @click=${nav(1)}>
               ${icon('chevronRight', 26)}
             </button>
             <!-- Announced rather than only drawn: the dialog's own label
                  changes with the photo, and a changed label is not re-read. -->
             <span class="counter" data-testid="lightbox-counter" aria-live="polite"
-              >${index + 1} of ${shots.length}</span
+              >${t('hv.lightbox.counter', { index: index + 1, total: shots.length })}</span
             >`
         : null}
     </div>`;

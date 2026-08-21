@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
@@ -274,7 +275,7 @@ export class HVLocationTree extends LitElement {
    * filed nowhere. Calling it "All items" in a picker promised a set and
    * delivered an empty field.
    */
-  @property({ type: String }) allLabel = 'All items';
+  @property({ type: String }) allLabel = t('hv.tree.allItems');
   @property({ type: String }) allIcon: IconName = 'home';
   /** Show a "No location" row bound to the orphans filter. */
   @property({ type: Boolean }) showOrphans = false;
@@ -488,7 +489,9 @@ export class HVLocationTree extends LitElement {
             ? html`<button
                 class="twisty hv-browse-row-lead"
                 data-testid="tree-twisty"
-                aria-label=${open ? `Collapse ${node.name}` : `Expand ${node.name}`}
+                aria-label=${open
+                  ? t('hv.tree.collapse', { name: node.name })
+                  : t('hv.tree.expand', { name: node.name })}
                 @click=${(e: Event) => {
                   e.stopPropagation();
                   this._toggle(node.id);
@@ -505,7 +508,7 @@ export class HVLocationTree extends LitElement {
                   class="action"
                   data-testid="tree-more"
                   data-id=${node.id}
-                  aria-label=${`Actions for ${node.name}`}
+                  aria-label=${t('hv.tree.actionsFor', { name: node.name })}
                   @click=${(e: Event) => {
                     e.stopPropagation();
                     this._emit('more-location', { locationId: node.id, node });
@@ -521,8 +524,8 @@ export class HVLocationTree extends LitElement {
                   class="action"
                   data-testid="tree-merge"
                   data-id=${node.id}
-                  aria-label=${`Merge ${node.name}`}
-                  title="Merge into another location"
+                  aria-label=${t('hv.tree.merge', { name: node.name })}
+                  title=${t('hv.tree.mergeTitle')}
                   @click=${(e: Event) => {
                     e.stopPropagation();
                     this._emit('merge-location', { locationId: node.id, node });
@@ -534,8 +537,8 @@ export class HVLocationTree extends LitElement {
                   class="action"
                   data-testid="tree-edit"
                   data-id=${node.id}
-                  aria-label=${`Edit ${node.name}`}
-                  title="Edit location"
+                  aria-label=${t('hv.tree.edit', { name: node.name })}
+                  title=${t('hv.tree.editTitle')}
                   @click=${(e: Event) => {
                     e.stopPropagation();
                     this._emit('edit-location', { locationId: node.id, node });
@@ -547,8 +550,8 @@ export class HVLocationTree extends LitElement {
                   class="action danger"
                   data-testid="tree-delete"
                   data-id=${node.id}
-                  aria-label=${`Delete ${node.name}`}
-                  title="Delete location"
+                  aria-label=${t('hv.tree.delete', { name: node.name })}
+                  title=${t('hv.tree.deleteTitle')}
                   @click=${(e: Event) => {
                     e.stopPropagation();
                     this._emit('delete-location', { locationId: node.id, node });
@@ -615,7 +618,7 @@ export class HVLocationTree extends LitElement {
     const pickable = this.areaSelectable && group !== null;
     const selected =
       pickable && this.selectedAreaId === group.id && !this._anySelected() && !this.orphansSelected;
-    const name = group?.name ?? 'No area';
+    const name = group?.name ?? t('hv.tree.noArea');
     const label = group
       ? renderAreaChip(group.name)
       : html`<span class="hv-area-chip quiet area-none"
@@ -709,7 +712,7 @@ export class HVLocationTree extends LitElement {
             this._newName = '';
           }}
         >
-          ${icon('plus', 15)} New location…
+          ${icon('plus', 15)} ${t('hv.tree.newLocation')}
         </button>
       </div>`;
     }
@@ -719,8 +722,8 @@ export class HVLocationTree extends LitElement {
         <input
           class="hv-input"
           data-testid="tree-create-name"
-          aria-label="New location name"
-          placeholder="Location name"
+          aria-label=${t('hv.tree.newLocationName')}
+          placeholder=${t('hv.tree.locationNamePlaceholder')}
           .value=${this._newName}
           @input=${(e: Event) => {
             this._newName = (e.target as HTMLInputElement).value;
@@ -744,7 +747,7 @@ export class HVLocationTree extends LitElement {
           ?disabled=${!name}
           @click=${() => this._submitCreate()}
         >
-          Create
+          ${t('hv.action.create')}
         </button>
       </div>
     </div>`;
@@ -772,7 +775,7 @@ export class HVLocationTree extends LitElement {
         ].filter(Boolean)
       : this.nodes.map((n) => this._renderNode(n, 0, false)).filter(Boolean);
     return html`
-      <div role="tree" aria-label="Locations">
+      <div role="tree" aria-label=${t('hv.tree.label')}>
         ${this.showAll
           ? html`<button
               class="row hv-browse-row ${!this.orphansSelected && !this._anySelected() ? 'selected' : ''}"
@@ -791,7 +794,7 @@ export class HVLocationTree extends LitElement {
           ? rendered
           : html`
               <div class="empty" data-testid="tree-empty">
-                ${filtering ? 'No locations match' : 'No locations yet'}
+                ${filtering ? t('hv.tree.noneMatch') : t('hv.tree.noneYet')}
               </div>
               ${this.allowCreate && !filtering ? this._renderCreate() : null}
             `}
@@ -805,7 +808,7 @@ export class HVLocationTree extends LitElement {
               >
                 <span class="twisty hv-browse-row-lead placeholder">${icon('chevronRight', 17)}</span>
                 ${icon('mapMarkerOff', 18)}
-                <span class="name hv-browse-row-label">No location</span>
+                <span class="name hv-browse-row-label">${t('hv.term.noLocation')}</span>
                 ${this.showCounts && this.orphanCount !== null
                   ? this._pairedCount(this.orphanCount, this._matchingOrphanCount)
                   : null}

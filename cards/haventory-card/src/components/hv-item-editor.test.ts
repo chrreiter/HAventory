@@ -1,3 +1,4 @@
+import { setLanguage } from '../i18n';
 import './hv-item-editor';
 import {
   all,
@@ -2726,4 +2727,23 @@ describe('hv-item-editor: reminders', () => {
     expect(saves[0].changes?.reminder_interval).toBe(null);
   });
 
+});
+
+describe('hv-item-editor: the language in force', () => {
+  it('labels its fields and refuses a save in German', async () => {
+    setLanguage('de');
+    const { el } = await mountComponent<HVItemEditor>('hv-item-editor', {
+      item: null,
+      locations: [garage],
+      locationTree: tree,
+    });
+    await settle(el);
+    expect(el.shadowRoot?.textContent).toContain('Menge');
+    expect(el.shadowRoot?.textContent).toContain('Neuer Gegenstand');
+    q<HTMLButtonElement>(el, '[data-testid="editor-save"]')?.click();
+    await settle(el);
+    // The message comes from `ui/item-form`, which the mechanism PR translated
+    // — so this also proves the two halves speak the same language.
+    expect(q(el, '[data-testid="editor-name-error"]')?.textContent).toContain('erforderlich');
+  });
 });

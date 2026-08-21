@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -62,20 +63,20 @@ import './hv-checkout-popover';
  * checkout, and as the field's `title` — a tooltip alone never reaches a phone,
  * which is where the whole block hides behind a disclosure to begin with.
  */
-const DUE_DATE_HINT = 'A due date applies while the item is checked out.';
+const dueDateHint = () => t('hv.editor.dueDateHint');
 
 /**
  * Why the repeat is dead until a date is set. The backend refuses an interval
  * with nothing to count from, so this says the same thing before the round trip
  * — as a note and as the field's `title`, for the same reason as the due date's.
  */
-const REMINDER_HINT = 'Pick a date first; leave the repeat empty for a one-off.';
+const reminderHint = () => t('hv.editor.reminderHint');
 
-const CUSTOM_FIELD_TYPES: { value: CustomFieldType; label: string }[] = [
-  { value: 'string', label: 'Text' },
-  { value: 'number', label: 'Number' },
-  { value: 'boolean', label: 'Yes/No' },
-  { value: 'date', label: 'Date' },
+const customFieldTypes = (): { value: CustomFieldType; label: string }[] => [
+  { value: 'string', label: t('hv.editor.type.string') },
+  { value: 'number', label: t('hv.editor.type.number') },
+  { value: 'boolean', label: t('hv.editor.type.boolean') },
+  { value: 'date', label: t('hv.editor.type.date') },
 ];
 
 /**
@@ -107,19 +108,19 @@ interface UploadEntry {
 }
 
 /** How each kind of attachment names itself in a confirmation. */
-const REMOVE_COPY: Record<AttachmentKind, { heading: string; message: string }> = {
-  picture: {
-    heading: 'Remove this photo?',
-    message: 'The photo file is deleted with it, and there is no way back.',
-  },
-  manual: {
-    heading: 'Remove this document?',
-    message: 'The document file is deleted with it, and there is no way back.',
-  },
-};
+const removeCopy = (kind: AttachmentKind): { heading: string; message: string } =>
+  kind === 'manual'
+    ? {
+        heading: t('hv.editor.removeDocument.heading'),
+        message: t('hv.editor.removeDocument.message'),
+      }
+    : {
+        heading: t('hv.editor.removePhoto.heading'),
+        message: t('hv.editor.removePhoto.message'),
+      };
 
 /** The message on a rejected command, whatever shape the rejection arrived in. */
-function errorText(err: unknown, fallback = 'Upload failed.'): string {
+function errorText(err: unknown, fallback = t('hv.editor.upload.failed')): string {
   if (err instanceof Error && err.message) return err.message;
   const message = (err as { message?: unknown } | null)?.message;
   return typeof message === 'string' && message ? message : fallback;
@@ -1428,9 +1429,9 @@ export class HVItemEditor extends LitElement {
   private _renderLocationField() {
     const locations = this._knownLocations;
     const loc = locations.find((l) => l.id === this._model.locationId);
-    const parts = locationPathParts(loc, locations, this.areas, 'No location');
+    const parts = locationPathParts(loc, locations, this.areas, t('hv.term.noLocation'));
     return html`<div class="cell span2">
-      <span class="hv-label">Location</span>
+      <span class="hv-label">${t('hv.editor.field.location')}</span>
       <button
         class="field-button ${this._model.locationId ? '' : 'empty'}"
         data-testid="editor-location"
@@ -1454,7 +1455,7 @@ export class HVItemEditor extends LitElement {
               .areas=${this.areas}
               .selectedId=${this._model.locationId}
               showAll
-              allLabel="No location"
+              allLabel=${t('hv.term.noLocation')}
               allIcon="close"
               ?allowCreate=${this.createLocation !== null}
               @select=${(e: CustomEvent) => {
@@ -1492,7 +1493,7 @@ export class HVItemEditor extends LitElement {
       this._patch({ locationId: created.id });
       this._locationOpen = false;
     } catch (err) {
-      this._locationError = errorText(err, 'The location could not be created.');
+      this._locationError = errorText(err, t('hv.editor.locationCreateFailed'));
     }
   }
 
@@ -1617,7 +1618,7 @@ export class HVItemEditor extends LitElement {
     const typed = this._model.category.trim();
     const options = this._categoryOptions;
     return html`<div class="cell">
-      <label class="hv-label" for="editor-category">Category</label>
+      <label class="hv-label" for="editor-category">${t('hv.editor.field.category')}</label>
       <div class="combo">
         <input
           id="editor-category"
@@ -1625,7 +1626,7 @@ export class HVItemEditor extends LitElement {
           data-testid="editor-category"
           role="combobox"
           autocomplete="off"
-          placeholder="No category"
+          placeholder=${t('hv.editor.categoryPlaceholder')}
           aria-autocomplete="list"
           aria-expanded=${String(this._categoryOpen)}
           aria-controls=${CATEGORY_LIST_ID}
@@ -1646,8 +1647,8 @@ export class HVItemEditor extends LitElement {
               class="combo-arrow"
               data-testid="editor-category-toggle"
               tabindex="-1"
-              aria-label="Show all categories"
-              title="Show all categories"
+              aria-label=${t('hv.editor.showAllCategories')}
+              title=${t('hv.editor.showAllCategories')}
               @mousedown=${(e: Event) => e.preventDefault()}
               @click=${() => {
                 // Only a second click on the *full* list closes it — pressing the
@@ -1688,7 +1689,7 @@ export class HVItemEditor extends LitElement {
                   </button>`,
                 )
               : html`<div class="option-empty" data-testid="editor-category-empty">
-                  No existing category matches “${typed}” — saving adds it as a new one.
+                  ${t('hv.editor.categoryEmpty', { typed })}
                 </div>`}`
           : null}
       </div>
@@ -1704,7 +1705,7 @@ export class HVItemEditor extends LitElement {
    */
   private _renderStatusField() {
     return html`<div class="cell">
-      <label class="hv-label" for="editor-status">Status</label>
+      <label class="hv-label" for="editor-status">${t('hv.editor.field.status')}</label>
       <select
         id="editor-status"
         class="hv-input"
@@ -1748,7 +1749,7 @@ export class HVItemEditor extends LitElement {
       <div class="state">
         <div class="group" role="group" aria-labelledby="editor-checkout-caption">
           <span class="hv-label group-caption" id="editor-checkout-caption" data-testid="editor-checkout-caption">
-            ${icon('account', 14)} Check out
+            ${icon('account', 14)} ${t('hv.editor.checkOutCaption')}
           </span>
           <div class="group-body checkout-body">
             <button
@@ -1757,10 +1758,12 @@ export class HVItemEditor extends LitElement {
               @click=${this._onCheckoutPressed}
             >
               ${icon(model.checkedOut ? 'check' : 'account', 16)}
-              <span>${model.checkedOut ? 'Check in' : 'Check out…'}</span>
+              <span
+                >${model.checkedOut ? t('hv.action.checkIn') : t('hv.action.checkOutEllipsis')}</span
+              >
             </button>
             <label class="hv-label due-label ${model.checkedOut ? '' : 'muted'}" for="editor-due">
-              Due date
+              ${t('hv.editor.dueDate')}
             </label>
             <input
               id="editor-due"
@@ -1768,18 +1771,18 @@ export class HVItemEditor extends LitElement {
               type="date"
               data-testid="editor-due-date"
               ?disabled=${!model.checkedOut}
-              title=${model.checkedOut ? '' : DUE_DATE_HINT}
+              title=${model.checkedOut ? '' : dueDateHint()}
               .value=${model.dueDate}
               @input=${(e: Event) => this._patch({ dueDate: (e.target as HTMLInputElement).value })}
             />
             ${model.checkedOut
               ? null
-              : html`<span class="group-hint" data-testid="editor-due-hint">${DUE_DATE_HINT}</span>`}
+              : html`<span class="group-hint" data-testid="editor-due-hint">${dueDateHint()}</span>`}
           </div>
           <hv-checkout-popover
             data-testid="editor-checkout"
             .item=${this.item}
-            .itemName=${model.name.trim() || 'this item'}
+            .itemName=${model.name.trim() || t('hv.editor.thisItem')}
             .anchor=${this._checkoutAnchor}
             ?inline=${this.mobile}
             ?touch=${this.mobile}
@@ -1800,7 +1803,7 @@ export class HVItemEditor extends LitElement {
         </div>
         <div class="group">
           <label class="hv-label group-caption" for="editor-inspection" data-testid="editor-inspection-caption">
-            ${icon('calendar', 14)} Next inspection
+            ${icon('calendar', 14)} ${t('hv.editor.nextInspection')}
           </label>
           <div class="group-body">
             <input
@@ -1836,14 +1839,14 @@ export class HVItemEditor extends LitElement {
     const model = this._model;
     return html`<div class="group reminder" role="group" aria-labelledby="editor-reminder-caption">
       <span class="hv-label group-caption" id="editor-reminder-caption" data-testid="editor-reminder-caption">
-        ${icon('clock', 14)} Reminder
+        ${icon('clock', 14)} ${t('hv.editor.reminder')}
       </span>
       <div class="group-body">
         <input
           id="editor-reminder-date"
           class="hv-input"
           type="date"
-          aria-label="Reminder date"
+          aria-label=${t('hv.editor.reminderDate')}
           data-testid="editor-reminder-date"
           .value=${model.reminderDate}
           @input=${(e: Event) =>
@@ -1851,7 +1854,7 @@ export class HVItemEditor extends LitElement {
         />
         <div class="repeat">
           <label class="hv-label ${model.reminderDate ? '' : 'muted'}" for="editor-reminder-count">
-            Repeat every
+            ${t('hv.editor.repeatEvery')}
           </label>
           <input
             id="editor-reminder-count"
@@ -1862,7 +1865,7 @@ export class HVItemEditor extends LitElement {
             placeholder="—"
             data-testid="editor-reminder-count"
             ?disabled=${!model.reminderDate}
-            title=${model.reminderDate ? '' : REMINDER_HINT}
+            title=${model.reminderDate ? '' : reminderHint()}
             .value=${model.reminderCount === null ? '' : String(model.reminderCount)}
             @input=${(e: Event) => {
               const raw = (e.target as HTMLInputElement).value.trim();
@@ -1871,7 +1874,7 @@ export class HVItemEditor extends LitElement {
           />
           <select
             class="hv-input repeat-unit"
-            aria-label="Repeat unit"
+            aria-label=${t('hv.editor.repeatUnit')}
             data-testid="editor-reminder-unit"
             ?disabled=${!model.reminderDate}
             .value=${model.reminderUnit}
@@ -1879,13 +1882,15 @@ export class HVItemEditor extends LitElement {
               this._patch({ reminderUnit: (e.target as HTMLSelectElement).value as ReminderUnit })}
           >
             ${REMINDER_UNITS.map(
-              (unit) => html`<option value=${unit} ?selected=${unit === model.reminderUnit}>${unit}</option>`,
+              (unit) => html`<option value=${unit} ?selected=${unit === model.reminderUnit}>
+                ${t(`hv.editor.unit.${unit}`)}
+              </option>`,
             )}
           </select>
         </div>
         ${model.reminderDate
           ? null
-          : html`<span class="group-hint" data-testid="editor-reminder-hint">${REMINDER_HINT}</span>`}
+          : html`<span class="group-hint" data-testid="editor-reminder-hint">${reminderHint()}</span>`}
       </div>
     </div>`;
   }
@@ -1934,7 +1939,7 @@ export class HVItemEditor extends LitElement {
             this._patch({ inspectionDate: addDays(this._inspectionCustomDays) });
           }}
         >
-          +X days
+          ${t('hv.editor.customDaysOffset')}
         </button>
       </div>
       ${this._inspectionCustomOpen
@@ -1944,7 +1949,7 @@ export class HVItemEditor extends LitElement {
               min="1"
               max="3650"
               inputmode="numeric"
-              aria-label="Days from today"
+              aria-label=${t('hv.editor.daysFromToday')}
               .value=${String(this._inspectionCustomDays)}
               @input=${(e: Event) => {
                 const days = Number((e.target as HTMLInputElement).value);
@@ -1957,7 +1962,7 @@ export class HVItemEditor extends LitElement {
                 });
               }}
             />
-            <span>days from today</span>
+            <span>${t('hv.editor.daysFromToday')}</span>
           </label>`
         : null}
     `;
@@ -1985,8 +1990,10 @@ export class HVItemEditor extends LitElement {
     return html`<div class="cell span3">
       <div class="custom">
         <div class="custom-head">
-          <span class="hv-label">Custom fields</span>
-          <span class="hv-tally" data-testid="editor-cf-tally">${counted(used, 'field')} set</span>
+          <span class="hv-label">${t('hv.editor.customFields')}</span>
+          <span class="hv-tally" data-testid="editor-cf-tally"
+            >${t('hv.editor.fieldsSet', { fields: counted(used, 'field') })}</span
+          >
         </div>
         ${rows.map((row) => {
           const error = this._errorFor(`custom:${row.id}`);
@@ -1994,19 +2001,19 @@ export class HVItemEditor extends LitElement {
             <input
               class="hv-input cf-key"
               data-testid="editor-cf-key"
-              aria-label="Field key"
-              placeholder="key"
+              aria-label=${t('hv.editor.fieldKey')}
+              placeholder=${t('hv.editor.fieldKeyPlaceholder')}
               .value=${row.key}
               @input=${(e: Event) => this._patchRow(row.id, { key: (e.target as HTMLInputElement).value })}
             />
             <select
               class="hv-input cf-type"
               data-testid="editor-cf-type"
-              aria-label="Field type"
+              aria-label=${t('hv.editor.fieldType')}
               @change=${(e: Event) =>
                 this._patchRow(row.id, { type: (e.target as HTMLSelectElement).value as CustomFieldType })}
             >
-              ${CUSTOM_FIELD_TYPES.map(
+              ${customFieldTypes().map(
                 (t) => html`<option value=${t.value} ?selected=${row.type === t.value}>${t.label}</option>`,
               )}
             </select>
@@ -2019,12 +2026,12 @@ export class HVItemEditor extends LitElement {
                   @click=${() => this._patchRow(row.id, { value: row.value === 'true' ? 'false' : 'true' })}
                 >
                   <span class="switch ${row.value === 'true' ? 'on' : ''}"></span>
-                  <span>${row.value === 'true' ? 'Yes' : 'No'}</span>
+                  <span>${row.value === 'true' ? t('hv.term.yes') : t('hv.term.no')}</span>
                 </button>`
               : html`<input
                   class="hv-input cf-value"
                   data-testid="editor-cf-value"
-                  aria-label="Field value"
+                  aria-label=${t('hv.editor.fieldValue')}
                   type=${row.type === 'number' ? 'number' : row.type === 'date' ? 'date' : 'text'}
                   .value=${row.value}
                   @input=${(e: Event) => this._patchRow(row.id, { value: (e.target as HTMLInputElement).value })}
@@ -2032,8 +2039,10 @@ export class HVItemEditor extends LitElement {
             <button
               class="cf-remove"
               data-testid="editor-cf-remove"
-              aria-label=${`Remove ${row.key || 'field'}`}
-              title="Remove field"
+              aria-label=${t('hv.editor.removeNamedField', {
+                key: row.key || t('hv.editor.fieldFallbackName'),
+              })}
+              title=${t('hv.editor.removeField')}
               @click=${() => this._patch({ customFields: rows.filter((r) => r.id !== row.id) })}
             >
               ${icon('close', 16)}
@@ -2046,11 +2055,11 @@ export class HVItemEditor extends LitElement {
           data-testid="editor-cf-add"
           @click=${() => this._patch({ customFields: [...rows, newCustomFieldRow()] })}
         >
-          ${icon('plus', 15)}Add field
+          ${icon('plus', 15)}${t('hv.editor.addField')}
         </button>
         ${unusedKeys.length
           ? html`<span class="key-hints" data-testid="editor-cf-key-hints">
-              Key suggestions:
+              ${t('hv.editor.keySuggestions')}
               ${unusedKeys.map(
                 (k) => html`<button
                   data-testid="editor-cf-key-hint"
@@ -2060,9 +2069,9 @@ export class HVItemEditor extends LitElement {
                   ${k}
                 </button>`,
               )}
-              · Clearing a value unsets the key on save.
+              · ${t('hv.editor.clearingUnsets')}
             </span>`
-          : html`<span class="key-hints">Clearing a value unsets the key on save.</span>`}
+          : html`<span class="key-hints">${t('hv.editor.clearingUnsets')}</span>`}
       </div>
     </div>`;
   }
@@ -2087,19 +2096,20 @@ export class HVItemEditor extends LitElement {
     const cap = kind === 'manual' ? config.max_manuals_per_item : config.max_pictures_per_item;
     if (cap !== undefined && alreadyAttached >= cap) {
       return kind === 'manual'
-        ? `${cap} documents is the limit for one item.`
-        : `${cap} photos is the limit for one item.`;
+        ? t('hv.editor.preflight.tooManyDocuments', { cap })
+        : t('hv.editor.preflight.tooManyPhotos', { cap });
     }
     if (file.size > config.max_attachment_bytes) {
-      return `${formatBytes(file.size)} is over the ${formatBytes(
-        config.max_attachment_bytes,
-      )} limit.`;
+      return t('hv.editor.preflight.tooBig', {
+        size: formatBytes(file.size),
+        limit: formatBytes(config.max_attachment_bytes),
+      });
     }
     const accepted = kind === 'manual' ? config.manual_mime_types : config.picture_mime_types;
     if (file.type && accepted && !accepted.includes(file.type)) {
       return kind === 'manual'
-        ? `${file.type} is not an accepted document type.`
-        : `${file.type} is not an accepted image type.`;
+        ? t('hv.editor.preflight.badDocumentType', { type: file.type })
+        : t('hv.editor.preflight.badImageType', { type: file.type });
     }
     return null;
   }
@@ -2222,7 +2232,7 @@ export class HVItemEditor extends LitElement {
     try {
       this._uploaded = await media.reorder(item.id, kind, ordered);
     } catch (err) {
-      this._pushUploadError('reorder', kind, 'Reorder photos', err);
+      this._pushUploadError('reorder', kind, t('hv.editor.upload.reorderPhotos'), err);
     }
   }
 
@@ -2243,7 +2253,9 @@ export class HVItemEditor extends LitElement {
       this._pushUploadError(
         'remove',
         kind,
-        kind === 'manual' ? 'Remove document' : 'Remove photo',
+        kind === 'manual'
+          ? t('hv.editor.upload.removeDocument')
+          : t('hv.editor.upload.removePhoto'),
         err,
       );
     }
@@ -2266,27 +2278,30 @@ export class HVItemEditor extends LitElement {
     return html`<div class="tile-controls">
       <button
         data-testid="editor-photo-earlier"
-        aria-label=${`Move photo ${index + 1} earlier`}
+        aria-label=${t('hv.editor.movePhotoEarlier', { position: index + 1 })}
         ?disabled=${index === 0}
         @click=${move(-1)}
       >
         ${icon('chevronLeft', 15)}
       </button>
       ${index === 0
-        ? html`<span class="is-cover" data-testid="editor-photo-cover" title="Cover photo"
+        ? html`<span
+            class="is-cover"
+            data-testid="editor-photo-cover"
+            title=${t('hv.editor.coverPhoto')}
             >${icon('star', 14)}</span
           >`
         : html`<button
             data-testid="editor-photo-make-cover"
-            aria-label=${`Make photo ${index + 1} the cover`}
-            title="Make cover"
+            aria-label=${t('hv.editor.makePhotoCover', { position: index + 1 })}
+            title=${t('hv.editor.makeCover')}
             @click=${move(-Infinity)}
           >
             ${icon('star', 14)}
           </button>`}
       <button
         data-testid="editor-photo-later"
-        aria-label=${`Move photo ${index + 1} later`}
+        aria-label=${t('hv.editor.movePhotoLater', { position: index + 1 })}
         ?disabled=${index === total - 1}
         @click=${move(1)}
       >
@@ -2309,7 +2324,7 @@ export class HVItemEditor extends LitElement {
 
     const drop = this._dropBindings('picture');
     return html`<div class="cell span3">
-      <span class="hv-label">Photos</span>
+      <span class="hv-label">${t('hv.editor.photos')}</span>
       <div
         class="photos ${!this.mobile && this._dropTarget === 'picture' ? 'dropping' : ''}"
         data-testid="editor-photos"
@@ -2324,7 +2339,9 @@ export class HVItemEditor extends LitElement {
               ? html`<button
                   class="open"
                   data-testid="editor-photo-open"
-                  aria-label=${`View ${pictureAlt(item.name, index, shots.length)}`}
+                  aria-label=${t('hv.editor.viewPhoto', {
+                    photo: pictureAlt(item.name, index, shots.length),
+                  })}
                   @click=${() => {
                     this._lightbox = index;
                   }}
@@ -2342,7 +2359,9 @@ export class HVItemEditor extends LitElement {
             <button
               class="remove"
               data-testid="editor-photo-remove"
-              aria-label=${`Remove ${pictureAlt(item.name, index, shots.length)}`}
+              aria-label=${t('hv.editor.removePhoto', {
+                photo: pictureAlt(item.name, index, shots.length),
+              })}
               @click=${() => {
                 this._confirmRemove = { id: picture.id, kind: 'picture' };
               }}
@@ -2354,7 +2373,7 @@ export class HVItemEditor extends LitElement {
         })}
         <label class="picker" data-testid="editor-photo-picker">
           ${icon('camera', 20)}
-          <span>Add photo</span>
+          <span>${t('hv.editor.addPhoto')}</span>
           <!-- capture="environment" is what opens the companion app's camera
                straight from this control; a browser without one ignores it and
                shows the ordinary file picker. -->
@@ -2384,9 +2403,9 @@ export class HVItemEditor extends LitElement {
   private _renderCreateAttachmentHint() {
     if (this.item !== null || !this.media) return null;
     return html`<div class="cell span3">
-      <span class="hv-label">Photos and documents</span>
+      <span class="hv-label">${t('hv.editor.attachmentsLater')}</span>
       <span class="attach-hint" data-testid="editor-attachment-hint">
-        Save the item first to add photos and manuals.
+        ${t('hv.editor.attachmentsHint')}
       </span>
     </div>`;
   }
@@ -2488,7 +2507,7 @@ export class HVItemEditor extends LitElement {
     try {
       this._uploaded = await media.retitle(item.id, attachmentId, title);
     } catch (err) {
-      this._pushUploadError('retitle', 'manual', 'Rename document', err);
+      this._pushUploadError('retitle', 'manual', t('hv.editor.upload.renameDocument'), err);
     }
   }
 
@@ -2516,7 +2535,7 @@ export class HVItemEditor extends LitElement {
 
     const drop = this._dropBindings('manual');
     return html`<div class="cell span3">
-      <span class="hv-label">Documents</span>
+      <span class="hv-label">${t('hv.editor.documents')}</span>
       <ul
         class="documents ${!this.mobile && this._dropTarget === 'manual' ? 'dropping' : ''}"
         data-testid="editor-documents"
@@ -2534,14 +2553,14 @@ export class HVItemEditor extends LitElement {
               data-testid="editor-document-title"
               .value=${doc.title ?? ''}
               placeholder=${doc.filename}
-              aria-label=${`Title for ${doc.filename}`}
+              aria-label=${t('hv.editor.titleFor', { filename: doc.filename })}
               @change=${(e: Event) =>
                 void this._retitle(doc.id, (e.target as HTMLInputElement).value.trim())}
             />
             <span class="doc-size">${formatBytes(doc.size)}</span>
             ${missing
               ? html`<span class="hv-chip warning" data-testid="editor-document-missing"
-                  >File missing</span
+                  >${t('hv.term.fileMissing')}</span
                 >`
               : src
                 ? html`<a
@@ -2550,15 +2569,15 @@ export class HVItemEditor extends LitElement {
                     href=${src}
                     target="_blank"
                     rel="noopener noreferrer"
-                    aria-label=${`Open ${attachmentTitle(doc)}`}
-                    title="Open document"
+                    aria-label=${t('hv.editor.openNamed', { name: attachmentTitle(doc) })}
+                    title=${t('hv.editor.openDocument')}
                     >${icon('openInNew', 15)}</a
                   >`
                 : null}
             <button
               class="doc-remove"
               data-testid="editor-document-remove"
-              aria-label=${`Remove ${attachmentTitle(doc)}`}
+              aria-label=${t('hv.editor.removeNamed', { name: attachmentTitle(doc) })}
               @click=${() => {
                 this._confirmRemove = { id: doc.id, kind: 'manual' };
               }}
@@ -2570,7 +2589,7 @@ export class HVItemEditor extends LitElement {
       </ul>
       <label class="picker doc-picker" data-testid="editor-manual-picker">
         ${icon('fileDocument', 18)}
-        <span>Add manual</span>
+        <span>${t('hv.editor.addManual')}</span>
         <input
           class="reveal"
           type="file"
@@ -2605,22 +2624,26 @@ export class HVItemEditor extends LitElement {
         >
           <span class="kind">${icon(glyph, 14)}</span>
           <span class="file">${entry.name}</span>
-          <span class="state">${entry.state === 'error' ? entry.message : `${entry.state}…`}</span>
+          <span class="state"
+            >${entry.state === 'error'
+              ? entry.message
+              : t(`hv.editor.upload.state.${entry.state}`)}</span
+          >
           ${entry.state === 'error' && entry.file
             ? html`<button
                 class="retry"
                 data-testid="editor-upload-retry"
-                aria-label=${`Try ${entry.name} again`}
+                aria-label=${t('hv.editor.upload.retryNamed', { name: entry.name })}
                 @click=${() => void this._retryUpload(entry.id)}
               >
-                Retry
+                ${t('hv.action.repeat')}
               </button>`
             : null}
           ${entry.state === 'error'
             ? html`<button
                 class="dismiss"
                 data-testid="editor-upload-dismiss"
-                aria-label=${`Dismiss the error for ${entry.name}`}
+                aria-label=${t('hv.editor.upload.dismissNamed', { name: entry.name })}
                 @click=${() => this._dismissUpload(entry.id)}
               >
                 ${icon('close', 13)}
@@ -2631,7 +2654,10 @@ export class HVItemEditor extends LitElement {
             : html`<span
                 class="progress"
                 role="progressbar"
-                aria-label=${`${entry.name}: ${entry.state}`}
+                aria-label=${t('hv.editor.upload.progress', {
+                  name: entry.name,
+                  state: entry.state,
+                })}
                 data-testid="editor-upload-progress"
                 ><span class="fill"></span
               ></span>`}
@@ -2643,13 +2669,15 @@ export class HVItemEditor extends LitElement {
   private _renderMoreFields() {
     const model = this._model;
     const summary = [
-      model.description ? 'description' : null,
-      model.dueDate || model.inspectionDate ? 'dates' : null,
+      model.description ? t('hv.editor.summary.description') : null,
+      model.dueDate || model.inspectionDate ? t('hv.editor.summary.dates') : null,
       // Named separately from the dates: a reminder is the one thing in here a
       // household set deliberately, and folding it into "dates" would hide it
       // behind a word that is already true of half the items.
-      model.reminderDate ? 'reminder' : null,
-      model.customFields.length ? `${model.customFields.length} custom` : null,
+      model.reminderDate ? t('hv.editor.summary.reminder') : null,
+      model.customFields.length
+        ? t('hv.editor.summary.custom', { count: model.customFields.length })
+        : null,
     ]
       .filter(Boolean)
       .join(' · ');
@@ -2663,14 +2691,16 @@ export class HVItemEditor extends LitElement {
           this._moreOpen = !this._moreOpen;
         }}
       >
-        ${icon(this._moreOpen ? 'chevronDown' : 'chevronRight', 19)} More fields
-        <span class="summary">${summary || 'description · dates · custom fields'}</span>
+        ${icon(this._moreOpen ? 'chevronDown' : 'chevronRight', 19)} ${t('hv.editor.moreFields')}
+        <span class="summary">${summary || t('hv.editor.moreSummaryFallback')}</span>
       </button>
       <div class="more-fields" id=${MORE_FIELDS_ID}>
         ${this._moreOpen
           ? html`
               <div class="cell span3">
-                <label class="hv-label" for="editor-description">Description</label>
+                <label class="hv-label" for="editor-description"
+                  >${t('hv.editor.field.description')}</label
+                >
                 <textarea
                   id="editor-description"
                   class="hv-input"
@@ -2704,24 +2734,30 @@ export class HVItemEditor extends LitElement {
           : html`<div class="head">
               ${icon('chevronDown', 18)}
               <span class="name" data-testid="editor-heading">
-                ${creating ? 'New item' : `${this.item?.name} — editing`}
+                ${creating
+                  ? t('hv.editor.heading.new')
+                  : t('hv.editor.heading.editing', { name: this.item?.name ?? '' })}
               </span>
               ${this.item?.checked_out
                 ? html`<span class="hv-chip ${overdue ? 'error' : 'state'}" data-testid="editor-out-chip">
-                    ${overdue ? 'Overdue' : 'Checked out'}${this.item?.due_date
-                      ? ` · due ${formatDate(this.item.due_date)}`
+                    ${overdue ? t('hv.term.overdue') : t('hv.term.checkedOut')}${this.item
+                      ?.due_date
+                      ? ` · ${t('hv.term.due', { date: formatDate(this.item.due_date) })}`
                       : ''}
                   </span>`
                 : null}
               ${this.item
                 ? html`<span class="meta" data-testid="editor-version"
-                    >v${this.item.version} · updated ${relativeTime(this.item.updated_at)}</span
+                    >${t('hv.editor.version', {
+                      version: this.item.version,
+                      when: relativeTime(this.item.updated_at),
+                    })}</span
                   >`
                 : null}
               <button
                 class="hv-icon-button"
                 data-testid="editor-close"
-                aria-label="Close editor"
+                aria-label=${t('hv.editor.close')}
                 @click=${this._requestCancel}
               >
                 ${icon('close', 18)}
@@ -2732,13 +2768,21 @@ export class HVItemEditor extends LitElement {
           : null}
 
         <div class="grid">
-          ${this._text('name', 'Name', { testid: 'editor-name' })}
-          ${this._text('quantity', 'Quantity', { type: 'number', testid: 'editor-quantity' })}
-          ${this._text('lowStock', 'Low-stock at', { type: 'number', testid: 'editor-low-stock' })}
+          ${this._text('name', t('hv.editor.field.name'), { testid: 'editor-name' })}
+          ${this._text('quantity', t('hv.editor.field.quantity'), {
+            type: 'number',
+            testid: 'editor-quantity',
+          })}
+          ${this._text('lowStock', t('hv.editor.field.lowStock'), {
+            type: 'number',
+            testid: 'editor-low-stock',
+          })}
           ${this.mobile
             ? null
             : html`<div class="cell span2">
-                  <label class="hv-label" for="editor-description-desktop">Description</label>
+                  <label class="hv-label" for="editor-description-desktop"
+                    >${t('hv.editor.field.description')}</label
+                  >
                   <textarea
                     id="editor-description-desktop"
                     class="hv-input"
@@ -2752,7 +2796,8 @@ export class HVItemEditor extends LitElement {
           ${this.mobile ? this._renderStatusField() : null}
           <div class="cell span3">
             <span class="hv-label"
-              >Tags <span class="label-note">· always lowercase</span></span
+              >${t('hv.editor.field.tags')}
+              <span class="label-note">${t('hv.editor.field.tagsNote')}</span></span
             >
             <hv-chip-input
               data-testid="editor-tags"
@@ -2781,20 +2826,20 @@ export class HVItemEditor extends LitElement {
                         }),
                       )}
                   >
-                    Delete item
+                    ${t('hv.action.deleteItem')}
                   </button>`
                 : null}
               <span class="spacer"></span>
               ${this.mobile
                 ? null
                 : html`<span class="hint" data-testid="editor-key-hint">
-                    Esc closes · ${saveShortcutLabel()} saves
+                    ${t('hv.editor.keyHint', { chord: saveShortcutLabel() })}
                   </span>`}
               <button class="hv-text-button" data-testid="editor-cancel" @click=${this._requestCancel}>
-                Cancel
+                ${t('hv.action.cancel')}
               </button>
               <button class="save" data-testid="editor-save" ?disabled=${this.busy} @click=${this._save}>
-                ${this.busy ? 'Saving…' : 'Save'}
+                ${this.busy ? t('hv.action.saving') : t('hv.action.save')}
               </button>
             </div>
           </div>
@@ -2825,9 +2870,9 @@ export class HVItemEditor extends LitElement {
         data-testid="editor-remove-confirm"
         ?open=${this._confirmRemove !== null}
         ?mobile=${this._viewport.narrow}
-        .heading=${REMOVE_COPY[this._confirmRemove?.kind ?? 'picture'].heading}
-        .message=${REMOVE_COPY[this._confirmRemove?.kind ?? 'picture'].message}
-        confirmLabel="Remove"
+        .heading=${removeCopy(this._confirmRemove?.kind ?? 'picture').heading}
+        .message=${removeCopy(this._confirmRemove?.kind ?? 'picture').message}
+        .confirmLabel=${t('hv.action.remove')}
         destructive
         @confirm=${(e: Event) => {
           e.stopPropagation();
