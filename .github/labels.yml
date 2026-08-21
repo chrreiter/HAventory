@@ -33,6 +33,9 @@
 - name: "ci:ha-latest"
   color: "fbca04"
   description: "Drift against current Home Assistant, found by the scheduled ha-latest run"
+- name: "ci:card-smoke"
+  color: "fbca04"
+  description: "The scheduled card smoke fails against current Home Assistant"
 
 # --- Housekeeping ---
 - name: "good first issue"

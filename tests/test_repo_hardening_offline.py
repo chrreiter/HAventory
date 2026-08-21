@@ -11,10 +11,11 @@ third-party action it calls is pinned to an immutable revision, and that
 Dependabot is configured to keep ``requirements-integration.txt`` patched
 without fighting the pins that file carries deliberately.
 
-Last, the scheduled ``ha-latest`` run, which is worthless in two specific ways
-that a green run of its own would not reveal: reporting a check that a pull
-request then waits on, and installing the pinned floor instead of the newest
-core — which would make it a second, slower copy of ``ci.yml``'s integration job.
+Last, the two scheduled runs — ``ha-latest`` and ``card-smoke`` — each of which
+can be worthless in ways a green run of its own would not reveal: reporting a
+check that a pull request then waits on, installing the pinned floor instead of
+the newest core, or driving a smoke that skips itself because its opt-in flag is
+missing.
 """
 
 from __future__ import annotations
@@ -33,6 +34,11 @@ RULESET_PATH = REPO_ROOT / ".github" / "rulesets" / "main.json"
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 DEPENDABOT_PATH = REPO_ROOT / ".github" / "dependabot.yml"
 HA_LATEST_PATH = WORKFLOWS_DIR / "ha-latest.yml"
+CARD_SMOKE_PATH = WORKFLOWS_DIR / "card-smoke.yml"
+
+# Every workflow that only ever runs on a timer, and the slot each one claims.
+# Two crons in the same minute would have them contending for runners.
+SCHEDULED_WORKFLOWS = ((HA_LATEST_PATH, "0 5 8 * *"), (CARD_SMOKE_PATH, "0 6 8 * *"))
 
 # `actions/*` is GitHub's own namespace, and this repository pins it by tag on
 # purpose; everything else names an immutable revision, because a tag can be
@@ -315,19 +321,30 @@ def test_a_blanket_ignore_is_told_from_a_scoped_one() -> None:
     assert ignored_update_types(scoped) == {"homeassistant": set(VERSION_UPDATE_TYPES)}
 
 
+def load(path: Path) -> dict[str, Any]:
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
 @pytest.fixture
 def ha_latest() -> dict[str, Any]:
-    return yaml.safe_load(HA_LATEST_PATH.read_text(encoding="utf-8"))
+    return load(HA_LATEST_PATH)
 
 
-def test_scheduled_ha_latest_reports_no_required_contexts(ha_latest: dict[str, Any]) -> None:
+@pytest.fixture
+def card_smoke() -> dict[str, Any]:
+    return load(CARD_SMOKE_PATH)
+
+
+@pytest.mark.parametrize("path", [path for path, _ in SCHEDULED_WORKFLOWS])
+def test_a_scheduled_workflow_reports_no_required_contexts(path: Path) -> None:
     """A monthly run must never become a check a pull request waits on.
 
-    It has no pull-request trigger, so it reports nothing on one and the ruleset
-    needs no edit. Adding that trigger later would put two check names into
-    ``available_contexts()`` that no pull request can satisfy quickly.
+    Neither has a pull-request trigger, so neither reports on one and the ruleset
+    needs no edit. Adding that trigger to either would put check names into
+    ``available_contexts()`` that no pull request can satisfy quickly — the card
+    smoke's worst, since it boots Home Assistant twice.
     """
-    assert workflow_contexts(ha_latest) == set()
+    assert workflow_contexts(load(path)) == set()
 
 
 def test_ha_latest_installs_no_pinned_home_assistant(ha_latest: dict[str, Any]) -> None:
@@ -349,9 +366,79 @@ def test_ha_latest_installs_no_pinned_home_assistant(ha_latest: dict[str, Any]) 
     assert "pytest-homeassistant-custom-component" in commands
 
 
-def test_ha_latest_is_dispatchable_and_scheduled(ha_latest: dict[str, Any]) -> None:
+@pytest.mark.parametrize(("path", "cron"), SCHEDULED_WORKFLOWS)
+def test_a_scheduled_workflow_is_dispatchable_and_on_its_own_slot(path: Path, cron: str) -> None:
     """Both triggers: the cron is the point, and dispatch is how it is proved."""
-    triggers = workflow_triggers(ha_latest)
+    triggers = workflow_triggers(load(path))
 
     assert "workflow_dispatch" in triggers
-    assert [entry["cron"] for entry in triggers["schedule"]] == ["0 5 8 * *"]
+    assert [entry["cron"] for entry in triggers["schedule"]] == [cron]
+
+
+def test_the_card_smoke_opts_into_the_online_test(card_smoke: dict[str, Any]) -> None:
+    """Its own green-and-worthless mode.
+
+    `e2e/live-updates.smoke.mjs` is opt-in: without ``RUN_ONLINE`` it prints SKIP
+    and exits 0, so the job would boot Home Assistant twice, drive nothing and
+    pass. The flag has to be on the step that runs it, not merely somewhere in
+    the file.
+    """
+    steps = [
+        step
+        for job in card_smoke["jobs"].values()
+        for step in job.get("steps", [])
+        if "live-updates.smoke.mjs" in str(step.get("run", ""))
+    ]
+
+    assert steps, "no step runs the live-update smoke"
+    for step in steps:
+        assert str(step.get("env", {}).get("RUN_ONLINE", "")) == "1"
+
+
+def test_the_scheduled_runs_do_not_share_a_notification_label(
+    ha_latest: dict[str, Any], card_smoke: dict[str, Any]
+) -> None:
+    """One label between them would have each closing the other's report."""
+
+    def labels(workflow: dict[str, Any]) -> set[str]:
+        commands = "\n".join(
+            str(step["run"])
+            for job in workflow["jobs"].values()
+            for step in job.get("steps", [])
+            if "run" in step
+        )
+        return set(re.findall(r"ci:[a-z-]+", commands))
+
+    ha_latest_labels, card_smoke_labels = labels(ha_latest), labels(card_smoke)
+
+    assert ha_latest_labels and card_smoke_labels
+    assert ha_latest_labels.isdisjoint(card_smoke_labels)
+
+
+def test_every_notification_label_is_declared_as_code(
+    ha_latest: dict[str, Any], card_smoke: dict[str, Any]
+) -> None:
+    """`gh issue create` refuses a label the repository does not have.
+
+    So a label named in a workflow and missing from `.github/labels.yml` is not a
+    cosmetic gap — it is the notification failing on the month it is needed.
+    """
+    declared = {
+        entry["name"]
+        for entry in yaml.safe_load((REPO_ROOT / ".github" / "labels.yml").read_text("utf-8"))
+    }
+    used = set(
+        re.findall(
+            r"ci:[a-z-]+",
+            "\n".join(
+                str(step["run"])
+                for workflow in (ha_latest, card_smoke)
+                for job in workflow["jobs"].values()
+                for step in job.get("steps", [])
+                if "run" in step
+            ),
+        )
+    )
+
+    assert used, "no notification label is named by either scheduled workflow"
+    assert used <= declared, f"undeclared: {sorted(used - declared)}"
