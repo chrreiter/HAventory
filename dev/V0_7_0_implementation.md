@@ -1,17 +1,43 @@
 # V0.7.0 — session plan
 
-Status: **planned** (2026-08-20). Assigns the milestone's 23 open issues to eleven
-**local** sessions, states the rules each session runs under, fixes the model each one
-runs on, and ends with the paste-ready prompt each session is started from (§7). The
-issues' own implementation notes (written 2026-08-05 for most of them) are the design —
-this file does not restate them; where a note and the tree disagree, §6 says which way the
-plan decides, and the session records the rest in its PR body.
+Status: **planned** (2026-08-20), **amended 2026-08-21**. Assigns the milestone's issues
+to thirteen **local** sessions, states the rules each session runs under, fixes the model
+each one runs on, and ends with the paste-ready prompt each session is started from (§7).
+The issues' own implementation notes (written 2026-08-05 for most of them) are the design
+— this file does not restate them; where a note and the tree disagree, §6 says which way
+the plan decides, and the session records the rest in its PR body.
 
 Baseline: `main` after release 0.6.0 (tagged 2026-08-20), the two Dependabot PRs (#455,
 #456) merged, and #302 and #442 closed on the evidence (no alert in any state;
 #442 shipped as #488), and two issues filed into the milestone the same day: #490 (the
 row thumbnail the card shows and the full view and panel do not) and #493 (three more
 count sensors). The 23 open issues are all below.
+
+**Amendment, 2026-08-21 — the items the sessions filed.** S1–S9 have merged, S10 is
+running, and while they ran seven issues and eight Dependabot pull requests arrived in
+the milestone that this plan does not assign — and reading those pull requests produced
+one more issue, #544. Two sessions are inserted between S10 and S11 to close what is
+left; two of the seven move to V0.8.0. **S11 stays last and stays the final gate** — the
+Fable sweep runs over everything below it, and nothing merges into 0.7.0 after it but the
+release PR.
+
+| Filed while the plan ran | Where it goes |
+| --- | --- |
+| #544 Dependabot proposes the pins that hold the HA floor again, and duplicates the `uv` group on a generated file — filed by this amendment | **S10a**, with the eight open bump PRs |
+| #507 a reload takes an open `/haventory` page back to the default dashboard | **S10a** |
+| #508 the first reload after a restart logs an ERROR about a listener that already fired | **S10a** |
+| #499 the full view's table never says an item is overdue | **S10b** |
+| #498 a passed Due date and a passed inspection date use two different alarm colours | **S10b** |
+| #505 a filtered list shows "Showing 1 of 0 matching items" after an event-inserted row | **S10b** |
+| #514 the coverage upload that needed a secret | **V0.8.0** — blocked on `CODECOV_TOKEN`, which pre-flight item 2 did not produce, and it gates nothing |
+| #536 the three seeded status labels are English in every language | **V0.8.0** — a decision about stored data rather than a defect, and it joins #540 and #542 there |
+
+Three more went straight to V0.8.0 as the sessions filed them and stay there: #540 (the
+German wording corrections), #542 (the translation-key audit) and #497 (retire the
+OpenSSF Scorecard badge and its workflow, rework the badge row). #497 is the one worth
+naming: it edits four lines of the README S10 is writing right now, and it stays in
+V0.8.0 so the document the owner signs off in S10 is not reopened in the session after
+it.
 
 Local means the session runs on the owner's machine with the dev Docker Home Assistant
 (`home-assistant`, `http://localhost:8123`) available: the `run-haventory` and
@@ -21,7 +47,7 @@ The sessions run strictly serially — one machine, one checkout, one dev HA.
 The owner's total involvement, by design:
 
 1. **Pre-flight, once** (§2) — three decisions that would otherwise stop a session mid-way.
-2. **Paste one prompt per session** — eleven pastes, each when the previous session's
+2. **Paste one prompt per session** — thirteen pastes, each when the previous session's
    handover has been read.
 3. **Read each session's handover** (§4, "The handover") and run the short hand-test list
    it carries — the things a harness cannot prove: a real phone, German wording read by a
@@ -79,10 +105,10 @@ Three things that are the owner's to decide and that a session must not wait on:
    / `HA_TOKEN` are exported in the shell profile every session inherits. A session that
    finds them missing stops and says so — that is the one interruption this plan cannot
    design away, so it is better spent here.
-2. **Coverage upload (#210, S3).** Codecov needs a `CODECOV_TOKEN` repository secret
-   while the repository is private. Add it before S3 if the coverage bullet is wanted;
-   if the secret is absent when S3 runs, the session drops that one bullet, says so in
-   the PR body, and the rest of #210 ships. No mid-session question either way.
+2. **Coverage upload (#210, S3) — settled 2026-08-21.** The secret was absent when S3
+   ran, so #515 shipped the other five bullets and dropped this one. It is now #514,
+   milestoned V0.8.0. Nothing later in this plan waits on it; adding `CODECOV_TOKEN`
+   whenever it suits pulls #514 forward, and no session asks about it again.
 3. **A real phone on the LAN (S11).** The dev HA publishes 8123, but the active WLAN
    profile is `Public` and Docker Desktop's inbound rule blocks it there, so a phone on
    the LAN cannot reach the dev HA today. Either change the profile / add a targeted
@@ -119,12 +145,19 @@ S9   #441 → #216                            Opus 5 xhigh   docs truth, dev-res
 ──────────────────────────────────────────────────────────────────────────────────────────
 S10  #217                                   Opus 5 xhigh   the README — owner merges      1 PR
 ──────────────────────────────────────────────────────────────────────────────────────────
+S10a #544 + the bump PRs → #507 → #508      Opus 5 xhigh   dependency triage, the panel   3 PRs
+                                                           across a reload, the ERROR
+                                                           that is not one
+──────────────────────────────────────────────────────────────────────────────────────────
+S10b #499 → #498 → #505                     Opus 5 xhigh   the row's date signals, and    3 PRs
+                                                           an honest filtered count
+──────────────────────────────────────────────────────────────────────────────────────────
 S11  online regression / usability pass     Fable 5 xhigh  findings → issues + small      n PRs
                                                            fixes; deletes this file
 ```
 
 A session starts only when the one before it has merged everything — or, for S6, S9 and
-S10, when the owner has merged the PR(s) it left open. Eleven sessions, 28 planned PRs
+S10, when the owner has merged the PR(s) it left open. Thirteen sessions, 34 planned PRs
 plus whatever S11 ships.
 
 ## 4. Rules every session follows
@@ -295,6 +328,22 @@ carries its own). Five parts, in this order, each present even when short:
   S3, S5 and S8 make (policy sentence, badge, job line, languages line) rather than each
   of them editing a structure that is about to change, and its screenshots show the
   final 0.7.0 card.
+- **S10a and S10b after S10, before S11.** Both close issues the earlier sessions filed
+  against themselves, so neither could have run sooner; and both have to be in before the
+  Fable sweep, because a sweep that rediscovers a known defect spends its budget on
+  something already written down.
+- **The dependency triage at S10a's head.** ruff and mypy move in it, so every commit
+  after it runs the gate on the versions 0.7.0 actually ships; and the config fix stops
+  next week's Dependabot run reopening the same red pull requests under S11.
+- **#507 and #508 in one session.** Both are config-entry lifecycle, and both are seen
+  the same way — restart the container, then reload the entry with a `/haventory` tab
+  open and the log tailing. One live pass covers the pair.
+- **#499 before #498.** The two issues say so themselves: the decisions lean on each
+  other, and #499's is the cheap half. Once the row names the lateness in a word, the
+  case for two hues in the date columns is weaker, so decide the chip first and the
+  colours in its light.
+- **#505 last in S10b.** It is store work with no visual judgment in it, so it does not
+  want to be in the way of the two that carry one.
 - **S11 last, before the release PR.** Its fixes ship in 0.7.0.
 
 ## 6. The sessions
@@ -685,10 +734,125 @@ HAventory — can you install it, add the card and write one automation from thi
 alone? `[HA settings]` after 0.7.0 is released: the HACS info panel renders the images.
 **Owner merges the #217 PR**; S11 starts after.
 
+### 6.10a S10a — #544 and the open bumps, #507, #508: dependency triage, and two lifecycle defects
+
+Three PRs and one triage pass, in this order:
+
+1. **"ci: hold the Home Assistant pins on the `uv` side too, and keep Dependabot off the
+   generated export"** — closes #544. Two edits to `.github/dependabot.yml` and a comment
+   saying why each is where it is: the `homeassistant` / `home-assistant-frontend` ignore
+   goes back on the **`uv`** block (it is still needed there — #521 and #522 are both `uv`
+   pull requests bumping `requirements-integration.txt`, which is what #515 believed the
+   `uv` updater could not see), and the `pip` block is scoped off `requirements-dev.txt`,
+   which is a `uv export` and carries "do not edit by hand" on line 1. Check the
+   Dependabot schema on the day for how to scope it — `exclude-paths`, or an `allow` list
+   naming only what `requirements-integration.txt` pins.
+   **Then triage the eight open bump PRs**, in the PR body: merge #523 (green); close
+   #516–#520 (five duplicates of #521's table, each editing the generated export) and #522
+   (the frontend wheel is pinned to the floor by policy), each with its one-line reason on
+   the thread; and once the config PR is on `main`, `@dependabot recreate` #521 so it
+   returns without the `homeassistant` bump, and merge it green. ruff 0.16.3 can reflow,
+   so `uv run ruff format` and re-run the gate before believing it; a bump that needs a
+   code change (a new ruff rule, a mypy tightening) is fixed **in the bump's own PR**, not
+   in a follow-up.
+2. **"fix(panel): keep an open `/haventory` page across a reload"** — closes #507. Decide
+   it rather than patch it, the way the issue asks: read the installed core in the dev
+   container (not the docs) for what `frontend.async_register_built_in_panel`'s `update`
+   argument does at this project's floor, and if it covers the case, register with it and
+   stop removing the panel when nothing about the registration changed. The
+   remove-then-register in `_async_apply_sidebar_panel` (`__init__.py`) stays for the two
+   cases it exists for — the sidebar toggle and the rename — and the `ValueError:
+   Overwriting panel haventory` it guards keeps its test. If the floor's core cannot do
+   it, say so in the PR body and take the narrower fix (skip the remove when the
+   registration is unchanged).
+3. **"fix(todo): stop logging an ERROR for a start listener that has already fired"** —
+   closes #508. `todo_bridge.async_setup` registers
+   `on_unload(listen_once(EVENT_HOMEASSISTANT_STARTED, _on_started))`; wrap the unsub so
+   it is a no-op once `_on_started` has run. Two lines and a test that sets up with
+   `hass.is_running` False, fires the start event, then unloads.
+
+phacc required for PRs 2 and 3. The offline stub carries a hand-written panel registry
+(`tests/conftest.py`, `frontend_panels`) and no job-listener bookkeeping at all, so what a
+real `frontend` component and a real event bus do with these two calls is only visible in
+the in-process mode; the redirect itself is a browser behaviour and stays a live check,
+not a test. A floor run after PR 1 too, since #521 moves the pinned dev stack under it.
+
+Live checks: after PR 1, `uv sync` and both gate halves on the bumped toolchain, and CI
+green on the recreated #521. For PRs 2 and 3, one pass on the dev HA: restart the
+container; open `/haventory` in a tab, apply a filter, scroll, open a row's editor;
+reload the config entry from Settings → Devices & services — the tab is still on
+`/haventory` with its filter and its scroll position; save the options without touching
+the panel's own settings — the same; then disable and re-enable the sidebar panel and
+rename it, proving the remove-then-register path still works; then
+`grep "Unable to remove unknown job listener" /config/home-assistant.log` in the
+container finds nothing from this boot.
+
+Handover hand-tests: `[desktop]` sit on `/haventory` with a filter applied, reload the
+entry from Settings — you are still where you were. `[log]` Settings → System → Logs
+after a restart and a reload: nothing at ERROR carrying `haventory`. `[HA settings]`
+the eight Dependabot pull requests are gone from the milestone and none came back red.
+
+### 6.10b S10b — #499, #498, #505: the row's date signals, and an honest filtered count
+
+Three PRs, in order. The first two are one decision taken in two steps, and #499 says so;
+take the chip first and the colours in its light.
+
+1. **"fix(card): say Overdue on the table row, not Checked out"** — closes #499. The
+   chip has moved since the issue was written — it is `hv-data-table.ts` ~722, now
+   reading `t('hv.term.checkedOut')`; grep the key, not the line. It reads
+   `t('hv.term.overdue')` in the error tone when `isOverdue(item.due_date)`, which is
+   what `hv-list-row.ts` and `hv-detail-sheet.ts` already do. **The plumbing is already
+   there**: `isOverdue` is imported in the table, and `hv.term.overdue` /
+   `hv.term.overdueOn` exist in both dictionaries — so this is a chip's text, not a new
+   chip, and it takes no width from the name track. No config option: the issue argues
+   against one and the plan takes its argument. The inspection half is the part that
+   would cost width, so it defers the way the status chip already does — draw it only
+   when the Next inspection column is off, or leave it to the column and settle its
+   colour in PR 2; decide with the measurement in front of you, not from the issue.
+   Pinned by a test on the rendered chip for an overdue item.
+2. **"fix(card): one tone for a date that has passed"** — closes #498. Decided after PR 1
+   and in its light: with the row naming the lateness in a word, pick one vocabulary for
+   "this date has passed" and apply it on all three surfaces — table cell, compact row,
+   detail-sheet fact — including the sheet's Due fact, which carries no marker today
+   while the inspection fact beneath it does. The floor, whatever else is decided: one
+   token for a passed date on a plain surface. `--hv-warn` in the table's inspection cell
+   and `--hv-warn-deep` in the row and the sheet disagree today, and only a light theme
+   shows it. The three CSS comments that state the current split as their reason move
+   with the decision — a comment describing a rule the code no longer follows is worse
+   than none.
+3. **"fix(card): keep the filtered total honest when an event inserts a row"** — closes
+   #505. The issue lists three answers and the plan takes none of them unseen: read what
+   `store/` does with an `items` event beside the `total` the last `item/list` reply
+   carried, and choose. The constraints are the two the issue names — the footer may
+   never say something that cannot be true, and a re-list on every event while a filter
+   is active costs one round trip per event, so it needs a reason. Covered offline
+   against the store with a search active and an event arriving, in both directions
+   (a row that matches, a row that does not).
+
+phacc: not involved.
+
+Live checks: deploy and drive the dev HA at the docked-sidebar width (~1400px at 1920)
+and at 375px, in **light and dark** — the light theme is where #498's token drift is
+visible at all, and dark alone would show nothing. An item with both dates in the past
+reads the same story in the card, the full view, the panel and the detail sheet.
+Screenshots before and after, both themes, in the PR bodies. For #505: two tabs on the
+same inventory, "spanner" typed in one's search box, a matching item created from the
+other — the new row appears and the footer counts it; repeat with
+`haventory.item_create` from Developer Tools → Actions as the mutator. The dev instance
+had 1087 items and 54 overdue when #499 was filed; reseed if it has moved.
+
+Handover hand-tests: `[desktop]` `[phone]` in a **light** theme, give an item a due date
+and an inspection date both in the past, then read its row in the card, in the full view,
+in the panel and in its detail sheet — one story about lateness, told the same way four
+times. `[phone]` two screens on the same inventory, a search typed on one and a matching
+item added on the other — the count under the list is the number of rows above it.
+
 ### 6.11 S11 — the online regression, jank and usability pass (Fable 5)
 
-Start condition: S10's PR is merged and every V0.7.0 issue is closed; release-please's
-0.7.0 PR may be open but **is not merged** — this session's fixes ship in 0.7.0.
+Start condition: S10b's PRs are merged (and, before them, S10's #217 PR), every V0.7.0
+issue is closed and no Dependabot pull request is open against the milestone;
+release-please's 0.7.0 PR may be open but **is not merged** — this session's fixes ship
+in 0.7.0.
 
 The session deploys `main` to a clean dev HA and spends its whole budget trying to find
 what is wrong with it. It is not a feature session. Its order:
@@ -1034,15 +1198,84 @@ the ## Handover block from §4 in its body and in your final message. The owner'
 is the go. Report and stop.
 ```
 
-### 7.11 S11 — start when the owner has merged S10's #217 PR
+### 7.10a S10a — start when the owner has merged S10's #217 PR
+
+```
+Model for this session: Opus 5, effort xhigh.
+
+Work in the HAventory repo, branching off the current origin/main. You are session S10a
+of the V0.7.0 plan — an amendment session, closing items the earlier sessions filed
+against themselves; start only when S10's #217 PR is merged. CLAUDE.md is short now, so
+read CONTRIBUTING.md in full as well. Read dev/V0_7_0_implementation.md §4 (rules,
+handover format, phacc Docker recipe) and §6.10a (your session), then issues #544, #507
+and #508 — their bodies are the design and each names the file it is about. Decide
+drifted details against the code and record the decisions in the PR body; do not edit
+the issues.
+
+Deliver three PRs and one triage pass, in this order:
+1. "ci: hold the Home Assistant pins on the `uv` side too, and keep Dependabot off the
+   generated export" — closes #544. Then triage the eight open bump PRs exactly as
+   §6.10a says: merge #523; close #516-#520 and #522 with a reason on each thread; once
+   the config PR is on main, `@dependabot recreate` #521 and merge it green. Fix
+   whatever the bumped ruff/mypy break inside #521 itself, not in a follow-up.
+2. "fix(panel): keep an open /haventory page across a reload" — closes #507. Read the
+   installed core in the dev container for what async_register_built_in_panel's `update`
+   argument does at this project's floor before choosing the shape.
+3. "fix(todo): stop logging an ERROR for a start listener that has already fired" —
+   closes #508.
+
+Both gates before every commit; scripts/test_integration.sh (Docker recipe) before
+merging PRs 2 and 3, and a floor run after PR 1. Live checks per §6.10a against the dev
+HA (run-haventory skill) — the reload with a /haventory tab open, the sidebar toggle and
+rename, and the log grep — evidence in the PR body. Squash-merge each PR yourself once
+gates, phacc, CI and live checks are green; delete the branch. Branch names
+claude/v0-7-0-s10a-<topic>. Never touch a release-please PR. End with the ## Handover
+block from §4, in the last PR body and in your final message.
+```
+
+### 7.10b S10b — start when S10a has merged its three PRs
+
+```
+Model for this session: Opus 5, effort xhigh.
+
+Work in the HAventory repo, branching off the current origin/main. You are session S10b
+of the V0.7.0 plan — an amendment session; start only when S10a's PRs are merged, #544,
+#507 and #508 are closed and no Dependabot PR is open against the milestone. CLAUDE.md
+is short now, so read CONTRIBUTING.md in full as well. Read
+dev/V0_7_0_implementation.md §4 (rules, handover format) and §6.10b (your session), then
+issues #499, #498 and #505 — their bodies are the design, and #499 and #498 say
+themselves that they are one decision in two steps. The card is translated now (#190), so
+every string goes through t() and lands in both dictionaries; the line numbers those
+issues cite are pre-i18n, so grep the key or the symbol. Record decisions in the PR body;
+do not edit the issues.
+
+Deliver three PRs, in this order:
+1. "fix(card): say Overdue on the table row, not Checked out" — closes #499. No config
+   option; the inspection chip defers to its column the way the status chip does.
+2. "fix(card): one tone for a date that has passed" — closes #498, decided in the light
+   of PR 1, applied on the table cell, the compact row and the detail-sheet fact (the
+   sheet's Due fact included). Move the three CSS comments that state the old split.
+3. "fix(card): keep the filtered total honest when an event inserts a row" — closes #505.
+
+Both gates before every commit; no phacc run needed. Live checks per §6.10b against the
+dev HA (run-haventory skill) at both widths and in BOTH themes — the light theme is the
+only place #498's token drift is visible — plus the two-tab check for #505; before/after
+screenshots in the PR bodies. Squash-merge each PR yourself once gates, CI and checks are
+green; delete the branch. Branch names claude/v0-7-0-s10b-<topic>. Never touch a
+release-please PR. End with the ## Handover block from §4, in the last PR body and in
+your final message.
+```
+
+### 7.11 S11 — start when S10b has merged its three PRs
 
 ```
 Model for this session: Fable 5, effort xhigh. This session does not run on any other
 model.
 
 Work in the HAventory repo. You are session S11 of the V0.7.0 plan — the closing online
-regression, jank and usability pass; start only when S10's #217 PR is merged and every
-V0.7.0 issue is closed. Release-please's 0.7.0 PR may be open: never merge, edit or
+regression, jank and usability pass, and the milestone's final gate; start only when
+S10b's three PRs are merged, every V0.7.0 issue is closed and no Dependabot pull request
+is open against the milestone. Release-please's 0.7.0 PR may be open: never merge, edit or
 close it — your fixes ship in it. Read dev/V0_7_0_implementation.md §4 (rules, handover
 format) and §6.11 (your session) in full, CONTRIBUTING.md in full, and skim
 dev/release_testing_plan.md's scenarios A–J for the fuller checklist. The
@@ -1071,8 +1304,13 @@ upgrade and the German a native reader catches — in your final message.
 
 V0.7.0 closes when:
 
-- All 23 issues in the milestone are closed — implemented, or closed as not-planned with
-  the reason in the issue — plus whatever S11 filed into it.
+- Every issue in the milestone is closed — the 23 this plan opened with, the five the
+  sessions filed while it ran and kept here, and #544 — implemented, or closed as
+  not-planned with the reason in the issue, plus whatever S11 files into it. #514 and
+  #536, the other two the sessions filed, moved to V0.8.0 on 2026-08-21 with the reason
+  on each.
+- No Dependabot pull request is open against the milestone, and `.github/dependabot.yml`
+  no longer proposes the two pins that hold the declared floor (#544).
 - The stored payload has stopped moving: `_generation` is gone, one `to_dict()` per
   model, and nothing after S1 changed `serialize_state`'s output (#482's condition for
   the V0.8.0 collapse).
