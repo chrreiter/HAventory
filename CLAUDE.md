@@ -56,8 +56,9 @@ across a language boundary neither side can check alone. Details in
 
 ### Docs — link here, don't duplicate
 `docs/` is what a user or contributor of the shipped integration needs:
-`backend_api_contract.md`, `data_shapes.md`, `frontend_architecture.md`, `rate_limiting.md`,
-`assets/`. `dev/` is the process, not the product: `release_testing_plan.md`,
+`installing.md`, `automations.md`, `developing.md`, `backend_api_contract.md`,
+`data_shapes.md`, `frontend_architecture.md`, `rate_limiting.md`, `assets/` (the social
+preview and the README's screenshots). `dev/` is the process, not the product: `release_testing_plan.md`,
 `ha_config_for_dev.yaml`, and the current milestone's implementation plan, which that
 milestone's last PR deletes. Nothing in `dev/` decides what to build — the issue tracker does,
 and a `dev/` document that disagrees with an issue is stale.
@@ -66,7 +67,7 @@ and a `dev/` document that disagrees with an issue is stale.
 
 Backend at the repo root, frontend in `cards/haventory-card`; bootstrap with `uv sync` and
 `npm ci`. Convenience wrappers are in `scripts/*.sh`; the online smokes (`tests/*_online.py`)
-need `RUN_ONLINE=1`, `HA_BASE_URL` and `HA_TOKEN` — see the README.
+need `RUN_ONLINE=1`, `HA_BASE_URL` and `HA_TOKEN` — see `docs/developing.md`.
 
 ```bash
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
