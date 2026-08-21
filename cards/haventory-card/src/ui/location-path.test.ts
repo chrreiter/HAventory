@@ -181,6 +181,19 @@ describe('renderAreaChip', () => {
     expect(chipOf('Kitchen')?.querySelector('.hv-sr-only')?.textContent).toContain('Area');
   });
 
+  // A household names its areas in Home Assistant, so the name can outrun the
+  // box the chip lands in. The wrapper is what the shared rule in ui/chip.ts
+  // elides — without it text-overflow has nothing to act on inside an
+  // inline-flex chip, and the name paints over whatever sits to its right.
+  it('wraps the name so it can elide inside a narrow box', () => {
+    const label = chipOf('Ground Floor Utility Room')?.querySelector('.hv-chip-text');
+    expect(label?.textContent).toBe('Ground Floor Utility Room');
+    // The glyph and the screen-reader word stay outside it: eliding those
+    // would drop the half of the chip that costs nothing to keep.
+    expect(label?.querySelector('svg')).toBe(null);
+    expect(label?.querySelector('.hv-sr-only')).toBe(null);
+  });
+
   it('renders nothing when the location resolves to no area', () => {
     expect(chipOf(null)).toBe(null);
   });
