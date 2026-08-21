@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
@@ -12,15 +13,15 @@ import type { DistinctValues, Location, LocationTreeNode, SortField, StatsCounts
 import './hv-location-tree';
 
 /** Sort fields the backend supports, in the order the menu lists them. */
-const SORT_FIELDS: { field: SortField; label: string }[] = [
-  { field: 'updated_at', label: 'Updated' },
-  { field: 'created_at', label: 'Created' },
-  { field: 'name', label: 'Name' },
-  { field: 'quantity', label: 'Quantity' },
-  { field: 'due_date', label: 'Due date' },
-  { field: 'inspection_date', label: 'Next inspection' },
-  { field: 'reminder_date', label: 'Reminder' },
-  { field: 'location', label: 'Location' },
+const SORT_FIELDS: readonly SortField[] = [
+  'updated_at',
+  'created_at',
+  'name',
+  'quantity',
+  'due_date',
+  'inspection_date',
+  'reminder_date',
+  'location',
 ];
 
 /** How many category chips to show before collapsing the rest behind "More…". */
@@ -39,8 +40,8 @@ const LOCATION_TREE_ID = 'filter-location-tree-holder';
 type DateField = 'updated' | 'created';
 
 const DATE_KEYS = {
-  updated: { after: 'updatedAfter', before: 'updatedBefore', noun: 'Updated' },
-  created: { after: 'createdAfter', before: 'createdBefore', noun: 'Created' },
+  updated: { after: 'updatedAfter', before: 'updatedBefore', noun: 'hv.filter.dateNoun.updated' },
+  created: { after: 'createdAfter', before: 'createdBefore', noun: 'hv.filter.dateNoun.created' },
 } as const;
 
 /**
@@ -497,12 +498,12 @@ export class HVFilterPanel extends LitElement {
               locations.find((l) => l.id === f.locationIds[0]),
               locations,
               this.areas,
-              'Any location',
+              t('hv.filter.anyLocation'),
             ),
           );
     return html`
       <div class="group">
-        <span class="hv-label">Where</span>
+        <span class="hv-label">${t('hv.filter.where')}</span>
         <div class="chips">
           <button
             class="hv-chip toggle chip ${f.locationIds.length ? 'on' : ''}"
@@ -516,12 +517,12 @@ export class HVFilterPanel extends LitElement {
             ${icon('mapMarker', 14)}${label}${icon('chevronDown', 14)}
           </button>
           <label class="field select-field ${f.areaId ? 'on' : ''}" data-testid="filter-area">
-            <span class="hv-sr-only">Area</span>
+            <span class="hv-sr-only">${t('hv.filter.area')}</span>
             <select
               .value=${f.areaId ?? ''}
               @change=${(e: Event) => this._patch({ areaId: (e.target as HTMLSelectElement).value || null })}
             >
-              <option value="">Area: Any</option>
+              <option value="">${t('hv.filter.areaAny')}</option>
               ${this.areas.map(
                 (a) => html`<option value=${a.id} ?selected=${f.areaId === a.id}>${a.name}</option>`,
               )}
@@ -529,7 +530,7 @@ export class HVFilterPanel extends LitElement {
             <span class="chevron">${icon('chevronDown', 14)}</span>
           </label>
           ${this._renderCheckbox(
-            'Include sub-locations',
+            t('hv.filter.includeSubtree'),
             f.includeSubtree,
             () => this._patch({ includeSubtree: !f.includeSubtree }),
             { testid: 'filter-include-subtree' },
@@ -575,7 +576,7 @@ export class HVFilterPanel extends LitElement {
     if (!all.length) return null;
     return html`
       <div class="group">
-        <span class="hv-label">Category</span>
+        <span class="hv-label">${t('hv.filter.category')}</span>
         <div class="chips">
           ${shown.map(
             (c) => html`<button
@@ -597,14 +598,14 @@ export class HVFilterPanel extends LitElement {
                   this._showAllCategories = true;
                 }}
               >
-                More… <span class="hv-tally">${hidden}</span>
+                ${t('hv.filter.more')} <span class="hv-tally">${hidden}</span>
               </button>`
             : null}
         </div>
         <!-- The tag group below carries an any/all control and this one does
              not, so the rule has to be said rather than inferred from its
              absence. -->
-        <span class="hint">Any of the picked categories</span>
+        <span class="hint">${t('hv.filter.categoryHint')}</span>
       </div>
     `;
   }
@@ -619,13 +620,13 @@ export class HVFilterPanel extends LitElement {
     return html`
       <div class="group">
         <div class="group-head">
-          <span class="hv-label">Tags</span>
+          <span class="hv-label">${t('hv.filter.tags')}</span>
           <!-- Beside its own heading, not pushed to the far edge: an auto margin
                parked Any/All against the right rim of a full-width panel, a
                screen's width from the word it qualifies and directly above an
                unrelated row. The Sort group's direction toggle already sits next
                to what it sorts, so this matches it. -->
-          <span class="segmented" role="radiogroup" aria-label="Tag match mode">
+          <span class="segmented" role="radiogroup" aria-label=${t('hv.filter.tagMatchMode')}>
             ${(['any', 'all'] as const).map(
               (mode) => html`<button
                 class=${f.tagsMode === mode ? 'on' : ''}
@@ -635,7 +636,7 @@ export class HVFilterPanel extends LitElement {
                 data-mode=${mode}
                 @click=${() => this._patch({ tagsMode: mode })}
               >
-                ${mode === 'any' ? 'Any' : 'All'}
+                ${mode === 'any' ? t('hv.term.any') : t('hv.term.all')}
               </button>`,
             )}
           </span>
@@ -665,10 +666,10 @@ export class HVFilterPanel extends LitElement {
             </button>`,
           )}
           <label class="field" data-testid="filter-tag-add">
-            <span class="hv-sr-only">Add tag</span>
+            <span class="hv-sr-only">${t('hv.filter.addTag')}</span>
             <input
               type="search"
-              placeholder="+ add tag…"
+              placeholder=${t('hv.filter.addTagPlaceholder')}
               .value=${this._tagDraft}
               size="10"
               @input=${(e: Event) => {
@@ -684,7 +685,7 @@ export class HVFilterPanel extends LitElement {
             />
           </label>
         </div>
-        <span class="hint">Tags are always lowercase</span>
+        <span class="hint">${t('hv.filter.tagsHint')}</span>
       </div>
     `;
   }
@@ -696,15 +697,15 @@ export class HVFilterPanel extends LitElement {
       n === null || n === undefined ? null : html`<span class="hv-tally">${n}</span>`;
     return html`
       <div class="group">
-        <span class="hv-label">Show only</span>
+        <span class="hv-label">${t('hv.filter.showOnly')}</span>
         <div class="chips">
           ${this.mobile
             ? html`
-                ${this._renderCheckbox('Low stock', f.lowStockOnly, () => this._patch({ lowStockOnly: !f.lowStockOnly }), { warning: true, tally: c?.low_stock_count, testid: 'filter-low-stock-only' })}
-                ${this._renderCheckbox('Checked out', f.checkedOutOnly, () => this._patch({ checkedOutOnly: !f.checkedOutOnly }), { tally: c?.checked_out_count, testid: 'filter-checked-out' })}
-                ${this._renderCheckbox('Overdue', f.overdueOnly, () => this._patch({ overdueOnly: !f.overdueOnly }), { warning: true, tally: c?.overdue_count, testid: 'filter-overdue' })}
-                ${this._renderCheckbox('Inspection due', f.inspectionDueOnly, () => this._patch({ inspectionDueOnly: !f.inspectionDueOnly }), { warning: true, tally: c?.inspection_due_count, testid: 'filter-inspection-due' })}
-                ${this._renderCheckbox('No location', f.orphansOnly, () => this._patch({ orphansOnly: !f.orphansOnly }), { tally: c?.no_location_count, testid: 'filter-orphans' })}
+                ${this._renderCheckbox(t('hv.term.lowStock'), f.lowStockOnly, () => this._patch({ lowStockOnly: !f.lowStockOnly }), { warning: true, tally: c?.low_stock_count, testid: 'filter-low-stock-only' })}
+                ${this._renderCheckbox(t('hv.term.checkedOut'), f.checkedOutOnly, () => this._patch({ checkedOutOnly: !f.checkedOutOnly }), { tally: c?.checked_out_count, testid: 'filter-checked-out' })}
+                ${this._renderCheckbox(t('hv.term.overdue'), f.overdueOnly, () => this._patch({ overdueOnly: !f.overdueOnly }), { warning: true, tally: c?.overdue_count, testid: 'filter-overdue' })}
+                ${this._renderCheckbox(t('hv.term.inspectionDue'), f.inspectionDueOnly, () => this._patch({ inspectionDueOnly: !f.inspectionDueOnly }), { warning: true, tally: c?.inspection_due_count, testid: 'filter-inspection-due' })}
+                ${this._renderCheckbox(t('hv.term.noLocation'), f.orphansOnly, () => this._patch({ orphansOnly: !f.orphansOnly }), { tally: c?.no_location_count, testid: 'filter-orphans' })}
               `
             : html`
                 <button
@@ -713,7 +714,9 @@ export class HVFilterPanel extends LitElement {
                   aria-pressed=${String(f.lowStockOnly)}
                   @click=${() => this._patch({ lowStockOnly: !f.lowStockOnly })}
                 >
-                  ${f.lowStockOnly ? icon('check', 12) : null}Low stock${tally(c?.low_stock_count)}
+                  ${f.lowStockOnly ? icon('check', 12) : null}${t('hv.term.lowStock')}${tally(
+                    c?.low_stock_count,
+                  )}
                 </button>
                 <button
                   class="hv-chip toggle chip ${f.checkedOutOnly ? 'on' : ''}"
@@ -721,7 +724,9 @@ export class HVFilterPanel extends LitElement {
                   aria-pressed=${String(f.checkedOutOnly)}
                   @click=${() => this._patch({ checkedOutOnly: !f.checkedOutOnly })}
                 >
-                  ${f.checkedOutOnly ? icon('check', 12) : null}Checked out${tally(c?.checked_out_count)}
+                  ${f.checkedOutOnly ? icon('check', 12) : null}${t('hv.term.checkedOut')}${tally(
+                    c?.checked_out_count,
+                  )}
                 </button>
                 <button
                   class="hv-chip toggle chip ${f.overdueOnly ? 'on error' : ''}"
@@ -729,7 +734,9 @@ export class HVFilterPanel extends LitElement {
                   aria-pressed=${String(f.overdueOnly)}
                   @click=${() => this._patch({ overdueOnly: !f.overdueOnly })}
                 >
-                  ${f.overdueOnly ? icon('check', 12) : null}Overdue${tally(c?.overdue_count)}
+                  ${f.overdueOnly ? icon('check', 12) : null}${t('hv.term.overdue')}${tally(
+                    c?.overdue_count,
+                  )}
                 </button>
                 <button
                   class="hv-chip toggle chip ${f.inspectionDueOnly ? 'on warning' : ''}"
@@ -737,7 +744,9 @@ export class HVFilterPanel extends LitElement {
                   aria-pressed=${String(f.inspectionDueOnly)}
                   @click=${() => this._patch({ inspectionDueOnly: !f.inspectionDueOnly })}
                 >
-                  ${f.inspectionDueOnly ? icon('check', 12) : null}Inspection due${tally(c?.inspection_due_count)}
+                  ${f.inspectionDueOnly
+                    ? icon('check', 12)
+                    : null}${t('hv.term.inspectionDue')}${tally(c?.inspection_due_count)}
                 </button>
                 <button
                   class="hv-chip toggle chip ${f.orphansOnly ? 'on' : ''}"
@@ -745,7 +754,9 @@ export class HVFilterPanel extends LitElement {
                   aria-pressed=${String(f.orphansOnly)}
                   @click=${() => this._patch({ orphansOnly: !f.orphansOnly })}
                 >
-                  ${f.orphansOnly ? icon('check', 12) : null}No location${tally(c?.no_location_count)}
+                  ${f.orphansOnly ? icon('check', 12) : null}${t('hv.term.noLocation')}${tally(
+                    c?.no_location_count,
+                  )}
                 </button>
               `}
         </div>
@@ -767,7 +778,7 @@ export class HVFilterPanel extends LitElement {
     const c = this.counts;
     return html`
       <div class="group">
-        <span class="hv-label">Status</span>
+        <span class="hv-label">${t('hv.filter.status')}</span>
         <div class="chips">
           ${statusList(this.statuses).map(({ slug: s }) => {
             const on = f.status === s;
@@ -811,7 +822,8 @@ export class HVFilterPanel extends LitElement {
    * across with the flip, since it is the date you meant either way.
    */
   private _renderDateRow(field: DateField) {
-    const { after: afterKey, before: beforeKey, noun } = DATE_KEYS[field];
+    const { after: afterKey, before: beforeKey, noun: nounKey } = DATE_KEYS[field];
+    const noun = t(nounKey);
     const before = this._dateDirectionOf(field) === 'before';
     const activeKey = before ? beforeKey : afterKey;
     const value = this.working[activeKey];
@@ -824,8 +836,10 @@ export class HVFilterPanel extends LitElement {
         class="direction"
         data-testid=${`filter-${field}-direction`}
         data-direction=${before ? 'before' : 'after'}
-        aria-label=${`${noun} ${before ? 'before' : 'since'} — switch to ${before ? 'since' : 'before'}`}
-        title=${before ? 'Before this date — click for "since"' : 'Since this date — click for "before"'}
+        aria-label=${before
+          ? t('hv.filter.dateFlipToSince', { noun })
+          : t('hv.filter.dateFlipToBefore', { noun })}
+        title=${before ? t('hv.filter.dateTitleBefore') : t('hv.filter.dateTitleSince')}
         @click=${() => {
           this._dateDirection = { ...this._dateDirection, [field]: before ? 'after' : 'before' };
           // Nothing to re-apply on an empty row, and patching two nulls would
@@ -837,7 +851,9 @@ export class HVFilterPanel extends LitElement {
       </button>
       <input
         type="date"
-        aria-label=${`${noun} ${before ? 'before' : 'since'}`}
+        aria-label=${before
+          ? t('hv.filter.dateBefore', { noun })
+          : t('hv.filter.dateSince', { noun })}
         .value=${dateOf(value)}
         @change=${(e: Event) => this._patch({ [activeKey]: toIso((e.target as HTMLInputElement).value) })}
       />
@@ -847,7 +863,7 @@ export class HVFilterPanel extends LitElement {
   private _renderDateGroup() {
     return html`
       <div class="group">
-        <span class="hv-label">Changed</span>
+        <span class="hv-label">${t('hv.filter.changed')}</span>
         <div class="chips">${this._renderDateRow('updated')} ${this._renderDateRow('created')}</div>
       </div>
     `;
@@ -856,14 +872,14 @@ export class HVFilterPanel extends LitElement {
   private _renderSortGroup() {
     const f = this.working;
     const isDateish = f.sort.field === 'updated_at' || f.sort.field === 'created_at';
-    const descLabel = isDateish ? 'Newest' : 'Descending';
-    const ascLabel = isDateish ? 'Oldest' : 'Ascending';
+    const descLabel = isDateish ? t('hv.filter.newest') : t('hv.filter.descending');
+    const ascLabel = isDateish ? t('hv.filter.oldest') : t('hv.filter.ascending');
     return html`
       <div class="group">
-        <span class="hv-label">Sort</span>
+        <span class="hv-label">${t('hv.filter.sort')}</span>
         <div class="chips">
           <label class="field select-field" data-testid="filter-sort-field">
-            <span class="hv-sr-only">Sort by</span>
+            <span class="hv-sr-only">${t('hv.filter.sortBy')}</span>
             <select
               @change=${(e: Event) =>
                 this._patch({
@@ -871,12 +887,14 @@ export class HVFilterPanel extends LitElement {
                 })}
             >
               ${SORT_FIELDS.map(
-                (s) => html`<option value=${s.field} ?selected=${f.sort.field === s.field}>${s.label}</option>`,
+                (field) => html`<option value=${field} ?selected=${f.sort.field === field}>
+                  ${t(`hv.filter.sortField.${field}`)}
+                </option>`,
               )}
             </select>
             <span class="chevron">${icon('chevronDown', 14)}</span>
           </label>
-          <span class="segmented" role="radiogroup" aria-label="Sort direction">
+          <span class="segmented" role="radiogroup" aria-label=${t('hv.filter.sortDirection')}>
             ${(['desc', 'asc'] as const).map(
               (order) => html`<button
                 class=${f.sort.order === order ? 'on' : ''}
@@ -891,13 +909,13 @@ export class HVFilterPanel extends LitElement {
             )}
           </span>
           ${this._renderCheckbox(
-            'Low stock first',
+            t('hv.filter.lowStockFirst'),
             f.lowStockFirst,
             () => this._patch({ lowStockFirst: !f.lowStockFirst }),
             { testid: 'filter-low-stock-first' },
           )}
         </div>
-        <span class="hint">Undated items always sort last, in both directions</span>
+        <span class="hint">${t('hv.filter.sortHint')}</span>
       </div>
     `;
   }
@@ -917,12 +935,16 @@ export class HVFilterPanel extends LitElement {
           ? null
           : html`<div class="footer">
               <span data-testid="filter-summary">
-                ${counted(count, 'filter')} active${this.total !== null && this.grandTotal !== null
-                  ? ` · ${this.total} of ${this.grandTotal} match`
-                  : ''}
+                ${this.total !== null && this.grandTotal !== null
+                  ? t('hv.filter.summaryMatching', {
+                      filters: counted(count, 'filter'),
+                      total: this.total,
+                      grandTotal: this.grandTotal,
+                    })
+                  : t('hv.filter.summary', { filters: counted(count, 'filter') })}
               </span>
               <button class="hv-text-button" data-testid="filter-clear-all" @click=${() => this.clearAll()}>
-                Clear all
+                ${t('hv.action.clearAll')}
               </button>
             </div>`}
       </div>

@@ -8,7 +8,7 @@
 //   node screenshot.mjs [--out <file.png>] [--path <ha-url-path>] [--full]
 //                       [--element <selector>]
 //                       [--device <name> | --mobile | --viewport <WxH>] [--dsf <n>]
-//                       [--dark] [--scheme light|dark]
+//                       [--dark] [--scheme light|dark] [--locale <bcp47>]
 //                       [--search <text>] [--tap <selector>]
 //                       [--swipe <dir>[@<selector>]] [--wait <ms>]
 //
@@ -129,6 +129,12 @@ if (deviceName) {
 const dsf = flag("--dsf", null);
 if (dsf) contextOptions.deviceScaleFactor = Number(dsf);
 contextOptions.colorScheme = colorScheme;
+// Chromium takes the host's locale, and Home Assistant falls back to the
+// browser language whenever the profile has none — so on a German host the
+// whole UI, HAventory included, comes up German with nothing set. Name the
+// language the shot is supposed to be in rather than inheriting one.
+const locale = flag("--locale", null);
+if (locale) contextOptions.locale = locale;
 
 const touchEnabled = Boolean(contextOptions.hasTouch);
 

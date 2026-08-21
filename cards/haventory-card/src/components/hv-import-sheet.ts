@@ -1,3 +1,4 @@
+import { t, tn } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -36,7 +37,9 @@ function importButtonLabel(itemWrites: number, locationWrites: number): string {
   const parts: string[] = [];
   if (itemWrites) parts.push(counted(itemWrites, 'item'));
   if (locationWrites) parts.push(counted(locationWrites, 'location'));
-  return parts.length ? `Import ${parts.join(' · ')}` : 'Import';
+  return parts.length
+    ? t('hv.import.button', { parts: parts.join(' · ') })
+    : t('hv.import.buttonBare');
 }
 
 /**
@@ -56,28 +59,29 @@ export function importSummaryLine(summary: ImportSummary): string {
   if (summary.items.update) updated.push(counted(summary.items.update, 'item'));
   if (summary.locations.update) updated.push(counted(summary.locations.update, 'location'));
   const parts: string[] = [];
-  if (added.length) parts.push(`added ${added.join(' and ')}`);
-  if (updated.length) parts.push(`updated ${updated.join(' and ')}`);
-  if (!parts.length) return 'Nothing needed changing — the inventory already matched the file.';
+  if (added.length) parts.push(t('hv.import.added', { what: added.join(t('hv.import.and')) }));
+  if (updated.length)
+    parts.push(t('hv.import.updated', { what: updated.join(t('hv.import.and')) }));
+  if (!parts.length) return t('hv.import.nothingChanged');
   const sentence = parts.join(', ');
   return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
 }
 
-const POLICIES: { id: ImportPolicy; title: string; description: string }[] = [
+const policies = (): { id: ImportPolicy; title: string; description: string }[] => [
   {
     id: 'merge',
-    title: 'Merge',
-    description: 'Update items matched by id field by field, combining tags; add the rest',
+    title: t('hv.import.policy.merge'),
+    description: t('hv.import.policy.mergeDescription'),
   },
   {
     id: 'replace',
-    title: 'Replace',
-    description: "Overwrite items matched by id with the file's version; add the rest",
+    title: t('hv.import.policy.replace'),
+    description: t('hv.import.policy.replaceDescription'),
   },
   {
     id: 'skip',
-    title: 'Skip',
-    description: "Only add items whose id isn't in the inventory yet; leave matched items as they are",
+    title: t('hv.import.policy.skip'),
+    description: t('hv.import.policy.skipDescription'),
   },
 ];
 
@@ -86,7 +90,7 @@ const POLICIES: { id: ImportPolicy; title: string; description: string }[] = [
  * wire value ("merge") is not what the user pressed ("Merge").
  */
 function policyTitle(id: ImportPolicy): string {
-  return POLICIES.find((p) => p.id === id)?.title ?? id;
+  return policies().find((p) => p.id === id)?.title ?? id;
 }
 
 /**
@@ -439,8 +443,8 @@ export class HVImportSheet extends LitElement {
   private _renderInput() {
     return html`
       <div class="head">
-        <div class="row"><h2>Import backup</h2></div>
-        <div class="sub">Step 1 of 2 · nothing is written until you press Import</div>
+        <div class="row"><h2>${t('hv.import.title')}</h2></div>
+        <div class="sub">${t('hv.import.step1')}</div>
       </div>
       <div class="body">
         <div class="tabs" role="tablist">
@@ -455,24 +459,24 @@ export class HVImportSheet extends LitElement {
                 this._source = source;
               }}
             >
-              ${source === 'paste' ? 'Paste JSON' : 'Choose file'}
+              ${source === 'paste' ? t('hv.import.pasteJson') : t('hv.import.chooseFileTab')}
             </button>`,
           )}
         </div>
         ${this._source === 'file'
           ? html`<div class="file-row">
               <label class="hv-pill outline">
-                ${icon('upload', 15)} Choose file…
+                ${icon('upload', 15)} ${t('hv.import.chooseFile')}
                 <input class="reveal" type="file" accept="application/json,.json" data-testid="import-file" @change=${(e: Event) => void this._onFile(e)} />
               </label>
               <span data-testid="import-filename" style="font-size:12.5px;color:var(--hv-text-secondary)">
-                ${this._fileName ?? 'No file chosen'}
+                ${this._fileName ?? t('hv.import.noFileChosen')}
               </span>
             </div>`
           : null}
         <textarea
           data-testid="import-text"
-          aria-label="Backup JSON"
+          aria-label=${t('hv.import.textareaLabel')}
           placeholder='{ "haventory_export_version": 1, … }'
           .value=${this._text}
           @input=${(e: Event) => {
@@ -492,9 +496,9 @@ export class HVImportSheet extends LitElement {
           : null}
 
         <div>
-          <span class="hv-label">If an item already exists</span>
+          <span class="hv-label">${t('hv.import.ifExists')}</span>
           <div class="policies" role="radiogroup" style="margin-top:6px" data-testid="import-policies">
-            ${POLICIES.map(
+            ${policies().map(
               (policy) => html`<button
                 class="policy ${this._policy === policy.id ? 'on' : ''}"
                 role="radio"
@@ -518,32 +522,39 @@ export class HVImportSheet extends LitElement {
         </div>
       </div>
       <div class="foot">
-        <span class="hint">Import applies for every connected client</span>
-        <button class="hv-text-button" data-testid="import-cancel" @click=${this._close}>Cancel</button>
+        <span class="hint">${t('hv.import.appliesEverywhere')}</span>
+        <button class="hv-text-button" data-testid="import-cancel" @click=${this._close}>
+          ${t('hv.action.cancel')}
+        </button>
         <button
           class="hv-pill"
           data-testid="import-preview"
           ?disabled=${!this._text.trim() || this.busy}
           @click=${() => this._emit('preview')}
         >
-          ${this.busy ? 'Checking…' : 'Preview'}
+          ${this.busy ? t('hv.import.checking') : t('hv.import.preview')}
         </button>
       </div>
     `;
   }
 
-  private _countTable(caption: string, counts: ImportBucketCounts | undefined) {
+  private _countTable(
+    captionKey: 'items' | 'locations',
+    counts: ImportBucketCounts | undefined,
+  ) {
+    const caption =
+      captionKey === 'items' ? t('hv.import.tableItems') : t('hv.import.tableLocations');
     const rows: [string, keyof ImportBucketCounts, string][] = [
-      ['Add', 'add', 'add'],
-      ['Update', 'update', 'update'],
-      ['Conflict', 'conflict', 'conflict'],
-      ['Unchanged', 'unchanged', 'unchanged'],
+      [t('hv.import.bucket.add'), 'add', 'add'],
+      [t('hv.import.bucket.update'), 'update', 'update'],
+      [t('hv.import.bucket.conflict'), 'conflict', 'conflict'],
+      [t('hv.import.bucket.unchanged'), 'unchanged', 'unchanged'],
     ];
     return html`<div class="table">
       <div class="caption">${caption}</div>
       <div class="rows">
         ${rows.map(
-          ([label, key, cls]) => html`<div class="r ${cls}" data-testid="import-count" data-key=${`${caption.toLowerCase()}-${key}`}>
+          ([label, key, cls]) => html`<div class="r ${cls}" data-testid="import-count" data-key=${`${captionKey}-${key}`}>
             <span>${label}</span><span>${key === 'add' ? '+' : ''}${counts?.[key] ?? 0}</span>
           </div>`,
         )}
@@ -556,10 +567,10 @@ export class HVImportSheet extends LitElement {
       <div class="head">
         <div class="row">
           <span style="color:var(--hv-error)">${icon('alertCircle', 20)}</span>
-          <h2>This file can't be imported</h2>
+          <h2>${t('hv.import.invalidTitle')}</h2>
         </div>
         <div class="sub">
-          ${counted(preview.errors.length, 'problem')} found · nothing was changed
+          ${t('hv.import.invalidSub', { problems: counted(preview.errors.length, 'problem') })}
         </div>
       </div>
       <div class="body">
@@ -573,9 +584,9 @@ export class HVImportSheet extends LitElement {
         </div>
       </div>
       <div class="foot">
-        <span class="hint">Fix the file and preview again</span>
+        <span class="hint">${t('hv.import.fixAndRetry')}</span>
         <button class="hv-text-button" data-testid="import-copy-errors" @click=${() => this._copyErrors()}>
-          ${this._copied ? 'Copied' : 'Copy errors'}
+          ${this._copied ? t('hv.diagnostics.copied') : t('hv.import.copyErrors')}
         </button>
         <button
           class="hv-pill"
@@ -583,7 +594,7 @@ export class HVImportSheet extends LitElement {
           @click=${() =>
             this.dispatchEvent(new CustomEvent('invalidate-preview', { bubbles: true, composed: true }))}
         >
-          Back to input
+          ${t('hv.import.backToInput')}
         </button>
       </div>
     `;
@@ -604,25 +615,28 @@ export class HVImportSheet extends LitElement {
 
     return html`
       <div class="head">
-        <div class="row"><h2>Import backup · preview</h2></div>
+        <div class="row"><h2>${t('hv.import.previewTitle')}</h2></div>
         <div class="sub">
-          Step 2 of 2 · validated on the server, nothing written yet · policy
+          ${t('hv.import.step2')}
           <strong class="policy-name">${policyTitle(preview.policy)}</strong>
         </div>
       </div>
       <div class="body">
-        <div class="tables">${this._countTable('Items', items)}${this._countTable('Locations', locations)}</div>
+        <div class="tables">
+          ${this._countTable('items', items)}${this._countTable('locations', locations)}
+        </div>
         ${conflicts
           ? html`<div class="alert warn" data-testid="import-conflicts">
               <span class="glyph">${icon('alert', 18)}</span>
               <span>
-                ${counted(conflicts, 'conflict')} — the file and this inventory both changed
-                ${conflicts === 1 ? 'that entry' : 'those entries'}.
+                ${tn('hv.import.conflicts', conflicts, {
+                  conflicts: counted(conflicts, 'conflict'),
+                })}
                 ${preview.policy === 'merge'
-                  ? "Merge keeps the file's values."
+                  ? t('hv.import.conflictsMerge')
                   : preview.policy === 'skip'
-                    ? 'Skip leaves them as they are.'
-                    : 'Replace overwrites them.'}
+                    ? t('hv.import.conflictsSkip')
+                    : t('hv.import.conflictsReplace')}
               </span>
             </div>`
           : null}
@@ -630,16 +644,18 @@ export class HVImportSheet extends LitElement {
           ? html`<div class="alert warn" data-testid="import-warnings">
               <span class="glyph">${icon('alert', 18)}</span>
               <span>
-                ${counted(warnings.length, 'nameClash')} — the file would add
-                ${warnings.length === 1 ? 'an entry' : 'entries'} under a name something here already uses,
-                under a different id. Import matches on the id alone, so
-                ${warnings.length === 1 ? 'this becomes a duplicate' : 'these become duplicates'} rather than
-                an update.
+                ${tn('hv.import.warnings', warnings.length, {
+                  clashes: counted(warnings.length, 'nameClash'),
+                })}
                 <ul class="warn-list">
                   ${warnings.slice(0, WARNING_LIST_LIMIT).map((w) => html`<li>${w.message}</li>`)}
                 </ul>
                 ${warnings.length > WARNING_LIST_LIMIT
-                  ? html`<span class="hint">…and ${warnings.length - WARNING_LIST_LIMIT} more.</span>`
+                  ? html`<span class="hint"
+                      >${t('hv.import.warningsMore', {
+                        count: warnings.length - WARNING_LIST_LIMIT,
+                      })}</span
+                    >`
                   : null}
               </span>
             </div>`
@@ -649,10 +665,7 @@ export class HVImportSheet extends LitElement {
               <span class="glyph">${icon('alertCircle', 18)}</span><span>${this.errorMessage}</span>
             </div>`
           : null}
-        <div class="fine">
-          Import is all-or-nothing: any failure rolls the whole document back. On success every connected card
-          reloads its data.
-        </div>
+        <div class="fine">${t('hv.import.allOrNothing')}</div>
       </div>
       <div class="foot">
         <button
@@ -661,23 +674,25 @@ export class HVImportSheet extends LitElement {
           @click=${() =>
             this.dispatchEvent(new CustomEvent('invalidate-preview', { bubbles: true, composed: true }))}
         >
-          Back
+          ${t('hv.action.back')}
         </button>
         <span class="hint"></span>
-        <button class="hv-text-button" data-testid="import-cancel" @click=${this._close}>Cancel</button>
+        <button class="hv-text-button" data-testid="import-cancel" @click=${this._close}>
+          ${t('hv.action.cancel')}
+        </button>
         <button
           class="hv-pill"
           data-testid="import-execute"
           ?disabled=${this.busy}
           @click=${() => this._emit('execute')}
         >
-          ${this.busy ? 'Importing…' : importButtonLabel(itemWrites, locationWrites)}
+          ${this.busy ? t('hv.import.importing') : importButtonLabel(itemWrites, locationWrites)}
         </button>
       </div>
       ${willWrite === 0
         ? html`<div class="foot" style="padding-top:0">
             <span class="hint" data-testid="import-nothing-to-do">
-              Nothing in this file would change the inventory
+              ${t('hv.import.nothingToDo')}
             </span>
           </div>`
         : null}
@@ -689,7 +704,7 @@ export class HVImportSheet extends LitElement {
       <div class="head">
         <div class="row">
           <span style="color:var(--hv-success)">${icon('checkCircle', 20)}</span>
-          <h2>Import complete</h2>
+          <h2>${t('hv.import.completeTitle')}</h2>
         </div>
       </div>
       <div class="body">
@@ -698,13 +713,17 @@ export class HVImportSheet extends LitElement {
           <span>${importSummaryLine(summary)}</span>
         </div>
         <div class="fine">
-          The inventory now holds ${counted(summary.totals.items_total, 'item')} across
-          ${counted(summary.totals.locations_total, 'location')}. Every connected card has reloaded.
+          ${t('hv.import.holdsNow', {
+            items: counted(summary.totals.items_total, 'item'),
+            locations: counted(summary.totals.locations_total, 'location'),
+          })}
         </div>
       </div>
       <div class="foot">
         <span class="hint"></span>
-        <button class="hv-pill" data-testid="import-done" @click=${this._close}>Done</button>
+        <button class="hv-pill" data-testid="import-done" @click=${this._close}>
+          ${t('hv.action.done')}
+        </button>
       </div>
     `;
   }
@@ -727,7 +746,7 @@ export class HVImportSheet extends LitElement {
           class="panel"
           role="dialog"
           aria-modal="true"
-          aria-label="Import backup"
+          aria-label=${t('hv.import.title')}
           data-testid="import-sheet"
           @keydown=${onEscape(() => this._close())}
         >

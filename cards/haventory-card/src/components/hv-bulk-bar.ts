@@ -2,7 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
-import { tn } from '../i18n';
+import { t, tn } from '../i18n';
 import { counted } from '../ui/plural';
 import type { IconName } from '../ui/icons';
 import type { AreaRef, BulkFailure, DistinctValues, Item, LocationTreeNode } from '../store/types';
@@ -48,14 +48,14 @@ export interface BulkResultView {
  * check-in straight into the batch, for check-out into the host's date popover,
  * which is why its label carries the same ellipsis the inline steps do.
  */
-const ACTIONS: { id: BulkAction; label: string; glyph?: IconName; picker?: boolean }[] = [
-  { id: 'move', label: 'Move to…', glyph: 'mapMarker', picker: true },
-  { id: 'add-tags', label: 'Add tags…', picker: true },
-  { id: 'remove-tags', label: 'Remove tags…', picker: true },
-  { id: 'set-category', label: 'Set category…', picker: true },
-  { id: 'adjust-qty', label: 'Adjust qty…', picker: true },
-  { id: 'check-out', label: 'Check out…' },
-  { id: 'check-in', label: 'Check in' },
+const actions = (): { id: BulkAction; label: string; glyph?: IconName; picker?: boolean }[] => [
+  { id: 'move', label: t('hv.bulk.action.move'), glyph: 'mapMarker', picker: true },
+  { id: 'add-tags', label: t('hv.bulk.action.addTags'), picker: true },
+  { id: 'remove-tags', label: t('hv.bulk.action.removeTags'), picker: true },
+  { id: 'set-category', label: t('hv.bulk.action.setCategory'), picker: true },
+  { id: 'adjust-qty', label: t('hv.bulk.action.adjustQty'), picker: true },
+  { id: 'check-out', label: t('hv.action.checkOutEllipsis') },
+  { id: 'check-in', label: t('hv.action.checkIn') },
 ];
 
 /**
@@ -270,7 +270,9 @@ export class HVBulkBar extends LitElement {
     switch (this._active) {
       case 'move':
         return html`<div class="picker" data-testid="bulk-picker" data-picker="move">
-          <span class="hv-label">Move ${counted(this.selectedCount, 'item')} to</span>
+          <span class="hv-label"
+            >${t('hv.bulk.moveTo', { items: counted(this.selectedCount, 'item') })}</span
+          >
           <div class="tree-holder">
             <hv-location-tree
               data-testid="bulk-location-tree"
@@ -286,7 +288,11 @@ export class HVBulkBar extends LitElement {
       case 'remove-tags': {
         const adding = this._active === 'add-tags';
         return html`<div class="picker" data-testid="bulk-picker" data-picker=${this._active}>
-          <span class="hv-label">${adding ? 'Add tags to' : 'Remove tags from'} ${counted(this.selectedCount, 'item')}</span>
+          <span class="hv-label"
+            >${t(adding ? 'hv.bulk.addTagsTo' : 'hv.bulk.removeTagsFrom', {
+              items: counted(this.selectedCount, 'item'),
+            })}</span
+          >
           <hv-chip-input
             data-testid="bulk-tags"
             .values=${this._tags}
@@ -297,7 +303,7 @@ export class HVBulkBar extends LitElement {
           ></hv-chip-input>
           <div class="row">
             <button class="hv-text-button" data-testid="bulk-picker-cancel" @click=${() => (this._active = null)}>
-              Cancel
+              ${t('hv.action.cancel')}
             </button>
             <button
               class="hv-pill"
@@ -305,19 +311,21 @@ export class HVBulkBar extends LitElement {
               ?disabled=${this._tags.length === 0}
               @click=${() => this._run({ action: adding ? 'add-tags' : 'remove-tags', tags: this._tags })}
             >
-              ${adding ? 'Add' : 'Remove'}
+              ${adding ? t('hv.card.addShort') : t('hv.action.remove')}
             </button>
           </div>
         </div>`;
       }
       case 'set-category':
         return html`<div class="picker" data-testid="bulk-picker" data-picker="set-category">
-          <span class="hv-label">Set the category on ${counted(this.selectedCount, 'item')}</span>
+          <span class="hv-label"
+            >${t('hv.bulk.setCategoryOn', { items: counted(this.selectedCount, 'item') })}</span
+          >
           <div class="row">
             <input
               data-testid="bulk-category"
               list="hv-bulk-categories"
-              placeholder="Category (blank clears it)"
+              placeholder=${t('hv.bulk.categoryPlaceholder')}
               .value=${this._draft}
               @input=${(e: Event) => {
                 this._draft = (e.target as HTMLInputElement).value;
@@ -327,25 +335,27 @@ export class HVBulkBar extends LitElement {
               ${(this.distinct?.categories ?? []).map((c) => html`<option value=${c.value}></option>`)}
             </datalist>
             <button class="hv-text-button" data-testid="bulk-picker-cancel" @click=${() => (this._active = null)}>
-              Cancel
+              ${t('hv.action.cancel')}
             </button>
             <button
               class="hv-pill"
               data-testid="bulk-picker-apply"
               @click=${() => this._run({ action: 'set-category', category: this._draft.trim() || null })}
             >
-              Set
+              ${t('hv.action.set')}
             </button>
           </div>
         </div>`;
       case 'adjust-qty':
         return html`<div class="picker" data-testid="bulk-picker" data-picker="adjust-qty">
-          <span class="hv-label">Adjust the quantity of ${counted(this.selectedCount, 'item')} by</span>
+          <span class="hv-label"
+            >${t('hv.bulk.adjustQtyOf', { items: counted(this.selectedCount, 'item') })}</span
+          >
           <div class="row">
             <input
               type="number"
               data-testid="bulk-delta"
-              placeholder="e.g. -1"
+              placeholder=${t('hv.bulk.deltaPlaceholder')}
               .value=${this._draft}
               @input=${(e: Event) => {
                 this._draft = (e.target as HTMLInputElement).value;
@@ -373,10 +383,18 @@ export class HVBulkBar extends LitElement {
     const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
     return html`<div class="progress" data-testid="bulk-progress">
       <div class="line">
-        <span data-testid="bulk-progress-label">${progress.label} ${progress.done} of ${progress.total}</span>
+        <span data-testid="bulk-progress-label"
+          >${t('hv.bulk.progress', {
+            label: progress.label,
+            done: progress.done,
+            total: progress.total,
+          })}</span
+        >
         <span class="spacer"></span>
         ${progress.failed > 0
-          ? html`<span class="failed" data-testid="bulk-progress-failed">${progress.failed} failed</span>`
+          ? html`<span class="failed" data-testid="bulk-progress-failed"
+              >${t('hv.bulk.progressFailed', { count: progress.failed })}</span
+            >`
           : null}
         <button
           class="band-button"
@@ -400,10 +418,15 @@ export class HVBulkBar extends LitElement {
         </span>
         <div>
           <div class="title" data-testid="bulk-result-title">
-            ${clean ? `${result.label} finished` : `${result.label} finished with errors`}
+            ${t(clean ? 'hv.bulk.finished' : 'hv.bulk.finishedWithErrors', {
+              label: result.label,
+            })}
           </div>
           <div class="sub" data-testid="bulk-result-summary">
-            ${result.succeeded} of ${result.succeeded + failedCount} succeeded.
+            ${t('hv.bulk.succeeded', {
+              done: result.succeeded,
+              total: result.succeeded + failedCount,
+            })}
             ${clean ? '' : tn('hv.bulk.result.failed', failedCount)}
           </div>
         </div>
@@ -423,7 +446,9 @@ export class HVBulkBar extends LitElement {
         : null}
       <div class="result-foot">
         <span class="hint">
-          ${failedCount ? `Selection kept to the ${counted(failedCount, 'failedRow')}` : ''}
+          ${failedCount
+            ? t('hv.bulk.selectionKept', { rows: counted(failedCount, 'failedRow') })
+            : ''}
         </span>
         <button
           class="hv-text-button"
@@ -438,7 +463,7 @@ export class HVBulkBar extends LitElement {
               data-testid="bulk-retry"
               @click=${() => this.dispatchEvent(new CustomEvent('retry-failed', { bubbles: true, composed: true }))}
             >
-              Retry ${failedCount} failed
+              ${t('hv.bulk.retryFailed', { count: failedCount })}
             </button>`
           : null}
       </div>
@@ -447,7 +472,7 @@ export class HVBulkBar extends LitElement {
 
   private _nameFor(failure: BulkFailure): string {
     const found = this.selectedItems.find((i) => i.id === failure.itemId);
-    return found?.name ?? failure.itemId ?? 'Item';
+    return found?.name ?? failure.itemId ?? t('hv.bulk.itemFallback');
   }
 
   render() {
@@ -457,9 +482,11 @@ export class HVBulkBar extends LitElement {
 
     return html`
       ${this._renderPicker()}
-      <div class="bar" data-testid="bulk-bar" role="toolbar" aria-label="Bulk actions">
-        <span class="lead" data-testid="bulk-lead">Apply to ${counted(this.selectedCount, 'item')}</span>
-        ${ACTIONS.map(
+      <div class="bar" data-testid="bulk-bar" role="toolbar" aria-label=${t('hv.bulk.toolbar')}>
+        <span class="lead" data-testid="bulk-lead"
+          >${t('hv.bulk.applyTo', { items: counted(this.selectedCount, 'item') })}</span
+        >
+        ${actions().map(
           (action) => html`<button
             class="band-button ${this._active === action.id ? 'active' : ''}"
             data-testid="bulk-action"
@@ -486,7 +513,7 @@ export class HVBulkBar extends LitElement {
           data-action="delete"
           @click=${() => this._run({ action: 'delete' })}
         >
-          ${icon('del', 15)}Delete
+          ${icon('del', 15)}${t('hv.action.delete')}
         </button>
       </div>
     `;
@@ -498,17 +525,19 @@ export function describeFailure(failure: BulkFailure): string {
   const { code, message } = failure.error;
   switch (code) {
     case 'conflict':
-      return 'Conflict — changed by another client since you loaded it.';
+      return t('hv.bulk.failure.conflict');
     case 'not_found':
-      return 'Not found — deleted before this ran.';
+      return t('hv.bulk.failure.notFound');
     case 'rate_limited':
-      return 'Rate limited — try again in a few seconds.';
+      return t('hv.bulk.failure.rateLimited');
     case 'validation_error':
-      return `Rejected — ${message}`;
+      // The backend's own sentence, framed by the card's — the message text
+      // itself is not translated, as #190's notes settle.
+      return t('hv.bulk.failure.rejected', { message });
     case 'storage_error':
-      return "Couldn't save — the integration failed to write to storage.";
+      return t('hv.bulk.failure.storage');
     default:
-      return message || 'Failed.';
+      return message || t('hv.bulk.failure.fallback');
   }
 }
 

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -246,7 +247,7 @@ export class HVOverflowMenu extends LitElement {
   ];
 
   @property({ attribute: false }) entries: OverflowMenuEntry[] = [];
-  @property({ type: String }) label = 'More actions';
+  @property({ type: String }) label = t('hv.menu.label');
   /** Use the white-on-primary treatment for the full view's app bar. */
   @property({ type: Boolean }) onPrimary = false;
 

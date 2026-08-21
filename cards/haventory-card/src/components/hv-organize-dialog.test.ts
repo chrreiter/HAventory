@@ -1,3 +1,4 @@
+import { setLanguage } from '../i18n';
 import './hv-organize-dialog';
 import { all, componentCss, makeItem, mountComponent, mountStore, q, settle } from '../test.utils';
 import { HVOrganizeDialog } from './hv-organize-dialog';
@@ -1628,5 +1629,16 @@ describe('hv-organize-dialog: disclosures come into view', () => {
     expect(scrolls).toHaveLength(2);
     expect(scrolls[1].el).toBe(q(sr, '[data-testid="location-editor"]'));
     expect(sr.activeElement).toBe(q(sr, '[data-testid="location-name"]'));
+  });
+});
+
+describe('hv-organize-dialog: the language in force', () => {
+  it('names its four tabs in German', async () => {
+    setLanguage('de');
+    const { el } = await mount();
+    const tabs = all<HTMLElement>(el, '[data-testid="organize-tab"]').map((b) =>
+      (b.textContent ?? '').trim(),
+    );
+    expect(tabs).toEqual(['Orte', 'Kategorien', 'Labels', 'Status']);
   });
 });

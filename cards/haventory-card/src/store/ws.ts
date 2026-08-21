@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { callWS, subscribeMessage } from '../ha-contract';
 import type {
   AnyEventPayload,
@@ -219,7 +220,7 @@ export class WSClient {
   ): Promise<Item> {
     const fetchWithAuth = this.hass.fetchWithAuth;
     if (typeof fetchWithAuth !== 'function') {
-      throw new Error('This Home Assistant connection cannot upload files.');
+      throw new Error(t('hv.store.cannotUpload'));
     }
     const body = new FormData();
     body.append('file', file);
@@ -228,7 +229,7 @@ export class WSClient {
       body,
     });
     if (!response.ok) {
-      throw new Error(`Upload failed (${response.status})`);
+      throw new Error(t('hv.store.uploadFailed', { status: response.status }));
     }
     const { file_id: fileId } = (await response.json()) as { file_id: string };
 

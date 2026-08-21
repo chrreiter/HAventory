@@ -1,3 +1,5 @@
+import type { TranslationKey } from '../i18n';
+import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
@@ -71,7 +73,7 @@ export function chipsFor(
           locations.find((l) => l.id === id),
           locations,
           ctx.areas ?? [],
-          'Location',
+          t('hv.chips.locationFallback'),
         ),
       ),
     );
@@ -81,13 +83,17 @@ export function chipsFor(
     const joined = paths.join(', ');
     chips.push({
       key: 'locationIds',
-      label: filters.includeSubtree ? `${joined} + sub` : joined,
+      label: filters.includeSubtree ? t('hv.chips.plusSub', { paths: joined }) : joined,
       tone: 'primary',
     });
   }
   if (filters.areaId) {
     const area = (ctx.areas ?? []).find((a) => a.id === filters.areaId);
-    chips.push({ key: 'areaId', label: `Area: ${area?.name ?? filters.areaId}`, tone: 'primary' });
+    chips.push({
+      key: 'areaId',
+      label: t('hv.chips.area', { name: area?.name ?? filters.areaId }),
+      tone: 'primary',
+    });
   }
   // This row has no headings above it, so every chip on it has to name its own
   // facet: a bare "Hardware" could be a category, a location or the search
@@ -97,29 +103,37 @@ export function chipsFor(
   if (filters.categories.length)
     chips.push({
       key: 'categories',
-      label: `${filters.categories.length > 1 ? 'Categories' : 'Category'}: ${filters.categories.join(', ')}`,
+      label: t(filters.categories.length > 1 ? 'hv.chips.categories' : 'hv.chips.category', {
+        values: filters.categories.join(', '),
+      }),
       tone: 'primary',
     });
   if (filters.tags.length) {
     const joined = filters.tags.map((t) => `${TAG_MARK}${t}`).join(', ');
     chips.push({
       key: 'tags',
-      label: filters.tagsMode === 'all' ? `all of: ${joined}` : `any of: ${joined}`,
+      label: t(filters.tagsMode === 'all' ? 'hv.chips.tagsAll' : 'hv.chips.tagsAny', {
+        values: joined,
+      }),
       tone: 'primary',
     });
   }
   // Deliberately distinct chips: one is a filter, one is an ordering.
-  if (filters.lowStockOnly) chips.push({ key: 'lowStockOnly', label: 'Low stock only', tone: 'warning' });
-  if (filters.lowStockFirst) chips.push({ key: 'lowStockFirst', label: 'Low stock first', tone: 'primary' });
-  if (filters.checkedOutOnly) chips.push({ key: 'checkedOutOnly', label: 'Checked out', tone: 'primary' });
-  if (filters.overdueOnly) chips.push({ key: 'overdueOnly', label: 'Overdue', tone: 'warning' });
+  if (filters.lowStockOnly)
+    chips.push({ key: 'lowStockOnly', label: t('hv.chips.lowStockOnly'), tone: 'warning' });
+  if (filters.lowStockFirst)
+    chips.push({ key: 'lowStockFirst', label: t('hv.chips.lowStockFirst'), tone: 'primary' });
+  if (filters.checkedOutOnly)
+    chips.push({ key: 'checkedOutOnly', label: t('hv.term.checkedOut'), tone: 'primary' });
+  if (filters.overdueOnly)
+    chips.push({ key: 'overdueOnly', label: t('hv.term.overdue'), tone: 'warning' });
   if (filters.inspectionDueOnly)
-    chips.push({ key: 'inspectionDueOnly', label: 'Inspection due', tone: 'warning' });
+    chips.push({ key: 'inspectionDueOnly', label: t('hv.term.inspectionDue'), tone: 'warning' });
   if (filters.status) {
     const tone = statusTone(filters.status, ctx.statuses);
     chips.push({
       key: 'status',
-      label: `Status: ${statusLabel(filters.status, ctx.statuses)}`,
+      label: t('hv.chips.status', { label: statusLabel(filters.status, ctx.statuses) }),
       // The status the household chose, in the colour the household gave it —
       // the same chip the rows below this one carry. `tone` is the fallback for
       // a consumer that reads neither of the two below.
@@ -128,17 +142,26 @@ export function chipsFor(
       toneStyle: tone.toneStyle,
     });
   }
-  if (filters.orphansOnly) chips.push({ key: 'orphansOnly', label: 'No location', tone: 'primary' });
+  if (filters.orphansOnly)
+    chips.push({ key: 'orphansOnly', label: t('hv.term.noLocation'), tone: 'primary' });
   // One chip per bound rather than one per field: each is separately clearable,
   // so a range narrowed too far can be half-undone.
-  const dateChips: [FilterChipKey, string | null, string][] = [
-    ['updatedAfter', filters.updatedAfter, 'Updated ≥'],
-    ['updatedBefore', filters.updatedBefore, 'Updated ≤'],
-    ['createdAfter', filters.createdAfter, 'Created ≥'],
-    ['createdBefore', filters.createdBefore, 'Created ≤'],
+  const dateChips: [FilterChipKey, string | null, TranslationKey][] = [
+    ['updatedAfter', filters.updatedAfter, 'hv.chips.updatedAfter'],
+    ['updatedBefore', filters.updatedBefore, 'hv.chips.updatedBefore'],
+    ['createdAfter', filters.createdAfter, 'hv.chips.createdAfter'],
+    ['createdBefore', filters.createdBefore, 'hv.chips.createdBefore'],
   ];
   for (const [key, value, prefix] of dateChips) {
-    if (value) chips.push({ key, label: `${prefix} ${formatDate(value.slice(0, 10))}`, tone: 'primary' });
+    if (value)
+      chips.push({
+        key,
+        label: t('hv.chips.dated', {
+          prefix: t(prefix),
+          date: formatDate(value.slice(0, 10)),
+        }),
+        tone: 'primary',
+      });
   }
   return chips;
 }
@@ -243,7 +266,7 @@ export class HVFilterChips extends LitElement {
           @click=${() =>
             this.dispatchEvent(new CustomEvent('clear-filters', { bubbles: true, composed: true }))}
         >
-          Clear all
+          ${t('hv.action.clearAll')}
         </button>
       </div>
     `;

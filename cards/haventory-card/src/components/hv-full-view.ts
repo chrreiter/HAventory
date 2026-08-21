@@ -6,7 +6,7 @@ import { chip } from '../ui/chip';
 import { browseRow } from '../ui/browse-row';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
-import { tn } from '../i18n';
+import { t, tn } from '../i18n';
 import { counted, showingCount } from '../ui/plural';
 import { nextZBase } from '../utils/zindex';
 import { debounce } from '../utils/debounce';
@@ -1174,7 +1174,7 @@ export class HVFullView extends LitElement {
     switch (detail.action) {
       case 'move':
         return {
-          label: 'Move',
+          label: t('hv.bulk.label.move'),
           ops: items.map((i) =>
             makeBulkOp('item_move', {
               item_id: i.id,
@@ -1185,7 +1185,7 @@ export class HVFullView extends LitElement {
         };
       case 'add-tags':
         return {
-          label: 'Tagging',
+          label: t('hv.bulk.label.addTags'),
           // add_tags/remove_tags are additive server-side, so concurrent edits
           // by another client are not clobbered the way a whole-array update
           // would clobber them.
@@ -1193,12 +1193,12 @@ export class HVFullView extends LitElement {
         };
       case 'remove-tags':
         return {
-          label: 'Untagging',
+          label: t('hv.bulk.label.removeTags'),
           ops: items.map((i) => makeBulkOp('item_remove_tags', { item_id: i.id, tags: detail.tags ?? [] })),
         };
       case 'set-category':
         return {
-          label: 'Categorising',
+          label: t('hv.bulk.label.setCategory'),
           ops: items.map((i) =>
             makeBulkOp('item_update', {
               item_id: i.id,
@@ -1209,21 +1209,24 @@ export class HVFullView extends LitElement {
         };
       case 'adjust-qty':
         return {
-          label: 'Adjusting',
+          label: t('hv.bulk.label.adjustQty'),
           ops: items.map((i) => makeBulkOp('item_adjust_quantity', { item_id: i.id, delta: detail.delta ?? 0 })),
         };
       case 'check-out':
         return {
-          label: 'Checking out',
+          label: t('hv.bulk.label.checkOut'),
           ops: items.map((i) =>
             makeBulkOp('item_check_out', { item_id: i.id, due_date: detail.dueDate ?? null }),
           ),
         };
       case 'check-in':
-        return { label: 'Checking in', ops: items.map((i) => makeBulkOp('item_check_in', { item_id: i.id })) };
+        return {
+          label: t('hv.bulk.label.checkIn'),
+          ops: items.map((i) => makeBulkOp('item_check_in', { item_id: i.id })),
+        };
       case 'delete':
         return {
-          label: 'Delete',
+          label: t('hv.bulk.label.delete'),
           ops: items.map((i) => makeBulkOp('item_delete', { item_id: i.id, expected_version: i.version })),
         };
     }
@@ -1290,7 +1293,8 @@ export class HVFullView extends LitElement {
       );
       this._creatingLocation = false;
     } catch (err) {
-      this._locationError = (err as { message?: string })?.message ?? 'Could not create that location.';
+      this._locationError =
+        (err as { message?: string })?.message ?? t('hv.fullView.locationCreateFailed');
     }
   }
 
@@ -1304,7 +1308,7 @@ export class HVFullView extends LitElement {
    */
   private _createLocationForEditor = (name: string): Promise<Location> => {
     const store = this.store;
-    if (!store) return Promise.reject(new Error('Not connected to Home Assistant yet.'));
+    if (!store) return Promise.reject(new Error(t('hv.card.notConnected')));
     return store.createLocation(name, null, null);
   };
 
@@ -1339,7 +1343,7 @@ export class HVFullView extends LitElement {
    * and all start meaning different things.
    */
   private _renderTagsMode(mode: 'any' | 'all') {
-    return html`<span class="segmented" role="radiogroup" aria-label="Tag match mode">
+    return html`<span class="segmented" role="radiogroup" aria-label=${t('hv.filter.tagMatchMode')}>
       ${(['any', 'all'] as const).map(
         (m) => html`<button
           class=${mode === m ? 'on' : ''}
@@ -1347,10 +1351,10 @@ export class HVFullView extends LitElement {
           aria-checked=${String(mode === m)}
           data-testid="sidebar-tags-mode"
           data-mode=${m}
-          title=${m === 'any' ? 'Items with any of the selected tags' : 'Items with all of them'}
+          title=${m === 'any' ? t('hv.fullView.tagsAnyTitle') : t('hv.fullView.tagsAllTitle')}
           @click=${() => this._setFilters({ tagsMode: m })}
         >
-          ${m === 'any' ? 'Any' : 'All'}
+          ${m === 'any' ? t('hv.term.any') : t('hv.term.all')}
         </button>`,
       )}
     </span>`;
@@ -1371,7 +1375,7 @@ export class HVFullView extends LitElement {
     const counts = st?.statsCounts;
     return html`
       <div class="sidebar-head">
-        ${this._renderSectionToggle('status', 'Status')}
+        ${this._renderSectionToggle('status', t('hv.filter.status'))}
         <!-- The other sections tally how many rows they hold. Here that number
              is the size of the household's vocabulary, which says nothing
              about the inventory the facet navigates. -->
@@ -1379,8 +1383,8 @@ export class HVFullView extends LitElement {
           <button
             class="hv-icon-button"
             data-testid="sidebar-new-status"
-            aria-label="New status…"
-            title="New status…"
+            aria-label=${t('hv.fullView.newStatus')}
+            title=${t('hv.fullView.newStatus')}
             @click=${() =>
               this.dispatchEvent(
                 new CustomEvent('menu-action', {
@@ -1449,8 +1453,8 @@ export class HVFullView extends LitElement {
           <button
             class="hv-icon-button"
             data-testid=${`sidebar-new-${section}`}
-            aria-label=${`New ${section === 'tags' ? 'tag' : 'category'}…`}
-            title=${`New ${section === 'tags' ? 'tag' : 'category'}…`}
+            aria-label=${section === 'tags' ? t('hv.fullView.newTag') : t('hv.fullView.newCategory')}
+            title=${section === 'tags' ? t('hv.fullView.newTag') : t('hv.fullView.newCategory')}
             @click=${() =>
               this.dispatchEvent(
                 new CustomEvent('menu-action', {
@@ -1493,7 +1497,9 @@ export class HVFullView extends LitElement {
                 </button>`,
               )
             : html`<div class="section-empty" data-testid=${`sidebar-${section}-empty`}>
-                ${section === 'tags' ? 'No tags in use yet' : 'No categories in use yet'}
+                ${section === 'tags'
+                  ? t('hv.fullView.noTagsYet')
+                  : t('hv.fullView.noCategoriesYet')}
               </div>`
           : null}
       </div>
@@ -1509,7 +1515,7 @@ export class HVFullView extends LitElement {
     return html`
       <div class="sidebar" data-testid="full-sidebar">
         <div class="sidebar-head">
-          ${this._renderSectionToggle('locations', 'Locations')}
+          ${this._renderSectionToggle('locations', t('hv.fullView.locations'))}
           <!-- Categories and tags each state how many there are; locations
                offered a "+" and no number, so the one section you can add to was
                also the one you could not size up. -->
@@ -1520,8 +1526,8 @@ export class HVFullView extends LitElement {
             <button
               class="hv-icon-button"
               data-testid="sidebar-new-location"
-              aria-label="New location"
-              title="New location"
+              aria-label=${t('hv.fullView.newLocation')}
+              title=${t('hv.fullView.newLocation')}
               @click=${() => {
                 this._creatingLocation = !this._creatingLocation;
                 this._locationError = null;
@@ -1539,7 +1545,7 @@ export class HVFullView extends LitElement {
         ${this._renderStatusSection()}
         ${this._renderFacetSection(
           'categories',
-          'Categories',
+          t('hv.fullView.categories'),
           distinct?.categories ?? [],
           (v) => selectedCategories.has(v),
           (v) =>
@@ -1551,7 +1557,7 @@ export class HVFullView extends LitElement {
         )}
         ${this._renderFacetSection(
           'tags',
-          'Tags',
+          t('hv.fullView.tags'),
           distinct?.tags ?? [],
           (v) => selectedTags.has(v),
           (v) =>
@@ -1583,8 +1589,8 @@ export class HVFullView extends LitElement {
           ? html`<div class="new-location">
               <input
                 data-testid="sidebar-new-location-name"
-                placeholder="New location name"
-                aria-label="New location name"
+                placeholder=${t('hv.fullView.newLocationName')}
+                aria-label=${t('hv.fullView.newLocationName')}
                 @keydown=${(e: KeyboardEvent) => {
                   if (e.key === 'Enter') void this._createLocation((e.target as HTMLInputElement).value);
                   if (e.key === 'Escape') this._creatingLocation = false;
@@ -1600,7 +1606,7 @@ export class HVFullView extends LitElement {
                   void this._createLocation(input?.value ?? '');
                 }}
               >
-                Add
+                ${t('hv.card.addShort')}
               </button>
             </div>`
           : null}
@@ -1654,7 +1660,7 @@ export class HVFullView extends LitElement {
     const panel = () => this.renderRoot?.querySelector<HVFilterPanel>('[data-testid="full-filter-panel"]');
     return html`<div class="panel-foot" data-testid="full-panel-foot">
       <button class="hv-text-button" data-testid="full-panel-clear" @click=${() => panel()?.clearAll()}>
-        Clear all
+        ${t('hv.action.clearAll')}
       </button>
       <span class="spacer"></span>
       <button
@@ -1665,10 +1671,12 @@ export class HVFullView extends LitElement {
           this._filtersOpen = false;
         }}
       >
-        Cancel
+        ${t('hv.action.cancel')}
       </button>
       <button class="hv-pill" data-testid="full-panel-apply" @click=${() => panel()?.apply()}>
-        ${this._stagedCount === null ? 'Show items' : `Show ${counted(this._stagedCount, 'item')}`}
+        ${this._stagedCount === null
+          ? t('hv.card.showItems')
+          : tn('hv.card.showCount', this._stagedCount)}
       </button>
     </div>`;
   }
@@ -1710,14 +1718,14 @@ export class HVFullView extends LitElement {
           ${renderAreaChip(areaMarkName(parts.areaName, parts.path))}
           <span class="hv-chip-line-text">
             ${filters.orphansOnly
-              ? html`<span class="current">No location</span>`
+              ? html`<span class="current">${t('hv.term.noLocation')}</span>`
               : segments.length
                 ? segments.map((seg, i) =>
                     i === segments.length - 1
                       ? html`<span class="current">${seg}</span>`
                       : html`<span>${seg} › </span>`,
                   )
-                : html`<span class="current">All items</span>`}${st?.total !== null &&
+                : html`<span class="current">${t('hv.fullView.allItems')}</span>`}${st?.total !== null &&
             st?.total !== undefined
               ? html` · ${counted(st.total, 'item')}`
               : null}
@@ -1747,13 +1755,13 @@ export class HVFullView extends LitElement {
             if (this._filtersOpen && this._narrow) this._priceStaged(filters);
           }}
         >
-          ${icon('tune', 16)}Filters
+          ${icon('tune', 16)}${t('hv.card.filters')}
         </button>
         <button
           class="hv-icon-button"
           data-testid="columns-expanded"
-          aria-label="Choose columns"
-          title="Choose columns"
+          aria-label=${t('hv.fullView.chooseColumns')}
+          title=${t('hv.fullView.chooseColumns')}
           @click=${() =>
             this.dispatchEvent(
               new CustomEvent('menu-action', { detail: { id: 'columns' }, bubbles: true, composed: true }),
@@ -1805,13 +1813,20 @@ export class HVFullView extends LitElement {
 
     return html`
       <div class="appbar selecting" data-testid="selection-bar">
-        <button class="tap" data-testid="exit-selection" aria-label="Exit selection" @click=${() => this._exitSelection()}>
+        <button
+          class="tap"
+          data-testid="exit-selection"
+          aria-label=${t('hv.fullView.exitSelection')}
+          @click=${() => this._exitSelection()}
+        >
           ${icon('close', 20)}
         </button>
-        <span class="count" data-testid="selection-count">${selected} selected</span>
+        <span class="count" data-testid="selection-count"
+          >${t('hv.fullView.selectedCount', { count: selected })}</span
+        >
         ${total !== null
           ? html`<span class="subcount" data-testid="selection-subcount"
-              >of ${total} matching the current filter</span
+              >${t('hv.fullView.ofMatching', { total })}</span
             >`
           : null}
         ${canLoadMore
@@ -1828,7 +1843,9 @@ export class HVFullView extends LitElement {
                 }
               }}
             >
-              ${this._loadingAll ? 'Loading…' : `Load all ${total} to select`}
+              ${this._loadingAll
+                ? t('hv.fullView.loading')
+                : t('hv.fullView.loadAll', { total })}
             </button>`
           : null}
         <span class="spacer"></span>
@@ -1840,7 +1857,7 @@ export class HVFullView extends LitElement {
           ?disabled=${selected === 0}
           @click=${() => this.store?.clearSelection()}
         >
-          Clear selection
+          ${t('hv.fullView.clearSelection')}
         </button>
       </div>
     `;
@@ -1860,8 +1877,8 @@ export class HVFullView extends LitElement {
     return html`<button
       class="tap"
       data-testid="panel-menu"
-      aria-label="Open the Home Assistant menu"
-      title="Menu"
+      aria-label=${t('hv.fullView.openMenu')}
+      title=${t('hv.fullView.menu')}
       @click=${() => this.dispatchEvent(new Event('hass-toggle-menu', { bubbles: true, composed: true }))}
     >
       ${icon('menu', 20)}
@@ -1893,7 +1910,7 @@ export class HVFullView extends LitElement {
             : html`<button
                 class="tap"
                 data-testid="expand-toggle"
-                aria-label="Close full view"
+                aria-label=${t('hv.fullView.close')}
                 @click=${() => this._leaveEditor('close')}
               >
                 ${icon('close', 20)}
@@ -1901,11 +1918,13 @@ export class HVFullView extends LitElement {
           <h2>${this.heading}</h2>
           <label class="search">
             ${icon('magnify', 18)}
-            <span class="hv-sr-only">Search items</span>
+            <span class="hv-sr-only">${t('hv.card.searchItems')}</span>
             <input
               type="search"
               data-testid="full-search"
-              placeholder=${counts ? `Search all ${counted(counts.items_total, 'item')}…` : 'Search items…'}
+              placeholder=${counts
+                ? tn('hv.card.searchAllPlaceholder', counts.items_total)
+                : t('hv.card.searchPlaceholder')}
               .value=${this._searchDraft}
               @input=${(e: Event) => {
                 this._searchDraft = (e.target as HTMLInputElement).value;
@@ -1919,10 +1938,10 @@ export class HVFullView extends LitElement {
                 class="hv-chip pill warning ${filters.lowStockOnly ? 'on' : ''}"
                 data-testid="full-badge-low"
                 aria-pressed=${String(filters.lowStockOnly)}
-                title="Show only low-stock items"
+                title=${t('hv.card.badge.lowTitle')}
                 @click=${() => this._setFilters({ lowStockOnly: !filters.lowStockOnly })}
               >
-                ${counts.low_stock_count} low
+                ${t('hv.card.badge.low', { count: counts.low_stock_count })}
               </button>`
             : null}
           ${allowsPill('overdue') && counts && (counts.overdue_count ?? 0) > 0
@@ -1930,10 +1949,10 @@ export class HVFullView extends LitElement {
                 class="hv-chip pill error ${filters.overdueOnly ? 'on' : ''}"
                 data-testid="full-badge-overdue"
                 aria-pressed=${String(filters.overdueOnly)}
-                title="Show only overdue items"
+                title=${t('hv.card.badge.overdueTitle')}
                 @click=${() => this._setFilters({ overdueOnly: !filters.overdueOnly })}
               >
-                ${counts.overdue_count} overdue
+                ${t('hv.card.badge.overdue', { count: counts.overdue_count ?? 0 })}
               </button>`
             : null}
           ${allowsPill('inspection_due') && counts && (counts.inspection_due_count ?? 0) > 0
@@ -1941,10 +1960,10 @@ export class HVFullView extends LitElement {
                 class="hv-chip pill warning ${filters.inspectionDueOnly ? 'on' : ''}"
                 data-testid="full-badge-inspection"
                 aria-pressed=${String(filters.inspectionDueOnly)}
-                title="Show only items due for inspection"
+                title=${t('hv.card.badge.inspectionTitle')}
                 @click=${() => this._setFilters({ inspectionDueOnly: !filters.inspectionDueOnly })}
               >
-                ${counts.inspection_due_count} to inspect
+                ${t('hv.card.badge.inspection', { count: counts.inspection_due_count ?? 0 })}
               </button>`
             : null}
           ${allowsPill('reminder_due') && counts && (counts.reminder_due_count ?? 0) > 0
@@ -1952,10 +1971,10 @@ export class HVFullView extends LitElement {
                 class="hv-chip pill warning ${filters.reminderDueOnly ? 'on' : ''}"
                 data-testid="full-badge-reminder"
                 aria-pressed=${String(filters.reminderDueOnly)}
-                title="Show only items whose reminder has come round"
+                title=${t('hv.card.badge.reminderTitle')}
                 @click=${() => this._setFilters({ reminderDueOnly: !filters.reminderDueOnly })}
               >
-                ${counts.reminder_due_count} to do
+                ${t('hv.card.badge.reminder', { count: counts.reminder_due_count ?? 0 })}
               </button>`
             : null}
           ${allowsPill('checked_out') && counts && counts.checked_out_count > 0
@@ -1963,10 +1982,10 @@ export class HVFullView extends LitElement {
                 class="hv-chip pill ${filters.checkedOutOnly ? 'on' : ''}"
                 data-testid="full-badge-out"
                 aria-pressed=${String(filters.checkedOutOnly)}
-                title="Show only checked-out items"
+                title=${t('hv.card.badge.checkedOutTitle')}
                 @click=${() => this._setFilters({ checkedOutOnly: !filters.checkedOutOnly })}
               >
-                ${counts.checked_out_count} checked out
+                ${t('hv.card.badge.checkedOut', { count: counts.checked_out_count })}
               </button>`
             : null}
           <button
@@ -1974,13 +1993,13 @@ export class HVFullView extends LitElement {
             data-testid="full-add-item"
             @click=${() => this._leaveEditor('new')}
           >
-            ${icon('plus', 16)}Add item
+            ${icon('plus', 16)}${t('hv.card.addItem')}
           </button>
           <button
             class="tap"
             data-testid="full-organize"
-            aria-label="Organize"
-            title="Organize"
+            aria-label=${t('hv.fullView.organize')}
+            title=${t('hv.fullView.organize')}
             @click=${() =>
               this.dispatchEvent(
                 new CustomEvent('menu-action', { detail: { id: 'organize' }, bubbles: true, composed: true }),
@@ -2058,7 +2077,7 @@ export class HVFullView extends LitElement {
               ? html`<div class="editor-holder">
                   ${this._editing !== 'new' && !st?.items.some((i) => i.id === this._editing)
                     ? html`<p class="pinned-hint" data-testid="pinned-editor-hint">
-                        No longer matches the current filters
+                        ${t('hv.list.noLongerMatches')}
                       </p>`
                     : null}
                   <hv-item-editor
@@ -2092,7 +2111,7 @@ export class HVFullView extends LitElement {
 
             ${this._selecting && st?.total !== null && st?.total !== undefined && loaded < st.total
               ? html`<div class="honesty" data-testid="selection-honesty">
-                  ${loaded} of ${st.total} loaded · scroll to load more. Select-all covers loaded rows only.
+                  ${t('hv.fullView.selectionHonesty', { loaded, total: st.total })}
                 </div>`
               : null}
 
@@ -2155,7 +2174,7 @@ export class HVFullView extends LitElement {
 
             <div class="footer" data-testid="full-footer">
               ${showingCount(loaded, st?.total, activeFilterCount(filters) > 0)}${st?.cursor
-                ? ' · scroll to load more'
+                ? t('hv.fullView.scrollToLoadMore')
                 : ''}
             </div>
           </div>
@@ -2165,10 +2184,12 @@ export class HVFullView extends LitElement {
           data-testid="bulk-confirm"
           ?open=${this._pendingDelete}
           ?mobile=${this._narrow}
-          .heading=${`Delete ${counted(selection.size, 'item')}?`}
-          message="This cannot be undone. Items are removed for every connected client. Locations and tags are not affected."
+          .heading=${t('hv.fullView.deleteHeading', {
+            items: counted(selection.size, 'item'),
+          })}
+          .message=${t('hv.fullView.deleteMessage')}
           .warning=${this._checkedOutWarning}
-          .confirmLabel=${`Delete ${selection.size}`}
+          .confirmLabel=${t('hv.fullView.deleteConfirm', { count: selection.size })}
           destructive
           @confirm=${() => {
             this._pendingDelete = false;

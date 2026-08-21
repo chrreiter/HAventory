@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -274,7 +275,7 @@ export class HVDiagnosticsPanel extends LitElement {
           class="panel"
           role="dialog"
           aria-modal="true"
-          aria-label="Diagnostics"
+          aria-label=${t('hv.diagnostics.title')}
           data-testid="diagnostics-panel"
           @keydown=${onEscape(() => this._close())}
         >
@@ -282,14 +283,16 @@ export class HVDiagnosticsPanel extends LitElement {
             <span style="color: var(--hv-${bad ? 'warn' : 'success'})">
               ${icon(bad ? 'alert' : 'checkCircle', 20)}
             </span>
-            <h2>Diagnostics</h2>
+            <h2>${t('hv.diagnostics.title')}</h2>
             <button
               class="hv-pill outline"
               data-testid="health-refresh"
               ?disabled=${this.busy}
               @click=${() => this.dispatchEvent(new CustomEvent('refresh', { bubbles: true, composed: true }))}
             >
-              ${icon('refresh', 15)}${this.busy ? 'Refreshing…' : 'Refresh'}
+              ${icon('refresh', 15)}${this.busy
+                ? t('hv.diagnostics.refreshing')
+                : t('hv.action.refresh')}
             </button>
           </div>
 
@@ -298,15 +301,16 @@ export class HVDiagnosticsPanel extends LitElement {
               <span class="dot"></span>
               <span>
                 ${!live
-                  ? html`<strong>Not live</strong> — subscriptions are down, so the list only changes when you
-                      refresh.`
+                  ? html`<strong>${t('hv.diagnostics.notLive')}</strong
+                      >${t('hv.diagnostics.notLiveDetail')}`
                   : rateLimited
-                    ? html`<strong>Degraded</strong> — rate limiting is active. Some commands and live updates
-                        are being dropped.`
+                    ? html`<strong>${t('hv.diagnostics.degraded')}</strong
+                        >${t('hv.diagnostics.degradedDetail')}`
                     : unhealthy
-                      ? html`<strong>Issues found</strong> — the integration reported problems with its stored
-                          data.`
-                      : html`<strong>No issues</strong> · live`}
+                      ? html`<strong>${t('hv.diagnostics.issuesFound')}</strong
+                          >${t('hv.diagnostics.issuesFoundDetail')}`
+                      : html`<strong>${t('hv.diagnostics.noIssues')}</strong
+                          >${t('hv.diagnostics.noIssuesDetail')}`}
               </span>
             </div>
 
@@ -315,25 +319,25 @@ export class HVDiagnosticsPanel extends LitElement {
                 <div class="value ${rate?.dropped_commands ? 'bad' : ''}" data-testid="diagnostics-dropped-commands">
                   ${rate?.dropped_commands ?? 0}
                 </div>
-                <div class="label">Commands rejected</div>
+                <div class="label">${t('hv.diagnostics.commandsRejected')}</div>
               </div>
               <div class="tile">
                 <div class="value ${rate?.dropped_events ? 'warn' : ''}" data-testid="diagnostics-dropped-events">
                   ${rate?.dropped_events ?? 0}
                 </div>
-                <div class="label">Events dropped</div>
+                <div class="label">${t('hv.diagnostics.eventsDropped')}</div>
               </div>
               <div class="tile">
                 <div class="value" data-testid="diagnostics-since">
                   ${this.lastRefresh ? relativeTime(this.lastRefresh) : '—'}
                 </div>
-                <div class="label">Since last refresh</div>
+                <div class="label">${t('hv.diagnostics.sinceLastRefresh')}</div>
               </div>
             </div>
 
             ${issues.length
               ? html`<div style="display:grid;gap:8px">
-                  <span class="hv-label">Issues</span>
+                  <span class="hv-label">${t('hv.diagnostics.issues')}</span>
                   ${issues.map(
                     (issue) => html`<div class="issue" data-testid="diagnostics-issue" data-code=${issue.code}>
                       <span class="glyph">${icon('alert', 17)}</span>
@@ -345,25 +349,35 @@ export class HVDiagnosticsPanel extends LitElement {
 
             <div class="facts">
               <div class="fact">
-                <span>Subscriptions</span>
+                <span>${t('hv.diagnostics.subscriptions')}</span>
                 <span class="value ${live ? 'live' : 'stale'}" data-testid="diagnostics-subscriptions">
-                  ${live ? 'items · locations · stats — live' : 'not connected'}
+                  ${live
+                    ? t('hv.diagnostics.subscriptionsLive')
+                    : t('hv.diagnostics.subscriptionsDown')}
                 </span>
               </div>
               <div class="fact">
-                <span>Data loaded</span>
+                <span>${t('hv.diagnostics.dataLoaded')}</span>
                 <span class="value" data-testid="diagnostics-loaded">
-                  ${this.loadedItems} of
-                  ${this.counts ? counted(this.counts.items_total, 'item') : '? items'} ·
-                  ${this.counts ? counted(this.counts.locations_total, 'location') : '? locations'}
+                  ${t('hv.diagnostics.loadedValue', {
+                    loaded: this.loadedItems,
+                    items: this.counts
+                      ? counted(this.counts.items_total, 'item')
+                      : t('hv.diagnostics.unknownItems'),
+                    locations: this.counts
+                      ? counted(this.counts.locations_total, 'location')
+                      : t('hv.diagnostics.unknownLocations'),
+                  })}
                 </span>
               </div>
               <div class="fact">
-                <span>Rate limiting</span>
-                <span class="value">${rate?.enabled ? 'enabled' : 'off'}</span>
+                <span>${t('hv.diagnostics.rateLimiting')}</span>
+                <span class="value"
+                  >${rate?.enabled ? t('hv.diagnostics.enabled') : t('hv.diagnostics.off')}</span
+                >
               </div>
               <div class="fact">
-                <span>Integration version</span>
+                <span>${t('hv.diagnostics.integrationVersion')}</span>
                 <span class="value" data-testid="diagnostics-version">
                   ${this.version?.integration_version ?? '—'}
                 </span>
@@ -372,10 +386,7 @@ export class HVDiagnosticsPanel extends LitElement {
 
             ${issues.length
               ? null
-              : html`<span class="note">
-                  A healthy integration reports nothing here. The counters stay at zero unless rate limiting is
-                  enabled and tripped.
-                </span>`}
+              : html`<span class="note">${t('hv.diagnostics.healthyNote')}</span>`}
           </div>
 
           <div class="foot">
@@ -388,11 +399,13 @@ export class HVDiagnosticsPanel extends LitElement {
                 this._copied = true;
               }}
             >
-              ${this._copied ? 'Copied' : 'Copy report'}
+              ${this._copied ? t('hv.diagnostics.copied') : t('hv.diagnostics.copyReport')}
             </button>
             <!-- This panel reports; it commits nothing. Its way out is drawn as
                  an outline so the filled shape keeps meaning "this writes". -->
-            <button class="hv-pill outline" data-testid="diagnostics-close" @click=${this._close}>Close</button>
+            <button class="hv-pill outline" data-testid="diagnostics-close" @click=${this._close}>
+              ${t('hv.action.close')}
+            </button>
           </div>
         </div>
       </div>

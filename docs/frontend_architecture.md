@@ -214,6 +214,46 @@ that prints a location path uses. Only the CSS is per-component — style rules 
 shadow boundary, which is also why the sidebar's value rows restate `hv-location-tree`'s row
 styling.
 
+### The language the wording is in
+
+Every string above — and every string in every component — comes out of `src/i18n/`.
+
+- **`en.ts` is the key universe.** `TranslationKey` is `keyof typeof en`, so a key nothing
+  defines does not compile at the call site; `de.ts` is a complete
+  `Record<TranslationKey, string>`, so an English string added without a German one does not
+  compile either. `catalog.test.ts` holds the rest: paired plurals, no orphaned keys, the same
+  placeholders on both sides.
+- **`t(key, params?)`** fills `{name}` placeholders; a placeholder with no parameter renders
+  literally, so a typo shows rather than blanking a word. **`tn(key, count, params?)`** picks
+  between `<key>.one` and `<key>.other` — two forms, which is the split English and German
+  share. `Intl.PluralRules` would add a category axis every dictionary has to fill and answer
+  a question neither language asks.
+- **The language is `hass.language`**, read in `index.ts`'s and `haventory-panel.ts`'s
+  `set hass` and on `haventory-card-editor`'s first update, resolved exact tag → primary
+  subtag → `en`. A key a dictionary has not reached falls through to the **English string**,
+  never to the key, so a partial dictionary shows a mixed screen rather than `hv.action.retry`
+  on a button.
+- **A module singleton, not a Lit context.** Half the copy lives in plain functions with no
+  host element (`ui/empty-state`, `ui/health-codes`, `ui/plural`, `describeFailure`), and a
+  context cannot reach any of them without changing every signature. The consequence is a
+  rule: **copy cannot be a module constant.** A `const` computed when the module is evaluated
+  freezes English into every surface that reads it, because the language arrives with the
+  first `hass` — long after. `discardPrompt()`, `quickDayOffsets()`, `columnLabel()` and the
+  editor's `customFieldTypes()` are all functions for that one reason.
+- **Whole sentences, not fragments glued at the call site.** Word order is a language's own,
+  and a sentence assembled from three keys can only ever be English word order with foreign
+  words in it. Two shared namespaces keep that from multiplying: `hv.action.*` for the verbs
+  and `hv.term.*` for the facts more than one surface states.
+- **Deliberately untranslated**: `DEFAULT_CARD_TITLE` (a product name, pinned to `const.py`),
+  the card-picker entry and `setConfig`'s refusal in `index.ts` (both run before any `hass`
+  exists), the diagnostics panel's copy-to-clipboard report (it is read by a maintainer), and
+  the backend's own error `message` text — the card translates the frame around it, and the
+  sentence inside stays as the backend wrote it.
+
+The integration's half is `custom_components/haventory/translations/`, one file per language
+mirroring `strings.json`'s key tree. `CONTRIBUTING.md` carries the recipe for adding a
+language to both halves.
+
 ### How a control says it is on
 
 A filter that is on announces with `aria-pressed`, everywhere: both app bars' stat pills,

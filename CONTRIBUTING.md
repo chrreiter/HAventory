@@ -101,8 +101,53 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
   the same PR — an upgrade extracts the release asset over the install directory
   without clearing it, so the file survives on every existing install until the
   setup-time sweep removes it.
+- **User-facing text is never a literal.** The card reads every string through
+  `t()` / `tn()` from `cards/haventory-card/src/i18n/`, and the integration
+  through `strings.json` plus `translations/<tag>.json`. See "Adding a language"
+  below for the shape, and `docs/frontend_architecture.md` for why copy cannot
+  be a module constant.
 - Update `README.md` when behavior changes. Report out-of-scope findings under a
   "Follow-ups" note rather than fixing them in the same PR.
+
+## Adding a language
+
+HAventory ships English and German. A new language is two files and one line, and
+touches nothing else.
+
+**The card.** Copy `cards/haventory-card/src/i18n/de.ts` to `<tag>.ts` — a
+lower-case BCP-47 tag, `fr` or `pt-br` — translate the values, and register it:
+
+```ts
+// cards/haventory-card/src/i18n/index.ts
+import { fr } from './fr';
+export const DICTIONARIES: Readonly<Record<string, Dictionary>> = { en, de, fr };
+```
+
+Type it `Dictionary` (a `Partial`) while it is incomplete: `t()` falls through to
+the English string for a key the dictionary has not reached, so a half-finished
+language ships as a mixed screen rather than as `hv.action.retry` printed on a
+button. Type it `Record<TranslationKey, string>` — the way `de.ts` is — once it
+is complete, and TypeScript then refuses an English string added without its
+counterpart. `catalog.test.ts` checks every registered dictionary for orphaned
+keys and for placeholders that do not match the English, whichever type it has.
+
+**The integration.** Copy `custom_components/haventory/translations/en.json` to
+`<tag>.json` and translate the values. The key tree has to stay identical —
+`tests/test_config_flow_offline.py` compares it against `strings.json`, checks
+that every `{placeholder}` survives, and rejects an inline URL (hassfest does
+too; a link belongs in the `{docs_url}` placeholder the options flow fills).
+Home Assistant discovers the file by name; nothing registers it.
+
+**Then:** add the language to the README line naming what ships, run both gates,
+and check the result against a real instance — set the Home Assistant profile to
+the language and read the config flow, the options screen, the card and the
+sidebar page. The `run-haventory` skill documents that recipe.
+
+Two conventions worth copying from `de.ts`: match Home Assistant's own
+translations for anything HA already has a word for (its `de.json` files live in
+`homeassistant/components/*/translations/`), and add a same-line
+`// codespell:ignore` to the rare test assertion whose non-English text trips the
+spell-check hook — the dictionaries themselves are already excluded by path.
 
 ## Pull request process
 

@@ -1,3 +1,4 @@
+import { setLanguage } from '../i18n';
 import './hv-bulk-bar';
 import { all, componentCss, makeItem, mountComponent, q } from '../test.utils';
 import { describeFailure } from './hv-bulk-bar';
@@ -276,6 +277,21 @@ describe('describeFailure', () => {
     expect(describeFailure(failure('a', 'storage_error'))).toContain('failed to write to storage');
     expect(describeFailure(failure('a', 'validation_error', 'quantity must be >= 0'))).toContain(
       'quantity must be >= 0',
+    );
+  });
+
+  it('says the same things in the language in force', () => {
+    // The extraction's own regression net: a literal left behind in the switch
+    // would still read English here while everything around it moved.
+    setLanguage('de');
+    expect(describeFailure(failure('a', 'conflict'))).toContain('Konflikt');
+    expect(describeFailure(failure('a', 'not_found'))).toContain('Nicht gefunden');
+    expect(describeFailure(failure('a', 'rate_limited'))).toContain('Ratenbegrenzung');
+    expect(describeFailure(failure('a', 'storage_error'))).toContain('Nicht gespeichert');
+    // The backend's own sentence rides through untranslated inside the card's
+    // frame, which is what #190's notes settle for `validation_error`.
+    expect(describeFailure(failure('a', 'validation_error', 'quantity must be >= 0'))).toBe(
+      'Abgelehnt – quantity must be >= 0',
     );
   });
 
