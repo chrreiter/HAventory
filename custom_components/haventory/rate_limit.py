@@ -15,7 +15,6 @@ loop access is needed. Tests monkeypatch ``_monotonic`` for determinism.
 from __future__ import annotations
 
 import functools
-import logging
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -42,8 +41,9 @@ from .const import (
     DEFAULT_RATE_LIMIT_GLOBAL_EVENTS_PER_SECOND,
     DOMAIN,
 )
+from .logs import context_logger
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = context_logger(__name__)
 
 # Module-level clock indirection so tests can monkeypatch time deterministically.
 _monotonic = time.monotonic

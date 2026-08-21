@@ -1124,7 +1124,11 @@ through [private reporting](SECURITY.md), never a public issue.
   built assets `custom_components/haventory/www/`, served at `/haventory_static/`;
   calendar entity `calendar.haventory`, whose `unique_id` is the constant
   `haventory_calendar`.
-- Logging: avoid reserved `LogRecord` keys in logger extras — use `item_name` /
+- Logging: every module takes its logger from `logs.context_logger`, which writes the
+  `extra=` context into the message text as `key=value` pairs and passes the mapping on for
+  any structured handler. Home Assistant's formatter renders the message and drops
+  everything else, so a field that stayed in `extra=` was invisible in exactly the log a bug
+  report carries. Avoid reserved `LogRecord` keys in the extras — use `item_name` /
   `location_name`, not `name`.
 
 ## Developer docs

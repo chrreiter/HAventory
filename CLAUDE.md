@@ -93,6 +93,9 @@ and the two must move together, which `tests/test_toolchain_pins.py` now enforce
 - `rate_limit.py` — opt-in token-bucket rate limiting (per-connection + global, for
   commands and broadcasts). Off by default; configured via the options flow
   (`config_flow.py`); limiter instance lives on the runtime (`entry.runtime_data.rate_limiter`).
+- `logs.py` — `context_logger`, the `LoggerAdapter` every module's logger comes from: it
+  renders `extra=` into the message so `op`, `elapsed_ms`, the schema versions and
+  `storage_key` are greppable in a user's log.
 - `import_export.py` — JSON import/export with `merge` / `replace` / `skip` policies and a
   read-only preview. **Import identity is the id, never the name.**
 - `stale_files.py` — `RETIRED_PATHS`, the explicit list of files earlier releases shipped
@@ -226,8 +229,14 @@ Offline tests stub HA via `tests/conftest.py`.
 - **Deleting or renaming a file inside `custom_components/haventory/`** means appending its
   old path to `RETIRED_PATHS` in the same PR — a HACS upgrade leaves it behind otherwise.
   The rule is stated in `CONTRIBUTING.md`.
-- **Logging**: avoid reserved `LogRecord` keys in `extra=` — use `item_name` / `location_name`,
-  not `name`.
+- **Logging**: take the module logger from `logs.context_logger(__name__)` — never
+  `logging.getLogger` directly, which `tests/test_logs_offline.py` sweeps for. It folds the
+  `extra=` context into the message text as `key=value` pairs (`op` first, `domain` left out
+  because the logger name says it) and hands the mapping on unchanged, so a structured
+  handler still reads the fields. Home Assistant's formatter renders the message and drops
+  everything else, so a field left only in `extra=` is invisible in the one log a bug report
+  carries. Keep attaching context through `extra=`; that is still the call-site shape. Avoid
+  reserved `LogRecord` keys there — `item_name` / `location_name`, not `name`.
 - **Comments explain constraints, not history.** A comment earns its place by encoding
   something the code cannot say itself: a browser or platform quirk, an API contract, a
   required ordering, an accessibility requirement, a deliberate tradeoff whose alternative

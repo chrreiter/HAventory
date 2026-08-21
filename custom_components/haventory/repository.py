@@ -14,7 +14,6 @@ import base64
 import binascii
 import copy
 import json
-import logging
 import re
 import uuid
 from collections import deque
@@ -25,6 +24,7 @@ from typing import Any, NamedTuple, TypedDict
 
 from .calendar_projection import next_occurrence_after
 from .exceptions import ConflictError, NotFoundError, ValidationError
+from .logs import context_logger
 from .models import (
     DEFAULT_ITEM_STATUS,
     EMPTY_LOCATION_PATH,
@@ -73,7 +73,7 @@ from .models import (
     validate_status_slug,
 )
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = context_logger(__name__)
 
 
 class _TextTokens(NamedTuple):

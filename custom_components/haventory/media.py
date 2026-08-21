@@ -19,7 +19,6 @@ Three rules hold everything here together:
 
 from __future__ import annotations
 
-import logging
 import shutil
 from collections.abc import Iterable
 from http import HTTPStatus
@@ -51,10 +50,11 @@ from .const import (
     MEDIA_URL_TEMPLATE,
 )
 from .exceptions import ValidationError
+from .logs import context_logger
 from .models import AttachmentKind, AttachmentMeta
 from .runtime import find_runtime
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = context_logger(__name__)
 
 # Accepted types and the per-item cap, by attachment kind.
 MIME_TYPES_BY_KIND: dict[str, tuple[str, ...]] = {

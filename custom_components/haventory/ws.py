@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -54,6 +53,7 @@ from .exceptions import (
 )
 from .health import collect_health_issues
 from .import_export import POLICIES, Policy
+from .logs import context_logger
 from .models import (
     ATTACHMENT_KINDS,
     AttachmentMeta,
@@ -73,7 +73,7 @@ from .runtime import Subscription, find_runtime, loaded_runtime
 from .serialization import serialize_item, serialize_location
 from .storage import CURRENT_SCHEMA_VERSION
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = context_logger(__name__)
 
 
 def _repo(hass: HomeAssistant) -> Repository:

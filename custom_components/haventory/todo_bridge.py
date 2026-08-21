@@ -19,7 +19,6 @@ rollback.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -37,9 +36,10 @@ from .const import (
     TODO_LINKS_STORAGE_KEY,
     TODO_LINKS_STORAGE_VERSION,
 )
+from .logs import context_logger
 from .runtime import HAventoryRuntime, find_runtime
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = context_logger(__name__)
 
 TODO_DOMAIN = "todo"
 SERVICE_ADD_ITEM = "add_item"

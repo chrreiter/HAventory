@@ -73,6 +73,7 @@ from .const import (
     REPAIR_ISSUE_IDS,
 )
 from .exceptions import CorruptSchemaVersionError, SchemaDowngradeError, StorageError
+from .logs import context_logger
 from .rate_limit import RateLimitConfig, RateLimiter
 from .repository import LoadReport, Repository
 from .runtime import HAventoryConfigEntry, HAventoryRuntime, find_runtime
@@ -87,7 +88,7 @@ from .storage import (
     schema_downgrade_message,
 )
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = context_logger(__name__)
 
 _MANIFEST_PATH = Path(__file__).with_name("manifest.json")
 
