@@ -2,7 +2,8 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
-import { counted, plural } from '../ui/plural';
+import { tn } from '../i18n';
+import { counted } from '../ui/plural';
 import type { IconName } from '../ui/icons';
 import type { AreaRef, BulkFailure, DistinctValues, Item, LocationTreeNode } from '../store/types';
 import './hv-chip-input';
@@ -403,7 +404,7 @@ export class HVBulkBar extends LitElement {
           </div>
           <div class="sub" data-testid="bulk-result-summary">
             ${result.succeeded} of ${result.succeeded + failedCount} succeeded.
-            ${clean ? '' : `${failedCount} failed and ${plural(failedCount, 'was', 'were')} left unchanged.`}
+            ${clean ? '' : tn('hv.bulk.result.failed', failedCount)}
           </div>
         </div>
       </div>
@@ -422,7 +423,7 @@ export class HVBulkBar extends LitElement {
         : null}
       <div class="result-foot">
         <span class="hint">
-          ${failedCount ? `Selection kept to the ${counted(failedCount, 'failed row')}` : ''}
+          ${failedCount ? `Selection kept to the ${counted(failedCount, 'failedRow')}` : ''}
         </span>
         <button
           class="hv-text-button"

@@ -1,5 +1,6 @@
 import { LitElement, css, html } from 'lit';
 import { registerCustomCard } from './ha-contract';
+import { setLanguage } from './i18n';
 import type { HassLike } from './store/types';
 import { Store } from './store/store';
 import { resolveColorScheme } from './ui/theme';
@@ -96,6 +97,9 @@ export class HAventoryCard extends LitElement {
 
   set hass(h: HassLike | undefined) {
     this._hass = h;
+    // Ahead of the store, so the first render of every surface it feeds is
+    // already in the user's language rather than flashing English first.
+    if (setLanguage(h?.language)) this.requestUpdate();
     if (h && !this.store) {
       this.store = new Store(h);
       this._storeUnsub = this.store.state.onChange(() => {

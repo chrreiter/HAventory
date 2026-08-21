@@ -1,5 +1,6 @@
 import { LitElement, css, html } from 'lit';
 import { property } from 'lit/decorators.js';
+import { setLanguage } from './i18n';
 import type { HassLike } from './store/types';
 import { Store } from './store/store';
 import { resolveColorScheme } from './ui/theme';
@@ -71,6 +72,8 @@ export class HAventoryPanel extends LitElement {
 
   set hass(h: HassLike | undefined) {
     this._hass = h;
+    // Ahead of the store, for the same reason the card does it there.
+    if (setLanguage(h?.language)) this.requestUpdate();
     if (h && !this.store) {
       this.store = new Store(h);
       this._storeUnsub = this.store.state.onChange(() => {

@@ -1,3 +1,4 @@
+import { setLanguage } from '../i18n';
 import { summarizeIssues } from './health-codes';
 
 describe('summarizeIssues', () => {
@@ -17,7 +18,17 @@ describe('summarizeIssues', () => {
     expect(out).toHaveLength(1);
     expect(out[0].code).toBe('item_references_missing_location');
     expect(out[0].count).toBe(3);
-    expect(out[0].message).toContain('3 item(s) reference a location that no longer exists');
+    expect(out[0].message).toContain('3 items reference a location that no longer exists');
+  });
+
+  it('agrees with its own count, and says so in the language in force', () => {
+    expect(summarizeIssues(['location_id_key_mismatch'])[0].message).toBe(
+      '1 location is stored under a key that does not match its id.',
+    );
+    setLanguage('de');
+    expect(
+      summarizeIssues(['location_id_key_mismatch', 'location_id_key_mismatch'])[0].message,
+    ).toMatch(/^2 Orte sind /);
   });
 
   it('keeps distinct codes in first-seen order', () => {

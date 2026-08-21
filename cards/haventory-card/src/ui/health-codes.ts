@@ -7,6 +7,9 @@
  * needs one card per distinct problem with a count, so dedupe and count here.
  */
 
+import { tn } from '../i18n';
+import type { PluralKey } from '../i18n';
+
 export interface HealthIssueSummary {
   /** The raw backend code, kept so the panel can still show it verbatim. */
   code: string;
@@ -17,34 +20,34 @@ export interface HealthIssueSummary {
 }
 
 /**
- * Known codes from `_collect_item_issues` / `_collect_index_issues` in `ws.py`.
- * `{n}` is replaced with the occurrence count. Unknown codes are surfaced as-is
- * rather than swallowed — a new backend check should still be visible.
+ * Known codes from `_collect_item_issues` / `_collect_index_issues` in `ws.py`,
+ * each mapped to the counted pair that says it in words.
+ *
+ * A code with no entry here is surfaced as-is rather than swallowed — a new
+ * backend check should still be visible, in whatever language, before anyone
+ * has got round to writing a sentence for it.
  */
-const MESSAGES: Record<string, string> = {
-  item_id_key_mismatch: '{n} item(s) are stored under a key that does not match their id.',
-  item_references_missing_location:
-    '{n} item(s) reference a location that no longer exists — they appear under "No location".',
-  item_missing_from_items_by_location_index: '{n} item(s) are missing from the location index.',
-  checked_out_item_missing_from_index: '{n} checked-out item(s) are missing from the checked-out index.',
-  non_checked_out_item_present_in_index: '{n} item(s) are in the checked-out index but are not checked out.',
-  low_stock_item_missing_from_index: '{n} low-stock item(s) are missing from the low-stock index.',
-  non_low_stock_item_present_in_index: '{n} item(s) are in the low-stock index but are not low on stock.',
-  tags_index_references_unknown_item_ids: 'The tag index references {n} item(s) that no longer exist.',
-  category_index_references_unknown_item_ids: 'The category index references {n} item(s) that no longer exist.',
-  checked_out_index_references_unknown_item_ids:
-    'The checked-out index references {n} item(s) that no longer exist.',
-  low_stock_index_references_unknown_item_ids: 'The low-stock index references {n} item(s) that no longer exist.',
-  items_by_location_index_references_unknown_item_ids:
-    'The location index references {n} item(s) that no longer exist.',
-  items_by_location_references_missing_location: 'The location index has {n} bucket(s) for missing locations.',
-  items_by_location_bucket_mismatch: '{n} location bucket(s) disagree with the items they hold.',
-  location_id_key_mismatch: '{n} location(s) are stored under a key that does not match their id.',
-  items_total_count_mismatch: 'The cached item total disagrees with the stored items.',
-  locations_total_count_mismatch: 'The cached location total disagrees with the stored locations.',
-  checked_out_count_mismatch: 'The cached checked-out count disagrees with the stored items.',
-  low_stock_count_mismatch: 'The cached low-stock count disagrees with the stored items.',
-};
+const MESSAGE_KEYS = {
+  item_id_key_mismatch: 'hv.health.itemIdKeyMismatch',
+  item_references_missing_location: 'hv.health.itemReferencesMissingLocation',
+  item_missing_from_items_by_location_index: 'hv.health.itemMissingFromLocationIndex',
+  checked_out_item_missing_from_index: 'hv.health.checkedOutItemMissingFromIndex',
+  non_checked_out_item_present_in_index: 'hv.health.nonCheckedOutItemInIndex',
+  low_stock_item_missing_from_index: 'hv.health.lowStockItemMissingFromIndex',
+  non_low_stock_item_present_in_index: 'hv.health.nonLowStockItemInIndex',
+  tags_index_references_unknown_item_ids: 'hv.health.tagsIndexUnknownItems',
+  category_index_references_unknown_item_ids: 'hv.health.categoryIndexUnknownItems',
+  checked_out_index_references_unknown_item_ids: 'hv.health.checkedOutIndexUnknownItems',
+  low_stock_index_references_unknown_item_ids: 'hv.health.lowStockIndexUnknownItems',
+  items_by_location_index_references_unknown_item_ids: 'hv.health.locationIndexUnknownItems',
+  items_by_location_references_missing_location: 'hv.health.locationIndexMissingLocation',
+  items_by_location_bucket_mismatch: 'hv.health.locationBucketMismatch',
+  location_id_key_mismatch: 'hv.health.locationIdKeyMismatch',
+  items_total_count_mismatch: 'hv.health.itemsTotalMismatch',
+  locations_total_count_mismatch: 'hv.health.locationsTotalMismatch',
+  checked_out_count_mismatch: 'hv.health.checkedOutCountMismatch',
+  low_stock_count_mismatch: 'hv.health.lowStockCountMismatch',
+} as const satisfies Record<string, PluralKey>;
 
 /**
  * Collapse a raw `issues` array into one entry per distinct code, preserving
@@ -57,9 +60,8 @@ export function summarizeIssues(issues: readonly string[] | null | undefined): H
     const code = String(raw);
     counts.set(code, (counts.get(code) ?? 0) + 1);
   }
-  return [...counts.entries()].map(([code, count]) => ({
-    code,
-    count,
-    message: MESSAGES[code]?.replace('{n}', String(count)) ?? code,
-  }));
+  return [...counts.entries()].map(([code, count]) => {
+    const key = (MESSAGE_KEYS as Record<string, PluralKey | undefined>)[code];
+    return { code, count, message: key ? tn(key, count) : code };
+  });
 }

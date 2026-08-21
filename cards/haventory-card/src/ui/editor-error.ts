@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import type { ErrorEntry } from '../store/types';
 
 /**
@@ -13,5 +14,5 @@ import type { ErrorEntry } from '../store/types';
  * would be describing the surface, not the failure.
  */
 export function editorErrorText(entry: ErrorEntry): string {
-  return entry.kind === 'conflict' ? 'Someone else changed this item.' : entry.message;
+  return entry.kind === 'conflict' ? t('hv.banner.conflict.heading') : entry.message;
 }

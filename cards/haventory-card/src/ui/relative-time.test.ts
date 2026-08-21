@@ -1,4 +1,14 @@
-import { addDays, formatDate, isDue, isOverdue, parseTs, relativeTime, toIsoDate } from './relative-time';
+import { setLanguage } from '../i18n';
+import {
+  addDays,
+  formatDate,
+  isDue,
+  isOverdue,
+  parseTs,
+  quickDayOffsets,
+  relativeTime,
+  toIsoDate,
+} from './relative-time';
 
 const NOW = Date.parse('2026-07-24T12:00:00Z');
 
@@ -18,13 +28,22 @@ describe('parseTs', () => {
 });
 
 describe('relativeTime', () => {
-  it('formats each bucket the way the mocks do', () => {
+  it('picks one bucket per span and names it', () => {
     expect(relativeTime('2026-07-24T11:59:30Z', NOW)).toBe('just now');
-    expect(relativeTime('2026-07-24T11:45:00Z', NOW)).toBe('15 m ago');
-    expect(relativeTime('2026-07-24T10:00:00Z', NOW)).toBe('2 h ago');
-    expect(relativeTime('2026-07-21T12:00:00Z', NOW)).toBe('3 d ago');
-    expect(relativeTime('2026-07-17T12:00:00Z', NOW)).toBe('1 w ago');
-    expect(relativeTime('2024-07-24T12:00:00Z', NOW)).toBe('2 y ago');
+    expect(relativeTime('2026-07-24T11:45:00Z', NOW)).toBe('15 min. ago');
+    expect(relativeTime('2026-07-24T10:00:00Z', NOW)).toBe('2 hr. ago');
+    expect(relativeTime('2026-07-21T12:00:00Z', NOW)).toBe('3 days ago');
+    expect(relativeTime('2026-07-17T12:00:00Z', NOW)).toBe('1 wk. ago');
+    expect(relativeTime('2024-07-24T12:00:00Z', NOW)).toBe('2 yr. ago');
+  });
+
+  it('names the same spans in the language in force', () => {
+    setLanguage('de');
+    expect(relativeTime('2026-07-24T11:59:30Z', NOW)).toBe('gerade eben');
+    expect(relativeTime('2026-07-24T11:45:00Z', NOW)).toBe('vor 15 Min.');
+    expect(relativeTime('2026-07-24T10:00:00Z', NOW)).toBe('vor 2 Std.');
+    expect(relativeTime('2026-07-21T12:00:00Z', NOW)).toBe('vor 3 Tagen');
+    expect(relativeTime('2024-07-24T12:00:00Z', NOW)).toBe('vor 2 Jahren');
   });
 
   it('degrades to an em dash for unusable input and clamps future stamps', () => {
@@ -40,10 +59,28 @@ describe('formatDate', () => {
     expect(formatDate('2025-12-01', NOW)).toBe('Dec 1, 2025');
   });
 
+  it('writes the date the way the language does', () => {
+    setLanguage('de');
+    expect(formatDate('2026-07-31', NOW)).toBe('31. Juli');
+    expect(formatDate('2025-12-01', NOW)).toBe('1. Dez. 2025');
+  });
+
   it('passes through anything that is not YYYY-MM-DD, and dashes empties', () => {
     expect(formatDate(null, NOW)).toBe('—');
     expect(formatDate('whenever', NOW)).toBe('whenever');
+    // A month a calendar does not have. `Date` would roll it into next
+    // January; the stored string is the honest answer.
     expect(formatDate('2026-13-01', NOW)).toBe('2026-13-01');
+    expect(formatDate('2026-02-30', NOW)).toBe('2026-02-30');
+  });
+});
+
+describe('quickDayOffsets', () => {
+  it('offers a week, a month and a quarter, labelled in the language in force', () => {
+    expect(quickDayOffsets().map((o) => o.days)).toEqual([7, 30, 90]);
+    expect(quickDayOffsets()[0].label).toBe('+7 days');
+    setLanguage('de');
+    expect(quickDayOffsets()[0].label).toBe('+7 Tage');
   });
 });
 

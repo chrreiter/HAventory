@@ -10,7 +10,7 @@ import {
   settle,
   stubViewport,
 } from '../test.utils';
-import { DISCARD_PROMPT } from '../ui/discard';
+import { discardPrompt } from '../ui/discard';
 import { addDays, toIsoDate } from '../ui/relative-time';
 import type { HVCardShell } from './hv-card-shell';
 import type { Item, Location } from '../store/types';
@@ -952,13 +952,13 @@ describe('hv-card-shell: adding an item on a phone', () => {
 
       const panel = hostGuard(sr).shadowRoot as ShadowRoot;
       expect(panel.querySelector('[data-testid="confirm-dialog"]')?.getAttribute('aria-label')).toBe(
-        DISCARD_PROMPT.heading,
+        discardPrompt().heading,
       );
       expect(panel.querySelector('[data-testid="confirm-message"]')?.textContent).toContain(
-        DISCARD_PROMPT.message,
+        discardPrompt().message,
       );
       expect(panel.querySelector('[data-testid="confirm-accept"]')?.textContent).toContain(
-        DISCARD_PROMPT.confirmLabel,
+        discardPrompt().confirmLabel,
       );
     });
   });

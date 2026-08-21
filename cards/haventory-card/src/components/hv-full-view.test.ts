@@ -1,7 +1,7 @@
 import './hv-full-view';
 import { componentCss, makeItem, mountComponent, mountStore, q, settle, stubViewport } from '../test.utils';
 import { deepActiveElement } from '../ui/dialog-focus';
-import { DISCARD_PROMPT } from '../ui/discard';
+import { discardPrompt } from '../ui/discard';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVFullView } from './hv-full-view';
 import type { Item, Location, StatusDefinition } from '../store/types';
@@ -1410,13 +1410,13 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
 
     const panel = guard(sr).shadowRoot as ShadowRoot;
     expect(panel.querySelector('[data-testid="confirm-dialog"]')?.getAttribute('aria-label')).toBe(
-      DISCARD_PROMPT.heading,
+      discardPrompt().heading,
     );
     expect(panel.querySelector('[data-testid="confirm-message"]')?.textContent).toContain(
-      DISCARD_PROMPT.message,
+      discardPrompt().message,
     );
     expect(panel.querySelector('[data-testid="confirm-accept"]')?.textContent).toContain(
-      DISCARD_PROMPT.confirmLabel,
+      discardPrompt().confirmLabel,
     );
   });
 });

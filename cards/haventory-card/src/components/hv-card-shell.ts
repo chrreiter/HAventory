@@ -12,7 +12,7 @@ import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import { quickFilterAllowed } from '../ui/quick-filters';
 import type { QuickFilterKey } from '../ui/quick-filters';
 import { editorErrorText } from '../ui/editor-error';
-import { DISCARD_PROMPT } from '../ui/discard';
+import { discardPrompt } from '../ui/discard';
 import { bannerStack, renderDegradedBanners, renderErrorBanners } from '../ui/banners';
 import type { BannerHooks } from '../ui/banners';
 import { HostSurfaces } from '../host-surfaces';
@@ -587,7 +587,7 @@ export class HVCardShell extends LitElement {
     if (this._editing === next) return;
     if (this._editing !== null && this._editor?.dirty) {
       this.surfaces.confirm({
-        ...DISCARD_PROMPT,
+        ...discardPrompt(),
         onConfirm: () => {
           this._editorError = null;
           this._editing = next;

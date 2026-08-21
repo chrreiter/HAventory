@@ -6,7 +6,8 @@ import { chip } from '../ui/chip';
 import { browseRow } from '../ui/browse-row';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
-import { counted, plural, showingCount } from '../ui/plural';
+import { tn } from '../i18n';
+import { counted, showingCount } from '../ui/plural';
 import { nextZBase } from '../utils/zindex';
 import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters, soleLocationId } from '../store/store';
@@ -24,7 +25,7 @@ import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import { quickFilterAllowed } from '../ui/quick-filters';
 import type { QuickFilterKey } from '../ui/quick-filters';
 import { editorErrorText } from '../ui/editor-error';
-import { DISCARD_PROMPT } from '../ui/discard';
+import { discardPrompt } from '../ui/discard';
 import { bannerStack, renderDegradedBanners, renderErrorBanners } from '../ui/banners';
 import type { BannerHooks } from '../ui/banners';
 import { NARROW_QUERY } from '../ui/responsive';
@@ -2280,9 +2281,9 @@ export class HVFullView extends LitElement {
           data-testid="full-discard-confirm"
           ?open=${this._pendingDiscard !== null}
           ?mobile=${this._narrow}
-          .heading=${DISCARD_PROMPT.heading}
-          .message=${DISCARD_PROMPT.message}
-          .confirmLabel=${DISCARD_PROMPT.confirmLabel}
+          .heading=${discardPrompt().heading}
+          .message=${discardPrompt().message}
+          .confirmLabel=${discardPrompt().confirmLabel}
           destructive
           @confirm=${() => {
             const to = this._pendingDiscard;
@@ -2300,7 +2301,7 @@ export class HVFullView extends LitElement {
   private get _checkedOutWarning(): string | null {
     const out = this._selectedItems.filter((i) => i.checked_out).length;
     if (!out) return null;
-    return `${out} of them ${plural(out, 'is', 'are')} checked out`;
+    return tn('hv.fullView.checkedOutWarning', out);
   }
 }
 

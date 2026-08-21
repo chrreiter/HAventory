@@ -6,7 +6,7 @@ import { areaMarkName, locationPathParts, pathTitle, renderAreaChip } from '../u
 import { icon } from '../ui/icons';
 import {
   DEFAULT_CUSTOM_DAYS,
-  QUICK_DAY_OFFSETS,
+  quickDayOffsets,
   addDays,
   formatDate,
   isOverdue,
@@ -14,7 +14,7 @@ import {
 } from '../ui/relative-time';
 import { saveShortcutLabel } from '../ui/keyboard';
 import { counted } from '../ui/plural';
-import { DISCARD_PROMPT } from '../ui/discard';
+import { discardPrompt } from '../ui/discard';
 import { ViewportNarrow } from '../ui/responsive';
 import { nextZBase } from '../utils/zindex';
 import {
@@ -1912,7 +1912,7 @@ export class HVItemEditor extends LitElement {
   private _renderInspectionOffsets(current: string) {
     return html`
       <div class="offsets" data-testid="editor-inspection-offsets">
-        ${QUICK_DAY_OFFSETS.map((offset) => {
+        ${quickDayOffsets().map((offset) => {
           const value = addDays(offset.days);
           return html`<button
             class="offset ${!this._inspectionCustomOpen && current === value ? 'on' : ''}"
@@ -2846,9 +2846,9 @@ export class HVItemEditor extends LitElement {
         data-testid="editor-discard-confirm"
         ?open=${this._confirmDiscard}
         ?mobile=${this._viewport.narrow}
-        .heading=${DISCARD_PROMPT.heading}
-        .message=${DISCARD_PROMPT.message}
-        .confirmLabel=${DISCARD_PROMPT.confirmLabel}
+        .heading=${discardPrompt().heading}
+        .message=${discardPrompt().message}
+        .confirmLabel=${discardPrompt().confirmLabel}
         destructive
         @confirm=${(e: Event) => {
           e.stopPropagation();

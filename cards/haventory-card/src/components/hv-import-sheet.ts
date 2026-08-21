@@ -630,7 +630,7 @@ export class HVImportSheet extends LitElement {
           ? html`<div class="alert warn" data-testid="import-warnings">
               <span class="glyph">${icon('alert', 18)}</span>
               <span>
-                ${counted(warnings.length, 'name clash', 'name clashes')} — the file would add
+                ${counted(warnings.length, 'nameClash')} — the file would add
                 ${warnings.length === 1 ? 'an entry' : 'entries'} under a name something here already uses,
                 under a different id. Import matches on the id alone, so
                 ${warnings.length === 1 ? 'this becomes a duplicate' : 'these become duplicates'} rather than

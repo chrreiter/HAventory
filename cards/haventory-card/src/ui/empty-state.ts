@@ -1,5 +1,6 @@
 import { html } from 'lit';
 import type { TemplateResult } from 'lit';
+import { t } from '../i18n';
 import { activeFilterCount, defaultFilters, soleLocationId } from '../store/store';
 import type { StoreFilters } from '../store/types';
 
@@ -72,33 +73,35 @@ export function emptyStateCopy(kind: EmptyKind, locationName?: string | null): E
     // action the other kinds offer would be an answer to a question that has
     // not been asked yet.
     case 'loading':
-      return { headline: 'Loading items', offers: [] };
+      return { headline: t('hv.empty.loading.headline'), offers: [] };
     case 'connection-lost':
       return {
-        headline: "Can't reach Home Assistant",
-        detail: 'The list will fill in once the connection is back.',
-        offers: [{ id: 'refresh', label: 'Try again' }],
+        headline: t('hv.empty.connectionLost.headline'),
+        detail: t('hv.empty.connectionLost.detail'),
+        offers: [{ id: 'refresh', label: t('hv.action.retry') }],
       };
     case 'no-matches':
       return {
-        headline: 'No items match these filters',
-        offers: [{ id: 'clear-filters', label: 'Clear all' }],
+        headline: t('hv.empty.noMatches.headline'),
+        offers: [{ id: 'clear-filters', label: t('hv.empty.noMatches.clearAction') }],
       };
     case 'empty-location':
       return {
-        headline: `Nothing in ${locationName ?? 'this location'}`,
+        headline: locationName
+          ? t('hv.empty.emptyLocation.headline', { location: locationName })
+          : t('hv.empty.emptyLocation.headlineUnnamed'),
         offers: [
-          { id: 'add-item', label: 'Add item here' },
-          { id: 'clear-filters', label: 'Show everything' },
+          { id: 'add-item', label: t('hv.empty.emptyLocation.addAction') },
+          { id: 'clear-filters', label: t('hv.empty.emptyLocation.clearAction') },
         ],
       };
     default:
       return {
-        headline: 'No items yet',
-        detail: 'Add your first item, or restore a backup.',
+        headline: t('hv.empty.noItems.headline'),
+        detail: t('hv.empty.noItems.detail'),
         offers: [
-          { id: 'add-item', label: 'Add your first item' },
-          { id: 'import', label: 'Import backup' },
+          { id: 'add-item', label: t('hv.empty.noItems.addAction') },
+          { id: 'import', label: t('hv.empty.noItems.importAction') },
         ],
       };
   }
