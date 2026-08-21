@@ -86,6 +86,9 @@ jobs:
           version=$(curl -fsS -H "Authorization: Bearer ${{ steps.provision.outputs.token }}" \
             http://localhost:8123/api/config | python3 -c "import json,sys; print(json.load(sys.stdin)['version'])")
           echo "version=${version}" >> "$GITHUB_OUTPUT"
+          # Into the log as well as the summary: a job summary is only readable in
+          # the browser, and the log is what a failing month gets grepped for.
+          echo "Home Assistant ${version} (channel ${{ matrix.channel }})"
           {
             echo "### Card smoke against Home Assistant ${{ matrix.channel }}"
             echo
