@@ -1168,8 +1168,8 @@ through [private reporting](SECURITY.md), never a public issue.
 - Release testing plan (the manual pre-release validation run): `dev/release_testing_plan.md`
 
 `docs/` holds what a user or contributor of the shipped integration needs; `dev/` holds the
-development process — the testing plan, the release review, and the per-task design
-documents. Work is tracked in the
+development process — the testing plan, the dev instance's Home Assistant config, and the
+current milestone's implementation plan. Work is tracked in the
 [issue tracker](https://github.com/chrreiter/HAventory/issues);
 [#236](https://github.com/chrreiter/HAventory/issues/236) carries what is mandatory before
 the first public release.
