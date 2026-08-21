@@ -72,7 +72,10 @@ const outFile = path.resolve(skillDir, flag("--out", "screenshot.png"));
 // With no --path, ask the instance which dashboard view holds the card in a
 // normal column — the shape a single screenshot is normally after. The sidebar
 // panel is not a dashboard view and is reached with an explicit --path.
-const urlPath = flag("--path", null) ?? (await cardPath("column"));
+// `--dashboard <url path or title>` narrows discovery when the instance holds
+// the card on more than one dashboard; `--path` still wins outright.
+const dashboard = flag("--dashboard", null);
+const urlPath = flag("--path", null) ?? (await cardPath("column", { dashboard }));
 const rootElement = flag("--element", "haventory-card");
 const fullPage = has("--full");
 const haDark = has("--dark");

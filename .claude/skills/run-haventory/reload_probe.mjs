@@ -25,6 +25,9 @@ const flag = (name, dflt) => {
 };
 
 const { base, token } = haConfig();
+// `--dashboard <url path or title>` narrows discovery when the instance holds
+// the card on more than one dashboard; `--path` still wins outright.
+const dashboard = flag("--dashboard", null);
 const outPrefix = flag("--out", "reload");
 const PROBE = `reload probe ${Math.floor(Date.now() / 1000)}`;
 
@@ -119,7 +122,7 @@ async function openTab(urlPath, root) {
   return { page, events, root };
 }
 
-const card = await openTab(await cardPath("wide"), "haventory-card");
+const card = await openTab(await cardPath("wide", { dashboard }), "haventory-card");
 const panel = await openTab("/haventory", "haventory-panel");
 
 const entries = await rest("GET", "/api/config/config_entries/entry");

@@ -40,7 +40,7 @@ if (!token) {
 }
 
 // --- args ----------------------------------------------------------------
-const VALUE_FLAGS = new Set(["--policy", "--out", "--path"]);
+const VALUE_FLAGS = new Set(["--policy", "--out", "--path", "--dashboard"]);
 const flag = (name, dflt) => {
   const i = args.indexOf(name);
   return i >= 0 && args[i + 1] ? args[i + 1] : dflt;
@@ -58,6 +58,7 @@ const docPath = positionals[0];
 if (!docPath) {
   console.error("Usage: node drive_import.mjs <document.json> [--policy merge|replace|skip]");
   console.error("                             [--apply] [--out <prefix>] [--path <ha-url-path>]");
+  console.error("                             [--dashboard <url path or title>]");
   process.exit(2);
 }
 
@@ -71,6 +72,9 @@ const outPrefix = flag("--out", "import");
 // The import sheet is a wide surface: with no --path, ask the instance for a
 // panel-mode view so the sheet gets the room its preview table needs.
 const urlPathArg = flag("--path", null);
+// `--dashboard <url path or title>` narrows discovery when the instance holds
+// the card on more than one dashboard; `--path` still wins outright.
+const dashboard = flag("--dashboard", null);
 const apply = args.includes("--apply");
 const shot = (suffix) => path.resolve(skillDir, `${outPrefix}-${suffix}.png`);
 
@@ -86,7 +90,7 @@ console.log(
     (apply ? " · APPLY (this writes)" : " · preview only"),
 );
 
-const urlPath = urlPathArg ?? (await cardPath("wide"));
+const urlPath = urlPathArg ?? (await cardPath("wide", { dashboard }));
 
 // --- drive ---------------------------------------------------------------
 const browser = await chromium.launch();

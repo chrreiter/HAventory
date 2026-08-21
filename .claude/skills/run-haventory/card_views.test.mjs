@@ -13,7 +13,19 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-import { cardViewsOf, holdsCard, parsePathOverrides, pickView, resolveTarget } from "./card_views.mjs";
+import {
+  cardViewsOf,
+  filterByDashboard,
+  holdsCard,
+  parsePathOverrides,
+  pickView,
+  resolveTarget,
+} from "./card_views.mjs";
+import {
+  DESKTOP_SURFACES,
+  MOBILE_SURFACES,
+  PANEL_MOBILE_SURFACES,
+} from "./surfaces.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -49,8 +61,22 @@ test("holdsCard says no to a view of other cards and to a strategy dashboard", (
 
 test("cardViewsOf reads both dev-dashboard views with their shapes", () => {
   assert.deepEqual(cardViewsOf(DEV_DASHBOARD, "dashboard-dev", "dev"), [
-    { urlPath: "/dashboard-dev/0", shape: "column", viewType: "sections", label: "dev › view 0" },
-    { urlPath: "/dashboard-dev/wide", shape: "wide", viewType: "panel", label: "dev › wide" },
+    {
+      urlPath: "/dashboard-dev/0",
+      shape: "column",
+      viewType: "sections",
+      dashPath: "dashboard-dev",
+      dashTitle: "dev",
+      label: "dev › view 0",
+    },
+    {
+      urlPath: "/dashboard-dev/wide",
+      shape: "wide",
+      viewType: "panel",
+      dashPath: "dashboard-dev",
+      dashTitle: "dev",
+      label: "dev › wide",
+    },
   ]);
 });
 
@@ -75,10 +101,61 @@ test("cardViewsOf treats a view with no type as a column and a strategy config a
     urlPath: "/d/0",
     shape: "column",
     viewType: "masonry",
+    // With no title given, the url path is the dashboard's only name.
+    dashPath: "d",
+    dashTitle: "d",
     label: "d › view 0",
   });
   assert.deepEqual(cardViewsOf({ strategy: { type: "map" } }, "map"), []);
   assert.deepEqual(cardViewsOf(undefined, "d"), []);
+});
+
+// --- choosing between dashboards -------------------------------------------
+//
+// Discovery returns every view on the instance that holds the card, in
+// `lovelace/dashboards/list` order. On an instance with the card on two
+// dashboards that order is the only thing deciding which one a pass opens, and
+// nothing about it says which was meant.
+
+const SECOND_DASHBOARD = {
+  views: [{ title: "Household", path: "wide", type: "panel", cards: [{ type: "custom:haventory-card" }] }],
+};
+const TWO_DASHBOARDS = [
+  ...cardViewsOf(DEV_DASHBOARD, "dashboard-dev", "dev"),
+  ...cardViewsOf(SECOND_DASHBOARD, "lovelace-home", "Home"),
+];
+
+test("filterByDashboard picks by url path or by title, case-insensitively", () => {
+  assert.deepEqual(
+    filterByDashboard(TWO_DASHBOARDS, "dashboard-dev").map((v) => v.urlPath),
+    ["/dashboard-dev/0", "/dashboard-dev/wide"],
+  );
+  assert.deepEqual(
+    filterByDashboard(TWO_DASHBOARDS, "DEV").map((v) => v.urlPath),
+    ["/dashboard-dev/0", "/dashboard-dev/wide"],
+  );
+  assert.deepEqual(
+    filterByDashboard(TWO_DASHBOARDS, "home").map((v) => v.urlPath),
+    ["/lovelace-home/wide"],
+  );
+});
+
+test("filterByDashboard returns nothing for a name no dashboard answers to", () => {
+  // The caller turns this into an error rather than falling through to
+  // pickView: opening some other dashboard's card is the failure the flag
+  // exists to remove.
+  assert.deepEqual(filterByDashboard(TWO_DASHBOARDS, "dashboard-dev-2"), []);
+  assert.deepEqual(filterByDashboard([], "dev"), []);
+});
+
+test("filtering first stops a shape reaching across dashboards", () => {
+  // Unfiltered, the dev dashboard's panel view answers "wide" — so a pass that
+  // named the other dashboard would silently open this one.
+  assert.equal(pickView(TWO_DASHBOARDS, "wide").view.urlPath, "/dashboard-dev/wide");
+  assert.equal(
+    pickView(filterByDashboard(TWO_DASHBOARDS, "Home"), "wide").view.urlPath,
+    "/lovelace-home/wide",
+  );
 });
 
 test("pickView prefers the asked-for shape wherever it sits", () => {
@@ -219,4 +296,74 @@ test("a value the environment already agrees with is not reported as overridden"
   });
 
   assert.deepEqual(target.overrode, []);
+});
+
+// --- the desktop surfaces tell the two layout branches apart ---------------
+//
+// The card picks its layout from its own width, so a desktop pass that lands in
+// a normal dashboard column runs the narrow branch — and a recipe whose
+// selectors exist on both branches passes there without noticing. #178's
+// `d-layout` check covers the pass as a whole; these two surfaces are the ones
+// that reuse a component the narrow branch also mounts, so each carries its own
+// discriminator.
+
+const selectorsOf = (surface) => [
+  ...[surface.expect ?? []].flat(),
+  ...[surface.hidden ?? []].flat(),
+];
+const surfaceById = (table, id) => table.find((s) => s.id === id);
+
+test("the desktop filter panel asserts the sheet's Apply button is absent", () => {
+  const desktop = surfaceById(DESKTOP_SURFACES, "02-filter-panel");
+  assert.match(desktop.hidden, /sheet-apply/);
+  // Both branches mount the same hv-filter-panel, which is why `filter-panel`
+  // alone could not tell them apart.
+  assert.match([desktop.expect].flat().join(" "), /filter-panel/);
+});
+
+test("the desktop full view asserts what the card's own branch decides", () => {
+  const desktop = surfaceById(DESKTOP_SURFACES, "11-full-view");
+  const expected = [desktop.expect].flat().join(" ");
+  // The full view is a modal at any width and sizes its sidebar off the window,
+  // so neither `full-view` nor `full-sidebar` can tell a narrow card in a wide
+  // window from a wide one. The shell's footer link is rendered only on the
+  // desktop branch, and the shell stays in the DOM under the modal.
+  assert.match(expected, /open-full-view/);
+  assert.match(expected, /full-sidebar/);
+});
+
+test("every selector a desktop surface hides is one a narrow surface expects", () => {
+  // A `hidden` selector that matches nothing anywhere passes forever — a typo in
+  // one is invisible. Anchoring each to a narrow-branch surface that asserts the
+  // same element visible is what keeps it from going vacuous.
+  const narrow = new Set(
+    [...MOBILE_SURFACES, ...PANEL_MOBILE_SURFACES]
+      .flatMap((s) => [s.expect ?? []].flat())
+      .map((sel) => sel.replace(/^\S+\s/, "")),
+  );
+  const hiddens = DESKTOP_SURFACES.flatMap((s) => [s.hidden ?? []].flat());
+  assert.ok(hiddens.length > 0, "no desktop surface discriminates by absence");
+  for (const sel of hiddens) {
+    assert.ok(narrow.has(sel.replace(/^\S+\s/, "")), `nothing narrow expects ${sel}`);
+  }
+});
+
+test("every selector the panel-mobile surfaces hide is one a wide surface expects", () => {
+  const wide = new Set(
+    DESKTOP_SURFACES.flatMap((s) => [s.expect ?? []].flat()).map((sel) => sel.replace(/^\S+\s/, "")),
+  );
+  const hiddens = PANEL_MOBILE_SURFACES.flatMap((s) => [s.hidden ?? []].flat());
+  assert.ok(hiddens.length > 0, "no panel-mobile surface discriminates by absence");
+  for (const sel of hiddens) {
+    assert.ok(wide.has(sel.replace(/^\S+\s/, "")), `nothing wide expects ${sel}`);
+  }
+});
+
+test("no surface asserts the same selector both visible and hidden", () => {
+  for (const table of [DESKTOP_SURFACES, MOBILE_SURFACES, PANEL_MOBILE_SURFACES]) {
+    for (const surface of table) {
+      const all = selectorsOf(surface);
+      assert.equal(new Set(all).size, all.length, `${surface.id} repeats a selector`);
+    }
+  }
 });
