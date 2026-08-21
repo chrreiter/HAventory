@@ -160,10 +160,30 @@ export function cardViewsOf(config, dashPath, dashTitle = dashPath) {
       urlPath: `/${dashPath}/${view.path ?? index}`,
       shape: viewType === "panel" ? "wide" : "column",
       viewType,
+      // Both names the dashboard answers to, as fields rather than only inside
+      // `label`: --dashboard matches on them, and matching by sniffing a
+      // composed string would break the moment the label's shape changes.
+      dashPath,
+      dashTitle,
       label: `${dashTitle} › ${view.title ?? view.path ?? `view ${index}`}`,
     });
   });
   return found;
+}
+
+/**
+ * The discovered views belonging to one dashboard, named by its URL path or its
+ * title, case-insensitively.
+ *
+ * An instance with the card on more than one dashboard otherwise gives a pass
+ * whichever `lovelace/dashboards/list` returned first, and no way to say which
+ * one it meant short of a per-pass `--path`.
+ */
+export function filterByDashboard(found, name) {
+  const wanted = String(name).trim().toLowerCase();
+  return found.filter(
+    (v) => v.dashPath?.toLowerCase() === wanted || v.dashTitle?.toLowerCase() === wanted,
+  );
 }
 
 /**
@@ -291,19 +311,35 @@ let notesPrinted = false;
  * so a run says which view it chose and why. `label` names the caller's own
  * notion of the pass when it has one; the shape is the sensible default.
  *
+ * `dashboard` narrows discovery to one dashboard before the shape is picked, so
+ * two passes in one run can name different ones — discovery itself stays
+ * memoized and unfiltered. `override` still wins outright: a `--path` names a
+ * URL, and there is nothing left to select.
+ *
  * @param {string} shape
- * @param {{ override?: string | null, label?: string }} [options]
+ * @param {{ override?: string | null, label?: string, dashboard?: string | null }} [options]
  * @returns {Promise<string>}
  */
-export async function cardPath(shape, { override = null, label = shape } = {}) {
+export async function cardPath(shape, { override = null, label = shape, dashboard = null } = {}) {
   if (override) {
     console.log(`view (${label}): ${override}  ← --path override`);
     return override;
   }
-  const { found, notes } = await discoverCardViews();
+  const { found: all, notes } = await discoverCardViews();
   if (!notesPrinted) {
     notesPrinted = true;
     for (const note of notes) console.log(`  (${note})`);
+  }
+  const found = dashboard ? filterByDashboard(all, dashboard) : all;
+  if (dashboard && found.length === 0) {
+    // Falling back here would open some other dashboard's card, which is the
+    // exact failure the flag exists to remove — so it stops the run instead.
+    const offered = all.map((v) => `${v.dashPath} (${v.dashTitle})`);
+    const seen = offered.length ? [...new Set(offered)].join(", ") : "nothing";
+    throw new Error(
+      `--dashboard ${dashboard}: no dashboard by that url path or title holds a ${CARD_TYPE}. ` +
+        `Discovery found: ${seen}.${notes.length ? ` (${notes.join("; ")})` : ""}`,
+    );
   }
   const { view, exact } = pickView(found, shape);
   if (!view) {

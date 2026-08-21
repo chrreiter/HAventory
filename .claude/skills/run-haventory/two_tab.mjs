@@ -27,7 +27,10 @@ const flag = (name, dflt) => {
 };
 
 const { base, token } = haConfig();
-const urlPath = flag("--path", null) ?? (await cardPath("wide"));
+// `--dashboard <url path or title>` narrows discovery when the instance holds
+// the card on more than one dashboard; `--path` still wins outright.
+const dashboard = flag("--dashboard", null);
+const urlPath = flag("--path", null) ?? (await cardPath("wide", { dashboard }));
 const outPrefix = flag("--out", "two-tab");
 const PROBE = `two-tab probe ${Math.floor(Date.now() / 1000)}`;
 

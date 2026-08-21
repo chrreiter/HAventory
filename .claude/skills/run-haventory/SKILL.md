@@ -185,8 +185,24 @@ sections column measures ~500px even in a 1440px window, so it gets the narrow b
 | `column` | any other view — sections, masonry — the column a card normally sits in | `screenshot.mjs`, `visual_pass.mjs` mobile, `import_policies.mjs`, `rl_banner.mjs` |
 
 A view without a `path` is addressed by **index**, which is why the dev instance's sections
-view is `/dashboard-dev/0`. Each harness prints the view it resolved and why, so a run says
-where it went:
+view is `/dashboard-dev/0`.
+
+**Choosing between dashboards.** Discovery searches every dashboard and takes the first
+matching view in `lovelace/dashboards/list` order, which is the right answer on an instance
+with one card-bearing dashboard and an arbitrary one on an instance with two. Every harness
+takes `--dashboard <url path or title>` (matched case-insensitively against either) to
+narrow discovery before the shape is picked:
+
+```bash
+node visual_pass.mjs --dashboard household        # or --dashboard lovelace-household
+node screenshot.mjs --dashboard "Family kitchen" --out kitchen.png
+```
+
+A `--dashboard` naming nothing is an **error**, not a fallback — quietly opening another
+dashboard's card is the exact failure the flag exists to remove, and the message lists what
+discovery did find. A `--path` names a URL outright and still wins for the pass it targets.
+
+Each harness prints the view it resolved and why, so a run says where it went:
 
 ```
 view (desktop): /dashboard-dev/wide  ← dev › wide (panel)
@@ -205,7 +221,16 @@ Three things discovery does when it cannot give a clean answer, all of them out 
 - **The shape was wrong anyway** — `visual_pass.mjs`'s two card passes assert the branch
   the card actually took (`d-layout`, `m-layout`) before running a single recipe. Enough
   testids are shared between the branches that a wrong-shape run would otherwise pass while
-  photographing the other layout.
+  photographing the other layout. Two desktop surfaces carry that check themselves, because
+  they drive components the narrow branch also mounts: `d-02-filter-panel` asserts the
+  filter sheet's Apply button is **absent** (both branches mount the same `hv-filter-panel`,
+  but the desktop one applies each change live and renders no footer), and `d-11-full-view`
+  asserts the shell's **`open-full-view` footer link** is present — `hv-card-shell` renders
+  it only when it is not in its narrow branch, and the shell stays in the DOM under the
+  modal. The full view itself cannot carry that check: it is a modal at any width and sizes
+  its sidebar off the *window*, so a narrow card opening it in a wide window still shows the
+  sidebar. The sidebar is asserted beside the link as the mirror of `pm-01-page`, which
+  asserts the same element hidden at 375px.
 
 The sidebar panel at `/haventory` needs none of this — HA routes it from the integration's
 own registration, so it is the one surface that survives any dashboard edit, and both
@@ -404,6 +429,7 @@ node visual_pass.mjs --only panel         # sidebar panel, desktop width
 node visual_pass.mjs --only panel-mobile  # sidebar panel, 375x812
 node visual_pass.mjs --list               # surface names
 node visual_pass.mjs --path desktop=/other/wide --path mobile=/other/0
+node visual_pass.mjs --dashboard household   # an instance with two card dashboards
 ```
 
 Four passes — 14 card surfaces at desktop width, 8 at phone width, and the sidebar panel
@@ -412,7 +438,9 @@ at both (10 wide, 8 narrow) — each a recipe of clicks against the card's own
 captured only if its root element exists afterwards, so a renamed testid fails loudly
 instead of silently photographing the wrong screen. The two card passes additionally
 assert the layout branch the card took (`d-layout`, `m-layout`), which is what makes 42
-rows out of 40 surfaces. Exit is non-zero if any of them failed, or the browser logged a
+rows out of 40 surfaces; the desktop filter-panel and full-view surfaces each carry that
+check for themselves as well, so they fail on the narrow branch on their own rather than
+relying on the pass-level one. Exit is non-zero if any of them failed, or the browser logged a
 console error. Files are prefixed `d-`, `m-`, `p-` and `pm-`.
 
 The four passes open **three** URLs — two discovered dashboard views and `/haventory` — so
@@ -423,6 +451,10 @@ The four passes open **three** URLs — two discovered dashboard views and `/hav
 ```bash
 node visual_pass.mjs --only desktop --path /dashboard-dev/wide
 ```
+
+`--dashboard` is the other half: it narrows *discovery* for the whole run rather than naming
+a URL, so both card passes stay on the dashboard you meant and keep choosing their own view
+shape within it. See "Where the card lives".
 
 The card's narrow layout is a **different component tree** (sheets, not panels), which is
 why the two card lists differ rather than sharing one. The panel's is not: `hv-full-view`
@@ -543,9 +575,12 @@ counts only grow — a *smaller* one than the last release's means collection br
 tests were removed — so treat them as a floor, and re-pin them when a release moves them.
 The full gate, with the numbers kept next to it, is the sibling `/test-haventory` skill.
 
-The harness has its own unit cover for the parts of `card_views.mjs` that decide where a
-run looks — which views hold the card, which URL addresses them, what `--path` asked for.
-No HA and no dependency beyond Node:
+The harness has its own unit cover for the parts that decide where a run looks and which
+instance it looks at: `card_views.mjs` (which views hold the card, which URL addresses them,
+what `--path` and `--dashboard` asked for, which `.env` wins) and `surfaces.mjs`, whose
+tables are checked about themselves — every selector a desktop surface asserts **absent** has
+to be one a narrow surface asserts present, so a typo cannot leave a `hidden` check passing
+vacuously. No HA and no dependency beyond Node:
 
 ```bash
 cd .claude/skills/run-haventory && node --test

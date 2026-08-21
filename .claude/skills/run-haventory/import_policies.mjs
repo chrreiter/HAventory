@@ -50,7 +50,10 @@ if (!token) {
   process.exit(2);
 }
 
-const urlPath = flag("--path", null) ?? (await cardPath("column"));
+// `--dashboard <url path or title>` narrows discovery when the instance holds
+// the card on more than one dashboard; `--path` still wins outright.
+const dashboard = flag("--dashboard", null);
+const urlPath = flag("--path", null) ?? (await cardPath("column", { dashboard }));
 const outPrefix = flag("--out", "policies");
 const sampleSize = Number(flag("--items", "6"));
 const docPath = flag("--doc", null);

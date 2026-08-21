@@ -57,7 +57,10 @@ const flag = (name, dflt) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : dflt;
 };
 
-const urlPath = flag("--path", null) ?? (await cardPath("column"));
+// `--dashboard <url path or title>` narrows discovery when the instance holds
+// the card on more than one dashboard; `--path` still wins outright.
+const dashboard = flag("--dashboard", null);
+const urlPath = flag("--path", null) ?? (await cardPath("column", { dashboard }));
 const outPrefix = flag("--out", "rl");
 const observeSecs = args.includes("--observe") ? Number(flag("--observe", "30")) : null;
 const scenarioArg = flag("--scenario", null);
