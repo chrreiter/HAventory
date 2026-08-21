@@ -11,6 +11,7 @@ import {
   stubViewport,
 } from '../test.utils';
 import { DISCARD_PROMPT } from '../ui/discard';
+import { addDays, toIsoDate } from '../ui/relative-time';
 import { base, tokens } from '../ui/tokens';
 import type { HVCardShell } from './hv-card-shell';
 import type { Item, Location } from '../store/types';
@@ -181,6 +182,24 @@ describe('hv-card-shell: header', () => {
       expect(store.state.value.items.map((i) => i.id).sort()).toEqual(['1', '2']);
       el.remove();
     }
+  });
+
+  // The pill says *due*, and due includes today: an inspection dated today is
+  // being asked for rather than merely approaching. The count it reads, the
+  // filter pressing it sends and the row badge all take that same boundary.
+  it('counts an inspection due today, and keeps it when the badge filters', async () => {
+    const items = [
+      makeItem({ id: '1', inspection_date: toIsoDate() }),
+      makeItem({ id: '2', inspection_date: addDays(1) }),
+    ];
+    const { el, store, sr } = await mountShell({ items });
+
+    const badge = sr.querySelector('[data-testid="badge-inspection"]') as HTMLButtonElement;
+    expect(badge?.textContent).toContain('1 to inspect');
+
+    badge.click();
+    await settle(el);
+    expect(store.state.value.items.map((i) => i.id)).toEqual(['1']);
   });
 
   it('makes the low badge a filter toggle, not just a number', async () => {

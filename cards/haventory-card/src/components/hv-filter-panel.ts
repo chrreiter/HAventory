@@ -703,7 +703,7 @@ export class HVFilterPanel extends LitElement {
                 ${this._renderCheckbox('Low stock', f.lowStockOnly, () => this._patch({ lowStockOnly: !f.lowStockOnly }), { warning: true, tally: c?.low_stock_count, testid: 'filter-low-stock-only' })}
                 ${this._renderCheckbox('Checked out', f.checkedOutOnly, () => this._patch({ checkedOutOnly: !f.checkedOutOnly }), { tally: c?.checked_out_count, testid: 'filter-checked-out' })}
                 ${this._renderCheckbox('Overdue', f.overdueOnly, () => this._patch({ overdueOnly: !f.overdueOnly }), { warning: true, tally: c?.overdue_count, testid: 'filter-overdue' })}
-                ${this._renderCheckbox('Inspection due', f.inspectionDueOnly, () => this._patch({ inspectionDueOnly: !f.inspectionDueOnly }), { warning: true, tally: c?.inspection_overdue_count, testid: 'filter-inspection-due' })}
+                ${this._renderCheckbox('Inspection due', f.inspectionDueOnly, () => this._patch({ inspectionDueOnly: !f.inspectionDueOnly }), { warning: true, tally: c?.inspection_due_count, testid: 'filter-inspection-due' })}
                 ${this._renderCheckbox('No location', f.orphansOnly, () => this._patch({ orphansOnly: !f.orphansOnly }), { tally: c?.no_location_count, testid: 'filter-orphans' })}
               `
             : html`
@@ -737,7 +737,7 @@ export class HVFilterPanel extends LitElement {
                   aria-pressed=${String(f.inspectionDueOnly)}
                   @click=${() => this._patch({ inspectionDueOnly: !f.inspectionDueOnly })}
                 >
-                  ${f.inspectionDueOnly ? icon('check', 12) : null}Inspection due${tally(c?.inspection_overdue_count)}
+                  ${f.inspectionDueOnly ? icon('check', 12) : null}Inspection due${tally(c?.inspection_due_count)}
                 </button>
                 <button
                   class="hv-chip toggle chip ${f.orphansOnly ? 'on' : ''}"

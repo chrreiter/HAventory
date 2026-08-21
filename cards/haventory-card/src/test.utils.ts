@@ -206,7 +206,9 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             low_stock_count: items.filter((i) => typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number)).length,
             checked_out_count: items.filter((i) => i.checked_out).length,
             overdue_count: items.filter((i) => isMockOverdue(i)).length,
-            inspection_overdue_count: items.filter((i) => isMockInspectionDue(i)).length,
+            checked_out_due_count: items.filter((i) => isMockCheckedOutDue(i)).length,
+            inspection_overdue_count: items.filter((i) => isMockInspectionOverdue(i)).length,
+            inspection_due_count: items.filter((i) => isMockInspectionDue(i)).length,
             missing_count: items.filter((i) => (i.status ?? 'ok') === 'missing').length,
             needs_repair_count: items.filter((i) => (i.status ?? 'ok') === 'needs_repair').length,
             status_counts: Object.fromEntries(
@@ -223,7 +225,9 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             low_stock_count: items.filter((i) => typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number)).length,
             checked_out_count: items.filter((i) => i.checked_out).length,
             overdue_count: items.filter((i) => isMockOverdue(i)).length,
-            inspection_overdue_count: items.filter((i) => isMockInspectionDue(i)).length,
+            checked_out_due_count: items.filter((i) => isMockCheckedOutDue(i)).length,
+            inspection_overdue_count: items.filter((i) => isMockInspectionOverdue(i)).length,
+            inspection_due_count: items.filter((i) => isMockInspectionDue(i)).length,
             locations_total: locations.length,
             no_location_count: items.filter((i) => i.location_id == null).length,
           };
@@ -741,14 +745,29 @@ export function makeMockHass(initial?: MockConfig): MockHass {
   return hass;
 }
 
-/** Mirror of the backend's overdue rule: a due date strictly before today (UTC). */
-function isMockOverdue(item: Item): boolean {
-  return !!item.due_date && item.due_date < new Date().toISOString().slice(0, 10);
+/** Today in UTC, the day every one of these rules compares against. */
+function mockToday(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
-/** Same rule against `inspection_date`, over every item rather than the out ones. */
+/** Mirror of the backend's overdue rule: a due date strictly before today (UTC). */
+function isMockOverdue(item: Item): boolean {
+  return !!item.due_date && item.due_date < mockToday();
+}
+
+/** The inclusive twin: due back today counts, which is what *due* means. */
+function isMockCheckedOutDue(item: Item): boolean {
+  return !!item.due_date && item.due_date <= mockToday();
+}
+
+/** Same strict rule against `inspection_date`, over every item rather than the out ones. */
+function isMockInspectionOverdue(item: Item): boolean {
+  return !!item.inspection_date && item.inspection_date < mockToday();
+}
+
+/** And its inclusive twin, which is the population the card's pill shows. */
 function isMockInspectionDue(item: Item): boolean {
-  return !!item.inspection_date && item.inspection_date < new Date().toISOString().slice(0, 10);
+  return !!item.inspection_date && item.inspection_date <= mockToday();
 }
 
 /** Faithful-but-small mirror of the backend ItemFilter semantics (AND of all predicates). */
@@ -760,7 +779,9 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     orphaned_only?: boolean;
     low_stock_only?: boolean;
     overdue_only?: boolean;
+    checked_out_due_only?: boolean;
     inspection_overdue_only?: boolean;
+    inspection_due_only?: boolean;
     location_id?: string | null;
     location_ids?: string[];
     include_subtree?: boolean;
@@ -816,7 +837,9 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
       return false;
     }
     if (filter.overdue_only && !isMockOverdue(it)) return false;
-    if (filter.inspection_overdue_only && !isMockInspectionDue(it)) return false;
+    if (filter.checked_out_due_only && !isMockCheckedOutDue(it)) return false;
+    if (filter.inspection_overdue_only && !isMockInspectionOverdue(it)) return false;
+    if (filter.inspection_due_only && !isMockInspectionDue(it)) return false;
     // Canonical 'Z' timestamps compare lexicographically; both bounds are exclusive.
     if (filter.updated_after && !(it.updated_at > filter.updated_after)) return false;
     if (filter.updated_before && !(it.updated_at < filter.updated_before)) return false;

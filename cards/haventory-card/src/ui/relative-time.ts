@@ -62,6 +62,18 @@ export function isOverdue(dueDate: string | null | undefined, now: number = Date
   return dueDate < today;
 }
 
+/**
+ * True once a date has come round, today included.
+ *
+ * The inclusive twin of `isOverdue`, and the rule `isReminderDue` already
+ * follows: a date that names the day something is being asked for is asking on
+ * that day, not from the day after. An inspection date names such a day.
+ */
+export function isDue(date: string | null | undefined, now: number = Date.now()): boolean {
+  if (!date) return false;
+  return date <= toIsoDate(now);
+}
+
 /** `YYYY-MM-DD` for a timestamp, in local time (matches how users read dates). */
 export function toIsoDate(ms: number = Date.now()): string {
   const d = new Date(ms);

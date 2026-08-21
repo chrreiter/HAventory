@@ -1,6 +1,7 @@
 import './hv-data-table';
 import { all, componentCss, makeItem, mountComponent, q } from '../test.utils';
 import { ACTIONS_COLUMN_WIDTH } from '../store/columns';
+import { toIsoDate } from '../ui/relative-time';
 import { rowMenuEntries } from './hv-list-row';
 import type { HVDataTable } from './hv-data-table';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
@@ -526,17 +527,20 @@ describe('hv-data-table: inspection column', () => {
     expect(q(el, '[data-field="inspection_date"]')?.textContent?.trim()).toBe('Next inspection');
   });
 
-  it('marks a cell whose inspection has come due, and only that one', async () => {
+  // Today counts: an inspection date names the day the item is next due to be
+  // inspected, so the cell marks it then rather than the morning after.
+  it('marks a cell whose inspection has come due, and only those', async () => {
     const el = await mount(
       [
         { id: '1', inspection_date: '2020-01-01' },
-        { id: '2', inspection_date: '2099-01-01' },
-        { id: '3', inspection_date: null },
+        { id: '2', inspection_date: toIsoDate() },
+        { id: '3', inspection_date: '2099-01-01' },
+        { id: '4', inspection_date: null },
       ],
       { columns: ['inspection_date'] },
     );
     const cells = all(el, '[data-testid="cell-inspection_date"]');
-    expect(cells.map((c) => c.classList.contains('due'))).toEqual([true, false, false]);
+    expect(cells.map((c) => c.classList.contains('due'))).toEqual([true, true, false, false]);
   });
 });
 

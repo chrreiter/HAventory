@@ -4,7 +4,7 @@ import { repeat } from 'lit/directives/repeat.js';
 import { tokens, base } from '../ui/tokens';
 import { chip, renderTagChip } from '../ui/chip';
 import { icon } from '../ui/icons';
-import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
+import { formatDate, isDue, isOverdue, relativeTime } from '../ui/relative-time';
 import { isReminderDue, reminderSummary } from '../ui/reminder';
 import {
   COLUMN_DEFS,
@@ -555,7 +555,7 @@ export class HVDataTable extends LitElement {
         >`;
       case 'inspection_date':
         return html`<span
-          class="cell inspection ${isOverdue(item.inspection_date) ? 'due' : ''}"
+          class="cell inspection ${isDue(item.inspection_date) ? 'due' : ''}"
           role="cell"
           data-testid="cell-inspection_date"
           >${formatDate(item.inspection_date)}</span

@@ -3,7 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { chip, renderTagChip } from '../ui/chip';
 import { icon } from '../ui/icons';
-import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
+import { formatDate, isDue, isOverdue, relativeTime } from '../ui/relative-time';
 import { customFieldLabel } from '../ui/field-label';
 import { canBumpReminder, hasReminder, isReminderDue, reminderSummary } from '../ui/reminder';
 import { inferType } from '../ui/item-form';
@@ -635,9 +635,9 @@ export class HVDetailSheet extends LitElement {
   private _renderRead(item: Item) {
     const low = isLowStock(item);
     const overdue = isOverdue(item.due_date);
-    // `inspection_date` is when the item is next due for inspection, so the
-    // same passed-date test the due date gets answers "needs inspecting".
-    const inspectionDue = isOverdue(item.inspection_date);
+    // `inspection_date` is the day the item is next due to be inspected, so
+    // that day is already asking — inclusive, unlike the due date above.
+    const inspectionDue = isDue(item.inspection_date);
     const parts = itemPathParts(item, this.areas);
     const customEntries = Object.entries(item.custom_fields ?? {});
 

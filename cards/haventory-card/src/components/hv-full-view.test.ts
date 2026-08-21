@@ -3,6 +3,7 @@ import { componentCss, makeItem, mountComponent, mountStore, q, settle, stubView
 import { deepActiveElement } from '../ui/dialog-focus';
 import { DISCARD_PROMPT } from '../ui/discard';
 import { NARROW_QUERY } from '../ui/responsive';
+import { toIsoDate } from '../ui/relative-time';
 import type { HVFullView } from './hv-full-view';
 import type { Item, Location, StatusDefinition } from '../store/types';
 
@@ -1829,22 +1830,24 @@ describe('hv-full-view: app bar filters', () => {
   });
 
   // An inspection that has come due is independent of any check-out, so the
-  // pill counts shelved items the overdue pill never sees.
+  // pill counts shelved items the overdue pill never sees — and *due* takes
+  // today with it, so an item dated today is in the count and in the filter.
   it('carries the inspection count, and filters the list on it', async () => {
     const due = [
       makeItem({ id: '1', inspection_date: '2000-01-01' }),
       makeItem({ id: '2', inspection_date: '2999-12-31' }),
+      makeItem({ id: '3', inspection_date: toIsoDate() }),
     ];
     const { el, store, sr } = await mount({ items: due });
     const pill = q(sr, '[data-testid="full-badge-inspection"]') as HTMLButtonElement;
-    expect(pill?.textContent).toContain('1 to inspect');
+    expect(pill?.textContent).toContain('2 to inspect');
     expect(q(sr, '[data-testid="full-badge-overdue"]')).toBe(null);
 
     pill.click();
     await settle(el);
     expect(store.state.value.filters.inspectionDueOnly).toBe(true);
     expect(q(sr, '[data-testid="full-badge-inspection"]')?.getAttribute('aria-pressed')).toBe('true');
-    expect(store.state.value.items.map((i) => i.id)).toEqual(['1']);
+    expect(store.state.value.items.map((i) => i.id).sort()).toEqual(['1', '3']);
   });
 
   it('drops the inspection pill when nothing is due', async () => {

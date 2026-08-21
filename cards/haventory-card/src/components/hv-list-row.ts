@@ -4,7 +4,7 @@ import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
 import { areaMarkName, itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
-import { formatDate, isOverdue } from '../ui/relative-time';
+import { formatDate, isDue, isOverdue } from '../ui/relative-time';
 import { itemStatus, renderStatusChip, statusLabel } from '../ui/status';
 import { MediaUrls, attachmentNameToken, manuals, pictureAlt, pictures } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
@@ -504,9 +504,9 @@ export class HVListRow extends LitElement {
     if (!item) return null;
     const low = isLowStock(item);
     const overdue = isOverdue(item.due_date);
-    // `inspection_date` is when the item is next due for inspection, so a date
-    // already behind us means it is waiting to be done.
-    const inspectionDue = isOverdue(item.inspection_date);
+    // `inspection_date` is the day the item is next due to be inspected, so
+    // that day is already asking — inclusive, unlike the due date above.
+    const inspectionDue = isDue(item.inspection_date);
     const parts = itemPathParts(item, this.areas);
     const areaMark = areaMarkName(parts.areaName, parts.path);
     // The desktop row has room for the whole path and the area chip beside it.

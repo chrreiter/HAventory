@@ -1935,7 +1935,7 @@ export class HVFullView extends LitElement {
                 ${counts.overdue_count} overdue
               </button>`
             : null}
-          ${allowsPill('inspection_due') && counts && (counts.inspection_overdue_count ?? 0) > 0
+          ${allowsPill('inspection_due') && counts && (counts.inspection_due_count ?? 0) > 0
             ? html`<button
                 class="hv-chip pill warning ${filters.inspectionDueOnly ? 'on' : ''}"
                 data-testid="full-badge-inspection"
@@ -1943,7 +1943,7 @@ export class HVFullView extends LitElement {
                 title="Show only items due for inspection"
                 @click=${() => this._setFilters({ inspectionDueOnly: !filters.inspectionDueOnly })}
               >
-                ${counts.inspection_overdue_count} to inspect
+                ${counts.inspection_due_count} to inspect
               </button>`
             : null}
           ${allowsPill('reminder_due') && counts && (counts.reminder_due_count ?? 0) > 0

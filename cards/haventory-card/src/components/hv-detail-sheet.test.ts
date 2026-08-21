@@ -12,6 +12,7 @@ import {
 } from '../test.utils';
 import { DISCARD_PROMPT } from '../ui/discard';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
+import { toIsoDate } from '../ui/relative-time';
 import type { HVDetailSheet } from './hv-detail-sheet';
 import type { HVBottomSheet } from './hv-bottom-sheet';
 import type { Item } from '../store/types';
@@ -284,10 +285,16 @@ describe('hv-detail-sheet: read view', () => {
   });
 
   it('chips an inspection that has come due, and marks the fact', async () => {
-    const el = await mount({ inspection_date: '2020-05-06' });
-    expect(q(el, '[data-testid="sheet-inspection-due"]')?.textContent).toContain('Inspection due');
-    const fact = all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === 'inspection');
-    expect(fact?.querySelector('.value')?.classList.contains('late')).toBe(true);
+    // Today as well as behind us: the day the date names is the day it asks.
+    for (const date of ['2020-05-06', toIsoDate()]) {
+      const el = await mount({ inspection_date: date });
+      expect(q(el, '[data-testid="sheet-inspection-due"]')?.textContent, date).toContain(
+        'Inspection due',
+      );
+      const fact = all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === 'inspection');
+      expect(fact?.querySelector('.value')?.classList.contains('late'), date).toBe(true);
+      el.remove();
+    }
   });
 
   it('shows the version alongside when it was updated', async () => {
