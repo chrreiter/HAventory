@@ -27,13 +27,17 @@ Three floors constrain everything, none of them written down here:
   enumerates the copies and fails when one drifts. Add a new copy to that test or don't
   write it. `requirements-integration.txt` pins the in-process suite to the floor, so CI
   runs the integration *at* it rather than at whatever is current.
-- **Python** — `requires-python` in `pyproject.toml`; ruff's `target-version` and mypy's
-  `python_version` follow it, and CI installs it. It cannot go lower than HA's own floor,
-  and the source uses PEP 758 unparenthesized `except A, B:`, which does not parse on
-  older interpreters — so an older HA could not import the integration at all. uv
-  provisions the interpreter automatically on `uv sync`; an environment with restricted
-  egress must preinstall it or allow the python-build-standalone download, otherwise the
-  offline suite cannot run there.
+- **Python** — `requires-python` in `pyproject.toml`, stated at patch level because Home
+  Assistant states its own that way; ruff's `target-version` and mypy's `python_version`
+  follow it as a series (neither accepts a patch), and CI installs it. It cannot go lower
+  than HA's own floor, and the source uses PEP 758 unparenthesized `except A, B:`, which
+  does not parse on older interpreters — so an older HA could not import the integration
+  at all. `tests/test_toolchain_pins.py` holds every copy to the declaration and tells the
+  two spellings apart; `tests/integration/test_python_floor.py` holds the declaration to
+  the `Requires-Python` of the HA release `requirements-integration.txt` pins, which is
+  the only place both numbers exist. uv provisions the interpreter automatically on
+  `uv sync`; an environment with restricted egress must preinstall it or allow the
+  python-build-standalone download, otherwise the offline suite cannot run there.
 - **Node** — `engines` in `cards/haventory-card/package.json`; CI runs a matrix across the
   supported majors, and every `node-version:` a workflow pins has to be one of them.
 

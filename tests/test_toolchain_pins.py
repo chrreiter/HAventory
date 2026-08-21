@@ -12,6 +12,14 @@ committed file is then swept for the same spellings, so a copy in an
 unregistered file fails too. Adding a copy means registering it here or not
 writing it.
 
+The floor is declared at patch level because Home Assistant declares its own
+that way; most copies name only the series an interpreter belongs to — ruff's
+target, mypy's ``python_version``, the CI matrix. Both spellings are registered
+per file, so relaxing a patch-level copy to the series fails as loudly as
+changing the number does. Whether the declared patch is the one the pinned Home
+Assistant release demands cannot be read without HA installed, and is asserted
+in ``tests/integration/test_python_floor.py``.
+
 Two Python copies are shaped so no interpreter-version pattern can see them, and
 neither is unguarded: ``.github/rulesets/main.json`` names the required check
 ``backend (3.14)``, which ``tests/test_repo_hardening_offline.py`` ties to the
@@ -26,6 +34,7 @@ import json
 import re
 import subprocess
 import tomllib
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -60,7 +69,7 @@ def collapse(text: str) -> str:
 # The Python floor
 # --------------------------------------------------------------------------
 
-_PY = r"3\.\d+"
+_PY = r"3\.\d+(?:\.\d+)?"
 
 # Every spelling of an interpreter version this repository uses. Anchored on
 # "python" or on the "3.14-only" phrase so that release versions which merely
@@ -82,22 +91,23 @@ PYTHON_VERSION_FORMS = re.compile(
 # ruff spells the same number without the dot.
 RUFF_TARGET_VERSION = re.compile(r"target-version *= *\"py3(\d\d)\"")
 
-# (path relative to the repository root, number of copies in it).
-PYTHON_FLOOR_SITES: tuple[tuple[str, int], ...] = (
-    ("pyproject.toml", 8),
-    (".github/workflows/ci.yml", 5),
-    (".github/workflows/codeql.yml", 1),
-    ("README.md", 10),
-    ("CONTRIBUTING.md", 1),
-    ("docs/backend_api_contract.md", 1),
-    ("requirements-integration.txt", 2),
-    ("scripts/test_integration.sh", 4),
-    (".devcontainer/Dockerfile", 1),
-    (".devcontainer/develop.sh", 2),
-    (".devcontainer/post-create.sh", 1),
-    (".claude/hooks/session-start.sh", 8),
-    (".claude/skills/run-haventory/SKILL.md", 2),
-    (".claude/skills/test-haventory/SKILL.md", 7),
+# (path relative to the repository root, copies naming the series, copies
+# naming the patch-level floor).
+PYTHON_FLOOR_SITES: tuple[tuple[str, int, int], ...] = (
+    ("pyproject.toml", 6, 2),
+    (".github/workflows/ci.yml", 5, 0),
+    (".github/workflows/codeql.yml", 1, 0),
+    ("README.md", 10, 0),
+    ("CONTRIBUTING.md", 1, 0),
+    ("docs/backend_api_contract.md", 1, 0),
+    ("requirements-integration.txt", 2, 0),
+    ("scripts/test_integration.sh", 4, 0),
+    (".devcontainer/Dockerfile", 1, 0),
+    (".devcontainer/develop.sh", 2, 0),
+    (".devcontainer/post-create.sh", 1, 0),
+    (".claude/hooks/session-start.sh", 8, 0),
+    (".claude/skills/run-haventory/SKILL.md", 2, 0),
+    (".claude/skills/test-haventory/SKILL.md", 7, 0),
 )
 
 # `dev/` holds design documents that quote configuration verbatim to describe
@@ -138,8 +148,14 @@ SWEPT_NAMES = frozenset({"Dockerfile"})
 
 
 def declared_python_floor() -> str:
-    """The interpreter version ``requires-python`` demands."""
+    """The interpreter version ``requires-python`` demands, patch level and all."""
     return read_toml(PYPROJECT)["project"]["requires-python"].removeprefix(">=")
+
+
+def declared_python_series() -> str:
+    """The floor's ``major.minor`` — the spelling a runtime target is written in."""
+    major, minor, *_ = declared_python_floor().split(".")
+    return f"{major}.{minor}"
 
 
 def python_versions_in(text: str) -> list[str]:
@@ -188,22 +204,45 @@ def test_the_floor_cannot_drop_below_the_syntax_the_source_uses() -> None:
     older interpreter parses — an environment below the floor cannot import the
     package at all, so lowering the declaration would not merely widen support.
     """
-    major, minor = (int(part) for part in declared_python_floor().split("."))
+    major, minor = (int(part) for part in declared_python_series().split("."))
     assert (major, minor) >= (3, 14)
 
 
-@pytest.mark.parametrize(("relative_path", "occurrences"), PYTHON_FLOOR_SITES)
-def test_python_floor_sites_match_pyproject(relative_path: str, occurrences: int) -> None:
-    """Every registered copy of the floor agrees with ``requires-python``."""
-    found = python_versions_in((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
+def test_the_floor_is_declared_at_patch_level() -> None:
+    """A series-only declaration admits interpreters Home Assistant refuses.
 
-    assert len(found) == occurrences, (
-        f"{relative_path}: expected {occurrences} interpreter version(s), found {len(found)} "
-        f"({found}) — register the new copy here or drop it"
+    Home Assistant states its own floor at patch level — ``>=3.14.2`` for the
+    release ``requirements-integration.txt`` installs — so a declaration of
+    ``>=3.14`` here is satisfied by interpreters that cannot install Home
+    Assistant at all. The failure then surfaces as an unsatisfiable dependency
+    resolution rather than as an interpreter a couple of patch releases too old.
+    """
+    assert re.fullmatch(r"\d+\.\d+\.\d+", declared_python_floor()), (
+        f"requires-python declares {declared_python_floor()!r}, which names no patch release"
     )
-    assert set(found) == {declared_python_floor()}, (
-        f"{relative_path} states {sorted(set(found))}, "
-        f"pyproject.toml declares {declared_python_floor()!r}"
+
+
+@pytest.mark.parametrize(("relative_path", "series_copies", "floor_copies"), PYTHON_FLOOR_SITES)
+def test_python_floor_sites_match_pyproject(
+    relative_path: str, series_copies: int, floor_copies: int
+) -> None:
+    """Every registered copy names the floor, in the spelling registered for it."""
+    found = Counter(python_versions_in((REPO_ROOT / relative_path).read_text(encoding="utf-8")))
+    expected = Counter(
+        {
+            version: count
+            for version, count in (
+                (declared_python_series(), series_copies),
+                (declared_python_floor(), floor_copies),
+            )
+            if count
+        }
+    )
+
+    assert found == expected, (
+        f"{relative_path} states {dict(found)}; registered here are {series_copies} copy/copies "
+        f"of the {declared_python_series()} series and {floor_copies} of the "
+        f"{declared_python_floor()} floor — register the new copy here or drop it"
     )
 
 
@@ -224,7 +263,7 @@ def test_a_local_only_file_is_not_swept() -> None:
 
 def test_no_unregistered_file_states_an_interpreter_version() -> None:
     """A copy in a file this test does not know about fails the same way."""
-    registered = {path for path, _ in PYTHON_FLOOR_SITES}
+    registered = {path for path, *_ in PYTHON_FLOOR_SITES}
     carrying = {
         path.relative_to(REPO_ROOT).as_posix()
         for path in swept_files()
@@ -248,6 +287,7 @@ def test_both_spellings_of_a_version_are_found() -> None:
     assert python_versions_in('target-version = "py315"') == ["3.15"]
     assert python_versions_in("needs Python\n**3.15** to run") == ["3.15"]
     assert python_versions_in("uv venv --python 3.15 .venv") == ["3.15"]
+    assert python_versions_in('requires-python = ">=3.15.2"') == ["3.15.2"]
 
 
 # --------------------------------------------------------------------------
