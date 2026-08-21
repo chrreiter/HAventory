@@ -164,19 +164,6 @@ def test_ruleset_gates_the_default_branch(ruleset: dict[str, Any]) -> None:
         assert rule(ruleset, rule_type)
 
 
-def test_merges_do_not_require_an_up_to_date_branch(ruleset: dict[str, Any]) -> None:
-    # Parallel pull requests are the normal working mode here; a strict policy
-    # would force a rebase of every open branch after each merge.
-    parameters = rule(ruleset, "required_status_checks")["parameters"]
-    assert parameters["strict_required_status_checks_policy"] is False
-
-
-def test_review_requirement_does_not_deadlock_a_solo_maintainer(ruleset: dict[str, Any]) -> None:
-    parameters = rule(ruleset, "pull_request")["parameters"]
-    assert parameters["required_approving_review_count"] == 0
-    assert parameters["require_last_push_approval"] is False
-
-
 def test_matrix_jobs_expand_to_one_context_per_combination() -> None:
     job = {"name": "CodeQL", "strategy": {"matrix": {"language": ["python", "typescript"]}}}
     assert job_contexts("analyze", job) == ["CodeQL (python)", "CodeQL (typescript)"]

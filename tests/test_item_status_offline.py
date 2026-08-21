@@ -1,9 +1,12 @@
 """Offline tests for the per-item status field (ok / missing / needs_repair).
 
-Scenarios cover creation defaults and validation, updates, filtering (scan and
-index paths), repository counts and round-trip, the v4 -> v5 migration that
-backfills the field, tolerant loading of payloads written before it existed,
-WS command surfaces, import/export, and the service schemas.
+What the field means, wherever the meaning is decided rather than served: the
+model's creation defaults, validation and filtering, the v4 -> v5 migration that
+backfills it, tolerant loading of payloads written before it existed, the
+repository round-trip, import/export, the service schemas, and the live status
+set a household can extend. The repository and WebSocket layers keep their own
+homes in ``test_repository_statuses_offline.py`` and
+``test_ws_statuses_offline.py``.
 """
 
 from __future__ import annotations
@@ -26,12 +29,8 @@ from custom_components.haventory.models import (
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.services import SCHEMA_ITEM_CREATE, SCHEMA_ITEM_UPDATE
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
-from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
-
-from runtime_helpers import install_runtime
-from ws_helpers import ws_send
 
 # -----------------------------
 # Models
@@ -110,58 +109,8 @@ def test_filter_items_rejects_unknown_status() -> None:
 
 
 # -----------------------------
-# Repository
+# Stored state
 # -----------------------------
-
-
-def test_repository_counts_and_index_follow_status_changes() -> None:
-    repo = Repository()
-    item = repo.create_item({"name": "Hammer", "status": "missing"})
-    repo.create_item({"name": "Drill", "status": "needs_repair"})
-    repo.create_item({"name": "Wrench"})
-
-    counts = repo.get_counts()
-    assert counts["missing_count"] == 1
-    assert counts["needs_repair_count"] == 1
-
-    # The default status is deliberately not bucketed.
-    idx = repo._debug_get_internal_indexes()
-    assert "ok" not in idx["status_to_item_ids"]
-    assert idx["status_to_item_ids"]["missing"] == {str(item.id)}
-
-    repo.update_item(item.id, ItemUpdate(status="ok"))
-    counts = repo.get_counts()
-    assert counts["missing_count"] == 0
-    assert "missing" not in repo._debug_get_internal_indexes()["status_to_item_ids"]
-
-
-def test_repository_delete_clears_status_index() -> None:
-    repo = Repository()
-    item = repo.create_item({"name": "Hammer", "status": "missing"})
-    repo.delete_item(item.id)
-    assert repo.get_counts()["missing_count"] == 0
-    assert "missing" not in repo._debug_get_internal_indexes()["status_to_item_ids"]
-
-
-def test_repository_list_items_filters_by_status_via_index() -> None:
-    repo = Repository()
-    repo.create_item({"name": "Wrench"})
-    missing = repo.create_item({"name": "Hammer", "status": "missing", "category": "tools"})
-    repo.create_item({"name": "Drill", "status": "needs_repair", "category": "tools"})
-
-    page = repo.list_items(flt={"status": "missing"})
-    assert [str(i.id) for i in page["items"]] == [str(missing.id)]
-    assert page["total"] == 1
-
-    # Intersects with other indexed filters.
-    page = repo.list_items(flt={"status": "missing", "category": "tools"})
-    assert [str(i.id) for i in page["items"]] == [str(missing.id)]
-    page = repo.list_items(flt={"status": "missing", "category": "kitchen"})
-    assert page["items"] == [] and page["total"] == 0
-
-    # "ok" takes the scan path (not bucketed) and still filters correctly.
-    page = repo.list_items(flt={"status": "ok"})
-    assert [i.name for i in page["items"]] == ["Wrench"]
 
 
 def test_repository_roundtrip_preserves_status() -> None:
@@ -251,108 +200,6 @@ async def test_domain_store_migrates_v4_store_on_load() -> None:
     on_disk = await raw_store.async_load()
     assert on_disk["schema_version"] == CURRENT_SCHEMA_VERSION
     assert on_disk["items"]["a"]["status"] == "ok"
-
-
-# -----------------------------
-# WebSocket commands
-# -----------------------------
-
-
-def _new_hass() -> HomeAssistant:
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
-    return hass
-
-
-@pytest.mark.asyncio
-async def test_ws_item_create_and_update_status() -> None:
-    hass = _new_hass()
-
-    res = await ws_send(hass, 1, "haventory/item/create", name="Hammer", status="missing")
-    assert res["success"] is True
-    assert res["result"]["status"] == "missing"
-    item_id = res["result"]["id"]
-
-    res = await ws_send(hass, 2, "haventory/item/update", item_id=item_id, status="needs_repair")
-    assert res["success"] is True
-    assert res["result"]["status"] == "needs_repair"
-
-    res = await ws_send(hass, 3, "haventory/item/get", item_id=item_id)
-    assert res["result"]["status"] == "needs_repair"
-
-
-@pytest.mark.asyncio
-async def test_ws_item_create_defaults_status_and_rejects_bad_values() -> None:
-    hass = _new_hass()
-
-    res = await ws_send(hass, 1, "haventory/item/create", name="Hammer")
-    assert res["success"] is True
-    assert res["result"]["status"] == "ok"
-    item_id = res["result"]["id"]
-
-    res = await ws_send(hass, 2, "haventory/item/create", name="Drill", status="lost")
-    assert res["success"] is False
-    assert res["error"]["code"] == "validation_error"
-
-    res = await ws_send(hass, 3, "haventory/item/update", item_id=item_id, status=None)
-    assert res["success"] is False
-    assert res["error"]["code"] == "validation_error"
-
-
-@pytest.mark.asyncio
-async def test_ws_item_list_filters_by_status() -> None:
-    hass = _new_hass()
-    await ws_send(hass, 1, "haventory/item/create", name="Hammer", status="missing")
-    await ws_send(hass, 2, "haventory/item/create", name="Wrench")
-
-    res = await ws_send(hass, 3, "haventory/item/list", filter={"status": "missing"})
-    assert res["success"] is True
-    assert [i["name"] for i in res["result"]["items"]] == ["Hammer"]
-    assert res["result"]["total"] == 1
-
-    res = await ws_send(hass, 4, "haventory/item/list", filter={"status": "bogus"})
-    assert res["success"] is False
-    assert res["error"]["code"] == "validation_error"
-
-
-@pytest.mark.asyncio
-async def test_ws_stats_and_health_reflect_status() -> None:
-    hass = _new_hass()
-    await ws_send(hass, 1, "haventory/item/create", name="Hammer", status="missing")
-    await ws_send(hass, 2, "haventory/item/create", name="Drill", status="needs_repair")
-
-    res = await ws_send(hass, 3, "haventory/stats")
-    assert res["result"]["missing_count"] == 1
-    assert res["result"]["needs_repair_count"] == 1
-
-    res = await ws_send(hass, 4, "haventory/health")
-    assert res["result"]["healthy"] is True
-    assert res["result"]["issues"] == []
-
-
-@pytest.mark.asyncio
-async def test_ws_bulk_item_update_sets_status() -> None:
-    hass = _new_hass()
-    res = await ws_send(hass, 1, "haventory/item/create", name="Hammer")
-    item_id = res["result"]["id"]
-
-    res = await ws_send(
-        hass,
-        2,
-        "haventory/items/bulk",
-        operations=[
-            {
-                "op_id": "a",
-                "kind": "item_update",
-                "payload": {"item_id": item_id, "status": "missing"},
-            }
-        ],
-    )
-    assert res["success"] is True
-    outcome = res["result"]["results"]["a"]
-    assert outcome["success"] is True
-    assert outcome["result"]["status"] == "missing"
 
 
 # -----------------------------

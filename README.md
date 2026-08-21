@@ -537,17 +537,9 @@ There are two backend test modes, kept deliberately separate:
 
 Every feature/fix ships with tests — happy path plus at least one edge/error case.
 
-Performance benchmarks live in `tests/test_repository_benchmarks_offline.py`,
-including the WP4 percentile scenarios (item list: 50-item page p50 ≤ 30 ms /
-p95 ≤ 75 ms; `move_subtree` p50 ≤ 80 ms / p95 ≤ 150 ms on the 2k-items /
-60-locations typical dataset) and the persistence curve at 250 / 500 / 1 000
-items, which is what a save costs the event loop before Home Assistant's own
-write. They print results always and fail on budget misses only with
-`ASSERT_BUDGETS=1`:
-
-```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 ASSERT_BUDGETS=1 uv run pytest -q tests/test_repository_benchmarks_offline.py -s
-```
+Timings are measured where the load is real — `scripts/stress_test.py` against a live
+Home Assistant (see [Backend stress testing](#backend-stress-testing)). A budget asserted
+inside the offline suite would only be measuring the runner it happened to land on.
 
 [phacc]: https://github.com/MatthewFlamm/pytest-homeassistant-custom-component
 

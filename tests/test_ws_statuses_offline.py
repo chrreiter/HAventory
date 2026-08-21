@@ -1,4 +1,4 @@
-"""Offline tests for the status-definition WebSocket commands.
+"""Offline tests for the status WebSocket commands and the item field they describe.
 
 Statuses are the one vocabulary items *reference*, so `status/delete` is the
 only command here that can orphan data. These tests pin its refusal, the
@@ -6,6 +6,10 @@ reassign escape hatch, the two topics a reassignment has to reach — cards
 showing the vocabulary, and cards showing the items that just moved — and the
 payload-less shape of that second broadcast, which is what tells a client to
 re-list rather than to patch one row.
+
+The item field itself follows: what `item/create`, `item/update`, `item/list`,
+`items/bulk` and `stats` do with a status, which is every command a card reaches
+for to flag something and find it again.
 """
 
 from __future__ import annotations
@@ -288,3 +292,98 @@ async def test_an_unknown_topic_is_still_refused() -> None:
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
+
+
+# -----------------------------
+# The item field the vocabulary describes
+# -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_ws_item_create_and_update_status() -> None:
+    hass = _new_hass()
+
+    res = await ws_send(hass, 1, "haventory/item/create", name="Hammer", status="missing")
+    assert res["success"] is True
+    assert res["result"]["status"] == "missing"
+    item_id = res["result"]["id"]
+
+    res = await ws_send(hass, 2, "haventory/item/update", item_id=item_id, status="needs_repair")
+    assert res["success"] is True
+    assert res["result"]["status"] == "needs_repair"
+
+    res = await ws_send(hass, 3, "haventory/item/get", item_id=item_id)
+    assert res["result"]["status"] == "needs_repair"
+
+
+@pytest.mark.asyncio
+async def test_ws_item_create_defaults_status_and_rejects_bad_values() -> None:
+    hass = _new_hass()
+
+    res = await ws_send(hass, 1, "haventory/item/create", name="Hammer")
+    assert res["success"] is True
+    assert res["result"]["status"] == "ok"
+    item_id = res["result"]["id"]
+
+    res = await ws_send(hass, 2, "haventory/item/create", name="Drill", status="lost")
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+
+    res = await ws_send(hass, 3, "haventory/item/update", item_id=item_id, status=None)
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+async def test_ws_item_list_filters_by_status() -> None:
+    hass = _new_hass()
+    await ws_send(hass, 1, "haventory/item/create", name="Hammer", status="missing")
+    await ws_send(hass, 2, "haventory/item/create", name="Wrench")
+
+    res = await ws_send(hass, 3, "haventory/item/list", filter={"status": "missing"})
+    assert res["success"] is True
+    assert [i["name"] for i in res["result"]["items"]] == ["Hammer"]
+    assert res["result"]["total"] == 1
+
+    res = await ws_send(hass, 4, "haventory/item/list", filter={"status": "bogus"})
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+
+
+@pytest.mark.asyncio
+async def test_ws_bulk_item_update_sets_status() -> None:
+    hass = _new_hass()
+    res = await ws_send(hass, 1, "haventory/item/create", name="Hammer")
+    item_id = res["result"]["id"]
+
+    res = await ws_send(
+        hass,
+        2,
+        "haventory/items/bulk",
+        operations=[
+            {
+                "op_id": "a",
+                "kind": "item_update",
+                "payload": {"item_id": item_id, "status": "missing"},
+            }
+        ],
+    )
+    assert res["success"] is True
+    outcome = res["result"]["results"]["a"]
+    assert outcome["success"] is True
+    assert outcome["result"]["status"] == "missing"
+
+
+@pytest.mark.asyncio
+async def test_ws_stats_and_health_reflect_status() -> None:
+    hass = _new_hass()
+    await ws_send(hass, 1, "haventory/item/create", name="Hammer", status="missing")
+    await ws_send(hass, 2, "haventory/item/create", name="Drill", status="needs_repair")
+
+    res = await ws_send(hass, 3, "haventory/stats")
+    assert res["result"]["missing_count"] == 1
+    assert res["result"]["needs_repair_count"] == 1
+
+    res = await ws_send(hass, 4, "haventory/health")
+    assert res["result"]["healthy"] is True
+    assert res["result"]["issues"] == []

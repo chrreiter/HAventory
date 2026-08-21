@@ -1,37 +1,19 @@
-"""Offline tests for status-definition and attachment-ordering mutators.
+"""Offline tests for the repository's status layer.
 
 The status vocabulary is the one collection whose entries items *reference*, so
 deleting one is the only vocabulary edit that can orphan data. These tests pin
 the refusal and the reassign escape hatch, and the reindexing that has to follow
 a reassignment for the status filter to keep agreeing with the stored value.
+Beside that sits the item field itself: the counts and the status index the
+status filter reads, which is the repository half of what a card shows.
 """
 
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.exceptions import ConflictError, NotFoundError, ValidationError
-from custom_components.haventory.models import (
-    AttachmentMeta,
-    ItemCreate,
-    ItemFilter,
-    iso_utc_now,
-    new_uuid4,
-)
+from custom_components.haventory.exceptions import NotFoundError, ValidationError
+from custom_components.haventory.models import ItemFilter, ItemUpdate
 from custom_components.haventory.repository import Repository
-
-
-def _attachment(kind: str = "picture", **overrides) -> AttachmentMeta:
-    fields = {
-        "id": new_uuid4(),
-        "kind": kind,
-        "filename": "photo.png",
-        "mime": "image/png",
-        "size": 12,
-        "uploaded_at": iso_utc_now(),
-    }
-    fields.update(overrides)
-    return AttachmentMeta(**fields)  # type: ignore[arg-type]
-
 
 # -----------------------------
 # Creating and updating
@@ -193,98 +175,55 @@ def test_reassigning_to_an_unknown_or_identical_status_is_refused() -> None:
 
 
 # -----------------------------
-# Attachment title and order
+# The item field the vocabulary describes
 # -----------------------------
 
 
-def test_retitling_an_attachment_is_an_item_edit() -> None:
+def test_counts_and_index_follow_status_changes() -> None:
     repo = Repository()
-    item = repo.create_item(ItemCreate(name="Dishwasher"))
-    meta = _attachment(kind="manual", filename="scan_0142.pdf", mime="application/pdf")
-    item = repo.add_attachment(item.id, meta)
+    item = repo.create_item({"name": "Hammer", "status": "missing"})
+    repo.create_item({"name": "Drill", "status": "needs_repair"})
+    repo.create_item({"name": "Wrench"})
 
-    updated = repo.update_attachment(item.id, meta.id, title="Warranty")
+    counts = repo.get_counts()
+    assert counts["missing_count"] == 1
+    assert counts["needs_repair_count"] == 1
 
-    assert updated.attachments[0].title == "Warranty"
-    assert updated.version == item.version + 1
+    # The default status is deliberately not bucketed.
+    idx = repo._debug_get_internal_indexes()
+    assert "ok" not in idx["status_to_item_ids"]
+    assert idx["status_to_item_ids"]["missing"] == {str(item.id)}
+
+    repo.update_item(item.id, ItemUpdate(status="ok"))
+    counts = repo.get_counts()
+    assert counts["missing_count"] == 0
+    assert "missing" not in repo._debug_get_internal_indexes()["status_to_item_ids"]
 
 
-def test_retitling_checks_the_expected_version() -> None:
+def test_list_items_filters_by_status_via_index() -> None:
     repo = Repository()
-    item = repo.create_item(ItemCreate(name="Dishwasher"))
-    meta = _attachment()
-    repo.add_attachment(item.id, meta)
+    repo.create_item({"name": "Wrench"})
+    missing = repo.create_item({"name": "Hammer", "status": "missing", "category": "tools"})
+    repo.create_item({"name": "Drill", "status": "needs_repair", "category": "tools"})
 
-    with pytest.raises(ConflictError):
-        repo.update_attachment(item.id, meta.id, title="Cover", expected_version=1)
+    page = repo.list_items(flt={"status": "missing"})
+    assert [str(i.id) for i in page["items"]] == [str(missing.id)]
+    assert page["total"] == 1
+
+    # Intersects with other indexed filters.
+    page = repo.list_items(flt={"status": "missing", "category": "tools"})
+    assert [str(i.id) for i in page["items"]] == [str(missing.id)]
+    page = repo.list_items(flt={"status": "missing", "category": "kitchen"})
+    assert page["items"] == [] and page["total"] == 0
+
+    # "ok" takes the scan path (not bucketed) and still filters correctly.
+    page = repo.list_items(flt={"status": "ok"})
+    assert [i.name for i in page["items"]] == ["Wrench"]
 
 
-def test_retitling_an_unknown_attachment_is_not_found() -> None:
+def test_deleting_an_item_clears_the_status_index() -> None:
     repo = Repository()
-    item = repo.create_item(ItemCreate(name="Dishwasher"))
-
-    with pytest.raises(NotFoundError):
-        repo.update_attachment(item.id, new_uuid4(), title="Nope")
-
-
-def test_reordering_pictures_makes_the_first_one_the_cover() -> None:
-    repo = Repository()
-    item = repo.create_item(ItemCreate(name="Drill"))
-    first, second = _attachment(), _attachment()
-    repo.add_attachment(item.id, first)
-    item = repo.add_attachment(item.id, second)
-
-    updated = repo.reorder_attachments(item.id, "picture", [str(second.id), str(first.id)])
-
-    ordered = sorted(updated.attachments, key=lambda a: a.order)
-    assert [a.id for a in ordered] == [second.id, first.id]
-    assert [a.order for a in ordered] == [0, 1]
-
-
-def test_reordering_leaves_the_other_kind_alone() -> None:
-    """Order is per kind, so shuffling pictures must not renumber manuals."""
-
-    repo = Repository()
-    item = repo.create_item(ItemCreate(name="Drill"))
-    front, back = _attachment(), _attachment()
-    first = _attachment(kind="manual", filename="a.pdf", mime="application/pdf")
-    second = _attachment(kind="manual", filename="b.pdf", mime="application/pdf")
-    for meta in (front, back, first, second):
-        item = repo.add_attachment(item.id, meta)
-
-    updated = repo.reorder_attachments(item.id, "picture", [str(back.id), str(front.id)])
-
-    manuals = {a.id: a.order for a in updated.attachments if a.kind == "manual"}
-    assert manuals == {first.id: 0, second.id: 1}
-
-
-def test_adding_appends_within_its_own_kind() -> None:
-    """A new upload lands after the ones already there, not tied with the cover.
-
-    The repository assigns the position: every ``AttachmentMeta`` arrives at the
-    default 0, so taking the caller's would sort each new picture into the
-    middle of the item's existing ones.
-    """
-
-    repo = Repository()
-    item = repo.create_item(ItemCreate(name="Drill"))
-    front, back = _attachment(), _attachment()
-    manual = _attachment(kind="manual", filename="m.pdf", mime="application/pdf")
-
-    item = repo.add_attachment(item.id, front)
-    item = repo.add_attachment(item.id, back)
-    item = repo.add_attachment(item.id, manual)
-
-    placed = {a.id: a.order for a in item.attachments}
-    assert placed == {front.id: 0, back.id: 1, manual.id: 0}
-
-
-def test_reordering_must_name_every_attachment_of_that_kind() -> None:
-    repo = Repository()
-    item = repo.create_item(ItemCreate(name="Drill"))
-    first, second = _attachment(), _attachment()
-    repo.add_attachment(item.id, first)
-    item = repo.add_attachment(item.id, second)
-
-    with pytest.raises(ValidationError, match="every attachment"):
-        repo.reorder_attachments(item.id, "picture", [str(first.id)])
+    item = repo.create_item({"name": "Hammer", "status": "missing"})
+    repo.delete_item(item.id)
+    assert repo.get_counts()["missing_count"] == 0
+    assert "missing" not in repo._debug_get_internal_indexes()["status_to_item_ids"]
