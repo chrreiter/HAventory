@@ -12,8 +12,6 @@ is what makes going past it reversible — the load itself destroys nothing.
 
 from __future__ import annotations
 
-import logging
-
 import voluptuous as vol
 from homeassistant.components.repairs import ConfirmRepairFlow, RepairsFlow, RepairsFlowResult
 from homeassistant.config_entries import ConfigEntryState
@@ -21,9 +19,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 
 from .const import CONF_ALLOW_LOSSY_LOAD, DOMAIN, ISSUE_CORRUPT_STORE
+from .logs import context_logger
 from .storage import async_backup_store
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = context_logger(__name__)
 
 
 class LossyLoadRepairFlow(RepairsFlow):

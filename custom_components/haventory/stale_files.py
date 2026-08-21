@@ -17,15 +17,15 @@ there, and a wildcard would take those too.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Sequence
 from pathlib import Path
 
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+from .logs import context_logger
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = context_logger(__name__)
 
 _PACKAGE_DIR = Path(__file__).parent
 

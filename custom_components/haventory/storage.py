@@ -16,7 +16,6 @@ forward-only migrations when an older schema payload is encountered.
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 from collections.abc import Mapping
 from copy import deepcopy
@@ -33,10 +32,11 @@ from .exceptions import (
     SchemaDowngradeError,
     StorageError,
 )
+from .logs import context_logger
 from .models import seed_status_definitions, serialize_status_definition
 from .runtime import find_runtime
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = context_logger(__name__)
 
 # Current schema version for persisted payloads
 CURRENT_SCHEMA_VERSION: Final[int] = 9

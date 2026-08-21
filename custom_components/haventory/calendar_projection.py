@@ -14,15 +14,15 @@ occurrences the window covers, and none of them is written anywhere.
 
 from __future__ import annotations
 
-import logging
 from calendar import monthrange
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
+from .logs import context_logger
 from .models import Item, ReminderInterval
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = context_logger(__name__)
 
 # Which unreadable stored dates have already been reported, as
 # ``(item_id, field, value)``. The projection runs on every calendar read, so an

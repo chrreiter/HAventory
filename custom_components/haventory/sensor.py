@@ -8,7 +8,6 @@ at all. `const.SENSOR_DESCRIPTIONS` is the catalog; nothing here is per-count.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
@@ -26,9 +25,10 @@ from .const import (
     SIGNAL_INVENTORY_CHANGED,
     HaventorySensorDescription,
 )
+from .logs import context_logger
 from .runtime import find_runtime
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = context_logger(__name__)
 
 
 async def async_setup_entry(

@@ -11,7 +11,6 @@ surfaces them to the caller.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable, Coroutine
 from typing import Any, NoReturn
 
@@ -30,12 +29,13 @@ from .exceptions import (
     log_exc_info,
     log_severity,
 )
+from .logs import context_logger
 from .repository import UNSET, Repository
 from .runtime import loaded_runtime
 from .serialization import serialize_item, serialize_location
 from .storage import async_persist_repo as _storage_async_persist_repo
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = context_logger(__name__)
 
 
 # -----------------------------

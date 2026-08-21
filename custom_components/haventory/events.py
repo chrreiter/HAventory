@@ -27,7 +27,6 @@ same call.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Sequence
 from typing import Any
 
@@ -40,10 +39,11 @@ from .const import (
     EVENT_LOW_STOCK,
     SIGNAL_INVENTORY_CHANGED,
 )
+from .logs import context_logger
 from .models import iso_utc_now
 from .runtime import HAventoryRuntime, find_runtime
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = context_logger(__name__)
 
 # The WebSocket items vocabulary, reused verbatim: an automation and a card
 # client describe the same mutation with the same word.
