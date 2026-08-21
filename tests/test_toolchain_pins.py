@@ -112,9 +112,10 @@ PYTHON_FLOOR_SITES: tuple[tuple[str, int, int], ...] = (
     (".claude/skills/test-haventory/SKILL.md", 7, 0),
 )
 
-# `dev/` holds design documents that quote configuration verbatim to describe
-# it — snapshots, not copies anyone keeps true, and they are deleted with the
-# work they plan.
+# `dev/` holds the process documents: the release testing plan and the current
+# milestone's implementation plan, both of which quote configuration verbatim to
+# describe it — snapshots, not copies anyone keeps true, and the milestone plan
+# is deleted with the work it plans.
 SWEPT_SKIP_DIR_PREFIXES = ("dev/",)
 
 # Committed files that carry versions nobody here writes.

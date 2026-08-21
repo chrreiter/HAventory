@@ -28,6 +28,19 @@ scaffolding and CI all assume it, and nothing here is tested on a Windows host.
 On Windows, develop inside WSL2. (This is about contributing, not about running
 HAventory: the integration itself runs wherever Home Assistant does.)
 
+**Proposing a higher Home Assistant floor?** Three constraints stack and the
+binding one is not always the same: the HA APIs the integration touches, the
+Python floor those releases carry, and **security** — a declared floor is a
+recommendation about what to run, so it must not point at a release carrying a
+known unpatched **high or critical** advisory. Lower severities do not move it:
+"any advisory at all" is what turns a floor into a treadmill, and it is not how
+the current one was derived. The high/critical set moves with new advisories, so
+the right number is not fixed either — re-derive it rather than assuming the
+current floor is still right. `hacs.json` is the one place the floor is declared;
+`tests/test_min_ha_version.py` enumerates every copy of it and fails when one
+drifts, and `dependency-review` fails CI if `requirements-integration.txt` is
+pinned below it.
+
 ```bash
 # One-shot bootstrap: uv env + card deps + pre-commit hooks
 scripts/setup.sh
@@ -82,8 +95,11 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
   `docs/backend_api_contract.md`, and `docs/data_shapes.md` together.
 - **Two documentation trees**: `docs/` is for what a user or a contributor of the
   shipped integration needs; `dev/` is for the development process — the release
-  testing plan, the release review, and per-task design documents. A new document
-  goes in one of the two, and neither is a tracker: work lives in GitHub issues.
+  testing plan, the dev Home Assistant's config, and the current milestone's
+  implementation plan. A new document goes in one of the two, and neither is a
+  tracker: work lives in GitHub issues. A plan document is deleted in the pull
+  request that ships the work it describes: git history keeps it, and a plan left
+  behind reads as pending work.
 - **Preserve the core invariants**: case-insensitive search, denormalized
   `location_path` on items, and optimistic concurrency via the item `version`.
 - **The card renders no `ha-*` element.** Home Assistant's frontend components
@@ -109,6 +125,38 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
   be a module constant.
 - Update `README.md` when behavior changes. Report out-of-scope findings under a
   "Follow-ups" note rather than fixing them in the same PR.
+
+### Comments explain constraints, not history
+
+A comment earns its place by encoding something the code cannot say itself: a
+browser or platform quirk, an API contract, a required ordering, an accessibility
+requirement, a deliberate tradeoff whose alternative looks better than it is.
+Write it in the present tense, about the code as it stands.
+
+- Do **not** narrate development history — no references to what a component
+  replaced, what an earlier iteration did, which work package introduced it, or
+  what "used to" be here. That context dies with the branch and leaves a dangling
+  reference. Git history is where it belongs.
+- Do **not** point at anything a reader of this repository cannot open: design-mock
+  numbers, an external design canvas, or a numbered entry in a tracker or ledger.
+  State the constraint the reference was standing in for.
+- Do **not** restate the line below. If a comment paraphrases the code, delete the
+  comment or fix the naming.
+- A comment that is wrong is worse than none. When a comment names a symbol, a
+  type, a caller or a stored shape, that name must still be correct.
+- `TODO` / `FIXME` markers do not belong in committed code — the repository has
+  zero and keeps it that way. Record follow-ups as GitHub issues (🔧 Task
+  template).
+- Component-level JSDoc says what the component is responsible for and what it
+  talks to. Non-obvious CSS gets a why-comment; obvious CSS gets none.
+- **Plain words, no stock AI-review vocabulary** — and not only in comments:
+  issues, pull request bodies, commit messages and docs alike. "Load-bearing",
+  "blast radius" and phrases of that family are out; name concretely what depends
+  on the thing, or what a change would break.
+
+Applies to TypeScript and Python alike, and is enforced by review rather than by a
+lint rule — the distinction is a judgment call, and a mechanical check would be
+wrong often enough to be ignored.
 
 ## Adding a language
 
