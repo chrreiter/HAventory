@@ -376,6 +376,44 @@ async def test_the_first_pass_waits_for_startup_when_home_assistant_is_still_boo
 
 
 @pytest.mark.asyncio
+async def test_the_start_listener_is_taken_off_the_bus_once_it_has_fired() -> None:
+    """The unload must not ask again for a listener that is already gone.
+
+    Real Home Assistant answers a removal it cannot match with
+    `Unable to remove unknown job listener` at ERROR, naming the frame that
+    asked — an HAventory line describing something that worked.
+    """
+
+    hass, _repo, _services, entry = await _bridge(is_running=False)
+    started = hass.bus.listeners_for(EVENT_HOMEASSISTANT_STARTED)
+    await started[0](None)
+    assert hass.bus.listeners_for(EVENT_HOMEASSISTANT_STARTED) == []
+
+    for release in entry._on_unload:
+        release()
+
+    assert hass.bus.unknown_removals == []
+
+
+@pytest.mark.asyncio
+async def test_an_unload_before_the_start_event_still_takes_it_off() -> None:
+    """The other order: Home Assistant stopped, or the entry reloaded, mid-boot.
+
+    Left on the bus, the listener would run a pass against a torn-down runtime
+    the moment startup finished.
+    """
+
+    hass, _repo, _services, entry = await _bridge(is_running=False)
+    assert len(hass.bus.listeners_for(EVENT_HOMEASSISTANT_STARTED)) == 1
+
+    for release in entry._on_unload:
+        release()
+
+    assert hass.bus.listeners == []
+    assert hass.bus.unknown_removals == []
+
+
+@pytest.mark.asyncio
 async def test_a_stored_row_missing_half_of_itself_is_dropped_on_load() -> None:
     """A row that cannot be retracted would hold its item off the list for good."""
 

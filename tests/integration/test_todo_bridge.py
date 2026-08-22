@@ -15,6 +15,8 @@ entity itself assigns.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from custom_components.haventory import todo_bridge
 from custom_components.haventory.const import CONF_TODO_ENTITY_ID, DOMAIN
@@ -26,8 +28,8 @@ from homeassistant.components.todo import (
     TodoListEntityFeature,
 )
 from homeassistant.config_entries import ConfigEntry, ConfigFlow
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -267,6 +269,67 @@ async def test_unloading_the_entry_stops_the_bridge_listening(
     # The list keeps what it had: an unloaded entry gives up its own runtime,
     # not the household's shopping list.
     assert todo_list.summaries == [f"Peanut butter {TIMES}2"]
+
+
+def _started_listeners(hass: HomeAssistant) -> int:
+    return hass.bus.async_listeners().get(EVENT_HOMEASSISTANT_STARTED, 0)
+
+
+async def test_the_boot_time_start_listener_is_gone_once_it_has_fired(
+    hass: HomeAssistant, todo_list: _TestTodoList, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A restart and then a reload must leave nothing at ERROR carrying our name.
+
+    Set up while Home Assistant is still starting, the bridge defers its first
+    pass to the start event. Home Assistant's own bookkeeping is what makes the
+    second removal visible: the bus refuses a listener it cannot match with
+    `Unable to remove unknown job listener`, at ERROR, quoting the frame that
+    asked. The offline bus keeps no such record, so this is the only place the
+    line can appear.
+    """
+
+    hass.set_state(CoreState.not_running)
+    before = _started_listeners(hass)
+
+    entry = await _setup_haventory(hass, entity_id=LIST_ENTITY_ID)
+    assert _started_listeners(hass) == before + 1
+
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+    # Fewer, not `before`: Home Assistant's own one-time listeners for this event
+    # go with the same firing, so the count after it is not the count before it.
+    assert _started_listeners(hass) < before + 1
+
+    caplog.clear()
+    with caplog.at_level(logging.ERROR):
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    errors = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
+    assert errors == []
+
+
+async def test_an_unload_before_the_start_event_releases_the_listener(
+    hass: HomeAssistant, todo_list: _TestTodoList, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The other order — stopped or reloaded mid-boot — and the bus is left clean.
+
+    Left on it, the listener would run a pass against a runtime Home Assistant
+    has already taken back, the moment startup finished.
+    """
+
+    hass.set_state(CoreState.not_running)
+    before = _started_listeners(hass)
+    entry = await _setup_haventory(hass, entity_id=LIST_ENTITY_ID)
+    assert _started_listeners(hass) == before + 1
+
+    caplog.clear()
+    with caplog.at_level(logging.ERROR):
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert _started_listeners(hass) == before
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
 
 
 async def test_the_options_flow_offers_the_shopping_list_field(hass: HomeAssistant) -> None:
