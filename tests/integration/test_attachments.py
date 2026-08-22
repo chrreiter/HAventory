@@ -12,6 +12,8 @@ is here is the transport and the view around it.
 
 from __future__ import annotations
 
+import hashlib
+import io
 import shutil
 import threading
 from http import HTTPStatus
@@ -21,10 +23,16 @@ from urllib.parse import unquote
 import pytest
 from aiohttp import FormData
 from custom_components.haventory import media
-from custom_components.haventory.const import DOMAIN, MEDIA_NAME_TOKEN_PARAM, MEDIA_SUBDIR
+from custom_components.haventory.const import (
+    DOMAIN,
+    MEDIA_NAME_TOKEN_PARAM,
+    MEDIA_SUBDIR,
+    THUMBNAIL_MAX_EDGE,
+)
 from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.core import HomeAssistant
+from PIL import Image
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
@@ -109,11 +117,69 @@ def upload_teardowns(monkeypatch) -> list[tuple[int, Path]]:
     return calls
 
 
+# The picture `_photograph` builds, and how far the tile's aspect ratio may sit
+# from it once both edges have been rounded to whole pixels.
+PHOTO_SIZE = (1200, 800)
+ASPECT_TOLERANCE = 0.01
+
+
+def _photograph(size: tuple[int, int] = PHOTO_SIZE) -> bytes:
+    """A PNG a decoder will actually open, the shape a phone camera produces.
+
+    Built rather than embedded: the tile is checked for its dimensions and its
+    size against the original, and a few-byte fixture can carry neither. Pillow
+    is here because Home Assistant brings it — the same reason this file is
+    where the encoder is exercised at all.
+    """
+
+    # Incompressible content, from a fixed seed so the run is repeatable. A
+    # pattern would make the PNG a few KB and "the tile is a fraction of the
+    # picture" true because the fixture was tiny rather than because the tile
+    # is small — and noise is the worst case for the encoder, so the ratio a
+    # real photograph gets is better than the one asserted here.
+    wanted = size[0] * size[1] * 3
+    raw = bytearray()
+    digest = b"haventory"
+    while len(raw) < wanted:
+        digest = hashlib.sha256(digest).digest()
+        raw += digest
+    buffer = io.BytesIO()
+    Image.frombytes("RGB", size, bytes(raw[:wanted])).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 async def _create_item(ws_client, name: str = "Drill") -> dict:
     await ws_client.send_json({"id": 1, "type": "haventory/item/create", "name": name})
     result = await ws_client.receive_json()
     assert result["success"] is True, result
     return result["result"]
+
+
+async def _attach(
+    ws,
+    client,
+    item: dict,
+    *,
+    file: tuple[bytes, str] = (PNG_BYTES, "drill.png"),
+    kind: str = "picture",
+) -> dict:
+    """Upload one file and hang it on `item`, returning the attachment."""
+
+    content, filename = file
+    file_id = await _upload(client, content=content, filename=filename)
+    await ws.send_json(
+        {
+            "id": 90,
+            "type": "haventory/item/attachment/add",
+            "item_id": item["id"],
+            "file_id": file_id,
+            "filename": filename,
+            "kind": kind,
+        }
+    )
+    added = await ws.receive_json()
+    assert added["success"] is True, added
+    return added["result"]["attachments"][-1]
 
 
 async def test_a_real_png_round_trips_through_upload_and_the_view(
@@ -157,6 +223,125 @@ async def test_a_real_png_round_trips_through_upload_and_the_view(
     assert disposition.startswith("inline;")
     assert 'filename="drill.png"' in disposition
     assert await served.read() == PNG_BYTES
+
+
+async def test_size_thumb_serves_a_real_webp_tile_and_writes_it_once(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+) -> None:
+    """The whole `?size=thumb` path against the real encoder.
+
+    Only real here: Pillow is not a dependency of this integration and is not in
+    the offline environment, but Home Assistant brings it, so this is where the
+    bytes a row actually downloads can be looked at. The offline suite covers
+    the logic around it — the once-only encode, the refusals, the sweep.
+    """
+
+    photo = _photograph()
+    await _setup(hass)
+    client = await hass_client()
+    ws = await hass_ws_client(hass)
+    item = await _create_item(ws)
+    attachment = await _attach(ws, client, item, file=(photo, "shelf.png"))
+
+    url = f"/api/haventory/media/{item['id']}/{attachment['id']}"
+    served = await client.get(f"{url}?size=thumb")
+    assert served.status == HTTPStatus.OK
+    tile = await served.read()
+
+    # A tile, not the picture: WebP whatever the original was, capped on its
+    # longest edge, and a fraction of the bytes a row used to download.
+    assert served.headers["Content-Type"] == "image/webp"
+    assert tile[:4] == b"RIFF" and tile[8:12] == b"WEBP"
+    assert len(tile) < len(photo) / 4
+    with Image.open(io.BytesIO(tile)) as decoded:
+        assert decoded.format == "WEBP"
+        assert max(decoded.size) == THUMBNAIL_MAX_EDGE
+        # 1200x800 down to 256 on its longest edge, keeping the shape it had:
+        # a tile that squared off a photograph would crop what the row shows.
+        # Scaled to whole pixels, so the ratio lands within one of them.
+        wide, high = decoded.size
+        assert abs(wide / high - PHOTO_SIZE[0] / PHOTO_SIZE[1]) < ASPECT_TOLERANCE
+
+    root = Path(hass.config.path(MEDIA_SUBDIR))
+    on_disk = media.thumbnail_path(root, item["id"], attachment["id"])
+    assert on_disk.is_file()
+    assert on_disk.read_bytes() == tile
+    # Written beside the original, which is still there and still itself.
+    assert on_disk.parent.name == item["id"]
+    original = await client.get(url)
+    assert await original.read() == photo
+    assert original.headers["Content-Type"].startswith("image/png")
+
+    # Served from the file the first request wrote, not encoded again.
+    mtime = on_disk.stat().st_mtime_ns
+    again = await client.get(f"{url}?size=thumb")
+    assert await again.read() == tile
+    assert on_disk.stat().st_mtime_ns == mtime
+
+    # Nothing is left behind mid-encode: the staging name never survives.
+    assert not list(on_disk.parent.glob("*.part"))
+
+
+async def test_a_picture_the_decoder_refuses_serves_the_original(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+) -> None:
+    """Fail open, with a file that really does defeat the decoder.
+
+    `PNG_BYTES` carries a genuine PNG signature — which is all the upload
+    allow-list reads — and Pillow cannot identify it, which is what a truncated
+    or corrupt upload looks like. The row shows the picture the browser can
+    still render, and the page is slower rather than broken.
+    """
+
+    await _setup(hass)
+    client = await hass_client()
+    ws = await hass_ws_client(hass)
+    item = await _create_item(ws)
+    attachment = await _attach(ws, client, item)
+
+    served = await client.get(f"/api/haventory/media/{item['id']}/{attachment['id']}?size=thumb")
+
+    assert served.status == HTTPStatus.OK
+    assert served.headers["Content-Type"] == "image/png"
+    assert await served.read() == PNG_BYTES
+    root = Path(hass.config.path(MEDIA_SUBDIR))
+    assert not media.thumbnail_path(root, item["id"], attachment["id"]).exists()
+
+
+async def test_an_unknown_size_is_refused_rather_than_generated(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+) -> None:
+    """One accepted value: the parameter selects a derived form, it does not let
+    a caller ask the server to render whatever size it likes."""
+
+    await _setup(hass)
+    client = await hass_client()
+    ws = await hass_ws_client(hass)
+    item = await _create_item(ws)
+    attachment = await _attach(ws, client, item)
+
+    url = f"/api/haventory/media/{item['id']}/{attachment['id']}"
+    for size in ("2048", "large", "THUMB", ""):
+        refused = await client.get(f"{url}?size={size}")
+        assert refused.status == HTTPStatus.BAD_REQUEST, size
+
+
+async def test_a_manual_asked_for_as_a_thumbnail_serves_the_pdf(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+) -> None:
+    """Fail open: there is no tile of a PDF, and the answer is the document."""
+
+    await _setup(hass)
+    client = await hass_client()
+    ws = await hass_ws_client(hass)
+    item = await _create_item(ws)
+    attachment = await _attach(ws, client, item, file=(PDF_BYTES, "manual.pdf"), kind="manual")
+
+    served = await client.get(f"/api/haventory/media/{item['id']}/{attachment['id']}?size=thumb")
+
+    assert served.status == HTTPStatus.OK
+    assert served.headers["Content-Type"] == "application/pdf"
+    assert await served.read() == PDF_BYTES
 
 
 async def test_the_upload_handle_is_consumed_off_the_event_loop(

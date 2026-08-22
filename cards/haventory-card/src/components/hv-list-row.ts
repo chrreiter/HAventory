@@ -8,6 +8,7 @@ import { icon } from '../ui/icons';
 import { formatDate, isDue, isOverdue } from '../ui/relative-time';
 import { itemStatus, renderStatusChip, statusLabel } from '../ui/status';
 import {
+  MEDIA_VARIANT_THUMB,
   MediaUrls,
   ROW_THUMB_SIZE,
   ROW_THUMB_SIZE_TOUCH,
@@ -412,14 +413,21 @@ export class HVListRow extends LitElement {
   /**
    * The row's leading thumbnail: the item's first picture, or nothing.
    *
-   * The full-size file is what loads — nothing is thumbnailed server-side, so
-   * `loading="lazy"` and `decoding="async"` are what keep a long list from
-   * fetching and decoding everything at once.
+   * Asks for the `thumb` variant, so the tile costs a few KB rather than the
+   * whole stored file; the backend serves the original whenever it cannot make
+   * one, so this never decides whether the picture appears. `loading="lazy"`
+   * and `decoding="async"` still matter — a long list would otherwise fetch and
+   * decode everything at once.
    */
   private _renderThumb() {
     const first = pictures(this.item.attachments)[0];
     if (!first) return null;
-    const src = this._urls.get(this.item.id, first.id, attachmentNameToken(first));
+    const src = this._urls.get(
+      this.item.id,
+      first.id,
+      attachmentNameToken(first),
+      MEDIA_VARIANT_THUMB,
+    );
     if (!src) return null;
     return html`<img
       class="thumb"

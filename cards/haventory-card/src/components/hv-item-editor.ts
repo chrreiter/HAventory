@@ -31,6 +31,7 @@ import {
 import type { CustomFieldRow, CustomFieldType, FieldError, ItemFormModel } from '../ui/item-form';
 import { statusLabel, statusList } from '../ui/status';
 import {
+  MEDIA_VARIANT_THUMB,
   MediaUrls,
   attachmentNameToken,
   attachmentTitle,
@@ -2338,7 +2339,14 @@ export class HVItemEditor extends LitElement {
         @drop=${drop.drop}
       >
         ${shots.map((picture, index) => {
-          const src = this._urls.get(item.id, picture.id, attachmentNameToken(picture));
+          // The tile, not the picture: tapping one opens the lightbox, which
+          // asks for the stored file itself.
+          const src = this._urls.get(
+            item.id,
+            picture.id,
+            attachmentNameToken(picture),
+            MEDIA_VARIANT_THUMB,
+          );
           return html`<figure data-testid="editor-photo">
             ${src
               ? html`<button

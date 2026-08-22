@@ -13,7 +13,7 @@ import {
   stubViewport,
 } from '../test.utils';
 import { discardPrompt } from '../ui/discard';
-import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
+import { MEDIA_NAME_TOKEN_PARAM, MEDIA_SIZE_PARAM, attachmentNameToken } from '../ui/media';
 import { addDays } from '../ui/relative-time';
 import type { HVItemEditor } from './hv-item-editor';
 import type { Item, ItemCreate, ItemUpdate, Location, LocationTreeNode } from '../store/types';
@@ -1433,6 +1433,20 @@ describe('hv-item-editor: pictures', () => {
     expect(q(el, '[data-testid="editor-photo-remove"]')?.getAttribute('aria-label')).toBe(
       'Remove Photo of Drill',
     );
+  });
+
+  // The tile is ~90px and the lightbox behind it is what shows the picture, so
+  // the form asks the backend for the small form of every photo it lists.
+  it('draws its picture tiles from the row-tile variant', async () => {
+    const el = await mount(
+      makeItem({ id: 'i-1', name: 'Drill', attachments: [makeAttachment({ id: 'att-1' })] }),
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    await el.updateComplete;
+
+    const img = el.shadowRoot?.querySelector('[data-testid="editor-photo"] img');
+    expect(img?.getAttribute('src')).toContain(`${MEDIA_SIZE_PARAM}=thumb`);
   });
 
   it('uploads a picked file and adopts the version the backend came back with', async () => {

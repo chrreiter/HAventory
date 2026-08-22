@@ -14,7 +14,14 @@ import {
   normalizeColumns,
   tableTemplateFor,
 } from '../store/columns';
-import { MediaUrls, ROW_THUMB_SIZE, attachmentNameToken, pictureAlt, pictures } from '../ui/media';
+import {
+  MEDIA_VARIANT_THUMB,
+  MediaUrls,
+  ROW_THUMB_SIZE,
+  attachmentNameToken,
+  pictureAlt,
+  pictures,
+} from '../ui/media';
 import type { MediaBindings } from '../ui/media';
 import { getDefaultOrderFor } from '../store/sort';
 import type { AreaRef, StatusDefinition } from '../store/types';
@@ -431,14 +438,21 @@ export class HVDataTable extends LitElement {
   /**
    * A row's leading thumbnail: the item's first picture, or nothing.
    *
-   * The full-size file is what loads — nothing is thumbnailed server-side — so
-   * `loading="lazy"` and `decoding="async"` are what keep a long table from
-   * fetching and decoding every row's photo at once.
+   * Asks for the `thumb` variant, so a 36px tile costs a few KB rather than the
+   * whole stored file; the backend serves the original whenever it cannot make
+   * one, so this never decides whether the picture appears. `loading="lazy"`
+   * and `decoding="async"` still matter — a long table would otherwise fetch
+   * and decode every row's tile at once.
    */
   private _renderThumb(item: Item) {
     const first = pictures(item.attachments)[0];
     if (!first) return null;
-    const src = this._urls.get(item.id, first.id, attachmentNameToken(first));
+    const src = this._urls.get(
+      item.id,
+      first.id,
+      attachmentNameToken(first),
+      MEDIA_VARIANT_THUMB,
+    );
     if (!src) return null;
     return html`<img
       class="thumb"

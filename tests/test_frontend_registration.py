@@ -32,6 +32,8 @@ from custom_components.haventory.const import (
     CONF_SIDEBAR_PANEL_ENABLED,
     DEFAULT_CARD_TITLE,
     MEDIA_NAME_TOKEN_PARAM,
+    MEDIA_SIZE_PARAM,
+    MEDIA_SIZE_THUMB,
     MEDIA_URL_TEMPLATE,
     PANEL_ELEMENT_NAME,
     PANEL_ICON,
@@ -801,6 +803,28 @@ def test_the_card_versions_media_urls_under_the_parameter_the_backend_reads() ->
     assert match is not None, "MEDIA_NAME_TOKEN_PARAM is no longer declared in media.ts"
 
     assert match.group(1) == MEDIA_NAME_TOKEN_PARAM
+
+
+def test_the_card_asks_for_a_row_tile_by_the_name_the_backend_accepts() -> None:
+    """The size parameter and its one value are constants on both sides.
+
+    Neither side can see the other, and the view answers an unknown ``size``
+    with a 400 — so a rename on the card turns every row tile into a broken
+    image, and a rename on the backend quietly serves the whole picture again
+    with nothing but the download size to say so.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "media.ts").read_text(
+        encoding="utf-8"
+    )
+    for name, expected in (
+        ("MEDIA_SIZE_PARAM", MEDIA_SIZE_PARAM),
+        ("MEDIA_VARIANT_THUMB", MEDIA_SIZE_THUMB),
+    ):
+        match = re.search(
+            rf"^export const {name}(?:: MediaVariant)? = '([^']+)';$", source, re.MULTILINE
+        )
+        assert match is not None, f"{name} is no longer declared in media.ts"
+        assert match.group(1) == expected
 
 
 def test_every_status_icon_has_a_glyph_in_the_bundle() -> None:

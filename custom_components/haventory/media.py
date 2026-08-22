@@ -15,10 +15,17 @@ Three rules hold everything here together:
   containment in the media root before anything reads or unlinks it.
 * **Every filesystem call blocks**, so it runs through
   ``hass.async_add_executor_job``.
+
+A picture also has a derived form: ``?size=thumb`` serves a 256px WebP written
+beside the original the first time a row asks for one. Pillow is imported for
+that and is not a dependency — every reason it cannot be used falls back to the
+original, so an install without it renders the same pages and only pays the
+bytes.
 """
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 from collections.abc import Iterable
 from http import HTTPStatus
@@ -46,8 +53,13 @@ from .const import (
     MAX_MANUALS_PER_ITEM,
     MAX_PICTURES_PER_ITEM,
     MEDIA_NAME_TOKEN_PARAM,
+    MEDIA_SIZE_PARAM,
+    MEDIA_SIZE_THUMB,
     MEDIA_SUBDIR,
     MEDIA_URL_TEMPLATE,
+    THUMBNAIL_MAX_EDGE,
+    THUMBNAIL_QUALITY,
+    THUMBNAIL_SUFFIX,
 )
 from .exceptions import ValidationError
 from .logs import context_logger
@@ -83,6 +95,9 @@ SNIFF_BYTES = 16
 # length limit of its own, and a client is entitled to refuse an oversized
 # header line rather than the file behind it.
 DISPOSITION_NAME_MAX_CHARS = 200
+
+# Where the thumbnail encode locks and refusals live on `hass.data`.
+_THUMBNAIL_STATE_KEY = f"{DOMAIN}_thumbnails"
 
 
 def sniff_mime(head: bytes) -> str | None:
@@ -160,6 +175,131 @@ def attachment_path(root: Path, item_id: str, attachment_id: str, mime: str) -> 
     return candidate
 
 
+def thumbnail_path(root: Path, item_id: str, attachment_id: str) -> Path:
+    """Where one picture's row tile lives, beside the original it comes from.
+
+    Named from the attachment id and not from the stored mime, because the
+    derived file is always WebP whatever the original is — and because the
+    sweep has to be able to name it from metadata alone.
+    """
+
+    resolved_root = root.resolve()
+    candidate = (root / item_id / f"{attachment_id}{THUMBNAIL_SUFFIX}").resolve()
+    if resolved_root not in candidate.parents:
+        raise ValidationError("thumbnail path resolves outside the media root")
+    return candidate
+
+
+def _encode_thumbnail_blocking(source: Path, target: Path) -> bool:
+    """Write ``source`` down to a row tile at ``target``. Blocks — executor only.
+
+    False, never an exception, for every reason this cannot be done: Pillow is
+    not a dependency of this integration, an animated GIF has no single frame
+    worth standing in for the picture, a file may be corrupt, and the config
+    tree is the user's and may refuse a write. Each of those means "serve the
+    original", which is a slower page and not a broken one.
+
+    Written to a neighbouring temporary file and moved into place, so a reader
+    arriving mid-encode finds either no thumbnail or a whole one, never a
+    half-written image.
+    """
+
+    try:
+        # Deliberately here and not at module scope: this is the whole reason
+        # `manifest.json` can keep declaring no requirements, and an install
+        # without Pillow has to import this module and serve its pictures.
+        from PIL import Image, ImageOps  # noqa: PLC0415
+    except ImportError:
+        return False
+
+    try:
+        with Image.open(source) as image:
+            if getattr(image, "is_animated", False):
+                return False
+            # EXIF orientation is a tag, not a rotation of the pixels, and
+            # `thumbnail` drops the tag — so a phone photo would come out on
+            # its side against an original the browser turns upright.
+            oriented = ImageOps.exif_transpose(image) or image
+            oriented = oriented.convert("RGB")
+            oriented.thumbnail((THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            staging = target.with_name(f"{target.name}.part")
+            oriented.save(staging, format="WEBP", quality=THUMBNAIL_QUALITY)
+            staging.replace(target)
+    except Exception:
+        LOGGER.debug(
+            "Serving the original: this picture could not be thumbnailed",
+            extra={"domain": DOMAIN, "op": "attachment_thumbnail", "path": str(source)},
+            exc_info=True,
+        )
+        return False
+    return True
+
+
+def _thumbnail_state(hass: HomeAssistant) -> tuple[dict[str, asyncio.Lock], set[str]]:
+    """Per-attachment encode locks, and the ones that cannot be encoded at all.
+
+    Kept on ``hass.data`` rather than on the runtime: neither survives a
+    restart, and neither should — an install that gains Pillow gets its
+    thumbnails on the next boot with nothing to clear.
+
+    The refusal set is what stops an 8 MB file that will never decode from
+    being decoded again on every render of every row that shows it. Both are
+    bounded by the number of picture attachments, and a replacement picture is
+    a new id rather than the same one with new bytes.
+    """
+
+    state: dict[str, Any] = hass.data.setdefault(_THUMBNAIL_STATE_KEY, {})
+    locks: dict[str, asyncio.Lock] = state.setdefault("locks", {})
+    refused: set[str] = state.setdefault("refused", set())
+    return locks, refused
+
+
+async def async_thumbnail(
+    hass: HomeAssistant, *, root: Path, item_id: str, meta: AttachmentMeta
+) -> Path | None:
+    """The row tile for one picture, encoding it once if it is not there yet.
+
+    ``None`` means "serve the original" — the caller never has to know which of
+    the reasons applied.
+    """
+
+    if meta.kind != "picture":
+        return None
+    try:
+        target = thumbnail_path(root, item_id, str(meta.id))
+    except ValidationError:  # pragma: no cover - ids come from validated metadata
+        return None
+
+    locks, refused = _thumbnail_state(hass)
+    key = str(target)
+    # Under the lock even on the hot path, where the file is already there:
+    # acquiring an uncontended `asyncio.Lock` does not suspend, and the check
+    # has to be inside it anyway for the tab that waited on the encode.
+    async with locks.setdefault(key, asyncio.Lock()):
+        if key in refused:
+            return None
+        if await hass.async_add_executor_job(target.is_file):
+            return target
+        source = attachment_path(root, item_id, str(meta.id), meta.mime)
+        return await _async_encode_once(hass, source=source, target=target, refused=refused)
+
+
+async def _async_encode_once(
+    hass: HomeAssistant, *, source: Path, target: Path, refused: set[str]
+) -> Path | None:
+    """Make one tile, under the caller's lock, and remember a refusal."""
+
+    if not await hass.async_add_executor_job(source.is_file):
+        # No original either: the view is about to 404 on its own, and
+        # remembering this would outlive the missing file being restored.
+        return None
+    if await hass.async_add_executor_job(_encode_thumbnail_blocking, source, target):
+        return target
+    refused.add(str(target))
+    return None
+
+
 def _store_blocking(target: Path, source: Path) -> int:
     """Move an uploaded file into place. Blocks — run it in the executor."""
 
@@ -234,7 +374,13 @@ def _sweep_blocking(root: Path, referenced: frozenset[str]) -> list[str]:
 
 
 def referenced_paths(root: Path, pairs: Iterable[tuple[str, AttachmentMeta]]) -> frozenset[str]:
-    """Resolve every (item, attachment) pair to the file it names.
+    """Resolve every (item, attachment) pair to the files it names.
+
+    Both files, for a picture: the sweep deletes everything it is not handed, so
+    a thumbnail left out of this list is removed on the next sweep and encoded
+    again on the next page that shows the row. A thumbnail is named whether or
+    not it exists — the sweep only ever removes, so naming one that was never
+    made costs nothing.
 
     An entry whose path would escape the media root is dropped rather than
     raised on: it names no file the sweep could keep, and refusing the whole
@@ -245,6 +391,8 @@ def referenced_paths(root: Path, pairs: Iterable[tuple[str, AttachmentMeta]]) ->
     for item_id, meta in pairs:
         try:
             paths.add(str(attachment_path(root, item_id, str(meta.id), meta.mime)))
+            if meta.kind == "picture":
+                paths.add(str(thumbnail_path(root, item_id, str(meta.id))))
         except ValidationError:  # pragma: no cover - ids come from validated metadata
             LOGGER.warning(
                 "Ignoring attachment metadata whose path escapes the media root",
@@ -277,13 +425,22 @@ async def async_consume_upload(
 async def async_delete_attachments(
     hass: HomeAssistant, pairs: Iterable[tuple[str, AttachmentMeta]]
 ) -> None:
-    """Delete the files named by each (item id, attachment) pair."""
+    """Delete the files named by each (item id, attachment) pair.
+
+    A removed picture takes its row tile with it; `_delete_blocking` passes over
+    one that was never made.
+    """
 
     root = media_root(hass)
+    _, refused = _thumbnail_state(hass)
     targets: list[Path] = []
     for item_id, meta in pairs:
         try:
             targets.append(attachment_path(root, item_id, str(meta.id), meta.mime))
+            if meta.kind == "picture":
+                thumb = thumbnail_path(root, item_id, str(meta.id))
+                targets.append(thumb)
+                refused.discard(str(thumb))
         except ValidationError:  # pragma: no cover - ids come from validated metadata
             continue
     if targets:
@@ -367,9 +524,18 @@ class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
     requires_auth = True
 
     async def get(self, request: Any, item_id: str, attachment_id: str) -> Any:
-        """Return the file the two ids name, or 404 if no metadata claims it."""
+        """Return the file the two ids name, or 404 if no metadata claims it.
+
+        ``?size=thumb`` asks for the row tile instead of the original. One
+        accepted value, and anything else is a 400 rather than an invitation to
+        have the server generate arbitrary sizes on demand.
+        """
 
         hass: HomeAssistant = request.app["hass"]
+        size = request.query.get(MEDIA_SIZE_PARAM)
+        if size is not None and size != MEDIA_SIZE_THUMB:
+            return web.Response(status=HTTPStatus.BAD_REQUEST)
+
         runtime = find_runtime(hass)
         if runtime is None:
             # No config entry owns the data — an unload, a disable, or the first
@@ -380,18 +546,26 @@ class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
         if meta is None:
             return web.Response(status=HTTPStatus.NOT_FOUND)
 
-        path = attachment_path(media_root(hass), item_id, str(meta.id), meta.mime)
+        root = media_root(hass)
+        path = attachment_path(root, item_id, str(meta.id), meta.mime)
         if not await hass.async_add_executor_job(path.is_file):
             # Metadata without its file: a JSON export imported onto a fresh
             # install carries the references and not the bytes.
             return web.Response(status=HTTPStatus.NOT_FOUND)
+
+        mime = meta.mime
+        if size == MEDIA_SIZE_THUMB:
+            thumb = await async_thumbnail(hass, root=root, item_id=item_id, meta=meta)
+            if thumb is not None:
+                path, mime = thumb, "image/webp"
 
         return web.FileResponse(
             path,
             headers={
                 # The stored type is the sniffed one; `nosniff` stops the
                 # browser from deciding differently about user-supplied bytes.
-                "Content-Type": meta.mime,
+                # A tile is always WebP, whatever the picture behind it is.
+                "Content-Type": mime,
                 "X-Content-Type-Options": "nosniff",
                 "Cache-Control": _cache_control(request),
                 # Without this the browser names a saved file after the last
