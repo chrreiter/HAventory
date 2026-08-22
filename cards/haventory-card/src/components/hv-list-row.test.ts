@@ -194,7 +194,9 @@ describe('hv-list-row: content', () => {
     const secondary = q(el, '[data-testid="row-secondary"]');
     expect(q(el, '[data-testid="row-inspection-due"]')).toBeTruthy();
     expect(secondary?.textContent).toContain('Inspection due');
-    expect(secondary?.classList.contains('inspect')).toBe(true);
+    // The line prints a date that has passed, so it takes the same tone the
+    // table's cells and the sheet's facts give one.
+    expect(secondary?.classList.contains('overdue')).toBe(true);
   });
 
   // Someone holding the item outranks a chore on the shelf, so the line keeps
@@ -244,7 +246,33 @@ describe('hv-list-row: content', () => {
     const el = await mount({ status: 'needs_repair' }, { mobile: true });
     const secondary = q(el, '[data-testid="row-secondary"]');
     expect(q(el, '[data-testid="row-status"]')?.textContent?.trim()).toBe('Needs repair');
-    expect(secondary?.classList.contains('inspect')).toBe(true);
+    // Amber, and not the tone a passed date takes: this line names a state, not
+    // a day that has gone by.
+    expect(secondary?.classList.contains('flagged')).toBe(true);
+    expect(secondary?.classList.contains('overdue')).toBe(false);
+  });
+
+  // The two the tone has to tell apart on one line: a flagged item whose
+  // inspection is also due says the status and stays amber, because that is
+  // what the line ends up printing.
+  it('keeps the flagged tone when an inspection is due behind it', async () => {
+    const el = await mount(
+      { status: 'needs_repair', inspection_date: '2020-05-06' },
+      { mobile: true },
+    );
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    expect(secondary?.classList.contains('flagged')).toBe(true);
+    expect(secondary?.classList.contains('overdue')).toBe(false);
+  });
+
+  it('marks an overdue loan on the phone line, and leaves one still in date alone', async () => {
+    const late = await mount({ checked_out: true, due_date: '2020-01-01' }, { mobile: true });
+    expect(q(late, '[data-testid="row-secondary"]')?.classList.contains('overdue')).toBe(true);
+
+    const inDate = await mount({ checked_out: true, due_date: '2099-01-01' }, { mobile: true });
+    const secondary = q(inDate, '[data-testid="row-secondary"]');
+    expect(secondary?.classList.contains('overdue')).toBe(false);
+    expect(secondary?.classList.contains('out')).toBe(true);
   });
 
   it('lets the flagged status outrank the inspection chore, but not the checkout', async () => {

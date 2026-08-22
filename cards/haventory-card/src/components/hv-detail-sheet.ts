@@ -228,10 +228,13 @@ export class HVDetailSheet extends LitElement {
       .fact .value.yes {
         color: var(--hv-success);
       }
-      /* An inspection date that has passed asks for something to be done, so
-         it does not read as a neutral fact. Same amber as the chip above it. */
+      /* A date that has passed is not a neutral fact, and every fact that
+         prints one is marked the same way — the same red the table's date cells
+         and the compact row's line use. The chips at the top of the sheet are
+         where the kind of lateness is named, so down here the colour says only
+         that the day has gone by. */
       .fact .value.late {
-        color: var(--hv-warn-deep);
+        color: var(--hv-error);
         font-weight: 500;
       }
       /* The one fact row that acts. The value keeps its margin-left:auto, so the
@@ -742,7 +745,7 @@ export class HVDetailSheet extends LitElement {
       <div class="facts">
         <div class="fact" data-testid="sheet-fact" data-key="due">
           <span>${t('hv.sheet.fact.due')}</span>
-          <span class="value ${item.due_date ? '' : 'unset'}"
+          <span class="value ${item.due_date ? '' : 'unset'} ${overdue ? 'late' : ''}"
             >${item.due_date ? formatDate(item.due_date) : t('hv.term.notSet')}</span
           >
         </div>

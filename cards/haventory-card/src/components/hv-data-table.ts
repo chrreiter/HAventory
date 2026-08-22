@@ -306,21 +306,18 @@ export class HVDataTable extends LitElement {
         color: var(--hv-warn);
         font-weight: 500;
       }
-      .cell.due.overdue {
-        color: var(--hv-error);
-        font-weight: 500;
-      }
-      /* Amber rather than the due column's red: a passed inspection date is a
-         chore on an item still on the shelf, not an item that is late back. */
-      .cell.inspection.due {
-        color: var(--hv-warn);
-        font-weight: 500;
-      }
-      /* Same amber as the inspection column, and for the same reason: a reminder
-         that has come round is a chore, not a lateness. Due includes today, so
-         this lights up on the day the household asked to be reminded. */
+      /* One tone for a date that has passed, whichever of the three columns
+         prints it. A bare date cell has no word beside it, so a second hue here
+         is the whole signal and reads as a severity ranking the card never
+         explains. Naming which kind of lateness it is belongs to the chips —
+         "Overdue" in the name cell, "Inspection due" on the row and the sheet —
+         and they keep their own two tones because the word carries what the
+         colour cannot. Inspection and reminder dates include today: the day a
+         date names is the day it is asking. */
+      .cell.due.overdue,
+      .cell.inspection.due,
       .cell.reminder.due {
-        color: var(--hv-warn);
+        color: var(--hv-error);
         font-weight: 500;
       }
       .cell.updated {
