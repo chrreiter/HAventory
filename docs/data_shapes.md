@@ -216,8 +216,14 @@ rewritten in full on every mutation, so base64 content would multiply every save
   the config directory so HA backups carry them, and outside both the integration package
   (which HACS replaces on upgrade) and `<config>/www` (which is `/local`, unauthenticated).
   They are served only through the authenticated view; see `backend_api_contract.md`.
-- Caps: 10 pictures and 10 manuals per item, 8 MB per file. Nothing is thumbnailed
-  server-side. `haventory/config` reports all of them so a picker can refuse early.
+- Caps: 10 pictures and 10 manuals per item, 8 MB per file. `haventory/config` reports all
+  of them so a picker can refuse early.
+- A picture also has a **row tile**: `?size=thumb` on the media route serves a 256px WebP
+  written beside the original the first time something asks for one, so a 36px list tile
+  costs a few KB instead of the whole file. It is derived, never stored metadata — nothing
+  in the shapes above changes, and an export carries no reference to it. Pillow is not a
+  dependency: where it is unavailable, or the file cannot be decoded, the original is
+  served instead.
 
 ### Location
 

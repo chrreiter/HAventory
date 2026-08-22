@@ -9,7 +9,7 @@ import {
   q,
 } from '../test.utils';
 import { ACTIONS_COLUMN_WIDTH } from '../store/columns';
-import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
+import { MEDIA_NAME_TOKEN_PARAM, MEDIA_SIZE_PARAM, attachmentNameToken } from '../ui/media';
 import { addDays, toIsoDate } from '../ui/relative-time';
 import { rowMenuEntries } from './hv-list-row';
 import type { HVDataTable } from './hv-data-table';
@@ -372,13 +372,17 @@ describe('hv-data-table: row thumbnail', () => {
 
     const img = q(el, '[data-testid="row-thumb"]') as HTMLImageElement | null;
     expect(img).toBeTruthy();
+    // `size=thumb`: a 36px tile served the stored file was up to 8 MB of
+    // download per row. The parameter is signed with the path, so it has to be
+    // on the URL before signing rather than appended to a signed one.
     expect(img?.getAttribute('src')).toBe(
       `/api/haventory/media/i-thumb/att-1?${MEDIA_NAME_TOKEN_PARAM}=`
-        + `${attachmentNameToken(makeAttachment({ id: 'att-1' }))}&authSig=test`,
+        + `${attachmentNameToken(makeAttachment({ id: 'att-1' }))}`
+        + `&${MEDIA_SIZE_PARAM}=thumb&authSig=test`,
     );
     expect(img?.getAttribute('alt')).toBe('Photo of Cordless drill');
-    // Nothing is thumbnailed server-side, so the browser must be told not to
-    // fetch and decode every row's full-size photo at once.
+    // A tile is small but there is still one per row, so the browser is told
+    // not to fetch and decode every one of them at once.
     expect(img?.getAttribute('loading')).toBe('lazy');
     expect(img?.getAttribute('decoding')).toBe('async');
     // It leads the cell: a picture after the name would be a second column of

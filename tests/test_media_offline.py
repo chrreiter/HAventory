@@ -20,6 +20,7 @@ Scenarios:
 
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 
@@ -396,3 +397,187 @@ async def test_deleting_a_file_that_is_already_gone_is_not_an_error() -> None:
     meta = _meta()
 
     await media.async_delete_attachments(hass, [(str(new_uuid4()), meta)])
+
+
+# -----------------------------
+# Row thumbnails
+#
+# The encoder itself needs Pillow, which is not a dependency of this
+# integration and is not in the offline environment. What is checkable here is
+# everything around it: that it is asked once, that every refusal serves the
+# original, and that the two places which delete files know about the new one.
+# `tests/integration/test_attachments.py` runs the real encoder, in an
+# environment where Home Assistant has brought Pillow with it.
+# -----------------------------
+
+
+def _stub_encoder(calls: list[tuple[Path, Path]], *, succeed: bool = True):
+    """Stand in for the Pillow encode, recording what it was asked to make."""
+
+    def encode(source: Path, target: Path) -> bool:
+        calls.append((source, target))
+        if not succeed:
+            return False
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(WEBP_BYTES)
+        return True
+
+    return encode
+
+
+async def _stored_picture(hass: HomeAssistant) -> tuple[Repository, object, AttachmentMeta]:
+    repo = Repository()
+    item = repo.create_item({"name": "Drill"})
+    meta = _meta()
+    repo.add_attachment(item.id, meta)
+    original = media.attachment_path(media.media_root(hass), str(item.id), str(meta.id), meta.mime)
+    original.parent.mkdir(parents=True, exist_ok=True)
+    original.write_bytes(PNG_BYTES)
+    return repo, item, meta
+
+
+@pytest.mark.asyncio
+async def test_a_thumbnail_is_encoded_once_and_reused(monkeypatch) -> None:
+    """The second row asking for the same picture reads what the first wrote."""
+
+    hass = HomeAssistant()
+    _, item, meta = await _stored_picture(hass)
+    calls: list[tuple[Path, Path]] = []
+    monkeypatch.setattr(media, "_encode_thumbnail_blocking", _stub_encoder(calls))
+
+    root = media.media_root(hass)
+    first = await media.async_thumbnail(hass, root=root, item_id=str(item.id), meta=meta)
+    second = await media.async_thumbnail(hass, root=root, item_id=str(item.id), meta=meta)
+
+    assert first is not None and first.is_file()
+    assert second == first
+    assert len(calls) == 1
+    assert first.name.endswith(".thumb.webp")
+
+
+@pytest.mark.asyncio
+async def test_two_requests_at_once_encode_once(monkeypatch) -> None:
+    """Two tabs opening the same page must not both decode the same file."""
+
+    hass = HomeAssistant()
+    _, item, meta = await _stored_picture(hass)
+    calls: list[tuple[Path, Path]] = []
+    monkeypatch.setattr(media, "_encode_thumbnail_blocking", _stub_encoder(calls))
+
+    root = media.media_root(hass)
+    results = await asyncio.gather(
+        *(media.async_thumbnail(hass, root=root, item_id=str(item.id), meta=meta) for _ in range(4))
+    )
+
+    assert len({str(path) for path in results}) == 1
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_an_encode_that_cannot_be_done_is_not_retried(monkeypatch) -> None:
+    """No Pillow, an animated GIF, a corrupt file: the answer is the original,
+    and asking again must not decode the same bytes a second time."""
+
+    hass = HomeAssistant()
+    _, item, meta = await _stored_picture(hass)
+    calls: list[tuple[Path, Path]] = []
+    monkeypatch.setattr(media, "_encode_thumbnail_blocking", _stub_encoder(calls, succeed=False))
+
+    root = media.media_root(hass)
+    assert await media.async_thumbnail(hass, root=root, item_id=str(item.id), meta=meta) is None
+    assert await media.async_thumbnail(hass, root=root, item_id=str(item.id), meta=meta) is None
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_manual_has_no_thumbnail_and_is_not_decoded(monkeypatch) -> None:
+    hass = HomeAssistant()
+    calls: list[tuple[Path, Path]] = []
+    monkeypatch.setattr(media, "_encode_thumbnail_blocking", _stub_encoder(calls))
+    meta = _meta(mime="application/pdf", kind="manual")
+
+    result = await media.async_thumbnail(
+        hass, root=media.media_root(hass), item_id=str(new_uuid4()), meta=meta
+    )
+
+    assert result is None
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_a_picture_whose_file_is_missing_gets_no_thumbnail(monkeypatch) -> None:
+    """Metadata outlives its bytes; the view 404s on its own right after."""
+
+    hass = HomeAssistant()
+    calls: list[tuple[Path, Path]] = []
+    monkeypatch.setattr(media, "_encode_thumbnail_blocking", _stub_encoder(calls))
+
+    result = await media.async_thumbnail(
+        hass, root=media.media_root(hass), item_id=str(new_uuid4()), meta=_meta()
+    )
+
+    assert result is None
+    assert calls == []
+
+
+def test_a_thumbnail_path_escaping_the_media_root_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError):
+        media.thumbnail_path(tmp_path / "root", "..", "..")
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_keeps_a_live_thumbnail_and_removes_an_orphaned_one(
+    monkeypatch,
+) -> None:
+    """The sweep deletes every file it is not handed, so a thumbnail left out
+    of `referenced_paths` is deleted and re-encoded on every page."""
+
+    hass = HomeAssistant()
+    repo, item, meta = await _stored_picture(hass)
+    monkeypatch.setattr(media, "_encode_thumbnail_blocking", _stub_encoder([]))
+    root = media.media_root(hass)
+    kept = await media.async_thumbnail(hass, root=root, item_id=str(item.id), meta=meta)
+    assert kept is not None
+
+    orphan = media.thumbnail_path(root, str(item.id), "00000000-0000-4000-8000-000000000000")
+    orphan.write_bytes(WEBP_BYTES)
+
+    removed = await media.async_sweep_orphans(hass, repo.iter_attachments())
+
+    assert removed == (str(orphan.resolve()),)
+    assert kept.is_file()
+    assert not orphan.exists()
+
+
+@pytest.mark.asyncio
+async def test_deleting_an_attachment_takes_its_thumbnail_with_it(monkeypatch) -> None:
+    hass = HomeAssistant()
+    _, item, meta = await _stored_picture(hass)
+    monkeypatch.setattr(media, "_encode_thumbnail_blocking", _stub_encoder([]))
+    root = media.media_root(hass)
+    thumb = await media.async_thumbnail(hass, root=root, item_id=str(item.id), meta=meta)
+    assert thumb is not None and thumb.is_file()
+
+    await media.async_delete_attachments(hass, [(str(item.id), meta)])
+
+    assert not thumb.exists()
+    assert not media.attachment_path(root, str(item.id), str(meta.id), meta.mime).exists()
+
+
+def test_referenced_paths_names_both_files_for_a_picture_and_one_for_a_manual() -> None:
+    root = media.media_root(HomeAssistant())
+    item_id = str(new_uuid4())
+    picture = _meta()
+    manual = _meta(mime="application/pdf", kind="manual")
+
+    named = media.referenced_paths(root, [(item_id, picture), (item_id, manual)])
+
+    # A picture names two files and a manual one: there is no tile of a PDF, and
+    # naming one would keep a path the sweep can never be asked to remove.
+    assert named == frozenset(
+        {
+            str(media.attachment_path(root, item_id, str(picture.id), picture.mime)),
+            str(media.thumbnail_path(root, item_id, str(picture.id))),
+            str(media.attachment_path(root, item_id, str(manual.id), manual.mime)),
+        }
+    )

@@ -39,6 +39,23 @@ export const MEDIA_URL_TEMPLATE = '/api/haventory/media/{item_id}/{attachment_id
 export const MEDIA_NAME_TOKEN_PARAM = 'v';
 
 /**
+ * Which form of a picture to ask the backend for.
+ *
+ * Only `thumb` exists, and only for a row tile: a 34–72px tile served the
+ * original was up to 8 MB of download for a few hundred pixels, which is
+ * invisible on Wi-Fi and the difference between usable and not on a phone in a
+ * shop. The lightbox and the detail sheet's large picture ask for neither and
+ * get the stored file. The backend falls back to the original whenever it
+ * cannot make a tile, so this is a request, not a requirement.
+ *
+ * Pinned to the backend's `MEDIA_SIZE_PARAM` / `MEDIA_SIZE_THUMB` by
+ * `tests/test_frontend_registration.py`.
+ */
+export const MEDIA_SIZE_PARAM = 'size';
+export type MediaVariant = 'thumb';
+export const MEDIA_VARIANT_THUMB: MediaVariant = 'thumb';
+
+/**
  * How long a signature is asked for.
  *
  * A browser caches by full URL, signature included, so a re-signed URL is a
@@ -101,12 +118,29 @@ interface MediaHost {
  * Assistant signs query parameters together with the path, so the token has to
  * be here before signing rather than appended to a signed URL.
  */
-export function mediaPath(itemId: string, attachmentId: string, nameToken?: string): string {
+export function mediaPath(
+  itemId: string,
+  attachmentId: string,
+  nameToken?: string,
+  variant?: MediaVariant,
+): string {
   const path = MEDIA_URL_TEMPLATE.replace('{item_id}', encodeURIComponent(itemId)).replace(
     '{attachment_id}',
     encodeURIComponent(attachmentId),
   );
-  return nameToken ? `${path}?${MEDIA_NAME_TOKEN_PARAM}=${encodeURIComponent(nameToken)}` : path;
+  const query = [
+    nameToken === undefined
+      ? null
+      : `${MEDIA_NAME_TOKEN_PARAM}=${encodeURIComponent(nameToken)}`,
+    variant === undefined ? null : `${MEDIA_SIZE_PARAM}=${encodeURIComponent(variant)}`,
+  ].filter((part): part is string => part !== null);
+  return query.length ? `${path}?${query.join('&')}` : path;
+}
+
+/** The key one variant's signed URL is cached under. */
+function urlKey(itemId: string, attachmentId: string, variant?: MediaVariant): string {
+  const base = `${itemId}/${attachmentId}`;
+  return variant === undefined ? base : `${base}#${variant}`;
 }
 
 /**
@@ -252,11 +286,21 @@ export class MediaUrls {
    * Passing the attachment's `attachmentNameToken` keeps the URL in step with a
    * retitle: a token the held URL was not signed for re-signs rather than
    * serving a URL whose cached response still carries the old filename. The
-   * entry is keyed on the two ids alone, so what `failed` and `presence` know
-   * about these bytes survives the re-sign.
+   * entry is keyed on the two ids and the variant, so what `failed` and
+   * `presence` know about these bytes survives the re-sign.
+   *
+   * A `variant` is a different URL and therefore a different signature, so it
+   * gets its own entry. `presence` deliberately does not take one: whether the
+   * file is there is a question about the attachment, not about the size it is
+   * being asked for, and the backend answers 404 for both together.
    */
-  get(itemId: string, attachmentId: string, nameToken?: string): string | null {
-    const key = `${itemId}/${attachmentId}`;
+  get(
+    itemId: string,
+    attachmentId: string,
+    nameToken?: string,
+    variant?: MediaVariant,
+  ): string | null {
+    const key = urlKey(itemId, attachmentId, variant);
     const entry = this.entries.get(key);
     // No token means no opinion about the name, not "the untitled URL". The
     // presence probe reads whatever URL is current without caring what it is
@@ -266,7 +310,7 @@ export class MediaUrls {
       if (entry.failed || entry.pending) return entry.url;
       if (entry.url && entry.expiresAt - REFRESH_MARGIN_MS > this.now()) return entry.url;
     }
-    this.request(key, itemId, attachmentId, nameToken);
+    this.request(key, itemId, attachmentId, nameToken, variant);
     // A lapsed URL is still shown while its replacement is in flight: the
     // browser has the image cached and swapping to a placeholder mid-view would
     // be a worse answer than a URL that is briefly stale.
@@ -274,8 +318,8 @@ export class MediaUrls {
   }
 
   /** True when signing this attachment failed, so no URL is coming. */
-  failed(itemId: string, attachmentId: string): boolean {
-    return this.entries.get(`${itemId}/${attachmentId}`)?.failed === true;
+  failed(itemId: string, attachmentId: string, variant?: MediaVariant): boolean {
+    return this.entries.get(urlKey(itemId, attachmentId, variant))?.failed === true;
   }
 
   /**
@@ -320,7 +364,13 @@ export class MediaUrls {
     this.host.requestUpdate();
   }
 
-  private request(key: string, itemId: string, attachmentId: string, nameToken?: string): void {
+  private request(
+    key: string,
+    itemId: string,
+    attachmentId: string,
+    nameToken?: string,
+    variant?: MediaVariant,
+  ): void {
     const sign = this.sign;
     if (!sign) return;
     const existing = this.entries.get(key);
@@ -350,7 +400,7 @@ export class MediaUrls {
     // matches it is a late one and is dropped rather than overwriting it.
     const superseded = () => this.entries.get(key)?.nameToken !== token;
 
-    void sign(mediaPath(itemId, attachmentId, token), SIGNED_URL_TTL_SECONDS).then(
+    void sign(mediaPath(itemId, attachmentId, token, variant), SIGNED_URL_TTL_SECONDS).then(
       (signed) => {
         if (superseded()) return;
         this.entries.set(key, {

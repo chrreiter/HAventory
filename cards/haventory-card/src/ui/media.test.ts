@@ -2,7 +2,9 @@ import { setLanguage } from '../i18n';
 import { describe, it, expect, vi } from 'vitest';
 import {
   MEDIA_NAME_TOKEN_PARAM,
+  MEDIA_SIZE_PARAM,
   MEDIA_URL_TEMPLATE,
+  MEDIA_VARIANT_THUMB,
   MediaUrls,
   SIGNED_URL_TTL_SECONDS,
   attachmentNameToken,
@@ -73,6 +75,18 @@ describe('mediaPath', () => {
 
   it('leaves the path alone when there is no token to carry', () => {
     expect(mediaPath('item-1', 'att-1')).not.toContain('?');
+  });
+
+  // Home Assistant signs the non-safe query parameters together with the path,
+  // so a variant appended to an already-signed URL would fail the signature.
+  it('carries the size variant, alone and beside the name token', () => {
+    expect(mediaPath('item-1', 'att-1', undefined, MEDIA_VARIANT_THUMB)).toBe(
+      `/api/haventory/media/item-1/att-1?${MEDIA_SIZE_PARAM}=thumb`,
+    );
+    expect(mediaPath('item-1', 'att-1', 'abc123', MEDIA_VARIANT_THUMB)).toBe(
+      `/api/haventory/media/item-1/att-1?${MEDIA_NAME_TOKEN_PARAM}=abc123`
+        + `&${MEDIA_SIZE_PARAM}=thumb`,
+    );
   });
 });
 
@@ -197,6 +211,42 @@ describe('formatBytes', () => {
     expect(formatBytes(512)).toBe('512 B');
     expect(formatBytes(2048)).toBe('2 KB');
     expect(formatBytes(8 * 1024 * 1024)).toBe('8.0 MB');
+  });
+});
+
+describe('MediaUrls: the row-tile variant', () => {
+  it('signs the tile and the original separately, and keeps both', async () => {
+    const h = host();
+    const signer = deferredSigner();
+    const urls = new MediaUrls(h);
+    urls.configure(signer.sign);
+
+    urls.get('item-1', 'att-1', undefined, MEDIA_VARIANT_THUMB);
+    urls.get('item-1', 'att-1');
+
+    expect(signer.sign).toHaveBeenCalledTimes(2);
+    expect(signer.calls).toEqual([
+      `/api/haventory/media/item-1/att-1?${MEDIA_SIZE_PARAM}=thumb`,
+      '/api/haventory/media/item-1/att-1',
+    ]);
+  });
+
+  // A row shows the tile and the lightbox over it shows the picture. One entry
+  // for both would have the two re-sign over each other on every render.
+  it('does not hand the tile URL back to a caller asking for the original', async () => {
+    const h = host();
+    const signer = deferredSigner();
+    const urls = new MediaUrls(h);
+    urls.configure(signer.sign);
+
+    urls.get('item-1', 'att-1', undefined, MEDIA_VARIANT_THUMB);
+    signer.resolve(`/api/haventory/media/item-1/att-1?${MEDIA_SIZE_PARAM}=thumb&authSig=abc`);
+    await Promise.resolve();
+
+    expect(urls.get('item-1', 'att-1', undefined, MEDIA_VARIANT_THUMB)).toContain(
+      `${MEDIA_SIZE_PARAM}=thumb`,
+    );
+    expect(urls.get('item-1', 'att-1')).toBeNull();
   });
 });
 

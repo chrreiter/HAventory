@@ -1,7 +1,7 @@
 import { setLanguage } from '../i18n';
 import './hv-list-row';
 import { makeAttachment, makeItem, makeManual, makeMediaBindings, mountComponent, q } from '../test.utils';
-import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
+import { MEDIA_NAME_TOKEN_PARAM, MEDIA_SIZE_PARAM, attachmentNameToken } from '../ui/media';
 import { elideMobilePath, elidePath, isLowStock, rowMenuEntries } from './hv-list-row';
 import { addDays, toIsoDate } from '../ui/relative-time';
 import type { HVListRow } from './hv-list-row';
@@ -586,13 +586,17 @@ describe('hv-list-row thumbnail', () => {
 
     const img = q(el, '[data-testid="row-thumb"]') as HTMLImageElement | null;
     expect(img).toBeTruthy();
+    // `size=thumb`: a 36px tile served the stored file was up to 8 MB of
+    // download per row. The parameter is signed with the path, so it has to be
+    // on the URL before signing rather than appended to a signed one.
     expect(img?.getAttribute('src')).toBe(
       `/api/haventory/media/i-thumb/att-1?${MEDIA_NAME_TOKEN_PARAM}=`
-        + `${attachmentNameToken(makeAttachment({ id: 'att-1' }))}&authSig=test`,
+        + `${attachmentNameToken(makeAttachment({ id: 'att-1' }))}`
+        + `&${MEDIA_SIZE_PARAM}=thumb&authSig=test`,
     );
     expect(img?.getAttribute('alt')).toBe('Photo of Cordless drill');
-    // Nothing is thumbnailed server-side, so the browser must be told not to
-    // fetch and decode every row's full-size photo at once.
+    // A tile is small but there is still one per row, so the browser is told
+    // not to fetch and decode every one of them at once.
     expect(img?.getAttribute('loading')).toBe('lazy');
     expect(img?.getAttribute('decoding')).toBe('async');
   });

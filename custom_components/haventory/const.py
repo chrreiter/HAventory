@@ -173,10 +173,22 @@ ATTACHMENT_MANUAL_MIME_TYPES: tuple[str, ...] = ("application/pdf",)
 # before an upload starts, and enforced server-side regardless.
 MAX_PICTURES_PER_ITEM: int = 10
 MAX_MANUALS_PER_ITEM: int = 10
-# 8 MB. Nothing is thumbnailed server-side — Pillow is not a dependency and a
-# local-push integration should not grow one for a list-row thumbnail — so this
-# is the only bound on what a browser has to decode.
+# 8 MB. This is what a client uploads and what the lightbox and the detail
+# sheet's large picture are still served; a row tile asks for `size=thumb`
+# instead, and gets the derived file below when one can be made.
 MAX_ATTACHMENT_BYTES: int = 8 * 1024 * 1024
+
+# The row-tile variant of a picture, derived on first request and written beside
+# the original. Pillow is **not** a dependency: it is imported lazily and every
+# failure to use it — absent, animated, undecodable, an unwritable directory —
+# serves the original instead, so an install without it shows its pictures and
+# only pays the bytes. 256px because the largest tile that asks for one is 72px
+# and a 3x screen wants 216.
+MEDIA_SIZE_PARAM: str = "size"
+MEDIA_SIZE_THUMB: str = "thumb"
+THUMBNAIL_MAX_EDGE: int = 256
+THUMBNAIL_QUALITY: int = 80
+THUMBNAIL_SUFFIX: str = ".thumb.webp"
 
 # -----------------------------
 # Status appearance
