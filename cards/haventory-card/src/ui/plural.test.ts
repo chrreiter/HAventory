@@ -37,6 +37,21 @@ describe('showingCount', () => {
     expect(showingCount(1, undefined)).toBe('Showing 1 item');
   });
 
+  // The rows are the store's newest reading, the total is the last list
+  // reply's: an event that adds a row a filtered list has not been re-priced
+  // for leaves the second behind the first, and "Showing 1 of 0 matching items"
+  // is a sentence that cannot be true.
+  it('says only what is on screen when the total is behind the rows', () => {
+    expect(showingCount(1, 0, true)).toBe('Showing 1 item');
+    expect(showingCount(51, 50, true)).toBe('Showing 51 items');
+    expect(showingCount(2, 1)).toBe('Showing 2 items');
+  });
+
+  it('keeps the pair while the two still agree', () => {
+    expect(showingCount(1, 1, true)).toBe('Showing 1 of 1 matching item');
+    expect(showingCount(0, 0, true)).toBe('Showing 0 of 0 matching items');
+  });
+
   it('inflects the noun after "von" in German', () => {
     setLanguage('de');
     // Dative plural — the form a derived plural could never have produced.

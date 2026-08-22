@@ -40,12 +40,21 @@ export function counted(count: number, noun: CountNoun): string {
  * filters, so with any of them on the noun says so; null means the server has
  * not priced the set yet. A surface may append its own suffix (the expanded
  * view offers "scroll to load more"), but not rephrase this.
+ *
+ * The two numbers are read at different moments — the total off a list reply,
+ * the rows including whatever a subscription event has added since — so they
+ * can disagree, and a total behind the rows would print a line that cannot be
+ * true ("Showing 1 of 0 matching items"). Then the count of what is on screen
+ * is the part still worth saying, and the claim about the match set is dropped
+ * rather than repaired with a number nothing stands behind.
  */
 export function showingCount(
   loaded: number,
   total: number | null | undefined,
   filtered = false,
 ): string {
-  if (total === null || total === undefined) return tn('hv.list.showingAll', loaded);
+  if (total === null || total === undefined || total < loaded) {
+    return tn('hv.list.showingAll', loaded);
+  }
   return tn(filtered ? 'hv.list.showingOfMatching' : 'hv.list.showingOf', total, { loaded });
 }

@@ -353,10 +353,13 @@ export class Store {
   private treeRefreshHandle: ReturnType<typeof setTimeout> | null = null;
   private facetRefreshHandle: ReturnType<typeof setTimeout> | null = null;
   private areasRefreshHandle: ReturnType<typeof setTimeout> | null = null;
+  private totalRefreshHandle: ReturnType<typeof setTimeout> | null = null;
   /** Identifies the newest facet-tally request, so a superseded one cannot land. */
   private distinctRefreshSeq = 0;
   /** Identifies the newest tree refetch, for the same reason. */
   private treeRefreshSeq = 0;
+  /** Identifies the newest filtered-total recount, for the same reason. */
+  private totalRefreshSeq = 0;
   /** Identifies the newest subscribe round, so a superseded one stops reporting. */
   private subscribeRound = 0;
   /** Subscribes in the current round that have not resolved or been refused yet. */
@@ -761,6 +764,10 @@ export class Store {
       clearTimeout(this.treeRefreshHandle);
       this.treeRefreshHandle = null;
     }
+    if (this.totalRefreshHandle !== null) {
+      clearTimeout(this.totalRefreshHandle);
+      this.totalRefreshHandle = null;
+    }
     if (this.facetRefreshHandle !== null) {
       clearTimeout(this.facetRefreshHandle);
       this.facetRefreshHandle = null;
@@ -790,6 +797,7 @@ export class Store {
       return;
     }
     const items = this.state.value.items.slice();
+    const loadedBefore = items.length;
     const idx = items.findIndex((x) => x.id === item.id);
     switch (evt.action) {
       case 'created':
@@ -808,7 +816,24 @@ export class Store {
         break;
       }
     }
-    this.stateObs.set({ items });
+    // `total` counts every match across all pages and came off the last
+    // `item/list` reply, computed before this event existed. Moving it by what
+    // the event did to the loaded list keeps the footer's two numbers telling
+    // one story straight away, with no round trip and nothing to wait for.
+    const total = this.state.value.total;
+    const delta = items.length - loadedBefore;
+    this.stateObs.set(
+      total !== null && delta !== 0 ? { items, total: Math.max(0, total + delta) } : { items },
+    );
+    // That step is optimistic, and it has to be: a subscription is filtered by
+    // location only, so a row handed to a card with a search typed into it may
+    // not belong to the set the footer is counting — and an item on a page
+    // nobody has scrolled to can leave the set without the loaded list moving
+    // at all. Both are what the server is asked about here. Coalesced, and a
+    // count rather than a re-list: `countMatching` asks for one row and reads
+    // the total off the reply, which leaves the loaded pages and the scroll
+    // position alone.
+    if (activeFilterCount(this.state.value.filters) > 0) this.scheduleTotalRefresh();
     // Category/tag distributions can change on create/update/delete — keep the
     // autocomplete source fresh. Other actions (quantity, check-out) can't.
     if (evt.action === 'created' || evt.action === 'updated' || evt.action === 'deleted') {
@@ -819,6 +844,34 @@ export class Store {
     if (evt.action === 'created' || evt.action === 'deleted' || evt.action === 'moved') {
       this.scheduleTreeRefresh();
     }
+  }
+
+  /**
+   * Re-price the active filter's match set, coalesced.
+   *
+   * A burst of events — a bulk move, an import, a script adding a shelf's worth
+   * of items — must ask once, the way `scheduleTreeRefresh` does and for the
+   * same reason.
+   */
+  private scheduleTotalRefresh(delayMs = 250) {
+    if (this.totalRefreshHandle !== null) clearTimeout(this.totalRefreshHandle);
+    this.totalRefreshHandle = setTimeout(() => {
+      this.totalRefreshHandle = null;
+      void this.refreshTotal().catch(() => undefined);
+    }, delayMs);
+  }
+
+  private async refreshTotal(): Promise<void> {
+    const seq = ++this.totalRefreshSeq;
+    const filters = this.state.value.filters;
+    const asked = JSON.stringify(toWireFilter(filters));
+    const total = await this.countMatching(filters);
+    // A newer recount has taken over, the filter moved under this one — in
+    // which case `listItems` has already answered for the new one — or the
+    // count failed and left nothing to apply.
+    if (seq !== this.totalRefreshSeq || total === null) return;
+    if (JSON.stringify(toWireFilter(this.state.value.filters)) !== asked) return;
+    this.stateObs.set({ total });
   }
 
   /**
