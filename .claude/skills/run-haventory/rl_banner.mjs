@@ -103,11 +103,29 @@ async function setRateLimit(enabled, overrides = {}) {
     show_advanced_options: false,
   });
   if (!flow.flow_id) throw new Error(`could not start options flow: ${JSON.stringify(flow).slice(0, 200)}`);
-  const res = await rest("POST", `/api/config/config_entries/options/flow/${flow.flow_id}`, {
-    rate_limit_enabled: enabled,
-    ...RL_DEFAULTS,
-    ...overrides,
-  });
+  // The knobs sit in one section of a form whose every top-level key is required, so
+  // the submit echoes the whole form as it stands — each field's `default`, or the
+  // `suggested_value` an optional field such as the to-do list entity carries — and
+  // overlays the knobs onto the section that holds them. A field with no value is
+  // left out rather than sent as null: the flow reads an absent optional key as unset.
+  const valueOf = (field) => field.description?.suggested_value ?? field.default;
+  const payload = {};
+  for (const field of flow.data_schema ?? []) {
+    if (field.type !== "expandable") {
+      payload[field.name] = valueOf(field);
+      continue;
+    }
+    const section = {};
+    for (const inner of field.schema ?? []) {
+      const value = valueOf(inner);
+      if (value !== undefined && value !== null) section[inner.name] = value;
+    }
+    if ((field.schema ?? []).some((inner) => inner.name === "rate_limit_enabled")) {
+      Object.assign(section, { rate_limit_enabled: enabled, ...RL_DEFAULTS, ...overrides });
+    }
+    payload[field.name] = section;
+  }
+  const res = await rest("POST", `/api/config/config_entries/options/flow/${flow.flow_id}`, payload);
   // A value the schema rejects comes back as the form again, with `errors` —
   // rate limiting then silently stays as it was and every later assertion in the
   // scenario measures nothing. The rates below sit above the flow's minimums
