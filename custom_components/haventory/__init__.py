@@ -117,9 +117,14 @@ _EXTRA_JS_URL_KEY = "extra_js_url"
 # route: aiohttp cannot unregister a route, so a reload must not add a second.
 _MEDIA_VIEW_KEY = "media_view_registered"
 
-# Whether the sidebar panel is currently registered. Entry-scoped: unload takes
-# the panel back, so a reload starts from nothing registered.
-_PANEL_REGISTERED_KEY = "panel_registered"
+# What the sidebar panel is registered with right now — the title and the module
+# URL, the only two inputs that can change while Home Assistant runs — or absent
+# when no panel is registered. Written and cleared together with the frontend's
+# own registry by the two functions at the bottom of this module, so the two
+# never disagree. It outlives a plain unload on purpose: a reload passes through
+# one, and a browser standing on `/haventory` is sent to the default dashboard
+# the moment the panel leaves `hass.panels`.
+_PANEL_STATE_KEY = "panel_state"
 
 # How many ids of each kind the corrupt-store refusal quotes. Enough to grep the
 # file with, few enough that a wholesale corruption does not paste thousands of
@@ -545,7 +550,7 @@ def _cleanup_ws_test_stub_registry(hass: HomeAssistant) -> None:
         )
 
 
-async def _async_teardown_entry(hass: HomeAssistant, *, op: str) -> None:
+async def _async_teardown_entry(hass: HomeAssistant, *, op: str, release_panel: bool) -> None:
     """Give up everything the config entry owns, in the order that keeps it safe.
 
     Every step here runs while the entry is **not** loaded — Home Assistant marks
@@ -558,6 +563,10 @@ async def _async_teardown_entry(hass: HomeAssistant, *, op: str) -> None:
     subscribers, while the subscription registry still lists them; then hand back
     the frontend registrations, which read the URL the bucket recorded. Home
     Assistant clears `runtime_data` itself once this returns.
+
+    `release_panel` says whether the sidebar entry goes with them; the callers
+    decide, because only they can tell an entry that is coming straight back from
+    one that is not.
     """
 
     await _async_flush_pending_writes(hass, op=op)
@@ -570,8 +579,11 @@ async def _async_teardown_entry(hass: HomeAssistant, *, op: str) -> None:
     _remove_extra_js_url(hass)
 
     # A sidebar entry outliving the backend it opens is a link to a page that
-    # cannot load; setup registers it again.
-    _remove_sidebar_panel(hass)
+    # cannot load — but a reload comes through here too, and the page a browser
+    # has open is what disappears with the panel. So it is handed back only when
+    # the entry is not coming back on its own, and setup converges it otherwise.
+    if release_panel:
+        _remove_sidebar_panel(hass)
 
     _forget_registration_flags(hass)
 
@@ -584,6 +596,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     cannot unregister — refuse from here until setup runs again. That covers a
     disabled entry, which stays in this state, and a reload, which passes through
     it for as long as setup takes.
+
+    The sidebar entry is the one thing those two want handled differently, so
+    they are told apart here: Home Assistant sets `disabled_by` before it
+    unloads, and a reload leaves it alone.
     """
 
     # Ahead of the teardown, which empties the bucket the handler list lives in.
@@ -594,7 +610,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # unavailable rather than being gone.
     unloaded = await _async_unload_platforms(hass, entry)
 
-    await _async_teardown_entry(hass, op="unload")
+    disabled = getattr(entry, "disabled_by", None) is not None
+    await _async_teardown_entry(hass, op="unload", release_panel=disabled)
 
     return unloaded
 
@@ -642,7 +659,7 @@ async def async_remove_entry(hass: HomeAssistant, _entry: ConfigEntry) -> None:
     """
 
     await _unregister_frontend_module(hass)
-    await _async_teardown_entry(hass, op="remove")
+    await _async_teardown_entry(hass, op="remove", release_panel=True)
 
 
 def _read_manifest_version() -> str:
@@ -879,10 +896,11 @@ def _sidebar_panel_enabled(entry: ConfigEntry) -> bool:
 def _remove_sidebar_panel(hass: HomeAssistant) -> None:
     """Take the sidebar entry back, whether or not one is registered.
 
-    `warn_if_unknown=False`: this also runs as the first half of a register, and
-    on the first setup of an install there is nothing there to remove.
+    `warn_if_unknown=False`: this also runs as the first half of replacing a
+    registration, and on the first setup of an install there is nothing there to
+    remove.
     """
-    hass.data.setdefault(DOMAIN, {}).pop(_PANEL_REGISTERED_KEY, None)
+    hass.data.setdefault(DOMAIN, {}).pop(_PANEL_STATE_KEY, None)
     if async_remove_panel is None:
         return
 
@@ -899,15 +917,28 @@ def _remove_sidebar_panel(hass: HomeAssistant) -> None:
 async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Converge the sidebar entry on what the options and the build ask for.
 
-    Removing first makes every path — first setup, reload, options toggle,
-    rename — the same one call, and is what keeps a second registration from
-    raising `ValueError: Overwriting panel haventory`. Both calls fire the
-    frontend's panel-update event, so the sidebar follows without a restart.
+    A registration already in place is left exactly as it is. Changing one means
+    removing it first — `panel_custom.async_register_panel` does not forward
+    `frontend.async_register_built_in_panel`'s `update` argument, so registering
+    over a path already taken raises `ValueError: Overwriting panel haventory` —
+    and for the moment the panel is missing from `hass.panels`, the frontend
+    sends whoever is standing on its page back to the default dashboard. That
+    cost belongs to the two changes that need it, the sidebar toggle and the
+    rename, and to nothing else: not to a reload, and not to an options save that
+    leaves the panel's own settings alone.
+
+    Both calls fire the frontend's panel-update event, so the sidebar follows
+    without a restart.
     """
     bucket = hass.data.setdefault(DOMAIN, {})
-    _remove_sidebar_panel(hass)
+
+    def give_back() -> None:
+        """Drop the panel if there is one; say nothing when there never was."""
+        if bucket.get(_PANEL_STATE_KEY) is not None:
+            _remove_sidebar_panel(hass)
 
     if not _sidebar_panel_enabled(entry):
+        give_back()
         LOGGER.debug(
             "Sidebar panel disabled in the options; not registering",
             extra={"domain": DOMAIN, "op": "panel_register"},
@@ -917,6 +948,7 @@ async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) ->
     # The panel is the card bundle's second element, so without a build there is
     # nothing for it to load — same graceful skip the card loaders take.
     if not os.path.isfile(_CARD_BUNDLE_PATH):  # noqa: ASYNC240
+        give_back()
         LOGGER.debug(
             "Card bundle not built; skipping sidebar panel registration",
             extra={
@@ -928,6 +960,7 @@ async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) ->
         return
 
     if async_register_panel is None:
+        give_back()
         LOGGER.debug(
             "panel_custom component not available; HAventory gets no sidebar entry",
             extra={"domain": DOMAIN, "op": "panel_register", "url": PANEL_URL_PATH},
@@ -938,6 +971,21 @@ async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) ->
     # The exact string both card loaders receive: a second URL for the same
     # module defeats the browser's module map and defines the element twice.
     url = await _async_card_url(hass)
+    wanted = (title, url)
+
+    if bucket.get(_PANEL_STATE_KEY) == wanted:
+        LOGGER.debug(
+            "Sidebar panel already registered as asked; leaving it in place",
+            extra={
+                "domain": DOMAIN,
+                "op": "panel_register",
+                "url": PANEL_URL_PATH,
+                "module_url": url,
+            },
+        )
+        return
+
+    give_back()
 
     try:
         await async_register_panel(
@@ -962,7 +1010,7 @@ async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) ->
         )
         return
 
-    bucket[_PANEL_REGISTERED_KEY] = True
+    bucket[_PANEL_STATE_KEY] = wanted
     LOGGER.debug(
         "Registered the HAventory sidebar panel",
         extra={

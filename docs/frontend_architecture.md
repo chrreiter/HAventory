@@ -66,10 +66,16 @@ the *same* module URL both card loaders get (`__init__.py`, `_async_apply_sideba
 so the browser's module map evaluates the bundle once whichever surface is opened first.
 The registration's `config` carries `{"title": <card title option>}`, which is where the
 panel's `panel.config.title` heading comes from; the sidebar entry itself is named by the
-same option. Registration is remove-then-register, because HA raises on a second
-registration of a URL path that is already taken. The `sidebar_panel_enabled` option turns
-it off, and both calls fire the frontend's panel-update event, so the sidebar follows
-without a restart.
+same option. Changing a registration is remove-then-register, because
+`panel_custom.async_register_panel` does not forward
+`frontend.async_register_built_in_panel`'s `update` argument and HA raises on a second
+registration of a URL path that is already taken. Only a change pays for that: while the
+panel is out of `hass.panels` the frontend sends whoever is standing on `/haventory` to
+the default dashboard, so a reload — and an options save that leaves the title alone —
+recognises the registration it already has and touches nothing. Unload keeps the panel for
+the same reason; it is handed back when the entry is disabled or removed. The
+`sidebar_panel_enabled` option turns it off, and both calls fire the frontend's
+panel-update event, so the sidebar follows without a restart.
 
 Both hosts hold a `HostSurfaces` instance (`src/host-surfaces.ts`): every surface
 `hv-full-view` can raise but not answer itself — the column picker, the export download,
