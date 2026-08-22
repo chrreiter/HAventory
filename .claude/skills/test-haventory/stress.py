@@ -585,16 +585,27 @@ async def set_rate_limit(
     # The form groups the rate-limit knobs into a section, so they must be submitted nested
     # under that section's name rather than flat, and every top-level key is required — a
     # partial submit is rejected with "required key not provided". HA seeds each field's
-    # `default` from the entry's current options, so echoing the returned schema back
-    # preserves the settings this layer is not trying to change.
+    # `default` (or, for an optional field such as the to-do list entity, its
+    # `suggested_value`) from the entry's current options, so echoing the returned schema
+    # back preserves the settings this layer is not trying to change. The knobs go into
+    # the one section that holds them: the form has other sections, and a key they do not
+    # declare is rejected as "extra keys not allowed". A field with no value is left out
+    # rather than sent as null — the flow reads an absent optional key as "unset".
+    def _value(field: dict[str, Any]) -> Any:
+        suggested = (field.get("description") or {}).get("suggested_value")
+        return field.get("default") if suggested is None else suggested
+
     user_input: dict[str, Any] = {}
     for field in flow.get("data_schema", []):
         if field.get("type") == "expandable":
-            section = {f["name"]: f.get("default") for f in field.get("schema", [])}
-            section.update({"rate_limit_enabled": enabled, **RL_DEFAULTS, **overrides})
+            section = {
+                f["name"]: _value(f) for f in field.get("schema", []) if _value(f) is not None
+            }
+            if any(f["name"] == "rate_limit_enabled" for f in field.get("schema", [])):
+                section.update({"rate_limit_enabled": enabled, **RL_DEFAULTS, **overrides})
             user_input[field["name"]] = section
         else:
-            user_input[field["name"]] = field.get("default")
+            user_input[field["name"]] = _value(field)
 
     res = await _http(
         session, "POST", f"/api/config/config_entries/options/flow/{flow_id}", user_input

@@ -161,14 +161,26 @@ const panelAfterReload = await panel.page.locator("haventory-panel").count();
 async function openOptionsForm() {
   return rest("POST", "/api/config/config_entries/options/flow", { handler: entry.entry_id });
 }
+// Every section travels with the values the form shows for it. An empty section is
+// not "leave it as it is": the flow reads an absent optional key as unset, so an
+// empty `todo` section would switch the to-do bridge off on the way through. A
+// field with no value is left out rather than sent as null, for the same reason.
 function valuesFrom(form) {
+  const valueOf = (field) => field.description?.suggested_value ?? field.default;
   const values = {};
   for (const field of form.data_schema ?? []) {
-    if (field.type === "expandable") continue;
-    values[field.name] = field.description?.suggested_value ?? field.default;
+    if (field.type === "expandable") {
+      const section = {};
+      for (const inner of field.schema ?? []) {
+        const value = valueOf(inner);
+        if (value !== undefined && value !== null) section[inner.name] = value;
+      }
+      values[field.name] = section;
+      continue;
+    }
+    values[field.name] = valueOf(field);
   }
-  // The two collapsed sections: empty means "leave them as they are".
-  return { ...values, todo: {}, rate_limit: {} };
+  return values;
 }
 async function submit(values) {
   const form = await openOptionsForm();
