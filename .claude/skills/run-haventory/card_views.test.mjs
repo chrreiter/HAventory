@@ -230,11 +230,19 @@ const codeOf = (file) =>
     .filter((line) => !/^\s*\/\//.test(line))
     .join("\n");
 
+// A harness that opens Home Assistant's own pages — the integration's settings
+// entry, the config flow behind a `my` redirect — has no card to find and nothing
+// to ask this module for. It is held to the second half of the rule only: it
+// must not name a dashboard either.
+const opensTheCard = (code) => /haventory-card|cardPath/.test(code);
+
 for (const file of HARNESSES.filter((f) => codeOf(f).includes("page.goto("))) {
   const name = path.basename(file);
   test(`${name} takes its URL from card_views, never its own`, () => {
     const code = codeOf(file);
-    assert.match(code, /import \{[^}]*\bcardPath\b[^}]*\} from ["'][^"']*card_views\.mjs["']/);
+    if (opensTheCard(code)) {
+      assert.match(code, /import \{[^}]*\bcardPath\b[^}]*\} from ["'][^"']*card_views\.mjs["']/);
+    }
     assert.doesNotMatch(code, /["'`][^"'`]*\/(lovelace|dashboard-)[^"'`]*["'`]/);
   });
 }
