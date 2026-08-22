@@ -746,7 +746,12 @@ export class HVItemEditor extends LitElement {
       }
       /* Delete is hv-text-button danger from the shared sheet — the same
          borderless red every other destructive action in the card uses (the
-         detail sheet's own Delete item, the organize dialog's Delete). */
+         detail sheet's own Delete item, the organize dialog's Delete).
+         The row is Delete, Cancel and Save, and only three labels wide: at
+         375px it has 343px to spend, which German's full "Gegenstand löschen"
+         overruns by 9px and drops Save onto a line of its own. That is why the
+         narrow branch shows the bare verb; wrap stays as the last resort for a
+         language longer still. */
       .actions {
         display: flex;
         align-items: center;
@@ -2817,6 +2822,7 @@ export class HVItemEditor extends LitElement {
                 ? html`<button
                     class="hv-text-button danger"
                     data-testid="editor-delete"
+                    aria-label=${t('hv.action.deleteItem')}
                     @click=${() =>
                       this.dispatchEvent(
                         new CustomEvent('delete-item', {
@@ -2826,7 +2832,7 @@ export class HVItemEditor extends LitElement {
                         }),
                       )}
                   >
-                    ${t('hv.action.deleteItem')}
+                    ${t(this.mobile ? 'hv.action.delete' : 'hv.action.deleteItem')}
                   </button>`
                 : null}
               <span class="spacer"></span>

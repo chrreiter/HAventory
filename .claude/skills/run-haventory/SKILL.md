@@ -672,6 +672,16 @@ destructive clean-start mode), then `Online smoke test completed successfully.`
   crash but leaves no console output and no HA log entry. `screenshot.mjs` blocks
   service workers for this reason; the resulting single `navigator.serviceWorker is
   undefined` console error comes from HA's own bundle, not the card.
+- **`--full` mis-paints a fixed sheet on a page that scrolls.** A `fullPage` capture
+  stitches the document at its own height, and the card's sheets are
+  `position: fixed; bottom: 0; max-height: 92dvh` — so on a page even 28px taller than the
+  viewport the panel's edge and the content slotted into it are painted against two
+  different heights, and whatever sits at the top of the sheet comes out clipped by about
+  9px. Nothing is clipped in the DOM: `getBoundingClientRect()` in the same state puts the
+  panel at 65 and the pill at 74. This is what produced
+  [#560](https://github.com/chrreiter/HAventory/issues/560)'s screenshot. Photograph a
+  sheet with a plain viewport capture (what `visual_pass.mjs` does), and read a rect before
+  believing a `--full` picture of one.
 - **HA dark mode is independent of the OS `prefers-color-scheme`** — a card has to be
   checked in all four combinations. Drive HA's side with a `selectedTheme`
   localStorage entry (`{"dark":true}`) before load, the OS side with
