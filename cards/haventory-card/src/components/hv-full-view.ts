@@ -5,6 +5,7 @@ import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
 import { browseRow } from '../ui/browse-row';
 import { onEscape } from '../ui/keyboard';
+import { rovingTarget, syncRovingTabindex } from '../ui/roving-list';
 import { icon } from '../ui/icons';
 import { t, tn } from '../i18n';
 import { counted, showingCount } from '../ui/plural';
@@ -65,6 +66,24 @@ const SEARCH_DEBOUNCE_MS = 200;
 
 /** The sidebar's collapsible sections, in the order they appear. */
 type SidebarSection = 'locations' | 'status' | 'categories' | 'tags';
+
+/**
+ * The sections whose rows the sidebar draws itself.
+ *
+ * Locations is the odd one out: its rows belong to `hv-location-tree`, which
+ * runs the same one-stop pattern behind its own shadow boundary.
+ */
+type FacetSection = Exclude<SidebarSection, 'locations'>;
+
+const FACET_SECTIONS: FacetSection[] = ['status', 'categories', 'tags'];
+
+/**
+ * Names a facet row by the value it stands for, so a stop survives a redraw
+ * that keeps the row. One namespace across the three lists, since one field
+ * holds all three keys.
+ */
+const facetRowKey = (section: FacetSection, value: string | undefined) =>
+  `${section}:${value ?? ''}`;
 
 /**
  * The element a section heading discloses, named so `aria-controls` can point at
@@ -824,6 +843,19 @@ export class HVFullView extends LitElement {
     tags: true,
   };
   /**
+   * Which row holds each facet list's one tab stop, as `facetRowKey` writes it.
+   *
+   * A facet list is as long as the household's vocabulary, and a row per tab
+   * stop put that vocabulary between this surface's search box and its table.
+   * Null until the first walk over the rendered rows resolves it, which
+   * `updated` does.
+   */
+  @state() private _facetStop: Record<FacetSection, string | null> = {
+    status: null,
+    categories: null,
+    tags: null,
+  };
+  /**
    * True on a phone-width viewport (`NARROW_QUERY`).
    *
    * This surface switches its own layout on the matching `@media` block below,
@@ -940,6 +972,51 @@ export class HVFullView extends LitElement {
         this._prevFocus.focus();
       }
     }
+    for (const section of FACET_SECTIONS) this._syncFacetStop(section);
+  }
+
+  /** The rows of one facet list, in the order they are drawn. */
+  private _facetRows(section: FacetSection): HTMLElement[] {
+    return [
+      ...this.renderRoot.querySelectorAll<HTMLElement>(`[data-testid="sidebar-${section}-row"]`),
+    ];
+  }
+
+  /**
+   * Leave one row of `section` in the tab order.
+   *
+   * Written here rather than in `render` because the walk is the rendered DOM:
+   * a template cannot ask which row comes first without rebuilding the walk
+   * from the values it was drawn from.
+   */
+  private _syncFacetStop(section: FacetSection) {
+    const held = syncRovingTabindex(this._facetRows(section), this._facetStop[section], (el) =>
+      facetRowKey(section, el.dataset.value),
+    );
+    this._holdFacetStop(section, held);
+  }
+
+  /**
+   * Remember which row holds a list's stop, without redrawing for a key that
+   * has not moved — `updated` writes this, so an unconditional assignment would
+   * queue a render for every render.
+   */
+  private _holdFacetStop(section: FacetSection, key: string | null) {
+    if (this._facetStop[section] === key) return;
+    this._facetStop = { ...this._facetStop, [section]: key };
+  }
+
+  /**
+   * The arrow layer, and the other half of the single tab stop: with one row
+   * reachable by Tab, the arrows are the only way to the rest. Enter and Space
+   * are left alone — the rows are buttons and already answer to both.
+   */
+  private _onFacetKeydown(section: FacetSection, e: KeyboardEvent) {
+    const next = rovingTarget(e, this._facetRows(section));
+    if (!next) return;
+    this._holdFacetStop(section, facetRowKey(section, next.dataset.value));
+    this._syncFacetStop(section);
+    next.focus();
   }
 
   private get _tree(): HVLocationTree | null {
@@ -1405,7 +1482,13 @@ export class HVFullView extends LitElement {
           </button>
         </span>
       </div>
-      <div id=${sectionPanelId('status')} ?hidden=${!this._sections.status}>
+      <div
+        id=${sectionPanelId('status')}
+        role="group"
+        aria-label=${t('hv.filter.status')}
+        ?hidden=${!this._sections.status}
+        @keydown=${(e: KeyboardEvent) => this._onFacetKeydown('status', e)}
+      >
         ${this._sections.status
           ? statusList(this.st?.statuses).map(({ slug: s }) => {
               const on = filters.status === s;
@@ -1415,7 +1498,11 @@ export class HVFullView extends LitElement {
                 data-testid="sidebar-status-row"
                 data-value=${s}
                 aria-pressed=${String(on)}
-                @click=${() => this._setFilters({ status: on ? null : s })}
+                tabindex="-1"
+                @click=${() => {
+                  this._holdFacetStop('status', facetRowKey('status', s));
+                  this._setFilters({ status: on ? null : s });
+                }}
               >
                 <span class="hv-browse-row-lead ${on ? '' : 'placeholder'}">${icon('check', 15)}</span>
                 <span class="label hv-browse-row-label">${statusLabel(s, this.st?.statuses)}</span>
@@ -1475,7 +1562,13 @@ export class HVFullView extends LitElement {
           </button>
         </span>
       </div>
-      <div id=${sectionPanelId(section)} ?hidden=${!open}>
+      <div
+        id=${sectionPanelId(section)}
+        role="group"
+        aria-label=${label}
+        ?hidden=${!open}
+        @keydown=${(e: KeyboardEvent) => this._onFacetKeydown(section, e)}
+      >
         ${open
           ? values.length
             ? values.map(
@@ -1484,7 +1577,11 @@ export class HVFullView extends LitElement {
                   data-testid=${`sidebar-${section}-row`}
                   data-value=${v.value}
                   aria-pressed=${String(isOn(v.value))}
-                  @click=${() => onPick(v.value)}
+                  tabindex="-1"
+                  @click=${() => {
+                    this._holdFacetStop(section, facetRowKey(section, v.value));
+                    onPick(v.value);
+                  }}
                 >
                   <span class="hv-browse-row-lead ${isOn(v.value) ? '' : 'placeholder'}"
                     >${icon('check', 15)}</span

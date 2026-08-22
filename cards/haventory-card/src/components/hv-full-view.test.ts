@@ -1,6 +1,6 @@
 import './hv-full-view';
 import { componentCss, makeItem, mountComponent, mountStore, q, settle, stubViewport } from '../test.utils';
-import { deepActiveElement } from '../ui/dialog-focus';
+import { deepActiveElement, deepFocusables } from '../ui/dialog-focus';
 import { discardPrompt } from '../ui/discard';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVFullView } from './hv-full-view';
@@ -2358,6 +2358,199 @@ describe('hv-full-view: the detail sheet is the narrow read view', () => {
       expect(q(sr, '[data-testid="full-editor"]')).toBeTruthy();
     } finally {
       restore();
+    }
+  });
+});
+
+// Every status, category and tag row was a tab stop of its own, so the walk
+// from the search box to the first table row grew with the household's
+// vocabulary: 184 presses on a seeded install, 122 of them labels. Each list is
+// now one stop with the arrows moving inside it, the shape the locations tree
+// already carries.
+describe('hv-full-view: one tab stop per facet list', () => {
+  const faceted = [
+    makeItem({ id: '1', category: 'Cleaning', tags: ['heavy'] }),
+    makeItem({ id: '2', category: 'Garden', tags: ['metric'] }),
+    makeItem({ id: '3', category: 'Tools', tags: ['sharp'] }),
+    makeItem({ id: '4', category: 'Tools', tags: ['worn'] }),
+  ];
+  const SECTIONS = ['status', 'categories', 'tags'];
+
+  const rows = (sr: ShadowRoot, section: string) =>
+    [...sr.querySelectorAll(`[data-testid="sidebar-${section}-row"]`)] as HTMLElement[];
+  const stops = (sr: ShadowRoot, section: string) =>
+    rows(sr, section)
+      .filter((r) => r.getAttribute('tabindex') === '0')
+      .map((r) => r.dataset.value);
+  const focused = (sr: ShadowRoot) => (sr.activeElement as HTMLElement | null)?.dataset.value;
+  const press = async (el: HTMLElement, sr: ShadowRoot, key: string) => {
+    sr.activeElement?.dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+    );
+    await settle(el);
+  };
+
+  it('leaves one row of each list in the tab order and takes the rest out', async () => {
+    const { sr } = await mount({ items: faceted });
+
+    for (const section of SECTIONS) {
+      const list = rows(sr, section);
+      expect(list.length, section).toBeGreaterThan(2);
+      expect(stops(sr, section), section).toHaveLength(1);
+      expect(
+        list.filter((r) => r.getAttribute('tabindex') === '-1').length,
+        section,
+      ).toBe(list.length - 1);
+    }
+  });
+
+  it('names each list as a group, so the stop announces what it is inside', async () => {
+    const { sr } = await mount({ items: faceted });
+
+    const group = (section: string) => q(sr, `#sidebar-section-${section}`);
+    expect(group('status')?.getAttribute('role')).toBe('group');
+    expect(group('status')?.getAttribute('aria-label')).toBe('Status');
+    expect(group('categories')?.getAttribute('aria-label')).toBe('Categories');
+    expect(group('tags')?.getAttribute('aria-label')).toBe('Tags');
+  });
+
+  it('moves the stop and the focus with the arrows, and stops at both ends', async () => {
+    const { el, sr } = await mount({ items: faceted });
+    rows(sr, 'tags')[0].focus();
+
+    await press(el, sr, 'ArrowDown');
+    expect(focused(sr)).toBe('metric');
+    expect(stops(sr, 'tags')).toEqual(['metric']);
+
+    await press(el, sr, 'ArrowUp');
+    expect(focused(sr)).toBe('heavy');
+    // The top is the top: Up does not wrap round to the last label.
+    await press(el, sr, 'ArrowUp');
+    expect(focused(sr)).toBe('heavy');
+
+    await press(el, sr, 'End');
+    expect(focused(sr)).toBe('worn');
+    await press(el, sr, 'ArrowDown');
+    expect(focused(sr)).toBe('worn');
+    expect(stops(sr, 'tags')).toEqual(['worn']);
+
+    await press(el, sr, 'Home');
+    expect(focused(sr)).toBe('heavy');
+  });
+
+  it('moves only inside the list the key came from', async () => {
+    const { el, sr } = await mount({ items: faceted });
+    rows(sr, 'categories')[0].focus();
+
+    await press(el, sr, 'End');
+
+    expect(stops(sr, 'categories')).toEqual(['Tools']);
+    // The other two lists still hold their own first row.
+    expect(stops(sr, 'tags')).toEqual(['heavy']);
+    expect(stops(sr, 'status')).toEqual(['ok']);
+  });
+
+  // Pressed twice a category row ends up unselected, so what holds the stop
+  // afterwards can only be the press itself.
+  it('leaves the stop where a click put it', async () => {
+    const { el, sr } = await mount({ items: faceted });
+    const third = () => rows(sr, 'categories')[2];
+
+    third().click();
+    await settle(el);
+    third().click();
+    await settle(el);
+
+    expect(rows(sr, 'categories').map((r) => r.getAttribute('aria-pressed'))).toEqual([
+      'false',
+      'false',
+      'false',
+    ]);
+    expect(stops(sr, 'categories')).toEqual(['Tools']);
+  });
+
+  it('hands the stop to the selected row when the row holding it is drawn away', async () => {
+    const { el, store, sr } = await mount({ items: faceted });
+    rows(sr, 'tags')[0].click();
+    await settle(el);
+    rows(sr, 'tags')[0].focus();
+    await press(el, sr, 'ArrowDown');
+    expect(stops(sr, 'tags')).toEqual(['metric']);
+
+    const cache = store.state.value.distinctValuesCache!;
+    cache.tags = cache.tags.filter((v) => v.value !== 'metric');
+    el.requestUpdate();
+    await settle(el);
+
+    expect(stops(sr, 'tags')).toEqual(['heavy']);
+  });
+
+  it('falls back to the first row when nothing is selected either', async () => {
+    const { el, store, sr } = await mount({ items: faceted });
+    rows(sr, 'tags')[0].focus();
+    await press(el, sr, 'End');
+    expect(stops(sr, 'tags')).toEqual(['worn']);
+
+    const cache = store.state.value.distinctValuesCache!;
+    cache.tags = cache.tags.filter((v) => v.value !== 'worn');
+    el.requestUpdate();
+    await settle(el);
+
+    expect(stops(sr, 'tags')).toEqual(['heavy']);
+  });
+
+  it('gives a section that has just been reopened exactly one stop', async () => {
+    const { el, sr } = await mount({ items: faceted });
+    const toggle = () => q(sr, '[data-testid="sidebar-toggle-tags"]') as HTMLButtonElement;
+
+    toggle().click();
+    await settle(el);
+    expect(rows(sr, 'tags')).toHaveLength(0);
+
+    toggle().click();
+    await settle(el);
+    expect(stops(sr, 'tags')).toHaveLength(1);
+  });
+
+  // The measurement the issue is about: the walk grew with the household's
+  // vocabulary, so a sidebar holding 40 labels offered 40 more stops than one
+  // holding 3. Both now offer the same number.
+  it('holds the sidebar walk steady as the vocabulary grows', async () => {
+    const vocabulary = (size: number) =>
+      Array.from({ length: size }, (_, i) =>
+        makeItem({ id: `i${i}`, category: `Category ${i}`, tags: [`tag-${i}`] }),
+      );
+    const small = await mount({ items: vocabulary(3) });
+    const large = await mount({ items: vocabulary(40) });
+    const walk = (sr: ShadowRoot) =>
+      deepFocusables(q(sr, '[data-testid="full-sidebar"]')).length;
+
+    expect(rows(large.sr, 'tags')).toHaveLength(40);
+    expect(walk(large.sr)).toBe(walk(small.sr));
+    // Not a vacuous match: the sidebar does still offer its headings, its
+    // three "+" buttons, the locations tree and one stop per facet list.
+    // 13 stops either way as this is written; with every row back in the tab
+    // order the same two sidebars offered 19 and 93. The bounds are what the
+    // claim needs — a sidebar that had stopped drawing its facets would match
+    // itself at zero.
+    expect(walk(small.sr)).toBeGreaterThan(6);
+    expect(walk(small.sr)).toBeLessThan(20);
+  });
+
+  // The heading, its "+" and the any/all pair are one stop each and stay that
+  // way: a section is reached, opened and added to without the arrows.
+  it('leaves the section heading and its actions as tab stops', async () => {
+    const { sr } = await mount({ items: faceted });
+
+    for (const testid of [
+      'sidebar-toggle-status',
+      'sidebar-new-status',
+      'sidebar-toggle-categories',
+      'sidebar-new-categories',
+      'sidebar-toggle-tags',
+      'sidebar-new-tags',
+    ]) {
+      expect(q(sr, `[data-testid="${testid}"]`)?.getAttribute('tabindex'), testid).toBe(null);
     }
   });
 });
