@@ -101,6 +101,39 @@ async def test_async_get_events_projects_both_dated_fields(hass: HomeAssistant) 
     assert projected[0]["end"] == (due + timedelta(days=1)).isoformat()
 
 
+async def test_the_summaries_are_written_in_the_servers_language(hass: HomeAssistant) -> None:
+    """Both surfaces the text reaches, in German: the event a calendar card
+    lists and the `message` attribute a notification automation templates.
+
+    Only real here — the patterns come from `translations/de.json` through Home
+    Assistant's own loader, which the offline suite has no counterpart for.
+    """
+
+    hass.config.language = "de"
+    await _setup(hass)
+
+    today = dt_util.now().date()
+    await _create(hass, name="Leiter", checked_out=True, due_date=today.isoformat())
+    await _create(
+        hass, name="Feuerlöscher", inspection_date=(today + timedelta(days=5)).isoformat()
+    )
+
+    assert hass.states.get(ENTITY_ID).attributes["message"] == "Rückgabe: Leiter"
+
+    window_end = dt_util.start_of_local_day() + timedelta(days=30)
+    events = await hass.services.async_call(
+        "calendar",
+        "get_events",
+        {"entity_id": ENTITY_ID, "end_date_time": window_end},
+        blocking=True,
+        return_response=True,
+    )
+    assert [e["summary"] for e in events[ENTITY_ID]["events"]] == [
+        "Rückgabe: Leiter",
+        "Prüfung: Feuerlöscher",
+    ]
+
+
 async def test_checking_an_item_out_due_today_turns_the_calendar_on(hass: HomeAssistant) -> None:
     """A mutation repaints the entity with no polling and no time travel.
 

@@ -111,6 +111,11 @@ school holidays and bin collections:
 | `Extinguisher inspection` | the `inspection_date` on any item |
 | `HVAC filter reminder` | the **reminder** on any item, and every repeat of it |
 
+The titles above are the English ones. A summary is written in the language Home Assistant
+itself runs in — Settings → System → General — not the reading user's, because the same text
+is `calendar.haventory`'s `message` attribute and an automation templating it gets one
+answer whoever is looking.
+
 Each is an all-day event on its date, described by the item's location path. The entity's
 attributes always carry the nearest event still to come, however far out it is; its state
 follows Home Assistant's own convention and reads `on` only while an event is actually

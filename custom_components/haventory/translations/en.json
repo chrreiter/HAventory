@@ -1,4 +1,9 @@
 {
+  "common": {
+    "calendar_due": "{name} due back",
+    "calendar_inspection": "{name} inspection",
+    "calendar_reminder": "{name} reminder"
+  },
   "config": {
     "step": {
       "user": {
