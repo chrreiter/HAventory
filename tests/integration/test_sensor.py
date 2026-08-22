@@ -21,11 +21,24 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, async_
 
 LOW_THRESHOLD = 3
 
+# 13:30 UTC on 22 August is 01:30 on the **23rd** in New Zealand — the window a
+# UTC-reading count and the household's own calendar disagree over.
+NZ_ZONE = "Pacific/Auckland"
+NZ_LATE_EVENING = datetime(2026, 8, 22, 11, 0, tzinfo=UTC)
+NZ_JUST_PAST_MIDNIGHT = datetime(2026, 8, 22, 12, 0, 30, tzinfo=UTC)
+NZ_EARLY_MORNING = datetime(2026, 8, 22, 13, 30, tzinfo=UTC)
+NZ_TODAY = "2026-08-23"
 
-def _utc_day_offset(days: int) -> str:
-    """A UTC calendar date `days` from today, as YYYY-MM-DD."""
 
-    return (datetime.now(UTC).date() + timedelta(days=days)).isoformat()
+def _local_day_offset(days: int) -> str:
+    """A calendar date `days` from today in the instance's zone, as YYYY-MM-DD.
+
+    Every date-derived count compares against Home Assistant's own day, and this
+    harness does not run in UTC, so a UTC offset would name a different date for
+    part of every day.
+    """
+
+    return (dt_util.now().date() + timedelta(days=days)).isoformat()
 
 
 async def _setup(hass: HomeAssistant) -> MockConfigEntry:
@@ -196,7 +209,7 @@ async def test_an_item_due_back_today_is_due_and_not_overdue(hass: HomeAssistant
     await hass.services.async_call(
         DOMAIN,
         "item_check_out",
-        {"item_id": borrowed["item"]["id"], "due_date": _utc_day_offset(0)},
+        {"item_id": borrowed["item"]["id"], "due_date": _local_day_offset(0)},
         blocking=True,
     )
     await hass.async_block_till_done()
@@ -210,7 +223,7 @@ async def test_an_item_due_back_today_is_due_and_not_overdue(hass: HomeAssistant
     await hass.services.async_call(
         DOMAIN,
         "item_check_out",
-        {"item_id": late["item"]["id"], "due_date": _utc_day_offset(-1)},
+        {"item_id": late["item"]["id"], "due_date": _local_day_offset(-1)},
         blocking=True,
     )
     await hass.async_block_till_done()
@@ -242,7 +255,7 @@ async def test_an_inspection_due_today_is_due_and_not_overdue(hass: HomeAssistan
     await hass.services.async_call(
         DOMAIN,
         "item_create",
-        {"name": "Harness", "inspection_date": _utc_day_offset(0)},
+        {"name": "Harness", "inspection_date": _local_day_offset(0)},
         blocking=True,
     )
     await hass.async_block_till_done()
@@ -253,7 +266,7 @@ async def test_an_inspection_due_today_is_due_and_not_overdue(hass: HomeAssistan
     await hass.services.async_call(
         DOMAIN,
         "item_create",
-        {"name": "Ladder", "inspection_date": _utc_day_offset(-1)},
+        {"name": "Ladder", "inspection_date": _local_day_offset(-1)},
         blocking=True,
     )
     await hass.async_block_till_done()
@@ -262,27 +275,57 @@ async def test_an_inspection_due_today_is_due_and_not_overdue(hass: HomeAssistan
     assert hass.states.get(overdue).state == "1"
 
 
-async def test_the_inspection_due_sensor_moves_at_utc_midnight(
+async def test_the_inspection_due_sensor_reads_the_instances_day(
+    hass: HomeAssistant, freezer
+) -> None:
+    """The issue's reproduction, east of Greenwich (#568).
+
+    At 01:30 on the 23rd in Auckland it is still the 22nd in UTC. A count that
+    read the UTC day answered 0 here while the row's chip, the calendar and the
+    card's pill all called the same item due — for the first twelve hours of
+    every day.
+    """
+
+    await hass.config.async_set_time_zone(NZ_ZONE)
+    freezer.move_to(NZ_EARLY_MORNING)
+
+    entry = await _setup(hass)
+    due = _entity_id_for(hass, entry, "inspection_due_count")
+
+    await hass.services.async_call(
+        DOMAIN, "item_create", {"name": "Harness", "inspection_date": NZ_TODAY}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert dt_util.now().date().isoformat() == NZ_TODAY
+    assert hass.states.get(due).state == "1"
+
+
+async def test_the_inspection_due_sensor_rolls_over_at_the_instances_midnight(
     hass: HomeAssistant, freezer
 ) -> None:
     """A date-derived count rewrites on the rollover, with nothing mutated.
 
     Tomorrow's inspection becomes today's without anybody touching the item, so
     a sensor that only listened for mutations would sit at yesterday's figure
-    all day.
+    all day. Pinned to a zone ahead of UTC, where the household's midnight comes
+    first: a rewrite scheduled for UTC's would not have fired yet at this
+    instant, which is what makes this the rollover and not just the clock.
     """
+
+    await hass.config.async_set_time_zone(NZ_ZONE)
+    freezer.move_to(NZ_LATE_EVENING)
 
     entry = await _setup(hass)
     due = _entity_id_for(hass, entry, "inspection_due_count")
-    tomorrow = _utc_day_offset(1)
 
     await hass.services.async_call(
-        DOMAIN, "item_create", {"name": "Harness", "inspection_date": tomorrow}, blocking=True
+        DOMAIN, "item_create", {"name": "Harness", "inspection_date": NZ_TODAY}, blocking=True
     )
     await hass.async_block_till_done()
     assert hass.states.get(due).state == "0"
 
-    freezer.move_to(f"{tomorrow}T00:00:30+00:00")
+    freezer.move_to(NZ_JUST_PAST_MIDNIGHT)
     async_fire_time_changed(hass, dt_util.utcnow())
     await hass.async_block_till_done()
 

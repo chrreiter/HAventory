@@ -28,16 +28,15 @@ One HAventory device under Settings → Devices & services, carrying:
 each *due* count is its *overdue* twin plus whatever falls today, and never smaller than it.
 
 They update the moment something changes — a card edit, a `haventory.*` service call, an
-import — with no polling interval to tune. The four date-derived ones also roll over at UTC
+import — with no polling interval to tune. The four date-derived ones also roll over at
 midnight, so "Checked out overdue count" grows overnight without anybody touching the
 inventory.
 
-**UTC midnight, deliberately, and it is not the calendar's midnight.** These counts
-compare stored dates against the UTC day, which is also the day `item/list`'s overdue
-filters use; the calendar and the reminder bump run on your Home Assistant timezone's day,
-because those are dates you read and act on rather than numbers. The two boundaries coincide
-in London and diverge everywhere else: at UTC-8 "Checked out overdue count" ticks up at 4 pm
-local, eight hours before the calendar stops showing that item as due today.
+**One day, and it is your Home Assistant's.** Everything that decides whether a date has
+passed — these counts, `item/list`'s overdue filters, the calendar entity, the reminder bump
+and the card's own chips and pills — measures against the day your instance is configured
+for, and rolls over at its midnight. Change the time zone in Home Assistant and they all
+move together.
 
 Put "Low stock count: 3" on a dashboard next to the weather and nobody has to open the card to
 know whether a shopping trip is due.

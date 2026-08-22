@@ -67,7 +67,7 @@ from .models import (
     selected_location_ids,
     serialize_status_definition,
     sort_items,
-    today_utc_date,
+    today_local_date,
     validate_location_name,
     validate_required_name,
     validate_status_definition,
@@ -1784,7 +1784,7 @@ class Repository:
         than the whole inventory.
         """
 
-        today = today_utc_date()
+        today = today_local_date()
         return sum(
             1
             for iid in self._checked_out_item_ids
@@ -1800,7 +1800,7 @@ class Repository:
         has to ``_count_inspection_overdue``.
         """
 
-        today = today_utc_date()
+        today = today_local_date()
         return sum(
             1
             for iid in self._checked_out_item_ids
@@ -1816,7 +1816,7 @@ class Repository:
         independent of any check-out, so any item can carry one.
         """
 
-        today = today_utc_date()
+        today = today_local_date()
         return sum(
             1 for it in self._items_by_id.values() if item_inspection_is_overdue(it, today=today)
         )
@@ -1829,7 +1829,7 @@ class Repository:
         differ by exactly the items whose inspection date is today.
         """
 
-        today = today_utc_date()
+        today = today_local_date()
         return sum(
             1 for it in self._items_by_id.values() if item_inspection_is_due(it, today=today)
         )
@@ -1842,7 +1842,7 @@ class Repository:
         one the household still has to act on.
         """
 
-        today = today_utc_date()
+        today = today_local_date()
         return sum(1 for it in self._items_by_id.values() if item_reminder_is_due(it, today=today))
 
     def count_matching_by_location(self, flt: ItemFilter | None = None) -> dict[str | None, int]:

@@ -127,11 +127,12 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 - `haventory/stats`
   - Result: `{items_total: number, low_stock_count: number, checked_out_count: number, overdue_count: number, checked_out_due_count: number, inspection_overdue_count: number, inspection_due_count: number, reminder_due_count: number, missing_count: number, needs_repair_count: number, status_counts: {[slug]: number}, locations_total: number, no_location_count: number}`
   - `no_location_count` is the number of items without a location (`location_id == null`, i.e. the `orphaned_only` filter's population).
-  - `overdue_count` is the number of items whose `due_date` is strictly before today in UTC (the `overdue_only` filter's population). It is derived from the calendar, not from stored state, so it can change without any mutation — no event is emitted when the date rolls over.
-  - `checked_out_due_count` is the number of items whose `due_date` is **on or before** today in UTC (the `checked_out_due_only` filter's population) — the same population as `overdue_count` plus the items due back today, so it is never smaller than it. Calendar-derived with the same no-event caveat.
-  - `inspection_overdue_count` is the number of items whose `inspection_date` — the date the item is next due for inspection — is strictly before today in UTC (the `inspection_overdue_only` filter's population). It counts the whole inventory, not just checked-out items, because an inspection is independent of any check-out. Calendar-derived in the same way as `overdue_count`, with the same no-event caveat.
-  - `inspection_due_count` is the number of items whose `inspection_date` is **on or before** today in UTC — the same population as `inspection_overdue_count` plus the items due today, so it is never smaller than it. *Due* includes today and *overdue* does not, the same distinction `checked_out_due_count` and `reminder_due_count` draw (the `inspection_due_only` filter's population). Calendar-derived with the same no-event caveat as the counts above.
-  - `reminder_due_count` is the number of items whose `reminder_date` is on or before today in UTC (the `reminder_due_only` filter's population). It **includes today**, as every *due* count does: a reminder names the day it is asking about, so an item reminding today is still one to act on, where a due date has to pass before it is late. Calendar-derived with the same no-event caveat as the counts above.
+  - `overdue_count` is the number of items whose `due_date` is strictly before today (the `overdue_only` filter's population). It is derived from the calendar, not from stored state, so it can change without any mutation — no event is emitted when the date rolls over.
+  - `checked_out_due_count` is the number of items whose `due_date` is **on or before** today (the `checked_out_due_only` filter's population) — the same population as `overdue_count` plus the items due back today, so it is never smaller than it. Calendar-derived with the same no-event caveat.
+  - `inspection_overdue_count` is the number of items whose `inspection_date` — the date the item is next due for inspection — is strictly before today (the `inspection_overdue_only` filter's population). It counts the whole inventory, not just checked-out items, because an inspection is independent of any check-out. Calendar-derived in the same way as `overdue_count`, with the same no-event caveat.
+  - `inspection_due_count` is the number of items whose `inspection_date` is **on or before** today — the same population as `inspection_overdue_count` plus the items due today, so it is never smaller than it. *Due* includes today and *overdue* does not, the same distinction `checked_out_due_count` and `reminder_due_count` draw (the `inspection_due_only` filter's population). Calendar-derived with the same no-event caveat as the counts above.
+  - `reminder_due_count` is the number of items whose `reminder_date` is on or before today (the `reminder_due_only` filter's population). It **includes today**, as every *due* count does: a reminder names the day it is asking about, so an item reminding today is still one to act on, where a due date has to pass before it is late. Calendar-derived with the same no-event caveat as the counts above.
+  - "Today" in those five is the day Home Assistant is configured for — the same day `calendar.haventory` rolls over on, `haventory/reminder/bump` counts from and the card's chips read. One boundary, at the instance's midnight, on every surface.
   - `missing_count` / `needs_repair_count` count items whose stored `status` is `missing` / `needs_repair` — each the population of the `status` filter set to that slug. Stored state, not calendar-derived: they only change on a mutation, and every mutation emits `stats/counts`.
   - `status_counts` is the same figure for **every** defined slug, including `ok`. Additive to the two keys above rather than a replacement for them, so a client written against the earlier shape keeps working.
 
@@ -295,9 +296,9 @@ with no WebSocket client at all. Payload shapes: `docs/data_shapes.md`.
     lands on its next *future* occurrence rather than another date already past, and no
     occurrence in between is skipped — a 31st series bumped in February lands on the 28th,
     and the next one is 31 March.
-  - Today is the **local** day, the one `calendar.haventory` rolls over on, not the UTC day
-    the two date-derived counts use. A reminder is a household-facing date, and bumping is
-    what somebody does in the evening.
+  - Today is the instance's local day, the one `calendar.haventory` rolls over on and the
+    one the date-derived counts and filters use. A reminder is a household-facing date, and
+    bumping is what somebody does in the evening.
   - `validation_error` when the item has no reminder, and when it has one with no interval:
     a one-off has no next occurrence, and `haventory/reminder/clear` is what ends it. Also
     when the stored dates cannot be read, which only a hand-edited store produces.

@@ -289,7 +289,7 @@ class HaventorySensorDescription:
     entity's ``unique_id``; ``translation_key`` names the entry under
     ``entity.sensor`` in `strings.json`. ``date_derived`` marks the counts that
     move with the calendar rather than with a mutation, which is what makes them
-    subscribe to the UTC-midnight rollover as well as to mutations.
+    subscribe to the local-midnight rollover as well as to mutations.
     """
 
     key: str
