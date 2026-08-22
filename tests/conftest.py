@@ -130,6 +130,11 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def __init__(self) -> None:
             self.fired: list[tuple[str, dict]] = []
             self.listeners: list[tuple[str, object]] = []
+            # Removals of a listener the bus no longer has. Real Home Assistant
+            # answers one with `Unable to remove unknown job listener` at ERROR,
+            # naming the caller's module — so a test asserting that a caller
+            # never asks twice needs the attempt, which `listeners` cannot show.
+            self.unknown_removals: list[str] = []
 
         def async_fire(self, event_type, event_data=None, *_args, **_kwargs) -> None:
             self.fired.append((event_type, dict(event_data or {})))
@@ -144,6 +149,8 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             def _remove() -> None:
                 if entry in self.listeners:
                     self.listeners.remove(entry)
+                else:
+                    self.unknown_removals.append(event_type)
 
             return _remove
 

@@ -19,6 +19,7 @@ rollback.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -116,8 +117,7 @@ async def async_setup(hass: HomeAssistant, entry: ConfigEntry) -> None:
         for event_type in (EVENT_ITEM_CHANGED, EVENT_LOW_STOCK):
             on_unload(listen(event_type, _on_inventory_event))
 
-    listen_once = getattr(bus, "async_listen_once", None)
-    if getattr(hass, "is_running", True) or not (callable(listen_once) and callable(on_unload)):
+    if getattr(hass, "is_running", True) or not (callable(listen) and callable(on_unload)):
         await async_reconcile(hass)
         return
 
@@ -125,10 +125,27 @@ async def async_setup(hass: HomeAssistant, entry: ConfigEntry) -> None:
     # while Home Assistant is still starting, and the pass refuses to write to a
     # list it cannot see. Waiting for the start event is what lets a restart
     # converge on its own, without anything in the inventory having to change.
+    #
+    # `async_listen`, not `async_listen_once`: a one-time listener takes itself
+    # off the bus the moment it fires, so the unsubscribe it hands back names a
+    # listener Home Assistant no longer has — and the unload that calls it gets
+    # an ERROR line carrying this module's name for something that worked.
+    # Removing it here gives the removal one owner, and whichever of the two
+    # paths gets there first leaves nothing for the other to do.
+    remove_started: Callable[[], None] | None = None
+
+    def _stop_waiting_for_start() -> None:
+        nonlocal remove_started
+        if remove_started is not None:
+            remove_started()
+            remove_started = None
+
     async def _on_started(_event: Any) -> None:
+        _stop_waiting_for_start()
         await async_reconcile(hass)
 
-    on_unload(listen_once(EVENT_HOMEASSISTANT_STARTED, _on_started))
+    remove_started = listen(EVENT_HOMEASSISTANT_STARTED, _on_started)
+    on_unload(_stop_waiting_for_start)
 
 
 async def async_reconcile(hass: HomeAssistant) -> None:
