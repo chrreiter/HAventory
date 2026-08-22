@@ -1324,7 +1324,11 @@ async def cmd_restart() -> None:
         print("\n  waiting for HA to come back ...")
         control = None
         ready = False
-        for _ in range(30):
+        # A `docker restart` is a kill as far as Home Assistant is concerned, so the boot
+        # that follows repairs the recorder's unfinished session before it loads a single
+        # integration -- about 100 s on the dev host with a few hundred items. The budget
+        # has to outlast that, or the on-disk cross-check below never runs.
+        for _ in range(80):
             await asyncio.sleep(3)
             try:
                 c = await connect()
