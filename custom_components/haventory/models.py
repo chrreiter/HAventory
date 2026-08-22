@@ -6,7 +6,10 @@ provides validation and normalization helpers to enforce invariants and produce
 denormalized location paths.
 
 The intent is to keep these models framework-agnostic and free of I/O. Higher
-layers (WebSocket/API, storage) are expected to compose these helpers.
+layers (WebSocket/API, storage) are expected to compose these helpers. The one
+Home Assistant import is `dt_util`, for the household's own calendar day: it
+reads a module global rather than a `hass`, and every date a user reads or
+writes is measured in that day.
 """
 
 from __future__ import annotations
@@ -18,6 +21,8 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final, Literal, NotRequired, TypedDict
+
+from homeassistant.util import dt as dt_util
 
 from .const import (
     DEFAULT_STATUS_COLOR,
@@ -1541,9 +1546,17 @@ def item_is_low_stock(item: Item) -> bool:
     return item.quantity <= thr
 
 
-def today_utc_date() -> str:
-    """Today's date as YYYY-MM-DD in UTC — the reference point for "overdue"."""
-    return datetime.now(UTC).date().isoformat()
+def today_local_date() -> str:
+    """Today's date as YYYY-MM-DD in the instance's time zone.
+
+    One day for the whole household: the calendar entity, the reminder bump,
+    the card's chips and these predicates all measure against the day Home
+    Assistant is configured for, so a row and a count cannot disagree for the
+    hours a UTC day and a local one differ by. `dt_util.now()` reads
+    `DEFAULT_TIME_ZONE`, which Home Assistant sets from its own configuration,
+    so this needs no `hass` handle.
+    """
+    return dt_util.now().date().isoformat()
 
 
 def item_is_overdue(item: Item, *, today: str = "") -> bool:
@@ -1552,13 +1565,13 @@ def item_is_overdue(item: Item, *, today: str = "") -> bool:
     A due date only exists while an item is checked out (see
     ``validate_due_date_rules``), so this needs no separate checked-out test.
     Both sides are YYYY-MM-DD, which compares correctly as text. ``today``
-    defaults to the current UTC date; callers filtering many items pass it in
-    once rather than re-reading the clock per item.
+    defaults to the instance's current local date; callers filtering many items
+    pass it in once rather than re-reading the clock per item.
     """
 
     if not item.due_date:
         return False
-    return item.due_date < (today or today_utc_date())
+    return item.due_date < (today or today_local_date())
 
 
 def item_is_due(item: Item, *, today: str = "") -> bool:
@@ -1573,7 +1586,7 @@ def item_is_due(item: Item, *, today: str = "") -> bool:
 
     if not item.due_date:
         return False
-    return item.due_date <= (today or today_utc_date())
+    return item.due_date <= (today or today_local_date())
 
 
 def item_inspection_is_overdue(item: Item, *, today: str = "") -> bool:
@@ -1586,7 +1599,7 @@ def item_inspection_is_overdue(item: Item, *, today: str = "") -> bool:
 
     if not item.inspection_date:
         return False
-    return item.inspection_date < (today or today_utc_date())
+    return item.inspection_date < (today or today_local_date())
 
 
 def item_inspection_is_due(item: Item, *, today: str = "") -> bool:
@@ -1601,7 +1614,7 @@ def item_inspection_is_due(item: Item, *, today: str = "") -> bool:
 
     if not item.inspection_date:
         return False
-    return item.inspection_date <= (today or today_utc_date())
+    return item.inspection_date <= (today or today_local_date())
 
 
 def item_reminder_is_due(item: Item, *, today: str = "") -> bool:
@@ -1615,7 +1628,7 @@ def item_reminder_is_due(item: Item, *, today: str = "") -> bool:
 
     if not item.reminder_date:
         return False
-    return item.reminder_date <= (today or today_utc_date())
+    return item.reminder_date <= (today or today_local_date())
 
 
 def _parse_location_selection(location_ids: Sequence[str]) -> list[uuid.UUID]:
@@ -1670,11 +1683,12 @@ def filter_items(
     - checked_out: exact match
     - low_stock_only: quantity <= threshold (0 valid, None disables)
     - orphaned_only: only items without a location (location_id is None)
-    - overdue_only: due_date set and strictly before today (UTC)
-    - checked_out_due_only: due_date set and on or before today (UTC)
-    - inspection_overdue_only: inspection_date set and strictly before today (UTC)
-    - inspection_due_only: inspection_date set and on or before today (UTC)
-    - reminder_due_only: reminder_date set and on or before today (UTC)
+    - overdue_only: due_date set and strictly before today
+    - checked_out_due_only: due_date set and on or before today
+    - inspection_overdue_only: inspection_date set and strictly before today
+    - inspection_due_only: inspection_date set and on or before today
+    - reminder_due_only: reminder_date set and on or before today
+    - "today" in those five is the instance's local day, read once per query
     - the three ``*_due_only`` keys count today and the two ``*overdue*`` ones do
       not: a due date names the day something is being asked for, not the last
       day it is not
@@ -1740,7 +1754,7 @@ def filter_items(
         inspection_due_only,
         reminder_due_only,
     )
-    today = today_utc_date() if any(date_predicates) else ""
+    today = today_local_date() if any(date_predicates) else ""
 
     predicates_active = (
         bool(q)

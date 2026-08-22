@@ -62,6 +62,22 @@ def test_only_the_calendar_derived_counts_track_midnight() -> None:
     }
 
 
+def test_the_rollover_is_the_instances_midnight_and_not_utcs() -> None:
+    """The counts read the instance's local day, so the rewrite has to follow it.
+
+    Read off the source because nothing offline stubs
+    `homeassistant.components.sensor`, so the module cannot be imported here.
+    That the subscription actually fires at local midnight is asserted in
+    `tests/integration/test_sensor.py`; what this catches is the one-word slip
+    back to the UTC helper, which no offline test could otherwise see.
+    """
+
+    source = (PACKAGE / "sensor.py").read_text(encoding="utf-8")
+
+    assert "async_track_utc_time_change" not in source
+    assert "async_track_time_change" in source
+
+
 def test_the_forwarded_platforms_are_the_two_this_integration_owns() -> None:
     """A platform in the tuple with no module beside it fails setup outright."""
 

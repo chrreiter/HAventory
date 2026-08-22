@@ -62,7 +62,7 @@ from .models import (
     new_uuid4,
     normalize_tags,
     serialize_status_definition,
-    today_utc_date,
+    today_local_date,
     validate_attachment_meta,
     validate_item_filter,
     validate_sort,
@@ -644,14 +644,14 @@ def _payload_inspection_is_overdue(item: dict[str, Any]) -> bool:
 
     The matcher is handed the event payload rather than the stored ``Item``, so
     it cannot call ``item_inspection_is_overdue`` — but it must agree with it,
-    and with ``inspection_overdue_only`` on ``item/list``. Same comparison:
-    YYYY-MM-DD text, strictly before today in UTC.
+    and with ``inspection_overdue_only`` on ``item/list``. Same comparison and
+    the same clock: YYYY-MM-DD text, strictly before the instance's local day.
     """
 
     date = item.get("inspection_date")
     if not isinstance(date, str) or not date:
         return False
-    return date < today_utc_date()
+    return date < today_local_date()
 
 
 def _item_matches_filter(item: dict[str, Any], sub: Subscription) -> bool:
@@ -1375,12 +1375,12 @@ async def ws_reminder_bump(
     the same reminder land on the same answer, and neither of them can re-anchor
     a series by accident.
 
-    Today is the **local** one, the day the calendar runs on. A reminder is a
+    Today is the instance's local day, the one every other surface runs on —
+    the calendar, the counts, the sensors and the card's chips. A reminder is a
     household-facing date rather than a timestamp, and bumping is what somebody
-    does in the evening — which west of Greenwich is already tomorrow in UTC, so
-    counting from the UTC day would skip the occurrence their own calendar is
-    showing them for tomorrow. The two date-derived counts still measure against
-    the UTC day; see the README's note on the two boundaries.
+    does in the evening: west of Greenwich that is already tomorrow in UTC, so
+    counting from a UTC day would skip the occurrence their own calendar is
+    showing them for tomorrow.
     """
 
     repo = _repo(hass)

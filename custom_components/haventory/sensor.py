@@ -1,9 +1,10 @@
 """The promoted inventory counts as sensor entities on one HAventory device.
 
 Push only — no coordinator and no polling. Two things move a state: a mutation,
-through the dispatcher signal `events.notify_mutation` sends, and UTC midnight,
-for the counts that are derived from the calendar and so change with no mutation
-at all. `const.SENSOR_DESCRIPTIONS` is the catalog; nothing here is per-count.
+through the dispatcher signal `events.notify_mutation` sends, and the
+instance's local midnight, for the counts that are derived from the calendar
+and so change with no mutation at all. `const.SENSOR_DESCRIPTIONS` is the
+catalog; nothing here is per-count.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.event import async_track_utc_time_change
+from homeassistant.helpers.event import async_track_time_change
 
 from .const import (
     DOMAIN,
@@ -76,10 +77,11 @@ class HaventoryCountSensor(SensorEntity):
         )
         if self._description.date_derived:
             # A date-derived count compares today's date against stored dates,
-            # so it moves at midnight with nothing having been mutated. UTC,
-            # because the counts themselves compare against a UTC date.
+            # so it moves at midnight with nothing having been mutated. The
+            # instance's midnight, not UTC's: the counts compare against the
+            # instance's local day, the same one `calendar.py` rolls over on.
             self.async_on_remove(
-                async_track_utc_time_change(
+                async_track_time_change(
                     self.hass, self._handle_time_change, hour=0, minute=0, second=0
                 )
             )
