@@ -275,6 +275,24 @@ describe('hv-detail-sheet: read view', () => {
     }
   });
 
+  // The sheet used to mark the smaller thing and leave the bigger one plain: an
+  // amber Next inspection fact directly under a Due fact in ordinary black, on
+  // an item whose chip above already said "Overdue".
+  it('marks a Due date that has passed, the way the inspection fact beneath it is marked', async () => {
+    const el = await mount({ checked_out: true, due_date: '2020-01-01' });
+    const due = all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === 'due');
+    expect(due?.querySelector('.value')?.classList.contains('late')).toBe(true);
+  });
+
+  it('leaves a Due date still ahead of today, and an unset one, unmarked', async () => {
+    for (const due_date of ['2099-01-01', null]) {
+      const el = await mount({ checked_out: due_date !== null, due_date });
+      const due = all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === 'due');
+      expect(due?.querySelector('.value')?.classList.contains('late'), String(due_date)).toBe(false);
+      el.remove();
+    }
+  });
+
   it('shows the version alongside when it was updated', async () => {
     const el = await mount({ version: 14 });
     expect(q(el, '[data-testid="sheet-updated"]')?.textContent).toContain('v14');

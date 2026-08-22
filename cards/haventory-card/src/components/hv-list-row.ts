@@ -246,16 +246,21 @@ export class HVListRow extends LitElement {
       .secondary.out {
         color: var(--hv-primary-dark);
       }
-      /* A passed due date is the one thing on this line worth interrupting for,
-         and "due Jul 2" in the same blue as "due Aug 24" said nothing. */
+      /* A date that has passed is the one thing on this line worth interrupting
+         for — "due Jul 2" in the same blue as "due Aug 24" said nothing — and it
+         is the same red the table's date cells and the sheet's facts use. The
+         line names the date it is talking about, so the colour is left saying
+         only that it has gone by. */
       .secondary.overdue {
         color: var(--hv-error);
         font-weight: 500;
       }
-      /* Amber, not that red: red here means an item is out and late back, while
-         an inspection that has come due is a chore on something on the shelf. */
-      .secondary.inspect {
-        color: var(--hv-warn-deep);
+      /* A flagged status is not a date and stays out of that vocabulary. Plain
+         --hv-warn rather than --hv-warn-deep, which is the ink for text laid on
+         --hv-warn-bg and is a shade meant for a tint, not for the row's own
+         surface. */
+      .secondary.flagged {
+        color: var(--hv-warn);
         font-weight: 500;
       }
       .dot {
@@ -541,7 +546,17 @@ export class HVListRow extends LitElement {
     // past the edge elides, so the width decides how much of it survives.
     const status = itemStatus(item);
     const flagged = status !== 'ok';
-    const mobileState = item.checked_out ? 'out' : flagged || inspectionDue ? 'inspect' : '';
+    // The line takes its tone from what it ends up saying, which follows the
+    // same order the branches below do. A date that has passed outranks the
+    // rest: an inspection line only ever prints one, and a check-out line
+    // prints one whenever the loan carries a due date it has gone past.
+    const mobileState = overdue || (!item.checked_out && !flagged && inspectionDue)
+      ? 'overdue'
+      : item.checked_out
+        ? 'out'
+        : flagged
+          ? 'flagged'
+          : '';
 
     return html`
       <div
@@ -587,10 +602,7 @@ export class HVListRow extends LitElement {
               : null}
           </span>
           <span
-            class="secondary ${this.mobile ? mobileState : 'hv-chip-line'} ${overdue &&
-            this.mobile
-              ? 'overdue'
-              : ''}"
+            class="secondary ${this.mobile ? mobileState : 'hv-chip-line'}"
             data-testid="row-secondary"
             title=${secondaryFull}
           >
