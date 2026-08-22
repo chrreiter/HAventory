@@ -626,7 +626,11 @@ export class HVDataTable extends LitElement {
     const columns = this._columns;
     // The name cell's chip is the flagged-status signal for a table that has no
     // Status column. With the column shown it would put the same word twice on
-    // one row, so the column takes over and the chip stands down.
+    // one row, so the column takes over and the chip stands down. The
+    // checked-out chip below has nothing to stand down for — the Due column
+    // carries a date, not the word — so it names an overdue loan either way,
+    // which is the only thing left saying so once the table is scrolled
+    // sideways or pinned to its name column.
     const statusColumn = columns.includes('status');
     // Low stands down for Checked out in the same cell, the way a phone row's
     // one line already picks the most interrupting thing it has to say: both
@@ -720,7 +724,13 @@ export class HVDataTable extends LitElement {
                         })
                       : null}
                     ${item.checked_out
-                      ? html`<span class="hv-chip state">${t('hv.term.checkedOut')}</span>`
+                      ? html`<span
+                          class="hv-chip ${isOverdue(item.due_date) ? 'error' : 'state'}"
+                          data-testid="table-checked-out"
+                          >${isOverdue(item.due_date)
+                            ? t('hv.term.overdue')
+                            : t('hv.term.checkedOut')}</span
+                        >`
                       : null}
                   </span>
                   ${columns.map((key) => this._cell(item, key))}

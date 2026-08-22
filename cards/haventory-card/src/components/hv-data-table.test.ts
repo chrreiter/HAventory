@@ -10,7 +10,7 @@ import {
 } from '../test.utils';
 import { ACTIONS_COLUMN_WIDTH } from '../store/columns';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
-import { toIsoDate } from '../ui/relative-time';
+import { addDays, toIsoDate } from '../ui/relative-time';
 import { rowMenuEntries } from './hv-list-row';
 import type { HVDataTable } from './hv-data-table';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
@@ -278,7 +278,52 @@ describe('hv-data-table: columns', () => {
     ]);
     expect(q(el, '[data-testid="cell-quantity"]')?.classList.contains('low')).toBe(true);
     expect(q(el, '[data-testid="cell-due_date"]')?.classList.contains('overdue')).toBe(true);
-    expect(el.shadowRoot?.textContent).toContain('Checked out');
+    expect(el.shadowRoot?.textContent).toContain('Overdue');
+  });
+});
+
+// The row's own word for lateness, which is what a table scrolled sideways or
+// pinned to its name column has left to say it with.
+describe('hv-data-table: the checked-out chip names an overdue loan', () => {
+  it('reads Overdue in the error tone once the due date has passed', async () => {
+    const el = await mount([{ id: '1', checked_out: true, due_date: '2020-01-01' }]);
+    const chip = q(el, '[data-testid="table-checked-out"]');
+    expect(chip?.textContent?.trim()).toBe('Overdue');
+    expect(chip?.classList.contains('error')).toBe(true);
+    expect(chip?.classList.contains('state')).toBe(false);
+  });
+
+  it('stays a calm Checked out while the loan still has time to run', async () => {
+    const el = await mount([{ id: '1', checked_out: true, due_date: addDays(3) }]);
+    const chip = q(el, '[data-testid="table-checked-out"]');
+    expect(chip?.textContent?.trim()).toBe('Checked out');
+    expect(chip?.classList.contains('state')).toBe(true);
+  });
+
+  // A loan with no return date agreed cannot be late, and neither can an item
+  // nobody has taken — the chip only exists for the first of those.
+  it('leaves a dateless loan calm, and draws nothing for an item on the shelf', async () => {
+    const dateless = await mount([{ id: '1', checked_out: true, due_date: null }]);
+    expect(q(dateless, '[data-testid="table-checked-out"]')?.textContent?.trim()).toBe(
+      'Checked out',
+    );
+
+    const shelved = await mount([{ id: '1', checked_out: false, due_date: '2020-01-01' }]);
+    expect(q(shelved, '[data-testid="table-checked-out"]')).toBe(null);
+  });
+
+  // The Due column carries a date, not the word — so unlike the status chip
+  // above, this one has nothing to stand down for and says it either way.
+  it('says it whether or not the Due column is on screen', async () => {
+    for (const columns of [['due_date'], ['quantity']] as const) {
+      const el = await mount([{ id: '1', checked_out: true, due_date: '2020-01-01' }], {
+        columns: [...columns],
+      });
+      expect(
+        q(el, '[data-testid="table-checked-out"]')?.textContent?.trim(),
+        `columns=${columns.join()}`,
+      ).toBe('Overdue');
+    }
   });
 });
 
