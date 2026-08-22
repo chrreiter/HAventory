@@ -9,7 +9,9 @@ unfiltered trigger.
 Then two things a workflow run cannot tell you about itself: that every
 third-party action it calls is pinned to an immutable revision, and that
 Dependabot is configured to keep ``requirements-integration.txt`` patched
-without fighting the pins that file carries deliberately.
+without fighting the pins that file carries deliberately, without bumping them
+from the other block that reads the same file, and without proposing the dev
+toolchain a second time out of a generated export.
 
 Last, the two scheduled runs — ``ha-latest`` and ``card-smoke`` — each of which
 can be worthless in ways a green run of its own would not reveal: reporting a
@@ -23,7 +25,7 @@ from __future__ import annotations
 import itertools
 import json
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
@@ -48,8 +50,16 @@ FIRST_PARTY_ACTION = re.compile(r"^actions/")
 IMMUTABLE_REVISION = re.compile(r"@(?:[0-9a-f]{40}|sha256:[0-9a-f]{64})$")
 
 # The two pins `requirements-integration.txt` carries as derived numbers rather
-# than as dependencies to keep current.
+# than as dependencies to keep current. Both updaters pointed at the repository
+# root read that file, so both have to be told.
 HA_PINS = ("homeassistant", "home-assistant-frontend")
+ROOT_PYTHON_ECOSYSTEMS = ("uv", "pip")
+
+# The root manifests the `uv` block owns, and which the `pip` block therefore has
+# to be scoped off: `requirements-dev.txt` is a `uv export` that says so on line
+# 1, and `pyproject.toml` has a lockfile beside it that a pip edit would not
+# touch.
+UV_OWNED_MANIFESTS = ("pyproject.toml", "requirements-dev.txt")
 VERSION_UPDATE_TYPES = frozenset(
     {
         "version-update:semver-major",
@@ -232,6 +242,21 @@ def ignored_update_types(block: dict[str, Any]) -> dict[str, set[str]]:
     }
 
 
+def still_scanned(block: dict[str, Any], paths: tuple[str, ...]) -> list[str]:
+    """Which of ``paths`` this block's ``exclude-paths`` leaves in its scan.
+
+    ``exclude-paths`` entries are glob patterns resolved against the block's
+    ``directory``, so a literal path and ``**/name`` are both legitimate ways to
+    write the same exclusion.
+    """
+    patterns = block.get("exclude-paths", [])
+    return [
+        path
+        for path in paths
+        if not any(PurePosixPath(path).full_match(pattern) for pattern in patterns)
+    ]
+
+
 def test_third_party_actions_are_pinned_by_digest() -> None:
     """A tag can be moved under the workflow that calls it; a digest cannot."""
     for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
@@ -271,25 +296,60 @@ def test_dependabot_updates_the_integration_requirements() -> None:
     assert dependabot_block("pip", "/") is not None
 
 
-def test_dependabot_leaves_the_ha_pins_alone() -> None:
+@pytest.mark.parametrize("ecosystem", ROOT_PYTHON_ECOSYSTEMS)
+def test_dependabot_leaves_the_ha_pins_alone(ecosystem: str) -> None:
     """Both pins are derived numbers: a version bump of either is a red build.
 
     ``homeassistant`` is the floor ``hacs.json`` declares, and
     ``home-assistant-frontend`` must equal what that release's own manifest asks
     for — so an automated bump is not an upgrade. Ignoring them outright would
-    also swallow the security update this block exists to receive, so the ignore
-    names version updates and nothing else.
+    also swallow the security update the ``pip`` block exists to receive, so the
+    ignore names version updates and nothing else.
+
+    Both root blocks need it. The ``uv`` updater is named for ``pyproject.toml``
+    and ``uv.lock`` but reads the root's requirements files as well, and writes
+    either pin straight into ``requirements-integration.txt`` when it is not
+    told otherwise.
+    """
+    block = dependabot_block(ecosystem, "/")
+    assert block is not None, f"no {ecosystem} block for the repository root"
+    ignored = ignored_update_types(block)
+
+    assert set(HA_PINS) <= set(ignored), f"{ecosystem} block ignores {sorted(ignored)}"
+    for name in HA_PINS:
+        assert ignored[name] == VERSION_UPDATE_TYPES, (
+            f"{name} is ignored for {sorted(ignored[name]) or 'every update'} in the "
+            f"{ecosystem} block — a blanket ignore also mutes the security channel"
+        )
+
+
+def test_dependabot_keeps_pip_off_the_manifests_uv_owns() -> None:
+    """The generated export is not a manifest to edit, and never on its own.
+
+    ``requirements-dev.txt`` is written by ``uv export`` and carries "do not edit
+    by hand" on its first line; ``pyproject.toml`` is half of a pair whose other
+    half is ``uv.lock``. The pip updater parses both anyway, so every dev package
+    the ``uv`` group already carries arrives a second time, in a shape that
+    dirties the tree for whoever runs ``uv`` next.
     """
     block = dependabot_block("pip", "/")
     assert block is not None
-    ignored = ignored_update_types(block)
+    left_in = still_scanned(block, UV_OWNED_MANIFESTS)
 
-    assert set(HA_PINS) <= set(ignored), f"pip block ignores {sorted(ignored)}"
-    for name in HA_PINS:
-        assert ignored[name] == VERSION_UPDATE_TYPES, (
-            f"{name} is ignored for {sorted(ignored[name]) or 'every update'} — a blanket "
-            f"ignore also mutes the security channel"
-        )
+    assert left_in == [], f"pip block still scans {left_in} — add them to exclude-paths"
+
+
+def test_an_unscoped_pip_block_is_reported() -> None:
+    """The shape the block had while it was opening the duplicates."""
+    unscoped: dict[str, Any] = {}
+    literal = {"exclude-paths": ["pyproject.toml", "requirements-dev.txt"]}
+    globbed = {"exclude-paths": ["**/*.toml", "**/requirements-dev.txt"]}
+    partial = {"exclude-paths": ["requirements-dev.txt"]}
+
+    assert still_scanned(unscoped, UV_OWNED_MANIFESTS) == list(UV_OWNED_MANIFESTS)
+    assert still_scanned(literal, UV_OWNED_MANIFESTS) == []
+    assert still_scanned(globbed, UV_OWNED_MANIFESTS) == []
+    assert still_scanned(partial, UV_OWNED_MANIFESTS) == ["pyproject.toml"]
 
 
 def test_a_blanket_ignore_is_told_from_a_scoped_one() -> None:

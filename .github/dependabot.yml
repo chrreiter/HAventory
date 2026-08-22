@@ -22,23 +22,9 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
-  # Python dev toolchain via uv (reads pyproject.toml + uv.lock; GA since
-  # 2025-03). Group minor/patch; majors arrive individually.
+  # Python dev toolchain via uv (pyproject.toml + uv.lock). Group minor/patch;
+  # majors arrive individually.
   - package-ecosystem: "uv"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    cooldown:
-      default-days: 3
-    groups:
-      python-dev:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
-
-  # Integration test harness (pip): `requirements-integration.txt` at the root.
-  # The dependency graph already scans that file, so an advisory in it alerts;
-  # what was missing is the pull request that fixes it.
-  - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
@@ -54,8 +40,55 @@ updates:
       # a bump arrives as a red pull request that reopens every week. Both move
       # together, by hand, when the declared floor moves.
       #
+      # The ignore belongs on this block as well as on `pip` below: the `uv`
+      # updater reads the root's requirements files too, not only the two
+      # manifests it is named for, and proposes both pins straight into
+      # `requirements-integration.txt` when it is left out here.
+      #
       # Scoped to version updates rather than ignored outright: a security update
       # for either must still be able to open a pull request.
+      - dependency-name: "homeassistant"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
+      - dependency-name: "home-assistant-frontend"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
+    groups:
+      python-dev:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # Integration test harness (pip): `requirements-integration.txt` at the root.
+  # The dependency graph already scans that file, so an advisory in it alerts;
+  # what was missing is the pull request that fixes it.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 3
+    exclude-paths:
+      # That one file is the whole point of this block, but the pip updater parses
+      # every manifest it finds in the directory — including the two the `uv`
+      # block owns. `requirements-dev.txt` is a `uv export` and says "do not edit
+      # by hand" on line 1; a pip edit to `pyproject.toml` leaves `uv.lock` behind,
+      # which the next `uv` command rewrites under whoever runs it. In scope, each
+      # dev package therefore arrives twice — once from `uv` with the lock, once
+      # from here without it.
+      #
+      # `exclude-paths` covers version updates only. A security advisory in either
+      # file can still open a pull request here; the `uv` block is what fixes one
+      # properly, and a duplicate is cheap next to a missed advisory.
+      - "pyproject.toml"
+      - "requirements-dev.txt"
+    ignore:
+      # The same two pins as the `uv` block above, for the same reason and with
+      # the same version-update scope — this is the block aimed at the file that
+      # carries them, so the ignore has to be here too.
       - dependency-name: "homeassistant"
         update-types:
           - "version-update:semver-major"

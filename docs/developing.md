@@ -464,7 +464,13 @@ throughout.
 - PR hygiene: Conventional-Commit PR-title check, path-based auto-labeling
   (`.github/labeler.yml`), labels-as-code (`.github/labels.yml`), CODEOWNERS review
   requests, and issue/PR templates.
-- Dependabot: grouped updates for `github-actions`, `npm` (card), and `uv` (Python).
+- Dependabot: grouped updates for `github-actions`, `npm` (card) and `uv` (Python), plus a
+  `pip` block for `requirements-integration.txt` so an advisory in that file arrives as a
+  pull request and not only as an alert. Both root Python blocks ignore *version* updates
+  to `homeassistant` and `home-assistant-frontend` — they are the declared floor and the
+  wheel that release asks for, not dependencies to keep current — and the `pip` block is
+  scoped off `pyproject.toml` and the generated `requirements-dev.txt`, which belong to the
+  `uv` block.
 - `main` is protected by a checked-in ruleset (`.github/rulesets/main.json`): pull request
   required, the CI/CodeQL/dependency-review/PR-title checks required, no force-push or
   deletion. Edit it under *Settings → Rules → Rulesets*, or `PUT` the file to
