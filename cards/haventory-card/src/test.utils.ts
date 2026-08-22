@@ -2,6 +2,7 @@ import type { CSSResult } from 'lit';
 import { vi } from 'vitest';
 
 import { Store } from './store/store';
+import { toIsoDate } from './ui/relative-time';
 import type {
   AnyEventPayload,
   AreaRef,
@@ -746,12 +747,19 @@ export function makeMockHass(initial?: MockConfig): MockHass {
   return hass;
 }
 
-/** Today in UTC, the day every one of these rules compares against. */
+/**
+ * Today in this machine's zone, the day every one of these rules compares against.
+ *
+ * `toIsoDate` is what the components themselves read, and the backend now names
+ * the instance's own day rather than a UTC one. Slicing an ISO string would give
+ * the UTC day instead, which agrees with neither for part of every day — a mock
+ * that disagreed with the code it stands in for on any machine outside UTC.
+ */
 function mockToday(): string {
-  return new Date().toISOString().slice(0, 10);
+  return toIsoDate();
 }
 
-/** Mirror of the backend's overdue rule: a due date strictly before today (UTC). */
+/** Mirror of the backend's overdue rule: a due date strictly before today. */
 function isMockOverdue(item: Item): boolean {
   return !!item.due_date && item.due_date < mockToday();
 }
