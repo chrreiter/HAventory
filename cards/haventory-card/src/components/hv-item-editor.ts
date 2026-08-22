@@ -16,6 +16,7 @@ import {
 import { saveShortcutLabel } from '../ui/keyboard';
 import { counted } from '../ui/plural';
 import { discardPrompt } from '../ui/discard';
+import { COPIED_MS, copyText } from '../ui/clipboard';
 import { ViewportNarrow } from '../ui/responsive';
 import { nextZBase } from '../utils/zindex';
 import {
@@ -745,6 +746,30 @@ export class HVItemEditor extends LitElement {
         font: 400 12px var(--hv-font);
         color: var(--hv-text-secondary);
       }
+      /* The id is not read, it is pasted — printed in full and offered to one
+         tap: user-select: all takes the whole uuid from a single click or
+         long-press, which is the copy route left when the browser has no
+         clipboard API (Home Assistant over plain http:// is not a secure
+         context). A uuid carries no space to break at, so it is allowed to
+         break anywhere rather than push the button off a phone's row.
+         A row of its own above the actions, never a fourth control inside
+         them: that row is Delete, Cancel and Save, and at 375px the three of
+         them have 343px to spend. */
+      .id-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .id-row code {
+        min-width: 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11.5px;
+        color: var(--hv-text-secondary);
+        overflow-wrap: anywhere;
+        -webkit-user-select: all;
+        user-select: all;
+      }
       /* Delete is hv-text-button danger from the shared sheet — the same
          borderless red every other destructive action in the card uses (the
          detail sheet's own Delete item, the organize dialog's Delete).
@@ -1185,6 +1210,13 @@ export class HVItemEditor extends LitElement {
   @state() private _lightbox: number | null = null;
   /** Escape on a dirty form asks before it throws the typing away. */
   @state() private _confirmDiscard = false;
+  /**
+   * Whether the item's id was copied a moment ago. Set only on a copy the
+   * browser confirmed — the button is the only feedback there is, so it must
+   * not announce a clipboard that still holds something else.
+   */
+  @state() private _copiedId = false;
+  private _copiedTimer?: ReturnType<typeof setTimeout>;
   /** Why creating a first location from the picker failed. */
   @state() private _locationError: string | null = null;
   /**
@@ -1253,6 +1285,7 @@ export class HVItemEditor extends LitElement {
       this._lightbox = null;
       this._locationError = null;
       this._createdLocations = [];
+      this._clearCopied();
       this._closeCategory();
       return;
     }
@@ -1576,6 +1609,28 @@ export class HVItemEditor extends LitElement {
   disconnectedCallback(): void {
     super.disconnectedCallback();
     this._closeCategory();
+    this._clearCopied();
+  }
+
+  private _clearCopied() {
+    clearTimeout(this._copiedTimer);
+    this._copiedTimer = undefined;
+    this._copiedId = false;
+  }
+
+  /**
+   * Put the item's id on the clipboard, and say so only if it got there.
+   *
+   * The label reverts on its own: a button that stays "Copied" reads as the
+   * name of what it does, and the next copy would then look like a no-op.
+   */
+  private async _copyId(id: string) {
+    if (!(await copyText(id))) return;
+    clearTimeout(this._copiedTimer);
+    this._copiedId = true;
+    this._copiedTimer = setTimeout(() => {
+      this._copiedId = false;
+    }, COPIED_MS);
   }
 
   private _chooseCategory(value: string) {
@@ -2423,6 +2478,35 @@ export class HVItemEditor extends LitElement {
     </div>`;
   }
 
+  /**
+   * The string every `haventory.*` action names this item by, as `item_id`.
+   *
+   * This form is the only surface a desktop gets: the detail sheet that also
+   * prints the id opens on a card element of 600px or less, and in the full
+   * view only below the 700px viewport query — while automation YAML is
+   * written on a wide screen. Last in the grid, below the fields and above the
+   * actions: it is a fact about the item, not something to fill in.
+   *
+   * The create form has no id yet and says nothing rather than showing a blank.
+   */
+  private _renderIdRow() {
+    const id = this.item?.id;
+    if (!id) return null;
+    return html`<div class="cell span3">
+      <span class="hv-label">${t('hv.term.id')}</span>
+      <div class="id-row">
+        <code data-testid="editor-id">${id}</code>
+        <button
+          class="hv-text-button"
+          data-testid="editor-copy-id"
+          @click=${() => void this._copyId(id)}
+        >
+          ${this._copiedId ? t('hv.action.copied') : t('hv.action.copy')}
+        </button>
+      </div>
+    </div>`;
+  }
+
   /** Hand the picked files to the queue and let the same file be picked again. */
   private _onPicked(e: Event, kind: AttachmentKind) {
     const input = e.target as HTMLInputElement;
@@ -2823,6 +2907,8 @@ export class HVItemEditor extends LitElement {
           ${this.mobile
             ? html`<div class="cell span3">${this._renderMoreFields()}</div>`
             : html`${this._renderStateFields()} ${this._renderCustomFields()}`}
+
+          ${this._renderIdRow()}
 
           <div class="cell span3 actions-cell">
             <div class="actions">
