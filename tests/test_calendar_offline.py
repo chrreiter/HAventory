@@ -441,3 +441,71 @@ def test_a_reminder_with_no_anchor_projects_from_its_own_date() -> None:
     events = build_events([item], WINDOW_START, date(2026, 11, 1))
 
     assert [e.start for e in events] == [date(2026, 8, 10), date(2026, 9, 10), date(2026, 10, 10)]
+
+
+# ---------------------------------------------------------------------------
+# Summary patterns — the household's language reaches every kind
+# ---------------------------------------------------------------------------
+
+GERMAN = {
+    KIND_DUE: "Rückgabe: {name}",
+    KIND_INSPECTION: "Prüfung: {name}",
+    KIND_REMINDER: "Erinnerung: {name}",
+}
+
+
+def test_passed_patterns_are_applied_to_all_three_kinds() -> None:
+    """The whole point: no summary is written in this module's own language."""
+
+    ladder = _item("Ladder", due="2026-08-10")
+    extinguisher = _item("Extinguisher", inspection="2026-08-20")
+    filter_change = _reminder("HVAC filter", anchor="2026-08-25")
+
+    events = build_events(
+        [ladder, extinguisher, filter_change], WINDOW_START, WINDOW_END, summaries=GERMAN
+    )
+
+    assert [e.summary for e in events] == [
+        "Rückgabe: Ladder",
+        "Prüfung: Extinguisher",
+        "Erinnerung: HVAC filter",
+    ]
+
+
+def test_next_event_writes_its_summary_the_same_way() -> None:
+    """The entity's state attribute comes through here, not `build_events`."""
+
+    ladder = _item("Ladder", due="2026-08-10")
+
+    german = next_event([ladder], WINDOW_START, summaries=GERMAN)
+    assert german is not None and german.summary == "Rückgabe: Ladder"
+
+    english = next_event([ladder], WINDOW_START)
+    assert english is not None and english.summary == "Ladder due back"
+
+
+def test_a_kind_the_patterns_are_missing_keeps_its_english() -> None:
+    """A translation that has not reached every key still projects a summary.
+
+    Home Assistant lays the requested language over English before this is
+    built, so a gap here means a mapping assembled some other way — and the
+    English pattern is a better answer than a title-less event.
+    """
+
+    events = build_events(
+        [_item("Ladder", due="2026-08-10"), _item("Extinguisher", inspection="2026-08-20")],
+        WINDOW_START,
+        WINDOW_END,
+        summaries={KIND_INSPECTION: "Prüfung: {name}"},
+    )
+
+    assert [e.summary for e in events] == ["Ladder due back", "Prüfung: Extinguisher"]
+
+
+def test_braces_in_an_item_name_survive_the_substitution() -> None:
+    """A name is a value, never part of the pattern: households label things
+    `{spare}` and a formatter would raise on one."""
+
+    events = build_events([_item("Fuse {spare}", due="2026-08-10")], WINDOW_START, WINDOW_END)
+
+    assert [e.summary for e in events] == ["Fuse {spare} due back"]

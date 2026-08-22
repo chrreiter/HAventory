@@ -15,9 +15,10 @@ occurrences the window covers, and none of them is written anywhere.
 from __future__ import annotations
 
 from calendar import monthrange
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from types import MappingProxyType
 
 from .logs import context_logger
 from .models import Item, ReminderInterval
@@ -38,6 +39,19 @@ _REPORTED_UNREADABLE: set[tuple[str, str, str]] = set()
 KIND_DUE = "due"
 KIND_INSPECTION = "inspection"
 KIND_REMINDER = "reminder"
+
+# How each kind's summary is written, keyed by kind. English, because this
+# module has no Home Assistant to ask; `calendar.py` resolves the household's
+# language once and passes the result in. The item's name is a `{name}`
+# placeholder rather than a suffix so a translation can put the noun where its
+# language puts it.
+SUMMARY_PATTERNS: Mapping[str, str] = MappingProxyType(
+    {
+        KIND_DUE: "{name} due back",
+        KIND_INSPECTION: "{name} inspection",
+        KIND_REMINDER: "{name} reminder",
+    }
+)
 
 # What one item's reminder may contribute to one window. A bound on the answer,
 # not on the data: a daily reminder against a decade-wide window is a request
@@ -82,7 +96,13 @@ def window_dates(start: datetime, end: datetime) -> tuple[date, date]:
     return start.date(), (last + _ONE_DAY if end.time() != time.min else last)
 
 
-def build_events(items: Iterable[Item], start: date, end: date) -> list[ProjectedEvent]:
+def build_events(
+    items: Iterable[Item],
+    start: date,
+    end: date,
+    *,
+    summaries: Mapping[str, str] = SUMMARY_PATTERNS,
+) -> list[ProjectedEvent]:
     """Every occurrence inside `[start, end)`, ordered for display.
 
     A date exactly on `start` is included and one exactly on `end` is not, which
@@ -90,10 +110,15 @@ def build_events(items: Iterable[Item], start: date, end: date) -> list[Projecte
     produces.
     """
 
-    return sorted(_iter_events(items, start, end), key=_order)
+    return sorted(_iter_events(items, start, end, summaries=summaries), key=_order)
 
 
-def next_event(items: Iterable[Item], on_or_after: date) -> ProjectedEvent | None:
+def next_event(
+    items: Iterable[Item],
+    on_or_after: date,
+    *,
+    summaries: Mapping[str, str] = SUMMARY_PATTERNS,
+) -> ProjectedEvent | None:
     """The earliest occurrence from `on_or_after` onwards, or none.
 
     What the entity reports as its state. An all-day occurrence covers the whole
@@ -106,7 +131,11 @@ def next_event(items: Iterable[Item], on_or_after: date) -> ProjectedEvent | Non
     window costs no more than a bounded one.
     """
 
-    return min(_iter_events(items, on_or_after, date.max, limit=1), key=_order, default=None)
+    return min(
+        _iter_events(items, on_or_after, date.max, limit=1, summaries=summaries),
+        key=_order,
+        default=None,
+    )
 
 
 def next_occurrence_after(
@@ -124,28 +153,49 @@ def next_occurrence_after(
 
 
 def _iter_events(
-    items: Iterable[Item], start: date, end: date, *, limit: int = MAX_REMINDER_OCCURRENCES
+    items: Iterable[Item],
+    start: date,
+    end: date,
+    *,
+    limit: int = MAX_REMINDER_OCCURRENCES,
+    summaries: Mapping[str, str] = SUMMARY_PATTERNS,
 ) -> Iterator[ProjectedEvent]:
     for item in items:
-        yield from _item_events(item, start, end, limit=limit)
+        yield from _item_events(item, start, end, limit=limit, summaries=summaries)
 
 
-def _item_events(item: Item, start: date, end: date, *, limit: int) -> Iterator[ProjectedEvent]:
-    for kind, stored, summary in (
-        (KIND_DUE, item.due_date, f"{item.name} due back"),
-        (KIND_INSPECTION, item.inspection_date, f"{item.name} inspection"),
+def _summary(summaries: Mapping[str, str], kind: str, item: Item) -> str:
+    """One event's title, from the pattern its kind is written with.
+
+    Substituted rather than `str.format`ted: an item name may hold braces, and a
+    translation Home Assistant could not parse would otherwise raise here and
+    cost the whole calendar its events rather than that one row its title.
+    """
+
+    pattern = summaries.get(kind) or SUMMARY_PATTERNS[kind]
+    return pattern.replace("{name}", item.name)
+
+
+def _item_events(
+    item: Item, start: date, end: date, *, limit: int, summaries: Mapping[str, str]
+) -> Iterator[ProjectedEvent]:
+    for kind, stored in (
+        (KIND_DUE, item.due_date),
+        (KIND_INSPECTION, item.inspection_date),
     ):
         if stored is None:
             continue
         day = _stored_date(item, f"{kind}_date", stored)
         if day is None or not (start <= day < end):
             continue
-        yield _event(item, kind, summary, day, uid=f"{item.id}:{kind}")
+        yield _event(item, kind, _summary(summaries, kind, item), day, uid=f"{item.id}:{kind}")
 
-    yield from _reminder_events(item, start, end, limit=limit)
+    yield from _reminder_events(item, start, end, limit=limit, summaries=summaries)
 
 
-def _reminder_events(item: Item, start: date, end: date, *, limit: int) -> Iterator[ProjectedEvent]:
+def _reminder_events(
+    item: Item, start: date, end: date, *, limit: int, summaries: Mapping[str, str]
+) -> Iterator[ProjectedEvent]:
     """Every occurrence of the item's reminder inside `[start, end)`.
 
     With no interval `reminder_date` is the whole series — a one-off. With one,
@@ -162,7 +212,7 @@ def _reminder_events(item: Item, start: date, end: date, *, limit: int) -> Itera
     if occurrence is None:
         return
     interval = item.reminder_interval
-    summary = f"{item.name} reminder"
+    summary = _summary(summaries, KIND_REMINDER, item)
 
     if interval is None:
         if start <= occurrence < end:

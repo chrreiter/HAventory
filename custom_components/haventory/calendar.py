@@ -11,6 +11,7 @@ over on a day nobody touched the inventory.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
@@ -20,15 +21,28 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.translation import async_get_translations
 from homeassistant.util import dt as dt_util
 
-from .calendar_projection import ProjectedEvent, build_events, next_event, window_dates
+from .calendar_projection import (
+    SUMMARY_PATTERNS,
+    ProjectedEvent,
+    build_events,
+    next_event,
+    window_dates,
+)
 from .const import CALENDAR_UNIQUE_ID, DOMAIN, INTEGRATION_VERSION, SIGNAL_INVENTORY_CHANGED
 from .logs import context_logger
 from .models import Item
 from .runtime import find_runtime
 
 LOGGER = context_logger(__name__)
+
+# Which section of `strings.json` the summary patterns live in. Home Assistant
+# reads any top-level section as a translation category, but hassfest validates
+# `strings.json` against a fixed set of them and rejects an invented one, so the
+# three patterns sit in `common` under `calendar_`-prefixed keys.
+TRANSLATION_CATEGORY = "common"
 
 
 async def async_setup_entry(
@@ -55,6 +69,7 @@ class HaventoryCalendar(CalendarEntity):
         # declares `single_config_entry`, so there is never a second one to tell
         # this apart from, and the reserved entity_id is pinned to this string.
         self._attr_unique_id = CALENDAR_UNIQUE_ID
+        self._summaries: Mapping[str, str] = SUMMARY_PATTERNS
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name="HAventory",
@@ -67,6 +82,7 @@ class HaventoryCalendar(CalendarEntity):
     async def async_added_to_hass(self) -> None:
         """Subscribe to the two things that move the reported event."""
 
+        self._summaries = await _async_summaries(self.hass)
         self.async_on_remove(
             async_dispatcher_connect(self.hass, SIGNAL_INVENTORY_CHANGED, self._handle_update)
         )
@@ -98,7 +114,7 @@ class HaventoryCalendar(CalendarEntity):
         items = self._items()
         if items is None:
             return None
-        upcoming = next_event(items, dt_util.now().date())
+        upcoming = next_event(items, dt_util.now().date(), summaries=self._summaries)
         return _as_calendar_event(upcoming) if upcoming is not None else None
 
     async def async_get_events(
@@ -110,7 +126,10 @@ class HaventoryCalendar(CalendarEntity):
         if items is None:
             return []
         start, end = window_dates(dt_util.as_local(start_date), dt_util.as_local(end_date))
-        return [_as_calendar_event(event) for event in build_events(items, start, end)]
+        return [
+            _as_calendar_event(event)
+            for event in build_events(items, start, end, summaries=self._summaries)
+        ]
 
     def _items(self) -> list[Item] | None:
         """Every item, or none while the entry is unloaded.
@@ -133,6 +152,30 @@ class HaventoryCalendar(CalendarEntity):
             )
             return None
         return list(result["items"])
+
+
+async def _async_summaries(hass: HomeAssistant) -> Mapping[str, str]:
+    """The three summary patterns, in the language the server runs in.
+
+    `hass.config.language` rather than the reading user's: an event summary is
+    also `calendar.haventory`'s `message` attribute, which an automation
+    templates, and an entity's state has one language — the server's, which is
+    what Home Assistant names its own entities in.
+
+    Resolved once, on the entity, because `CalendarEntity.event` is a
+    synchronous property that cannot await one. Home Assistant loads English
+    first and lays the requested language over it, so a key a translation has
+    not reached keeps its English pattern with nothing to arrange here.
+    """
+
+    resources = await async_get_translations(
+        hass, hass.config.language, TRANSLATION_CATEGORY, integrations=[DOMAIN]
+    )
+    prefix = f"component.{DOMAIN}.{TRANSLATION_CATEGORY}."
+    return {
+        kind: resources.get(f"{prefix}calendar_{kind}", default)
+        for kind, default in SUMMARY_PATTERNS.items()
+    }
 
 
 def _as_calendar_event(event: ProjectedEvent) -> CalendarEvent:
