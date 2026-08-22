@@ -1,4 +1,4 @@
-import { setLanguage } from '../i18n';
+import { setLanguage, t } from '../i18n';
 import './hv-item-editor';
 import {
   all,
@@ -528,6 +528,28 @@ describe('hv-item-editor: saving', () => {
       'editor-save',
     ]);
     expect(editorCss()).toMatch(/\.actions \.spacer \{[^}]*margin-left: auto/);
+  });
+
+  // Measured at 375px in the panel's detail sheet: the row has 343px and the
+  // three German labels plus their gaps want 352.2, so Save dropped onto a line
+  // of its own at the left edge. The verb alone costs the row 78px.
+  it('shows Delete as the bare verb on a phone and the whole phrase elsewhere', async () => {
+    const narrow = await mount(makeItem({ id: '1', name: 'A' }), { mobile: true });
+    const wide = await mount(makeItem({ id: '1', name: 'A' }));
+
+    const label = (el: Element) =>
+      q(el, '[data-testid="editor-delete"]')?.textContent?.trim();
+    expect(label(narrow)).toBe(t('hv.action.delete'));
+    expect(label(wide)).toBe(t('hv.action.deleteItem'));
+    expect(label(narrow)).not.toBe(label(wide));
+
+    // Shorter on the screen, unchanged to a screen reader — on both branches,
+    // so the name never depends on the width.
+    for (const el of [narrow, wide]) {
+      expect(q(el, '[data-testid="editor-delete"]')?.getAttribute('aria-label')).toBe(
+        t('hv.action.deleteItem'),
+      );
+    }
   });
 
   // Three buttons in one row, three shapes: measured at a 390px viewport in the
