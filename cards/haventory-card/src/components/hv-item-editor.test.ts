@@ -12,6 +12,13 @@ import {
   settle,
   stubViewport,
 } from '../test.utils';
+// The clipboard itself is `ui/clipboard`'s own test; what the editor owes is
+// asking the helper and believing its answer, which needs both answers.
+vi.mock('../ui/clipboard', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../ui/clipboard')>()),
+  copyText: vi.fn(async () => true),
+}));
+import { copyText } from '../ui/clipboard';
 import { discardPrompt } from '../ui/discard';
 import { MEDIA_NAME_TOKEN_PARAM, MEDIA_SIZE_PARAM, attachmentNameToken } from '../ui/media';
 import { addDays } from '../ui/relative-time';
@@ -2763,6 +2770,96 @@ describe('hv-item-editor: reminders', () => {
     expect(saves[0].changes?.reminder_interval).toBe(null);
   });
 
+});
+
+describe('hv-item-editor: the id an automation names', () => {
+  const UUID = '0f2c4a11-6b3d-4a5e-9c8f-2d1e0b7a4c63';
+  const copy = vi.mocked(copyText);
+  const button = (el: HVItemEditor) => q<HTMLButtonElement>(el, '[data-testid="editor-copy-id"]')!;
+
+  beforeEach(() => {
+    copy.mockReset();
+    copy.mockResolvedValue(true);
+  });
+
+  // The editor is the only surface a desktop gets: the detail sheet that also
+  // prints the id opens on a card ≤600px and in the full view below 700px.
+  it('prints the whole id of the item being edited', async () => {
+    const el = await mount(makeItem({ id: UUID }));
+    // Elided it would be unpastable, which is the only reason to print it.
+    expect(q(el, '[data-testid="editor-id"]')?.textContent?.trim()).toBe(UUID);
+  });
+
+  // jsdom lays out no shadow DOM, so the rule is read off the stylesheet.
+  it('offers the whole id to one tap rather than to a 36-character drag', async () => {
+    await mount(makeItem({ id: UUID }));
+    expect(editorCss()).toMatch(/\.id-row code \{[^}]*user-select: all/);
+  });
+
+  it('says nothing on the create form, which has no id yet', async () => {
+    const el = await mount(null);
+    expect(q(el, '[data-testid="editor-id"]')).toBeNull();
+    expect(q(el, '[data-testid="editor-copy-id"]')).toBeNull();
+  });
+
+  // The action row is Delete, Cancel and Save, and at 375px those three have
+  // 343px to spend — a fourth label there would take the row onto two lines.
+  it('keeps the copy out of the phone action row', async () => {
+    const el = await mount(makeItem({ id: UUID }), { mobile: true });
+    expect(button(el).closest('.actions')).toBeNull();
+  });
+
+  it('copies the id and says so once the copy has happened', async () => {
+    const el = await mount(makeItem({ id: UUID }));
+    expect(button(el).textContent?.trim()).toBe('Copy');
+
+    button(el).click();
+    await settle(el);
+
+    expect(copy).toHaveBeenCalledWith(UUID);
+    expect(button(el).textContent?.trim()).toBe('Copied');
+  });
+
+  // Home Assistant on the LAN over plain http:// is not a secure context, and
+  // an old browser there has no fallback either. "Copied" would name whatever
+  // was on the clipboard before, so the value stays on screen and unclaimed.
+  it('claims nothing when the browser refused the copy', async () => {
+    copy.mockResolvedValue(false);
+    const el = await mount(makeItem({ id: UUID }));
+
+    button(el).click();
+    await settle(el);
+
+    expect(button(el).textContent?.trim()).toBe('Copy');
+  });
+
+  it('goes back to offering the copy a couple of seconds later', async () => {
+    const el = await mount(makeItem({ id: UUID }));
+    vi.useFakeTimers();
+    try {
+      button(el).click();
+      await settle(el);
+      expect(button(el).textContent?.trim()).toBe('Copied');
+
+      await vi.advanceTimersByTimeAsync(2500);
+      await el.updateComplete;
+      expect(button(el).textContent?.trim()).toBe('Copy');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('forgets it copied when the form moves to another item', async () => {
+    const el = await mount(makeItem({ id: UUID }));
+    button(el).click();
+    await settle(el);
+
+    el.item = makeItem({ id: 'i-8' });
+    await settle(el);
+
+    expect(q(el, '[data-testid="editor-id"]')?.textContent?.trim()).toBe('i-8');
+    expect(button(el).textContent?.trim()).toBe('Copy');
+  });
 });
 
 describe('hv-item-editor: the language in force', () => {

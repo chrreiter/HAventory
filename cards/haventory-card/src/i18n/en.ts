@@ -270,6 +270,8 @@ export const en = {
   'hv.action.checkIn': 'Check in',
   'hv.action.checkOut': 'Check out',
   'hv.action.checkOutEllipsis': 'Check out…',
+  'hv.action.copy': 'Copy',
+  'hv.action.copied': 'Copied',
 
   // Words the card names a fact with, wherever it names one.
   'hv.term.noLocation': 'No location',
@@ -282,6 +284,11 @@ export const en = {
   'hv.term.yes': 'Yes',
   'hv.term.no': 'No',
   'hv.term.fileMissing': 'File missing',
+  // The label over an item's or a location's uuid, on both surfaces that print
+  // one. Deliberately the initialism rather than "Identifier": it is what the
+  // service fields are called (`item_id`, `location_id`), which is what the
+  // household is about to paste it into.
+  'hv.term.id': 'ID',
   'hv.term.due': 'due {date}',
   'hv.term.overdueOn': 'Overdue · {date}',
   'hv.term.checkedOutUntil': 'Checked out · due {date}',
@@ -722,7 +729,6 @@ export const en = {
   'hv.diagnostics.integrationVersion': 'Integration version',
   'hv.diagnostics.healthyNote':
     'A healthy integration reports nothing here. The counters stay at zero unless rate limiting is enabled and tripped.',
-  'hv.diagnostics.copied': 'Copied',
   'hv.diagnostics.copyReport': 'Copy report',
 
   // hv-import-sheet.

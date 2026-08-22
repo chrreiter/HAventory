@@ -177,8 +177,10 @@ script:
           location_id: "8a11…"
 ```
 
-The ids those take are the ones in a JSON export (⋮ → **Export backup**); nothing in the
-card shows an id today.
+To read an id: open an item from the card and its **ID** is on it, with **Copy** beside it —
+the last fact on the detail sheet a narrow surface opens, the last row of the edit form
+everywhere else. A location's is in its editor, under ⋮ → **Organize** → Locations → ✎. A JSON
+export (⋮ → **Export backup**) carries both as well.
 
 Every action returns the entity it touched, so a script can chain calls through
 `response_variable`. The sensors and what each one counts, the event payloads, the calendar,

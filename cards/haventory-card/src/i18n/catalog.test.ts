@@ -68,6 +68,7 @@ describe('the German dictionary', () => {
       'hv.filter.sortField.name',
       'hv.table.name',
       'hv.organize.locationName',
+      'hv.term.id',
       // Nothing but placeholders and punctuation — there is no word to move.
       'hv.editor.upload.progress',
       'hv.sheet.updatedValue',

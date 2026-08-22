@@ -1,7 +1,14 @@
 import './hv-diagnostics-panel';
 import type { HVDiagnosticsPanel } from './hv-diagnostics-panel';
 import type { DegradedState, HealthResult, StatsCounts } from '../store/types';
-import { all, mountComponent, q } from '../test.utils';
+import { all, mountComponent, q, settle } from '../test.utils';
+// The clipboard itself is `ui/clipboard`'s own test; what this panel owes is
+// asking the helper and believing its answer, which needs both answers.
+vi.mock('../ui/clipboard', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../ui/clipboard')>()),
+  copyText: vi.fn(async () => true),
+}));
+import { copyText } from '../ui/clipboard';
 
 const counts: StatsCounts = {
   items_total: 250,
@@ -142,6 +149,31 @@ describe('hv-diagnostics-panel: actions', () => {
     expect(el.report).toContain('healthy: false');
     expect(el.report).toContain('low_stock_count_mismatch');
     expect(el.report).toContain('subscriptions: items=true');
+  });
+
+  it('copies the report and says so once the copy has happened', async () => {
+    const el = await mount();
+    const button = q(el, '[data-testid="diagnostics-copy"]') as HTMLButtonElement;
+
+    button.click();
+    await settle(el);
+
+    expect(copyText).toHaveBeenCalledWith(el.report);
+    expect(button.textContent?.trim()).toBe('Copied');
+  });
+
+  // A report the household is told it has, and has not, is worse than a button
+  // that stayed put: Home Assistant over plain http:// is not a secure context,
+  // and an old browser there has no fallback either.
+  it('says nothing about a copy the browser refused', async () => {
+    vi.mocked(copyText).mockResolvedValueOnce(false);
+    const el = await mount();
+    const button = q(el, '[data-testid="diagnostics-copy"]') as HTMLButtonElement;
+
+    button.click();
+    await settle(el);
+
+    expect(button.textContent?.trim()).toBe('Copy report');
   });
 
   // This panel writes nothing, so its way out must not wear the shape that

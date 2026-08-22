@@ -22,6 +22,7 @@ import {
 } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
 import { discardPrompt } from '../ui/discard';
+import { COPIED_MS, copyText } from '../ui/clipboard';
 import { ViewportNarrow } from '../ui/responsive';
 import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, ScalarValue, StatusDefinition } from '../store/types';
 import './hv-bottom-sheet';
@@ -254,6 +255,19 @@ export class HVDetailSheet extends LitElement {
       .fact .text-action[disabled] {
         color: var(--hv-text-tertiary);
       }
+      /* The id is not read, it is pasted — so it is printed in full and offered
+         to one tap: user-select: all takes the whole uuid from a single click or
+         long-press, which is the copy route left when the browser has no
+         clipboard API (Home Assistant over plain http:// is not a secure
+         context). A uuid carries no space to break at, so it is allowed to break
+         anywhere rather than push the button off a phone's row. */
+      .fact .value.id {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11.5px;
+        overflow-wrap: anywhere;
+        -webkit-user-select: all;
+        user-select: all;
+      }
       .actions {
         display: grid;
         gap: 9px;
@@ -438,6 +452,13 @@ export class HVDetailSheet extends LitElement {
    * view, dismissing the sheet takes the whole surface down.
    */
   @state() private _pendingDiscard: 'read' | 'close' | null = null;
+  /**
+   * Whether the id was copied a moment ago. Set only on a copy the browser
+   * confirmed — the button is the only feedback there is, so it must not
+   * announce a clipboard that still holds something else.
+   */
+  @state() private _copiedId = false;
+  private _copiedTimer?: ReturnType<typeof setTimeout>;
 
   private readonly _urls = new MediaUrls(this);
   /** Window width, for the confirm this sheet raises over itself. */
@@ -466,7 +487,34 @@ export class HVDetailSheet extends LitElement {
       this._checkoutOpen = false;
       this._lightbox = null;
       this._pendingDiscard = null;
+      this._clearCopied();
     }
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._clearCopied();
+  }
+
+  private _clearCopied() {
+    clearTimeout(this._copiedTimer);
+    this._copiedTimer = undefined;
+    this._copiedId = false;
+  }
+
+  /**
+   * Put the item's id on the clipboard, and say so only if it got there.
+   *
+   * The label reverts on its own: a button that stays "Copied" reads as the
+   * name of what it does, and the next copy would then look like a no-op.
+   */
+  private async _copyId(id: string) {
+    if (!(await copyText(id))) return;
+    clearTimeout(this._copiedTimer);
+    this._copiedId = true;
+    this._copiedTimer = setTimeout(() => {
+      this._copiedId = false;
+    }, COPIED_MS);
   }
 
   /** True when the edit form is open with unsaved changes. */
@@ -785,6 +833,21 @@ export class HVDetailSheet extends LitElement {
               version: item.version,
             })}</span
           >
+        </div>
+        <!-- Every haventory action that touches one item takes this string as
+             item_id, and until it was printed here the only way to read one was
+             to export the whole inventory as JSON and search it. Last in the
+             list: it is the one fact that is not about the item itself. -->
+        <div class="fact" data-testid="sheet-fact" data-key="id">
+          <span>${t('hv.term.id')}</span>
+          <code class="value id" data-testid="sheet-id">${item.id}</code>
+          <button
+            class="text-action"
+            data-testid="sheet-copy-id"
+            @click=${() => void this._copyId(item.id)}
+          >
+            ${this._copiedId ? t('hv.action.copied') : t('hv.action.copy')}
+          </button>
         </div>
       </div>
 

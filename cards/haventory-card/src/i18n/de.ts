@@ -250,6 +250,8 @@ export const de: Record<TranslationKey, string> = {
   'hv.action.checkIn': 'Zurückgeben',
   'hv.action.checkOut': 'Ausleihen',
   'hv.action.checkOutEllipsis': 'Ausleihen …',
+  'hv.action.copy': 'Kopieren',
+  'hv.action.copied': 'Kopiert',
 
   'hv.term.noLocation': 'Kein Ort',
   'hv.term.checkedOut': 'Ausgeliehen',
@@ -261,6 +263,7 @@ export const de: Record<TranslationKey, string> = {
   'hv.term.yes': 'Ja',
   'hv.term.no': 'Nein',
   'hv.term.fileMissing': 'Datei fehlt',
+  'hv.term.id': 'ID',
   'hv.term.due': 'fällig {date}',
   'hv.term.overdueOn': 'Überfällig · {date}',
   'hv.term.checkedOutUntil': 'Ausgeliehen · fällig {date}',
@@ -688,7 +691,6 @@ export const de: Record<TranslationKey, string> = {
   'hv.diagnostics.integrationVersion': 'Version der Integration',
   'hv.diagnostics.healthyNote':
     'Eine gesunde Integration meldet hier nichts. Die Zähler bleiben bei null, solange die Ratenbegrenzung nicht aktiviert ist und greift.',
-  'hv.diagnostics.copied': 'Kopiert',
   'hv.diagnostics.copyReport': 'Bericht kopieren',
 
   'hv.import.title': 'Backup importieren',
