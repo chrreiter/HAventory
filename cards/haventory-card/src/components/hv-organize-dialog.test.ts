@@ -1,6 +1,13 @@
 import { setLanguage } from '../i18n';
 import './hv-organize-dialog';
 import { all, componentCss, makeItem, mountComponent, mountStore, q, settle } from '../test.utils';
+// The clipboard itself is `ui/clipboard`'s own test; what the dialog owes is
+// asking the helper and believing its answer, which needs both answers.
+vi.mock('../ui/clipboard', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../ui/clipboard')>()),
+  copyText: vi.fn(async () => true),
+}));
+import { copyText } from '../ui/clipboard';
 import { HVOrganizeDialog } from './hv-organize-dialog';
 import type { OrganizeTab } from './hv-organize-dialog';
 import type { AreaRef, Item, Location, StatusDefinition } from '../store/types';
@@ -1629,6 +1636,80 @@ describe('hv-organize-dialog: disclosures come into view', () => {
     expect(scrolls).toHaveLength(2);
     expect(scrolls[1].el).toBe(q(sr, '[data-testid="location-editor"]'));
     expect(sr.activeElement).toBe(q(sr, '[data-testid="location-name"]'));
+  });
+});
+
+describe('hv-organize-dialog: the id an automation names', () => {
+  const locations = [loc('garage', 'Garage', null, 'area-garage'), loc('shelf-a', 'Shelf A', 'garage')];
+  const copy = vi.mocked(copyText);
+
+  /** Open the editor over an existing location, the way the tree's ✎ does. */
+  async function editing(id: string) {
+    const { el, sr } = await mount({ locations });
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+    (
+      tree.shadowRoot?.querySelector(`[data-testid="tree-edit"][data-id="${id}"]`) as HTMLButtonElement
+    ).click();
+    await settle(el);
+    return { el, sr };
+  }
+
+  beforeEach(() => {
+    copy.mockReset();
+    copy.mockResolvedValue(true);
+  });
+
+  it('shows a location its id, and copies it', async () => {
+    const { el, sr } = await editing('garage');
+    expect(q(sr, '[data-testid="location-id"]')?.textContent?.trim()).toBe('garage');
+
+    const button = q<HTMLButtonElement>(sr, '[data-testid="location-copy-id"]')!;
+    expect(button.textContent?.trim()).toBe('Copy');
+    button.click();
+    await settle(el);
+
+    expect(copy).toHaveBeenCalledWith('garage');
+    expect(q(sr, '[data-testid="location-copy-id"]')?.textContent?.trim()).toBe('Copied');
+  });
+
+  // The same refusal the detail sheet answers for: over plain http:// there may
+  // be no clipboard at all, and a button that says Copied anyway names whatever
+  // was on it before.
+  it('claims nothing when the browser refused the copy', async () => {
+    copy.mockResolvedValue(false);
+    const { el, sr } = await editing('garage');
+
+    q<HTMLButtonElement>(sr, '[data-testid="location-copy-id"]')!.click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="location-copy-id"]')?.textContent?.trim()).toBe('Copy');
+  });
+
+  it('offers no id on the editor for a location that does not exist yet', async () => {
+    const { el, sr } = await mount({ locations });
+    (q(sr, '[data-testid="organize-new-location"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="location-editor"]')).toBeTruthy();
+    expect(q(sr, '[data-testid="location-id"]')).toBe(null);
+    expect(q(sr, '[data-testid="location-copy-id"]')).toBe(null);
+  });
+
+  it('forgets it copied when the editor is opened again', async () => {
+    const { el, sr } = await editing('garage');
+    q<HTMLButtonElement>(sr, '[data-testid="location-copy-id"]')!.click();
+    await settle(el);
+    expect(q(sr, '[data-testid="location-copy-id"]')?.textContent?.trim()).toBe('Copied');
+
+    (q(sr, '[data-testid="location-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement
+    ).click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="location-copy-id"]')?.textContent?.trim()).toBe('Copy');
   });
 });
 

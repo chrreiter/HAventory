@@ -10,6 +10,7 @@ import { summarizeIssues } from '../ui/health-codes';
 import { relativeTime } from '../ui/relative-time';
 import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
+import { copyText } from '../ui/clipboard';
 import type { DegradedState, HealthResult, StatsCounts, VersionInfo } from '../store/types';
 
 /**
@@ -394,12 +395,11 @@ export class HVDiagnosticsPanel extends LitElement {
             <button
               class="hv-text-button"
               data-testid="diagnostics-copy"
-              @click=${() => {
-                void navigator.clipboard?.writeText?.(this.report).catch(() => undefined);
-                this._copied = true;
+              @click=${async () => {
+                this._copied = await copyText(this.report);
               }}
             >
-              ${this._copied ? t('hv.diagnostics.copied') : t('hv.diagnostics.copyReport')}
+              ${this._copied ? t('hv.action.copied') : t('hv.diagnostics.copyReport')}
             </button>
             <!-- This panel reports; it commits nothing. Its way out is drawn as
                  an outline so the filled shape keeps meaning "this writes". -->

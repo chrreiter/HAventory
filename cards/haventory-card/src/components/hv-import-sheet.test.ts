@@ -1,7 +1,14 @@
 import './hv-import-sheet';
 import type { HVImportSheet } from './hv-import-sheet';
 import type { ImportPreview, ImportSummary } from '../store/types';
-import { all, mountComponent, q } from '../test.utils';
+import { all, mountComponent, q, settle } from '../test.utils';
+// The clipboard itself is `ui/clipboard`'s own test; what this sheet owes is
+// asking the helper and believing its answer, which needs both answers.
+vi.mock('../ui/clipboard', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../ui/clipboard')>()),
+  copyText: vi.fn(async () => true),
+}));
+import { copyText } from '../ui/clipboard';
 
 const VALID_DOC = '{"haventory_export_version":1,"items":[],"locations":[]}';
 
@@ -354,8 +361,23 @@ describe('hv-import-sheet: invalid document', () => {
     const copy = q(el, '[data-testid="import-copy-errors"]') as HTMLButtonElement;
     expect(copy.textContent).toContain('Copy errors');
     copy.click();
-    await el.updateComplete;
+    await settle(el);
+    expect(copyText).toHaveBeenCalledWith(expect.stringContaining('items[14].quantity'));
     expect(copy.textContent).toContain('Copied');
+  });
+
+  // Home Assistant on the LAN over plain http:// is not a secure context, and
+  // an old browser there has no fallback either. Saying "Copied" would send the
+  // household off to paste whatever was on the clipboard before.
+  it('says nothing about a copy the browser refused', async () => {
+    vi.mocked(copyText).mockResolvedValueOnce(false);
+    const el = await mount({ preview: invalid });
+    const copy = q(el, '[data-testid="import-copy-errors"]') as HTMLButtonElement;
+
+    copy.click();
+    await settle(el);
+
+    expect(copy.textContent).toContain('Copy errors');
   });
 });
 

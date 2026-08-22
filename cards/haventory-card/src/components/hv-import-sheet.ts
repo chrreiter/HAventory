@@ -8,6 +8,7 @@ import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
+import { copyText } from '../ui/clipboard';
 import type { ImportBucketCounts, ImportPolicy, ImportPreview, ImportSummary } from '../store/types';
 
 // Every policy decides one thing: what happens to an item the file and the
@@ -433,10 +434,9 @@ export class HVImportSheet extends LitElement {
     this._parseError = null;
   }
 
-  private _copyErrors() {
+  private async _copyErrors() {
     const text = (this.preview?.errors ?? []).map((e) => `${e.path}: ${e.message}`).join('\n');
-    void navigator.clipboard?.writeText?.(text).catch(() => undefined);
-    this._copied = true;
+    this._copied = await copyText(text);
   }
 
   // ---------- States ----------
@@ -585,8 +585,8 @@ export class HVImportSheet extends LitElement {
       </div>
       <div class="foot">
         <span class="hint">${t('hv.import.fixAndRetry')}</span>
-        <button class="hv-text-button" data-testid="import-copy-errors" @click=${() => this._copyErrors()}>
-          ${this._copied ? t('hv.diagnostics.copied') : t('hv.import.copyErrors')}
+        <button class="hv-text-button" data-testid="import-copy-errors" @click=${() => void this._copyErrors()}>
+          ${this._copied ? t('hv.action.copied') : t('hv.import.copyErrors')}
         </button>
         <button
           class="hv-pill"
