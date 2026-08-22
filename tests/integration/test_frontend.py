@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 from custom_components.haventory.const import (
+    CONF_CARD_TITLE,
     CONF_SIDEBAR_PANEL_ENABLED,
     DEFAULT_CARD_TITLE,
     DOMAIN,
@@ -22,6 +23,7 @@ from custom_components.haventory.const import (
     PANEL_URL_PATH,
 )
 from homeassistant.components import frontend
+from homeassistant.config_entries import ConfigEntryDisabler
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
@@ -204,27 +206,80 @@ async def test_the_sidebar_panel_lands_in_the_real_panel_registry(hass: HomeAssi
 
 
 @needs_bundle
-async def test_reload_does_not_hit_the_overwriting_panel_error(hass: HomeAssistant) -> None:
-    """`async_register_built_in_panel` raises on a path already taken.
+async def test_a_reload_leaves_the_same_panel_object_in_place(hass: HomeAssistant) -> None:
+    """A browser standing on `/haventory` is sent away the moment the panel goes.
 
-    Unguarded, that raise comes out of `async_setup_entry` and leaves the entry
-    in a retry loop with no sidebar entry at all.
+    Identity rather than presence: a remove-then-register inside the reload
+    would put a different `Panel` in the registry, and would already have fired
+    the panel-update event that moves the browser. Only the real `frontend`
+    component has that registry, so the offline suite cannot see this.
+    """
+    entry = await _setup(hass)
+    panel = hass.data[frontend.DATA_PANELS][PANEL_URL_PATH]
+
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert hass.data[frontend.DATA_PANELS][PANEL_URL_PATH] is panel
+
+
+@needs_bundle
+async def test_an_unload_on_its_own_keeps_the_sidebar_panel(hass: HomeAssistant) -> None:
+    """The half of a reload the panel has to survive, asserted on its own.
+
+    A reload is an unload followed by a setup; if the unload took the panel, the
+    setup could only put a new one back and the page would be gone either way.
     """
     entry = await _setup(hass)
 
-    assert await hass.config_entries.async_reload(entry.entry_id)
+    assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
     assert PANEL_URL_PATH in hass.data[frontend.DATA_PANELS]
 
 
 @needs_bundle
-async def test_unload_removes_the_sidebar_panel(hass: HomeAssistant) -> None:
-    """No backend, no sidebar entry: the page it opens could not load anyway."""
-    entry = await _setup(hass)
-    assert PANEL_URL_PATH in hass.data[frontend.DATA_PANELS]
+async def test_a_rename_replaces_the_panel_without_the_overwriting_error(
+    hass: HomeAssistant,
+) -> None:
+    """`async_register_built_in_panel` raises on a path already taken.
 
-    assert await hass.config_entries.async_unload(entry.entry_id)
+    Renaming is the path that registers a second time now, so it is the path
+    that has to remove first. Unguarded, the raise comes out of the options
+    listener, the sidebar keeps the old name, and nothing about it reaches the
+    user.
+    """
+    entry = await _setup(hass)
+
+    hass.config_entries.async_update_entry(entry, options={CONF_CARD_TITLE: "Pantry"})
+    await hass.async_block_till_done()
+
+    panel = hass.data[frontend.DATA_PANELS][PANEL_URL_PATH]
+    assert panel.sidebar_title == "Pantry"
+    assert panel.config["title"] == "Pantry"
+
+
+@needs_bundle
+async def test_a_disabled_entry_gives_the_sidebar_panel_back(hass: HomeAssistant) -> None:
+    """A disabled entry stays unloaded, so its sidebar entry opens nothing.
+
+    Home Assistant sets `disabled_by` before it unloads; that ordering is what
+    the unload path reads, and it is real-core behaviour a stub cannot vouch for.
+    """
+    entry = await _setup(hass)
+
+    assert await hass.config_entries.async_set_disabled_by(entry.entry_id, ConfigEntryDisabler.USER)
+    await hass.async_block_till_done()
+
+    assert PANEL_URL_PATH not in hass.data[frontend.DATA_PANELS]
+
+
+@needs_bundle
+async def test_removing_the_entry_gives_the_sidebar_panel_back(hass: HomeAssistant) -> None:
+    """The other end: nothing is coming back to serve the page it opens."""
+    entry = await _setup(hass)
+
+    await hass.config_entries.async_remove(entry.entry_id)
     await hass.async_block_till_done()
 
     assert PANEL_URL_PATH not in hass.data[frontend.DATA_PANELS]

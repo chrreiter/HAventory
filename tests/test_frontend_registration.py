@@ -920,8 +920,13 @@ async def test_registers_the_sidebar_panel_against_the_card_bundle(hav_init):
 
 
 @pytest.mark.asyncio
-async def test_applying_twice_over_leaves_one_panel(hav_init):
-    """Registering onto a path already taken raises in HA — so remove first, always."""
+async def test_applying_twice_over_registers_once(hav_init):
+    """An options save that changes nothing about the panel must not touch it.
+
+    Registering onto a path already taken raises in HA, so a changed
+    registration has to be removed first — and for the moment it is gone, the
+    frontend sends whoever is on `/haventory` back to the default dashboard.
+    """
     hass = make_hass()
     entry = ConfigEntry()
 
@@ -929,28 +934,37 @@ async def test_applying_twice_over_leaves_one_panel(hav_init):
     await hav_init._async_apply_sidebar_panel(hass, entry)
 
     assert list(hass.data[DATA_PANELS]) == [PANEL_URL_PATH]
-    assert panel_registration_attempts(hass) == [PANEL_URL_PATH] * 2
+    assert panel_registration_attempts(hass) == [PANEL_URL_PATH]
 
 
 @pytest.mark.asyncio
-async def test_reload_re_registers_the_panel_exactly_once(hav_init):
-    """Setup → unload → setup: two registrations attempted, one panel live, nothing raised."""
+async def test_a_reload_leaves_the_panel_in_place(hav_init):
+    """Setup → unload → setup, and the panel never leaves the registry.
+
+    The page a browser has open is what disappears with it, so the reload path
+    neither removes nor re-registers: it recognises the registration it already
+    has.
+    """
     hass = make_hass()
     entry = ConfigEntry()
 
     await setup_frontend(hav_init, hass, entry)
+    panel = registered_panel(hass)
+
     await hav_init.async_unload_entry(hass, entry)
+    assert registered_panel(hass) is panel
+
     await setup_frontend(hav_init, hass, entry)
 
-    assert list(hass.data[DATA_PANELS]) == [PANEL_URL_PATH]
-    assert panel_registration_attempts(hass) == [PANEL_URL_PATH] * 2
+    assert registered_panel(hass) is panel
+    assert panel_registration_attempts(hass) == [PANEL_URL_PATH]
 
 
 @pytest.mark.asyncio
-async def test_unload_takes_the_sidebar_entry_back(hav_init):
-    """A sidebar entry outliving its backend opens a page that cannot load."""
+async def test_a_disabled_entry_takes_the_sidebar_entry_back(hav_init):
+    """A disabled entry stays unloaded, so its sidebar entry opens nothing."""
     hass = make_hass()
-    entry = ConfigEntry()
+    entry = ConfigEntry(disabled_by="user")
 
     await setup_frontend(hav_init, hass, entry)
     assert registered_panel(hass) is not None
@@ -958,7 +972,43 @@ async def test_unload_takes_the_sidebar_entry_back(hav_init):
     await hav_init.async_unload_entry(hass, entry)
 
     assert registered_panel(hass) is None
-    assert hass.data[hav_init.DOMAIN].get("panel_registered") is None
+    assert hass.data[hav_init.DOMAIN].get("panel_state") is None
+
+
+@pytest.mark.asyncio
+async def test_removing_the_entry_takes_the_sidebar_entry_back(hav_init):
+    """Removal is the other end: nothing is coming back to serve the page."""
+    hass = make_hass()
+    entry = ConfigEntry()
+
+    await setup_frontend(hav_init, hass, entry)
+    await hav_init.async_unload_entry(hass, entry)
+    assert registered_panel(hass) is not None
+
+    await hav_init.async_remove_entry(hass, entry)
+
+    assert registered_panel(hass) is None
+    assert hass.data[hav_init.DOMAIN].get("panel_state") is None
+
+
+@pytest.mark.asyncio
+async def test_a_rename_across_a_reload_replaces_the_panel(hav_init):
+    """The recognised registration is the one that was made, not merely "a panel".
+
+    A title changed while the entry was unloaded still has to reach the sidebar,
+    which is the case a bare "is something registered?" check would miss.
+    """
+    hass = make_hass()
+    entry = ConfigEntry(options={CONF_CARD_TITLE: "Pantry"})
+
+    await setup_frontend(hav_init, hass, entry)
+    await hav_init.async_unload_entry(hass, entry)
+
+    entry.options[CONF_CARD_TITLE] = "Garage"
+    await setup_frontend(hav_init, hass, entry)
+
+    assert registered_panel(hass).sidebar_title == "Garage"
+    assert panel_registration_attempts(hass) == [PANEL_URL_PATH] * 2
 
 
 @pytest.mark.asyncio

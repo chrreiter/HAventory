@@ -324,11 +324,15 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             entry_id: str = "haventory-test-entry",
             domain: str = "haventory",
             state=None,
+            disabled_by=None,
         ) -> None:
             self.options: dict = dict(options or {})
             self.entry_id = entry_id
             self.domain = domain
             self.state = state if state is not None else ConfigEntryState.LOADED
+            # Home Assistant sets this before it unloads, which is how an unload
+            # that is a disable is told from one that is half of a reload.
+            self.disabled_by = disabled_by
             self._update_listeners: list = []
             self._on_unload: list = []
 
