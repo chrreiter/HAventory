@@ -53,6 +53,49 @@ async function mount(
 }
 
 describe('hv-full-view: phone-width app bar', () => {
+  // The first row of the narrow bar holds four controls and only the heading
+  // can shrink, so the add button's label decides whether the row stays whole.
+  // "Gegenstand hinzufügen" on its own is wider than the room the row has,
+  // which squeezed the heading to "H…" and sent the overflow menu to a second
+  // row; the short label keeps the row, and the full wording is still the
+  // button's accessible name.
+  it('shortens the add button on the narrow branch without losing its name', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { sr } = await mount({ items: [makeItem({ id: '1' })] });
+      const add = q(sr, '[data-testid="full-add-item"]') as HTMLButtonElement;
+      expect(add.textContent?.trim()).toBe('Add');
+      expect(add.getAttribute('aria-label')).toBe('Add item');
+      expect(add.getAttribute('title')).toBe('Add item');
+    } finally {
+      restore();
+    }
+  });
+
+  it('spells the add button out where the bar has room for it', async () => {
+    const restore = stubViewport(false);
+    try {
+      const { sr } = await mount({ items: [makeItem({ id: '1' })] });
+      const add = q(sr, '[data-testid="full-add-item"]') as HTMLButtonElement;
+      expect(add.textContent?.trim()).toBe('Add item');
+      expect(add.getAttribute('aria-label')).toBe('Add item');
+    } finally {
+      restore();
+    }
+  });
+
+  // The crumb and its count can fill a phone-width row on their own. The
+  // filter toggle and the column picker then have to move down together:
+  // as separate flex items the picker wrapped alone under the toggle.
+  it('moves the filter toggle and the column picker as one unit', async () => {
+    const { sr } = await mount({ items: [makeItem({ id: '1' })] });
+    const toggle = q(sr, '[data-testid="full-filters-toggle"]') as HTMLElement;
+    const columns = q(sr, '[data-testid="columns-expanded"]') as HTMLElement;
+    expect(toggle.parentElement).toBe(columns.parentElement);
+    expect(toggle.parentElement?.classList.contains('context-actions')).toBe(true);
+    expect(toggle.parentElement?.parentElement?.classList.contains('context')).toBe(true);
+    expect(componentCss('hv-full-view')).toMatch(/\.context-actions \{[^}]*margin-left: auto/);
+  });
 
   it('keeps the apply button out of the scroll, where the count is visible', async () => {
     const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });

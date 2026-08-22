@@ -534,6 +534,13 @@ export class HVFullView extends LitElement {
         padding: 12px 20px;
         flex-wrap: wrap;
       }
+      .context-actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-left: auto;
+      }
       .crumb {
         font-size: 13px;
         color: var(--hv-text-secondary);
@@ -1731,44 +1738,49 @@ export class HVFullView extends LitElement {
               : null}
           </span>
         </span>
-        <span class="spacer"></span>
-        ${filterCount > 0
-          ? html`<hv-filter-chips
-              .statuses=${this.st?.statuses ?? null}
-              .filters=${filters}
-              .locations=${st?.locationsFlatCache ?? null}
-              .areas=${st?.areasCache?.areas ?? []}
-              @remove-filter=${(e: CustomEvent) =>
-                this._setFilters((e.detail as { patch: Partial<StoreFilters> }).patch)}
-              @clear-filters=${() => this.store?.clearFilters()}
-            ></hv-filter-chips>`
-          : null}
-        <button
-          class="filters-button ${this._filtersOpen ? 'on' : ''}"
-          data-testid="full-filters-toggle"
-          aria-expanded=${String(this._filtersOpen)}
-          aria-controls=${FILTER_PANEL_ID}
-          @click=${() => {
-            this._filtersOpen = !this._filtersOpen;
-            // The phone panel stages its edits, so its button has a number to
-            // print from the moment it opens.
-            if (this._filtersOpen && this._narrow) this._priceStaged(filters);
-          }}
-        >
-          ${icon('tune', 16)}${t('hv.card.filters')}
-        </button>
-        <button
-          class="hv-icon-button"
-          data-testid="columns-expanded"
-          aria-label=${t('hv.fullView.chooseColumns')}
-          title=${t('hv.fullView.chooseColumns')}
-          @click=${() =>
-            this.dispatchEvent(
-              new CustomEvent('menu-action', { detail: { id: 'columns' }, bubbles: true, composed: true }),
-            )}
-        >
-          ${icon('viewColumn', 20)}
-        </button>
+        <!-- One flex item for everything right of the crumb, so that when the
+             crumb and its count fill a phone-width row the chips and both
+             buttons move to the next line together, rather than the column
+             picker wrapping on its own under the filter button. -->
+        <span class="context-actions">
+          ${filterCount > 0
+            ? html`<hv-filter-chips
+                .statuses=${this.st?.statuses ?? null}
+                .filters=${filters}
+                .locations=${st?.locationsFlatCache ?? null}
+                .areas=${st?.areasCache?.areas ?? []}
+                @remove-filter=${(e: CustomEvent) =>
+                  this._setFilters((e.detail as { patch: Partial<StoreFilters> }).patch)}
+                @clear-filters=${() => this.store?.clearFilters()}
+              ></hv-filter-chips>`
+            : null}
+          <button
+            class="filters-button ${this._filtersOpen ? 'on' : ''}"
+            data-testid="full-filters-toggle"
+            aria-expanded=${String(this._filtersOpen)}
+            aria-controls=${FILTER_PANEL_ID}
+            @click=${() => {
+              this._filtersOpen = !this._filtersOpen;
+              // The phone panel stages its edits, so its button has a number to
+              // print from the moment it opens.
+              if (this._filtersOpen && this._narrow) this._priceStaged(filters);
+            }}
+          >
+            ${icon('tune', 16)}${t('hv.card.filters')}
+          </button>
+          <button
+            class="hv-icon-button"
+            data-testid="columns-expanded"
+            aria-label=${t('hv.fullView.chooseColumns')}
+            title=${t('hv.fullView.chooseColumns')}
+            @click=${() =>
+              this.dispatchEvent(
+                new CustomEvent('menu-action', { detail: { id: 'columns' }, bubbles: true, composed: true }),
+              )}
+          >
+            ${icon('viewColumn', 20)}
+          </button>
+        </span>
       </div>
     `;
   }
@@ -1988,12 +2000,20 @@ export class HVFullView extends LitElement {
                 ${t('hv.card.badge.checkedOut', { count: counts.checked_out_count })}
               </button>`
             : null}
+          <!-- On a phone the bar's first row holds the menu, this button, the
+               organize pin and the overflow, and only the heading can shrink.
+               The full German label is wider than the row has left, which
+               squeezed the heading to "H…" and pushed the overflow onto a
+               second row; the short label the card header uses keeps the row
+               whole. The full wording stays on the accessible name. -->
           <button
             class="add"
             data-testid="full-add-item"
+            aria-label=${t('hv.card.addItem')}
+            title=${t('hv.card.addItem')}
             @click=${() => this._leaveEditor('new')}
           >
-            ${icon('plus', 16)}${t('hv.card.addItem')}
+            ${icon('plus', 16)}${t(this._narrow ? 'hv.card.addShort' : 'hv.card.addItem')}
           </button>
           <button
             class="tap"
