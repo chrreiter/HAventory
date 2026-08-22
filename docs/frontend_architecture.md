@@ -159,6 +159,19 @@ than by a component of their own: they are flat lists of `distinct_values` entri
 rows only have to look like `hv-location-tree`'s — which, being in another shadow root,
 could not have shared the rule either way.
 
+Each of those lists — status, categories and tags — is **one tab stop**, not one per row:
+the list is as long as the household's vocabulary, and a stop per row put that vocabulary
+between the search box and the table. The container carries `role="group"` with the
+section's name, one row holds `tabindex="0"` and the rest `-1`, and ArrowDown/ArrowUp move
+inside the list while Home and End reach its ends; neither end wraps. The rows stay
+`<button aria-pressed>`, so Enter and Space still press them. Which row holds the stop is
+kept per section in `_facetStop` and reconciled against the rendered rows after every
+render: a held row drawn away — a narrowed vocabulary, a cleared filter — hands the stop to
+the selected row, or to the first one. The section heading, its "+" and the tags any/all
+pair are ordinary tab stops, so a section is still reached, opened and added to without the
+arrows. `ui/roving-list.ts` holds the walk and the key handling; `hv-location-tree` runs the
+same shape for the Locations section behind its own shadow boundary.
+
 Each of the four headings offers a create action, and the three that can be counted state
 how many of their thing there is — Status is the household's own vocabulary, whose size says
 nothing about the inventory the facet navigates. Categories and tags come with their
@@ -426,6 +439,7 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 | `downscale.ts` | Re-encoding an oversized photo in the browser before it is uploaded: the size and type rules, the capped-edge arithmetic, and the decode/encode seam. Fails open — anything that does not work hands the original file back. |
 | `status.ts` | The item-status vocabulary: the definitions a surface renders from (backend's, or the built-in three until `haventory/config` answers), the label / tone-class / glyph lookups with their fallbacks, the colour and glyph vocabularies the management picker offers, and `renderStatusChip` — one renderer so the mark cannot drift between a table cell and a detail sheet. |
 | `keyboard.ts` | `onEscape()` for the surfaces where Escape means exactly "close", and the platform-correct save-shortcut label. |
+| `roving-list.ts` | A long list of rows as one tab stop: which row holds `tabindex="0"` after a redraw (`syncRovingTabindex`), and which row an Arrow, Home or End press moves to (`rovingTarget`). Used by the sidebar's three facet lists; `hv-location-tree` carries its own copy of the pattern, since a tree also has to open and close nodes. |
 | `plural.ts` | Count agreement for every count string in the card. |
 | `theme.ts` | Whether the card is painted on a light or dark surface, read from HA's own theme variables rather than `prefers-color-scheme`. |
 
