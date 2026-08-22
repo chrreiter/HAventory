@@ -779,3 +779,178 @@ describe('hv-location-tree: the whole row is the target', () => {
     expect(q(el, '[data-testid="tree-row"][data-id="kitchen"]')?.getAttribute('tabindex')).toBe('0');
   });
 });
+
+// A tree is one tab stop with a roving tabindex, not one per row: this tree
+// stands between the full view's search box and its table, and with the seeded
+// household expanded it put more than forty stops in that gap. Tab lands on the
+// tree once, the arrows move inside it, Tab leaves.
+describe('hv-location-tree: one tab stop', () => {
+  const stops = (el: HVLocationTree) =>
+    [
+      ...(el.shadowRoot?.querySelectorAll(
+        '[data-testid="tree-row"][tabindex="0"], [data-testid="tree-area-head"][tabindex="0"]',
+      ) ?? []),
+    ] as HTMLElement[];
+
+  const press = async (el: HVLocationTree, target: Element, key: string) => {
+    target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    await el.updateComplete;
+  };
+
+  it('leaves exactly one node focusable, whatever is open', async () => {
+    const el = await mount();
+    expect(stops(el)).toHaveLength(1);
+    expect(stops(el)[0].dataset.id).toBe('garage');
+
+    (q(el, '[data-testid="tree-twisty"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(ids(el)).toContain('shelf-a');
+    expect(stops(el)).toHaveLength(1);
+  });
+
+  it('moves the stop and the focus with ArrowDown, and back with ArrowUp', async () => {
+    const el = await mount();
+    const garage = q(el, '[data-testid="tree-row"][data-id="garage"]') as HTMLElement;
+    garage.focus();
+
+    await press(el, garage, 'ArrowDown');
+    const kitchen = q(el, '[data-testid="tree-row"][data-id="kitchen"]') as HTMLElement;
+    expect(el.shadowRoot?.activeElement).toBe(kitchen);
+    expect(stops(el)).toEqual([kitchen]);
+
+    await press(el, kitchen, 'ArrowUp');
+    expect(el.shadowRoot?.activeElement).toBe(garage);
+    expect(stops(el)).toEqual([garage]);
+  });
+
+  it('opens a closed row with ArrowRight and steps into it with the next one', async () => {
+    const el = await mount();
+    const garage = q(el, '[data-testid="tree-row"][data-id="garage"]') as HTMLElement;
+    garage.focus();
+
+    await press(el, garage, 'ArrowRight');
+    expect(ids(el)).toEqual(['garage', 'shelf-a', 'shelf-b', 'kitchen']);
+    // Opening moves nothing: the row that disclosed the children keeps focus.
+    expect(el.shadowRoot?.activeElement).toBe(garage);
+
+    await press(el, garage, 'ArrowRight');
+    expect((el.shadowRoot?.activeElement as HTMLElement)?.dataset.id).toBe('shelf-a');
+  });
+
+  it('collapses an open row with ArrowLeft and keeps focus on it', async () => {
+    const el = await mount();
+    const garage = q(el, '[data-testid="tree-row"][data-id="garage"]') as HTMLElement;
+    garage.focus();
+    await press(el, garage, 'ArrowRight');
+    expect(ids(el)).toContain('shelf-a');
+
+    await press(el, garage, 'ArrowLeft');
+    expect(ids(el)).toEqual(['garage', 'kitchen']);
+    expect(el.shadowRoot?.activeElement).toBe(garage);
+    expect(stops(el)).toEqual([garage]);
+  });
+
+  it('steps out to the parent with ArrowLeft on a closed child', async () => {
+    const el = await mount();
+    const garage = q(el, '[data-testid="tree-row"][data-id="garage"]') as HTMLElement;
+    garage.focus();
+    await press(el, garage, 'ArrowRight');
+    const shelfA = q(el, '[data-testid="tree-row"][data-id="shelf-a"]') as HTMLElement;
+    shelfA.focus();
+
+    await press(el, shelfA, 'ArrowLeft');
+    expect(el.shadowRoot?.activeElement).toBe(garage);
+    // The branch is still open — Left stepped out rather than closing it.
+    expect(ids(el)).toContain('shelf-a');
+  });
+
+  it('reaches both ends with Home and End', async () => {
+    const el = await mount();
+    const kitchen = q(el, '[data-testid="tree-row"][data-id="kitchen"]') as HTMLElement;
+    kitchen.focus();
+
+    await press(el, kitchen, 'Home');
+    expect((el.shadowRoot?.activeElement as HTMLElement)?.dataset.id).toBe('garage');
+    await press(el, el.shadowRoot!.activeElement!, 'End');
+    expect((el.shadowRoot?.activeElement as HTMLElement)?.dataset.id).toBe('kitchen');
+  });
+
+  it('takes the twisty out of the tab order, since Right and Left do its job', async () => {
+    const el = await mount();
+    expect(q(el, '[data-testid="tree-twisty"]')?.getAttribute('tabindex')).toBe('-1');
+    // Still a button, still clickable — only unreachable by Tab.
+    expect(q(el, '[data-testid="tree-twisty"]')?.tagName).toBe('BUTTON');
+  });
+
+  it('starts the stop on the selected row rather than the first', async () => {
+    const el = await mount({ selectedId: 'kitchen' });
+    expect(stops(el)[0].dataset.id).toBe('kitchen');
+  });
+
+  it('gives an empty tree its create button, so the tree is never a hole', async () => {
+    const el = await mount({ nodes: [], allowCreate: true });
+    expect(stops(el)).toHaveLength(0);
+    const create = q(el, '[data-testid="tree-create"]') as HTMLButtonElement;
+    expect(create).toBeTruthy();
+    expect(create.getAttribute('tabindex')).toBe(null);
+  });
+});
+
+describe('hv-location-tree: one tab stop across area bands', () => {
+  const AREAS = [
+    { id: 'area-kitchen', name: 'Kitchen' },
+    { id: 'area-garage', name: 'Garage' },
+  ];
+  const areaTree: LocationTreeNode[] = [
+    node('fridge', 'Fridge', null, [3, 9], [node('top', 'Top Shelf', 'fridge', [6, 6])], 'area-kitchen'),
+    node('bench', 'Bench', null, [2, 2], [], 'area-garage'),
+    node('attic', 'Attic', null, [5, 5]),
+  ];
+  const mountAreas = (props: Partial<HVLocationTree> = {}) =>
+    mount({ nodes: areaTree, areas: AREAS, ...props });
+
+  const walk = (el: HVLocationTree) =>
+    [
+      ...(el.shadowRoot?.querySelectorAll(
+        '[data-testid="tree-area-head"], [data-testid="tree-row"]',
+      ) ?? []),
+    ] as HTMLElement[];
+
+  it('walks heads and rows together, so Up from a first root reaches its area', async () => {
+    const el = await mountAreas();
+    const bench = q(el, '[data-testid="tree-row"][data-id="bench"]') as HTMLElement;
+    bench.focus();
+
+    bench.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }));
+    await el.updateComplete;
+
+    const active = el.shadowRoot?.activeElement as HTMLElement;
+    expect(active.dataset.testid ?? active.getAttribute('data-testid')).toBe('tree-area-head');
+    expect(active.dataset.area).toBe('area-garage');
+  });
+
+  it('leaves one stop across the whole thing, heads included', async () => {
+    const el = await mountAreas();
+    expect(walk(el).filter((n) => n.getAttribute('tabindex') === '0')).toHaveLength(1);
+    expect(walk(el).filter((n) => n.getAttribute('tabindex') === '-1').length).toBeGreaterThan(3);
+  });
+
+  it('takes the area twisty and the area name out of the tab order', async () => {
+    const el = await mountAreas({ areaSelectable: true });
+    expect(q(el, '[data-testid="tree-area-twisty"]')?.getAttribute('tabindex')).toBe('-1');
+    expect(q(el, '[data-testid="tree-area-select"]')?.getAttribute('tabindex')).toBe('-1');
+  });
+
+  it('picks an area from its head, now that the name button is not a stop', async () => {
+    const el = await mountAreas({ areaSelectable: true });
+    const picked: string[] = [];
+    el.addEventListener('select-area', (e) => picked.push((e as CustomEvent).detail.areaId));
+
+    const head = q(el, '[data-testid="tree-area-head"][data-area="area-garage"]') as HTMLElement;
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    head.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(picked).toEqual(['area-garage']);
+  });
+});

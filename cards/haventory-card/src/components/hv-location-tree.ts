@@ -342,12 +342,145 @@ export class HVLocationTree extends LitElement {
   /** The first-location field is showing, and what has been typed into it. */
   @state() private _creating = false;
   @state() private _newName = '';
+  /**
+   * Which node holds the tree's one tab stop, as `_nodeKey` writes it.
+   *
+   * A tree is a single stop with a roving tabindex, not one per row: this tree
+   * stands between a full view's search box and its table, and a household with
+   * five areas and a dozen expanded roots put more than forty stops in that gap.
+   * Null until the first walk resolves it, which `updated` does.
+   */
+  @state() private _activeKey: string | null = null;
 
-  /** Revealing the name field has to put the caret in it, or it asks for a
-   *  second tap before it can be typed into. */
   protected updated(changed: Map<string, unknown>) {
+    // Revealing the name field has to put the caret in it, or it asks for a
+    // second tap before it can be typed into.
     if (changed.has('_creating') && this._creating) {
       this.renderRoot.querySelector<HTMLInputElement>('[data-testid="tree-create-name"]')?.focus();
+    }
+    this._syncRovingTabindex();
+  }
+
+  /**
+   * Every node the arrows walk, in the order they are drawn.
+   *
+   * Read from the DOM rather than derived from `nodes`: a collapsed row renders
+   * no descendants and a collapsed band renders no roots, so what is here is
+   * already exactly what is visible — and a second walk over the data would be
+   * a second copy of the filter, expand and area rules to keep in step.
+   * Excluded rows are left out; they are drawn to show where a subtree cannot
+   * go, and cannot be chosen.
+   */
+  private _walk(): HTMLElement[] {
+    const rows = this.renderRoot.querySelectorAll<HTMLElement>(
+      '[data-testid="tree-area-head"], [data-testid="tree-row"]',
+    );
+    return [...rows].filter((el) => el.getAttribute('aria-disabled') !== 'true');
+  }
+
+  /** One namespace for both kinds of node, so `_activeKey` can name either. */
+  private _nodeKey(el: HTMLElement): string {
+    return el.dataset.id ? `loc:${el.dataset.id}` : `area:${el.dataset.area}`;
+  }
+
+  /**
+   * Leave exactly one node in the tab order, and give that node's own actions
+   * their only way in.
+   *
+   * Written here rather than in `render` because the walk is the rendered DOM:
+   * a template cannot ask which row comes first without rebuilding the walk
+   * from the data it was drawn from.
+   */
+  private _syncRovingTabindex() {
+    const walk = this._walk();
+    if (!walk.length) {
+      this._activeKey = null;
+      return;
+    }
+    const held = walk.find((el) => this._nodeKey(el) === this._activeKey);
+    // The selection is where the tab stop belongs before anyone has moved it:
+    // arriving on the tree and pressing Enter should re-pick what is already
+    // chosen, not jump the household back to its first room.
+    const selected = walk.find((el) => el.getAttribute('aria-selected') === 'true');
+    const active = held ?? selected ?? walk[0];
+    this._activeKey = this._nodeKey(active);
+    for (const el of walk) {
+      const isActive = el === active;
+      el.tabIndex = isActive ? 0 : -1;
+      // A row's merge, edit, delete and overflow buttons have no key of their
+      // own to reach them by, so they ride with their row: Tab from the active
+      // node steps through that node's actions and then leaves the tree.
+      for (const action of el.querySelectorAll<HTMLElement>('.actions button')) {
+        action.tabIndex = isActive ? 0 : -1;
+      }
+    }
+  }
+
+  /** Move the tab stop to `el` and take focus with it. */
+  private _activate(el: HTMLElement | undefined) {
+    if (!el) return;
+    this._activeKey = this._nodeKey(el);
+    el.tabIndex = 0;
+    el.focus();
+    this.requestUpdate();
+  }
+
+  /** The node one level out from `el` — the nearest earlier, shallower node. */
+  private _parentOf(walk: HTMLElement[], index: number): HTMLElement | undefined {
+    const level = Number(walk[index].getAttribute('aria-level') ?? '1');
+    for (let i = index - 1; i >= 0; i--) {
+      if (Number(walk[i].getAttribute('aria-level') ?? '1') < level) return walk[i];
+    }
+    return undefined;
+  }
+
+  /** Open or close the node `el` stands for, whichever kind it is. */
+  private _toggleNode(el: HTMLElement) {
+    if (el.dataset.id) this._toggle(el.dataset.id);
+    else if (el.dataset.area) {
+      this._toggleArea(el.dataset.area === NO_AREA_KEY ? NO_AREA_KEY : `area:${el.dataset.area}`);
+    }
+  }
+
+  /**
+   * The arrow layer the ARIA tree pattern asks for, and the other half of the
+   * single tab stop: with one node reachable by Tab, the arrows are the only
+   * way to the rest, and the twisties are out of the tab order because Right
+   * and Left do what they do.
+   */
+  private _onTreeKeydown(e: KeyboardEvent) {
+    const keys = ['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'Home', 'End'];
+    if (!keys.includes(e.key)) return;
+    const walk = this._walk();
+    const index = walk.findIndex((el) => el.contains(e.target as Node));
+    if (index < 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const current = walk[index];
+    const expanded = current.getAttribute('aria-expanded');
+    // While a filter is running every node is drawn open whatever the expand
+    // state says, so collapsing one would move nothing on the screen.
+    const filtering = this.filterText.trim().length > 0;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        return this._activate(walk[index + 1]);
+      case 'ArrowUp':
+        return this._activate(walk[index - 1]);
+      case 'Home':
+        return this._activate(walk[0]);
+      case 'End':
+        return this._activate(walk[walk.length - 1]);
+      case 'ArrowRight':
+        // Open what is closed; on what is already open, step into it — the
+        // first child is the next node drawn.
+        if (expanded === 'false') return this._toggleNode(current);
+        if (expanded === 'true') return this._activate(walk[index + 1]);
+        return;
+      case 'ArrowLeft':
+        if (expanded === 'true' && !filtering) return this._toggleNode(current);
+        return this._activate(this._parentOf(walk, index));
     }
   }
 
@@ -391,6 +524,9 @@ export class HVLocationTree extends LitElement {
   /** Pick a node — from anywhere on its row, which is one target. */
   private _select(node: LocationTreeNode, excluded: boolean) {
     if (excluded) return;
+    // The tab stop goes where the user just acted, so returning to the tree by
+    // Tab comes back to the row they chose rather than the one they left.
+    this._activeKey = `loc:${node.id}`;
     this._emit('select', { locationId: node.id, node });
   }
 
@@ -470,7 +606,7 @@ export class HVLocationTree extends LitElement {
           aria-level=${depth + 1}
           aria-disabled=${ifDefined(isExcluded ? 'true' : undefined)}
           title=${node.path?.display_path ?? node.name}
-          tabindex=${isExcluded ? -1 : 0}
+          tabindex="-1"
           data-testid="tree-row"
           data-id=${node.id}
           data-depth=${depth}
@@ -489,6 +625,7 @@ export class HVLocationTree extends LitElement {
             ? html`<button
                 class="twisty hv-browse-row-lead"
                 data-testid="tree-twisty"
+                tabindex="-1"
                 aria-label=${open
                   ? t('hv.tree.collapse', { name: node.name })
                   : t('hv.tree.expand', { name: node.name })}
@@ -632,14 +769,24 @@ export class HVLocationTree extends LitElement {
       aria-expanded=${ifDefined(empty ? undefined : String(open))}
       aria-controls=${ifDefined(empty ? undefined : areaRootsId(key))}
       aria-level="1"
+      tabindex="-1"
       data-testid="tree-area-head"
       data-area=${group?.id ?? NO_AREA_KEY}
+      @keydown=${(e: KeyboardEvent) => {
+        // The head is a treeitem and, where areas are pickable, the target its
+        // own name button used to be — so it answers the keys a button would.
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        if (pickable) this._emit('select-area', { areaId: group.id });
+        else if (!empty) this._toggleArea(key);
+      }}
     >
       ${empty
         ? html`<span class="twisty hv-browse-row-lead placeholder">${icon('chevronRight', 17)}</span>`
         : html`<button
             class="twisty hv-browse-row-lead"
             data-testid="tree-area-twisty"
+            tabindex="-1"
             data-area=${group?.id ?? NO_AREA_KEY}
             aria-label=${open ? `Collapse ${name}` : `Expand ${name}`}
             @click=${(e: Event) => {
@@ -653,6 +800,7 @@ export class HVLocationTree extends LitElement {
         ? html`<button
             class="area-name"
             data-testid="tree-area-select"
+            tabindex="-1"
             data-area=${group.id}
             title=${name}
             @click=${() => this._emit('select-area', { areaId: group.id })}
@@ -775,7 +923,7 @@ export class HVLocationTree extends LitElement {
         ].filter(Boolean)
       : this.nodes.map((n) => this._renderNode(n, 0, false)).filter(Boolean);
     return html`
-      <div role="tree" aria-label=${t('hv.tree.label')}>
+      <div role="tree" aria-label=${t('hv.tree.label')} @keydown=${this._onTreeKeydown}>
         ${this.showAll
           ? html`<button
               class="row hv-browse-row ${!this.orphansSelected && !this._anySelected() ? 'selected' : ''}"
