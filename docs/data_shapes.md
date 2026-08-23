@@ -269,7 +269,9 @@ counts items at the node or any descendant (so it is always >= the direct count)
 ### Filters and sorting
 
 - ItemFilter:
-  - `q?: string` (case-insensitive; name, description, tags, location display path)
+  - `q?: string` (case- and accent-insensitive substring match, mid-word included; every
+    word of the query must appear in one of name, description, category, tags or the
+    location display path)
   - `tags_any?: string[]` (a value that is not a list of strings is a `validation_error`)
   - `tags_all?: string[]` (same rule)
   - `category?: string`

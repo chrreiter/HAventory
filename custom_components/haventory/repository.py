@@ -14,13 +14,12 @@ import base64
 import binascii
 import copy
 import json
-import re
 import uuid
 from collections import deque
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
-from typing import Any, NamedTuple, TypedDict
+from typing import Any, TypedDict
 
 from .calendar_projection import next_occurrence_after
 from .exceptions import ConflictError, NotFoundError, ValidationError
@@ -58,7 +57,6 @@ from .models import (
     location_sort_key,
     monotonic_timestamp_after,
     new_uuid4,
-    normalize_search_text,
     normalize_text_for_sort,
     parse_uuid4,
     require_string_list,
@@ -76,21 +74,6 @@ from .models import (
 )
 
 LOGGER = context_logger(__name__)
-
-
-class _TextTokens(NamedTuple):
-    """Cached text-index tokens for one item, split by source.
-
-    ``base_*`` tokens derive from name/description/category/tags; ``path_*``
-    tokens derive from the denormalized ``location_path.display_path``. The
-    split lets subtree moves update only the path-derived buckets.
-    """
-
-    base_words: frozenset[str]
-    path_words: frozenset[str]
-    name_prefixes: frozenset[str]
-    base_trigrams: frozenset[str]
-    path_trigrams: frozenset[str]
 
 
 class PageResult(TypedDict):
@@ -116,9 +99,6 @@ class InternalIndexes(TypedDict):
 
 # Sentinel for optional args that distinguish "not provided" from explicit None
 UNSET: object = object()
-
-TRIGRAM_MIN_LEN = 3
-PREFIX_MIN_LEN = 2
 
 #: Longest pagination cursor this build will even attempt to decode. A cursor is
 #: base64 of a small JSON object this repository minted itself, so anything
@@ -252,14 +232,6 @@ class Repository:
         self._items_by_area_id: dict[str, set[str]] = {}
         # Cached name sort keys
         self._name_sort_key_by_item_id: dict[str, str] = {}
-
-        # Text Indices
-        self._word_to_item_ids: dict[str, set[str]] = {}
-        self._name_prefix_to_item_ids: dict[str, set[str]] = {}
-        self._trigram_to_item_ids: dict[str, set[str]] = {}
-        # Per-item cached tokens so clearing/delta-updating the text indexes
-        # never has to re-derive tokens from the item fields.
-        self._item_text_tokens: dict[str, _TextTokens] = {}
 
         # Location tree indexes
         self._children_ids_by_parent_id: dict[str | None, set[str]] = {}
@@ -460,9 +432,6 @@ class Repository:
         # Update subtree index
         self._add_item_to_subtree_index(item)
 
-        # Update text search index
-        self._index_item_text(item)
-
         # Increment generation on state modification
         self._increment_generation()
 
@@ -491,9 +460,6 @@ class Repository:
 
         # Remove from subtree index
         self._remove_item_from_subtree_index(item)
-
-        # Remove from text search index
-        self._clear_item_text_index(item)
 
         # Finally, drop from primary store
         self._items_by_id.pop(item_key, None)
@@ -544,199 +510,6 @@ class Repository:
 
     def _is_low_stock(self, item: Item) -> bool:
         return item_is_low_stock(item)
-
-    def _normalize_for_search(self, text: str) -> str:
-        """Normalize text for search indexing (lowercase, strip accents).
-
-        Delegates to :func:`models.normalize_search_text` so the index path and the
-        ``filter_items`` post-filter always agree on normalization.
-        """
-        return normalize_search_text(text)
-
-    def _extract_trigrams(self, text: str) -> set[str]:
-        """Extract 3-character trigrams from normalized text."""
-        if len(text) < TRIGRAM_MIN_LEN:
-            return set()
-        return {text[i : i + TRIGRAM_MIN_LEN] for i in range(len(text) - (TRIGRAM_MIN_LEN - 1))}
-
-    def _tokenize(self, text: str) -> list[str]:
-        """Normalize and split text into indexable words."""
-        norm = self._normalize_for_search(text)
-        if not norm:
-            return []
-        return [w for w in re.split(r"[^a-z0-9]", norm) if w]
-
-    def _compute_path_tokens(self, display_path: str) -> tuple[frozenset[str], frozenset[str]]:
-        """Return (words, trigrams) derived from a location display path."""
-        words = self._tokenize(display_path)
-        trigrams: set[str] = set()
-        for w in words:
-            trigrams |= self._extract_trigrams(w)
-        return frozenset(words), frozenset(trigrams)
-
-    def _compute_text_tokens(self, item: Item) -> _TextTokens:
-        """Derive the full token record for an item's text indexes."""
-        base_words: set[str] = set()
-        base_trigrams: set[str] = set()
-        for text in (item.name, item.description or "", item.category or "", *item.tags):
-            for w in self._tokenize(text):
-                base_words.add(w)
-                base_trigrams |= self._extract_trigrams(w)
-
-        # Prefixes are indexed per word of the name only.
-        name_prefixes: set[str] = set()
-        for w in self._tokenize(item.name):
-            for i in range(PREFIX_MIN_LEN, len(w) + 1):
-                name_prefixes.add(w[:i])
-
-        path_words, path_trigrams = self._compute_path_tokens(item.location_path.display_path)
-        return _TextTokens(
-            base_words=frozenset(base_words),
-            path_words=path_words,
-            name_prefixes=frozenset(name_prefixes),
-            base_trigrams=frozenset(base_trigrams),
-            path_trigrams=path_trigrams,
-        )
-
-    def _index_item_text(self, item: Item) -> None:
-        """Build text indexes for an item and cache its token record."""
-        item_key = str(item.id)
-        tokens = self._compute_text_tokens(item)
-        self._item_text_tokens[item_key] = tokens
-
-        for prefix in tokens.name_prefixes:
-            self._add_to_bucket(self._name_prefix_to_item_ids, prefix, item_key)
-        for w in tokens.base_words | tokens.path_words:
-            self._add_to_bucket(self._word_to_item_ids, w, item_key)
-        for t in tokens.base_trigrams | tokens.path_trigrams:
-            self._add_to_bucket(self._trigram_to_item_ids, t, item_key)
-
-    def _clear_item_text_index(self, item: Item) -> None:
-        """Remove item from text bucket indexes using its cached tokens."""
-        item_key = str(item.id)
-        tokens = self._item_text_tokens.pop(item_key, None)
-        if tokens is None:  # pragma: no cover - defensive fallback
-            tokens = self._compute_text_tokens(item)
-
-        for prefix in tokens.name_prefixes:
-            self._remove_from_bucket(self._name_prefix_to_item_ids, prefix, item_key)
-        for w in tokens.base_words | tokens.path_words:
-            self._remove_from_bucket(self._word_to_item_ids, w, item_key)
-        for t in tokens.base_trigrams | tokens.path_trigrams:
-            self._remove_from_bucket(self._trigram_to_item_ids, t, item_key)
-
-    def _apply_path_token_delta(
-        self,
-        item_key: str,
-        tokens: _TextTokens,
-        new_path_words: frozenset[str],
-        new_path_trigrams: frozenset[str],
-    ) -> None:
-        """Update text buckets for a path-only change using set deltas.
-
-        A bucket entry must exist iff the token is in ``base | path``: a token
-        leaving the path is only removed when the base does not also carry it,
-        and a token joining the path is only added when the base did not
-        already index it.
-        """
-        for w in tokens.path_words - new_path_words:
-            if w not in tokens.base_words:
-                self._remove_from_bucket(self._word_to_item_ids, w, item_key)
-        for w in new_path_words - tokens.path_words:
-            if w not in tokens.base_words:
-                self._add_to_bucket(self._word_to_item_ids, w, item_key)
-
-        for t in tokens.path_trigrams - new_path_trigrams:
-            if t not in tokens.base_trigrams:
-                self._remove_from_bucket(self._trigram_to_item_ids, t, item_key)
-        for t in new_path_trigrams - tokens.path_trigrams:
-            if t not in tokens.base_trigrams:
-                self._add_to_bucket(self._trigram_to_item_ids, t, item_key)
-
-        self._item_text_tokens[item_key] = tokens._replace(
-            path_words=new_path_words, path_trigrams=new_path_trigrams
-        )
-
-    def _get_candidates_for_word(self, word: str) -> set[str]:
-        """Get candidate item IDs for a single search word using strict OR logic."""
-        word_candidates = self._word_to_item_ids.get(word)
-        prefix_candidates = self._name_prefix_to_item_ids.get(word)
-
-        matches = set()
-        if word_candidates:
-            matches.update(word_candidates)
-        if prefix_candidates:
-            matches.update(prefix_candidates)
-
-        if not matches and len(word) >= TRIGRAM_MIN_LEN:
-            trigrams = self._extract_trigrams(word)
-            if trigrams:
-                trigram_candidates: list[set[str]] = []
-                for t in trigrams:
-                    ts = self._trigram_to_item_ids.get(t)
-                    if ts:
-                        trigram_candidates.append(ts)
-
-                if trigram_candidates:
-                    fuzzy_matches = set(trigram_candidates[0])
-                    for other in trigram_candidates[1:]:
-                        fuzzy_matches.intersection_update(other)
-                    matches.update(fuzzy_matches)
-
-        return matches
-
-    def _text_index_covers_query(self, query: str) -> bool:
-        """Return True when the text index can answer ``query`` without false negatives.
-
-        ``_item_matches_q`` matches a query word anywhere inside an item's text,
-        mid-word included. The index only reaches that far through trigrams, so a
-        word shorter than ``TRIGRAM_MIN_LEN`` is reachable only where it happens to
-        start a name word — "wi" finds "Wine" and never "Kiwi". A query with no
-        indexable word at all (punctuation only) is outside the index entirely.
-
-        For those queries the index is a lossy filter rather than a pre-filter, and
-        callers must let the ``filter_items`` scan answer instead. Tokenizes exactly
-        as ``_search_by_text`` does, so the two always agree on the word boundaries
-        the judgement is made over.
-        """
-
-        words = self._tokenize(query)
-        return bool(words) and all(len(w) >= TRIGRAM_MIN_LEN for w in words)
-
-    def _search_by_text(self, query: str) -> set[str]:
-        """Return item IDs matching the query using indexes.
-
-        Per query word, candidates come from exact word matches, name-prefix
-        matches, and (only when both miss) a trigram fallback — see
-        ``_get_candidates_for_word``. Multi-word queries intersect the per-word
-        candidate sets.
-        """
-        norm_query = self._normalize_for_search(query)
-        if not norm_query:
-            return set()
-
-        # Split into words
-        query_words = [w for w in re.split(r"[^a-z0-9]", norm_query) if w]
-        if not query_words:
-            return set()
-
-        # Strategy: Intersection of candidates for each word
-        candidate_sets: list[set[str]] = []
-
-        for word in query_words:
-            matches = self._get_candidates_for_word(word)
-            if not matches:
-                return set()
-            candidate_sets.append(matches)
-
-        if not candidate_sets:
-            return set()
-
-        result = set(candidate_sets[0])
-        for other in candidate_sets[1:]:
-            result.intersection_update(other)
-
-        return result
 
     # -----------------------------
     # Internal helpers — locations
@@ -1152,11 +925,10 @@ class Repository:
         """Refresh ``location_path`` for items under any of the given locations.
 
         Fast path for subtree renames/moves. All items in one location share
-        that location's (already recomputed) ``path``, and only two things
-        change per item: the denormalized ``location_path`` and the
-        path-derived text tokens. Everything else is either untouched
-        (location/category/tag/checkout/low-stock buckets, name sort keys) or
-        rebuilt wholesale by the caller via
+        that location's (already recomputed) ``path``, so the only thing that
+        changes per item is the denormalized ``location_path``. Everything else
+        is either untouched (location/category/tag/checkout/low-stock buckets,
+        name sort keys) or rebuilt wholesale by the caller via
         ``_rebuild_location_hierarchy_indexes`` (subtree index). The effective
         area is re-resolved once per location and items are re-bucketed only
         when it actually changed.
@@ -1181,7 +953,6 @@ class Repository:
                 continue
 
             new_path = loc.path
-            new_path_words, new_path_trigrams = self._compute_path_tokens(new_path.display_path)
 
             # All items of a location live in the same area bucket; probe once.
             item_id_list = list(item_ids)
@@ -1199,13 +970,6 @@ class Repository:
                 updated = copy.copy(old_item)
                 updated.location_path = new_path
                 self._items_by_id[item_id] = updated
-
-                tokens = self._item_text_tokens.get(item_id)
-                if tokens is None:  # pragma: no cover - defensive fallback
-                    self._clear_item_text_index(old_item)
-                    self._index_item_text(updated)
-                else:
-                    self._apply_path_token_delta(item_id, tokens, new_path_words, new_path_trigrams)
 
                 if area_changed:
                     if old_area is not None:
@@ -1560,6 +1324,11 @@ class Repository:
         available indexes (category, tags, location, etc.).
         Returns None if no selective index applies.
         Returns empty list if indexes prove no items match.
+
+        ``q`` is not one of them. It matches anywhere inside an item's text,
+        mid-word included, which a bucket keyed by whole words or by fixed-length
+        fragments cannot narrow without dropping matches the contract promises —
+        so ``filter_items`` answers ``q`` over whatever this hands it.
         """
         if not flt:
             return None
@@ -1576,19 +1345,6 @@ class Repository:
                 if not s:
                     return []
                 candidate_sets.append(s)
-
-        # 0. Text Search Index (q)
-        # A pre-filter, authoritative only over the queries the index covers
-        # (``_text_index_covers_query``). Where it does not, ``q`` contributes no
-        # candidate set and the ``filter_items`` post-filter decides on its own —
-        # an index miss there means "cannot tell", not "no match".
-        q = (flt.get("q") or "").strip()
-        if q and self._text_index_covers_query(q):
-            has_indexed_filter = True
-            text_matches = self._search_by_text(q)
-            if not text_matches:
-                return []
-            candidate_sets.append(text_matches)
 
         # 2. Location Index
         # A multi-select unions its buckets, the way tags_any does below; the
@@ -2640,16 +2396,12 @@ class Repository:
         self._tags_to_item_ids = {}
         self._category_to_item_ids = {}
         self._status_to_item_ids = {}
-        self._word_to_item_ids = {}
-        self._name_prefix_to_item_ids = {}
-        self._trigram_to_item_ids = {}
         self._checked_out_item_ids = set()
         self._low_stock_item_ids = set()
         self._items_by_location_id = {}
         self._locations_by_area_id = {}
         self._items_by_area_id = {}
         self._name_sort_key_by_item_id = {}
-        self._item_text_tokens = {}
         self._children_ids_by_parent_id = {}
         self._location_descendants = {}
         self._items_in_subtree = {}

@@ -481,8 +481,9 @@ def normalize_search_text(text: str) -> str:
     """Normalize text for search matching (lowercase, strip accents).
 
     Uses NFKD normalization to separate accents from characters, then keeps only ASCII.
-    Shared by the repository search indexes and the post-filter in ``_item_matches_q``
-    so both layers agree on what "case-insensitive, accent-insensitive" means.
+    What ``_item_matches_q`` reads both the query and the item's text through, so
+    "case-insensitive, accent-insensitive" means one thing on both sides of the
+    comparison.
     """
 
     if not text:
