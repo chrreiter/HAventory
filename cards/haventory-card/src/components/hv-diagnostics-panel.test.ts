@@ -1,7 +1,7 @@
 import './hv-diagnostics-panel';
 import type { HVDiagnosticsPanel } from './hv-diagnostics-panel';
 import type { DegradedState, HealthResult, StatsCounts } from '../store/types';
-import { all, mountComponent, q, settle } from '../test.utils';
+import { mountComponent, q, settle } from '../test.utils';
 // The clipboard itself is `ui/clipboard`'s own test; what this panel owes is
 // asking the helper and believing its answer, which needs both answers.
 vi.mock('../ui/clipboard', async (importOriginal) => ({
@@ -23,7 +23,6 @@ function health(patch: Partial<HealthResult> = {}): HealthResult {
     healthy: true,
     issues: [],
     counts,
-    generation: 42,
     rate_limit: { enabled: false, dropped_commands: 0, dropped_events: 0 },
     ...patch,
   };
@@ -61,7 +60,6 @@ describe('hv-diagnostics-panel: healthy', () => {
     expect(status.classList.contains('ok')).toBe(true);
     expect(status.textContent).toContain('No issues');
     expect(status.textContent).toContain('live');
-    expect(q(el, '[data-testid="diagnostics-issue"]')).toBe(null);
   });
 
   it('shows the counters at zero and where the data came from', async () => {
@@ -88,28 +86,6 @@ describe('hv-diagnostics-panel: rate limiting', () => {
     expect(status.textContent).toContain('rate limiting is active');
     expect(q(el, '[data-testid="diagnostics-dropped-commands"]')?.textContent?.trim()).toBe('7');
     expect(q(el, '[data-testid="diagnostics-dropped-events"]')?.textContent?.trim()).toBe('23');
-  });
-});
-
-describe('hv-diagnostics-panel: integrity issues', () => {
-  it('turns repeated bare codes into one counted sentence each', async () => {
-    const el = await mount({
-      health: health({
-        healthy: false,
-        issues: [
-          'item_references_missing_location',
-          'item_references_missing_location',
-          'item_references_missing_location',
-          'low_stock_count_mismatch',
-        ],
-      }),
-    });
-
-    const issues = all(el, '[data-testid="diagnostics-issue"]');
-    expect(issues).toHaveLength(2);
-    expect(issues[0].dataset.code).toBe('item_references_missing_location');
-    expect(issues[0].textContent).toContain('3 items reference a location that no longer exists');
-    expect(q(el, '[data-testid="diagnostics-status"]')?.textContent).toContain('Issues found');
   });
 });
 
@@ -143,11 +119,10 @@ describe('hv-diagnostics-panel: actions', () => {
 
   it('builds a copyable report covering everything on screen', async () => {
     const el = await mount({
-      health: health({ healthy: false, issues: ['low_stock_count_mismatch'] }),
+      health: health({ rate_limit: { enabled: true, dropped_commands: 7, dropped_events: 23 } }),
     });
     expect(el.report).toContain('integration 0.0.1');
-    expect(el.report).toContain('healthy: false');
-    expect(el.report).toContain('low_stock_count_mismatch');
+    expect(el.report).toContain('"dropped_commands":7');
     expect(el.report).toContain('subscriptions: items=true');
   });
 

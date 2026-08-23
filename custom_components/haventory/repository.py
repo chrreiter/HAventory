@@ -82,21 +82,6 @@ class PageResult(TypedDict):
     total: int
 
 
-class InternalIndexes(TypedDict):
-    """Live references to the repository's internal indexes (health/tests)."""
-
-    items_by_id: dict[str, Item]
-    locations_by_id: dict[str, Location]
-    tags_to_item_ids: dict[str, set[str]]
-    category_to_item_ids: dict[str, set[str]]
-    status_to_item_ids: dict[str, set[str]]
-    checked_out_item_ids: set[str]
-    low_stock_item_ids: set[str]
-    items_by_location_id: dict[str, set[str]]
-    locations_by_area_id: dict[str, set[str]]
-    items_by_area_id: dict[str, set[str]]
-
-
 # Sentinel for optional args that distinguish "not provided" from explicit None
 UNSET: object = object()
 
@@ -236,9 +221,6 @@ class Repository:
         # Location tree indexes
         self._children_ids_by_parent_id: dict[str | None, set[str]] = {}
 
-        # Generation counter for optimistic locking and debugging
-        self._generation: int = 0
-
         # Location Hierarchy Indexes (O(1) subtree lookup)
         self._location_descendants: dict[str, set[str]] = {}  # loc_id -> all descendant ids
         self._items_in_subtree: dict[str, set[str]] = {}  # loc_id -> all item ids in subtree
@@ -288,7 +270,6 @@ class Repository:
             doc = {**doc, "order": len(self._statuses_by_slug)}
         definition = validate_status_definition(doc)
         self._statuses_by_slug[definition.slug] = definition
-        self._increment_generation()
         return definition
 
     def update_status(self, slug: str, changes: dict[str, Any]) -> StatusDefinition:
@@ -302,7 +283,6 @@ class Repository:
         merged = {**serialize_status_definition(current), **changes, "slug": slug}
         definition = validate_status_definition(merged)
         self._statuses_by_slug[slug] = definition
-        self._increment_generation()
         return definition
 
     def reorder_statuses(self, slugs: Sequence[str]) -> list[StatusDefinition]:
@@ -313,7 +293,6 @@ class Repository:
             raise ValidationError("reorder must name every status exactly once")
         for order, slug in enumerate(slugs):
             self._statuses_by_slug[slug] = replace(self._statuses_by_slug[slug], order=order)
-        self._increment_generation()
         return self.list_statuses()
 
     def delete_status(
@@ -349,7 +328,6 @@ class Repository:
         moved = self._reassign_status(slug, reassign_to) if reassign_to is not None else []
         del self._statuses_by_slug[slug]
         self._status_to_item_ids.pop(slug, None)
-        self._increment_generation()
         return current, moved
 
     def _reassign_status(self, slug: str, target: str) -> list[str]:
@@ -372,14 +350,6 @@ class Repository:
     # -----------------------------
     # Internal helpers — indexing
     # -----------------------------
-
-    def _increment_generation(self) -> None:
-        """Increment generation counter on any state modification.
-
-        The generation counter is used for optimistic locking and debugging
-        to track when the repository state has changed.
-        """
-        self._generation += 1
 
     def _add_to_bucket(self, bucket: dict[str, set[str]], key: str, item_id: str) -> None:
         bucket.setdefault(key, set()).add(item_id)
@@ -432,9 +402,6 @@ class Repository:
         # Update subtree index
         self._add_item_to_subtree_index(item)
 
-        # Increment generation on state modification
-        self._increment_generation()
-
     def _unindex_item(self, item: Item) -> None:
         # Remove from tag/category/checked/low-stock/location caches
         item_key = str(item.id)
@@ -463,9 +430,6 @@ class Repository:
 
         # Finally, drop from primary store
         self._items_by_id.pop(item_key, None)
-
-        # Increment generation on state modification
-        self._increment_generation()
 
     def _remove_item_from_all_area_buckets(self, item_key: str) -> None:
         # Defensive: remove an item id from every area bucket
@@ -627,9 +591,6 @@ class Repository:
         if loc.area_id is not None:
             self._locations_by_area_id.setdefault(str(loc.area_id), set()).add(str(loc.id))
 
-        # Increment generation on state modification
-        self._increment_generation()
-
     def _remove_location(self, loc: Location) -> None:
         self._locations_by_id.pop(str(loc.id), None)
         parent_key: str | None = str(loc.parent_id) if loc.parent_id is not None else None
@@ -647,9 +608,6 @@ class Repository:
                 s.discard(str(loc.id))
                 if not s:
                     self._locations_by_area_id.pop(str(loc.area_id), None)
-
-        # Increment generation on state modification
-        self._increment_generation()
 
     def _stage_location_update(
         self,
@@ -976,8 +934,6 @@ class Repository:
                         self._remove_from_bucket(self._items_by_area_id, old_area, item_id)
                     if new_area is not None:
                         self._add_to_bucket(self._items_by_area_id, new_area, item_id)
-
-                self._increment_generation()
 
     # -----------------------------
     # Public API — Item operations
@@ -1909,9 +1865,6 @@ class Repository:
             root_key = self._find_location_root(key)
             self._rebucket_items_for_subtree_area_change(root_key)
 
-        # Increment generation on any location state modification
-        self._increment_generation()
-
         LOGGER.debug(
             "Location updated",
             extra={
@@ -2120,41 +2073,6 @@ class Repository:
         return page, self._encode_cursor(cursor_payload)
 
     # -----------------------------
-    # Properties
-    # -----------------------------
-
-    @property
-    def generation(self) -> int:
-        """How many times this process has modified the repository.
-
-        Reported by ``haventory/health`` and the diagnostics dump, and useful for
-        telling a snapshot apart from a later one *within one run*. It is not
-        stored, so it starts near zero on every boot and says nothing about how
-        much the household has changed — the item ``version`` field is the
-        persisted counter, and the one optimistic concurrency runs on.
-        """
-        return self._generation
-
-    # -----------------------------
-    # Introspection helpers for tests
-    # -----------------------------
-
-    def _debug_get_internal_indexes(self) -> InternalIndexes:
-        """Expose live index references for the health command and tests."""
-        return {
-            "items_by_id": self._items_by_id,
-            "locations_by_id": self._locations_by_id,
-            "tags_to_item_ids": self._tags_to_item_ids,
-            "category_to_item_ids": self._category_to_item_ids,
-            "status_to_item_ids": self._status_to_item_ids,
-            "checked_out_item_ids": self._checked_out_item_ids,
-            "low_stock_item_ids": self._low_stock_item_ids,
-            "items_by_location_id": self._items_by_location_id,
-            "locations_by_area_id": self._locations_by_area_id,
-            "items_by_area_id": self._items_by_area_id,
-        }
-
-    # -----------------------------
     # Persistence — export/import
     # -----------------------------
 
@@ -2210,11 +2128,10 @@ class Repository:
         if not isinstance(data, dict):
             return
 
-        # The generation counter is not restored, and stores written by older
-        # builds carry a `_generation` key that is ignored here. It counts this
-        # process's mutations for the health command and the diagnostics dump;
-        # nothing compares it across a restart, and the item `version` field —
-        # which is persisted — is what optimistic concurrency runs on.
+        # Stores written by older builds carry a `_generation` key. Nothing
+        # reads it: the counter it belonged to counted one process's mutations
+        # and is gone, and the item `version` field — which is persisted — is
+        # what optimistic concurrency runs on.
 
         # Statuses BEFORE the item loop, or ``coerce_item_status`` would see
         # only the built-ins and rewrite every item on a custom status to "ok"
@@ -2380,9 +2297,6 @@ class Repository:
                     continue
 
         self._last_load_report = self._build_load_report(dropped_item_ids, dropped_location_ids)
-
-        # Increment generation after load to mark as modified since load
-        self._increment_generation()
 
         # Rebuild location hierarchy indexes ensuring consistency
         self._rebuild_location_hierarchy_indexes()

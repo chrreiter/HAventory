@@ -348,14 +348,9 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
         repo = runtime.repository
 
         start_time = time.monotonic()
-        generation = getattr(repo, "generation", None)
         _LOGGER.debug(
             "Persisting repository state",
-            extra={
-                "domain": DOMAIN,
-                "op": "persist_start",
-                "generation": generation,
-            },
+            extra={"domain": DOMAIN, "op": "persist_start"},
         )
 
         payload = repo.export_state()
@@ -367,7 +362,6 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
                 extra={
                     "domain": DOMAIN,
                     "op": "persist_complete",
-                    "generation": generation,
                     "elapsed_ms": int(elapsed * 1000),
                 },
             )
@@ -378,7 +372,6 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
                 extra={
                     "domain": DOMAIN,
                     "op": "persist_failed",
-                    "generation": generation,
                     "elapsed_ms": int(elapsed * 1000),
                 },
                 exc_info=True,

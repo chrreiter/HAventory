@@ -548,10 +548,6 @@ async def test_a_store_written_before_the_generation_was_dropped_still_loads() -
 
     assert payload["_generation"] == STALE_GENERATION
     assert [item.name for item in reloaded.list_items()["items"]] == ["Screws"]
-    # Read as a key this build has no use for, not as a counter to resume: the
-    # same payload with the key stripped out reaches the same number.
-    stripped = {name: value for name, value in payload.items() if name != "_generation"}
-    assert reloaded.generation == Repository.from_state(stripped).generation
 
 
 @pytest.mark.asyncio

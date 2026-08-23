@@ -72,81 +72,6 @@ export const de: Record<TranslationKey, string> = {
   'hv.discard.heading': 'Änderungen verwerfen?',
   'hv.discard.message': 'Alles, was du seit dem letzten Speichern eingegeben hast, geht verloren.',
 
-  'hv.health.itemIdKeyMismatch.one':
-    '{count} Gegenstand ist unter einem Schlüssel gespeichert, der nicht zu seiner ID passt.',
-  'hv.health.itemIdKeyMismatch.other':
-    '{count} Gegenstände sind unter Schlüsseln gespeichert, die nicht zu ihren IDs passen.',
-  'hv.health.itemReferencesMissingLocation.one':
-    '{count} Gegenstand verweist auf einen Ort, den es nicht mehr gibt – er erscheint unter „Kein Ort“.',
-  'hv.health.itemReferencesMissingLocation.other':
-    '{count} Gegenstände verweisen auf einen Ort, den es nicht mehr gibt – sie erscheinen unter „Kein Ort“.',
-  'hv.health.itemMissingFromLocationIndex.one': '{count} Gegenstand fehlt im Ortsindex.',
-  'hv.health.itemMissingFromLocationIndex.other': '{count} Gegenstände fehlen im Ortsindex.',
-  'hv.health.checkedOutItemMissingFromIndex.one':
-    '{count} ausgeliehener Gegenstand fehlt im Ausleih-Index.',
-  'hv.health.checkedOutItemMissingFromIndex.other':
-    '{count} ausgeliehene Gegenstände fehlen im Ausleih-Index.',
-  'hv.health.nonCheckedOutItemInIndex.one':
-    '{count} Gegenstand steht im Ausleih-Index, ist aber nicht ausgeliehen.',
-  'hv.health.nonCheckedOutItemInIndex.other':
-    '{count} Gegenstände stehen im Ausleih-Index, sind aber nicht ausgeliehen.',
-  'hv.health.lowStockItemMissingFromIndex.one':
-    '{count} Gegenstand mit niedrigem Bestand fehlt im Bestandsindex.',
-  'hv.health.lowStockItemMissingFromIndex.other':
-    '{count} Gegenstände mit niedrigem Bestand fehlen im Bestandsindex.',
-  'hv.health.nonLowStockItemInIndex.one':
-    '{count} Gegenstand steht im Bestandsindex, hat aber keinen niedrigen Bestand.',
-  'hv.health.nonLowStockItemInIndex.other':
-    '{count} Gegenstände stehen im Bestandsindex, haben aber keinen niedrigen Bestand.',
-  'hv.health.tagsIndexUnknownItems.one':
-    'Der Label-Index verweist auf {count} Gegenstand, den es nicht mehr gibt.',
-  'hv.health.tagsIndexUnknownItems.other':
-    'Der Label-Index verweist auf {count} Gegenstände, die es nicht mehr gibt.',
-  'hv.health.categoryIndexUnknownItems.one':
-    'Der Kategorie-Index verweist auf {count} Gegenstand, den es nicht mehr gibt.',
-  'hv.health.categoryIndexUnknownItems.other':
-    'Der Kategorie-Index verweist auf {count} Gegenstände, die es nicht mehr gibt.',
-  'hv.health.checkedOutIndexUnknownItems.one':
-    'Der Ausleih-Index verweist auf {count} Gegenstand, den es nicht mehr gibt.',
-  'hv.health.checkedOutIndexUnknownItems.other':
-    'Der Ausleih-Index verweist auf {count} Gegenstände, die es nicht mehr gibt.',
-  'hv.health.lowStockIndexUnknownItems.one':
-    'Der Bestandsindex verweist auf {count} Gegenstand, den es nicht mehr gibt.',
-  'hv.health.lowStockIndexUnknownItems.other':
-    'Der Bestandsindex verweist auf {count} Gegenstände, die es nicht mehr gibt.',
-  'hv.health.locationIndexUnknownItems.one':
-    'Der Ortsindex verweist auf {count} Gegenstand, den es nicht mehr gibt.',
-  'hv.health.locationIndexUnknownItems.other':
-    'Der Ortsindex verweist auf {count} Gegenstände, die es nicht mehr gibt.',
-  'hv.health.locationIndexMissingLocation.one':
-    'Der Ortsindex führt {count} Fach für einen Ort, den es nicht mehr gibt.',
-  'hv.health.locationIndexMissingLocation.other':
-    'Der Ortsindex führt {count} Fächer für Orte, die es nicht mehr gibt.',
-  'hv.health.locationBucketMismatch.one':
-    '{count} Fach im Ortsindex stimmt nicht mit den Gegenständen überein, die es führt.',
-  'hv.health.locationBucketMismatch.other':
-    '{count} Fächer im Ortsindex stimmen nicht mit den Gegenständen überein, die sie führen.',
-  'hv.health.locationIdKeyMismatch.one':
-    '{count} Ort ist unter einem Schlüssel gespeichert, der nicht zu seiner ID passt.',
-  'hv.health.locationIdKeyMismatch.other':
-    '{count} Orte sind unter Schlüsseln gespeichert, die nicht zu ihren IDs passen.',
-  'hv.health.itemsTotalMismatch.one':
-    'Die zwischengespeicherte Gesamtzahl der Gegenstände stimmt nicht mit den gespeicherten Gegenständen überein.',
-  'hv.health.itemsTotalMismatch.other':
-    'Die zwischengespeicherte Gesamtzahl der Gegenstände stimmt nicht mit den gespeicherten Gegenständen überein.',
-  'hv.health.locationsTotalMismatch.one':
-    'Die zwischengespeicherte Gesamtzahl der Orte stimmt nicht mit den gespeicherten Orten überein.',
-  'hv.health.locationsTotalMismatch.other':
-    'Die zwischengespeicherte Gesamtzahl der Orte stimmt nicht mit den gespeicherten Orten überein.',
-  'hv.health.checkedOutCountMismatch.one':
-    'Die zwischengespeicherte Zahl der ausgeliehenen Gegenstände stimmt nicht mit den gespeicherten Gegenständen überein.',
-  'hv.health.checkedOutCountMismatch.other':
-    'Die zwischengespeicherte Zahl der ausgeliehenen Gegenstände stimmt nicht mit den gespeicherten Gegenständen überein.',
-  'hv.health.lowStockCountMismatch.one':
-    'Die zwischengespeicherte Zahl der Gegenstände mit niedrigem Bestand stimmt nicht mit den gespeicherten Gegenständen überein.',
-  'hv.health.lowStockCountMismatch.other':
-    'Die zwischengespeicherte Zahl der Gegenstände mit niedrigem Bestand stimmt nicht mit den gespeicherten Gegenständen überein.',
-
   'hv.count.item.one': '{count} Gegenstand',
   'hv.count.item.other': '{count} Gegenstände',
   'hv.count.location.one': '{count} Ort',
@@ -163,8 +88,6 @@ export const de: Record<TranslationKey, string> = {
   'hv.count.field.other': '{count} Felder',
   'hv.count.filter.one': '{count} Filter',
   'hv.count.filter.other': '{count} Filter',
-  'hv.count.issue.one': '{count} Problem',
-  'hv.count.issue.other': '{count} Probleme',
   'hv.count.problem.one': '{count} Problem',
   'hv.count.problem.other': '{count} Probleme',
   'hv.count.conflict.one': '{count} Konflikt',
@@ -669,15 +592,11 @@ export const de: Record<TranslationKey, string> = {
   'hv.diagnostics.degraded': 'Eingeschränkt',
   'hv.diagnostics.degradedDetail':
     ' – die Ratenbegrenzung greift. Einige Befehle und Live-Aktualisierungen werden verworfen.',
-  'hv.diagnostics.issuesFound': 'Probleme gefunden',
-  'hv.diagnostics.issuesFoundDetail':
-    ' – die Integration meldet Probleme mit ihren gespeicherten Daten.',
   'hv.diagnostics.noIssues': 'Keine Probleme',
   'hv.diagnostics.noIssuesDetail': ' · live',
   'hv.diagnostics.commandsRejected': 'Befehle abgelehnt',
   'hv.diagnostics.eventsDropped': 'Ereignisse verworfen',
   'hv.diagnostics.sinceLastRefresh': 'Seit der letzten Aktualisierung',
-  'hv.diagnostics.issues': 'Probleme',
   'hv.diagnostics.subscriptions': 'Abonnements',
   'hv.diagnostics.subscriptionsLive': 'Gegenstände · Orte · Statistik – live',
   'hv.diagnostics.subscriptionsDown': 'nicht verbunden',

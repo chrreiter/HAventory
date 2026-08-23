@@ -20,7 +20,7 @@ from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime, repo_of
+from runtime_helpers import install_runtime
 
 STORED_TITLE = "Haus Hoffmann Vorratskammer"
 STORED_ITEM = "Zdrojova kniha 1987"
@@ -61,7 +61,7 @@ def _loaded_hass() -> tuple[HomeAssistant, ConfigEntry]:
 
 @pytest.mark.asyncio
 async def test_the_payload_answers_shape_questions() -> None:
-    """Counts, both schema numbers, the generation, the health verdict, the bucket's keys."""
+    """Counts, both schema numbers, the health key, and the bucket's own keys."""
 
     hass, entry = _loaded_hass()
 
@@ -77,7 +77,6 @@ async def test_the_payload_answers_shape_questions() -> None:
     assert repository["counts"]["items_total"] == 1
     assert repository["counts"]["locations_total"] == 1
     assert repository["health_issues"] == []
-    assert repository["generation"] == repo_of(hass).generation
     # Field names, so a report says what the runtime holds without holding any
     # of it. `repository` naming the object and never its contents is the point.
     assert payload["runtime"]["data_keys"] == [
@@ -151,7 +150,6 @@ async def test_an_unloaded_entry_still_produces_a_payload() -> None:
     assert payload["repository"] == {
         "loaded": False,
         "counts": None,
-        "generation": None,
         "health_issues": None,
     }
     assert payload["storage"]["store_schema_version"] is None

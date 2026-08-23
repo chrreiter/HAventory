@@ -5,8 +5,8 @@ the entry's ⋮ menu; the JSON it writes is what a bug report carries.
 
 **Aggregates only — no item or location bodies at any depth, and none of the
 household's own words.** A diagnostics dump answers questions about the *shape*
-of an install: how much is stored, what schema it is on, whether the indexes
-agree with themselves, whether the card bundle is even deployed. Redacting free
+of an install: how much is stored, what schema it is on, which runtime pieces
+are loaded, whether the card bundle is even deployed. Redacting free
 text well enough to paste into a public issue is not something a name, a note or
 a custom field can be trusted to survive, and a user who wants their content
 already has `haventory/export`.
@@ -36,7 +36,6 @@ from homeassistant.core import HomeAssistant
 
 from . import _CARD_BUNDLE_PATH
 from .const import CONF_CARD_TITLE, CONF_TODO_ENTITY_ID, DOMAIN, INTEGRATION_VERSION
-from .health import collect_health_issues
 from .models import ITEM_STATUSES
 from .rate_limit import RateLimiter
 from .repository import Repository
@@ -69,13 +68,14 @@ def _bundle_state(path: Path) -> dict[str, Any]:
 
 def _repository_block(repo: Repository | None) -> dict[str, Any]:
     if repo is None:
-        return {"loaded": False, "counts": None, "generation": None, "health_issues": None}
-    issues, counts = collect_health_issues(repo)
+        return {"loaded": False, "counts": None, "health_issues": None}
     return {
         "loaded": True,
-        "counts": _without_household_status_names(counts),
-        "generation": repo.generation,
-        "health_issues": issues,
+        "counts": _without_household_status_names(repo.get_counts()),
+        # The index checks this used to carry moved into the test suite, where
+        # they are worth something; see `ws.ws_health`. The key stays so a
+        # report from this build has the shape a reader expects.
+        "health_issues": [],
     }
 
 

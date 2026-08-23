@@ -436,7 +436,7 @@ async def test_service_conflict_logs_warning_without_traceback(caplog) -> None:
     hass = _make_hass()
     repo = repo_of(hass)
     await services_mod.service_item_create(hass, {"name": "Widget"})
-    item_id = next(iter(repo._debug_get_internal_indexes()["items_by_id"]))
+    item_id = str(repo.list_items()["items"][0].id)
 
     caplog.clear()
     caplog.set_level(logging.DEBUG, logger=SERVICES_LOGGER)

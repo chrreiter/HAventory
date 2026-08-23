@@ -3,11 +3,10 @@
 Scenarios:
 - ping returns echo and timestamp
 - version reports integration_version and schema_version
-- health reports the generation this process has reached
 - config reports the configured card title, and the default when unset
 - config carries the status vocabulary and the attachment caps
 - stats returns repository counts, including the per-slug map
-- health returns healthy True for fresh repo and details with counts
+- health answers the four fields it is documented to, with an empty issue list
 """
 
 from __future__ import annotations
@@ -22,7 +21,6 @@ from custom_components.haventory.const import (
     MAX_MANUALS_PER_ITEM,
     MAX_PICTURES_PER_ITEM,
 )
-from custom_components.haventory.models import ItemCreate
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 from custom_components.haventory.ws import setup as ws_setup
@@ -59,29 +57,6 @@ async def test_version_reports_integration_and_schema() -> None:
     assert res["result"]["integration_version"] == INTEGRATION_VERSION
     # In offline tests, store may not exist; default to CURRENT_SCHEMA_VERSION
     assert int(res["result"]["schema_version"]) == int(CURRENT_SCHEMA_VERSION)
-
-
-@pytest.mark.asyncio
-async def test_health_reports_the_generation_this_run_has_reached() -> None:
-    """The counter left the store; it did not leave the health command.
-
-    It is what a maintainer reads to see whether a repository is being written
-    to at all, and it counts this process's mutations — so it moves under
-    traffic and starts near zero after a restart, rather than continuing a
-    number the last run left behind.
-    """
-
-    hass = HomeAssistant()
-    repo = Repository()
-    install_runtime(hass, repository=repo)
-    ws_setup(hass)
-
-    before = await ws_send(hass, 30, "haventory/health")
-    repo.create_item(ItemCreate(name="Drill"))
-    after = await ws_send(hass, 31, "haventory/health")
-
-    assert before["result"]["generation"] == repo.generation - 1
-    assert after["result"]["generation"] == repo.generation
 
 
 @pytest.mark.asyncio
@@ -244,8 +219,13 @@ async def test_stats_carries_status_counts_beside_the_legacy_keys() -> None:
 
 
 @pytest.mark.asyncio
-async def test_health_is_healthy_for_fresh_repo() -> None:
-    """haventory/health returns healthy True and includes counts and issues list."""
+async def test_health_answers_the_documented_shape() -> None:
+    """The four fields the contract lists, and nothing beside them.
+
+    The index checks that once filled `issues` moved into the test suite, so the
+    pair a client reads is constant; the shape is what has to hold, because a
+    field appearing or leaving here is a contract change.
+    """
 
     hass = HomeAssistant()
     install_runtime(hass)
@@ -254,7 +234,7 @@ async def test_health_is_healthy_for_fresh_repo() -> None:
     res = await ws_send(hass, 4, "haventory/health")
     assert res["success"] is True
     body = res["result"]
-    assert isinstance(body, dict)
-    assert body.get("healthy") is True
-    assert isinstance(body.get("counts"), dict)
-    assert isinstance(body.get("issues"), list)
+    assert set(body) == {"healthy", "issues", "counts", "rate_limit"}
+    assert body["healthy"] is True
+    assert body["issues"] == []
+    assert isinstance(body["counts"], dict)

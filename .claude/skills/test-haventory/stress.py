@@ -6,10 +6,11 @@ Robust, connection-per-worker WS client (applies the scripts/stress_test.py revi
 guardrails: one connection per concurrent task; send_no_wait + dedup-by-id for
 in-flight bursts; no count-tolerance oracles; every send wrapped). Every
 scenario prefixes its data with `stress_test_` so `cleanup` can sweep it, and
-polls `haventory/health` before/after as the pass gate.
+cross-checks `haventory/health` counts against `haventory/stats` before/after
+as the pass gate.
 
 Subcommands (run one at a time; non-destructive first, `restart` last):
-  baseline     health + version snapshot
+  baseline     counts + version snapshot
   fuzz         adversarial malformed single-mutation inputs (+ dataset-untouched oracle)
   bulkfuzz     adversarial haventory/items/bulk (whole-batch + per-op + dup op_id)
   subteardown  Fix #2: HA-core unsubscribe_events + dedicated unsubscribe teardown
@@ -186,16 +187,23 @@ async def health(conn: WSConn) -> dict:
     return (await conn.call("haventory/health"))["result"]
 
 
-async def assert_healthy(conn: WSConn, phase: str) -> dict:
+async def assert_counts_agree(conn: WSConn, phase: str) -> dict:
+    """Oracle: `haventory/health` and `haventory/stats` describe the same repository.
+
+    `healthy` and `issues` used to carry index cross-checks; those run in the
+    offline suite now and the two fields are constants, so the online gate is the
+    numbers. Two read commands over one repository disagreeing is a real find.
+    """
     h = await health(conn)
-    ok = h.get("healthy") is True and h.get("issues") == []
-    tag = "PASS" if ok else "**FAIL**"
-    print(
-        f"  [oracle {tag}] {phase}: healthy={h.get('healthy')} issues={h.get('issues')} "
-        f"gen={h.get('generation')} counts={h.get('counts')}"
-    )
-    if not ok:
-        raise SystemExit(f"HEALTH ORACLE FAILED at {phase}: {json.dumps(h)}")
+    stats = (await conn.call("haventory/stats"))["result"]
+    counts = h.get("counts") or {}
+    mismatched = {
+        key: (value, stats.get(key)) for key, value in counts.items() if stats.get(key) != value
+    }
+    tag = "PASS" if not mismatched else "**FAIL**"
+    print(f"  [oracle {tag}] {phase}: counts={counts}")
+    if mismatched:
+        raise SystemExit(f"COUNTS ORACLE FAILED at {phase}: {json.dumps(mismatched)}")
     return h
 
 
@@ -257,7 +265,7 @@ async def cmd_baseline() -> None:
     try:
         v = (await conn.call("haventory/version"))["result"]
         print(f"version: {v}")
-        await assert_healthy(conn, "baseline")
+        await assert_counts_agree(conn, "baseline")
     finally:
         await conn.close()
 
@@ -274,8 +282,7 @@ async def cmd_fuzz() -> None:
     results: list[tuple[str, str, str, str]] = []  # (case, expected, actual, verdict)
     try:
         print("== FUZZ: adversarial malformed inputs ==")
-        before = await assert_healthy(conn, "fuzz/before")
-        gen0 = before["generation"]
+        before = await assert_counts_agree(conn, "fuzz/before")
         counts0 = before["counts"]
 
         missing_uuid = _rand_uuid4()
@@ -497,10 +504,8 @@ async def cmd_fuzz() -> None:
 
         # dataset-untouched oracle: negatives must not have mutated anything
         after = await health(conn)
-        gen1 = after["generation"]
         counts1 = after["counts"]
-        # generation may move only due to the positive-case create+delete we did (b_id/big/cf); those were cleaned.
-        # Assert item/location counts returned to baseline.
+        # The positive cases created and deleted; assert the counts came back to baseline.
         counts_ok = counts1.get("items_total") == counts0.get("items_total") and counts1.get(
             "locations_total"
         ) == counts0.get("locations_total")
@@ -511,7 +516,6 @@ async def cmd_fuzz() -> None:
         print("  " + "-" * 100)
         for label, exp, act, verd in results:
             print(f"  {label:<28} {exp:<32} {act:<19} {verd}")
-        print(f"\n  generation: {gen0} -> {gen1}")
         print(
             f"  counts baseline vs after: {counts0} vs {counts1}  ({'MATCH' if counts_ok else '**MISMATCH**'})"
         )
@@ -522,7 +526,7 @@ async def cmd_fuzz() -> None:
         print(
             f"\n  unknown_error cases: {len(unknowns)}  unexpected-success: {len(unexpected_success)}  hard-fails: {len(fails)}"
         )
-        await assert_healthy(conn, "fuzz/after")
+        await assert_counts_agree(conn, "fuzz/after")
     finally:
         await cleanup_prefix(conn)
         await conn.close()
@@ -741,7 +745,7 @@ async def cmd_ratelimit() -> None:
             f"{'PASS (full recovery)' if rl2 == 0 else '**STILL LIMITED**'}"
         )
         await hammer2.close()
-        await assert_healthy(control, "ratelimit/after")
+        await assert_counts_agree(control, "ratelimit/after")
     finally:
         # ensure rate limiting is left OFF even on failure
         try:
@@ -760,7 +764,7 @@ async def cmd_bulkfuzz() -> None:
     conn = await connect()
     try:
         print("== BULK FUZZ: haventory/items/bulk adversarial ==")
-        await assert_healthy(conn, "bulkfuzz/before")
+        await assert_counts_agree(conn, "bulkfuzz/before")
         # three real targets
         ids = []
         for i in range(3):
@@ -875,7 +879,7 @@ async def cmd_bulkfuzz() -> None:
         # cleanup targets
         for iid, _ in ids:
             await conn.call("haventory/item/delete", item_id=iid)
-        await assert_healthy(conn, "bulkfuzz/after")
+        await assert_counts_agree(conn, "bulkfuzz/after")
     finally:
         await cleanup_prefix(conn)
         await conn.close()
@@ -923,8 +927,7 @@ async def cmd_bulk(target: int = 1000, conns: int = 8) -> None:
     pool: list[WSConn] = []
     try:
         print(f"== BULK: create scale to {target} across {conns} connections ==")
-        before = await assert_healthy(control, "bulk/before")
-        gen0 = before["generation"]
+        before = await assert_counts_agree(control, "bulk/before")
         items0 = before["counts"]["items_total"]
 
         pool = [await connect() for _ in range(conns)]
@@ -965,10 +968,9 @@ async def cmd_bulk(target: int = 1000, conns: int = 8) -> None:
             if errs:
                 print(f"    first errors: {errs[:3]}")
 
-        # uniqueness + generation oracle
+        # uniqueness + count oracle
         uniq = len(set(created_total))
         after = await health(control)
-        gen1 = after["generation"]
         items1 = after["counts"]["items_total"]
         print(
             f"\n  created={len(created_total)} unique={uniq} "
@@ -978,10 +980,9 @@ async def cmd_bulk(target: int = 1000, conns: int = 8) -> None:
             f"  items_total {items0} -> {items1} (delta {items1 - items0}, expected {len(created_total)}) "
             f"{'OK' if items1 - items0 == len(created_total) else '**MISMATCH**'}"
         )
-        print(f"  generation {gen0} -> {gen1} (delta {gen1 - gen0})")
         # scaling-cliff signal
         print(f"  latency growth (cliff signal): p95 first-250 vs last bucket printed above")
-        await assert_healthy(control, "bulk/after-create")
+        await assert_counts_agree(control, "bulk/after-create")
 
         # bulk delete
         print("\n== BULK: delete all created across connections ==")
@@ -1015,7 +1016,7 @@ async def cmd_bulk(target: int = 1000, conns: int = 8) -> None:
         )
         if del_err:
             print(f"    first delete errors: {del_err[:3]}")
-        await assert_healthy(control, "bulk/after-delete")
+        await assert_counts_agree(control, "bulk/after-delete")
     finally:
         for c in pool:
             await c.close()
@@ -1032,7 +1033,7 @@ async def cmd_races() -> None:
     b = await connect()
     try:
         print("== RACE 1: location rename leaves subtree item versions valid ==")
-        await assert_healthy(control, "races/before")
+        await assert_counts_agree(control, "races/before")
         loc = (await control.call("haventory/location/create", name=PREFIX + "race_loc"))["result"]
         loc_id = loc["id"]
         item_versions: dict[str, int] = {}
@@ -1088,7 +1089,7 @@ async def cmd_races() -> None:
             f"  subtree items carrying the new path: {repathed}/{len(item_versions)} "
             f"{'OK' if repathed == len(item_versions) else '**STALE PATH**'}"
         )
-        await assert_healthy(control, "races/after-rename")
+        await assert_counts_agree(control, "races/after-rename")
 
         print("\n== RACE 2: concurrent rename of same location (no locking -> last-writer-wins) ==")
         r1, r2 = await asyncio.gather(
@@ -1100,7 +1101,7 @@ async def cmd_races() -> None:
             f"  both success: {r1.get('success')},{r2.get('success')}  final name={final.get('name')!r} "
             f"({'OK last-writer-wins' if final.get('name') in (PREFIX + 'concurrent_A', PREFIX + 'concurrent_B') else '**LOST**'})"
         )
-        await assert_healthy(control, "races/after-concurrent-rename")
+        await assert_counts_agree(control, "races/after-concurrent-rename")
 
         print("\n== RACE 3: concurrent adjust_quantity serialization ==")
         item = (
@@ -1133,7 +1134,7 @@ async def cmd_races() -> None:
         finally:
             for c in adj_conns:
                 await c.close()
-        await assert_healthy(control, "races/after-adjust")
+        await assert_counts_agree(control, "races/after-adjust")
     finally:
         await a.close()
         await b.close()
@@ -1245,7 +1246,7 @@ async def cmd_restart() -> None:
     try:
         print("== PERSISTENCE: mid-load restart + on-disk cross-check ==")
         await cleanup_prefix(control)
-        await assert_healthy(control, "restart/before")
+        await assert_counts_agree(control, "restart/before")
 
         # seed a known, stable set
         N = 200
@@ -1269,9 +1270,8 @@ async def cmd_restart() -> None:
 
         h_before = await health(control)
         cnt_before = h_before["counts"]["items_total"]
-        gen_before = h_before["generation"]
         disk_before = await _pull_store_counts()
-        print(f"  API items_total={cnt_before} gen={gen_before}")
+        print(f"  API items_total={cnt_before}")
         print(f"  ON-DISK store: {disk_before}")
         disk_ok_before = disk_before.get("disk_items") == cnt_before
         print(
@@ -1338,7 +1338,7 @@ async def cmd_restart() -> None:
             # control connection or closed here, including when health() fails on a
             # half-booted HA.
             try:
-                ready = (await health(c)).get("healthy") is not None
+                ready = (await health(c)).get("counts") is not None
             except Exception:  # noqa: BLE001
                 ready = False
             if ready:
@@ -1354,15 +1354,12 @@ async def cmd_restart() -> None:
         # --- post-restart invariants ---
         h_after = await health(control)
         stats_after = (await control.call("haventory/stats"))["result"]
-        issues = h_after.get("issues")
-        healthy = h_after.get("healthy")
         cnt_after = h_after["counts"]["items_total"]
         internal_ok = h_after["counts"]["items_total"] == stats_after["items_total"]
         disk_after = await _pull_store_counts()
         disk_match = disk_after.get("disk_items") == cnt_after
-        print(f"  healthy={healthy} issues={issues}")
         print(
-            f"  API items_total={cnt_after} (was {cnt_before} + up to {len(storm_ids)} storm survivors) gen={h_after['generation']}"
+            f"  API items_total={cnt_after} (was {cnt_before} + up to {len(storm_ids)} storm survivors)"
         )
         print(f"  health.counts == stats: {'PASS' if internal_ok else '**MISMATCH**'}")
         print(f"  ON-DISK store: {disk_after}")
@@ -1370,9 +1367,6 @@ async def cmd_restart() -> None:
             f"  on-disk == API (post-restart): {'PASS' if disk_match else '**MISMATCH**'} "
             f"(disk {disk_after.get('disk_items')} vs api {cnt_after})"
         )
-        # index drift oracle
-        drift_ok = healthy is True and issues == []
-        print(f"  index-drift oracle: {'PASS (no drift)' if drift_ok else '**INDEX DRIFT**'}")
         # known seed survived?
         survived = 0
         for iid, nm, qty in sample:
@@ -1385,7 +1379,7 @@ async def cmd_restart() -> None:
         )
         di, dl = await cleanup_prefix(control)
         print(f"  cleanup removed {di} items {dl} locations")
-        await assert_healthy(control, "restart/after-cleanup")
+        await assert_counts_agree(control, "restart/after-cleanup")
     finally:
         if control is not None:
             try:
@@ -1480,7 +1474,7 @@ async def cmd_subteardown() -> None:
     conn = await connect()
     try:
         print("== SUB TEARDOWN (Fix #2): core unsubscribe_events + dedicated unsubscribe ==")
-        await assert_healthy(conn, "subteardown/before")
+        await assert_counts_agree(conn, "subteardown/before")
 
         # (a) subscribe, then tear down via CORE unsubscribe_events (the frontend path)
         sub_id = await conn.send_no_wait("haventory/subscribe", topic="items")
@@ -1508,7 +1502,7 @@ async def cmd_subteardown() -> None:
         print(
             f"  unsubscribe_events after dedicated unsub -> {again_code} (benign either way, must not crash)"
         )
-        await assert_healthy(conn, "subteardown/after")
+        await assert_counts_agree(conn, "subteardown/after")
     finally:
         await conn.close()
 
@@ -1521,7 +1515,7 @@ async def cmd_cleanup() -> None:
     try:
         di, dl = await cleanup_prefix(conn)
         print(f"cleanup removed {di} items, {dl} locations")
-        await assert_healthy(conn, "cleanup/after")
+        await assert_counts_agree(conn, "cleanup/after")
     finally:
         await conn.close()
 

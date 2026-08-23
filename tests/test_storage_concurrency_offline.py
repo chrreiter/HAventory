@@ -47,27 +47,6 @@ async def test_persist_lock_prevents_concurrent_saves():
 
 
 @pytest.mark.asyncio
-async def test_generation_counter_increments_on_modification():
-    """Repository generation counter increments on every state modification."""
-    repo = Repository()
-    initial_gen = repo.generation
-
-    # Create item should increment generation
-    item = repo.create_item(ItemCreate(name="Test Item"))
-    gen_after_create = repo.generation
-    assert gen_after_create > initial_gen
-
-    # Update item should increment generation (updates call _reindex which unindexes + indexes)
-    repo.update_item(item.id, ItemUpdate(quantity=5))
-    gen_after_update = repo.generation
-    assert gen_after_update > gen_after_create
-
-    # Delete item should increment generation
-    repo.delete_item(item.id)
-    assert repo.generation > gen_after_update
-
-
-@pytest.mark.asyncio
 async def test_concurrent_operations_with_persistence():
     """Multiple concurrent operations complete successfully with locking."""
     hass = HomeAssistant()

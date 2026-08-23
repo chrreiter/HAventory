@@ -7,7 +7,7 @@
  *
  * A module singleton rather than a Lit context or a threaded property. Half the
  * card's copy lives in plain functions with no host element — `ui/empty-state`,
- * `ui/health-codes`, `ui/plural`, `describeFailure` in `hv-bulk-bar` — and a
+ * `ui/plural`, `describeFailure` in `hv-bulk-bar` — and a
  * context cannot reach any of them without a signature change at every call
  * site. The language is fixed for the lifetime of a page, so a singleton gives
  * up nothing: `setLanguage` reports whether the value actually moved, and the
