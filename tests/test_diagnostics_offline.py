@@ -84,7 +84,6 @@ async def test_the_payload_answers_shape_questions() -> None:
         "card_title",
         "low_stock_ids",
         "persist_lock",
-        "persist_task",
         "quick_filters",
         "rate_limiter",
         "repository",

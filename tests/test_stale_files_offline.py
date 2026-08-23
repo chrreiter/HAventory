@@ -163,9 +163,7 @@ async def test_nothing_retired_touches_no_files_at_all() -> None:
 
 
 @pytest.mark.asyncio
-async def test_setup_entry_sweeps_the_retired_paths(
-    install_dir: Path, monkeypatch, immediate_persist
-) -> None:
+async def test_setup_entry_sweeps_the_retired_paths(install_dir: Path, monkeypatch) -> None:
     """The sweep is wired into setup, which is the only thing that runs it."""
     stale = install_dir / "reminders.py"
     stale.write_text("LEGACY = True\n", encoding="utf-8")

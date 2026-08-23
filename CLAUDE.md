@@ -119,9 +119,9 @@ helpers assume a UTF-8 terminal. Develop on Windows through WSL2.
   concurrency** via the item `version` are invariants the rest of the code depends on.
   `location_path` is derived: no client writes it, and rewriting it must not touch an item's
   `version` or `updated_at` — a location rename is not an item edit.
-- **Persistence**: WS and service handlers save immediately, errors propagating as
-  `storage_error`; shutdown and unload flush immediately; debounced saves are for internal or
-  batch work only and go through `hass.async_create_background_task`.
+- **Persistence**: every write is awaited where it is made — WS and service handlers save
+  immediately, errors propagating as `storage_error`; shutdown and unload flush immediately.
+  There is one persist path and no scheduled one.
 - **Deleting or renaming a file inside `custom_components/haventory/`** means appending its old
   path to `RETIRED_PATHS` in the same PR — a HACS upgrade leaves it behind otherwise.
 - **Logging**: take the module logger from `logs.context_logger(__name__)`, never

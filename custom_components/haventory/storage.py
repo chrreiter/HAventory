@@ -15,7 +15,6 @@ forward-only migrations when an older schema payload is encountered.
 
 from __future__ import annotations
 
-import asyncio
 import time
 from collections.abc import Mapping
 from copy import deepcopy
@@ -43,9 +42,6 @@ CURRENT_SCHEMA_VERSION: Final[int] = 9
 
 # Storage key under which the persisted dataset is saved
 STORAGE_KEY: Final[str] = "haventory_store"
-
-# Debounce delay for persistence operations (seconds)
-PERSIST_DEBOUNCE_DELAY: Final[float] = 1.0
 
 # How much of a corrupt ``schema_version`` the refusal quotes back. The value is
 # whatever the file holds, and the message reaches the config entry's error state
@@ -390,87 +386,13 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
             raise StorageError("failed to persist repository") from exc
 
 
-def cancel_pending_persist(hass: HomeAssistant, *, op: str = "persist_cancel") -> None:
-    """Cancel a scheduled debounced persist, if one is pending.
-
-    Anything about to write itself — or about to take away the repository the
-    write would read — has to clear the pending task first, or it fires against
-    state that has moved on.
-    """
-    runtime = find_runtime(hass)
-    if runtime is None:
-        return
-
-    existing_task = runtime.persist_task
-    if existing_task is None or existing_task.done():
-        return
-
-    existing_task.cancel()
-    _LOGGER.debug(
-        "Cancelled pending persist task",
-        extra={"domain": DOMAIN, "op": op},
-    )
-
-
-async def async_request_persist(hass: HomeAssistant) -> None:
-    """Request a debounced persistence operation.
-
-    Cancels any pending persist task and schedules a new one — as a Home
-    Assistant tracked background task — after the debounce delay. This coalesces
-    rapid changes into a single persistence operation, reducing disk I/O while
-    maintaining data safety.
-
-    The debounce delay is PERSIST_DEBOUNCE_DELAY (1.0 seconds by default).
-    """
-    runtime = find_runtime(hass)
-    if runtime is None:
-        raise NotLoadedError("HAventory runtime not initialized; run integration setup")
-
-    cancel_pending_persist(hass, op="persist_debounce_cancel")
-
-    async def _delayed_persist() -> None:
-        """Execute persistence after debounce delay."""
-        try:
-            await asyncio.sleep(PERSIST_DEBOUNCE_DELAY)
-            await async_persist_repo(hass)
-        except asyncio.CancelledError:
-            # Task was cancelled, this is expected
-            _LOGGER.debug(
-                "Debounced persist task cancelled",
-                extra={"domain": DOMAIN, "op": "persist_debounce_cancelled"},
-            )
-        except Exception:  # pragma: no cover - defensive
-            _LOGGER.error(
-                "Debounced persist task failed",
-                extra={"domain": DOMAIN, "op": "persist_debounce_failed"},
-                exc_info=True,
-            )
-
-    _LOGGER.debug(
-        "Persist requested, debouncing",
-        extra={
-            "domain": DOMAIN,
-            "op": "persist_debounce_request",
-            "delay_s": PERSIST_DEBOUNCE_DELAY,
-        },
-    )
-
-    # Schedule through HA rather than asyncio directly: hass tracks the task and
-    # cancels/awaits it during shutdown, so a pending debounce cannot outlive the
-    # event loop.
-    runtime.persist_task = hass.async_create_background_task(
-        _delayed_persist(), name=f"{DOMAIN} debounced persist"
-    )
-
-
 async def async_persist_immediate(hass: HomeAssistant) -> None:
-    """Persist immediately, bypassing debounce.
+    """Persist from a path with no client waiting on the answer.
 
-    Cancels any pending debounced persist task and executes persistence
-    synchronously. Use this for critical paths like shutdown where we need
-    to ensure data is written to disk before the process exits.
+    The rewrite after a lossy load and the teardown flush both write through
+    here. Neither surfaces in a handler's reply, so this log line is what tells
+    an operator reading the log that the write was attempted at all.
     """
-    cancel_pending_persist(hass, op="persist_immediate_cancel")
 
     _LOGGER.debug(
         "Immediate persist requested",

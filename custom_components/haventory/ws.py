@@ -839,9 +839,9 @@ def broadcast_counts(hass: HomeAssistant) -> None:
 async def _persist_repo(hass: HomeAssistant) -> None:
     """Write the repository to disk, propagating failure to the caller.
 
-    Uses immediate persistence so storage errors reach clients: debounced
-    persistence (``async_request_persist``) swallows errors in background tasks,
-    breaking the ``@ws_guard`` error mapping contract.
+    The write is awaited rather than handed to a background task, because that
+    is what puts a storage failure in front of ``@ws_guard`` and so in the
+    client's reply as ``storage_error``.
 
     **Every mutation handler awaits this before it broadcasts or replies.** That
     ordering is the whole guarantee an event carries: a subscriber that receives

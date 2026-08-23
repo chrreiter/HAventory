@@ -83,7 +83,6 @@ from .storage import (
     DomainStore,
     async_backup_store,
     async_persist_immediate,
-    cancel_pending_persist,
     read_schema_version,
     schema_downgrade_message,
 )
@@ -503,13 +502,11 @@ async def _async_options_updated(hass: HomeAssistant, entry: HAventoryConfigEntr
 async def _async_flush_pending_writes(hass: HomeAssistant, *, op: str) -> None:
     """Write out whatever is still unsaved, before the state that holds it goes.
 
-    A pending debounce is cleared either way: with nothing loaded there is
-    nothing to write, and leaving the task scheduled would only fire it against
-    a repository that is on its way out.
+    With no runtime there is nothing to write: the repository the write would
+    read is already gone.
     """
 
     if find_runtime(hass) is None:
-        cancel_pending_persist(hass, op=op)
         return
 
     try:

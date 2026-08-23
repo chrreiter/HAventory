@@ -1,9 +1,9 @@
 """Offline tests: once the config entry is removed, the API refuses.
 
 Home Assistant cannot unregister a WebSocket command, so the ``haventory/*``
-commands keep listening after the integration is gone. Removal drops the loaded
-runtime — store, repository, limiter, subscriptions, any pending write — which
-is what turns "still listening" into "refuses", instead of a dashboard left open
+commands keep listening after the integration is gone. Removal writes out what is
+unsaved and then drops the loaded runtime — store, repository, limiter,
+subscriptions — which turns "still listening" into "refuses", instead of a dashboard left open
 going on reading and writing an inventory nothing owns any more.
 
 These tests call ``async_remove_entry`` without ``async_unload_entry`` first.
@@ -16,11 +16,9 @@ ordering against a real core.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 import pytest
-from custom_components.haventory import storage as storage_mod
 from custom_components.haventory import ws as ws_mod
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.runtime import find_runtime
@@ -120,9 +118,7 @@ async def test_removal_stops_persistence(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_removal_flushes_before_dropping(monkeypatch) -> None:
-    """A debounced write pending at removal lands, and then fires no second time."""
-
-    monkeypatch.setattr(storage_mod, "PERSIST_DEBOUNCE_DELAY", 0.05)
+    """What the repository holds and the store does not is written out at removal."""
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
@@ -135,18 +131,11 @@ async def test_removal_flushes_before_dropping(monkeypatch) -> None:
     monkeypatch.setattr(store, "async_save", _record)
 
     repo_of(hass).create_item({"name": "Unsaved"})
-    await storage_mod.async_request_persist(hass)
-    pending = runtime_of(hass).persist_task
 
     await remove_entry(hass, entry)
 
-    assert len(saved) == 1, "removal writes the pending state out"
+    assert len(saved) == 1, "removal writes the unsaved state out"
     assert [item["name"] for item in saved[0]["items"].values()] == ["Unsaved"]
-
-    await asyncio.sleep(0.2)
-
-    assert pending.cancelled() or pending.done()
-    assert len(saved) == 1, "the cancelled debounce never fired against a dropped store"
 
 
 @pytest.mark.asyncio

@@ -17,12 +17,10 @@ WebSocket, against a real core.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 import pytest
 from custom_components.haventory import services as services_mod
-from custom_components.haventory import storage as storage_mod
 from custom_components.haventory import ws as ws_mod
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import NotLoadedError
@@ -119,9 +117,7 @@ async def test_unload_keeps_the_static_route_flag() -> None:
 
 @pytest.mark.asyncio
 async def test_unload_flushes_before_dropping(monkeypatch) -> None:
-    """A debounced write pending at unload lands, and then fires no second time."""
-
-    monkeypatch.setattr(storage_mod, "PERSIST_DEBOUNCE_DELAY", 0.05)
+    """What the repository holds and the store does not is written out at unload."""
 
     hass = HomeAssistant()
     entry = await _setup_entry(hass)
@@ -134,18 +130,11 @@ async def test_unload_flushes_before_dropping(monkeypatch) -> None:
     monkeypatch.setattr(store, "async_save", _record)
 
     repo_of(hass).create_item({"name": "Unsaved"})
-    await storage_mod.async_request_persist(hass)
-    pending = runtime_of(hass).persist_task
 
     await unload_entry(hass, entry)
 
-    assert len(saved) == 1, "unload writes the pending state out"
+    assert len(saved) == 1, "unload writes the unsaved state out"
     assert [item["name"] for item in saved[0]["items"].values()] == ["Unsaved"]
-
-    await asyncio.sleep(0.2)
-
-    assert pending.cancelled() or pending.done()
-    assert len(saved) == 1, "the cancelled debounce never fired against a dropped store"
 
 
 @pytest.mark.asyncio
