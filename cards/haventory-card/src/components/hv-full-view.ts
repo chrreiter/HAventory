@@ -100,6 +100,40 @@ const sectionPanelId = (section: SidebarSection) => `sidebar-section-${section}`
 const FILTER_PANEL_ID = 'full-view-filter-panel';
 
 /**
+ * App-bar width at or below which *Add item* keeps its icon and gives up its
+ * label, and the bar tightens its gaps.
+ *
+ * German is what sets it. In the panel with all four counts showing, the bar
+ * wants title 84 + search 260 + strip 329 + "Gegenstand hinzufügen" 189 +
+ * organize 36 + ⋮ 34, plus 60px of gaps and 32px of padding — 1024, which is
+ * exactly what a 1280px window leaves once Home Assistant's sidebar has taken
+ * its 256. The icon-only button and the tighter gaps bring it to 851.
+ */
+const BAR_TIGHT = 1100;
+
+/**
+ * And at or below which the search box gives up 60px of its floor, so the pill
+ * strip still has a pill to show. The narrowest bar that is not the phone
+ * layout is 614px — an 870px window with the sidebar docked — where everything
+ * but the strip costs 462px and the strip keeps the remaining 152.
+ */
+const BAR_TIGHTER = 900;
+
+/**
+ * The steps a bar of this width takes, as the classes that carry them.
+ *
+ * A width of 0 is a bar that has not been measured — no observer, or nothing
+ * rendered yet — and answers with the widest form, which is the honest default
+ * for a surface that cannot say how much room it has.
+ */
+function barSteps(width: number): string {
+  if (width <= 0) return '';
+  if (width <= BAR_TIGHTER) return 'tight tighter';
+  if (width <= BAR_TIGHT) return 'tight';
+  return '';
+}
+
+/**
  * The expanded workspace.
  *
  * The coloured app bar is the mode signal — the standard card never has one, so
@@ -148,13 +182,14 @@ export class HVFullView extends LitElement {
          */
         --hv-tap-min: initial;
         --hv-input-font: initial;
-        /* The app bar does not compress below 778px — close, the title, the
-           search box's own minimum, three count pills, Add item and the ⋮ —
-           and the grid column takes that minimum whatever the screen is. On a
-           phone held sideways, 760px, the surface was therefore 18px wider
-           than the viewport, and with overflow hidden those 18px did not
-           exist: the ⋮ was sliced down the middle, the editor's Save sat flush
-           against the screen edge, and no gesture could bring either back.
+        /* The app bar compresses in steps and its pill strip scrolls, but it
+           keeps a floor — the leading button, the title, the search box's own
+           minimum, Add item and the ⋮ — and the grid column takes that floor
+           whatever the screen is. On a phone held sideways, 760px, the surface
+           was therefore wider than the viewport, and with overflow hidden the
+           difference did not exist: the ⋮ was sliced down the middle, the
+           editor's Save sat flush against the screen edge, and no gesture could
+           bring either back.
 
            Vertical stays clipped — this surface *is* the viewport and the
            boxes inside it do their own scrolling — but when the layout
@@ -297,33 +332,96 @@ export class HVFullView extends LitElement {
         color: #fff;
       }
       /*
+       * The pills travel as one strip so that they, and not the bar, are what
+       * gives when the room runs out: the strip is the only item beside the
+       * search box that can shrink, and it scrolls its own overflow instead of
+       * pushing the actions onto a second row.
+       *
+       * The 3px of padding is the applied ring — a 2px outline at a 1px offset
+       * — which a scroll box would otherwise cut off on the first and last
+       * pill and along both edges. The matching negative margin takes those
+       * 3px back out of the bar, so the gaps either side read as the 12px the
+       * bar declares.
+       */
+      .appbar .pills {
+        display: flex;
+        align-items: center;
+        flex-wrap: nowrap;
+        gap: 8px;
+        flex: 0 1 auto;
+        min-width: 0;
+        overflow-x: auto;
+        padding: 3px;
+        margin: -3px;
+        scrollbar-width: none;
+      }
+      .appbar .pills::-webkit-scrollbar {
+        display: none;
+      }
+      /*
        * Above the phone breakpoint — the complement of NARROW_QUERY, whose own
        * block below owns everything at or under it.
        *
-       * The search is the only item on this bar that can shrink: every pill,
-       * the title and both trailing buttons are flex:none. So each pill added
-       * comes out of the search box, and with all six showing it collapsed to
-       * "Search all 1(" in a 1024px content area. A floor stops that, and the
-       * bar takes a second line instead — which is what the phone layout
-       * already does with these same pills.
+       * The search box has a floor here, or each pill added would come out of
+       * it: with all six showing it collapsed to "Search all 1(" in a 1024px
+       * content area. The bar used to take a second line instead, which read
+       * as a fix until an ordinary laptop hit it — at 1280px in German the ⋮
+       * went down on its own and left a 44px band of empty blue under the
+       * pills. So the row stays whole and two things give before it does: the
+       * pill strip scrolls, and the two steps below trade away what can be
+       * read from an icon.
        */
       @media (min-width: 701px) {
-        .appbar {
-          flex-wrap: wrap;
-        }
         .appbar .search {
           min-width: 260px;
         }
-        /* The spacer can only push on the line it sits on, so once the bar
-           wraps it holds the first line open while the actions it was meant to
-           push land left-aligned under the title. Carrying the margin on the
-           actions themselves keeps them at the right edge of whichever line
-           they end up on, and reads the same as today when nothing wraps. */
+        /* Selection mode reuses this bar for a sentence and two buttons.
+           Nothing in it is a bare glyph that a second line would strand, and
+           the sentence is the household's count read out — it wraps as it did
+           before the row above stopped wrapping. */
+        .appbar.selecting {
+          flex-wrap: wrap;
+        }
+        /* The heading is whatever the dashboard called this card, so it has no
+           length the bar can count on. It elides rather than pushing the row
+           off the side — but only once the strip has given everything it has,
+           which is what the shrink weight buys: a cut title reads as broken,
+           where a strip scrolled off its last pill does not. */
+        .appbar h2 {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .appbar .pills {
+          flex-shrink: 100;
+        }
+        /* Two auto margins on one line share the free space between them, so a
+           spacer here would strand the pill strip halfway across the bar. The
+           actions carry the one margin that holds the group at the right
+           edge. */
         .appbar .spacer {
           display: none;
         }
         .appbar .add {
           margin-left: auto;
+        }
+        /* First step. The add button's label is the widest thing on the bar
+           that the button does not need to be understood — "Gegenstand
+           hinzufügen" measures 187px against "Add item"'s 110 — and the icon
+           with that label on the accessible name says it in 36px. Hiding the
+           label is the template's job, off this same measurement, because
+           hv-sr-only is the card's one way to keep a name undrawn. */
+        .appbar.tight {
+          gap: 8px;
+        }
+        .appbar.tight .add {
+          padding: 7px 10px;
+        }
+        /* Second step. The search box gives up 60px of its floor: a
+           placeholder that elides is still a search box, and what it buys is
+           the pill strip keeping a pill or two on screen. */
+        .appbar.tighter .search {
+          min-width: 200px;
         }
       }
       .appbar .add {
@@ -410,11 +508,19 @@ export class HVFullView extends LitElement {
           max-width: none;
           padding: 5px 12px;
         }
-        /* Third row. These are secondary toggles reporting a count, not the
-           bar's actions, so they keep their own compact height instead of
-           growing to the 44px tap target the buttons above them take. */
-        .appbar .pill {
+        /* Third row. The strip carries the order, because a child orders
+           itself among its own siblings and the pills are the strip's. Here it
+           wraps rather than scrolls — the row it lands on is its own and the
+           height is free, which is the layout this branch was written for. */
+        .appbar .pills {
           order: 2;
+          flex-wrap: wrap;
+          overflow: visible;
+        }
+        /* These are secondary toggles reporting a count, not the bar's
+           actions, so they keep their own compact height instead of growing to
+           the 44px tap target the buttons above them take. */
+        .appbar .pill {
           min-height: 30px;
           padding: 5px 11px;
         }
@@ -893,6 +999,24 @@ export class HVFullView extends LitElement {
    */
   @state() private _narrow = false;
   /**
+   * Which of the app bar's two steps the room calls for, as the classes that
+   * carry them — see `barSteps`.
+   *
+   * The steps read the *bar's* width, not the window's: embedded, this surface
+   * is the panel, which is the window minus whatever Home Assistant's sidebar
+   * is taking, and no media query on this side can name that. A size container
+   * would answer it in CSS, but `container-type` brings layout containment
+   * with it, and a contained ancestor becomes the containing block for every
+   * `position: fixed` descendant — the ⋮ menu, the confirms and the sheets
+   * this surface hosts all place themselves from viewport coordinates, and
+   * embedded they would land offset by the width of the sidebar. So the shell
+   * is measured instead.
+   *
+   * The step is what is reactive, not the pixels: a drag across the whole
+   * range redraws this tree twice rather than once a frame.
+   */
+  @state() private _barSteps = '';
+  /**
    * The staged filter set's match count, so the phone footer's button can say
    * what pressing it will show — the same contract the card's filter sheet has.
    */
@@ -949,6 +1073,38 @@ export class HVFullView extends LitElement {
     this._storeUnsub?.();
     this._storeUnsub = undefined;
     this._narrowQuery?.removeEventListener('change', this._onNarrowChange);
+    this._barObserver?.disconnect();
+    this._barTarget = null;
+  }
+
+  private _barObserver?: ResizeObserver;
+  private _barTarget: Element | null = null;
+
+  /**
+   * Watch the rendered shell, which is the width the app bar has to fit in.
+   * Called after every render, because the shell comes and goes with `open`.
+   */
+  private _syncBarMeasure() {
+    const shell = this.shadowRoot?.querySelector('.shell') ?? null;
+    if (shell === this._barTarget) return;
+    this._barTarget = shell;
+    this._barObserver?.disconnect();
+    if (!shell || typeof ResizeObserver === 'undefined') {
+      this._setBarWidth(0);
+      return;
+    }
+    this._barObserver ??= new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      this._setBarWidth(entry.contentRect?.width ?? entry.target.getBoundingClientRect().width);
+    });
+    this._barObserver.observe(shell);
+  }
+
+  /** The one way in for a measured width; a test with no layout calls it too. */
+  private _setBarWidth(width: number) {
+    const next = barSteps(width);
+    if (next !== this._barSteps) this._barSteps = next;
   }
 
   private _narrowQuery?: MediaQueryList | null;
@@ -1010,6 +1166,7 @@ export class HVFullView extends LitElement {
       }
     }
     for (const section of FACET_SECTIONS) this._syncFacetStop(section);
+    this._syncBarMeasure();
   }
 
   /** The rows of one facet list, in the order they are drawn. */
@@ -2083,8 +2240,72 @@ export class HVFullView extends LitElement {
     // The dashboard decides what is on offer; the count still decides whether
     // there is anything to say. Same vocabulary the card's badges read.
     const allowsPill = (key: QuickFilterKey) => quickFilterAllowed(this.quickFilters, key);
+    // The narrow branch dresses these same controls its own way, on its own
+    // breakpoint, so the measured steps stand aside for it.
+    const steps = this._narrow ? '' : this._barSteps;
+    const addLabelClass = steps.includes('tight') ? 'add-label hv-sr-only' : 'add-label';
+    // One strip, so the pills are what gives when the bar runs out of room —
+    // and no strip at all when nothing is flagged, because an empty one is
+    // still a flex item with a gap in front of it.
+    const pills = [
+      allowsPill('low_stock') && counts && counts.low_stock_count > 0
+        ? html`<button
+            class="hv-chip pill warning ${filters.lowStockOnly ? 'on' : ''}"
+            data-testid="full-badge-low"
+            aria-pressed=${String(filters.lowStockOnly)}
+            title=${t('hv.card.badge.lowTitle')}
+            @click=${() => this._setFilters({ lowStockOnly: !filters.lowStockOnly })}
+          >
+            ${t('hv.card.badge.low', { count: counts.low_stock_count })}
+          </button>`
+        : null,
+      allowsPill('overdue') && counts && (counts.overdue_count ?? 0) > 0
+        ? html`<button
+            class="hv-chip pill error ${filters.overdueOnly ? 'on' : ''}"
+            data-testid="full-badge-overdue"
+            aria-pressed=${String(filters.overdueOnly)}
+            title=${t('hv.card.badge.overdueTitle')}
+            @click=${() => this._setFilters({ overdueOnly: !filters.overdueOnly })}
+          >
+            ${t('hv.card.badge.overdue', { count: counts.overdue_count ?? 0 })}
+          </button>`
+        : null,
+      allowsPill('inspection_due') && counts && (counts.inspection_due_count ?? 0) > 0
+        ? html`<button
+            class="hv-chip pill warning ${filters.inspectionDueOnly ? 'on' : ''}"
+            data-testid="full-badge-inspection"
+            aria-pressed=${String(filters.inspectionDueOnly)}
+            title=${t('hv.card.badge.inspectionTitle')}
+            @click=${() => this._setFilters({ inspectionDueOnly: !filters.inspectionDueOnly })}
+          >
+            ${t('hv.card.badge.inspection', { count: counts.inspection_due_count ?? 0 })}
+          </button>`
+        : null,
+      allowsPill('reminder_due') && counts && (counts.reminder_due_count ?? 0) > 0
+        ? html`<button
+            class="hv-chip pill warning ${filters.reminderDueOnly ? 'on' : ''}"
+            data-testid="full-badge-reminder"
+            aria-pressed=${String(filters.reminderDueOnly)}
+            title=${t('hv.card.badge.reminderTitle')}
+            @click=${() => this._setFilters({ reminderDueOnly: !filters.reminderDueOnly })}
+          >
+            ${t('hv.card.badge.reminder', { count: counts.reminder_due_count ?? 0 })}
+          </button>`
+        : null,
+      allowsPill('checked_out') && counts && counts.checked_out_count > 0
+        ? html`<button
+            class="hv-chip pill ${filters.checkedOutOnly ? 'on' : ''}"
+            data-testid="full-badge-out"
+            aria-pressed=${String(filters.checkedOutOnly)}
+            title=${t('hv.card.badge.checkedOutTitle')}
+            @click=${() => this._setFilters({ checkedOutOnly: !filters.checkedOutOnly })}
+          >
+            ${t('hv.card.badge.checkedOut', { count: counts.checked_out_count })}
+          </button>`
+        : null,
+    ];
     return html`
-        <div class="appbar">
+        <div class="appbar ${steps}">
           ${this.embedded
             ? this._renderMenuButton()
             : html`<button
@@ -2113,67 +2334,17 @@ export class HVFullView extends LitElement {
             />
           </label>
           <span class="spacer"></span>
-          ${allowsPill('low_stock') && counts && counts.low_stock_count > 0
-            ? html`<button
-                class="hv-chip pill warning ${filters.lowStockOnly ? 'on' : ''}"
-                data-testid="full-badge-low"
-                aria-pressed=${String(filters.lowStockOnly)}
-                title=${t('hv.card.badge.lowTitle')}
-                @click=${() => this._setFilters({ lowStockOnly: !filters.lowStockOnly })}
-              >
-                ${t('hv.card.badge.low', { count: counts.low_stock_count })}
-              </button>`
-            : null}
-          ${allowsPill('overdue') && counts && (counts.overdue_count ?? 0) > 0
-            ? html`<button
-                class="hv-chip pill error ${filters.overdueOnly ? 'on' : ''}"
-                data-testid="full-badge-overdue"
-                aria-pressed=${String(filters.overdueOnly)}
-                title=${t('hv.card.badge.overdueTitle')}
-                @click=${() => this._setFilters({ overdueOnly: !filters.overdueOnly })}
-              >
-                ${t('hv.card.badge.overdue', { count: counts.overdue_count ?? 0 })}
-              </button>`
-            : null}
-          ${allowsPill('inspection_due') && counts && (counts.inspection_due_count ?? 0) > 0
-            ? html`<button
-                class="hv-chip pill warning ${filters.inspectionDueOnly ? 'on' : ''}"
-                data-testid="full-badge-inspection"
-                aria-pressed=${String(filters.inspectionDueOnly)}
-                title=${t('hv.card.badge.inspectionTitle')}
-                @click=${() => this._setFilters({ inspectionDueOnly: !filters.inspectionDueOnly })}
-              >
-                ${t('hv.card.badge.inspection', { count: counts.inspection_due_count ?? 0 })}
-              </button>`
-            : null}
-          ${allowsPill('reminder_due') && counts && (counts.reminder_due_count ?? 0) > 0
-            ? html`<button
-                class="hv-chip pill warning ${filters.reminderDueOnly ? 'on' : ''}"
-                data-testid="full-badge-reminder"
-                aria-pressed=${String(filters.reminderDueOnly)}
-                title=${t('hv.card.badge.reminderTitle')}
-                @click=${() => this._setFilters({ reminderDueOnly: !filters.reminderDueOnly })}
-              >
-                ${t('hv.card.badge.reminder', { count: counts.reminder_due_count ?? 0 })}
-              </button>`
-            : null}
-          ${allowsPill('checked_out') && counts && counts.checked_out_count > 0
-            ? html`<button
-                class="hv-chip pill ${filters.checkedOutOnly ? 'on' : ''}"
-                data-testid="full-badge-out"
-                aria-pressed=${String(filters.checkedOutOnly)}
-                title=${t('hv.card.badge.checkedOutTitle')}
-                @click=${() => this._setFilters({ checkedOutOnly: !filters.checkedOutOnly })}
-              >
-                ${t('hv.card.badge.checkedOut', { count: counts.checked_out_count })}
-              </button>`
+          ${pills.some((pill) => pill !== null)
+            ? html`<div class="pills" data-testid="full-pills">${pills}</div>`
             : null}
           <!-- On a phone the bar's first row holds the menu, this button, the
                organize pin and the overflow, and only the heading can shrink.
                The full German label is wider than the row has left, which
                squeezed the heading to "H…" and pushed the overflow onto a
                second row; the short label the card header uses keeps the row
-               whole. The full wording stays on the accessible name. -->
+               whole. On a bar that is merely tight the label goes to the
+               accessible name instead, leaving the icon. Either way the full
+               wording is what the button is called. -->
           <button
             class="add"
             data-testid="full-add-item"
@@ -2181,7 +2352,9 @@ export class HVFullView extends LitElement {
             title=${t('hv.card.addItem')}
             @click=${() => this._leaveEditor('new')}
           >
-            ${icon('plus', 16)}${t(this._narrow ? 'hv.card.addShort' : 'hv.card.addItem')}
+            ${icon('plus', 16)}<span class=${addLabelClass}
+              >${t(this._narrow ? 'hv.card.addShort' : 'hv.card.addItem')}</span
+            >
           </button>
           <button
             class="tap"
