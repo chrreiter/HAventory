@@ -660,7 +660,28 @@ export class HVFullView extends LitElement {
            underneath it. */
         overscroll-behavior-y: contain;
       }
-      /* Only rendered on a phone, where the panel stages its edits. */
+      /* Both only rendered on a phone, where the panel stages its edits. */
+      .panel-head {
+        display: flex;
+        flex: none;
+        align-items: center;
+        gap: 10px;
+        padding: 2px 0 8px;
+        border-bottom: 1px solid var(--hv-row-divider);
+      }
+      .panel-head .heading {
+        font-size: 16px;
+        font-weight: 500;
+        color: var(--hv-text);
+      }
+      .panel-head .staged {
+        font-size: 12.5px;
+        color: var(--hv-text-secondary);
+      }
+      .panel-head .hv-text-button {
+        margin-left: auto;
+        flex: none;
+      }
       .panel-foot {
         display: flex;
         flex: none;
@@ -668,8 +689,13 @@ export class HVFullView extends LitElement {
         gap: 8px;
         padding: 10px 0 2px;
       }
+      /* The count is a sentence with the number inside it, so a label a few
+         pixels wider than the button's share of the row would stack its words
+         rather than run past the edge. The row has one other control and an
+         auto margin between them, which is the give this takes. */
       .panel-foot .hv-pill {
         min-width: 130px;
+        white-space: nowrap;
       }
       .footer {
         padding: 10px 20px;
@@ -871,6 +897,12 @@ export class HVFullView extends LitElement {
    * what pressing it will show — the same contract the card's filter sheet has.
    */
   @state() private _stagedCount: number | null = null;
+  /**
+   * The phone panel's in-flight filter set, so its head row counts what is
+   * staged rather than what is applied — the two differ for as long as the
+   * panel is open, which is exactly when the number is read.
+   */
+  @state() private _stagedFilters: StoreFilters | null = null;
   @state() private _selecting = false;
   @state() private _bulkProgress: BulkProgress | null = null;
   @state() private _bulkResult: BulkResultView | null = null;
@@ -922,6 +954,10 @@ export class HVFullView extends LitElement {
   private _narrowQuery?: MediaQueryList | null;
   private _onNarrowChange = (e: MediaQueryListEvent) => {
     this._narrow = e.matches;
+    // The panel drops its draft when it stops being on a phone, so a staged set
+    // held from before the rotation would have the head row counting filters
+    // the controls under it no longer carry.
+    this._stagedFilters = null;
   };
 
   /** Price a staged (not yet applied) filter set, so the footer can be honest. */
@@ -945,6 +981,7 @@ export class HVFullView extends LitElement {
         this._selecting = this.startSelecting;
       } else {
         this._filtersOpen = false;
+        this._stagedFilters = null;
         this._editing = null;
         this._detailItemId = null;
         this._editorError = null;
@@ -1750,6 +1787,37 @@ export class HVFullView extends LitElement {
   }
 
   /**
+   * The phone panel's head row: what the panel is, how much of it is staged,
+   * and the way out of all of it.
+   *
+   * Clear all sits here rather than beside the commit buttons because three
+   * controls do not fit a 375px row in every language: German's
+   * `hv.action.clearAll` broke over two lines and left the button beside it
+   * stacking its count sentence over three. The card's filter sheet has
+   * carried this same head row all along, which is why its footer never had
+   * the problem.
+   */
+  private _renderPanelHead(filters: StoreFilters) {
+    const staged = activeFilterCount(this._stagedFilters ?? filters);
+    return html`<div class="panel-head" data-testid="full-panel-head">
+      <span class="heading">${t('hv.card.filters')}</span>
+      <span class="staged" data-testid="full-panel-count">
+        ${t('hv.card.filtersActive', { count: staged })}
+      </span>
+      <button class="hv-text-button" data-testid="full-panel-clear" @click=${() => this._panel()?.clearAll()}>
+        ${t('hv.action.clearAll')}
+      </button>
+    </div>`;
+  }
+
+  // Resolved per click, never captured at render time: on the render that first
+  // draws the panel this element does not exist yet, so a captured reference
+  // would leave every button that names it doing nothing.
+  private _panel() {
+    return this.renderRoot?.querySelector<HVFilterPanel>('[data-testid="full-filter-panel"]');
+  }
+
+  /**
    * The phone panel's commit row.
    *
    * `hv-filter-panel` stages its edits when it is on a phone and drops its own
@@ -1758,14 +1826,8 @@ export class HVFullView extends LitElement {
    * without this would stage every edit with no way to apply it.
    */
   private _renderPanelFoot() {
-    // Resolved per click, never captured at render time: on the render that
-    // first draws the panel this element does not exist yet, so a captured
-    // reference would leave all three buttons doing nothing.
-    const panel = () => this.renderRoot?.querySelector<HVFilterPanel>('[data-testid="full-filter-panel"]');
+    const panel = this._panel.bind(this);
     return html`<div class="panel-foot" data-testid="full-panel-foot">
-      <button class="hv-text-button" data-testid="full-panel-clear" @click=${() => panel()?.clearAll()}>
-        ${t('hv.action.clearAll')}
-      </button>
       <span class="spacer"></span>
       <button
         class="hv-text-button"
@@ -1773,6 +1835,7 @@ export class HVFullView extends LitElement {
         @click=${() => {
           panel()?.resetDraft();
           this._filtersOpen = false;
+          this._stagedFilters = null;
         }}
       >
         ${t('hv.action.cancel')}
@@ -1858,25 +1921,33 @@ export class HVFullView extends LitElement {
             aria-controls=${FILTER_PANEL_ID}
             @click=${() => {
               this._filtersOpen = !this._filtersOpen;
-              // The phone panel stages its edits, so its button has a number to
-              // print from the moment it opens.
+              // The phone panel stages its edits, so its head row and its
+              // button both have a number to print from the moment it opens.
+              this._stagedFilters = this._filtersOpen && this._narrow ? filters : null;
               if (this._filtersOpen && this._narrow) this._priceStaged(filters);
             }}
           >
             ${icon('tune', 16)}${t('hv.card.filters')}
           </button>
-          <button
-            class="hv-icon-button"
-            data-testid="columns-expanded"
-            aria-label=${t('hv.fullView.chooseColumns')}
-            title=${t('hv.fullView.chooseColumns')}
-            @click=${() =>
-              this.dispatchEvent(
-                new CustomEvent('menu-action', { detail: { id: 'columns' }, bubbles: true, composed: true }),
-              )}
-          >
-            ${icon('viewColumn', 20)}
-          </button>
+          <!-- Not on a phone. This row also carries the chips and their clear
+               button, and in German the four together were one control too
+               many for 375px: the picker dropped onto a line of its own under
+               the chip. The ⋮ menu offers Columns on both hosts, so nothing is
+               lost by leaving it as the only route there at this width. -->
+          ${this._narrow
+            ? null
+            : html`<button
+                class="hv-icon-button"
+                data-testid="columns-expanded"
+                aria-label=${t('hv.fullView.chooseColumns')}
+                title=${t('hv.fullView.chooseColumns')}
+                @click=${() =>
+                  this.dispatchEvent(
+                    new CustomEvent('menu-action', { detail: { id: 'columns' }, bubbles: true, composed: true }),
+                  )}
+              >
+                ${icon('viewColumn', 20)}
+              </button>`}
         </span>
       </div>
     `;
@@ -2163,6 +2234,7 @@ export class HVFullView extends LitElement {
             <div class="panel-holder" id=${FILTER_PANEL_ID} ?hidden=${!this._filtersOpen}>
               ${this._filtersOpen
                 ? html`
+                  ${this._narrow ? this._renderPanelHead(filters) : null}
                   <div class="panel-scroll">
                   <hv-filter-panel
                     .statuses=${this.st?.statuses ?? null}
@@ -2177,11 +2249,15 @@ export class HVFullView extends LitElement {
                     .counts=${counts ?? null}
                     ?mobile=${this._narrow}
                     @change=${(e: CustomEvent) => this._setFilters(e.detail as Partial<StoreFilters>)}
-                    @stage=${(e: CustomEvent) =>
-                      this._priceStaged((e.detail as { filters: StoreFilters }).filters)}
+                    @stage=${(e: CustomEvent) => {
+                      const staged = (e.detail as { filters: StoreFilters }).filters;
+                      this._stagedFilters = staged;
+                      this._priceStaged(staged);
+                    }}
                     @apply=${(e: CustomEvent) => {
                       this._setFilters(e.detail as StoreFilters);
                       this._filtersOpen = false;
+                      this._stagedFilters = null;
                     }}
                     @clear-filters=${() => this.store?.clearFilters()}
                   ></hv-filter-panel>
