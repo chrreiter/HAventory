@@ -1346,18 +1346,24 @@ def _validate_storage_payload(payload: dict[str, Any], *, schema_version: int) -
 
 
 def _log_storage_health(payload: dict[str, Any], *, schema_version: int) -> None:
-    """Log storage health summary after validation."""
+    """Log storage health summary after validation.
+
+    Always DEBUG, whatever the counts. An empty store is what every fresh
+    install and every household that cleared its inventory boots with, and HA
+    surfaces WARNING with no logger configuration, so warning on 0/0 made a new
+    user's first line about HAventory a warning about a healthy state. A store
+    that did not load is a different case with its own refusals, its own
+    `corrupt_store` repair and its own ERROR lines.
+    """
 
     items = payload.get("items")
     locations = payload.get("locations")
     item_count = len(items) if isinstance(items, dict) else 0
     location_count = len(locations) if isinstance(locations, dict) else 0
 
-    level = logging.WARNING if item_count == 0 and location_count == 0 else logging.DEBUG
     # The three numbers are the context's, not the message's: it is rendered into
     # the line either way, and formatting them here as well printed each twice.
-    LOGGER.log(
-        level,
+    LOGGER.debug(
         "Storage health",
         extra={
             "domain": DOMAIN,
