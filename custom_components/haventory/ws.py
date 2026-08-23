@@ -1575,12 +1575,7 @@ async def ws_location_delete(
 async def ws_location_list(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    repo = _repo(hass)
-    # Return flat list
-    data = [
-        serialize_location(repo.get_location(loc_id))
-        for loc_id in repo._debug_get_internal_indexes()["locations_by_id"]
-    ]
+    data = [serialize_location(loc) for loc in _repo(hass).iter_locations()]
     conn.send_message(websocket_api.result_message(msg.get("id", 0), data))
 
 
@@ -1592,11 +1587,7 @@ async def ws_location_list(
 async def ws_location_tree(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    # Build a naive tree from repo children mapping
     repo = _repo(hass)
-    indexes = repo._debug_get_internal_indexes()
-    locs_by_id = indexes["locations_by_id"]
-    children_by_parent = repo._children_ids_by_parent_id
 
     # With a filter, every node also reports how much of it the filter keeps, so
     # a sidebar can read "4 / 37" instead of a total that never moves. Counted
@@ -1608,9 +1599,9 @@ async def ws_location_tree(
     )
 
     def build_node(loc_id: str) -> dict[str, Any]:
-        loc = locs_by_id[loc_id]
+        loc = repo.get_location(loc_id)
         counts = repo.get_location_item_counts(loc_id)
-        children = [build_node(cid) for cid in sorted(children_by_parent.get(loc_id, set()))]
+        children = [build_node(cid) for cid in sorted(repo.children_of(loc_id))]
         node = {
             "id": str(loc.id),
             "name": loc.name,
@@ -1634,8 +1625,7 @@ async def ws_location_tree(
             )
         return node
 
-    roots = sorted(children_by_parent.get(None, set()))
-    tree = [build_node(r) for r in roots]
+    tree = [build_node(root) for root in sorted(repo.children_of(None))]
     conn.send_message(websocket_api.result_message(msg.get("id", 0), tree))
 
 

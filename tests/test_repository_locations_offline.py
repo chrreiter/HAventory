@@ -161,3 +161,29 @@ async def test_moving_a_subtree_to_the_top_level_files_it_under_a_new_area() -> 
 
     in_cellar = repo.list_items(flt={"area_id": "area-cellar"})
     assert [i.id for i in in_cellar["items"]] == [drill.id]
+
+
+@pytest.mark.asyncio
+async def test_the_tree_is_readable_without_reaching_into_the_indexes() -> None:
+    """`location/list` and `location/tree` are ordinary reads, not introspection.
+
+    Both used to walk `_debug_get_internal_indexes()` and the private child map,
+    so the two commands the card opens with depended on a helper written for
+    tests. These two accessors are what they read instead.
+    """
+
+    repo = Repository()
+    garage = repo.create_location(name="Garage")
+    shelf = repo.create_location(name="Shelf", parent_id=garage.id)
+    bin_1 = repo.create_location(name="Bin 1", parent_id=shelf.id)
+
+    assert [loc.id for loc in repo.iter_locations()] == [garage.id, shelf.id, bin_1.id]
+    assert repo.children_of(None) == frozenset({str(garage.id)})
+    assert repo.children_of(garage.id) == frozenset({str(shelf.id)})
+    assert repo.children_of(str(shelf.id)) == frozenset({str(bin_1.id)})
+    assert repo.children_of(bin_1.id) == frozenset()
+
+    # A childless answer is not the index: adding to it moves nothing.
+    repo.delete_location(bin_1.id)
+    assert repo.children_of(shelf.id) == frozenset()
+    assert [loc.id for loc in repo.iter_locations()] == [garage.id, shelf.id]
