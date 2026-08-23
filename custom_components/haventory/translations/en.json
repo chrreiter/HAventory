@@ -122,51 +122,303 @@
   "services": {
     "item_create": {
       "name": "Create item",
-      "description": "Create a new inventory item."
+      "description": "Create a new inventory item.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": "What the item is called."
+        },
+        "description": {
+          "name": "Description",
+          "description": "Free text about the item."
+        },
+        "quantity": {
+          "name": "Quantity",
+          "description": "How many there are, as a whole number from 0 up. Defaults to 1."
+        },
+        "status": {
+          "name": "Status",
+          "description": "The item's condition, as a status slug: ok, missing, needs_repair, or one this household added. Defaults to ok."
+        },
+        "checked_out": {
+          "name": "Checked out",
+          "description": "Whether someone has the item out on loan. Defaults to no."
+        },
+        "due_date": {
+          "name": "Due date",
+          "description": "When the item is due back, as YYYY-MM-DD. Only accepted while it is checked out."
+        },
+        "inspection_date": {
+          "name": "Next inspection",
+          "description": "When the item is next due for inspection, as YYYY-MM-DD. A date before today is overdue."
+        },
+        "reminder_date": {
+          "name": "Reminder date",
+          "description": "When the reminder is next due, as YYYY-MM-DD. A repeating reminder counts from this date."
+        },
+        "reminder_interval": {
+          "name": "Reminder repeat",
+          "description": "How often the reminder comes round, as unit and count — for example unit months, count 3. The unit is days, weeks or months, and a repeat needs a reminder date to count from."
+        },
+        "location_id": {
+          "name": "Location ID",
+          "description": "The id of the location to put the item in. Leave it out to create the item without a location."
+        },
+        "tags": {
+          "name": "Tags",
+          "description": "A list of tags. Saving trims them, lower-cases them and drops repeats."
+        },
+        "category": {
+          "name": "Category",
+          "description": "One free-text category for the item."
+        },
+        "low_stock_threshold": {
+          "name": "Low-stock threshold",
+          "description": "The quantity at or below which the item counts as low on stock, as a whole number from 0 up. Leave it out for no threshold."
+        },
+        "custom_fields": {
+          "name": "Custom fields",
+          "description": "Extra fields of your own, as name and value. A value is text, a number or true/false."
+        }
+      }
     },
     "item_update": {
       "name": "Update item",
-      "description": "Update an existing inventory item."
+      "description": "Update an existing inventory item.",
+      "fields": {
+        "item_id": {
+          "name": "Item ID",
+          "description": "The id of the item to update."
+        },
+        "expected_version": {
+          "name": "Expected version",
+          "description": "The version the item is expected to be at. If it has changed since, the call is refused as a conflict instead of overwriting the other edit."
+        },
+        "name": {
+          "name": "Name",
+          "description": "A new name for the item."
+        },
+        "description": {
+          "name": "Description",
+          "description": "Free text about the item. Null clears it."
+        },
+        "quantity": {
+          "name": "Quantity",
+          "description": "How many there are, as a whole number from 0 up."
+        },
+        "status": {
+          "name": "Status",
+          "description": "The item's condition, as a status slug: ok, missing, needs_repair, or one this household added. Setting ok is how a flagged item clears."
+        },
+        "checked_out": {
+          "name": "Checked out",
+          "description": "Whether someone has the item out on loan."
+        },
+        "due_date": {
+          "name": "Due date",
+          "description": "When the item is due back, as YYYY-MM-DD. Only accepted while it is checked out; null clears it."
+        },
+        "inspection_date": {
+          "name": "Next inspection",
+          "description": "When the item is next due for inspection, as YYYY-MM-DD. Null clears it."
+        },
+        "reminder_date": {
+          "name": "Reminder date",
+          "description": "When the reminder is next due, as YYYY-MM-DD. Writing it restarts a repeating reminder from that date; null clears the reminder."
+        },
+        "reminder_interval": {
+          "name": "Reminder repeat",
+          "description": "How often the reminder comes round, as unit and count — for example unit months, count 3. Null makes it a one-off."
+        },
+        "location_id": {
+          "name": "Location ID",
+          "description": "The id of the location that holds the item. Null leaves it without a location."
+        },
+        "tags": {
+          "name": "Tags",
+          "description": "The whole list of tags, replacing the ones stored. Null clears them."
+        },
+        "category": {
+          "name": "Category",
+          "description": "One free-text category for the item. Null clears it."
+        },
+        "low_stock_threshold": {
+          "name": "Low-stock threshold",
+          "description": "The quantity at or below which the item counts as low on stock, as a whole number from 0 up. Null removes the threshold."
+        },
+        "custom_fields_set": {
+          "name": "Custom fields to set",
+          "description": "Custom fields to add or overwrite, as name and value. Fields the item carries that this does not name are left alone."
+        },
+        "custom_fields_unset": {
+          "name": "Custom fields to remove",
+          "description": "The names of the custom fields to take off the item."
+        }
+      }
     },
     "item_delete": {
       "name": "Delete item",
-      "description": "Delete an inventory item."
+      "description": "Delete an inventory item.",
+      "fields": {
+        "item_id": {
+          "name": "Item ID",
+          "description": "The id of the item to delete."
+        },
+        "expected_version": {
+          "name": "Expected version",
+          "description": "The version the item is expected to be at. If it has changed since, the call is refused as a conflict instead of overwriting the other edit."
+        }
+      }
     },
     "item_move": {
       "name": "Move item",
-      "description": "Move an item to a new location (or root)."
+      "description": "Move an item to a new location (or root).",
+      "fields": {
+        "item_id": {
+          "name": "Item ID",
+          "description": "The id of the item to move."
+        },
+        "new_location_id": {
+          "name": "New location ID",
+          "description": "The id of the location to move the item into; the WebSocket API calls this field location_id. Leaving it out, or sending null, leaves the item without a location."
+        },
+        "expected_version": {
+          "name": "Expected version",
+          "description": "The version the item is expected to be at. If it has changed since, the call is refused as a conflict instead of overwriting the other edit."
+        }
+      }
     },
     "item_adjust_quantity": {
       "name": "Adjust quantity",
-      "description": "Add or subtract from item quantity."
+      "description": "Add or subtract from item quantity.",
+      "fields": {
+        "item_id": {
+          "name": "Item ID",
+          "description": "The id of the item whose quantity to change."
+        },
+        "delta": {
+          "name": "Change",
+          "description": "How much to add to the quantity. A negative number subtracts."
+        },
+        "expected_version": {
+          "name": "Expected version",
+          "description": "The version the item is expected to be at. If it has changed since, the call is refused as a conflict instead of overwriting the other edit."
+        }
+      }
     },
     "item_set_quantity": {
       "name": "Set quantity",
-      "description": "Set item quantity exactly."
+      "description": "Set item quantity exactly.",
+      "fields": {
+        "item_id": {
+          "name": "Item ID",
+          "description": "The id of the item whose quantity to set."
+        },
+        "quantity": {
+          "name": "Quantity",
+          "description": "The quantity to store, as a whole number from 0 up."
+        },
+        "expected_version": {
+          "name": "Expected version",
+          "description": "The version the item is expected to be at. If it has changed since, the call is refused as a conflict instead of overwriting the other edit."
+        }
+      }
     },
     "item_check_out": {
       "name": "Check out item",
-      "description": "Mark an item as checked out with due date."
+      "description": "Mark an item as checked out with due date.",
+      "fields": {
+        "item_id": {
+          "name": "Item ID",
+          "description": "The id of the item to check out."
+        },
+        "due_date": {
+          "name": "Due date",
+          "description": "When the item is due back, as YYYY-MM-DD."
+        },
+        "expected_version": {
+          "name": "Expected version",
+          "description": "The version the item is expected to be at. If it has changed since, the call is refused as a conflict instead of overwriting the other edit."
+        }
+      }
     },
     "item_check_in": {
       "name": "Check in item",
-      "description": "Mark an item as not checked out."
+      "description": "Mark an item as not checked out.",
+      "fields": {
+        "item_id": {
+          "name": "Item ID",
+          "description": "The id of the item to check back in."
+        },
+        "expected_version": {
+          "name": "Expected version",
+          "description": "The version the item is expected to be at. If it has changed since, the call is refused as a conflict instead of overwriting the other edit."
+        }
+      }
     },
     "reminder_bump": {
       "name": "Bump reminder",
-      "description": "Mark a recurring reminder done and move it on to its next occurrence."
+      "description": "Mark a recurring reminder done and move it on to its next occurrence.",
+      "fields": {
+        "item_id": {
+          "name": "Item ID",
+          "description": "The id of the item whose reminder has just been done."
+        },
+        "expected_version": {
+          "name": "Expected version",
+          "description": "The version the item is expected to be at. If it has changed since, the call is refused as a conflict instead of overwriting the other edit."
+        }
+      }
     },
     "location_create": {
       "name": "Create location",
-      "description": "Create a new storage location."
+      "description": "Create a new storage location.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": "What the location is called."
+        },
+        "parent_id": {
+          "name": "Parent location ID",
+          "description": "The id of the location this one sits inside. Leave it out to create it at the top level."
+        },
+        "area_id": {
+          "name": "Area ID",
+          "description": "The id of a Home Assistant area. It is stored at the top of the location's tree, so it applies to every location under that one."
+        }
+      }
     },
     "location_update": {
       "name": "Update location",
-      "description": "Update an existing storage location."
+      "description": "Update an existing storage location.",
+      "fields": {
+        "location_id": {
+          "name": "Location ID",
+          "description": "The id of the location to update."
+        },
+        "name": {
+          "name": "Name",
+          "description": "A new name for the location."
+        },
+        "new_parent_id": {
+          "name": "New parent location ID",
+          "description": "The id of the location to move this one inside; the WebSocket API calls this field parent_id. Null moves it to the top level."
+        },
+        "area_id": {
+          "name": "Area ID",
+          "description": "The id of a Home Assistant area. It is stored at the top of the location's tree, so it applies to every location under that one."
+        }
+      }
     },
     "location_delete": {
       "name": "Delete location",
-      "description": "Delete a storage location."
+      "description": "Delete a storage location.",
+      "fields": {
+        "location_id": {
+          "name": "Location ID",
+          "description": "The id of the location to delete. It has to be empty first: no locations inside it and no items in it."
+        }
+      }
     }
   },
   "issues": {

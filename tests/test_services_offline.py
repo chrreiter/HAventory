@@ -281,25 +281,52 @@ async def test_repository_exceptions_are_logged(monkeypatch, caplog) -> None:
 
 
 def test_service_catalog_agrees_across_registration_yaml_and_strings() -> None:
-    """Every registered service is described in `services.yaml` and translated.
+    """Every registered service, and every field it takes, is declared and translated.
 
     Home Assistant renders a service in the UI from three files that nothing
-    joins up: `services.py` registers it, `services.yaml` declares its fields,
-    and `strings.json` supplies the name and description the frontend shows —
-    falling back to the `services.yaml` text only where the translation is
-    missing. A service added to one file and not the others still works over the
-    API, so the gap shows up as a shabby entry in the service picker rather than
-    as a failure.
+    joins up: `services.py` registers it and types what it accepts,
+    `services.yaml` declares the fields and their selectors, and `strings.json`
+    supplies every piece of text the frontend shows. A service or a field added
+    to one file and not the others still works over the API, so the gap surfaces
+    as a bare key in Developer Tools → Actions rather than as a failure.
+
+    `services.yaml` carries no text of its own. Home Assistant falls back to it
+    where a translation is missing, so a name left there would render for every
+    language instead of the one it was written in, and it is the one place
+    user-facing text would sit outside `strings.json`.
     """
 
     package = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
-    registered = {name for name, _handler, _schema in services_mod.SERVICES}
-    documented = set(yaml.safe_load((package / "services.yaml").read_text(encoding="utf-8")))
+    registered = {name: schema for name, _handler, schema in services_mod.SERVICES}
+    documented = yaml.safe_load((package / "services.yaml").read_text(encoding="utf-8"))
     translated = json.loads((package / "strings.json").read_text(encoding="utf-8"))["services"]
 
-    assert documented == registered, "services.yaml and the SERVICES table disagree"
-    assert set(translated) == registered, "strings.json and the SERVICES table disagree"
-    assert all(entry.keys() == {"name", "description"} for entry in translated.values())
+    assert set(documented) == set(registered), "services.yaml and the SERVICES table disagree"
+    assert set(translated) == set(registered), "strings.json and the SERVICES table disagree"
+
+    for service, schema in registered.items():
+        accepted = {str(marker) for marker in schema.schema}
+        declared = documented[service]["fields"]
+        entry = translated[service]
+
+        assert set(documented[service]) == {"fields"}, (
+            f"services.yaml's {service} carries text that belongs in strings.json"
+        )
+        assert set(declared) == accepted, (
+            f"services.yaml and the schema disagree about {service}'s fields"
+        )
+        for field, spec in declared.items():
+            assert {"name", "description"}.isdisjoint(spec), (
+                f"services.yaml's {service}.{field} carries text that belongs in strings.json"
+            )
+
+        assert entry.keys() == {"name", "description", "fields"}, service
+        assert set(entry["fields"]) == accepted, (
+            f"strings.json and the schema disagree about {service}'s fields"
+        )
+        for field, text in entry["fields"].items():
+            assert text.keys() == {"name", "description"}, f"{service}.{field}"
+            assert all(value.strip() for value in text.values()), f"{service}.{field}"
 
 
 # -----------------------------

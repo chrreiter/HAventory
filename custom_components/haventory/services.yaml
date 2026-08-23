@@ -1,6 +1,4 @@
 item_create:
-  name: Create item
-  description: Create a new inventory item
   fields:
     name:
       required: true
@@ -84,8 +82,6 @@ item_create:
         object:
 
 item_update:
-  name: Update item
-  description: Update fields on an existing item
   fields:
     item_id:
       required: true
@@ -168,8 +164,6 @@ item_update:
         object:
 
 item_delete:
-  name: Delete item
-  description: Delete an item by id
   fields:
     item_id:
       required: true
@@ -181,8 +175,6 @@ item_delete:
         number:
 
 item_move:
-  name: Move item
-  description: Move an item to a new location (or root)
   fields:
     item_id:
       required: true
@@ -198,8 +190,6 @@ item_move:
         number:
 
 item_adjust_quantity:
-  name: Adjust quantity
-  description: Add or subtract from item quantity
   fields:
     item_id:
       required: true
@@ -215,8 +205,6 @@ item_adjust_quantity:
         number:
 
 item_set_quantity:
-  name: Set quantity
-  description: Set item quantity exactly
   fields:
     item_id:
       required: true
@@ -232,8 +220,6 @@ item_set_quantity:
         number:
 
 item_check_out:
-  name: Check out item
-  description: Mark an item as checked out with due date
   fields:
     item_id:
       required: true
@@ -250,8 +236,6 @@ item_check_out:
         number:
 
 item_check_in:
-  name: Check in item
-  description: Mark an item as not checked out
   fields:
     item_id:
       required: true
@@ -263,8 +247,6 @@ item_check_in:
         number:
 
 reminder_bump:
-  name: Bump reminder
-  description: Mark a recurring reminder done and move it on to its next occurrence
   fields:
     item_id:
       required: true
@@ -278,8 +260,6 @@ reminder_bump:
         number:
 
 location_create:
-  name: Create location
-  description: Create a new location under an optional parent
   fields:
     name:
       required: true
@@ -296,8 +276,6 @@ location_create:
         text:
 
 location_update:
-  name: Update location
-  description: Rename and/or move a location
   fields:
     location_id:
       required: true
@@ -318,8 +296,6 @@ location_update:
         text:
 
 location_delete:
-  name: Delete location
-  description: Delete a location by id
   fields:
     location_id:
       required: true
