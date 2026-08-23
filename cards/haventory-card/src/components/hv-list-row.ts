@@ -26,6 +26,7 @@ import {
   pictures,
 } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
+import type { TemplateResult } from 'lit';
 import type { AreaRef, Item, StatusDefinition } from '../store/types';
 import './hv-overflow-menu';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
@@ -205,17 +206,78 @@ export class HVListRow extends LitElement {
       .secondary.hv-chip-line {
         display: flex;
       }
-      /* The wide row's area pill, inside a line that is a text run rather than a
-         row of chips. The fill is what separates the area from the path after
-         it: as plain text in the same colour and weight, a root location named
-         after its own area printed the word twice with a single space between
-         them and nothing to say which was which.
+      /*
+       * The phone line: pieces on a row, capped at the first row of them.
+       *
+       * An ellipsis only ever replaces text, and the area pill in the middle of
+       * this line is an atomic box — inside one elided text run it was cut where
+       * the edge fell, so a row leading with an overdue loan ended in half a
+       * room name with nothing to say it had been cut. As flex items the pieces
+       * are placed whole or not at all: the lead elides in place, and a pill or
+       * tail the line cannot afford wraps onto a second row.
+       *
+       * That second row is what the cap hides, and the row-gap is what makes the
+       * cap safe: it pushes the wrapped pieces far below the first row, so the
+       * cap only has to clear the tallest piece instead of matching whatever
+       * line-height the line inherits. A line with nothing to drop keeps its own
+       * height, so a row without an area does not grow to meet the cap. 24px
+       * clears the pill, which is the tallest thing here — 11.5px of text at
+       * 1.4, plus its padding and border.
+       */
+      :host([mobile]) .secondary {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        align-content: flex-start;
+        column-gap: 6px;
+        row-gap: 200px;
+        max-height: 24px;
+        overflow: hidden;
+      }
+      /* First on the line and never wrapped away: what the row is flagged with
+         is why the line is being read at all. It elides only when it alone
+         outruns the line. */
+      :host([mobile]) .secondary > .lead {
+        flex: 0 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      /* The pill and the " · " that introduces it travel as one piece, so a line
+         with no room for the pill drops the separator with it rather than ending
+         on a dot. Those two spaces are the piece's own text, and white-space:
+         pre is what keeps them — a flex item's leading and trailing spaces are
+         dropped otherwise.
 
-         The margin is the gap the wide line gets from its flex layout. The line
-         itself stays a block with inline content, because text-overflow does not
-         apply to a flex container and the path tail has to keep its ellipsis. */
-      :host([mobile]) .secondary .hv-area-chip {
-        margin-right: 6px;
+         The pill's fill is what separates the area from the path after it: as
+         plain text in the same colour and weight, a root location named after
+         its own area printed the word twice with a single space between them and
+         nothing to say which was which. */
+      :host([mobile]) .secondary > .area {
+        display: flex;
+        align-items: center;
+        flex: 0 1 auto;
+        min-width: 0;
+        white-space: pre;
+      }
+      /* A room name long enough to outrun the whole line elides inside the pill
+         rather than being cut at the line's edge — the shared chip rule elides
+         the label, and reaching it needs the pill to be allowed to shrink, which
+         that rule holds at flex: none for the rows of chips elsewhere. */
+      :host([mobile]) .secondary > .area > .hv-area-chip {
+        flex: 0 1 auto;
+        min-width: 0;
+      }
+      /* Takes what the pieces before it leave and elides inside it; below the
+         floor it wraps away instead, because two characters of a location name
+         and an ellipsis name nothing. */
+      :host([mobile]) .secondary > .tail {
+        flex: 1 1 0;
+        min-width: 4ch;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       /* The path elides; the chip ahead of it does not. */
       .secondary.hv-chip-line > .hv-chip-line-text {
@@ -243,10 +305,10 @@ export class HVListRow extends LitElement {
         color: var(--hv-warn);
         font-weight: 500;
       }
+      /* Only ever drawn on the phone line, which is a flex row — so the space
+         after it is that row's gap, and a margin of its own would double it. */
       .dot {
-        display: inline-block;
-        vertical-align: middle;
-        margin-right: 6px;
+        flex: none;
         width: 6px;
         height: 6px;
         border-radius: 50%;
@@ -535,6 +597,31 @@ export class HVListRow extends LitElement {
     `;
   }
 
+  /**
+   * The phone row's second line, as up to three pieces: what the row leads
+   * with, the area pill, and the location tail.
+   *
+   * Three elements rather than one run of text, because an ellipsis only
+   * replaces text and the pill between them is an atomic box — see the
+   * `:host([mobile]) .secondary` rule for what the pieces buy. The " · " that
+   * introduces whichever piece follows the lead sits inside that piece, so a
+   * line that drops it drops the separator with it; a line that has no lead
+   * opens on the pill, which is how it always read.
+   */
+  private _mobileSecondary(lead: TemplateResult | null, area: string | null, tail: string) {
+    return html`${lead === null
+      ? null
+      : html`<span class="lead" data-testid="row-lead">${lead}</span>`}${area === null
+      ? null
+      : html`<span class="area" data-testid="row-area"
+          >${lead === null ? '' : ' · '}${renderAreaChip(area)}</span
+        >`}${tail
+      ? html`<span class="tail" data-testid="row-tail"
+          >${lead !== null && area === null ? ' · ' : ''}${tail}</span
+        >`
+      : null}`;
+  }
+
   render() {
     const item = this.item;
     if (!item) return null;
@@ -555,7 +642,6 @@ export class HVListRow extends LitElement {
     const mobileLead = elideMobilePath(areaMark, parts.path);
     const mobileTail = [mobileLead.rest, item.category].filter(Boolean).join(' · ');
     const hasMobileSecondary = Boolean(mobileLead.area || mobileTail);
-    const mobileSecondary = html`${renderAreaChip(mobileLead.area)}${mobileTail}`;
     // The tooltip carries the *unelided* path: on a phone the middle of it is
     // dropped on purpose, and this is where the whole thing can still be read.
     const secondaryFull = [pathTitle(parts), item.category].filter(Boolean).join(' · ');
@@ -632,20 +718,34 @@ export class HVListRow extends LitElement {
               ? html`<span class="dot" data-testid="row-low-dot"></span>`
               : null}
             ${this.mobile && item.checked_out
-              ? html`${overdue ? t('hv.term.overdue') : t('hv.term.checkedOut')}${item.due_date
-                  ? ` · ${t('hv.term.due', { date: formatDate(item.due_date) })}`
-                  : ''}${hasMobileSecondary ? html` · ${mobileSecondary}` : ''}`
+              ? this._mobileSecondary(
+                  html`${overdue ? t('hv.term.overdue') : t('hv.term.checkedOut')}${item.due_date
+                    ? ` · ${t('hv.term.due', { date: formatDate(item.due_date) })}`
+                    : ''}`,
+                  mobileLead.area,
+                  mobileTail,
+                )
               : this.mobile && flagged
-                ? html`<span data-testid="row-status">${statusLabel(status, this.statuses)}</span>${hasMobileSecondary
-                    ? html` · ${mobileSecondary}`
-                    : ''}`
+                ? this._mobileSecondary(
+                    html`<span data-testid="row-status">${statusLabel(status, this.statuses)}</span>`,
+                    mobileLead.area,
+                    mobileTail,
+                  )
                 : this.mobile && inspectionDue
-                  ? html`<span data-testid="row-inspection-due">${t('hv.term.inspectionDue')}</span> ·
-                      ${formatDate(item.inspection_date)}`
+                  ? // The one phone line that says nothing about where the item
+                    // is: the chore and its date take all of it.
+                    this._mobileSecondary(
+                      html`<span data-testid="row-inspection-due">${t('hv.term.inspectionDue')}</span> ·
+                        ${formatDate(item.inspection_date)}`,
+                      null,
+                      '',
+                    )
                   : this.mobile
-                    ? hasMobileSecondary
-                      ? mobileSecondary
-                      : t('hv.term.noLocation')
+                    ? this._mobileSecondary(
+                        null,
+                        mobileLead.area,
+                        hasMobileSecondary ? mobileTail : t('hv.term.noLocation'),
+                      )
                     : html`${renderAreaChip(areaMark)}<span class="hv-chip-line-text"
                         >${secondary || t('hv.term.noLocation')}</span
                       >`}

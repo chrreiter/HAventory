@@ -502,6 +502,97 @@ describe('hv-list-row: mobile affordances', () => {
   });
 });
 
+// An ellipsis only ever replaces text, and the area pill in the middle of this
+// line is an atomic box: a checked-out row with an overdue date left it no room
+// and it was cut where the edge fell — "Living Ro" — while every other row on
+// the same screen elided its path with a "…".
+describe('hv-list-row: the phone line’s pieces', () => {
+  const deepPath = {
+    id_path: [],
+    name_path: [],
+    display_path: 'Workshop / Parts Cabinet / Drawer A / Small Bin',
+    sort_key: '',
+  };
+  const garage = [{ id: 'area-workshop', name: 'Garage' }];
+
+  it('lays the line out as lead, area and tail, reading as it always did', async () => {
+    const el = await mount(
+      {
+        checked_out: true,
+        due_date: '2000-01-02',
+        category: 'Tools',
+        effective_area_id: 'area-workshop',
+        location_path: deepPath,
+      },
+      { mobile: true, areas: garage },
+    );
+    const secondary = q(el, '[data-testid="row-secondary"]');
+    const pieces = [...(secondary?.children ?? [])];
+
+    expect(pieces.map((piece) => piece.getAttribute('data-testid'))).toEqual([
+      'row-lead',
+      'row-area',
+      'row-tail',
+    ]);
+    expect(pieces[0].textContent).toBe('Overdue · due Jan 2, 2000');
+    expect(pieces[1].querySelector('[data-testid="area-chip"]')?.textContent).toContain('Garage');
+    expect(pieces[2].textContent).toBe('… › Small Bin · Tools');
+    expect(secondary?.textContent).toContain('Overdue · due Jan 2, 2000 · ');
+  });
+
+  // The separator rides with whatever follows the lead, so a line that drops
+  // that piece drops the dot with it rather than ending on one.
+  it('gives the separator to the piece that follows the lead', async () => {
+    const withArea = await mount(
+      { checked_out: true, due_date: '2000-01-02', category: null, effective_area_id: 'area-workshop', location_path: deepPath },
+      { mobile: true, areas: garage },
+    );
+    expect(q(withArea, '[data-testid="row-lead"]')?.textContent).toBe('Overdue · due Jan 2, 2000');
+    expect(q(withArea, '[data-testid="row-area"]')?.textContent?.startsWith(' · ')).toBe(true);
+    expect(q(withArea, '[data-testid="row-tail"]')?.textContent).toBe('… › Small Bin');
+
+    const noArea = await mount(
+      { checked_out: true, due_date: '2000-01-02', category: null, location_path: deepPath },
+      { mobile: true },
+    );
+    expect(q(noArea, '[data-testid="row-area"]')).toBe(null);
+    expect(q(noArea, '[data-testid="row-tail"]')?.textContent).toBe(' · Workshop › … › Small Bin');
+  });
+
+  it('leads with nothing on a row that is only where the item is', async () => {
+    const el = await mount(
+      { category: null, effective_area_id: 'area-workshop', location_path: deepPath },
+      { mobile: true, areas: garage },
+    );
+    const secondary = q(el, '[data-testid="row-secondary"]');
+
+    expect(q(el, '[data-testid="row-lead"]')).toBe(null);
+    // No lead to separate it from, so the pill opens the line as it always did.
+    expect(q(el, '[data-testid="row-area"]')?.textContent?.startsWith(' · ')).toBe(false);
+    expect(secondary?.textContent).toContain('… › Small Bin');
+  });
+
+  // jsdom lays nothing out, so the rules are what can be asserted here; the
+  // measurement is a live one.
+  it('caps the line at its first row of pieces, and drops what does not fit whole', () => {
+    const css = componentCss('hv-list-row');
+
+    expect(css).toMatch(/:host\(\[mobile\]\) \.secondary \{[^}]*flex-wrap: wrap/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.secondary \{[^}]*max-height: 24px/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.secondary \{[^}]*overflow: hidden/);
+    // What keeps the cap honest: the wrapped row starts far below the first, so
+    // a dropped piece cannot show its top edge under the text.
+    expect(css).toMatch(/:host\(\[mobile\]\) \.secondary \{[^}]*row-gap: 200px/);
+    // The lead elides in place; the tail takes what is left and elides in that.
+    expect(css).toMatch(/:host\(\[mobile\]\) \.secondary > \.lead \{[^}]*text-overflow: ellipsis/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.secondary > \.tail \{[^}]*flex: 1 1 0/);
+    expect(css).toMatch(/:host\(\[mobile\]\) \.secondary > \.tail \{[^}]*min-width: 4ch/);
+    // The pill is no longer spaced by a margin of its own — the row's gap does
+    // it, and a margin would double it.
+    expect(css).not.toMatch(/:host\(\[mobile\]\) \.secondary \.hv-area-chip \{[^}]*margin-right/);
+  });
+});
+
 describe('hv-list-row: selection mode', () => {
   it('swaps row navigation for a checkbox', async () => {
     const el = await mount({ id: 'item-1' }, { selectable: true });
