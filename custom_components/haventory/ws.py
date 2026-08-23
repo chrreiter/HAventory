@@ -150,7 +150,14 @@ def _error_envelope(
     return {"id": iden, "type": "result", "success": False, "error": error}
 
 
-def _error_message(_id: int, exc: Exception, *, context: dict[str, Any]) -> dict[str, Any]:
+def _log_rejection(exc: Exception, context: dict[str, Any]) -> tuple[str, str]:
+    """Log one refused call at the level its code earns, and say what the wire carries.
+
+    The severity, the traceback and the message a client is given are decided
+    here for a whole command and for one row of a batch alike, so a rejection
+    reads the same in the log whichever of the two carried it.
+    """
+
     code = error_code(exc)
     LOGGER.log(
         log_severity(code, exc),
@@ -158,7 +165,12 @@ def _error_message(_id: int, exc: Exception, *, context: dict[str, Any]) -> dict
         extra={"domain": DOMAIN, **(context or {})},
         exc_info=log_exc_info(code, exc),
     )
-    return _error_envelope(_id, code, str(exc), context or None)
+    return code, str(exc)
+
+
+def _error_message(_id: int, exc: Exception, *, context: dict[str, Any]) -> dict[str, Any]:
+    code, message = _log_rejection(exc, context)
+    return _error_envelope(_id, code, message, context or None)
 
 
 # -----------------------------
@@ -304,6 +316,48 @@ def _validate_bulk_ops(operations: Any) -> list[dict[str, Any]]:
             raise ValidationError("operation.payload must be an object")
         validated.append({"op_id": normalized_op_id, "kind": str(kind), "payload": payload})
     return validated
+
+
+#: The payload fields a rejected bulk row names, the way `ws_guard`'s
+#: `context_fields` name a command's. One list for every kind, because a row
+#: carries whichever of them its own kind takes.
+_BULK_OP_CONTEXT_FIELDS = (
+    "item_id",
+    "expected_version",
+    "location_id",
+    "due_date",
+    "quantity",
+    "delta",
+    "low_stock_threshold",
+    "tags",
+    "set",
+    "unset",
+)
+
+
+def _bulk_op_error(
+    op_id: str, kind: str, payload: dict[str, Any], exc: Exception
+) -> dict[str, object]:
+    """Map one refused row to the verdict the caller reads under its `op_id`.
+
+    Built from the same two pieces `ws_guard` builds a whole command's answer
+    from, so a row and a command say the same thing about the same failure: one
+    rejected row is classified on its own code — a stale version inside a batch
+    is no more of a fault than it is on its own — and anything that is not a
+    domain error answers the generic message with its details left in the log.
+    """
+
+    context = _context_from_msg("items_bulk_op_failed", payload, _BULK_OP_CONTEXT_FIELDS)
+    context["op_id"] = op_id
+    context["kind"] = kind
+    if isinstance(exc, ValidationError | NotFoundError | ConflictError | StorageError):
+        code, message = _log_rejection(exc, context)
+    else:
+        LOGGER.exception(
+            "Unexpected error in a bulk operation", extra={"domain": DOMAIN, **context}
+        )
+        code, message = "unknown_error", UNEXPECTED_ERROR_MESSAGE
+    return {"success": False, "error": {"code": code, "message": message, "context": context}}
 
 
 def _payload_item_id(payload: dict[str, Any]) -> str:
@@ -1306,69 +1360,12 @@ async def ws_items_bulk(
         payload = op["payload"]
         try:
             serialized, action = _execute_item_op(hass, kind, payload)
+        except Exception as exc:
+            # Whatever it was, it fails its own row and no other.
+            results[op_id] = _bulk_op_error(op_id, kind, payload, exc)
+        else:
             results[op_id] = {"success": True, "result": serialized}
             successful_ops.append((op_id, serialized, action))
-        except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-            # Log error with full context for debugging
-            ctx = {
-                "op_id": op_id,
-                "kind": kind,
-                "error": str(exc),
-            }
-            for k in (
-                "item_id",
-                "expected_version",
-                "location_id",
-                "due_date",
-                "quantity",
-                "delta",
-                "low_stock_threshold",
-                "tags",
-                "set",
-                "unset",
-            ):
-                if k in payload:
-                    ctx[k] = payload.get(k)
-
-            # One rejected op is classified on its own code, not on the batch:
-            # a stale version inside a bulk is no more of a fault than it is
-            # on its own.
-            code = error_code(exc)
-            LOGGER.log(
-                log_severity(code, exc),
-                "Bulk operation failed, continuing with remaining ops",
-                extra={
-                    "domain": DOMAIN,
-                    "op": "items_bulk_op_failed",
-                    **ctx,
-                },
-                exc_info=log_exc_info(code, exc),
-            )
-
-            results[op_id] = {
-                "success": False,
-                "error": {"code": code, "message": str(exc), "context": ctx},
-            }
-        except Exception:
-            # A malformed payload must fail only its own op, never the batch,
-            # and internal details stay out of the client-visible message.
-            LOGGER.exception(
-                "Bulk operation failed unexpectedly, continuing with remaining ops",
-                extra={
-                    "domain": DOMAIN,
-                    "op": "items_bulk_op_failed",
-                    "op_id": op_id,
-                    "kind": kind,
-                },
-            )
-            results[op_id] = {
-                "success": False,
-                "error": {
-                    "code": "unknown_error",
-                    "message": UNEXPECTED_ERROR_MESSAGE,
-                    "context": {"op_id": op_id, "kind": kind},
-                },
-            }
 
     # Only a batch that changed something writes or announces anything. An
     # all-failed batch deliberately logs no summary of its own: each op already
