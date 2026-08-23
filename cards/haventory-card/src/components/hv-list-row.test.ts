@@ -677,6 +677,63 @@ describe('hv-list-row: document marker', () => {
 
 });
 
+describe('hv-list-row: the day turning over', () => {
+  const mounted: HVListRow[] = [];
+
+  async function mountAndTrack(item: Partial<Item>) {
+    const el = await mount(item);
+    mounted.push(el);
+    return el;
+  }
+
+  beforeEach(() => {
+    // The clock is module-level and arms on its *first* subscriber, so every
+    // row this file mounted earlier has to be disconnected before the fake
+    // clock is installed — otherwise the deadline is still the real midnight.
+    document.body.innerHTML = '';
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 22, 23, 59, 58));
+  });
+
+  afterEach(() => {
+    while (mounted.length) mounted.pop()?.remove();
+    vi.useRealTimers();
+  });
+
+  // The row's chips are read off the clock at render and nothing else redraws
+  // it, so a wall tablet showing this list kept yesterday's chips until
+  // somebody edited something.
+  it('badges an inspection dated tomorrow once tomorrow arrives', async () => {
+    const el = await mountAndTrack({ inspection_date: '2026-08-23' });
+    expect(q(el, '[data-testid="row-inspection-due"]')).toBe(null);
+
+    vi.advanceTimersByTime(3_000);
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-inspection-due"]')).toBeTruthy();
+  });
+
+  it('turns a due date that passed overnight overdue', async () => {
+    const el = await mountAndTrack({ checked_out: true, due_date: '2026-08-22' });
+    expect(q(el, '[data-testid="row-checked-out"]')?.classList.contains('error')).toBe(false);
+
+    vi.advanceTimersByTime(3_000);
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-checked-out"]')?.classList.contains('error')).toBe(true);
+  });
+
+  it('leaves a disconnected row out of it', async () => {
+    const el = await mountAndTrack({ inspection_date: '2026-08-23' });
+    el.remove();
+
+    vi.advanceTimersByTime(3_000);
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-inspection-due"]')).toBe(null);
+  });
+});
+
 describe('hv-list-row: the language in force', () => {
   // The row is the card's densest surface and the one every install sees
   // first, so it is where a literal left behind by the extraction shows up.

@@ -2880,3 +2880,53 @@ describe('hv-item-editor: the language in force', () => {
     expect(q(el, '[data-testid="editor-name-error"]')?.textContent).toContain('erforderlich');
   });
 });
+
+describe('hv-item-editor: the day turning over', () => {
+  const mounted: HVItemEditor[] = [];
+
+  beforeEach(() => {
+    // The clock is module-level and arms on its first subscriber, so every
+    // editor this file mounted earlier has to be disconnected before the fake
+    // clock is installed.
+    document.body.innerHTML = '';
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 22, 23, 59, 58));
+  });
+
+  afterEach(() => {
+    while (mounted.length) mounted.pop()?.remove();
+    vi.useRealTimers();
+  });
+
+  async function mountAndTrack(item: Item) {
+    const el = await mount(item);
+    mounted.push(el);
+    return el;
+  }
+
+  // A form left open overnight is the ordinary case on a phone, and its header
+  // chip is read off the clock at render.
+  it('calls a check-out overdue once its due date has passed', async () => {
+    const el = await mountAndTrack(
+      makeItem({ id: '1', checked_out: true, due_date: '2026-08-22' }),
+    );
+    expect(q(el, '[data-testid="editor-out-chip"]')?.textContent).toContain('Checked out');
+
+    vi.advanceTimersByTime(3_000);
+    await settle(el);
+
+    expect(q(el, '[data-testid="editor-out-chip"]')?.textContent).toContain('Overdue');
+  });
+
+  it('leaves a disconnected editor out of it', async () => {
+    const el = await mountAndTrack(
+      makeItem({ id: '1', checked_out: true, due_date: '2026-08-22' }),
+    );
+    el.remove();
+
+    vi.advanceTimersByTime(3_000);
+    await settle(el);
+
+    expect(q(el, '[data-testid="editor-out-chip"]')?.textContent).not.toContain('Overdue');
+  });
+});

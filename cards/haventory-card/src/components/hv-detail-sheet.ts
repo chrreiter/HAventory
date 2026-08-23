@@ -4,6 +4,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { chip, renderTagChip } from '../ui/chip';
 import { icon } from '../ui/icons';
+import { onDayChange } from '../ui/day-clock';
 import { formatDate, isDue, isOverdue, relativeTime } from '../ui/relative-time';
 import { customFieldLabel } from '../ui/field-label';
 import { canBumpReminder, hasReminder, isReminderDue, reminderSummary } from '../ui/reminder';
@@ -498,10 +499,23 @@ export class HVDetailSheet extends LitElement {
     }
   }
 
+  /**
+   * The overdue, inspection and reminder lines are read off the clock at
+   * render, and a sheet can be left open — on a phone, all evening.
+   */
+  connectedCallback(): void {
+    super.connectedCallback();
+    this._dayUnsub = onDayChange(() => this.requestUpdate());
+  }
+
   disconnectedCallback(): void {
     super.disconnectedCallback();
+    this._dayUnsub?.();
+    this._dayUnsub = undefined;
     this._clearCopied();
   }
+
+  private _dayUnsub?: () => void;
 
   private _clearCopied() {
     clearTimeout(this._copiedTimer);

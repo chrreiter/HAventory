@@ -5,6 +5,7 @@ import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
 import { areaMarkName, itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
+import { onDayChange } from '../ui/day-clock';
 import { formatDate, isDue, isOverdue } from '../ui/relative-time';
 import { itemStatus, renderStatusChip, statusLabel } from '../ui/status';
 import {
@@ -405,6 +406,24 @@ export class HVListRow extends LitElement {
   @property({ attribute: false }) media: MediaBindings | null = null;
 
   private readonly _urls = new MediaUrls(this);
+
+  private _dayUnsub?: () => void;
+
+  /**
+   * The due and inspection chips are read off the clock at render, so a row
+   * whose date fell overdue overnight would keep yesterday's look until
+   * something else made it redraw.
+   */
+  connectedCallback(): void {
+    super.connectedCallback();
+    this._dayUnsub = onDayChange(() => this.requestUpdate());
+  }
+
+  disconnectedCallback(): void {
+    this._dayUnsub?.();
+    this._dayUnsub = undefined;
+    super.disconnectedCallback();
+  }
 
   protected willUpdate() {
     this._urls.configure(this.media?.sign ?? null);

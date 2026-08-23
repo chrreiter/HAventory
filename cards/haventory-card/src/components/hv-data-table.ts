@@ -5,6 +5,7 @@ import { repeat } from 'lit/directives/repeat.js';
 import { tokens, base } from '../ui/tokens';
 import { chip, renderTagChip } from '../ui/chip';
 import { icon } from '../ui/icons';
+import { onDayChange } from '../ui/day-clock';
 import { formatDate, isDue, isOverdue, relativeTime } from '../ui/relative-time';
 import { isReminderDue, reminderSummary } from '../ui/reminder';
 import {
@@ -478,12 +479,19 @@ export class HVDataTable extends LitElement {
     super.connectedCallback();
     if (!this.hasAttribute('role')) this.setAttribute('role', 'table');
     this.addEventListener('scroll', this._onScroll);
+    // The due, inspection and reminder cells are read off the clock at render,
+    // so a table left open across midnight would keep yesterday's tones.
+    this._dayUnsub = onDayChange(() => this.requestUpdate());
   }
 
   disconnectedCallback(): void {
     this.removeEventListener('scroll', this._onScroll);
+    this._dayUnsub?.();
+    this._dayUnsub = undefined;
     super.disconnectedCallback();
   }
+
+  private _dayUnsub?: () => void;
 
   /**
    * Paging: the host is the scrolled box, so the host is where the position can
