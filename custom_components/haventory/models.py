@@ -493,7 +493,14 @@ def normalize_search_text(text: str) -> str:
 
 
 def normalize_tags(tags: list[str] | None) -> list[str]:
-    """Lowercase, trim, and de-duplicate a list of tags, preserving order."""
+    """Lowercase, trim, and de-duplicate a list of tags, preserving order.
+
+    The tolerant reader, for an import document: it coerces what it is handed
+    rather than refusing it, because a restore must not fail on a row an earlier
+    release wrote. A tag list arriving from a client goes through
+    :func:`validate_tags` or :func:`selected_tags` instead, which refuse a value
+    that is not a list of strings rather than absorbing it.
+    """
 
     if not tags:
         return []
@@ -600,7 +607,7 @@ def validate_tags(tags: object, *, previous: Collection[str] = ()) -> list[str]:
     iterates whatever it is handed, so a string would reach the store as its
     characters. ``None`` is what clears the list.
 
-    Separate from the filter path, which normalizes tag *queries*: a filter
+    Separate from :func:`selected_tags`, which reads a tag *query*: a filter
     naming sixty tags is a query, not an item, and is not over any limit.
 
     ``previous`` is the item's current tag list, and the caps are enforced
@@ -683,6 +690,19 @@ def selected_categories(flt: ItemFilter) -> list[str]:
         if value not in selection:
             selection.append(value)
     return selection
+
+
+def selected_tags(flt: ItemFilter, key: Literal["tags_any", "tags_all"]) -> list[str]:
+    """The casefolded tags one of a filter's two tag keys names.
+
+    Same shape rule as :func:`selected_categories`, and for the same reason: a
+    bare string iterates as its characters, so ``tags_any: "kitchen"`` would
+    query seven one-letter tags and quietly answer with nothing. Read through
+    here by the scan and by the index pre-filter alike, so a query cannot be
+    refused by one and absorbed by the other.
+    """
+
+    return normalize_string_list(flt.get(key), field_name=key, casefold=True)
 
 
 def selected_location_ids(flt: ItemFilter) -> list[str]:
@@ -1737,8 +1757,8 @@ def filter_items(
         return list(items)
 
     q = (flt.get("q") or "").strip()
-    tags_any = normalize_tags(flt.get("tags_any")) if "tags_any" in flt else []
-    tags_all = normalize_tags(flt.get("tags_all")) if "tags_all" in flt else []
+    tags_any = selected_tags(flt, "tags_any")
+    tags_all = selected_tags(flt, "tags_all")
     categories = set(selected_categories(flt))
     status = (
         validate_item_status(flt["status"], known_statuses=known_statuses)

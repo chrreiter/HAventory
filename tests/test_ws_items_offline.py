@@ -970,6 +970,25 @@ async def test_item_list_refuses_a_non_integer_limit() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("key", ["tags_any", "tags_all"])
+async def test_item_list_refuses_a_tag_selection_that_is_a_bare_string(key: str) -> None:
+    """A bare string is refused rather than queried as its letters.
+
+    The index pre-filter reads the same key before the scan does, so answering
+    it there is what keeps this from coming back as an empty page — which reads
+    to a client as "no item carries that tag".
+    """
+
+    hass = _hass_with_items()
+
+    res = await ws_send(hass, 1, "haventory/item/list", filter={key: "kitchen"})
+
+    assert res["success"] is False, res
+    assert res["error"]["code"] == "validation_error"
+    assert res["error"]["message"] == f"{key} must be a list of strings"
+
+
+@pytest.mark.asyncio
 async def test_item_list_still_serves_a_full_known_filter_and_pages() -> None:
     """The regression that matters: nothing legitimate got refused."""
 

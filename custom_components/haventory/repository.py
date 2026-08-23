@@ -59,13 +59,13 @@ from .models import (
     monotonic_timestamp_after,
     new_uuid4,
     normalize_search_text,
-    normalize_tags,
     normalize_text_for_sort,
     parse_uuid4,
     require_string_list,
     seed_status_definitions,
     selected_categories,
     selected_location_ids,
+    selected_tags,
     serialize_status_definition,
     sort_items,
     today_local_date,
@@ -1635,7 +1635,7 @@ class Repository:
         # loading item data or doing complex N-way intersection. For now, we only
         # optimize tags_any which is a union of indexes.
         if flt.get("tags_any"):
-            tags = normalize_tags(flt["tags_any"])
+            tags = selected_tags(flt, "tags_any")
             if tags:
                 has_indexed_filter = True
                 tag_items: set[str] = set()
