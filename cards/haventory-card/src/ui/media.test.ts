@@ -6,6 +6,7 @@ import {
   MEDIA_URL_TEMPLATE,
   MEDIA_VARIANT_THUMB,
   MediaUrls,
+  PictureFallback,
   SIGNED_URL_TTL_SECONDS,
   attachmentNameToken,
   attachmentTitle,
@@ -490,5 +491,97 @@ describe('MediaUrls', () => {
 
     expect(urls.get('item-1', 'att-1')).toBeNull();
     expect(second.sign).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PictureFallback', () => {
+  it('leaves a tile alone until the browser says the URL did not load', () => {
+    const h = host();
+    const urls = new MediaUrls(h, { fetch: vi.fn(async () => new Response(null, { status: 404 })) });
+
+    expect(new PictureFallback(h, urls).state('item-1', 'att-1')).toBe('ok');
+  });
+
+  it('asks whether the file is there only after a tile failed, and once', async () => {
+    const h = host();
+    const signer = deferredSigner();
+    const probe = vi.fn(async () => new Response(null, { status: 404 }));
+    const urls = new MediaUrls(h, { fetch: probe });
+    urls.configure(signer.sign);
+    const fallback = new PictureFallback(h, urls);
+
+    // A list draws its tiles without asking the backend anything about them.
+    expect(fallback.state('item-1', 'att-1')).toBe('ok');
+    expect(probe).not.toHaveBeenCalled();
+
+    fallback.noteError('item-1', 'att-1');
+    signer.resolve('/signed');
+    await Promise.resolve();
+    // Nothing can be probed before there is a URL to probe.
+    expect(fallback.state('item-1', 'att-1')).toBe('errored');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fallback.state('item-1', 'att-1')).toBe('missing');
+    expect(fallback.state('item-1', 'att-1')).toBe('missing');
+    expect(probe).toHaveBeenCalledTimes(1);
+    // The answer lands outside a render, so the host has to be told.
+    expect(h.renders).toBeGreaterThan(0);
+  });
+
+  it('keeps a picture the probe could not rule out rather than calling it missing', async () => {
+    const h = host();
+    const signer = deferredSigner();
+    const urls = new MediaUrls(h, {
+      fetch: vi.fn(async () => {
+        throw new Error('offline');
+      }),
+    });
+    urls.configure(signer.sign);
+    const fallback = new PictureFallback(h, urls);
+
+    fallback.noteError('item-1', 'att-1');
+    signer.resolve('/signed');
+    await Promise.resolve();
+    fallback.state('item-1', 'att-1');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fallback.state('item-1', 'att-1')).toBe('errored');
+  });
+
+  it('takes a tile back once its picture loads', async () => {
+    const h = host();
+    const signer = deferredSigner();
+    const urls = new MediaUrls(h, {
+      fetch: vi.fn(async () => {
+        throw new Error('offline');
+      }),
+    });
+    urls.configure(signer.sign);
+    const fallback = new PictureFallback(h, urls);
+
+    fallback.noteError('item-1', 'att-1');
+    signer.resolve('/signed');
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fallback.state('item-1', 'att-1')).toBe('errored');
+
+    // The next URL for the same bytes is the first chance to learn that it was
+    // the request that failed and not the file.
+    fallback.noteLoad('item-1', 'att-1');
+
+    expect(fallback.state('item-1', 'att-1')).toBe('ok');
+  });
+
+  it('answers per attachment, so one broken tile says nothing about the next', async () => {
+    const h = host();
+    const signer = deferredSigner();
+    const urls = new MediaUrls(h, { fetch: vi.fn(async () => new Response(null, { status: 404 })) });
+    urls.configure(signer.sign);
+    const fallback = new PictureFallback(h, urls);
+
+    fallback.noteError('item-1', 'att-1');
+
+    expect(fallback.state('item-1', 'att-2')).toBe('ok');
+    expect(fallback.state('item-2', 'att-1')).toBe('ok');
   });
 });

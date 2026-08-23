@@ -967,6 +967,60 @@ describe('hv-detail-sheet: lightbox navigation', () => {
   });
 });
 
+/**
+ * A restore that brought the store back without the config directory's media
+ * tree leaves every picture like this, so the strip is a run of these rather
+ * than one odd tile.
+ */
+describe('hv-detail-sheet: a picture whose file is gone', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function serve(status: number) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status })),
+    );
+  }
+
+  it('draws the strip’s tile as missing instead of a broken image', async () => {
+    serve(404);
+    const el = await mount(
+      { id: 'i-1', name: 'Coffee maker', attachments: [makeAttachment({ id: 'att-1' })] },
+      { media: makeMediaBindings() },
+    );
+    for (let i = 0; i < 4; i += 1) await settle(el);
+
+    const tile = q(el, '[data-testid="sheet-photo-missing"]');
+    expect(tile).toBeTruthy();
+    expect(tile?.textContent).toContain('File missing');
+    expect(tile?.querySelector('.hv-chip.warning')).toBeTruthy();
+    // Nothing to open and nothing to draw a broken glyph with.
+    expect(q(el, '[data-testid="sheet-photo-open"]')).toBeNull();
+    expect(el.shadowRoot?.querySelector('img')).toBeNull();
+    // The strip stays, so the item still says it has a photo on record.
+    expect(q(el, '[data-testid="sheet-gallery"]')).toBeTruthy();
+  });
+
+  it('keeps a picture the probe could not rule out', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('offline');
+      }),
+    );
+    const el = await mount(
+      { id: 'i-1', attachments: [makeAttachment({ id: 'att-1' })] },
+      { media: makeMediaBindings() },
+    );
+    for (let i = 0; i < 4; i += 1) await settle(el);
+
+    expect(q(el, '[data-testid="sheet-photo-missing"]')).toBeNull();
+    expect(q(el, '[data-testid="sheet-photo-open"]')).toBeTruthy();
+  });
+});
+
 describe('hv-detail-sheet: documents', () => {
   /** Answers every liveness probe the section makes; 206 is a live file. */
   function serve(status: number) {

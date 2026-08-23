@@ -252,3 +252,47 @@ describe('hv-lightbox: chrome over any photo', () => {
     expect(Number(panel(el)?.style.zIndex)).toBeGreaterThan(0);
   });
 });
+
+/**
+ * The tiles that open this refuse to open a picture whose file is gone, so this
+ * covers the file that goes missing while the photo is on screen — and any host
+ * that opens the lightbox by index without looking.
+ */
+describe('hv-lightbox: a picture whose file is gone', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function failed(probe: () => unknown) {
+    vi.stubGlobal('fetch', probe);
+    const el = await mount({ id: 'i-1', name: 'Drill', attachments: shots(1) }, 0);
+    q(el, 'img')?.dispatchEvent(new Event('error'));
+    for (let i = 0; i < 4; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await settle(el);
+    }
+    return el;
+  }
+
+  it('says the file is missing rather than filling the frame with a broken glyph', async () => {
+    const el = await failed(vi.fn(async () => new Response(null, { status: 404 })));
+
+    expect(q(el, '[data-testid="lightbox-missing"]')?.textContent).toContain('File missing');
+    expect(q(el, 'img')).toBeNull();
+    // Still a dialog: closing it is how the user gets back, and the controls
+    // that do that are outside the frame.
+    expect(panel(el)).toBeTruthy();
+    expect(q(el, '[data-testid="lightbox-close"]')).toBeTruthy();
+  });
+
+  it('keeps the photo when the probe cannot say the file is gone', async () => {
+    const el = await failed(
+      vi.fn(async () => {
+        throw new Error('offline');
+      }),
+    );
+
+    expect(q(el, '[data-testid="lightbox-missing"]')).toBeNull();
+    expect(shown(el)).toBe('Photo of Drill');
+  });
+});

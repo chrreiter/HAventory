@@ -1878,6 +1878,62 @@ describe('hv-item-editor: opening a document', () => {
   });
 });
 
+/**
+ * The state an import onto a fresh machine leaves every picture in — the export
+ * carries the metadata and not the bytes. A photo used to get the browser's
+ * broken-image glyph here while its manual sibling got the chip.
+ */
+describe('hv-item-editor: a picture whose file is gone', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function serve(status: number) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status })),
+    );
+  }
+
+  it('gives it the same missing state a manual already gets', async () => {
+    serve(404);
+    const el = await mount(
+      makeItem({ id: 'i-1', name: 'Coffee maker', attachments: [makeAttachment({ id: 'p-1' })] }),
+      { media: makeMediaBindings() },
+    );
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+
+    const tile = q(el, '[data-testid="editor-photo-missing"]');
+    expect(tile).toBeTruthy();
+    expect(tile?.textContent).toContain('File missing');
+    expect(tile?.querySelector('.hv-chip.warning')).toBeTruthy();
+    // No <img>: an element with a src is what draws the glyph and spills the
+    // alt text out of a 72px tile. And nothing to open, because the lightbox
+    // has nothing to show.
+    expect(el.shadowRoot?.querySelector('img')).toBeNull();
+    expect(q(el, '[data-testid="editor-photo-open"]')).toBeNull();
+    // The reference is still the item's to clear.
+    expect(q(el, '[data-testid="editor-photo-remove"]')).toBeTruthy();
+  });
+
+  it('keeps a picture the probe could not rule out', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('offline');
+      }),
+    );
+    const el = await mount(
+      makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'p-1' })] }),
+      { media: makeMediaBindings() },
+    );
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+
+    expect(q(el, '[data-testid="editor-photo-missing"]')).toBeNull();
+    expect(q(el, '[data-testid="editor-photo-open"]')).toBeTruthy();
+  });
+});
+
 describe('hv-item-editor: photo order and the cover', () => {
   function pick(el: HVItemEditor, files: File[]) {
     const input = q(el, '[data-testid="editor-photo-input"]') as HTMLInputElement;

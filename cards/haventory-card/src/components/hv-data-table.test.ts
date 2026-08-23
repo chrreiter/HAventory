@@ -498,6 +498,76 @@ describe('hv-data-table: row thumbnail', () => {
 
     expect(q(el, '[data-testid="row-thumb"]')).toBeNull();
   });
+
+  describe('and its file is gone', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    /** Two rows with a picture each, both failing to load it. */
+    async function broken(probe: () => unknown) {
+      vi.stubGlobal('fetch', probe);
+      const el = await mount(
+        [
+          { id: 'i-1', name: 'Cordless drill', attachments: [makeAttachment({ id: 'att-1' })] },
+          { id: 'i-2', name: 'Hammer', attachments: [makeAttachment({ id: 'att-2' })] },
+        ],
+        { media: makeMediaBindings() },
+      );
+      await el.updateComplete;
+      await el.updateComplete;
+      for (const img of all(el, '[data-testid="row-thumb"]')) {
+        img.dispatchEvent(new Event('error'));
+      }
+      for (let i = 0; i < 4; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await el.updateComplete;
+      }
+      return el;
+    }
+
+    it('draws a missing mark in place of the browser’s broken-image glyph', async () => {
+      const el = await broken(vi.fn(async () => new Response(null, { status: 404 })));
+
+      const marks = all(el, '[data-testid="row-thumb-missing"]');
+      expect(marks).toHaveLength(2);
+      // Glyph-only in a 34px box, so the state has to reach a screen reader and
+      // a pointer some other way.
+      expect(marks[0].getAttribute('aria-label')).toBe('File missing');
+      expect(marks[0].getAttribute('title')).toBe('File missing');
+      // No <img> at all: an element with a src is what draws the glyph and
+      // spills the alt text out of the tile.
+      expect(el.shadowRoot?.querySelector('img')).toBeNull();
+      // It still leads the cell, so a restored inventory keeps its rhythm
+      // rather than shifting every name left by a tile.
+      expect(q(el, '.name-cell')?.firstElementChild).toBe(marks[0]);
+    });
+
+    it('asks the backend nothing for a table whose pictures load', async () => {
+      const probe = vi.fn(async () => new Response(null, { status: 404 }));
+      vi.stubGlobal('fetch', probe);
+      const el = await mount([{ id: 'i-1', attachments: [makeAttachment({ id: 'att-1' })] }], {
+        media: makeMediaBindings(),
+      });
+      await el.updateComplete;
+      await el.updateComplete;
+
+      expect(q(el, '[data-testid="row-thumb"]')).toBeTruthy();
+      expect(probe).not.toHaveBeenCalled();
+    });
+
+    it('keeps the tile when the probe cannot say the file is gone', async () => {
+      const el = await broken(
+        vi.fn(async () => {
+          throw new Error('offline');
+        }),
+      );
+
+      expect(q(el, '[data-testid="row-thumb-missing"]')).toBeNull();
+      expect(q(el, '[data-testid="row-thumb"]')?.classList.contains('broken')).toBe(true);
+      expect(componentCss('hv-data-table')).toMatch(/\.thumb\.broken \{ visibility: hidden/);
+    });
+  });
 });
 
 describe('hv-data-table: sorting', () => {

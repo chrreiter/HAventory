@@ -18,6 +18,7 @@ import {
 import {
   MEDIA_VARIANT_THUMB,
   MediaUrls,
+  PictureFallback,
   ROW_THUMB_SIZE,
   attachmentNameToken,
   pictureAlt,
@@ -196,6 +197,24 @@ export class HVDataTable extends LitElement {
         border-radius: 6px;
         object-fit: cover;
         background: var(--hv-surface-raised);
+      }
+      /* The tile of a picture whose file the backend no longer has. It keeps the
+         box, because a restore without the media directory leaves every row in
+         this state and a table that dropped them all would hand the width back
+         to the name column row by row. */
+      .thumb.missing {
+        display: inline-grid;
+        place-items: center;
+        box-sizing: border-box;
+        border: 1px dashed var(--hv-divider);
+        color: var(--hv-text-tertiary);
+      }
+      /* Between the failure and the probe's answer. Hidden rather than removed:
+         what an errored <img> draws is the browser's broken-image glyph with the
+         alt text spilling out of a 34px square, which is the whole thing this
+         state exists to keep out of the cell. */
+      .thumb.broken {
+        visibility: hidden;
       }
       /*
        * A phone shows about a quarter of this table — the template's floor is
@@ -464,6 +483,7 @@ export class HVDataTable extends LitElement {
   @property({ attribute: false }) media: MediaBindings | null = null;
 
   private readonly _urls = new MediaUrls(this);
+  private readonly _thumbs = new PictureFallback(this, this._urls);
 
   protected willUpdate() {
     this._urls.configure(this.media?.sign ?? null);
@@ -477,10 +497,24 @@ export class HVDataTable extends LitElement {
    * one, so this never decides whether the picture appears. `loading="lazy"`
    * and `decoding="async"` still matter — a long table would otherwise fetch
    * and decode every row's tile at once.
+   *
+   * A file the backend no longer has is answered from the failure rather than
+   * probed for up front — see `PictureFallback`.
    */
   private _renderThumb(item: Item) {
     const first = pictures(item.attachments)[0];
     if (!first) return null;
+    const state = this._thumbs.state(item.id, first.id);
+    if (state === 'missing') {
+      return html`<span
+        class="thumb missing"
+        data-testid="row-thumb-missing"
+        role="img"
+        aria-label=${t('hv.term.fileMissing')}
+        title=${t('hv.term.fileMissing')}
+        >${icon('camera', 18)}</span
+      >`;
+    }
     const src = this._urls.get(
       item.id,
       first.id,
@@ -489,12 +523,14 @@ export class HVDataTable extends LitElement {
     );
     if (!src) return null;
     return html`<img
-      class="thumb"
+      class=${state === 'errored' ? 'thumb broken' : 'thumb'}
       data-testid="row-thumb"
       src=${src}
       alt=${pictureAlt(item.name, 0, 1)}
       loading="lazy"
       decoding="async"
+      @error=${() => this._thumbs.noteError(item.id, first.id)}
+      @load=${() => this._thumbs.noteLoad(item.id, first.id)}
     />`;
   }
 
