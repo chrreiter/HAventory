@@ -425,6 +425,21 @@ describe('haventory-panel: the ⋮ menu', () => {
     ]);
   });
 
+  // The phone toolbar drops its column-picker button because this entry is the
+  // route to the same dialog there. If it ever left the menu, the panel would
+  // have no way to choose columns on a phone at all.
+  it('keeps the columns entry on a phone, where the toolbar button is gone', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { sr, view } = await mountPanel();
+      expect(ids(view())).toContain('columns');
+      expect(view().shadowRoot?.querySelector('[data-testid="columns-expanded"]')).toBe(null);
+      expect(sr.querySelector('[data-testid="host-columns"]')).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
+
   // The filtered export would be the whole inventory again, so it is not offered
   // until a filter is on — same rule the card's menu follows.
   it('offers the filtered export only once something is filtered', async () => {

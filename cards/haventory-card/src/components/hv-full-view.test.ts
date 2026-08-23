@@ -1575,6 +1575,99 @@ describe('hv-full-view: phone-width children', () => {
       restore();
     }
   });
+
+  // Three controls on one 375px row is one too many for a language that spells
+  // `hv.action.clearAll` in two long words: the clear button broke over two
+  // lines and stacked the primary button's count sentence over three. The
+  // card's filter sheet already carries the clear in a head row; this is that
+  // shape.
+  it('carries the clear-all in a head row and leaves the phone footer two buttons', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
+      (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      const head = q(sr, '[data-testid="full-panel-head"]') as HTMLElement;
+      expect(head).toBeTruthy();
+      expect(head.querySelector('[data-testid="full-panel-clear"]')).toBeTruthy();
+
+      const foot = q(sr, '[data-testid="full-panel-foot"]') as HTMLElement;
+      expect([...foot.querySelectorAll('button')].map((b) => b.dataset.testid)).toEqual([
+        'full-panel-cancel',
+        'full-panel-apply',
+      ]);
+      // The head is read before the filters it clears, so it sits above the
+      // scroll box rather than after it.
+      expect(head.nextElementSibling?.classList.contains('panel-scroll')).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+
+  it('clears the staged set from the moved clear button, and counts what is staged', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { el, sr } = await mount({ items: [makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 })] });
+      (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      const count = () => (q(sr, '[data-testid="full-panel-count"]') as HTMLElement).textContent?.trim();
+      expect(count()).toBe('0 active');
+
+      const panel = q(sr, '[data-testid="full-filter-panel"]') as HTMLElement;
+      (panel.shadowRoot?.querySelector('[data-testid="filter-low-stock-only"]') as HTMLButtonElement).click();
+      await settle(el);
+      expect(count()).toBe('1 active');
+
+      (q(sr, '[data-testid="full-panel-clear"]') as HTMLButtonElement).click();
+      await settle(el);
+      expect(count()).toBe('0 active');
+      expect(
+        (panel.shadowRoot?.querySelector('[data-testid="filter-low-stock-only"]') as HTMLElement).getAttribute(
+          'aria-pressed',
+        ),
+      ).toBe('false');
+    } finally {
+      restore();
+    }
+  });
+
+  it('leaves the desktop panel without a head row', async () => {
+    const restore = stubViewport(false);
+    try {
+      const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
+      (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      expect(q(sr, '[data-testid="full-panel-head"]')).toBe(null);
+      expect(q(sr, '[data-testid="full-panel-clear"]')).toBe(null);
+    } finally {
+      restore();
+    }
+  });
+
+  // The ⋮ menu carries "Columns…" on every host, so the phone toolbar can drop
+  // the icon button and keep its remaining controls on one row.
+  it('drops the column picker button on a phone', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { sr } = await mount({ items: [makeItem({ id: '1' })] });
+      expect(q(sr, '[data-testid="columns-expanded"]')).toBe(null);
+    } finally {
+      restore();
+    }
+  });
+
+  it('keeps the column picker button where the row has room for it', async () => {
+    const restore = stubViewport(false);
+    try {
+      const { sr } = await mount({ items: [makeItem({ id: '1' })] });
+      expect(q(sr, '[data-testid="columns-expanded"]')).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
 });
 
 describe('hv-full-view: app bar filters', () => {

@@ -3,7 +3,7 @@ import './hv-filter-chips';
 import { chipsFor, clearedValueFor } from './hv-filter-chips';
 import { defaultFilters } from '../store/store';
 import type { Location, StatusDefinition, StoreFilters } from '../store/types';
-import { mountComponent } from '../test.utils';
+import { componentCss, mountComponent } from '../test.utils';
 
 type Chips = HTMLElement & {
   filters: StoreFilters;
@@ -360,5 +360,31 @@ describe('hv-filter-chips', () => {
     const el = await mount({ filters: { ...defaultFilters(), overdueOnly: true } });
     const chip = el.shadowRoot?.querySelector('[data-testid="filter-chip"]') as HTMLElement;
     expect(chip.getAttribute('aria-label')).toBe('Clear filter Overdue');
+  });
+
+  // A search term, a list of tags or a nested location path has no length this
+  // row can rely on, and the row shares a phone-width line with the filter
+  // toggle. The chip summarizes; the whole value stays readable on hover and
+  // in the accessible name.
+  it('holds a long label to the cap and keeps the whole of it on the title', async () => {
+    const term = 'x'.repeat(60);
+    const el = await mount({ filters: { ...defaultFilters(), q: term } });
+    const chip = el.shadowRoot?.querySelector('[data-testid="filter-chip"]') as HTMLElement;
+    const label = chip.querySelector('.hv-chip-text') as HTMLElement;
+
+    expect(label.textContent).toBe(`"${term}"`);
+    expect(chip.getAttribute('title')).toBe(`"${term}"`);
+    expect(chip.getAttribute('aria-label')).toBe(`Clear filter "${term}"`);
+    expect(componentCss('hv-filter-chips')).toMatch(
+      /\.chip > \.hv-chip-text \{[^}]*text-overflow: ellipsis/,
+    );
+    expect(componentCss('hv-filter-chips')).toMatch(/\.chip > \.hv-chip-text \{[^}]*max-width:/);
+  });
+
+  it('wraps a short label in the same element, so one chip is not shaped unlike the next', async () => {
+    const el = await mount({ filters: { ...defaultFilters(), overdueOnly: true } });
+    const chip = el.shadowRoot?.querySelector('[data-testid="filter-chip"]') as HTMLElement;
+    expect((chip.querySelector('.hv-chip-text') as HTMLElement).textContent).toBe('Overdue');
+    expect(chip.getAttribute('title')).toBe('Overdue');
   });
 });

@@ -216,6 +216,24 @@ export class HVFilterChips extends LitElement {
       .chip:hover {
         opacity: 0.85;
       }
+      /*
+       * A chip names a narrowing; it is not where the value is read. Nothing
+       * caps what a household can put into one — a search term, a run of tags,
+       * a path several levels deep — and this row shares a phone-width line
+       * with the filter toggle, so one uncapped chip takes the row away from
+       * the controls beside it. The whole text stays on the title and on the
+       * accessible name.
+       *
+       * The elision belongs on the label rather than on the chip: the chip is
+       * an inline-flex container, so text-overflow on it would do nothing and
+       * the trailing × has to stay outside the clipped box to remain visible.
+       */
+      .chip > .hv-chip-text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 20ch;
+      }
       .chip svg {
         opacity: 0.8;
       }
@@ -247,6 +265,7 @@ export class HVFilterChips extends LitElement {
             style=${ifDefined(entry.toneStyle)}
             data-testid="filter-chip"
             data-key=${entry.key}
+            title=${entry.label}
             aria-label=${`Clear filter ${entry.label}`}
             @click=${() =>
               this.dispatchEvent(
@@ -257,7 +276,7 @@ export class HVFilterChips extends LitElement {
                 }),
               )}
           >
-            ${entry.label}${icon('close', 15)}
+            <span class="hv-chip-text">${entry.label}</span>${icon('close', 15)}
           </button>`,
         )}
         <button
