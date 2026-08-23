@@ -171,15 +171,16 @@ def _subscription_location_ids(sub: Subscription) -> list[str]:
 
     The same union rule ``models.selected_location_ids`` applies to an
     ``ItemFilter``, kept here because a subscription is not one: it carries a
-    payload matcher, not a query.
+    payload matcher, not a query. The list arrives already trimmed and typed —
+    ``haventory/subscribe`` refuses an entry that is not a string — while the
+    scalar beside it is whatever the client sent.
     """
 
     selection: list[str] = []
     scalar = sub.get("location_id")
     if scalar:
         selection.append(str(scalar).strip())
-    for raw in sub.get("location_ids") or []:
-        value = str(raw).strip()
+    for value in sub.get("location_ids") or []:
         if value and value not in selection:
             selection.append(value)
     return [value for value in selection if value]

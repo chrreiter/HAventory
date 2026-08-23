@@ -41,39 +41,26 @@ Transport-level errors produced by Home Assistant itself (before a handler runs)
 
 #### Which of the two answers a wrong type
 
-Most fields in a command schema are deliberately typed `object` rather than concretely, so
-that a wrong type is answered by the handler as `validation_error` instead of by Home
-Assistant as `invalid_format`. The difference matters to an operator: core refuses the frame
-before the guard runs and logs the client's payload at ERROR, while the guard names the field
-at WARNING with no traceback.
+A client handles both, and does not have to know which field answers which — the split is
+about *where* the frame stopped, not about the field's name.
 
-That is the default, and it widens whenever a command gains a typed-input pass, so the
-object-typed fields are not listed here. What is listed is the **exception** set: the fields
-that keep a concrete schema type, and therefore still answer `invalid_format`.
+`validation_error` is what a value earns. Most payload fields are typed `object` in their
+command schema — names, quantities, ids, filters, and every collection a caller writes whole
+(`tags`, `custom_fields`, `custom_fields_set`, `custom_fields_unset`, `set`, `unset`,
+`attachment_ids`, `slugs`) — so the model is what reads them and the refusal names the field
+at WARNING with no traceback. A bare string where a list belongs is the case worth naming:
+iterating one yields its characters, so it is refused rather than read.
 
-- `expected_version`, on every command that takes it.
-- The dates, and the two fields that travel with them: `due_date`, `inspection_date`,
-  `reminder_date`, `reminder_interval`, `checked_out`.
-- The collections a caller writes whole: `tags`, `custom_fields`, `custom_fields_set`,
-  `custom_fields_unset`, `set`, `unset`, `attachment_ids`.
-- The attachment handles: `file_id`, `kind`, `filename`, `title`.
-- `haventory/subscribe`'s own three: `topic`, `include_subtree`, `inspection_overdue_only`.
-- Every field the `haventory/status/*` commands take: `slug`, `slugs`, `label`, `color`,
-  `icon`, `order`, `reassign_to`.
-- Import's `document` and `policy`.
+`invalid_format` is Home Assistant's, raised before the guard runs and logged with the
+client's payload at ERROR. It answers a frame the command schema refuses on shape — a missing
+`id`, an unknown top-level key, a required field left out — and the scalars a schema still
+types concretely: `expected_version`, the flags, the date strings, the attachment and status
+handles, import's `document` and `policy`. That list is not itself part of the contract, and
+a client that keys on it will drift with the next widening: handle both codes.
 
-`tags` is the one name on both sides: concrete on `item/create`, `item/add_tags` and
-`item/remove_tags`, `object` on `item/update`. The same wrong value therefore answers a
-different code depending on which command carried it, which is the reason to handle both
-rather than to key on the field name. Under either code nothing is written: a `tags` that is
-not a list of strings — a bare string above all, which iterates as its characters — is
-refused before the list is read. The `items/bulk` payloads carry no schema at all, so
-`item_update`, `item_add_tags` and `item_remove_tags` answer that row with
-`validation_error` and leave the item as it was.
-
-`tests/test_docs_contract_offline.py` reads the schemas back off the registered handlers and
-fails when this list and the code disagree, so a new concretely-typed field arrives here in
-the same change.
+Under either code nothing is written. The `items/bulk` payloads carry no schema at all, so
+every wrong type in a row answers that row with `validation_error` and leaves the item as it
+was.
 
 ### Logging
 
@@ -158,7 +145,7 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 - Subscribe
   - `haventory/subscribe` request: `{id, type, topic: "items"|"locations"|"stats"|"statuses", location_id?: string|null, location_ids?: string[], area_id?: string|null, include_subtree?: boolean, inspection_overdue_only?: boolean}`
   - Result: `null` (result envelope with `result: null`)
-  - `location_ids` is the multi-select beside `location_id`, unioned with it exactly as `item/list`'s filter unions the same pair, and covering the `items` and `locations` topics alike. One `include_subtree` flag governs the whole selection (defaulting to **true** here, unlike the list filter). A value that is not a list of strings answers `validation_error`. A card whose location filter names several locations has to send this, or the socket keeps delivering the other locations' events.
+  - `location_ids` is the multi-select beside `location_id`, unioned with it exactly as `item/list`'s filter unions the same pair, and covering the `items` and `locations` topics alike. One `include_subtree` flag governs the whole selection (defaulting to **true** here, unlike the list filter). A value that is not a list of strings answers `validation_error`, entry by entry: an id that is not a string is refused rather than turned into one, which would have registered a subscription matching nothing. A card whose location filter names several locations has to send this, or the socket keeps delivering the other locations' events.
   - `area_id` narrows the `items` topic to items whose `effective_area_id` equals it — the same area `item/list`'s `area_id` filter selects by, read off the event's own item payload. A `null` (or an omitted key) means no area filter, not "items with no area"; an item with no location has `effective_area_id: null` and therefore reaches no area-filtered subscription. An `area_id` naming an area nothing resolves to is accepted and simply delivers nothing. Filters combine with AND: a subscription carrying both `area_id` and `location_id` requires both to match. The `locations` topic ignores `area_id`.
   - `inspection_overdue_only` narrows the `items` topic to items past their `inspection_date`, using the same rule as the `item/list` filter of that name. Like every subscription filter it is applied to the event's item payload as it stands *after* the mutation, so an item that leaves the filtered set (its inspection date rescheduled or cleared) produces no event for that subscription — a client that tracks a filtered set re-lists rather than relying on a departure event.
   - Subsequent events delivered as HA WS events to the same connection using this `id` as the subscription id.
@@ -312,7 +299,7 @@ with no WebSocket client at all. Payload shapes: `docs/data_shapes.md`.
   - Takes `expected_version` like any other item edit, and answers `conflict` on a stale one.
 
 - `haventory/item/add_tags`
-  - Payload: `{item_id: string, tags: string[], expected_version?: number}` (tags normalized: trimmed, casefolded, deduped)
+  - Payload: `{item_id: string, tags: string[], expected_version?: number}` (tags normalized: trimmed, casefolded, deduped; a value that is not a list of strings is a `validation_error`)
   - Result: `<Item>`; emits `items/updated` and `stats/counts`.
 
 - `haventory/item/remove_tags`
@@ -359,8 +346,9 @@ with no WebSocket client at all. Payload shapes: `docs/data_shapes.md`.
   - Renumbers one kind. **The first id named takes position 0, which is what makes a picture
     the item's cover** — there is no separate cover flag, so "make cover" is this command.
     Order is per kind, so renumbering pictures never moves a manual.
-  - Refusals: `validation_error` unless `attachment_ids` names every attachment of that kind
-    exactly once, `not_found` for an unknown item, `conflict` for a stale `expected_version`.
+  - Refusals: `validation_error` when `attachment_ids` is not a list of strings, and unless
+    it names every attachment of that kind exactly once; `not_found` for an unknown item;
+    `conflict` for a stale `expected_version`.
 
 - Serving an attachment — `GET /api/haventory/media/{item_id}/{attachment_id}`
   - An authenticated `HomeAssistantView`, not `/local` and not `/haventory_static`: both of those are served without authentication, and an inventory photo is as private as the inventory.
@@ -386,7 +374,7 @@ with no WebSocket client at all. Payload shapes: `docs/data_shapes.md`.
   - Payload: `{filter?: <ItemFilter>, sort?: <Sort>, limit?: number, cursor?: string}`
   - Result: `{items: <Item[]>, next_cursor: string|null, total: number}`
   - `total` is the number of items matching the filter across **all** pages (not the page size), recomputed per request — so "Showing N of `total`" is renderable on every page.
-  - **Categories and locations multi-select.** `filter.categories: string[]` sits beside `filter.category`, and `filter.location_ids: string[]` beside `filter.location_id`. Each pair is *one* selection: the scalar and the list are **unioned**, never intersected — an item carries exactly one category and sits in exactly one location, so requiring both to hold would match nothing whenever they name different values. An empty list does not narrow, the way an empty `tags_any` does not. A value that is not a list of strings answers `validation_error` naming the key. `include_subtree` is **one flag for the whole location selection**, not one per entry: a per-entry form is deliberately not offered, and can be added later without breaking this one. See data shapes for the full rule.
+  - **Categories and locations multi-select.** `filter.categories: string[]` sits beside `filter.category`, and `filter.location_ids: string[]` beside `filter.location_id`. Each pair is *one* selection: the scalar and the list are **unioned**, never intersected — an item carries exactly one category and sits in exactly one location, so requiring both to hold would match nothing whenever they name different values. An empty list does not narrow, the way an empty `tags_any` does not. A value that is not a list of strings answers `validation_error` naming the key — `tags_any` and `tags_all` answer the same way, so a bare string is never queried as its letters. `include_subtree` is **one flag for the whole location selection**, not one per entry: a per-entry form is deliberately not offered, and can be added later without breaking this one. See data shapes for the full rule.
   - **Unknown `filter` and `sort` keys are refused** with `validation_error` naming the offending key, rather than dropped. A dropped key returns the whole inventory labelled as a filtered result, which no caller can tell from a filter that legitimately matched everything. The accepted key set is exactly `<ItemFilter>`'s; `sort` accepts `field` and `order` only.
   - **`sort.field` accepts `location`**, ordering on the item's denormalized `location_path.sort_key`; items with no location sort last in both orders. This is not an area sort, and one is deliberately not offered — see data shapes for why. The cursor carries the same key, so a location-ordered page boundary round-trips like every other.
   - **A `cursor` that cannot be honoured is an error, never a silent restart.** `validation_error` is answered for a cursor that is empty, undecodable, longer than 2048 characters, missing its `last_id` / `last_sort_key`, or minted under a different `sort` — or a different `filter.low_stock_first` setting — than the request carries. Answering any of those with page one makes a caller paging through the inventory loop over the first page indefinitely without being told. To restart pagination, omit `cursor` — do not send `""`.
@@ -441,8 +429,9 @@ except `status/delete` with a reassign target.
 - `haventory/status/reorder`
   - Payload: `{slugs: string[]}`
   - Result: `<StatusDefinition[]>` in the new order; emits `statuses/reordered`.
-  - Refusals: `validation_error` unless `slugs` names every live status exactly once — a
-    partial list would leave two definitions claiming one position.
+  - Refusals: `validation_error` when `slugs` is not a list of strings, and unless it names
+    every live status exactly once — a partial list would leave two definitions claiming one
+    position, and a repeat is a client bug rather than something to normalize away.
 
 - `haventory/status/delete`
   - Payload: `{slug: string, reassign_to?: string}`

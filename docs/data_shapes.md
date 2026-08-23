@@ -270,8 +270,8 @@ counts items at the node or any descendant (so it is always >= the direct count)
 
 - ItemFilter:
   - `q?: string` (case-insensitive; name, description, tags, location display path)
-  - `tags_any?: string[]`
-  - `tags_all?: string[]`
+  - `tags_any?: string[]` (a value that is not a list of strings is a `validation_error`)
+  - `tags_all?: string[]` (same rule)
   - `category?: string`
   - `categories?: string[]` (multi-select beside `category`; see the union rule below)
   - `status?: <status slug>` (exact match against the live status set; unknown values are `validation_error`)
@@ -302,7 +302,8 @@ counts items at the node or any descendant (so it is always >= the direct count)
   sent alone; the card sends only the plural. An empty list does not narrow at all, the
   same way an empty `tags_any` does not. Entries are trimmed and de-duplicated, categories
   case-insensitively; a value that is not a list of strings is a `validation_error` naming
-  the key, because iterating a bare string would filter by its letters. A `location_ids`
+  the key, because iterating a bare string would filter by its letters — the rule
+  `tags_any` and `tags_all` follow too. A `location_ids`
   entry that is not a valid UUID v4 contributes nothing, so a selection of only bad ids
   matches nothing — what a single bad `location_id` has always done.
 
@@ -636,6 +637,12 @@ shapes as the WebSocket surface — no bespoke service shape exists:
 - `tags` is a list of strings on every item write, and `null` clears the list. A value that
   is not one — a bare string, which iterates as its characters — is refused rather than
   read, on the whole-list write and on the two tag operations alike.
+- Every other collection a caller writes whole follows that rule and answers it the same
+  way, naming the key the caller sent: `custom_fields`, `custom_fields_set`,
+  `custom_fields_unset`, `update_custom_fields`'s `set` and `unset`, `attachment_ids` and
+  `slugs`. The last two name a whole set as a permutation, so nothing is trimmed or
+  de-duplicated on the way in: a list naming one member twice is a client bug, and
+  normalizing it into a valid permutation would hide it.
 
 #### Input caps
 

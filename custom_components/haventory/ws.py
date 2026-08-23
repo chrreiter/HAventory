@@ -3,6 +3,11 @@
 Implements CRUD and helper commands for items and locations.
 Adheres to the envelope: input {id, type, ...payload}, output result_message/error_message.
 
+Most payload fields are typed `object` rather than concretely, so a wrong type
+is answered by the model as `validation_error` naming the field. A concrete
+schema type has Home Assistant refuse the frame as `invalid_format` before the
+guard runs, and log the client's payload at ERROR while naming nothing.
+
 Handlers only. A mutation announces itself through a door in `events.py`, which
 covers the bus and the entities as well as the wire; the subscription registry
 and the fan-out behind that door are `subscriptions.py`.
@@ -65,6 +70,7 @@ from .models import (
     ItemUpdate,
     iso_utc_now,
     new_uuid4,
+    normalize_string_list,
     serialize_status_definition,
     validate_attachment_meta,
     validate_item_filter,
@@ -562,10 +568,9 @@ async def ws_subscribe(
     if "location_id" in msg:
         sub["location_id"] = msg.get("location_id")
     if "location_ids" in msg:
-        raw_ids = msg.get("location_ids")
-        if raw_ids is not None and not isinstance(raw_ids, list):
-            raise ValidationError("location_ids must be a list of strings")
-        sub["location_ids"] = [str(value) for value in raw_ids or []]
+        sub["location_ids"] = normalize_string_list(
+            msg.get("location_ids"), field_name="location_ids"
+        )
     if "area_id" in msg:
         sub["area_id"] = msg.get("area_id")
     if "include_subtree" in msg:
@@ -625,8 +630,6 @@ async def ws_unsubscribe(
         vol.Required("name"): object,
         vol.Optional("description"): object,
         vol.Optional("quantity"): object,
-        # Widened to object so the model layer rejects bad values as a typed
-        # validation_error instead of HA core logging a schema ERROR.
         vol.Optional("status"): object,
         vol.Optional("checked_out"): bool,
         vol.Optional("due_date"): vol.Any(str, None),
@@ -634,10 +637,10 @@ async def ws_unsubscribe(
         vol.Optional("reminder_date"): vol.Any(str, None),
         vol.Optional("reminder_interval"): vol.Any(dict, None),
         vol.Optional("location_id"): object,
-        vol.Optional("tags"): [str],
+        vol.Optional("tags"): object,
         vol.Optional("category"): object,
         vol.Optional("low_stock_threshold"): object,
-        vol.Optional("custom_fields"): {str: object},
+        vol.Optional("custom_fields"): object,
     }
 )
 @websocket_api.async_response
@@ -679,8 +682,8 @@ async def ws_item_get(
         vol.Optional("tags"): object,
         vol.Optional("category"): object,
         vol.Optional("low_stock_threshold"): object,
-        vol.Optional("custom_fields_set"): {str: object},
-        vol.Optional("custom_fields_unset"): [str],
+        vol.Optional("custom_fields_set"): object,
+        vol.Optional("custom_fields_unset"): object,
     }
 )
 @websocket_api.async_response
@@ -862,7 +865,7 @@ async def ws_reminder_bump(
         vol.Required("type"): "haventory/item/add_tags",
         vol.Required("item_id"): object,
         vol.Optional("expected_version"): int,
-        vol.Optional("tags"): [str],
+        vol.Optional("tags"): object,
     }
 )
 @websocket_api.async_response
@@ -878,7 +881,7 @@ async def ws_item_add_tags(
         vol.Required("type"): "haventory/item/remove_tags",
         vol.Required("item_id"): object,
         vol.Optional("expected_version"): int,
-        vol.Optional("tags"): [str],
+        vol.Optional("tags"): object,
     }
 )
 @websocket_api.async_response
@@ -894,8 +897,8 @@ async def ws_item_remove_tags(
         vol.Required("type"): "haventory/item/update_custom_fields",
         vol.Required("item_id"): object,
         vol.Optional("expected_version"): int,
-        vol.Optional("set"): dict,
-        vol.Optional("unset"): [str],
+        vol.Optional("set"): object,
+        vol.Optional("unset"): object,
     }
 )
 @websocket_api.async_response
@@ -1086,7 +1089,7 @@ async def ws_item_attachment_update(
         vol.Required("type"): "haventory/item/attachment/reorder",
         vol.Required("item_id"): object,
         vol.Required("kind"): str,
-        vol.Required("attachment_ids"): [str],
+        vol.Required("attachment_ids"): object,
         vol.Optional("expected_version"): int,
     }
 )
@@ -1105,7 +1108,7 @@ async def ws_item_attachment_reorder(
     updated = repo.reorder_attachments(
         msg["item_id"],
         msg["kind"],
-        list(msg["attachment_ids"]),
+        msg["attachment_ids"],
         expected_version=msg.get("expected_version"),
     )
     serialized = serialize_item(hass, updated)
@@ -1477,7 +1480,7 @@ async def ws_status_update(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "haventory/status/reorder",
-        vol.Required("slugs"): [str],
+        vol.Required("slugs"): object,
     }
 )
 @websocket_api.async_response
@@ -1488,7 +1491,7 @@ async def ws_status_reorder(
     """Rewrite display order from a full permutation of the live slugs."""
 
     repo = _repo(hass)
-    ordered = repo.reorder_statuses(list(msg["slugs"]))
+    ordered = repo.reorder_statuses(msg["slugs"])
     serialized = [serialize_status_definition(d) for d in ordered]
     await _persist_repo(hass)
     notify_status_mutation(hass, action="reordered", statuses=serialized)

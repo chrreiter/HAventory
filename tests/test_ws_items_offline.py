@@ -6,9 +6,8 @@ Scenarios:
 - list items with pagination cursor passthrough
 - error mapping for validation/not_found/conflict with contextual data
 - optimistic concurrency: with and without expected_version
-- tag normalization on the one command whose schema admits a null tag
-- a wrong-typed field answers invalid_format or validation_error by how the
-  command schema types it, and writes nothing either way
+- tag normalization, and the null tag every command taking tags refuses
+- a wrong-typed field answers validation_error and writes nothing
 - attachment add/remove: version bumps, refusals, and the file-deletion cascade
 
 The attachment tests stand in for core's `file_upload` component, which the
@@ -71,14 +70,11 @@ async def test_item_create_get_update_delete_success() -> None:
 
 @pytest.mark.asyncio
 async def test_item_update_refuses_a_tag_list_carrying_a_null() -> None:
-    """`item/update` is the one command that can carry a null tag to the model.
+    """A null tag is refused by the model, on every command that takes tags.
 
-    Every other command taking tags declares `[str]`, which Home Assistant
-    refuses a null against before dispatch. `item/update` types each field as
-    `object` and leaves the shape to `apply_item_update`, which answers with
-    the same rule one layer down — a stored `None` would break every tag index
-    and filter that assumes strings, and dropping it silently would store a
-    list the caller did not send.
+    Each of them types `tags` as `object` and leaves the shape to the model — a
+    stored `None` would break every tag index and filter that assumes strings,
+    and dropping it silently would store a list the caller did not send.
     """
 
     hass = HomeAssistant()
@@ -99,10 +95,17 @@ async def test_item_update_refuses_a_tag_list_carrying_a_null() -> None:
     unchanged = await ws_send(hass, 3, "haventory/item/get", item_id=item_id)
     assert unchanged["result"]["tags"] == ["li-ion"]
 
-    # The narrow schemas hold the line for the commands that declare `[str]`.
-    refused = await ws_send(hass, 4, "haventory/item/add_tags", item_id=item_id, tags=["x", None])
-    assert refused["success"] is False
-    assert refused["error"]["code"] == "invalid_format"
+    # The two tag operations answer the same code with the same message.
+    for op_id, command in ((4, "add_tags"), (5, "remove_tags")):
+        refused = await ws_send(
+            hass, op_id, f"haventory/item/{command}", item_id=item_id, tags=["x", None]
+        )
+        assert refused["success"] is False, command
+        assert refused["error"]["code"] == "validation_error", command
+        assert refused["error"]["message"] == "tags must be a list of strings", command
+
+    still_unchanged = await ws_send(hass, 6, "haventory/item/get", item_id=item_id)
+    assert still_unchanged["result"]["tags"] == ["li-ion"]
 
 
 @pytest.mark.asyncio
@@ -967,6 +970,25 @@ async def test_item_list_refuses_a_non_integer_limit() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("key", ["tags_any", "tags_all"])
+async def test_item_list_refuses_a_tag_selection_that_is_a_bare_string(key: str) -> None:
+    """A bare string is refused rather than queried as its letters.
+
+    The index pre-filter reads the same key before the scan does, so answering
+    it there is what keeps this from coming back as an empty page — which reads
+    to a client as "no item carries that tag".
+    """
+
+    hass = _hass_with_items()
+
+    res = await ws_send(hass, 1, "haventory/item/list", filter={key: "kitchen"})
+
+    assert res["success"] is False, res
+    assert res["error"]["code"] == "validation_error"
+    assert res["error"]["message"] == f"{key} must be a list of strings"
+
+
+@pytest.mark.asyncio
 async def test_item_list_still_serves_a_full_known_filter_and_pages() -> None:
     """The regression that matters: nothing legitimate got refused."""
 
@@ -997,36 +1019,13 @@ async def test_item_list_still_serves_a_full_known_filter_and_pages() -> None:
 
 
 @pytest.mark.asyncio
-async def test_item_create_refuses_a_wrong_typed_field_and_mutates_nothing() -> None:
-    """A field the command schema types concretely is refused before the handler.
-
-    ``tags`` is one of the fields ``item/create`` still types concretely, so
-    Home Assistant answers ``invalid_format`` ahead of ``ws_guard``. The fields
-    whose wrong type is a plausible client bug — ``name``, ``quantity`` — are
-    typed ``object`` on purpose so they answer ``validation_error`` through the
-    guard instead; the test below covers those.
-    """
-
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
-    repo = repo_of(hass)
-
-    res = await ws_send(hass, 1, "haventory/item/create", name="Hammer", tags="chisel")
-
-    assert res["success"] is False
-    assert res["error"]["code"] == "invalid_format"
-    assert repo.get_counts()["items_total"] == 0
-
-
-@pytest.mark.asyncio
-async def test_item_create_answers_a_widened_field_with_validation_error() -> None:
-    """A field typed ``object`` is refused by the handler, through the guard.
+async def test_item_create_answers_a_wrong_typed_field_with_validation_error() -> None:
+    """A wrong type is refused by the handler, through the guard.
 
     Home Assistant refuses a schema mismatch before ``ws_guard`` runs and logs
-    the client's payload at ERROR while doing it. The fields a client most
-    plausibly gets wrong are typed ``object`` so the answer comes from the model
-    layer instead, naming the field at WARNING.
+    the client's payload at ERROR while doing it. Every field carrying a value
+    is typed ``object`` so the answer comes from the model layer instead,
+    naming the field at WARNING — the scalars and the collections alike.
     """
 
     hass = HomeAssistant()
@@ -1038,6 +1037,9 @@ async def test_item_create_answers_a_widened_field_with_validation_error() -> No
         {"name": "Hammer", "quantity": "many"},
         {"name": 42},
         {"name": "Hammer", "quantity": 1.5},
+        {"name": "Hammer", "tags": "chisel"},
+        {"name": "Hammer", "tags": [7]},
+        {"name": "Hammer", "custom_fields": ["length"]},
     ):
         res = await ws_send(hass, 1, "haventory/item/create", **payload)
         assert res["success"] is False, payload

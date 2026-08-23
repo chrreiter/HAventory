@@ -186,6 +186,11 @@ async def test_widened_frames_answer_validation_error(hass: HomeAssistant, hass_
         {"type": "haventory/item/create", "name": "Hammer", "quantity": 1.5},
         {"type": "haventory/item/create", "name": 42},
         {"type": "haventory/items/bulk", "operations": "oops"},
+        # The collections a caller writes whole, which the schemas used to type
+        # concretely: a bare string reaches the model here too.
+        {"type": "haventory/item/create", "name": "Hammer", "tags": "chisel"},
+        {"type": "haventory/item/create", "name": "Hammer", "custom_fields": ["length"]},
+        {"type": "haventory/status/reorder", "slugs": "ok"},
     ]
     for msg_id, frame in enumerate(frames, start=1):
         await client.send_json({"id": msg_id, **frame})

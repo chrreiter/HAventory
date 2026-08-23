@@ -59,12 +59,13 @@ from .models import (
     monotonic_timestamp_after,
     new_uuid4,
     normalize_search_text,
-    normalize_tags,
     normalize_text_for_sort,
     parse_uuid4,
+    require_string_list,
     seed_status_definitions,
     selected_categories,
     selected_location_ids,
+    selected_tags,
     serialize_status_definition,
     sort_items,
     today_local_date,
@@ -335,6 +336,7 @@ class Repository:
     def reorder_statuses(self, slugs: Sequence[str]) -> list[StatusDefinition]:
         """Rewrite display order from a full permutation of the live slugs."""
 
+        slugs = require_string_list(slugs, field_name="slugs")
         if sorted(slugs) != sorted(self._statuses_by_slug):
             raise ValidationError("reorder must name every status exactly once")
         for order, slug in enumerate(slugs):
@@ -1290,10 +1292,12 @@ class Repository:
         )
 
     def adjust_quantity(
-        self, item_id: str | uuid.UUID, delta: int, *, expected_version: int | None = None
+        self, item_id: str | uuid.UUID, delta: object, *, expected_version: int | None = None
     ) -> Item:
-        # Reject booleans (an int subclass) so the single-command path matches
-        # the bulk validator and never silently treats True/False as +/-1.
+        # `object` because this is where the type is answered: the command
+        # schema types `delta` as `object` so the refusal names the field, and
+        # every surface reaches the arithmetic through here. Booleans are an
+        # int subclass, and are refused rather than read as +/-1.
         if isinstance(delta, bool) or not isinstance(delta, int):
             raise ValidationError("delta must be an integer")
         current = self.get_item(item_id)
@@ -1508,6 +1512,7 @@ class Repository:
         renumbering pictures must not move a manual.
         """
 
+        attachment_ids = require_string_list(attachment_ids, field_name="attachment_ids")
         current = self.get_item(item_id)
         of_kind = {str(a.id) for a in current.attachments if a.kind == kind}
         if sorted(attachment_ids) != sorted(of_kind):
@@ -1632,7 +1637,7 @@ class Repository:
         # loading item data or doing complex N-way intersection. For now, we only
         # optimize tags_any which is a union of indexes.
         if flt.get("tags_any"):
-            tags = normalize_tags(flt["tags_any"])
+            tags = selected_tags(flt, "tags_any")
             if tags:
                 has_indexed_filter = True
                 tag_items: set[str] = set()

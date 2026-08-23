@@ -493,7 +493,14 @@ def normalize_search_text(text: str) -> str:
 
 
 def normalize_tags(tags: list[str] | None) -> list[str]:
-    """Lowercase, trim, and de-duplicate a list of tags, preserving order."""
+    """Lowercase, trim, and de-duplicate a list of tags, preserving order.
+
+    The tolerant reader, for an import document: it coerces what it is handed
+    rather than refusing it, because a restore must not fail on a row an earlier
+    release wrote. A tag list arriving from a client goes through
+    :func:`validate_tags` or :func:`selected_tags` instead, which refuse a value
+    that is not a list of strings rather than absorbing it.
+    """
 
     if not tags:
         return []
@@ -547,9 +554,16 @@ def validate_location_name(name: str) -> str:
 
 
 def validate_custom_fields(
-    values: dict[str, ScalarValue], *, previous: Mapping[str, ScalarValue] | None = None
+    values: dict[str, ScalarValue],
+    *,
+    previous: Mapping[str, ScalarValue] | None = None,
+    field_name: str = "custom_fields",
 ) -> None:
     """Validate custom field keys and values are scalars of allowed types.
+
+    ``field_name`` names the key the *caller* sent in the shape refusal, since
+    a patch arrives under a name of its own. The caps keep naming
+    ``custom_fields``: what they bound is the item's map, not the patch.
 
     ``previous`` is the map the item already carries, and the caps refuse
     *growth* past it, the way :func:`validate_tags` treats its ``previous``: a
@@ -561,7 +575,7 @@ def validate_custom_fields(
     """
 
     if not isinstance(values, dict):
-        raise ValidationError("custom_fields must be a mapping of string keys to scalars")
+        raise ValidationError(f"{field_name} must be a mapping of string keys to scalars")
     prev = previous or {}
     if len(values) > CUSTOM_FIELDS_MAX_KEYS and len(values) > len(prev):
         raise ValidationError(f"custom_fields must have at most {CUSTOM_FIELDS_MAX_KEYS} keys")
@@ -589,13 +603,12 @@ def validate_tags(tags: object, *, previous: Collection[str] = ()) -> list[str]:
     """Normalize an *item's* tag list and enforce the item-side tag caps.
 
     Every item write crosses here, which is why the shape is checked here too:
-    :func:`normalize_tags` iterates whatever it is handed, and ``item/update``
-    types ``tags`` as ``object``, so a string would reach the store as its
+    the command schemas type ``tags`` as ``object``, and :func:`normalize_tags`
+    iterates whatever it is handed, so a string would reach the store as its
     characters. ``None`` is what clears the list.
 
-    Separate from :func:`normalize_tags`, which also normalizes *filter* values:
-    a filter naming sixty tags is a query, not an item, and is not over any
-    limit.
+    Separate from :func:`selected_tags`, which reads a tag *query*: a filter
+    naming sixty tags is a query, not an item, and is not over any limit.
 
     ``previous`` is the item's current tag list, and the caps are enforced
     against what the edit *adds*. An item that predates the caps can therefore
@@ -619,25 +632,37 @@ def validate_tags(tags: object, *, previous: Collection[str] = ()) -> list[str]:
 ITEM_FILTER_KEYS: Final[frozenset[str]] = frozenset(ItemFilter.__annotations__)
 
 
-def normalize_string_list(value: object, *, field_name: str, casefold: bool = False) -> list[str]:
-    """Normalize a list of strings a caller writes whole: trim, drop blanks, dedupe.
+def require_string_list(value: object, *, field_name: str) -> list[str]:
+    """Return a list of strings a caller wrote whole, entry for entry.
 
     A bare string is the mistake worth naming rather than absorbing: iterating
     one yields characters, so ``categories: "Tools"`` would quietly filter by
     five single letters instead of by a category, and ``tags: "kitchen"`` would
     store seven one-letter tags. ``None`` is the empty list — on an item's tags,
     the value that clears them.
+
+    Nothing is trimmed or de-duplicated here, which is what the two commands
+    naming a whole set as a permutation need: ``status/reorder`` and
+    ``item/attachment/reorder`` refuse a list that names one member twice, and
+    de-duplicating first would let it through.
     """
 
     if value is None:
         return []
     if not isinstance(value, list):
         raise ValidationError(f"{field_name} must be a list of strings")
-    seen: set[str] = set()
-    result: list[str] = []
     for raw in value:
         if not isinstance(raw, str):
             raise ValidationError(f"{field_name} must be a list of strings")
+    return list(value)
+
+
+def normalize_string_list(value: object, *, field_name: str, casefold: bool = False) -> list[str]:
+    """Normalize a list of strings a caller writes whole: trim, drop blanks, dedupe."""
+
+    seen: set[str] = set()
+    result: list[str] = []
+    for raw in require_string_list(value, field_name=field_name):
         text = raw.strip().casefold() if casefold else raw.strip()
         if not text or text in seen:
             continue
@@ -665,6 +690,19 @@ def selected_categories(flt: ItemFilter) -> list[str]:
         if value not in selection:
             selection.append(value)
     return selection
+
+
+def selected_tags(flt: ItemFilter, key: Literal["tags_any", "tags_all"]) -> list[str]:
+    """The casefolded tags one of a filter's two tag keys names.
+
+    Same shape rule as :func:`selected_categories`, and for the same reason: a
+    bare string iterates as its characters, so ``tags_any: "kitchen"`` would
+    query seven one-letter tags and quietly answer with nothing. Read through
+    here by the scan and by the index pre-filter alike, so a query cannot be
+    refused by one and absorbed by the other.
+    """
+
+    return normalize_string_list(flt.get(key), field_name=key, casefold=True)
 
 
 def selected_location_ids(flt: ItemFilter) -> list[str]:
@@ -1393,11 +1431,15 @@ def _update_tags_category_threshold(new_item: Item, update: ItemUpdate) -> None:
 
 
 def _update_custom_fields(new_item: Item, update: ItemUpdate) -> None:
-    to_set = update.get("custom_fields_set", {})
-    to_unset = update.get("custom_fields_unset", [])
+    to_set = update.get("custom_fields_set")
+    to_unset = require_string_list(
+        update.get("custom_fields_unset"), field_name="custom_fields_unset"
+    )
     before = len(new_item.custom_fields)
-    if to_set:
-        validate_custom_fields(to_set, previous=new_item.custom_fields)
+    if to_set is not None:
+        validate_custom_fields(
+            to_set, previous=new_item.custom_fields, field_name="custom_fields_set"
+        )
         new_item.custom_fields = {**new_item.custom_fields, **to_set}
     if to_unset:
         new_item.custom_fields = {
@@ -1715,8 +1757,8 @@ def filter_items(
         return list(items)
 
     q = (flt.get("q") or "").strip()
-    tags_any = normalize_tags(flt.get("tags_any")) if "tags_any" in flt else []
-    tags_all = normalize_tags(flt.get("tags_all")) if "tags_all" in flt else []
+    tags_any = selected_tags(flt, "tags_any")
+    tags_all = selected_tags(flt, "tags_all")
     categories = set(selected_categories(flt))
     status = (
         validate_item_status(flt["status"], known_statuses=known_statuses)

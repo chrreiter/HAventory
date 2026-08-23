@@ -28,7 +28,13 @@ from homeassistant.util import dt as dt_util
 from . import media as media_mod
 from .events import notify_counts, notify_location_mutation, notify_mutation
 from .exceptions import ValidationError
-from .models import ItemCreate, ItemUpdate, normalize_string_list, validate_quantity
+from .models import (
+    ItemCreate,
+    ItemUpdate,
+    normalize_string_list,
+    require_string_list,
+    validate_quantity,
+)
 from .repository import UNSET, Repository
 from .runtime import loaded_runtime
 from .serialization import serialize_item, serialize_location
@@ -85,14 +91,6 @@ def _payload_tags(payload: dict[str, Any]) -> list[str]:
     return normalize_string_list(payload.get("tags"), field_name="tags", casefold=True)
 
 
-def _payload_int(payload: dict[str, Any], key: str) -> int:
-    """Extract a required integer field from an (unschema'd) op payload."""
-    value = payload.get(key)
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValidationError(f"{key} must be an integer")
-    return value
-
-
 def _op_item_create(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
     item = _repo(hass).create_item(cast("ItemCreate", payload))
     return Written("item", serialize_item(hass, item), "created")
@@ -135,7 +133,7 @@ def _op_item_adjust_quantity(hass: HomeAssistant, payload: dict[str, Any]) -> Wr
     repo = _repo(hass)
     item_id = _payload_item_id(payload)
     updated = repo.adjust_quantity(
-        item_id, _payload_int(payload, "delta"), expected_version=payload.get("expected_version")
+        item_id, payload.get("delta"), expected_version=payload.get("expected_version")
     )
     return Written("item", serialize_item(hass, updated), "quantity_changed")
 
@@ -200,9 +198,7 @@ def _op_item_update_custom_fields(hass: HomeAssistant, payload: dict[str, Any]) 
         update["custom_fields_set"] = dict(set_value)
     unset_value = payload.get("unset")
     if unset_value is not None:
-        if not isinstance(unset_value, list):
-            raise ValidationError("unset must be a list")
-        update["custom_fields_unset"] = list(unset_value)
+        update["custom_fields_unset"] = require_string_list(unset_value, field_name="unset")
     updated = repo.update_item(item_id, update, expected_version=expected)
     return Written("item", serialize_item(hass, updated), "updated")
 

@@ -736,7 +736,7 @@ def test_the_location_selection_is_parsed_once_per_query(monkeypatch) -> None:  
     assert calls == 2  # noqa: PLR2004 — one per selected id, whatever the item count
 
 
-@pytest.mark.parametrize("key", ["categories", "location_ids"])
+@pytest.mark.parametrize("key", ["categories", "location_ids", "tags_any", "tags_all"])
 @pytest.mark.parametrize("bad", ["Tools", 5, {"a": 1}, [1], [None]])
 def test_a_multi_select_key_that_is_not_a_list_of_strings_is_refused(key: str, bad: object) -> None:
     """A bare string is the one worth naming: iterating it filters by letters."""
