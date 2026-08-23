@@ -391,10 +391,20 @@ export class HVFullView extends LitElement {
         }
         /* The heading is whatever the dashboard called this card, so it has no
            length the bar can count on. It elides rather than pushing the row
-           off the side — but only once the strip has given everything it has,
-           which is what the shrink weight buys: a cut title reads as broken,
-           where a strip scrolled off its last pill does not. */
+           off the side, but not before the strip has given what it has — and a
+           shrink weight cannot buy that: negative space is shared by shrink ×
+           basis, so a shrinkable heading takes a slice of every pixel the bar
+           is over, and a slice of a fraction of a pixel is enough to swap the
+           last letters for an ellipsis. So it does not shrink at all: it draws
+           at its own width up to a cap and elides only past the cap, leaving
+           the strip as what gives. The cap is a share of the bar rather than a
+           pixel count, so it scales with it — a fixed one wide enough to be
+           worth having would not fit the 614px bar the narrowest non-phone
+           window leaves. min-width holds the flex item's automatic minimum off
+           the cap. */
         .appbar h2 {
+          flex: none;
+          max-width: 30%;
           min-width: 0;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -403,13 +413,15 @@ export class HVFullView extends LitElement {
           flex-shrink: 100;
         }
         /* Two auto margins on one line share the free space between them, so a
-           spacer here would strand the pill strip halfway across the bar. The
-           actions carry the one margin that holds the group at the right
-           edge. */
-        .appbar .spacer {
-          display: none;
-        }
+           second one would strand the pill strip halfway across the bar. This
+           is the one that holds the actions at the right edge. */
         .appbar .add {
+          margin-left: auto;
+        }
+        /* Selection mode's own right-hand group is a single button, and it
+           belongs at the far side of the bar, where it is on a phone too.
+           Below this breakpoint the count's flex:1 already puts it there. */
+        .appbar.selecting .clear {
           margin-left: auto;
         }
         /* First step. The add button's label is the widest thing on the bar
@@ -537,11 +549,6 @@ export class HVFullView extends LitElement {
         }
         .appbar .add {
           padding: 0 14px;
-        }
-        /* An auto margin cannot push anything anywhere once the row wraps, and
-           it would only add a phantom flex item to the line. */
-        .appbar .spacer {
-          display: none;
         }
 
         /* Selection mode reuses this bar and broke in its own way. .subcount
@@ -2192,11 +2199,10 @@ export class HVFullView extends LitElement {
                 : t('hv.fullView.loadAll', { total })}
             </button>`
           : null}
-        <span class="spacer"></span>
         <!-- Selection mode opens at zero, so the bar's one action starts with
              nothing to act on; live rather than greyed it offers a no-op. -->
         <button
-          class="ghost plain"
+          class="ghost plain clear"
           data-testid="selection-clear"
           ?disabled=${selected === 0}
           @click=${() => this.store?.clearSelection()}
@@ -2340,7 +2346,6 @@ export class HVFullView extends LitElement {
               }}
             />
           </label>
-          <span class="spacer"></span>
           ${pills.some((pill) => pill !== null)
             ? html`<div class="pills" data-testid="full-pills">${pills}</div>`
             : null}
