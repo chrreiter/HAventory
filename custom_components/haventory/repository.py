@@ -34,26 +34,19 @@ from .models import (
     ItemFilter,
     ItemUpdate,
     Location,
-    LocationPath,
     Sort,
     StatusDefinition,
     apply_item_update,
     build_location_path,
-    coerce_item_status,
     create_item_from_create,
     date_sort_key,
     filter_items,
-    is_canonical_utc_timestamp,
-    iso_utc_now,
     item_inspection_is_due,
     item_inspection_is_overdue,
     item_is_due,
     item_is_low_stock,
     item_is_overdue,
     item_reminder_is_due,
-    load_attachments,
-    load_reminder_anchor,
-    load_reminder_interval,
     location_sort_key,
     monotonic_timestamp_after,
     new_uuid4,
@@ -68,7 +61,6 @@ from .models import (
     sort_items,
     today_local_date,
     validate_location_name,
-    validate_required_name,
     validate_status_definition,
     validate_status_slug,
 )
@@ -113,20 +105,6 @@ def _log_dropped_overflow(op: str, dropped: int) -> None:
             "dropped_logged": LOAD_DROP_LOG_LIMIT,
         },
     )
-
-
-def _coerce_canonical_ts(value: object, *, fallback: str | None = None) -> str:
-    """Return a canonical UTC timestamp, backfilling non-canonical input.
-
-    Item timestamps compare lexicographically for sort/range filters, so on
-    load any missing / null / corrupt value is replaced with a canonical one
-    (the fallback when it is itself canonical, otherwise the current time).
-    """
-    if isinstance(value, str) and is_canonical_utc_timestamp(value):
-        return value
-    if fallback is not None and is_canonical_utc_timestamp(fallback):
-        return fallback
-    return iso_utc_now()
 
 
 @dataclass(frozen=True)
@@ -2145,42 +2123,7 @@ class Repository:
         if isinstance(locations, dict):
             for loc_id, loc_data in locations.items():
                 try:
-                    path_obj = loc_data.get("path", {}) if isinstance(loc_data, dict) else {}
-                    path = LocationPath(
-                        id_path=[
-                            parse_uuid4(str(x), field_name="path.id_path")
-                            for x in list(path_obj.get("id_path", []) or [])
-                        ],
-                        name_path=list(path_obj.get("name_path", []) or []),
-                        display_path=str(path_obj.get("display_path", "")),
-                        # Backfill for stores written before sort_key was
-                        # persisted (pre-WP4): derive it from display_path.
-                        sort_key=str(path_obj.get("sort_key", ""))
-                        or normalize_text_for_sort(str(path_obj.get("display_path", ""))),
-                    )
-                    loc = Location(
-                        id=parse_uuid4(str(loc_data.get("id", loc_id)), field_name="location.id"),
-                        parent_id=(
-                            parse_uuid4(
-                                str(loc_data.get("parent_id")), field_name="location.parent_id"
-                            )
-                            if loc_data.get("parent_id") is not None
-                            else None
-                        ),
-                        # Not `str(...)`: a missing key would read as "" and a
-                        # stored `null` as the literal "None", both of them rows
-                        # no write path could have produced. Raising here drops
-                        # the row into the load report, which is what the
-                        # corrupt-store repair is built on.
-                        name=validate_required_name(loc_data.get("name")),
-                        area_id=(
-                            str(loc_data.get("area_id"))
-                            if loc_data.get("area_id") is not None
-                            else None
-                        ),
-                        path=path,
-                    )
-                    self._add_location(loc)
+                    self._add_location(Location.from_dict(loc_data, fallback_id=str(loc_id)))
                 except (
                     AttributeError,
                     TypeError,
@@ -2208,75 +2151,11 @@ class Repository:
         if isinstance(items, dict):
             for item_id, item_data in items.items():
                 try:
-                    lp = (item_data or {}).get("location_path", {})
-                    location_path = LocationPath(
-                        id_path=[
-                            parse_uuid4(str(x), field_name="location_path.id_path")
-                            for x in list(lp.get("id_path", []) or [])
-                        ],
-                        name_path=list(lp.get("name_path", []) or []),
-                        display_path=str(lp.get("display_path", "")),
-                        # Backfill for stores written before sort_key was
-                        # persisted (pre-WP4): derive it from display_path.
-                        sort_key=str(lp.get("sort_key", ""))
-                        or normalize_text_for_sort(str(lp.get("display_path", ""))),
+                    self._index_item(
+                        Item.from_dict(
+                            item_data, known_statuses=known_statuses, fallback_id=str(item_id)
+                        )
                     )
-                    item = Item(
-                        id=parse_uuid4(str(item_data.get("id", item_id)), field_name="item.id"),
-                        # See the location above: an unreadable name is a
-                        # corrupt row, not an item called "" or "None".
-                        name=validate_required_name(item_data.get("name")),
-                        description=item_data.get("description"),
-                        quantity=int(item_data.get("quantity", 0)),
-                        # Stores written before the field existed carry no
-                        # status; they read as the default rather than failing.
-                        status=coerce_item_status(
-                            item_data.get("status"), known_statuses=known_statuses
-                        ),
-                        checked_out=bool(item_data.get("checked_out", False)),
-                        due_date=item_data.get("due_date"),
-                        inspection_date=item_data.get("inspection_date"),
-                        # Absent on every store written before v8, and read as
-                        # none there — which is exactly what migrate_7_to_8
-                        # writes, so the two paths agree. The anchor is the same
-                        # story one version later: absent before v9, and equal to
-                        # the date for any reminder nobody has bumped.
-                        reminder_date=item_data.get("reminder_date"),
-                        reminder_anchor=load_reminder_anchor(
-                            item_data.get("reminder_anchor"),
-                            reminder_date=item_data.get("reminder_date"),
-                        ),
-                        reminder_interval=load_reminder_interval(
-                            item_data.get("reminder_interval")
-                        ),
-                        location_id=(
-                            parse_uuid4(
-                                str(item_data.get("location_id")), field_name="item.location_id"
-                            )
-                            if item_data.get("location_id") is not None
-                            else None
-                        ),
-                        tags=list(item_data.get("tags", []) or []),
-                        category=item_data.get("category"),
-                        low_stock_threshold=item_data.get("low_stock_threshold"),
-                        custom_fields=dict(item_data.get("custom_fields", {}) or {}),
-                        # Timestamps compare lexicographically for sort/filter,
-                        # so any non-canonical value (missing / null / corrupt /
-                        # hand-edited import) is backfilled with a canonical one.
-                        created_at=_coerce_canonical_ts(item_data.get("created_at")),
-                        updated_at=_coerce_canonical_ts(
-                            item_data.get("updated_at"),
-                            fallback=_coerce_canonical_ts(item_data.get("created_at")),
-                        ),
-                        version=int(item_data.get("version", 1)),
-                        location_path=location_path,
-                        # Tolerant of absence and of a non-list value (both read
-                        # as none), but not of a malformed *entry*: dropping one
-                        # would lose the only reference to a file on disk, which
-                        # the orphan sweep would then delete.
-                        attachments=load_attachments(item_data.get("attachments")),
-                    )
-                    self._index_item(item)
                 except (
                     AttributeError,
                     TypeError,

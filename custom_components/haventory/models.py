@@ -94,6 +94,32 @@ class LocationPath:
             "sort_key": self.sort_key,
         }
 
+    @classmethod
+    def from_dict(cls, data: object) -> LocationPath:
+        """Read back what ``to_dict`` wrote, tolerating an absent nesting.
+
+        ``sort_key`` is backfilled from ``display_path`` when the payload
+        carries none: stores written before it was persisted have to sort
+        alongside the ones that were, and it is derived, so recomputing it
+        costs nothing but the read.
+
+        An entry of ``id_path`` that is not a UUID v4 raises: the id path is
+        what a subtree filter matches on, so a row carrying a broken one is
+        corrupt rather than merely old.
+        """
+
+        raw = data if isinstance(data, Mapping) else {}
+        display = str(raw.get("display_path", ""))
+        return cls(
+            id_path=[
+                parse_uuid4(str(entry), field_name="path.id_path")
+                for entry in (raw.get("id_path") or [])
+            ],
+            name_path=list(raw.get("name_path") or []),
+            display_path=display,
+            sort_key=str(raw.get("sort_key", "")) or normalize_text_for_sort(display),
+        )
+
 
 EMPTY_LOCATION_PATH = LocationPath(id_path=[], name_path=[], display_path="", sort_key="")
 
@@ -142,6 +168,34 @@ class Location:
             "area_id": str(self.area_id) if self.area_id is not None else None,
             "path": self.path.to_dict(),
         }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any], *, fallback_id: str | None = None) -> Location:
+        """Read back what ``to_dict`` wrote, refusing a row no write path wrote.
+
+        ``fallback_id`` is the key the row was stored under, used when the row
+        itself carries no ``id``.
+
+        The name goes through :func:`validate_required_name` rather than
+        ``str()``: a missing key would read as ``""`` and a stored ``null`` as
+        the literal ``"None"``, putting a location in memory that no write path
+        would accept. Raising here is what lets a load drop the row and report
+        it instead.
+        """
+
+        parent_id = data.get("parent_id")
+        area_id = data.get("area_id")
+        return cls(
+            id=parse_uuid4(str(data.get("id", fallback_id)), field_name="location.id"),
+            parent_id=(
+                parse_uuid4(str(parent_id), field_name="location.parent_id")
+                if parent_id is not None
+                else None
+            ),
+            name=validate_required_name(data.get("name")),
+            area_id=str(area_id) if area_id is not None else None,
+            path=LocationPath.from_dict(data.get("path")),
+        )
 
 
 @dataclass
@@ -289,6 +343,68 @@ class Item:
             "location_path": self.location_path.to_dict(),
             "attachments": [serialize_attachment_meta(meta) for meta in self.attachments],
         }
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: Mapping[str, Any],
+        *,
+        known_statuses: Collection[str] = ITEM_STATUSES,
+        fallback_id: str | None = None,
+    ) -> Item:
+        """Read back what ``to_dict`` wrote, refusing a row no write path wrote.
+
+        ``fallback_id`` is the key the row was stored under, used when the row
+        itself carries no ``id``. ``known_statuses`` has to be the live set:
+        passing the built-ins while the store defines more would rewrite every
+        item on a custom status to the default.
+
+        Absent fields read as the value the build that introduced them writes
+        for an item that has none, so a store written by an older build loads
+        without a migration touching every row. What is *not* tolerated is a
+        malformed value: an unreadable name, id or attachment entry is a corrupt
+        row, and raising is what lets a load drop it and report it.
+        """
+
+        location_id = data.get("location_id")
+        created_at = _coerce_canonical_ts(data.get("created_at"))
+        return cls(
+            id=parse_uuid4(str(data.get("id", fallback_id)), field_name="item.id"),
+            name=validate_required_name(data.get("name")),
+            description=data.get("description"),
+            quantity=int(data.get("quantity", 0)),
+            status=coerce_item_status(data.get("status"), known_statuses=known_statuses),
+            checked_out=bool(data.get("checked_out", False)),
+            due_date=data.get("due_date"),
+            inspection_date=data.get("inspection_date"),
+            reminder_date=data.get("reminder_date"),
+            # Equal to the date for any reminder nobody has bumped, which is
+            # what a store written before the anchor existed carries.
+            reminder_anchor=load_reminder_anchor(
+                data.get("reminder_anchor"), reminder_date=data.get("reminder_date")
+            ),
+            reminder_interval=load_reminder_interval(data.get("reminder_interval")),
+            location_id=(
+                parse_uuid4(str(location_id), field_name="item.location_id")
+                if location_id is not None
+                else None
+            ),
+            tags=list(data.get("tags", []) or []),
+            category=data.get("category"),
+            low_stock_threshold=data.get("low_stock_threshold"),
+            custom_fields=dict(data.get("custom_fields", {}) or {}),
+            # Timestamps compare lexicographically for sort and range filters,
+            # so a missing, null or non-canonical one is backfilled rather than
+            # carried: the alternative is a row that sorts arbitrarily.
+            created_at=created_at,
+            updated_at=_coerce_canonical_ts(data.get("updated_at"), fallback=created_at),
+            version=int(data.get("version", 1)),
+            location_path=LocationPath.from_dict(data.get("location_path")),
+            # Tolerant of absence and of a non-list value (both read as none),
+            # but not of a malformed *entry*: dropping one would lose the only
+            # reference to a file on disk, which the orphan sweep then deletes.
+            attachments=load_attachments(data.get("attachments")),
+        )
 
 
 class ItemCreate(TypedDict, total=False):
@@ -1549,6 +1665,21 @@ def is_canonical_utc_timestamp(ts: object) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _coerce_canonical_ts(value: object, *, fallback: str | None = None) -> str:
+    """Return a canonical UTC timestamp, backfilling non-canonical input.
+
+    Item timestamps compare lexicographically for sort and range filters, so on
+    load any missing / null / corrupt value is replaced with a canonical one
+    (the fallback when it is itself canonical, otherwise the current time).
+    """
+
+    if isinstance(value, str) and is_canonical_utc_timestamp(value):
+        return value
+    if fallback is not None and is_canonical_utc_timestamp(fallback):
+        return fallback
+    return iso_utc_now()
 
 
 def _parse_iso8601_utc(ts: str, *, field_name: str) -> datetime:
