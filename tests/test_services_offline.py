@@ -317,6 +317,30 @@ def test_service_catalog_agrees_across_registration_yaml_and_strings() -> None:
             assert all(value.strip() for value in text.values()), f"{service}.{field}"
 
 
+def test_every_service_field_carries_an_example_and_one_selector_per_name() -> None:
+    """Developer Tools → Actions builds its form field by field out of the yaml.
+
+    Two gaps this closes. A field with no `example` gives the author an empty
+    box and no hint of the shape it takes. And a field name declared one way on
+    one service and another way on the next renders the same value two ways —
+    `tags` was `text:` on `item_create` and `object:` on `item_update`, so the
+    create form offered a single-line box for a value both schemas take as a
+    list.
+    """
+
+    package = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
+    documented = yaml.safe_load((package / "services.yaml").read_text(encoding="utf-8"))
+
+    seen: dict[str, tuple[str, object]] = {}
+    for service, spec in documented.items():
+        for field, declared in spec["fields"].items():
+            assert "example" in declared, f"services.yaml's {service}.{field} shows no example"
+            first_service, first_selector = seen.setdefault(field, (service, declared["selector"]))
+            assert declared["selector"] == first_selector, (
+                f"{service}.{field} and {first_service}.{field} declare different selectors"
+            )
+
+
 def test_every_service_names_the_fields_its_refusal_logs() -> None:
     """The log context is per service, so the table has to cover every one.
 
