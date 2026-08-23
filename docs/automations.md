@@ -36,7 +36,9 @@ inventory.
 passed — these counts, `item/list`'s overdue filters, the calendar entity, the reminder bump
 and the card's own chips and pills — measures against the day your instance is configured
 for, and rolls over at its midnight. Change the time zone in Home Assistant and they all
-move together.
+move together. A wall tablet left on the card overnight moves with them: the backend sends
+the fresh counts at that midnight, and the card re-reads its own chips there too, so the
+dashboard never shows a sensor and a pill disagreeing.
 
 Put "Low stock count: 3" on a dashboard next to the weather and nobody has to open the card to
 know whether a shopping trip is due.

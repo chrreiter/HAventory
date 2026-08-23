@@ -1,18 +1,28 @@
-"""Integration: HAventory events on the real Home Assistant bus.
+"""Integration: HAventory events on the real Home Assistant bus, and at midnight.
 
 The offline stub records what `events.py` asked the bus to fire; only a real bus
-shows that a listener — and so an automation trigger — actually receives it.
+shows that a listener — and so an automation trigger — actually receives it. The
+same goes for the day rollover: offline a test invokes the tracked action itself,
+and only a real clock and a real socket show that the instance's own midnight
+reaches a subscriber.
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from custom_components.haventory.const import DOMAIN, EVENT_ITEM_CHANGED, EVENT_LOW_STOCK
 from custom_components.haventory.runtime import find_runtime
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.setup import async_setup_component
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import (
+    CLIENT_ID,
+    MockConfigEntry,
+    async_capture_events,
+    async_fire_time_changed,
+)
 
 LOW_THRESHOLD = 3
 CREATED_QUANTITY = 2
@@ -214,3 +224,130 @@ async def test_a_status_reassignment_reaches_the_bus_once_per_item(
     payloads = _data(captured)
     assert {p["item_id"] for p in payloads} == set(moved)
     assert {p["action"] for p in payloads} == {"updated"}
+
+
+# -----------------------------
+# The local-midnight rollover
+# -----------------------------
+
+# 11:00 UTC on 22 August is 23:00 the same day in New Zealand, and 12:00:30 UTC
+# is half a minute past that household's midnight — while UTC is still on the
+# 22nd. A tick scheduled for UTC's midnight would not have fired at that
+# instant, which is what makes this the household's rollover and not the clock.
+NZ_ZONE = "Pacific/Auckland"
+NZ_LATE_EVENING = datetime(2026, 8, 22, 11, 0, tzinfo=UTC)
+NZ_JUST_PAST_MIDNIGHT = datetime(2026, 8, 22, 12, 0, 30, tzinfo=UTC)
+NZ_TOMORROW = "2026-08-23"
+
+STATS_SUB = 21
+
+
+async def _frozen_clock_client(hass: HomeAssistant, hass_ws_client: Any, user: Any) -> Any:
+    """A socket authenticated under the clock the test froze.
+
+    The harness's own token is minted before the freeze, and a jump of years is
+    what these cases are made of — so the token is re-minted here, where "now"
+    is the frozen instant, and the socket is opened after the entry so the entry
+    can still register its views on a router the test client has not started.
+    """
+
+    refresh_token = await hass.auth.async_create_refresh_token(user, CLIENT_ID)
+    return await hass_ws_client(hass, hass.auth.async_create_access_token(refresh_token))
+
+
+async def _subscribe_stats(client: Any) -> None:
+    await client.send_json({"id": STATS_SUB, "type": "haventory/subscribe", "topic": "stats"})
+    result = await client.receive_json()
+    assert result["success"] is True, result
+
+
+async def _events_before_a_ping(client: Any, ping_id: int) -> list[dict[str, Any]]:
+    """Every event frame already queued, drained behind a fresh command's reply.
+
+    An ordering barrier rather than a read with a timeout, because these cases
+    freeze the clock and `asyncio.timeout` is measured on a monotonic clock
+    freezegun stops as well — a bounded read never returns at all. Frames are
+    delivered in order, so anything broadcast before the ping was sent arrives
+    before its reply, and "no event at all" reads back as an empty list instead
+    of hanging the run.
+    """
+
+    await client.send_json({"id": ping_id, "type": "haventory/ping"})
+    events: list[dict[str, Any]] = []
+    while True:
+        frame = await client.receive_json()
+        if frame["type"] == "result" and frame["id"] == ping_id:
+            return events
+        if frame["type"] == "event":
+            events.append(frame)
+
+
+async def test_the_counts_roll_over_at_the_instances_midnight(
+    hass: HomeAssistant, hass_ws_client: Any, hass_admin_user: Any, freezer: Any
+) -> None:
+    """#584: an open subscription hears the day turn, with nothing mutated.
+
+    The date-derived counts move on the day boundary, and until this tick the
+    only thing that told a subscriber was the next mutation — so a card left
+    open across midnight disagreed with the sensors beside it on the same
+    dashboard, once a day.
+    """
+
+    await hass.config.async_set_time_zone(NZ_ZONE)
+    freezer.move_to(NZ_LATE_EVENING)
+
+    await _setup(hass)
+    client = await _frozen_clock_client(hass, hass_ws_client, hass_admin_user)
+    await _subscribe_stats(client)
+
+    await hass.services.async_call(
+        DOMAIN, "item_create", {"name": "Harness", "inspection_date": NZ_TOMORROW}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    created = await _events_before_a_ping(client, 90)
+    assert [f["event"]["action"] for f in created] == ["counts"]
+    assert created[0]["event"]["counts"]["inspection_due_count"] == 0
+
+    # Still 23:00 on the 22nd in the household: a timer sweep here announces
+    # nothing, which is what tells the household's midnight from any other.
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+    assert await _events_before_a_ping(client, 91) == []
+
+    freezer.move_to(NZ_JUST_PAST_MIDNIGHT)
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+
+    rolled = await _events_before_a_ping(client, 92)
+    assert len(rolled) == 1, rolled
+    assert rolled[0]["id"] == STATS_SUB
+    assert rolled[0]["event"]["topic"] == "stats"
+    assert rolled[0]["event"]["action"] == "counts"
+    assert rolled[0]["event"]["counts"]["inspection_due_count"] == 1
+
+
+async def test_an_unloaded_entry_announces_no_rollover(
+    hass: HomeAssistant, hass_ws_client: Any, hass_admin_user: Any, freezer: Any
+) -> None:
+    """The tracker goes with the entry, or it broadcasts counts nothing owns."""
+
+    await hass.config.async_set_time_zone(NZ_ZONE)
+    freezer.move_to(NZ_LATE_EVENING)
+
+    entry = await _setup(hass)
+    client = await _frozen_clock_client(hass, hass_ws_client, hass_admin_user)
+    await _subscribe_stats(client)
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    # The teardown tells every open subscription it has stopped; that frame is
+    # the entry leaving, not the rollover.
+    gone = await _events_before_a_ping(client, 93)
+    assert [f["event"]["action"] for f in gone] == ["unavailable"]
+
+    freezer.move_to(NZ_JUST_PAST_MIDNIGHT)
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+
+    assert await _events_before_a_ping(client, 94) == []

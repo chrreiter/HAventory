@@ -185,6 +185,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) ->
     # that was low before it.
     events.seed_low_stock_snapshot(hass)
 
+    # Tell `stats` subscribers when the day turns over, the way the date-derived
+    # sensors and the calendar already rewrite themselves there. Cancelled with
+    # the entry: a tracker outliving it would broadcast counts nothing owns.
+    entry.async_on_unload(events.async_track_day_rollover(hass))
+
     # Serve attachment files, and collect the ones nothing references any more.
     # Both need the repository, so both come after the runtime is on the entry.
     _register_media_view(hass)

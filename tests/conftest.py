@@ -241,6 +241,10 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             self.is_running = True
             self.dispatcher_sends: list[tuple[str, tuple]] = []
             self.dispatcher_connects: list[tuple[str, object]] = []
+            # What `async_track_time_change` was asked to call, and at which
+            # wall-clock time. Offline there is no clock to reach it, so a test
+            # invokes the action itself.
+            self.time_change_trackers: list[tuple[object, object, object, object]] = []
             # Real HA holds an entry's runtime on the entry, and every read
             # resolves it through here. A test that wants a loaded HAventory
             # calls `install_runtime(hass)`, which registers one.
@@ -281,9 +285,21 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         OPTIONAL = "optional"
         ONLY = "only"
 
+    def callback(func):  # type: ignore[override]
+        """Stand in for HA's callback marker, attribute included.
+
+        Real Home Assistant reads `_hass_callback` to decide whether a job runs
+        on the event loop or is handed to an executor thread, so the attribute
+        is what makes "this runs on the loop" checkable rather than assumed.
+        """
+
+        func._hass_callback = True
+        return func
+
     ha_core.HomeAssistant = HomeAssistant
     ha_core.ServiceCall = ServiceCall
     ha_core.SupportsResponse = SupportsResponse
+    ha_core.callback = callback
     sys.modules["homeassistant.core"] = ha_core
 
     # homeassistant.exceptions
@@ -355,6 +371,19 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def async_on_unload(self, func):
             self._on_unload.append(func)
             return func
+
+        def run_on_unload(self):
+            """Run what setup registered, as Home Assistant does while unloading.
+
+            Real HA calls these itself once `async_unload_entry` reports success;
+            offline the test harness is the only thing that can
+            (`runtime_helpers.unload_entry`). Each runs once — a second unload
+            has nothing left to cancel.
+            """
+
+            pending, self._on_unload = self._on_unload, []
+            for func in pending:
+                func()
 
     class ConfigFlow:  # type: ignore[override]
         def __init_subclass__(cls, **kwargs):  # accept e.g. domain=...
@@ -565,6 +594,26 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     ha_helpers_dispatcher.async_dispatcher_connect = async_dispatcher_connect
     ha_helpers.dispatcher = ha_helpers_dispatcher
     sys.modules["homeassistant.helpers.dispatcher"] = ha_helpers_dispatcher
+
+    # homeassistant.helpers.event — the local-midnight tick the date-derived
+    # counts roll over on. Offline nothing advances a clock, so the stub records
+    # what was tracked and hands back the same kind of unsubscribe the
+    # dispatcher one does; a test fires the action itself.
+    ha_helpers_event = types.ModuleType("homeassistant.helpers.event")
+
+    def async_track_time_change(hass, action, hour=None, minute=None, second=None):  # type: ignore[override]
+        tracked = (action, hour, minute, second)
+        hass.time_change_trackers.append(tracked)
+
+        def _remove() -> None:
+            if tracked in hass.time_change_trackers:
+                hass.time_change_trackers.remove(tracked)
+
+        return _remove
+
+    ha_helpers_event.async_track_time_change = async_track_time_change
+    ha_helpers.event = ha_helpers_event
+    sys.modules["homeassistant.helpers.event"] = ha_helpers_event
 
     # homeassistant.util.dt — the household's own day, which is what every date a
     # user reads or writes is measured in. `DEFAULT_TIME_ZONE` is a module
