@@ -16,6 +16,8 @@ Scenarios:
 - only a URL versioned by that name may be cached, because the name can change
 - the sweep deletes an unreferenced file and keeps a referenced one
 - the sweep refuses a path resolving outside the media root
+- a tile keeps the transparency its source had, where there is a decoder to
+  look at the bytes with
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from custom_components.haventory.const import (
     MAX_ATTACHMENT_BYTES,
     MAX_PICTURES_PER_ITEM,
     MEDIA_NAME_TOKEN_PARAM,
+    THUMBNAIL_MAX_EDGE,
 )
 from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.models import (
@@ -403,11 +406,12 @@ async def test_deleting_a_file_that_is_already_gone_is_not_an_error() -> None:
 # Row thumbnails
 #
 # The encoder itself needs Pillow, which is not a dependency of this
-# integration and is not in the offline environment. What is checkable here is
+# integration and is not in the offline environment. These stub it out to check
 # everything around it: that it is asked once, that every refusal serves the
 # original, and that the two places which delete files know about the new one.
-# `tests/integration/test_attachments.py` runs the real encoder, in an
-# environment where Home Assistant has brought Pillow with it.
+# The encode's own output is looked at further down, where Pillow is present,
+# and in `tests/integration/test_attachments.py`, which runs the whole view
+# against it in an environment Home Assistant brought Pillow to.
 # -----------------------------
 
 
@@ -581,3 +585,105 @@ def test_referenced_paths_names_both_files_for_a_picture_and_one_for_a_manual() 
             str(media.attachment_path(root, item_id, str(manual.id), manual.mime)),
         }
     )
+
+
+# -----------------------------
+# The encode itself
+#
+# These need a decoder, so they run only where something else brought Pillow:
+# `uv sync --group probes` locally, Home Assistant in the phacc mode. What they
+# pin is the one thing a stub encoder cannot — which channels of the source
+# survive into the tile a row downloads.
+#
+# Alpha is stored losslessly by the WebP encoder, so an opaque pixel comes back
+# exactly opaque; the colour under it goes through a lossy pass and is only
+# asked to still be red rather than the black a flattened tile would show.
+# -----------------------------
+
+OPAQUE_ALPHA = 255
+RED_FLOOR = 200
+OTHER_CHANNEL_CEILING = 80
+
+
+def test_a_transparent_png_keeps_its_alpha_in_the_tile(tmp_path: Path) -> None:
+    """A logo or a screenshot saved with a transparent background is the common
+    case. Flattening it puts the shape on black, so the row and the opened item
+    would show two different pictures."""
+
+    image_module = pytest.importorskip("PIL.Image")
+    draw_module = pytest.importorskip("PIL.ImageDraw")
+    source = tmp_path / "logo.png"
+    picture = image_module.new("RGBA", (300, 300), (0, 0, 0, 0))
+    draw_module.Draw(picture).ellipse((100, 100, 199, 199), fill=(255, 0, 0, 255))
+    picture.save(source, format="PNG")
+    target = tmp_path / f"logo{media.THUMBNAIL_SUFFIX}"
+
+    assert media._encode_thumbnail_blocking(source, target) is True
+
+    with image_module.open(target) as tile:
+        assert tile.format == "WEBP"
+        assert tile.mode == "RGBA"
+        assert max(tile.size) == THUMBNAIL_MAX_EDGE
+        # A source pixel nothing was drawn on comes out fully transparent
+        # rather than nearly so.
+        assert tile.getpixel((0, 0))[3] == 0
+        centre = tile.getpixel((tile.width // 2, tile.height // 2))
+        assert centre[3] == OPAQUE_ALPHA
+        assert centre[0] > RED_FLOOR
+        assert max(centre[1], centre[2]) < OTHER_CHANNEL_CEILING
+
+
+def test_a_palette_png_with_a_transparent_index_keeps_it(tmp_path: Path) -> None:
+    """Here transparency is a palette index and not a band, so the mode alone
+    does not say whether the picture has one."""
+
+    image_module = pytest.importorskip("PIL.Image")
+    source = tmp_path / "sprite.png"
+    picture = image_module.new("P", (300, 300), 1)
+    picture.paste(0, (100, 100, 200, 200))
+    picture.putpalette([255, 0, 0] + [0, 0, 255] * 255)
+    picture.save(source, format="PNG", transparency=1)
+    target = tmp_path / f"sprite{media.THUMBNAIL_SUFFIX}"
+
+    assert media._encode_thumbnail_blocking(source, target) is True
+
+    with image_module.open(target) as tile:
+        assert tile.mode == "RGBA"
+        assert tile.getpixel((0, 0))[3] == 0
+        assert tile.getpixel((tile.width // 2, tile.height // 2))[3] == OPAQUE_ALPHA
+
+
+def test_a_photograph_without_an_alpha_channel_gets_none(tmp_path: Path) -> None:
+    """Nothing to keep, nothing to pay for: a camera photo's tile stays three
+    channels."""
+
+    image_module = pytest.importorskip("PIL.Image")
+    source = tmp_path / "shelf.jpg"
+    image_module.new("RGB", (300, 300), (12, 120, 200)).save(source, format="JPEG")
+    target = tmp_path / f"shelf{media.THUMBNAIL_SUFFIX}"
+
+    assert media._encode_thumbnail_blocking(source, target) is True
+
+    with image_module.open(target) as tile:
+        assert tile.mode == "RGB"
+        assert tile.size == (THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE)
+
+
+def test_an_exif_rotated_photograph_still_comes_out_upright(tmp_path: Path) -> None:
+    """Deciding the mode must not cost the rotation: the orientation tag is
+    applied first, and `thumbnail` drops the tag."""
+
+    image_module = pytest.importorskip("PIL.Image")
+    source = tmp_path / "portrait.jpg"
+    picture = image_module.new("RGB", (400, 200), (12, 120, 200))
+    exif = picture.getexif()
+    # 274 is Orientation; 6 is the quarter turn a browser applies on its own.
+    exif[274] = 6
+    picture.save(source, format="JPEG", exif=exif)
+    target = tmp_path / f"portrait{media.THUMBNAIL_SUFFIX}"
+
+    assert media._encode_thumbnail_blocking(source, target) is True
+
+    with image_module.open(target) as tile:
+        # Landscape on disk, portrait once the tag is honoured.
+        assert tile.size == (THUMBNAIL_MAX_EDGE // 2, THUMBNAIL_MAX_EDGE)

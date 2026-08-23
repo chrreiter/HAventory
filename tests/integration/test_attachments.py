@@ -32,7 +32,7 @@ from custom_components.haventory.const import (
 from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.core import HomeAssistant
-from PIL import Image
+from PIL import Image, ImageDraw
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
@@ -122,6 +122,14 @@ def upload_teardowns(monkeypatch) -> list[tuple[int, Path]]:
 PHOTO_SIZE = (1200, 800)
 ASPECT_TOLERANCE = 0.01
 
+# What one pixel of a transparent picture's tile has to look like. WebP stores
+# alpha losslessly, so an opaque pixel comes back exactly opaque; the colour
+# under it goes through a lossy pass and is only asked to still be red rather
+# than the black a flattened tile would show.
+OPAQUE_ALPHA = 255
+RED_FLOOR = 200
+OTHER_CHANNEL_CEILING = 80
+
 
 def _photograph(size: tuple[int, int] = PHOTO_SIZE) -> bytes:
     """A PNG a decoder will actually open, the shape a phone camera produces.
@@ -145,6 +153,25 @@ def _photograph(size: tuple[int, int] = PHOTO_SIZE) -> bytes:
         raw += digest
     buffer = io.BytesIO()
     Image.frombytes("RGB", size, bytes(raw[:wanted])).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _transparent_logo(size: tuple[int, int] = (600, 600)) -> bytes:
+    """A PNG with a transparent background and one opaque shape in the middle.
+
+    What a picture saved off a manufacturer's page looks like, as opposed to
+    one taken with a camera — which is why the photograph above cannot show
+    whether the encode keeps an alpha channel.
+    """
+
+    picture = Image.new("RGBA", size, (0, 0, 0, 0))
+    inset = (size[0] // 4, size[1] // 4)
+    ImageDraw.Draw(picture).ellipse(
+        (inset[0], inset[1], size[0] - inset[0], size[1] - inset[1]),
+        fill=(255, 0, 0, 255),
+    )
+    buffer = io.BytesIO()
+    picture.save(buffer, format="PNG")
     return buffer.getvalue()
 
 
@@ -280,6 +307,43 @@ async def test_size_thumb_serves_a_real_webp_tile_and_writes_it_once(
 
     # Nothing is left behind mid-encode: the staging name never survives.
     assert not list(on_disk.parent.glob("*.part"))
+
+
+async def test_a_transparent_picture_keeps_its_alpha_through_the_view(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+) -> None:
+    """A logo or a screenshot saved as a transparent PNG keeps its background.
+
+    Flattening it would leave the shape on the encoder's black, so the row and
+    the opened item would show two different pictures — and against the light
+    theme the row reads as a black square.
+    """
+
+    logo = _transparent_logo()
+    await _setup(hass)
+    client = await hass_client()
+    ws = await hass_ws_client(hass)
+    item = await _create_item(ws)
+    attachment = await _attach(ws, client, item, file=(logo, "logo.png"))
+
+    url = f"/api/haventory/media/{item['id']}/{attachment['id']}"
+    served = await client.get(f"{url}?size=thumb")
+    assert served.status == HTTPStatus.OK
+    assert served.headers["Content-Type"] == "image/webp"
+
+    with Image.open(io.BytesIO(await served.read())) as tile:
+        assert tile.mode == "RGBA"
+        assert max(tile.size) == THUMBNAIL_MAX_EDGE
+        # What was fully transparent still is.
+        assert tile.getpixel((0, 0))[3] == 0
+        centre = tile.getpixel((tile.width // 2, tile.height // 2))
+        assert centre[3] == OPAQUE_ALPHA
+        assert centre[0] > RED_FLOOR
+        assert max(centre[1], centre[2]) < OTHER_CHANNEL_CEILING
+
+    # The original is untouched, which is the picture the opened item shows.
+    original = await client.get(url)
+    assert await original.read() == logo
 
 
 async def test_a_picture_the_decoder_refuses_serves_the_original(
