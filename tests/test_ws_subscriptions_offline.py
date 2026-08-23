@@ -885,18 +885,29 @@ async def test_location_ids_scopes_a_subscription_to_several_locations() -> None
 
 
 @pytest.mark.asyncio
-async def test_subscribe_refuses_location_ids_that_is_not_a_list() -> None:
+@pytest.mark.parametrize("bad", ["not-a-list", 5, {"a": 1}, [7], [None]])
+async def test_subscribe_refuses_location_ids_that_is_not_a_list_of_strings(bad: object) -> None:
+    """The same rule the list filter answers, and no coercion behind it.
+
+    A number in the list used to become its own string, which then matched no
+    location — so a client that sent one got a subscription that silently
+    delivered nothing instead of being told what was wrong.
+    """
+
     hass = HomeAssistant()
     install_runtime(hass)
     ws_setup(hass)
+    conn = RecordingConn()
 
     res = await ws_send(
         hass,
         1,
         "haventory/subscribe",
-        conn=RecordingConn(),
+        conn=conn,
         topic="items",
-        location_ids="not-a-list",
+        location_ids=bad,
     )
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
+    assert res["error"]["message"] == "location_ids must be a list of strings"
+    assert conn.subscriptions == {}

@@ -70,6 +70,7 @@ from .models import (
     ItemUpdate,
     iso_utc_now,
     new_uuid4,
+    normalize_string_list,
     serialize_status_definition,
     validate_attachment_meta,
     validate_item_filter,
@@ -567,10 +568,9 @@ async def ws_subscribe(
     if "location_id" in msg:
         sub["location_id"] = msg.get("location_id")
     if "location_ids" in msg:
-        raw_ids = msg.get("location_ids")
-        if raw_ids is not None and not isinstance(raw_ids, list):
-            raise ValidationError("location_ids must be a list of strings")
-        sub["location_ids"] = [str(value) for value in raw_ids or []]
+        sub["location_ids"] = normalize_string_list(
+            msg.get("location_ids"), field_name="location_ids"
+        )
     if "area_id" in msg:
         sub["area_id"] = msg.get("area_id")
     if "include_subtree" in msg:
