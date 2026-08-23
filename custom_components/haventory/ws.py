@@ -70,6 +70,7 @@ from .models import (
     serialize_status_definition,
     validate_attachment_meta,
     validate_item_filter,
+    validate_quantity,
     validate_sort,
 )
 from .rate_limit import RateLimiter
@@ -149,7 +150,14 @@ def _error_envelope(
     return {"id": iden, "type": "result", "success": False, "error": error}
 
 
-def _error_message(_id: int, exc: Exception, *, context: dict[str, Any]) -> dict[str, Any]:
+def _log_rejection(exc: Exception, context: dict[str, Any]) -> tuple[str, str]:
+    """Log one refused call at the level its code earns, and say what the wire carries.
+
+    The severity, the traceback and the message a client is given are decided
+    here for a whole command and for one row of a batch alike, so a rejection
+    reads the same in the log whichever of the two carried it.
+    """
+
     code = error_code(exc)
     LOGGER.log(
         log_severity(code, exc),
@@ -157,7 +165,12 @@ def _error_message(_id: int, exc: Exception, *, context: dict[str, Any]) -> dict
         extra={"domain": DOMAIN, **(context or {})},
         exc_info=log_exc_info(code, exc),
     )
-    return _error_envelope(_id, code, str(exc), context or None)
+    return code, str(exc)
+
+
+def _error_message(_id: int, exc: Exception, *, context: dict[str, Any]) -> dict[str, Any]:
+    code, message = _log_rejection(exc, context)
+    return _error_envelope(_id, code, message, context or None)
 
 
 # -----------------------------
@@ -305,6 +318,48 @@ def _validate_bulk_ops(operations: Any) -> list[dict[str, Any]]:
     return validated
 
 
+#: The payload fields a rejected bulk row names, the way `ws_guard`'s
+#: `context_fields` name a command's. One list for every kind, because a row
+#: carries whichever of them its own kind takes.
+_BULK_OP_CONTEXT_FIELDS = (
+    "item_id",
+    "expected_version",
+    "location_id",
+    "due_date",
+    "quantity",
+    "delta",
+    "low_stock_threshold",
+    "tags",
+    "set",
+    "unset",
+)
+
+
+def _bulk_op_error(
+    op_id: str, kind: str, payload: dict[str, Any], exc: Exception
+) -> dict[str, object]:
+    """Map one refused row to the verdict the caller reads under its `op_id`.
+
+    Built from the same two pieces `ws_guard` builds a whole command's answer
+    from, so a row and a command say the same thing about the same failure: one
+    rejected row is classified on its own code — a stale version inside a batch
+    is no more of a fault than it is on its own — and anything that is not a
+    domain error answers the generic message with its details left in the log.
+    """
+
+    context = _context_from_msg("items_bulk_op_failed", payload, _BULK_OP_CONTEXT_FIELDS)
+    context["op_id"] = op_id
+    context["kind"] = kind
+    if isinstance(exc, ValidationError | NotFoundError | ConflictError | StorageError):
+        code, message = _log_rejection(exc, context)
+    else:
+        LOGGER.exception(
+            "Unexpected error in a bulk operation", extra={"domain": DOMAIN, **context}
+        )
+        code, message = "unknown_error", UNEXPECTED_ERROR_MESSAGE
+    return {"success": False, "error": {"code": code, "message": message, "context": context}}
+
+
 def _payload_item_id(payload: dict[str, Any]) -> str:
     """Extract a validated item_id from an (unschema'd) op payload."""
     value = payload.get("item_id")
@@ -378,9 +433,11 @@ def _op_item_set_quantity(
     hass: HomeAssistant, payload: dict[str, Any]
 ) -> tuple[dict[str, Any], str]:
     repo = _repo(hass)
+    # The quantity before the item id: a payload wrong about both is answered on
+    # the value, which is the answer both this op's callers give.
+    quantity = validate_quantity(payload.get("quantity"))
     item_id = _payload_item_id(payload)
-    qty = _payload_int(payload, "quantity")
-    updated = repo.set_quantity(item_id, qty, expected_version=payload.get("expected_version"))
+    updated = repo.set_quantity(item_id, quantity, expected_version=payload.get("expected_version"))
     return serialize_item(hass, updated), "quantity_changed"
 
 
@@ -500,6 +557,33 @@ async def _persist_repo(hass: HomeAssistant) -> None:
     """
 
     await storage_mod.async_persist_repo(hass)
+
+
+async def _mutate_item(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any], kind: str
+) -> None:
+    """Run one item operation and answer for it: write, free, announce, reply.
+
+    The command's fields are the op's payload — the envelope's `id` and `type`
+    are all that is stripped — so a command and the `items/bulk` row naming the
+    same `kind` reach the repository through one function and answer alike.
+    """
+
+    payload = {k: v for k, v in msg.items() if k not in {"id", "type"}}
+    serialized, action = _execute_item_op(hass, kind, payload)
+    await _persist_repo(hass)
+
+    # `deleted` is the action `_op_item_delete` alone returns, so it names
+    # exactly the body whose files nothing references any more — and exactly the
+    # command that answers `null`, its body being a pre-delete snapshot for the
+    # `items/deleted` event rather than a row the caller could read back.
+    deleted = action == "deleted"
+    if deleted:
+        await media_mod.async_delete_item_files(hass, [serialized])
+    notify_mutation(hass, action=action, item=serialized)
+    conn.send_message(
+        websocket_api.result_message(msg.get("id", 0), None if deleted else serialized)
+    )
 
 
 # -----------------------------
@@ -795,18 +879,7 @@ async def ws_item_get(
 async def ws_item_update(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    item_id = msg["item_id"]
-    expected = msg.get("expected_version")
-    update = cast(
-        "ItemUpdate",
-        {k: v for k, v in msg.items() if k not in {"id", "type", "item_id", "expected_version"}},
-    )
-    updated = _repo(hass).update_item(item_id, update, expected_version=expected)
-    serialized = serialize_item(hass, updated)
-    action = "moved" if "location_id" in update else "updated"
-    await _persist_repo(hass)
-    notify_mutation(hass, action=action, item=serialized)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    await _mutate_item(hass, conn, msg, "item_update")
 
 
 @websocket_api.websocket_command(
@@ -821,15 +894,7 @@ async def ws_item_update(
 async def ws_item_delete(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    item_id = msg["item_id"]
-    repo = _repo(hass)
-    before = repo.get_item(item_id)
-    serialized_before = serialize_item(hass, before)
-    repo.delete_item(item_id, expected_version=msg.get("expected_version"))
-    await _persist_repo(hass)
-    await media_mod.async_delete_item_files(hass, [serialized_before])
-    notify_mutation(hass, action="deleted", item=serialized_before)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
+    await _mutate_item(hass, conn, msg, "item_delete")
 
 
 @websocket_api.websocket_command(
@@ -845,15 +910,7 @@ async def ws_item_delete(
 async def ws_item_adjust_quantity(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    # The schema types `delta` as `object`, so the integer check lives here and
-    # answers `validation_error` rather than an HA-core schema rejection.
-    item = _repo(hass).adjust_quantity(
-        msg["item_id"], _payload_int(msg, "delta"), expected_version=msg.get("expected_version")
-    )
-    serialized = serialize_item(hass, item)
-    await _persist_repo(hass)
-    notify_mutation(hass, action="quantity_changed", item=serialized)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    await _mutate_item(hass, conn, msg, "item_adjust_quantity")
 
 
 @websocket_api.websocket_command(
@@ -869,20 +926,7 @@ async def ws_item_adjust_quantity(
 async def ws_item_set_quantity(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    # Validated here, not in the schema: `quantity` is typed `object` so a wrong
-    # type answers `validation_error` instead of an HA-core schema rejection,
-    # and validating upfront keeps the answer about the quantity even when the
-    # item id is also bad.
-    qty = _payload_int(msg, "quantity")
-    if qty < 0:
-        raise ValidationError("quantity must be an integer >= 0")
-    item = _repo(hass).set_quantity(
-        msg["item_id"], qty, expected_version=msg.get("expected_version")
-    )
-    serialized = serialize_item(hass, item)
-    await _persist_repo(hass)
-    notify_mutation(hass, action="quantity_changed", item=serialized)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    await _mutate_item(hass, conn, msg, "item_set_quantity")
 
 
 @websocket_api.websocket_command(
@@ -898,15 +942,7 @@ async def ws_item_set_quantity(
 async def ws_item_check_out(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    item = _repo(hass).check_out(
-        msg["item_id"],
-        due_date=msg.get("due_date"),
-        expected_version=msg.get("expected_version"),
-    )
-    serialized = serialize_item(hass, item)
-    await _persist_repo(hass)
-    notify_mutation(hass, action="checked_out", item=serialized)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    await _mutate_item(hass, conn, msg, "item_check_out")
 
 
 @websocket_api.websocket_command(
@@ -921,11 +957,7 @@ async def ws_item_check_out(
 async def ws_item_check_in(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    item = _repo(hass).check_in(msg["item_id"], expected_version=msg.get("expected_version"))
-    serialized = serialize_item(hass, item)
-    await _persist_repo(hass)
-    notify_mutation(hass, action="checked_in", item=serialized)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    await _mutate_item(hass, conn, msg, "item_check_in")
 
 
 async def _apply_reminder(
@@ -1045,18 +1077,7 @@ async def ws_reminder_bump(
 async def ws_item_add_tags(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    serialized, action = _execute_item_op(
-        hass,
-        "item_add_tags",
-        {
-            "item_id": msg["item_id"],
-            "expected_version": msg.get("expected_version"),
-            "tags": msg.get("tags"),
-        },
-    )
-    await _persist_repo(hass)
-    notify_mutation(hass, action=action, item=serialized)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    await _mutate_item(hass, conn, msg, "item_add_tags")
 
 
 @websocket_api.websocket_command(
@@ -1072,18 +1093,7 @@ async def ws_item_add_tags(
 async def ws_item_remove_tags(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    serialized, action = _execute_item_op(
-        hass,
-        "item_remove_tags",
-        {
-            "item_id": msg["item_id"],
-            "expected_version": msg.get("expected_version"),
-            "tags": msg.get("tags"),
-        },
-    )
-    await _persist_repo(hass)
-    notify_mutation(hass, action=action, item=serialized)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    await _mutate_item(hass, conn, msg, "item_remove_tags")
 
 
 @websocket_api.websocket_command(
@@ -1100,19 +1110,7 @@ async def ws_item_remove_tags(
 async def ws_item_update_custom_fields(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    serialized, action = _execute_item_op(
-        hass,
-        "item_update_custom_fields",
-        {
-            "item_id": msg["item_id"],
-            "expected_version": msg.get("expected_version"),
-            "set": msg.get("set"),
-            "unset": msg.get("unset"),
-        },
-    )
-    await _persist_repo(hass)
-    notify_mutation(hass, action=action, item=serialized)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    await _mutate_item(hass, conn, msg, "item_update_custom_fields")
 
 
 @websocket_api.websocket_command(
@@ -1128,18 +1126,7 @@ async def ws_item_update_custom_fields(
 async def ws_item_set_low_stock_threshold(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    serialized, action = _execute_item_op(
-        hass,
-        "item_set_low_stock_threshold",
-        {
-            "item_id": msg["item_id"],
-            "expected_version": msg.get("expected_version"),
-            "low_stock_threshold": msg.get("low_stock_threshold"),
-        },
-    )
-    await _persist_repo(hass)
-    notify_mutation(hass, action=action, item=serialized)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    await _mutate_item(hass, conn, msg, "item_set_low_stock_threshold")
 
 
 @websocket_api.websocket_command(
@@ -1348,18 +1335,7 @@ async def ws_item_attachment_reorder(
 async def ws_item_move(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    serialized, action = _execute_item_op(
-        hass,
-        "item_move",
-        {
-            "item_id": msg["item_id"],
-            "expected_version": msg.get("expected_version"),
-            "location_id": msg.get("location_id"),
-        },
-    )
-    await _persist_repo(hass)
-    notify_mutation(hass, action=action, item=serialized)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    await _mutate_item(hass, conn, msg, "item_move")
 
 
 @websocket_api.websocket_command(
@@ -1384,69 +1360,12 @@ async def ws_items_bulk(
         payload = op["payload"]
         try:
             serialized, action = _execute_item_op(hass, kind, payload)
+        except Exception as exc:
+            # Whatever it was, it fails its own row and no other.
+            results[op_id] = _bulk_op_error(op_id, kind, payload, exc)
+        else:
             results[op_id] = {"success": True, "result": serialized}
             successful_ops.append((op_id, serialized, action))
-        except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-            # Log error with full context for debugging
-            ctx = {
-                "op_id": op_id,
-                "kind": kind,
-                "error": str(exc),
-            }
-            for k in (
-                "item_id",
-                "expected_version",
-                "location_id",
-                "due_date",
-                "quantity",
-                "delta",
-                "low_stock_threshold",
-                "tags",
-                "set",
-                "unset",
-            ):
-                if k in payload:
-                    ctx[k] = payload.get(k)
-
-            # One rejected op is classified on its own code, not on the batch:
-            # a stale version inside a bulk is no more of a fault than it is
-            # on its own.
-            code = error_code(exc)
-            LOGGER.log(
-                log_severity(code, exc),
-                "Bulk operation failed, continuing with remaining ops",
-                extra={
-                    "domain": DOMAIN,
-                    "op": "items_bulk_op_failed",
-                    **ctx,
-                },
-                exc_info=log_exc_info(code, exc),
-            )
-
-            results[op_id] = {
-                "success": False,
-                "error": {"code": code, "message": str(exc), "context": ctx},
-            }
-        except Exception:
-            # A malformed payload must fail only its own op, never the batch,
-            # and internal details stay out of the client-visible message.
-            LOGGER.exception(
-                "Bulk operation failed unexpectedly, continuing with remaining ops",
-                extra={
-                    "domain": DOMAIN,
-                    "op": "items_bulk_op_failed",
-                    "op_id": op_id,
-                    "kind": kind,
-                },
-            )
-            results[op_id] = {
-                "success": False,
-                "error": {
-                    "code": "unknown_error",
-                    "message": UNEXPECTED_ERROR_MESSAGE,
-                    "context": {"op_id": op_id, "kind": kind},
-                },
-            }
 
     # Only a batch that changed something writes or announces anything. An
     # all-failed batch deliberately logs no summary of its own: each op already

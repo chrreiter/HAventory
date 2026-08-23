@@ -256,7 +256,9 @@ class DockerLogMonitor:
                 self.metrics.persist_timestamps.append(("complete", ts))
             elif "Failed to persist repository" in line or "persist_failed" in line:
                 self.metrics.persist_failures += 1
-            elif "Bulk operation failed" in line:
+            elif "items_bulk_op_failed" in line:
+                # The structured `op` rather than the sentence: a refused row is
+                # logged with the reason as its message, whatever that reason is.
                 self.metrics.bulk_op_failures += 1
 
 

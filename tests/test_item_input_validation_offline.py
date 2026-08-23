@@ -4,7 +4,10 @@ Regression coverage for the PR #91 review:
 - non-scalar category/description are rejected before indexing, so a bad value
   can never leave a durable partially-indexed phantom item;
 - boolean quantity/delta/low_stock_threshold are rejected consistently on the
-  single-command paths (matching the bulk validator), never stored as a bool.
+  single-command paths (matching the bulk validator), never stored as a bool;
+- a value the payload is wrong about is refused before the item is looked up, so
+  a single-item command and the `items/bulk` row of the same kind answer one
+  payload with one code.
 """
 
 from __future__ import annotations
@@ -138,6 +141,66 @@ async def test_ws_set_quantity_bool_is_validation_error() -> None:
     got = await ws_send(hass, 4, "haventory/item/get", item_id=item_id)
     assert got["result"]["quantity"] == 1
     assert got["result"]["quantity"] is not True
+
+
+@pytest.mark.asyncio
+async def test_a_refused_quantity_answers_alike_from_the_command_and_from_bulk() -> None:
+    """The value is checked before the item is looked up, on both surfaces.
+
+    A payload that is wrong about the quantity *and* names an item that is not
+    there has two possible answers, and a caller that batches its edits must not
+    get a different one from the one it gets when it sends them singly.
+    """
+
+    hass = _make_hass()
+    missing = "00000000-0000-4000-8000-000000000000"
+
+    single = await ws_send(hass, 1, "haventory/item/set_quantity", item_id=missing, quantity=-1)
+    batch = await ws_send(
+        hass,
+        2,
+        "haventory/items/bulk",
+        operations=[
+            {
+                "op_id": "a",
+                "kind": "item_set_quantity",
+                "payload": {"item_id": missing, "quantity": -1},
+            }
+        ],
+    )
+
+    assert single["success"] is False
+    assert single["error"]["code"] == "validation_error"
+    row = batch["result"]["results"]["a"]
+    assert row["success"] is False
+    assert row["error"]["code"] == single["error"]["code"]
+    assert row["error"]["message"] == single["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_an_item_id_of_the_wrong_type_names_the_field_on_both_surfaces() -> None:
+    """`item_id` is typed `object` in the schema, so the handler is what names it.
+
+    A number where an id belongs is a client bug, and `not_found` sends its
+    author looking for a missing item instead.
+    """
+
+    hass = _make_hass()
+
+    single = await ws_send(hass, 1, "haventory/item/update", item_id=7, name="X")
+    batch = await ws_send(
+        hass,
+        2,
+        "haventory/items/bulk",
+        operations=[{"op_id": "a", "kind": "item_update", "payload": {"item_id": 7, "name": "X"}}],
+    )
+
+    assert single["success"] is False
+    assert single["error"]["code"] == "validation_error"
+    row = batch["result"]["results"]["a"]
+    assert row["success"] is False
+    assert row["error"]["code"] == single["error"]["code"]
+    assert row["error"]["message"] == single["error"]["message"]
 
 
 # -----------------------------
