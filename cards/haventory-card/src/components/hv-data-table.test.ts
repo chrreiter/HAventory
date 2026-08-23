@@ -168,6 +168,84 @@ describe('hv-data-table: a path too long for its column', () => {
 });
 
 describe('hv-data-table: narrow screens', () => {
+  const AREAS = [
+    { id: 'area-kitchen', name: 'Küche' },
+    { id: 'area-garage', name: 'Garage' },
+  ];
+  const DEEP = 'Küche / Hochschrank / Oberstes Fach / Vorratsbox / Backzutaten';
+
+  const mountNarrow = (display_path: string, props: Partial<HVDataTable> = {}, areaId = 'area-kitchen') =>
+    mount(
+      [
+        {
+          id: '1',
+          effective_area_id: areaId,
+          location_path: { id_path: [], name_path: [], display_path, sort_key: '' },
+        },
+      ],
+      { columns: ['location'], areas: AREAS, narrow: true, ...props },
+    );
+
+  const cellOf = (el: HVDataTable) => q(el, '[data-testid="cell-location"]')!;
+
+  // At phone width the table scrolls sideways and the LOCATION column is off
+  // the right edge, but its wrapped path still set the row's height: a
+  // five-segment path made a 129px row against 65px for a one-segment one, for
+  // a column the reader cannot see. One line, whatever the depth.
+  it('writes the path on one line where the column is scrolled off screen', async () => {
+    const el = await mountNarrow(DEEP);
+    const cell = cellOf(el);
+
+    expect(cell.querySelectorAll('.hv-path-seg').length).toBe(0);
+    expect(cell.textContent?.replace(/\s+/g, ' ').trim()).toBe('Küche › … › Backzutaten');
+    // The whole path is still readable where nothing elides it.
+    expect(cell.getAttribute('title')).toBe(
+      'Area: Küche · Küche › Hochschrank › Oberstes Fach › Vorratsbox › Backzutaten',
+    );
+  });
+
+  // The same line the card's phone rows write, down to the area coming back
+  // out of the elision as a chip rather than a path segment.
+  it('marks the area beside the elided line, not inside it', async () => {
+    const el = await mountNarrow('Werkstatt / Schrank / Schublade A', {}, 'area-garage');
+    const cell = cellOf(el);
+
+    expect(cell.querySelector('[data-testid="area-chip"]')?.textContent).toContain('Garage');
+    expect(cell.querySelector('.hv-chip-line-text')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      '… › Schublade A',
+    );
+  });
+
+  it('still says nothing is filed there with an em dash', async () => {
+    const el = await mount([{ id: '1' }], { columns: ['location'], areas: AREAS, narrow: true });
+    expect(cellOf(el).textContent?.trim()).toBe('—');
+  });
+
+  // Desktop keeps every segment: there the column is on screen and the height
+  // it costs is height the reader gets something for.
+  it('gives the path its segments back at desktop width', async () => {
+    const el = await mountNarrow(DEEP);
+    el.narrow = false;
+    await el.updateComplete;
+
+    expect([...cellOf(el).querySelectorAll('.hv-path-seg')].map((s) => s.textContent?.replace(' › ', ''))).toEqual(
+      ['Küche', 'Hochschrank', 'Oberstes Fach', 'Vorratsbox', 'Backzutaten'],
+    );
+  });
+
+  // jsdom lays nothing out, so the rule that clamps the cell is only assertable
+  // as text — and the attribute is the only thing that rule can select on.
+  it('reflects the phone flag and clamps the cell from CSS', async () => {
+    const el = await mountNarrow(DEEP);
+    expect(el.hasAttribute('narrow')).toBe(true);
+    el.narrow = false;
+    await el.updateComplete;
+    expect(el.hasAttribute('narrow')).toBe(false);
+
+    const css = componentCss('hv-data-table');
+    expect(css).toMatch(/:host\(\[narrow\]\) \.cell\.path[^{]*\{[^}]*flex-wrap: nowrap/);
+    expect(css).toMatch(/:host\(\[narrow\]\) \.cell\.path[^{]*\{[^}]*white-space: nowrap/);
+  });
 
   it('reflects the selecting flag, which is all the pinning rules can read', async () => {
     const el = await mount([{ id: '1' }], { selectable: true });

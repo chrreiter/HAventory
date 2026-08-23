@@ -32,6 +32,7 @@ import './hv-overflow-menu';
 import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
 import {
   areaMarkName,
+  elideMobilePath,
   itemPathParts,
   pathTitle,
   renderAreaChip,
@@ -292,6 +293,29 @@ export class HVDataTable extends LitElement {
         align-items: center;
         row-gap: 2px;
       }
+      /*
+       * At phone width the table scrolls sideways and this column is off the
+       * right edge, where a wrapped path was still setting the row's height —
+       * five segments made a 129px row against 65px for one, for a column the
+       * reader cannot see into. So the cell takes one line here, on the elided
+       * form the card's phone rows already write, and the row's height stops
+       * depending on how deep the tree is. The title attribute still carries
+       * the whole path, and scrolling the column into view reaches this line.
+       *
+       * The text is a block rather than a flex row on this branch: the elision
+       * has already decided what to drop, and text-overflow has nothing to act
+       * on inside a flex container.
+       */
+      :host([narrow]) .cell.path,
+      :host([narrow]) .cell.path > .hv-chip-line-text {
+        flex-wrap: nowrap;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      :host([narrow]) .cell.path > .hv-chip-line-text {
+        display: block;
+      }
       /* A segment holds its line, and elides only when one segment on its own
          is wider than the whole column — the point past which there is no break
          left to take. */
@@ -424,6 +448,15 @@ export class HVDataTable extends LitElement {
   /** Reflected: the sticky name column offsets itself past the checkbox track
    * from CSS, which can only see an attribute. */
   @property({ type: Boolean, reflect: true }) selectable = false;
+  /**
+   * True on a phone-width viewport, set by the host that reads the query.
+   *
+   * The table keeps every column at every width and scrolls sideways, so at
+   * this width the location column sits off the right edge — and a path that
+   * wraps there buys height nothing on screen spends. Reflected: the rule that
+   * clamps the cell is CSS, and CSS can only see an attribute.
+   */
+  @property({ type: Boolean, reflect: true }) narrow = false;
   /** HA areas, to name the one each item's location resolves to. */
   @property({ attribute: false }) areas: AreaRef[] = [];
   @property({ attribute: false }) selection: Set<string> = new Set();
@@ -601,12 +634,30 @@ export class HVDataTable extends LitElement {
         return html`<span class="cell" role="cell" data-testid="cell-category" title=${item.category ?? ''}>${item.category || '—'}</span>`;
       case 'location': {
         const parts = itemPathParts(item, this.areas);
+        const mark = areaMarkName(parts.areaName, parts.path);
+        // On a phone the column is scrolled off screen, so the path gets one
+        // line and drops its middle rather than growing the row for segments
+        // nobody can see. The area comes back out of the elision as the same
+        // chip the wide cell hangs beside the path — the card's phone rows
+        // write this exact line.
+        if (this.narrow) {
+          const lead = elideMobilePath(mark, parts.path);
+          return html`<span
+            class="cell path hv-chip-line"
+            role="cell"
+            data-testid="cell-location"
+            title=${pathTitle(parts)}
+            >${renderAreaChip(lead.area)}<span class="hv-chip-line-text"
+              >${lead.rest || '—'}</span
+            ></span
+          >`;
+        }
         return html`<span
           class="cell path hv-chip-line"
           role="cell"
           data-testid="cell-location"
           title=${pathTitle(parts)}
-          >${renderAreaChip(areaMarkName(parts.areaName, parts.path))}<span class="hv-chip-line-text"
+          >${renderAreaChip(mark)}<span class="hv-chip-line-text"
             >${parts.path ? renderPathSegments(parts.path) : '—'}</span
           ></span
         >`;

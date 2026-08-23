@@ -364,6 +364,15 @@ mark is the separator, and it costs the line about what that separator cost. An 
 that itself contains ` › ` splits into two segments and comes back unmarked, which reads as
 the line always did rather than marking the wrong words.
 
+Both live in `ui/location-path.ts`, because `hv-data-table` writes the same line: its
+`narrow` property — the phone breakpoint, handed down by `hv-full-view`, which is the only
+thing that can read a media query on the table's behalf — swaps the wrapping location cell
+for the elided one. The table keeps every column and scrolls sideways, so at that width the
+location column is off the right edge, and a path that wrapped there still set the row's
+height: five segments cost a 129px row against 65px for one, for a column nobody can see
+into. One line, whatever the depth; the cell's `title` still carries the path whole. Above
+the breakpoint the column is on screen and `renderPathSegments` keeps every segment.
+
 Threading is by property, outward from the two containers that hold `areasCache`.
 `hv-card-shell` and `hv-full-view` pass `.areas` to `hv-list` (which forwards to
 `hv-list-row`), `hv-data-table`, `hv-detail-sheet`, `hv-item-editor`, `hv-filter-panel`,
