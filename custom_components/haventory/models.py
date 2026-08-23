@@ -96,28 +96,32 @@ class LocationPath:
 
     @classmethod
     def from_dict(cls, data: object) -> LocationPath:
-        """Read back what ``to_dict`` wrote, tolerating an absent nesting.
+        """Read back what ``to_dict`` wrote; ``None`` reads as the empty path.
 
         ``sort_key`` is backfilled from ``display_path`` when the payload
         carries none: stores written before it was persisted have to sort
         alongside the ones that were, and it is derived, so recomputing it
         costs nothing but the read.
 
-        An entry of ``id_path`` that is not a UUID v4 raises: the id path is
-        what a subtree filter matches on, so a row carrying a broken one is
-        corrupt rather than merely old.
+        What is refused is a value of the wrong shape — anything present that
+        is not an object, and an ``id_path`` entry that is not a UUID v4. A row
+        carrying one of those is corrupt rather than merely old, and refusing
+        is what lets a load drop it and report it.
         """
 
-        raw = data if isinstance(data, Mapping) else {}
-        display = str(raw.get("display_path", ""))
+        if data is None:
+            return cls(id_path=[], name_path=[], display_path="", sort_key="")
+        if not isinstance(data, Mapping):
+            raise ValidationError("a location path must be an object")
+        display = str(data.get("display_path", ""))
         return cls(
             id_path=[
                 parse_uuid4(str(entry), field_name="path.id_path")
-                for entry in (raw.get("id_path") or [])
+                for entry in (data.get("id_path") or [])
             ],
-            name_path=list(raw.get("name_path") or []),
+            name_path=list(data.get("name_path") or []),
             display_path=display,
-            sort_key=str(raw.get("sort_key", "")) or normalize_text_for_sort(display),
+            sort_key=str(data.get("sort_key", "")) or normalize_text_for_sort(display),
         )
 
 

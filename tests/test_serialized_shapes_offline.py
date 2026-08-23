@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.import_export import build_export_document
 from custom_components.haventory.models import EMPTY_LOCATION_PATH, Item, Location, LocationPath
 from custom_components.haventory.repository import Repository
@@ -181,6 +182,18 @@ def test_a_row_that_carries_no_path_reads_as_the_empty_one() -> None:
     location = Location.from_dict({"id": str(uuid.uuid4()), "name": "Garage"})
 
     assert location.path == EMPTY_LOCATION_PATH
+
+
+@pytest.mark.parametrize("broken", ["garbage", 7, []])
+def test_a_path_of_the_wrong_shape_is_refused(broken: object) -> None:
+    """Absent is old; present and not an object is corrupt.
+
+    The load path turns this refusal into a dropped row named in the report,
+    rather than an entity carrying a path no write path could have written.
+    """
+
+    with pytest.raises(ValidationError):
+        LocationPath.from_dict(broken)
 
 
 # --------------------------------------------------------------------------- #
